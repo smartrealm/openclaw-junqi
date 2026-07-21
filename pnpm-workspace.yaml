@@ -2,6 +2,10 @@ packages:
   - 'packages/*'
 
 allowBuilds:
+  '@google/genai': false
   esbuild: true
   fs-xattr: set this to true or false
   macos-alias: set this to true or false
+  openclaw: false
+  protobufjs: false
+  tree-sitter-bash: false

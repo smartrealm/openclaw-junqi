@@ -36,7 +36,7 @@ test('BUG-07 all direct chat send paths interrupt voice first', () => {
   const chat = read('../../components/Chat/ChatView.tsx');
   const quick = read('../../pages/QuickChatPage.tsx');
   assert.match(input, /if \(st\.isTyping \|\| voiceActive\)/);
-  assert.match(input, /Not queuing[\s\S]*voiceRuntime\.interruptGlobally\(activeSessionKey\)/);
+  assert.match(input, /voiceRuntime\.interruptGlobally\(sendSessionKey\);\s+await chatSendCoordinator\.send/);
   assert.match(chat, /voiceRuntime\.interruptGlobally\(activeSessionKey\)/);
   assert.match(quick, /voiceRuntime\.interruptGlobally\(sessionKey\)/);
 });
@@ -118,7 +118,7 @@ test('BUG-20 Quick Chat ownership never writes main tab state', () => {
 test('BUG-21 voice sends portable attachments and cleanup scopes the directory', () => {
   const input = read('../../components/Chat/MessageInput.tsx');
   const adapter = read('../../api/tauri-adapter.ts');
-  assert.match(input, /\[\{ type: 'base64', mimeType, content: base64, fileName: filename \}\]/);
+  assert.match(input, /toGatewayAttachments\(\[createPreparedAttachment\(\{[\s\S]*fileName: filename,[\s\S]*mimeType,[\s\S]*base64,/);
   assert.doesNotMatch(input, /\[voice\] \$\{savedPath\}/);
   const hostilePath = voiceSessionDirectory('/app/data/', 'agent:main/../../main');
   const formerlyCollidingPath = voiceSessionDirectory('/app/data/', 'agent_main_______main');

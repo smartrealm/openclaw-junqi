@@ -2,6 +2,17 @@
 // Gateway connection types — state, events, status
 // ═══════════════════════════════════════════════════════════
 
+export type {
+  GatewayHelloObservation,
+  RuntimeAttestation,
+  RuntimeDeploymentKind,
+  RuntimeIdentity,
+  RuntimeIdentityIssue,
+  RuntimeInstallTarget,
+  RuntimeOwnership,
+  RuntimePersistence,
+} from '@/types/gatewayRuntime';
+
 /** Finite states for the gateway connection lifecycle. */
 export enum GatewayState {
   DETECTING = 'detecting',     // Probing if gateway is running
@@ -46,7 +57,10 @@ export interface GatewayProcessStatus {
 /** Connection target resolved from config. */
 export interface ConnectionTarget {
   wsUrl: string;
+  /** Explicit/shared token read from the selected OpenClaw configuration. */
   token: string;
+  /** Paired-device token loaded from the operating-system credential vault. */
+  deviceToken: string;
   httpUrl: string;
 }
 

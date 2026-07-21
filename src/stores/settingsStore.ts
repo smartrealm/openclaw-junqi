@@ -25,6 +25,11 @@ import {
   persistLanguagePreference,
   type AppLanguage,
 } from '@/i18n/languages';
+import {
+  deleteGatewayDeviceCredential,
+  resolveGatewayCredentialRuntimeKey,
+  storeGatewayDeviceCredential,
+} from '@/services/gateway/credentialProvider';
 
 // ═══════════════════════════════════════════════════════════
 // Settings Store
@@ -196,6 +201,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   wakeWord: localStorage.getItem('aegis-wake-word') || '',
   wakeSensitivity: parseFloat(localStorage.getItem('aegis-wake-sensitivity') || '0.7') || 0.7,
   gatewayUrl: localStorage.getItem('aegis-gateway-url') || '',
+  // Gateway credentials are restored through credentialProvider after the
+  // runtime target is known. Browser storage is legacy migration input only.
   gatewayToken: '',
   sidebarCollapsed: savedSidebarMode === 'mini',
   sidebarMode: savedSidebarMode,
@@ -273,14 +280,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   setGatewayToken: (token) => {
     const normalized = token.trim();
-    localStorage.removeItem('aegis-gateway-token');
-    localStorage.removeItem('aegis-setting:gatewayToken');
-    set({ gatewayToken: '' });
-    const endpoint = get().gatewayUrl.trim() || undefined;
+    set({ gatewayToken: normalized });
+    const runtimeKey = resolveGatewayCredentialRuntimeKey(
+      get().gatewayUrl || 'ws://127.0.0.1:18789',
+    );
     if (normalized) {
-      void window.aegis?.pairing?.saveToken(normalized, endpoint);
+      void storeGatewayDeviceCredential(runtimeKey, normalized);
     } else {
-      void window.aegis?.pairing?.clearToken(endpoint);
+      void deleteGatewayDeviceCredential(runtimeKey);
     }
   },
   setSidebarCollapsed: (collapsed) => {

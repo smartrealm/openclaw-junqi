@@ -749,7 +749,11 @@ export function AgentHubPage() {
       setAgentFormError(t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'));
       return;
     }
-    const duplicate = agents.some((agent) => agent.id.toLowerCase() === payload.id) || payload.id === MAIN_GATEWAY_AGENT_ID;
+    if (!payload.workspace) {
+      setAgentFormError(t('agentHub.addForm.workspaceRequired', 'Choose a workspace or configure a default Agent workspace.'));
+      return;
+    }
+    const duplicate = agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId) || normalizedNewAgentId === MAIN_GATEWAY_AGENT_ID;
     if (duplicate) {
       setAgentFormError(t('agentHub.addForm.duplicateId', 'This agent ID already exists.'));
       return;
@@ -761,7 +765,10 @@ export function AgentHubPage() {
     setCreatingAgent(true);
     setAgentFormError(null);
     try {
-      await gateway.createAgent(payload);
+      const created = await gateway.createAgent(payload);
+      if (created?.agentId !== payload.id) {
+        throw new Error(`OpenClaw created Agent ${String(created?.agentId || 'unknown')}; expected ${payload.id}`);
+      }
       if (newAgentSkillKeys.length > 0) {
         try {
           await persistAgentSkillFilter(payload.id, newAgentSkillKeys);

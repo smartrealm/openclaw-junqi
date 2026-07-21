@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Check, ChevronDown, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
+import { Check, ChevronDown, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, ShieldCheck, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
 import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
 import { useAppStore, type SetupLog, type StorageSetupDraft } from '@/stores/app-store';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
+import { useCollaborationMaintenance } from '@/hooks/useCollaborationMaintenance';
 
 interface StorageSetupStatus {
   configured: boolean;
@@ -151,6 +152,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   const [progress, setProgress] = useState<MigrationProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completion, setCompletion] = useState<StorageCompletion | null>(null);
+  const collaborationMaintenance = useCollaborationMaintenance();
 
   const loadStorageStatus = useCallback(async () => {
     setLoading(true);
@@ -267,19 +269,26 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       const shouldMigrateSelectedState = !usingLegacy
         && migrateExisting
         && (forceConfigure || status.legacyExists);
-      const result = await invoke<StorageConfigureResult>('configure_storage', {
-        targetDir,
-        migrateExisting: shouldMigrateSelectedState,
-        locations: {
-          workspaceDir,
-          runtimeDir,
-          npmCacheDir: customNpmCache ? npmCacheDir.trim() || null : null,
-          npmPrefix: customNpmPrefix ? npmPrefix.trim() || null : null,
-          nodeRuntimeDir: status.customNodeRuntimeSupported && customNodeRuntime ? nodeRuntimeDir.trim() || null : null,
-          gitRuntimeDir: status.customGitRuntimeSupported && customGitRuntime ? gitRuntimeDir.trim() || null : null,
-          terminalIntegration,
-        },
-      });
+      const result = await collaborationMaintenance.runGuarded(
+        shouldMigrateSelectedState
+          ? 'storage-migration'
+          : usingLegacy
+            ? 'storage-activation'
+            : 'storage-clean-start',
+        () => invoke<StorageConfigureResult>('configure_storage', {
+          targetDir,
+          migrateExisting: shouldMigrateSelectedState,
+          locations: {
+            workspaceDir,
+            runtimeDir,
+            npmCacheDir: customNpmCache ? npmCacheDir.trim() || null : null,
+            npmPrefix: customNpmPrefix ? npmPrefix.trim() || null : null,
+            nodeRuntimeDir: status.customNodeRuntimeSupported && customNodeRuntime ? nodeRuntimeDir.trim() || null : null,
+            gitRuntimeDir: status.customGitRuntimeSupported && customGitRuntime ? gitRuntimeDir.trim() || null : null,
+            terminalIntegration,
+          },
+        }),
+      );
       if (!mountedRef.current) return;
       setStorageDraft(null);
       onReadyRef.current({
@@ -292,7 +301,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     } finally {
       if (mountedRef.current) setApplying(false);
     }
-  }, [applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+  }, [applying, collaborationMaintenance, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, forceConfigure, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
 
   useEffect(() => {
     setCompletion(null);
@@ -703,7 +712,34 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
           </div>
         )}
 
-        {error && <p className="mt-5 break-all border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">{error}</p>}
+        {error && (
+          <div className="mt-5 border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">
+            <p className="break-all">{error}</p>
+            {collaborationMaintenance.issue?.activeRuns.length ? (
+              <ul className="mt-2 space-y-1 text-xs">
+                {collaborationMaintenance.issue.activeRuns.slice(0, 5).map((run) => (
+                  <li key={run.runId} className="flex min-w-0 items-center justify-between gap-3">
+                    <span className="truncate">{run.goal || run.runId}</span>
+                    <span className="shrink-0 font-mono text-[10px]">{run.status}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {collaborationMaintenance.issue?.recoveryRequired && (
+              <button
+                type="button"
+                onClick={() => { void collaborationMaintenance.recover(); }}
+                disabled={collaborationMaintenance.recovering}
+                className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-danger/30 px-3 text-xs font-semibold transition-colors hover:bg-aegis-danger/10 disabled:opacity-50"
+              >
+                {collaborationMaintenance.recovering
+                  ? <LoaderCircle size={13} className="animate-spin" />
+                  : <ShieldCheck size={13} />}
+                {t('storage.verifyAndReleaseMaintenance', '验证并解除维护')}
+              </button>
+            )}
+          </div>
+        )}
 
       </section>
     </SetupShell>

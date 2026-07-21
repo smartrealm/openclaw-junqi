@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, CircleAlert, Download, ExternalLink, RefreshCw, TerminalSquare } from 'lucide-react';
+import { CheckCircle2, CircleAlert, Download, ExternalLink, RefreshCw, ShieldCheck, TerminalSquare } from 'lucide-react';
 import clsx from 'clsx';
 import { useOpenclawUpdate } from '@/hooks/useOpenclawUpdate';
 import { resolveOpenclawUpdateIndicator } from './openclawUpdateIndicator';
@@ -88,6 +88,20 @@ export function OpenClawUpdatePanel({
       );
     }
     if (update.phase === 'error') {
+      if (update.maintenanceIssue?.recoveryRequired) {
+        return (
+          <Button
+            size="sm"
+            variant="outline"
+            leadingIcon={<ShieldCheck size={14} />}
+            loading={update.recoveringMaintenance}
+            disabled={update.recoveringMaintenance}
+            onClick={() => { void update.recoverMaintenance(); }}
+          >
+            {t('setup.openclawUpdate.recoverMaintenance', '验证并解除维护')}
+          </Button>
+        );
+      }
       return (
         <Button
           size="sm"
@@ -296,7 +310,27 @@ export function OpenClawUpdatePanel({
       {update.phase === 'error' && update.error && (
         <div className="mt-3" aria-live="assertive">
           <Alert tone="danger" size="sm" title={t('setup.openclawUpdate.failed')}>
-            <span className="break-words">{update.error}</span>
+            <div className="space-y-2">
+              <span className="block break-words">{update.error}</span>
+              {update.maintenanceIssue?.activeRuns.length ? (
+                <ul className="space-y-1 border-t border-current/15 pt-2">
+                  {update.maintenanceIssue.activeRuns.slice(0, 5).map((run) => (
+                    <li key={run.runId} className="flex min-w-0 items-center justify-between gap-3">
+                      <span className="truncate">{run.goal || run.runId}</span>
+                      <span className="shrink-0 font-mono text-[10px] opacity-75">{run.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {update.maintenanceIssue?.recoveryRequired && !update.maintenanceIssue.activeRuns.length ? (
+                <p className="text-[11px] opacity-80">
+                  {t(
+                    'setup.openclawUpdate.recoveryHint',
+                    '维护闸门仍处于关闭状态。请先确认 Gateway 已恢复，再显式验证并解除。',
+                  )}
+                </p>
+              ) : null}
+            </div>
           </Alert>
         </div>
       )}

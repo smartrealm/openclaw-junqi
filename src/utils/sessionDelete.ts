@@ -1,8 +1,9 @@
 /** Shared native OpenClaw session deletion flow. */
-import { gateway } from '@/services/gateway';
+import { executeSessionLifecycleMutation } from '@/services/collaboration/sessionLifecycle';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { useCollaborationStore } from '@/stores/collaborationStore';
 import { clearSessionModelPref } from '@/utils/sessionModelPrefs';
 import { debugWarn } from '@/utils/debugLog';
 import {
@@ -16,13 +17,13 @@ import {
 const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
 
 type SessionDeleteDeps = {
-  deleteRemote: (sessionKey: string) => Promise<any>;
+  deleteRemote: (sessionKey: string) => Promise<unknown>;
   warn: (...args: unknown[]) => void;
   notifyFailure: (detail: string) => void;
 };
 
 const defaultSessionDeleteDeps: SessionDeleteDeps = {
-  deleteRemote: (sessionKey) => gateway.deleteSession(sessionKey),
+  deleteRemote: (sessionKey) => executeSessionLifecycleMutation(sessionKey, 'delete'),
   warn: (...args) => debugWarn('app', ...args),
   notifyFailure: (detail) => {
     useNotificationStore.getState().addToast('error', '删除会话失败', detail);
@@ -68,13 +69,20 @@ function clearDeletedSessionLocalPrefs(sessionKey: string): void {
   removeLocalStorageMapEntry(SESSION_TOPIC_PREFS_KEY, sessionKey);
 }
 
-export function applyConfirmedSessionDeletion(rawSessionKey: string): boolean {
+export function applyConfirmedSessionDeletion(rawSessionKey: string, confirmedSessionId?: string): boolean {
   const sessionKey = normalizeSessionKey(rawSessionKey);
   if (!sessionKey || isAgentMainSession(sessionKey)) return false;
 
+  const chatStore = useChatStore.getState();
+  const sessionId = confirmedSessionId
+    || chatStore.sessions.find((session) => session.key === sessionKey)?.sessionId;
   markSessionDeleted(sessionKey);
+  chatStore.clearQueue(sessionKey);
+  if (sessionId) {
+    useCollaborationStore.getState().clearSessionProjection({ sessionKey, sessionId });
+  }
   clearDeletedSessionLocalPrefs(sessionKey);
-  useChatStore.getState().removeSession(sessionKey);
+  chatStore.removeSession(sessionKey);
   const gatewayStore = useGatewayDataStore.getState();
   gatewayStore.setSessions(gatewayStore.sessions.filter((session) => session.key !== sessionKey));
   return true;
@@ -87,7 +95,18 @@ async function performSessionDeletion(sessionKey: string): Promise<boolean> {
     const result = await sessionDeleteDeps.deleteRemote(sessionKey);
     const failure = gatewayMutationFailure(result, 'Gateway rejected session deletion');
     if (failure) throw new Error(failure);
-    applyConfirmedSessionDeletion(sessionKey);
+    const response = result !== null && typeof result === 'object' && !Array.isArray(result)
+      ? result as Record<string, unknown>
+      : null;
+    if (response?.cancelled === true) return false;
+    const confirmed = response?.success === true
+      || response?.ok === true
+      || response?.deleted === true;
+    if (!confirmed) throw new Error('Gateway did not confirm session deletion');
+    const confirmedSessionId = typeof response?.sessionId === 'string'
+      ? response.sessionId
+      : undefined;
+    applyConfirmedSessionDeletion(sessionKey, confirmedSessionId);
   } catch (error) {
     sessionDeleteDeps.warn('[sessionDelete] gateway.deleteSession failed:', error);
     sessionDeleteDeps.notifyFailure(errorMessage(error));

@@ -439,32 +439,45 @@ function ConnectPanel() {
   const resolveTarget = async () => {
     const url = editUrl.trim();
     if (url) {
-      const token = tokenDirty
-        ? editToken.trim()
-        : await window.aegis?.pairing?.getToken(url) || '';
-      return { url, token };
+      if (tokenDirty) return { url, token: editToken.trim(), deviceToken: '' };
+      const config = await window.aegis?.config?.get();
+      const configUrl = config?.gatewayUrl || config?.gatewayWsUrl || '';
+      const splitCredentials = config
+        && ('gatewayBootstrapToken' in config || 'gatewayDeviceToken' in config);
+      const sameTarget = url === configUrl;
+      const storedDeviceToken = await window.aegis?.pairing?.getToken(url) || '';
+      return {
+        url,
+        token: sameTarget
+          ? (config?.gatewayBootstrapToken ?? (!splitCredentials ? config?.gatewayToken : '') ?? '')
+          : '',
+        deviceToken: sameTarget ? (config?.gatewayDeviceToken || storedDeviceToken) : storedDeviceToken,
+      };
     }
     const config = await window.aegis?.config?.get();
     return {
       url: config?.gatewayUrl || config?.gatewayWsUrl || defaultGatewayWsUrl(),
-      token: tokenDirty ? editToken.trim() : config?.gatewayToken || '',
+      token: tokenDirty
+        ? editToken.trim()
+        : config?.gatewayBootstrapToken ?? config?.gatewayToken ?? '',
+      deviceToken: tokenDirty ? '' : config?.gatewayDeviceToken ?? '',
     };
   };
   const handleSave = async () => {
     setGatewayUrl(editUrl.trim());
     if (tokenDirty) setGatewayToken(editToken.trim());
-    const { url, token } = await resolveTarget();
+    const { url, token, deviceToken } = await resolveTarget();
     setEditToken('');
     setTokenDirty(false);
-    setHasStoredToken(Boolean(token));
-    gatewayManager.connect(url, token);
+    setHasStoredToken(Boolean(token || deviceToken));
+    gatewayManager.connect(url, token, deviceToken);
   };
   const handleTest = async () => {
     setTesting(true);
     setTestOk(null);
     try {
-      const { url, token } = await resolveTarget();
-      gatewayManager.connect(url, token);
+      const { url, token, deviceToken } = await resolveTarget();
+      gatewayManager.connect(url, token, deviceToken);
       await new Promise(r=>setTimeout(r,2500));
       setTestOk(useChatStore.getState().connected);
     } catch {

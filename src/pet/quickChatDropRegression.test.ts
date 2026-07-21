@@ -31,6 +31,13 @@ test('QuickChat recovers seed paths even if the startup event was missed', async
   assert.match(backend, /static QUICKCHAT_SEED/);
 });
 
+test('QuickChat uses a referentially stable empty message snapshot', async () => {
+  const page = await read('../pages/QuickChatPage.tsx');
+  assert.match(page, /const EMPTY_MESSAGES:/);
+  assert.match(page, /\?\? EMPTY_MESSAGES : EMPTY_MESSAGES/);
+  assert.doesNotMatch(page, /sessionKey\s*\?[^\n]*\?\? \[\]\s*:\s*\[\]/);
+});
+
 test('QuickChat has a connection-only root and cannot own Gateway lifecycle', async () => {
   const [entry, root, lease] = await Promise.all([
     read('../main.tsx'),

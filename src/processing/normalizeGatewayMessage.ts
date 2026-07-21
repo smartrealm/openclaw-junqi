@@ -85,6 +85,14 @@ function extractTextParts(content: unknown): string[] {
   return parts;
 }
 
+/**
+ * Convert Gateway content into the plain-text contract used by ChatMessage.
+ * Rich blocks remain available separately through ChatMessage.rawContent.
+ */
+export function extractGatewayMessageText(content: unknown): string {
+  return extractTextParts(content).join('');
+}
+
 /** Exported for ChatHandler — live thinking from content blocks during streams. */
 export function extractThinkingContent(content: unknown): string | undefined {
   const parts: string[] = [];
@@ -174,7 +182,7 @@ export function normalizeGatewayMessage(message: any): NormalizedMessage {
   const role = typeof message?.role === 'string' ? message.role : 'unknown';
   const timestamp = message?.timestamp || message?.createdAt || new Date().toISOString();
   const id = message?.id || message?.messageId || `hist-${crypto.randomUUID()}`;
-  const rawContent = message?.content;
+  const rawContent = message?.rawContent ?? message?.content;
   const isStreaming = Boolean(message?.isStreaming);
   const responseState =
     message?.responseState === 'error' || message?.responseState === 'aborted'

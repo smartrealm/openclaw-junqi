@@ -3,11 +3,11 @@ import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  Copy, Check, User, RefreshCw, Pencil,
+  Copy, Check, User, RefreshCw, RotateCcw, Pencil,
   ChevronDown, ChevronRight, AlertTriangle, Trash2, Eye, Code2,
-  Sparkles, Bot, ExternalLink, Globe, FileText,
+  Sparkles, Bot, Globe, FileText,
   FileSpreadsheet, FileArchive, FileJson, FileCode2, Music, Film,
-  Kanban, Wrench, Brain, CheckCircle2, Info, LoaderCircle,
+  Kanban, Wrench, Brain, CheckCircle2, Info, GitFork, Loader2, LoaderCircle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -92,12 +92,7 @@ function detectErrorAction(content: string): ErrorAction | null {
 // through to a syntax-highlighted <pre>.
 function ArtifactCard({ artifact }: { artifact: Artifact }) {
   const { t } = useTranslation();
-  const [opening, setOpening] = useState(false);
-  const [tab, setTab] = useState<'preview' | 'source'>(
-    artifact.type === 'html' || artifact.type === 'react' || artifact.type === 'svg'
-      ? 'preview'
-      : 'source',
-  );
+  const [tab, setTab] = useState<'preview' | 'source'>('source');
   const typeIcons: Record<string, React.ReactNode> = {
     html:    Icon.chat.artifact.html,
     react:   Icon.chat.artifact.react,
@@ -109,14 +104,7 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
 
   const defaultArtifactIcon = Icon.chat.artifact.generic;
 
-  const handleOpen = async () => {
-    setOpening(true);
-    try { await window.aegis?.artifact?.open(artifact); } catch (err) {
-      debugError('media', '[Artifact] Failed to open preview:', err);
-    } finally { setTimeout(() => setOpening(false), 500); }
-  };
-
-  const supportsPreview = artifact.type === 'html' || artifact.type === 'react' || artifact.type === 'svg';
+  const supportsPreview = artifact.type === 'html' || artifact.type === 'svg';
 
   return (
     <div className="my-3 rounded-xl border border-aegis-primary/20 bg-aegis-primary/[0.04] overflow-hidden">
@@ -143,26 +131,15 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
               </button>
             </div>
           )}
-          <button onClick={handleOpen} disabled={opening}
-            title={t('resultCards.openExternal', 'Open in external window')}
-            className={clsx(
-              'flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all',
-              'text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-overlay/5',
-              opening && 'opacity-60',
-            )}>
-            <ExternalLink size={12} />
-          </button>
         </div>
       </div>
 
       {tab === 'preview' && supportsPreview ? (
-        // Inline sandboxed iframe — sandbox="allow-scripts" only (no allow-same-origin)
-        // so the artifact cannot access our origin's storage/cookies.
         <div className="bg-white" style={{ minHeight: 320 }}>
           <iframe
             srcDoc={artifact.content}
             title={artifact.title}
-            sandbox="allow-scripts"
+            sandbox=""
             className="w-full border-0"
             style={{ height: 480, display: 'block', background: '#fff' }}
             referrerPolicy="no-referrer"
@@ -241,9 +218,19 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
 interface MessageBubbleProps {
   block: MessageBlock;
   onEdit?: (messageId: string, content: string) => Promise<void>;
+  onResend?: (content: string) => void;
   onRegenerate?: () => void;
   onErrorAction?: (action: string) => void;
   onDelete?: () => void;
+  deliveryStatus?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  deliveryError?: string;
+  historyTruncated?: boolean;
+  historyTruncationReason?: string;
+  onLoadFullMessage?: () => Promise<void>;
+  collaborationAction?: {
+    state: 'confirming' | 'ready' | 'active';
+    onClick?: () => void;
+  };
 }
 
 function isLocalFilePath(value?: string) {
@@ -307,14 +294,16 @@ function FileCard({ path, meta }: { path: string; meta?: string }) {
 }
 
 // ── Action Button (icon-only, hover tooltip via title) ──
-function ActionBtn({ icon, label, onClick, danger }: {
-  icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean;
+function ActionBtn({ icon, label, onClick, danger, disabled }: {
+  icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean; disabled?: boolean;
 }) {
   return (
-    <button onClick={onClick}
+    <button onClick={onClick} disabled={disabled}
       className={clsx(
         'inline-flex items-center justify-center w-7 h-7 rounded transition-all duration-150',
+        '[@media(pointer:coarse)]:h-[40px] [@media(pointer:coarse)]:w-[40px]',
         'hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text',
+        'disabled:cursor-wait disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-aegis-text-muted',
         danger && 'hover:bg-aegis-danger/10 hover:text-aegis-danger',
       )}
       title={label}
@@ -413,7 +402,8 @@ const markdownComponents = {
 };
 
 export const MessageBubble = memo(function MessageBubble({
-  block, onEdit, onRegenerate, onErrorAction, onDelete,
+  block, onEdit, onResend, onRegenerate, onErrorAction, onDelete, collaborationAction,
+  deliveryStatus, deliveryError, historyTruncated, historyTruncationReason, onLoadFullMessage,
 }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
   const agents = useGatewayDataStore((s) => s.agents);
@@ -435,6 +425,8 @@ export const MessageBubble = memo(function MessageBubble({
   const [editSaving, setEditSaving] = useState(false);
   const [editRevision, setEditRevision] = useState(0);
   const [errorActionDone, setErrorActionDone] = useState(false);
+  const [loadingFullMessage, setLoadingFullMessage] = useState(false);
+  const [fullMessageError, setFullMessageError] = useState('');
   const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
   const contextContent = contextMeta?.content
     ? (() => { try { return JSON.parse(contextMeta.content) as { input?: number; inputTokens?: number; output?: number; outputTokens?: number; cacheRead?: number; cacheReadInputTokens?: number; cacheWrite?: number; cacheCreationInputTokens?: number; contextPercent?: number | null; model?: string; formatted?: string; duration?: number }; } catch { return null; } })()
@@ -803,6 +795,34 @@ function stripInlineCodeTicks(md: string): string {
             <CollapsedMeta items={block.meta} />
           )}
 
+          {historyTruncated && onLoadFullMessage && !block.isStreaming && (
+            <div className="mt-3 pt-2.5 border-t border-aegis-border/50">
+              <button
+                type="button"
+                disabled={loadingFullMessage}
+                onClick={() => {
+                  setLoadingFullMessage(true);
+                  setFullMessageError('');
+                  void onLoadFullMessage()
+                    .catch((error) => setFullMessageError(
+                      error instanceof Error ? error.message : String(error),
+                    ))
+                    .finally(() => setLoadingFullMessage(false));
+                }}
+                className="inline-flex min-h-[32px] items-center gap-1.5 rounded-md border border-aegis-border px-2.5 py-1 text-[11px] font-medium text-aegis-text-muted transition-colors hover:border-aegis-primary/35 hover:text-aegis-text disabled:cursor-wait disabled:opacity-60"
+                title={historyTruncationReason}
+              >
+                {loadingFullMessage
+                  ? <Loader2 size={13} className="animate-spin" />
+                  : <FileText size={13} />}
+                {t('chat.loadFullMessage', '加载完整消息')}
+              </button>
+              {fullMessageError && (
+                <p className="mt-1 text-[10px] text-aegis-danger">{fullMessageError}</p>
+              )}
+            </div>
+          )}
+
           {/* Error Action */}
           {errorAction && (
             <div className="mt-3 pt-2.5 border-t border-aegis-warning/15">
@@ -839,9 +859,22 @@ function stripInlineCodeTicks(md: string): string {
 
           {/* Timestamp + duration — AI: "Jun 25 14:32 · 12s", User: "14:32" */}
           {isUser ? (
-            <time className="text-[10px] text-aegis-text-muted tabular-nums" dateTime={block.timestamp || ''}>
-              {timeLabel}
-            </time>
+            <span className="inline-flex items-center gap-1.5">
+              <time className="text-[10px] text-aegis-text-muted tabular-nums" dateTime={block.timestamp || ''}>
+                {timeLabel}
+              </time>
+              {deliveryStatus === 'pending' && (
+                <span className="text-[10px] text-aegis-text-dim">{t('chat.sending', '发送中')}</span>
+              )}
+              {deliveryStatus === 'queued' && (
+                <span className="text-[10px] text-aegis-warning">{t('chat.queued', '已排队')}</span>
+              )}
+              {deliveryStatus === 'failed' && (
+                <span className="text-[10px] text-aegis-danger" title={deliveryError}>
+                  {t('chat.sendFailed', '发送失败')}
+                </span>
+              )}
+            </span>
           ) : (
             <span className="inline-flex items-center text-[10px] text-aegis-text-muted" style={{ gap: 4 }}>
               <span>{dateLabel}</span>
@@ -923,6 +956,27 @@ function stripInlineCodeTicks(md: string): string {
             {!isUser && onRegenerate && (
               <ActionBtn icon={<RefreshCw size={14} />} label={t('chat.regenerate', 'Regenerate')}
                 onClick={onRegenerate} />
+            )}
+
+            {/* Retry (user only, as resend) */}
+            {isUser && onResend && (
+              <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.resend', 'Resend')}
+                onClick={() => onResend(block.markdown)} />
+            )}
+
+            {isUser && collaborationAction && (
+              <ActionBtn
+                icon={collaborationAction.state === 'confirming'
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <GitFork size={14} />}
+                label={collaborationAction.state === 'active'
+                  ? t('collaboration.chat.viewRun', 'View collaboration')
+                  : collaborationAction.state === 'ready'
+                    ? t('collaboration.chat.startRun', 'Start collaboration')
+                    : t('collaboration.chat.confirmingMessage', 'Confirming message identity')}
+                onClick={() => collaborationAction.onClick?.()}
+                disabled={collaborationAction.state === 'confirming' || !collaborationAction.onClick}
+              />
             )}
 
             {/* Delete */}

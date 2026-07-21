@@ -96,6 +96,12 @@ export async function loadOrCreateDeviceIdentity(): Promise<DeviceIdentity> {
   return identity;
 }
 
+/** Public identity reference for credential scoping; never exposes the signing key. */
+export async function getDeviceIdentityReference(): Promise<Pick<DeviceIdentity, 'deviceId' | 'publicKey'>> {
+  const { deviceId, publicKey } = await loadOrCreateDeviceIdentity();
+  return { deviceId, publicKey };
+}
+
 export function buildDeviceAuthPayload(params: {
   deviceId: string;
   clientId: string;

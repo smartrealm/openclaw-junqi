@@ -3,6 +3,12 @@ dist/
 target/
 .DS_Store
 *.log
+# Local verification evidence can include runtime diagnostics. CI should upload
+# it as an artifact instead of committing it to the source tree.
+.artifacts/
+# Release evidence is generated, attested, and retained by CI; it is never a
+# repository-authored acceptance gate.
+release-evidence/
 # Local AI-tooling scratch space (attachments, config). Keep out of git.
 .nezha/
 .junqi/

@@ -42,6 +42,14 @@ test('opening a local project initializes the JunQi project configuration', () =
   assert.match(source, /初始化项目配置失败/);
 });
 
+test('the empty task page can open a local project directly', () => {
+  const emptyStateStart = source.indexOf(") : !projectPath ? (");
+  const emptyStateEnd = source.indexOf(") : !selected ? (", emptyStateStart);
+  const emptyState = source.slice(emptyStateStart, emptyStateEnd);
+  assert.match(emptyState, /openProjectWorkspace\(\)/);
+  assert.doesNotMatch(emptyState, /navigate\('\/terminal'\)/);
+});
+
 test('task list actions match JunQi ownership boundaries', () => {
   const start = source.indexOf("title={task.starred ? '取消收藏'");
   const end = source.indexOf('title="删除任务"', start);

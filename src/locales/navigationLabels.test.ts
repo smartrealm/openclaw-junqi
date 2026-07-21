@@ -3,9 +3,11 @@ import test from 'node:test';
 import zh from './zh.json';
 import en from './en.json';
 
-test('agent run and AI workspace have distinct navigation labels', () => {
-  assert.notEqual(zh.nav.agentRun, zh.nav.aiWorkspace);
-  assert.notEqual(en.nav.agentRun, en.nav.aiWorkspace);
+test('agent run and Agent tasks have distinct navigation labels', () => {
+  assert.notEqual(zh.nav.agentRun, zh.nav.agentTasks);
+  assert.notEqual(en.nav.agentRun, en.nav.agentTasks);
+  assert.equal(zh.nav.agentTasks, 'Agent 任务');
+  assert.equal(en.nav.agentTasks, 'Agent Tasks');
 });
 
 test('the legacy welcome route is named as a project launcher', () => {

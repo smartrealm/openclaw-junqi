@@ -42,6 +42,7 @@ import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOpt
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 
 function RouteLoadingFallback() {
   return (
@@ -102,9 +103,8 @@ export default function App() {
   } = useChatStore();
 
   // ── Auto-Pairing State ──
-  const [needsPairing, setNeedsPairing] = useState(false);
-  const [scopeError, setScopeError] = useState<string>('');
-  const [gatewayHttpUrl, setGatewayHttpUrl] = useState(defaultGatewayHttpUrl);
+  const [pairingIssue, setPairingIssue] = useState<GatewayAuthorizationIssue | null>(null);
+  const needsPairing = pairingIssue !== null;
   const pairingTriggeredRef = useRef(false);
   const deferredModelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -241,6 +241,8 @@ export default function App() {
         }
         return {
           key,
+          sessionId: typeof s.sessionId === 'string' ? s.sessionId : undefined,
+          agentId: typeof s.agentId === 'string' ? s.agentId : undefined,
           label: typeof s.label === 'string'
             ? s.label
             : (typeof s.name === 'string' ? s.name : ''),
@@ -734,11 +736,10 @@ export default function App() {
         }
         if (status.connected) {
           cancelGatewayMigrationRetry();
-          // Successfully connected — dismiss pairing screen if showing
-          if (needsPairing) {
-            setNeedsPairing(false);
-            pairingTriggeredRef.current = false;
-          }
+          // The callback is installed once, so it must not rely on a captured
+          // pairing flag. Any successful handshake closes the approval surface.
+          setPairingIssue(null);
+          pairingTriggeredRef.current = false;
           const boot = useBootSequenceStore.getState();
           boot.markStageCompleted('connection', 'WebSocket handshake complete');
           boot.markStageRunning('config', 'Loading sessions');
@@ -791,14 +792,11 @@ export default function App() {
           });
         }
       },
-      onScopeError: (error) => {
-        debugWarn('app', '[App] 🔑 Scope error — triggering pairing flow:', error);
-        // Only trigger pairing once per connection attempt
-        if (!pairingTriggeredRef.current) {
-          pairingTriggeredRef.current = true;
-          setScopeError(error);
-          setNeedsPairing(true);
-        }
+      onAuthorizationIssue: (issue) => {
+        debugWarn('app', '[App] Gateway authorization issue:', issue.code);
+        if (issue.kind !== 'pairing_required') return;
+        pairingTriggeredRef.current = true;
+        setPairingIssue(issue);
       },
     });
 
@@ -1019,15 +1017,19 @@ export default function App() {
   // ── Pairing Handlers ──
   const handlePairingComplete = useCallback(async (token: string) => {
     debugLog('gateway', '[App] 🔑 Pairing complete — reconnecting with new token');
+    // Save token to config via IPC
+    if (window.aegis?.pairing?.saveToken) {
+      await window.aegis.pairing.saveToken(token);
+    }
     // Reconnect gateway with new token
     gatewayManager.reconnectWithToken(token);
-    setNeedsPairing(false);
+    setPairingIssue(null);
     pairingTriggeredRef.current = false;
   }, []);
 
   const handlePairingCancel = useCallback(() => {
     debugLog('gateway', '[App] Pairing cancelled by user');
-    setNeedsPairing(false);
+    setPairingIssue(null);
     pairingTriggeredRef.current = false;
     // Stop gateway pairing retry loop — user chose to dismiss
     gateway.stopPairingRetry();
@@ -1105,13 +1107,12 @@ export default function App() {
       </Suspense>
 
       {/* Pairing overlay — shown when Gateway rejects due to missing scopes */}
-      {needsPairing && !gatewayOptionalRoute && !gatewayBootError && (
+      {pairingIssue && !gatewayOptionalRoute && !gatewayBootError && (
         <Suspense fallback={null}>
           <PairingScreen
-            gatewayHttpUrl={gatewayHttpUrl}
+            issue={pairingIssue}
             onPaired={handlePairingComplete}
             onCancel={handlePairingCancel}
-            errorMessage={scopeError}
           />
         </Suspense>
       )}

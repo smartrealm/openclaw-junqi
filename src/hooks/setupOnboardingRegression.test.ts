@@ -74,7 +74,9 @@ test('BUG-ONB-24 URL-only settings changes preserve endpoint-scoped credentials'
   assert.match(settingsStore, /config\?\.save\?\.\(\{ gatewayUrl: url \}\)/);
   assert.match(settingsPage, /if \(tokenDirty\) setGatewayToken\(editToken\.trim\(\)\)/);
   assert.match(settingsDialog, /if \(tokenDirty\) setGatewayToken\(editToken\.trim\(\)\)/);
-  assert.match(adapter, /mergeDesktopGatewaySettings\(update, localStorage\)/);
+  assert.match(adapter, /const safe = \{ \.\.\.current, \.\.\.update \}/);
+  assert.match(adapter, /delete safe\.gatewayToken/);
+  assert.match(adapter, /if \(token\) await persistGatewayToken\(token,/);
 });
 
 test('BUG-ONB-05 install mode selection is explicit and confirmed by Next', () => {

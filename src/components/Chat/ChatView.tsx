@@ -9,7 +9,16 @@ import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { showConfirm } from '@/components/shared/AlertDialog';
+import { createClientMessageId } from '@/services/gateway/messageIdentity';
+import { chatSendCoordinator } from '@/services/chat/sendTransaction';
+import { resolveHistoryPageMetadata } from '@/services/chat/historyPagination';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
+import {
+  normalizeCachedChatMessageContent,
+  normalizeHistoryMessage,
+  normalizeHistoryMessages,
+} from '@/processing/normalizeHistoryMessage';
 import { projectResponseGroupToRenderBlocks } from '@/processing/projectResponseGroup';
 import type {
   DecisionBlock,
@@ -28,6 +37,17 @@ import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { isSessionDeleted } from '@/utils/sessionLifecycle';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
+import {
+  buildCollaborationChatTimeline,
+  type ChatTimelineItem,
+} from '@/processing/collaborationTimeline';
+import {
+  CollaborationChatProvider,
+  CollaborationRunAnchor,
+  CollaborationSessionDock,
+  CollaborationUnanchoredBanner,
+  useCollaborationChat,
+} from './CollaborationChatProvider';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -109,30 +129,11 @@ function ResultCardFallback({ block }: { block: DecisionBlock | SessionEventBloc
   );
 }
 
-function numberFromHistory(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
-
-function textFromHistory(value: unknown): string | undefined {
-  if (typeof value === 'string') return value;
-  if (value == null) return undefined;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
 interface HistoryMeta {
   loaded: boolean;
   loadedCount: number;
   hasMore: boolean;
-  nextCursor?: string;
+  nextOffset?: number;
   source: 'gateway' | 'cache';
 }
 
@@ -183,8 +184,17 @@ function CompactDivider({ timestamp, label }: { timestamp?: string; label: strin
 // ═══════════════════════════════════════════════════════════
 
 export function ChatView() {
+  return (
+    <CollaborationChatProvider>
+      <ChatViewContent />
+    </CollaborationChatProvider>
+  );
+}
+
+function ChatViewContent() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const collaboration = useCollaborationChat();
 
   // ── Store selectors (split to minimize re-renders) ──
   const renderBlocks = useChatStore((s) => s.renderBlocks);
@@ -201,6 +211,12 @@ export function ChatView() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const activeSessionId = useChatStore(
+    (s) => s.sessions.find((session) => session.key === activeSessionKey)?.sessionId,
+  );
+  const activeAgentId = useChatStore(
+    (s) => s.sessions.find((session) => session.key === activeSessionKey)?.agentId,
+  );
   const messageQueue = useChatStore((s) => s.messageQueue);
   const queueCount = (messageQueue[activeSessionKey] || []).length;
   const availableModels = useChatStore((s) => s.availableModels);
@@ -216,9 +232,14 @@ export function ChatView() {
   const setIsLoadingHistory = useChatStore((s) => s.setIsLoadingHistory);
   const cacheMessagesForSession = useChatStore((s) => s.cacheMessagesForSession);
   const getCachedMessages = useChatStore((s) => s.getCachedMessages);
-  const addMessage = useChatStore((s) => s.addMessage);
   const setHistoryLoader = useChatStore((s) => s.setHistoryLoader);
   const setQuickReplies = useChatStore((s) => s.setQuickReplies);
+  const setSessionIdentity = useChatStore((s) => s.setSessionIdentity);
+
+  const { timelineItems, anchoredRunIds } = useMemo(
+    () => buildCollaborationChatTimeline(responseGroups, messages, collaboration.runs),
+    [collaboration.runs, messages, responseGroups],
+  );
 
   // ── Virtuoso ref & scroll state ──
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -234,6 +255,7 @@ export function ChatView() {
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
 
   const inFlightHistoryBySession = useRef<Record<string, Promise<void> | undefined>>({});
+  const queuedForcedHistoryBySession = useRef<Record<string, { force: true; background?: boolean } | undefined>>({});
   const historyRetryTimerBySession = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const latestHistoryRequestBySession = useRef<Record<string, number>>({});
   const historyRequestSeq = useRef(0);
@@ -270,6 +292,7 @@ export function ChatView() {
   const bottomContentSignature = [
     activeSessionKey,
     responseGroups.length,
+    timelineItems.length,
     renderBlocks.length,
     tailMessage?.id || '',
     tailMessage?.content?.length || 0,
@@ -339,7 +362,20 @@ export function ChatView() {
       if (isSessionDeleted(sessionKey)) return;
 
       if (inFlightHistoryBySession.current[sessionKey]) {
+        if (options?.force) {
+          const pending = queuedForcedHistoryBySession.current[sessionKey];
+          queuedForcedHistoryBySession.current[sessionKey] = {
+            force: true,
+            // A foreground request wins over any already queued background refresh.
+            background: pending?.background === false || options.background !== true ? false : true,
+          };
+        }
         await inFlightHistoryBySession.current[sessionKey];
+        const queued = queuedForcedHistoryBySession.current[sessionKey];
+        if (queued) {
+          delete queuedForcedHistoryBySession.current[sessionKey];
+          await loadHistory(sessionKey, queued);
+        }
         return;
       }
 
@@ -351,13 +387,14 @@ export function ChatView() {
 
       const cached = getCachedMessages(sessionKey);
       if (!options?.force && cached && cached.length > 0) {
-        setMessages(cached, sessionKey);
+        const normalizedCached = cached.map(normalizeCachedChatMessageContent);
+        setMessages(normalizedCached, sessionKey);
         setHistoryMetaBySession((prev) => ({
           ...prev,
           [sessionKey]: prev[sessionKey] ?? {
             loaded: true,
-            loadedCount: cached.length,
-            hasMore: cached.length >= HISTORY_LIMIT,
+            loadedCount: normalizedCached.length,
+            hasMore: false,
             source: 'cache',
           },
         }));
@@ -365,8 +402,12 @@ export function ChatView() {
         const shouldTrackConversationStage =
           boot.stages.conversation.status === 'pending' || boot.stages.conversation.status === 'running';
         if (shouldTrackConversationStage && !options?.background) {
-          boot.markStageCompleted('conversation', `Recent conversation loaded from cache (${cached.length} messages)`);
+          boot.markStageCompleted('conversation', `Recent conversation loaded from cache (${normalizedCached.length} messages)`);
         }
+        queueMicrotask(() => {
+          if (isSessionDeleted(sessionKey)) return;
+          void loadHistory(sessionKey, { force: true, background: true });
+        });
         return;
       }
 
@@ -386,42 +427,24 @@ export function ChatView() {
         const requestStartedAt = performance.now();
         if (!options?.background) setIsLoadingHistory(true);
         try {
-          const result = await gateway.getHistory(sessionKey, HISTORY_LIMIT, HISTORY_REQUEST_TIMEOUT_MS);
+          const result = await gateway.getHistory(
+            sessionKey,
+            HISTORY_LIMIT,
+            HISTORY_REQUEST_TIMEOUT_MS,
+            { offset: 0 },
+          );
           const requestMs = Math.round(performance.now() - requestStartedAt);
           if (latestHistoryRequestBySession.current[sessionKey] !== requestId || isSessionDeleted(sessionKey)) return;
 
           const normalizeStartedAt = performance.now();
           const rawMessages = Array.isArray(result?.messages) ? result.messages : [];
-          const hasMore = rawMessages.length >= HISTORY_LIMIT;
-          const nextCursor = rawMessages.length > 0 ? rawMessages[0]?.id || undefined : undefined;
-
-          const mappedMessages = rawMessages.map((msg: any) => ({
-            id: msg.id || msg.messageId || `hist-${crypto.randomUUID()}`,
-            runId: msg.runId || msg.run_id || null,
-            role: msg.role || 'unknown',
-            content: msg.content,
-            timestamp: msg.timestamp || msg.createdAt || new Date().toISOString(),
-            responseState:
-              msg.state === 'error' || msg.state === 'aborted' ? msg.state : ('final' as const),
-            model: msg.model ?? null,
-            mediaUrl: msg.mediaUrl || undefined,
-            mediaType: msg.mediaType || undefined,
-            attachments: msg.attachments,
-            toolName: msg.toolName || msg.name,
-            toolInput: msg.toolInput || msg.input,
-            toolOutput: textFromHistory(msg.toolOutput ?? msg.output ?? msg.result),
-            toolStatus: msg.toolStatus || msg.status,
-            toolDurationMs: numberFromHistory(
-              msg.toolDurationMs ?? msg.durationMs ?? msg.duration_ms ?? msg.tool_duration_ms,
-            ),
-            toolCallId: msg.toolCallId || msg.tool_call_id,
-            thinkingContent: msg.thinkingContent,
-            fileRefs: Array.isArray(msg.fileRefs) ? msg.fileRefs : undefined,
-            decisionOptions: Array.isArray(msg.decisionOptions) ? msg.decisionOptions : undefined,
-            workshopEvents: Array.isArray(msg.workshopEvents) ? msg.workshopEvents : undefined,
-            sessionEvents: Array.isArray(msg.sessionEvents) ? msg.sessionEvents : undefined,
-            usage: msg.usage && typeof msg.usage === 'object' ? msg.usage : undefined,
-          })) as ChatMessage[];
+          const historySessionId = typeof result?.sessionId === 'string' ? result.sessionId : undefined;
+          const historyAgentId = typeof result?.sessionInfo?.agentId === 'string'
+            ? result.sessionInfo.agentId
+            : undefined;
+          if (historySessionId) setSessionIdentity(sessionKey, historySessionId, historyAgentId);
+          const { hasMore, nextOffset } = resolveHistoryPageMetadata(result, 0);
+          const mappedMessages = normalizeHistoryMessages(rawMessages);
 
           const previousMessages = getCachedMessages(sessionKey) ?? [];
           const messages = reconcileHistoryMessageIds(previousMessages, dedupeHistoryMessages(mappedMessages));
@@ -433,15 +456,17 @@ export function ChatView() {
             setMessages(messages.slice(-20), sessionKey);
             requestAnimationFrame(() => {
               if (latestHistoryRequestBySession.current[sessionKey] !== requestId || isSessionDeleted(sessionKey)) return;
-              setMessages(messages, sessionKey);
-              cacheMessagesForSession(sessionKey, messages);
+              const latestMessages = useChatStore.getState().messagesPerSession[sessionKey] ?? [];
+              const hydratedMessages = reconcileHistoryMessageIds(latestMessages, messages);
+              setMessages(hydratedMessages, sessionKey);
+              cacheMessagesForSession(sessionKey, hydratedMessages);
               setHistoryMetaBySession((prev) => ({
                 ...prev,
                 [sessionKey]: {
                   loaded: true,
-                  loadedCount: messages.length,
+                  loadedCount: hydratedMessages.length,
                   hasMore,
-                  nextCursor,
+                  nextOffset,
                   source: 'gateway',
                 },
               }));
@@ -455,7 +480,7 @@ export function ChatView() {
                 loaded: true,
                 loadedCount: messages.length,
                 hasMore,
-                nextCursor,
+                nextOffset,
                 source: 'gateway',
               },
             }));
@@ -542,7 +567,7 @@ export function ChatView() {
       inFlightHistoryBySession.current[sessionKey] = task;
       await task;
     },
-    [activeSessionKey, setMessages, setIsLoadingHistory, getCachedMessages, cacheMessagesForSession],
+    [activeSessionKey, setMessages, setIsLoadingHistory, getCachedMessages, cacheMessagesForSession, setSessionIdentity],
   );
 
   useEffect(
@@ -566,7 +591,7 @@ export function ChatView() {
     }
   }, [isRefreshing, isLoadingHistory, loadHistory]);
 
-  // ── Load older messages via HTTP cursor pagination ──
+  // ── Load older messages through the official chat.history offset contract ──
   const isLoadingOlderRef = useRef(false);
   const loadOlderMessages = useCallback(async () => {
     const sk = activeSessionKey;
@@ -577,24 +602,25 @@ export function ChatView() {
     isLoadingOlderRef.current = true;
     setHasUnreadBelow(false);
     try {
-      const { baseUrl, token } = (await import('@/api/gatewayAuth')).getGatewayAuth() || {};
-      if (!baseUrl || !token) return;
-      const { fetchSessionHistoryPage } = await import('@/api/http/historyClient');
-      const { normalizeHistoryMessages } = await import('@/processing/normalizeHistoryMessage');
       const { prependOlderMessages } = await import('@/processing/mergeHistory');
-      const page = await fetchSessionHistoryPage({
-        baseUrl, token, sessionKey: sk,
-        limit: HISTORY_LIMIT,
-        cursor: meta.nextCursor,
-      });
+      const requestedOffset = meta.nextOffset ?? 0;
+      const page = await gateway.getHistory(
+        sk,
+        HISTORY_LIMIT,
+        HISTORY_REQUEST_TIMEOUT_MS,
+        { offset: requestedOffset },
+      );
       if (isSessionDeleted(sk)) return;
-      const normalized = normalizeHistoryMessages(page.messages as unknown[]);
+      const normalized = normalizeHistoryMessages(
+        Array.isArray(page?.messages) ? page.messages : [],
+      );
       const existing = useChatStore.getState().messagesPerSession[sk] || [];
       const { merged, addedCount } = prependOlderMessages(existing, normalized);
+      const { hasMore, nextOffset } = resolveHistoryPageMetadata(page, requestedOffset);
       if (addedCount === 0) {
         setHistoryMetaBySession((prev) => ({
           ...prev,
-          [sk]: { ...prev[sk], hasMore: page.hasMore, nextCursor: page.nextCursor },
+          [sk]: { ...prev[sk], hasMore, nextOffset },
         }));
         return;
       }
@@ -605,8 +631,8 @@ export function ChatView() {
         [sk]: {
           loaded: true,
           loadedCount: merged.length,
-          hasMore: page.hasMore,
-          nextCursor: page.nextCursor,
+          hasMore,
+          nextOffset,
           source: 'gateway',
         },
       }));
@@ -658,11 +684,19 @@ export function ChatView() {
     const detail = (e as CustomEvent<{ message: string; autoSend?: boolean }>).detail;
     if (!detail?.message) return;
     const key = activeSessionKey || 'agent:main:main';
+    const clientMessageId = createClientMessageId();
     try {
       voiceRuntime.interruptGlobally(key);
-      await gateway.sendMessage(detail.message, undefined, key);
-    } catch { /* gateway offline — safe no-op */ }
-  }, [activeSessionKey]);
+      await chatSendCoordinator.send({
+        sessionKey: key,
+        message: detail.message,
+        clientMessageId,
+        sessionId: activeSessionId,
+      });
+    } catch (error) {
+      debugError('app', '[Quick action] Send error:', error);
+    }
+  }, [activeSessionKey, activeSessionId]);
   useEffect(() => {
     window.addEventListener('aegis:quick-action', handleQuickAction as EventListener);
     return () => window.removeEventListener('aegis:quick-action', handleQuickAction as EventListener);
@@ -691,11 +725,15 @@ export function ChatView() {
       await gateway.abortChat(activeSessionKey).catch(() => undefined);
     }
 
+    const clientMessageId = createClientMessageId();
     const editedMessage: ChatMessage = {
       ...originalMessages[messageIndex],
+      id: clientMessageId,
+      clientMessageId,
       content: text,
       timestamp: new Date().toISOString(),
-      status: 'sent',
+      status: 'pending',
+      deliveryError: undefined,
     };
     const optimisticMessages = [
       ...originalMessages.slice(0, messageIndex),
@@ -705,7 +743,13 @@ export function ChatView() {
     revealConversationTail({ instant: true });
     state.setIsTyping(true, activeSessionKey);
     try {
-      await gateway.sendMessage(text, undefined, activeSessionKey);
+      await chatSendCoordinator.send({
+        sessionKey: activeSessionKey,
+        message: text,
+        clientMessageId,
+        sessionId: activeSessionId,
+        optimisticMessage: false,
+      });
     } catch (err) {
       const currentMessages = useChatStore.getState().messagesPerSession[activeSessionKey] ?? [];
       const stillOptimistic = currentMessages.length === optimisticMessages.length
@@ -719,7 +763,22 @@ export function ChatView() {
       }
       throw err;
     }
-  }, [activeSessionKey, revealConversationTail]);
+  }, [activeSessionKey, activeSessionId, revealConversationTail]);
+
+  const handleResend = useCallback(async (content: string) => {
+    const clientMessageId = createClientMessageId();
+    revealConversationTail({ instant: true });
+    try {
+      await chatSendCoordinator.send({
+        sessionKey: activeSessionKey,
+        message: content,
+        clientMessageId,
+        sessionId: activeSessionId,
+      });
+    } catch (error) {
+      debugError('app', '[Resend] Send error:', error);
+    }
+  }, [activeSessionKey, activeSessionId, revealConversationTail]);
 
   // Regenerate: re-send the last user message
   const handleRegenerate = useCallback(() => {
@@ -727,58 +786,91 @@ export function ChatView() {
       (b) => b.type === 'message' && b.role === 'user'
     );
     if (lastUserMsg && lastUserMsg.type === 'message') {
+      const clientMessageId = createClientMessageId();
       revealConversationTail({ instant: true });
       voiceRuntime.interruptGlobally(activeSessionKey);
-      useChatStore.getState().setIsTyping(true, activeSessionKey);
-      gateway.sendMessage(lastUserMsg.markdown, undefined, activeSessionKey);
+      void chatSendCoordinator.send({
+        sessionKey: activeSessionKey,
+        message: lastUserMsg.markdown,
+        clientMessageId,
+        sessionId: activeSessionId,
+        optimisticMessage: false,
+      }).catch((error) => debugError('app', '[Regenerate] Send error:', error));
     }
-  }, [renderBlocks, activeSessionKey, revealConversationTail]);
+  }, [renderBlocks, activeSessionKey, activeSessionId, revealConversationTail]);
 
   // ── Error Action Handler — called by MessageBubble when user clicks an error action button ──
   const handleErrorAction = useCallback(async (action: string) => {
     if (action === 'reset-session') {
-      await resetSessionEverywhere(activeSessionKey);
+      showConfirm(
+        t('chat.resetSession', 'Reset session'),
+        t('chat.resetSessionConfirm', 'Clear this session history? The session itself will remain.'),
+        async () => {
+          await resetSessionEverywhere(activeSessionKey);
+        },
+      );
     }
-  }, [activeSessionKey]);
+  }, [activeSessionKey, t]);
 
   const handleInlineButtonClick = useCallback(async (callbackData: string) => {
     const text = callbackData;
     voiceRuntime.interruptGlobally(activeSessionKey);
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: text,
-      timestamp: new Date().toISOString(),
-    };
-    addMessage(userMsg, activeSessionKey);
-    const { setIsTyping } = useChatStore.getState();
-    setIsTyping(true, activeSessionKey);
+    const clientMessageId = createClientMessageId();
     try {
-      await gateway.sendMessage(text, undefined, activeSessionKey);
+      await chatSendCoordinator.send({
+        sessionKey: activeSessionKey,
+        message: text,
+        clientMessageId,
+        sessionId: activeSessionId,
+      });
     } catch (err) {
       debugError('app', '[InlineButtons] Send error:', err);
     }
-  }, [addMessage, activeSessionKey]);
+  }, [activeSessionKey, activeSessionId]);
 
   const handleDecisionSelect = useCallback(async (value: string) => {
     const text = value;
     voiceRuntime.interruptGlobally(activeSessionKey);
+    const clientMessageId = createClientMessageId();
     setQuickReplies([], activeSessionKey);
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: text,
-      timestamp: new Date().toISOString(),
-    };
-    addMessage(userMsg, activeSessionKey);
-    const { setIsTyping } = useChatStore.getState();
-    setIsTyping(true, activeSessionKey);
     try {
-      await gateway.sendMessage(text, undefined, activeSessionKey);
+      await chatSendCoordinator.send({
+        sessionKey: activeSessionKey,
+        message: text,
+        clientMessageId,
+        sessionId: activeSessionId,
+      });
     } catch (err) {
       debugError('app', '[DecisionCard] Send error:', err);
     }
-  }, [activeSessionKey, addMessage, setQuickReplies]);
+  }, [activeSessionKey, activeSessionId, setQuickReplies]);
+
+  const handleLoadFullMessage = useCallback(async (sourceMessage: ChatMessage) => {
+    if (!sourceMessage.nativeMessageId) {
+      throw new Error(t('chat.fullMessageUnavailable', '该消息没有可查询的 OpenClaw 消息 ID'));
+    }
+    const result = await gateway.getMessage(
+      activeSessionKey,
+      sourceMessage.nativeMessageId,
+      activeAgentId,
+    );
+    if (result?.ok !== true || !result.message) {
+      throw new Error(
+        result?.unavailableReason
+          ? `${t('chat.fullMessageUnavailable', '完整消息不可用')}: ${result.unavailableReason}`
+          : t('chat.fullMessageUnavailable', '完整消息不可用'),
+      );
+    }
+    const normalized = normalizeHistoryMessage(result.message);
+    const { id: _normalizedId, ...replacement } = normalized;
+    useChatStore.getState().updateMessage(activeSessionKey, sourceMessage.id, {
+      ...replacement,
+      clientMessageId: normalized.clientMessageId ?? sourceMessage.clientMessageId,
+      nativeMessageId: normalized.nativeMessageId ?? sourceMessage.nativeMessageId,
+      historyTruncated: false,
+      historyTruncationReason: undefined,
+    });
+  }, [activeAgentId, activeSessionKey, t]);
 
   // ── Render a single block (used by Virtuoso) ──
   const renderBlock = useCallback((block: RenderBlock) => {
@@ -847,13 +939,25 @@ export function ChatView() {
         );
 
       case 'message':
+        const sourceMessage = messages.find((message) => message.id === block.id);
         return (
           <Suspense fallback={<MessageBubbleFallback block={block} />}>
             <MessageBubble
               block={block}
               onEdit={block.role === 'user' ? handleEditMessage : undefined}
+              onResend={block.role === 'user' ? handleResend : undefined}
               onRegenerate={block.role === 'assistant' ? handleRegenerate : undefined}
               onErrorAction={block.role === 'assistant' ? handleErrorAction : undefined}
+              deliveryStatus={sourceMessage?.status}
+              deliveryError={sourceMessage?.deliveryError}
+              historyTruncated={sourceMessage?.historyTruncated}
+              historyTruncationReason={sourceMessage?.historyTruncationReason}
+              onLoadFullMessage={sourceMessage?.historyTruncated
+                ? () => handleLoadFullMessage(sourceMessage)
+                : undefined}
+              collaborationAction={block.role === 'user'
+                ? collaboration.getMessageAction(sourceMessage)
+                : undefined}
               onDelete={() => {
                 const st = useChatStore.getState();
                 const key = st.activeSessionKey;
@@ -866,7 +970,17 @@ export function ChatView() {
       default:
         return <div />;
     }
-  }, [handleEditMessage, handleRegenerate, handleInlineButtonClick, handleDecisionSelect, handleErrorAction]);
+  }, [
+    collaboration,
+    handleEditMessage,
+    handleResend,
+    handleRegenerate,
+    handleInlineButtonClick,
+    handleDecisionSelect,
+    handleErrorAction,
+    handleLoadFullMessage,
+    messages,
+  ]);
 
   const renderGroup = useCallback((index: number, group: ResponseGroup) => {
     const blocks = projectResponseGroupToRenderBlocks(group);
@@ -898,6 +1012,11 @@ export function ChatView() {
       </div>
     );
   }, [renderBlock]);
+
+  const renderTimelineItem = useCallback((index: number, item: ChatTimelineItem) => {
+    if (item.type === 'collaboration') return <CollaborationRunAnchor runId={item.runId} />;
+    return renderGroup(index, item.group);
+  }, [renderGroup]);
 
   // ── Header: loading indicator / session start divider ──
   const Header = useCallback(() => {
@@ -984,7 +1103,11 @@ export function ChatView() {
               {connectionError && <span className="opacity-60"> — {connectionError}</span>}
               <button onClick={() => {
                 window.aegis?.config.get().then((c: any) => {
-                  gatewayManager.connect(c.gatewayUrl || c.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL, c.gatewayToken || '');
+                  gatewayManager.connect(
+                    c.gatewayUrl || c.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL,
+                    c.gatewayBootstrapToken ?? c.gatewayToken ?? '',
+                    c.gatewayDeviceToken ?? '',
+                  );
                 });
               }} className="mx-2 underline hover:no-underline">
                 {t('connection.reconnect')}
@@ -1011,6 +1134,9 @@ export function ChatView() {
         </div>
       )}
 
+      <CollaborationUnanchoredBanner anchoredRunIds={anchoredRunIds} />
+      <CollaborationSessionDock />
+
 
 
       {/* Messages Area — Virtualized */}
@@ -1026,12 +1152,12 @@ export function ChatView() {
           if (!atBottom) scrollLockedRef.current = true;
         }}
       >
-        {responseGroups.length === 0 ? (
+        {timelineItems.length === 0 ? (
           <div className="flex-1 h-full" />
         ) : (
           <Virtuoso
             ref={virtuosoRef}
-            data={responseGroups}
+            data={timelineItems}
             followOutput={() => {
               // Honor explicit user lock OR if atBottom is false. Without the
               // atBottom gate, virtuoso auto-anchors to the tail during stream
@@ -1044,7 +1170,7 @@ export function ChatView() {
             overscan={{ main: 600, reverse: 600 }}
             increaseViewportBy={{ top: 400, bottom: 400 }}
             defaultItemHeight={120}
-            initialTopMostItemIndex={responseGroups.length - 1}
+            initialTopMostItemIndex={timelineItems.length - 1}
             atBottomStateChange={(b) => {
               setAtBottom(b);
               if (b) {
@@ -1073,7 +1199,7 @@ export function ChatView() {
               }
             }}
             atBottomThreshold={100}
-            itemContent={renderGroup}
+            itemContent={renderTimelineItem}
             startReached={handleStartReached}
             components={{ Footer }}
             className="h-full py-3 scrollbar-thin"
@@ -1101,17 +1227,14 @@ export function ChatView() {
             onSend={async (text) => {
               voiceRuntime.interruptGlobally(activeSessionKey);
               setQuickReplies([], activeSessionKey);
-              const userMsg: ChatMessage = {
-                id: `user-${Date.now()}`,
-                role: 'user',
-                content: text,
-                timestamp: new Date().toISOString(),
-              };
-              addMessage(userMsg, activeSessionKey);
-              const { setIsTyping } = useChatStore.getState();
-              setIsTyping(true, activeSessionKey);
+              const clientMessageId = createClientMessageId();
               try {
-                await gateway.sendMessage(text, undefined, activeSessionKey);
+                await chatSendCoordinator.send({
+                  sessionKey: activeSessionKey,
+                  message: text,
+                  clientMessageId,
+                  sessionId: activeSessionId,
+                });
               } catch (err) {
                 debugError('app', '[QuickReplyBar] Send error:', err);
               }

@@ -26,12 +26,6 @@ fn gateway_log_stream(source: crate::state::gateway_process::LogSource) -> &'sta
     }
 }
 
-fn write_json_atomic(path: &std::path::Path, value: &serde_json::Value) -> Result<(), String> {
-    let raw = serde_json::to_string_pretty(value)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    crate::commands::config::atomic_write_text(path, &raw)
-}
-
 fn write_openclaw_config_safely(
     path: &std::path::Path,
     value: &serde_json::Value,
@@ -47,6 +41,60 @@ pub struct GatewayStatus {
     /// Literal gateway auth token when one exists. SecretRef-managed values are
     /// deliberately not materialized across the native/renderer boundary.
     pub token: Option<String>,
+}
+
+/// Validate the in-memory owner/child pair without probing the network.
+/// A live child is destructive-operation authority only when the canonical
+/// runtime state records `ManagedChild`.
+pub(crate) fn inspect_gateway_owner(
+    state: &GatewayProcess,
+) -> Result<(GatewayRuntimeMode, Option<u32>), String> {
+    let mode = state.runtime_snapshot()?.mode;
+    let mut child_slot = state.child.lock().map_err(|error| error.to_string())?;
+    let observation = match child_slot.as_mut() {
+        Some(child) => match child.try_wait() {
+            Ok(None) => Some(Ok(child.id().ok_or_else(|| {
+                "A live JunQi Gateway child has no stable process id".to_string()
+            })?)),
+            Ok(Some(_)) => Some(Err(())),
+            Err(error) => {
+                return Err(format!(
+                    "Failed to inspect the existing JunQi Gateway child: {error}"
+                ));
+            }
+        },
+        None => None,
+    };
+
+    match (mode, observation) {
+        (GatewayRuntimeMode::ManagedChild, Some(Ok(pid))) => Ok((mode, Some(pid))),
+        (GatewayRuntimeMode::ManagedChild, Some(Err(()))) => {
+            *child_slot = None;
+            drop(child_slot);
+            state.transition(
+                Some(GatewayLifecycle::Stopped),
+                Some(GatewayRuntimeMode::None),
+                None,
+                "gateway owner inspection: managed child exited",
+            );
+            Ok((GatewayRuntimeMode::None, None))
+        }
+        (GatewayRuntimeMode::ManagedChild, None) => Err(
+            "Gateway owner is ManagedChild but no owned child is present; recover the Gateway state before proceeding"
+                .to_string(),
+        ),
+        (_, Some(Ok(_))) => {
+            Err("A live JunQi Gateway child conflicts with the recorded Gateway owner".to_string())
+        }
+        (_, Some(Err(()))) => {
+            *child_slot = None;
+            Err(
+                "An exited JunQi Gateway child conflicts with the recorded Gateway owner"
+                    .to_string(),
+            )
+        }
+        (_, None) => Ok((mode, None)),
+    }
 }
 
 async fn stop_offline_gateway_service(
@@ -1111,74 +1159,6 @@ pub(crate) fn ensure_config_with_token(
     write_openclaw_config_safely(config_path, &default_config)?;
 
     Ok(Some(token))
-}
-
-/// Ensure all paired devices have full operator scopes.
-///
-/// Internal gateway calls (e.g. from sessions_spawn subagents) use
-/// CLI_DEFAULT_OPERATOR_SCOPES which includes admin/read/write/approvals/pairing.
-/// If a device was initially paired with limited scopes (e.g. only "operator.read"),
-/// subsequent connections requesting wider scopes trigger a "scope-upgrade" pairing
-/// request. The gateway never silently auto-approves scope upgrades (silent=false is
-/// hardcoded), so the connection fails with "pairing required" (1008).
-///
-/// This function patches paired.json at startup to grant full operator scopes to all
-/// operator-role devices, preventing scope-upgrade pairing failures.
-fn ensure_paired_devices_full_scopes(base_dir: &std::path::Path) {
-    let paired_path = base_dir.join("devices").join("paired.json");
-    if !paired_path.exists() {
-        return;
-    }
-    let raw = match std::fs::read_to_string(&paired_path) {
-        Ok(r) => r,
-        Err(_) => return,
-    };
-    let mut doc: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-    let full_scopes = serde_json::json!([
-        "operator.admin",
-        "operator.read",
-        "operator.write",
-        "operator.approvals",
-        "operator.pairing"
-    ]);
-    let mut changed = false;
-    if let Some(obj) = doc.as_object_mut() {
-        for (_device_id, entry) in obj.iter_mut() {
-            if let Some(entry_obj) = entry.as_object_mut() {
-                // Only patch operator-role devices
-                let is_operator =
-                    entry_obj.get("role").and_then(|r| r.as_str()) == Some("operator");
-                if !is_operator {
-                    continue;
-                }
-                // Patch scopes and approvedScopes to full set
-                if entry_obj.get("approvedScopes") != Some(&full_scopes) {
-                    entry_obj.insert("scopes".into(), full_scopes.clone());
-                    entry_obj.insert("approvedScopes".into(), full_scopes.clone());
-                    // Also update tokens to include full scopes
-                    if let Some(tokens) =
-                        entry_obj.get_mut("tokens").and_then(|t| t.as_object_mut())
-                    {
-                        if let Some(op_token) =
-                            tokens.get_mut("operator").and_then(|t| t.as_object_mut())
-                        {
-                            op_token.insert("scopes".into(), full_scopes.clone());
-                        }
-                    }
-                    changed = true;
-                }
-            }
-        }
-    }
-    if changed {
-        // Also clear pending requests since they may reference stale scope state
-        let pending_path = base_dir.join("devices").join("pending.json");
-        let _ = crate::commands::config::atomic_write_text(&pending_path, "{}");
-        let _ = write_json_atomic(&paired_path, &doc);
-    }
 }
 
 fn gateway_token_from_resolution_payload(payload: &serde_json::Value) -> Option<String> {
@@ -2697,12 +2677,6 @@ pub(crate) async fn start_gateway_locked(
         }
     }
 
-    // Ensure paired devices have full operator scopes so internal callGateway()
-    // (used by sessions_spawn / subagents / cron) doesn't hit "pairing required"
-    // scope-upgrade errors. Scope upgrades are never silently auto-approved by
-    // the gateway, so we patch the persisted pairing state at startup.
-    ensure_paired_devices_full_scopes(&base_dir);
-
     // Pre-create the default workspace directory so the first message isn't delayed
     let default_workspace = paths::default_workspace_dir();
     if !default_workspace.exists() {
@@ -2839,6 +2813,15 @@ pub(crate) async fn start_gateway_locked(
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+
+    #[cfg(windows)]
+    {
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+    }
+    #[cfg(unix)]
+    cmd.process_group(0);
 
     let startup_started_at_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

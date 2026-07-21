@@ -16,7 +16,7 @@ function toolCategories(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
   return [
     { to: '/activity',  icon: <Activity size={14} />,  label: t('nav.activity', '活动中心'), feature: 'dashboard' },
     { to: '/workshop', icon: <Folder size={14} />,    label: t('nav.workspace', '工作空间'), feature: 'workshop' },
-    { to: '/ai-workspace', icon: <Bot size={14} />,   label: t('nav.aiWorkspace', 'AI 工作台'), feature: 'agentRun' },
+    { to: '/ai-workspace', icon: <Bot size={14} />,   label: t('nav.agentTasks', 'Agent 任务'), feature: 'agentRun' },
     { to: '/terminal', icon: <Terminal size={14} />,  label: t('nav.terminal', '终端'), feature: 'terminal' },
     { to: '/files',    icon: <FileText size={14} />,  label: t('nav.files', '文件管理'), feature: 'files' },
     { to: '/tools',    icon: <Database size={14} />,  label: t('nav.mcpTools', 'MCP 工具'), feature: 'tools' },
@@ -54,8 +54,8 @@ function agentToolLinks(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
 export function AgentsPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const agents = useGatewayDataStore((st) => (st as any).agents) ?? [];
-  const sessions = useChatStore((st) => st.sessions) ?? [];
+  const agents = useGatewayDataStore((st) => st.agents);
+  const sessions = useChatStore((st) => st.sessions);
   const skillList = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
 
@@ -98,7 +98,7 @@ export function AgentsPanel() {
       rows.unshift({
         id: 'main',
         name: t('agents.mainAgent', 'Main Agent'),
-        model: mainSession?.model,
+        model: mainSession?.model ?? undefined,
       });
     }
     return rows.sort((a: any, b: any) => {

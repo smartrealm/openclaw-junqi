@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   checkOpenclawUpdate,
@@ -11,8 +11,14 @@ import {
   openclawUpdateReducer,
 } from './openclawUpdateState';
 import {
+  beginOpenclawUpdateMaintenance,
+  assertOpenclawUpdateMaintenanceCurrent,
+  CollaborationMaintenanceError,
   dispatchOpenclawUpdateMaintenanceFinished,
   dispatchOpenclawUpdateMaintenanceStarted,
+  failOpenclawUpdateMaintenance,
+  finishOpenclawUpdateMaintenance,
+  recoverOpenclawUpdateMaintenance,
 } from '@/services/openclawUpdateLifecycle';
 import { normalizeSetupProgressPayload } from './setupProgressEvents';
 import { translateSetupProgressMessage } from './setupProgressParams';
@@ -24,6 +30,18 @@ export interface OpenclawUpdateCompletion {
 }
 
 function errorMessage(error: unknown): string {
+  if (error instanceof CollaborationMaintenanceError) {
+    if (error.activeRuns.length > 0) {
+      const goals = error.activeRuns
+        .slice(0, 3)
+        .map((run) => run.goal || run.runId)
+        .join(', ');
+      return `${error.message}${goals ? `: ${goals}` : ''}`;
+    }
+    if (error.recoveryRequired) {
+      return `${error.message}. The maintenance lease remains active and must be recovered explicitly.`;
+    }
+  }
   return error instanceof Error ? error.message : String(error || 'Unknown update error');
 }
 
@@ -32,6 +50,8 @@ export function useOpenclawUpdate() {
   const [state, dispatch] = useReducer(openclawUpdateReducer, initialOpenclawUpdateState);
   const operationId = useRef(0);
   const busy = useRef(false);
+  const [maintenanceIssue, setMaintenanceIssue] = useState<CollaborationMaintenanceError | null>(null);
+  const [recoveringMaintenance, setRecoveringMaintenance] = useState(false);
 
   useEffect(() => {
     const unlisten = subscribeTauriEvent('setup-progress', (event) => {
@@ -64,6 +84,7 @@ export function useOpenclawUpdate() {
     busy.current = true;
     const id = ++operationId.current;
     dispatch({ type: 'checkStarted' });
+    setMaintenanceIssue(null);
     try {
       const status = await checkOpenclawUpdate();
       if (id === operationId.current) {
@@ -84,14 +105,23 @@ export function useOpenclawUpdate() {
     if (busy.current) return null;
     busy.current = true;
     const id = ++operationId.current;
-    dispatch({ type: 'updateStarted' });
-    dispatchOpenclawUpdateMaintenanceStarted();
-    let maintenanceFinished = false;
+    let maintenanceEventStarted = false;
+    let maintenance: Awaited<ReturnType<typeof beginOpenclawUpdateMaintenance>> | null = null;
     try {
+      setMaintenanceIssue(null);
+      maintenance = await beginOpenclawUpdateMaintenance();
+      await assertOpenclawUpdateMaintenanceCurrent(maintenance);
+      dispatch({ type: 'updateStarted' });
+      dispatchOpenclawUpdateMaintenanceStarted();
+      maintenanceEventStarted = true;
       const result = await updateOpenclaw();
-      dispatchOpenclawUpdateMaintenanceFinished();
-      maintenanceFinished = true;
       if (!result.success) {
+        if (maintenance.guarded) {
+          throw failOpenclawUpdateMaintenance(
+            maintenance,
+            new Error(result.error || result.reason || 'OpenClaw update did not complete'),
+          );
+        }
         if (id === operationId.current) {
           dispatch({
             type: 'operationFailed',
@@ -100,6 +130,8 @@ export function useOpenclawUpdate() {
         }
         return { result, status: null };
       }
+
+      await finishOpenclawUpdateMaintenance(maintenance);
 
       let status: OpenclawUpdateStatus | null = null;
       try {
@@ -112,24 +144,52 @@ export function useOpenclawUpdate() {
         dispatch({ type: 'updateCompleted', result, status });
       }
       return { result, status };
-    } catch (error) {
+    } catch (cause) {
+      const error = cause instanceof CollaborationMaintenanceError || !maintenance?.guarded
+        ? cause
+        : failOpenclawUpdateMaintenance(maintenance, cause);
+      const issue = error instanceof CollaborationMaintenanceError ? error : null;
       if (id === operationId.current) {
+        setMaintenanceIssue(issue);
         dispatch({ type: 'operationFailed', error: errorMessage(error) });
       }
       return null;
     } finally {
-      if (!maintenanceFinished) {
+      if (maintenanceEventStarted) {
         dispatchOpenclawUpdateMaintenanceFinished();
       }
       busy.current = false;
     }
   }, []);
 
+  const recoverMaintenance = useCallback(async (): Promise<boolean> => {
+    if (busy.current || recoveringMaintenance) return false;
+    busy.current = true;
+    setRecoveringMaintenance(true);
+    try {
+      await recoverOpenclawUpdateMaintenance();
+      setMaintenanceIssue(null);
+      dispatch({ type: 'maintenanceRecovered' });
+      return true;
+    } catch (error) {
+      const issue = error instanceof CollaborationMaintenanceError ? error : null;
+      setMaintenanceIssue(issue);
+      dispatch({ type: 'operationFailed', error: errorMessage(error) });
+      return false;
+    } finally {
+      setRecoveringMaintenance(false);
+      busy.current = false;
+    }
+  }, [recoveringMaintenance]);
+
   return {
     ...state,
     checking: state.phase === 'checking',
     updating: state.phase === 'updating',
+    maintenanceIssue,
+    recoveringMaintenance,
     check,
     apply,
+    recoverMaintenance,
   };
 }

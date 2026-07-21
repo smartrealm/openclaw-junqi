@@ -64,7 +64,7 @@ async function resolveExistingFilePath(path: string): Promise<string> {
 
 export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
   const { t } = useTranslation();
-  const [opening, setOpening] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const typeIcons: Record<string, React.ReactNode> = {
     html:    Icon.chat.artifact.html,
     react:   Icon.chat.artifact.react,
@@ -74,16 +74,7 @@ export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
     code:    Icon.chat.artifact.code,
   };
 
-  const handleOpen = async () => {
-    setOpening(true);
-    try {
-      await window.aegis?.artifact?.open(artifact);
-    } catch (err) {
-      debugError('media', '[ArtifactResultCard] Failed to open preview:', err);
-    } finally {
-      setTimeout(() => setOpening(false), 500);
-    }
-  };
+  const supportsPreview = artifact.type === 'html' || artifact.type === 'svg';
 
   return (
     <div className="pl-[42px] py-[2px]">
@@ -96,20 +87,26 @@ export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
               <div className="text-[10px] uppercase tracking-wider text-aegis-text-dim">{artifact.type}</div>
             </div>
           </div>
-          <button
-            onClick={handleOpen}
-            disabled={opening}
+          {supportsPreview && <button
+            onClick={() => setShowPreview((value) => !value)}
             className={clsx(
               'flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-all',
               'border-aegis-primary/20 bg-aegis-primary/15 text-aegis-primary hover:border-aegis-primary/40 hover:bg-aegis-primary/25',
-              opening && 'opacity-60',
             )}
           >
             <Eye size={13} />
-            {t('resultCards.preview', 'Preview')}
-          </button>
+            {showPreview ? t('resultCards.source', 'Source') : t('resultCards.preview', 'Preview')}
+          </button>}
         </div>
-        <details className="group">
+        {showPreview && supportsPreview ? (
+          <iframe
+            srcDoc={artifact.content}
+            title={artifact.title}
+            sandbox=""
+            referrerPolicy="no-referrer"
+            className="block h-[360px] w-full border-0 bg-white"
+          />
+        ) : <details className="group" open>
           <summary className="flex cursor-pointer items-center gap-1.5 px-4 py-1.5 text-[11px] text-aegis-text-dim hover:text-aegis-text-muted">
             <Code2 size={11} />
             {t('resultCards.viewSource', 'View source')} ({artifact.content.length} {t('resultCards.chars', 'chars')})
@@ -120,7 +117,7 @@ export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
               {artifact.content.length > 2000 ? '\n...(truncated)' : ''}
             </pre>
           </div>
-        </details>
+        </details>}
       </div>
     </div>
   );

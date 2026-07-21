@@ -30,7 +30,7 @@
     "settings": "الإعدادات",
     "terminal": "الطرفية",
     "agentRun": "تشغيل الوكيل",
-    "aiWorkspace": "مساحة عمل الذكاء الاصطناعي",
+    "agentTasks": "مهام الوكيل",
     "notifications": "الإشعارات",
     "calendar": "التقويم",
     "files": "إدارة الملفات",
@@ -1016,7 +1016,7 @@
     "needsApproval": "جهازك يحتاج موافقة",
     "pairWithGateway": "ربط مع Gateway",
     "enterCode": "أدخل هذا الكود في Gateway:",
-    "openTerminal": "افتح Terminal وشغّل: openclaw gateway approve",
+    "openTerminal": "افتح Terminal وشغّل: openclaw devices list",
     "orApproveFromUI": "أو وافق من واجهة OpenClaw الرئيسية",
     "waitingApproval": "في انتظار الموافقة...",
     "requestingPairing": "جاري طلب الربط...",
@@ -1031,7 +1031,9 @@
     "enterTokenDesc": "أدخل الـ Gateway Token من إعدادات OpenClaw:",
     "pasteToken": "الصق الـ Token هنا...",
     "connect": "اتصل",
-    "tokenExplanation": "يحتاج JunQi Desktop إلى token صالح للاتصال بـ OpenClaw Gateway. هذا الربط يتم مرة واحدة فقط."
+    "tokenExplanation": "يقرأ JunQi Desktop إعداد OpenClaw المحلي أولاً. أدخل token فقط للـ Gateway البعيد أو عند عدم توفر إعداد محلي.",
+    "copyCommand": "نسخ الأمر",
+    "copied": "تم النسخ"
   },
   "settingsExtra": {
     "theme": "المظهر",
@@ -2643,5 +2645,282 @@
   "storage.progress.verifying": "جارٍ التحقق من البيانات المرحّلة…",
   "storage.progress.switching": "جارٍ تبديل موقع التخزين…",
   "storage.progress.startingGateway": "جارٍ تشغيل Gateway من موقع التخزين الجديد…",
-  "storage.progress.complete": "تم تحديث موقع التخزين"
+  "storage.progress.complete": "تم تحديث موقع التخزين",
+  "collaboration": {
+    "common": {
+      "close": "إغلاق",
+      "retry": "إعادة المحاولة",
+      "dismiss": "تجاهل"
+    },
+    "chat": {
+      "sessionSyncFailed": "تعذر مزامنة بيانات التعاون. قد تكون البيانات المعروضة قديمة.",
+      "sessionDock": "تعاون الجلسة",
+      "activeSessionRun": "تعاون نشط",
+      "latestSessionRun": "أحدث تعاون",
+      "workItemProgress": "{{completed}}/{{total}}",
+      "activeRunCount": "{{count}} نشط",
+      "history": "السجل"
+    },
+    "card": {
+      "ariaLabel": "تشغيل تعاوني: {{goal}}",
+      "title": "تشغيل تعاوني",
+      "untitled": "تعاون بلا عنوان",
+      "completed": "مكتمل",
+      "actions": "إجراءات التشغيل",
+      "loading": "جارٍ تحميل تفاصيل التشغيل",
+      "workItems": "عناصر العمل",
+      "unassignedAgent": "غير معيّن",
+      "moreItems": "{{count}} عناصر عمل إضافية",
+      "noWorkItems": "خطة العمل غير متاحة بعد.",
+      "openDetails": "التفاصيل"
+    },
+    "residualExecutionRisk": {
+      "title": "أُلغي محلياً؛ لم يتأكد إنهاء مهمة OpenClaw",
+      "summary": "أغلق JunQi هذا التشغيل محلياً، لكن مهمة OpenClaw قد تكتمل أو تُحدث آثاراً جانبية. احتفظ بسجل التدقيق هذا.",
+      "details": "ألغى JunQi هذا التشغيل وأغلقه محلياً، لكن إنهاء مهمة OpenClaw لم يتأكد بعد وقد يستمر العمل الخارجي أو آثاره الجانبية. يظل التنظيف التلقائي والحذف محظورين للحفاظ على مسار التدقيق."
+    },
+    "status": {
+      "DRAFT": "مسودة",
+      "PLANNING": "جارٍ التخطيط",
+      "AWAITING_APPROVAL": "بانتظار الموافقة",
+      "PROVISIONING": "جارٍ إعداد الوكلاء",
+      "RUNNING": "قيد التشغيل",
+      "AWAITING_INTERVENTION": "إجراء مطلوب",
+      "SYNTHESIZING": "جارٍ التجميع",
+      "FINALIZING": "جارٍ الإنهاء",
+      "DELIVERY_PENDING": "التسليم معلّق",
+      "COMPLETED": "مكتمل",
+      "CANCELLING": "جارٍ الإلغاء",
+      "CANCELLED": "ملغى",
+      "FAILED": "فشل"
+    },
+    "workItemStatus": {
+      "PLANNED": "مخطط",
+      "BLOCKED": "محظور",
+      "READY": "جاهز",
+      "DISPATCHING": "جارٍ الإسناد",
+      "RUNNING": "قيد التشغيل",
+      "SUCCEEDED": "نجح",
+      "NEEDS_INTERVENTION": "إجراء مطلوب",
+      "CANCELLING": "جارٍ الإلغاء",
+      "CANCELLED": "ملغى",
+      "WAIVED": "مُعفى"
+    },
+    "attemptStatus": {
+      "CREATED": "تم الإنشاء",
+      "DISPATCHING": "جارٍ الإسناد",
+      "RUNNING": "قيد التشغيل",
+      "SUCCEEDED": "نجح",
+      "FAILED": "فشل",
+      "TIMED_OUT": "انتهت المهلة",
+      "CANCELLING": "جارٍ الإلغاء",
+      "CANCELLED": "ملغى",
+      "UNKNOWN": "النتيجة غير معروفة",
+      "ABANDONED": "متروك"
+    },
+    "attemptKind": {
+      "PLANNER": "وكيل التخطيط",
+      "WORKER": "وكيل التنفيذ",
+      "SYNTHESIZER": "وكيل التجميع"
+    },
+    "attemptResolution": {
+      "RUNNING": "قيد التشغيل",
+      "SUCCEEDED": "نجح",
+      "FAILED": "فشل",
+      "TIMED_OUT": "انتهت المهلة",
+      "CANCELLED": "ملغى",
+      "ABANDONED": "متروك"
+    },
+    "deliveryStatus": {
+      "PREPARED": "جاهز",
+      "SENDING": "جارٍ الإرسال",
+      "DELIVERED": "تم التسليم",
+      "RETRY_REQUIRED": "إعادة المحاولة مطلوبة",
+      "UNKNOWN": "النتيجة غير معروفة",
+      "ABANDONED": "متروك"
+    },
+    "transcriptStatus": {
+      "PENDING": "معلّق",
+      "CONFIRMED": "مؤكد",
+      "FAILED": "فشل",
+      "UNKNOWN": "غير معروف",
+      "SESSION_REBOUND": "تغيّرت الجلسة"
+    },
+    "channelStatus": {
+      "NOT_REQUIRED": "غير مطلوب",
+      "PENDING": "معلّق",
+      "CONFIRMED": "مؤكد",
+      "FAILED": "فشل",
+      "UNSUPPORTED": "غير مدعوم",
+      "UNKNOWN": "غير معروف"
+    },
+    "actions": {
+      "PLAN_REVISE": "تعديل الخطة",
+      "PLAN_APPROVE": "بدء",
+      "CANCEL": "إلغاء",
+      "DISPATCH_STOP": "إيقاف الإسناد",
+      "DISPATCH_RESUME": "استئناف الإسناد",
+      "WORK_ITEM_INPUT_APPEND": "إضافة مدخلات",
+      "WORK_ITEM_CANCEL": "إلغاء عنصر العمل",
+      "WORK_ITEM_RETRY": "إعادة محاولة العمل",
+      "WORK_ITEM_REASSIGN": "إعادة التعيين",
+      "ATTEMPT_RESOLVE_UNKNOWN": "حسم نتيجة محاولة غير معروفة",
+      "PARTIAL": "قبول النتيجة الجزئية",
+      "RECONCILE": "مطابقة الحالة",
+      "DELIVERY_RETRY": "إعادة محاولة التسليم",
+      "DELIVERY_RETARGET": "تغيير الهدف",
+      "DELIVERY_ABANDON": "ترك التسليم",
+      "EXPORT": "تصدير",
+      "CLONE": "استنساخ",
+      "ARCHIVE": "أرشفة",
+      "UNARCHIVE": "إلغاء الأرشفة",
+      "DELETE": "حذف"
+    },
+    "actionDialog": {
+      "unknownAttempt": "محاولة ذات نتيجة غير معروفة",
+      "chooseAttempt": "اختر محاولة",
+      "unknownResolution": "النتيجة المؤكدة",
+      "chooseResolution": "اختر النتيجة المؤكدة",
+      "confirmResidualRisk": "أقبل المخاطر المتبقية: قد يُكمل الوكيل الأصلي العمل أو يُحدث آثاراً جانبية بعد ترك هذه المحاولة.",
+      "additionalInput": "مدخلات للمحاولة التالية",
+      "additionalInputHint": "أضف حقائق أو قيوداً أو تصحيحات للمحاولة التالية.",
+      "additionalInputPrivacy": "ترتبط هذه المدخلات بالمحاولة التالية فقط، ولا تغيّر محاولة نشطة، وتُحفظ كبيانات تنفيذ داخلية ولن تُعرض هنا مرة أخرى.",
+      "confirmWorkItemCancel": "أفهم أن الإسناد الجديد سيتوقف. ستتلقى أي محاولة OpenClaw نشطة لعنصر العمل طلب إلغاء فعلياً؛ وإلا فسيُلغى العنصر فوراً.",
+      "noInputEligibleItem": "لا يمكن لأي عنصر عمل قبول مدخلات الآن. يجب أن تنتهي المحاولات النشطة أو تُلغى أولاً.",
+      "noEligibleWorkItem": "لا يوجد عنصر عمل مؤهل لهذا الإجراء.",
+      "unknownDelivery": "نتيجة التسليم السابقة غير معروفة.",
+      "sameDeliveryReconcile": "سيطابق JunQi التسليم الأصلي مع إيصال OpenClaw الحالي."
+    },
+    "risk": {
+      "LOW": "مخاطر منخفضة",
+      "MEDIUM": "مخاطر متوسطة",
+      "HIGH": "مخاطر عالية"
+    },
+    "sideEffect": {
+      "READ_ONLY": "قراءة فقط",
+      "LOCAL_WRITE": "كتابة محلية",
+      "EXTERNAL_WRITE": "كتابة خارجية",
+      "DESTRUCTIVE": "عملية مدمرة"
+    },
+    "details": {
+      "loading": "جارٍ تحميل تفاصيل التعاون",
+      "unavailable": "تفاصيل التعاون غير متاحة.",
+      "updated": "آخر تحديث {{time}}",
+      "revision": "المراجعة",
+      "revisionValue": "المراجعة {{revision}}",
+      "workGraph": "مخطط العمل",
+      "viewMode": "عرض عناصر العمل",
+      "graph": "مخطط",
+      "list": "قائمة",
+      "dagLabel": "مخطط تبعيات العمل",
+      "listLabel": "قائمة عناصر العمل",
+      "workItem": "عنصر العمل",
+      "agent": "الوكيل",
+      "state": "الحالة",
+      "rootWorkItem": "بلا تبعيات",
+      "dependsOn": "يعتمد على: {{items}}",
+      "dependencies": "التبعيات",
+      "noWorkItems": "لا توجد عناصر عمل مسجلة.",
+      "planHistory": "سجل الخطة",
+      "planRevision": "مراجعة الخطة {{revision}}",
+      "attempts": "المحاولات",
+      "noAttempts": "لا توجد محاولات مسجلة.",
+      "runLevelAttempt": "محاولة على مستوى التشغيل",
+      "evidence": "الأدلة",
+      "noEvidence": "لا توجد أدلة مسجلة.",
+      "untitledEvidence": "دليل بلا عنوان",
+      "interventions": "التدخلات",
+      "noInterventions": "لا توجد تدخلات مسجلة.",
+      "resolved": "تم الحل",
+      "actionRequired": "إجراء مطلوب",
+      "delivery": "التسليم",
+      "noDeliveries": "لا توجد محاولات تسليم مسجلة.",
+      "targetRevision": "المراجعة المستهدفة {{revision}}",
+      "transcript": "سجل المحادثة",
+      "channel": "القناة",
+      "finalResult": "النتيجة النهائية",
+      "auditTimeline": "الخط الزمني للتدقيق",
+      "noEvents": "لم تُحمّل أحداث التدقيق."
+    },
+    "drawer": {
+      "title": "سجل التعاون",
+      "subtitle": "تبقى عمليات التشغيل متاحة عبر جلسات المحادثة.",
+      "loading": "جارٍ تحميل سجل التعاون",
+      "empty": "لا توجد عمليات تعاون بعد.",
+      "emptyHint": "ستظهر عمليات التشغيل المنشأة من المحادثة هنا مع سجلها الكامل.",
+      "runsHeading": "عمليات التشغيل",
+      "runList": "عمليات التعاون",
+      "archived": "مؤرشف",
+      "count": "{{count}} عمليات تشغيل",
+      "deletedTitle": "السجلات المحذوفة",
+      "deletedList": "سجلات التعاون المحذوفة",
+      "deletedRecord": "تشغيل محذوف",
+      "deletedBy": "حُذف بواسطة {{actor}}",
+      "cleanupPending": "تنظيف الملفات المُدارة معلّق.",
+      "cleanupPartial": "لا تزال بعض الملفات المُدارة بحاجة إلى التنظيف.",
+      "cleanupError": "تفاصيل التنظيف: {{error}}",
+      "cleanupUpdated": "آخر تحديث {{time}}",
+      "retryCleanup": "إعادة محاولة التنظيف",
+      "deletedCount": "{{count}} محذوف"
+    },
+    "setup": {
+      "loading": "جارٍ فحص قدرة التعاون",
+      "plugin-missing": {
+        "title": "التعاون غير مثبت",
+        "message": "ثبّت إضافة تعاون JunQi لتشغيل تدفقات عمل متعددة الوكلاء وقابلة للاستمرار من المحادثة.",
+        "action": "تثبيت الإضافة"
+      },
+      "plugin-not-configured": {
+        "title": "التعاون يحتاج إلى إعداد",
+        "message": "اختر الوكيل المنسق والوكلاء المسموح لهم قبل بدء تدفق العمل.",
+        "action": "إعداد"
+      },
+      "runtime-not-durable": {
+        "title": "بيئة تشغيل مستمرة مطلوبة",
+        "message": "يتوقف Gateway الحالي مع JunQi. استخدم خدمة نظام أو Docker مستمرًا أو Gateway خارجيًا.",
+        "action": "فحص بيئة التشغيل"
+      },
+      "version-incompatible": {
+        "title": "تحديث التعاون مطلوب",
+        "message": "مخطط بيانات الإضافة المثبتة غير متوافق مع إصدار JunQi هذا.",
+        "action": "فحص التحديث"
+      },
+      "no-agents": {
+        "title": "لا توجد وكلاء لتدفق العمل",
+        "message": "أنشئ أو اسمح لوكيل OpenClaw واحد على الأقل قبل بدء التعاون.",
+        "action": "إدارة الوكلاء"
+      },
+      "error": {
+        "title": "التعاون غير متاح",
+        "message": "تعذر على JunQi قراءة قدرة التعاون. افحص Gateway ثم أعد المحاولة.",
+        "action": "إعادة المحاولة"
+      },
+      "ready": {
+        "title": "التعاون جاهز",
+        "message": "يمكن لبيئة التشغيل هذه متابعة تدفق العمل بعد إغلاق JunQi.",
+        "action": "عرض الإعدادات"
+      }
+    },
+    "sessionMutation": {
+      "deleteTitle": "حذف الجلسة",
+      "resetTitle": "إعادة ضبط الجلسة",
+      "checking": "جارٍ فحص أثر التعاون...",
+      "affectedRuns": "ستتأثر {{count}} من عمليات التعاون النشطة.",
+      "noAffectedRuns": "لا توجد عملية تعاون نشطة متأثرة.",
+      "fenceActive": "تغيير سابق للجلسة ما زال محمياً ويجب استعادته.",
+      "fenceRetained": "حاجز التعاون ما زال نشطاً. أعد الاستعادة قبل تغيير هذه الجلسة.",
+      "runs": "العمليات المتأثرة",
+      "strategy": "اختر طريقة المتابعة",
+      "proceed": "متابعة",
+      "proceedDetail": "لا ترتبط عملية تعاون نشطة بهذه الجلسة الأصلية.",
+      "cancelAndWait": "إلغاء التعاون والمتابعة",
+      "cancelAndWaitDetail": "إلغاء العمليات المتأثرة وانتظار تأكيد انتهائها ثم تغيير الجلسة.",
+      "stopAndRetarget": "الاحتفاظ بالعمليات للاستعادة لاحقاً",
+      "stopAndRetargetDetail": "إيقاف الإسناد الجديد وحذف الجلسة ثم معالجة أهداف التسليم من سجل التعاون.",
+      "recover": "استعادة التغيير المتوقف",
+      "recoverDetail": "متابعة العملية المحمية الحالية بدلاً من بدء تغيير جديد.",
+      "confirmDelete": "حذف",
+      "confirmReset": "إعادة ضبط"
+    }
+  }
 }

@@ -1475,11 +1475,11 @@
     "needsApproval": "設備需要審批",
     "pairWithGateway": "與 Gateway 配對",
     "enterCode": "在 Gateway 中輸入此代碼：",
-    "openTerminal": "在運行 Gateway 的終端中執行：openclaw pairing approve",
+    "openTerminal": "在運行 Gateway 的終端中執行：openclaw devices list",
     "orApproveFromUI": "或在 OpenClaw 控制台（Control UI）中審批",
     "waitingApproval": "正在等待審批…",
     "requestingPairing": "正在請求配對…",
-    "needsApprovalDesc": "你的設備需要 OpenClaw Gateway 的審批。在運行 Gateway 的機器上打開終端並執行：",
+    "needsApprovalDesc": "JunQi 已嘗試讀取目前的 Gateway Token；OpenClaw 仍要求審批這台設備。請在運行 Gateway 的機器上執行：",
     "orApproveFromUIFull": "或者在 OpenClaw 控制台（Dashboard）中進行審批",
     "oneTimeOnly": "審批只需進行一次，之後會自動連接。",
     "waitingApprovalRetry": "正在等待審批…（每 5 秒重試一次）",
@@ -1490,7 +1490,9 @@
     "enterTokenDesc": "從 OpenClaw 設置中複製 Gateway Token：",
     "pasteToken": "在此粘貼 Token…",
     "connect": "連接",
-    "tokenExplanation": "JunQi Desktop 需要一個有效 Token 才能連接到 OpenClaw Gateway。該配對過程只需進行一次。"
+    "tokenExplanation": "JunQi Desktop 會優先讀取本機 OpenClaw 配置；遠端 Gateway 或無本機配置時可手動輸入 Token。",
+    "copyCommand": "複製命令",
+    "copied": "已複製"
   },
   "settingsExtra": {
     "theme": "主題",

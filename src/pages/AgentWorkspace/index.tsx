@@ -993,7 +993,7 @@ export function AgentWorkspacePage() {
         >
           <div className="flex h-12 items-center gap-2 border-b border-aegis-border px-3">
             <Bot size={16} className="text-aegis-primary" />
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{workspace?.name || 'AI 工作台'}</span>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{workspace?.name || 'Agent 任务'}</span>
             <button
               type="button"
               title={t('agentWorkspace.collapseTasks', '收起任务栏')}
@@ -1181,7 +1181,7 @@ export function AgentWorkspacePage() {
               </>
             )}
             <GitBranch size={14} className="shrink-0" />
-            <span className="truncate">{workspace?.name || '项目工作台'}</span>
+            <span className="truncate">{workspace?.name || 'Agent 任务'}</span>
             {openDiff && <span className="truncate text-aegis-text">/ {openDiff.title}</span>}
           </div>
           <span />
@@ -1241,13 +1241,13 @@ export function AgentWorkspacePage() {
             <WorkspaceContentScene key="no-project">
               <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
                 <FileText size={28} className="text-aegis-text-dim" />
-                <p className="text-sm text-aegis-text-dim">请先在终端工作台创建或选择一个本地项目工作区。</p>
+                <p className="text-sm text-aegis-text-dim">选择一个本地项目以开始创建任务。</p>
                 <button
                   type="button"
-                  onClick={() => navigate('/terminal')}
-                  className="rounded bg-aegis-primary px-3 py-2 text-xs font-semibold text-white"
+                  onClick={() => void openProjectWorkspace()}
+                  className="inline-flex items-center gap-2 rounded bg-aegis-primary px-3 py-2 text-xs font-semibold text-white"
                 >
-                  打开终端工作台
+                  <Plus size={14} />选择本地项目
                 </button>
               </div>
             </WorkspaceContentScene>

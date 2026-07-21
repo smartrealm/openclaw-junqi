@@ -158,7 +158,7 @@ fn persist_settings(settings: &AppSettings) -> Result<(), String> {
     let dir = path
         .parent()
         .ok_or_else(|| "JunQi settings path has no parent directory".to_string())?;
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let raw = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
     atomic_write(&path, &raw)
 }

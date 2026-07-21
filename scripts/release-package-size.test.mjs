@@ -3,8 +3,21 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8');
+const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 const tauri = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
+
+function dependencyMinor(version, label) {
+  const match = version.match(/^(?:[~^])?(\d+)\.(\d+)(?:\.\d+)?$/);
+  assert.ok(match, `${label} must use an explicit semantic version`);
+  return `${match[1]}.${match[2]}`;
+}
+
+function cargoDependencyVersion(name) {
+  const match = cargo.match(new RegExp(`^${name}\\s*=\\s*"([^"]+)"`, 'm'));
+  assert.ok(match, `${name} must have a direct Cargo version requirement`);
+  return match[1];
+}
 
 test('production Rust profile is optimized for package size', () => {
   assert.doesNotMatch(cargo, /features\s*=\s*\[[^\]]*"devtools"/s);
@@ -15,6 +28,22 @@ test('production Rust profile is optimized for package size', () => {
   assert.match(cargo, /panic\s*=\s*"abort"/);
   assert.match(cargo, /strip\s*=\s*"symbols"/);
   assert.match(cargo, /zip\s*=\s*\{[^}]*default-features\s*=\s*false[^}]*features\s*=\s*\["deflate-flate2",\s*"flate2"\]/s);
+});
+
+test('Tauri JavaScript bindings and Rust plugins stay on the same minor', () => {
+  for (const name of ['dialog', 'fs']) {
+    const npmName = `@tauri-apps/plugin-${name}`;
+    const cargoName = `tauri-plugin-${name}`;
+    const npmVersion = packageJson.dependencies[npmName];
+    const cargoVersion = cargoDependencyVersion(cargoName);
+
+    assert.equal(
+      dependencyMinor(cargoVersion, cargoName),
+      dependencyMinor(npmVersion, npmName),
+      `${npmName} and ${cargoName} must stay on the same major/minor`,
+    );
+    assert.match(cargoVersion, /^~/, `${cargoName} must not drift across minor releases`);
+  }
 });
 
 test('macOS release packages are split by architecture', () => {
@@ -31,38 +60,31 @@ test('Windows packages download the WebView2 bootstrapper instead of embedding i
   assert.doesNotMatch(release, /Mark offline Windows installers/);
 });
 
-test('release downloads are split by installer purpose', () => {
-  assert.match(release, /artifact_name \}\}-dmg/);
-  assert.match(release, /artifact_name \}\}-updater/);
-  assert.match(release, /artifact_name \}\}-nsis/);
-  assert.match(release, /artifact_name \}\}-msi-en-us/);
-  assert.match(release, /artifact_name \}\}-msi-zh-cn/);
+test('candidate artifacts are flattened and bound to the immutable workflow run', () => {
+  assert.match(release, /node scripts\/stage-release-assets\.mjs/);
+  assert.match(release, /--prefix "\$\{\{ matrix\.stage_prefix \}\}"/);
+  assert.match(release, /name: junqi-desktop-\$\{\{ matrix\.artifact_name \}\}-\$\{\{ github\.run_id \}\}/);
+  assert.match(release, /pattern: junqi-desktop-\*-\$\{\{ github\.run_id \}\}/);
+  assert.match(release, /merge-multiple: true/);
   assert.doesNotMatch(release, /path:\s*\$\{\{ matrix\.installer_paths \}\}/);
 });
 
-test('tag releases require a commit already contained in main', () => {
-  assert.match(release, /fetch-depth:\s*0/);
-  assert.match(release, /RELEASE_REF: \$\{\{ github\.event\.inputs\.ref \|\| github\.ref_name \}\}/);
-  assert.match(release, /refs\/tags\/\$\{release_ref\}\^\{commit\}/);
-  assert.match(release, /refs\/heads\/main:refs\/remotes\/origin\/main/);
-  assert.match(release, /git merge-base --is-ancestor "\$tag_commit" "\$main_commit"/);
+test('tag-owned workflow code cannot enter the release candidate path', () => {
+  assert.match(release, /branches: \[main\]/);
+  assert.doesNotMatch(release, /tags:\s*\[/);
+  assert.match(release, /ref: \$\{\{ github\.sha \}\}/);
+  assert.match(release, /persist-credentials: false/);
+  assert.match(release, /node scripts\/release-source-policy\.mjs/);
 });
 
-test('tag releases wait for successful CI on the exact tagged commit', () => {
+test('trusted publication remains unreachable without a promotion decision', () => {
   const verification = release.slice(release.indexOf('  verify-version:'), release.indexOf('  build:'));
-  assert.match(verification, /actions:\s*read/);
-  assert.match(verification, /name: Require successful CI run for tagged commit/);
-  assert.match(verification, /public version tag must prove the exact commit passed the CI workflow/);
-  assert.match(verification, /if: startsWith\(github\.ref, 'refs\/tags\/v'\) \|\| startsWith\(github\.event\.inputs\.ref, 'v'\)/);
-  assert.match(verification, /TAG_COMMIT: \$\{\{ steps\.release-context\.outputs\.tag_commit \}\}/);
-  assert.match(verification, /actions\/workflows\/\$\{CI_WORKFLOW_FILE\}\/runs\?event=push&head_sha=\$\{TAG_COMMIT\}/);
-  assert.match(verification, /gh api --paginate --slurp "\$api_path"/);
-  assert.match(verification, /\.head_sha == \$sha and \.event == "push"/);
-  assert.match(verification, /\.conclusion == "success"/);
-  assert.match(verification, /CI_POLL_SECONDS: '15'/);
-  assert.match(verification, /CI_WAIT_TIMEOUT_SECONDS: '1800'/);
-  assert.match(verification, /timeout-minutes: 32/);
-  assert.match(release, /needs: verify-version/);
+  const publish = release.slice(release.indexOf('  publish:'), release.indexOf('  release:'));
+  assert.match(verification, /signing-enabled: \$\{\{ steps\.source\.outputs\.signing-enabled \}\}/);
+  assert.match(publish, /needs\.verify-version\.outputs\.signing-enabled == 'true'/);
+  assert.match(publish, /external-release-gate\.result == 'success'/);
+  assert.match(publish, /external-release-decision-attest\.result == 'success'/);
+  assert.match(release, /trusted promotion/i);
 });
 
 test('GitHub releases remain anchored to their pushed tag', () => {

@@ -214,10 +214,10 @@ export class GatewayConnectionManager {
     gateway.reconnectWithToken(token);
   }
 
-  connect(url: string, token: string): void {
+  connect(url: string, token: string, deviceToken = ''): void {
     this.invalidateLifecycle('Gateway connection target changed');
     this.dispatch({ type: 'RESET' });
-    gateway.connect(url, token);
+    gateway.connect(url, token, deviceToken);
   }
 
   /** Cleanup — call on unmount. */

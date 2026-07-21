@@ -19,7 +19,7 @@ export class GatewayClientLease {
 
     onHttpUrl(target.httpUrl);
     localStorage.setItem('aegis-gateway-http', target.httpUrl);
-    gateway.connect(target.wsUrl, target.token);
+    gateway.connect(target.wsUrl, target.token, target.deviceToken);
   }
 
   release(): void {

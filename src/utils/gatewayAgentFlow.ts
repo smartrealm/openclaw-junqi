@@ -13,8 +13,8 @@ export interface GatewayAgentDraft {
 export interface GatewayAgentCreatePayload {
   id: string;
   name?: string;
-  model?: string;
   workspace?: string;
+  model?: string;
 }
 
 /**

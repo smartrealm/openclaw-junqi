@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { useChatStore, type Session } from './chatStore';
+import { normalizeHistoryMessage } from '@/processing/normalizeHistoryMessage';
+import { gateway } from '@/services/gateway';
 
 const MAIN_KEY = 'agent:main:main';
 const OTHER_KEY = 'agent:worker:main';
@@ -107,4 +109,161 @@ test('removeSession closes the tab, switches active session, and persists tab or
   assert.equal(state.sessions.some((session) => session.key === deletedKey), false);
   assert.equal(state.messagesPerSession[deletedKey], undefined);
   assert.equal(localStorage.getItem('aegis-open-tabs'), JSON.stringify([MAIN_KEY]));
+});
+
+test('history cache preserves structured Gateway blocks through ChatStore projection', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    messages: [],
+    renderBlocks: [],
+    responseGroups: [],
+    messagesPerSession: {},
+    _blocksCache: {},
+    _groupsCache: {},
+  });
+
+  const toolMessage = normalizeHistoryMessage({
+    __openclaw: { id: 'native-tool-message' },
+    role: 'assistant',
+    content: [{ type: 'toolCall', name: 'search_docs', input: { query: 'OpenClaw' } }],
+    timestamp: new Date(1).toISOString(),
+  });
+  const thinkingMessage = normalizeHistoryMessage({
+    __openclaw: { id: 'native-thinking-message' },
+    role: 'assistant',
+    content: [
+      { type: 'thinking', thinking: 'Check the authoritative source.' },
+      { type: 'text', text: 'The source is confirmed.' },
+    ],
+    timestamp: new Date(2).toISOString(),
+  });
+  const toolResultMessage = normalizeHistoryMessage({
+    __openclaw: { id: 'native-tool-result-message' },
+    role: 'tool',
+    content: [{ type: 'toolResult', name: 'search_docs', result: 'Found the contract.' }],
+    timestamp: new Date(3).toISOString(),
+  });
+
+  useChatStore.getState().setMessages(
+    [toolMessage, thinkingMessage, toolResultMessage],
+    MAIN_KEY,
+  );
+
+  const state = useChatStore.getState();
+  assert.deepEqual(state.messages.map((message) => message.rawContent), [
+    toolMessage.rawContent,
+    thinkingMessage.rawContent,
+    toolResultMessage.rawContent,
+  ]);
+  assert.ok(state.renderBlocks.some((block) => (
+    block.type === 'tool' && block.toolName === 'search_docs'
+  )));
+  assert.ok(state.renderBlocks.some((block) => (
+    block.type === 'thinking' && block.content === 'Check the authoritative source.'
+  )));
+  assert.ok(state.renderBlocks.some((block) => (
+    block.type === 'tool' && block.output === 'Found the contract.'
+  )));
+  assert.ok(state.renderBlocks.some((block) => (
+    block.type === 'message' && block.markdown === 'The source is confirmed.'
+  )));
+});
+
+test('CHAT-02 failed queue drain keeps the item and its attachments for explicit retry', async () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    messages: [],
+    messagesPerSession: { [MAIN_KEY]: [] },
+    renderBlocks: [],
+    responseGroups: [],
+    _blocksCache: {},
+    _groupsCache: {},
+    typingBySession: { [MAIN_KEY]: false },
+    isTyping: false,
+    messageQueue: {
+      [MAIN_KEY]: [{
+        id: 'queued-1',
+        text: 'inspect attachment',
+        timestamp: new Date(0).toISOString(),
+        attachments: [{
+          type: 'file',
+          mimeType: 'application/pdf',
+          content: 'AA==',
+          fileName: 'report.pdf',
+        }],
+      }],
+    },
+  });
+
+  const originalSend = gateway.sendMessage;
+  let deliveredAttachments: unknown;
+  try {
+    gateway.sendMessage = async () => { throw new Error('network failed'); };
+    await useChatStore.getState().drainQueue(MAIN_KEY);
+    let state = useChatStore.getState();
+    assert.equal(state.messageQueue[MAIN_KEY][0]?.failed, true);
+    assert.equal(state.messagesPerSession[MAIN_KEY][0]?.status, 'failed');
+    assert.equal(state.typingBySession[MAIN_KEY], false);
+
+    gateway.sendMessage = async (_message, attachments) => {
+      deliveredAttachments = attachments;
+      return { ok: true };
+    };
+    await state.retryQueuedMessage(MAIN_KEY, 'queued-1');
+    state = useChatStore.getState();
+    assert.deepEqual(state.messageQueue[MAIN_KEY], []);
+    assert.equal(state.messagesPerSession[MAIN_KEY][0]?.status, 'sent');
+    assert.deepEqual(deliveredAttachments, [{
+      type: 'file',
+      mimeType: 'application/pdf',
+      content: 'AA==',
+      fileName: 'report.pdf',
+    }]);
+  } finally {
+    gateway.sendMessage = originalSend;
+  }
+});
+
+test('CHAT-02 queue actions immediately update the active transcript', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.getState().setMessages([
+    {
+      id: 'queued-1',
+      role: 'user',
+      content: 'first draft',
+      timestamp: new Date(0).toISOString(),
+      status: 'failed',
+    },
+    {
+      id: 'queued-2',
+      role: 'user',
+      content: 'second draft',
+      timestamp: new Date(1).toISOString(),
+      status: 'queued',
+    },
+  ], MAIN_KEY);
+  useChatStore.setState({
+    messageQueue: {
+      [MAIN_KEY]: [
+        { id: 'queued-1', text: 'first draft', timestamp: new Date(0).toISOString(), failed: true },
+        { id: 'queued-2', text: 'second draft', timestamp: new Date(1).toISOString() },
+      ],
+    },
+  });
+
+  useChatStore.getState().updateQueuedMessage(MAIN_KEY, 'queued-1', 'edited draft');
+  let state = useChatStore.getState();
+  assert.equal(state.messageQueue[MAIN_KEY][0]?.text, 'edited draft');
+  assert.equal(state.messages[0]?.content, 'edited draft');
+
+  state.removeQueuedMessage(MAIN_KEY, 'queued-1');
+  state = useChatStore.getState();
+  assert.equal(state.messageQueue[MAIN_KEY].some((message) => message.id === 'queued-1'), false);
+  assert.equal(state.messages[0]?.status, 'cancelled');
+
+  state.clearQueue(MAIN_KEY);
+  state = useChatStore.getState();
+  assert.deepEqual(state.messageQueue[MAIN_KEY], []);
+  assert.equal(state.messages[1]?.status, 'cancelled');
+  assert.equal(state.messagesPerSession[MAIN_KEY][1]?.status, 'cancelled');
 });

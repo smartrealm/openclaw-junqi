@@ -9,7 +9,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run collab:bundle && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "node --import ./test-setup.ts --import tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\" && node --test \"scripts/*.test.mjs\"",
@@ -19,7 +19,17 @@
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "lint": "npm run check:boundaries && tsc --noEmit",
     "test:boundaries": "node --test scripts/check-boundaries.test.mjs",
-    "generate:provider-catalog": "node scripts/generate-provider-catalog.js"
+    "generate:provider-catalog": "node scripts/generate-provider-catalog.js",
+    "collab:build": "npm --prefix packages/junqi-collab run build",
+    "collab:test": "npm --prefix packages/junqi-collab run test",
+    "collab:pack": "npm --prefix packages/junqi-collab run pack:plugin",
+    "collab:bundle": "node scripts/build-collaboration-plugin-bundle.mjs",
+    "collab:validate": "npm --prefix packages/junqi-collab run validate:plugin",
+    "collab:gateway:smoke": "node scripts/verify-collaboration-real-gateway.mjs",
+    "test:collab:gateway:smoke": "node --test scripts/verify-collaboration-real-gateway.test.mjs",
+    "collab:gateway:behavioral": "node scripts/verify-collaboration-behavioral-gateway.mjs",
+    "test:collab:gateway:behavioral": "node --test scripts/collaboration-deterministic-provider.test.mjs scripts/verify-collaboration-behavioral-gateway.test.mjs",
+    "collab:release:evidence": "node scripts/run-collaboration-release-evidence.mjs"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",

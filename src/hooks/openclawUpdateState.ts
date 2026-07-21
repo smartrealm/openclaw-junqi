@@ -19,6 +19,7 @@ export type OpenclawUpdateAction =
   | { type: 'updateCompleted'; result: OpenclawUpdateResult; status: OpenclawUpdateStatus | null }
   | { type: 'operationFailed'; error: string }
   | { type: 'progressReceived'; progress: number | null; message: string }
+  | { type: 'maintenanceRecovered' }
   | { type: 'diagnosticReceived'; message: string };
 
 export const initialOpenclawUpdateState: OpenclawUpdateState = {
@@ -76,6 +77,12 @@ export function openclawUpdateReducer(
         progress: 100,
         statusMessage: state.statusMessage,
         logs: state.logs,
+      };
+    case 'maintenanceRecovered':
+      return {
+        ...state,
+        phase: state.status ? 'ready' : 'idle',
+        error: null,
       };
     case 'operationFailed':
       return { ...state, phase: 'error', error: action.error };

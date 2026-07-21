@@ -1,10 +1,14 @@
-name: Linux Self-hosted Release
+name: Linux Self-hosted Candidate
 
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Version tag to build and append to an existing release, for example v0.5.2.'
+        description: 'Immutable version tag to build as a candidate, for example v0.5.2.'
+        required: true
+        type: string
+      source_sha:
+        description: 'Full commit SHA resolved by the release promotion.'
         required: true
         type: string
 
@@ -13,16 +17,41 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  # This workflow is intentionally candidate-only. Public release mutation is
+  # reserved for the attested production-release gate in release.yml.
+  contents: read
 
 jobs:
-  build-and-publish:
-    name: Build and publish Linux x64
+  runner-preflight:
+    name: Require externally provisioned ephemeral candidate runner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RUNNER_PROVISIONED: ${{ vars.COLLAB_LINUX_EPHEMERAL_RUNNER_PROVISIONED }}
+    steps:
+      - name: Require protected infrastructure controller handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_PROVISIONED" != true ]]; then
+            echo '::error::A protected external controller must provision a JIT/ephemeral Linux runner and set COLLAB_LINUX_EPHEMERAL_RUNNER_PROVISIONED before dispatch.'
+            exit 1
+          fi
+
+  build-candidate:
+    name: Build Linux x64 candidate
+    needs: runner-preflight
     # Keep this static: a matching runner must carry every label below.
-    runs-on: [self-hosted, linux, x64, junqi-linux-x64]
+    # The runner label is intentionally explicit: only an ephemeral/JIT
+    # candidate runner may execute arbitrary release-source lifecycle scripts.
+    runs-on: [self-hosted, linux, x64, junqi-linux-x64, ephemeral]
+    environment: candidate-build
     # Build inside Ubuntu so the CentOS host's older WebKitGTK does not affect
     # Tauri/Wry, which requires the WebKitGTK 4.1 pkg-config contract.
-    container: ubuntu:22.04
+    # Pin the amd64 Ubuntu image; a mutable tag is not acceptable on a
+    # self-hosted runner that executes repository lifecycle scripts.
+    container: ubuntu@sha256:0d779ea97881505f5ef0039336ee85edba27519bdba968c284c86ee066a973c8
     env:
       RELEASE_TAG: ${{ inputs.ref }}
       CARGO_BUILD_JOBS: '1'
@@ -36,7 +65,7 @@ jobs:
       no_proxy: 127.0.0.1,localhost,172.17.0.1,mirrors.tencent.com
     steps:
       # This runs before JavaScript actions because the minimal Ubuntu image
-      # needs Git for checkout and gh for the release upload.
+      # needs Git and gh to resolve and download the requested tag source.
       - name: Install container build dependencies
         shell: bash
         run: |
@@ -78,19 +107,15 @@ jobs:
           set -euo pipefail
 
           tag="${RELEASE_TAG:-}"
-          if [[ "$tag" != v* || ${#tag} -le 1 ]]; then
-            echo "::error::ref must be a non-empty version tag beginning with v (for example v0.5.2)"
-            exit 1
-          fi
-
-          if ! git check-ref-format --allow-onelevel "refs/tags/$tag"; then
-            echo "::error::ref is not a valid Git tag name: $tag"
+          if [[ ! "$tag" =~ ^v[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
+            echo "::error::ref must be a strict version tag (for example v0.5.2)"
             exit 1
           fi
 
       - name: Download requested tag source
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA_INPUT: ${{ inputs.source_sha }}
           # Go-based gh prefers upper-case proxy keys. The Runner injects
           # host-local values into containers, so override them here.
           HTTP_PROXY: http://172.17.0.1:7890
@@ -103,6 +128,11 @@ jobs:
 
           repo="$GITHUB_REPOSITORY"
           tag="$RELEASE_TAG"
+          source_sha_input="${SOURCE_SHA_INPUT:-}"
+          if [[ ! "$source_sha_input" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::source_sha must be a full commit SHA" >&2
+            exit 1
+          fi
           tag_object_type="$(gh api "repos/$repo/git/ref/tags/$tag" --jq '.object.type')"
           tag_object_sha="$(gh api "repos/$repo/git/ref/tags/$tag" --jq '.object.sha')"
 
@@ -124,7 +154,7 @@ jobs:
               ;;
           esac
 
-          if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ ]]; then
+          if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ || "$source_commit" != "$source_sha_input" || "$GITHUB_SHA" != "$source_sha_input" ]]; then
             echo "::error::Tag $tag did not resolve to a commit SHA" >&2
             exit 1
           fi
@@ -132,18 +162,49 @@ jobs:
           archive="$RUNNER_TEMP/junqi-source-$source_commit.tar.gz"
           auth_config="$(mktemp "$RUNNER_TEMP/junqi-curl-auth.XXXXXX")"
           chmod 600 "$auth_config"
-          trap 'rm -f "$auth_config"' EXIT
+          extract_dir="$(mktemp -d "$RUNNER_TEMP/junqi-source-extract.XXXXXX")"
+          chmod 700 "$extract_dir"
+          trap 'rm -rf "$extract_dir"; rm -f "$auth_config"' EXIT
           printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" > "$auth_config"
           printf '%s\n' 'header = "Accept: application/vnd.github+json"' >> "$auth_config"
 
-          rm -rf "$GITHUB_WORKSPACE"
-          mkdir -p "$GITHUB_WORKSPACE"
           curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
             --connect-timeout 10 --max-time 300 \
             --config "$auth_config" \
             --output "$archive" \
             "https://api.github.com/repos/$repo/tarball/$source_commit"
-          tar --extract --gzip --file "$archive" --strip-components=1 -C "$GITHUB_WORKSPACE"
+
+          # The archive is untrusted input to a self-hosted runner. Reject
+          # traversal, absolute names, and link entries before extraction, then
+          # extract into a private temporary directory and verify real paths
+          # before copying the regular-file tree into the workspace.
+          LC_ALL=C tar --list --gzip --file "$archive" \
+            | while IFS= read -r entry; do
+                [[ -n "$entry" && "$entry" != /* && "$entry" != *$'\\'*
+                  && "$entry" != ../* && "$entry" != */../* && "$entry" != */.. ]] \
+                  || { echo "::error::Unsafe tar path: $entry" >&2; exit 1; }
+              done
+          LC_ALL=C tar --list --gzip --verbose --file "$archive" \
+            | while IFS= read -r entry; do
+                case "${entry:0:1}" in
+                  l|h) echo "::error::Tar link entry is forbidden" >&2; exit 1 ;;
+                esac
+              done
+          tar --extract --gzip --file "$archive" --strip-components=1 \
+            --directory "$extract_dir" --no-same-owner --no-same-permissions \
+            --keep-directory-symlink --delay-directory-restore
+          extract_real="$(realpath "$extract_dir")"
+          while IFS= read -r -d '' extracted; do
+            [[ ! -L "$extracted" ]] || { echo "::error::Extracted symlink is forbidden" >&2; exit 1; }
+            resolved="$(realpath "$extracted")"
+            case "$resolved" in
+              "$extract_real"|"$extract_real"/*) ;;
+              *) echo "::error::Extracted path escaped the private directory" >&2; exit 1 ;;
+            esac
+          done < <(find "$extract_dir" -print0)
+          rm -rf "$GITHUB_WORKSPACE"
+          mkdir -p "$GITHUB_WORKSPACE"
+          cp -a --no-preserve=ownership "$extract_dir"/. "$GITHUB_WORKSPACE"/
 
           if [[ ! -f "$GITHUB_WORKSPACE/package.json" ]]; then
             echo '::error::Downloaded tag archive did not contain package.json' >&2
@@ -153,17 +214,20 @@ jobs:
           printf '%s\n' "$source_commit" > "$RUNNER_TEMP/junqi-source-commit"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: '20'
+          node-version: '22.23.1'
           cache: pnpm
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # pinned 1.96.0
         with:
+          toolchain: 1.96.0
           targets: x86_64-unknown-linux-gnu
 
       - name: Verify downloaded tag and desktop version
@@ -188,7 +252,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build Linux installers
-        run: pnpm tauri build --target x86_64-unknown-linux-gnu --bundles appimage,deb
+        run: >-
+          pnpm tauri build --target x86_64-unknown-linux-gnu --bundles appimage,deb
+          --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Verify Linux installers
         id: installers
@@ -210,36 +276,27 @@ jobs:
           printf 'deb=%s\n' "${debs[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Linux installer artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: junqi-desktop-linux-x86_64-${{ inputs.ref }}
+          # Keep one logical artifact per workflow run so a same-run retry can
+          # replace the previous candidate without colliding with v4+ immutability.
+          name: junqi-desktop-linux-x86_64-${{ inputs.ref }}-${{ github.run_id }}
+          overwrite: true
           path: |
             ${{ steps.installers.outputs.appimage }}
             ${{ steps.installers.outputs.deb }}
           retention-days: 14
           if-no-files-found: error
 
-      - name: Append Linux installers to tagged release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APPIMAGE_PATH: ${{ steps.installers.outputs.appimage }}
-          DEB_PATH: ${{ steps.installers.outputs.deb }}
-          HTTP_PROXY: http://172.17.0.1:7890
-          HTTPS_PROXY: http://172.17.0.1:7890
-          ALL_PROXY: http://172.17.0.1:7890
-          NO_PROXY: 127.0.0.1,localhost,172.17.0.1,mirrors.tencent.com
+      - name: Record candidate-only boundary
         shell: bash
         run: |
-          set -euo pipefail
-
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $RELEASE_TAG does not exist; refusing to create an unintended release"
-            exit 1
-          fi
-
-          gh release upload "$RELEASE_TAG" "$APPIMAGE_PATH" "$DEB_PATH" \
-            --clobber \
-            --repo "$GITHUB_REPOSITORY"
+          {
+            echo "## Linux candidate"
+            echo
+            echo "Built from immutable tag \`$RELEASE_TAG\`."
+            echo "This workflow cannot create, update, or append to a GitHub Release."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Container-created files can otherwise remain root-owned in the
       # runner workspace and exhaust the small self-hosted host disk.

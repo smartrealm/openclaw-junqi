@@ -7,6 +7,9 @@ const gitRuntime = readFileSync(new URL('../src-tauri/src/commands/git_runtime.r
 const nodeRuntime = readFileSync(new URL('../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
 const platform = readFileSync(new URL('../src-tauri/src/platform.rs', import.meta.url), 'utf8');
 const lib = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+const config = readFileSync(new URL('../src-tauri/src/commands/config.rs', import.meta.url), 'utf8');
+const gatewayCredentials = readFileSync(new URL('../src-tauri/src/commands/gateway_credentials.rs', import.meta.url), 'utf8');
+const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8');
 const tauri = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
 const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 
@@ -86,15 +89,35 @@ test('Windows package uses the small WebView2 bootstrapper and standard system r
   assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('ensure_winget_package'));
 });
 
-test('Windows releases sign and verify Authenticode when SignPath is configured', () => {
+test('Windows signing is isolated behind the unreachable trusted promotion path', () => {
   assert.equal(tauri.bundle.windows.signCommand, undefined);
-  assert.match(release, /signpath\/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd/g);
-  assert.match(release, /SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG/);
-  assert.match(release, /SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG/);
-  assert.match(release, /pnpm tauri signer sign \$installer\.FullName/);
-  assert.match(release, /generate-updater-manifest\.mjs/);
-  assert.match(release, /Get-AuthenticodeSignature/);
-  assert.match(release, /signature\.Status -ne 'Valid'/);
-  assert.match(release, /enabled=false/);
-  assert.match(release, /publishing unsigned Windows installers/);
+  assert.match(release, /needs\.verify-version\.outputs\.signing-enabled == 'true' && runner\.os == 'Windows'/);
+  assert.match(release, /WINDOWS_PFX_BASE64/);
+  assert.match(release, /WINDOWS_TIMESTAMP_URL/);
+  assert.match(release, /signtool sign \/fd SHA256/);
+  assert.match(release, /signtool verify \/pa \/all \/tw/);
+  assert.match(release, /createUpdaterArtifacts":false/);
+  assert.doesNotMatch(release, /tags:\s*\[/);
+});
+
+test('Windows reads the selected OpenClaw token and stores device credentials in Credential Manager', () => {
+  const detector = config.slice(
+    config.indexOf('pub async fn detect_gateway_config'),
+    config.indexOf('pub async fn set_active_gateway_runtime'),
+  );
+  assert.match(detector, /paths::active_config_path\(\)/);
+  assert.match(detector, /extract_token_from_config/);
+  assert.match(detector, /ws_url/);
+  assert.match(gatewayCredentials, /store_system_credential/);
+  assert.match(gatewayCredentials, /get_system_credential/);
+  assert.doesNotMatch(gatewayCredentials, /std::fs::(?:write|read_to_string)/);
+  assert.match(cargo, /\[target\.'cfg\(windows\)'\.dependencies\][\s\S]*keyring\s*=\s*\{[^}]*"windows-native"/);
+});
+
+test('Windows release matrix builds and stages both NSIS and MSI for x64 and ARM64', () => {
+  assert.match(release, /name: Windows x64[\s\S]*target: 'x86_64-pc-windows-msvc'[\s\S]*--bundles nsis,msi/);
+  assert.match(release, /name: Windows ARM64[\s\S]*target: 'aarch64-pc-windows-msvc'[\s\S]*--bundles nsis,msi/);
+  assert.match(release, /bundle\/nsis\|\.exe/);
+  assert.match(release, /bundle\/msi\|\.msi/);
+  assert.match(release, /if-no-files-found: error/);
 });

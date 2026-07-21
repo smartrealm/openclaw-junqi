@@ -26,7 +26,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { EnsureResult, LogEntry } from './tauri-commands';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
+import { DEFAULT_GATEWAY_PORT, defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import {
   loadOrCreateDeviceIdentity,
   buildDeviceAuthPayload,
@@ -43,15 +43,15 @@ import { formatGatewayLogs } from '../services/gateway/gatewayLogFormatting';
 import { gatewayRestartSingleFlight } from '../services/gateway/SingleFlight';
 import { gatewayRestartProgressFromLog, type GatewayRecoveryStatus } from '../services/gateway/recoveryProgress';
 import { APP_VERSION } from '../version';
+import { inferMimeType } from '@/services/chat/attachments';
 import {
-  canonicalGatewayEndpoint,
-  mergeDesktopGatewaySettings,
-  pollGatewayPairing,
-  readLegacyGatewayCredential,
-  readLegacyGatewayEndpoint,
-  removeLegacyGatewayCredentials,
-  requestGatewayPairing,
-} from './gateway-pairing';
+  clearLegacyGatewayCredentialStorage,
+  getGatewayDeviceCredentialForUrl,
+  migrateLegacyGatewayCredential,
+  resolveGatewayCredentialRuntimeKey,
+  storeGatewayDeviceCredential,
+  type GatewayCredential,
+} from '../services/gateway/credentialProvider';
 
 const GATEWAY_RESTART_STARTED_EVENT = 'aegis:gateway-restart-started';
 const GATEWAY_RESTART_FINISHED_EVENT = 'aegis:gateway-restart-finished';
@@ -182,6 +182,82 @@ function cacheGatewayConfig(config: GwConfig): void {
   }
 }
 
+function currentGatewayWsUrl(explicitUrl?: string): string {
+  if (explicitUrl?.trim()) return explicitUrl.trim();
+  if (_cachedGatewayConfig?.ws_url) return _cachedGatewayConfig.ws_url;
+  if (typeof _gwConfig?.ws_url === 'string' && _gwConfig.ws_url.trim()) return _gwConfig.ws_url.trim();
+  return defaultGatewayWsUrl(_cachedGatewayPort ?? DEFAULT_GATEWAY_PORT);
+}
+
+function normalizedGatewayEndpoint(rawUrl: string): string | null {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') return null;
+    const host = ['localhost', '::1', '[::1]'].includes(url.hostname.toLowerCase())
+      ? '127.0.0.1'
+      : url.hostname.toLowerCase();
+    const port = url.port || (url.protocol === 'wss:' ? '443' : '80');
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+    return `${url.protocol}//${host}:${port}${path}`;
+  } catch {
+    return null;
+  }
+}
+
+function gatewayEndpointsMatch(left: string, right: string): boolean {
+  const normalizedLeft = normalizedGatewayEndpoint(left);
+  return normalizedLeft !== null && normalizedLeft === normalizedGatewayEndpoint(right);
+}
+
+async function persistGatewayToken(token: string, explicitUrl?: string): Promise<void> {
+  const normalized = token.trim();
+  if (!normalized) return;
+  await storeGatewayDeviceCredential(
+    resolveGatewayCredentialRuntimeKey(currentGatewayWsUrl(explicitUrl)),
+    normalized,
+  );
+}
+
+async function migrateNativeLegacyGatewayCredential(
+  gatewayUrl: string,
+  activeConfig: GwConfig | null,
+): Promise<GatewayCredential | null> {
+  const scope = activeConfig && gatewayEndpointsMatch(gatewayUrl, activeConfig.ws_url)
+    ? activeConfig.credential_scope || 'selected-runtime'
+    : 'external-endpoint';
+  try {
+    const token = await invoke<string | null>('get_legacy_gateway_credential', {
+      endpoint: gatewayUrl,
+      scope,
+    });
+    if (typeof token !== 'string' || !token.trim()) return null;
+    const credential = await storeGatewayDeviceCredential(
+      resolveGatewayCredentialRuntimeKey(gatewayUrl),
+      token,
+    );
+    if (credential.persistence === 'system') {
+      await invoke('delete_legacy_gateway_credential', { endpoint: gatewayUrl, scope }).catch(() => {});
+    }
+    return credential;
+  } catch {
+    return null;
+  }
+}
+
+// Upgrade migration must not depend on a successful Gateway connection. Start
+// it as soon as the native adapter is loaded, using the last non-secret target
+// preference to scope the credential.
+try {
+  const saved = JSON.parse(localStorage.getItem('aegis-config') || '{}');
+  const legacyUrl = localStorage.getItem('aegis-gateway-url')
+    || saved.gatewayUrl
+    || saved.gatewayWsUrl
+    || currentGatewayWsUrl();
+  void migrateLegacyGatewayCredential(resolveGatewayCredentialRuntimeKey(legacyUrl)).catch(() => {});
+} catch {
+  // Connection resolution performs the same idempotent migration later.
+}
+
 function cacheGatewayLifecycleResult(result: any): void {
   if (typeof result?.port !== 'number' || result.port <= 0 || result.port >= 65536) return;
   _cachedGatewayPort = result.port;
@@ -189,103 +265,6 @@ function cacheGatewayLifecycleResult(result: any): void {
     token: typeof result.token === 'string' ? result.token : '',
     ws_url: defaultGatewayWsUrl(result.port),
   });
-}
-
-function readDesktopGatewaySettings(): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem('aegis-config') || '{}');
-    const settings = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {};
-    const endpoint = readLegacyGatewayEndpoint(localStorage);
-    return endpoint && !(typeof settings.gatewayUrl === 'string' && settings.gatewayUrl.trim())
-      ? { ...settings, gatewayUrl: endpoint }
-      : settings;
-  } catch {
-    const endpoint = readLegacyGatewayEndpoint(localStorage);
-    return endpoint ? { gatewayUrl: endpoint } : {};
-  }
-}
-
-function endpointsMatch(left: string, right: string): boolean {
-  try {
-    return canonicalGatewayEndpoint(left) === canonicalGatewayEndpoint(right);
-  } catch {
-    return left.trim() === right.trim();
-  }
-}
-
-let _legacyGatewayCredentialMigration: Promise<void> | null = null;
-async function migrateLegacyGatewayCredential(fallbackEndpoint: string, scope: string): Promise<void> {
-  if (_legacyGatewayCredentialMigration) return _legacyGatewayCredentialMigration;
-  _legacyGatewayCredentialMigration = (async () => {
-    const legacy = readLegacyGatewayCredential(localStorage);
-    if (!legacy) return;
-    const endpoint = legacy.endpoint || fallbackEndpoint;
-    if (!endpoint) return;
-    const migrationScope = endpointsMatch(endpoint, fallbackEndpoint) ? scope : 'external-endpoint';
-    await invoke('store_gateway_credential', { endpoint, scope: migrationScope, value: legacy.token });
-    removeLegacyGatewayCredentials(localStorage);
-  })().catch((error) => {
-    _legacyGatewayCredentialMigration = null;
-    throw error;
-  });
-  return _legacyGatewayCredentialMigration;
-}
-
-async function readSecureGatewayCredential(endpoint: string, scope: string): Promise<string | null> {
-  try {
-    const value = await invoke<string | null>('get_gateway_credential', { endpoint, scope });
-    return typeof value === 'string' && value.trim() ? value.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-async function resolveSelectedGatewayConfig(): Promise<GwConfig> {
-  const active = await resolveGwConfig();
-  const settings = readDesktopGatewaySettings();
-  const configuredUrl = typeof settings.gatewayUrl === 'string' ? settings.gatewayUrl.trim() : '';
-  const wsUrl = configuredUrl || active?.ws_url || defaultGatewayWsUrl();
-  const scope = active && endpointsMatch(active.ws_url, wsUrl)
-    ? active.credential_scope || 'selected-runtime'
-    : 'external-endpoint';
-  try {
-    await migrateLegacyGatewayCredential(wsUrl, scope);
-  } catch {
-    // A locked/unavailable system vault must not make non-secret config unreadable.
-  }
-  let stored = await readSecureGatewayCredential(wsUrl, scope);
-  const activeToken = active && endpointsMatch(active.ws_url, wsUrl) ? active.token : '';
-  if (!stored && !activeToken && active && endpointsMatch(active.ws_url, wsUrl)) {
-    try {
-      const resolved = await invoke<string>('get_gateway_token');
-      if (resolved.trim()) {
-        stored = resolved.trim();
-        await invoke('store_gateway_credential', { endpoint: wsUrl, scope, value: stored });
-        removeLegacyGatewayCredentials(localStorage);
-      }
-    } catch {
-      // The Gateway may still be starting. A later resolution attempt retries.
-    }
-  }
-  const result = { token: stored || activeToken, ws_url: wsUrl, credential_scope: scope };
-  cacheGatewayConfig(result);
-  return result;
-}
-
-async function storeSecureGatewayCredential(token: string, endpoint?: string): Promise<string> {
-  const normalized = token.trim();
-  if (!normalized) throw new Error('Gateway credential cannot be empty');
-  const selected = await resolveSelectedGatewayConfig();
-  const target = endpoint?.trim() || selected.ws_url;
-  const scope = endpointsMatch(target, selected.ws_url)
-    ? selected.credential_scope || 'selected-runtime'
-    : 'external-endpoint';
-  await invoke('store_gateway_credential', { endpoint: target, scope, value: normalized });
-  removeLegacyGatewayCredentials(localStorage);
-  cacheGatewayConfig({ token: normalized, ws_url: target, credential_scope: scope });
-  return target;
 }
 
 /**
@@ -390,26 +369,45 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
 
   config: {
     get: async () => {
-      const gw = await resolveSelectedGatewayConfig();
+      const gw = await resolveGwConfig();
+      let saved: any = {};
+      try { saved = JSON.parse(localStorage.getItem("aegis-config") || "{}"); } catch {}
+      const legacyUrl = saved.gatewayUrl || saved.gatewayWsUrl;
+      const wsUrl = legacyUrl || gw?.ws_url || currentGatewayWsUrl();
+      let credential = await migrateLegacyGatewayCredential(resolveGatewayCredentialRuntimeKey(wsUrl));
+      if (!credential.token) {
+        credential = await migrateNativeLegacyGatewayCredential(wsUrl, gw) || credential;
+      }
+      if (!credential.token) credential = await getGatewayDeviceCredentialForUrl(wsUrl);
+      const bootstrapToken = gw?.token && gatewayEndpointsMatch(wsUrl, gw.ws_url)
+        ? gw.token
+        : '';
+      clearLegacyGatewayCredentialStorage();
+      delete saved.gatewayToken;
       return {
-        ...readDesktopGatewaySettings(),
-        gatewayUrl: gw.ws_url,
-        gatewayToken: gw.token,
+        ...saved,
+        ...(wsUrl ? { gatewayUrl: wsUrl } : {}),
+        ...((bootstrapToken || credential.token)
+          ? { gatewayToken: bootstrapToken || credential.token }
+          : {}),
+        gatewayBootstrapToken: bootstrapToken,
+        gatewayDeviceToken: credential.token || '',
       };
     },
     save: async (c: any) => {
       try {
-        const update = c && typeof c === 'object' && !Array.isArray(c) ? { ...c } : {};
-        const token = typeof update.gatewayToken === 'string' ? update.gatewayToken : undefined;
-        delete update.gatewayToken;
-        if (token?.trim()) {
-          const current = readDesktopGatewaySettings();
-          const endpoint = typeof update.gatewayUrl === 'string'
-            ? update.gatewayUrl
-            : typeof current.gatewayUrl === 'string' ? current.gatewayUrl : undefined;
-          await storeSecureGatewayCredential(token, endpoint);
-        }
-        mergeDesktopGatewaySettings(update, localStorage);
+        let current: Record<string, unknown> = {};
+        try {
+          const parsed = JSON.parse(localStorage.getItem('aegis-config') || '{}');
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed;
+        } catch {}
+        const update = c && typeof c === 'object' && !Array.isArray(c) ? c : {};
+        const safe = { ...current, ...update } as Record<string, any>;
+        const token = typeof safe.gatewayToken === 'string' ? safe.gatewayToken.trim() : '';
+        delete safe.gatewayToken;
+        if (token) await persistGatewayToken(token, safe.gatewayUrl || safe.gatewayWsUrl);
+        clearLegacyGatewayCredentialStorage();
+        localStorage.setItem("aegis-config", JSON.stringify(safe));
         return { success: true };
       } catch {
         return { success: false };
@@ -628,7 +626,19 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     },
   },
 
-  settings: { save: async (k: string, v: any) => { try { localStorage.setItem(`aegis-setting:${k}`, JSON.stringify(v)); return { success: true }; } catch { return { success: false }; } } },
+  settings: { save: async (k: string, v: any) => {
+    try {
+      if (k === 'gatewayToken') {
+        if (typeof v === 'string' && v.trim()) await persistGatewayToken(v);
+        localStorage.removeItem('aegis-setting:gatewayToken');
+        return { success: true };
+      }
+      localStorage.setItem(`aegis-setting:${k}`, JSON.stringify(v));
+      return { success: true };
+    } catch {
+      return { success: false };
+    }
+  } },
 
   device: {
     getIdentity: async () => { const id = await deviceIdentity(); return { deviceId: id.deviceId, publicKey: id.publicKey }; },
@@ -643,8 +653,27 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
   },
 
   file: {
-    openDialog: async () => { try { const { open } = await import("@tauri-apps/plugin-dialog"); const r = await open({ multiple: false }); return r ? { canceled: false, filePaths: [r] } : { canceled: true, filePaths: [] }; } catch { return { canceled: true, filePaths: [] }; } },
-    read: async (path: string) => { try { const { readFile } = await import("@tauri-apps/plugin-fs"); const c = await readFile(path); const ext = path.split(".").pop()?.toLowerCase() || ""; const img = ["png","jpg","jpeg","gif","webp","svg"]; const is = img.includes(ext); return { name: path.split("/").pop()||path, path, base64: bytesToBase64(c), mimeType: is ? `image/${ext}` : "application/octet-stream", isImage: is, size: c.length }; } catch { return null; } },
+    openDialog: async () => { try { const { open } = await import("@tauri-apps/plugin-dialog"); const r = await open({ multiple: true }); const filePaths = Array.isArray(r) ? r : r ? [r] : []; return filePaths.length ? { canceled: false, filePaths } : { canceled: true, filePaths: [] }; } catch { return { canceled: true, filePaths: [] }; } },
+    read: async (path: string) => {
+      try {
+        const { readFile, stat } = await import("@tauri-apps/plugin-fs");
+        const metadata = await stat(path);
+        if (metadata.size > 20 * 1024 * 1024) return null;
+        const bytes = await readFile(path);
+        const name = path.split(/[\\/]/).pop() || path;
+        const mimeType = inferMimeType(name);
+        return {
+          name,
+          path,
+          base64: bytesToBase64(bytes),
+          mimeType,
+          isImage: mimeType.startsWith('image/'),
+          size: bytes.length,
+        };
+      } catch {
+        return null;
+      }
+    },
     openSharedFolder: async () => {
       try {
         const config = await invoke<{ raw: string }>("read_config");
@@ -700,43 +729,30 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
   },
   memory: { browse: async () => null, readLocal: async () => ({ success: false, files: [] }) },
   pairing: {
-    getToken: async (endpoint?: string) => {
-      const selected = await resolveSelectedGatewayConfig();
-      const target = endpoint?.trim() || selected.ws_url;
-      const scope = endpointsMatch(target, selected.ws_url)
-        ? selected.credential_scope || 'selected-runtime'
-        : 'external-endpoint';
-      const stored = await readSecureGatewayCredential(target, scope);
-      if (stored) return stored;
-      return endpointsMatch(target, selected.ws_url) ? selected.token || null : null;
-    },
-    saveToken: async (token: string, endpoint?: string) => {
+    getToken: async (gatewayUrl?: string) => {
       try {
-        await storeSecureGatewayCredential(token, endpoint);
-        return { success: true };
-      } catch {
-        return { success: false };
-      }
-    },
-    clearToken: async (endpoint?: string) => {
-      try {
-        const target = endpoint?.trim() || (await resolveSelectedGatewayConfig()).ws_url;
-        const selected = await resolveSelectedGatewayConfig();
-        const scope = endpointsMatch(target, selected.ws_url)
-          ? selected.credential_scope || 'selected-runtime'
-          : 'external-endpoint';
-        await invoke('delete_gateway_credential', { endpoint: target, scope });
-        removeLegacyGatewayCredentials(localStorage);
-        if (_cachedGatewayConfig && endpointsMatch(_cachedGatewayConfig.ws_url, target)) {
-          _cachedGatewayConfig = { ..._cachedGatewayConfig, token: '' };
+        const target = currentGatewayWsUrl(gatewayUrl);
+        const activeConfig = await resolveGwConfig();
+        let credential = await getGatewayDeviceCredentialForUrl(target);
+        if (!credential.token) {
+          credential = await migrateNativeLegacyGatewayCredential(target, activeConfig) || credential;
         }
+        if (credential.token) return credential.token;
+        return null;
+      } catch {
+        return null;
+      }
+    },
+    saveToken: async (token: string, gatewayUrl?: string) => {
+      try {
+        await persistGatewayToken(token, gatewayUrl);
         return { success: true };
       } catch {
+        // The provider itself retains a session-only token when the native
+        // credential store is unsupported; only invalid input reaches here.
         return { success: false };
       }
     },
-    requestPairing: (httpBaseUrl: string) => requestGatewayPairing(httpBaseUrl, detectPlatform()),
-    poll: (httpBaseUrl: string, deviceId: string) => pollGatewayPairing(httpBaseUrl, deviceId),
   },
   terminal: {
     // portable-pty backed PTY multiplexer in Rust. Each create() spawns a
@@ -775,7 +791,6 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       return () => { pending = false; unlisten?.(); };
     },
   },
-  artifact: { open: async () => ({ success: false }) },
   notify: async (t: string, b: string) => { if ("Notification" in window && Notification.permission === "granted") new Notification(t, { body: b }); },
   consoleUi: {
     // Open the gateway's Control UI in an in-app window (mirrors openclaw-desktop).
@@ -819,7 +834,6 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
 	    read: async (path: string) => { try { const v: any = await invoke('read_file_text', { path }); return { success: v?.success ?? false, content: v?.content ?? null, byteSize: v?.byte_size ?? 0, truncated: v?.truncated ?? false, error: v?.error ?? null }; } catch { return { success: false, content: null, byteSize: 0, truncated: false, error: 'invoke failed' }; } },
     delete: async () => ({ success: false }),
   },
-  attachments: { stage: async () => ({ success: false, staged: [] }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
   uploads: { list: async () => ({ success: true, rows: [], total: 0, root: "" }), open: async () => ({ success: false }), reveal: async () => ({ success: false }), exists: async () => ({ success: false, exists: false }), read: async () => ({ success: false }), delete: async () => ({ success: false }), saveAs: async () => ({ success: false }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
   // JunQi-style system metrics event stream (background thread emits every 1s)
   systemMetrics: {

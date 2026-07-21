@@ -475,8 +475,8 @@ test('BUG-06 recovery logs remain reachable while Gateway is offline', () => {
 test('BUG-07 WebSocket retry has one owner, deadline, and real UI attempt events', () => {
   const connection = source('src/services/gateway/Connection.ts');
   const app = source('src/App.tsx');
-  assert.match(connection, /connect\(url: string, token: string, resetReconnectAttempts = true\)/);
-  assert.match(connection, /connect\(this\.url, this\.token, false\)/);
+  assert.match(connection, /connect\(\s*url: string,\s*token: string,\s*deviceToken = '',\s*resetReconnectAttempts = true/);
+  assert.match(connection, /connect\(this\.url, this\.token, this\.deviceToken, false\)/);
   assert.match(connection, /new ConnectionRetryPolicy\(3\)/);
   assert.match(connection, /CONNECTION_ATTEMPT_TIMEOUT_MS = 8_000/);
   assert.match(connection, /emitRetryState\('exhausted'/);
@@ -539,7 +539,7 @@ test('Windows recovery terminates the owned process tree before a new Gateway st
   const supervisor = source('src-tauri/src/commands/gateway_supervisor.rs');
   const processControl = source('src-tauri/src/commands/process_control.rs');
 
-  assert.match(supervisor, /terminate_process_tree\(child, child\.id\(\)\)\.await/);
+  assert.match(supervisor, /terminate_process_tree_confirmed\(/);
   assert.match(processControl, /taskkill/);
   assert.match(processControl, /"\/T", "\/F"/);
 });

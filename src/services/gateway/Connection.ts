@@ -6,18 +6,45 @@
 // ═══════════════════════════════════════════════════════════
 
 import { startPolling, stopPolling } from '@/stores/gatewayDataStore';
-import { MessageRouter, isAuthError } from './messageRouter';
+import {
+  MessageRouter,
+  classifyGatewayAuthorizationError,
+  type GatewayAuthorizationIssue,
+} from './messageRouter';
 import { ConnectionRetryPolicy } from './ConnectionRetryPolicy';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import i18n from '@/i18n';
 import { gatewayLocaleForLanguage } from './gatewayLocale';
+import type { GatewayHelloObservation, RuntimeIdentity } from '@/types/gatewayRuntime';
+import {
+  buildGatewayHelloObservation,
+  invalidateGatewayRuntimeIdentity,
+  observeGatewayHello,
+} from './runtimeIdentity';
 
 // OpenClaw 2026.5.x introduced a newer WS protocol while older installs still
 // negotiate protocol 3. Advertise a compatible range so Desktop can connect to
 // both without pinning the bundled gateway to one exact revision.
 const GATEWAY_PROTOCOL_MIN = 3;
 const GATEWAY_PROTOCOL_MAX = 4;
+export type GatewayOperatorScope =
+  | 'operator.read'
+  | 'operator.write'
+  | 'operator.admin'
+  | 'operator.approvals'
+  | 'operator.pairing';
+
+export const DAILY_OPERATOR_SCOPES: readonly GatewayOperatorScope[] = [
+  'operator.read',
+  'operator.write',
+];
+
+export interface GatewayConnectionOptions {
+  scopes?: readonly GatewayOperatorScope[];
+  /** A one-operation connection that must not own global polling or runtime identity. */
+  transient?: boolean;
+}
 
 // ── Platform Detection (cross-platform) ──
 export function detectPlatform(): string {
@@ -72,10 +99,16 @@ export interface GatewayCallbacks {
   onStreamEnd: (sessionKey: string, messageId: string, content: string, media?: MediaInfo, meta?: StreamEndMeta) => void;
   onStatusChange: (status: { connected: boolean; connecting: boolean; error?: string }) => void;
   onRetryState?: (state: GatewayRetryState) => void;
-  /** Fired when Gateway rejects with missing scope / invalid token */
+  /** Structured authorization failure from the Gateway protocol. */
+  onAuthorizationIssue?: (issue: GatewayAuthorizationIssue) => void;
+  /** @deprecated Use onAuthorizationIssue. Retained for auxiliary clients. */
   onScopeError?: (error: string) => void;
   /** Fired after successful re-pairing (token received) */
   onPairingComplete?: (token: string) => void;
+  /** Raw, normalized hello-ok facts before local runtime attestation. */
+  onHello?: (observation: GatewayHelloObservation) => void;
+  /** Cross-checked Gateway identity, or null when its socket is invalidated. */
+  onRuntimeIdentity?: (identity: RuntimeIdentity | null) => void;
 }
 
 export interface GatewayRetryState {
@@ -101,11 +134,68 @@ export interface GatewayRequestOptions {
   timeoutMs?: number | null;
 }
 
+/**
+ * A failed Gateway RPC response. Keep this deliberately narrower than the
+ * response envelope so callers receive the protocol contract without leaking
+ * unrelated transport fields.
+ */
+export class GatewayRpcError extends Error {
+  constructor(
+    message: string,
+    public readonly code?: string,
+    public readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = 'GatewayRpcError';
+  }
+
+  override toString(): string {
+    return this.message;
+  }
+}
+
+export class GatewayMessageQueueFullError extends Error {
+  readonly code = 'GATEWAY_MESSAGE_QUEUE_FULL';
+
+  constructor(public readonly limit: number) {
+    super(`Offline message queue is full (${limit} messages)`);
+    this.name = 'GatewayMessageQueueFullError';
+  }
+}
+
+export class GatewayConnectionFenceError extends Error {
+  readonly code = 'GATEWAY_CONNECTION_FENCE_MISMATCH';
+
+  constructor(
+    public readonly expectedConnectionId: string,
+    public readonly actualConnectionId: string | null,
+  ) {
+    super('The Gateway connection changed before the fenced request completed');
+    this.name = 'GatewayConnectionFenceError';
+  }
+}
+
+function gatewayRpcError(value: unknown): GatewayRpcError {
+  const error = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+  const message =
+    (typeof error?.message === 'string' && error.message) ||
+    (typeof value === 'string' && value) ||
+    'Request failed';
+  const code = typeof error?.code === 'string' && error.code.length > 0
+    ? error.code
+    : undefined;
+  return new GatewayRpcError(message, code, error?.details);
+}
+
 // ── Queued message (pre-processed: attachments in gateway format, context injected) ──
 interface QueuedMessage {
   message: string;
   attachments?: any[];
   sessionKey?: string;
+  idempotencyKey: string;
+  sessionId?: string;
 }
 
 export class GatewayConnection {
@@ -120,6 +210,7 @@ export class GatewayConnection {
   private readonly CONNECTION_ATTEMPT_TIMEOUT_MS = 8_000;
   private attemptTimer: ReturnType<typeof setTimeout> | null = null;
   private handshakeRequestId: string | null = null;
+  private runtimeIdentityConnectionId: string | null = null;
 
   // ── Pairing detection (gentle retry instead of exponential backoff) ──
   private pairingRequired = false;
@@ -146,17 +237,21 @@ export class GatewayConnection {
 
   // ── Last error for diagnostics (shown in OfflineOverlay) ──
   private lastError: string | null = null;
+  private readonly requestedScopes: readonly GatewayOperatorScope[];
+  private readonly transient: boolean;
 
   url = '';
+  /** Explicit/shared Gateway token. Device credentials are stored separately. */
   token = '';
-  /** Whether Desktop context was already injected with the first outgoing message. */
-  contextSent = false;
+  deviceToken = '';
 
   // ── Event callback (set by ChatHandler) ──
   /** Called for every incoming non-response event from the WebSocket. */
   onEvent: (msg: any) => void = () => {};
 
-  constructor() {
+  constructor(options: GatewayConnectionOptions = {}) {
+    this.requestedScopes = [...new Set(options.scopes?.length ? options.scopes : DAILY_OPERATOR_SCOPES)];
+    this.transient = options.transient === true;
     // Register message handlers once — they never change and MessageRouter
     // uses set() semantics, so calling this in connect() would be a no-op,
     // but initializing here is the correct ownership model.
@@ -200,12 +295,17 @@ export class GatewayConnection {
   // Message Queue Management
   // ══════════════════════════════════════════════════════
 
-  enqueueMessage(message: string, attachments?: any[], sessionKey?: string) {
+  enqueueMessage(
+    message: string,
+    attachments: any[] | undefined,
+    sessionKey: string | undefined,
+    idempotencyKey: string,
+    sessionId?: string,
+  ) {
     if (this.messageQueue.length >= this.MAX_QUEUE_SIZE) {
-      debugWarn('gateway', '[GW] Queue full — dropping oldest message');
-      this.messageQueue.shift();
+      throw new GatewayMessageQueueFullError(this.MAX_QUEUE_SIZE);
     }
-    this.messageQueue.push({ message, attachments, sessionKey });
+    this.messageQueue.push({ message, attachments, sessionKey, idempotencyKey, sessionId });
     debugLog('gateway', '[GW] 📦 Queued message — queue size:', this.messageQueue.length);
   }
 
@@ -214,17 +314,21 @@ export class GatewayConnection {
     debugLog('gateway', '[GW] 📤 Flushing', this.messageQueue.length, 'queued messages');
     const queued = [...this.messageQueue];
     this.messageQueue = [];
-    for (const item of queued) {
+    for (let index = 0; index < queued.length; index += 1) {
+      const item = queued[index];
       try {
         await this.request('chat.send', {
           sessionKey: item.sessionKey || 'agent:main:main',
           message: item.message,
-          idempotencyKey: `aegis-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          idempotencyKey: item.idempotencyKey,
+          ...(item.sessionId ? { sessionId: item.sessionId } : {}),
           ...(item.attachments?.length ? { attachments: item.attachments } : {}),
         });
       } catch (err) {
         debugError('gateway', '[GW] Failed to flush queued message:', err);
-        this.messageQueue.unshift(item);
+        // Preserve the failed item and every item that had not been attempted.
+        // New messages queued concurrently remain behind this older batch.
+        this.messageQueue = [...queued.slice(index), ...this.messageQueue];
         break;
       }
     }
@@ -252,9 +356,15 @@ export class GatewayConnection {
   // Connect / Disconnect
   // ══════════════════════════════════════════════════════
 
-  connect(url: string, token: string, resetReconnectAttempts = true) {
+  connect(
+    url: string,
+    token: string,
+    deviceToken = '',
+    resetReconnectAttempts = true,
+  ) {
     this.url = url;
     this.token = token;
+    this.deviceToken = deviceToken;
     resetReconnectAttempts ? this.retryPolicy.begin() : this.retryPolicy.beginRetry();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -269,7 +379,6 @@ export class GatewayConnection {
 
     this.connecting = true;
     this.lastError = null;
-    this.contextSent = false; // Reset context injection for new connection
     this.emitStatus();
 
     debugLog('gateway', '[GW] Connecting:', url);
@@ -315,21 +424,30 @@ export class GatewayConnection {
       debugLog('gateway', '[GW] Closed:', event.code, event.reason);
       this.stopHeartbeat();
       this.clearAttemptTimers();
-      stopPolling();
+      if (!this.transient) stopPolling();
       this.connected = false;
       this.connecting = false;
       this.ws = null;
+      if (!this.transient) this.invalidateObservedRuntimeIdentity();
       this.rejectAllPending(event.reason || 'Gateway connection closed');
       this.emitStatus();
 
-      // Close code 1008 = pairing required (Gateway scope rejection)
-      if (event.code === 1008) {
-        this.pairingRequired = true;
+      // 1008 is a generic policy close. Only the structured Gateway code (or a
+      // legacy reason that explicitly says pairing required) may enter pairing.
+      if (!this.pairingRequired) {
+        const closeIssue = classifyGatewayAuthorizationError({ message: event.reason });
+        if (closeIssue?.kind === 'pairing_required') {
+          this.pairingRequired = true;
+          this.emitAuthorizationIssue(closeIssue);
+        }
+      }
+
+      if (this.transient) {
+        return;
       }
 
       // Pairing required — gentle retry instead of exponential backoff
       if (this.pairingRequired) {
-        this.callbacks?.onScopeError?.(event.reason || 'pairing required');
         this.schedulePairingRetry();
         return;
       }
@@ -359,6 +477,7 @@ export class GatewayConnection {
     this.rejectAllPending('Gateway connection closed');
     this.connected = false;
     this.connecting = false;
+    if (!this.transient) this.invalidateObservedRuntimeIdentity();
     this.emitRetryState('idle');
     this.emitStatus();
   }
@@ -376,7 +495,7 @@ export class GatewayConnection {
     this.emitRetryState('backoff', { attempt: nextAttempt, delayMs });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.connect(this.url, this.token, false);
+      this.connect(this.url, this.token, this.deviceToken, false);
     }, delayMs);
   }
 
@@ -430,7 +549,7 @@ export class GatewayConnection {
     const id = this.nextId();
     this.handshakeRequestId = id;
     const handshakeSocket = this.ws;
-    const scopes = ['operator.read', 'operator.write', 'operator.admin'];
+    const scopes = [...this.requestedScopes];
     const clientId = 'openclaw-control-ui';
     const clientMode = 'ui';
 
@@ -441,8 +560,24 @@ export class GatewayConnection {
         debugLog('gateway', '[GW] Handshake response:', JSON.stringify(response).substring(0, 200));
         if (response.ok !== false && (response.payload?.type === 'hello-ok' || response.type === 'hello-ok')) {
           debugLog('gateway', '[GW] ✅ Connected!');
-          const auth = response.auth || response.payload?.auth;
-          if (auth?.deviceToken && window.aegis?.pairing?.saveToken) {
+          const helloPayload = response.payload?.type === 'hello-ok' ? response.payload : response;
+          const auth = helloPayload.auth;
+          if (!this.transient) {
+            const helloObservation = buildGatewayHelloObservation(this.url, helloPayload);
+            this.runtimeIdentityConnectionId = helloObservation.connectionId || null;
+            this.callbacks?.onHello?.(helloObservation);
+            void observeGatewayHello(helloObservation)
+              .then((identity) => {
+                if (this.ws === handshakeSocket && identity) {
+                  this.callbacks?.onRuntimeIdentity?.(identity);
+                }
+              })
+              .catch((error) => {
+                debugWarn('gateway', '[GW] Runtime identity attestation failed:', error);
+            });
+          }
+          if (!this.transient && auth?.deviceToken && window.aegis?.pairing?.saveToken) {
+            this.deviceToken = auth.deviceToken;
             window.aegis.pairing.saveToken(auth.deviceToken, this.url).catch(() => {});
           }
           this.connected = true;
@@ -457,14 +592,16 @@ export class GatewayConnection {
           this.startHeartbeat();
           this.emitRetryState('connected');
           this.emitStatus();
-          startPolling(this);
-          // Labels and deletes may be initiated by another OpenClaw client.
-          // Subscribe once per connected socket so those mutations propagate
-          // immediately instead of waiting for the 10s polling interval.
-          void this.request('sessions.subscribe', {}).catch((error) => {
-            debugWarn('gateway', '[GW] Unable to subscribe to session changes:', error);
-          });
-          this.flushQueue();
+          if (!this.transient) {
+            startPolling(this);
+            // Labels and deletes may be initiated by another OpenClaw client.
+            // Subscribe once per connected socket so those mutations propagate
+            // immediately instead of waiting for the 10s polling interval.
+            void this.request('sessions.subscribe', {}).catch((error) => {
+              debugWarn('gateway', '[GW] Unable to subscribe to session changes:', error);
+            });
+            this.flushQueue();
+          }
         } else {
           const err = response.error?.message || JSON.stringify(response);
           debugError('gateway', '[GW] ❌ Handshake failed:', err);
@@ -480,9 +617,9 @@ export class GatewayConnection {
         const errStr = String(err);
         debugError('gateway', '[GW] ❌ Handshake rejected:', errStr);
         this.connecting = false;
-        if (isAuthError({ message: errStr })) {
-          this.pairingRequired = true;
-        }
+        const authorizationIssue = classifyGatewayAuthorizationError(err);
+        this.pairingRequired = authorizationIssue?.kind === 'pairing_required';
+        this.lastError = errStr;
         this.emitStatus({ error: errStr });
         if (handshakeSocket && this.ws === handshakeSocket) {
           handshakeSocket.close(
@@ -498,6 +635,13 @@ export class GatewayConnection {
     // Build device identity if available (Electron IPC)
     // Gateway 2026.2.22+ requires v2 signatures.
     // If no challenge nonce arrived, skip device and use token-only auth.
+    const sharedToken = this.token.trim();
+    const storedDeviceToken = this.deviceToken.trim();
+    const authToken = sharedToken || storedDeviceToken;
+    // Match OpenClaw's client precedence: try the explicit shared token first.
+    // A stored device token is sent as deviceToken only when no shared token is
+    // available; a successful shared-token handshake rotates it via hello-ok.
+    const authDeviceToken = sharedToken ? '' : storedDeviceToken;
     let device: any = undefined;
     try {
       if (window.aegis?.device?.sign && this.challengeNonce) {
@@ -507,7 +651,7 @@ export class GatewayConnection {
           clientMode,
           role: 'operator',
           scopes,
-          token: this.token || '',
+          token: authToken,
         });
         if (signed.signature) {
           device = {
@@ -549,7 +693,10 @@ export class GatewayConnection {
         caps: ['streaming'],
         commands: [],
         permissions: {},
-        auth: { token: this.token },
+        auth: {
+          ...(authToken ? { token: authToken } : {}),
+          ...(authDeviceToken ? { deviceToken: authDeviceToken } : {}),
+        },
         device,
         locale,
         userAgent: `aegis-desktop/${APP_VERSION} (${platform})`,
@@ -568,6 +715,64 @@ export class GatewayConnection {
       const id = this.nextId();
       this.registerCallback(id, { resolve, reject }, options);
       this.send({ type: 'req', id, method, params });
+    });
+  }
+
+  /**
+   * Dispatch an identity-sensitive RPC only on the socket that produced the
+   * attested connection id. JavaScript cannot interleave a reconnect between
+   * the synchronous fence check and WebSocket.send; close/swap rejects the
+   * pending request, and the response path verifies the fence again.
+   */
+  async requestFenced(
+    method: string,
+    params: any,
+    expectedConnectionId: string,
+    options?: GatewayRequestOptions,
+  ): Promise<any> {
+    const expected = expectedConnectionId.trim();
+    const socket = this.ws;
+    const actual = this.runtimeIdentityConnectionId;
+    if (
+      !expected
+      || !socket
+      || !this.connected
+      || socket.readyState !== WebSocket.OPEN
+      || actual !== expected
+    ) {
+      throw new GatewayConnectionFenceError(expected, actual);
+    }
+
+    return new Promise((resolve, reject) => {
+      const id = this.nextId();
+      const verifyFence = () => this.ws === socket
+        && this.connected
+        && this.runtimeIdentityConnectionId === expected;
+      const rejectFenced = (error: unknown) => {
+        if (!verifyFence()) {
+          reject(new GatewayConnectionFenceError(expected, this.runtimeIdentityConnectionId));
+          return;
+        }
+        reject(error);
+      };
+      this.registerCallback(id, {
+        resolve: (value) => {
+          if (!verifyFence()) {
+            reject(new GatewayConnectionFenceError(expected, this.runtimeIdentityConnectionId));
+            return;
+          }
+          resolve(value);
+        },
+        reject: rejectFenced,
+      }, options);
+      try {
+        socket.send(JSON.stringify({ type: 'req', id, method, params }));
+      } catch (error) {
+        const pending = this.pendingRequests.get(id);
+        if (pending?.timer) clearTimeout(pending.timer);
+        this.pendingRequests.delete(id);
+        rejectFenced(error);
+      }
     });
   }
 
@@ -623,13 +828,14 @@ export class GatewayConnection {
         if (msg.ok !== false) {
           pending.resolve(msg.payload ?? msg);
         } else {
-          const error = msg.error || {};
-          const errorMsg = error.message || 'Request failed';
-          if (isAuthError(error)) {
-            debugWarn('gateway', '[GW] 🔑 Scope/auth error detected:', errorMsg);
-            this.callbacks?.onScopeError?.(errorMsg);
+          const error = gatewayRpcError(msg.error);
+          const authorizationIssue = classifyGatewayAuthorizationError(error);
+          if (authorizationIssue) {
+            debugWarn('gateway', '[GW] Authorization issue detected:', authorizationIssue.code);
+            if (authorizationIssue.kind === 'pairing_required') this.pairingRequired = true;
+            this.emitAuthorizationIssue(authorizationIssue);
           }
-          pending.reject(errorMsg);
+          pending.reject(error);
         }
       })
       // Generic events — forward to ChatHandler
@@ -640,6 +846,24 @@ export class GatewayConnection {
     // Any incoming message = connection alive — reset heartbeat timer
     this.resetHeartbeat();
     this.msgRouter.route(msg);
+  }
+
+  private emitAuthorizationIssue(issue: GatewayAuthorizationIssue): void {
+    if (this.callbacks?.onAuthorizationIssue) {
+      this.callbacks.onAuthorizationIssue(issue);
+      return;
+    }
+    this.callbacks?.onScopeError?.(issue.message);
+  }
+
+  private invalidateObservedRuntimeIdentity() {
+    const connectionId = this.runtimeIdentityConnectionId;
+    this.runtimeIdentityConnectionId = null;
+    if (!connectionId) return;
+    this.callbacks?.onRuntimeIdentity?.(null);
+    void invalidateGatewayRuntimeIdentity(connectionId).catch((error) => {
+      debugWarn('gateway', '[GW] Failed to invalidate runtime identity:', error);
+    });
   }
 
   // ══════════════════════════════════════════════════════
@@ -675,7 +899,7 @@ export class GatewayConnection {
     this.pairingRetryTimer = setTimeout(() => {
       if (this.pairingRequired && !this.connected && !this.connecting) {
         debugLog('gateway', '[GW] 🔑 Pairing retry...');
-        this.connect(this.url, this.token);
+        this.connect(this.url, this.token, this.deviceToken);
       }
     }, this.PAIRING_RETRY_MS);
   }
@@ -713,40 +937,11 @@ export class GatewayConnection {
     }
     this.connected = false;
     this.connecting = false;
+    this.invalidateObservedRuntimeIdentity();
     this.retryPolicy.reset();
     this.rejectAllPending('Gateway credentials changed');
     this.token = newToken;
-    setTimeout(() => this.connect(this.url, newToken), 300);
-  }
-
-  /** Request pairing via Gateway HTTP API */
-  async requestPairing(): Promise<{ code: string; deviceId: string }> {
-    const httpUrl = this.getHttpBaseUrl();
-    debugLog('gateway', '[GW] 🔑 Requesting pairing from:', httpUrl);
-    const res = await fetch(`${httpUrl}/v1/pair`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        clientId: 'openclaw-control-ui',
-        clientName: 'JunQi Desktop',
-        platform: detectPlatform(),
-        scopes: ['operator.read', 'operator.write', 'operator.admin'],
-      }),
-    });
-    if (!res.ok) {
-      throw new Error(`Pairing request failed: ${res.status} ${res.statusText}`);
-    }
-    return res.json();
-  }
-
-  /** Poll pairing status until approved or timeout */
-  async pollPairingStatus(deviceId: string): Promise<{ status: string; token?: string }> {
-    const httpUrl = this.getHttpBaseUrl();
-    const res = await fetch(`${httpUrl}/v1/pair/${encodeURIComponent(deviceId)}/status`);
-    if (!res.ok) {
-      throw new Error(`Pairing poll failed: ${res.status}`);
-    }
-    return res.json();
+    setTimeout(() => this.connect(this.url, newToken, this.deviceToken), 300);
   }
 
   // ── Enable reasoning visibility for a session (lazy) ──

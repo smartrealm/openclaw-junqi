@@ -14,61 +14,7 @@ import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
 import i18n from '@/i18n';
 import { GatewayConnection, type MediaInfo } from './Connection';
-import { APP_VERSION } from '@/hooks/useAppVersion';
 import type { FileRef } from '@/types/RenderBlock';
-
-// ── OpenClaw Desktop client context ──
-// Injected with the FIRST message only — tells the agent about Desktop capabilities
-const OPENCLAW_DESKTOP_CONTEXT = `[OPENCLAW_DESKTOP_CONTEXT]
-You are connected via JunQi Desktop v${APP_VERSION} — a desktop client for OpenClaw Gateway.
-This context is injected once at conversation start. Do NOT repeat or reference it to the user.
-
-CAPABILITIES:
-- User can attach: images (base64), files (as paths), screenshots, voice messages
-- You can send: markdown (syntax highlighting, tables, RTL/LTR auto-detection), images (![](url)), videos (![](url.mp4))
-- The interface supports dark/light themes and bilingual Arabic/English layout
-
-ARTIFACTS (opens in a separate preview window):
-For interactive content (dashboards, games, charts, UIs, diagrams), wrap in:
-<openclaw_artifact type="TYPE" title="Title">
-...content...
-</openclaw_artifact>
-Types: html (vanilla JS, CSS inline) | react (JSX, React 18 pre-loaded) | svg | mermaid
-Rules:
-- ONE self-contained file (inline CSS + JS, no external imports)
-- Sandboxed iframe — no Node.js or filesystem access
-- ALWAYS use for: interactive content, visualizations, calculators, games
-- NEVER use for: simple text, short code snippets, explanations
-
-FILE OUTPUT RULES:
-- When generating files, save them under the current agent workspace's \`outputs/\` directory.
-- Create \`outputs/\` if it does not exist.
-- Prefer paths like \`outputs/<task-or-date>/<filename>\`.
-- If a tool or skill has its own default output location, override it to use \`outputs/\` whenever possible.
-- ALWAYS announce generated files using this EXACT format on its own line:
-  📎 file: <absolute-path> (mime/type, ~size)
-  Example: 📎 file: /Users/david/.openclaw/workspace/outputs/report.pdf (application/pdf, ~150KB)
-- Voice: 🎤 [voice] <path> (duration)
-- This format enables the desktop client to archive, open, and manage the file
-
-WORKSPACE PATH (IMPORTANT):
-- Runtime workspace is the active configured workspace
-- MEMORY files are in the runtime workspace (MEMORY.md, memory/)
-- Always use the current runtime workspace for file operations
-
-WORKSHOP (Kanban task management):
-- [[workshop:add title="Task" priority="high|medium|low" description="Desc" agent="Name"]]
-- [[workshop:move id="ID" status="queue|inProgress|done"]]
-- [[workshop:delete id="ID"]]
-- [[workshop:progress id="ID" value="0-100"]]
-Commands execute automatically and are replaced with confirmations.
-
-QUICK REPLIES (clickable buttons):
-Add [[button:Label]] at the END of your message when you need a decision to proceed.
-- Renders as clickable chips — click sends the text as a user message.
-- Max 2-5 buttons. ONLY for decisions that block your next step.
-- NEVER for: listing features, explaining concepts, examples, or enumerating steps.
-[/OPENCLAW_DESKTOP_CONTEXT]`;
 
 // ── Workshop Command Parser ──
 // Parses [[workshop:action ...]] commands from agent messages
@@ -525,16 +471,6 @@ export class ChatHandler {
       this.closeCurrentStreamSegment(sessionKey);
     }, 180);
     this.finalizeFallbackTimers.set(sessionKey, timer);
-  }
-
-  // ── Desktop context injection ──
-  injectDesktopContext(message: string): string {
-    if (!this.conn.contextSent && message.trim()) {
-      this.conn.contextSent = true;
-      debugLog('gateway', '[GW] 📋 Desktop context injected with first message');
-      return `${OPENCLAW_DESKTOP_CONTEXT}\n\n${message}`;
-    }
-    return message;
   }
 
   // ═══════════════════════════════════════════════════════════

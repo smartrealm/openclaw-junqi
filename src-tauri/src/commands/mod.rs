@@ -1,4 +1,6 @@
 pub mod cli_tools;
+pub mod collaboration_bootstrap;
+pub mod collaboration_owner;
 pub mod font;
 
 pub mod agent_assist;
@@ -18,6 +20,7 @@ pub mod ensure;
 pub mod fs_neu;
 pub mod fs_watcher;
 pub mod gateway;
+pub mod gateway_credentials;
 pub mod gateway_logs;
 pub mod gateway_rescue;
 pub(crate) mod gateway_service;
@@ -49,6 +52,7 @@ pub mod project_config;
 pub mod provider_oauth;
 pub mod pty_neu;
 pub mod quickchat;
+pub mod runtime_identity;
 pub(crate) mod runtime_policy;
 pub mod screenshot;
 pub mod secret_store;

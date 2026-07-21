@@ -21,11 +21,16 @@ import { invoke } from '@tauri-apps/api/core';
 import { X, FileText, Folder, Sparkles, Minus, Maximize2, GripVertical, Square } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { AudioPlayer } from '@/components/Chat/AudioPlayer';
+import { createClientMessageId } from '@/services/gateway/messageIdentity';
+import { chatSendCoordinator } from '@/services/chat/sendTransaction';
+import {
+  createPreparedAttachment,
+  displayAttachments,
+  toGatewayAttachments,
+} from '@/services/chat/attachments';
 import { useTranslation } from 'react-i18next';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
@@ -34,6 +39,8 @@ interface SeedFile {
   name: string;
   isDir: boolean;
 }
+
+const EMPTY_MESSAGES: ReturnType<typeof useChatStore.getState>['messages'] = [];
 
 function parseName(p: string): SeedFile {
   // Strip file:// prefix that some OSes tack on, also handle URLs.
@@ -67,7 +74,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   // WebView's chat store. Gateway history remains the cross-window authority.
   // gateway streams without us re-implementing the stream pipeline.
   const messages = useChatStore((s) =>
-    sessionKey ? s.messagesPerSession[sessionKey] ?? [] : []
+    sessionKey ? s.messagesPerSession[sessionKey] ?? EMPTY_MESSAGES : EMPTY_MESSAGES
   );
   const lastAssistantMessage = (() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -132,34 +139,43 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     voiceRuntime.interruptGlobally(sessionKey);
     setSending(true);
 
-    // Build a context-rich initial message: attachment list + the user text.
-    const attachmentLines = files.map(f => `- ${f.isDir ? 'DIR' : 'FILE'} ${f.name} (${f.path})`).join('\n');
-    const fullMessage = `${t('pet.quickChat.attachmentIntro')}\n${attachmentLines}\n\n${trimmed}`;
+    const directoryLines = files
+      .filter((file) => file.isDir)
+      .map((file) => `- DIR ${file.name} (${file.path})`)
+      .join('\n');
+    const fullMessage = directoryLines
+      ? `${t('pet.quickChat.attachmentIntro')}\n${directoryLines}\n\n${trimmed}`
+      : trimmed;
 
     // The session is created at mount so Gateway callbacks can be scoped before
     // the first request is sent.
     const key = sessionKey;
 
     try {
-      // Keep this WebView's message lifecycle explicit without selecting or
-      // persisting the session as a main-window navigation tab.
-      useChatStore.getState().addMessage({
-        id: `qc-${Date.now()}`,
-        role: 'user',
-        content: fullMessage,
-        timestamp: new Date().toISOString(),
-      }, key);
-
-      // Stream reply inline — we read the assistant message that the
-      // chat store fills as tokens arrive. Set sending state and the
-      // store will update lastAssistant on every chunk.
-      try {
-        await gateway.sendMessage(fullMessage, undefined, key);
-      } catch (err: any) {
-        setStreamedReply(t('pet.quickChat.sendError', { error: err?.message ?? String(err) }));
-      }
-
+      const clientMessageId = createClientMessageId();
+      const prepared = await Promise.all(files.filter((file) => !file.isDir).map(async (seed) => {
+        const file = await window.aegis?.file?.read(seed.path);
+        if (!file) throw new Error(`Unable to read ${seed.name}`);
+        return createPreparedAttachment({
+          fileName: file.name,
+          mimeType: file.mimeType,
+          base64: file.base64,
+          size: file.size,
+          preview: file.isImage ? `data:${file.mimeType};base64,${file.base64}` : undefined,
+          sourcePath: seed.path,
+        });
+      }));
+      const attachments = toGatewayAttachments(prepared);
+      await chatSendCoordinator.send({
+        sessionKey: key,
+        message: fullMessage,
+        clientMessageId,
+        attachments: attachments.length ? attachments : undefined,
+        displayAttachments: displayAttachments(prepared),
+      });
       setText('');
+    } catch (err: any) {
+      setStreamedReply(t('pet.quickChat.sendError', { error: err?.message ?? String(err) }));
     } finally {
       setSending(false);
       setTimeout(() => messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }), 30);

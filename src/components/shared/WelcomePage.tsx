@@ -189,8 +189,8 @@ export function WelcomePage({ onLaunchTool, onOpenProject }: WelcomePageProps) {
   const projectLoadId = useRef(0);
 
   const workshopTasks = useWorkshopStore((state) => state.tasks);
-  const sessions = useChatStore((state) => state.sessions ?? []);
-  const messagesPerSession = useChatStore((state) => state.messagesPerSession ?? {});
+  const sessions = useChatStore((state) => state.sessions);
+  const messagesPerSession = useChatStore((state) => state.messagesPerSession);
 
   const refreshProjects = useCallback(async () => {
     const loadId = ++projectLoadId.current;

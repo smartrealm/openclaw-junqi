@@ -7,6 +7,10 @@ import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
 import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import { gateway } from '@/services/gateway';
+import type {
+  PreparedAttachment,
+  QueuedChatMessage,
+} from '@/services/chat/types';
 import { useSettingsStore } from './settingsStore';
 import {
   coalesceSessionsByKey,
@@ -25,6 +29,7 @@ const MAIN_SESSION = 'agent:main:main';
 const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
 const OPEN_TABS_PREFS_KEY = 'aegis-open-tabs';
 const SESSION_PIN_PREFS_KEY = 'aegis:session-pin-prefs';
+const drainingQueueSessions = new Set<string>();
 
 function persistOpenTabs(tabs: string[]): void {
   try {
@@ -256,14 +261,21 @@ function isLocalPlaceholderSession(session: Session): boolean {
 
 export interface ChatMessage {
   id: string;
+  /** Stable Desktop idempotency key for an optimistic user message. */
+  clientMessageId?: string;
+  /** OpenClaw transcript message id. Required before a collaboration can anchor here. */
+  nativeMessageId?: string;
   role: 'user' | 'assistant' | 'system' | 'tool' | 'compaction';
   /** Optional subtype — e.g. 'model-switch' for inline model-change notices. */
   kind?: 'model-switch' | string;
   content: string;
+  /** Original structured Gateway blocks retained for tool/thinking projection. */
+  rawContent?: unknown;
   timestamp: string;
   runId?: string | null;
   responseState?: 'streaming' | 'final' | 'error' | 'aborted';
-  status?: 'sent' | 'queued' | 'cancelled';
+  status?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  deliveryError?: string;
   isStreaming?: boolean;
   mediaUrl?: string;
   mediaType?: string;
@@ -278,6 +290,7 @@ export interface ChatMessage {
   toolOutput?: string;
   toolStatus?: 'running' | 'done' | 'error';
   toolDurationMs?: number;
+  toolCallId?: string;
   // Thinking/reasoning content (saved after streaming completes)
   thinkingContent?: string;
   fileRefs?: FileRef[];
@@ -286,10 +299,15 @@ export interface ChatMessage {
   sessionEvents?: SessionEvent[];
   usage?: Record<string, number>;
   model?: string | null;
+  nativeSequence?: number;
+  historyTruncated?: boolean;
+  historyTruncationReason?: string;
 }
 
 export interface Session {
   key: string;
+  /** Ephemeral OpenClaw session identity. Changes after reset/new. */
+  sessionId?: string;
   label: string;
   agentId?: string;
   createdAt?: number | string;
@@ -347,6 +365,7 @@ interface ChatState {
   // Messages (active session)
   messages: ChatMessage[];
   addMessage: (msg: ChatMessage, sessionKey?: string) => void;
+  updateMessage: (sessionKey: string, messageId: string, patch: Partial<ChatMessage>) => void;
   updateStreamingMessage: (
     id: string,
     content: string,
@@ -394,6 +413,7 @@ interface ChatState {
   sessions: Session[];
   activeSessionKey: string;
   setSessions: (sessions: Session[], defaults?: { model: string | null; contextTokens: number | null }) => void;
+  setSessionIdentity: (key: string, sessionId: string, agentId?: string) => void;
   /** Append a new session to the sidebar immediately (before the gateway's
    *  sessions.list reply). Used by per-agent "+ New Session" buttons in
    *  the sidebar: create the row and mark it active — the gateway catches
@@ -463,8 +483,10 @@ interface ChatState {
   isTyping: boolean;
   typingBySession: Record<string, boolean>;
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
-  messageQueue: Record<string, Array<{ id: string; text: string; timestamp: string }>>;
+  messageQueue: Record<string, QueuedChatMessage[]>;
+  enqueueMessage: (sessionKey: string, message: QueuedChatMessage) => void;
   drainQueue: (sessionKey: string) => Promise<void>;
+  retryQueuedMessage: (sessionKey: string, id: string) => Promise<void>;
   clearQueue: (sessionKey: string) => void;
   queueSize: (sessionKey: string) => number;
 
@@ -480,6 +502,9 @@ interface ChatState {
   setDraftAttachments: (key: string, paths: string[]) => void;
   addDraftAttachment: (key: string, path: string) => void;
   removeDraftAttachment: (key: string, path: string) => void;
+  /** Binary-safe, fully prepared attachments isolated by session. */
+  preparedAttachments: Record<string, PreparedAttachment[]>;
+  setPreparedAttachments: (key: string, files: PreparedAttachment[]) => void;
   removeQueuedMessage: (sessionKey: string, id: string) => void;
   updateQueuedMessage: (sessionKey: string, id: string, newText: string) => void;
   isSending: boolean;
@@ -546,6 +571,7 @@ const createRawHistoryPayload = (messages: ChatMessage[], sessionKey: string) =>
     runId: msg.runId,
     role: msg.role,
     content: msg.content,
+    rawContent: msg.rawContent,
     timestamp: msg.timestamp,
     responseState: msg.responseState,
     toolName: msg.toolName,
@@ -667,6 +693,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           role: msg.role,
           kind: msg.kind,
           content: msg.content,
+          rawContent: msg.rawContent,
           timestamp: msg.timestamp,
           responseState: msg.responseState,
           toolName: msg.toolName,
@@ -717,6 +744,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         },
       };
     });
+  },
+
+  updateMessage: (sessionKey, messageId, patch) => {
+    const state = get();
+    const current = getSessionMessages(state, sessionKey);
+    const index = current.findIndex((message) => message.id === messageId);
+    if (index < 0) return;
+    const updated = [...current];
+    updated[index] = { ...updated[index], ...patch };
+    get().setMessages(updated, sessionKey);
   },
 
   updateStreamingMessage: (id, content, extra, sessionKey) => {
@@ -1102,6 +1139,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     removedCanonicalSessionKeys.forEach((key) => get().removeSession(key));
   },
 
+  setSessionIdentity: (key, sessionId, agentId) => set((state) => ({
+    sessions: upsertSession(state.sessions, key, (session) => ({
+      ...session,
+      sessionId,
+      ...(agentId ? { agentId } : {}),
+    })),
+  })),
+
   setActiveSession: (key) => {
     if (isSessionDeleted(key)) return;
     const state = get();
@@ -1263,6 +1308,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       draftAttachments: { ...s.draftAttachments, [key]: next },
     };
   }),
+  preparedAttachments: {} as Record<string, PreparedAttachment[]>,
+  setPreparedAttachments: (key, files) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : { preparedAttachments: { ...state.preparedAttachments, [key]: files } }
+  )),
 
   // ── Tabs ──
   openTabs: (() => {
@@ -1376,6 +1427,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { [key]: _draft, ...restDrafts } = state.drafts;
     const { [key]: _queue, ...restMessageQueue } = state.messageQueue;
     const { [key]: _attachments, ...restDraftAttachments } = state.draftAttachments;
+    const { [key]: _prepared, ...restPreparedAttachments } = state.preparedAttachments;
     const msgs = restMessages[newActive] || [];
     const blocks = restBlocks[newActive];
     const groups = restGroupsCache[newActive];
@@ -1394,6 +1446,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       drafts: restDrafts,
       messageQueue: restMessageQueue,
       draftAttachments: restDraftAttachments,
+      preparedAttachments: restPreparedAttachments,
       quickReplies: restQuickReplies[newActive] || [],
       thinkingText: restThinking[newActive]?.text || '',
       thinkingRunId: restThinking[newActive]?.runId || null,
@@ -1461,43 +1514,107 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isTyping: false,
   typingBySession: {},
   messageQueue: {},
+  enqueueMessage: (sessionKey, message) => set((state) => ({
+    messageQueue: {
+      ...state.messageQueue,
+      [sessionKey]: [...(state.messageQueue[sessionKey] || []), message],
+    },
+  })),
   drainQueue: async (sessionKey) => {
-    if (isSessionDeleted(sessionKey)) return;
-    const { messageQueue } = get();
-    const queue = [...(messageQueue[sessionKey] || [])];
-    if (queue.length === 0) return;
-    const next = queue.shift()!;
-    set({ messageQueue: { ...get().messageQueue, [sessionKey]: queue } });
+    if (isSessionDeleted(sessionKey) || drainingQueueSessions.has(sessionKey)) return;
+    const next = get().messageQueue[sessionKey]?.[0];
+    if (!next || next.failed) return;
+    drainingQueueSessions.add(sessionKey);
     // Mark typing so the drained reply is tracked through its lifecycle — its
     // completion (typing true→false) re-triggers the App.tsx drain subscription
     // to send the next queued item. Without this the subscription would fire in
     // a tight loop (typing stays false) and the reply would show no indicator.
     // User message appears in chat BEFORE AI starts replying
     get().addMessage({
-      id: next.id, role: 'user', content: next.text,
-      timestamp: next.timestamp, status: 'sent' as const,
+      id: next.id,
+      clientMessageId: next.id,
+      role: 'user', content: next.text,
+      timestamp: next.timestamp, status: 'pending' as const,
+      ...(next.displayAttachments?.length ? { attachments: next.displayAttachments } : {}),
     }, sessionKey);
+    get().updateMessage(sessionKey, next.id, { status: 'pending', deliveryError: undefined });
     get().setIsTyping(true, sessionKey);
     try {
-      await gateway.sendMessage(next.text, undefined, sessionKey);
-    } catch { /* gateway handles retry */ }
+      const result = await gateway.sendMessage(next.text, next.attachments, sessionKey, {
+        clientMessageId: next.id,
+        sessionId: next.sessionId,
+      }) as { queued?: boolean } | undefined;
+      set((state) => ({
+        messageQueue: {
+          ...state.messageQueue,
+          [sessionKey]: (state.messageQueue[sessionKey] || []).filter((item) => item.id !== next.id),
+        },
+      }));
+      get().updateMessage(sessionKey, next.id, {
+        status: result?.queued ? 'queued' : 'sent',
+        deliveryError: undefined,
+      });
+      if (result?.queued) get().setIsTyping(false, sessionKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || 'Message delivery failed');
+      set((state) => ({
+        messageQueue: {
+          ...state.messageQueue,
+          [sessionKey]: (state.messageQueue[sessionKey] || []).map((item) => (
+            item.id === next.id ? { ...item, failed: true, error: message } : item
+          )),
+        },
+      }));
+      get().updateMessage(sessionKey, next.id, { status: 'failed', deliveryError: message });
+      get().setIsTyping(false, sessionKey);
+    } finally {
+      drainingQueueSessions.delete(sessionKey);
+    }
   },
-  clearQueue: (sessionKey) => set((s) => {
-    const q = s.messageQueue[sessionKey] || [];
-    const ids = new Set(q.map((m) => m.id));
-    return {
-      messageQueue: { ...s.messageQueue, [sessionKey]: [] },
-      messagesPerSession: { ...s.messagesPerSession, [sessionKey]: (s.messagesPerSession[sessionKey] || []).map((m) => ids.has(m.id) ? { ...m, status: 'cancelled' as const } : m) },
-    };
-  }),
-  removeQueuedMessage: (sessionKey, id) => set((s) => ({
-    messageQueue: { ...s.messageQueue, [sessionKey]: (s.messageQueue[sessionKey] || []).filter((m) => m.id !== id) },
-    messagesPerSession: { ...s.messagesPerSession, [sessionKey]: (s.messagesPerSession[sessionKey] || []).map((m) => m.id === id ? { ...m, status: 'cancelled' as const } : m) },
-  })),
-  updateQueuedMessage: (sessionKey, id, newText) => set((s) => ({
-    messageQueue: { ...s.messageQueue, [sessionKey]: (s.messageQueue[sessionKey] || []).map((m) => m.id === id ? { ...m, text: newText } : m) },
-    messagesPerSession: { ...s.messagesPerSession, [sessionKey]: (s.messagesPerSession[sessionKey] || []).map((m) => m.id === id ? { ...m, content: newText } : m) },
-  })),
+  retryQueuedMessage: async (sessionKey, id) => {
+    set((state) => ({
+      messageQueue: {
+        ...state.messageQueue,
+        [sessionKey]: (state.messageQueue[sessionKey] || []).map((item) => (
+          item.id === id ? { ...item, failed: false, error: undefined } : item
+        )),
+      },
+    }));
+    await get().drainQueue(sessionKey);
+  },
+  clearQueue: (sessionKey) => {
+    const queuedIds = new Set((get().messageQueue[sessionKey] || []).map((message) => message.id));
+    set((state) => ({
+      messageQueue: { ...state.messageQueue, [sessionKey]: [] },
+    }));
+    if (queuedIds.size === 0) return;
+
+    const messages = getSessionMessages(get(), sessionKey);
+    if (!messages.some((message) => queuedIds.has(message.id))) return;
+    get().setMessages(messages.map((message) => (
+      queuedIds.has(message.id) ? { ...message, status: 'cancelled' as const } : message
+    )), sessionKey);
+  },
+  removeQueuedMessage: (sessionKey, id) => {
+    set((state) => ({
+      messageQueue: {
+        ...state.messageQueue,
+        [sessionKey]: (state.messageQueue[sessionKey] || []).filter((message) => message.id !== id),
+      },
+    }));
+    get().updateMessage(sessionKey, id, { status: 'cancelled' });
+  },
+  updateQueuedMessage: (sessionKey, id, newText) => {
+    set((state) => ({
+      messageQueue: {
+        ...state.messageQueue,
+        [sessionKey]: (state.messageQueue[sessionKey] || []).map((message) => (
+          message.id === id ? { ...message, text: newText } : message
+        )),
+      },
+    }));
+    get().updateMessage(sessionKey, id, { content: newText });
+  },
   queueSize: (sessionKey) => (get().messageQueue[sessionKey] || []).length,
   setIsTyping: (typing, sessionKey) =>
     set((state) => {

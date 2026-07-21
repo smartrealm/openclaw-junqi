@@ -1,0 +1,60 @@
+{
+  "id": "junqi-collab",
+  "name": "JunQi Collaboration",
+  "version": "0.3.0",
+  "description": "Durable, auditable collaboration workflows across OpenClaw agents.",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "coordinatorAgentId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "allowedAgentIds": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 },
+        "uniqueItems": true,
+        "default": []
+      },
+      "maxConcurrency": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 16,
+        "default": 4
+      },
+      "maxWorkItems": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 64,
+        "default": 24
+      },
+      "attemptTimeoutMs": {
+        "type": "integer",
+        "minimum": 30000,
+        "maximum": 86400000,
+        "default": 1800000
+      },
+      "retentionDays": {
+        "type": "integer",
+        "minimum": 7,
+        "maximum": 3650,
+        "default": 365
+      }
+    }
+  },
+  "uiHints": {
+    "coordinatorAgentId": {
+      "label": "Coordinator agent"
+    },
+    "allowedAgentIds": {
+      "label": "Allowed agents"
+    },
+    "maxConcurrency": {
+      "label": "Maximum concurrency"
+    }
+  }
+}

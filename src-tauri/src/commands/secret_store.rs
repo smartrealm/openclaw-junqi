@@ -141,6 +141,64 @@ fn gateway_credential_account(endpoint: &str, scope: Option<&str>) -> Result<Str
     Ok(format!("endpoint:{digest:x}"))
 }
 
+/// This build includes an OS-backed keyring backend on every supported target.
+/// Runtime availability is still checked by each operation and never falls
+/// back to a plaintext file.
+pub(crate) fn system_credential_store_available() -> bool {
+    true
+}
+
+pub(crate) async fn store_system_credential(
+    service: &str,
+    account_id: &str,
+    _label: &str,
+    value: &str,
+) -> Result<(), String> {
+    let service = service.to_string();
+    let account_id = account_id.to_string();
+    let value = value.to_string();
+    tokio::task::spawn_blocking(move || {
+        credential_entry_for(&service, &account_id)?
+            .set_password(&value)
+            .map_err(|error| format!("store credential in system vault: {error}"))
+    })
+    .await
+    .map_err(|error| format!("credential store task failed: {error}"))?
+}
+
+pub(crate) async fn get_system_credential(
+    service: &str,
+    account_id: &str,
+) -> Result<Option<String>, String> {
+    let service = service.to_string();
+    let account_id = account_id.to_string();
+    tokio::task::spawn_blocking(move || {
+        match credential_entry_for(&service, &account_id)?.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(format!("read credential from system vault: {error}")),
+        }
+    })
+    .await
+    .map_err(|error| format!("credential read task failed: {error}"))?
+}
+
+pub(crate) async fn delete_system_credential(
+    service: &str,
+    account_id: &str,
+) -> Result<(), String> {
+    let service = service.to_string();
+    let account_id = account_id.to_string();
+    tokio::task::spawn_blocking(move || {
+        match credential_entry_for(&service, &account_id)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(format!("delete credential from system vault: {error}")),
+        }
+    })
+    .await
+    .map_err(|error| format!("credential delete task failed: {error}"))?
+}
+
 async fn store_in_keychain(account_id: &str, _label: &str, value: &str) -> Result<(), String> {
     let account_id = account_id.to_string();
     let value = value.to_string();
@@ -252,28 +310,7 @@ pub async fn list_provider_secrets() -> Result<Vec<StoredSecret>, String> {
 }
 
 #[tauri::command]
-pub async fn store_gateway_credential(
-    endpoint: String,
-    scope: Option<String>,
-    value: String,
-) -> Result<(), String> {
-    if value.trim().is_empty() {
-        return Err("Gateway credential cannot be empty".into());
-    }
-    let account_id = gateway_credential_account(&endpoint, scope.as_deref())?;
-    let value = value.trim().to_string();
-    let _guard = secret_operation().lock().await;
-    tokio::task::spawn_blocking(move || {
-        credential_entry_for(gateway_keychain_service_name(), &account_id)?
-            .set_password(&value)
-            .map_err(|error| format!("store Gateway credential in system vault: {error}"))
-    })
-    .await
-    .map_err(|error| format!("Gateway credential store task failed: {error}"))?
-}
-
-#[tauri::command]
-pub async fn get_gateway_credential(
+pub async fn get_legacy_gateway_credential(
     endpoint: String,
     scope: Option<String>,
 ) -> Result<Option<String>, String> {
@@ -293,7 +330,7 @@ pub async fn get_gateway_credential(
 }
 
 #[tauri::command]
-pub async fn delete_gateway_credential(
+pub async fn delete_legacy_gateway_credential(
     endpoint: String,
     scope: Option<String>,
 ) -> Result<(), String> {

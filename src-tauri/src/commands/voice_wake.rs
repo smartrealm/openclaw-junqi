@@ -522,6 +522,27 @@ fn run_vad_loop(
     }
 }
 
+fn finalize_wav(samples: &[i16], sample_rate: u32, channels: u16) -> Result<String, String> {
+    let spec = hound::WavSpec {
+        channels,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let mut writer = hound::WavWriter::new(Cursor::new(&mut buf), spec)
+            .map_err(|e| format!("WAV writer: {}", e))?;
+        for &s in samples {
+            let _ = writer.write_sample(s);
+        }
+        writer
+            .finalize()
+            .map_err(|e| format!("WAV finalize: {}", e))?;
+    }
+    Ok(STANDARD.encode(&buf))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{mark_worker_stopped, rms_u16, should_emit_command_stop, CaptureState, WakeState};
@@ -574,25 +595,4 @@ mod tests {
         assert!(!should_emit_command_stop(&replacement));
         assert!(should_emit_command_stop(&None));
     }
-}
-
-fn finalize_wav(samples: &[i16], sample_rate: u32, channels: u16) -> Result<String, String> {
-    let spec = hound::WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut buf: Vec<u8> = Vec::new();
-    {
-        let mut writer = hound::WavWriter::new(Cursor::new(&mut buf), spec)
-            .map_err(|e| format!("WAV writer: {}", e))?;
-        for &s in samples {
-            let _ = writer.write_sample(s);
-        }
-        writer
-            .finalize()
-            .map_err(|e| format!("WAV finalize: {}", e))?;
-    }
-    Ok(STANDARD.encode(&buf))
 }

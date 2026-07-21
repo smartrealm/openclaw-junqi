@@ -6,6 +6,7 @@ import {
   CircleAlert,
   ClipboardCopy,
   HeartPulse,
+  LockKeyhole,
   Loader2,
   Power,
   RefreshCw,
@@ -25,6 +26,7 @@ import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { GatewayLifecyclePanel } from './GatewayLifecyclePanel';
 import { runOpenClawRepair, useOpenClawRepairing } from '@/services/gateway/openclawRepair';
+import { useCollaborationMaintenance } from '@/hooks/useCollaborationMaintenance';
 
 const CATEGORY_ORDER: MaintenanceCategory[] = ['config', 'plugin', 'mcp', 'security', 'gateway', 'doctor'];
 
@@ -68,6 +70,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
   const [gatewayRecovering, setGatewayRecovering] = useState(false);
   const [gatewayRecoveryError, setGatewayRecoveryError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const collaborationMaintenance = useCollaborationMaintenance();
 
   const scan = useCallback(async () => {
     if (scanning || repairing) return;
@@ -113,7 +116,10 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
           setRepairing(true);
           setRequestError(null);
           try {
-            const repaired = await runOpenClawRepair();
+            const repaired = await collaborationMaintenance.runGuarded(
+              'openclaw-repair',
+              () => runOpenClawRepair(),
+            );
             if (!repaired) {
               showAlert(
                 t('maintenance.repairFailedTitle', '修复未完成'),
@@ -135,7 +141,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
         })();
       },
     );
-  }, [t]);
+  }, [collaborationMaintenance, t]);
 
   const copyReport = useCallback(async () => {
     if (!report) return;
@@ -254,6 +260,75 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
           </div>
         ) : null}
       </GlassCard>
+
+      {(collaborationMaintenance.status?.active || collaborationMaintenance.error) && (
+        <section
+          className="border-y border-aegis-warning/30 bg-aegis-warning/[0.05] px-4 py-3"
+          aria-label={t('maintenance.collaborationGate', '协作维护闸门')}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <LockKeyhole size={17} className="mt-0.5 shrink-0 text-aegis-warning" />
+              <div className="min-w-0">
+                <h3 className="text-[13px] font-semibold text-aegis-text">
+                  {collaborationMaintenance.status?.active
+                    ? t('maintenance.collaborationGateActive', '协作分派已因维护暂停')
+                    : t('maintenance.collaborationGateUnknown', '无法确认协作维护状态')}
+                </h3>
+                {collaborationMaintenance.status?.lease && (
+                  <p className="mt-1 break-words text-[11px] text-aegis-text-dim">
+                    {collaborationMaintenance.status.lease.reason}
+                    {' · '}
+                    {collaborationMaintenance.status.lease.owner}
+                  </p>
+                )}
+                {collaborationMaintenance.status?.activeRuns.length ? (
+                  <div className="mt-2 space-y-1">
+                    {collaborationMaintenance.status.activeRuns.slice(0, 5).map((run) => (
+                      <div key={run.runId} className="flex min-w-0 items-center gap-2 text-[11px] text-aegis-warning">
+                        <span className="min-w-0 flex-1 truncate">{run.goal || run.runId}</span>
+                        <span className="shrink-0 font-mono text-[10px] opacity-75">{run.status}</span>
+                      </div>
+                    ))}
+                    <p className="text-[10.5px] text-aegis-text-dim">
+                      {t('maintenance.collaborationRunsMustSettle', '活动运行必须先在会话中收敛；检修不会自动取消它们。')}
+                    </p>
+                  </div>
+                ) : null}
+                {collaborationMaintenance.error && (
+                  <p role="alert" className="mt-2 break-words text-[11px] text-aegis-danger">
+                    {collaborationMaintenance.error}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { void collaborationMaintenance.refresh(); }}
+                disabled={collaborationMaintenance.loading || collaborationMaintenance.recovering}
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-aegis-border/35 text-aegis-text-dim transition-colors hover:border-aegis-border/60 hover:text-aegis-text disabled:opacity-50"
+                title={t('maintenance.refreshCollaborationGate', '刷新协作维护状态')}
+              >
+                <RefreshCw size={13} className={collaborationMaintenance.loading ? 'animate-spin' : ''} />
+              </button>
+              {collaborationMaintenance.status?.active && (
+                <button
+                  type="button"
+                  onClick={() => { void collaborationMaintenance.recover(); }}
+                  disabled={collaborationMaintenance.recovering}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-warning/35 bg-aegis-warning/10 px-3 text-[11px] font-semibold text-aegis-warning transition-colors hover:bg-aegis-warning/15 disabled:opacity-50"
+                >
+                  {collaborationMaintenance.recovering
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <ShieldCheck size={12} />}
+                  {t('maintenance.verifyAndReleaseGate', '验证并解除')}
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="space-y-2">
         <GatewayLifecyclePanel variant="full" />

@@ -1,0 +1,154 @@
+name: Collaboration Gateway Release Evidence
+
+# This is a manually promoted producer. It deliberately fails closed while
+# the repository only has the partial P0 harness; it must never manufacture a
+# FULL_BEHAVIORAL JSON document from structural or unit-test results.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Immutable version tag to verify (for example v0.5.4).
+        required: true
+        type: string
+      source_sha:
+        description: Full commit SHA resolved by the trusted release promotion.
+        required: true
+        type: string
+
+concurrency:
+  group: collaboration-gateway-release-evidence-${{ inputs.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22.23.1"
+
+jobs:
+  produce:
+    name: Produce full isolated Gateway evidence
+    runs-on: ubuntu-latest
+    environment: production-release-evidence
+    timeout-minutes: 360
+    steps:
+      - name: Checkout immutable evidence source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify tag ref boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/tags/v"* ]] || { echo "::error::Evidence must run from a version tag"; exit 1; }
+          [[ "$GITHUB_REF_NAME" == "$GITHUB_EVENT_INPUTS_REF" ]] || { echo "::error::Selected ref does not match workflow input"; exit 1; }
+          [[ "$GITHUB_EVENT_INPUTS_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_sha must be a full commit SHA"; exit 1; }
+          [[ "$GITHUB_SHA" == "$GITHUB_EVENT_INPUTS_SOURCE_SHA" ]] || { echo "::error::Workflow event SHA does not match source_sha"; exit 1; }
+          actual_sha="$(git rev-parse 'HEAD^{commit}')"
+          [[ "$actual_sha" == "$GITHUB_EVENT_INPUTS_SOURCE_SHA" ]] || { echo "::error::Checked out source does not match source_sha"; exit 1; }
+        env:
+          GITHUB_EVENT_INPUTS_REF: ${{ inputs.ref }}
+          GITHUB_EVENT_INPUTS_SOURCE_SHA: ${{ inputs.source_sha }}
+
+      - name: Require trusted default-branch promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-evidence/gateway
+          printf '%s\n' '{"schemaVersion":1,"evidenceType":"GATEWAY","status":"BLOCKED","code":"TRUSTED_PROMOTION_REQUIRED","message":"Evidence producers cannot execute tag-owned workflow code; a protected default-branch promotion handoff is required."}' > release-evidence/gateway/blocker.json
+          exit 1
+
+      - name: Require provisioned full Gateway harness before install
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f scripts/verify-collaboration-full-gateway.mjs ]]; then
+            mkdir -p release-evidence/gateway
+            printf '%s\n' '{"schemaVersion":1,"evidenceType":"GATEWAY","status":"BLOCKED","code":"FULL_GATEWAY_HARNESS_REQUIRED","message":"The full real-Gateway harness is not provisioned; dependency installation is intentionally skipped."}' > release-evidence/gateway/blocker.json
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install exact dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run the full-scope producer (fail closed when incomplete)
+        run: >-
+          node scripts/run-collaboration-release-evidence.mjs
+          --type gateway
+          --output release-evidence/gateway/publish
+          --evidence-root release-evidence/gateway/partial
+
+      - name: Scan evidence artifacts for credentials
+        id: scan-evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d release-evidence/gateway/ ]]; then
+            node scripts/scan-evidence-artifacts.mjs --root release-evidence/gateway/
+          fi
+
+      - name: Upload blocked producer diagnostics
+        if: failure() && steps.scan-evidence.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: collaboration-gateway-release-evidence-blocked-${{ github.run_id }}
+          overwrite: true
+          path: release-evidence/gateway/blocker.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Verify collaboration-gateway-release-evidence.json is present
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f release-evidence/gateway/publish/collaboration-gateway-release-evidence.json
+          mapfile -d '' files < <(find release-evidence/gateway/publish -type f -print0)
+          [[ ${#files[@]} -ge 2 ]] || { echo '::error::Gateway evidence must include JSON and physical observation artifacts'; exit 1; }
+
+      - name: Upload collaboration-gateway-release-evidence
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: collaboration-gateway-release-evidence-${{ github.run_id }}
+          overwrite: true
+          path: release-evidence/gateway/publish/
+          if-no-files-found: error
+          retention-days: 90
+
+  attest:
+    name: Attest Gateway evidence
+    needs: produce
+    if: needs.produce.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download producer artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: collaboration-gateway-release-evidence-${{ github.run_id }}
+          path: release-evidence/gateway/publish
+
+      - name: Attest collaboration-gateway-release-evidence
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: release-evidence/gateway/publish/**

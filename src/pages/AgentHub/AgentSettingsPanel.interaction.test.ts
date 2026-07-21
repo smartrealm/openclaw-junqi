@@ -38,6 +38,7 @@ test('creating an agent persists selected skills as the native allowlist', async
 
   assert.match(page, /await gateway\.createAgent\(payload\)/);
   assert.match(page, /await persistAgentSkillFilter\(payload\.id, newAgentSkillKeys\)/);
+  assert.match(page, /created\?\.agentId !== payload\.id/);
   assert.doesNotMatch(page, /gateway\.createAgent\([^)]*skills/);
 });
 

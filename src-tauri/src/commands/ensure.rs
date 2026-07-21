@@ -69,7 +69,7 @@ fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {
 }
 
 /// 从 JunQi 管理的 Docker 配置读取 Gateway token。
-fn read_docker_gateway_token() -> Option<String> {
+pub(crate) fn read_docker_gateway_token() -> Option<String> {
     read_gateway_token(&paths::docker_config_path())
 }
 
@@ -201,12 +201,21 @@ pub async fn ensure_gateway_running(
         return ensure_selected_docker_gateway(app, &state, port).await;
     }
 
+    let (recorded_mode, managed_pid) = crate::commands::gateway::inspect_gateway_owner(&state)?;
+
     // 1. 本机配置端口已经可用，直接复用。
     if selected_native_gateway_ready(port).await {
         let token = read_gateway_token(&paths::config_path());
+        let serving_mode = if managed_pid.is_some() {
+            GatewayRuntimeMode::ManagedChild
+        } else if recorded_mode == GatewayRuntimeMode::None {
+            GatewayRuntimeMode::External
+        } else {
+            recorded_mode
+        };
         state.transition(
             Some(GatewayLifecycle::Running),
-            Some(GatewayRuntimeMode::External),
+            Some(serving_mode),
             None,
             "ensure_gateway_running: existing endpoint is healthy",
         );
@@ -227,14 +236,7 @@ pub async fn ensure_gateway_running(
     }
 
     // 2. 托管子进程仍在，但端口暂未可用，记录诊断信息。
-    let managed_alive = {
-        let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
-        if let Some(ref mut child) = *child_lock {
-            matches!(child.try_wait(), Ok(None))
-        } else {
-            false
-        }
-    };
+    let managed_alive = managed_pid.is_some();
     if managed_alive {
         push_log(&state.logs, LogSource::Lifecycle, LogLevel::Warn,
                  format!("ensure_gateway_running: managed native child alive but gateway port was not reachable on {}", port));

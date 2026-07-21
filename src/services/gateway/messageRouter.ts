@@ -3,34 +3,117 @@
 // Replaces if-else type chains in Connection.handleMessage.
 // ═══════════════════════════════════════════════════════════
 
-/** Structured auth/scope error detection — replaces fragile includes() chains. */
-const AUTH_ERROR_PATTERNS: readonly RegExp[] = [
-  /missing\s+scope/i,
-  /unauthorized/i,
-  /invalid\s+token/i,
-  /token\s+required/i,
-  // Match "auth" only as a whole word to avoid false positives like "batch auth"
-  /\bauth(\b|_)|\bauthentication\s+(failed|required)/i,
-] as const;
+export type GatewayAuthorizationIssueKind =
+  | 'pairing_required'
+  | 'credentials_missing'
+  | 'credentials_invalid'
+  | 'scope_denied'
+  | 'rate_limited'
+  | 'device_identity_required';
 
-/** Error codes from the gateway that indicate auth/scope issues. */
-const AUTH_ERROR_CODES: readonly string[] = [
+export interface GatewayAuthorizationIssue {
+  kind: GatewayAuthorizationIssueKind;
+  code: string;
+  message: string;
+  requestId?: string;
+  reason?: string;
+  recommendedNextStep?: string;
+}
+
+type ErrorRecord = Record<string, unknown>;
+
+const PAIRING_CODES = new Set(['PAIRING_REQUIRED']);
+const MISSING_CREDENTIAL_CODES = new Set([
   'AUTH_REQUIRED',
+  'AUTH_TOKEN_MISSING',
+  'AUTH_PASSWORD_MISSING',
+  'AUTH_TOKEN_NOT_CONFIGURED',
+  'AUTH_PASSWORD_NOT_CONFIGURED',
+  'TOKEN_REQUIRED',
+]);
+const INVALID_CREDENTIAL_CODES = new Set([
+  'AUTH_UNAUTHORIZED',
+  'AUTH_TOKEN_MISMATCH',
+  'AUTH_BOOTSTRAP_TOKEN_INVALID',
+  'AUTH_PASSWORD_MISMATCH',
+  'AUTH_DEVICE_TOKEN_MISMATCH',
   'INVALID_TOKEN',
-  'MISSING_SCOPE',
-  'UNAUTHORIZED',
   'TOKEN_EXPIRED',
-  'PAIRING_REQUIRED',
-] as const;
+  'UNAUTHORIZED',
+]);
+const SCOPE_CODES = new Set(['AUTH_SCOPE_MISMATCH', 'MISSING_SCOPE']);
+const RATE_LIMIT_CODES = new Set(['AUTH_RATE_LIMITED']);
+const DEVICE_IDENTITY_CODES = new Set([
+  'CONTROL_UI_DEVICE_IDENTITY_REQUIRED',
+  'DEVICE_IDENTITY_REQUIRED',
+]);
 
-export function isAuthError(error: { message?: string; code?: string }): boolean {
-  // Structured error code takes priority (deterministic, no false positives)
-  if (error.code && AUTH_ERROR_CODES.includes(error.code.toUpperCase())) return true;
+function asRecord(value: unknown): ErrorRecord | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as ErrorRecord
+    : null;
+}
 
-  // Fall back to message matching — but with word-boundary regex, not bare includes()
-  const msg = error.message;
-  if (typeof msg !== 'string') return false;
-  return AUTH_ERROR_PATTERNS.some(re => re.test(msg));
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function normalizedCode(value: unknown): string {
+  return nonEmptyString(value)?.toUpperCase() ?? '';
+}
+
+/**
+ * Normalize the current OpenClaw Gateway authorization contract. Pairing is
+ * carried in `error.details.code`; the outer code is often only UNAUTHORIZED.
+ * Keeping the categories separate prevents a stale token from being presented
+ * to the user as a device-approval request.
+ */
+export function classifyGatewayAuthorizationError(
+  value: unknown,
+): GatewayAuthorizationIssue | null {
+  const error = asRecord(value);
+  const details = asRecord(error?.details);
+  const message = nonEmptyString(error?.message)
+    ?? (typeof value === 'string' ? value.trim() : '')
+    ?? '';
+  const outerCode = normalizedCode(error?.code);
+  const detailCode = normalizedCode(details?.code);
+  const code = detailCode || outerCode;
+
+  let kind: GatewayAuthorizationIssueKind | null = null;
+  if (PAIRING_CODES.has(code) || /\bpairing\s+required\b/i.test(message)) {
+    kind = 'pairing_required';
+  } else if (MISSING_CREDENTIAL_CODES.has(code) || /\b(token|password)\s+(required|missing)\b/i.test(message)) {
+    kind = 'credentials_missing';
+  } else if (RATE_LIMIT_CODES.has(code) || /too many failed authentication attempts/i.test(message)) {
+    kind = 'rate_limited';
+  } else if (SCOPE_CODES.has(code) || /\bmissing\s+scope\b/i.test(message)) {
+    kind = 'scope_denied';
+  } else if (DEVICE_IDENTITY_CODES.has(code) || /\bdevice identity required\b/i.test(message)) {
+    kind = 'device_identity_required';
+  } else if (
+    INVALID_CREDENTIAL_CODES.has(code)
+    || /\b(invalid token|unauthorized|authentication failed|token mismatch)\b/i.test(message)
+  ) {
+    kind = 'credentials_invalid';
+  }
+
+  if (!kind) return null;
+  return {
+    kind,
+    code: code || outerCode || 'AUTHORIZATION_ERROR',
+    message: message || 'Gateway authorization failed',
+    ...(nonEmptyString(details?.requestId) ? { requestId: nonEmptyString(details?.requestId) } : {}),
+    ...(nonEmptyString(details?.reason) ? { reason: nonEmptyString(details?.reason) } : {}),
+    ...(nonEmptyString(details?.recommendedNextStep)
+      ? { recommendedNextStep: nonEmptyString(details?.recommendedNextStep) }
+      : {}),
+  };
+}
+
+/** Backward-compatible predicate for callers that only need a boolean. */
+export function isAuthError(error: unknown): boolean {
+  return classifyGatewayAuthorizationError(error) !== null;
 }
 
 export type MessageHandler = (msg: any) => void;

@@ -45,6 +45,7 @@ pub fn cache_status(status: HookInstallStatus) {
 }
 
 /// Read the cached install status.
+#[cfg(test)]
 pub fn current_status() -> HookInstallStatus {
     cached_status()
         .lock()
@@ -53,6 +54,7 @@ pub fn current_status() -> HookInstallStatus {
 }
 
 /// Whether the selected agent's hook configuration was installed successfully.
+#[cfg(test)]
 pub fn usable_for(_agent: &str) -> bool {
     let status = current_status();
     status.script_installed
@@ -68,8 +70,7 @@ pub fn usable_for(_agent: &str) -> bool {
 ///   2. `<app-config>/agent-hooks/claude-settings.json` — isolated settings
 ///      (passed to Claude via `--settings`, never mutates user's settings.json)
 ///
-/// Returns the install status. Subsequent `usable_for("claude")` returns true
-/// once the script + settings file exist on disk.
+/// Returns the install status once the script and settings file exist on disk.
 pub fn ensure_installed() -> HookInstallStatus {
     match install_hook_files() {
         Ok((script_path_str, settings_path_str, node_path_str)) => {

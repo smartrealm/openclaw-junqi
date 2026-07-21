@@ -1,9 +1,9 @@
-// Skill persona — optional persona carried by a skill. When present, the
-// SkillsPage exposes a "Start chat" action that injects this as the system
-// prompt of a new chat session via sessions.patch { systemPrompt }.
+// Skill persona — optional visible session instruction carried by a skill.
+// OpenClaw does not expose a per-session systemPrompt patch, so JunQi places
+// this content in the new session draft for the user to review and send.
 
 export type SkillPersona = {
-  /** System prompt body. */
+  /** User-reviewable session instruction. */
   prompt: string;
   /** Display label for the persona chip. Falls back to skill name. */
   label?: string;

@@ -7,7 +7,7 @@ mod window_adaptation;
 mod window_sizing;
 
 use commands::channel_enrollment::ChannelEnrollmentRegistry;
-use state::GatewayProcess;
+use state::{CollaborationControlState, GatewayProcess, RuntimeIdentityState};
 use tauri::{Emitter, Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -43,6 +43,8 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(GatewayProcess::new())
         .manage(ChannelEnrollmentRegistry::default())
+        .manage(RuntimeIdentityState::new())
+        .manage(CollaborationControlState::new())
         .invoke_handler(tauri::generate_handler![
             // Gateway
             commands::gateway::start_gateway,
@@ -75,13 +77,28 @@ pub fn run() {
             commands::terminal_integration::get_terminal_integration_status,
             commands::gateway_supervisor::get_gateway_lifecycle,
             commands::gateway_supervisor::get_gateway_runtime_snapshot,
+            commands::runtime_identity::resolve_gateway_runtime_identity,
+            commands::runtime_identity::get_gateway_runtime_identity,
+            commands::runtime_identity::clear_gateway_runtime_identity,
+            commands::collaboration_bootstrap::collaboration_bootstrap_probe,
+            commands::collaboration_bootstrap::collaboration_bootstrap_apply,
+            commands::collaboration_bootstrap::collaboration_bootstrap_status,
+            commands::collaboration_bootstrap::collaboration_bootstrap_recover,
+            commands::collaboration_bootstrap::collaboration_bootstrap_abandon,
+            commands::collaboration_bootstrap::collaboration_bootstrap_confirm_health,
+            commands::collaboration_bootstrap::collaboration_bootstrap_restart,
+            commands::collaboration_bootstrap::collaboration_bootstrap_configure,
+            commands::collaboration_owner::get_collaboration_maintenance_owner,
+            commands::gateway_credentials::get_gateway_credential,
+            commands::gateway_credentials::store_gateway_credential,
+            commands::gateway_credentials::delete_gateway_credential,
+            commands::gateway_credentials::migrate_gateway_credential,
             commands::secret_store::store_provider_secret,
             commands::secret_store::get_provider_secret,
             commands::secret_store::delete_provider_secret,
             commands::secret_store::list_provider_secrets,
-            commands::secret_store::store_gateway_credential,
-            commands::secret_store::get_gateway_credential,
-            commands::secret_store::delete_gateway_credential,
+            commands::secret_store::get_legacy_gateway_credential,
+            commands::secret_store::delete_legacy_gateway_credential,
             commands::session_labels::load_legacy_session_labels,
             commands::session_labels::remove_legacy_session_labels,
             commands::provider_oauth::start_provider_oauth,
@@ -577,7 +594,7 @@ pub fn run() {
             let state = app_handle.state::<GatewayProcess>();
             if let Ok(mut child_lock) = state.child.lock() {
                 if let Some(ref mut child) = *child_lock {
-                    let _ = child.start_kill();
+                    commands::gateway_supervisor::terminate_owned_gateway_now(child);
                 }
                 *child_lock = None;
             };

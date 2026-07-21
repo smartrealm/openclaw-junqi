@@ -61,7 +61,43 @@ pub async fn wait_for_port_free(port: u16, timeout_ms: u64) -> Result<u64, Strin
 pub async fn terminate_owned_gateway(child: &mut tokio::process::Child) {
     let pid = child.id().unwrap_or(0);
     eprintln!("[gateway_supervisor] terminating child (pid={})", pid);
-    crate::commands::process_control::terminate_process_tree(child, child.id()).await;
+
+    #[cfg(unix)]
+    if pid > 1 {
+        if let Ok(process_group) = i32::try_from(pid) {
+            // Managed children are process-group leaders. Signal descendants
+            // before the shared helper reaps the direct child.
+            let _ = unsafe { libc::kill(-process_group, libc::SIGKILL) };
+        }
+    }
+
+    if let Err(error) = crate::commands::process_control::terminate_process_tree_confirmed(
+        child,
+        (pid > 0).then_some(pid),
+    )
+    .await
+    {
+        eprintln!(
+            "[gateway_supervisor] process-tree cleanup was not confirmed for pid {}: {}",
+            pid, error
+        );
+    }
+}
+
+/// Best-effort synchronous exit hook for Tauri's non-async shutdown callback.
+pub fn terminate_owned_gateway_now(child: &mut tokio::process::Child) {
+    let pid = child.id().unwrap_or(0);
+    #[cfg(unix)]
+    if pid > 1 {
+        if let Ok(process_group) = i32::try_from(pid) {
+            let _ = unsafe { libc::kill(-process_group, libc::SIGKILL) };
+        }
+    }
+    #[cfg(windows)]
+    if pid > 0 {
+        crate::commands::process_control::request_windows_process_tree_termination(pid);
+    }
+    let _ = child.start_kill();
 }
 
 /// Tauri command: return the current lifecycle state for the frontend.

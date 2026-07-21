@@ -208,7 +208,7 @@ const INITIAL_DOCKER_STEPS: StepState[] = [
   { id: "gateway",   label: "Gateway",       status: "pending" },
 ];
 
-function cacheGatewayTarget(port?: number | null): void {
+function cacheGatewayTarget(port?: number | null, _token?: string | null): void {
   if (!port) return;
   try {
     const current = JSON.parse(localStorage.getItem("aegis-config") || "{}");

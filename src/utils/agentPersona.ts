@@ -1,7 +1,7 @@
 // Per-agent default persona persistence.
 // Stored as a single localStorage entry keyed by agentId so the schema can
 // grow without spamming keys. Only ChatTabs reads/writes — single source of
-// truth for the "default persona for this agent" concept.
+// truth for the default visible session-instruction concept.
 
 import type { SkillPersona } from '@/types/skills';
 

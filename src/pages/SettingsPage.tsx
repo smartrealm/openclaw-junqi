@@ -393,22 +393,36 @@ export function SettingsPageFull() {
     }
   };
 
-  const resolveConnectionUrl = async (): Promise<{ url: string; token: string }> => {
+  const resolveConnectionUrl = async (): Promise<{ url: string; token: string; deviceToken: string }> => {
     const userUrl = editUrl.trim();
     const userToken = editToken.trim();
     if (userUrl) {
-      if (tokenDirty) return { url: userUrl, token: userToken };
-      const storedToken = await window.aegis?.pairing?.getToken(userUrl);
-      return { url: userUrl, token: storedToken || '' };
+      if (tokenDirty) return { url: userUrl, token: userToken, deviceToken: '' };
+      const config = await window.aegis?.config.get();
+      const configUrl = config?.gatewayUrl || config?.gatewayWsUrl || '';
+      const splitCredentials = config
+        && ('gatewayBootstrapToken' in config || 'gatewayDeviceToken' in config);
+      const sameTarget = userUrl === configUrl;
+      const storedDeviceToken = await window.aegis?.pairing?.getToken(userUrl) || '';
+      return {
+        url: userUrl,
+        token: sameTarget
+          ? (config?.gatewayBootstrapToken ?? (!splitCredentials ? config?.gatewayToken : '') ?? '')
+          : '',
+        deviceToken: sameTarget ? (config?.gatewayDeviceToken || storedDeviceToken) : storedDeviceToken,
+      };
     }
     try {
       const config = await window.aegis?.config.get();
       return {
         url: config?.gatewayUrl || config?.gatewayWsUrl || defaultGatewayWsUrl(),
-        token: tokenDirty ? userToken : config?.gatewayToken || '',
+        token: tokenDirty
+          ? userToken
+          : config?.gatewayBootstrapToken ?? config?.gatewayToken ?? '',
+        deviceToken: tokenDirty ? '' : config?.gatewayDeviceToken ?? '',
       };
     } catch {
-      return { url: defaultGatewayWsUrl(), token: '' };
+      return { url: defaultGatewayWsUrl(), token: '', deviceToken: '' };
     }
   };
 
@@ -416,8 +430,8 @@ export function SettingsPageFull() {
     setTestingConnection(true);
     setTestResult(null);
     try {
-      const { url, token } = await resolveConnectionUrl();
-      gatewayManager.connect(url, token);
+      const { url, token, deviceToken } = await resolveConnectionUrl();
+      gatewayManager.connect(url, token, deviceToken);
       // Poll the store for up to 5 s (50 × 100 ms) instead of a fixed 2.5 s sleep.
       // This resolves faster on quick connections and is more reliable on slow ones.
       let connected = false;
@@ -434,19 +448,19 @@ export function SettingsPageFull() {
   };
 
   const handleReconnect = async () => {
-    const { url, token } = await resolveConnectionUrl();
-    gatewayManager.connect(url, token);
+    const { url, token, deviceToken } = await resolveConnectionUrl();
+    gatewayManager.connect(url, token, deviceToken);
   };
 
   const handleSaveConnection = async () => {
     setGatewayUrl(editUrl.trim());
     if (tokenDirty) setGatewayToken(editToken.trim());
     setConnectionDirty(false);
-    const { url, token } = await resolveConnectionUrl();
-    setHasStoredGatewayToken(Boolean(token));
+    const { url, token, deviceToken } = await resolveConnectionUrl();
+    setHasStoredGatewayToken(Boolean(token || deviceToken));
     setEditToken('');
     setTokenDirty(false);
-    gatewayManager.connect(url, token);
+    gatewayManager.connect(url, token, deviceToken);
   };
 
   // Toggle switch — unified design (used everywhere in settings)

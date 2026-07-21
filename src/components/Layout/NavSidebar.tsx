@@ -111,7 +111,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const agents = useGatewayDataStore((st) => (st as any).agents) ?? [];
+  const agents = useGatewayDataStore((st) => st.agents);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(currentTitle);
   const [renamingInFlight, setRenamingInFlight] = useState(false);
@@ -324,9 +324,9 @@ function WorkbenchPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const sessions = useChatStore((st) => st.sessions) ?? [];
-  const cronJobs = useGatewayDataStore((st) => st.cronJobs) ?? [];
-  const agents = useGatewayDataStore((st) => st.agents) ?? [];
+  const sessions = useChatStore((st) => st.sessions);
+  const cronJobs = useGatewayDataStore((st) => st.cronJobs);
+  const agents = useGatewayDataStore((st) => st.agents);
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
   const typingBySession = useChatStore((st) => st.typingBySession);
   const thinkingBySession = useChatStore((st) => st.thinkingBySession);
@@ -336,7 +336,7 @@ function WorkbenchPanel() {
 
   // Per-session first user message, keyed for O(1) lookups during render.
   // Without this we'd have to walk messagesPerSession on every session row.
-  const messagesPerSession = useChatStore((st) => st.messagesPerSession) ?? {};
+  const messagesPerSession = useChatStore((st) => st.messagesPerSession);
   const firstUserByKey = useMemo(() => {
     const out: Record<string, string> = {};
     for (const [k, msgs] of Object.entries(messagesPerSession)) {
@@ -762,7 +762,7 @@ function miniItemsFor(
       { to: '/memory', icon: <Brain size={20} />, label: t('nav.memory', 'Memory'), feature: 'memory' },
     ];
     case 'tools': return [
-      { to: '/ai-workspace', icon: <Bot size={20} />, label: t('nav.aiWorkspace', 'AI 工作台'), feature: 'agentRun' },
+      { to: '/ai-workspace', icon: <Bot size={20} />, label: t('nav.agentTasks', 'Agent 任务'), feature: 'agentRun' },
       { to: '/terminal', icon: <Terminal size={20} />, label: t('nav.terminal', 'Terminal'), feature: 'terminal' },
       { to: '/files', icon: <Folder size={20} />, label: t('nav.files', 'Files'), feature: 'files' },
       { to: '/tools', icon: <Cpu size={20} />, label: t('nav.mcpTools', 'MCP Tools'), feature: 'tools' },

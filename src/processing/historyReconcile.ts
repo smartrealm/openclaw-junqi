@@ -2,6 +2,8 @@ import { normalizeGatewayMessage } from './normalizeGatewayMessage';
 
 type HistoryLikeMessage = {
   id: string;
+  clientMessageId?: string;
+  nativeMessageId?: string;
   role?: string;
   content?: unknown;
   timestamp?: string;
@@ -9,6 +11,11 @@ type HistoryLikeMessage = {
   toolName?: string;
   toolCallId?: string;
   thinkingContent?: string;
+  status?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  deliveryError?: string;
+  isStreaming?: boolean;
+  responseState?: 'streaming' | 'final' | 'error' | 'aborted';
+  attachments?: unknown[];
 };
 
 function normalizeWhitespace(value: string): string {
@@ -47,7 +54,13 @@ function messageExactKey(message: HistoryLikeMessage): string {
   ].join('|');
 }
 
-function messageIdentityKey(message: HistoryLikeMessage): string | null {
+function messageIdentityKeys(message: HistoryLikeMessage): string[] {
+  const explicitKeys = [
+    message.nativeMessageId ? `native:${message.nativeMessageId}` : null,
+    message.clientMessageId ? `client:${message.clientMessageId}` : null,
+  ].filter((key): key is string => Boolean(key));
+  if (explicitKeys.length > 0) return explicitKeys;
+
   const role = message.role ?? '';
   const toolCallId = message.toolCallId ?? '';
   const toolName = message.toolName ?? '';
@@ -56,10 +69,10 @@ function messageIdentityKey(message: HistoryLikeMessage): string | null {
   const thinking = normalizeWhitespace(message.thinkingContent ?? '');
 
   if (!role && !toolCallId && !toolName && !content && !mediaUrl && !thinking) {
-    return null;
+    return [];
   }
 
-  return [role, toolCallId, toolName, content, mediaUrl, thinking].join('|');
+  return [[role, toolCallId, toolName, content, mediaUrl, thinking].join('|')];
 }
 
 export function dedupeHistoryMessages<T extends HistoryLikeMessage>(messages: T[]): T[] {
@@ -80,37 +93,58 @@ export function reconcileHistoryMessageIds<T extends HistoryLikeMessage>(
   previous: T[],
   incoming: T[],
 ): T[] {
-  if (previous.length === 0 || incoming.length === 0) {
-    return incoming;
-  }
+  if (previous.length === 0) return incoming;
 
-  const idsByIdentity = new Map<string, string[]>();
-  for (const message of previous) {
-    const key = messageIdentityKey(message);
-    if (!key) continue;
-    const ids = idsByIdentity.get(key) ?? [];
-    ids.push(message.id);
-    idsByIdentity.set(key, ids);
+  const indexesByIdentity = new Map<string, number[]>();
+  for (const [index, message] of previous.entries()) {
+    for (const key of messageIdentityKeys(message)) {
+      const matches = indexesByIdentity.get(key) ?? [];
+      matches.push(index);
+      indexesByIdentity.set(key, matches);
+    }
   }
+  const consumedPreviousIndexes = new Set<number>();
 
-  return incoming.map((message) => {
-    const key = messageIdentityKey(message);
-    if (!key) return message;
-    const ids = idsByIdentity.get(key);
-    if (!ids || ids.length === 0) return message;
-    const reusedId = ids.shift();
-    if (!reusedId) return message;
-    if (ids.length === 0) {
-      idsByIdentity.delete(key);
-    } else {
-      idsByIdentity.set(key, ids);
+  let lastMatchedPreviousIndex = -1;
+  const reconciled = incoming.map((message) => {
+    let previousIndex: number | undefined;
+    for (const key of messageIdentityKeys(message)) {
+      previousIndex = indexesByIdentity.get(key)?.find((index) => !consumedPreviousIndexes.has(index));
+      if (previousIndex !== undefined) break;
     }
-    if (reusedId === message.id) {
-      return message;
-    }
+    if (previousIndex === undefined) return message;
+    consumedPreviousIndexes.add(previousIndex);
+    lastMatchedPreviousIndex = Math.max(lastMatchedPreviousIndex, previousIndex);
+    const previousMessage = previous[previousIndex];
+    if (!previousMessage) return message;
+    const attachments = message.attachments ?? previousMessage.attachments;
+    const status = message.status ?? (previousMessage.status ? 'sent' : undefined);
     return {
       ...message,
-      id: reusedId,
+      id: previousMessage.id,
+      clientMessageId: message.clientMessageId ?? previousMessage.clientMessageId,
+      nativeMessageId: message.nativeMessageId ?? previousMessage.nativeMessageId,
+      ...(attachments !== undefined ? { attachments } : {}),
+      ...(status !== undefined ? { status } : {}),
+      ...(previousMessage.deliveryError !== undefined ? { deliveryError: undefined } : {}),
     };
   });
+
+  const localTail = previous
+    .map((message, index) => ({ message, index }))
+    .filter(({ message, index }) => (
+      !consumedPreviousIndexes.has(index)
+      && index > lastMatchedPreviousIndex
+      && isLocalTailMessage(message)
+    ))
+    .slice(-20)
+    .map(({ message }) => message);
+
+  return [...reconciled, ...localTail];
+}
+
+function isLocalTailMessage(message: HistoryLikeMessage): boolean {
+  if (message.status === 'pending' || message.status === 'queued' || message.status === 'failed') return true;
+  if (message.isStreaming || message.responseState === 'streaming') return true;
+  return Boolean(message.clientMessageId && !message.nativeMessageId);
 }

@@ -1,0 +1,52 @@
+{
+  "name": "@junqi/openclaw-collaboration",
+  "version": "0.3.0",
+  "description": "Durable multi-agent collaboration workflow for JunQi and OpenClaw",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "pack:plugin": "npm run validate:plugin && node scripts/pack-plugin.mjs",
+    "validate:plugin": "npm run build && node scripts/validate-package.mjs",
+    "prepack": "npm run validate:plugin"
+  },
+  "engines": {
+    "node": ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.7.1 <2027.0.0"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.7.1 <2027.0.0",
+      "minGatewayVersion": "2026.7.1"
+    },
+    "build": {
+      "openclawVersion": "2026.7.1",
+      "pluginSdkVersion": "2026.7.1"
+    }
+  }
+}

@@ -26,6 +26,27 @@ const CONTAINER_SCHEMA_LABEL: &str = "com.junqi.openclaw.schema";
 const CONTAINER_SCHEMA: &str = "1";
 const CONTAINER_STATE_LABEL: &str = "com.junqi.openclaw.state-id";
 
+fn validate_managed_image_reference(image: &str) -> Result<(), String> {
+    if image.len() > 512
+        || image
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return Err("Docker Gateway image reference is invalid".to_string());
+    }
+    let tag_prefix = format!("{}:", OPENCLAW_IMAGE);
+    let digest_prefix = format!("{}@sha256:", OPENCLAW_IMAGE);
+    let valid_tag = image
+        .strip_prefix(&tag_prefix)
+        .is_some_and(|tag| !tag.is_empty());
+    let valid_digest = image.strip_prefix(&digest_prefix).is_some_and(|digest| {
+        digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+    });
+    (valid_tag || valid_digest).then_some(()).ok_or_else(|| {
+        "Docker Gateway image is outside the managed OpenClaw repository".to_string()
+    })
+}
+
 /// Separates paths resolved by the host from paths interpreted inside the
 /// OpenClaw container. A container path must never be parsed or created on the
 /// host, especially on Windows where `/home/...` has unrelated drive semantics.
@@ -691,10 +712,10 @@ fn docker_gateway_environment(
         }
     }
     if let Some(name) = gateway_token_environment_reference(&config) {
-        if !values.contains_key(&name) {
-            if let Ok(value) = std::env::var(&name) {
+        if let std::collections::btree_map::Entry::Vacant(entry) = values.entry(name) {
+            if let Ok(value) = std::env::var(entry.key()) {
                 if !value.trim().is_empty() {
-                    values.insert(name, value);
+                    entry.insert(value);
                 }
             }
         }
@@ -963,11 +984,22 @@ pub(crate) async fn start_docker_gateway_locked(
     port: Option<u16>,
     tag: Option<String>,
 ) -> Result<GatewayStatus, String> {
-    paths::validate_runtime_mode(paths::OpenClawRuntimeMode::Docker)?;
-    let container_port = docker_gateway_configured_port();
-    let port = port.unwrap_or(container_port);
     let tag = tag.unwrap_or_else(|| "latest".to_string());
     let image = format!("{}:{}", OPENCLAW_IMAGE, tag);
+    start_docker_gateway_with_image_locked(app, port, &image).await
+}
+
+/// Recreate the managed container from a previously attested exact image.
+/// Callers must already own `GatewayProcess::operation_gate`.
+pub(crate) async fn start_docker_gateway_with_image_locked(
+    app: AppHandle,
+    port: Option<u16>,
+    image: &str,
+) -> Result<GatewayStatus, String> {
+    paths::validate_runtime_mode(paths::OpenClawRuntimeMode::Docker)?;
+    validate_managed_image_reference(image)?;
+    let container_port = docker_gateway_configured_port();
+    let port = port.unwrap_or(container_port);
     let mapping = RuntimePathMapping::from_active_layout()?;
     let config_path = mapping.host_config_path.clone();
     let config_dir = mapping.host_config_dir()?.to_path_buf();
@@ -1040,7 +1072,7 @@ pub(crate) async fn start_docker_gateway_locked(
         workspace_mount,
         "--restart".to_string(),
         "unless-stopped".to_string(),
-        image,
+        image.to_string(),
     ]);
     for (name, _) in &gateway_environment {
         run_args.insert(4, name.clone());

@@ -22,6 +22,7 @@ import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPer
 import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
 import { debugWarn } from '@/utils/debugLog';
+import { applyPersonaToSessionDraft } from '@/utils/personaDraft';
 
 // ═══════════════════════════════════════════════════════════
 // ChatTabs — Browser-style tab bar
@@ -891,6 +892,7 @@ export function ChatTabs() {
             const lastMessage = s.lastMessage?.content?.substring?.(0, 80) || previous?.lastMessage;
             return {
               key,
+              sessionId: typeof s.sessionId === 'string' ? s.sessionId : previous?.sessionId,
               label: typeof s.label === 'string'
                 ? s.label
                 : (typeof s.name === 'string' ? s.name : ''),
@@ -942,8 +944,7 @@ export function ChatTabs() {
     setShowNewPicker(false);
     setPendingPersona(null);
     if (persona && persona.prompt) {
-      void gateway.setSessionPersona(persona.prompt, sessionKey)
-        .catch((err) => debugWarn('app', '[ChatTabs] setSessionPersona failed:', err));
+      applyPersonaToSessionDraft(sessionKey, persona);
     }
   }, [openTab]);
 
@@ -966,8 +967,7 @@ export function ChatTabs() {
     setPendingPersona(null);
 
     if (persona && persona.prompt) {
-      void gateway.setSessionPersona(persona.prompt, desktopKey)
-        .catch((err) => debugWarn('app', '[ChatTabs] setSessionPersona failed:', err));
+      applyPersonaToSessionDraft(desktopKey, persona);
     }
 
     if (!inheritedModel) return;

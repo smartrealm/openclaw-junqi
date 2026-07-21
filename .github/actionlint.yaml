@@ -1,0 +1,9 @@
+self-hosted-runner:
+  labels:
+    - self-hosted
+    - linux
+    - x64
+    - junqi-linux-x64
+    - ephemeral
+    # GitHub-hosted public preview label. actionlint 1.7.7 does not yet ship it.
+    - windows-11-arm

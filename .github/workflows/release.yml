@@ -2,25 +2,26 @@
 # JunQi Desktop — Release Build (macOS + Windows)
 #
 # Builds the Tauri desktop app on macOS and Windows in parallel and
-# uploads installers as workflow artifacts. A version tag additionally
-# creates a public GitHub Release with those installers attached. Designed
-# to be triggered by either:
-#   - push to daxia (fresh, short-lived binaries in the Actions tab)
-#   - workflow_dispatch (manual ad-hoc builds)
-#   - tag push v* (a permanent GitHub Release)
+# uploads installers as workflow artifacts. A future trusted promotion may
+# create a public GitHub Release with those installers attached. Candidate
+# triggers are:
+#   - push to main (fresh, unsigned, short-lived candidate binaries)
+#   - workflow_dispatch (manual, unsigned candidate builds)
+# Tag push v* is intentionally not a trigger. A default-branch promotion
+# controller must be added before any privileged release path is enabled.
 #
 # Why all desktop platforms in one workflow rather than separate files:
 #   - one place to read the matrix, cache strategy, artifact naming
 #   - the '✅ Release Summary' job at the end gives a single status
 #     banner for the whole release in the Actions tab
 #
-# Why use tauri-apps/tauri-action@v1:
+# Why use the pinned tauri-apps/tauri-action (v1):
 #   - it runs the Tauri build consistently after we install Node/Rust deps
 #   - caches Rust build artifacts across runs (~10x faster rebuilds)
 #   - uses beforeBuildCommand from tauri.conf.json while this workflow keeps
 #     target architectures and installer formats explicit
 #
-# Artifact retention: 14 days. GitHub Releases are permanent; daxia-branch
+# Artifact retention: 14 days. GitHub Releases are permanent; main-branch
 # artifacts remain intentionally short-lived.
 # ═══════════════════════════════════════════════════════════
 
@@ -28,37 +29,61 @@ name: Release Build
 
 on:
   push:
-    branches: [daxia]
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Git ref to build (branch, tag, or SHA). Defaults to daxia.'
+        description: 'Main branch candidate selector. Repository protection and privileged promotion are not available yet.'
         required: false
-        default: 'daxia'
+        default: 'main'
 
 concurrency:
   group: release-${{ github.event.inputs.ref || github.ref }}
-  cancel-in-progress: true
+  # A release can already own a draft GitHub Release while its final asset
+  # verification is running. Cancelling that workflow would strand an
+  # unverifiable draft and make the next promotion fail closed on existence.
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  NODE_VERSION: "22.23.1"
 
 jobs:
   verify-version:
     name: Verify version consistency
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
+    outputs:
+      source-sha: ${{ steps.source.outputs.sha }}
+      release-ref: ${{ steps.source.outputs.release-ref }}
+      release-tag: ${{ steps.source.outputs.release-tag }}
+      source-kind: ${{ steps.source.outputs.source-kind }}
+      signing-enabled: ${{ steps.source.outputs.signing-enabled }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          ref: ${{ github.event.inputs.ref || github.sha }}
-          # Tag releases must prove their commit has reached main. A shallow
-          # checkout cannot establish that ancestry relationship reliably.
-          fetch-depth: 0
+          # The workflow code is always loaded from the immutable event SHA.
+          # A future promotion controller must live on the protected default
+          # branch; dispatch input is payload, never executable workflow code.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Resolve immutable release source
+        id: source
+        shell: bash
+        env:
+          DISPATCH_REF: ${{ github.event.inputs.ref }}
+        run: |
+          set -euo pipefail
+          node scripts/release-source-policy.mjs
 
       - name: Check package.json, Cargo.toml, and tauri.conf.json
         shell: bash
+        env:
+          RELEASE_REF_INPUT: ${{ steps.source.outputs.release-ref }}
         run: |
           set -euo pipefail
 
@@ -75,311 +100,516 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve tag release context
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.event.inputs.ref, 'v')
-        id: release-context
-        shell: bash
-        env:
-          RELEASE_REF: ${{ github.event.inputs.ref || github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          release_ref="$RELEASE_REF"
-          package_version="$(jq -r '.version' package.json)"
-          tag_version="${release_ref#v}"
-          if [ "$tag_version" != "$package_version" ]; then
-            echo "::error::Tag $release_ref does not match desktop version $package_version"
-            exit 1
+          release_ref="$RELEASE_REF_INPUT"
+          if [[ "$release_ref" == v* ]]; then
+            tag_version="${release_ref#v}"
+            if [ "$tag_version" != "$package_version" ]; then
+              echo "::error::Tag $release_ref does not match desktop version $package_version"
+              exit 1
+            fi
           fi
 
-          tag_commit="$(git rev-parse --verify "refs/tags/${release_ref}^{commit}" 2>/dev/null)" || {
-            echo "::error::Release reference $release_ref must resolve to an existing Git tag"
-            exit 1
-          }
-          checked_out_commit="$(git rev-parse HEAD)"
-          if [ "$checked_out_commit" != "$tag_commit" ]; then
-            echo "::error::Checked out commit $checked_out_commit does not match tag $release_ref ($tag_commit)"
-            exit 1
-          fi
-
-          # A version tag is a release candidate only after the exact tagged
-          # commit is already part of the canonical main history.
-          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
-          main_commit="$(git rev-parse origin/main)"
-          if ! git merge-base --is-ancestor "$tag_commit" "$main_commit"; then
-            echo "::error::Tag $release_ref ($tag_commit) is not contained in origin/main ($main_commit)"
-            exit 1
-          fi
-
-          echo "tag=$release_ref" >> "$GITHUB_OUTPUT"
-          echo "tag_commit=$tag_commit" >> "$GITHUB_OUTPUT"
-
-      - name: Require successful CI run for tagged commit
-        # Branch and non-tag dispatch builds are intentionally ad hoc. Only a
-        # public version tag must prove the exact commit passed the CI workflow.
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.event.inputs.ref, 'v')
-        timeout-minutes: 32
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG_COMMIT: ${{ steps.release-context.outputs.tag_commit }}
-          CI_WORKFLOW_FILE: ci.yml
-          CI_POLL_SECONDS: '15'
-          CI_WAIT_TIMEOUT_SECONDS: '1800'
-        run: |
-          set -euo pipefail
-
-          : "${TAG_COMMIT:?The tag release context did not provide a commit.}"
-          readonly deadline="$(( $(date +%s) + CI_WAIT_TIMEOUT_SECONDS ))"
-          readonly api_path="/repos/${GITHUB_REPOSITORY}/actions/workflows/${CI_WORKFLOW_FILE}/runs?event=push&head_sha=${TAG_COMMIT}&per_page=100"
-
-          while true; do
-            if ! response="$(gh api --paginate --slurp "$api_path")"; then
-              echo "::error::Unable to query CI workflow runs for tagged commit $TAG_COMMIT"
-              exit 1
-            fi
-
-            if ! matching_runs="$(jq -ce --arg sha "$TAG_COMMIT" '
-              (if type == "array" then . else [.] end)
-              | [ .[] | .workflow_runs[]? | select(.head_sha == $sha and .event == "push") ]
-              | unique_by(.id)
-            ' <<<"$response")"; then
-              echo "::error::GitHub returned an unexpected CI workflow response for tagged commit $TAG_COMMIT"
-              exit 1
-            fi
-
-            if successful_url="$(jq -r '
-              [ .[] | select(.status == "completed" and .conclusion == "success") ]
-              | sort_by(.updated_at // .created_at // "")
-              | last
-              | .html_url // empty
-            ' <<<"$matching_runs")" && [ -n "$successful_url" ]; then
-              echo "Verified successful CI run for $TAG_COMMIT: $successful_url"
-              break
-            fi
-
-            run_count="$(jq 'length' <<<"$matching_runs")"
-            active_count="$(jq '[ .[] | select(.status != "completed") ] | length' <<<"$matching_runs")"
-            if [ "$run_count" -gt 0 ] && [ "$active_count" -eq 0 ]; then
-              latest_failure="$(jq -r '
-                ([ .[] | select(.status == "completed") ] | sort_by(.updated_at // .created_at // "") | last) as $run
-                | if $run == null then "no completed run details" else "run #\($run.run_number) concluded \($run.conclusion // "unknown"): \($run.html_url)" end
-              ' <<<"$matching_runs")"
-              echo "::error::CI did not succeed for tagged commit $TAG_COMMIT ($latest_failure)"
-              exit 1
-            fi
-
-            now="$(date +%s)"
-            if [ "$now" -ge "$deadline" ]; then
-              echo "::error::Timed out after ${CI_WAIT_TIMEOUT_SECONDS}s waiting for a successful CI run for tagged commit $TAG_COMMIT"
-              exit 1
-            fi
-
-            remaining="$(( deadline - now ))"
-            echo "Waiting for CI on $TAG_COMMIT: $run_count matching run(s), $active_count active; retrying in ${CI_POLL_SECONDS}s (${remaining}s remaining)."
-            sleep "$CI_POLL_SECONDS"
-          done
-
-  build:
-    name: Build ${{ matrix.name }}
+  quality-node:
+    name: Quality (Desktop + collaboration)
     needs: verify-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.verify-version.outputs.source-sha }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: GitHub Actions lint
+        run: >-
+          docker run --rm --pull always
+          --mount type=bind,src="$GITHUB_WORKSPACE",dst=/repo,readonly
+          --workdir /repo
+          rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+
+      - name: Automated quality evidence contract tests
+        run: >-
+          node --test
+          scripts/generate-automated-quality-evidence.test.mjs
+          scripts/validate-external-release-evidence.test.mjs
+
+      - name: Desktop and boundary tests
+        run: pnpm test
+
+      - name: Collaboration plugin tests
+        run: pnpm collab:test
+
+      - name: Type and module-boundary checks
+        run: pnpm lint
+
+      - name: Deterministic production build
+        run: pnpm build
+
+      - name: Verify generated collaboration bundle is committed
+        shell: bash
+        run: |
+          git diff --check
+          git diff --exit-code -- \
+            src/generated/collaborationPluginBundle.generated.json \
+            src-tauri/resources/collaboration
+
+  quality-rust:
+    name: Quality (Rust)
+    needs: verify-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.verify-version.outputs.source-sha }}
+          persist-credentials: false
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # pinned 1.96.0
+        with:
+          toolchain: 1.96.0
+
+      - name: Cache cargo registry & build
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libasound2-dev
+
+      - name: Rust format
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Rust lint
+        working-directory: src-tauri
+        run: cargo clippy --all-targets
+
+      - name: Rust check
+        working-directory: src-tauri
+        run: cargo check --all-targets
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --lib --no-fail-fast
+
+  quality-evidence:
+    name: Attested automated quality evidence
+    needs: [verify-version, quality-node, quality-rust]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.verify-version.outputs.source-sha }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # pinned 1.96.0
+        with:
+          toolchain: 1.96.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild the deterministic collaboration bundle
+        run: pnpm collab:bundle
+
+      - name: Verify evidence inputs match the release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff --exit-code HEAD --
+
+      - name: Generate automated quality evidence
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.verify-version.outputs.source-sha }}
+        run: >-
+          node scripts/generate-automated-quality-evidence.mjs
+          --output release-evidence/automated-quality-evidence.json
+
+      - name: Upload automated quality evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: automated-quality-evidence-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          overwrite: true
+          path: release-evidence/automated-quality-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+
+  quality-evidence-attest:
+    name: Attest automated quality evidence
+    needs: [verify-version, quality-evidence]
+    # Candidate artifacts are diagnostic only. OIDC/Sigstore attestations are
+    # reserved for the protected promotion path so an unprotected main push
+    # cannot mint provenance that looks release-eligible.
+    if: needs.verify-version.outputs.signing-enabled == 'true' && needs.quality-evidence.result == 'success'
+    runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
-    env:
-      IS_TAG_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.event.inputs.ref, 'v') }}
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download automated quality evidence
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: automated-quality-evidence-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          path: release-evidence
+
+      - name: Attest automated quality evidence
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: release-evidence/automated-quality-evidence.json
+
+  gateway-structural-smoke:
+    name: Real Gateway structural smoke
+    needs: [verify-version, quality-node]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.verify-version.outputs.source-sha }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild the deterministic collaboration bundle
+        run: pnpm collab:bundle
+
+      - name: Run structural smoke against pinned OpenClaw Docker image
+        run: >-
+          pnpm collab:gateway:smoke --
+          --evidence-root release-evidence/gateway-structural
+
+      - name: Verify structural evidence boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' evidence_files < <(
+            find release-evidence/gateway-structural -type f -name evidence.json -print0
+          )
+          if [[ ${#evidence_files[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one structural smoke evidence file, found ${#evidence_files[@]}"
+            exit 1
+          fi
+          install -m 0600 "${evidence_files[0]}" release-evidence/gateway-structural-smoke-evidence.json
+
+          EVIDENCE_PATH=release-evidence/gateway-structural-smoke-evidence.json \
+            node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          import {
+            OFFICIAL_OPENCLAW_IMAGE_DIGEST,
+            OFFICIAL_OPENCLAW_VERSION,
+          } from './scripts/verify-collaboration-real-gateway.mjs';
+
+          const evidence = JSON.parse(await readFile(process.env.EVIDENCE_PATH, 'utf8'));
+          const accepted = evidence.kind === 'JUNQI_COLLABORATION_REAL_GATEWAY_STRUCTURAL_SMOKE'
+            && evidence.status === 'PASSED'
+            && evidence.scope === 'STRUCTURAL_ONLY'
+            && evidence.p0BehaviorVerified === false
+            && evidence.image?.version === OFFICIAL_OPENCLAW_VERSION
+            && evidence.image?.digest === OFFICIAL_OPENCLAW_IMAGE_DIGEST
+            && evidence.isolation?.userProfileAccessAllowed === false
+            && evidence.isolation?.devModeAllowed === false
+            && evidence.isolation?.hostPortPublished === false
+            && Array.isArray(evidence.cleanup?.errors)
+            && evidence.cleanup.errors.length === 0;
+          if (!accepted) throw new Error('Structural smoke evidence violates the release contract');
+          NODE
+
+      - name: Upload structural smoke evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gateway-structural-smoke-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          overwrite: true
+          path: release-evidence/gateway-structural-smoke-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+
+  gateway-structural-smoke-attest:
+    name: Attest Gateway structural smoke
+    needs: [verify-version, gateway-structural-smoke]
+    # See quality-evidence-attest: candidate evidence has no release trust.
+    if: needs.verify-version.outputs.signing-enabled == 'true' && needs.gateway-structural-smoke.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download structural smoke evidence
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: gateway-structural-smoke-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          path: release-evidence
+
+      - name: Attest structural smoke evidence
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: release-evidence/gateway-structural-smoke-evidence.json
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: [verify-version, quality-evidence, gateway-structural-smoke]
+    if: needs.verify-version.result == 'success' && needs.quality-evidence.result == 'success' && needs.gateway-structural-smoke.result == 'success'
+    # Candidate refs are intentionally built without any signing secret. The
+    # trusted promotion path is disabled until its default-branch controller
+    # and protected signing environment are provisioned.
+    environment:
+      name: ${{ needs.verify-version.outputs.signing-enabled == 'true' && 'production-release' || 'candidate-build' }}
+    permissions:
+      # Build candidates must never create or mutate a public release.
+      contents: read
     strategy:
       fail-fast: false              # keep all platforms building even if one fails
       matrix:
         include:
           # macOS — one package per architecture. Splitting the targets keeps
-          # each download small while the updater selects the running arch.
-          # Pin the image to avoid macos-latest migration drift.
+          # each candidate small and matches the architecture selected by the
+          # updater once trusted promotion is implemented.
           - name: macOS ARM64
             artifact_name: macos-arm64
             platform: macos-15
             target: 'aarch64-apple-darwin'
             rust_targets: 'aarch64-apple-darwin'
-            macos_signing_identity: '-'
-            # The updater consumes the signed .app.tar.gz artifact; DMG is
-            # retained for manual installation.
+            # Unsigned candidates publish only the DMG. Signed updater assets
+            # (.app.tar.gz/.sig/latest.json) remain disabled until mainline
+            # updater-manifest integration and trusted promotion are complete.
             bundle_args: '--bundles app,dmg'
+            stage_prefix: macos-arm64
+            asset_specs: |
+              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg|.dmg
           - name: macOS x64
             artifact_name: macos-x86_64
             platform: macos-15-intel
             target: 'x86_64-apple-darwin'
             rust_targets: 'x86_64-apple-darwin'
-            macos_signing_identity: '-'
             bundle_args: '--bundles app,dmg'
+            stage_prefix: macos-x86_64
+            asset_specs: |
+              src-tauri/target/x86_64-apple-darwin/release/bundle/dmg|.dmg
           # Windows — native MSVC runners for both supported architectures.
           - name: Windows x64
             artifact_name: windows-x86_64
             platform: windows-latest
             target: 'x86_64-pc-windows-msvc'
             rust_targets: 'x86_64-pc-windows-msvc'
-            macos_signing_identity: ''
             bundle_args: '--bundles nsis,msi'
+            stage_prefix: windows-x86_64
+            asset_specs: |
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis|.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi|.msi
           - name: Windows ARM64
             artifact_name: windows-arm64
             platform: windows-11-arm
             target: 'aarch64-pc-windows-msvc'
             rust_targets: 'aarch64-pc-windows-msvc'
-            macos_signing_identity: ''
             bundle_args: '--bundles nsis,msi'
+            stage_prefix: windows-arm64
+            asset_specs: |
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis|.exe
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi|.msi
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          ref: ${{ github.event.inputs.ref || github.sha }}
+          ref: ${{ needs.verify-version.outputs.source-sha }}
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # pinned 1.96.0
         with:
+          toolchain: 1.96.0
           targets: ${{ matrix.rust_targets }}
 
       - name: Cache cargo registry & build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: src-tauri -> target
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build macOS Tauri bundles
-        if: runner.os == 'macOS'
-        uses: tauri-apps/tauri-action@v1
+      - name: Verify updater signing inputs
+        if: needs.verify-version.outputs.signing-enabled == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || matrix.macos_signing_identity }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$TAURI_SIGNING_PRIVATE_KEY" ]] || { echo '::error::TAURI_SIGNING_PRIVATE_KEY is required for a trusted release'; exit 1; }
+          [[ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]] || { echo '::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required for a trusted release'; exit 1; }
+
+      - name: Verify protected macOS signing inputs
+        if: needs.verify-version.outputs.signing-enabled == 'true' && runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for required_name in \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY \
+            APPLE_ID \
+            APPLE_PASSWORD \
+            APPLE_TEAM_ID; do
+            [[ -n "${!required_name}" ]] || { echo "::error::$required_name is required for a trusted macOS release"; exit 1; }
+          done
+
+      - name: Build signed macOS Tauri release
+        if: needs.verify-version.outputs.signing-enabled == 'true' && runner.os == 'macOS'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           args: --target ${{ matrix.target }} ${{ matrix.bundle_args }}
 
-      - name: Build Windows application
-        if: runner.os == 'Windows'
+      - name: Build signed Windows Tauri release
+        if: needs.verify-version.outputs.signing-enabled == 'true' && runner.os == 'Windows'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri build --target ${{ matrix.target }} --no-bundle --ci
+        with:
+          args: --target ${{ matrix.target }} ${{ matrix.bundle_args }}
 
-      - name: Resolve SignPath release configuration
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
-        id: signpath-config
+      - name: Build unsigned candidate
+        if: needs.verify-version.outputs.signing-enabled != 'true'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+        env:
+          # An unsigned candidate must never evaluate release signing secrets.
+          APPLE_SIGNING_IDENTITY: '-'
+        with:
+          # createUpdaterArtifacts requires a private updater key. Candidates
+          # are deliberately unsigned, so disable only that artifact family
+          # through Tauri's config merge instead of passing a fake key.
+          args: >-
+            --target ${{ matrix.target }} ${{ matrix.bundle_args }}
+            --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Sign Windows installers with Authenticode
+        if: needs.verify-version.outputs.signing-enabled == 'true' && runner.os == 'Windows'
         shell: pwsh
         env:
-          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
-          SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
-          SIGNPATH_PROJECT_SLUG: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
-          SIGNPATH_SIGNING_POLICY_SLUG: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
-          SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG: ${{ secrets.SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG }}
-          SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG: ${{ secrets.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
         run: |
-          $required = @(
-            'SIGNPATH_API_TOKEN',
-            'SIGNPATH_ORGANIZATION_ID',
-            'SIGNPATH_PROJECT_SLUG',
-            'SIGNPATH_SIGNING_POLICY_SLUG',
-            'SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG',
-            'SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG'
-          )
-          $missing = $required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
-          if ($missing.Count -gt 0) {
-            Write-Warning "SignPath Foundation is not configured; publishing unsigned Windows installers. Missing: $($missing -join ', ')"
-            "enabled=false" >> $env:GITHUB_OUTPUT
-            exit 0
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_PASSWORD) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_TIMESTAMP_URL)) {
+            throw 'WINDOWS_PFX_BASE64, WINDOWS_PFX_PASSWORD, and WINDOWS_TIMESTAMP_URL are required for a tagged Windows release.'
           }
-          "enabled=true" >> $env:GITHUB_OUTPUT
-
-      - name: Upload unsigned Windows application for SignPath
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
-        id: upload-unsigned-windows-application
-        uses: actions/upload-artifact@v7
-        with:
-          name: signpath-unsigned-app-${{ matrix.artifact_name }}
-          path: src-tauri/target/${{ matrix.target }}/release/junqi-desktop.exe
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Sign Windows application with SignPath Foundation
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
-        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
-          artifact-configuration-slug: ${{ secrets.SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG }}
-          github-artifact-id: ${{ steps.upload-unsigned-windows-application.outputs.artifact-id }}
-          wait-for-completion: true
-          output-artifact-directory: ${{ runner.temp }}/signpath-signed-app
-
-      - name: Activate signed Windows application
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
-        shell: pwsh
-        run: |
-          $signed = Get-ChildItem "$env:RUNNER_TEMP/signpath-signed-app" -Recurse -Filter junqi-desktop.exe | Select-Object -First 1
-          if (-not $signed) { throw 'SignPath did not return junqi-desktop.exe.' }
-          Copy-Item $signed.FullName "src-tauri/target/${{ matrix.target }}/release/junqi-desktop.exe" -Force
-
-      - name: Bundle Windows installers
-        if: runner.os == 'Windows'
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri bundle --target ${{ matrix.target }} --bundles nsis,msi --ci
-
-      - name: Upload unsigned Windows installers for SignPath
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
-        id: upload-unsigned-windows-installers
-        uses: actions/upload-artifact@v7
-        with:
-          name: signpath-unsigned-installers-${{ matrix.artifact_name }}
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
-            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Sign Windows installers with SignPath Foundation
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
-        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
-          artifact-configuration-slug: ${{ secrets.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
-          github-artifact-id: ${{ steps.upload-unsigned-windows-installers.outputs.artifact-id }}
-          wait-for-completion: true
-          output-artifact-directory: ${{ runner.temp }}/signpath-signed-installers
-
-      - name: Re-sign Windows updater artifacts after Authenticode
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
-        shell: pwsh
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          $installers = Get-ChildItem "$env:RUNNER_TEMP/signpath-signed-installers" -Recurse -File |
-            Where-Object { $_.Extension -in '.exe', '.msi' }
-          if ($installers.Count -lt 2) { throw "Expected at least two signed Windows installers, found $($installers.Count)." }
-          foreach ($installer in $installers) {
-            pnpm tauri signer sign $installer.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Tauri updater signing failed for $($installer.FullName)." }
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'junqi-release-signing.pfx'
+          try {
+            [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+            $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+            $installerRoot = "src-tauri/target/${{ matrix.target }}/release/bundle"
+            $installers = Get-ChildItem -Path $installerRoot -Recurse -File | Where-Object { $_.Extension -in '.exe', '.msi' }
+            if ($installers.Count -eq 0) { throw "No Windows installers found under $installerRoot" }
+            foreach ($installer in $installers) {
+              & $signtool sign /fd SHA256 /f $certificatePath /p $env:WINDOWS_PFX_PASSWORD /tr $env:WINDOWS_TIMESTAMP_URL /td SHA256 $installer.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($installer.Name)" }
+              & $signtool verify /pa /all /tw $installer.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $($installer.Name)" }
+            }
+          } finally {
+            if (Test-Path -LiteralPath $certificatePath) {
+              Remove-Item -LiteralPath $certificatePath -Force
+            }
           }
 
       - name: Verify macOS disk image and app signature
         if: runner.os == 'macOS'
+        env:
+          SIGNING_ENABLED: ${{ needs.verify-version.outputs.signing-enabled }}
         shell: bash
         run: |
           set -euo pipefail
@@ -403,21 +633,19 @@ jobs:
             exit 1
           fi
           codesign --verify --deep --strict --verbose=2 "${apps[0]}"
+          if [[ "$SIGNING_ENABLED" == true ]]; then
+            xcrun stapler validate "${dmgs[0]}"
+            spctl --assess --type open --context context:primary-signature --verbose=2 "${dmgs[0]}"
+          fi
 
-      - name: Verify Windows Authenticode signatures
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
-        shell: pwsh
-        run: |
-          $artifacts = Get-ChildItem "$env:RUNNER_TEMP/signpath-signed-installers" -Recurse -File |
-            Where-Object { $_.Extension -in '.exe', '.msi' }
-          if (-not $artifacts) { throw 'No Windows installers were produced.' }
-          foreach ($artifact in $artifacts) {
-            $signature = Get-AuthenticodeSignature $artifact.FullName
-            if ($signature.Status -ne 'Valid') {
-              throw "Invalid Authenticode signature for $($artifact.FullName): $($signature.Status)"
-            }
-            Write-Host "Verified $($artifact.FullName) [$($signature.SignerCertificate.Subject)]"
-          }
+      - name: Stage flat release assets
+        env:
+          ASSET_SPECS: ${{ matrix.asset_specs }}
+        run: >-
+          node scripts/stage-release-assets.mjs
+          --output release-assets-staged
+          --prefix "${{ matrix.stage_prefix }}"
+          --specs-env ASSET_SPECS
 
       - name: List built artifacts
         if: always()
@@ -426,108 +654,451 @@ jobs:
           echo "Built artifacts:"
           find "src-tauri/target" -path "*/release/bundle/*" \( -name "*.dmg" -o -name "*.app" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) 2>/dev/null | sort
 
-      - name: Upload macOS DMG installer
-        if: success() && runner.os == 'macOS'
-        uses: actions/upload-artifact@v7
+      - name: Upload installer artifacts
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: junqi-desktop-${{ matrix.artifact_name }}-dmg
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          name: junqi-desktop-${{ matrix.artifact_name }}-${{ github.run_id }}
+          overwrite: true
+          path: release-assets-staged/*
           retention-days: 14
           if-no-files-found: error
 
-      - name: Upload macOS updater
-        if: success() && runner.os == 'macOS'
-        uses: actions/upload-artifact@v7
+  release-asset-manifest:
+    name: Bind release assets to source and bundle
+    needs: [verify-version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          name: junqi-desktop-${{ matrix.artifact_name }}-updater
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
-          retention-days: 14
-          if-no-files-found: error
+          ref: ${{ needs.verify-version.outputs.source-sha }}
+          persist-credentials: false
 
-      - name: Upload signed Windows NSIS installer
-        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          name: junqi-desktop-${{ matrix.artifact_name }}-nsis
-          path: |
-            ${{ runner.temp }}/signpath-signed-installers/**/*-setup.exe
-            ${{ runner.temp }}/signpath-signed-installers/**/*-setup.exe.sig
-          retention-days: 14
-          if-no-files-found: error
+          node-version: ${{ env.NODE_VERSION }}
 
-      - name: Upload signed Windows English MSI installer
-        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v7
+      - name: Download staged release assets
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: junqi-desktop-${{ matrix.artifact_name }}-msi-en-us
-          path: |
-            ${{ runner.temp }}/signpath-signed-installers/**/*_en-US.msi
-            ${{ runner.temp }}/signpath-signed-installers/**/*_en-US.msi.sig
-          retention-days: 14
-          if-no-files-found: error
+          pattern: junqi-desktop-*-${{ github.run_id }}
+          path: release-assets
+          merge-multiple: true
 
-      - name: Upload signed Windows Chinese MSI installer
-        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: junqi-desktop-${{ matrix.artifact_name }}-msi-zh-cn
-          path: |
-            ${{ runner.temp }}/signpath-signed-installers/**/*_zh-CN.msi
-            ${{ runner.temp }}/signpath-signed-installers/**/*_zh-CN.msi.sig
-          retention-days: 14
-          if-no-files-found: error
+      - name: Create immutable release asset manifest
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.verify-version.outputs.source-sha }}
+          RELEASE_REF: ${{ needs.verify-version.outputs.release-ref }}
+        run: >-
+          node scripts/create-release-asset-manifest.mjs
+          --root release-assets
+          --output release-assets-manifest.json
+          --source-sha "$EXPECTED_SOURCE_SHA"
+          --release-ref "$RELEASE_REF"
 
-      - name: Upload unsigned Windows NSIS installer
-        if: success() && runner.os == 'Windows' && (env.IS_TAG_RELEASE != 'true' || steps.signpath-config.outputs.enabled != 'true')
-        uses: actions/upload-artifact@v7
+      - name: Upload release asset manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: junqi-desktop-${{ matrix.artifact_name }}-nsis
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe
-            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe.sig
-          retention-days: 14
+          name: junqi-release-asset-manifest-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          overwrite: true
+          path: release-assets-manifest.json
           if-no-files-found: error
+          retention-days: 90
 
-      - name: Upload unsigned Windows English MSI installer
-        if: success() && runner.os == 'Windows' && (env.IS_TAG_RELEASE != 'true' || steps.signpath-config.outputs.enabled != 'true')
-        uses: actions/upload-artifact@v7
+  release-asset-manifest-attest:
+    name: Attest release asset manifest
+    needs: [verify-version, release-asset-manifest]
+    # Candidate manifests are retained as build artifacts, but are not signed
+    # until a protected promotion has supplied the release trust boundary.
+    if: needs.verify-version.outputs.signing-enabled == 'true' && needs.release-asset-manifest.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download release asset manifest
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: junqi-desktop-${{ matrix.artifact_name }}-msi-en-us
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*_en-US.msi
-            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*_en-US.msi.sig
-          retention-days: 14
-          if-no-files-found: error
+          name: junqi-release-asset-manifest-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          path: release-assets-manifest
 
-      - name: Upload unsigned Windows Chinese MSI installer
-        if: success() && runner.os == 'Windows' && (env.IS_TAG_RELEASE != 'true' || steps.signpath-config.outputs.enabled != 'true')
-        uses: actions/upload-artifact@v7
+      - name: Attest release asset manifest
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
-          name: junqi-desktop-${{ matrix.artifact_name }}-msi-zh-cn
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*_zh-CN.msi
-            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*_zh-CN.msi.sig
-          retention-days: 14
+          subject-path: release-assets-manifest/release-assets-manifest.json
+
+  external-release-gate:
+    name: Verify external release evidence
+    needs: [verify-version, quality-evidence-attest, gateway-structural-smoke-attest, build, release-asset-manifest-attest]
+    # Keep the durable BLOCKED decision path alive when a trusted prerequisite
+    # fails. Without always(), GitHub skips this job and loses the audit record.
+    if: always() && needs.verify-version.outputs.signing-enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production-release
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+    env:
+      COLLAB_GATEWAY_EVIDENCE_RUN_ID: ${{ vars.COLLAB_GATEWAY_EVIDENCE_RUN_ID }}
+      COLLAB_VISUAL_EVIDENCE_RUN_ID: ${{ vars.COLLAB_VISUAL_EVIDENCE_RUN_ID }}
+      COLLAB_SOAK_EVIDENCE_RUN_ID: ${{ vars.COLLAB_SOAK_EVIDENCE_RUN_ID }}
+      EXPECTED_SOURCE_SHA: ${{ needs.verify-version.outputs.source-sha }}
+      RELEASE_REF: ${{ needs.verify-version.outputs.release-ref }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.verify-version.outputs.source-sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js for evidence policy
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Initialize durable release decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p external-release-evidence
+          rm -f external-release-evidence/release-decision.json \
+            external-release-evidence/.release-decision.json.tmp
+          jq -n \
+            --arg sourceSha "$EXPECTED_SOURCE_SHA" \
+            --arg releaseRef "$RELEASE_REF" \
+            '{schemaVersion: 1, kind: "BLOCKED", code: "EVIDENCE_GATE_NOT_COMPLETED", field: "release", message: "The external evidence gate did not produce a verified decision.", sourceSha: $sourceSha, releaseRef: $releaseRef}' \
+            > external-release-evidence/release-decision.json
+
+      - name: Require trusted release prerequisites
+        shell: bash
+        env:
+          QUALITY_EVIDENCE_ATTEST_RESULT: ${{ needs.quality-evidence-attest.result }}
+          STRUCTURAL_EVIDENCE_ATTEST_RESULT: ${{ needs.gateway-structural-smoke-attest.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          ASSET_MANIFEST_ATTEST_RESULT: ${{ needs.release-asset-manifest-attest.result }}
+        run: |
+          set -euo pipefail
+          for result in \
+            "$QUALITY_EVIDENCE_ATTEST_RESULT" \
+            "$STRUCTURAL_EVIDENCE_ATTEST_RESULT" \
+            "$BUILD_RESULT" \
+            "$ASSET_MANIFEST_ATTEST_RESULT"; do
+            if [[ "$result" != success ]]; then
+              echo '::error::A trusted release prerequisite did not succeed; retaining a BLOCKED durable decision.'
+              exit 1
+            fi
+          done
+
+      - name: Download automated quality evidence
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: automated-quality-evidence-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          path: external-release-evidence/quality
+
+      - name: Download current release build assets
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: junqi-desktop-*-${{ github.run_id }}
+          path: external-release-evidence/release-assets
+          merge-multiple: true
+
+      - name: Download structural smoke evidence
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: gateway-structural-smoke-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          path: external-release-evidence/structural
+
+      - name: Download immutable release asset manifest
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: junqi-release-asset-manifest-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          path: external-release-evidence/release-assets-manifest
+
+      - name: Verify first-party quality attestations
+        shell: bash
+        run: |
+          set -euo pipefail
+          for subject in \
+            external-release-evidence/quality/automated-quality-evidence.json \
+            external-release-evidence/structural/gateway-structural-smoke-evidence.json \
+            external-release-evidence/release-assets-manifest/release-assets-manifest.json; do
+            gh attestation verify "$subject" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-digest "$EXPECTED_SOURCE_SHA" \
+              --source-ref "$RELEASE_REF" \
+              --format json > "$RUNNER_TEMP/$(basename "$subject").attestation.json"
+          done
+
+      - name: Download and verify attested external evidence
+        id: evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_ids=(
+            "$COLLAB_GATEWAY_EVIDENCE_RUN_ID"
+            "$COLLAB_VISUAL_EVIDENCE_RUN_ID"
+            "$COLLAB_SOAK_EVIDENCE_RUN_ID"
+          )
+          for run_id in "${run_ids[@]}"; do
+            if [[ ! "$run_id" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::production-release must define three positive evidence workflow run IDs"
+              exit 1
+            fi
+          done
+          if [[ "${run_ids[0]}" == "${run_ids[1]}" || \
+                "${run_ids[0]}" == "${run_ids[2]}" || \
+                "${run_ids[1]}" == "${run_ids[2]}" ]]; then
+            echo "::error::External evidence must come from three distinct workflow runs"
+            exit 1
+          fi
+
+          retrieve_evidence() {
+            local kind="$1"
+            local run_id="$2"
+            local workflow_path="$3"
+            local artifact_name=''
+            local evidence_name="collaboration-${kind}-release-evidence.json"
+            local destination="external-release-evidence/${kind}"
+            local run_json="$RUNNER_TEMP/${kind}-run.json"
+
+            gh run view "$run_id" --repo "$GITHUB_REPOSITORY" \
+              --json attempt,conclusion,headSha > "$run_json"
+            if ! jq -e \
+              --arg sha "$EXPECTED_SOURCE_SHA" \
+              '.conclusion == "success" and .headSha == $sha and (.attempt | type == "number" and . > 0)' \
+              "$run_json" >/dev/null; then
+              echo "::error::Evidence run $run_id is unsuccessful or is not bound to $EXPECTED_SOURCE_SHA"
+              exit 1
+            fi
+            artifact_name="collaboration-${kind}-release-evidence-${run_id}"
+
+            mkdir -p "$destination"
+            gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+              --name "$artifact_name" --dir "$destination"
+            local evidence_path="$destination/$evidence_name"
+            if [[ ! -f "$evidence_path" || -L "$evidence_path" ]]; then
+              echo "::error::Evidence artifact $artifact_name must contain regular file $evidence_name"
+              exit 1
+            fi
+
+            mapfile -d '' downloaded_entries < <(find "$destination" -mindepth 1 -print0)
+            for entry in "${downloaded_entries[@]}"; do
+              if [[ -L "$entry" || ( ! -f "$entry" && ! -d "$entry" ) ]]; then
+                echo "::error::Evidence artifact $artifact_name contains a symlink or special file"
+                exit 1
+              fi
+            done
+
+            mapfile -d '' downloaded_files < <(find "$destination" -type f -print0)
+            if [[ ${#downloaded_files[@]} -lt 2 ]]; then
+              echo "::error::Evidence artifact $artifact_name must contain JSON and physical evidence files"
+              exit 1
+            fi
+            node scripts/scan-evidence-artifacts.mjs --root "$destination"
+            local latest_run_attempt
+            local evidence_run_attempt
+            latest_run_attempt="$(jq -r '.attempt' "$run_json")"
+            evidence_run_attempt="$(jq -r '.workflow.runAttempt // empty' "$evidence_path")"
+            if ! jq -e \
+              --arg runId "$run_id" \
+              --argjson latestAttempt "$latest_run_attempt" \
+              '.workflow.runId == $runId and
+               (.workflow.runAttempt | type == "number" and . >= 1 and . <= $latestAttempt)' \
+              "$evidence_path" >/dev/null; then
+              echo "::error::Evidence artifact $artifact_name is not bound to a valid attempt of run $run_id"
+              exit 1
+            fi
+            local attestation_index=0
+            for downloaded_file in "${downloaded_files[@]}"; do
+              local attestation_json="$RUNNER_TEMP/${kind}-${attestation_index}-attestation.json"
+              gh attestation verify "$downloaded_file" \
+                --repo "$GITHUB_REPOSITORY" \
+                --signer-workflow "$GITHUB_REPOSITORY/$workflow_path" \
+                --source-digest "$EXPECTED_SOURCE_SHA" \
+                --source-ref "$RELEASE_REF" \
+                --format json > "$attestation_json"
+              jq -e 'type == "array" and length > 0' "$attestation_json" >/dev/null
+              attestation_index=$((attestation_index + 1))
+            done
+
+            printf '%s_run_attempt=%s\n' "$kind" "$evidence_run_attempt" >> "$GITHUB_OUTPUT"
+          }
+
+          retrieve_evidence gateway "$COLLAB_GATEWAY_EVIDENCE_RUN_ID" \
+            .github/workflows/collaboration-gateway-release-evidence.yml
+          retrieve_evidence visual "$COLLAB_VISUAL_EVIDENCE_RUN_ID" \
+            .github/workflows/collaboration-visual-release-evidence.yml
+          retrieve_evidence soak "$COLLAB_SOAK_EVIDENCE_RUN_ID" \
+            .github/workflows/collaboration-soak-release-evidence.yml
+
+      - name: Recompute and verify release asset manifest
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.verify-version.outputs.source-sha }}
+          RELEASE_REF: ${{ needs.verify-version.outputs.release-ref }}
+        run: |
+          set -euo pipefail
+          node scripts/create-release-asset-manifest.mjs \
+            --root external-release-evidence/release-assets \
+            --output "$RUNNER_TEMP/recomputed-release-assets-manifest.json" \
+            --source-sha "$EXPECTED_SOURCE_SHA" \
+            --release-ref "$RELEASE_REF"
+          cmp --silent \
+            "$RUNNER_TEMP/recomputed-release-assets-manifest.json" \
+            external-release-evidence/release-assets-manifest/release-assets-manifest.json
+
+      - name: Apply fail-closed external evidence policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          decision_tmp='external-release-evidence/.release-decision.json.tmp'
+          # Keep the initialized BLOCKED decision intact until a complete,
+          # schema-bound validator result is ready for atomic replacement.
+          rm -f "$decision_tmp"
+          set +e
+          node scripts/validate-external-release-evidence.mjs \
+            --quality external-release-evidence/quality/automated-quality-evidence.json \
+            --gateway external-release-evidence/gateway/collaboration-gateway-release-evidence.json \
+            --gateway-artifact-root external-release-evidence/gateway \
+            --visual external-release-evidence/visual/collaboration-visual-release-evidence.json \
+            --visual-artifact-root external-release-evidence/visual \
+            --soak external-release-evidence/soak/collaboration-soak-release-evidence.json \
+            --soak-artifact-root external-release-evidence/soak \
+            --gateway-run-id "$COLLAB_GATEWAY_EVIDENCE_RUN_ID" \
+            --gateway-run-attempt "${{ steps.evidence.outputs.gateway_run_attempt }}" \
+            --visual-run-id "$COLLAB_VISUAL_EVIDENCE_RUN_ID" \
+            --visual-run-attempt "${{ steps.evidence.outputs.visual_run_attempt }}" \
+            --soak-run-id "$COLLAB_SOAK_EVIDENCE_RUN_ID" \
+            --soak-run-attempt "${{ steps.evidence.outputs.soak_run_attempt }}" \
+            --release-asset-root external-release-evidence/release-assets \
+            --release-ref "$RELEASE_REF" \
+            --source-sha "$EXPECTED_SOURCE_SHA" \
+            > "$decision_tmp"
+          validator_status=$?
+          set -e
+          if [[ ! -s "$decision_tmp" ]]; then
+            echo '::error::External evidence validator produced no durable decision'
+            rm -f "$decision_tmp"
+            exit 1
+          fi
+          cat "$decision_tmp"
+          if ! jq -e \
+            --arg sourceSha "$EXPECTED_SOURCE_SHA" \
+            --arg releaseRef "$RELEASE_REF" \
+            '(.schemaVersion == 1) and (.kind == "SATISFIED" or .kind == "BLOCKED") and .sourceSha == $sourceSha and .releaseRef == $releaseRef' \
+            "$decision_tmp" >/dev/null; then
+            echo '::error::External evidence decision is malformed or not bound to this source/ref'
+            rm -f "$decision_tmp"
+            exit 1
+          fi
+          mv -f -- "$decision_tmp" external-release-evidence/release-decision.json
+          if (( validator_status != 0 )); then
+            exit "$validator_status"
+          fi
+
+      - name: Prepare and scan durable release decision snapshot
+        id: decision-snapshot
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -e release-decision-publish || -L release-decision-publish ]]; then
+            echo '::error::Durable decision snapshot destination already exists'
+            exit 1
+          fi
+          install -d -m 0700 release-decision-publish
+          install -m 0600 \
+            external-release-evidence/release-decision.json \
+            release-decision-publish/release-decision.json
+          node scripts/scan-evidence-artifacts.mjs --root release-decision-publish
+
+      - name: Upload durable release decision
+        if: always() && steps.decision-snapshot.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: collaboration-release-decision-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          overwrite: true
+          path: release-decision-publish/release-decision.json
           if-no-files-found: error
+          retention-days: 90
+
+  external-release-decision-attest:
+    name: Attest durable external release decision
+    needs: [verify-version, external-release-gate]
+    if: always() && needs.verify-version.outputs.signing-enabled == 'true' && (needs.external-release-gate.result == 'success' || needs.external-release-gate.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download durable release decision
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: collaboration-release-decision-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          path: external-release-evidence
+
+      - name: Verify durable decision provenance
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.verify-version.outputs.source-sha }}
+          RELEASE_REF: ${{ needs.verify-version.outputs.release-ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e \
+            --arg sourceSha "$EXPECTED_SOURCE_SHA" \
+            --arg releaseRef "$RELEASE_REF" \
+            '(.schemaVersion == 1) and (.kind == "SATISFIED" or .kind == "BLOCKED") and .sourceSha == $sourceSha and .releaseRef == $releaseRef' \
+            external-release-evidence/release-decision.json >/dev/null
+
+      - name: Attest durable release decision
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: external-release-evidence/release-decision.json
 
   publish:
     name: Publish GitHub Release
-    needs: build
-    # Daxia branch builds remain Actions artifacts. A v* tag is the explicit signal
-    # that a tested build should be public and permanent.
-    if: needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/v') || startsWith(github.event.inputs.ref, 'v'))
+    needs: [verify-version, quality-evidence-attest, build, release-asset-manifest-attest, external-release-gate, external-release-decision-attest]
+    # This privileged path is intentionally unreachable until the trusted
+    # default-branch promotion controller emits a signed source decision.
+    # When enabled, publication is a two-phase draft transaction.
+    if: needs.verify-version.outputs.signing-enabled == 'true' && needs.external-release-gate.result == 'success' && needs.external-release-decision-attest.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 150
+    concurrency:
+      group: release-publish-${{ needs.verify-version.outputs.release-tag || needs.verify-version.outputs.source-sha }}
+      cancel-in-progress: false
+    environment: production-release
     permissions:
+      attestations: read
       contents: write
     env:
-      RELEASE_TAG: ${{ github.event.inputs.ref || github.ref_name }}
-      SIGNPATH_CONFIGURED: ${{ secrets.SIGNPATH_API_TOKEN != '' && secrets.SIGNPATH_ORGANIZATION_ID != '' && secrets.SIGNPATH_PROJECT_SLUG != '' && secrets.SIGNPATH_SIGNING_POLICY_SLUG != '' && secrets.SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG != '' && secrets.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG != '' }}
+      RELEASE_TAG: ${{ needs.verify-version.outputs.release-tag }}
+      EXPECTED_SOURCE_SHA: ${{ needs.verify-version.outputs.source-sha }}
+      RELEASE_REF: ${{ needs.verify-version.outputs.release-ref }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          ref: ${{ github.event.inputs.ref || github.sha }}
+          ref: ${{ needs.verify-version.outputs.source-sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js for release asset verification
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Verify tag matches the desktop version
         shell: bash
@@ -539,97 +1110,321 @@ jobs:
             exit 1
           fi
 
-      - name: Download installers
-        uses: actions/download-artifact@v7
-        with:
-          pattern: junqi-desktop-*
-          path: release-assets
-
-      - name: Normalize macOS updater artifact names
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(node -p "require('./package.json').version")"
-
-          normalize_updater() {
-            local artifact_name="$1"
-            local architecture="$2"
-            local source_dir="release-assets/$artifact_name"
-            local source="$source_dir/JunQi Desktop.app.tar.gz"
-            local target="release-assets/JunQi Desktop_${version}_${architecture}.app.tar.gz"
-
-            if [[ ! -f "$source" || ! -f "$source.sig" ]]; then
-              echo "::error::Missing macOS updater or signature in $source_dir"
-              exit 1
-            fi
-
-            mv "$source" "$target"
-            mv "$source.sig" "$target.sig"
-          }
-
-          normalize_updater 'junqi-desktop-macos-arm64-updater' 'aarch64'
-          normalize_updater 'junqi-desktop-macos-x86_64-updater' 'x64'
-
-      - name: Generate updater manifest from final release artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(node -p "require('./package.json').version")"
-          node scripts/generate-updater-manifest.mjs \
-            --assets-dir release-assets \
-            --repo "$GITHUB_REPOSITORY" \
-            --tag "$RELEASE_TAG" \
-            --version "$version" \
-            --notes "JunQi Desktop $version" \
-            --output release-assets/latest.json
-
-      - name: Create or update GitHub Release
+      - name: Verify tag target commit
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ needs.verify-version.outputs.source-sha }}
+        shell: bash
+        run: >-
+          node scripts/verify-github-tag-target.mjs
+          --repo "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --expected-sha "$EXPECTED_SOURCE_SHA"
+
+      - name: Download installers
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: junqi-desktop-*-${{ github.run_id }}
+          path: release-assets/installers
+          merge-multiple: true
+
+      - name: Download release asset manifest
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: junqi-release-asset-manifest-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          path: release-assets/metadata
+
+      - name: Download durable release decision
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: collaboration-release-decision-${{ needs.verify-version.outputs.source-sha }}-${{ github.run_id }}
+          path: release-assets/metadata
+
+      - name: Stage immutable publication snapshot
+        id: stage-publication
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.verify-version.outputs.source-sha }}
+          RELEASE_REF: ${{ needs.verify-version.outputs.release-ref }}
         shell: bash
         run: |
-          assets=()
-          while IFS= read -r -d '' asset; do
-            assets+=("$asset")
-          done < <(find release-assets -type f -print0 | sort -z)
-          if [ "${#assets[@]}" -eq 0 ]; then
-            echo "::error::No installer assets were downloaded"
-            exit 1
-          fi
+          set -euo pipefail
+          node scripts/stage-release-publication.mjs \
+            --installers release-assets/installers \
+            --metadata release-assets/metadata \
+            --output release-assets/publication \
+            --source-sha "$EXPECTED_SOURCE_SHA" \
+            --release-ref "$RELEASE_REF" \
+            --seal-output "$RUNNER_TEMP/release-publication-seal.json"
+          seal_sha="$(sha256sum "$RUNNER_TEMP/release-publication-seal.json" | cut -d ' ' -f 1)"
+          printf 'seal_sha=%s\n' "$seal_sha" >> "$GITHUB_OUTPUT"
 
+      - name: Verify durable release decision before publication
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.verify-version.outputs.source-sha }}
+          RELEASE_REF: ${{ needs.verify-version.outputs.release-ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e \
+            --arg sourceSha "$EXPECTED_SOURCE_SHA" \
+            --arg releaseRef "$RELEASE_REF" \
+            '(.schemaVersion == 1) and (.kind == "SATISFIED") and .sourceSha == $sourceSha and .releaseRef == $releaseRef' \
+            release-assets/publication/release-decision.json >/dev/null
+
+      - name: Lock sealed publication snapshot
+        env:
+          EXPECTED_SEAL_SHA: ${{ steps.stage-publication.outputs.seal_sha }}
+          EXPECTED_RELEASE_REF: ${{ needs.verify-version.outputs.release-ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The seal is created from the copied bytes. Lock the exact files
+          # before provenance verification so later upload/reconcile reads
+          # cannot silently diverge from the attested snapshot.
+          chmod -R a-w release-assets/publication
+          test -f "$RUNNER_TEMP/release-publication-seal.json"
+          [[ "$EXPECTED_SEAL_SHA" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$EXPECTED_RELEASE_REF" == "refs/tags/$RELEASE_TAG" ]]
+          actual_seal_sha="$(sha256sum "$RUNNER_TEMP/release-publication-seal.json" | cut -d ' ' -f 1)"
+          [[ "$actual_seal_sha" == "$EXPECTED_SEAL_SHA" ]]
+
+      - name: Verify release provenance attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ needs.verify-version.outputs.source-sha }}
+          RELEASE_REF: ${{ needs.verify-version.outputs.release-ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for subject in \
+            release-assets/publication/release-assets-manifest.json \
+            release-assets/publication/release-decision.json; do
+            gh attestation verify "$subject" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-digest "$EXPECTED_SOURCE_SHA" \
+              --source-ref "$RELEASE_REF" \
+              --format json > "$RUNNER_TEMP/$(basename "$subject").attestation.json"
+          done
+
+      - name: Scan immutable publication snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/scan-evidence-artifacts.mjs --root release-assets/publication
+          test -f "$RUNNER_TEMP/release-publication-seal.json"
+
+      - name: Create draft GitHub Release and verify immutable assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SEAL_SHA: ${{ steps.stage-publication.outputs.seal_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
           tag="$RELEASE_TAG"
           title="JunQi Desktop ${tag#v}"
-          if [ "$SIGNPATH_CONFIGURED" = "true" ]; then
-            notes="Windows 安装器已通过 SignPath Foundation 完成 Authenticode 可信代码签名。"
-          else
-            notes="Windows 安装器暂未配置 Authenticode 可信代码签名，Windows 可能显示 SmartScreen 提示。附件中的 .sig 用于应用更新完整性验证，不等同于 Windows 系统信任证书。"
+          # The adapter owns the create/resume state machine. It preflights the
+          # authenticated draft list, posts exactly once, and reconciles an
+          # uncertain response by immutable release id and source marker.
+          release_result="$(node scripts/mutate-github-release.mjs \
+            create \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$tag" \
+            --title "$title" \
+            --source-sha "$EXPECTED_SOURCE_SHA")"
+          if ! jq -e \
+            --arg tag "$tag" \
+            --arg marker "<!-- junqi-release-source-sha: $EXPECTED_SOURCE_SHA -->" \
+            '(.status | IN("DRAFT", "PUBLISHED"))
+             and (.releaseId | type == "number")
+             and (.state | IN("draft", "published"))
+             and (.release.id == .releaseId)
+             and (.release.tagName == $tag)
+             and (.release.draft == (.state == "draft"))
+             and (.release.body | contains($marker))' \
+            <<<"$release_result" >/dev/null; then
+            echo '::error::Release mutation adapter returned an invalid release identity'
+            exit 1
           fi
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$tag" --notes "$notes" --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$tag" "${assets[@]}" \
+          release_id="$(jq -r '.releaseId' <<<"$release_result")"
+          release_state="$(jq -r '.state' <<<"$release_result")"
+          [[ "$release_id" =~ ^[1-9][0-9]*$ ]] || { echo '::error::Release transaction has no valid immutable release id'; exit 1; }
+          if jq -e '.action | IN("RESUMED", "RECONCILED")' <<<"$release_result" >/dev/null; then
+            echo "::notice::Release transaction converged through the Node adapter ($release_state, id $release_id)"
+          fi
+          if [[ "$release_state" == published ]]; then
+            node scripts/verify-github-release-assets.mjs \
+              --root release-assets/publication \
               --repo "$GITHUB_REPOSITORY" \
-              --title "$title" \
-              --notes "$notes"
+              --tag "$tag" \
+              --release-id "$release_id" \
+              --source-sha "$EXPECTED_SOURCE_SHA" \
+              --seal "$RUNNER_TEMP/release-publication-seal.json" \
+              --seal-sha "$EXPECTED_SEAL_SHA" \
+              --expected-state published
+            node scripts/verify-github-tag-target.mjs \
+              --repo "$GITHUB_REPOSITORY" \
+              --tag "$tag" \
+              --expected-sha "$EXPECTED_SOURCE_SHA"
+            exit 0
           fi
+          reconciliation="$(node scripts/reconcile-github-release-assets.mjs \
+            --root release-assets/publication \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$tag" \
+            --release-id "$release_id" \
+            --source-sha "$EXPECTED_SOURCE_SHA" \
+            --seal "$RUNNER_TEMP/release-publication-seal.json" \
+            --seal-sha "$EXPECTED_SEAL_SHA")"
+          if ! jq -e \
+            --argjson releaseId "$release_id" \
+            '.status == "READY" and .releaseId == $releaseId and (.missing | type == "array")' \
+            <<<"$reconciliation" >/dev/null; then
+            echo '::error::Release asset reconciliation returned an invalid plan'
+            exit 1
+          fi
+          mapfile -d '' missing_names < <(jq -j '.missing[] | . + "\u0000"' <<<"$reconciliation")
+          upload_args=(
+            --root release-assets/publication
+            --repo "$GITHUB_REPOSITORY"
+            --tag "$tag"
+            --release-id "$release_id"
+            --source-sha "$EXPECTED_SOURCE_SHA"
+            --seal "$RUNNER_TEMP/release-publication-seal.json"
+            --seal-sha "$EXPECTED_SEAL_SHA"
+          )
+          for name in "${missing_names[@]}"; do
+            if [[ ! "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$ ]]; then
+              echo '::error::Reconciliation returned an unsafe asset name'
+              exit 1
+            fi
+            asset="release-assets/publication/$name"
+            if [[ ! -f "$asset" || -L "$asset" ]]; then
+              echo "::error::Reconciliation asset is not a regular snapshot file: $name"
+              exit 1
+            fi
+            upload_args+=(--asset "$name")
+          done
+          if (( ${#missing_names[@]} > 0 )); then
+            node scripts/upload-github-release-assets.mjs "${upload_args[@]}"
+          fi
+          node scripts/verify-github-release-assets.mjs \
+            --root release-assets/publication \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$tag" \
+            --release-id "$release_id" \
+            --source-sha "$EXPECTED_SOURCE_SHA" \
+            --seal "$RUNNER_TEMP/release-publication-seal.json" \
+            --seal-sha "$EXPECTED_SEAL_SHA" \
+            --expected-state draft
+          node scripts/verify-github-tag-target.mjs \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$tag" \
+            --expected-sha "$EXPECTED_SOURCE_SHA"
+          publish_result="$(node scripts/mutate-github-release.mjs \
+            publish \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$tag" \
+            --release-id "$release_id" \
+            --source-sha "$EXPECTED_SOURCE_SHA")"
+          if ! jq -e \
+            --argjson releaseId "$release_id" \
+            --arg tag "$tag" \
+            --arg marker "<!-- junqi-release-source-sha: $EXPECTED_SOURCE_SHA -->" \
+            '.status == "PUBLISHED"
+             and .state == "published"
+             and .releaseId == $releaseId
+             and .release.id == $releaseId
+             and .release.tagName == $tag
+             and .release.draft == false
+             and (.release.body | contains($marker))' \
+            <<<"$publish_result" >/dev/null; then
+            echo '::error::Release mutation adapter did not confirm the exact release transaction as published'
+            exit 1
+          fi
+          node scripts/verify-github-release-assets.mjs \
+            --root release-assets/publication \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$tag" \
+            --release-id "$release_id" \
+            --source-sha "$EXPECTED_SOURCE_SHA" \
+            --seal "$RUNNER_TEMP/release-publication-seal.json" \
+            --seal-sha "$EXPECTED_SEAL_SHA" \
+            --expected-state published
+          node scripts/verify-github-tag-target.mjs \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$tag" \
+            --expected-sha "$EXPECTED_SOURCE_SHA"
 
   release:
     name: ✅ Release Summary
-    needs: build
+    needs: [verify-version, quality-node, quality-rust, quality-evidence, quality-evidence-attest, gateway-structural-smoke, gateway-structural-smoke-attest, build, release-asset-manifest, release-asset-manifest-attest, external-release-gate, external-release-decision-attest, publish]
     if: always()
     runs-on: ubuntu-latest
+    env:
+      SIGNING_ENABLED: ${{ needs.verify-version.outputs.signing-enabled }}
     steps:
       - name: Report per-platform status
         run: |
-          echo "## JunQi Desktop — Release Build" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Build matrix | Targets | Status |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|--------------|---------|--------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Desktop installers | macOS ARM64/x64, Windows x64/ARM64 | ${{ needs.build.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## JunQi Desktop — Release Build"
+            echo ""
+            echo "| Build matrix | Targets | Status |"
+            echo "|--------------|---------|--------|"
+            echo "| Desktop installers | macOS ARM64/x64, Windows x64/ARM64 | ${{ needs.build.result }} |"
+            echo "| Release asset manifest | source/bundle/digest binding | ${{ needs.release-asset-manifest.result }} |"
+            echo "| Quality evidence attestation | immutable subject attestation | ${{ needs.quality-evidence-attest.result }} |"
+            echo "| Structural smoke attestation | immutable subject attestation | ${{ needs.gateway-structural-smoke-attest.result }} |"
+            echo "| Release asset attestation | immutable subject attestation | ${{ needs.release-asset-manifest-attest.result }} |"
+            echo "| External evidence gate | Gateway, visual, soak | ${{ needs.external-release-gate.result }} |"
+            echo "| Decision attestation | durable gate decision | ${{ needs.external-release-decision-attest.result }} |"
+            echo "| GitHub Release publication | trusted promotion only | ${{ needs.publish.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ needs.quality-node.result }}" != "success" ] || \
+             [ "${{ needs.quality-rust.result }}" != "success" ] || \
+             [ "${{ needs.quality-evidence.result }}" != "success" ] || \
+             [ "${{ needs.gateway-structural-smoke.result }}" != "success" ]; then
+            echo "::error::Release quality gates failed"
+            exit 1
+          fi
+
+          if [[ "$SIGNING_ENABLED" == true ]]; then
+            if [ "${{ needs.quality-evidence-attest.result }}" != "success" ] || \
+               [ "${{ needs.gateway-structural-smoke-attest.result }}" != "success" ]; then
+              echo "::error::Trusted promotion requires first-party quality attestations"
+              exit 1
+            fi
+          fi
 
           if [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::One or more platform builds failed"
             exit 1
           fi
-          echo "✅ All platforms built successfully" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ needs.release-asset-manifest.result }}" != "success" ]; then
+            echo "::error::Release asset provenance manifest failed"
+            exit 1
+          fi
+          if [[ "$SIGNING_ENABLED" == true && \
+                "${{ needs.release-asset-manifest-attest.result }}" != "success" ]]; then
+            echo "::error::Release asset provenance attestation failed"
+            exit 1
+          fi
+          if [[ "$SIGNING_ENABLED" == true && \
+                "${{ needs.external-release-gate.result }}" != "success" ]]; then
+            echo "::error::Attested external release evidence gate failed"
+            exit 1
+          fi
+          if [[ "$SIGNING_ENABLED" == true ]]; then
+            if [ "${{ needs.external-release-decision-attest.result }}" != "success" ]; then
+              echo "::error::Durable external release decision attestation failed"
+              exit 1
+            fi
+            if [ "${{ needs.publish.result }}" != "success" ]; then
+              echo "::error::Tagged build passed prerequisites but GitHub Release publication did not succeed"
+              exit 1
+            fi
+            echo "✅ Tagged release published successfully" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ Candidate build completed; no public release was requested" >> "$GITHUB_STEP_SUMMARY"
+          fi

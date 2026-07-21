@@ -76,6 +76,27 @@ describe('deleteSessionEverywhere', () => {
     assert.equal(warnings.length, 1);
   });
 
+  test('keeps the session visible when deletion is not explicitly confirmed', async () => {
+    seed();
+    __setSessionDeleteDepsForTest({
+      deleteRemote: async (key) => {
+        requests.push(key);
+        return {};
+      },
+      notifyFailure: (detail) => failures.push(detail),
+      warn: (...args) => warnings.push(args),
+    });
+
+    const result = await deleteSessionEverywhere(TEST_KEY);
+
+    assert.equal(result, false);
+    assert.deepEqual(requests, [TEST_KEY]);
+    assert.equal(useChatStore.getState().sessions.some((session) => session.key === TEST_KEY), true);
+    assert.equal(useGatewayDataStore.getState().sessions.some((session) => session.key === TEST_KEY), true);
+    assert.deepEqual(failures, ['Gateway did not confirm session deletion']);
+    assert.equal(warnings.length, 1);
+  });
+
   test('never sends a native delete for an agent main session', async () => {
     seed();
 

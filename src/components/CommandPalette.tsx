@@ -59,7 +59,11 @@ export function CommandPalette() {
   const reconnectWithBestConfig = async () => {
     const config = await window.aegis?.config?.get();
     const cfgUrl = config?.gatewayUrl || config?.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL;
-    gatewayManager.connect(cfgUrl, config?.gatewayToken || '');
+    gatewayManager.connect(
+      cfgUrl,
+      config?.gatewayBootstrapToken ?? config?.gatewayToken ?? '',
+      config?.gatewayDeviceToken ?? '',
+    );
   };
 
   // Define commands — all names use i18n keys

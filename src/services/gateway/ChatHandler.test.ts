@@ -90,7 +90,6 @@ test('chat.final falls back to longer streamed content', async () => {
 
   const streamEnds: StreamEndCall[] = [];
   const conn = {
-    contextSent: false,
     callbacks: {
       onStreamChunk: () => {},
       onStreamEnd: (sessionKey: string, messageId: string, content: string, _media?: any, meta?: any) => {
@@ -140,7 +139,6 @@ test('agent lifecycle end seals the local assistant segment when chat.final is m
 
   const streamEnds: StreamEndCall[] = [];
   const conn = {
-    contextSent: false,
     callbacks: {
       onStreamChunk: () => {},
       onStreamEnd: (sessionKey: string, messageId: string, content: string, _media?: any, meta?: any) => {
@@ -200,7 +198,6 @@ test('chat.final maps managedFiles capture refs using path field', async () => {
 
   const streamEnds: StreamEndCall[] = [];
   const conn = {
-    contextSent: false,
     callbacks: {
       onStreamChunk: () => {},
       onStreamEnd: (sessionKey: string, messageId: string, content: string, _media?: any, meta?: any) => {

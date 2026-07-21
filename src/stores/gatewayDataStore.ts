@@ -25,6 +25,7 @@ import {
 
 export interface SessionInfo {
   key: string;
+  sessionId?: string;
   label?: string;
   model?: string;
   running?: boolean;

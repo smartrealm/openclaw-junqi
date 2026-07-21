@@ -110,3 +110,18 @@ test('diagnostics stay in logs without replacing the localized progress phase', 
     'npm http fetch GET 200 https://registry.npmjs.org/openclaw',
   ]);
 });
+
+test('explicit maintenance recovery clears the blocking update error', () => {
+  const recovered = openclawUpdateReducer(
+    {
+      ...initialOpenclawUpdateState,
+      phase: 'error',
+      status,
+      error: 'maintenance lease remains active',
+    },
+    { type: 'maintenanceRecovered' },
+  );
+
+  assert.equal(recovered.phase, 'ready');
+  assert.equal(recovered.error, null);
+});

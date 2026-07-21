@@ -1,4 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
+import type {
+  ClearRuntimeIdentityParams,
+  GatewayHelloObservation,
+  RuntimeIdentity,
+} from '@/types/gatewayRuntime';
+import type {
+  BootstrapApplyParams,
+  BootstrapAbandonParams,
+  BootstrapConfigureParams,
+  BootstrapConfirmHealthParams,
+  BootstrapProbeParams,
+  BootstrapRecoverParams,
+  BootstrapRestartParams,
+  CollaborationBootstrapConfigureResult,
+  CollaborationBootstrapAbandonResult,
+  CollaborationBootstrapProbe,
+  CollaborationBootstrapRestartResult,
+  CollaborationBootstrapResult,
+  CollaborationBootstrapStatus,
+} from '@/types/collaborationBootstrap';
 
 export type RuntimeToolSource = 'system' | 'custom';
 export interface NodeStatus { available: boolean; version: string | null; path: string | null; source: RuntimeToolSource | null; }
@@ -77,6 +97,12 @@ export interface OpenclawUpdateResult {
   error: string | null;
 }
 
+export interface CollaborationMaintenanceOwner {
+  owner: string;
+  created: boolean;
+  adoptedLegacy: boolean;
+}
+
 export type MaintenanceSeverity = 'error' | 'warning' | 'info';
 export type MaintenanceCategory = 'config' | 'plugin' | 'mcp' | 'security' | 'gateway' | 'doctor';
 export interface MaintenanceFinding {
@@ -111,6 +137,11 @@ export const checkGit = () => invoke<GitStatus>("check_git");
 export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");
 export const checkOpenclawUpdate = () => invoke<OpenclawUpdateStatus>("check_openclaw_update");
 export const updateOpenclaw = () => invoke<OpenclawUpdateResult>("update_openclaw");
+/** Durable per-installation owner used to recover a persisted collaboration lease. */
+export const getCollaborationMaintenanceOwner = (legacyOwner?: string) => invoke<CollaborationMaintenanceOwner>(
+  "get_collaboration_maintenance_owner",
+  { params: legacyOwner ? { legacyOwner } : {} },
+);
 export const runMaintenanceScan = () => invoke<MaintenanceReport>("run_maintenance_scan");
 export const installNode = (force = false, operationId?: string) => (
   invoke<string>("install_node", { force, operationId })
@@ -210,3 +241,70 @@ export interface LogEntry {
 }
 export const getGatewayLogs = (limit: number) => invoke<LogEntry[]>("get_gateway_logs", { limit });
 export const clearGatewayLogs = () => invoke<void>("clear_gateway_logs");
+
+export const resolveGatewayRuntimeIdentity = (observation: GatewayHelloObservation) =>
+  invoke<RuntimeIdentity>('resolve_gateway_runtime_identity', { observation });
+
+export const getGatewayRuntimeIdentity = () =>
+  invoke<RuntimeIdentity | null>('get_gateway_runtime_identity');
+
+export const clearGatewayRuntimeIdentity = (params: ClearRuntimeIdentityParams) =>
+  invoke<boolean>('clear_gateway_runtime_identity', { params });
+
+export const probeCollaborationBootstrap = (params: BootstrapProbeParams = {}) =>
+  invoke<CollaborationBootstrapProbe>('collaboration_bootstrap_probe', { params });
+
+export const applyCollaborationBootstrap = (params: BootstrapApplyParams) =>
+  invoke<CollaborationBootstrapResult>('collaboration_bootstrap_apply', { params });
+
+export const getCollaborationBootstrapStatus = () =>
+  invoke<CollaborationBootstrapStatus>('collaboration_bootstrap_status');
+
+export const recoverCollaborationBootstrap = (params: BootstrapRecoverParams) =>
+  invoke<CollaborationBootstrapResult>('collaboration_bootstrap_recover', { params });
+
+export const abandonCollaborationBootstrap = (params: BootstrapAbandonParams) =>
+  invoke<CollaborationBootstrapAbandonResult>('collaboration_bootstrap_abandon', { params });
+
+export const confirmCollaborationBootstrapHealth = (params: BootstrapConfirmHealthParams) =>
+  invoke<CollaborationBootstrapResult>('collaboration_bootstrap_confirm_health', { params });
+
+export const restartCollaborationBootstrapGateway = (params: BootstrapRestartParams) =>
+  invoke<CollaborationBootstrapRestartResult>('collaboration_bootstrap_restart', { params });
+
+export const configureCollaborationBootstrap = (params: BootstrapConfigureParams) =>
+  invoke<CollaborationBootstrapConfigureResult>('collaboration_bootstrap_configure', { params });
+
+export type GatewayCredentialPersistence = 'system' | 'session_only' | 'unsupported';
+
+export interface GatewayCredentialResult {
+  runtimeKey: string;
+  persistence: GatewayCredentialPersistence;
+  token: string | null;
+  migrated: boolean;
+}
+
+export interface GatewayCredentialKeyParams {
+  runtimeKey: string;
+  deviceId: string;
+}
+
+export interface StoreGatewayCredentialParams extends GatewayCredentialKeyParams {
+  token: string;
+}
+
+export interface MigrateGatewayCredentialParams extends GatewayCredentialKeyParams {
+  legacyToken: string;
+}
+
+export const getGatewayCredential = (params: GatewayCredentialKeyParams) =>
+  invoke<GatewayCredentialResult>('get_gateway_credential', { params });
+
+export const storeGatewayCredential = (params: StoreGatewayCredentialParams) =>
+  invoke<GatewayCredentialResult>('store_gateway_credential', { params });
+
+export const deleteGatewayCredential = (params: GatewayCredentialKeyParams) =>
+  invoke<GatewayCredentialResult>('delete_gateway_credential', { params });
+
+export const migrateGatewayCredential = (params: MigrateGatewayCredentialParams) =>
+  invoke<GatewayCredentialResult>('migrate_gateway_credential', { params });

@@ -32,7 +32,7 @@ function useTitleContext() {
     '/skills':   { label: t('nav.skills') },
     '/terminal': { label: t('nav.terminal') },
     '/welcome': { label: t('nav.agentWorkspace', '项目启动') },
-    '/ai-workspace': { label: t('nav.aiWorkspace', 'AI 工作台') },
+    '/ai-workspace': { label: t('nav.agentTasks', 'Agent 任务') },
     '/memory':   { label: t('nav.memory') },
     '/config':   { label: t('nav.config') },
     '/files':    { label: t('nav.files') },

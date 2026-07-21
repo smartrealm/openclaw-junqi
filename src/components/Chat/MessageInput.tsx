@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Send, Paperclip, Camera, Mic, X, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio, Smile } from 'lucide-react';
-import { showAlert } from '@/components/shared/AlertDialog';
+import { Send, Paperclip, Camera, Mic, X, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio, Smile, RefreshCw } from 'lucide-react';
+import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { Icon } from '@/components/shared/icons';
 import { useTranslation } from 'react-i18next';
@@ -10,6 +10,16 @@ import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { gateway } from '@/services/gateway';
+import { createClientMessageId } from '@/services/gateway/messageIdentity';
+import { chatSendCoordinator } from '@/services/chat/sendTransaction';
+import {
+  AttachmentValidationError,
+  createPreparedAttachment,
+  displayAttachments,
+  toGatewayAttachments,
+  validatePreparedAttachments,
+} from '@/services/chat/attachments';
+import type { PreparedAttachment, QueuedChatMessage } from '@/services/chat/types';
 import { getDirection } from '@/i18n';
 import { SLASH_COMMANDS, CATEGORY_META, type SlashCommand, type SlashCategory } from '@/data/slashCommands';
 import { cmdIcon } from '@/data/cmdIcons';
@@ -18,6 +28,7 @@ import clsx from 'clsx';
 import { formatBytes } from '@/utils/format';
 import { debugError } from '@/utils/debugLog';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { resetSessionEverywhere } from '@/utils/sessionReset';
 
 const EmojiPicker = lazy(() => import('./EmojiPicker').then((m) => ({ default: m.EmojiPicker })));
 const ScreenshotPicker = lazy(() => import('./ScreenshotPicker').then((m) => ({ default: m.ScreenshotPicker })));
@@ -30,21 +41,12 @@ const VoiceRecorder = lazy(() => import('./VoiceRecorder').then((m) => ({ defaul
 // Stable empty-array reference for the queue selector — returning a fresh `[]`
 // literal from a zustand selector breaks useSyncExternalStore's referential
 // equality check and triggers an infinite re-render loop.
-const EMPTY_QUEUE: Array<{ id: string; text: string; timestamp: string }> = [];
+const EMPTY_QUEUE: QueuedChatMessage[] = [];
 // Stable empty reference for `draftAttachments[k] ?? ...` selectors. Using a
 // fresh `[]` inline allocates a new array per render and trips React #185
 // when the consumer wires the result into a useEffect dep.
 const EMPTY_PATHS: string[] = [];
-
-interface PendingFile {
-  name: string;
-  base64: string;
-  mimeType: string;
-  isImage: boolean;
-  size: number;
-  preview?: string;
-  path?: string;  // Windows path — non-image files send path instead of base64
-}
+const EMPTY_PREPARED_ATTACHMENTS: PreparedAttachment[] = [];
 
 function estimateWavDuration(base64: string): number {
   try {
@@ -117,12 +119,9 @@ export function MessageInput() {
     isSending,
     setIsSending,
     connected,
-    addMessage,
     setIsTyping,
     isTyping,
     activeSessionKey,
-    drafts,
-    setDraft,
     messages,
     historyLoader,
     isLoadingHistory,
@@ -134,14 +133,46 @@ export function MessageInput() {
   const voiceOutputActive = remoteVoiceOutput !== null
     || ((voicePhase === 'queued' || voicePhase === 'speaking')
       && (voiceSessionKey == null || voiceSessionKey === activeSessionKey));
-  const drainQueue = useChatStore((s) => s.drainQueue);
   const clearQueue = useChatStore((s) => s.clearQueue);
   const queue = useChatStore((s) => s.messageQueue[activeSessionKey] || EMPTY_QUEUE);
+  const activeSessionId = useChatStore(
+    (s) => s.sessions.find((session) => session.key === activeSessionKey)?.sessionId,
+  );
   const removeQueuedMessage = useChatStore((s) => s.removeQueuedMessage);
   const updateQueuedMessage = useChatStore((s) => s.updateQueuedMessage);
+  const retryQueuedMessage = useChatStore((s) => s.retryQueuedMessage);
+  const enqueueMessage = useChatStore((s) => s.enqueueMessage);
   const pendingCount = queue.length;
-  const [text, setText] = useState(() => drafts[activeSessionKey] || '');
-  const [files, setFiles] = useState<PendingFile[]>([]);
+  const text = useChatStore((s) => s.drafts[activeSessionKey] || '');
+  const files = useChatStore(
+    (s) => s.preparedAttachments[activeSessionKey] ?? EMPTY_PREPARED_ATTACHMENTS,
+  );
+  const setText = useCallback((next: React.SetStateAction<string>) => {
+    const state = useChatStore.getState();
+    const current = state.drafts[activeSessionKey] || '';
+    state.setDraft(activeSessionKey, typeof next === 'function' ? next(current) : next);
+  }, [activeSessionKey]);
+  const updateSessionFiles = useCallback((
+    sessionKey: string,
+    next: React.SetStateAction<PreparedAttachment[]>,
+  ) => {
+    const state = useChatStore.getState();
+    const current = state.preparedAttachments[sessionKey] ?? [];
+    const resolved = typeof next === 'function' ? next(current) : next;
+    validatePreparedAttachments(resolved);
+    state.setPreparedAttachments(sessionKey, resolved);
+  }, []);
+  const setFiles = useCallback((next: React.SetStateAction<PreparedAttachment[]>) => {
+    updateSessionFiles(activeSessionKey, next);
+  }, [activeSessionKey, updateSessionFiles]);
+  const reportAttachmentError = useCallback((error: unknown) => {
+    debugError('media', '[Attachments] Unable to prepare attachment:', error);
+    showAlert(
+      t('input.attachmentErrorTitle', '附件读取失败'),
+      error instanceof Error ? error.message : String(error),
+      'error',
+    );
+  }, [t]);
   const [screenshotOpen, setScreenshotOpen] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null); // image preview URL
@@ -151,13 +182,7 @@ export function MessageInput() {
     if (!connected || isHistoryWarmupGate || !base64) return;
     setVoiceMode(false);
     voiceRuntime.interruptGlobally(activeSessionKey);
-    addMessage({
-      id: `user-${Date.now()}`, role: 'user',
-      content: t('voice.voiceMessage', { seconds: durationSec }),
-      timestamp: new Date().toISOString(),
-      mediaUrl: previewUrl, mediaType: 'audio',
-    }, activeSessionKey);
-    setIsTyping(true, activeSessionKey);
+    const clientMessageId = createClientMessageId();
     setIsSending(true);
     try {
       const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'webm';
@@ -165,18 +190,27 @@ export function MessageInput() {
       // Local persistence supports retention and recovery. Gateway may run in
       // Docker or on another host, so transport must never depend on this path.
       await window.aegis?.voice?.save?.(filename, base64, activeSessionKey).catch(() => null);
-      await gateway.sendMessage(
-        `🎤 [voice attachment] (${durationSec}s)`,
-        [{ type: 'base64', mimeType, content: base64, fileName: filename }],
-        activeSessionKey,
-      );
+      const attachments = toGatewayAttachments([createPreparedAttachment({
+        fileName: filename,
+        mimeType,
+        base64,
+        size: Math.floor(base64.length * 0.75),
+      })]);
+      await chatSendCoordinator.send({
+        sessionKey: activeSessionKey,
+        sessionId: activeSessionId,
+        clientMessageId,
+        message: t('voice.voiceMessage', { seconds: durationSec }),
+        attachments,
+        optimisticMessage: { mediaUrl: previewUrl, mediaType: 'audio' },
+      });
     } catch (err) {
       debugError('media', '[Voice] Send error:', err);
-      setIsTyping(false, activeSessionKey);
+      if (err instanceof AttachmentValidationError) reportAttachmentError(err);
     } finally {
       setIsSending(false);
     }
-  }, [activeSessionKey, addMessage, connected, isHistoryWarmupGate, setIsSending, setIsTyping, t]);
+  }, [activeSessionKey, activeSessionId, connected, isHistoryWarmupGate, reportAttachmentError, setIsSending, t]);
 
   const handleVoiceWakeCapture = useCallback(async (wavDataUrl: string) => {
     const base64 = wavDataUrl.split(',')[1] || '';
@@ -238,32 +272,27 @@ export function MessageInput() {
     if (draftAttach.length === 0) return;
     // Snapshot the paths BEFORE we clear so the dependency closure is
     // stable for this run even if the store changes mid-effect.
+    const sessionKey = activeSessionKey;
     const paths = [...draftAttach];
-    const ext = (p: string) => {
-      const m = /\.([^.\\/]+)$/.exec(p);
-      return m ? m[1].toLowerCase() : '';
-    };
-    const isImage = (e: string) => /^(png|jpe?g|gif|webp|bmp|svg)$/i.test(e);
-    const additions: PendingFile[] = paths.map((p) => {
-      const e = ext(p);
-      return {
-        name: p.split(/[\\/]/).pop() || p,
-        base64: '',
-        mimeType: isImage(e) ? `image/${e === 'svg' ? 'svg+xml' : e}` : 'application/octet-stream',
-        isImage: isImage(e),
-        size: 0,
-        path: p,
-      };
-    });
-    setFiles((cur) => {
-      const seen = new Set(cur.map((f) => f.path || f.name));
-      const next = [...cur];
-      for (const a of additions) if (!seen.has(a.path || a.name)) next.push(a);
-      return next;
-    });
-    // Clear the draft via getState() (no subscription, no re-render storm).
-    useChatStore.getState().setDraftAttachments(activeSessionKey, []);
-  }, [activeSessionKey, draftAttach]);
+    useChatStore.getState().setDraftAttachments(sessionKey, []);
+    void Promise.all(paths.map(async (path) => {
+      const file = await window.aegis?.file?.read(path);
+      if (!file) throw new Error(`Unable to read ${path}`);
+      return createPreparedAttachment({
+        fileName: file.name,
+        mimeType: file.mimeType,
+        base64: file.base64,
+        size: file.size,
+        preview: file.isImage ? `data:${file.mimeType};base64,${file.base64}` : undefined,
+        sourcePath: path,
+      });
+    })).then((additions) => {
+      updateSessionFiles(sessionKey, (current) => {
+        const seen = new Set(current.map((file) => file.sourcePath || file.id));
+        return [...current, ...additions.filter((file) => !seen.has(file.sourcePath || file.id))];
+      });
+    }).catch(reportAttachmentError);
+  }, [activeSessionKey, draftAttach, reportAttachmentError, updateSessionFiles]);
   useEffect(() => {
     if (!connected) return;
     gateway.getSkills().then((r: any) => {
@@ -323,9 +352,11 @@ export function MessageInput() {
       setText('');
       setSlashPicker({ open: false, query: '', idx: 0 });
       if (cmd.localAction === 'clear') {
-        const st = useChatStore.getState();
-        st.clearMessages(activeSessionKey);
-        gateway.call('sessions.reset', { sessionKey: activeSessionKey }).catch(() => {});
+        showConfirm(
+          t('chat.resetSession', 'Reset session'),
+          t('chat.resetSessionConfirm', 'Clear this session history? The session itself will remain.'),
+          () => { void resetSessionEverywhere(activeSessionKey); },
+        );
       } else if (cmd.localAction === 'compress') {
         void gateway.compactSession(activeSessionKey).catch((error) => {
           debugError('gateway', '[Chat] Session compaction failed:', error);
@@ -436,16 +467,6 @@ export function MessageInput() {
     el?.focus();
   };
 
-  // Sync draft when switching sessions
-  useEffect(() => {
-    setText(drafts[activeSessionKey] || '');
-  }, [activeSessionKey]);
-
-  // Save draft on text change
-  useEffect(() => {
-    setDraft(activeSessionKey, text);
-  }, [text, activeSessionKey]);
-
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -495,8 +516,7 @@ export function MessageInput() {
       }
 
       // ESC #2 — input focused: recall the last user message (and the reply that
-      // followed it) back into the input box for editing. The draft is restored
-      // automatically by the text→setDraft effect below.
+      // followed it) back into the session-scoped input box for editing.
       if (document.activeElement !== textareaRef.current) return;
       const msgs = st.messages;
       let lastUserIdx = -1;
@@ -536,80 +556,48 @@ export function MessageInput() {
   }, [queue.length]);
 
   const handleSend = useCallback(async () => {
-    // Read latest DOM value to avoid IME timing issues (composition may not have flushed into state yet).
+    const sendSessionKey = activeSessionKey;
+    const sendSessionId = activeSessionId;
+    const sendFiles = [...files];
     const rawText = textareaRef.current?.value ?? text;
     const trimmed = rawText.trim();
-    // While the AI is typing, allow queueing even if a previous send's ACK is still
-    // pending (isSending) — the message routes to the queue below, not a duplicate send.
-    const isAiTyping = !!useChatStore.getState().typingBySession[activeSessionKey];
-    if ((!trimmed && files.length === 0) || (!isAiTyping && isSending) || !connected || isHistoryWarmupGate) return;
+    const isAiTyping = !!useChatStore.getState().typingBySession[sendSessionKey];
+    if ((!trimmed && sendFiles.length === 0) || (!isAiTyping && isSending) || !connected || isHistoryWarmupGate) return;
 
-    // On first interaction — load history before sending so context is visible
     if (messages.length === 0 && historyLoader) {
-      await historyLoader();
+      try {
+        await historyLoader(sendSessionKey);
+      } catch (error) {
+        debugError('app', '[Send] History warmup failed:', error);
+        showAlert(
+          t('chat.historyLoadFailed', '历史记录加载失败'),
+          error instanceof Error ? error.message : String(error),
+          'error',
+        );
+        return;
+      }
     }
 
+    let attachmentsForGateway;
+    try {
+      attachmentsForGateway = toGatewayAttachments(sendFiles);
+    } catch (error) {
+      showAlert(
+        t('input.attachmentErrorTitle', '附件无法发送'),
+        error instanceof Error ? error.message : String(error),
+        'error',
+      );
+      return;
+    }
+
+    const fullMessage = trimmed || `📎 ${sendFiles.map((file) => file.fileName).join(', ')}`;
+    const previewImageAttachments = displayAttachments(sendFiles);
+
+    const clientMessageId = createClientMessageId();
+    const timestamp = new Date().toISOString();
     setIsSending(true);
 
-    const imageFiles = files.filter((f) => f.isImage);
-    const previewImageAttachments = imageFiles
-      .filter((f) => f.preview)
-      .map((f) => ({ mimeType: f.mimeType, content: f.preview!, fileName: f.name }));
-    let fullMessage = trimmed;
-    let attachmentsForGateway: Array<{ type: string; mimeType: string; content: string; fileName: string }> | undefined;
-    let usedManagedMarkers = false;
-
     try {
-      const stageResult = await window.aegis?.attachments?.stage?.({
-        sessionKey: activeSessionKey,
-        files: files.map((file) => ({
-          name: file.name,
-          mimeType: file.mimeType,
-          base64: file.base64 || undefined,
-          sourcePath: file.path || undefined,
-          size: file.size,
-          isImage: file.isImage,
-        })),
-      });
-      if (stageResult?.success && stageResult.staged.length > 0) {
-        const markers = stageResult.staged.map((entry) => entry.marker);
-        const markerText = markers.join('\n');
-        fullMessage = fullMessage ? `${fullMessage}\n\n${markerText}` : markerText;
-        usedManagedMarkers = true;
-      } else if (files.length > 0) {
-        throw new Error((stageResult as { error?: string } | undefined)?.error || 'failed to stage attachments');
-      }
-    } catch {
-      const nonImageFiles = files.filter((f) => !f.isImage);
-      const filePathRefs = nonImageFiles
-        .map((f) => `📎 file: ${f.path || f.name} (${f.mimeType}, ${formatBytes(f.size)})`)
-        .join('\n');
-      if (filePathRefs) {
-        fullMessage = fullMessage ? `${fullMessage}\n\n${filePathRefs}` : filePathRefs;
-      }
-      attachmentsForGateway = imageFiles.map((f) => ({
-        type: 'base64',
-        mimeType: f.mimeType,
-        content: f.base64,
-        fileName: f.name,
-      }));
-    }
-    if (!fullMessage && files.length > 0) {
-      fullMessage = `📎 ${files.map((f) => f.name).join(', ')}`;
-    }
-
-    const userMsg = {
-      id: `user-${Date.now()}`, role: 'user' as const,
-      content: fullMessage || '',
-      timestamp: new Date().toISOString(),
-      ...(!usedManagedMarkers && previewImageAttachments.length > 0 ? { attachments: previewImageAttachments } : {}),
-    };
-
-    // ── Token/cost budget guard ──
-    // budgetLimit (USD) is a 30-day rolling cap. If the user set a limit and the
-    // accumulated 30d cost already exceeds it, block new messages and tell them
-    // instead of silently burning tokens. budgetLimit === 0 means "no limit".
-    {
       const { budgetLimit } = useSettingsStore.getState();
       if (budgetLimit > 0) {
         await ensureGroupFresh('cost');
@@ -625,41 +613,39 @@ export function MessageInput() {
             }),
             'warning',
           );
-          setIsSending(false);
           return;
         }
       }
-    }
 
-    setText('');
-    setFiles([]);
-    const cs = useChatStore.getState();
-    cs.setQuickReplies([], activeSessionKey);
+      const state = useChatStore.getState();
+      state.setDraft(sendSessionKey, '');
+      state.setPreparedAttachments(sendSessionKey, []);
+      state.setQuickReplies([], sendSessionKey);
 
-    // Queue if AI is already processing — add to queue only, NOT to chat area.
-    // The Queue Strip is the authoritative display for queued messages.
-    if (cs.typingBySession[activeSessionKey] && cs.activeSessionKey === activeSessionKey) {
-      const st = useChatStore.getState();
-      const q = [...(st.messageQueue[activeSessionKey] || []), { id: userMsg.id, text: fullMessage || '', timestamp: userMsg.timestamp }];
-      useChatStore.setState({ messageQueue: { ...st.messageQueue, [activeSessionKey]: q } });
-      setIsSending(false);
-      return;
-    }
+      if (state.typingBySession[sendSessionKey]) {
+        enqueueMessage(sendSessionKey, {
+          id: clientMessageId,
+          text: fullMessage,
+          timestamp,
+          ...(sendSessionId ? { sessionId: sendSessionId } : {}),
+          ...(attachmentsForGateway.length ? { attachments: attachmentsForGateway } : {}),
+          ...(previewImageAttachments.length ? { displayAttachments: previewImageAttachments } : {}),
+        });
+        return;
+      }
 
-    // Not queuing — add to chat area immediately and send
-    voiceRuntime.interruptGlobally(activeSessionKey);
-    addMessage(userMsg, activeSessionKey);
-
-    setIsTyping(true, activeSessionKey);
-
-    try {
-      await gateway.sendMessage(
-        fullMessage || '',
-        attachmentsForGateway && attachmentsForGateway.length > 0 ? attachmentsForGateway : undefined,
-        activeSessionKey,
-      );
-    } catch (err) {
-      debugError('app', '[Send] Error:', err);
+      voiceRuntime.interruptGlobally(sendSessionKey);
+      await chatSendCoordinator.send({
+        sessionKey: sendSessionKey,
+        sessionId: sendSessionId,
+        message: fullMessage,
+        clientMessageId,
+        attachments: attachmentsForGateway.length ? attachmentsForGateway : undefined,
+        displayAttachments: previewImageAttachments,
+        optimisticMessage: { timestamp },
+      });
+    } catch (error) {
+      debugError('app', '[Send] Error:', error);
     } finally {
       setIsSending(false);
     }
@@ -669,12 +655,13 @@ export function MessageInput() {
     isSending,
     connected,
     activeSessionKey,
-    addMessage,
+    activeSessionId,
     setIsSending,
-    setIsTyping,
     messages,
     historyLoader,
     isHistoryWarmupGate,
+    enqueueMessage,
+    t,
   ]);
 
   // File type icon based on MIME type (uses Icon.chat.attachment palette)
@@ -692,30 +679,42 @@ export function MessageInput() {
   };
 
   const handleFileSelect = async () => {
-    const result = await window.aegis?.file.openDialog();
-    if (result?.canceled || !result?.filePaths?.length) return;
-    for (const filePath of result.filePaths) {
-      const file = await window.aegis.file.read(filePath);
-      if (file) {
-        const isImage = file.mimeType?.startsWith('image/') ?? false;
-        setFiles((prev) => [...prev, {
-          name: file.name,
-          base64: isImage ? file.base64 : '',  // Only store base64 for images
+    const sessionKey = activeSessionKey;
+    try {
+      const result = await window.aegis?.file.openDialog();
+      if (result?.canceled || !result?.filePaths?.length) return;
+      const additions = (await Promise.all(result.filePaths.map(async (filePath) => {
+        const file = await window.aegis.file.read(filePath);
+        if (!file) throw new Error(`Unable to read ${filePath}`);
+        return createPreparedAttachment({
+          fileName: file.name,
           mimeType: file.mimeType,
-          isImage, size: file.size,
-          preview: isImage ? `data:${file.mimeType};base64,${file.base64}` : undefined,
-          path: filePath,  // Store original Windows path
-        }]);
-      }
+          base64: file.base64,
+          size: file.size,
+          preview: file.isImage ? `data:${file.mimeType};base64,${file.base64}` : undefined,
+          sourcePath: filePath,
+        });
+      })));
+      updateSessionFiles(sessionKey, (current) => [...current, ...additions]);
+    } catch (error) {
+      reportAttachmentError(error);
     }
   };
 
   const handleScreenshotCapture = (dataUrl: string) => {
     const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-    setFiles((prev) => [...prev, {
-      name: `screenshot-${Date.now()}.png`, base64, mimeType: 'image/png',
-      isImage: true, size: base64.length * 0.75, preview: dataUrl,
-    }]);
+    try {
+      setFiles((prev) => [...prev, createPreparedAttachment({
+        fileName: `screenshot-${Date.now()}.png`,
+        base64,
+        mimeType: 'image/png',
+        size: Math.floor(base64.length * 0.75),
+        preview: dataUrl,
+      })]);
+    } catch (error) {
+      reportAttachmentError(error);
+      return;
+    }
     textareaRef.current?.focus();
   };
 
@@ -726,6 +725,7 @@ export function MessageInput() {
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
+    const sessionKey = activeSessionKey;
     for (const item of Array.from(items)) {
       if (item.type.startsWith('image/')) {
         e.preventDefault();
@@ -733,13 +733,22 @@ export function MessageInput() {
         if (!blob) continue;
         const reader = new FileReader();
         reader.onload = () => {
-          const dataUrl = reader.result as string;
-          const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-          setFiles((prev) => [...prev, {
-            name: 'clipboard.png', base64, mimeType: 'image/png',
-            isImage: true, size: blob.size, preview: dataUrl,
-          }]);
+          try {
+            if (typeof reader.result !== 'string') throw new Error('Clipboard image could not be read');
+            const dataUrl = reader.result;
+            const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+            updateSessionFiles(sessionKey, (prev) => [...prev, createPreparedAttachment({
+              fileName: 'clipboard.png',
+              base64,
+              mimeType: 'image/png',
+              size: blob.size,
+              preview: dataUrl,
+            })]);
+          } catch (error) {
+            reportAttachmentError(error);
+          }
         };
+        reader.onerror = () => reportAttachmentError(reader.error ?? new Error('Clipboard image could not be read'));
         reader.readAsDataURL(blob);
         break;
       }
@@ -748,30 +757,31 @@ export function MessageInput() {
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    const sessionKey = activeSessionKey;
     for (const file of Array.from(e.dataTransfer.files)) {
       const isImage = file.type.startsWith('image/');
       const filePath = (file as any).path || '';  // Electron adds .path to File objects
 
-      if (isImage) {
-        // Images: read base64 for preview + attachment
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          if (typeof reader.result !== 'string') throw new Error(`${file.name} could not be read`);
+          const dataUrl = reader.result;
           const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
-          setFiles((prev) => [...prev, {
-            name: file.name, base64, mimeType: file.type,
-            isImage: true, size: file.size,
-            preview: dataUrl, path: filePath,
-          }]);
-        };
-        reader.readAsDataURL(file);
-      } else {
-        // Non-images: store path only (no base64 needed)
-        setFiles((prev) => [...prev, {
-          name: file.name, base64: '', mimeType: file.type || 'application/octet-stream',
-          isImage: false, size: file.size, path: filePath,
-        }]);
-      }
+          updateSessionFiles(sessionKey, (prev) => [...prev, createPreparedAttachment({
+            fileName: file.name,
+            base64,
+            mimeType: file.type || undefined,
+            size: file.size,
+            preview: isImage ? dataUrl : undefined,
+            sourcePath: filePath || undefined,
+          })]);
+        } catch (error) {
+          reportAttachmentError(error);
+        }
+      };
+      reader.onerror = () => reportAttachmentError(reader.error ?? new Error(`${file.name} could not be read`));
+      reader.readAsDataURL(file);
     }
   };
 
@@ -786,7 +796,7 @@ export function MessageInput() {
             <div key={i} className="relative shrink-0 w-[72px] h-[72px] rounded-xl border border-aegis-border/40 overflow-hidden bg-aegis-surface group">
               {file.isImage && file.preview ? (
                 <>
-                  <img src={file.preview} alt={file.name} className="w-full h-full object-cover" />
+                  <img src={file.preview} alt={file.fileName} className="w-full h-full object-cover" />
                   {/* Center eye icon — hover to preview */}
                   <button
                     onClick={() => setLightbox(file.preview || null)}
@@ -798,7 +808,7 @@ export function MessageInput() {
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center p-1">
                   <span className="text-xl">{getFileIcon(file.mimeType)}</span>
-                  <span className="text-[8px] text-aegis-text-dim truncate w-full text-center mt-0.5">{file.name}</span>
+                  <span className="text-[8px] text-aegis-text-dim truncate w-full text-center mt-0.5">{file.fileName}</span>
                 </div>
               )}
               <button onClick={() => removeFile(i)}
@@ -806,7 +816,7 @@ export function MessageInput() {
                 <Trash2 size={9} className="text-white" />
               </button>
               <div className="absolute bottom-0 left-0 right-0 bg-aegis-bg-solid/80 text-[7px] text-center text-aegis-text py-0.5">
-                {formatBytes(file.size)}
+                  {formatBytes(file.size)}
               </div>
             </div>
           ))}
@@ -906,7 +916,23 @@ export function MessageInput() {
                       </>
                     ) : (
                       <>
-                        <span className="text-[12px] text-aegis-text-secondary flex-1 min-w-0 break-words line-clamp-2">{item.text}</span>
+                        <span className="text-[12px] text-aegis-text-secondary flex-1 min-w-0 break-words">
+                          <span className="line-clamp-2">{item.text}</span>
+                          {item.failed && (
+                            <span className="block mt-0.5 text-[10px] text-aegis-danger line-clamp-1">
+                              {item.error || t('chat.sendFailed', '发送失败')}
+                            </span>
+                          )}
+                        </span>
+                        {item.failed && (
+                          <button
+                            onClick={() => { void retryQueuedMessage(activeSessionKey, item.id); }}
+                            className="w-5 h-5 rounded-md flex items-center justify-center text-aegis-danger hover:bg-aegis-danger/10 transition-colors shrink-0"
+                            title={t('chat.retrySend', '重试发送')}
+                          >
+                            <RefreshCw size={11} />
+                          </button>
+                        )}
                         <button
                           onClick={() => { setEditingQueueIdx(idx); setEditingQueueText(item.text); }}
                           className="w-5 h-5 rounded-md flex items-center justify-center text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors shrink-0"

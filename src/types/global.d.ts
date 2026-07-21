@@ -118,9 +118,6 @@ interface AegisAPI {
     rehydrateMainRuntime: () => Promise<{ success: boolean; error?: string }>;
   };
   // Gateway IPC removed — all WS handled by src/services/gateway.ts
-  artifact: {
-    open: (data: { type: string; title: string; content: string }) => Promise<{ success: boolean; error?: string }>;
-  };
   device: {
     getIdentity: () => Promise<{ deviceId: string; publicKey: string }>;
     sign: (params: {
@@ -223,57 +220,6 @@ interface AegisAPI {
       | { success: false; error?: string; removed: boolean; sessionKey: string }
     >;
   };
-  attachments?: {
-    stage: (payload: {
-      sessionKey?: string;
-      agentId?: string;
-      files?: Array<{
-        name?: string;
-        mimeType?: string;
-        base64?: string;
-        sourcePath?: string;
-        size?: number;
-        isImage?: boolean;
-      }>;
-    }) => Promise<
-      | {
-          success: true;
-          staged: Array<{
-            name: string;
-            path: string;
-            mimeType: string;
-            size: number;
-            isImage: boolean;
-            marker: string;
-          }>;
-        }
-      | { success: false; error?: string; staged: [] }
-    >;
-    cleanup: (payload?: {
-      ttlMs?: number;
-      maxTotalBytes?: number;
-      dryRun?: boolean;
-    }) => Promise<
-      | {
-          success: true;
-          removedFiles: number;
-          removedBytes: number;
-          scannedFiles: number;
-          totalBytes: number;
-          root: string;
-          wouldRemoveFiles: number;
-          wouldRemoveBytes: number;
-        }
-      | { success: false; error?: string }
-    >;
-    cleanupSession: (payload?: {
-      sessionKey?: string;
-      agentId?: string;
-    }) => Promise<
-      | { success: true; removed: boolean; sessionKey: string }
-      | { success: false; error?: string; removed: boolean; sessionKey: string }
-    >;
-  };
   uploads?: {
     list: (payload?: {
       sessionKey?: string;
@@ -359,11 +305,8 @@ interface AegisAPI {
     readLocal: (dirPath: string) => Promise<{ success: boolean; files: any[]; error?: string }>;
   };
   pairing: {
-    getToken: (endpoint?: string) => Promise<string | null>;
-    saveToken: (token: string, endpoint?: string) => Promise<{ success: boolean }>;
-    clearToken: (endpoint?: string) => Promise<{ success: boolean }>;
-    requestPairing: (httpBaseUrl: string) => Promise<{ code: string; deviceId: string }>;
-    poll: (httpBaseUrl: string, deviceId: string) => Promise<{ status: string; token?: string }>;
+    getToken: (gatewayUrl?: string) => Promise<string | null>;
+    saveToken: (token: string, gatewayUrl?: string) => Promise<{ success: boolean }>;
   };
   terminal: {
     create: (opts?: { cols?: number; rows?: number; cwd?: string }) => Promise<{ id: string; pid: number; error?: string }>;
