@@ -81,6 +81,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ChevronRight, Clock3, FolderOpen, FolderTree, GitBranch, Layers, Plus, RefreshCw, Search, Server, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
 import { Icon } from '@/components/shared/icons';
 import { KookyAgentIcon } from '@/components/Terminal/KookyAgentIcon';
+import { TerminalKookyMenuDivider, TerminalKookyMenuItem } from '@/components/Terminal/KookyMenu';
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/junqi/types";
 import type { Workspace } from "@/workspace/types";
 import { takePendingTerminalCommands } from '@/services/terminalCommandQueue';
@@ -939,16 +940,35 @@ function ProjectWorkspaceRow({
     getTerminalSessionOverviewSnapshot,
     getTerminalSessionOverviewSnapshot,
   );
+  const workspaceAgentEntries = useSyncExternalStore(
+    subscribeTerminalAgentOverview,
+    getTerminalAgentOverviewSnapshot,
+    getTerminalAgentOverviewSnapshot,
+  );
+  const workspaceSessionEntries = workspaceSessions.filter((session) => session.workspaceId === workspace.id);
   const activeSession = workspaceSessions.find((session) => session.workspaceId === workspace.id && session.agent)
     ?? workspaceSessions.find((session) => session.workspaceId === workspace.id);
+  const workspaceAgentActivity = workspaceAgentEntries.find((entry) => (
+    workspaceSessionEntries.some((session) => session.shellId === entry.shellId)
+  ));
+  const workspaceHasFailure = workspaceSessionEntries.some((session) => session.runtimeState === 'failed');
+  const workspaceActivityColor = workspaceAgentActivity?.state === 'attention'
+    ? 'rgb(var(--aegis-status-attention))'
+    : workspaceHasFailure
+      ? 'rgb(var(--aegis-status-failed))'
+      : workspaceAgentActivity
+        ? 'rgb(var(--aegis-status-running))'
+    : null;
   const workspaceGlyph = (
-    <KookyAgentIcon
-      agent={activeSession?.agent}
-      size={16}
-      fallback={workspace.sshRemoteHost
-        ? <Server size={15} strokeWidth={1.8} />
-        : <TerminalIcon size={15} strokeWidth={1.7} />}
-    />
+    <span style={{ width: 20, height: 20, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+      <KookyAgentIcon
+        agent={activeSession?.agent}
+        size={20}
+        fallback={workspace.sshRemoteHost
+          ? <Server size={16} strokeWidth={1.8} />
+          : <TerminalIcon size={16} strokeWidth={1.7} />}
+      />
+    </span>
   );
 
   useEffect(() => {
@@ -990,21 +1010,25 @@ function ProjectWorkspaceRow({
   const contextMenuContent = contextMenu && (
     <div
       role="menu"
+      className="terminal-kooky-menu"
       onPointerDown={(event) => event.stopPropagation()}
       style={{
-        position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 600,
-        minWidth: 176, padding: 4, borderRadius: 6,
+        position: 'fixed', left: Math.max(4, Math.min(contextMenu.x, window.innerWidth - 248)), top: Math.max(4, Math.min(contextMenu.y, window.innerHeight - 320)), zIndex: 600,
+        minWidth: 240, padding: 4, borderRadius: 6,
         ...TERMINAL_CONTEXT_MENU_STYLE,
       }}
     >
-      {onClose && <WorkspaceRowMenuItem danger label={workspace.worktreeParentId ? t('terminal.worktreeClose') : t('terminal.workspaceClose')} onClick={() => { onClose(); setContextMenu(null); }} />}
-      <WorkspaceRowMenuItem disabled={!canCloseOthers} label={t('terminal.workspaceCloseOthers')} onClick={() => { if (canCloseOthers) { onCloseOthers?.(); setContextMenu(null); } }} />
-      <div style={{ height: 1, margin: '3px 0', background: 'rgb(var(--aegis-overlay) / 0.10)' }} />
-      <WorkspaceRowMenuItem label={t('terminal.workspaceRename')} onClick={() => beginRename(true)} />
-      <WorkspaceRowMenuItem label={t('terminal.workspaceDuplicate')} onClick={() => { onDuplicate(); setContextMenu(null); }} />
-      {onCreateWorktree && <WorkspaceRowMenuItem label={t('terminal.worktreeCreate')} onClick={() => { onCreateWorktree(); setContextMenu(null); }} />}
-      {onGoToSource && <WorkspaceRowMenuItem label={t('terminal.worktreeGoToSource')} onClick={() => { onGoToSource(); setContextMenu(null); }} />}
-      {onReveal && <WorkspaceRowMenuItem label={t('terminal.workspaceReveal')} onClick={() => { onReveal(); setContextMenu(null); }} />}
+      {onClose && <TerminalKookyMenuItem label={workspace.worktreeParentId ? t('terminal.worktreeClose') : t('terminal.workspaceClose')} onClick={() => { onClose(); setContextMenu(null); }} />}
+      <TerminalKookyMenuItem disabled={!canCloseOthers} label={t('terminal.workspaceCloseOthers')} onClick={() => { if (canCloseOthers) { onCloseOthers?.(); setContextMenu(null); } }} />
+      <TerminalKookyMenuDivider />
+      <TerminalKookyMenuItem label={t('terminal.workspaceRename')} onClick={() => beginRename(true)} />
+      <TerminalKookyMenuItem label={t('terminal.workspaceDuplicate')} onClick={() => { onDuplicate(); setContextMenu(null); }} />
+      {onCreateWorktree && <TerminalKookyMenuItem label={t('terminal.worktreeCreate')} onClick={() => { setContextMenu(null); requestAnimationFrame(onCreateWorktree); }} />}
+      {onGoToSource && <TerminalKookyMenuItem label={t('terminal.worktreeGoToSource')} onClick={() => { onGoToSource(); setContextMenu(null); }} />}
+      {onReveal && <>
+        <TerminalKookyMenuDivider />
+        <TerminalKookyMenuItem label={t('terminal.workspaceReveal')} onClick={() => { onReveal(); setContextMenu(null); }} />
+      </>}
     </div>
   );
 
@@ -1020,6 +1044,8 @@ function ProjectWorkspaceRow({
           event.preventDefault();
           setContextMenu({ x: event.clientX, y: event.clientY });
         }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         onDragStart={(event) => {
           if (!draggable) return;
           event.dataTransfer.setData('application/x-junqi-workspace', workspace.id);
@@ -1032,14 +1058,15 @@ function ProjectWorkspaceRow({
         onDrop={onDrop}
         style={{
           height: 38, margin: '1px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          position: 'relative', cursor: 'pointer', borderRadius: 6,
-          background: active ? 'rgb(var(--aegis-overlay) / 0.15)' : 'transparent',
+          position: 'relative', cursor: 'pointer', borderRadius: 6, overflow: 'hidden',
+          background: active ? 'rgb(var(--aegis-overlay) / 0.15)' : hovered ? 'rgb(var(--aegis-overlay) / 0.07)' : 'transparent',
           outline: dragTargetPosition ? '1px solid rgb(var(--aegis-primary) / 0.55)' : 'none',
           color: active ? 'rgb(var(--aegis-text))' : 'rgb(var(--aegis-text-dim))',
         }}
       >
+        {workspace.worktreeParentId && <span aria-hidden style={{ position: 'absolute', insetBlock: 0, insetInlineStart: 0, width: 1.5, background: 'rgb(var(--aegis-text) / 0.4)' }} />}
         {workspaceGlyph}
-        {active && <span style={{ position: 'absolute', top: 5, right: 5, width: 5, height: 5, borderRadius: '50%', background: 'rgb(var(--aegis-primary))' }} />}
+        {workspaceActivityColor && <span style={{ position: 'absolute', top: 5, right: 5, width: 6, height: 6, borderRadius: '50%', background: workspaceActivityColor }} />}
       </div>
       {contextMenuContent}
       </>
@@ -1098,25 +1125,26 @@ function ProjectWorkspaceRow({
             }}
             style={{ height: 20, minWidth: 0, borderRadius: 3, border: '1px solid rgb(var(--aegis-primary) / 0.7)', background: 'rgb(var(--aegis-surface))', color: 'rgb(var(--aegis-text))', fontSize: 12, padding: '0 5px', outline: 'none' }}
           />
-        ) : <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, lineHeight: 1.2, color: active ? 'rgb(var(--aegis-text))' : 'inherit' }}>{title}</span>}
-        <span title={subtitle} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, lineHeight: 1.2, opacity: 0.7, fontFamily: '"JetBrains Mono", monospace' }}>
+        ) : <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, lineHeight: 1.2, color: active ? 'rgb(var(--aegis-text))' : 'inherit' }}>{title}</span>}
+        <span title={subtitle} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10.5, lineHeight: 1.2, opacity: 0.7, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>
           {workspace.worktreeParentId && <GitBranch size={10} strokeWidth={1.8} style={{ verticalAlign: '-1px', marginRight: 4 }} />}{subtitle}
         </span>
       </div>
-      {hovered && (onClose || onCreateWorktree || hasChildren) ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
-          {hasChildren && <button type="button" title={collapsed ? t('terminal.worktreeExpand') : t('terminal.worktreeCollapse')} onClick={(event) => { event.stopPropagation(); onToggleChildren(); }} style={workspaceRowIconButtonStyle}><ChevronRight size={12} style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 120ms ease' }} /></button>}
-          {onCreateWorktree && <button type="button" title={t('terminal.worktreeCreate')} onClick={(event) => { event.stopPropagation(); onCreateWorktree(); }} style={workspaceRowIconButtonStyle}><GitBranch size={12} /></button>}
+      <div style={{ width: 20 + (hasChildren ? 22 : 0) + (onCreateWorktree ? 22 : 0), display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+        {hasChildren && <button type="button" title={collapsed ? t('terminal.worktreeExpand') : t('terminal.worktreeCollapse')} onClick={(event) => { event.stopPropagation(); onToggleChildren(); }} style={{ ...workspaceRowIconButtonStyle, opacity: hovered ? 1 : 0, pointerEvents: hovered ? 'auto' : 'none' }}><ChevronRight size={10} style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 120ms ease' }} /></button>}
+        {onCreateWorktree && <button type="button" title={t('terminal.worktreeCreate')} onClick={(event) => { event.stopPropagation(); onCreateWorktree(); }} style={{ ...workspaceRowIconButtonStyle, opacity: hovered ? 1 : 0, pointerEvents: hovered ? 'auto' : 'none' }}><GitBranch size={10} /></button>}
+        <span style={{ width: 20, height: 20, position: 'relative', flexShrink: 0 }}>
+          {workspaceActivityColor && <span style={{ position: 'absolute', inset: 7, width: 6, height: 6, borderRadius: '50%', background: workspaceActivityColor, opacity: hovered ? 0 : 1 }} />}
           {onClose && <button
             type="button"
             title={workspace.worktreeParentId ? t('terminal.worktreeClose') : t('terminal.workspaceClose')}
             onClick={(event) => { event.stopPropagation(); onClose(); }}
-            style={workspaceRowIconButtonStyle}
+            style={{ ...workspaceRowIconButtonStyle, position: 'absolute', inset: 0, opacity: hovered ? 1 : 0, pointerEvents: hovered ? 'auto' : 'none' }}
           >
-            <X size={12} strokeWidth={2} />
+            <X size={10} strokeWidth={2} />
           </button>}
-        </div>
-      ) : <span style={{ width: 20, height: 20, flexShrink: 0 }} />}
+        </span>
+      </div>
       {parent && <span className="sr-only">{parent.name}</span>}
       {contextMenuContent}
     </div>
@@ -1136,22 +1164,6 @@ const workspaceRowIconButtonStyle: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
 };
-
-function WorkspaceRowMenuItem({ label, onClick, danger = false, disabled = false }: { label: string; onClick: () => void; danger?: boolean; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      disabled={disabled}
-      onClick={onClick}
-      style={{ width: '100%', height: 28, border: 'none', borderRadius: 4, background: 'transparent', color: danger ? 'rgb(239 68 68)' : 'rgb(var(--aegis-text))', opacity: disabled ? 0.45 : 1, padding: '0 8px', cursor: disabled ? 'default' : 'pointer', textAlign: 'left', fontSize: 11.5 }}
-      onMouseEnter={(event) => { if (!disabled) event.currentTarget.style.background = danger ? 'rgb(239 68 68 / 0.10)' : 'rgb(var(--aegis-overlay) / 0.08)'; }}
-      onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
-    >
-      {label}
-    </button>
-  );
-}
 
 // ──────────────────────────────────────────────────────────────
 // WorkspaceSidebarPanel — redesigned (full 220px / compact 52px)

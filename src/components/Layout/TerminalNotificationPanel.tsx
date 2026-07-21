@@ -80,7 +80,7 @@ export function TerminalNotificationPanel({
           aria-label={t('notifications.markAllRead', 'Mark all read')}
           className="flex h-7 w-7 items-center justify-center rounded-[5px] text-[#8c9099] transition-colors hover:bg-[rgb(239_239_241_/_0.07)] hover:text-[#efeff1] disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
         >
-          <Check size={14} strokeWidth={2} />
+          <Check size={12} strokeWidth={2} />
         </button>
         <button
           type="button"
@@ -90,7 +90,7 @@ export function TerminalNotificationPanel({
           aria-label={t('notifications.clearAll', 'Clear all')}
           className="flex h-7 w-7 items-center justify-center rounded-[5px] text-[#8c9099] transition-colors hover:bg-[rgb(239_239_241_/_0.07)] hover:text-[#efeff1] disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
         >
-          <Trash2 size={14} strokeWidth={1.8} />
+          <Trash2 size={12} strokeWidth={1.8} />
         </button>
       </div>
 
@@ -105,7 +105,6 @@ export function TerminalNotificationPanel({
                 onClick={() => onItemClick(item)}
                 className={clsx(
                   'group flex h-[50px] w-full items-center gap-[11px] px-[14px] text-left transition-colors hover:bg-[rgb(239_239_241_/_0.07)]',
-                  item.read && 'opacity-60',
                 )}
               >
                 <span
@@ -133,7 +132,7 @@ export function TerminalNotificationPanel({
                 </span>
                 <span className="flex min-w-8 shrink-0 justify-end font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[10px] text-[rgb(140_144_153_/_0.72)]">
                   <span className="group-hover:hidden">{terminalInboxRelativeTime(item.timestamp)}</span>
-                  <ArrowUpRight size={11} strokeWidth={2} className="hidden text-[rgb(239_239_241_/_0.75)] group-hover:block" />
+                  <ArrowUpRight size={10} strokeWidth={2} className="hidden text-[rgb(239_239_241_/_0.75)] group-hover:block" />
                 </span>
               </button>
             );

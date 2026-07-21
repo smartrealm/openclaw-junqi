@@ -4,12 +4,15 @@ import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./ShellTerminalPanel.tsx', import.meta.url), 'utf8');
 
-test('terminal tab context menu exposes every documented close operation', () => {
-  assert.match(source, /onCloseAll\?: \(\) => void/);
-  assert.match(source, /file\.closeAllTabs/);
-  assert.match(source, /shells\.forEach\(recordClosedTerminalShell\)/);
-  assert.match(source, /setShells\(\[\]\)/);
-  assert.match(source, /onClose\(\)/);
+test('terminal tab context menu mirrors Kooky’s command set and shortcut layout', () => {
+  assert.match(source, /TerminalKookyMenuItem/);
+  assert.match(source, /shortcut=\{closeShortcut\}/);
+  assert.match(source, /shortcut=\{splitRightShortcut\}/);
+  assert.match(source, /shortcut=\{splitDownShortcut\}/);
+  assert.match(source, /shortcut=\{renameShortcut\}/);
+  assert.match(source, /minWidth: 240/);
+  assert.doesNotMatch(source, /onCloseAll/);
+  assert.doesNotMatch(source, /file\.closeAllTabs/);
 });
 
 test('terminal tab context menu stays within the viewport and dismisses predictably', () => {

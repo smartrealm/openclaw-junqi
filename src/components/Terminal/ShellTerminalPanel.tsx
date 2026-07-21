@@ -12,6 +12,7 @@ import { matchesTerminalNewline, TERMINAL_NEWLINE_SEQUENCE } from "@/junqi/short
 import { TERMINAL_CONTEXT_MENU_STYLE } from "./terminalMenuStyles";
 import { Icon } from '@/components/shared/icons';
 import { KookyAgentIcon } from './KookyAgentIcon';
+import { TerminalKookyMenuDivider, TerminalKookyMenuItem } from './KookyMenu';
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "./terminalTypes";
 import {
   applyTerminalThemeOnPanel,
@@ -146,7 +147,7 @@ function computeShellTitle(shell: ShellSession): string {
 
 // ── kooky TabBarItem port: 40pt strip, cornerRadius 6, chromeActive bg,
 //    opacity 0.6 inactive foreground, hover-to-show close button,
-//    right-click context menu: Close / Close Others / Close to Right / Close All / Rename
+//    right-click context menu: Close / Close Others / Close to Right / Rename
 //    + HTML5 drag-and-drop reorder (Windows/macOS/Linux)
 //    + inline rename popover (no native prompt())
 
@@ -162,7 +163,6 @@ interface TabShellItemProps {
   onClose: () => void;
   onCloseOthers?: () => void;
   onCloseToRight?: () => void;
-  onCloseAll?: () => void;
   onRename?: (name: string) => void;
   onDuplicate?: () => void;
   onMoveToNewWindow?: () => void;
@@ -179,7 +179,7 @@ interface TabShellItemProps {
 
 function TabShellItem({
   title, agent, status, exitCode, selected, index, totalCount,
-  onSelect, onClose, onCloseOthers, onCloseToRight, onCloseAll, onRename,
+  onSelect, onClose, onCloseOthers, onCloseToRight, onRename,
   onDuplicate, onMoveToNewWindow, onSplitH, onSplitV, onRevealDirectory,
   onDragStart, onDragEnter, onDragEnd, onExternalDrop, renameRequested = false, onRenameRequestHandled,
 }: TabShellItemProps) {
@@ -189,6 +189,7 @@ function TabShellItem({
   const [dragOver, setDragOver] = useState(false);
   const [renameSession, setRenameSession] = useState<ShellRenameSession | null>(null);
   const renaming = renameSession !== null;
+  const hasCommandFailure = status === 'failed' || (status === 'exited' && exitCode !== 0 && exitCode != null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const pendingRenameFrameRef = useRef<number | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -232,14 +233,10 @@ function TabShellItem({
     };
   }, [ctxMenu]);
 
-  const menuItemStyle: React.CSSProperties = {
-    padding: '4px 12px', fontSize: 11, cursor: 'pointer',
-    color: 'rgb(var(--aegis-text))', fontFamily: '"JetBrains Mono", monospace',
-    whiteSpace: 'nowrap', background: 'transparent', border: 'none',
-    textAlign: 'left' as const, width: '100%',
-  };
-  const menuHover = (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; };
-  const menuLeave = (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; };
+  const closeShortcut = APP_PLATFORM === 'macos' ? '⌘W' : 'Ctrl+W';
+  const splitRightShortcut = APP_PLATFORM === 'macos' ? '⌘D' : 'Ctrl+Alt+D';
+  const splitDownShortcut = APP_PLATFORM === 'macos' ? '⌘⇧D' : 'Ctrl+Alt+Shift+D';
+  const renameShortcut = APP_PLATFORM === 'macos' ? '⌘R' : 'Ctrl+R';
 
   const startRename = (deferred = false) => {
     const open = () => {
@@ -304,22 +301,18 @@ function TabShellItem({
           outlineOffset: -1,
         }}
       >
-        <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+        {hasCommandFailure && (
+          <span
+            title={exitCode != null ? `exit ${exitCode}` : t('terminal.failed', 'Terminal stopped unexpectedly')}
+            style={{ width: 5, height: 5, flexShrink: 0, borderRadius: '50%', background: 'rgb(232 102 102)' }}
+          />
+        )}
+        <span style={{ display: 'inline-flex', flexShrink: 0 }}>
           <KookyAgentIcon
             agent={agent}
             size={15}
-            fallback={<TerminalIcon size={12} color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"} />}
+            fallback={<TerminalIcon size={15} color={selected ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text)/0.6)"} />}
           />
-          {status === 'failed' || (status === 'exited' && exitCode !== 0 && exitCode != null) ? (
-            <span
-              title={exitCode != null ? `exit ${exitCode}` : t('terminal.failed', 'Terminal stopped unexpectedly')}
-              style={{
-                position: 'absolute', right: -3, bottom: -2, width: 5, height: 5, borderRadius: '50%',
-                background: 'rgb(239 68 68)',
-                border: '1px solid rgb(var(--terminal-bg))',
-              }}
-            />
-          ) : null}
         </span>
         {renaming ? (
           <input
@@ -357,7 +350,7 @@ function TabShellItem({
           style={{
             background: "none", border: "none", color: "rgb(var(--aegis-text-dim))",
             display: "flex", alignItems: "center", justifyContent: "center",
-            padding: 1, borderRadius: 3, cursor: "pointer",
+            width: 16, height: 16, padding: 0, borderRadius: 5, cursor: "pointer",
             opacity: !renaming && (hovered || selected) ? 1 : 0,
             pointerEvents: !renaming && (hovered || selected) ? "auto" : "none",
             transition: "opacity 0.1s, background 0.12s, color 0.12s",
@@ -365,7 +358,7 @@ function TabShellItem({
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.10)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
         >
-          <X size={12} />
+          <X size={9} />
         </button>
       </div>
 
@@ -373,47 +366,48 @@ function TabShellItem({
         <div
           ref={contextMenuRef}
           role="menu"
+          className="terminal-kooky-menu"
           onMouseDown={(event) => event.stopPropagation()}
           style={{
-          position: 'fixed', left: Math.max(4, Math.min(ctxMenu.x, window.innerWidth - 220)), top: Math.max(4, Math.min(ctxMenu.y, window.innerHeight - 280)), zIndex: 2147482000,
+          position: 'fixed', left: Math.max(4, Math.min(ctxMenu.x, window.innerWidth - 248)), top: Math.max(4, Math.min(ctxMenu.y, window.innerHeight - 320)), zIndex: 2147482000,
           ...TERMINAL_CONTEXT_MENU_STYLE,
           borderRadius: 6,
-          padding: '4px 0', minWidth: 180, display: 'flex', flexDirection: 'column',
+          padding: 4, minWidth: 240, display: 'flex', flexDirection: 'column',
           }}
         >
-          <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-            onClick={() => { onClose(); setCtxMenu(null); }}>{t('terminal.close', 'Close')}</button>
-          <button type="button" role="menuitem" disabled={!onCloseOthers || totalCount <= 1} style={{ ...menuItemStyle, opacity: onCloseOthers && totalCount > 1 ? 1 : 0.45, cursor: onCloseOthers && totalCount > 1 ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-            onClick={() => { if (onCloseOthers && totalCount > 1) { onCloseOthers(); setCtxMenu(null); } }}>{t('terminal.closeOthers', 'Close Others')}</button>
-          <button type="button" role="menuitem" disabled={!onCloseToRight || index >= totalCount - 1} style={{ ...menuItemStyle, opacity: onCloseToRight && index < totalCount - 1 ? 1 : 0.45, cursor: onCloseToRight && index < totalCount - 1 ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-            onClick={() => { if (onCloseToRight && index < totalCount - 1) { onCloseToRight(); setCtxMenu(null); } }}>{t('terminal.closeTabsToRight', 'Close Tabs to the Right')}</button>
-          <button type="button" role="menuitem" disabled={!onCloseAll} style={{ ...menuItemStyle, opacity: onCloseAll ? 1 : 0.45, cursor: onCloseAll ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-            onClick={() => { if (onCloseAll) { onCloseAll(); setCtxMenu(null); } }}>{t('file.closeAllTabs', 'Close All Tabs')}</button>
-          <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
+          <TerminalKookyMenuItem label={t('terminal.close', 'Close')} shortcut={closeShortcut} onClick={() => { onClose(); setCtxMenu(null); }} />
+          <TerminalKookyMenuItem
+            label={t('terminal.closeOthers', 'Close Others')}
+            disabled={!onCloseOthers || totalCount <= 1}
+            onClick={() => { if (onCloseOthers && totalCount > 1) { onCloseOthers(); setCtxMenu(null); } }}
+          />
+          <TerminalKookyMenuItem
+            label={t('terminal.closeTabsToRight', 'Close Tabs to the Right')}
+            disabled={!onCloseToRight || index >= totalCount - 1}
+            onClick={() => { if (onCloseToRight && index < totalCount - 1) { onCloseToRight(); setCtxMenu(null); } }}
+          />
+          <TerminalKookyMenuDivider />
           {onSplitH && (
-            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onSplitH(); setCtxMenu(null); }}>{t('terminal.splitRight', 'Split Right')}</button>
+            <TerminalKookyMenuItem label={t('terminal.splitRight', 'Split Right')} shortcut={splitRightShortcut} onClick={() => { onSplitH(); setCtxMenu(null); }} />
           )}
           {onSplitV && (
-            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onSplitV(); setCtxMenu(null); }}>{t('terminal.splitDown', 'Split Down')}</button>
+            <TerminalKookyMenuItem label={t('terminal.splitDown', 'Split Down')} shortcut={splitDownShortcut} onClick={() => { onSplitV(); setCtxMenu(null); }} />
           )}
           {onMoveToNewWindow && (
-            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onMoveToNewWindow(); setCtxMenu(null); }}>{t('terminal.moveToNewWindow', 'Move to New Window')}</button>
+            <TerminalKookyMenuItem label={t('terminal.moveToNewWindow', 'Move to New Window')} onClick={() => { onMoveToNewWindow(); setCtxMenu(null); }} />
           )}
-          <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
+          <TerminalKookyMenuDivider />
           {onRename && (
-            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => startRename(true)}>{t('terminal.rename', 'Rename...')}</button>
+            <TerminalKookyMenuItem label={t('terminal.rename', 'Rename...')} shortcut={renameShortcut} onClick={() => startRename(true)} />
           )}
           {onDuplicate && (
-            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onDuplicate(); setCtxMenu(null); }}>{t('terminal.duplicateTab', 'Duplicate Tab')}</button>
+            <TerminalKookyMenuItem label={t('terminal.duplicateTab', 'Duplicate Tab')} onClick={() => { onDuplicate(); setCtxMenu(null); }} />
           )}
           {onRevealDirectory && (
-            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onRevealDirectory(); setCtxMenu(null); }}>{t('terminal.revealInFileManager', 'Reveal in file manager')}</button>
+            <>
+              <TerminalKookyMenuDivider />
+              <TerminalKookyMenuItem label={t('terminal.revealInFileManager', 'Reveal in file manager')} onClick={() => { onRevealDirectory(); setCtxMenu(null); }} />
+            </>
           )}
         </div>,
         document.body,
@@ -430,19 +424,13 @@ function TerminalLaunchMenuItem({ icon, label, onClick, disabled = false, meta }
   meta?: string;
 }) {
   return (
-    <button
-      type="button"
-      role="menuitem"
+    <TerminalKookyMenuItem
+      label={label}
       disabled={disabled}
+      leading={<span style={{ color: 'rgb(var(--aegis-text-dim))' }}>{icon}</span>}
+      trailing={meta ? <span style={{ color: 'rgb(var(--aegis-text-dim))', fontSize: 10 }}>{meta}</span> : undefined}
       onClick={onClick}
-      style={{ width: '100%', height: 30, display: 'flex', alignItems: 'center', gap: 8, border: 'none', borderRadius: 4, background: 'transparent', color: 'rgb(var(--aegis-text))', opacity: disabled ? 0.48 : 1, padding: '0 8px', cursor: disabled ? 'default' : 'pointer', textAlign: 'left', fontSize: 11.5 }}
-      onMouseEnter={(event) => { if (!disabled) event.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; }}
-      onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
-    >
-      <span style={{ color: 'rgb(var(--aegis-text-dim))', display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
-      <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-      {meta && <span style={{ color: 'rgb(var(--aegis-text-dim))', fontSize: 10, flexShrink: 0 }}>{meta}</span>}
-    </button>
+    />
   );
 }
 
@@ -1541,6 +1529,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       const liveSessionShellIds = new Set<string>();
       for (const shell of shells) {
         liveSessionShellIds.add(shell.id);
+        const displayAgent = shell.agentActivity?.agent ?? shell.launcherAgent;
         upsertTerminalSessionOverview({
           shellId: shell.id,
           paneId: projectId,
@@ -1549,7 +1538,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
           projectPath: isRemoteWorkspace
             ? `ssh://${sshHost?.trim() || 'remote'}`
             : shell.cwd || projectPath,
-          ...(shell.agentActivity ? { agent: shell.agentActivity.agent } : {}),
+          ...(displayAgent ? { agent: displayAgent } : {}),
           ...(isRemoteWorkspace && sshHost?.trim() ? { remoteHost: sshHost.trim() } : {}),
           runtimeState: shell.status,
           focus: () => {
@@ -2354,13 +2343,6 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       if (activeShellId && toClose.some((s) => s.id === activeShellId)) {
                         setActiveShellId(shell.id);
                       }
-                    }}
-                    onCloseAll={() => {
-                      shells.forEach(recordClosedTerminalShell);
-                      setShells([]);
-                      setActiveShellId(null);
-                      shellRefs.current = {};
-                      onClose();
                     }}
                     onRename={(name) => {
                       const customTitle = normalizeShellCustomTitle(name);

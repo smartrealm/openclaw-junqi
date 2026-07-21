@@ -1,7 +1,6 @@
 import { useSyncExternalStore, type ReactNode } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Icon } from '@/components/shared/icons';
 import { KookyAgentIcon, hasKookyAgentIcon } from './KookyAgentIcon';
 import {
@@ -11,12 +10,18 @@ import {
   type TerminalAgentPanelMode,
 } from './terminalAgentRegistry';
 
-function agentVisual(agent: string): { icon: ReactNode; tint: string; label: string } {
+function agentVisual(agent: string, iconSize = 16): { icon: ReactNode; tint: string; label: string } {
   const fallback = Icon.agent[agent] ?? { icon: Icon.agent.claude.icon, tint: '888888', label: agent || 'Agent' };
   return {
     ...fallback,
-    icon: hasKookyAgentIcon(agent) ? <KookyAgentIcon agent={agent} size={16} /> : fallback.icon,
+    icon: hasKookyAgentIcon(agent) ? <KookyAgentIcon agent={agent} size={iconSize} /> : fallback.icon,
   };
+}
+
+function agentStateVisual(state: TerminalAgentOverviewEntry['state']): { label: string; color: string } {
+  return state === 'attention'
+    ? { label: 'waiting', color: 'rgb(var(--aegis-status-attention))' }
+    : { label: 'running', color: 'rgb(var(--aegis-status-running))' };
 }
 
 export type AgentPanelMode = Exclude<TerminalAgentPanelMode, 'hidden'>;
@@ -36,32 +41,6 @@ export function AgentOverviewPanel({ mode = 'full' }: AgentOverviewPanelProps) {
     getTerminalAgentOverviewSnapshot,
   );
 
-  if (entries.length === 0) {
-    if (mode === 'compact') {
-      return (
-        <div
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, paddingTop: 10, opacity: 0.45 }}
-          title={t('terminal.agentPanelEmpty', 'No terminal agents are active')}
-        >
-          <Sparkles size={15} style={{ color: 'rgb(var(--aegis-text-dim))' }} />
-        </div>
-      );
-    }
-    return (
-      <div
-        style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          height: '100%', gap: 7, opacity: 0.5, userSelect: 'none', padding: 20, textAlign: 'center',
-        }}
-      >
-        <Sparkles size={18} style={{ color: 'rgb(var(--aegis-text-dim))', opacity: 0.65 }} />
-        <span style={{ fontSize: 11, color: 'rgb(var(--aegis-text-dim))' }}>
-          {t('terminal.agentPanelEmpty', 'No terminal agents are active')}
-        </span>
-      </div>
-    );
-  }
-
   if (mode === 'compact') {
     return (
       <div
@@ -70,13 +49,14 @@ export function AgentOverviewPanel({ mode = 'full' }: AgentOverviewPanelProps) {
         aria-label={t('terminal.agents', 'Agents')}
       >
         {entries.map((entry) => {
-          const visual = agentVisual(entry.agent);
+          const visual = agentVisual(entry.agent, 17);
+          const state = agentStateVisual(entry.state);
           return (
             <button
               key={entry.shellId}
               type="button"
               role="listitem"
-              title={`${visual.label} · ${entry.title} · ${entry.state}`}
+              title={`${visual.label} · ${entry.title} · ${state.label}`}
               aria-label={`${visual.label}: ${entry.title}`}
               onClick={entry.focus}
               style={{
@@ -91,9 +71,8 @@ export function AgentOverviewPanel({ mode = 'full' }: AgentOverviewPanelProps) {
               <span
                 style={{
                   position: 'absolute', bottom: 2, right: 2, width: 7, height: 7, borderRadius: '50%',
-                  background: `rgb(var(--aegis-status-${entry.state}))`,
-                  boxShadow: entry.state === 'running' ? '0 0 6px rgb(var(--aegis-status-running-glow))' : 'none',
-                  animation: entry.state === 'running' ? 'aegis-pulse 1.6s ease-in-out infinite' : 'none',
+                  background: state.color,
+                  boxShadow: '0 0 0 1.5px var(--kooky-chrome)',
                 }}
               />
             </button>
@@ -106,47 +85,60 @@ export function AgentOverviewPanel({ mode = 'full' }: AgentOverviewPanelProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }} role="list" aria-label={t('terminal.agents', 'Agents')}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 32, flexShrink: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'rgb(var(--aegis-text))', fontFamily: '"JetBrains Mono", monospace' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'rgb(var(--aegis-text))', fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>
           {t('terminal.agents', 'agents')}
         </span>
-        <span style={{ fontSize: 10, fontWeight: 500, color: 'rgb(var(--aegis-text-dim))', fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>
-          {entries.length}
-        </span>
+        {entries.length > 0 && <span style={{ fontSize: 10, fontWeight: 500, color: 'rgb(var(--aegis-text-dim))', fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>{entries.length}</span>}
       </div>
       <div style={{ height: 1, flexShrink: 0, background: 'rgb(255 255 255 / 0.07)' }} />
+      {entries.length === 0 ? (
+        <>
+          <div style={{ height: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 7, flexShrink: 0, userSelect: 'none' }}>
+            <Sparkles size={18} strokeWidth={1.3} style={{ color: 'rgb(var(--aegis-text-dim))', opacity: 0.4 }} />
+            <span style={{ fontSize: 11, color: 'rgb(var(--aegis-text-dim))', fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>
+              {t('terminal.agentPanelEmpty', 'no agents running')}
+            </span>
+          </div>
+          <div style={{ flex: 1 }} />
+        </>
+      ) : (
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
         {entries.map((entry) => {
           const visual = agentVisual(entry.agent);
+          const state = agentStateVisual(entry.state);
           return (
             <button
               key={entry.shellId}
               type="button"
               role="listitem"
-              title={entry.projectPath || entry.title}
+              title={`${visual.label} · ${entry.title} · ${state.label}`}
               onClick={entry.focus}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px', height: 46,
                 border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: 'inherit',
               }}
-              onMouseEnter={(event) => { event.currentTarget.style.background = 'rgb(255 255 255 / 0.04)'; }}
+              onMouseEnter={(event) => { event.currentTarget.style.background = 'rgb(var(--aegis-overlay) / 0.07)'; }}
               onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
             >
               <span style={{ width: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: `#${visual.tint}` }}>
                 {visual.icon}
               </span>
               <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <span style={{ fontSize: 12, fontWeight: 500, color: 'rgb(var(--aegis-text))', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: '"JetBrains Mono", monospace' }}>
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'rgb(var(--aegis-text))', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>
                   {visual.label}
                 </span>
-                <span style={{ fontSize: 10, color: 'rgb(var(--aegis-text-dim))', opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 10, color: 'rgb(var(--aegis-text-dim))', opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>
                   {entry.title}
                 </span>
               </span>
-              <StatusBadge state={entry.state} label size={7} className="shrink-0" />
+              <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 500, color: state.color, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>
+                {state.label}
+              </span>
             </button>
           );
         })}
       </div>
+      )}
     </div>
   );
 }
