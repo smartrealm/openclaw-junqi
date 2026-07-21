@@ -527,6 +527,10 @@
     "notificationsDesc": "تنبيهات سطح المكتب عند وصول رسالة",
     "sound": "الصوت",
     "soundDesc": "تشغيل صوت عند وصول تنبيه",
+    "audioAutoPlay": "تشغيل صوت الرد المباشر تلقائياً",
+    "audioAutoPlayDesc": "تشغيل الصوت المرفق بردود المساعد المباشرة؛ تبقى التسجيلات السابقة يدوية.",
+    "voiceAutoSpeak": "الردود الصوتية التلقائية",
+    "voiceAutoSpeakDesc": "قراءة ردود المساعد بصوت النظام مع إمكانية المقاطعة.",
     "dnd": "عدم الإزعاج",
     "dndDesc": "إيقاف جميع التنبيهات مؤقتاً",
     "testNotification": "هذا تنبيه تجريبي من JunQi Desktop!",
@@ -759,10 +763,11 @@
     "screenshot": "سكرين شوت",
     "voiceRecord": "تسجيل صوتي",
     "emoji": "إيموجي",
-    "voiceWakeStart": "بدء الاستماع الصوتي",
-    "voiceWakeStop": "إيقاف الاستماع الصوتي",
+    "voiceWakeStart": "بدء الإدخال الصوتي",
+    "voiceWakeStop": "إيقاف الإدخال الصوتي",
     "voiceWakeListening": "جارٍ الاستماع…",
-    "voiceWakeCaptured": "تم التقاط الاستماع الصوتي (لا يوجد تحويل على هذا الويبفيو؛ تم حفظ الصوت)"
+    "voiceWakeCaptured": "تم التقاط الصوت وجارٍ إرساله…",
+    "voiceStop": "إيقاف الصوت"
   },
   "screenshot": {
     "title": "سكرين شوت",
@@ -774,11 +779,26 @@
     "permissionRequired": "إذن تسجيل الشاشة مطلوب",
     "permissionHint": "افتح إعدادات النظام → الخصوصية والأمان → تسجيل الشاشة، فعّل JunQi Desktop ثم أعد المحاولة."
   },
+  "voiceWake": {
+    "title": "الإدخال الصوتي والمقاطعة",
+    "hint": "يُستخدم التعرف الصوتي للنظام للنسخ المباشر عند توفره. وفي بيئات سطح المكتب الأخرى يلتقط VAD المحلي الصوت ويرسله إلى OpenClaw. بدء التحدث يوقف الرد الحالي. إعدادات Picovoice محجوزة لمحوّل كلمة تنبيه مستقبلي.",
+    "accessKey": "Picovoice AccessKey (محجوز)",
+    "accessKeyPlaceholder": "حفظ AccessKey لمحوّل كلمة التنبيه المستقبلي",
+    "keyword": "كلمة التنبيه (محجوزة)",
+    "keywordPlaceholder": "حفظ كلمة لمحوّل التنبيه المستقبلي",
+    "sensitivity": "الحساسية (محجوزة)",
+    "sensLow": "تشغيلات خاطئة أقل",
+    "sensHigh": "حساسية أعلى",
+    "configured": "تم حفظ AccessKey؛ ما زال هذا الإصدار يستخدم تعرف النظام أو VAD المحلي",
+    "notConfigured": "يُستخدم تعرف النظام أو VAD المحلي حاليًا"
+  },
   "voice": {
     "cancel": "إلغاء",
     "sendRecording": "إرسال التسجيل",
     "voiceMessage": "🎤 رسالة صوتية ({{seconds}} ثانية)",
-    "micError": "⚠️ ما قدرت أوصل للمايكروفون. تأكد من الصلاحيات."
+    "micError": "⚠️ ما قدرت أوصل للمايكروفون. تأكد من الصلاحيات.",
+    "runtimeListening": "جارٍ الاستماع",
+    "runtimeSpeaking": "جارٍ نطق الرد"
   },
   "audio": {
     "loadError": "⚠️ تعذر تحميل الملف الصوتي"
@@ -2431,6 +2451,11 @@
   "setup.openclawUpdate.currentVersion": "الإصدار الحالي",
   "setup.gatewayReadyTitle": "بيئة التشغيل جاهزة",
   "setup.gatewayReadySubtitle": "تم تشغيل بوابة OpenClaw. انقر فوق التالي للمتابعة.",
+  "setup.gatewayReadyCheckingAction": "جارٍ فحص الإعداد…",
+  "setup.gatewayReadyCheckingTitle": "جارٍ فحص إعداد OpenClaw",
+  "setup.gatewayReadyCheckingDescription": "جارٍ التحقق من النموذج الحالي. بعد اكتمال الفحص ستنتقل إلى معالج الإعداد الرسمي أو شاشة الإكمال.",
+  "setup.gatewayReadyContinueFailedTitle": "تعذر المتابعة",
+  "setup.gatewayReadyContinueFailed": "تعذر المتابعة: {{error}}",
   "setup.openclawUpdate.latestVersion": "الإصدار المتاح",
   "setup.openclawUpdate.unknown": "غير معروف",
   "setup.openclawUpdate.check": "التحقق من التحديثات",

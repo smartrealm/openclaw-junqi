@@ -326,6 +326,9 @@ interface AegisAPI {
     >;
   };
   voice: {
+    startRecording?: () => Promise<{ success: boolean; error?: string }>;
+    stopRecording?: () => Promise<{ success: boolean; data?: string; duration?: number; error?: string }>;
+    isRecording?: () => Promise<{ recording: boolean; error?: string }>;
     save: (filename: string, base64: string, sessionKey?: string, agentId?: string) => Promise<string | null>;
     read: (filePath: string) => Promise<string | null>;
     cleanupSession?: (payload?: { sessionKey?: string; agentId?: string }) => Promise<

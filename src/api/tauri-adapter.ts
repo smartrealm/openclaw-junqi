@@ -56,6 +56,29 @@ import {
 const GATEWAY_RESTART_STARTED_EVENT = 'aegis:gateway-restart-started';
 const GATEWAY_RESTART_FINISHED_EVENT = 'aegis:gateway-restart-finished';
 
+/** Encode arbitrary-sized binary data without exceeding JS argument limits. */
+export function bytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+export function voiceSessionDirectory(appDataPath: string, sessionKey?: string): string {
+  const root = `${appDataPath.replace(/[\\/]+$/, '')}/voice`;
+  if (!sessionKey) return root;
+  const encoded = bytesToBase64(new TextEncoder().encode(sessionKey))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+  const chunks = encoded.match(/.{1,120}/g) ?? ['_'];
+  // The terminal component makes encoded keys prefix-safe: no session
+  // directory can become an ancestor of another session directory.
+  return `${root}/v1/${chunks.join('/')}/_`;
+}
+
 interface GatewayProgressEvent {
   step: 'gateway';
   message: string;
@@ -621,7 +644,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
 
   file: {
     openDialog: async () => { try { const { open } = await import("@tauri-apps/plugin-dialog"); const r = await open({ multiple: false }); return r ? { canceled: false, filePaths: [r] } : { canceled: true, filePaths: [] }; } catch { return { canceled: true, filePaths: [] }; } },
-    read: async (path: string) => { try { const { readFile } = await import("@tauri-apps/plugin-fs"); const c = await readFile(path); const t = new TextDecoder().decode(c); const ext = path.split(".").pop()?.toLowerCase() || ""; const img = ["png","jpg","jpeg","gif","webp","svg"]; const is = img.includes(ext); return { name: path.split("/").pop()||path, path, base64: is ? btoa(String.fromCharCode(...c)) : btoa(t), mimeType: is ? `image/${ext}` : "application/octet-stream", isImage: is, size: c.length }; } catch { return null; } },
+    read: async (path: string) => { try { const { readFile } = await import("@tauri-apps/plugin-fs"); const c = await readFile(path); const ext = path.split(".").pop()?.toLowerCase() || ""; const img = ["png","jpg","jpeg","gif","webp","svg"]; const is = img.includes(ext); return { name: path.split("/").pop()||path, path, base64: bytesToBase64(c), mimeType: is ? `image/${ext}` : "application/octet-stream", isImage: is, size: c.length }; } catch { return null; } },
     openSharedFolder: async () => {
       try {
         const config = await invoke<{ raw: string }>("read_config");
@@ -812,11 +835,11 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     isRecording: async () => { try { const r: any = await invoke("voice_is_recording"); return r; } catch { return { recording: false }; } },
     save: async (filename: string, base64: string, sessionKey?: string, agentId?: string) => {
       try {
-        const { writeFile } = await import("@tauri-apps/plugin-fs");
+        const { mkdir, writeFile } = await import("@tauri-apps/plugin-fs");
         const { appDataDir } = await import("@tauri-apps/api/path");
         const dir = await appDataDir();
-        const voiceDir = sessionKey ? `${dir}voice/${sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_")}` : `${dir}voice`;
-        try { await invoke("open_folder", { path: voiceDir }); } catch {}
+        const voiceDir = voiceSessionDirectory(dir, sessionKey);
+        await mkdir(voiceDir, { recursive: true });
         const path = `${voiceDir}/${filename}`;
         const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
         await writeFile(path, bytes);
@@ -827,9 +850,22 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       try {
         const { readFile } = await import("@tauri-apps/plugin-fs");
         const bytes = await readFile(filePath);
-        const b64 = btoa(String.fromCharCode(...bytes));
-        return b64;
+        return bytesToBase64(bytes);
       } catch { return null; }
+    },
+    cleanupSession: async (payload?: { sessionKey?: string; agentId?: string }) => {
+      const sessionKey = payload?.sessionKey || '';
+      if (!sessionKey.trim()) return { success: false, removed: false, sessionKey, error: 'sessionKey is required' };
+      try {
+        const { exists, remove } = await import('@tauri-apps/plugin-fs');
+        const { appDataDir } = await import('@tauri-apps/api/path');
+        const voiceDir = voiceSessionDirectory(await appDataDir(), sessionKey);
+        if (!await exists(voiceDir)) return { success: true, removed: false, sessionKey };
+        await remove(voiceDir, { recursive: true });
+        return { success: true, removed: true, sessionKey };
+      } catch (error) {
+        return { success: false, removed: false, sessionKey, error: String(error) };
+      }
     },
   },
   update: { check: async () => null, download: async () => null, install: async () => {}, onAvailable: () => () => {}, onUpToDate: () => () => {}, onProgress: () => () => {}, onDownloaded: () => () => {}, onError: () => () => {} },

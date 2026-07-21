@@ -14,7 +14,7 @@
     "connectingBanner": "正在連接到 Gateway…",
     "disconnectedBanner": "已與 Gateway 斷開連接",
     "reconnect": "重新連接",
-    "connectedReady": "✅ 已連接 — 可以開始輸入消息",
+    "connectedReady": "已連接 — 可以開始輸入消息",
     "waitingConnection": "正在等待連接…"
   },
   "nav": {
@@ -233,7 +233,7 @@
     "clawhubInstallFailed": "ClawHub 安裝失敗",
     "hubInstall": "安裝",
     "hubInstalling": "安裝中…",
-    "hubInstallDone": "✓ 已安裝",
+    "hubInstallDone": "已安裝",
     "hubInstallDoneHint": "下次對話時自動生效，無需重啟",
     "hubInstallError": "重試安裝",
     "hubSourceClawhub": "當前使用 ClawHub（SkillHub 在此網絡不可訪問）",
@@ -252,7 +252,7 @@
     "skillshubCliManual": "手動安裝",
     "skillshubInstall": "通過 SkillHub 安裝",
     "skillshubInstalling": "SkillHub 安裝中…",
-    "skillshubInstallDone": "✓ 已安裝（SkillHub）",
+    "skillshubInstallDone": "已安裝（SkillHub）",
     "skillshubInstallError": "SkillHub 安裝失敗",
     "skillshubFallbackInstall": "通過 ClawHub 安裝",
     "skillshubFallbackNote": "SkillHub API 當前不可訪問，已切換到 ClawHub 目錄（內容相同）。安裝時將自動使用騰訊 CDN 加速。",
@@ -568,6 +568,10 @@
     "notificationsDesc": "收到消息時顯示桌面通知",
     "sound": "提示音",
     "soundDesc": "通知時播放提示音",
+    "audioAutoPlay": "自動播放即時回覆音訊",
+    "audioAutoPlayDesc": "自動播放助手即時回覆附帶的音訊；歷史錄音仍需手動播放。",
+    "voiceAutoSpeak": "自動語音回覆",
+    "voiceAutoSpeakDesc": "使用系統語音朗讀目前會話的助手回覆，可隨時打斷。",
     "dnd": "請勿打擾",
     "dndDesc": "臨時靜音所有通知",
     "testNotification": "這是一條來自 JunQi Desktop 的測試通知",
@@ -808,7 +812,7 @@
     "outputCost": "輸出成本",
     "cacheCost": "緩存成本",
     "otherCost": "其他成本",
-    "copyTitle": "📊 統計報告",
+    "copyTitle": "統計報告",
     "copyPeriod": "週期：{{start}} → {{end}}（{{days}} 天）",
     "copyTotalCost": "總成本：{{value}}",
     "copyTotalTokens": "Token 總量：{{value}}",
@@ -1033,10 +1037,11 @@
     "screenshot": "截圖",
     "voiceRecord": "語音錄製",
     "emoji": "表情",
-    "voiceWakeStart": "開啟語音喚醒",
-    "voiceWakeStop": "關閉語音喚醒",
-    "voiceWakeListening": "語音喚醒中…",
-    "voiceWakeCaptured": "語音喚醒捕獲（該 webview 不支持轉寫，已保存音頻）"
+    "voiceWakeStart": "開啟語音輸入",
+    "voiceWakeStop": "關閉語音輸入",
+    "voiceWakeListening": "正在聆聽…",
+    "voiceWakeCaptured": "已擷取語音，正在傳送…",
+    "voiceStop": "停止語音"
   },
   "screenshot": {
     "title": "截圖",
@@ -1048,14 +1053,29 @@
     "permissionRequired": "需要屏幕錄製權限",
     "permissionHint": "打開 系統設置 → 隱私與安全性 → 屏幕錄製，啟用 JunQi Desktop 後重新截圖。"
   },
+  "voiceWake": {
+    "title": "語音輸入與打斷",
+    "hint": "支援系統語音辨識時會直接轉寫；其他桌面環境使用本機 VAD 擷取語音並傳送給 OpenClaw。開始說話會打斷目前回覆。Picovoice 設定保留給後續喚醒詞介面。",
+    "accessKey": "Picovoice AccessKey（預留）",
+    "accessKeyPlaceholder": "為後續喚醒詞介面儲存 AccessKey",
+    "keyword": "喚醒詞（預留）",
+    "keywordPlaceholder": "為後續喚醒詞介面儲存關鍵詞",
+    "sensitivity": "靈敏度（預留）",
+    "sensLow": "低誤觸",
+    "sensHigh": "高靈敏",
+    "configured": "AccessKey 已儲存；目前版本仍使用系統辨識或本機 VAD",
+    "notConfigured": "目前使用系統語音辨識或本機 VAD"
+  },
   "voice": {
     "cancel": "取消",
     "sendRecording": "發送錄音",
-    "voiceMessage": "🎤 語音消息（{{seconds}} 秒）",
-    "micError": "⚠️ 無法訪問麥克風，請檢查權限設置。"
+    "voiceMessage": "語音消息（{{seconds}} 秒）",
+    "micError": "無法訪問麥克風，請檢查權限設置。",
+    "runtimeListening": "聆聽中",
+    "runtimeSpeaking": "語音回覆中"
   },
   "audio": {
-    "loadError": "⚠️ 音頻文件加載失敗"
+    "loadError": "音頻文件加載失敗"
   },
   "palette": {
     "heartbeat": "快速健康檢查",
@@ -1280,7 +1300,7 @@
     "phaseThinking": "思考中",
     "phaseGenerating": "生成回覆中",
     "sessionsRunning": "{{count}} 個會話運行中",
-    "backgroundPrefix": "👁 {{agent}} · "
+    "backgroundPrefix": "{{agent}} · "
   },
   "token": {
     "lastUpdate": "上次更新時間",
@@ -1548,9 +1568,9 @@
     "noMemoriesCards": "未找到任何記憶",
     "importance": "重要性",
     "relatedMemories": "相關記憶",
-    "graphView": "🕸️ 圖視圖",
-    "timelineView": "📅 時間線",
-    "cardsView": "🗃️ 卡片視圖",
+    "graphView": "圖視圖",
+    "timelineView": "時間線",
+    "cardsView": "卡片視圖",
     "catAll": "全部",
     "catTechnical": "技術",
     "catProjects": "項目",
@@ -1576,9 +1596,9 @@
     }
   },
   "agentHubExtra": {
-    "treeView": "🌳 樹狀視圖",
-    "gridView": "▤ 網格視圖",
-    "activityView": "⚡ 活動",
+    "treeView": "樹狀視圖",
+    "gridView": "網格視圖",
+    "activityView": "活動",
     "agentsCount": "智能體",
     "workersCount": "工作者",
     "runningCount": "運行中",
@@ -1744,24 +1764,24 @@
     "active": "活躍"
   },
   "skillsExtra": {
-    "featured": "⭐ 推薦",
+    "featured": "推薦",
     "installs": "安裝量",
-    "requirements": "🔧 依賴說明",
+    "requirements": "依賴說明",
     "version": "版本",
     "downloads": "下載量",
     "stars": "收藏",
     "viewOnClawHub": "在 ClawHub 查看"
   },
   "settingsTheme": {
-    "dark": "🌙 深色模式",
-    "light": "☀️ 淺色模式"
+    "dark": "深色模式",
+    "light": "淺色模式"
   },
   "splash": {
     "loading": "正在加載…"
   },
   "contextMenu": {
-    "openLink": "🔗 打開鏈接",
-    "copyLink": "📋 複製鏈接",
+    "openLink": "打開鏈接",
+    "copyLink": "複製鏈接",
     "cut": "剪切",
     "copy": "複製",
     "paste": "粘貼",
@@ -1773,7 +1793,7 @@
   },
   "tray": {
     "open": "打開 JunQi Desktop",
-    "close": "❌ 退出"
+    "close": "退出"
   },
   "config": {
     "title": "提供方配置",
@@ -2008,7 +2028,7 @@
     "allowedOrigins": "允許的 Origin",
     "allowInsecureAuth": "允許不安全認證",
     "disableDeviceAuth": "關閉設備認證",
-    "dangerousWarning": "⚠️ 危險選項——僅在完全瞭解風險時使用",
+    "dangerousWarning": "危險選項——僅在完全瞭解風險時使用",
     "remoteGateway": "遠程 Gateway",
     "remoteUrl": "遠程地址",
     "transport": "傳輸方式",
@@ -2192,7 +2212,7 @@
     "providerId": "Provider ID",
     "providerIdPlaceholder": "例如：minimax-anthropic、my-vllm、custom",
     "providerIdHint": "寫入 OpenClaw 配置的 models.providers[id] 的鍵名，默認 custom",
-    "baseUrlDriftWarning": "⚠️ 已偏離推薦 endpoint（{{url}}），確認後再繼續。",
+    "baseUrlDriftWarning": "已偏離推薦 endpoint（{{url}}），確認後再繼續。",
     "modelIdHint": "輸入模型名稱，回車或逗號確認。OpenClaw 會自動加 {{providerId}}/ 前綴",
     "configPreviewTitle": "配置寫入預覽",
     "apiKeyEmpty": "（未填寫）",
@@ -2265,14 +2285,6 @@
       "education": "學習",
       "other": "其他"
     },
-    "categoryIcon": {
-      "work": "🏢",
-      "personal": "🏠",
-      "health": "🏥",
-      "social": "👥",
-      "education": "📚",
-      "other": "📌"
-    },
     "reminder": {
       "none": "不提醒",
       "5min": "提前 5 分鐘",
@@ -2282,10 +2294,10 @@
       "2hours": "提前 2 小時",
       "1day": "提前 1 天",
       "1week": "提前 1 周",
-      "scheduled": "已計劃 ✓",
+      "scheduled": "已計劃",
       "pending": "待發送",
-      "fired": "已發送 ✓",
-      "failed": "發送失敗 ✗"
+      "fired": "已發送",
+      "failed": "發送失敗"
     },
     "delivery": {
       "label": "發送到",
@@ -2329,10 +2341,10 @@
       "run": "運行審計",
       "running": "正在審計…",
       "failed": "審計失敗",
-      "clean": "🟢 乾淨 — 未發現問題",
-      "findings": "🟡 發現問題 — 檢測到明文密鑰",
-      "unresolved": "🔴 無法解析 — 部分密鑰引用無法解析",
-      "unknown": "⚪ 未知"
+      "clean": "乾淨 — 未發現問題",
+      "findings": "發現問題 — 檢測到明文密鑰",
+      "unresolved": "無法解析 — 部分密鑰引用無法解析",
+      "unknown": "未知"
     },
     "providers": {
       "title": "密鑰提供方",
@@ -2814,7 +2826,7 @@
     "typing": "正在回覆…",
     "working": "工作中…",
     "done": "完成啦！",
-    "celebrate": "任務完成 🎉",
+    "celebrate": "任務完成",
     "error": "出錯了",
     "sleepy": "有點困…",
     "sleep": "休息中",
@@ -3209,6 +3221,11 @@
   "setup.installComplete": "必需組件已安裝完成",
   "setup.gatewayConnected": "Gateway 已就緒",
   "setup.gatewayReadySubtitle": "OpenClaw Gateway 已啟動。請點擊下一步繼續。",
+  "setup.gatewayReadyCheckingAction": "正在檢查配置…",
+  "setup.gatewayReadyCheckingTitle": "正在檢查 OpenClaw 配置",
+  "setup.gatewayReadyCheckingDescription": "正在驗證目前模型是否可用；完成後將進入官方配置嚮導或完成頁。",
+  "setup.gatewayReadyContinueFailedTitle": "無法進入下一步",
+  "setup.gatewayReadyContinueFailed": "無法進入下一步：{{error}}",
   "setup.installCompleteSubtitle": "安裝與配置已完成。下一步只會啟動 Gateway，啟動後仍需手動進入工作臺。",
   "setup.installCompleteGatewayPending": "Gateway 配置已準備，點擊啟動 Gateway 繼續。",
   "setup.gatewayPrepareWillRetry": "Gateway 準備檢查未完成：{{error}}。點擊啟動時將自動重試。",
@@ -3233,7 +3250,7 @@
   "setup.node.extract": "正在解壓至 {{path}}…",
   "setup.node.cleanup": "清理臨時文件…",
   "setup.node.verify": "驗證安裝結果…",
-  "setup.node.done": "Node.js {{version}} 安裝成功 ✓",
+  "setup.node.done": "Node.js {{version}} 安裝成功",
   "setup.git.check": "正在檢測 Git 安裝狀態…",
   "setup.git.skip": "Git 已安裝，跳過安裝步驟",
   "setup.git.onDemand": "僅在 npm 明確需要 Git 時安裝",
@@ -3245,7 +3262,7 @@
   "setup.git.waitingWizard": "等待安裝嚮導完成… 已等待 {{elapsed}}",
   "setup.git.refreshPath": "安裝嚮導已退出，正在刷新系統 PATH…",
   "setup.git.verify": "正在驗證 Git 是否可用…",
-  "setup.git.done": "Git 安裝成功 ✓",
+  "setup.git.done": "Git 安裝成功",
   "setup.git.manualRequired": "Git 不可用。請手動安裝 Apple Command Line Tools 後重試。",
   "setup.git.prepareMacDialog": "Git 不可用。請手動安裝 Apple Command Line Tools 後重試。",
   "setup.git.waitingMac": "等待手動安裝完成後重試。",
@@ -3268,7 +3285,7 @@
   "setup.openclaw.prepareDir": "準備安裝目錄 {{path}}…",
   "setup.openclaw.npmInstall": "優先使用 npmmirror.com（國內）安裝 openclaw，失敗自動切換 npmjs.org（官方）…",
   "setup.openclaw.verify": "正在驗證 openclaw 安裝…",
-  "setup.openclaw.done": "openclaw 安裝成功 ✓",
+  "setup.openclaw.done": "openclaw 安裝成功",
   "setup.installTarget.title": "安裝位置",
   "setup.installTarget.user.tier": "用戶 npm 前綴",
   "setup.installTarget.user.note": "與終端 `npm i -g` 落點一致；安裝後 `openclaw` 已在你的 PATH 中",
@@ -3288,7 +3305,7 @@
   "setup.gateway.willStart": "未檢測到正在運行的 Gateway，將由前端啟動器接管啟動流程",
   "setup.gateway.syncState": "同步運行時狀態（AGENTS / SESSIONS / HEALTH）…",
   "setup.gateway.detectConnectSync": "檢測、連接並同步運行時狀態…",
-  "setup.gateway.ready": "Gateway 準備就緒 ✓",
+  "setup.gateway.ready": "Gateway 準備就緒",
   "setup.gateway.preparedToStart": "Gateway 準備完成，下一步啟動服務…",
   "gateway.restartTooltip": "重啟 Gateway",
   "gateway.startTooltip": "啟動 Gateway",

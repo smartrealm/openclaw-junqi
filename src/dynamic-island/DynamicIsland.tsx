@@ -21,6 +21,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent } from '@/utils/tauriEvents';
 import {
   EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
+  isVoiceActivePhase,
   formatRemainingTime,
   shouldPeekForSnapshot,
   type DynamicIslandSnapshot,
@@ -34,6 +35,7 @@ type IslandAction =
   | { type: 'toggle-dnd' }
   | { type: 'pomodoro-toggle' }
   | { type: 'pomodoro-stop' }
+  | { type: 'voice-stop' }
   | { type: 'hide' };
 
 const COLLAPSE_DELAY_MS = 5_200;
@@ -170,6 +172,7 @@ export default function DynamicIsland() {
   ));
   const attentionCount = attentionTasks.length;
   const primaryRunningTask = snapshot.tasks.find((task) => task.status === 'running');
+  const voiceActive = isVoiceActivePhase(snapshot.voicePhase);
   const remaining = formatRemainingTime(snapshot, now);
   const headline = useMemo(() => {
     if (snapshot.resourceDrop?.phase === 'dragging') {
@@ -181,6 +184,12 @@ export default function DynamicIsland() {
     if (snapshot.notice) return snapshot.notice.title;
     if (attentionCount === 1) return attentionTasks[0].title;
     if (attentionCount > 0) return chinese ? `${attentionCount} 项需要处理` : `${attentionCount} need attention`;
+    if (snapshot.voicePhase === 'speaking' || snapshot.voicePhase === 'queued') {
+      return chinese ? 'JunQi 正在语音回复' : 'JunQi is speaking';
+    }
+    if (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing') {
+      return chinese ? '正在聆听' : 'Listening';
+    }
     if (runningCount === 1 && primaryRunningTask) return primaryRunningTask.title;
     if (runningCount > 0) return chinese ? `${runningCount} 个 Agent 执行中` : `${runningCount} agents running`;
     if (snapshot.sessionRunning) return chinese ? '当前会话正在回复' : 'The active session is responding';
@@ -189,7 +198,7 @@ export default function DynamicIsland() {
       : snapshot.connecting
         ? (chinese ? '正在连接 Gateway' : 'Connecting to Gateway')
         : (chinese ? 'Gateway 离线' : 'Gateway offline');
-  }, [attentionCount, attentionTasks, chinese, primaryRunningTask, runningCount, snapshot.connected, snapshot.connecting, snapshot.notice, snapshot.resourceDrop, snapshot.sessionRunning]);
+  }, [attentionCount, attentionTasks, chinese, primaryRunningTask, runningCount, snapshot.connected, snapshot.connecting, snapshot.notice, snapshot.resourceDrop, snapshot.sessionRunning, snapshot.voicePhase]);
   const compactMeta = useMemo(() => {
     const task = attentionTasks[0] ?? primaryRunningTask;
     if (task) return `${task.agent} · ${statusLabel(task.status, chinese)}`;
@@ -199,8 +208,16 @@ export default function DynamicIsland() {
         : (chinese ? '休息计时' : 'Break session');
     }
     if (snapshot.sessionRunning) return chinese ? 'OPENCLAW · 生成中' : 'OPENCLAW · RESPONDING';
+    if (snapshot.voicePhase === 'speaking' || snapshot.voicePhase === 'queued') {
+      return snapshot.voiceQueueLength > 0
+        ? (chinese ? `语音队列 · ${snapshot.voiceQueueLength}` : `VOICE QUEUE · ${snapshot.voiceQueueLength}`)
+        : (chinese ? '语音播放中' : 'VOICE OUTPUT');
+    }
+    if (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing') {
+      return chinese ? '语音输入' : 'VOICE INPUT';
+    }
     return snapshot.connected ? 'OPENCLAW ONLINE' : 'OPENCLAW STANDBY';
-  }, [attentionTasks, chinese, primaryRunningTask, snapshot.connected, snapshot.pomodoro.phase, snapshot.pomodoro.running, snapshot.sessionRunning]);
+  }, [attentionTasks, chinese, primaryRunningTask, snapshot.connected, snapshot.pomodoro.phase, snapshot.pomodoro.running, snapshot.sessionRunning, snapshot.voicePhase, snapshot.voiceQueueLength]);
 
   return (
     <main
@@ -254,6 +271,8 @@ export default function DynamicIsland() {
             <span className="junqi-island-compact-metrics">
               {remaining ? (
                 <span className="junqi-island-timer"><Clock3 size={12} />{remaining}</span>
+              ) : voiceActive ? (
+                <span className="junqi-island-running"><Volume2 size={12} />{snapshot.voiceQueueLength || ''}</span>
               ) : runningCount > 0 ? (
                 <span className="junqi-island-running"><span className="junqi-island-spinner" />{runningCount}</span>
               ) : (
@@ -319,7 +338,16 @@ export default function DynamicIsland() {
                     <span className="junqi-island-task-copy"><strong>{task.title}</strong><small>{task.agent} · {statusLabel(task.status, chinese)}</small></span>
                     <ChevronUp size={13} className="junqi-island-task-open" />
                   </button>
-                )) : (
+                )) : voiceActive ? (
+                  <div className="junqi-island-empty">
+                    <Volume2 size={18} />
+                    <span><strong>{snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing'
+                      ? (chinese ? '正在处理语音' : 'Processing voice')
+                      : (chinese ? '正在播报回复' : 'Speaking a reply')}</strong><small>{snapshot.voiceQueueLength > 0
+                        ? (chinese ? `队列中还有 ${snapshot.voiceQueueLength} 句` : `${snapshot.voiceQueueLength} sentence(s) queued`)
+                        : (chinese ? '可以随时打断' : 'You can interrupt at any time')}</small></span>
+                  </div>
+                ) : (
                   <div className="junqi-island-empty">
                     <Bot size={18} />
                     <span><strong>{chinese ? '没有运行中的任务' : 'No active tasks'}</strong><small>{chinese ? '需要时我会在这里提醒你' : 'Important activity will appear here'}</small></span>
@@ -335,6 +363,9 @@ export default function DynamicIsland() {
                 </button>
                 {snapshot.pomodoro.running && (
                   <button type="button" onClick={() => action({ type: 'pomodoro-stop' })} title={chinese ? '停止计时' : 'Stop timer'}><Square size={14} /><span>{chinese ? '停止' : 'Stop'}</span></button>
+                )}
+                {(snapshot.voicePhase === 'queued' || snapshot.voicePhase === 'speaking') && (
+                  <button type="button" className="is-active" onClick={() => action({ type: 'voice-stop' })} title={chinese ? '停止语音' : 'Stop voice'}><Square size={14} /><span>{chinese ? '停止语音' : 'Stop voice'}</span></button>
                 )}
                 <button type="button" className={snapshot.dndMode ? 'is-active' : ''} onClick={() => action({ type: 'toggle-dnd' })} title={chinese ? '请勿打扰' : 'Do not disturb'}>
                   {snapshot.dndMode ? <VolumeX size={15} /> : <Volume2 size={15} />}

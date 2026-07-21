@@ -1,6 +1,7 @@
 import type { AgentWorkspaceTask, AgentWorkspaceTaskStatus } from '@/stores/agentWorkspaceStore';
 import type { NotificationType } from '@/stores/notificationStore';
 import type { PomodoroState } from '@/stores/petStore';
+import type { VoicePhase } from '@/services/voice/types';
 
 export interface DynamicIslandTask {
   id: string;
@@ -29,6 +30,8 @@ export interface DynamicIslandSnapshot {
   connected: boolean;
   connecting: boolean;
   sessionRunning: boolean;
+  voicePhase: VoicePhase;
+  voiceQueueLength: number;
   petEnabled: boolean;
   dndMode: boolean;
   autoExpand: boolean;
@@ -38,11 +41,21 @@ export interface DynamicIslandSnapshot {
   resourceDrop: DynamicIslandDrop | null;
 }
 
+/** Voice phases that represent ongoing user-visible audio work. */
+export function isVoiceActivePhase(phase: VoicePhase): boolean {
+  return phase === 'listening'
+    || phase === 'transcribing'
+    || phase === 'queued'
+    || phase === 'speaking';
+}
+
 export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   revision: 0,
   connected: false,
   connecting: false,
   sessionRunning: false,
+  voicePhase: 'idle',
+  voiceQueueLength: 0,
   petEnabled: false,
   dndMode: false,
   autoExpand: true,
@@ -103,6 +116,7 @@ export function shouldShowDynamicIsland(input: {
   enabled: boolean;
   mainMinimized: boolean;
   sessionRunning: boolean;
+  voiceActive?: boolean;
   tasks: DynamicIslandTask[];
   resourceDrop: DynamicIslandDrop | null;
   terminalPulse: boolean;
@@ -111,6 +125,7 @@ export function shouldShowDynamicIsland(input: {
   if (input.resourceDrop) return true;
   if (!input.mainMinimized) return false;
   return input.sessionRunning
+    || Boolean(input.voiceActive)
     || input.terminalPulse
     || input.tasks.some((task) => (
       task.status === 'running'
@@ -124,6 +139,7 @@ export function shouldPeekForSnapshot(
   next: DynamicIslandSnapshot,
 ): boolean {
   if (!next.autoExpand) return false;
+  if (!isVoiceActivePhase(previous.voicePhase) && isVoiceActivePhase(next.voicePhase)) return true;
   if (next.resourceDrop && (
     !previous.resourceDrop
     || next.resourceDrop.phase !== previous.resourceDrop.phase

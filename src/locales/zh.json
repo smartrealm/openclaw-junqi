@@ -14,7 +14,7 @@
     "connectingBanner": "正在连接到 Gateway…",
     "disconnectedBanner": "已与 Gateway 断开连接",
     "reconnect": "重新连接",
-    "connectedReady": "✅ 已连接 — 可以开始输入消息",
+    "connectedReady": "已连接 — 可以开始输入消息",
     "waitingConnection": "正在等待连接…"
   },
   "nav": {
@@ -233,7 +233,7 @@
     "clawhubInstallFailed": "ClawHub 安装失败",
     "hubInstall": "安装",
     "hubInstalling": "安装中…",
-    "hubInstallDone": "✓ 已安装",
+    "hubInstallDone": "已安装",
     "hubInstallDoneHint": "下次对话时自动生效，无需重启",
     "hubInstallError": "重试安装",
     "hubSourceClawhub": "当前使用 ClawHub（SkillHub 在此网络不可访问）",
@@ -252,7 +252,7 @@
     "skillshubCliManual": "手动安装",
     "skillshubInstall": "通过 SkillHub 安装",
     "skillshubInstalling": "SkillHub 安装中…",
-    "skillshubInstallDone": "✓ 已安装（SkillHub）",
+    "skillshubInstallDone": "已安装（SkillHub）",
     "skillshubInstallError": "SkillHub 安装失败",
     "skillshubFallbackInstall": "通过 ClawHub 安装",
     "skillshubFallbackNote": "SkillHub API 当前不可访问，已切换到 ClawHub 目录（内容相同）。安装时将自动使用腾讯 CDN 加速。",
@@ -568,6 +568,10 @@
     "notificationsDesc": "收到消息时显示桌面通知",
     "sound": "提示音",
     "soundDesc": "通知时播放提示音",
+    "audioAutoPlay": "自动播放实时回复音频",
+    "audioAutoPlayDesc": "自动播放助手实时回复携带的音频；历史录音仍需手动播放。",
+    "voiceAutoSpeak": "自动语音回复",
+    "voiceAutoSpeakDesc": "用系统语音朗读当前会话的助手回复，可随时打断。",
     "dnd": "请勿打扰",
     "dndDesc": "临时静音所有通知",
     "testNotification": "这是一条来自 JunQi Desktop 的测试通知",
@@ -808,7 +812,7 @@
     "outputCost": "输出成本",
     "cacheCost": "缓存成本",
     "otherCost": "其他成本",
-    "copyTitle": "📊 统计报告",
+    "copyTitle": "统计报告",
     "copyPeriod": "周期：{{start}} → {{end}}（{{days}} 天）",
     "copyTotalCost": "总成本：{{value}}",
     "copyTotalTokens": "Token 总量：{{value}}",
@@ -1033,10 +1037,11 @@
     "screenshot": "截图",
     "voiceRecord": "语音录制",
     "emoji": "表情",
-    "voiceWakeStart": "开启语音唤醒",
-    "voiceWakeStop": "关闭语音唤醒",
-    "voiceWakeListening": "语音唤醒中…",
-    "voiceWakeCaptured": "语音唤醒捕获（该 webview 不支持转写，已保存音频）"
+    "voiceWakeStart": "开启语音输入",
+    "voiceWakeStop": "关闭语音输入",
+    "voiceWakeListening": "正在聆听…",
+    "voiceWakeCaptured": "已捕获语音，正在发送…",
+    "voiceStop": "停止语音"
   },
   "screenshot": {
     "title": "截图",
@@ -1048,14 +1053,29 @@
     "permissionRequired": "需要屏幕录制权限",
     "permissionHint": "打开 系统设置 → 隐私与安全性 → 屏幕录制，启用 JunQi Desktop 后重新截图。"
   },
+  "voiceWake": {
+    "title": "语音输入与打断",
+    "hint": "支持系统语音识别时会直接转写；其他桌面环境使用本地 VAD 捕获语音并发送给 OpenClaw。开始说话会打断当前回复。Picovoice 配置为后续唤醒词适配器预留。",
+    "accessKey": "Picovoice AccessKey（预留）",
+    "accessKeyPlaceholder": "为后续唤醒词适配器保存 AccessKey",
+    "keyword": "唤醒词（预留）",
+    "keywordPlaceholder": "为后续唤醒词适配器保存关键词",
+    "sensitivity": "灵敏度（预留）",
+    "sensLow": "低误触",
+    "sensHigh": "高灵敏",
+    "configured": "AccessKey 已保存；当前版本仍使用系统识别或本地 VAD",
+    "notConfigured": "当前使用系统语音识别或本地 VAD"
+  },
   "voice": {
     "cancel": "取消",
     "sendRecording": "发送录音",
-    "voiceMessage": "🎤 语音消息（{{seconds}} 秒）",
-    "micError": "⚠️ 无法访问麦克风，请检查权限设置。"
+    "voiceMessage": "语音消息（{{seconds}} 秒）",
+    "micError": "无法访问麦克风，请检查权限设置。",
+    "runtimeListening": "聆听中",
+    "runtimeSpeaking": "语音回复中"
   },
   "audio": {
-    "loadError": "⚠️ 音频文件加载失败"
+    "loadError": "音频文件加载失败"
   },
   "palette": {
     "heartbeat": "快速健康检查",
@@ -1280,7 +1300,7 @@
     "phaseThinking": "思考中",
     "phaseGenerating": "生成回复中",
     "sessionsRunning": "{{count}} 个会话运行中",
-    "backgroundPrefix": "👁 {{agent}} · "
+    "backgroundPrefix": "{{agent}} · "
   },
   "token": {
     "lastUpdate": "上次更新时间",
@@ -1548,9 +1568,9 @@
     "noMemoriesCards": "未找到任何记忆",
     "importance": "重要性",
     "relatedMemories": "相关记忆",
-    "graphView": "🕸️ 图视图",
-    "timelineView": "📅 时间线",
-    "cardsView": "🗃️ 卡片视图",
+    "graphView": "图视图",
+    "timelineView": "时间线",
+    "cardsView": "卡片视图",
     "catAll": "全部",
     "catTechnical": "技术",
     "catProjects": "项目",
@@ -1576,9 +1596,9 @@
     }
   },
   "agentHubExtra": {
-    "treeView": "🌳 树状视图",
-    "gridView": "▤ 网格视图",
-    "activityView": "⚡ 活动",
+    "treeView": "树状视图",
+    "gridView": "网格视图",
+    "activityView": "活动",
     "agentsCount": "智能体",
     "workersCount": "工作者",
     "runningCount": "运行中",
@@ -1744,24 +1764,24 @@
     "active": "活跃"
   },
   "skillsExtra": {
-    "featured": "⭐ 推荐",
+    "featured": "推荐",
     "installs": "安装量",
-    "requirements": "🔧 依赖说明",
+    "requirements": "依赖说明",
     "version": "版本",
     "downloads": "下载量",
     "stars": "收藏",
     "viewOnClawHub": "在 ClawHub 查看"
   },
   "settingsTheme": {
-    "dark": "🌙 深色模式",
-    "light": "☀️ 浅色模式"
+    "dark": "深色模式",
+    "light": "浅色模式"
   },
   "splash": {
     "loading": "正在加载…"
   },
   "contextMenu": {
-    "openLink": "🔗 打开链接",
-    "copyLink": "📋 复制链接",
+    "openLink": "打开链接",
+    "copyLink": "复制链接",
     "cut": "剪切",
     "copy": "复制",
     "paste": "粘贴",
@@ -1773,7 +1793,7 @@
   },
   "tray": {
     "open": "打开 JunQi Desktop",
-    "close": "❌ 退出"
+    "close": "退出"
   },
   "config": {
     "title": "提供方配置",
@@ -2008,7 +2028,7 @@
     "allowedOrigins": "允许的 Origin",
     "allowInsecureAuth": "允许不安全认证",
     "disableDeviceAuth": "关闭设备认证",
-    "dangerousWarning": "⚠️ 危险选项——仅在完全了解风险时使用",
+    "dangerousWarning": "危险选项——仅在完全了解风险时使用",
     "remoteGateway": "远程 Gateway",
     "remoteUrl": "远程地址",
     "transport": "传输方式",
@@ -2192,7 +2212,7 @@
     "providerId": "Provider ID",
     "providerIdPlaceholder": "例如：minimax-anthropic、my-vllm、custom",
     "providerIdHint": "写入 OpenClaw 配置的 models.providers[id] 的键名，默认 custom",
-    "baseUrlDriftWarning": "⚠️ 已偏离推荐 endpoint（{{url}}），确认后再继续。",
+    "baseUrlDriftWarning": "已偏离推荐 endpoint（{{url}}），确认后再继续。",
     "modelIdHint": "输入模型名称，回车或逗号确认。OpenClaw 会自动加 {{providerId}}/ 前缀",
     "configPreviewTitle": "配置写入预览",
     "apiKeyEmpty": "（未填写）",
@@ -2265,14 +2285,6 @@
       "education": "学习",
       "other": "其他"
     },
-    "categoryIcon": {
-      "work": "🏢",
-      "personal": "🏠",
-      "health": "🏥",
-      "social": "👥",
-      "education": "📚",
-      "other": "📌"
-    },
     "reminder": {
       "none": "不提醒",
       "5min": "提前 5 分钟",
@@ -2282,10 +2294,10 @@
       "2hours": "提前 2 小时",
       "1day": "提前 1 天",
       "1week": "提前 1 周",
-      "scheduled": "已计划 ✓",
+      "scheduled": "已计划",
       "pending": "待发送",
-      "fired": "已发送 ✓",
-      "failed": "发送失败 ✗"
+      "fired": "已发送",
+      "failed": "发送失败"
     },
     "delivery": {
       "label": "发送到",
@@ -2329,10 +2341,10 @@
       "run": "运行审计",
       "running": "正在审计…",
       "failed": "审计失败",
-      "clean": "🟢 干净 — 未发现问题",
-      "findings": "🟡 发现问题 — 检测到明文密钥",
-      "unresolved": "🔴 无法解析 — 部分密钥引用无法解析",
-      "unknown": "⚪ 未知"
+      "clean": "干净 — 未发现问题",
+      "findings": "发现问题 — 检测到明文密钥",
+      "unresolved": "无法解析 — 部分密钥引用无法解析",
+      "unknown": "未知"
     },
     "providers": {
       "title": "密钥提供方",
@@ -2814,7 +2826,7 @@
     "typing": "正在回复…",
     "working": "工作中…",
     "done": "完成啦！",
-    "celebrate": "任务完成 🎉",
+    "celebrate": "任务完成",
     "error": "出错了",
     "sleepy": "有点困…",
     "sleep": "休息中",
@@ -3233,7 +3245,7 @@
   "setup.node.extract": "正在解压至 {{path}}…",
   "setup.node.cleanup": "清理临时文件…",
   "setup.node.verify": "验证安装结果…",
-  "setup.node.done": "Node.js {{version}} 安装成功 ✓",
+  "setup.node.done": "Node.js {{version}} 安装成功",
   "setup.git.check": "正在检测 Git 安装状态…",
   "setup.git.skip": "Git 已安装，跳过安装步骤",
   "setup.git.onDemand": "仅在 npm 明确需要 Git 时安装",
@@ -3245,7 +3257,7 @@
   "setup.git.waitingWizard": "等待安装向导完成… 已等待 {{elapsed}}",
   "setup.git.refreshPath": "安装向导已退出，正在刷新系统 PATH…",
   "setup.git.verify": "正在验证 Git 是否可用…",
-  "setup.git.done": "Git 安装成功 ✓",
+  "setup.git.done": "Git 安装成功",
   "setup.git.manualRequired": "Git 不可用。请手动安装 Apple Command Line Tools 后重试。",
   "setup.git.prepareMacDialog": "Git 不可用。请手动安装 Apple Command Line Tools 后重试。",
   "setup.git.waitingMac": "等待手动安装完成后重试。",
@@ -3268,7 +3280,7 @@
   "setup.openclaw.prepareDir": "准备安装目录 {{path}}…",
   "setup.openclaw.npmInstall": "优先使用 npmmirror.com（国内）安装 openclaw，失败自动切换 npmjs.org（官方）…",
   "setup.openclaw.verify": "正在验证 openclaw 安装…",
-  "setup.openclaw.done": "openclaw 安装成功 ✓",
+  "setup.openclaw.done": "openclaw 安装成功",
   "setup.installTarget.title": "安装位置",
   "setup.installTarget.user.tier": "用户 npm 前缀",
   "setup.installTarget.user.note": "与终端 `npm i -g` 落点一致；安装后 `openclaw` 已在你的 PATH 中",
@@ -3288,7 +3300,7 @@
   "setup.gateway.willStart": "未检测到正在运行的 Gateway，将由前端启动器接管启动流程",
   "setup.gateway.syncState": "同步运行时状态（AGENTS / SESSIONS / HEALTH）…",
   "setup.gateway.detectConnectSync": "检测、连接并同步运行时状态…",
-  "setup.gateway.ready": "Gateway 准备就绪 ✓",
+  "setup.gateway.ready": "Gateway 准备就绪",
   "setup.gateway.preparedToStart": "Gateway 准备完成，下一步启动服务…",
   "gateway.restartTooltip": "重启 Gateway",
   "gateway.startTooltip": "启动 Gateway",
@@ -3411,6 +3423,11 @@
   "setup.openclawUpdate.currentVersion": "当前版本",
   "setup.gatewayReadyTitle": "运行时已就绪",
   "setup.gatewayReadySubtitle": "OpenClaw Gateway 已启动。请点击下一步继续。",
+  "setup.gatewayReadyCheckingAction": "正在检查配置…",
+  "setup.gatewayReadyCheckingTitle": "正在检查 OpenClaw 配置",
+  "setup.gatewayReadyCheckingDescription": "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
+  "setup.gatewayReadyContinueFailedTitle": "无法进入下一步",
+  "setup.gatewayReadyContinueFailed": "无法进入下一步：{{error}}",
   "storage.save": "保存位置",
   "storage.saved": "存储位置已保存，请点击下一步继续。",
   "setup.openclawUpdate.latestVersion": "可用版本",

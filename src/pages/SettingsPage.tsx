@@ -30,6 +30,7 @@ import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
+import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { ThemePicker } from '@/components/settings/ThemePicker';
 import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
 import { GatewayLifecyclePanel } from '@/components/settings/GatewayLifecyclePanel';
@@ -55,6 +56,8 @@ export function SettingsPageFull() {
     language, setLanguage,
     notificationsEnabled, setNotificationsEnabled,
     soundEnabled, setSoundEnabled,
+    audioAutoPlay, setAudioAutoPlay,
+    voiceAutoSpeak, setVoiceAutoSpeak,
     dndMode, setDndMode,
     dynamicIslandEnabled, setDynamicIslandEnabled,
     dynamicIslandAutoExpand, setDynamicIslandAutoExpand,
@@ -698,6 +701,38 @@ export function SettingsPageFull() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-[13px] text-aegis-text flex items-center gap-2">
+                <Volume2 size={14} />
+                {t('settings.audioAutoPlay', '自动播放实时回复音频')}
+              </div>
+              <div className="text-[11px] text-aegis-text-dim">
+                {t('settings.audioAutoPlayDesc', '自动播放助手实时回复携带的音频；历史录音仍需手动播放。')}
+              </div>
+            </div>
+            <Toggle enabled={audioAutoPlay} onChange={(enabled) => {
+              setAudioAutoPlay(enabled);
+              if (!enabled) voiceRuntime.interruptAll();
+            }} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[13px] text-aegis-text flex items-center gap-2">
+                <Volume2 size={14} />
+                {t('settings.voiceAutoSpeak', '自动语音回复')}
+              </div>
+              <div className="text-[11px] text-aegis-text-dim">
+                {t('settings.voiceAutoSpeakDesc', '用系统语音朗读当前会话的助手回复，可随时打断。')}
+              </div>
+            </div>
+            <Toggle enabled={voiceAutoSpeak} onChange={(enabled) => {
+              setVoiceAutoSpeak(enabled);
+              if (!enabled) voiceRuntime.interruptAll();
+            }} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[13px] text-aegis-text flex items-center gap-2">
                 <BellOff size={14} />
                 {t('settings.dnd')}
               </div>
@@ -708,9 +743,10 @@ export function SettingsPageFull() {
 
           <button
             onClick={() => notifications.notify({ type: 'info', title: t('app.title', 'JunQi Desktop'), body: t('settings.testNotification') })}
-            className="text-[12px] px-4 py-2 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/40 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-aegis-border/20 px-4 py-2 text-[12px] text-aegis-text-dim transition-colors hover:border-aegis-border/40 hover:text-aegis-text"
           >
-            🔔 {t('settings.testSound')}
+            <Bell size={13} aria-hidden="true" />
+            {t('settings.testSound')}
           </button>
         </div>
       </GlassCard>
@@ -992,21 +1028,21 @@ export function SettingsPageFull() {
         </div>
       </GlassCard>
 
-      {/* Voice Wake (phase 2 config) */}
+      {/* Voice input runtime and reserved wake-word provider settings. */}
       <GlassCard delay={0.14}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
           <Radio size={16} className="text-aegis-primary" />
-          {t('voiceWake.title', '语音唤醒')}
+          {t('voiceWake.title', '语音输入与打断')}
         </h3>
         <div className="space-y-4">
           <div className="rounded-lg border border-aegis-border/20 bg-[rgb(var(--aegis-overlay)/0.02)] p-3 text-[11px] leading-relaxed text-aegis-text-dim">
-            {t('voiceWake.hint', '语音唤醒使用 Porcupine 引擎。在 Picovoice Console 免费注册获取 AccessKey，填入后启用真唤醒词；未配置时回退到 VAD 占位（检测到说话即触发）。')}
+            {t('voiceWake.hint', '支持系统语音识别时会直接转写；其他桌面环境使用本地 VAD 捕获语音并发送给 OpenClaw。开始说话会打断当前回复。Picovoice 配置为后续唤醒词适配器预留。')}
           </div>
 
           <div>
             <label className="text-[12px] text-aegis-text-dim mb-1.5 flex items-center gap-1.5">
               <KeyRound size={12} />
-              {t('voiceWake.accessKey', 'Picovoice AccessKey')}
+              {t('voiceWake.accessKey', 'Picovoice AccessKey（预留）')}
             </label>
             <input
               type="password"
@@ -1018,7 +1054,7 @@ export function SettingsPageFull() {
           </div>
 
           <div>
-            <label className="text-[12px] text-aegis-text-dim mb-1.5">{t('voiceWake.keyword', '唤醒词')}</label>
+            <label className="text-[12px] text-aegis-text-dim mb-1.5">{t('voiceWake.keyword', '唤醒词（预留）')}</label>
             <input
               type="text"
               value={wakeWord}
@@ -1030,7 +1066,7 @@ export function SettingsPageFull() {
 
           <div>
             <label className="text-[12px] text-aegis-text-dim mb-1.5 flex items-center justify-between">
-              <span>{t('voiceWake.sensitivity', '灵敏度')}</span>
+              <span>{t('voiceWake.sensitivity', '灵敏度（预留）')}</span>
               <span className="font-mono text-aegis-text-muted">{wakeSensitivity.toFixed(2)}</span>
             </label>
             <input
@@ -1049,11 +1085,11 @@ export function SettingsPageFull() {
           </div>
 
           <div className="flex items-center gap-2 text-[11px]">
-            <StatusDot status={picovoiceAccessKey.trim() ? 'active' : 'idle'} size={8} />
+            <StatusDot status="active" size={8} />
             <span className="text-aegis-text-dim">
               {picovoiceAccessKey.trim()
-                ? t('voiceWake.configured', '已配置 AccessKey，将使用 Porcupine 真唤醒词')
-                : t('voiceWake.notConfigured', '未配置，使用 VAD 占位（检测说话即触发）')}
+                ? t('voiceWake.configured', 'AccessKey 已保存；当前版本仍使用系统识别或本地 VAD')
+                : t('voiceWake.notConfigured', '当前使用系统语音识别或本地 VAD')}
             </span>
           </div>
         </div>
@@ -1189,8 +1225,12 @@ export function SettingsPageFull() {
               <span className={clsx('text-[11px] flex items-center gap-1',
                 testResult === 'success' ? 'text-aegis-success' : 'text-aegis-danger'
               )}>
-                <CheckCircle size={12} />
-                {testResult === 'success' ? '✓' : '✗'}
+                {testResult === 'success'
+                  ? <CheckCircle size={12} aria-hidden="true" />
+                  : <WifiOff size={12} aria-hidden="true" />}
+                {testResult === 'success'
+                  ? t('settings.connectionTestSuccess', 'Connected')
+                  : t('settings.connectionTestFailed', 'Connection failed')}
               </span>
             )}
           </div>
@@ -1301,13 +1341,23 @@ export function SettingsPageFull() {
         </div>
         <div className="space-y-2 border-t border-aegis-border/15 pt-3">
           {[
-            ['OpenClaw', openclawVersion ? `v${openclawVersion}` : '—'],
-            [t('settingsExtra.platform', 'Platform'), platformLabel],
-            [t('settings.gateway', 'Gateway'), connected ? `${localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || defaultGatewayWsUrl()} ✓` : '— ✗'],
-          ].map(([label, value]) => (
+            { label: 'OpenClaw', value: openclawVersion ? `v${openclawVersion}` : '—' },
+            { label: t('settingsExtra.platform', 'Platform'), value: platformLabel },
+            {
+              label: t('settings.gateway', 'Gateway'),
+              value: connected
+                ? localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || defaultGatewayWsUrl()
+                : '—',
+              connectionState: connected ? 'connected' : 'disconnected',
+            },
+          ].map(({ label, value, connectionState }) => (
             <div key={label} className="flex items-center justify-between">
               <span className="text-[11px] text-aegis-text-dim">{label}</span>
-              <span className="text-[10px] font-mono text-aegis-text-muted truncate max-w-[250px]">{value}</span>
+              <span className="flex max-w-[250px] items-center gap-1 text-[10px] font-mono text-aegis-text-muted">
+                {connectionState === 'connected' && <Wifi size={11} className="shrink-0 text-aegis-success" aria-hidden="true" />}
+                {connectionState === 'disconnected' && <WifiOff size={11} className="shrink-0 text-aegis-danger" aria-hidden="true" />}
+                <span className="truncate">{value}</span>
+              </span>
             </div>
           ))}
         </div>

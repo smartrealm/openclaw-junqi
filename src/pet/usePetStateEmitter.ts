@@ -5,6 +5,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useWorkshopStore } from '@/stores/workshopStore';
 import { useAppStore } from '@/stores/app-store';
+import { useVoiceStore } from '@/stores/voiceStore';
 import { isCronSessionKey, isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
 import { derivePetState, type CelebrateKind, type PetState } from './pet-states';
 import i18n from '@/i18n';
@@ -237,6 +238,9 @@ export function usePetStateEmitter() {
 
       const typing = Object.values(cs.typingBySession).some(Boolean);
       const thinking = Object.values(cs.thinkingBySession).some((e) => (e?.text?.length ?? 0) > 0);
+      const voice = useVoiceStore.getState();
+      const voiceListening = voice.phase === 'listening' || voice.phase === 'transcribing';
+      const voiceSpeaking = voice.remoteOutput !== null || voice.phase === 'queued' || voice.phase === 'speaking';
       const tool = cs.messages.some((m) => m.toolStatus === 'running');
       // "working" means an agent is actively running. `session.running` is the
       // authoritative state set by real-time events (session.running / stopped /
@@ -268,7 +272,7 @@ export function usePetStateEmitter() {
       const backgroundRunning = runningSessions.filter(
         (session) => isCronSessionKey(String(session?.key || '')),
       );
-      const hasHighPriorityWork = typing || thinking || tool
+      const hasHighPriorityWork = typing || thinking || tool || voiceListening || voiceSpeaking
         || conversationalRunning.length > 0 || gw.runningSubAgents.length > 0;
       const backgroundWork = !hasHighPriorityWork && backgroundRunning.length > 0;
 
@@ -345,6 +349,8 @@ export function usePetStateEmitter() {
         connectionError: cs.connectionError,
         thinking,
         typing,
+        voiceListening,
+        voiceSpeaking,
         tool,
         running: hasHighPriorityWork,
         backgroundWork,
@@ -371,7 +377,12 @@ export function usePetStateEmitter() {
       let message: string | undefined;
       let taskLabel: string | undefined;
       if (emotion === 'thinking') {
-        message = (cs.thinkingText || '').slice(0, 60) || undefined;
+        message = voiceListening
+          ? i18n.t('voice.runtimeListening', { defaultValue: '聆听中' })
+          : (cs.thinkingText || '').slice(0, 60) || undefined;
+        taskLabel = activeAgentName;
+      } else if (emotion === 'typing' && voiceSpeaking && !typing) {
+        message = i18n.t('voice.runtimeSpeaking', { defaultValue: '语音回复中' });
         taskLabel = activeAgentName;
       } else if (emotion === 'working') {
         if (hasHighPriorityWork) {
@@ -427,6 +438,7 @@ export function usePetStateEmitter() {
       useWorkshopStore.subscribe(wake),
       usePetStore.subscribe(wake),
       useAppStore.subscribe(wake),
+      useVoiceStore.subscribe(wake),
     ];
 
     loop();

@@ -8,9 +8,9 @@
  * Lifecycle:
  *  - On mount: listen for `quickchat:seed` (Rust emits the dropped paths
  *    after a 450ms warm-up so React is ready).
- *  - On unmount / close: dedupe the auto-created session via the chat
- *    store's sessionCleanup helper (TBD), or just leave the session
- *    around so the user can re-open the same QuickChat and pick up.
+ *  - On unmount / close: release this WebView's client lease and voice output.
+ *    Gateway retains conversation history, but the session is never persisted
+ *    as an open main-window tab.
  *
  * Window itself is frameless + transparent + always_on_top (see Rust
  * quickchat.rs builder), so we render our own draggable title bar.
@@ -18,11 +18,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { X, FileText, Folder, Sparkles, Minus, Maximize2, GripVertical } from 'lucide-react';
+import { X, FileText, Folder, Sparkles, Minus, Maximize2, GripVertical, Square } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
+import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { useVoiceStore } from '@/stores/voiceStore';
+import { AudioPlayer } from '@/components/Chat/AudioPlayer';
 import { useTranslation } from 'react-i18next';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
@@ -44,7 +47,7 @@ function parseName(p: string): SeedFile {
   return { path, name: cleaned, isDir };
 }
 
-export function QuickChatPage() {
+export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: string } = {}) {
   const { t } = useTranslation();
   const connected = useChatStore((state) => state.connected);
   const connecting = useChatStore((state) => state.connecting);
@@ -53,22 +56,30 @@ export function QuickChatPage() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [streamedReply, setStreamedReply] = useState('');
-  const [sessionKey, setSessionKey] = useState<string | null>(null);
+  const [fallbackSessionKey] = useState(() => `quickchat:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`);
+  const sessionKey = ownedSessionKey || fallbackSessionKey;
+  const voiceOutputActive = useVoiceStore((state) =>
+    state.remoteOutput !== null
+      || ((state.phase === 'queued' || state.phase === 'speaking') && state.sessionKey === sessionKey),
+  );
 
-  // Read the latest streamed assistant message for this session from the
-  // shared chat store. This keeps quickchat in sync with whatever the
+  // Read the latest streamed assistant message for this session from this
+  // WebView's chat store. Gateway history remains the cross-window authority.
   // gateway streams without us re-implementing the stream pipeline.
   const messages = useChatStore((s) =>
     sessionKey ? s.messagesPerSession[sessionKey] ?? [] : []
   );
-  const lastAssistant = (() => {
+  const lastAssistantMessage = (() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === 'assistant' && typeof messages[i].content === 'string') {
-        return messages[i].content as string;
+        return messages[i];
       }
     }
-    return '';
+    return null;
   })();
+  const lastAssistant = lastAssistantMessage?.content as string || '';
+  const lastAssistantAudio = lastAssistantMessage?.mediaUrl || '';
+  const lastAssistantComplete = Boolean(lastAssistantMessage && !lastAssistantMessage.isStreaming);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
 
@@ -118,23 +129,20 @@ export function QuickChatPage() {
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    voiceRuntime.interruptGlobally(sessionKey);
     setSending(true);
 
     // Build a context-rich initial message: attachment list + the user text.
     const attachmentLines = files.map(f => `- ${f.isDir ? 'DIR' : 'FILE'} ${f.name} (${f.path})`).join('\n');
     const fullMessage = `${t('pet.quickChat.attachmentIntro')}\n${attachmentLines}\n\n${trimmed}`;
 
-    // Resolve or create a dedicated session for this quick chat window.
-    const key = sessionKey ?? (() => {
-      const k = `quickchat:${Date.now()}`;
-      setSessionKey(k);
-      return k;
-    })();
+    // The session is created at mount so Gateway callbacks can be scoped before
+    // the first request is sent.
+    const key = sessionKey;
 
     try {
-      // Use chatStore to push the user message into the merged sessions list
-      // so the main window will see this conversation too. We piggy-back on
-      // the existing message lifecycle but flag this session for later cleanup.
+      // Keep this WebView's message lifecycle explicit without selecting or
+      // persisting the session as a main-window navigation tab.
       useChatStore.getState().addMessage({
         id: `qc-${Date.now()}`,
         role: 'user',
@@ -229,10 +237,15 @@ export function QuickChatPage() {
             <div className="text-[11px] opacity-70">{t('pet.quickChat.emptyHint')}</div>
           </div>
         )}
-        {(lastAssistant || streamedReply) && (
+        {(lastAssistant || streamedReply || lastAssistantAudio) && (
           <div className="whitespace-pre-wrap break-words animate-in fade-in slide-in-from-bottom-2 duration-200">
             {streamedReply || lastAssistant}
             {sending && <span className="inline-block w-1.5 h-3.5 bg-aegis-primary ml-0.5 align-middle animate-pulse" />}
+            {lastAssistantAudio && lastAssistantComplete && (
+              <div className="mt-2">
+                <AudioPlayer src={lastAssistantAudio} sessionKey={sessionKey} trackVoiceOutput />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -256,16 +269,16 @@ export function QuickChatPage() {
             {text.length > 0 && t('pet.quickChat.characterCount', { count: text.length })}
           </div>
           <button
-            onClick={handleSend}
-            disabled={sending || !text.trim()}
+            onClick={voiceOutputActive ? () => voiceRuntime.interruptGlobally(sessionKey) : handleSend}
+            disabled={voiceOutputActive ? false : sending || !text.trim()}
             className={clsx(
               'px-3 py-1 rounded-md text-[11px] font-semibold transition-all',
-              sending || !text.trim()
+              (!voiceOutputActive && (sending || !text.trim()))
                 ? 'bg-white/10 text-aegis-text-dim cursor-not-allowed'
                 : 'bg-aegis-primary text-white hover:brightness-110'
             )}
           >
-            {sending ? t('pet.quickChat.sending') : t('pet.quickChat.send')}
+            {voiceOutputActive ? <Square size={13} /> : (sending ? t('pet.quickChat.sending') : t('pet.quickChat.send'))}
           </button>
         </div>
       </div>

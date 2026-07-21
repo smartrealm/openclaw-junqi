@@ -82,6 +82,10 @@ export interface PetInputs {
   connectionError: string | null;
   thinking: boolean;
   typing: boolean;
+  /** Voice input is being captured or transcribed. */
+  voiceListening?: boolean;
+  /** Assistant audio is queued or currently being spoken. */
+  voiceSpeaking?: boolean;
   tool: boolean;
   running: boolean;
   /** Low-priority background work (e.g. memory dreaming cron) is active.
@@ -188,8 +192,10 @@ export function derivePetState(i: PetInputs): PetState {
   if (i.connectionError) return { emotion: 'error', ...base };
 
   // Steady active states.
+  if (i.voiceListening) return { emotion: 'thinking', ...base };
   if (i.thinking) return { emotion: 'thinking', ...base };
   if (i.tool) return { emotion: 'tool', ...base };
+  if (i.voiceSpeaking) return { emotion: 'typing', ...base };
   if (i.typing) return { emotion: 'typing', ...base };
   if (i.running) return { emotion: 'working', ...base };
 
