@@ -1,5 +1,5 @@
 // ── GitHistory — commit log browser ───────────────────────────────────────────
-// Ported from nezha's GitHistory with --aegis-* CSS var rewrites.
+// Ported from junqi's GitHistory with --aegis-* CSS var rewrites.
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {

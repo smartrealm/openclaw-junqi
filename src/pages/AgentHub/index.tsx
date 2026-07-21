@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen } from 'lucide-react';
+import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid } from 'lucide-react';
 import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
@@ -537,8 +537,9 @@ function ActivityFeed({ sessions, agents }: { sessions: SessionInfo[]; agents: A
 
   if (activities.length === 0) {
     return (
-      <div className="flex items-center justify-center py-20 text-aegis-text-dim text-[13px]">
-        ⚡ No activity yet
+      <div className="flex items-center justify-center gap-2 py-20 text-aegis-text-dim text-[13px]">
+        <Activity size={14} aria-hidden="true" />
+        {t('agents.noActivity', 'No activity recorded yet')}
       </div>
     );
   }
@@ -999,16 +1000,17 @@ export function AgentHubPage() {
           {/* View Switcher */}
           <div className="flex gap-0.5 bg-[rgb(var(--aegis-overlay)/0.02)] border border-[rgb(var(--aegis-overlay)/0.06)] rounded-xl p-1">
             {([
-              { key: 'tree' as const, label: t('agentHubExtra.treeView') },
-              { key: 'grid' as const, label: t('agentHubExtra.gridView') },
-              { key: 'activity' as const, label: t('agentHubExtra.activityView', '⚡ Activity') },
-            ]).map(v => (
-              <button key={v.key} onClick={() => setViewMode(v.key)}
+              { key: 'tree' as const, label: t('agentHubExtra.treeView'), icon: GitBranch },
+              { key: 'grid' as const, label: t('agentHubExtra.gridView'), icon: LayoutGrid },
+              { key: 'activity' as const, label: t('agentHubExtra.activityView', 'Activity'), icon: Activity },
+            ]).map(({ key, label, icon: ViewIcon }) => (
+              <button key={key} onClick={() => setViewMode(key)}
                 className={clsx(
-                  'px-4 py-1.5 rounded-lg text-[12px] font-semibold transition-all',
-                  viewMode === v.key ? 'bg-aegis-accent/15 text-aegis-accent' : 'text-aegis-text-muted hover:text-aegis-text-muted'
+                  'inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-semibold transition-all',
+                  viewMode === key ? 'bg-aegis-accent/15 text-aegis-accent' : 'text-aegis-text-muted hover:text-aegis-text-muted'
                 )}>
-                {v.label}
+                <ViewIcon size={12} aria-hidden="true" />
+                {label}
               </button>
             ))}
           </div>
@@ -1570,8 +1572,9 @@ export function AgentHubPage() {
                                 </div>
                                 {/* Task label when spawned */}
                                 {spawned && spawnedLabel && (
-                                  <div className="mt-1.5 text-[9px] text-aegis-primary/70 truncate max-w-[200px]" title={spawnedLabel}>
-                                    📋 {spawnedLabel}
+                                  <div className="mt-1.5 flex max-w-[200px] items-center gap-1 text-[9px] text-aegis-primary/70" title={spawnedLabel}>
+                                    <ClipboardList size={10} className="shrink-0" aria-hidden="true" />
+                                    <span className="truncate">{spawnedLabel}</span>
                                   </div>
                                 )}
                                 <div className="mt-2 flex items-center gap-1.5 min-w-0">

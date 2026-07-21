@@ -7,19 +7,17 @@ import {
   writeTaskDisplayWindow,
 } from './agentWorkspacePreferences';
 
-test('AI workspace preferences use Nezha storage keys and migrate the old task window', () => {
+test('AI workspace preferences use JunQi storage keys', () => {
   localStorage.clear();
-  localStorage.setItem('junqi:agent-workspace:task-display-window', '15');
-  assert.equal(readTaskDisplayWindow(), 15);
+  assert.equal(readTaskDisplayWindow(), 3);
   writeTaskDisplayWindow('all');
-  assert.equal(localStorage.getItem('nezha:taskDisplayWindow'), 'all');
-  assert.equal(localStorage.getItem('junqi:agent-workspace:task-display-window'), null);
+  assert.equal(localStorage.getItem('junqi:taskDisplayWindow'), 'all');
 });
 
-test('attention badge defaults on and persists the Nezha toggle', () => {
+test('attention badge defaults on and persists the JunQi toggle', () => {
   localStorage.clear();
   assert.equal(readAttentionBadge(), true);
   writeAttentionBadge(false);
   assert.equal(readAttentionBadge(), false);
-  assert.equal(localStorage.getItem('nezha:attentionBadge'), '0');
+  assert.equal(localStorage.getItem('junqi:attentionBadge'), '0');
 });

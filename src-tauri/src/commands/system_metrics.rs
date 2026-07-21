@@ -1,4 +1,4 @@
-// System metrics background thread — Nezha-style state stream.
+// System metrics background thread — JunQi-style state stream.
 // Collects CPU/memory/disk/network every second, emits via Tauri events.
 use std::thread;
 use sysinfo::{Disks, Networks, System};

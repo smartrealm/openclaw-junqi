@@ -1,9 +1,9 @@
 /* ═══════════════════════════════════════════════════════════
    shadcn/ui HSL tokens — keyed on [data-theme].
-   primary/ring bridge to nezha's blue accent (#5d7cff light /
-   #7f9aff dark / #b07b3e eyecare). Neutrals follow nezha surfaces.
+   primary/ring bridge to junqi's blue accent (#5d7cff light /
+   #7f9aff dark / #b07b3e eyecare). Neutrals follow junqi surfaces.
 
-   nezha accent HSL (computed from hex):
+   junqi accent HSL (computed from hex):
      #5d7cff → 229 100% 68%   (light)
      #7f9aff → 227 100% 75%   (dark)
      #b07b3e →  32  48% 47%   (eyecare brown)

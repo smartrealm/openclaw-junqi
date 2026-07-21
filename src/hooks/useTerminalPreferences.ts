@@ -4,7 +4,7 @@ import { hasTauriEventBridge } from '@/utils/tauriEvents';
 
 export const DEFAULT_TERMINAL_SCROLLBACK = 1000;
 export const DEFAULT_TERMINAL_SHIFT_ENTER_NEWLINE = true;
-export const TERMINAL_SETTINGS_CHANGED_EVENT = 'nezha:app-settings-changed';
+export const TERMINAL_SETTINGS_CHANGED_EVENT = 'junqi:app-settings-changed';
 
 interface NativeTerminalPreferences {
   terminal_scrollback?: number;

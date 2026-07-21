@@ -20,7 +20,7 @@ import type {
   SplitDirection,
   Workspace,
 } from '@/workspace/types';
-import type { ThemeVariant, TerminalFontSize, FontFamily } from '@/_nezha_root/types';
+import type { ThemeVariant, TerminalFontSize, FontFamily } from '@/junqi/types';
 
 // ── Props ───────────────────────────────────────────────────────────────────
 

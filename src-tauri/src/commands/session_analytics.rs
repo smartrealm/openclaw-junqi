@@ -1,10 +1,10 @@
 // ── Session metrics ───────────────────────────────────────────────────────────
 //
-// Ported from nezha's analytics.rs (src-tauri/src/nezha/analytics.rs).
+// Ported from junqi's analytics.rs (src-tauri/src/junqi/analytics.rs).
 // Differences from upstream:
 //   - Uses std::sync::Mutex + std::sync::OnceLock instead of parking_lot / once_cell
 //     (junqi doesn't depend on either crate).
-//   - Public API: `read_session_metrics` matches nezha's signature so the
+//   - Public API: `read_session_metrics` matches junqi's signature so the
 //     existing frontend RunningView can call it without changes.
 //
 // Reads Claude/Codex session JSONL files and aggregates:
@@ -262,10 +262,10 @@ pub async fn read_session_metrics(session_path: String) -> Result<SessionMetrics
     .map_err(|e| format!("read_session_metrics join error: {}", e))?
 }
 
-// ── Session messages (ported from nezha session.rs) ─────────────────────────
+// ── Session messages (ported from junqi session.rs) ─────────────────────────
 //
 // Used by the SessionView to display past conversation turns.
-// Output shape (must match nezha's serialized form so SessionView can render it):
+// Output shape (must match junqi's serialized form so SessionView can render it):
 //   SessionMessage { role: "user"|"assistant", content: [SessionContent] }
 //   SessionContent (tagged enum):
 //     { type: "text", text: string }

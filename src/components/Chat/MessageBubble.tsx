@@ -1,4 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -6,7 +7,7 @@ import {
   ChevronDown, ChevronRight, AlertTriangle, Trash2, Eye, Code2,
   Sparkles, Bot, ExternalLink, Globe, FileText,
   FileSpreadsheet, FileArchive, FileJson, FileCode2, Music, Film,
-  Kanban, Wrench, Brain, CheckCircle2, Info,
+  Kanban, Wrench, Brain, CheckCircle2, Info, LoaderCircle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -14,6 +15,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { getDirection } from '@/i18n';
 import type { MessageBlock, Artifact, MetaItem } from '@/types/RenderBlock';
 import { Icon } from '@/components/shared/icons';
+import { StatusIcon } from '@/components/shared/StatusIcon';
 import clsx from 'clsx';
 import { debugError } from '@/utils/debugLog';
 
@@ -431,6 +433,7 @@ export const MessageBubble = memo(function MessageBubble({
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const [editRevision, setEditRevision] = useState(0);
   const [errorActionDone, setErrorActionDone] = useState(false);
   const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
   const contextContent = contextMeta?.content
@@ -465,6 +468,7 @@ export const MessageBubble = memo(function MessageBubble({
     setEditSaving(true);
     try {
       await onEdit(block.id, nextContent);
+      setEditRevision((revision) => revision + 1);
       setIsEditing(false);
     } catch (error) {
       debugError('app', '[MessageBubble] Failed to edit user message:', error);
@@ -476,6 +480,11 @@ export const MessageBubble = memo(function MessageBubble({
   const dir = getDirection(i18n.language);
   const content = block.markdown;
   const errorAction = !isUser && !block.isStreaming && onErrorAction ? detectErrorAction(content) : null;
+  const responseStatus = !isUser && block.responseState === 'aborted'
+    ? 'cancelled'
+    : !isUser && block.responseState === 'error'
+      ? 'error'
+      : null;
 
   // Strip markdown wrapper around code so the copied text is "clean" when
 // pasted into Notion / Slack / email (those clients have their own markdown
@@ -591,7 +600,12 @@ function stripInlineCodeTicks(md: string): string {
         {/* Bubble */}
 
         {/* Bubble */}
-        <div className={clsx(
+        <motion.div
+          key={`${block.id}-bubble-${editRevision}`}
+          initial={editRevision > 0 ? { opacity: 0.62, y: 3, scale: 0.995 } : false}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          className={clsx(
           'relative block rounded-xl py-2.5 transition-colors duration-150',
           'pl-4 pr-9 max-w-full box-border min-w-0 break-words group/bubble',
           isEmptyAssistantStreaming
@@ -600,7 +614,9 @@ function stripInlineCodeTicks(md: string): string {
               ? 'bg-aegis-primary/[0.10] border border-aegis-primary/20 shadow-sm'
               : 'bg-[rgb(var(--aegis-primary)/0.035)] hover:bg-[rgb(var(--aegis-primary)/0.055)] border border-aegis-primary/10 shadow-[inset_1px_0_0_rgb(var(--aegis-primary)/0.12)]',
           block.isStreaming && !isEmptyAssistantStreaming && 'ring-1 ring-aegis-primary/30',
-        )} style={{ width: 'auto' }}>
+          )}
+          style={{ width: 'auto' }}
+        >
 
           {/* Floating Copy button — top-right corner of the FIRST line, hugging
               the bubble border (4px inset). opacity-0 by default and reveals on
@@ -627,7 +643,11 @@ function stripInlineCodeTicks(md: string): string {
           {block.audio && !block.isStreaming && (
             <div className="mb-2">
               <Suspense fallback={<MediaFallback className="h-10 w-full" />}>
-                <AudioPlayer src={block.audio} />
+                <AudioPlayer
+                  src={block.audio}
+                  sessionKey={activeSessionKey}
+                  trackVoiceOutput={!isUser}
+                />
               </Suspense>
             </div>
           )}
@@ -661,21 +681,37 @@ function stripInlineCodeTicks(md: string): string {
 
           {/* Content */}
           {isEditing ? (
-            <div className="w-full">
+            <motion.div
+              className="w-full"
+              initial={{ opacity: 0.72, y: 2 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.14, ease: 'easeOut' }}
+            >
               <textarea autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    void submitEdit();
+                  }
+                }}
                 className="w-full min-w-[320px] bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-2 text-[13px] text-aegis-text border border-aegis-border outline-none focus:border-aegis-primary/30 resize-y min-h-[60px]"
                 rows={Math.min(editText.split('\n').length + 1, 8)} />
               <div className="flex gap-1.5 mt-1.5">
-                <button onClick={() => { void submitEdit(); }} disabled={editSaving || !editText.trim()}
-                  className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50">
+                <motion.button
+                  type="button"
+                  onClick={() => { void submitEdit(); }}
+                  disabled={editSaving || !editText.trim()}
+                  whileTap={editSaving ? undefined : { scale: 0.96 }}
+                  className="inline-flex min-w-[58px] items-center justify-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50">
+                  {editSaving && <LoaderCircle size={11} className="animate-spin" aria-hidden="true" />}
                   {editSaving ? t('chat.sending', 'Sending…') : t('chat.sendEdit', 'Send')}
-                </button>
+                </motion.button>
                 <button onClick={() => setIsEditing(false)} disabled={editSaving}
                   className="px-2.5 py-1 rounded-lg text-[10px] font-semibold text-aegis-text-muted hover:text-aegis-text-secondary transition-colors disabled:cursor-not-allowed disabled:opacity-50">
                   {t('chat.cancel', 'Cancel')}
                 </button>
               </div>
-            </div>
+            </motion.div>
           ) : block.isStreaming ? (
             <div className="flex flex-col gap-2">
               {content.trim() && (
@@ -726,12 +762,24 @@ function stripInlineCodeTicks(md: string): string {
               )}
             </div>
           ) : (
-            <div className="markdown-body text-[15px] leading-relaxed text-aegis-text">
-              {content && (
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                  {content}
-                </ReactMarkdown>
+            <div className="flex min-w-0 items-start gap-2 text-[15px] leading-relaxed text-aegis-text">
+              {responseStatus && (
+                <span
+                  className="mt-[3px] inline-flex h-4 w-4 shrink-0 items-center justify-center"
+                  aria-label={responseStatus === 'cancelled'
+                    ? t('chat.stopped', 'Stopped')
+                    : t('errors.occurred', 'An error occurred')}
+                >
+                  <StatusIcon status={responseStatus} size={14} />
+                </span>
               )}
+              <div className="markdown-body min-w-0 flex-1">
+                {content && (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                    {content}
+                  </ReactMarkdown>
+                )}
+              </div>
               {/* Blinking caret — gives a clear "still typing" signal while the
                   LLM is streaming tokens in. Goes inside the markdown flow so
                   it sits right after the latest content. */}
@@ -771,7 +819,7 @@ function stripInlineCodeTicks(md: string): string {
               </button>
             </div>
           )}
-        </div>
+        </motion.div>
 
         {/* ── Footer: agent | time + duration | context | model | actions ── */}
         <div className={clsx(

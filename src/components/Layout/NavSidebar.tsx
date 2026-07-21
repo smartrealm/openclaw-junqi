@@ -14,6 +14,8 @@ import { resolveTab, type SidebarTab } from './tab-utils';
 import {
   bucketSessionsByActivity,
   isEmptyTransientSession,
+  isSessionBucketKey,
+  resolveExpandedSessionBuckets,
   sessionActivityTime,
   sessionTitle,
   sortSessionsByActivity,
@@ -31,6 +33,7 @@ import {
   sessionExecutionState,
   type BackgroundActivityKind,
 } from '@/utils/sessionPresentation';
+import { resolveBackgroundActivityNavigation } from '@/utils/backgroundActivityNavigation';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
@@ -49,6 +52,17 @@ const BACKGROUND_ACTIVITY_ITEMS: ReadonlyArray<{
   { kind: 'subagent', labelKey: 'sidebar.background.subagent', fallback: '子智能体', Icon: Bot },
   { kind: 'system', labelKey: 'sidebar.background.system', fallback: '系统', Icon: Cpu },
 ];
+
+const SESSION_BUCKET_SELECTION_STORAGE_KEY = 'junqi:sidebar-session-bucket';
+
+function readPreferredSessionBucket(): SessionBucketKey {
+  try {
+    const stored = window.localStorage.getItem(SESSION_BUCKET_SELECTION_STORAGE_KEY);
+    return isSessionBucketKey(stored) ? stored : 'today';
+  } catch {
+    return 'today';
+  }
+}
 
 function sessionAgentId(session: Session, sessionKey: string): string {
   if (session.agentId) return session.agentId;
@@ -228,36 +242,28 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
             : 'border-transparent text-aegis-text-secondary hover:bg-aegis-hover/35',
         )}
         >
-        <span
-          className={clsx(
-            'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors',
-            isWorking
-              ? 'bg-aegis-success/12 text-aegis-success'
-              : hasPendingCompletion
-                ? 'bg-aegis-primary/12 text-aegis-primary'
-                : isActive
-                  ? 'bg-aegis-primary/10 text-aegis-primary'
-                  : 'bg-aegis-overlay/[0.05] text-aegis-text-dim',
-          )}
-          title={isWorking
-            ? t('chat.sessionWorking', 'Working…')
-            : hasPendingCompletion
-              ? t('chat.sessionCompleted', 'Reply ready')
-              : undefined}
-          aria-label={isWorking
-            ? t('chat.sessionWorking', 'Working…')
-            : hasPendingCompletion
-              ? t('chat.sessionCompleted', 'Reply ready')
-              : undefined}
-        >
-          {isWorking
-            ? <Activity size={15} className="animate-pulse" aria-hidden="true" />
-            : hasPendingCompletion
-              ? <CheckCircle2 size={15} aria-hidden="true" />
-              : <MessageSquare size={14} aria-hidden="true" />}
-        </span>
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-1.5">
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+              {isWorking ? (
+                <LoaderCircle
+                  size={13}
+                  className={clsx(
+                    'animate-spin',
+                    isActive
+                      ? 'text-aegis-text'
+                      : 'text-aegis-primary group-hover/session:text-aegis-text group-focus-within/session:text-aegis-text',
+                  )}
+                  aria-label={t('chat.sessionWorking', 'Working…')}
+                />
+              ) : hasPendingCompletion ? (
+                <CheckCircle2
+                  size={13}
+                  className="text-aegis-success"
+                  aria-label={t('chat.sessionCompleted', 'Reply ready')}
+                />
+              ) : null}
+            </span>
             <span className={clsx(
               'min-w-0 flex-1 truncate text-[13px] font-semibold leading-[18px] tracking-normal',
               isActive ? 'text-aegis-text' : 'text-aegis-text-secondary',
@@ -276,13 +282,13 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           </span>
         </span>
       </div>
-      <span className="pointer-events-none absolute end-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-aegis-border/80 bg-aegis-elevated p-0.5 opacity-0 shadow-sm transition-[opacity,background-color] group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/session:pointer-events-auto group-focus-within/session:opacity-100">
+      <span className="pointer-events-none absolute end-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-aegis-border/80 bg-aegis-elevated p-0.5 text-aegis-text-muted opacity-0 shadow-sm transition-[opacity,background-color] group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/session:pointer-events-auto group-focus-within/session:opacity-100">
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); startRename(); }}
           onDoubleClick={(e) => e.stopPropagation()}
-          className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim transition-colors hover:bg-aegis-hover/55 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/45"
+          className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-aegis-hover/55 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/45"
           title={t('chat.renameSession', 'Rename session')}
           aria-label={t('chat.renameSession', 'Rename session')}
         >
@@ -297,7 +303,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           className={clsx(
             'flex h-6 w-6 items-center justify-center rounded transition-colors focus-visible:outline-none',
             canDelete
-              ? 'text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-1 focus-visible:ring-red-400/45'
+              ? 'hover:bg-aegis-danger/10 hover:text-aegis-danger focus-visible:ring-1 focus-visible:ring-aegis-danger/45'
               : 'cursor-not-allowed text-aegis-text-dim/30',
           )}
           title={canDelete
@@ -317,18 +323,16 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
 function WorkbenchPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const sessions = useChatStore((st) => st.sessions) ?? [];
   const cronJobs = useGatewayDataStore((st) => st.cronJobs) ?? [];
   const agents = useGatewayDataStore((st) => st.agents) ?? [];
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
+  const typingBySession = useChatStore((st) => st.typingBySession);
+  const thinkingBySession = useChatStore((st) => st.thinkingBySession);
   const [nowMs, setNowMs] = useState(Date.now());
-  const [backgroundOpen, setBackgroundOpen] = useState(false);
-  const [expandedBuckets, setExpandedBuckets] = useState<Record<SessionBucketKey, boolean>>({
-    today: true,
-    withinWeek: true,
-    withinMonth: false,
-    older: false,
-  });
+  const [backgroundUserOpen, setBackgroundUserOpen] = useState(false);
+  const [preferredBucket, setPreferredBucket] = useState<SessionBucketKey>(readPreferredSessionBucket);
 
   // Per-session first user message, keyed for O(1) lookups during render.
   // Without this we'd have to walk messagesPerSession on every session row.
@@ -355,16 +359,53 @@ function WorkbenchPanel() {
   const backgroundRunning = Object.values(presentation.background)
     .some((group) => group.some(isSessionExecutionActive));
   const buckets = useMemo(() => bucketSessionsByActivity(visibleSessions, nowMs), [visibleSessions, nowMs]);
+  const requiredSessionKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const session of visibleSessions) {
+      const thinking = thinkingBySession[session.key];
+      if (
+        session.key === activeKey
+        || isSessionExecutionActive(session)
+        || session.hasPendingCompletion === true
+        || typingBySession[session.key]
+        || Boolean(thinking?.runId || thinking?.text)
+      ) {
+        keys.add(session.key);
+      }
+    }
+    return keys;
+  }, [activeKey, thinkingBySession, typingBySession, visibleSessions]);
+  const expandedBucketKeys = useMemo(
+    () => resolveExpandedSessionBuckets(buckets, preferredBucket, requiredSessionKeys),
+    [buckets, preferredBucket, requiredSessionKeys],
+  );
+  const routedBackgroundSessionKey = useMemo(
+    () => new URLSearchParams(location.search).get('session')?.trim() ?? '',
+    [location.search],
+  );
+  const backgroundHasSelectedSession = useMemo(() => {
+    const selectedKey = location.pathname === '/chat' ? activeKey : routedBackgroundSessionKey;
+    if (!selectedKey) return false;
+    return Object.values(presentation.background)
+      .some((group) => group.some((session) => session.key === selectedKey));
+  }, [activeKey, location.pathname, presentation.background, routedBackgroundSessionKey]);
+  const backgroundOpen = backgroundUserOpen || backgroundRunning || backgroundHasSelectedSession;
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const openBackgroundSession = useCallback((sessionKey: string) => {
-    cleanupEmptyActiveSession(sessionKey);
-    useChatStore.getState().openTab(sessionKey);
-    navigate('/chat');
+  const openBackgroundSession = useCallback((kind: BackgroundActivityKind, sessionKey: string) => {
+    setBackgroundUserOpen(true);
+    const target = resolveBackgroundActivityNavigation(kind, sessionKey);
+    if (target.kind === 'chat') {
+      cleanupEmptyActiveSession(target.sessionKey);
+      useChatStore.getState().openTab(target.sessionKey);
+      navigate('/chat');
+      return;
+    }
+    navigate(target.to);
   }, [navigate]);
 
   const deleteBackgroundSession = useCallback((sessionKey: string) => {
@@ -378,10 +419,12 @@ function WorkbenchPanel() {
   }, [t]);
 
   useEffect(() => {
-    const activeBucket = buckets.find((bucket) => bucket.sessions.some((session) => session.key === activeKey));
-    if (!activeBucket) return;
-    setExpandedBuckets((current) => current[activeBucket.key] ? current : { ...current, [activeBucket.key]: true });
-  }, [activeKey, buckets]);
+    try {
+      window.localStorage.setItem(SESSION_BUCKET_SELECTION_STORAGE_KEY, preferredBucket);
+    } catch {
+      // Storage may be unavailable in hardened webviews; in-memory state still works.
+    }
+  }, [preferredBucket]);
 
   const renderRow = (sx: typeof visibleSessions[number]) => (
     <SessionRowItem key={sx.key} session={sx} sessionKey={sx.key}
@@ -389,7 +432,7 @@ function WorkbenchPanel() {
   );
 
   const toggleBucket = (key: SessionBucketKey) => {
-    setExpandedBuckets((current) => ({ ...current, [key]: !current[key] }));
+    setPreferredBucket((current) => current === key && key !== 'today' ? 'today' : key);
   };
 
   return (
@@ -488,7 +531,7 @@ function WorkbenchPanel() {
 
         {buckets.map((bucket) => {
           if (bucket.sessions.length === 0) return null;
-          const isOpen = expandedBuckets[bucket.key] ?? false;
+          const isOpen = expandedBucketKeys.has(bucket.key);
           return (
             <div key={bucket.key} className="mb-2">
               <button
@@ -512,7 +555,7 @@ function WorkbenchPanel() {
         <div className="mx-3 shrink-0 border-t border-aegis-border/70 px-1 pb-1 pt-2">
           <button
             type="button"
-            onClick={() => setBackgroundOpen((current) => !current)}
+            onClick={() => setBackgroundUserOpen((current) => !current)}
             className="flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11px] font-semibold text-aegis-text-dim transition-colors hover:bg-aegis-hover/30 hover:text-aegis-text-secondary"
             aria-expanded={backgroundOpen}
           >
@@ -549,6 +592,9 @@ function WorkbenchPanel() {
                       <div className="space-y-0.5 pl-2">
                         {group.map((session) => {
                           const state = sessionExecutionState(session);
+                          const isSelected = item.kind === 'subagent'
+                            ? location.pathname === '/chat' && activeKey === session.key
+                            : routedBackgroundSessionKey === session.key;
                           const title = sessionTitle(session, firstUserByKey[session.key]);
                           const workerAgentId = session.agentId || agentIdFromSessionKey(session.key) || 'main';
                           const parentSessionKey = parentSessionKeyForSession(session);
@@ -587,8 +633,13 @@ function WorkbenchPanel() {
                             <div key={session.key} className="group/background-session relative">
                               <button
                                 type="button"
-                                onClick={() => openBackgroundSession(session.key)}
-                                className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1.5 pr-9 text-left text-[11px] text-aegis-text-dim transition-colors hover:bg-aegis-hover/35 hover:text-aegis-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/50"
+                                onClick={() => openBackgroundSession(item.kind, session.key)}
+                                className={clsx(
+                                  'flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1.5 pr-9 text-left text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/50',
+                                  isSelected
+                                    ? 'bg-aegis-primary/[0.08] text-aegis-primary'
+                                    : 'text-aegis-text-dim hover:bg-aegis-hover/35 hover:text-aegis-text-secondary',
+                                )}
                                 title={parentSessionKey
                                   ? `${session.key}\n${delegationLabel}\n${parentSessionKey}`
                                   : session.key}

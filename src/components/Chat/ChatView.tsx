@@ -7,6 +7,7 @@ import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useChatStore, type ChatMessage } from '@/stores/chatStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
+import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
 import { projectResponseGroupToRenderBlocks } from '@/processing/projectResponseGroup';
@@ -658,6 +659,7 @@ export function ChatView() {
     if (!detail?.message) return;
     const key = activeSessionKey || 'agent:main:main';
     try {
+      voiceRuntime.interruptGlobally(key);
       await gateway.sendMessage(detail.message, undefined, key);
     } catch { /* gateway offline — safe no-op */ }
   }, [activeSessionKey]);
@@ -683,6 +685,7 @@ export function ChatView() {
     const originalMessages = state.messagesPerSession[activeSessionKey] ?? [];
     const messageIndex = originalMessages.findIndex((message) => message.id === messageId && message.role === 'user');
     if (messageIndex < 0) throw new Error(`User message ${messageId} is no longer available`);
+    voiceRuntime.interruptGlobally(activeSessionKey);
 
     if (state.typingBySession[activeSessionKey]) {
       await gateway.abortChat(activeSessionKey).catch(() => undefined);
@@ -725,6 +728,7 @@ export function ChatView() {
     );
     if (lastUserMsg && lastUserMsg.type === 'message') {
       revealConversationTail({ instant: true });
+      voiceRuntime.interruptGlobally(activeSessionKey);
       useChatStore.getState().setIsTyping(true, activeSessionKey);
       gateway.sendMessage(lastUserMsg.markdown, undefined, activeSessionKey);
     }
@@ -739,6 +743,7 @@ export function ChatView() {
 
   const handleInlineButtonClick = useCallback(async (callbackData: string) => {
     const text = callbackData;
+    voiceRuntime.interruptGlobally(activeSessionKey);
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -757,6 +762,7 @@ export function ChatView() {
 
   const handleDecisionSelect = useCallback(async (value: string) => {
     const text = value;
+    voiceRuntime.interruptGlobally(activeSessionKey);
     setQuickReplies([], activeSessionKey);
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -1093,6 +1099,7 @@ export function ChatView() {
           <QuickReplyBar
             buttons={quickReplies}
             onSend={async (text) => {
+              voiceRuntime.interruptGlobally(activeSessionKey);
               setQuickReplies([], activeSessionKey);
               const userMsg: ChatMessage = {
                 id: `user-${Date.now()}`,

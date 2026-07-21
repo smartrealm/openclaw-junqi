@@ -50,7 +50,8 @@ test('BUG-IU-04 external Gateway restoration stays JunQi-managed', () => {
 
 test('BUG-IU-05 setup progress stays after storage and reaches 100', () => {
   assert.doesNotMatch(setupFlow, /resetProgress/);
-  assert.equal(progressForPhase('git', 0), 31);
+  assert.equal(progressForPhase('node', 0), 31);
+  assert.equal(progressForSetupEvent('git', 0, 'native'), progressForPhase('openclaw', 0));
   assert.equal(progressForSetupEvent('pull', 0, 'docker'), 31);
   assert.equal(progressForSetupEvent('container', 100, 'docker'), 84);
   assert.equal(progressForPhase('ready', 100), 100);

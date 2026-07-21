@@ -395,6 +395,7 @@ export function CronMonitorPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const requestedJobId = searchParams.get('job')?.trim() || null;
   useEffect(() => {
     if (!connected) return;
     void ensureGroupFresh('cron');
@@ -598,8 +599,27 @@ export function CronMonitorPage() {
     }
   };
 
-  // Auto-select first job — Fix #10: deps = [jobs.length] not [jobs]
-  useEffect(() => { if (jobs.length > 0 && !selectedJobId) setSelectedJobId(jobs[0].id); }, [jobs, selectedJobId]);
+  useEffect(() => {
+    if (jobs.length === 0) return;
+    const requestedJob = requestedJobId
+      ? jobs.find((job) => job.id === requestedJobId)
+      : null;
+    if (requestedJob) {
+      if (selectedJobId !== requestedJob.id) setSelectedJobId(requestedJob.id);
+      return;
+    }
+    if (!selectedJobId || !jobs.some((job) => job.id === selectedJobId)) {
+      setSelectedJobId(jobs[0].id);
+    }
+  }, [jobs, requestedJobId, selectedJobId]);
+
+  const selectJob = useCallback((jobId: string) => {
+    setSelectedJobId(jobId);
+    const next = new URLSearchParams(searchParams);
+    next.set('job', jobId);
+    next.delete('session');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // ═══ RENDER ═══
   // Activity log shows selected job's runs when a job is selected, otherwise all recent runs
@@ -686,7 +706,7 @@ export function CronMonitorPage() {
                   // Fix #4: layout animation only — no initial/animate that re-fires on poll
                   <motion.div key={job.id}
                     layout transition={{ layout: { duration: 0.15 } }}
-                    onClick={() => setSelectedJobId(job.id)}
+                    onClick={() => selectJob(job.id)}
                     className={clsx(
                       'flex items-stretch gap-0 mb-1 rounded-md overflow-hidden cursor-pointer transition-colors border',
                       isSelected ? 'border-aegis-accent/20 bg-aegis-accent/[0.03]' : 'border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.02)] hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
@@ -888,7 +908,7 @@ export function CronMonitorPage() {
                             height: `${h}%`,
                             background: isOk ? (colorMap[selectedJob.id] || tc.primary) : tc.danger,
                             animation: `mc-bar-grow 0.4s ease-out ${i * 0.03}s backwards`,
-                          }} title={`${formatDuration(run.durationMs)} ${isOk ? '✓' : '✗'}`} />
+                          }} title={`${formatDuration(run.durationMs)} ${isOk ? t('cron.completed', 'Completed') : t('cron.failed', 'Failed')}`} />
                         );
                       })}
                     </div>

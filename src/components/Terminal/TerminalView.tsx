@@ -9,8 +9,8 @@ import {
   matchesTerminalNewline,
   normalizeShiftEnterNewline,
   TERMINAL_NEWLINE_SEQUENCE,
-} from "@/_nezha_root/shortcuts";
-import type { TerminalFontSize, FontFamily, ThemeVariant } from "./_nezha-types";
+} from "@/junqi/shortcuts";
+import type { TerminalFontSize, FontFamily, ThemeVariant } from "./terminalTypes";
 import {
   applyTerminalThemeOnPanel,
   initTerminal,
@@ -266,8 +266,8 @@ export function TerminalView({
         });
     }
     loadNewlineShortcut();
-    window.addEventListener("nezha:app-settings-changed", loadNewlineShortcut);
-    return () => window.removeEventListener("nezha:app-settings-changed", loadNewlineShortcut);
+    window.addEventListener("junqi:app-settings-changed", loadNewlineShortcut);
+    return () => window.removeEventListener("junqi:app-settings-changed", loadNewlineShortcut);
   }, []);
 
   useEffect(() => {
@@ -329,7 +329,7 @@ export function TerminalView({
   return (
     <div
       ref={containerRef}
-      className="nezha-xterm-host"
+      className="junqi-xterm-host"
       style={{
         width: "100%",
         height: "100%",

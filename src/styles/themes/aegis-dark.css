@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   Theme: AEGIS Dark — values ported 1:1 from hanshuaikang/nezha
+   Theme: AEGIS Dark — values ported 1:1 from hanshuaikang/junqi
    themes.css (html.dark). Cool blue-grey surfaces, blue accent,
    4-level text, 3-step solid borders. --aegis-* names kept so the
    3900+ aegis utility classes work unchanged.
@@ -12,7 +12,7 @@
    ═══════════════════════════════════════════════════════════ */
 
 [data-theme="aegis-dark"] {
-  /* ── Backgrounds (nezha dark surfaces) ── */
+  /* ── Backgrounds (junqi dark surfaces) ── */
   --aegis-bg:             #1d212a;   /* bg-root */
   --aegis-bg-solid:       #1d212a;
   --aegis-surface:        #242a35;   /* bg-sidebar */
@@ -29,7 +29,7 @@
   --aegis-bg-frosted:     rgba(29, 33, 42, 0.95);
   --aegis-bg-frosted-60:  rgba(29, 33, 42, 0.6);
 
-  /* ── Borders — 3-step solid (nezha border-dim/medium/strong) ── */
+  /* ── Borders — 3-step solid (junqi border-dim/medium/strong) ── */
   --aegis-border:         rgba(255, 255, 255, 0.07);
   --aegis-border-hover:   rgba(255, 255, 255, 0.12);
   --aegis-border-active:  rgba(141, 163, 255, 0.3);
@@ -40,7 +40,7 @@
   --aegis-text-muted:     164 173 194;   /* text-muted #a4adc2 */
   --aegis-text-dim:       114 123 143;   /* text-hint #727b8f */
 
-  /* ── Primary = nezha accent (blue, was teal) ── */
+  /* ── Primary = junqi accent (blue, was teal) ── */
   --aegis-primary:         127 154 255;   /* accent #7f9aff */
   --aegis-primary-hover:   111 142 255;   /* accent-hover #6f8eff */
   --aegis-primary-deep:    105 135 255;   /* accent-strong #6987ff */
@@ -55,7 +55,7 @@
   --aegis-accent-hover:  111 142 255;
   --aegis-accent-glow:   rgba(105, 135, 255, 0.3);
 
-  /* ── Status (nezha) ── */
+  /* ── Status (junqi) ── */
   --aegis-danger:         255 85 85;     /* #ff5555 */
   --aegis-danger-surface: rgba(248, 81, 73, 0.12);
   --aegis-warning:        245 166 35;    /* #f5a623 */

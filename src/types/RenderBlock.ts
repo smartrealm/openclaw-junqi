@@ -82,6 +82,7 @@ export interface MetaItem {
 export interface MessageBlock extends BlockBase {
   type: 'message';
   role: 'user' | 'assistant';
+  responseState?: 'streaming' | 'final' | 'error' | 'aborted';
   markdown: string;            // cleaned, ready-to-render
   model?: string | null;       // provider/model for assistant responses
   artifacts: Artifact[];       // extracted <openclaw_artifact> blocks

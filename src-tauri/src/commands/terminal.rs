@@ -1,6 +1,6 @@
 // Integrated terminal - portable-pty backed PTY multiplexer.
 //
-// Architecture mirrors the io_stream model from nezha:
+// Architecture mirrors the io_stream model from junqi:
 //   - IoStreamContext: per-session context with mutex-guarded PTY master,
 //     flume bounded channel for user input, AtomicBool for close signalling
 //   - Per-user (20) / per-server (40) concurrent stream limits
@@ -25,7 +25,7 @@ use tauri::{AppHandle, Emitter};
 const MAX_STREAMS_PER_USER: usize = 20;
 const MAX_STREAMS_PER_SERVER: usize = 40;
 
-// Mirrors nezha's ioStreamContext.
+// Mirrors junqi's ioStreamContext.
 struct IoStreamContext {
     creator_user_id: u64,
     target_server_id: u64,
@@ -105,7 +105,7 @@ fn build_shell(cwd: Option<&str>) -> CommandBuilder {
 }
 
 // PTY reader thread: reads PTY stdout -> emits Tauri events.
-// Mirrors the read half of nezha's io.CopyBuffer(userIo, agentIo).
+// Mirrors the read half of junqi's io.CopyBuffer(userIo, agentIo).
 //
 // Runs until: PTY reader returns 0/Err (EOF), which happens when the child
 // exits OR Kill() closes the master fd.
@@ -182,7 +182,7 @@ fn pty_reader_thread(id: String, mut reader: Box<dyn Read + Send>, app: AppHandl
 }
 
 // PTY writer thread: receives renderer keystrokes via flume -> writes to PTY master.
-// Mirrors the write half of nezha's io.CopyBuffer(agentIo, userIo).
+// Mirrors the write half of junqi's io.CopyBuffer(agentIo, userIo).
 //
 // Blocks on flume recv(). Runs until:
 //   - user_input_rx.recv() returns Disconnected (sender dropped on Kill/Close)
@@ -239,7 +239,7 @@ pub async fn terminal_create(
         .map_err(|e| format!("try_clone_reader: {e}"))?;
     let master = pair.master;
 
-    // Per-user / per-server limits (nezha model)
+    // Per-user / per-server limits (junqi model)
     let id = next_id();
     let map = streams().lock().unwrap();
 
@@ -354,7 +354,7 @@ pub async fn terminal_kill(id: String) -> Result<(), String> {
     if let Some(ctx) = ctx_opt {
         ctx.closed.store(true, Ordering::Relaxed);
         // Kill the child explicitly so the reader thread sees EOF promptly
-        // (mirrors nezha's CloseStream closing the underlying IO pipes).
+        // (mirrors junqi's CloseStream closing the underlying IO pipes).
         if let Some(mut child) = ctx.child.lock().unwrap().take() {
             let _ = child.kill();
         }

@@ -1,5 +1,5 @@
 // ── Git File Browser — tree/list view for git file lists ──────────────────────
-// Ported from nezha's git-view/GitFileBrowser with --aegis-* CSS var rewrites.
+// Ported from junqi's git-view/GitFileBrowser with --aegis-* CSS var rewrites.
 import {
   useState,
   useMemo,

@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Play, Pause, Volume2, VolumeX, RotateCcw, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
-import { useSettingsStore } from '@/stores/settingsStore';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
+import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { VOICE_INTERRUPT_EVENT, VOICE_MEDIA_REQUEST_EVENT } from '@/services/voice/types';
 
 // ═══════════════════════════════════════════════════════════
 // AudioPlayer — Custom audio player for TTS / voice messages
@@ -13,12 +14,16 @@ import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 interface AudioPlayerProps {
   src: string;
   className?: string;
+  sessionKey?: string | null;
+  /** Only assistant output participates in VoiceRuntime auto-play/state. */
+  trackVoiceOutput?: boolean;
 }
 
-export function AudioPlayer({ src, className }: AudioPlayerProps) {
+export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutput = false }: AudioPlayerProps) {
   const { t } = useTranslation();
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
+  const playbackTokenRef = useRef(Symbol('audio-player'));
 
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -31,10 +36,31 @@ export function AudioPlayer({ src, className }: AudioPlayerProps) {
     src.startsWith('aegis-media:') ? '' : src
   );
 
+  useEffect(() => {
+    const interrupt = (event: Event) => {
+      const owner = (event as CustomEvent<{ sessionKey?: string | null }>).detail?.sessionKey;
+      // A scoped interrupt must not pause ownerless history/user players.
+      if (owner && owner !== sessionKey) return;
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.pause();
+      setPlaying(false);
+    };
+    window.addEventListener(VOICE_INTERRUPT_EVENT, interrupt);
+    return () => window.removeEventListener(VOICE_INTERRUPT_EVENT, interrupt);
+  }, [sessionKey]);
+
   // ── Resolve media sources ──
   useEffect(() => {
+    let active = true;
+    setError(false);
+    setPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+    setLoading(true);
     if (src.startsWith('aegis-media:')) {
       let filePath = src.replace('aegis-media:', '');
+      setResolvedSrc('');
       setLoading(true);
 
       // Sandbox /tmp/ paths → serve via TTS HTTP server (port configurable via IPC)
@@ -49,19 +75,17 @@ export function AudioPlayer({ src, className }: AudioPlayerProps) {
           .then(r => {
             if (r.ok) {
               debugLog('media', '[AudioPlayer] ✅ HTTP audio available:', httpUrl);
-              setResolvedSrc(httpUrl);
+              if (active) setResolvedSrc(httpUrl);
             } else {
               debugWarn('media', '[AudioPlayer] ⚠️ HTTP 404 — file not yet copied to shared folder');
-              setError(true);
-              setLoading(false);
+              if (active) { setError(true); setLoading(false); }
             }
           })
           .catch(() => {
             debugWarn('media', '[AudioPlayer] ⚠️ Edge TTS server unreachable');
-            setError(true);
-            setLoading(false);
+            if (active) { setError(true); setLoading(false); }
           });
-        return;
+        return () => { active = false; };
       }
 
       // Convert Docker/Linux mount paths to native paths via IPC (platform-agnostic)
@@ -83,16 +107,14 @@ export function AudioPlayer({ src, className }: AudioPlayerProps) {
             const ext = filePath.split('.').pop()?.toLowerCase() || 'mp3';
             const mime = ext === 'mp3' ? 'audio/mpeg' : ext === 'ogg' ? 'audio/ogg' : ext === 'wav' ? 'audio/wav' : 'audio/webm';
             debugLog('media', '[AudioPlayer] ✅ Loaded via IPC, size:', Math.round(base64.length / 1024), 'KB');
-            setResolvedSrc(`data:${mime};base64,${base64}`);
+            if (active) setResolvedSrc(`data:${mime};base64,${base64}`);
           } else {
             debugError('media', '[AudioPlayer] ❌ No data returned for:', filePath);
-            setError(true);
-            setLoading(false);
+            if (active) { setError(true); setLoading(false); }
           }
         }).catch((err: any) => {
           debugError('media', '[AudioPlayer] ❌ Read failed:', err);
-          setError(true);
-          setLoading(false);
+          if (active) { setError(true); setLoading(false); }
         });
       } else {
         debugError('media', '[AudioPlayer] No voice.read IPC available');
@@ -103,6 +125,7 @@ export function AudioPlayer({ src, className }: AudioPlayerProps) {
     } else if (src.startsWith('data:') || src.startsWith('http') || src.startsWith('blob:')) {
       setResolvedSrc(src);
     }
+    return () => { active = false; };
   }, [src]);
 
   // ── Time format ──
@@ -130,36 +153,79 @@ export function AudioPlayer({ src, className }: AudioPlayerProps) {
     const onEnded = () => {
       setPlaying(false);
       setCurrentTime(0);
+      if (trackVoiceOutput) voiceRuntime.endExternalPlayback(playbackTokenRef.current);
+    };
+
+    const onPlay = () => {
+      setPlaying(true);
+      if (trackVoiceOutput && sessionKey) {
+        voiceRuntime.startExternalPlayback(
+          sessionKey,
+          src,
+          playbackTokenRef.current,
+          () => audio.pause(),
+        );
+      }
+    };
+
+    const onPause = () => {
+      setPlaying(false);
+      if (trackVoiceOutput) voiceRuntime.endExternalPlayback(playbackTokenRef.current);
     };
 
     const onError = () => {
       setError(true);
       setLoading(false);
       debugError('media', '[AudioPlayer] Failed to load:', src);
+      if (trackVoiceOutput && sessionKey) {
+        voiceRuntime.failExternalPlayback(sessionKey, src, playbackTokenRef.current);
+      }
     };
 
     const onCanPlay = () => {
       setLoading(false);
-      // Auto-play if setting is enabled
-      if (useSettingsStore.getState().audioAutoPlay && !playing) {
-        audio.play().then(() => setPlaying(true)).catch(() => {});
+      // Only a live assistant response registered by VoiceRuntime may
+      // auto-play. History and user recordings remain manual.
+      if (
+        trackVoiceOutput
+        && sessionKey
+        && voiceRuntime.claimExternalPlayback(sessionKey, src)
+        && audio.paused
+      ) {
+        audio.play().catch(() => {
+          voiceRuntime.failExternalPlayback(sessionKey, src, playbackTokenRef.current);
+        });
       }
+    };
+
+    const onMediaRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionKey?: string; source?: string }>).detail;
+      if (detail?.sessionKey !== sessionKey || detail?.source !== src) return;
+      if (audio.readyState >= 3) onCanPlay();
     };
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('ended', onEnded);
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
     audio.addEventListener('error', onError);
     audio.addEventListener('canplay', onCanPlay);
+    window.addEventListener(VOICE_MEDIA_REQUEST_EVENT, onMediaRequest);
+    if (audio.readyState >= 3) onCanPlay();
 
     return () => {
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
       audio.removeEventListener('error', onError);
       audio.removeEventListener('canplay', onCanPlay);
+      window.removeEventListener(VOICE_MEDIA_REQUEST_EVENT, onMediaRequest);
+      if (trackVoiceOutput) voiceRuntime.endExternalPlayback(playbackTokenRef.current);
     };
-  }, [resolvedSrc]);
+  }, [resolvedSrc, sessionKey, src, trackVoiceOutput]);
 
   // ── Play / Pause ──
   const togglePlay = useCallback(() => {

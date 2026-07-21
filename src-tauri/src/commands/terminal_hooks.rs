@@ -18,7 +18,7 @@ use tauri::{AppHandle, Emitter, Manager};
 const HOOK_EVENT_NAME: &str = "terminal-hook";
 const MAX_HOOK_MESSAGE_BYTES: u64 = 16 * 1024;
 const MAX_IDENTIFIER_BYTES: usize = 2 * 1024;
-const TERMINAL_HOOK_SCRIPT: &str = include_str!("../nezha/junqi-terminal-hook.mjs");
+const TERMINAL_HOOK_SCRIPT: &str = include_str!("../assets/junqi-terminal-hook.mjs");
 
 #[derive(Clone)]
 struct TerminalHookBridge {

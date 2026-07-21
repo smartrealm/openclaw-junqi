@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ENABLE_USAGE_INSIGHTS } from '@/components/Terminal/_nezha-platform';
+import { ENABLE_USAGE_INSIGHTS } from '@/components/Terminal/platform';
 
 export interface UsageWindow {
   usedPercent: number;

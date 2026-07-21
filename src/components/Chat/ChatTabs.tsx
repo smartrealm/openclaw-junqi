@@ -830,8 +830,6 @@ export function ChatTabs() {
     currentThinking,
     currentModel,
     manualModelOverride,
-    typingBySession,
-    thinkingBySession,
   } = useChatStore();
 
   // ── Drag-to-reorder sensors ──
@@ -1168,10 +1166,6 @@ export function ChatTabs() {
             || session?.label
             || label;
           const unread = session?.unread ?? 0;
-          const hasPendingCompletion = Boolean(session?.hasPendingCompletion);
-          const hasThinking = Boolean(thinkingBySession[key]?.runId || thinkingBySession[key]?.text);
-          const runningState = hasThinking ? 'thinking' : typingBySession[key] ? 'streaming' : null;
-          const isRunning = Boolean(runningState);
           const isEditing = editingKey === key;
 
           return (
@@ -1248,27 +1242,6 @@ export function ChatTabs() {
                     {label}
                   </span>
                 )}
-                {runningState && !isActive && (
-                  <span
-                    className="inline-flex items-center gap-1 shrink-0"
-                    title={runningState === 'thinking'
-                      ? t('chat.tabThinking', 'Background thinking in progress')
-                      : t('chat.tabStreaming', 'Background reply streaming')}
-                  >
-                    {runningState === 'thinking' ? (
-                      <Bot size={11} className="text-aegis-warning animate-pulse-soft" />
-                    ) : (
-                      <Zap size={11} className="text-aegis-primary animate-pulse-soft" />
-                    )}
-                  </span>
-                )}
-                {hasPendingCompletion && !isActive && !isRunning && (
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0 bg-aegis-success/90"
-                    title={t('chat.tabCompleted', 'Background reply completed')}
-                  />
-                )}
-
                 {unread > 0 && !isActive && (
                   <span
                     className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-aegis-primary/15 text-aegis-primary text-[10px] font-semibold leading-[18px] text-center"

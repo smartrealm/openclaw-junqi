@@ -10,7 +10,7 @@ test('AI task terminal forwards interactive keyboard input', () => {
   assert.doesNotMatch(source, /data\.length <= 3/);
 });
 
-test('AI task terminal installs Nezha terminal affordances', () => {
+test('AI task terminal installs JunQi terminal affordances', () => {
   assert.match(source, /attachSmartCopy\(term, \{/);
   assert.match(source, /attachMacWebKitShiftInputFix\(term\)/);
   assert.match(source, /attachTerminalScrollbarAutoHide\(term, container\)/);
@@ -21,7 +21,7 @@ test('AI task terminal follows the configured newline shortcut', () => {
   assert.match(source, /matchesTerminalNewline\(event, shiftEnterNewlineRef\.current\)/);
   assert.match(source, /sendTerminalInput\(TERMINAL_NEWLINE_SEQUENCE\)/);
   assert.match(source, /terminal_shift_enter_newline/);
-  assert.match(source, /nezha:app-settings-changed/);
+  assert.match(source, /junqi:app-settings-changed/);
 });
 
 test('running task follow-up input supports multiline text and stops during recovery', () => {
@@ -72,7 +72,7 @@ test('workspace-owned tasks cannot change their project path', () => {
   assert.match(source, /placeholder="项目路径（留空使用当前目录）"/);
 });
 
-test('new task composition follows the Nezha card and launch-bar hierarchy', () => {
+test('new task composition follows the JunQi card and launch-bar hierarchy', () => {
   assert.match(source, /claudeGif from '@\/assets\/gif\/claude\.gif'/);
   assert.match(source, /codexGif from '@\/assets\/gif\/codex\.gif'/);
   assert.match(source, /agent === 'codex' \? codexGif : claudeGif/);
@@ -89,7 +89,7 @@ test('todo tasks reject attachments instead of silently dropping them', () => {
   assert.match(source, /包含附件的任务必须立即发送/);
 });
 
-test('workspace task agent choices match Nezha while standalone runs may use Pi', () => {
+test('workspace task agent choices match JunQi while standalone runs may use Pi', () => {
   assert.match(source, /allowPi \? \['claude', 'codex', 'pi'\] : \['claude', 'codex'\]/);
   assert.match(source, /allowPi=\{providedProjectPath === undefined\}/);
   assert.match(source, /a === 'codex' \? 'Codex' : 'Pi'/);
@@ -100,7 +100,7 @@ test('new worktree tasks require an explicit base branch', () => {
   assert.match(source, /请选择工作树的基础分支/);
 });
 
-test('new worktree creation consumes the Nezha camel-case response contract', () => {
+test('new worktree creation consumes the JunQi camel-case response contract', () => {
   assert.match(source, /worktreePath: string; worktreeBranch: string; baseBranch: string/);
   assert.match(source, /actualPath = result\.worktreePath/);
   assert.match(source, /worktreeBranch: result\.worktreeBranch/);

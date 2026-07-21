@@ -499,6 +499,7 @@ pub async fn run_task(
             agent == "claude" && hook_status.settings_linked
         };
         if hooks_usable {
+            super::agent_event_watcher::start(app.clone());
             if agent == "codex" {
                 cmd.arg("--dangerously-bypass-hook-trust");
             }
@@ -510,9 +511,9 @@ pub async fn run_task(
             }
             if let Ok(event_dir) = super::hooks::events_dir_for(&task_id) {
                 let _ = fs::create_dir_all(&event_dir);
-                cmd.env("NEZHA_TASK_ID", &task_id);
-                cmd.env("NEZHA_EVENT_DIR", event_dir);
-                cmd.env("NEZHA_AGENT", &agent);
+                cmd.env("JUNQI_TASK_ID", &task_id);
+                cmd.env("JUNQI_EVENT_DIR", event_dir);
+                cmd.env("JUNQI_AGENT", &agent);
             }
         }
     }
@@ -1126,9 +1127,9 @@ mod tests {
     fn trusted_hook_tasks_receive_event_environment_and_codex_trust_flag() {
         let source = include_str!("agent_task_pty.rs");
         assert!(source.contains("--dangerously-bypass-hook-trust"));
-        assert!(source.contains("NEZHA_TASK_ID"));
-        assert!(source.contains("NEZHA_EVENT_DIR"));
-        assert!(source.contains("NEZHA_AGENT"));
+        assert!(source.contains("JUNQI_TASK_ID"));
+        assert!(source.contains("JUNQI_EVENT_DIR"));
+        assert!(source.contains("JUNQI_AGENT"));
     }
 
     #[test]

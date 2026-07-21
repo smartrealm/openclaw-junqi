@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════
 // FileExplorer — Virtualized file tree with context menus
-// Ported from nezha with --aegis-* CSS var rewrites.
+// Ported from junqi with --aegis-* CSS var rewrites.
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";

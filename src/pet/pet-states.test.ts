@@ -43,6 +43,15 @@ test('typing beats running', () => {
   assert.equal(derivePetState(base({ typing: true, running: true })).emotion, 'typing');
 });
 
+test('voice listening and playback map to active pet states', () => {
+  assert.equal(derivePetState(base({ voiceListening: true })).emotion, 'thinking');
+  assert.equal(derivePetState(base({ voiceSpeaking: true })).emotion, 'typing');
+});
+
+test('voice listening takes priority over simultaneous playback', () => {
+  assert.equal(derivePetState(base({ voiceListening: true, voiceSpeaking: true })).emotion, 'thinking');
+});
+
 test('running → working', () => {
   assert.equal(derivePetState(base({ running: true })).emotion, 'working');
 });

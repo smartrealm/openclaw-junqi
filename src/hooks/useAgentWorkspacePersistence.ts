@@ -46,7 +46,7 @@ export function normalizeLoadedAgentWorkspaceTasks(
   });
 }
 
-/** Nezha-compatible per-project disk persistence with startup process reconciliation. */
+/** JunQi-compatible per-project disk persistence with startup process reconciliation. */
 export function useAgentWorkspacePersistence(workspaces: PersistedWorkspace[]): void {
   const loadedIdsRef = useRef(new Set<string>());
   const blockedIdsRef = useRef(new Set<string>());

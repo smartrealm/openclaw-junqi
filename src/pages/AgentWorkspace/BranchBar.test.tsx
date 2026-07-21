@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./BranchBar.tsx', import.meta.url), 'utf8');
 
-test('branch creation matches the full Nezha flow', () => {
+test('branch creation matches the full JunQi flow', () => {
   assert.match(source, /fromBranch/);
   assert.match(source, /checkout: boolean/);
   assert.match(source, /创建并切换/);

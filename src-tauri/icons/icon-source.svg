@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  JunQi Desktop app icon: matches the in-app brand mark + the nezha
-  visual DNA (docs/NEZHA-VISUAL-DNA.md):
+  JunQi Desktop app icon: matches the in-app brand mark and current
+  product visual language:
     Outer: rounded square with a subtle gradient border
       (blue to cyan to green): restrained, not rainbow
     Inner: opaque dark navy card (matches aegis-bg = #1d212a)

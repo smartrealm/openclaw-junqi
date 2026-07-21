@@ -1,5 +1,5 @@
 // ── DiffFileBlock — renders a single file's diff in unified or split view ─────
-// Ported from nezha's git-diff/DiffFileBlock with --aegis-* CSS var rewrites.
+// Ported from junqi's git-diff/DiffFileBlock with --aegis-* CSS var rewrites.
 import { useState, useCallback, useMemo } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { DiffFile, DiffViewMode } from "./types";

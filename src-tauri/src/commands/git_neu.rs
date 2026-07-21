@@ -1,6 +1,6 @@
-// ── Port of nezha git.rs into commands module with _neu suffix ─────────────────
+// ── Port of junqi git.rs into commands module with _neu suffix ─────────────────
 // All #[tauri::command] functions are preserved. Crate references changed to
-// match the host project's crate structure: nezha modules live under crate::nezha::.
+// match the host project's crate structure: junqi modules live under crate::junqi::.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -8,7 +8,7 @@ use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-// ── Inlined platform helpers (avoiding deep nezha dependency chain) ──────────
+// ── Inlined platform helpers (avoiding deep junqi dependency chain) ──────────
 
 #[cfg(windows)]
 fn configure_background_command(cmd: &mut std::process::Command) {
@@ -71,8 +71,8 @@ struct ProjectConfig {
 }
 
 fn read_project_config_helper(_project_path: String) -> Result<ProjectConfig, String> {
-    // Without nezha's full config system, provide reasonable defaults.
-    // The nezha config is stored alongside the project but has deep dependencies.
+    // Without junqi's full config system, provide reasonable defaults.
+    // The junqi config is stored alongside the project but has deep dependencies.
     // For now, use hardcoded defaults so the git commands work standalone.
     Ok(ProjectConfig {
         git: GitConfig {
@@ -304,7 +304,7 @@ fn git_has_head(worktree_root: &str) -> Result<bool, String> {
     Ok(output.status.success())
 }
 
-const PROTECTED_FIRST_SEGMENTS: &[&str] = &[".git", ".nezha"];
+const PROTECTED_FIRST_SEGMENTS: &[&str] = &[".git", ".junqi"];
 
 fn is_protected_project_relative_path(relative_path: &str) -> bool {
     Path::new(relative_path)
@@ -350,7 +350,7 @@ fn run_agent_commit_message_command(
 }
 
 fn create_empty_temp_file() -> Result<PathBuf, String> {
-    let path = std::env::temp_dir().join(format!("nezha-empty-{}.tmp", uuid::Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("junqi-empty-{}.tmp", uuid::Uuid::new_v4()));
     std::fs::File::create(&path)
         .map_err(|e| format!("Failed to create temporary file for git diff: {e}"))?;
     Ok(path)
@@ -1350,14 +1350,14 @@ pub async fn git_remote_counts(
     })
 }
 
-// ── Worktree task helpers (ported from nezha git.rs) ─────────────────────────
+// ── Worktree task helpers ────────────────────────────────────────────────────
 //
-// Each task can run inside its own git worktree under `<project>/.nezha/worktrees/<task_id>`,
-// on a dedicated branch `nezha-task/<task_id>`. This lets multiple agents edit the same
+// Each task can run inside its own git worktree under `<project>/.junqi/worktrees/<task_id>`,
+// on a dedicated branch `junqi-task/<task_id>`. This lets multiple agents edit the same
 // repo in parallel without stomping each other's uncommitted changes.
 //
 // All four commands share the worktrees-root invariant: every worktree_path the
-// frontend sends must canonicalize under `<project>/.nezha/worktrees/`. Otherwise
+// frontend sends must canonicalize under `<project>/.junqi/worktrees/`. Otherwise
 // an attacker-controlled session_path could trigger `git worktree remove` on
 // arbitrary directories.
 
@@ -1378,15 +1378,15 @@ fn task_worktree_branch_name(task_id: &str) -> String {
     if sanitized.is_empty() {
         sanitized = String::from("task");
     }
-    format!("nezha-task/{sanitized}")
+    format!("junqi-task/{sanitized}")
 }
 
 /// Reject any `worktree_path` that does not canonicalize under
-/// `<project>/.nezha/worktrees/`. Mirrors nezha's `ensure_path_under_worktrees_root`.
+/// `<project>/.junqi/worktrees/`.
 fn ensure_path_under_worktrees_root(project_path: &str, worktree_path: &str) -> Result<(), String> {
     let canonical_project =
         std::fs::canonicalize(project_path).map_err(|e| format!("Bad project path: {}", e))?;
-    let worktrees_root = canonical_project.join(".nezha").join("worktrees");
+    let worktrees_root = canonical_project.join(".junqi").join("worktrees");
     // Ensure the root itself exists so canonicalize on the candidate doesn't fail
     // just because no worktree has been created yet.
     std::fs::create_dir_all(&worktrees_root)
@@ -1429,8 +1429,8 @@ pub struct WorktreeCreated {
     pub base_branch: String,
 }
 
-/// Spawn a fresh worktree at `<project>/.nezha/worktrees/<task_id>` on a new
-/// branch `nezha-task/<task_id>` based on `base_branch`.
+/// Spawn a fresh worktree at `<project>/.junqi/worktrees/<task_id>` on a new
+/// branch `junqi-task/<task_id>` based on `base_branch`.
 #[tauri::command]
 pub async fn create_task_worktree(
     project_path: String,
@@ -1447,7 +1447,7 @@ pub async fn create_task_worktree(
 
     tokio::task::spawn_blocking(move || -> Result<WorktreeCreated, String> {
         let worktrees_dir = std::path::Path::new(&project_path)
-            .join(".nezha")
+            .join(".junqi")
             .join("worktrees");
         std::fs::create_dir_all(&worktrees_dir)
             .map_err(|e| format!("Failed to create worktrees dir: {}", e))?;
@@ -1879,16 +1879,16 @@ mod terminal_file_diff_tests {
     use super::{parse_numstat_z, WorktreeCreated};
 
     #[test]
-    fn worktree_created_matches_the_nezha_frontend_contract() {
+    fn worktree_created_matches_the_junqi_frontend_contract() {
         let value = serde_json::to_value(WorktreeCreated {
-            worktree_path: "/repo/.nezha/worktrees/task-1".to_string(),
-            worktree_branch: "nezha/task-1".to_string(),
+            worktree_path: "/repo/.junqi/worktrees/task-1".to_string(),
+            worktree_branch: "junqi-task/task-1".to_string(),
             base_branch: "main".to_string(),
         })
         .expect("worktree response must serialize");
 
-        assert_eq!(value["worktreePath"], "/repo/.nezha/worktrees/task-1");
-        assert_eq!(value["worktreeBranch"], "nezha/task-1");
+        assert_eq!(value["worktreePath"], "/repo/.junqi/worktrees/task-1");
+        assert_eq!(value["worktreeBranch"], "junqi-task/task-1");
         assert_eq!(value["baseBranch"], "main");
         assert!(value.get("worktree_path").is_none());
     }

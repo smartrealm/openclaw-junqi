@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════
 // FileViewer — Code editor + markdown preview + media viewer
-// Ported from nezha with --aegis-* CSS var rewrites.
+// Ported from junqi with --aegis-* CSS var rewrites.
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
@@ -8,7 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal, X } from "lucide-react";
+import { MoreHorizontal, Play, X } from "lucide-react";
 import ReactCodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
 import { solarizedLight } from "@uiw/codemirror-theme-solarized";
@@ -688,6 +688,9 @@ function FilePreviewPane({
                   color: "var(--aegis-text-secondary)",
                   cursor: "pointer",
                   lineHeight: 1.4,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
                   transition: "background 0.12s, color 0.12s",
                 }}
                 onMouseEnter={(e) => {
@@ -699,7 +702,8 @@ function FilePreviewPane({
                   e.currentTarget.style.color = "var(--aegis-text-secondary)";
                 }}
               >
-                ▶ {target}
+                <Play size={10} aria-hidden="true" />
+                {target}
               </button>
             ))}
           </div>

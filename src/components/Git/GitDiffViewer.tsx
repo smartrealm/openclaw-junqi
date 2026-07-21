@@ -1,5 +1,5 @@
 // ── GitDiffViewer — diff display for commits and working-tree files ───────────
-// Ported from nezha's GitDiffViewer with --aegis-* CSS var rewrites.
+// Ported from junqi's GitDiffViewer with --aegis-* CSS var rewrites.
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";

@@ -4,7 +4,7 @@
 // per-project installations (symlinks into the project's agent skills dir).
 //
 // JunQi stores hub configuration directly and treats project_id as the local
-// project path, while retaining Nezha's validation, conflict, and symlink rules.
+// project path.
 
 use std::collections::HashSet;
 use std::fs;
@@ -97,17 +97,16 @@ pub struct SetHubResult {
 
 // ── Persistence paths ─────────────────────────────────────────────────────────
 
-fn nezha_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
-    Ok(home.join(".nezha"))
+fn skills_state_dir() -> PathBuf {
+    crate::paths::app_config_dir().join("skills")
 }
 
-fn hub_config_path() -> Result<PathBuf, String> {
-    Ok(nezha_dir()?.join("skill-hub.json"))
+fn hub_config_path() -> PathBuf {
+    skills_state_dir().join("hub.json")
 }
 
-fn installations_path() -> Result<PathBuf, String> {
-    Ok(nezha_dir()?.join("skill-installations.json"))
+fn installations_path() -> PathBuf {
+    skills_state_dir().join("installations.json")
 }
 
 fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
@@ -135,10 +134,7 @@ fn now_ms() -> i64 {
 // ── Hub config CRUD ──────────────────────────────────────────────────────────
 
 fn load_hub_config() -> SkillHubConfig {
-    let path = match hub_config_path() {
-        Ok(p) => p,
-        Err(_) => return SkillHubConfig::default(),
-    };
+    let path = hub_config_path();
     if !path.exists() {
         return SkillHubConfig::default();
     }
@@ -149,9 +145,9 @@ fn load_hub_config() -> SkillHubConfig {
 }
 
 fn save_hub_config(cfg: &SkillHubConfig) -> Result<(), String> {
-    let dir = nezha_dir()?;
+    let dir = skills_state_dir();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = hub_config_path()?;
+    let path = hub_config_path();
     let raw = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
     atomic_write(&path, &raw)
 }
@@ -207,10 +203,7 @@ struct InstallationsFile {
 }
 
 fn load_installations() -> InstallationsFile {
-    let path = match installations_path() {
-        Ok(p) => p,
-        Err(_) => return InstallationsFile::default(),
-    };
+    let path = installations_path();
     if !path.exists() {
         return InstallationsFile::default();
     }
@@ -221,9 +214,9 @@ fn load_installations() -> InstallationsFile {
 }
 
 fn save_installations(file: &InstallationsFile) -> Result<(), String> {
-    let dir = nezha_dir()?;
+    let dir = skills_state_dir();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = installations_path()?;
+    let path = installations_path();
     let raw = serde_json::to_string_pretty(file).map_err(|e| e.to_string())?;
     atomic_write(&path, &raw)
 }
@@ -783,6 +776,14 @@ pub async fn delete_skill(skill_name: String, skill_path: String) -> Result<Dele
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_state_is_stored_in_the_application_config_directory() {
+        let root = crate::paths::app_config_dir().join("skills");
+        assert_eq!(skills_state_dir(), root);
+        assert_eq!(hub_config_path(), root.join("hub.json"));
+        assert_eq!(installations_path(), root.join("installations.json"));
+    }
 
     #[test]
     fn parse_frontmatter_inline_scalars() {

@@ -36,13 +36,13 @@ test('new task drafts open the full editor instead of the todo detail view', () 
   assert.match(source, /initialIsDraft=\{task\.isDraft\}/);
 });
 
-test('opening a local project initializes the Nezha project configuration', () => {
+test('opening a local project initializes the JunQi project configuration', () => {
   assert.match(source, /invoke\('init_project_config', \{ projectPath \}\)/);
   assert.match(source, /workspace\?\.sshRemoteHost/);
   assert.match(source, /初始化项目配置失败/);
 });
 
-test('task list actions match Nezha ownership boundaries', () => {
+test('task list actions match JunQi ownership boundaries', () => {
   const start = source.indexOf("title={task.starred ? '取消收藏'");
   const end = source.indexOf('title="删除任务"', start);
   const taskActions = source.slice(start, end);
@@ -129,7 +129,7 @@ test('AI workspace navigation labels exist in every supported locale', () => {
   }
 });
 
-test('closing the active file tab follows Nezha adjacent-tab fallback', () => {
+test('closing the active file tab follows JunQi adjacent-tab fallback', () => {
   assert.match(source, /if \(index === -1\) return current;/);
   assert.match(source, /next\[Math\.min\(index, next\.length - 1\)\]\?\.path \?\? null/);
   assert.doesNotMatch(source, /next\[index - 1\]\?\.path \?\? next\[index\]\?\.path/);
@@ -143,7 +143,7 @@ test('task notification deep links select their project and task', () => {
   assert.match(source, /navigate\('\/ai-workspace', \{ replace: true \}\)/);
 });
 
-test('task history and attention badge preferences live in Nezha app settings', () => {
+test('task history and attention badge preferences live in JunQi app settings', () => {
   assert.match(source, /readAttentionBadge/);
   assert.match(source, /attentionBadge && activity\.attention > 0/);
   assert.match(source, /attentionBadge && hasAttention/);
@@ -160,7 +160,7 @@ test('workspace capability panel reuses shared skills and persisted task setting
   assert.match(source, /onNavigate\('\/activity'\)/);
 });
 
-test('task list delegates Nezha attention ordering to the shared model', () => {
+test('task list delegates JunQi attention ordering to the shared model', () => {
   assert.match(source, /sort\(compareAgentWorkspaceTasks\)/);
   assert.match(source, /agentTaskNeedsAttention\(task\)/);
 });

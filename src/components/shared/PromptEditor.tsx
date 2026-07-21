@@ -1,4 +1,4 @@
-// ── PromptEditor — nezha-style @ mention + image attachments + draft cache ──
+// ── PromptEditor — junqi-style @ mention + image attachments + draft cache ──
 //
 // Self-contained textarea wrapper that:
 //   1. Detects `@` keystrokes and opens a file picker
@@ -8,7 +8,7 @@
 //   5. Accepts image drag-and-drop → shows thumbnails, calls onAttachImages
 //   6. Caches draft text in a module-level ref → restores on re-mount
 //
-// Source pattern: nezha/src/components/new-task/PromptEditor.tsx
+// Source pattern: junqi/src/components/new-task/PromptEditor.tsx
 
 import {
   useCallback, useEffect, useRef, useState,

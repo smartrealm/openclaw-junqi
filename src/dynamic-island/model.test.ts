@@ -38,6 +38,13 @@ test('auto peek only reacts to a new notice or meaningful status transition', ()
   assert.equal(shouldPeekForSnapshot(attention, { ...attention, autoExpand: false }), false);
 });
 
+test('voice activity peeks once when capture or playback starts', () => {
+  const listening = { ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT, voicePhase: 'listening' as const };
+  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, listening), true);
+  assert.equal(shouldPeekForSnapshot(listening, { ...listening, voicePhase: 'transcribing' }), false);
+  assert.equal(shouldPeekForSnapshot(listening, { ...listening, autoExpand: false }), false);
+});
+
 test('remaining time freezes while paused and uses stable tabular format', () => {
   const paused = {
     ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
@@ -65,6 +72,8 @@ test('the island is conditional unless a file drag needs immediate feedback', ()
   assert.equal(shouldShowDynamicIsland(base), false);
   assert.equal(shouldShowDynamicIsland({ ...base, mainMinimized: true }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], mainMinimized: true }), false);
+  assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], mainMinimized: true, voiceActive: true }), true);
+  assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], voiceActive: true }), false);
   assert.equal(shouldShowDynamicIsland({
     ...base,
     tasks: [],

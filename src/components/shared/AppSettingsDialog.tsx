@@ -1,4 +1,4 @@
-// ── AppSettingsDialog — 1:1 nezha modal settings ─────────────────────────────
+// ── AppSettingsDialog — 1:1 junqi modal settings ─────────────────────────────
 //
 // Full settings modal with 11-panel sidebar nav:
 //   Application: General, Theme, Fonts, Shortcuts
@@ -14,7 +14,7 @@ import {
   Save, RefreshCw, ExternalLink, Loader2,
   Sun, Moon, Eye, Palette, Type, Keyboard,
   Wifi, Bell, BellOff, Volume2, VolumeX, PawPrint,
-  CheckCircle2, AlertCircle, Upload, Trash2, Blocks, FolderOpen, RotateCcw,
+  CheckCircle2, AlertCircle, Upload, Trash2, Blocks, FolderOpen, RotateCcw, Timer,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -158,7 +158,7 @@ function SkillsPanel() {
     return () => { cancelled = true; };
   }, []);
 
-  const notifyChanged = () => window.dispatchEvent(new Event('nezha:skill-hub-changed'));
+  const notifyChanged = () => window.dispatchEvent(new Event('junqi:skill-hub-changed'));
   const chooseHub = async () => {
     setError(null);
     const selected = await openDialog({ directory: true, multiple: false });
@@ -243,7 +243,7 @@ function GeneralPanel() {
     setSavingScrollback(true);
     try {
       await invoke('save_terminal_scrollback', { scrollback: next });
-      window.dispatchEvent(new Event('nezha:app-settings-changed'));
+      window.dispatchEvent(new Event('junqi:app-settings-changed'));
     } finally { setSavingScrollback(false); }
   };
   const handleLanguageChange = (lang: AppLanguage) => {
@@ -398,7 +398,7 @@ function ShortcutsPanel() {
   const [loadedSettings, setLoadedSettings] = useState<Record<string, unknown>>({});
   const isMac = typeof navigator !== 'undefined' && navigator.platform?.toLowerCase().includes('mac');
   useEffect(() => { let c = false; invoke<Record<string, unknown> & {send_shortcut?:string;terminal_shift_enter_newline?:boolean}>('load_app_settings').then(s => { if(!c){ setLoadedSettings(s); setSend(s.send_shortcut||'mod_enter'); setShiftEnter(s.terminal_shift_enter_newline??true); } }).catch(()=>{}).finally(()=>{ if(!c) setLoading(false); }); return ()=>{c=true}; }, []);
-  const save = async () => { setSaving(true); try { const settings = {...loadedSettings,send_shortcut:send,terminal_shift_enter_newline:shiftEnter}; await invoke('save_app_settings',{settings}); setLoadedSettings(settings); window.dispatchEvent(new Event('nezha:app-settings-changed')); setSaved(true); setTimeout(()=>setSaved(false),1500); } catch {} finally { setSaving(false); } };
+  const save = async () => { setSaving(true); try { const settings = {...loadedSettings,send_shortcut:send,terminal_shift_enter_newline:shiftEnter}; await invoke('save_app_settings',{settings}); setLoadedSettings(settings); window.dispatchEvent(new Event('junqi:app-settings-changed')); setSaved(true); setTimeout(()=>setSaved(false),1500); } catch {} finally { setSaving(false); } };
   return loading ? <div className="p-6"><Loader2 size={14} className="animate-spin text-aegis-text-dim"/></div> : (
     <div className="p-6">
       <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.shortcuts', 'Shortcuts')}</h2>
@@ -488,7 +488,11 @@ function ConnectPanel() {
         <div className="flex items-center gap-2">
           {dirty && <button onClick={handleSave} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/25">{t('appSettings.saveReconnect', 'Save & Reconnect')}</button>}
           <button onClick={handleTest} disabled={testing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text">{testing?<Loader2 size={13} className="animate-spin"/>:<Wifi size={13}/>}{t('settings.testConnection')}</button>
-          {testOk!==null && <span className={testOk?'text-aegis-success':'text-aegis-danger'}>{testOk?'✓':'✗'}</span>}
+          {testOk !== null && (
+            <span className={testOk ? 'text-aegis-success' : 'text-aegis-danger'}>
+              {testOk ? <CheckCircle2 size={14} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />}
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -517,7 +521,7 @@ function NotifyPanel() {
           <Toggle enabled={dndMode} onChange={(v)=>{setDndMode(v);notifications.setDndMode(v);}} />
         </div>
         <button onClick={()=>notifications.notify({type:'info',title:'JunQi Desktop',body:t('settings.testNotification')})}
-          className="text-[12px] px-4 py-2 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/40 transition-colors w-fit">🔔 {t('settings.testSound')}</button>
+          className="inline-flex w-fit items-center gap-1.5 rounded-xl border border-aegis-border/20 px-4 py-2 text-[12px] text-aegis-text-dim transition-colors hover:border-aegis-border/40 hover:text-aegis-text"><Bell size={13} aria-hidden="true" />{t('settings.testSound')}</button>
       </div>
     </div>
   );
@@ -549,7 +553,7 @@ function PetPanel() {
               className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text">{t('pet.settings.animatedPackage')}</button>
             {(petCustomAsset||customPet)&&<button onClick={async()=>{setUploadErr(null);await Promise.all([invoke('clear_pet_asset').catch(()=>undefined),invoke('clear_pet_package').catch(()=>undefined)]);setPetCustomAsset(null);setCustomPet(null);}} className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-danger">{t('pet.settings.clear')}</button>}</div></div>
         {uploadErr&&<div className="text-[11px] text-aegis-danger">{uploadErr}</div>}
-        <div className="border-t pt-4" style={{borderColor:'rgb(var(--aegis-border))'}}><div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">🍅 {t('pet.pomodoro.title')}</div></div><Toggle enabled={petPomodoro.enabled} onChange={v=>setPetPomodoro({enabled:v})}/></div>
+        <div className="border-t pt-4" style={{borderColor:'rgb(var(--aegis-border))'}}><div className="flex items-center justify-between"><div><div className="flex items-center gap-1.5 text-[13px] text-aegis-text"><Timer size={14} aria-hidden="true" />{t('pet.pomodoro.title')}</div></div><Toggle enabled={petPomodoro.enabled} onChange={v=>setPetPomodoro({enabled:v})}/></div>
           <div className="flex items-center gap-2 mt-3"><input type="number" min={1} max={120} value={petPomodoro.workMin} disabled={petPomodoro.running} onChange={e=>setPetPomodoro({workMin:Math.max(1,Math.min(120,Number(e.target.value)||30))})} className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center"/><span className="text-[11px] text-aegis-text-dim">{t('appSettings.workMinutes', 'min work')}</span>
             <input type="number" min={1} max={60} value={petPomodoro.breakMin} disabled={petPomodoro.running} onChange={e=>setPetPomodoro({breakMin:Math.max(1,Math.min(60,Number(e.target.value)||5))})} className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center ml-2"/><span className="text-[11px] text-aegis-text-dim">{t('appSettings.breakMinutes', 'min break')}</span></div>
           <div className="flex items-center gap-2 mt-3">
@@ -614,7 +618,7 @@ function AgentProgramPathSection({ agent }: { agent: 'claude' | 'codex' }) {
     try {
       const next = await invoke<NativeAppSettings>('detect_agent_paths');
       setSettings(next);
-      window.dispatchEvent(new Event('nezha:app-settings-changed'));
+      window.dispatchEvent(new Event('junqi:app-settings-changed'));
     } catch (reason) {
       setError(String(reason));
     } finally {
@@ -629,7 +633,7 @@ function AgentProgramPathSection({ agent }: { agent: 'claude' | 'codex' }) {
     try {
       await invoke('save_app_settings', { settings: nextSettings });
       setSettings(nextSettings);
-      window.dispatchEvent(new Event('nezha:app-settings-changed'));
+      window.dispatchEvent(new Event('junqi:app-settings-changed'));
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2000);
     } catch (reason) {

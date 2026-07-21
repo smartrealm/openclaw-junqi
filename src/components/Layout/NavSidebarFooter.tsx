@@ -10,7 +10,7 @@ import { Settings } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { UsagePopover } from '@/components/shared/UsagePopover';
-import { ENABLE_USAGE_INSIGHTS } from '@/components/Terminal/_nezha-platform';
+import { ENABLE_USAGE_INSIGHTS } from '@/components/Terminal/platform';
 import clsx from 'clsx';
 
 export function NavSidebarFooter({ collapsed }: { collapsed?: boolean }) {

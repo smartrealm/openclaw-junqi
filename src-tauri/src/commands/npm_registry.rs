@@ -211,6 +211,20 @@ impl NpmPackageSource {
         }
     }
 
+    /// User-visible source label for installation diagnostics. Built-in URLs
+    /// are safe to show; configured endpoints remain opaque because they may
+    /// identify private registries even after credentials are removed.
+    pub(crate) fn install_log_label(&self) -> String {
+        match &self.0 {
+            NpmPackageSourceKind::Public(registry) => {
+                format!("{} [{}]", registry.label(), registry.url)
+            }
+            NpmPackageSourceKind::Configured(_) => {
+                "user-configured npm registry [endpoint protected]".to_string()
+            }
+        }
+    }
+
     pub(crate) fn public_registry(&self) -> Option<NpmRegistry> {
         match &self.0 {
             NpmPackageSourceKind::Public(registry) => Some(*registry),
@@ -872,32 +886,20 @@ fn choose_matching_source<'a>(
     mirror: &'a RegistryProbe,
 ) -> (&'a RegistryProbe, &'a RegistryProbe, &'static str) {
     match (official.tarball_latency, mirror.tarball_latency) {
-        (Some(official_latency), Some(mirror_latency)) if mirror_latency < official_latency => {
-            (mirror, official, "按实际 tarball 传输延迟选择国内镜像")
-        }
-        (Some(official_latency), Some(mirror_latency)) if official_latency < mirror_latency => {
-            (official, mirror, "按实际 tarball 传输延迟选择官方 registry")
-        }
-        (Some(_), Some(_)) => (official, mirror, "tarball 传输延迟相同，优先官方 registry"),
-        (None, Some(_)) => (
+        (_, Some(_)) => (
             mirror,
             official,
-            "官方 tarball 探测不可用，选择已验证 tarball 的国内镜像",
+            "国内镜像版本与官方一致且 tarball 可达，优先使用国内镜像",
         ),
         (Some(_), None) => (
             official,
             mirror,
             "国内镜像 tarball 探测不可用，选择已验证 tarball 的官方 registry",
         ),
-        (None, None) if mirror.metadata_latency < official.metadata_latency => (
-            mirror,
-            official,
-            "tarball 探测均不可用，按元数据延迟选择国内镜像",
-        ),
         (None, None) => (
-            official,
             mirror,
-            "tarball 探测均不可用，按发布权威优先选择官方 registry",
+            official,
+            "tarball 探测均不可用，保留国内镜像优先并以官方 registry 备用",
         ),
     }
 }
@@ -976,15 +978,27 @@ mod tests {
     }
 
     #[test]
-    fn chooses_the_faster_matching_source_when_both_are_healthy() {
+    fn matching_healthy_release_uses_the_china_mirror_first() {
+        const MATCHING_RELEASE: &str = "2030.1.1";
+        const OFFICIAL_LATENCY_MS: u64 = 50;
+        const CHINA_MIRROR_LATENCY_MS: u64 = 80;
+
         let selection = select_from_probes(
-            Some(probe(OFFICIAL_NPM_REGISTRY, 80, "2026.7.1")),
-            Some(probe(CHINA_NPM_REGISTRY, 50, "2026.7.1")),
+            Some(probe(
+                OFFICIAL_NPM_REGISTRY,
+                OFFICIAL_LATENCY_MS,
+                MATCHING_RELEASE,
+            )),
+            Some(probe(
+                CHINA_NPM_REGISTRY,
+                CHINA_MIRROR_LATENCY_MS,
+                MATCHING_RELEASE,
+            )),
         );
 
         assert_eq!(selection.primary.kind, NpmRegistryKind::ChinaMirror);
         assert_eq!(selection.fallback, Some(OFFICIAL_NPM_REGISTRY));
-        assert_eq!(selection.package_version.as_deref(), Some("2026.7.1"));
+        assert_eq!(selection.package_version.as_deref(), Some(MATCHING_RELEASE));
     }
 
     #[test]

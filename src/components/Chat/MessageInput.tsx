@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useVoiceStore } from '@/stores/voiceStore';
 import { gateway } from '@/services/gateway';
 import { getDirection } from '@/i18n';
 import { SLASH_COMMANDS, CATEGORY_META, type SlashCommand, type SlashCategory } from '@/data/slashCommands';
@@ -16,6 +17,7 @@ import clsx from 'clsx';
 
 import { formatBytes } from '@/utils/format';
 import { debugError } from '@/utils/debugLog';
+import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 
 const EmojiPicker = lazy(() => import('./EmojiPicker').then((m) => ({ default: m.EmojiPicker })));
 const ScreenshotPicker = lazy(() => import('./ScreenshotPicker').then((m) => ({ default: m.ScreenshotPicker })));
@@ -42,6 +44,21 @@ interface PendingFile {
   size: number;
   preview?: string;
   path?: string;  // Windows path — non-image files send path instead of base64
+}
+
+function estimateWavDuration(base64: string): number {
+  try {
+    const raw = atob(base64);
+    if (raw.length < 44) return 0;
+    const view = new DataView(Uint8Array.from(raw, (char) => char.charCodeAt(0)).buffer);
+    const channels = view.getUint16(22, true) || 1;
+    const sampleRate = view.getUint32(24, true) || 16_000;
+    const bits = view.getUint16(34, true) || 16;
+    const dataBytes = view.getUint32(40, true) || Math.max(0, raw.length - 44);
+    return Math.max(0, Math.round(dataBytes / Math.max(1, sampleRate * channels * (bits / 8))));
+  } catch {
+    return 0;
+  }
 }
 
 function DeferredEmojiPicker({
@@ -94,6 +111,7 @@ function DeferredEmojiPicker({
 export function MessageInput() {
   const { t } = useTranslation();
   const { language } = useSettingsStore();
+  const runtimeLanguage = String(language);
   const dir = getDirection(language);
   const {
     isSending,
@@ -109,6 +127,13 @@ export function MessageInput() {
     historyLoader,
     isLoadingHistory,
   } = useChatStore();
+  const isHistoryWarmupGate = connected && messages.length === 0 && isLoadingHistory;
+  const voicePhase = useVoiceStore((state) => state.phase);
+  const voiceSessionKey = useVoiceStore((state) => state.sessionKey);
+  const remoteVoiceOutput = useVoiceStore((state) => state.remoteOutput);
+  const voiceOutputActive = remoteVoiceOutput !== null
+    || ((voicePhase === 'queued' || voicePhase === 'speaking')
+      && (voiceSessionKey == null || voiceSessionKey === activeSessionKey));
   const drainQueue = useChatStore((s) => s.drainQueue);
   const clearQueue = useChatStore((s) => s.clearQueue);
   const queue = useChatStore((s) => s.messageQueue[activeSessionKey] || EMPTY_QUEUE);
@@ -120,19 +145,66 @@ export function MessageInput() {
   const [screenshotOpen, setScreenshotOpen] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null); // image preview URL
-  // Voice wake (phase 1: VAD placeholder). Transcribed text fills the input;
-  // if no ASR is available on this webview, the captured utterance is sent as a
-  // voice attachment instead so the feature still works end-to-end.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isComposingRef = useRef(false);
+  const sendVoicePayload = useCallback(async (base64: string, mimeType: string, durationSec: number, previewUrl: string) => {
+    if (!connected || isHistoryWarmupGate || !base64) return;
+    setVoiceMode(false);
+    voiceRuntime.interruptGlobally(activeSessionKey);
+    addMessage({
+      id: `user-${Date.now()}`, role: 'user',
+      content: t('voice.voiceMessage', { seconds: durationSec }),
+      timestamp: new Date().toISOString(),
+      mediaUrl: previewUrl, mediaType: 'audio',
+    }, activeSessionKey);
+    setIsTyping(true, activeSessionKey);
+    setIsSending(true);
+    try {
+      const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'webm';
+      const filename = `voice-${Date.now()}.${ext}`;
+      // Local persistence supports retention and recovery. Gateway may run in
+      // Docker or on another host, so transport must never depend on this path.
+      await window.aegis?.voice?.save?.(filename, base64, activeSessionKey).catch(() => null);
+      await gateway.sendMessage(
+        `🎤 [voice attachment] (${durationSec}s)`,
+        [{ type: 'base64', mimeType, content: base64, fileName: filename }],
+        activeSessionKey,
+      );
+    } catch (err) {
+      debugError('media', '[Voice] Send error:', err);
+      setIsTyping(false, activeSessionKey);
+    } finally {
+      setIsSending(false);
+    }
+  }, [activeSessionKey, addMessage, connected, isHistoryWarmupGate, setIsSending, setIsTyping, t]);
+
+  const handleVoiceWakeCapture = useCallback(async (wavDataUrl: string) => {
+    const base64 = wavDataUrl.split(',')[1] || '';
+    if (!base64) return;
+    await sendVoicePayload(base64, 'audio/wav', estimateWavDuration(base64), wavDataUrl);
+  }, [sendVoicePayload]);
+
+  const handleVoiceTranscript = useCallback((transcript: string) => {
+    voiceRuntime.interruptGlobally(activeSessionKey);
+    setText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+    textareaRef.current?.focus();
+  }, [activeSessionKey]);
+
+  const handleVoiceWakeDetected = useCallback(() => {
+    voiceRuntime.interruptGlobally(activeSessionKey);
+    if (useChatStore.getState().typingBySession[activeSessionKey]) {
+      void gateway.abortChat(activeSessionKey).catch(() => undefined);
+    }
+  }, [activeSessionKey]);
+
+  // Browser recognition is used when available. Native VAD captures a WAV on
+  // platforms without Web Speech; that WAV is sent through the same voice path.
   const voiceWake = useVoiceWake({
-    onTranscript: (tr) => { setText((prev) => (prev ? `${prev} ${tr}` : tr)); textareaRef.current?.focus(); },
-    onCaptureFallback: (wavDataUrl) => {
-      const b64 = wavDataUrl.split(',')[1] || '';
-      addMessage({
-        id: `voice-wake-${Date.now()}`, role: 'assistant', timestamp: new Date().toISOString(),
-        content: `🎤 ${t('input.voiceWakeCaptured', '语音唤醒捕获（该 webview 不支持转写，已保存音频）')}`,
-        attachments: [{ type: 'base64', mimeType: 'audio/wav', content: b64, fileName: `voice-${Date.now()}.wav` }],
-      } as any, activeSessionKey);
-    },
+    onTranscript: handleVoiceTranscript,
+    onCaptureFallback: handleVoiceWakeCapture,
+    onWakeDetected: handleVoiceWakeDetected,
+    lang: runtimeLanguage === 'zh-TW' ? 'zh-TW' : runtimeLanguage === 'zh' ? 'zh-CN' : runtimeLanguage === 'ar' ? 'ar-SA' : 'en-US',
+    sessionKey: activeSessionKey,
   });
   // Queue strip UI states
   const [queueExpanded, setQueueExpanded] = useState(false);
@@ -140,8 +212,6 @@ export function MessageInput() {
   const [editingQueueText, setEditingQueueText] = useState('');
   const [confirmingDeleteIdx, setConfirmingDeleteIdx] = useState<number | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isComposingRef = useRef(false);
   // ── Slash command picker (/) — triggered by typing '/' at line start ──
   const [slashPicker, setSlashPicker] = useState<{ open: boolean; query: string; idx: number }>({ open: false, query: '', idx: 0 });
 
@@ -365,7 +435,6 @@ export function MessageInput() {
     setAtPicker({ open: false, query: '', idx: 0 });
     el?.focus();
   };
-  const isHistoryWarmupGate = connected && messages.length === 0 && isLoadingHistory;
 
   // Sync draft when switching sessions
   useEffect(() => {
@@ -410,11 +479,18 @@ export function MessageInput() {
       const st = useChatStore.getState();
 
       // ESC #1 — AI is replying: abort the current response (works from anywhere).
-      if (st.isTyping) {
+      const voice = useVoiceStore.getState();
+      const voiceActive = voice.remoteOutput !== null
+        || ((voice.phase === 'queued' || voice.phase === 'speaking')
+          && (voice.sessionKey == null || voice.sessionKey === activeSessionKey));
+      if (st.isTyping || voiceActive) {
         e.preventDefault();
-        gateway.abortChat(activeSessionKey).catch(() => {});
-        st.clearQueue(activeSessionKey);
-        st.setIsTyping(false, activeSessionKey);
+        voiceRuntime.interruptGlobally(activeSessionKey);
+        if (st.isTyping) {
+          gateway.abortChat(activeSessionKey).catch(() => {});
+          st.clearQueue(activeSessionKey);
+          st.setIsTyping(false, activeSessionKey);
+        }
         return;
       }
 
@@ -571,6 +647,7 @@ export function MessageInput() {
     }
 
     // Not queuing — add to chat area immediately and send
+    voiceRuntime.interruptGlobally(activeSessionKey);
     addMessage(userMsg, activeSessionKey);
 
     setIsTyping(true, activeSessionKey);
@@ -642,39 +719,9 @@ export function MessageInput() {
     textareaRef.current?.focus();
   };
 
-  const handleVoiceSend = useCallback(async (base64: string, mimeType: string, durationSec: number, previewUrl: string) => {
-    if (!connected || isHistoryWarmupGate) return;
-    setVoiceMode(false);
-    addMessage({
-      id: `user-${Date.now()}`, role: 'user',
-      content: t('voice.voiceMessage', { seconds: durationSec }),
-      timestamp: new Date().toISOString(),
-      mediaUrl: previewUrl, mediaType: 'audio',
-    }, activeSessionKey);
-    setIsTyping(true, activeSessionKey);
-    setIsSending(true);
-    try {
-      const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
-      const filename = `voice-${Date.now()}.${ext}`;
-      let savedPath = '';
-      if (window.aegis?.voice?.save) {
-        savedPath = await window.aegis.voice.save(filename, base64, activeSessionKey) || '';
-      }
-      if (savedPath) {
-        await gateway.sendMessage(`🎤 [voice] ${savedPath} (${durationSec}s)`, undefined, activeSessionKey);
-      } else {
-        await gateway.sendMessage(
-          `🎤 [voice:${mimeType}:base64] ${base64.substring(0, 50)}... (${durationSec}s)`,
-          undefined,
-          activeSessionKey,
-        );
-      }
-    } catch (err) {
-      debugError('media', '[Voice] Send error:', err);
-    } finally {
-      setIsSending(false);
-    }
-  }, [addMessage, setIsTyping, setIsSending, t, activeSessionKey, connected, isHistoryWarmupGate]);
+  const handleVoiceSend = useCallback((base64: string, mimeType: string, durationSec: number, previewUrl: string) => {
+    void sendVoicePayload(base64, mimeType, durationSec, previewUrl);
+  }, [sendVoicePayload]);
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -935,18 +982,31 @@ export function MessageInput() {
               { icon: Camera, action: () => setScreenshotOpen(true), title: t('input.screenshot') },
               {
                 icon: Mic,
-                action: () => setVoiceMode(true),
+                action: () => { void (async () => {
+                  voiceRuntime.interruptAll();
+                  if (useChatStore.getState().typingBySession[activeSessionKey]) {
+                    await gateway.abortChat(activeSessionKey).catch(() => undefined);
+                  }
+                  if (voiceWake.enabled) await voiceWake.stop();
+                  setVoiceMode(true);
+                })(); },
                 title: t('input.voiceRecord'),
                 disabled: !connected || isHistoryWarmupGate,
               },
               {
                 icon: Radio,
-                action: () => { void (voiceWake.enabled ? voiceWake.stop() : voiceWake.start()); },
+                action: () => { void (async () => {
+                  if (voiceWake.enabled) {
+                    await voiceWake.stop();
+                    return;
+                  }
+                  await voiceWake.start();
+                })(); },
                 title: voiceWake.enabled
                   ? (voiceWake.phase === 'wake_detected'
-                      ? t('input.voiceWakeListening', '语音唤醒中…')
-                      : t('input.voiceWakeStop', '关闭语音唤醒'))
-                  : t('input.voiceWakeStart', '开启语音唤醒'),
+                      ? t('input.voiceWakeListening', '正在聆听…')
+                      : t('input.voiceWakeStop', '关闭语音输入'))
+                  : t('input.voiceWakeStart', '开启语音输入'),
                 disabled: !connected,
                 active: voiceWake.enabled,
               },
@@ -1325,7 +1385,11 @@ export function MessageInput() {
                   : 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
                 'disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none'
               )}
-              title={isHistoryWarmupGate ? t('input.historyLoading') : (isTyping ? t('input.queue', 'Queue') : t('input.send'))}>
+              title={isHistoryWarmupGate
+                ? t('input.historyLoading')
+                : (voiceOutputActive && !isTyping && !isSending
+                  ? t('input.voiceStop', '停止语音')
+                  : (isTyping ? t('input.queue', 'Queue') : t('input.send')))}>
               <Send size={16} className={dir === 'rtl' ? 'rotate-180' : ''} />
               {isTyping && pendingCount > 0 && (
                 <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 flex items-center justify-center rounded-full bg-aegis-primary text-white text-[9px] font-bold leading-none">
@@ -1334,14 +1398,17 @@ export function MessageInput() {
               )}
             </button>
 
-            {/* Stop button — only while the AI is running */}
-            {(isTyping || isSending) && (
+            {/* Stop button — while the AI or voice output is active */}
+            {(isTyping || isSending || voiceOutputActive) && (
               <button onClick={async () => {
                 try {
-                  await gateway.abortChat(activeSessionKey);
-                  clearQueue(activeSessionKey);
-                  setIsTyping(false, activeSessionKey);
-                  setIsSending(false);
+                  voiceRuntime.interruptGlobally(activeSessionKey);
+                  if (isTyping || isSending) {
+                    await gateway.abortChat(activeSessionKey);
+                    clearQueue(activeSessionKey);
+                    setIsTyping(false, activeSessionKey);
+                    setIsSending(false);
+                  }
                 } catch (err) {
                   debugError('app', '[Abort] Error:', err);
                 }

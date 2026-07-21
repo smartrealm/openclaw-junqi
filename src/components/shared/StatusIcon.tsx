@@ -1,6 +1,6 @@
-// ── StatusIcon — adapted from nezha's StatusIcon ──────────────────────────────
+// ── StatusIcon — adapted from junqi's StatusIcon ──────────────────────────────
 //
-// Original nezha typing uses TaskStatus = 'todo' | 'pending' | 'running' |
+// Original junqi typing uses TaskStatus = 'todo' | 'pending' | 'running' |
 // 'input_required' | 'detached' | 'interrupted' | 'done' | 'failed' | 'cancelled'.
 //
 // Junqi's existing stores use overlapping but distinct vocabularies:
@@ -33,7 +33,7 @@ import {
  * branch keeps unknown values from blowing up.
  */
 export type StatusIconValue =
-  // nezha-style TaskStatus
+  // junqi-style TaskStatus
   | "todo"
   | "pending"
   | "running"

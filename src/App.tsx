@@ -41,6 +41,7 @@ import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
+import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 
 function RouteLoadingFallback() {
   return (
@@ -114,6 +115,7 @@ export default function App() {
   const [gatewayBootLogs, setGatewayBootLogs] = useState<{ stdout: string; stderr: string } | undefined>();
   const [gatewayRetrying, setGatewayRetrying] = useState(false);
   const connected = useChatStore((s) => s.connected);
+  const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const setupComplete = useAppStore((s) => s.setupComplete);
   const setupHealthCheckedRef = useRef(false);
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
@@ -127,6 +129,15 @@ export default function App() {
   const gatewayBootErrorRef = useRef<string | null>(null);
   const bootRecoveryStartedRef = useRef(false);
   const manualGatewayRecoveryInFlightRef = useRef(false);
+  const previousVoiceSessionRef = useRef(activeSessionKey);
+
+  useEffect(() => {
+    const previous = previousVoiceSessionRef.current;
+    if (previous && previous !== activeSessionKey) {
+      voiceRuntime.interrupt(previous);
+    }
+    previousVoiceSessionRef.current = activeSessionKey;
+  }, [activeSessionKey]);
   const manualGatewayRecoveryAwaitingConnectionRef = useRef(false);
   const gatewayMigrationRetryCoordinatorRef = useRef<GatewayMigrationRetryCoordinator | null>(null);
   if (!gatewayMigrationRetryCoordinatorRef.current) {
@@ -596,6 +607,9 @@ export default function App() {
           typeof rawSk === 'string' && rawSk.trim() ? rawSk : useChatStore.getState().activeSessionKey;
         const { activeSessionKey: currentSessionKey } = useChatStore.getState();
         addMessage(msg, sessionKey);
+        if (msg.role === 'assistant' && sessionKey === useChatStore.getState().activeSessionKey) {
+          voiceRuntime.speakMessage(sessionKey, msg.content, (msg as any).mediaUrl);
+        }
         if (sessionKey !== currentSessionKey) {
           incrementSessionUnread(sessionKey);
         }
@@ -610,6 +624,9 @@ export default function App() {
         }
       },
       onStreamChunk: (sessionKey, messageId, content, media, runId) => {
+        if (sessionKey === useChatStore.getState().activeSessionKey) {
+          voiceRuntime.consumeStream(sessionKey, content, messageId, media?.mediaUrl);
+        }
         updateStreamingMessage(
           messageId,
           content,
@@ -622,6 +639,9 @@ export default function App() {
         );
       },
       onStreamEnd: (sessionKey, messageId, content, media, meta) => {
+        if (sessionKey === useChatStore.getState().activeSessionKey) {
+          voiceRuntime.finishStream(sessionKey, content, meta?.state ?? 'final', messageId, media?.mediaUrl);
+        }
         setIsTyping(false, sessionKey);
         finalizeStreamingMessage(
           messageId,
@@ -696,6 +716,7 @@ export default function App() {
         if (status.connected) {
           gatewayManager.notifyWsOpen();
         } else if (!status.connecting) {
+          voiceRuntime.interruptAll();
           gatewayManager.notifyWsClose();
           // Clear all per-session active flags on disconnect so the pet does not
           // stay "working/typing/thinking" indefinitely if the stream was cut off

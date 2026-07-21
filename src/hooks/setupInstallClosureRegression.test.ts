@@ -77,5 +77,7 @@ test("BUG-INSTALL-09 Windows installers request elevation and retain exit status
   assert.match(setup, /ShellExecuteExW/);
   assert.match(setup, /"runas\\0"/);
   assert.match(setup, /GetExitCodeProcess/);
-  assert.match(setup, /Ok\(Some\(0 \| 3010\)\)/);
+  assert.match(setup, /fn windows_installer_exit_succeeded/);
+  assert.match(setup, /matches!\(exit_code, 0 \| 1641 \| 3010\)/);
+  assert.match(setup, /reconcile_windows_installer_runtime/);
 });

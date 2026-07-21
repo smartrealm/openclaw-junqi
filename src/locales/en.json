@@ -14,7 +14,7 @@
     "connectingBanner": "Connecting to Gateway...",
     "disconnectedBanner": "Disconnected from Gateway",
     "reconnect": "Reconnect",
-    "connectedReady": "✅ Connected — Type your message",
+    "connectedReady": "Connected — Type your message",
     "waitingConnection": "Waiting for connection..."
   },
   "nav": {
@@ -210,7 +210,7 @@
     "clawhubInstallFailed": "ClawHub install failed",
     "hubInstall": "Install Skill",
     "hubInstalling": "Installing…",
-    "hubInstallDone": "✓ Installed",
+    "hubInstallDone": "Installed",
     "hubInstallDoneHint": "Active on next conversation — no restart needed",
     "hubInstallError": "Retry Install",
     "hubSourceClawhub": "Using ClawHub (SkillHub unavailable in this network)",
@@ -252,7 +252,7 @@
     "skillshubCliManual": "Install manually",
     "skillshubInstall": "Install via SkillHub",
     "skillshubInstalling": "Installing via SkillHub…",
-    "skillshubInstallDone": "✓ Installed (SkillHub)",
+    "skillshubInstallDone": "Installed (SkillHub)",
     "skillshubInstallError": "SkillHub install failed",
     "skillshubFallbackInstall": "Install via ClawHub",
     "skillshubFallbackNote": "SkillHub API is unreachable — showing ClawHub catalog (same content). Installation will still use Tencent CDN when available.",
@@ -568,6 +568,10 @@
     "notificationsDesc": "Desktop notifications when messages arrive",
     "sound": "Sound",
     "soundDesc": "Play sound on notification",
+    "audioAutoPlay": "Auto-play live reply audio",
+    "audioAutoPlayDesc": "Play audio attached to live assistant replies; history recordings remain manual.",
+    "voiceAutoSpeak": "Auto voice replies",
+    "voiceAutoSpeakDesc": "Read assistant replies aloud with the system voice; playback can be interrupted.",
     "dnd": "Do Not Disturb",
     "dndDesc": "Temporarily mute all notifications",
     "testNotification": "This is a test notification from JunQi Desktop!",
@@ -808,7 +812,7 @@
     "outputCost": "Output Cost",
     "cacheCost": "Cache Cost",
     "otherCost": "Other Cost",
-    "copyTitle": "📊 Full Analytics Report",
+    "copyTitle": "Full Analytics Report",
     "copyPeriod": "Period: {{start}} → {{end}} ({{days}} days)",
     "copyTotalCost": "Total Cost:     {{value}}",
     "copyTotalTokens": "Total Tokens:   {{value}}",
@@ -1035,10 +1039,11 @@
     "screenshot": "Screenshot",
     "voiceRecord": "Voice Record",
     "emoji": "Emoji",
-    "voiceWakeStart": "Start voice wake",
-    "voiceWakeStop": "Stop voice wake",
-    "voiceWakeListening": "Listening for wake…",
-    "voiceWakeCaptured": "Voice wake captured (no transcription on this webview; audio saved)"
+    "voiceWakeStart": "Start voice input",
+    "voiceWakeStop": "Stop voice input",
+    "voiceWakeListening": "Listening…",
+    "voiceWakeCaptured": "Voice captured and being sent…",
+    "voiceStop": "Stop voice"
   },
   "screenshot": {
     "title": "Screenshot",
@@ -1050,14 +1055,29 @@
     "permissionRequired": "Screen recording permission required",
     "permissionHint": "Open System Settings → Privacy & Security → Screen Recording, enable JunQi Desktop then retry."
   },
+  "voiceWake": {
+    "title": "Voice input & interruption",
+    "hint": "System speech recognition transcribes directly where supported. Other desktop environments use local VAD to capture audio and send it to OpenClaw. Speaking interrupts the current reply. Picovoice settings are reserved for a future wake-word adapter.",
+    "accessKey": "Picovoice AccessKey (reserved)",
+    "accessKeyPlaceholder": "Save an AccessKey for the future wake-word adapter",
+    "keyword": "Wake word (reserved)",
+    "keywordPlaceholder": "Save a keyword for the future wake-word adapter",
+    "sensitivity": "Sensitivity (reserved)",
+    "sensLow": "Fewer false triggers",
+    "sensHigh": "More sensitive",
+    "configured": "AccessKey saved; this version still uses system recognition or local VAD",
+    "notConfigured": "Using system speech recognition or local VAD"
+  },
   "voice": {
     "cancel": "Cancel",
     "sendRecording": "Send Recording",
-    "voiceMessage": "🎤 Voice message ({{seconds}}s)",
-    "micError": "⚠️ Cannot access microphone. Check permissions."
+    "voiceMessage": "Voice message ({{seconds}}s)",
+    "micError": "Cannot access microphone. Check permissions.",
+    "runtimeListening": "Listening",
+    "runtimeSpeaking": "Speaking reply"
   },
   "audio": {
-    "loadError": "⚠️ Failed to load audio file"
+    "loadError": "Failed to load audio file"
   },
   "palette": {
     "heartbeat": "Quick Check (Heartbeat)",
@@ -1282,7 +1302,7 @@
     "phaseThinking": "Thinking",
     "phaseGenerating": "Generating reply",
     "sessionsRunning": "{{count}} sessions running",
-    "backgroundPrefix": "👁 {{agent}} · "
+    "backgroundPrefix": "{{agent}} · "
   },
   "token": {
     "lastUpdate": "Last update",
@@ -1550,9 +1570,9 @@
     "noMemoriesCards": "No memories found",
     "importance": "importance",
     "relatedMemories": "Related Memories",
-    "graphView": "🕸️ Graph",
-    "timelineView": "📅 Timeline",
-    "cardsView": "🗃️ Cards",
+    "graphView": "Graph",
+    "timelineView": "Timeline",
+    "cardsView": "Cards",
     "catAll": "All",
     "catTechnical": "Technical",
     "catProjects": "Projects",
@@ -1578,9 +1598,9 @@
     }
   },
   "agentHubExtra": {
-    "treeView": "🌳 Tree",
-    "gridView": "▤ Grid",
-    "activityView": "⚡ Activity",
+    "treeView": "Tree",
+    "gridView": "Grid",
+    "activityView": "Activity",
     "agentsCount": "agents",
     "workersCount": "workers",
     "runningCount": "running",
@@ -1746,24 +1766,24 @@
     "active": "Active"
   },
   "skillsExtra": {
-    "featured": "⭐ Featured",
+    "featured": "Featured",
     "installs": "Installs",
-    "requirements": "🔧 Requirements",
+    "requirements": "Requirements",
     "version": "Version",
     "downloads": "Downloads",
     "stars": "Stars",
     "viewOnClawHub": "View on ClawHub"
   },
   "settingsTheme": {
-    "dark": "🌙 Dark Mode",
-    "light": "☀️ Light Mode"
+    "dark": "Dark Mode",
+    "light": "Light Mode"
   },
   "splash": {
     "loading": "Loading..."
   },
   "contextMenu": {
-    "openLink": "🔗 Open Link",
-    "copyLink": "📋 Copy Link",
+    "openLink": "Open Link",
+    "copyLink": "Copy Link",
     "cut": "Cut",
     "copy": "Copy",
     "paste": "Paste",
@@ -1775,7 +1795,7 @@
   },
   "tray": {
     "open": "JunQi Desktop",
-    "close": "❌ Close"
+    "close": "Close"
   },
   "config": {
     "title": "Provider Config",
@@ -2012,7 +2032,7 @@
     "allowedOrigins": "Allowed Origins",
     "allowInsecureAuth": "Allow Insecure Auth",
     "disableDeviceAuth": "Disable Device Auth",
-    "dangerousWarning": "⚠️ Dangerous — only use if you know what you're doing",
+    "dangerousWarning": "Dangerous — only use if you know what you're doing",
     "remoteGateway": "Remote Gateway",
     "remoteUrl": "URL",
     "transport": "Transport",
@@ -2101,7 +2121,7 @@
     "discard": "Discard Changes",
     "reload": "Reload",
     "reloading": "Reloading...",
-    "reloadDone": "Reloaded ✓",
+    "reloadDone": "Reloaded",
     "exportConfig": "Export Config",
     "importConfig": "Import Config",
     "importError": "Invalid JSON file",
@@ -2198,7 +2218,7 @@
     "providerId": "Provider ID",
     "providerIdPlaceholder": "e.g. minimax-anthropic, my-vllm, custom",
     "providerIdHint": "Written to models.providers[id] in OpenClaw config. Defaults to \"custom\".",
-    "baseUrlDriftWarning": "⚠️ Drifted from recommended endpoint ({{url}}) — verify before continuing.",
+    "baseUrlDriftWarning": "Drifted from recommended endpoint ({{url}}) — verify before continuing.",
     "modelIdHint": "Enter model names, confirm with Enter or comma. OpenClaw will prefix with {{providerId}}/",
     "configPreviewTitle": "Config Write Preview",
     "apiKeyEmpty": "(not filled)",
@@ -2271,14 +2291,6 @@
       "education": "Education",
       "other": "Other"
     },
-    "categoryIcon": {
-      "work": "🏢",
-      "personal": "🏠",
-      "health": "🏥",
-      "social": "👥",
-      "education": "📚",
-      "other": "📌"
-    },
     "reminder": {
       "none": "No reminder",
       "5min": "5 minutes before",
@@ -2288,10 +2300,10 @@
       "2hours": "2 hours before",
       "1day": "1 day before",
       "1week": "1 week before",
-      "scheduled": "Scheduled ✓",
+      "scheduled": "Scheduled",
       "pending": "Pending",
-      "fired": "Sent ✓",
-      "failed": "Failed ✗"
+      "fired": "Sent",
+      "failed": "Failed"
     },
     "delivery": {
       "label": "Deliver to",
@@ -2335,10 +2347,10 @@
       "run": "Run Audit",
       "running": "Running audit...",
       "failed": "Audit failed",
-      "clean": "🟢 Clean — no issues found",
-      "findings": "🟡 Findings — plaintext secrets detected",
-      "unresolved": "🔴 Unresolved — secret refs could not be resolved",
-      "unknown": "⚪ Unknown"
+      "clean": "Clean — no issues found",
+      "findings": "Findings — plaintext secrets detected",
+      "unresolved": "Unresolved — secret refs could not be resolved",
+      "unknown": "Unknown"
     },
     "providers": {
       "title": "Secret Providers",
@@ -2820,7 +2832,7 @@
     "typing": "Replying…",
     "working": "Working…",
     "done": "Done!",
-    "celebrate": "Task complete 🎉",
+    "celebrate": "Task complete",
     "error": "Error",
     "sleepy": "Getting sleepy…",
     "sleep": "Resting",
@@ -3209,7 +3221,7 @@
   "setup.node.extract": "Extracting to {{path}}…",
   "setup.node.cleanup": "Cleaning up temp files…",
   "setup.node.verify": "Verifying installation…",
-  "setup.node.done": "Node.js {{version}} installed successfully ✓",
+  "setup.node.done": "Node.js {{version}} installed successfully",
   "setup.git.check": "Checking Git installation…",
   "setup.git.skip": "Git already installed, skipping",
   "setup.git.onDemand": "Git will be installed only if npm requires it",
@@ -3221,7 +3233,7 @@
   "setup.git.waitingWizard": "Waiting for installer wizard… elapsed {{elapsed}}",
   "setup.git.refreshPath": "Wizard finished, refreshing system PATH…",
   "setup.git.verify": "Verifying git is usable…",
-  "setup.git.done": "Git installed successfully ✓",
+  "setup.git.done": "Git installed successfully",
   "setup.git.manualRequired": "Git is not available. Please install Apple Command Line Tools manually, then retry.",
   "setup.git.prepareMacDialog": "Git is not available. Please install Apple Command Line Tools manually, then retry.",
   "setup.git.waitingMac": "Retry after the manual installation is complete.",
@@ -3244,7 +3256,7 @@
   "setup.openclaw.prepareDir": "Preparing install directory {{path}}…",
   "setup.openclaw.npmInstall": "Preferring npmmirror.com (CN) for openclaw install; falls back to npmjs.org (official)…",
   "setup.openclaw.verify": "Verifying openclaw installation…",
-  "setup.openclaw.done": "openclaw installed successfully ✓",
+  "setup.openclaw.done": "openclaw installed successfully",
   "setup.installTarget.title": "Install location",
   "setup.installTarget.user.tier": "User npm prefix",
   "setup.installTarget.user.note": "Same place as `npm i -g` — `openclaw` will be on your PATH",
@@ -3264,7 +3276,7 @@
   "setup.gateway.willStart": "No Gateway detected — the frontend launcher will start it",
   "setup.gateway.syncState": "Syncing runtime state (AGENTS / SESSIONS / HEALTH)…",
   "setup.gateway.detectConnectSync": "Detecting, connecting, and syncing runtime state…",
-  "setup.gateway.ready": "Gateway is ready ✓",
+  "setup.gateway.ready": "Gateway is ready",
   "setup.gateway.preparedToStart": "Gateway prepared; starting service next...",
   "gateway.restartTooltip": "Restart Gateway",
   "gateway.startTooltip": "Start Gateway",
@@ -3387,6 +3399,11 @@
   "setup.openclawUpdate.currentVersion": "Current",
   "setup.gatewayReadyTitle": "Runtime ready",
   "setup.gatewayReadySubtitle": "OpenClaw Gateway is running. Click Next to continue.",
+  "setup.gatewayReadyCheckingAction": "Checking configuration…",
+  "setup.gatewayReadyCheckingTitle": "Checking OpenClaw configuration",
+  "setup.gatewayReadyCheckingDescription": "Verifying the current model. You will continue to the official setup wizard or the completion screen when the check finishes.",
+  "setup.gatewayReadyContinueFailedTitle": "Unable to continue",
+  "setup.gatewayReadyContinueFailed": "Unable to continue: {{error}}",
   "storage.save": "Save location",
   "storage.saved": "Storage location saved. Click Next to continue.",
   "setup.openclawUpdate.latestVersion": "Available",

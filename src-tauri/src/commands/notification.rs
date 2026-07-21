@@ -1,4 +1,4 @@
-// ── Notification local store (ported from nezha notification.rs) ──────────────
+// ── Notification local store (ported from junqi notification.rs) ──────────────
 //
 // Manages JunQi's application config directory — a per-user persistent store of
 // "which notification IDs have been read" + a local notifications queue that
@@ -66,7 +66,7 @@ struct LocalStore {
     #[serde(default)]
     read_ids: HashSet<String>,
     /// Last fetch timestamp (epoch seconds). Always 0 in this stub since we
-    /// don't fetch anything — kept for API compatibility with nezha.
+    /// don't fetch anything; retained as part of JunQi's persisted schema.
     #[serde(default)]
     last_fetched_at: i64,
 }
@@ -80,38 +80,10 @@ impl NotificationRepository {
     fn discover() -> Result<Self, String> {
         let dir = crate::paths::app_config_dir().join("notifications");
         fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-        let repository = Self {
+        Ok(Self {
             store_path: dir.join("read-state.json"),
             items_path: dir.join("items.json"),
-        };
-        repository.migrate_legacy_files()?;
-        Ok(repository)
-    }
-
-    fn migrate_legacy_files(&self) -> Result<(), String> {
-        let Some(home) = dirs::home_dir() else {
-            return Ok(());
-        };
-        self.migrate_legacy_files_from(&home.join(".nezha"))
-    }
-
-    fn migrate_legacy_files_from(&self, legacy_dir: &Path) -> Result<(), String> {
-        if !self.store_path.exists() {
-            let legacy_store = legacy_dir.join("notification-store.json");
-            if legacy_store.exists() {
-                save_store_at(&self.store_path, &load_store_at(&legacy_store))?;
-            }
-        }
-        if !self.items_path.exists() {
-            let legacy_items = legacy_dir.join("local-notifications.json");
-            if legacy_items.exists() {
-                save_local_notifications(
-                    &self.items_path,
-                    &load_local_notifications(&legacy_items),
-                )?;
-            }
-        }
-        Ok(())
+        })
     }
 
     fn load_store(&self) -> LocalStore {
@@ -437,37 +409,5 @@ mod tests {
         assert!(prune_read_state(&mut store, &[item("retained")]));
         assert_eq!(store.read_ids, HashSet::from(["retained".to_string()]));
         assert!(!prune_read_state(&mut store, &[item("retained")]));
-    }
-
-    #[test]
-    fn repository_migrates_legacy_files_without_deleting_them() {
-        let root = std::env::temp_dir().join(format!(
-            "junqi-notification-migration-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
-        let legacy = root.join("legacy");
-        let current = root.join("current");
-        std::fs::create_dir_all(&legacy).unwrap();
-        let mut legacy_store = LocalStore::default();
-        legacy_store.read_ids.insert("legacy-item".to_string());
-        save_store_at(&legacy.join("notification-store.json"), &legacy_store).unwrap();
-        save_local_notifications(
-            &legacy.join("local-notifications.json"),
-            &[item("legacy-item")],
-        )
-        .unwrap();
-        let repository = NotificationRepository {
-            store_path: current.join("read-state.json"),
-            items_path: current.join("items.json"),
-        };
-
-        repository.migrate_legacy_files_from(&legacy).unwrap();
-
-        assert!(repository.load_store().read_ids.contains("legacy-item"));
-        assert_eq!(repository.load_items().len(), 1);
-        assert!(legacy.join("notification-store.json").exists());
-        assert!(legacy.join("local-notifications.json").exists());
-        std::fs::remove_dir_all(root).unwrap();
     }
 }

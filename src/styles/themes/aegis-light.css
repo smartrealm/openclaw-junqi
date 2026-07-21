@@ -1,11 +1,11 @@
 /* ═══════════════════════════════════════════════════════════
-   Theme: AEGIS Light — values ported 1:1 from hanshuaikang/nezha
+   Theme: AEGIS Light — values ported 1:1 from hanshuaikang/junqi
    themes.css (:root). Near-white cool surfaces, blue accent,
    4-level text, 3-step solid borders.
    ═══════════════════════════════════════════════════════════ */
 
 [data-theme="aegis-light"] {
-  /* ── Backgrounds (nezha light surfaces) ── */
+  /* ── Backgrounds (junqi light surfaces) ── */
   --aegis-bg:             hsl(240deg 6% 99.4%);   /* bg-root */
   --aegis-bg-solid:       hsl(240deg 6% 99.4%);
   --aegis-surface:        #fdfdfd;                 /* bg-sidebar */
@@ -33,7 +33,7 @@
   --aegis-text-muted:     105 117 138;  /* text-muted #69758a */
   --aegis-text-dim:       154 163 178;  /* text-hint #9aa3b2 */
 
-  /* ── Primary = nezha accent (blue) ── */
+  /* ── Primary = junqi accent (blue) ── */
   --aegis-primary:         93 124 255;   /* accent #5d7cff */
   --aegis-primary-hover:   77 111 242;   /* accent-hover #4d6ff2 */
   --aegis-primary-deep:    68 103 245;   /* accent-strong #4467f5 */
@@ -48,7 +48,7 @@
   --aegis-accent-hover:  77 111 242;
   --aegis-accent-glow:   rgba(68, 103, 245, 0.18);
 
-  /* ── Status (nezha) ── */
+  /* ── Status (junqi) ── */
   --aegis-danger:         220 38 38;      /* #dc2626 */
   --aegis-danger-surface: rgba(220, 38, 38, 0.10);
   --aegis-warning:        217 119 6;      /* #d97706 */

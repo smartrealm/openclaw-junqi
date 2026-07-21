@@ -23,21 +23,30 @@ struct HookEvent {
 }
 
 static LAST_STATUS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static WATCHER_STARTED: OnceLock<()> = OnceLock::new();
 
 fn last_status() -> &'static Mutex<HashMap<String, String>> {
     LAST_STATUS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 pub fn start(app: AppHandle) {
+    if WATCHER_STARTED.set(()).is_err() {
+        return;
+    }
     thread::spawn(move || run_loop(app));
+}
+
+fn prepare_events_root(events_root: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(events_root)
 }
 
 fn run_loop(app: AppHandle) {
     let Ok(events_root) = super::hooks::events_root() else {
         return;
     };
-    let _ = fs::remove_dir_all(&events_root);
-    let _ = fs::create_dir_all(&events_root);
+    if prepare_events_root(&events_root).is_err() {
+        return;
+    }
 
     let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
     let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default())
@@ -146,7 +155,7 @@ pub fn cleanup_task_events(task_id: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{status_for_event, HookEvent};
+    use super::{prepare_events_root, status_for_event, HookEvent};
 
     #[test]
     fn hook_events_map_to_attention_and_running_states() {
@@ -176,5 +185,22 @@ mod tests {
             Some("running")
         );
         assert_eq!(status_for_event(&parse("PostToolUse", "")), Some("running"));
+    }
+
+    #[test]
+    fn preparing_events_root_preserves_existing_files() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-agent-events-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let sentinel = root.join("sentinel");
+        std::fs::write(&sentinel, "keep").unwrap();
+
+        prepare_events_root(&root).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&sentinel).unwrap(), "keep");
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

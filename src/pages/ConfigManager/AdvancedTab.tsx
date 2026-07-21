@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Check, Plus, X, FileText, Sparkles } from 'lucide-react';
+import { AlertCircle, Check, Plus, X, FileText, Sparkles, KeyRound, Settings2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { OpenClawConfig } from './types';
 import {
@@ -251,7 +251,8 @@ export function AdvancedTab({ config, onChange }: AdvancedTabProps) {
 
       {/* ── B) Environment Variables (collapsed) ───────────── */}
       <ExpandableCard
-        title={`🔑 ${t('config.envVars')}`}
+        title={t('config.envVars')}
+        icon={<KeyRound size={15} aria-hidden="true" />}
         defaultExpanded={false}
       >
         <div className="space-y-2">
@@ -337,7 +338,8 @@ export function AdvancedTab({ config, onChange }: AdvancedTabProps) {
 
       {/* ── C) Commands (collapsed) ───────────────────────── */}
       <ExpandableCard
-        title={`⚙️ ${t('config.commands')}`}
+        title={t('config.commands')}
+        icon={<Settings2 size={15} aria-hidden="true" />}
         defaultExpanded={false}
       >
         <div className="space-y-3">

@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import { SearchAddon } from '@xterm/addon-search';
-import { APP_PLATFORM } from './_nezha-platform';
+import { APP_PLATFORM } from './platform';
 
 export interface PaneSearchBarProps {
   term: XTerm | null;

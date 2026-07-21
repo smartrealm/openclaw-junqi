@@ -20,7 +20,7 @@ import {
   type ThemeVariant,
   type TerminalFontSize,
   type FontFamily,
-} from '@/_nezha_root/types';
+} from '@/junqi/types';
 
 const LazyShellTerminalPanel = lazy(() =>
   import('@/components/Terminal/ShellTerminalPanel').then((m) => ({ default: m.ShellTerminalPanel })),

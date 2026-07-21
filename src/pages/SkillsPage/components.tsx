@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare, AlertCircle, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock } from 'lucide-react';
+import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare, AlertCircle, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
@@ -143,15 +143,17 @@ function HubBadge({ badge }: { badge?: 'official' | 'featured' }) {
   if (!badge) return null;
   if (badge === 'official') {
     return (
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold
         bg-aegis-primary/[0.08] border border-aegis-primary/15 text-aegis-primary">
-        ✓ Official
+        <BadgeCheck size={10} aria-hidden="true" />
+        {t('skillsExtra.official', 'Official')}
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold
       bg-aegis-accent/[0.08] border border-aegis-accent/15 text-aegis-accent">
+      <Star size={10} aria-hidden="true" />
       {t('skillsExtra.featured')}
     </span>
   );
@@ -508,7 +510,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                 {installState === 'installing' ? (
                   <><Loader2 size={13} className="animate-spin" /> {installingLabel ?? t('skillsExtra.installing', 'Installing…')}</>
                 ) : installState === 'done' ? (
-                  <>{doneLabel ?? t('skillsExtra.installed', '✓ Installed')}</>
+                  <><CheckCircle2 size={13} aria-hidden="true" />{doneLabel ?? t('skillsExtra.installed', 'Installed')}</>
                 ) : installState === 'error' ? (
                   <><Download size={13} /> {errorLabel ?? t('skillsExtra.retryInstall', 'Retry Install')}</>
                 ) : (
@@ -586,6 +588,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             {(skill.requirements.env.length > 0 || skill.requirements.bin.length > 0) && (
               <div className="px-6 py-4">
                 <h3 className="text-[12px] font-semibold text-aegis-text-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Wrench size={13} aria-hidden="true" />
                   {t('skillsExtra.requirements')}
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
@@ -609,7 +612,8 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             {skill.readme && (
               <div className="px-6 pb-4">
                 <h3 className="text-[12px] font-semibold text-aegis-text-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  📖 Readme
+                  <BookOpenText size={13} aria-hidden="true" />
+                  Readme
                 </h3>
                 <div
                   className="prose-sm max-h-[280px] overflow-y-auto p-4 rounded-[10px]

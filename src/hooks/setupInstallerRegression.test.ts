@@ -16,7 +16,6 @@ const nodeRuntime = readFileSync(new URL('../../src-tauri/src/commands/node_runt
 const runtimePolicy = readFileSync(new URL('../../src-tauri/src/commands/runtime_policy.rs', import.meta.url), 'utf8');
 const paths = readFileSync(new URL('../../src-tauri/src/paths.rs', import.meta.url), 'utf8');
 const platform = readFileSync(new URL('../../src-tauri/src/platform.rs', import.meta.url), 'utf8');
-const nezhaUnixPlatform = readFileSync(new URL('../../src-tauri/src/nezha/platform/unix.rs', import.meta.url), 'utf8');
 const appStore = readFileSync(new URL('../stores/app-store.ts', import.meta.url), 'utf8');
 const tauriCommands = readFileSync(new URL('../api/tauri-commands.ts', import.meta.url), 'utf8');
 
@@ -77,11 +76,15 @@ test('bug 03 dependency versions remain visible after installation', () => {
 });
 
 test('BUG-INSTALL-12 Windows installs Git only after npm reports a missing Git process', () => {
+  const nativeSteps = setupFlow.slice(
+    setupFlow.indexOf('const INITIAL_NATIVE_STEPS'),
+    setupFlow.indexOf('const INITIAL_DOCKER_STEPS'),
+  );
   assert.match(setupFlow, /function isMissingGitDependencyError/);
-  assert.match(setupFlow, /if \(isWindows\) \{[\s\S]*?"git",[\s\S]*?"skipped"/);
+  assert.doesNotMatch(nativeSteps, /id: "git"/);
   assert.match(
     setupFlow,
-    /await installSelectedOpenclaw\(\)[\s\S]*isMissingGitDependencyError\(error\)[\s\S]*runDependencyInstall\(runId, "git", installGit\)[\s\S]*await installSelectedOpenclaw\(\)/,
+    /await installSelectedOpenclaw\(\)[\s\S]*isMissingGitDependencyError\(error\)[\s\S]*ensureStepBefore\([\s\S]*id: "git"[\s\S]*runDependencyInstall\(runId, "git", installGit\)[\s\S]*await installSelectedOpenclaw\(\)/,
   );
 });
 
@@ -117,9 +120,9 @@ test('bug 04 Windows setup installs system defaults from domestic vendor install
   assert.doesNotMatch(systemCommands, /legacy_local_(node|npm|git)_path/);
   assert.doesNotMatch(systemCommands, /macos_git_candidates/);
   assert.doesNotMatch(systemCommands, /\.npm-global"\)\.join\("bin"\)\.join\("git"\)/);
-  assert.doesNotMatch(nezhaUnixPlatform, /\.npm-global/);
-  assert.match(nezhaUnixPlatform, /configured_npm_prefix\(\)/);
-  assert.match(nezhaUnixPlatform, /user_npm_bin_dir\(\)/);
+  assert.doesNotMatch(paths, /\.npm-global/);
+  assert.match(paths, /pub fn configured_npm_prefix\(\)/);
+  assert.match(paths, /pub fn user_npm_bin_dir\(\)/);
   assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("node"\)/);
   assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("git"\)/);
   assert.match(systemCommands, /struct NodeRuntimeContract/);

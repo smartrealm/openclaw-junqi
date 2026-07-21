@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// SkillHubManager — minimal Skill Hub view ported from nezha
+// SkillHubManager — minimal Skill Hub view ported from junqi
 //
 // Wires to the backend commands added in commands/skills.rs:
 //   - get_skill_hub_config / set_skill_hub_path / clear_skill_hub
@@ -7,7 +7,7 @@
 //   - install_skill / delete_skill
 //
 // Why minimal: junqi already has SkillsPage/index.tsx (2k lines, gateway-based).
-// This page is a *companion* view that exercises the new nezha-style fs/symlink
+// This page is a *companion* view that exercises the new junqi-style fs/symlink
 // backend so the wiring stays valid. UI is deliberately plain so it doesn't
 // compete with the gateway-based SkillsPage.
 // ═══════════════════════════════════════════════════════════
@@ -301,7 +301,7 @@ export function SkillHubManager() {
           <h1 className="text-[16px] font-bold text-aegis-text">Skill Hub Manager</h1>
         </div>
         <p className="text-[12px] text-aegis-text-dim">
-          Nezha-style skill hub: frontmatter-parsed skill folders with per-project symlink installs.
+          JunQi-style skill hub: frontmatter-parsed skill folders with per-project symlink installs.
         </p>
       </div>
 

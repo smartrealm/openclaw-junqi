@@ -36,6 +36,8 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "浚启智境科技有限公司",
+    "copyright": "Copyright © 2026 浚启智境科技有限公司",
     "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [

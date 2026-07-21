@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ShieldCheck, RefreshCw, AlertTriangle, KeyRound, AlertCircle, Circle } from 'lucide-react';
+import { StatusIcon } from '@/components/shared/StatusIcon';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { ExpandableCard } from './components';
@@ -122,12 +123,12 @@ export function SecretsTab({ config }: SecretsTabProps) {
     if (!auditResult) return null;
     const { status } = auditResult;
     if (status === 'clean')
-      return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-emerald-400/10 text-emerald-400 border border-emerald-400/20">{t('secrets.audit.clean', '<Circle size={10} fill="#4ade80" stroke="none" /> Clean — no issues found')}</span>;
+      return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-emerald-400/10 text-emerald-400 border border-emerald-400/20"><StatusIcon status="done" size={13} />{t('secrets.audit.clean', 'Clean — no issues found')}</span>;
     if (status === 'findings')
-      return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-yellow-400/10 text-yellow-400 border border-yellow-400/20">{t('secrets.audit.findings', '<Circle size={10} fill="#fbbf24" stroke="none" /> Findings — plaintext secrets detected')}</span>;
+      return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-yellow-400/10 text-yellow-400 border border-yellow-400/20"><AlertTriangle size={13} aria-hidden="true" />{t('secrets.audit.findings', 'Findings — plaintext secrets detected')}</span>;
     if (status === 'unresolved')
-      return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-red-400/10 text-red-400 border border-red-400/20">{t('secrets.audit.unresolved', '<Circle size={10} fill="#f87171" stroke="none" /> Unresolved — secret refs could not be resolved')}</span>;
-    return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-zinc-400/10 text-zinc-400 border border-zinc-400/20">{t('secrets.audit.unknown', '<Circle size={10} fill="#9ca3af" stroke="none" /> Unknown')}</span>;
+      return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-red-400/10 text-red-400 border border-red-400/20"><StatusIcon status="error" size={13} />{t('secrets.audit.unresolved', 'Unresolved — secret refs could not be resolved')}</span>;
+    return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-zinc-400/10 text-zinc-400 border border-zinc-400/20"><Circle size={13} aria-hidden="true" />{t('secrets.audit.unknown', 'Unknown')}</span>;
   };
 
   return (

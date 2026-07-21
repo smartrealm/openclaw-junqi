@@ -392,6 +392,10 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { setupStep } = useAppStore();
   const active = setupStep === "ready" ? 5 : 3;
   const isGatewayReady = setupStep === "gateway-ready";
+  const gatewayReadyChecking = isGatewayReady && flow.gatewayReadyContinuation.status === "checking";
+  const gatewayReadyError = isGatewayReady && flow.gatewayReadyContinuation.status === "failed"
+    ? flow.gatewayReadyContinuation.error
+    : null;
   const currentInstallStep = currentStepOf(flow.steps);
   const canRepairGateway = setupStep === "error" && currentInstallStep?.id === "gateway";
   // BUG-CPI-07：自愈梯子（更新→重装）已确认这些插件不可自动修复，
@@ -411,7 +415,10 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       logs={logs}
       wide
       showLogToggle={false}
-      previousAction={setupStep === "error" || isGatewayReady ? { onClick: () => flow.goBack(), disabled: flow.repairing } : undefined}
+      previousAction={setupStep === "error" || isGatewayReady ? {
+        onClick: () => flow.goBack(),
+        disabled: flow.repairing || gatewayReadyChecking,
+      } : undefined}
       secondaryAction={canRepairGateway ? {
         label: t("setup.retryDirectly", "直接重试"),
         onClick: () => { void flow.retryGateway(); },
@@ -421,7 +428,15 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         setupStep === "ready"
           ? { label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }
           : isGatewayReady
-            ? { label: t("setup.nextStep", "下一步"), onClick: () => { void flow.continueAfterGatewayReady(); } }
+            ? {
+                label: gatewayReadyChecking
+                  ? t("setup.gatewayReadyCheckingAction", "正在检查配置…")
+                  : t("setup.nextStep", "下一步"),
+                onClick: () => { void flow.continueAfterGatewayReady(); },
+                disabled: gatewayReadyChecking,
+                loading: gatewayReadyChecking,
+                icon: gatewayReadyChecking ? "none" : "next",
+              }
           : hasBrokenPlugins
             ? {
                 label: flow.repairing
@@ -445,6 +460,28 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
             : { label: runningStepLabel, disabled: true, loading: true, icon: "none" }
       }
     >
+      {gatewayReadyChecking && (
+        <div className="mb-3">
+          <StatusPanel
+            icon={<LoaderCircle size={22} className="animate-spin" />}
+            title={t("setup.gatewayReadyCheckingTitle", "正在检查 OpenClaw 配置")}
+            message={t(
+              "setup.gatewayReadyCheckingDescription",
+              "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
+            )}
+          />
+        </div>
+      )}
+      {gatewayReadyError && (
+        <div className="mb-3">
+          <StatusPanel
+            icon={<AlertTriangle size={22} />}
+            tone="danger"
+            title={t("setup.gatewayReadyContinueFailedTitle", "无法进入下一步")}
+            message={gatewayReadyError}
+          />
+        </div>
+      )}
       {hasBrokenPlugins && (
         <div className="mb-3 space-y-2">
           <StatusPanel

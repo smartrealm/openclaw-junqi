@@ -33,6 +33,9 @@ import {
 /** Three-stage sidebar: full → icons-only → fully hidden, cycled by the topbar toggle. */
 export type SidebarMode = 'expanded' | 'mini' | 'hidden';
 
+export const AUDIO_AUTO_PLAY_STORAGE_KEY = 'aegis-audio-autoplay';
+export const VOICE_AUTO_SPEAK_STORAGE_KEY = 'aegis-voice-auto-speak';
+
 interface SettingsState {
   /** User-selected theme. Concrete themes are derived from {@link AEGIS_THEMES}; `system` follows the OS. */
   theme: ThemeSetting;
@@ -61,6 +64,7 @@ interface SettingsState {
   context1mEnabled: boolean;
   toolIntentEnabled: boolean;
   audioAutoPlay: boolean;
+  voiceAutoSpeak: boolean;
   /** Picovoice AccessKey for Porcupine wake-word engine (phase 2). Free from Picovoice Console. */
   picovoiceAccessKey: string;
   /** Builtin wake word id (e.g. 'porcupine') or empty to use the default. */
@@ -98,6 +102,7 @@ interface SettingsState {
   setContext1mEnabled: (enabled: boolean) => void;
   setToolIntentEnabled: (enabled: boolean) => void;
   setAudioAutoPlay: (enabled: boolean) => void;
+  setVoiceAutoSpeak: (enabled: boolean) => void;
   setPicovoiceAccessKey: (key: string) => void;
   setWakeWord: (word: string) => void;
   setWakeSensitivity: (s: number) => void;
@@ -167,7 +172,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   uiScale: savedUiScale,
   uiFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.uiFont) || '',
   monoFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.monoFont) || '',
-  terminalFontSize: Math.min(20, Math.max(10, Number(localStorage.getItem('nezha:terminalFontSize')) || 12)),
+  terminalFontSize: Math.min(20, Math.max(10, Number(localStorage.getItem('junqi:terminalFontSize')) || 12)),
   sidebarOpen: true,
   sidebarWidth: 280,
   settingsOpen: false,
@@ -185,7 +190,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   memoryLocalPath: localStorage.getItem('aegis-memory-local-path') || '',
   context1mEnabled: localStorage.getItem('aegis-context1m') === 'true',
   toolIntentEnabled: localStorage.getItem('aegis-tool-intent') === 'true',
-  audioAutoPlay: localStorage.getItem('aegis-audio-autoplay') === 'true',
+  audioAutoPlay: localStorage.getItem(AUDIO_AUTO_PLAY_STORAGE_KEY) === 'true',
+  voiceAutoSpeak: localStorage.getItem(VOICE_AUTO_SPEAK_STORAGE_KEY) === 'true',
   picovoiceAccessKey: localStorage.getItem('aegis-picovoice-access-key') || '',
   wakeWord: localStorage.getItem('aegis-wake-word') || '',
   wakeSensitivity: parseFloat(localStorage.getItem('aegis-wake-sensitivity') || '0.7') || 0.7,
@@ -228,7 +234,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   setTerminalFontSize: (size) => {
     const next = Math.min(20, Math.max(10, Math.round(size)));
-    localStorage.setItem('nezha:terminalFontSize', String(next));
+    localStorage.setItem('junqi:terminalFontSize', String(next));
     set({ terminalFontSize: next });
   },
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -254,7 +260,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setMemoryLocalPath: (path) => { localStorage.setItem('aegis-memory-local-path', path); set({ memoryLocalPath: path }); },
   setContext1mEnabled: (enabled) => { localStorage.setItem('aegis-context1m', String(enabled)); set({ context1mEnabled: enabled }); },
   setToolIntentEnabled: (enabled) => { localStorage.setItem('aegis-tool-intent', String(enabled)); set({ toolIntentEnabled: enabled }); },
-  setAudioAutoPlay: (enabled) => { localStorage.setItem('aegis-audio-autoplay', String(enabled)); set({ audioAutoPlay: enabled }); },
+  setAudioAutoPlay: (enabled) => { localStorage.setItem(AUDIO_AUTO_PLAY_STORAGE_KEY, String(enabled)); set({ audioAutoPlay: enabled }); },
+  setVoiceAutoSpeak: (enabled) => { localStorage.setItem(VOICE_AUTO_SPEAK_STORAGE_KEY, String(enabled)); set({ voiceAutoSpeak: enabled }); },
   setPicovoiceAccessKey: (key) => { localStorage.setItem('aegis-picovoice-access-key', key); set({ picovoiceAccessKey: key }); },
   setWakeWord: (word) => { localStorage.setItem('aegis-wake-word', word); set({ wakeWord: word }); },
   setWakeSensitivity: (s) => { const v = Math.min(1, Math.max(0, s)); localStorage.setItem('aegis-wake-sensitivity', String(v)); set({ wakeSensitivity: v }); },
@@ -302,6 +309,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     applyAccentColor(normalized);
   },
 }));
+
+// WebViews share persistent storage but have separate Zustand instances.
+// Mirror voice-related changes so an already-open Quick Chat observes them.
+export function syncVoiceSettingFromStorage(key: string | null, newValue: string | null): void {
+  if (key === AUDIO_AUTO_PLAY_STORAGE_KEY) {
+    useSettingsStore.setState({ audioAutoPlay: newValue === 'true' });
+  } else if (key === VOICE_AUTO_SPEAK_STORAGE_KEY) {
+    useSettingsStore.setState({ voiceAutoSpeak: newValue === 'true' });
+  }
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (event) => {
+    syncVoiceSettingFromStorage(event.key, event.newValue);
+  });
+}
 
 // Apply saved accent on load
 const savedAccent = readPersistedAccentColor();

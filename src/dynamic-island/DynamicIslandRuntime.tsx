@@ -5,11 +5,13 @@ import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { usePetStore } from '@/stores/petStore';
+import { useVoiceStore } from '@/stores/voiceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { notifications } from '@/services/notifications';
+import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent } from '@/utils/tauriEvents';
-import { selectDynamicIslandTasks, shouldShowDynamicIsland, type DynamicIslandDrop, type DynamicIslandSnapshot } from './model';
+import { isVoiceActivePhase, selectDynamicIslandTasks, shouldShowDynamicIsland, type DynamicIslandDrop, type DynamicIslandSnapshot } from './model';
 
 type IslandAction =
   | { type: 'open-task'; taskId: string }
@@ -17,6 +19,7 @@ type IslandAction =
   | { type: 'toggle-dnd' }
   | { type: 'pomodoro-toggle' }
   | { type: 'pomodoro-stop' }
+  | { type: 'voice-stop' }
   | { type: 'hide' };
 
 export default function DynamicIslandRuntime() {
@@ -26,6 +29,11 @@ export default function DynamicIslandRuntime() {
   const connected = useChatStore((state) => state.connected);
   const connecting = useChatStore((state) => state.connecting);
   const sessionRunning = useChatStore((state) => state.isTyping);
+  const localVoicePhase = useVoiceStore((state) => state.phase);
+  const localVoiceQueueLength = useVoiceStore((state) => state.queueLength);
+  const remoteVoiceOutput = useVoiceStore((state) => state.remoteOutput);
+  const voicePhase = remoteVoiceOutput ? 'speaking' : localVoicePhase;
+  const voiceQueueLength = remoteVoiceOutput ? 0 : localVoiceQueueLength;
   const tasks = useAgentWorkspaceStore((state) => state.tasks);
   const pomodoro = usePetStore((state) => state.pomodoro);
   const petEnabled = usePetStore((state) => state.enabled);
@@ -41,10 +49,12 @@ export default function DynamicIslandRuntime() {
   resourceDropRef.current = resourceDrop;
 
   const visibleTasks = useMemo(() => selectDynamicIslandTasks(tasks), [tasks]);
+  const voiceActive = isVoiceActivePhase(voicePhase);
   const shouldShow = shouldShowDynamicIsland({
     enabled,
     mainMinimized,
     sessionRunning,
+    voiceActive,
     tasks: visibleTasks,
     resourceDrop,
     terminalPulse,
@@ -72,6 +82,8 @@ export default function DynamicIslandRuntime() {
     connected,
     connecting,
     sessionRunning,
+    voicePhase,
+    voiceQueueLength,
     petEnabled,
     dndMode,
     autoExpand,
@@ -91,7 +103,7 @@ export default function DynamicIslandRuntime() {
       body: latestToast.body,
     } : null,
     resourceDrop,
-  }), [autoExpand, connected, connecting, dndMode, latestToast, petEnabled, pomodoro, resourceDrop, sessionRunning, visibleTasks]);
+  }), [autoExpand, connected, connecting, dndMode, latestToast, petEnabled, pomodoro, resourceDrop, sessionRunning, visibleTasks, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
 
@@ -162,6 +174,9 @@ export default function DynamicIslandRuntime() {
           break;
         case 'pomodoro-stop':
           stopPomodoro();
+          break;
+        case 'voice-stop':
+          voiceRuntime.interruptAll();
           break;
         case 'hide':
           useSettingsStore.getState().setDynamicIslandEnabled(false);

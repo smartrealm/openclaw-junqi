@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
-import { APP_PLATFORM } from '@/components/Terminal/_nezha-platform';
+import { APP_PLATFORM } from '@/components/Terminal/platform';
 
 // ═══════════════════════════════════════════════════════════
 // Keyboard Shortcuts — Global hotkeys for OpenClaw Desktop
