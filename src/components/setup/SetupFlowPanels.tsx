@@ -6,8 +6,10 @@ import {
   Circle,
   CircleDot,
   Copy,
+  Download,
   Eye,
   EyeOff,
+  FolderOpen,
   Minus,
   Package,
   RefreshCw,
@@ -17,9 +19,14 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { MouseEventHandler, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { save } from "@tauri-apps/plugin-dialog";
 import type { TFunction } from "i18next";
 import clsx from "clsx";
-import type { OpenclawStatus } from "@/api/tauri-commands";
+import {
+  exportSetupDiagnosticsBundle,
+  openSetupDiagnosticsDirectory,
+  type OpenclawStatus,
+} from "@/api/tauri-commands";
 import { GatewayLifecyclePanel } from "@/components/settings/GatewayLifecyclePanel";
 import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
@@ -38,7 +45,7 @@ export const STEP_META: Record<string, { titleKey: string; titleFallback: string
     titleKey: "setup.installSteps.git.title",
     titleFallback: "Git",
     descriptionKey: "setup.installSteps.git.description",
-    descriptionFallback: "验证源码与包管理所需的基础工具",
+    descriptionFallback: "检测源码与包管理工具，仅在安装需要时补齐",
   },
   node: {
     titleKey: "setup.installSteps.node.title",
@@ -792,7 +799,11 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
   const [copied, setCopied] = useState(false);
-  const visibleLogs = logs.slice(-100);
+  const [openingDirectory, setOpeningDirectory] = useState(false);
+  const [directoryError, setDirectoryError] = useState(false);
+  const [exportingBundle, setExportingBundle] = useState(false);
+  const [bundleExportState, setBundleExportState] = useState<"idle" | "success" | "error">("idle");
+  const visibleLogs = logs.slice(-500);
 
   useEffect(() => {
     if (!followRef.current || !viewportRef.current) return;
@@ -800,14 +811,45 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   }, [logs.length]);
 
   const copyLogs = () => {
-    const text = visibleLogs
-      .map((log) => `${new Date(log.ts).toLocaleTimeString()} [${log.step ?? log.source}] ${log.message}`)
+    const text = logs
+      .map((log) => `${new Date(log.ts).toLocaleTimeString()} [${log.step ?? log.source}]${log.diagnostic ? " [diagnostic]" : ""} ${log.message}`)
       .join("\n");
     if (!text) return;
     void navigator.clipboard?.writeText(text).then(() => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     });
+  };
+
+  const openDiagnosticsDirectory = async () => {
+    setOpeningDirectory(true);
+    setDirectoryError(false);
+    try {
+      await openSetupDiagnosticsDirectory();
+    } catch {
+      setDirectoryError(true);
+    } finally {
+      setOpeningDirectory(false);
+    }
+  };
+
+  const exportDiagnosticsBundle = async () => {
+    setExportingBundle(true);
+    setBundleExportState("idle");
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const destination = await save({
+        defaultPath: `junqi-install-diagnostics-${timestamp}.zip`,
+        filters: [{ name: "ZIP", extensions: ["zip"] }],
+      });
+      if (!destination) return;
+      await exportSetupDiagnosticsBundle(destination);
+      setBundleExportState("success");
+    } catch {
+      setBundleExportState("error");
+    } finally {
+      setExportingBundle(false);
+    }
   };
 
   return (
@@ -820,16 +862,57 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
             <span className="h-1.5 w-1.5 rounded-full bg-aegis-success" />
             {t("setup.installPanel.live", "实时")}
           </span>
+          <span className="font-mono text-[10px] font-normal tabular-nums text-aegis-text-dim">
+            {logs.length}
+          </span>
         </div>
-        <button
-          type="button"
-          onClick={copyLogs}
-          disabled={visibleLogs.length === 0}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-surface disabled:opacity-40"
-        >
-          <Copy size={12} />
-          {copied ? t("setup.copiedLogs") : t("setup.copyLogs")}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => { void exportDiagnosticsBundle(); }}
+            disabled={exportingBundle}
+            title={bundleExportState === "error"
+              ? t("setup.installPanel.exportLogsFailed", "无法导出安装诊断包")
+              : bundleExportState === "success"
+                ? t("setup.installPanel.exportLogsComplete", "安装诊断包已导出")
+                : t("setup.installPanel.exportLogs", "导出安装诊断包")}
+            aria-label={t("setup.installPanel.exportLogs", "导出安装诊断包")}
+            className={clsx(
+              "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-aegis-surface disabled:opacity-40",
+              bundleExportState === "error"
+                ? "text-red-300"
+                : bundleExportState === "success"
+                  ? "text-aegis-success"
+                  : "text-aegis-text-secondary",
+            )}
+          >
+            <Download size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => { void openDiagnosticsDirectory(); }}
+            disabled={openingDirectory}
+            title={directoryError
+              ? t("setup.installPanel.openLogsFailed", "无法打开日志目录")
+              : t("setup.installPanel.openLogs", "打开完整日志目录")}
+            aria-label={t("setup.installPanel.openLogs", "打开完整日志目录")}
+            className={clsx(
+              "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-aegis-surface disabled:opacity-40",
+              directoryError ? "text-red-300" : "text-aegis-text-secondary",
+            )}
+          >
+            <FolderOpen size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={copyLogs}
+            disabled={logs.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-surface disabled:opacity-40"
+          >
+            <Copy size={12} />
+            {copied ? t("setup.copiedLogs") : t("setup.copyLogs")}
+          </button>
+        </div>
       </header>
       <div
         ref={viewportRef}
@@ -850,7 +933,14 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
               {new Date(log.ts).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </time>
             <span className="truncate text-aegis-text-dim">{log.step ?? log.source}</span>
-            <span className={clsx("col-span-2 min-w-0 break-words sm:col-span-1", logTone(log.level))}>{log.message}</span>
+            <span className={clsx(
+              "col-span-2 min-w-0 break-words sm:col-span-1",
+              logTone(log.level),
+              log.diagnostic && "opacity-80",
+            )}>
+              {log.diagnostic && <span className="mr-1 text-[9px] uppercase text-aegis-text-dim">diag</span>}
+              {log.message}
+            </span>
           </div>
         ))}
       </div>

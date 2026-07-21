@@ -19,7 +19,7 @@ import { StatusDot } from '@/components/shared/StatusDot';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
-import { gateway } from '@/services/gateway';
+import { gateway, GatewayAgentDisplayNameUpdateError } from '@/services/gateway';
 import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
 import { getChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
 import {
@@ -31,6 +31,7 @@ import {
 import clsx from 'clsx';
 import { themeHex, themeAlpha, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
+import { isCronSessionKey, isSubagentSessionKey } from '@/utils/sessionPresentation';
 import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
 import { parseAgentWorkspaceSkills, type AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import { persistAgentSkillFilter } from './agentSkillConfig';
@@ -133,8 +134,8 @@ const timeAgo = (ts?: number) => {
 };
 
 const getSessionType = (key: string): 'main' | 'cron' | 'subagent' => {
-  if (key.includes(':cron:')) return 'cron';
-  if (key.includes(':subagent:')) return 'subagent';
+  if (isCronSessionKey(key)) return 'cron';
+  if (isSubagentSessionKey(key)) return 'subagent';
   return 'main';
 };
 
@@ -707,7 +708,10 @@ export function AgentHubPage() {
   const normalizedNewAgentId = normalizeGatewayAgentId(newAgent.id);
   const newAgentIdExists = !!normalizedNewAgentId && (normalizedNewAgentId === MAIN_GATEWAY_AGENT_ID || agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId));
   const newAgentIdInvalid = !!normalizedNewAgentId && !GATEWAY_AGENT_ID_RE.test(normalizedNewAgentId);
-  const canCreateAgent = connected && !!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists && !creatingAgent;
+  const effectiveDefaultAgentWorkspace = defaultAgentWorkspace || agents.find((agent) => agent.id === MAIN_GATEWAY_AGENT_ID)?.workspace || '';
+  const newAgentWorkspace = newAgent.workspace.trim() || effectiveDefaultAgentWorkspace.trim();
+  const newAgentWorkspaceMissing = !newAgentWorkspace;
+  const canCreateAgent = connected && !!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists && !newAgentWorkspaceMissing && !creatingAgent;
 
   // Sidebar "在线智能体" click navigates to /agents?agent=<id>. Open that
   // agent's settings panel automatically, matching in-page card click behavior.
@@ -738,7 +742,7 @@ export function AgentHubPage() {
 
   const handleCreateAgent = async () => {
     if (creatingAgent) return;
-    const payload = buildGatewayAgentCreatePayload(newAgent, defaultAgentWorkspace);
+    const payload = buildGatewayAgentCreatePayload(newAgent, effectiveDefaultAgentWorkspace);
     if (!payload.id) return;
     if (!GATEWAY_AGENT_ID_RE.test(payload.id)) {
       setAgentFormError(t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'));
@@ -786,6 +790,24 @@ export function AgentHubPage() {
         configured: true,
       });
     } catch (err: any) {
+      if (err instanceof GatewayAgentDisplayNameUpdateError) {
+        await refreshGroup('agents');
+        setSelectedAgentId(err.agentId);
+        setSettingsAgent({
+          id: err.agentId,
+          name: err.agentId,
+          model: payload.model,
+          workspace: payload.workspace,
+          configured: true,
+        });
+        resetNewAgentWizard();
+        showAlert(
+          t('agentHub.addForm.nameUpdateWarningTitle', 'Agent created; display name needs attention'),
+          t('agentHub.addForm.nameUpdateWarning', 'The agent was created, but its display name could not be saved. Open the agent settings and try again.'),
+          'warning',
+        );
+        return;
+      }
       showAlert(i18n.t('common.error') as string, err?.message || String(err), 'error');
     } finally {
       setCreatingAgent(false);
@@ -1121,7 +1143,10 @@ export function AgentHubPage() {
                             ];
                             const canGoNext = newAgentStep === 0
                               ? canCreateAgent || (!!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists)
+                              : newAgentStep === 2
+                                ? !newAgentWorkspaceMissing
                               : true;
+                            const workspaceErrorVisible = newAgentStep >= 2 && newAgentWorkspaceMissing;
                             return (
                           <div className="space-y-4">
                             <div className="flex items-start justify-between gap-3">
@@ -1189,11 +1214,11 @@ export function AgentHubPage() {
                             {newAgentStep === 2 && (
                               <div className="space-y-2">
                                 <div className="text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.workspacePlaceholder', 'Workspace')}</div>
-                                <input disabled={creatingAgent || newAgent.inheritWorkspace} placeholder={defaultAgentWorkspace || '/path/to/workspace'} value={newAgent.workspace} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, workspace: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
+                                <input disabled={creatingAgent || newAgent.inheritWorkspace} placeholder={effectiveDefaultAgentWorkspace || '/path/to/workspace'} value={newAgent.workspace} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, workspace: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
                                 <label className="flex items-start gap-2 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2 text-[11px] text-aegis-text-muted">
                                   <input
                                     type="checkbox"
-                                    disabled={creatingAgent || !defaultAgentWorkspace}
+                                    disabled={creatingAgent || !effectiveDefaultAgentWorkspace}
                                     checked={newAgent.inheritWorkspace}
                                     onChange={(e) => {
                                       setAgentFormError(null);
@@ -1203,9 +1228,9 @@ export function AgentHubPage() {
                                   />
                                   <span className="leading-relaxed">
                                     {t('agentHub.addForm.inheritWorkspace', 'Inherit default workspace')}
-                                    {defaultAgentWorkspace && (
+                                    {effectiveDefaultAgentWorkspace && (
                                       <span className="block font-mono text-[9px] text-aegis-text-dim truncate">
-                                        {defaultAgentWorkspace}
+                                        {effectiveDefaultAgentWorkspace}
                                       </span>
                                     )}
                                   </span>
@@ -1257,7 +1282,7 @@ export function AgentHubPage() {
                                   [t('agentHub.addForm.agentIdPlaceholder', 'Agent ID *'), normalizedNewAgentId || '—'],
                                   [t('agentHub.addForm.namePlaceholder', 'Name'), newAgent.name.trim() || normalizedNewAgentId || '—'],
                                   [t('agentSettings.model', 'Model'), newAgent.model.trim() || defaultAgentModel || t('agentHub.inherited', 'Inherited')],
-                                  [t('agentSettings.workspace', 'Workspace'), newAgent.workspace.trim() || (newAgent.inheritWorkspace ? defaultAgentWorkspace : '') || t('agentHub.inherited', 'Inherited')],
+                                  [t('agentSettings.workspace', 'Workspace'), newAgentWorkspace || t('agentHub.inherited', 'Inherited')],
                                   [t('nav.agentSkills', 'Agent Skills'), selectedNewAgentSkills.length > 0 ? selectedNewAgentSkills.map(([, info]) => info.name).join(', ') : t('sidebar.noAgentSkills', 'No available skills')],
                                   [t('agentSettings.channels', 'Channels'), t('agentHub.wizard.configureAfterCreate', 'Configure after creation')],
                                 ].map(([label, value]) => (
@@ -1269,16 +1294,18 @@ export function AgentHubPage() {
                               </div>
                             )}
 
-                            {(agentFormError || newAgentIdInvalid || newAgentIdExists || !connected) && (
+                            {(agentFormError || newAgentIdInvalid || newAgentIdExists || workspaceErrorVisible || !connected) && (
                               <div className="flex items-start gap-2 rounded-lg border border-aegis-danger/20 bg-aegis-danger/10 px-3 py-2 text-[11px] leading-relaxed text-aegis-danger">
                                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
                                 <span>
                                   {agentFormError
                                     || (!connected
                                       ? t('agentHub.addForm.notConnected', 'Gateway is not connected.')
-                                      : newAgentIdExists
+                                        : newAgentIdExists
                                         ? t('agentHub.addForm.duplicateId', 'This agent ID already exists.')
-                                        : t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'))}
+                                        : workspaceErrorVisible
+                                          ? t('agentHub.addForm.workspaceRequired', 'Choose a workspace or configure a default workspace before creating the agent.')
+                                          : t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'))}
                                 </span>
                               </div>
                             )}

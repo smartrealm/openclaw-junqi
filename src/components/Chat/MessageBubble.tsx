@@ -2,7 +2,7 @@ import { lazy, memo, Suspense, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  Copy, Check, User, RotateCcw, RefreshCw, Pencil,
+  Copy, Check, User, RefreshCw, Pencil,
   ChevronDown, ChevronRight, AlertTriangle, Trash2, Eye, Code2,
   Sparkles, Bot, ExternalLink, Globe, FileText,
   FileSpreadsheet, FileArchive, FileJson, FileCode2, Music, Film,
@@ -238,7 +238,7 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
 
 interface MessageBubbleProps {
   block: MessageBlock;
-  onResend?: (content: string) => void;
+  onEdit?: (messageId: string, content: string) => Promise<void>;
   onRegenerate?: () => void;
   onErrorAction?: (action: string) => void;
   onDelete?: () => void;
@@ -411,7 +411,7 @@ const markdownComponents = {
 };
 
 export const MessageBubble = memo(function MessageBubble({
-  block, onResend, onRegenerate, onErrorAction, onDelete,
+  block, onEdit, onRegenerate, onErrorAction, onDelete,
 }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
   const agents = useGatewayDataStore((s) => s.agents);
@@ -430,6 +430,7 @@ export const MessageBubble = memo(function MessageBubble({
   const [footerHovered, setFooterHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
   const [errorActionDone, setErrorActionDone] = useState(false);
   const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
   const contextContent = contextMeta?.content
@@ -453,6 +454,24 @@ export const MessageBubble = memo(function MessageBubble({
     contextCacheWrite ? `W${ctxFmt(contextCacheWrite)}` : '',
     contextContent?.contextPercent != null ? `${contextContent.contextPercent}% ${t('chat.context', '上下文')}` : '',
   ].filter(Boolean);
+
+  const submitEdit = async () => {
+    const nextContent = editText.trim();
+    if (!onEdit || editSaving || !nextContent) return;
+    if (nextContent === block.markdown.trim()) {
+      setIsEditing(false);
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await onEdit(block.id, nextContent);
+      setIsEditing(false);
+    } catch (error) {
+      debugError('app', '[MessageBubble] Failed to edit user message:', error);
+    } finally {
+      setEditSaving(false);
+    }
+  };
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
   const content = block.markdown;
@@ -647,12 +666,12 @@ function stripInlineCodeTicks(md: string): string {
                 className="w-full min-w-[320px] bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-2 text-[13px] text-aegis-text border border-aegis-border outline-none focus:border-aegis-primary/30 resize-y min-h-[60px]"
                 rows={Math.min(editText.split('\n').length + 1, 8)} />
               <div className="flex gap-1.5 mt-1.5">
-                <button onClick={() => { onResend?.(editText); setIsEditing(false); }}
-                  className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors">
-                  {t('chat.sendEdit', 'Send')}
+                <button onClick={() => { void submitEdit(); }} disabled={editSaving || !editText.trim()}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50">
+                  {editSaving ? t('chat.sending', 'Sending…') : t('chat.sendEdit', 'Send')}
                 </button>
-                <button onClick={() => setIsEditing(false)}
-                  className="px-2.5 py-1 rounded-lg text-[10px] font-semibold text-aegis-text-muted hover:text-aegis-text-secondary transition-colors">
+                <button onClick={() => setIsEditing(false)} disabled={editSaving}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-semibold text-aegis-text-muted hover:text-aegis-text-secondary transition-colors disabled:cursor-not-allowed disabled:opacity-50">
                   {t('chat.cancel', 'Cancel')}
                 </button>
               </div>
@@ -847,7 +866,7 @@ function stripInlineCodeTicks(md: string): string {
             {/* Dot separator */}
             <span className="text-aegis-border text-[10px] select-none">·</span>
             {/* Edit (user only) */}
-            {isUser && onResend && (
+            {isUser && onEdit && (
               <ActionBtn icon={<Pencil size={14} />} label={t('chat.edit', 'Edit')}
                 onClick={() => { setIsEditing(true); setEditText(block.markdown); }} />
             )}
@@ -856,12 +875,6 @@ function stripInlineCodeTicks(md: string): string {
             {!isUser && onRegenerate && (
               <ActionBtn icon={<RefreshCw size={14} />} label={t('chat.regenerate', 'Regenerate')}
                 onClick={onRegenerate} />
-            )}
-
-            {/* Retry (user only, as resend) */}
-            {isUser && onResend && (
-              <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.resend', 'Resend')}
-                onClick={() => onResend(block.markdown)} />
             )}
 
             {/* Delete */}

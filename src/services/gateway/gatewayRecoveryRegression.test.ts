@@ -85,7 +85,7 @@ test('BUG-GSC01 application lifecycle requests use the manager core', () => {
 test('managed Gateway start owns readiness and preserves process diagnostics', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const setup = source('src/hooks/useSetupFlow.ts');
-  assert.match(gateway, /MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 60/);
+  assert.match(gateway, /MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 90/);
   assert.match(gateway, /child\.try_wait\(\)[\s\S]*gateway_matches_config\(port, &config_path\)\.await/);
   assert.match(gateway, /OPENCLAW_GATEWAY_LIVENESS_PATH: &str = "healthz"/);
   assert.doesNotMatch(gateway, /TcpStream::connect/);
@@ -130,12 +130,10 @@ test('BUG-GW-01 forced storage recovery migrates the configured state, not only 
 test('BUG-GW-02 lifecycle ownership decisions authenticate the selected state directory', () => {
   const ensure = source('src-tauri/src/commands/ensure.rs');
   const gateway = source('src-tauri/src/commands/gateway.rs');
-  const setup = source('src-tauri/src/commands/setup.rs');
   const storage = source('src-tauri/src/commands/storage.rs');
 
   assert.match(ensure, /selected_native_gateway_ready[\s\S]*gateway_matches_config/);
   assert.match(ensure, /if selected_native_gateway_ready\(port\)\.await/);
-  assert.match(setup, /gateway_matches_config\(port, &config_path\)\.await/);
   assert.match(storage, /wait_for_gateway\([\s\S]*gateway_matches_config/);
   assert.match(storage, /reachable: crate::commands::gateway::gateway_matches_config\(port, &old_config\)\.await/);
   assert.match(gateway, /wait_for_selected_gateway[\s\S]*gateway_matches_config/);
@@ -166,13 +164,16 @@ test('BUG-WIN-CWD-01 managed Gateway uses stable non-root cwd', () => {
   assert.doesNotMatch(managed, /working_dir = state_dir[.\s]*Some/);
 });
 
-test('offline system services are stopped before the desktop-managed Gateway starts', () => {
+test('offline system service handoff reuses one bounded ownership snapshot', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const service = source('src-tauri/src/commands/gateway_service.rs');
   assert.match(service, /OPENCLAW_STATE_DIR/);
   assert.match(service, /paths_refer_to_same_location/);
-  assert.match(service, /stop_selected_gateway_service/);
-  assert.match(gateway, /stop_offline_gateway_service\(&app, &runtime, &gw_path\)\.await\?/);
+  assert.match(service, /inspect_gateway_service_state_for_start/);
+  assert.match(service, /stop_selected_gateway_service_verified/);
+  assert.match(service, /"--no-probe"/);
+  assert.match(gateway, /let service_inspection =/);
+  assert.match(gateway, /stop_offline_gateway_service\([\s\S]*inspection/);
 });
 
 test('BUG-GW-04 storage migration preserves only a verified official service binding', () => {

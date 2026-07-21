@@ -19,11 +19,18 @@ use uuid::Uuid;
 const REGISTRATION_PATH: &str = "/oauth/v1/app/registration";
 const FEISHU_ACCOUNTS_URL: &str = "https://accounts.feishu.cn";
 const LARK_ACCOUNTS_URL: &str = "https://accounts.larksuite.com";
+const FEISHU_REGISTRATION_HOSTS: &[&str] = &[
+    "accounts.feishu.cn",
+    "accounts.larksuite.com",
+    "open.feishu.cn",
+    "open.larksuite.com",
+];
 const REGISTRATION_TIMEOUT: Duration = Duration::from_secs(15);
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_EXPIRY: Duration = Duration::from_secs(600);
 const MAX_POLL_INTERVAL: Duration = Duration::from_secs(60);
 const MAX_ACTIVE_SESSIONS: usize = 16;
+const MAX_PROVIDER_QR_CONTENT_LENGTH: usize = 4_096;
 
 /// Process-local registry for channel enrollment transactions. The registry
 /// deliberately owns device codes and generated credentials so neither is
@@ -130,6 +137,7 @@ struct EnrollmentSession {
     registration: ProviderRegistration,
     state: EnrollmentState,
     qr_data_url: String,
+    qr_content: String,
     poll_after: Duration,
     expires_at: Instant,
     expires_at_ms: u64,
@@ -171,6 +179,8 @@ pub struct ChannelEnrollmentSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     qr_data_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    qr_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     poll_after_ms: Option<u64>,
     expires_at: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -211,23 +221,37 @@ enum EnrollmentErrorKind {
 
 struct EnrollmentError {
     kind: EnrollmentErrorKind,
+    renderer_code: Option<&'static str>,
 }
 
 impl EnrollmentError {
     fn transient() -> Self {
         Self {
             kind: EnrollmentErrorKind::Transient,
+            renderer_code: None,
         }
     }
 
     fn permanent() -> Self {
         Self {
             kind: EnrollmentErrorKind::Permanent,
+            renderer_code: None,
         }
     }
 
     fn is_transient(&self) -> bool {
         matches!(self.kind, EnrollmentErrorKind::Transient)
+    }
+
+    fn unsupported_verification_host() -> Self {
+        Self {
+            kind: EnrollmentErrorKind::Permanent,
+            renderer_code: Some("unsupported_verification_host"),
+        }
+    }
+
+    fn renderer_code(&self) -> Option<&'static str> {
+        self.renderer_code
     }
 }
 
@@ -289,7 +313,7 @@ impl ChannelEnrollmentProvider for FeishuEnrollmentProvider {
             let mut qr_url =
                 Url::parse(&verification_uri).map_err(|_| EnrollmentError::permanent())?;
             if qr_url.scheme() != "https" || !is_feishu_registration_host(qr_url.host_str()) {
-                return Err(EnrollmentError::permanent());
+                return Err(EnrollmentError::unsupported_verification_host());
             }
             qr_url
                 .query_pairs_mut()
@@ -398,7 +422,17 @@ pub async fn start_channel_enrollment(
     let started = provider
         .start(&registry.client, domain.as_deref())
         .await
-        .map_err(|_| "Could not create a QR enrollment session. Please try again.".to_string())?;
+        .map_err(|error| {
+            if let Some(code) = error.renderer_code() {
+                format!("channel_enrollment:{code}")
+            } else if error.is_transient() {
+                "Could not connect to the Feishu enrollment service. Please check your network and try again."
+                    .to_string()
+            } else {
+                "The Feishu enrollment service rejected this request. Please try again later."
+                    .to_string()
+            }
+        })?;
     let qr_data_url = qr_svg_data_url(&started.qr_url)
         .map_err(|_| "Could not render the channel QR code. Please try again.".to_string())?;
     let session_id = Uuid::new_v4().to_string();
@@ -408,6 +442,7 @@ pub async fn start_channel_enrollment(
         registration: started.registration,
         state: EnrollmentState::Waiting,
         qr_data_url,
+        qr_content: started.qr_url,
         poll_after: started.poll_after,
         expires_at,
         expires_at_ms: unix_millis_after(started.expires_in),
@@ -527,29 +562,16 @@ pub async fn cancel_channel_enrollment(
     Ok(())
 }
 
-/// Render an authorization URL supplied by an official Gateway wizard note.
-/// The URL remains Gateway-owned; this command only turns it into a local
-/// image when terminal QR rendering is unavailable.
-#[tauri::command]
-pub fn render_qr_code_data_url(content: String) -> Result<String, String> {
-    let content = content.trim();
-    let url = Url::parse(content).map_err(|_| "QR content must be a valid URL.".to_string())?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err("QR content must use HTTP or HTTPS.".into());
-    }
-    qr_svg_data_url(content).map_err(|_| {
-        "Could not render the authorization QR code. Please use the URL instead.".into()
-    })
-}
-
-/// Render a QR payload returned by a locally installed OpenClaw channel
-/// adapter. The payload is never fetched; it is only encoded as SVG locally.
+/// Render an opaque QR payload returned by a locally installed OpenClaw channel
+/// adapter. It is never fetched or executed; it is only encoded as SVG locally.
 #[tauri::command]
 pub fn render_local_qr_data_url(content: String) -> Result<String, String> {
     let content = content.trim();
-    let url = Url::parse(content).map_err(|_| "QR content must be a valid URL.".to_string())?;
-    if !matches!(url.scheme(), "https" | "sgnl") {
-        return Err("QR content must use HTTPS or the Signal link scheme.".into());
+    if content.is_empty()
+        || content.len() > MAX_PROVIDER_QR_CONTENT_LENGTH
+        || content.chars().any(char::is_control)
+    {
+        return Err("QR content is not a valid provider payload.".into());
     }
     qr_svg_data_url(content).map_err(|_| {
         "Could not render the channel QR code. Please refresh the login session.".into()
@@ -574,10 +596,11 @@ fn session_for_current_runtime<'a>(
 }
 
 fn snapshot(session_id: &str, session: &EnrollmentSession) -> ChannelEnrollmentSnapshot {
-    let (phase, qr_data_url, poll_after_ms, domain) = match &session.state {
+    let (phase, qr_data_url, qr_content, poll_after_ms, domain) = match &session.state {
         EnrollmentState::Waiting | EnrollmentState::Polling => (
             EnrollmentPhase::Waiting,
             Some(session.qr_data_url.clone()),
+            Some(session.qr_content.clone()),
             Some(session.poll_after.as_millis().min(u128::from(u64::MAX)) as u64),
             None,
         ),
@@ -585,17 +608,19 @@ fn snapshot(session_id: &str, session: &EnrollmentSession) -> ChannelEnrollmentS
             EnrollmentPhase::Connected,
             None,
             None,
+            None,
             Some(credentials.domain.as_str()),
         ),
-        EnrollmentState::Denied => (EnrollmentPhase::Denied, None, None, None),
-        EnrollmentState::Expired => (EnrollmentPhase::Expired, None, None, None),
-        EnrollmentState::Failed => (EnrollmentPhase::Error, None, None, None),
+        EnrollmentState::Denied => (EnrollmentPhase::Denied, None, None, None, None),
+        EnrollmentState::Expired => (EnrollmentPhase::Expired, None, None, None, None),
+        EnrollmentState::Failed => (EnrollmentPhase::Error, None, None, None, None),
     };
     ChannelEnrollmentSnapshot {
         session_id: session_id.to_string(),
         channel: session.channel.as_str(),
         phase,
         qr_data_url,
+        qr_content,
         poll_after_ms,
         expires_at: session.expires_at_ms,
         domain,
@@ -657,10 +682,7 @@ fn expiry(value: &Value) -> Duration {
 }
 
 fn is_feishu_registration_host(host: Option<&str>) -> bool {
-    matches!(
-        host,
-        Some("accounts.feishu.cn") | Some("accounts.larksuite.com")
-    )
+    host.is_some_and(|host| FEISHU_REGISTRATION_HOSTS.contains(&host))
 }
 
 fn unix_millis_after(duration: Duration) -> u64 {
@@ -698,7 +720,10 @@ fn qr_svg_data_url(content: &str) -> Result<String, EnrollmentError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{qr_svg_data_url, render_local_qr_data_url, render_qr_code_data_url};
+    use super::{
+        is_feishu_registration_host, qr_svg_data_url, render_local_qr_data_url,
+        MAX_PROVIDER_QR_CONTENT_LENGTH,
+    };
     use base64::{engine::general_purpose::STANDARD, Engine as _};
 
     #[test]
@@ -714,19 +739,20 @@ mod tests {
     }
 
     #[test]
-    fn generic_qr_renderer_accepts_authorization_urls_only() {
-        assert!(
-            render_qr_code_data_url("https://example.com/authorization?code=test".into()).is_ok()
-        );
-        assert!(render_qr_code_data_url("not a URL".into()).is_err());
-        assert!(render_qr_code_data_url("file:///tmp/secret".into()).is_err());
+    fn feishu_registration_hosts_cover_official_qr_entrypoints_only() {
+        assert!(is_feishu_registration_host(Some("accounts.feishu.cn")));
+        assert!(is_feishu_registration_host(Some("accounts.larksuite.com")));
+        assert!(is_feishu_registration_host(Some("open.feishu.cn")));
+        assert!(is_feishu_registration_host(Some("open.larksuite.com")));
+        assert!(!is_feishu_registration_host(Some("evil.example")));
     }
 
     #[test]
-    fn local_channel_qr_renderer_accepts_only_safe_link_schemes() {
+    fn local_channel_qr_renderer_accepts_bounded_provider_payloads() {
         assert!(render_local_qr_data_url("https://example.com/link".into()).is_ok());
         assert!(render_local_qr_data_url("sgnl://linkdevice?uuid=test".into()).is_ok());
-        assert!(render_local_qr_data_url("file:///tmp/secret".into()).is_err());
-        assert!(render_local_qr_data_url("javascript:alert(1)".into()).is_err());
+        assert!(render_local_qr_data_url("dingtalk://openapp?corp=one".into()).is_ok());
+        assert!(render_local_qr_data_url("opaque\nprovider-payload".into()).is_err());
+        assert!(render_local_qr_data_url("x".repeat(MAX_PROVIDER_QR_CONTENT_LENGTH + 1)).is_err());
     }
 }

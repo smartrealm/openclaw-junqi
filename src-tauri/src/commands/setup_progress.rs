@@ -86,8 +86,7 @@ pub fn emit_keyed_with_params(
 }
 
 /// Emit third-party process output for troubleshooting. Diagnostics remain in
-/// the setup log but must not replace the user-facing, localizable progress
-/// phase.
+/// the activity log without replacing the localizable progress phase.
 pub fn emit_diagnostic(app: &tauri::AppHandle, step: &str, message: &str, progress: f64) {
     emit_event(
         app,
@@ -142,12 +141,62 @@ pub fn emit_error(app: &tauri::AppHandle, step: &str, message: &str, progress: O
     );
 }
 
+pub(crate) fn emit_log_write_failure(app: &tauri::AppHandle, step: &str, error: &str) {
+    let _ = app.emit(
+        "setup-progress",
+        SetupProgress {
+            step: step.into(),
+            message: "Setup diagnostics could not be written to disk".into(),
+            key: Some("setup.installPanel.logWriteFailed".into()),
+            params: None,
+            progress: None,
+            diagnostic: true,
+            error: Some(error.into()),
+            status: None,
+        },
+    );
+}
+
+fn record_timeline(
+    app: &tauri::AppHandle,
+    step: &str,
+    message: &str,
+    metadata: &SetupProgressMetadata<'_>,
+) {
+    let mut line = String::new();
+    if let Some(progress) = metadata.progress {
+        line.push_str(&format!("[{:>5.1}%] ", progress.clamp(0.0, 1.0) * 100.0));
+    }
+    if metadata.diagnostic {
+        line.push_str("(diag) ");
+    }
+    line.push_str(message);
+    if let Some(key) = metadata.key {
+        line.push_str(&format!("  [key={key}]"));
+    }
+    if let Some(params) = &metadata.params {
+        if !params.is_empty() {
+            let joined = params
+                .iter()
+                .map(|(name, value)| format!("{name}={value}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            line.push_str(&format!("  [{joined}]"));
+        }
+    }
+    if let Some(error) = metadata.error {
+        line.push_str(&format!("  ERROR: {error}"));
+    }
+    crate::commands::setup_diagnostics::record_timeline_note(app, step, &line);
+}
+
 fn emit_event(
     app: &tauri::AppHandle,
     step: &str,
     message: &str,
     metadata: SetupProgressMetadata<'_>,
 ) {
+    record_timeline(app, step, message, &metadata);
     let _ = app.emit(
         "setup-progress",
         SetupProgress {

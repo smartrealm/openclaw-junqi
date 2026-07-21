@@ -98,14 +98,14 @@ test('pet generation promotes only a validated, newly-created v2 package', async
   assert.match(backend, /newer_than_unix_ms/);
 });
 
-test('the legacy lobster remains optional rather than the default pet', async () => {
+test('the built-in lobster is the shared default pet', async () => {
   const [store, character, skill] = await Promise.all([
     read('../stores/petStore.ts'),
     read('../pet/PetCharacter.tsx'),
     read('../../src-tauri/resources/skills/hatch-pet/SKILL.md'),
   ]);
-  assert.match(store, /DEFAULT_PET_SKIN: PetSkin = 'robot'/);
-  assert.match(store, /persistedVersion < 5 && skin === 'lobster'/);
-  assert.match(character, /skin = 'robot'/);
+  assert.match(store, /DEFAULT_PET_SKIN/);
+  assert.match(character, /skin = DEFAULT_PET_SKIN/);
+  assert.match(skill, /A lobster or another character/);
   assert.match(skill, /Do not make oversized claws/);
 });

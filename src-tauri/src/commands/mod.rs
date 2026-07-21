@@ -55,6 +55,7 @@ pub mod secret_store;
 pub mod session_analytics;
 pub mod session_labels;
 pub mod setup;
+pub mod setup_diagnostics;
 pub mod setup_progress;
 pub mod skills;
 pub(crate) mod state_dir_probe;

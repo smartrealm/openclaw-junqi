@@ -20,7 +20,13 @@ use crate::commands::process_control::{
     process_tree_was_already_gone, request_windows_process_tree_termination,
     terminate_windows_process_tree,
 };
-use crate::commands::setup_progress::{emit, emit_keyed, emit_keyed_with_params};
+#[cfg(windows)]
+use crate::commands::setup_diagnostics::diagnostic_artifact_path;
+use crate::commands::setup_diagnostics::{
+    record_process_finished, record_process_output, record_process_started, record_timeline_note,
+    reset_timeline_log,
+};
+use crate::commands::setup_progress::{emit, emit_diagnostic, emit_keyed, emit_keyed_with_params};
 use crate::paths;
 use crate::platform;
 use crate::state::GatewayProcess;
@@ -56,10 +62,15 @@ const DEPENDENCY_INSTALL_DEADLINE: std::time::Duration = std::time::Duration::fr
 const DOWNLOAD_SOURCE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2 * 60);
 const DOWNLOAD_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const NODE_INDEX_STAGGER: std::time::Duration = std::time::Duration::from_millis(250);
+// A normal Node.js/Git MSI or Inno Setup transaction completes well within a
+// few minutes. A longer wait hides a blocked Windows Installer service and
+// prevents the controlled fallback from producing a useful diagnostic.
 #[cfg(any(windows, test))]
-const WINDOWS_INSTALLER_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(20 * 60);
+const WINDOWS_INSTALLER_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 #[cfg(any(windows, test))]
 const PROCESS_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+#[cfg(windows)]
+const WINDOWS_RUNTIME_SETTLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const PROCESS_REAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 const DEPENDENCY_INSTALL_OPERATION_ID_MAX_LEN: usize = 160;
@@ -512,11 +523,11 @@ impl<'a> WindowsInstallProgress<'a> {
     }
 
     fn progress(&self) -> f64 {
-        let elapsed = self.started_at.elapsed().as_secs_f64();
-        let expected_install_seconds = 20.0 * 60.0;
-        self.progress_start
-            + (self.progress_end - self.progress_start)
-                * (elapsed / expected_install_seconds).clamp(0.0, 1.0)
+        // Installer APIs do not expose a trustworthy percentage. Keep the
+        // progress bar at the phase boundary and expose elapsed time through
+        // the heartbeat text instead of presenting a fabricated completion
+        // percentage that can look stuck or falsely complete.
+        self.progress_start.min(self.progress_end)
     }
 
     fn elapsed(&self) -> String {
@@ -533,6 +544,20 @@ impl<'a> WindowsInstallProgress<'a> {
             "setup.windows.installerWaiting",
             &[("tool", self.tool), ("elapsed", &elapsed)],
             self.progress(),
+        );
+    }
+
+    fn report_admin_prompt(&self) {
+        emit_keyed_with_params(
+            self.app,
+            self.step,
+            &format!(
+                "Waiting for Windows administrator approval before starting the {} installer…",
+                self.tool
+            ),
+            "setup.windows.adminPrompt",
+            &[("tool", self.tool)],
+            self.progress_start,
         );
     }
 
@@ -871,6 +896,23 @@ struct DownloadRequest<'a> {
     progress: std::ops::Range<f64>,
 }
 
+fn compact_elapsed(duration: std::time::Duration) -> String {
+    let seconds = duration.as_secs();
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+    if hours > 0 {
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes:02}:{seconds:02}")
+    }
+}
+
+fn transfer_rate_mib_per_second(bytes: u64, elapsed: std::time::Duration) -> f64 {
+    let seconds = elapsed.as_secs_f64().max(0.001);
+    bytes as f64 / 1024.0 / 1024.0 / seconds
+}
+
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
 async fn download_with_fallback(
     request: DownloadRequest<'_>,
@@ -905,6 +947,20 @@ async fn download_with_fallback_with_budget(
     let mut last_error = "no download source responded".to_string();
     for (index, (url, label)) in sources.iter().enumerate() {
         operation.ensure_active()?;
+        let source_started = std::time::Instant::now();
+        // A mirror that stalls or errors out must still leave a trace: without
+        // this, hopping to the next source looks identical to a slow single
+        // attempt in the timeline log.
+        let note_source_failure = |reason: &str| {
+            record_timeline_note(
+                app,
+                step,
+                &format!(
+                    "{label} failed after {:.1}s: {reason}",
+                    source_started.elapsed().as_secs_f64()
+                ),
+            );
+        };
         let attempt = match DownloadAttemptBudget::new(budget) {
             Ok(attempt) => attempt,
             Err(DownloadTimeout::Transaction) => {
@@ -946,16 +1002,19 @@ async fn download_with_fallback_with_budget(
                     Ok(response) => response,
                     Err(error) => {
                         last_error = format!("{label}: {error}");
+                        note_source_failure(&error.to_string());
                         continue;
                     }
                 },
                 Err(error) => {
                     last_error = format!("{label}: {error}");
+                    note_source_failure(&error.to_string());
                     continue;
                 }
             },
             Err(_) => {
                 if matches!(connect_limit, DownloadTimeout::Transaction) {
+                    note_source_failure("30-minute transaction deadline exceeded while connecting");
                     return Err(format!(
                         "下载 {} 超过 30 分钟总时限。最后错误：{}",
                         step, last_error
@@ -965,10 +1024,28 @@ async fn download_with_fallback_with_budget(
                     "{label}: connection exceeded {}",
                     download_timeout_message(connect_limit)
                 );
+                note_source_failure(&format!(
+                    "connection exceeded {}",
+                    download_timeout_message(connect_limit)
+                ));
                 continue;
             }
         };
+        let header_elapsed = source_started.elapsed();
+        let response_status = response.status();
         let total = response.content_length().unwrap_or(0);
+        let response_detail = format!(
+            "{label} response headers received in {:.2}s (HTTP {}, content-length={})",
+            header_elapsed.as_secs_f64(),
+            response_status.as_u16(),
+            if total > 0 {
+                format!("{:.1} MB", total as f64 / 1024.0 / 1024.0)
+            } else {
+                "unknown".to_string()
+            },
+        );
+        record_timeline_note(app, step, &response_detail);
+        emit_diagnostic(app, step, &response_detail, prog_start);
         let mut file = match tokio::fs::File::create(destination).await {
             Ok(file) => file,
             Err(error) => {
@@ -1067,23 +1144,29 @@ async fn download_with_fallback_with_budget(
                     0.5
                 };
                 let progress = prog_start + (prog_end - prog_start) * fraction;
+                let elapsed = source_started.elapsed();
+                let rate = transfer_rate_mib_per_second(downloaded, elapsed);
                 let detail = if total > 0 {
                     format!(
-                        "【下载 {}/{}】{}：{:.1}/{:.1} MB（{}%）",
+                        "【下载 {}/{}】{}：{:.1}/{:.1} MB（{}%，{:.2} MB/s，已用时 {}）",
                         index + 1,
                         sources.len(),
                         label,
                         downloaded as f64 / 1024.0 / 1024.0,
                         total as f64 / 1024.0 / 1024.0,
                         (fraction * 100.0).round() as u64,
+                        rate,
+                        compact_elapsed(elapsed),
                     )
                 } else {
                     format!(
-                        "【下载 {}/{}】{}：已下载 {:.1} MB",
+                        "【下载 {}/{}】{}：已下载 {:.1} MB（{:.2} MB/s，已用时 {}）",
                         index + 1,
                         sources.len(),
                         label,
                         downloaded as f64 / 1024.0 / 1024.0,
+                        rate,
+                        compact_elapsed(elapsed),
                     )
                 };
                 emit(app, step, &detail, progress);
@@ -1091,12 +1174,14 @@ async fn download_with_fallback_with_budget(
         }
         if let Some(error) = stream_error {
             last_error = format!("{label}: {error}");
+            note_source_failure(&error);
             drop(file);
             let _ = tokio::fs::remove_file(destination).await;
             continue;
         }
         if downloaded == 0 {
             last_error = format!("{label}: empty response");
+            note_source_failure("empty response");
             drop(file);
             let _ = tokio::fs::remove_file(destination).await;
             continue;
@@ -1113,9 +1198,21 @@ async fn download_with_fallback_with_budget(
         let actual = format!("{:x}", hasher.finalize());
         if !actual.eq_ignore_ascii_case(expected_sha256) {
             last_error = format!("{label}: SHA-256 mismatch");
+            note_source_failure("SHA-256 mismatch");
             let _ = tokio::fs::remove_file(destination).await;
             continue;
         }
+        let completed_elapsed = source_started.elapsed();
+        record_timeline_note(
+            app,
+            step,
+            &format!(
+                "{label} succeeded after {:.1}s; downloaded {:.1} MB; average {:.2} MB/s",
+                completed_elapsed.as_secs_f64(),
+                downloaded as f64 / 1024.0 / 1024.0,
+                transfer_rate_mib_per_second(downloaded, completed_elapsed),
+            ),
+        );
         emit(
             app,
             step,
@@ -1270,6 +1367,8 @@ async fn extract_node_archive(
 // ─── npm install with registry fallback ───────────────────────────────────────
 
 const NPM_INACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+const NPM_SLOW_FETCH_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(90);
+const NPM_DIAGNOSTIC_LINE_LIMIT: usize = 24;
 
 const NPM_NOISY_LOG_PREFIXES: &[&str] = &["npm verbose", "npm sill", "npm timing", "npm notice"];
 
@@ -1282,22 +1381,33 @@ const NPM_SECRET_MARKERS: &[&str] = &[
     "apikey",
 ];
 
+fn npm_log_line_is_noisy(line: &str) -> bool {
+    let lowercase = line.trim().to_ascii_lowercase();
+    NPM_NOISY_LOG_PREFIXES
+        .iter()
+        .any(|prefix| lowercase.starts_with(prefix))
+}
+
 /// Keep npm's verbose stream available for inactivity detection without
-/// forwarding internal chatter or credentials into the setup console.
+/// forwarding internal chatter or credentials into the primary setup console.
 fn npm_log_line_for_display(line: &str) -> Option<String> {
+    if npm_log_line_is_noisy(line) {
+        return None;
+    }
+    npm_log_line_redacted(line)
+}
+
+/// Redact credentials/registry URLs from an npm log line without dropping it
+/// for noise. Used for the raw diagnostic console, which intentionally shows
+/// everything (including `npm verbose`/`sill`/`timing`) so a slow-but-alive
+/// install is visibly still doing something, never just silently.
+fn npm_log_line_redacted(line: &str) -> Option<String> {
     let line = line.trim();
     if line.is_empty() {
         return None;
     }
 
     let lowercase = line.to_ascii_lowercase();
-    if NPM_NOISY_LOG_PREFIXES
-        .iter()
-        .any(|prefix| lowercase.starts_with(prefix))
-    {
-        return None;
-    }
-
     if NPM_SECRET_MARKERS
         .iter()
         .any(|marker| lowercase.contains(marker))
@@ -1335,10 +1445,129 @@ fn npm_log_line_for_display(line: &str) -> Option<String> {
     }
 }
 
+fn npm_fetch_duration_ms(line: &str) -> Option<u64> {
+    if !line.to_ascii_lowercase().contains("npm http fetch") {
+        return None;
+    }
+    line.split_whitespace().rev().find_map(|token| {
+        token
+            .strip_suffix("ms")
+            .and_then(|value| value.parse::<u64>().ok())
+    })
+}
+
+#[derive(Default)]
+struct NpmFetchMetrics {
+    requests: u64,
+    cache_hits: u64,
+    cache_misses: u64,
+    total_duration_ms: u128,
+    slowest_duration_ms: u64,
+    slow_requests: u64,
+}
+
+type SharedNpmFetchMetrics = Arc<Mutex<NpmFetchMetrics>>;
+
+fn observe_npm_fetch(
+    line: &str,
+    source_label: &str,
+    slow_fetch_tx: &tokio::sync::watch::Sender<Option<String>>,
+    slow_fetch_triggered: &AtomicBool,
+    metrics: &SharedNpmFetchMetrics,
+) {
+    let Some(duration_ms) = npm_fetch_duration_ms(line) else {
+        return;
+    };
+    {
+        let lowercase = line.to_ascii_lowercase();
+        let mut metrics = metrics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        metrics.requests += 1;
+        metrics.total_duration_ms += duration_ms as u128;
+        metrics.slowest_duration_ms = metrics.slowest_duration_ms.max(duration_ms);
+        if lowercase.contains("cache hit") {
+            metrics.cache_hits += 1;
+        } else if lowercase.contains("cache miss") {
+            metrics.cache_misses += 1;
+        }
+        if duration_ms >= NPM_SLOW_FETCH_THRESHOLD.as_millis() as u64 {
+            metrics.slow_requests += 1;
+        }
+    }
+    if duration_ms < NPM_SLOW_FETCH_THRESHOLD.as_millis() as u64
+        || slow_fetch_triggered.swap(true, Ordering::AcqRel)
+    {
+        return;
+    }
+    let reason = format!(
+        "{} npm tarball request took {}ms (slow-source threshold: {}s)",
+        source_label,
+        duration_ms,
+        NPM_SLOW_FETCH_THRESHOLD.as_secs()
+    );
+    let _ = slow_fetch_tx.send(Some(reason));
+}
+
+fn npm_fetch_summary(source_label: &str, metrics: &SharedNpmFetchMetrics) -> Option<String> {
+    let metrics = metrics
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if metrics.requests == 0 {
+        return None;
+    }
+    let average_ms = metrics.total_duration_ms / metrics.requests as u128;
+    Some(format!(
+        "npm network summary for {source_label}: requests={}, cache hits={}, cache misses={}, average={}ms, slowest={}ms, requests >= {}s={}",
+        metrics.requests,
+        metrics.cache_hits,
+        metrics.cache_misses,
+        average_ms,
+        metrics.slowest_duration_ms,
+        NPM_SLOW_FETCH_THRESHOLD.as_secs(),
+        metrics.slow_requests,
+    ))
+}
+
+fn emit_npm_fetch_summary(
+    app: &tauri::AppHandle,
+    step: &str,
+    source_label: &str,
+    metrics: &SharedNpmFetchMetrics,
+    progress: f64,
+) {
+    if let Some(summary) = npm_fetch_summary(source_label, metrics) {
+        emit_diagnostic(app, step, &summary, progress);
+    }
+}
+
+type NpmDiagnostics = Arc<Mutex<Vec<String>>>;
+
+fn record_npm_diagnostic(diagnostics: &NpmDiagnostics, line: &str) {
+    let mut lines = diagnostics
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if lines.last().is_some_and(|last| last == line) {
+        return;
+    }
+    if lines.len() == NPM_DIAGNOSTIC_LINE_LIMIT {
+        lines.remove(0);
+    }
+    lines.push(line.to_owned());
+}
+
+fn npm_diagnostic_text(diagnostics: &NpmDiagnostics) -> String {
+    diagnostics
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .join(" | ")
+}
+
 enum NpmWaitResult {
     Exited(std::io::Result<std::process::ExitStatus>),
     Inactive,
     DeadlineExceeded,
+    SlowSource(String),
 }
 
 struct NpmOutputTasks {
@@ -1396,9 +1625,28 @@ async fn stop_npm_process(
     }
 }
 
+#[cfg(test)]
 async fn wait_for_process_activity(
     child: &mut tokio::process::Child,
     activity: &mut tokio::sync::watch::Receiver<u64>,
+    inactivity_timeout: std::time::Duration,
+    deadline: std::time::Instant,
+) -> NpmWaitResult {
+    let (_slow_fetch_tx, mut slow_fetch_rx) = tokio::sync::watch::channel(None);
+    wait_for_process_activity_with_slow_signal(
+        child,
+        activity,
+        &mut slow_fetch_rx,
+        inactivity_timeout,
+        deadline,
+    )
+    .await
+}
+
+async fn wait_for_process_activity_with_slow_signal(
+    child: &mut tokio::process::Child,
+    activity: &mut tokio::sync::watch::Receiver<u64>,
+    slow_fetch: &mut tokio::sync::watch::Receiver<Option<String>>,
     inactivity_timeout: std::time::Duration,
     deadline: std::time::Instant,
 ) -> NpmWaitResult {
@@ -1415,6 +1663,13 @@ async fn wait_for_process_activity(
         tokio::select! {
             status = &mut wait => return NpmWaitResult::Exited(status),
             _ = &mut deadline_wait => return NpmWaitResult::DeadlineExceeded,
+            changed = slow_fetch.changed() => {
+                if changed.is_ok() {
+                    if let Some(reason) = slow_fetch.borrow().clone() {
+                        return NpmWaitResult::SlowSource(reason);
+                    }
+                }
+            }
             changed = activity.changed() => {
                 if changed.is_err() {
                     return NpmWaitResult::Exited(wait.await);
@@ -1473,6 +1728,35 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         .map(npm_registry::NpmPackageSource::label)
         .collect::<Vec<_>>()
         .join(" -> ");
+    let cache_directory = paths::configured_npm_cache_dir()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "npm default cache".to_string());
+    emit_diagnostic(
+        app,
+        step,
+        &format!(
+            "npm install context: platform={}/{}, node={}, npm-cli={}, prefix={}, cache={}, force={}",
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            npm.node().display(),
+            npm.npm_cli().display(),
+            global_prefix.display(),
+            cache_directory,
+            force,
+        ),
+        prog_start,
+    );
+    emit_diagnostic(
+        app,
+        step,
+        &format!(
+            "npm network policy: fetch-retries=2, fetch-timeout=120000ms, slow-source-threshold={}s, inactivity-timeout={}s, transaction-deadline={}s",
+            NPM_SLOW_FETCH_THRESHOLD.as_secs(),
+            NPM_INACTIVITY_TIMEOUT.as_secs(),
+            DEPENDENCY_INSTALL_DEADLINE.as_secs(),
+        ),
+        prog_start,
+    );
     emit(
         app,
         step,
@@ -1481,6 +1765,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             registry_order,
             target.version(),
         ),
+        prog_start,
+    );
+    emit(
+        app,
+        step,
+        &format!("npm source diagnostics: {}", target.source_diagnostic()),
         prog_start,
     );
 
@@ -1511,6 +1801,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             )
         })?;
         let reg_label = source.label();
+        let attempt_started = std::time::Instant::now();
         emit(
             app,
             step,
@@ -1561,7 +1852,19 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             }
         };
         let child_pid = child.id();
+        let process_label = format!("npm-attempt-{}", reg_idx + 1);
+        record_process_started(
+            app,
+            step,
+            &process_label,
+            child_pid,
+            &format!("npm install via {reg_label}"),
+        );
         let (activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
+        let (slow_fetch_tx, mut slow_fetch_rx) = tokio::sync::watch::channel(None::<String>);
+        let slow_fetch_triggered = Arc::new(AtomicBool::new(false));
+        let fetch_metrics = Arc::new(Mutex::new(NpmFetchMetrics::default()));
+        let diagnostics = Arc::new(Mutex::new(Vec::new()));
 
         // Stream stdout to progress events so the user sees live npm output
         let prog_live = prog_start + (prog_end - prog_start) * 0.4;
@@ -1569,6 +1872,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let app_c = app.clone();
             let step_c = step.to_string();
             let activity_tx = activity_tx.clone();
+            let slow_fetch_tx = slow_fetch_tx.clone();
+            let slow_fetch_triggered = Arc::clone(&slow_fetch_triggered);
+            let fetch_metrics = Arc::clone(&fetch_metrics);
+            let source_label = reg_label.clone();
+            let diagnostics = Arc::clone(&diagnostics);
+            let process_label = process_label.clone();
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stdout).lines();
@@ -1577,11 +1886,40 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     .await
                     .map_err(|error| format!("Failed to read npm stdout: {error}"))?
                 {
+                    record_process_output(&app_c, &step_c, &process_label, "stdout", &line);
                     activity_tx.send_modify(|sequence| *sequence += 1);
-                    let Some(line) = npm_log_line_for_display(&line) else {
-                        continue;
-                    };
-                    emit(&app_c, &step_c, &format!("npm › {}", line), prog_live);
+                    observe_npm_fetch(
+                        &line,
+                        &source_label,
+                        &slow_fetch_tx,
+                        &slow_fetch_triggered,
+                        &fetch_metrics,
+                    );
+                    match npm_log_line_for_display(&line) {
+                        Some(display_line) => {
+                            record_npm_diagnostic(&diagnostics, &display_line);
+                            emit(
+                                &app_c,
+                                &step_c,
+                                &format!("npm › {}", display_line),
+                                prog_live,
+                            );
+                        }
+                        // Noisy lines (npm verbose/sill/timing/notice) are dropped from
+                        // the primary progress stream, but a raw diagnostic console
+                        // still needs them to show a slow-but-alive install is doing
+                        // something, not just silently stuck.
+                        None => {
+                            if let Some(raw_line) = npm_log_line_redacted(&line) {
+                                emit_diagnostic(
+                                    &app_c,
+                                    &step_c,
+                                    &format!("npm » {}", raw_line),
+                                    prog_live,
+                                );
+                            }
+                        }
+                    }
                 }
                 Ok(())
             })
@@ -1592,6 +1930,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let step_e = step.to_string();
             let tar_warning_count_e = Arc::clone(&tar_warning_count);
             let activity_tx = activity_tx.clone();
+            let slow_fetch_tx = slow_fetch_tx.clone();
+            let slow_fetch_triggered = Arc::clone(&slow_fetch_triggered);
+            let fetch_metrics = Arc::clone(&fetch_metrics);
+            let source_label = reg_label.clone();
+            let diagnostics = Arc::clone(&diagnostics);
+            let process_label = process_label.clone();
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stderr).lines();
@@ -1600,19 +1944,46 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     .await
                     .map_err(|error| format!("Failed to read npm stderr: {error}"))?
                 {
+                    record_process_output(&app_e, &step_e, &process_label, "stderr", &line);
                     activity_tx.send_modify(|sequence| *sequence += 1);
-                    let Some(line) = npm_log_line_for_display(&line) else {
-                        continue;
-                    };
-                    if line.contains("TAR_ENTRY_ERROR") && line.contains("ENOENT") {
-                        let seen = tar_warning_count_e.fetch_add(1, Ordering::Relaxed);
-                        // Preserve the first diagnostic but avoid flooding the
-                        // setup UI with hundreds of identical npm warnings.
-                        if seen > 0 {
-                            continue;
+                    observe_npm_fetch(
+                        &line,
+                        &source_label,
+                        &slow_fetch_tx,
+                        &slow_fetch_triggered,
+                        &fetch_metrics,
+                    );
+                    match npm_log_line_for_display(&line) {
+                        Some(display_line) => {
+                            if display_line.contains("TAR_ENTRY_ERROR")
+                                && display_line.contains("ENOENT")
+                            {
+                                let seen = tar_warning_count_e.fetch_add(1, Ordering::Relaxed);
+                                // Preserve the first diagnostic but avoid flooding the
+                                // setup UI with hundreds of identical npm warnings.
+                                if seen > 0 {
+                                    continue;
+                                }
+                            }
+                            record_npm_diagnostic(&diagnostics, &display_line);
+                            emit(
+                                &app_e,
+                                &step_e,
+                                &format!("npm › {}", display_line),
+                                prog_live,
+                            );
+                        }
+                        None => {
+                            if let Some(raw_line) = npm_log_line_redacted(&line) {
+                                emit_diagnostic(
+                                    &app_e,
+                                    &step_e,
+                                    &format!("npm » {}", raw_line),
+                                    prog_live,
+                                );
+                            }
                         }
                     }
-                    emit(&app_e, &step_e, &format!("npm › {}", line), prog_live);
                 }
                 Ok(())
             })
@@ -1645,9 +2016,10 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 }
             }
         });
-        let wait_result = wait_for_process_activity(
+        let wait_result = wait_for_process_activity_with_slow_signal(
             &mut child,
             &mut activity_rx,
+            &mut slow_fetch_rx,
             NPM_INACTIVITY_TIMEOUT,
             deadline,
         )
@@ -1660,17 +2032,51 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         };
         let status = match wait_result {
             NpmWaitResult::Exited(Ok(status)) => {
-                output.finish().await.map_err(|error| {
-                    format!("npm exited, but its output streams did not finish cleanly: {error}")
-                })?;
+                if let Err(error) = output.finish().await {
+                    record_process_finished(
+                        app,
+                        step,
+                        &process_label,
+                        child_pid,
+                        status.code().map(i64::from),
+                        attempt_started.elapsed(),
+                    );
+                    return Err(format!(
+                        "npm exited, but its output streams did not finish cleanly: {error}"
+                    ));
+                }
+                record_process_finished(
+                    app,
+                    step,
+                    &process_label,
+                    child_pid,
+                    status.code().map(i64::from),
+                    attempt_started.elapsed(),
+                );
+                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
                 if std::time::Instant::now() >= deadline {
                     return Err("npm install exceeded the 30-minute dependency deadline".into());
                 }
                 status
             }
             NpmWaitResult::Exited(Err(e)) => {
-                last_err = format!("npm process error: {}", e);
-                if let Err(cleanup_error) = stop_npm_process(&mut child, child_pid, output).await {
+                let diagnostic = npm_diagnostic_text(&diagnostics);
+                last_err = if diagnostic.is_empty() {
+                    format!("npm process error: {e}")
+                } else {
+                    format!("npm process error: {e}; {diagnostic}")
+                };
+                let cleanup = stop_npm_process(&mut child, child_pid, output).await;
+                record_process_finished(
+                    app,
+                    step,
+                    &process_label,
+                    child_pid,
+                    None,
+                    attempt_started.elapsed(),
+                );
+                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
+                if let Err(cleanup_error) = cleanup {
                     return Err(format!(
                         "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
                     ));
@@ -1688,15 +2094,66 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 }
                 continue;
             }
+            NpmWaitResult::SlowSource(reason) => {
+                let diagnostic = npm_diagnostic_text(&diagnostics);
+                last_err = if diagnostic.is_empty() {
+                    reason.clone()
+                } else {
+                    format!("{reason}; {diagnostic}")
+                };
+                let cleanup = stop_npm_process(&mut child, child_pid, output).await;
+                record_process_finished(
+                    app,
+                    step,
+                    &process_label,
+                    child_pid,
+                    None,
+                    attempt_started.elapsed(),
+                );
+                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
+                if let Err(cleanup_error) = cleanup {
+                    return Err(format!(
+                        "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
+                    ));
+                }
+                if reg_idx + 1 < total_regs {
+                    emit(
+                        app,
+                        step,
+                        &format!(
+                            "{} detected a slow transfer; switching to the fallback source immediately...",
+                            reg_label
+                        ),
+                        prog_start,
+                    );
+                }
+                continue;
+            }
             timeout @ (NpmWaitResult::Inactive | NpmWaitResult::DeadlineExceeded) => {
                 let deadline_expired = matches!(timeout, NpmWaitResult::DeadlineExceeded)
                     || std::time::Instant::now() >= deadline;
-                last_err = if deadline_expired {
-                    "npm install exceeded the 30-minute dependency deadline".into()
+                let diagnostic = npm_diagnostic_text(&diagnostics);
+                let base_error = if deadline_expired {
+                    "npm install exceeded the 30-minute dependency deadline"
                 } else {
-                    "npm install produced no child-process output for 10 minutes".into()
+                    "npm install produced no child-process output for 10 minutes"
                 };
-                if let Err(cleanup_error) = stop_npm_process(&mut child, child_pid, output).await {
+                last_err = if diagnostic.is_empty() {
+                    base_error.into()
+                } else {
+                    format!("{base_error}; {diagnostic}")
+                };
+                let cleanup = stop_npm_process(&mut child, child_pid, output).await;
+                record_process_finished(
+                    app,
+                    step,
+                    &process_label,
+                    child_pid,
+                    None,
+                    attempt_started.elapsed(),
+                );
+                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
+                if let Err(cleanup_error) = cleanup {
                     return Err(format!(
                         "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
                     ));
@@ -1720,6 +2177,16 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         };
 
         if status.success() {
+            emit(
+                app,
+                step,
+                &format!(
+                    "{} npm process completed in {}s; validating the staged package...",
+                    reg_label,
+                    attempt_started.elapsed().as_secs()
+                ),
+                prog_live,
+            );
             let tar_warnings = tar_warning_count.load(Ordering::Relaxed);
             if tar_warnings > 1 {
                 emit(
@@ -1781,7 +2248,23 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             ));
         }
 
-        last_err = format!("npm 退出码 {}", status.code().unwrap_or(-1));
+        let diagnostic = npm_diagnostic_text(&diagnostics);
+        last_err = if diagnostic.is_empty() {
+            format!("npm 退出码 {}", status.code().unwrap_or(-1))
+        } else {
+            format!("npm 退出码 {}: {}", status.code().unwrap_or(-1), diagnostic)
+        };
+        emit(
+            app,
+            step,
+            &format!(
+                "{} npm process exited after {}s: {}",
+                reg_label,
+                attempt_started.elapsed().as_secs(),
+                last_err
+            ),
+            prog_start,
+        );
         if reg_idx + 1 < total_regs {
             emit(
                 app,
@@ -2096,6 +2579,118 @@ fn ready_node_runtime_message(runtime: &crate::commands::system::NodeRuntimeCont
     )
 }
 
+/// Windows package managers can exit before the MSI has published its PATH
+/// and registry changes. Give the selected runtime a short, bounded settle
+/// window before deciding that the channel failed or starting another
+/// installer. This keeps one install transaction serialized without hiding a
+/// genuinely incompatible package for more than a few seconds.
+#[cfg(windows)]
+async fn wait_for_node_runtime_settle(
+    app: &tauri::AppHandle,
+    requirement: &NodeRuntimeRequirement,
+    budget: DependencyInstallBudget,
+    operation: &DependencyInstallOperation,
+) -> Result<crate::commands::system::NodeRuntimeContract, WindowsInstallerFailure> {
+    let remaining = budget.remaining().unwrap_or_default();
+    let deadline = std::time::Instant::now() + remaining.min(WINDOWS_RUNTIME_SETTLE_TIMEOUT);
+    let mut last_error = None;
+
+    loop {
+        operation
+            .ensure_active()
+            .map_err(WindowsInstallerFailure::cancelled)?;
+        platform::refresh_process_path_from_registry();
+        match resolve_complete_node_runtime_contract(requirement).await {
+            Ok(runtime) => return Ok(runtime),
+            Err(error) => last_error = Some(error),
+        }
+        let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+            break;
+        };
+        let elapsed = WINDOWS_RUNTIME_SETTLE_TIMEOUT
+            .saturating_sub(remaining)
+            .as_secs();
+        emit_keyed_with_params(
+            app,
+            "node",
+            "Waiting for Windows to publish the installed Node.js runtime…",
+            "setup.node.runtimeSettling",
+            &[("elapsed", &elapsed.to_string())],
+            0.94,
+        );
+        tokio::select! {
+            _ = tokio::time::sleep(remaining.min(PROCESS_HEARTBEAT_INTERVAL)) => {}
+            _ = operation.cancelled() => {
+                return Err(WindowsInstallerFailure::cancelled(
+                    DEPENDENCY_INSTALL_CANCELLED_MESSAGE,
+                ));
+            }
+        }
+    }
+
+    Err(WindowsInstallerFailure::retryable(format!(
+        "Node.js runtime did not become usable after the installer completed: {}",
+        last_error.unwrap_or_else(|| "the installed runtime was not visible".into())
+    )))
+}
+
+#[cfg(windows)]
+async fn wait_for_git_runtime_settle(
+    app: &tauri::AppHandle,
+    budget: DependencyInstallBudget,
+    operation: &DependencyInstallOperation,
+) -> Result<crate::commands::system::GitStatus, WindowsInstallerFailure> {
+    let remaining = budget.remaining().unwrap_or_default();
+    let deadline = std::time::Instant::now() + remaining.min(WINDOWS_RUNTIME_SETTLE_TIMEOUT);
+    let mut last_error = None;
+
+    loop {
+        operation
+            .ensure_active()
+            .map_err(WindowsInstallerFailure::cancelled)?;
+        platform::refresh_process_path_from_registry();
+        match crate::commands::system::check_git().await {
+            Ok(status) if status.available => return Ok(status),
+            Ok(status) => {
+                last_error = Some("git.exe was not detected after the installer completed".into());
+                if let Some(version) = status.version {
+                    last_error = Some(format!(
+                        "detected Git {version}, but its executable contract was incomplete"
+                    ));
+                }
+            }
+            Err(error) => last_error = Some(error),
+        }
+        let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+            break;
+        };
+        let elapsed = WINDOWS_RUNTIME_SETTLE_TIMEOUT
+            .saturating_sub(remaining)
+            .as_secs();
+        emit_keyed_with_params(
+            app,
+            "git",
+            "Waiting for Windows to publish the installed Git runtime…",
+            "setup.git.runtimeSettling",
+            &[("elapsed", &elapsed.to_string())],
+            0.94,
+        );
+        tokio::select! {
+            _ = tokio::time::sleep(remaining.min(PROCESS_HEARTBEAT_INTERVAL)) => {}
+            _ = operation.cancelled() => {
+                return Err(WindowsInstallerFailure::cancelled(
+                    DEPENDENCY_INSTALL_CANCELLED_MESSAGE,
+                ));
+            }
+        }
+    }
+
+    Err(WindowsInstallerFailure::retryable(format!(
+        "Git runtime did not become usable after the installer completed: {}",
+        last_error.unwrap_or_else(|| "git.exe was not visible on the refreshed PATH".into())
+    )))
+}
+
 /// Check the current Node.js runtime against the active setup contract: the
 /// installed package when one exists, otherwise the exact target release.
 #[tauri::command]
@@ -2265,6 +2860,9 @@ async fn install_node_for_requirement_inner(
     )
     .await?;
     operation.ensure_active()?;
+    // Reset only after acquiring the per-tool lock so a queued retry cannot
+    // erase the timeline of an installer that is still running.
+    reset_timeline_log(&app, "node");
 
     #[cfg(windows)]
     let result = {
@@ -2644,28 +3242,52 @@ async fn install_windows_system_node_from_mirrors(
     let msiexec = platform_path("msiexec.exe", "msiexec").ok_or_else(|| {
         WindowsInstallerFailure::retryable("Windows Installer (msiexec) is unavailable")
     })?;
-    let args = [
+    let installer_log = temp_dir.join("node-msi.log");
+    let args = vec![
         std::ffi::OsString::from("/i"),
         installer.into_os_string(),
         std::ffi::OsString::from("/qn"),
         std::ffi::OsString::from("/norestart"),
+        std::ffi::OsString::from("/L*V"),
+        installer_log.clone().into_os_string(),
     ];
-    run_windows_installer(
+    let installer_result = run_windows_installer(
         &msiexec,
         &args,
         budget.process_policy("Node.js MSI installer")?,
         WindowsInstallProgress::new(app, "node", "Node.js", 0.64, 0.92),
         operation,
     )
-    .await?;
+    .await;
+    // Preserve the verbose MSI log regardless of outcome: a slow-but-successful
+    // install still needs its ACTION timestamps to find the real bottleneck.
+    let preserved_log = match preserve_windows_installer_log(app, &installer_log, "node") {
+        Ok(path) => path,
+        Err(error) => {
+            emit_diagnostic(app, "node", &error, 0.92);
+            None
+        }
+    };
+    if let Some(path) = &preserved_log {
+        record_timeline_note(
+            app,
+            "node",
+            &format!("msiexec verbose log preserved at {}", path.display()),
+        );
+    }
+    if let Err(error) = installer_result {
+        let error = match preserved_log {
+            Some(path) => error.with_context(format!("installer log: {}", path.display())),
+            None => error,
+        };
+        return Err(error);
+    }
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
     platform::refresh_process_path_from_registry();
 
-    let installed = resolve_complete_node_runtime_contract(requirement)
-        .await
-        .map_err(WindowsInstallerFailure::retryable)?;
+    let installed = wait_for_node_runtime_settle(app, requirement, budget, operation).await?;
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
@@ -2686,7 +3308,7 @@ async fn install_windows_system_node_with_winget(
     budget: DependencyInstallBudget,
     operation: &DependencyInstallOperation,
 ) -> Result<String, WindowsInstallerFailure> {
-    install_or_upgrade_winget_package(
+    ensure_winget_package(
         app,
         "node",
         "Node.js",
@@ -2699,37 +3321,33 @@ async fn install_windows_system_node_with_winget(
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
     platform::refresh_process_path_from_registry();
-    let mut installed = resolve_complete_node_runtime_contract(requirement).await;
-    operation
-        .ensure_active()
-        .map_err(WindowsInstallerFailure::cancelled)?;
-    if installed.is_err() {
-        emit_keyed(
-            &app,
-            "node",
-            "The LTS channel does not satisfy OpenClaw; trying the current Node.js channel...",
-            "setup.node.systemCurrentInstall",
-            0.55,
-        );
-        install_or_upgrade_winget_package(
-            app,
-            "node",
-            "Node.js",
-            WINGET_NODE_CURRENT_PACKAGE,
-            budget,
-            operation,
-        )
-        .await?;
-        operation
-            .ensure_active()
-            .map_err(WindowsInstallerFailure::cancelled)?;
-        platform::refresh_process_path_from_registry();
-        installed = resolve_complete_node_runtime_contract(requirement).await;
-        operation
-            .ensure_active()
-            .map_err(WindowsInstallerFailure::cancelled)?;
-    }
-    let installed = installed.map_err(WindowsInstallerFailure::retryable)?;
+    let installed = match wait_for_node_runtime_settle(app, requirement, budget, operation).await {
+        Ok(runtime) => runtime,
+        Err(WindowsInstallerFailure::Retryable(_)) => {
+            emit_keyed(
+                &app,
+                "node",
+                "The LTS channel does not satisfy OpenClaw; trying the current Node.js channel...",
+                "setup.node.systemCurrentInstall",
+                0.55,
+            );
+            ensure_winget_package(
+                app,
+                "node",
+                "Node.js",
+                WINGET_NODE_CURRENT_PACKAGE,
+                budget,
+                operation,
+            )
+            .await?;
+            operation
+                .ensure_active()
+                .map_err(WindowsInstallerFailure::cancelled)?;
+            platform::refresh_process_path_from_registry();
+            wait_for_node_runtime_settle(app, requirement, budget, operation).await?
+        }
+        Err(error) => return Err(error),
+    };
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
@@ -2812,6 +3430,18 @@ impl WindowsInstallerFailure {
         Self::CleanupIncomplete(message.into())
     }
 
+    #[cfg(windows)]
+    fn with_context(self, context: impl Into<String>) -> Self {
+        let context = context.into();
+        match self {
+            Self::Retryable(message) => Self::Retryable(format!("{message}; {context}")),
+            Self::Cancelled(message) => Self::Cancelled(format!("{message}; {context}")),
+            Self::CleanupIncomplete(message) => {
+                Self::CleanupIncomplete(format!("{message}; {context}"))
+            }
+        }
+    }
+
     fn permits_fallback(&self) -> bool {
         matches!(self, Self::Retryable(_))
     }
@@ -2855,6 +3485,29 @@ impl WindowsInstallerFailure {
 }
 
 #[cfg(windows)]
+fn preserve_windows_installer_log(
+    app: &tauri::AppHandle,
+    path: &Path,
+    tool: &str,
+) -> Result<Option<PathBuf>, String> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let destination = diagnostic_artifact_path(
+        app,
+        tool,
+        &format!("{}-{}.log", tool.to_ascii_lowercase(), uuid::Uuid::new_v4()),
+    )?;
+    std::fs::copy(path, &destination).map_err(|error| {
+        format!(
+            "Failed to preserve the {tool} native installer log at {}: {error}",
+            destination.display()
+        )
+    })?;
+    Ok(Some(destination))
+}
+
+#[cfg(windows)]
 fn dependency_install_windows_failure(error: String) -> WindowsInstallerFailure {
     if error == DEPENDENCY_INSTALL_CANCELLED_MESSAGE {
         WindowsInstallerFailure::cancelled(error)
@@ -2875,6 +3528,7 @@ struct ElevatedWindowsProcess {
     handle: isize,
     pid: u32,
     completed: bool,
+    exit_code: Option<u32>,
 }
 
 #[cfg(windows)]
@@ -2898,6 +3552,7 @@ impl ElevatedWindowsProcess {
                     ))
                 } else {
                     self.completed = true;
+                    self.exit_code = Some(exit_code);
                     Ok(Some(exit_code))
                 }
             }
@@ -3044,6 +3699,7 @@ async fn launch_elevated_windows_process(
             handle: info.hProcess as isize,
             pid: unsafe { GetProcessId(info.hProcess) },
             completed: false,
+            exit_code: None,
         })
     })
     .await
@@ -3133,26 +3789,72 @@ async fn run_windows_installer(
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
+    progress.report_admin_prompt();
+    let started = std::time::Instant::now();
     let mut process = launch_elevated_windows_process(executable, args, progress.tool).await?;
+    record_process_started(
+        progress.app,
+        progress.step,
+        progress.tool,
+        Some(process.pid),
+        "elevated Windows installer",
+    );
     // ShellExecuteExW may be blocked by the Windows UAC dialog. A cancel
     // request is retained by the coordinator while that OS call is pending;
     // once it yields a process handle, this wait immediately terminates and
     // reaps the installer tree instead of allowing setup to continue.
-    wait_for_elevated_windows_process(&mut process, policy, &progress, operation).await
+    let result =
+        wait_for_elevated_windows_process(&mut process, policy, &progress, operation).await;
+    record_process_finished(
+        progress.app,
+        progress.step,
+        progress.tool,
+        Some(process.pid),
+        process.exit_code.map(i64::from),
+        started.elapsed(),
+    );
+    result
 }
 
 #[cfg(windows)]
 fn collect_process_output<R>(
-    mut reader: R,
+    reader: R,
+    app: tauri::AppHandle,
+    step: String,
+    process: String,
+    stream: &'static str,
+    progress: f64,
 ) -> tokio::task::JoinHandle<Result<Vec<u8>, std::io::Error>>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
-        use tokio::io::AsyncReadExt;
+        use tokio::io::{AsyncBufReadExt, BufReader};
 
+        const CAPTURE_LIMIT: usize = 1024 * 1024;
         let mut bytes = Vec::new();
-        reader.read_to_end(&mut bytes).await?;
+        let mut reader = BufReader::new(reader);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            let read = reader.read_until(b'\n', &mut line).await?;
+            if read == 0 {
+                break;
+            }
+            let remaining = CAPTURE_LIMIT.saturating_sub(bytes.len());
+            bytes.extend_from_slice(&line[..line.len().min(remaining)]);
+            let output = String::from_utf8_lossy(&line);
+            record_process_output(&app, &step, &process, stream, &output);
+            let display = crate::commands::diagnostic_output::sanitize_diagnostic_line(&output);
+            if !display.is_empty() {
+                emit_diagnostic(
+                    &app,
+                    &step,
+                    &format!("winget {stream} › {display}"),
+                    progress,
+                );
+            }
+        }
         Ok(bytes)
     })
 }
@@ -3222,7 +3924,7 @@ impl Drop for WindowsChildTreeCancellationGuard {
 }
 
 #[cfg(windows)]
-async fn install_or_upgrade_winget_package(
+async fn ensure_winget_package(
     app: &tauri::AppHandle,
     step: &str,
     tool: &str,
@@ -3239,41 +3941,35 @@ async fn install_or_upgrade_winget_package(
             "Windows Package Manager (winget) is unavailable. Install the dependency with its standard system installer or select an explicit portable runtime directory in JunQi.",
         ));
     }
+    // `winget upgrade` is not an installation contract: it exits successfully
+    // when the package is absent, already current, or owned by another source.
+    // That was the reason a machine could remain on Node.js 20 after JunQi had
+    // reported a successful LTS operation. Use one idempotent, forced install
+    // and let the caller validate the resulting executable contract before any
+    // channel fallback is considered.
     let progress = WindowsInstallProgress::new(app, step, tool, 0.62, 0.92);
-    match run_winget_package_command(
-        &winget,
-        "upgrade",
-        package_id,
-        budget.process_policy(&format!("winget upgrade for {package_id}"))?,
-        &progress,
-        operation,
-    )
-    .await
-    {
-        Ok(output) if output.status.success() => return Ok(()),
-        Ok(_) | Err(WindowsInstallerFailure::Retryable(_)) => {}
-        Err(error @ WindowsInstallerFailure::Cancelled(_))
-        | Err(error @ WindowsInstallerFailure::CleanupIncomplete(_)) => return Err(error),
-    }
     let install = run_winget_package_command(
         &winget,
-        "install",
         package_id,
         budget.process_policy(&format!("winget install for {package_id}"))?,
         &progress,
         operation,
     )
     .await?;
+    // Persist winget's own output regardless of outcome: a successful-but-slow
+    // install still needs its "Downloading"/"Installing" lines to see where
+    // the time went, and they would otherwise only surface on failure.
+    let diagnostic = windows_package_manager_output(&install);
+    if !diagnostic.is_empty() {
+        record_timeline_note(
+            app,
+            step,
+            &format!("winget install {package_id} output: {diagnostic}"),
+        );
+    }
     if install.status.success() {
         return Ok(());
     }
-    let diagnostic = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&install.stdout).trim(),
-        String::from_utf8_lossy(&install.stderr).trim()
-    )
-    .trim()
-    .to_string();
     Err(WindowsInstallerFailure::retryable(
         if diagnostic.is_empty() {
             format!("winget could not install {package_id}")
@@ -3284,9 +3980,18 @@ async fn install_or_upgrade_winget_package(
 }
 
 #[cfg(windows)]
+fn windows_package_manager_output(output: &std::process::Output) -> String {
+    let raw = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout).trim(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    crate::commands::diagnostic_output::sanitize_diagnostic_text(raw.trim(), 1_200)
+}
+
+#[cfg(windows)]
 async fn run_winget_package_command(
     winget: &str,
-    verb: &str,
     package_id: &str,
     policy: ControlledProcessPolicy,
     progress: &WindowsInstallProgress<'_>,
@@ -3297,10 +4002,13 @@ async fn run_winget_package_command(
         .map_err(WindowsInstallerFailure::cancelled)?;
     let mut command = tokio::process::Command::new(winget);
     command.args([
-        verb,
+        "install",
         "-e",
         "--id",
         package_id,
+        "--force",
+        "--source",
+        "winget",
         "--silent",
         "--disable-interactivity",
         "--accept-source-agreements",
@@ -3313,18 +4021,58 @@ async fn run_winget_package_command(
     platform::configure_background_command(&mut command);
     let mut child = command.spawn().map_err(|error| {
         WindowsInstallerFailure::retryable(format!(
-            "Failed to run winget {verb} for {package_id}: {error}"
+            "Failed to run winget install for {package_id}: {error}"
         ))
     })?;
-    let mut cancellation_guard = WindowsChildTreeCancellationGuard::new(child.id());
-    let stdout_task = child.stdout.take().map(collect_process_output);
-    let stderr_task = child.stderr.take().map(collect_process_output);
+    let pid = child.id();
+    let started = std::time::Instant::now();
+    let process_label = format!("winget-{package_id}");
+    record_process_started(
+        progress.app,
+        progress.step,
+        &process_label,
+        pid,
+        &format!("winget install {package_id}"),
+    );
+    let mut cancellation_guard = WindowsChildTreeCancellationGuard::new(pid);
+    let stdout_task = child.stdout.take().map(|stdout| {
+        collect_process_output(
+            stdout,
+            progress.app.clone(),
+            progress.step.to_owned(),
+            process_label.clone(),
+            "stdout",
+            progress.progress(),
+        )
+    });
+    let stderr_task = child.stderr.take().map(|stderr| {
+        collect_process_output(
+            stderr,
+            progress.app.clone(),
+            progress.step.to_owned(),
+            process_label.clone(),
+            "stderr",
+            progress.progress(),
+        )
+    });
     let status = wait_for_controlled_child(&mut child, policy, Some(operation), || {
         progress.report_package_manager_wait();
     })
     .await;
     let stdout = finish_process_output("stdout", stdout_task).await;
     let stderr = finish_process_output("stderr", stderr_task).await;
+    record_process_finished(
+        progress.app,
+        progress.step,
+        &process_label,
+        pid,
+        status
+            .as_ref()
+            .ok()
+            .and_then(|status| status.code())
+            .map(i64::from),
+        started.elapsed(),
+    );
 
     // A root winget process can exit while an installer descendant still owns
     // one of its inherited pipes. Treat that as incomplete cleanup before
@@ -3341,7 +4089,7 @@ async fn run_winget_package_command(
         ));
     }
     let status = status.map_err(|error| {
-        WindowsInstallerFailure::from_wait_error(&format!("winget {verb} for {package_id}"), error)
+        WindowsInstallerFailure::from_wait_error(&format!("winget install for {package_id}"), error)
     })?;
     let stdout = stdout.map_err(WindowsInstallerFailure::from_output_failure)?;
     let stderr = stderr.map_err(WindowsInstallerFailure::from_output_failure)?;
@@ -3534,6 +4282,9 @@ async fn install_git_impl_inner(
     .await?;
     operation.ensure_active()?;
     let step = "git";
+    // The lock is held before this reset, so concurrent setup attempts retain
+    // the active installer timeline until its transaction has finished.
+    reset_timeline_log(&app, step);
 
     // ① Detect
     emit_keyed(
@@ -3644,16 +4395,7 @@ async fn install_windows_system_git(
         0.60,
     );
     operation.ensure_active()?;
-    match install_or_upgrade_winget_package(
-        &app,
-        "git",
-        "Git",
-        WINGET_GIT_PACKAGE,
-        budget,
-        operation,
-    )
-    .await
-    {
+    match ensure_winget_package(&app, "git", "Git", WINGET_GIT_PACKAGE, budget, operation).await {
         Ok(()) => {}
         Err(error @ WindowsInstallerFailure::Cancelled(_))
         | Err(error @ WindowsInstallerFailure::CleanupIncomplete(_)) => {
@@ -3667,8 +4409,9 @@ async fn install_windows_system_git(
         }
     }
     operation.ensure_active()?;
-    platform::refresh_process_path_from_registry();
-    let installed = crate::commands::system::check_git().await?;
+    let installed = wait_for_git_runtime_settle(&app, budget, operation)
+        .await
+        .map_err(WindowsInstallerFailure::into_message)?;
     operation.ensure_active()?;
     if !installed.available {
         return Err(
@@ -3730,25 +4473,49 @@ async fn install_windows_system_git_from_mirrors(
     .await
     .map_err(dependency_install_windows_failure)?;
 
-    let args = [
+    let installer_log = temp_dir.join("git-installer.log");
+    let args = vec![
         std::ffi::OsString::from("/VERYSILENT"),
         std::ffi::OsString::from("/NORESTART"),
         std::ffi::OsString::from("/SUPPRESSMSGBOXES"),
         std::ffi::OsString::from("/SP-"),
+        std::ffi::OsString::from(format!("/LOG={}", installer_log.display())),
     ];
-    run_windows_installer(
+    let installer_result = run_windows_installer(
         &installer,
         &args,
         budget.process_policy("Git installer")?,
         WindowsInstallProgress::new(app, "git", "Git", 0.64, 0.92),
         operation,
     )
-    .await?;
+    .await;
+    // Preserve the Inno Setup log regardless of outcome: a slow-but-successful
+    // install still needs its timestamps to find the real bottleneck.
+    let preserved_log = match preserve_windows_installer_log(&app, &installer_log, "git") {
+        Ok(path) => path,
+        Err(error) => {
+            emit_diagnostic(&app, "git", &error, 0.92);
+            None
+        }
+    };
+    if let Some(path) = &preserved_log {
+        record_timeline_note(
+            &app,
+            "git",
+            &format!("Inno Setup log preserved at {}", path.display()),
+        );
+    }
+    if let Err(error) = installer_result {
+        let error = match preserved_log {
+            Some(path) => error.with_context(format!("installer log: {}", path.display())),
+            None => error,
+        };
+        return Err(error);
+    }
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
-    platform::refresh_process_path_from_registry();
-    let installed = crate::commands::system::check_git().await?;
+    let installed = wait_for_git_runtime_settle(app, budget, operation).await?;
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
@@ -4681,6 +5448,7 @@ async fn install_openclaw_impl_inner(
     let _operation_guard = operation_gate.lock_owned().await;
     let install_lock = OPENCLAW_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(()));
     let _install_guard = install_lock.lock().await;
+    reset_timeline_log(&app, step);
     let mode = mode.for_current_storage();
     let mut relocation = matches!(mode, OpenclawInstallMode::Relocate)
         .then(OpenclawRelocationRequest::capture)
@@ -4972,190 +5740,6 @@ async fn install_openclaw_impl_inner(
     ))
 }
 
-/// 准备 Gateway — 在 install_openclaw 完成后由前端调用。
-///
-/// 输出 step="gateway" 的 setup-progress 事件，前端会拿这些 message
-/// 当作实时状态文本展示。这一组文案与 "正在准备 OpenClaw Gateway…
-/// 检测、连接并同步运行时状态…" 的形态保持一致——逐条细分、可读、
-/// 进度平滑推进。
-#[tauri::command]
-pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
-    paths::validate_runtime_mode(paths::OpenClawRuntimeMode::Native)?;
-    if matches!(
-        paths::active_runtime_mode(),
-        paths::OpenClawRuntimeMode::Docker
-    ) {
-        return Err(
-            "Docker is the selected OpenClaw runtime. Start its container instead of preparing a native Gateway."
-                .to_string(),
-        );
-    }
-    crate::commands::system::ensure_openclaw_relocation_complete()?;
-    let step = "gateway";
-
-    // ⓘ Stage 1: detect local runtime
-    emit_keyed(
-        &app,
-        step,
-        "Preparing OpenClaw Gateway...",
-        "setup.gateway.preparing",
-        0.05,
-    );
-    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
-
-    emit_keyed(
-        &app,
-        step,
-        "Detecting local runtime (Node.js / npm / openclaw binary)...",
-        "setup.gateway.detectRuntime",
-        0.12,
-    );
-
-    let node_status = crate::commands::system::check_node().await.ok();
-    let node_ok = node_status.as_ref().is_some_and(|status| status.available);
-    let openclaw_status = crate::commands::system::detect_openclaw().await;
-    let oclaw_ok = openclaw_status.installed;
-    let summary = format!(
-        "Runtime check done: {} {}",
-        if node_ok {
-            "Node.js ✓,"
-        } else {
-            "Node.js ✗,"
-        },
-        if oclaw_ok {
-            "openclaw ✓"
-        } else {
-            "openclaw ✗"
-        },
-    );
-    emit_keyed(&app, step, &summary, "setup.gateway.runtimeSummary", 0.22);
-    if !oclaw_ok {
-        return Err(format!(
-            "OpenClaw is not ready for Gateway startup: {}",
-            openclaw_status
-                .error
-                .unwrap_or_else(|| "validation failed".into())
-        ));
-    }
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-
-    // ⓘ Stage 2: config port probing
-    let config_path = paths::config_path();
-    emit_keyed(
-        &app,
-        step,
-        &format!("Reading gateway port from {}...", config_path.display()),
-        "setup.gateway.readPort",
-        0.32,
-    );
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-
-    let port = configured_gateway_port(&config_path);
-    emit_keyed(
-        &app,
-        step,
-        &format!(
-            "Target port = {} (source: openclaw.json or OpenClaw default)",
-            port
-        ),
-        "setup.gateway.portResolved",
-        0.42,
-    );
-    if paths::pending_gateway_service_rebind().is_some() {
-        let binary = openclaw_status
-            .path
-            .as_deref()
-            .map(PathBuf::from)
-            .ok_or("A pending Gateway service rebind has no OpenClaw binary")?;
-        let node = node_status
-            .filter(|status| status.available)
-            .ok_or("A pending Gateway service rebind has no compatible Node.js runtime")?;
-        let runtime = crate::commands::system::native_openclaw_runtime(binary, &node)?;
-        let search_path = crate::commands::system::openclaw_search_path();
-        emit_keyed(
-            &app,
-            step,
-            "Rebinding the installed Gateway service to the selected Node.js/npm/config locations...",
-            "setup.gateway.rebindService",
-            0.46,
-        );
-        crate::commands::gateway_service::reconcile_pending_gateway_service(
-            &runtime,
-            &paths::desktop_dir(),
-            &config_path,
-            port,
-            Some(&search_path),
-        )
-        .await?;
-    }
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-
-    // ⓘ Stage 3: probe existing Gateway process
-    emit_keyed(
-        &app,
-        step,
-        &format!(
-            "Probing {}:{} for existing Gateway listener...",
-            crate::commands::config::default_gateway_host(),
-            port,
-        ),
-        "setup.gateway.probe",
-        0.52,
-    );
-
-    let reachable = crate::commands::gateway::gateway_matches_config(port, &config_path).await;
-    if reachable {
-        emit_keyed(
-            &app,
-            step,
-            &format!(
-                "OpenClaw Gateway health check passed on port {}; skipping start",
-                port
-            ),
-            "setup.gateway.alreadyUp",
-            0.92,
-        );
-        emit_keyed(&app, step, "Gateway is ready ✓", "setup.gateway.ready", 1.0);
-    } else {
-        emit_keyed(
-            &app,
-            step,
-            "No Gateway detected - the frontend launcher will start it",
-            "setup.gateway.willStart",
-            0.62,
-        );
-        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-
-        emit_keyed(
-            &app,
-            step,
-            "Syncing runtime state (AGENTS / SESSIONS / HEALTH)...",
-            "setup.gateway.syncState",
-            0.78,
-        );
-        emit_keyed(
-            &app,
-            step,
-            "Gateway prepared; starting service next...",
-            "setup.gateway.preparedToStart",
-            1.0,
-        );
-    }
-
-    Ok(format!("Gateway prepared on port {}", port))
-}
-
-/// Read only the Gateway port from an existing OpenClaw configuration.  The
-/// configuration contract is JSON5, so all setup consumers share the same
-/// parser and shape validation as the configuration editor and runtime.
-fn configured_gateway_port(config_path: &Path) -> u16 {
-    std::fs::read_to_string(config_path)
-        .ok()
-        .and_then(|raw| crate::commands::config::parse_openclaw_config(&raw).ok())
-        .and_then(|config| crate::commands::config::gateway_port_from_config(&config))
-        .unwrap_or_else(crate::commands::config::default_gateway_port)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5171,25 +5755,6 @@ mod tests {
         ));
         std::fs::create_dir_all(&path).unwrap();
         path
-    }
-
-    #[test]
-    fn configured_gateway_port_accepts_openclaw_json5() {
-        let root = test_dir("gateway-json5-port");
-        let config = root.join("openclaw.json");
-        std::fs::write(
-            &config,
-            r#"
-            {
-              // The official config format permits comments and trailing commas.
-              gateway: { port: 19123, },
-            }
-            "#,
-        )
-        .unwrap();
-
-        assert_eq!(configured_gateway_port(&config), 19123);
-        let _ = std::fs::remove_dir_all(root);
     }
 
     fn write_windows_openclaw(prefix: &Path, version: &str) {
@@ -5249,6 +5814,78 @@ mod tests {
     }
 
     #[test]
+    fn npm_log_line_redacted_keeps_noisy_lines_for_the_raw_diagnostic_console() {
+        // The raw console must show verbose/sill/timing lines that the
+        // primary progress stream drops, but never at the cost of leaking
+        // credentials embedded in a registry URL.
+        assert_eq!(
+            npm_log_line_redacted("npm verbose cli /usr/bin/node /usr/bin/npm"),
+            Some("npm verbose cli /usr/bin/node /usr/bin/npm".into())
+        );
+        assert_eq!(
+            npm_log_line_redacted("npm timing reifyNode:node_modules/openclaw Completed in 45ms"),
+            Some("npm timing reifyNode:node_modules/openclaw Completed in 45ms".into())
+        );
+        assert_eq!(
+            npm_log_line_redacted("npm sill fetch https://user:secret@example.com/pkg"),
+            Some("npm sill fetch [registry URL redacted]".into())
+        );
+        assert_eq!(
+            npm_log_line_redacted("npm verbose authorization: Bearer secret-value"),
+            Some("[authentication details redacted]".into())
+        );
+        assert!(npm_log_line_is_noisy("npm verbose cli ..."));
+        assert!(!npm_log_line_is_noisy("npm http fetch GET 200 ..."));
+    }
+
+    #[test]
+    fn npm_fetch_duration_parser_reads_only_http_fetch_timings() {
+        assert_eq!(
+            npm_fetch_duration_ms(
+                "npm http fetch GET 200 https://cdn.example.test/package.tgz 156841ms (cache miss)"
+            ),
+            Some(156_841)
+        );
+        assert_eq!(
+            npm_fetch_duration_ms("npm warn deprecated package@1.0.0"),
+            None
+        );
+    }
+
+    #[test]
+    fn slow_npm_fetch_signal_is_emitted_once_without_leaking_urls() {
+        let (tx, rx) = tokio::sync::watch::channel(None::<String>);
+        let triggered = AtomicBool::new(false);
+        let metrics = Arc::new(Mutex::new(NpmFetchMetrics::default()));
+        let line = "npm http fetch GET 200 https://user:secret@example.test/package.tgz 91000ms (cache miss)";
+
+        observe_npm_fetch(
+            line,
+            "npmmirror.com (China mirror)",
+            &tx,
+            &triggered,
+            &metrics,
+        );
+        observe_npm_fetch(
+            line,
+            "npmmirror.com (China mirror)",
+            &tx,
+            &triggered,
+            &metrics,
+        );
+
+        let reason = rx.borrow().clone().expect("slow source signal");
+        assert!(reason.contains("91000ms"));
+        assert!(!reason.contains("example.test"));
+        assert!(triggered.load(Ordering::Acquire));
+        let summary = npm_fetch_summary("npmmirror.com (China mirror)", &metrics).unwrap();
+        assert!(summary.contains("requests=2"));
+        assert!(summary.contains("cache misses=2"));
+        assert!(summary.contains("slowest=91000ms"));
+        assert!(!summary.contains("example.test"));
+    }
+
+    #[test]
     fn npm_log_filter_redacts_credentials() {
         assert_eq!(
             npm_log_line_for_display("npm error authorization: Bearer secret-value"),
@@ -5265,6 +5902,24 @@ mod tests {
         let output = npm_log_line_for_display(&"x".repeat(1_500)).expect("line remains visible");
         assert_eq!(output.chars().count(), 1_001);
         assert!(output.ends_with('…'));
+    }
+
+    #[test]
+    fn npm_failure_diagnostics_are_bounded_and_already_redacted() {
+        let diagnostics = Arc::new(Mutex::new(Vec::new()));
+        for index in 0..(NPM_DIAGNOSTIC_LINE_LIMIT + 3) {
+            let line =
+                npm_log_line_for_display(&format!("npm error spawn git ENOENT {index}")).unwrap();
+            record_npm_diagnostic(&diagnostics, &line);
+        }
+        let text = npm_diagnostic_text(&diagnostics);
+        assert_eq!(text.split(" | ").count(), NPM_DIAGNOSTIC_LINE_LIMIT);
+        assert!(text.contains("spawn git ENOENT"));
+        assert!(!text.contains("secret"));
+
+        let secret = npm_log_line_for_display("npm error authorization: Bearer secret").unwrap();
+        record_npm_diagnostic(&diagnostics, &secret);
+        assert!(!npm_diagnostic_text(&diagnostics).contains("secret"));
     }
 
     #[tokio::test]

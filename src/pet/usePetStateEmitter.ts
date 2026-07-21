@@ -5,6 +5,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useWorkshopStore } from '@/stores/workshopStore';
 import { useAppStore } from '@/stores/app-store';
+import { isCronSessionKey, isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
 import { derivePetState, type CelebrateKind, type PetState } from './pet-states';
 import i18n from '@/i18n';
 
@@ -261,9 +262,12 @@ export function usePetStateEmitter() {
       // background maintenance (memory dreaming cron). A cron session key looks
       // like "agent:<id>:cron:<uuid>". Dreaming runs at lowest priority: it
       // only keeps the pet "working" when nothing else is active.
-      const isCronSession = (s: any) => String(s?.key || '').includes(':cron:');
-      const conversationalRunning = runningSessions.filter((s) => !isCronSession(s));
-      const backgroundRunning = runningSessions.filter((s) => isCronSession(s));
+      const conversationalRunning = runningSessions.filter(
+        (session) => !isIsolatedExecutionSessionKey(String(session?.key || '')),
+      );
+      const backgroundRunning = runningSessions.filter(
+        (session) => isCronSessionKey(String(session?.key || '')),
+      );
       const hasHighPriorityWork = typing || thinking || tool
         || conversationalRunning.length > 0 || gw.runningSubAgents.length > 0;
       const backgroundWork = !hasHighPriorityWork && backgroundRunning.length > 0;

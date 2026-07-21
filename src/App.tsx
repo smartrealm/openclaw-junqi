@@ -127,6 +127,7 @@ export default function App() {
   const gatewayBootErrorRef = useRef<string | null>(null);
   const bootRecoveryStartedRef = useRef(false);
   const manualGatewayRecoveryInFlightRef = useRef(false);
+  const manualGatewayRecoveryAwaitingConnectionRef = useRef(false);
   const gatewayMigrationRetryCoordinatorRef = useRef<GatewayMigrationRetryCoordinator | null>(null);
   if (!gatewayMigrationRetryCoordinatorRef.current) {
     gatewayMigrationRetryCoordinatorRef.current = createGatewayMigrationRetryCoordinator();
@@ -238,6 +239,14 @@ export default function App() {
           kind: s.kind,
           channel: typeof s.channel === 'string' ? s.channel : (typeof s.lastChannel === 'string' ? s.lastChannel : null),
           lastChannel: typeof s.lastChannel === 'string' ? s.lastChannel : null,
+          origin: s.origin,
+          spawnedBy: typeof s.spawnedBy === 'string' ? s.spawnedBy : undefined,
+          parentSessionKey: typeof s.parentSessionKey === 'string' ? s.parentSessionKey : undefined,
+          status: typeof s.status === 'string' ? s.status : undefined,
+          hasActiveRun: s.hasActiveRun === true,
+          hasActiveSubagentRun: s.hasActiveSubagentRun === true,
+          subagentRunState: typeof s.subagentRunState === 'string' ? s.subagentRunState : undefined,
+          systemSent: s.systemSent === true,
           // Per-session metadata for TitleBar
           model: resolvedModel,
           thinkingLevel: s.thinkingLevel ?? null,
@@ -406,6 +415,7 @@ export default function App() {
     if (!(await waitForGatewayMigrationLock(diagnostic))) return false;
     if (!window.aegis?.gateway?.retry) {
       const message = 'Gateway restart is unavailable in this runtime.';
+      manualGatewayRecoveryAwaitingConnectionRef.current = false;
       emitGatewayProgress(message, 1, 'gateway.progress.restartUnavailable', undefined, 'failed');
       setGatewayBootError(message);
       openControlUiAfterRecoveryRef.current = false;
@@ -426,6 +436,7 @@ export default function App() {
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      manualGatewayRecoveryAwaitingConnectionRef.current = false;
       addBootRecoveryLog(`Gateway restart failed: ${message}`);
       emitGatewayProgress(
         `Restart failed: ${message}`,
@@ -651,6 +662,16 @@ export default function App() {
         }
       },
       onRetryState: (retry) => {
+        if (retry.phase === 'exhausted' && manualGatewayRecoveryAwaitingConnectionRef.current) {
+          manualGatewayRecoveryAwaitingConnectionRef.current = false;
+          emitGatewayProgress(
+            'Gateway recovery finished, but the authenticated connection could not be established.',
+            1,
+            'gateway.progress.connectionFailed',
+            undefined,
+            'failed',
+          );
+        }
         if (bootOverlayDismissedRef.current) return;
         if (retry.phase === 'attempting') {
           setBootRecoveryAttempt(retry.attempt);
@@ -815,6 +836,16 @@ export default function App() {
       }
 
       if (snap.connected) {
+        if (manualGatewayRecoveryAwaitingConnectionRef.current) {
+          manualGatewayRecoveryAwaitingConnectionRef.current = false;
+          emitGatewayProgress(
+            'Gateway recovered and authenticated.',
+            1,
+            'gateway.progress.recoveryComplete',
+            undefined,
+            'completed',
+          );
+        }
         setGatewayBootError(null);
         setGatewayBootLogs(undefined);
         if (openControlUiAfterRecoveryRef.current) {
@@ -907,6 +938,7 @@ export default function App() {
         : 'reconnect';
       const source = detail?.source || 'manual';
       manualGatewayRecoveryInFlightRef.current = true;
+      manualGatewayRecoveryAwaitingConnectionRef.current = true;
       void (async () => {
         bootRecoveryStartedRef.current = false;
         addBootRecoveryLog(`Gateway recovery requested (${source}, ${action})`);
@@ -966,14 +998,6 @@ export default function App() {
   // ── Pairing Handlers ──
   const handlePairingComplete = useCallback(async (token: string) => {
     debugLog('gateway', '[App] 🔑 Pairing complete — reconnecting with new token');
-    // Save token to config via IPC
-    if (window.aegis?.pairing?.saveToken) {
-      await window.aegis.pairing.saveToken(token);
-    }
-    // Also update config via the existing config:save IPC
-    if (window.aegis?.config?.save) {
-      await window.aegis.config.save({ gatewayToken: token });
-    }
     // Reconnect gateway with new token
     gatewayManager.reconnectWithToken(token);
     setNeedsPairing(false);

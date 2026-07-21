@@ -638,6 +638,73 @@ pub(crate) fn docker_gateway_configured_port() -> u16 {
         .unwrap_or_else(crate::commands::config::default_gateway_port)
 }
 
+fn valid_environment_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
+        && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
+}
+
+fn gateway_token_environment_reference(config: &serde_json::Value) -> Option<String> {
+    let value = config.get("gateway")?.get("auth")?.get("token")?;
+    if let Some(value) = value.as_str().map(str::trim) {
+        let name = value
+            .strip_prefix("${")
+            .and_then(|value| value.strip_suffix('}'))
+            .or_else(|| value.strip_prefix('$'))
+            .or_else(|| value.strip_prefix("secretref-env:"))
+            .or_else(|| value.strip_prefix("__env__:"))?;
+        return valid_environment_name(name).then(|| name.to_string());
+    }
+    let reference = value.as_object()?;
+    if reference.get("source").and_then(serde_json::Value::as_str) != Some("env") {
+        return None;
+    }
+    reference
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|name| valid_environment_name(name))
+        .map(str::to_string)
+}
+
+fn docker_gateway_environment(
+    config_path: &Path,
+    literal_token: Option<&str>,
+) -> Vec<(String, String)> {
+    let config = std::fs::read_to_string(config_path)
+        .ok()
+        .and_then(|raw| crate::commands::config::parse_openclaw_config(&raw).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    let mut values = std::collections::BTreeMap::<String, String>::new();
+    if let Some(vars) = config
+        .get("env")
+        .and_then(|env| env.get("vars"))
+        .and_then(serde_json::Value::as_object)
+    {
+        for (name, value) in vars {
+            if valid_environment_name(name) {
+                if let Some(value) = value.as_str() {
+                    values.insert(name.clone(), value.to_string());
+                }
+            }
+        }
+    }
+    if let Some(name) = gateway_token_environment_reference(&config) {
+        if !values.contains_key(&name) {
+            if let Ok(value) = std::env::var(&name) {
+                if !value.trim().is_empty() {
+                    values.insert(name, value);
+                }
+            }
+        }
+    }
+    if let Some(token) = literal_token {
+        values.insert("OPENCLAW_GATEWAY_TOKEN".into(), token.to_string());
+    }
+    values.into_iter().collect()
+}
+
 /// Release only the foreground Gateway child owned by this desktop process
 /// before Docker binds the same local port. External services stay untouched.
 pub(crate) async fn release_managed_native_gateway_for_docker(
@@ -941,7 +1008,7 @@ pub(crate) async fn start_docker_gateway_locked(
         port,
         container_port
     );
-    let token_env = format!("OPENCLAW_GATEWAY_TOKEN={}", token);
+    let gateway_environment = docker_gateway_environment(&config_path, token.as_deref());
     let state_dir_env = format!("OPENCLAW_STATE_DIR={}", mapping.runtime_state_dir);
     let config_path_env = format!("OPENCLAW_CONFIG_PATH={}", mapping.runtime_config_path);
     let locale_env = format!(
@@ -960,8 +1027,6 @@ pub(crate) async fn start_docker_gateway_locked(
         "-p".to_string(),
         port_mapping,
         "-e".to_string(),
-        token_env,
-        "-e".to_string(),
         "OPENCLAW_GATEWAY_BIND=lan".to_string(),
         "-e".to_string(),
         locale_env,
@@ -977,8 +1042,16 @@ pub(crate) async fn start_docker_gateway_locked(
         "unless-stopped".to_string(),
         image,
     ]);
-    let output = tokio::process::Command::new(&docker_bin)
-        .args(&run_args)
+    for (name, _) in &gateway_environment {
+        run_args.insert(4, name.clone());
+        run_args.insert(4, "-e".to_string());
+    }
+    let mut command = tokio::process::Command::new(&docker_bin);
+    command.args(&run_args);
+    for (name, value) in &gateway_environment {
+        command.env(name, value);
+    }
+    let output = command
         .output()
         .await
         .map_err(|e| format!("Failed to start Docker container: {}", e))?;
@@ -990,24 +1063,18 @@ pub(crate) async fn start_docker_gateway_locked(
         return Err(message);
     }
 
-    // Wait for the gateway to be ready (TCP connect check, up to 30s)
-    // Use the same readiness contract as native mode: the mapped local port
-    // must accept a TCP connection.
+    // Wait for the mapped endpoint to accept the selected config identity. A
+    // TCP listener alone could be another container or host process.
     emit(
         &app,
         "container",
         "Waiting for gateway to be ready...",
         0.55,
     );
-    let addr = format!(
-        "{}:{}",
-        crate::commands::config::default_gateway_host(),
-        port
-    );
     let mut healthy = false;
     for attempt in 0..30 {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        if tokio::net::TcpStream::connect(&addr).await.is_ok() {
+        if crate::commands::gateway::gateway_matches_config(port, &config_path).await {
             healthy = true;
             break;
         }
@@ -1071,7 +1138,7 @@ pub(crate) async fn start_docker_gateway_locked(
         running: true,
         port,
         pid: None, // Docker manages the PID
-        token: Some(token),
+        token,
     })
 }
 

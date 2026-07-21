@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, Loader2, QrCode, RefreshCw, X } from 'lucide-react';
+import { CheckCircle2, Copy, Loader2, QrCode, RefreshCw, X } from 'lucide-react';
 import {
   ChannelEnrollmentSession,
   type ChannelEnrollmentCompletion,
@@ -68,6 +68,14 @@ export function ChannelEnrollmentDialog({
         ? t('setup.wizard.channelEnrollment.denied', '手机端拒绝了此次授权。请重新生成二维码。')
         : state.phase === 'expired'
           ? t('setup.wizard.channelEnrollment.expired', '二维码已过期。请重新生成后扫码。')
+          : state.error === 'network_failed'
+            ? t('setup.wizard.channelEnrollment.networkFailed', '无法连接飞书服务。请检查网络后重试。')
+            : state.error === 'rate_limited'
+              ? t('setup.wizard.channelEnrollment.rateLimited', '飞书服务繁忙，请稍后重新生成二维码。')
+          : state.error === 'provider_rejected'
+                ? t('setup.wizard.channelEnrollment.providerRejected', '飞书拒绝了本次二维码注册请求。请稍后重试。')
+              : state.error === 'unsupported_verification_host'
+                ? t('setup.wizard.channelEnrollment.protocolChanged', '飞书扫码入口已更新，当前 JunQi 版本尚不支持。请升级 JunQi 后重试。')
           : state.error
             ? t('setup.wizard.channelEnrollment.error', '二维码服务暂时不可用。请重新生成后重试。')
             : t('setup.wizard.channelEnrollment.waiting', '请使用飞书或 Lark 手机端扫描二维码。');
@@ -90,6 +98,7 @@ export function ChannelEnrollmentDialog({
             <QrCode size={48} className="text-aegis-text-muted" />
           )}
           <p className="text-xs leading-relaxed text-aegis-text-secondary">{statusText}</p>
+          {state.qrContent && <button type="button" onClick={() => void navigator.clipboard.writeText(state.qrContent!).catch(() => undefined)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline"><Copy size={13} />{t('common.copy', 'Copy link')}</button>}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-aegis-border px-4 py-3">
           <button type="button" onClick={() => void handleClose()} disabled={finalizing || handoffStarted} className="rounded-md border border-aegis-border px-3 py-2 text-xs font-semibold text-aegis-text-secondary disabled:opacity-50">{t('common.close', 'Close')}</button>

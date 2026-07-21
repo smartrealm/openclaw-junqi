@@ -9,6 +9,7 @@ import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import { gateway } from '@/services/gateway';
 import { useSettingsStore } from './settingsStore';
 import {
+  coalesceSessionsByKey,
   isAgentMainSession,
   isSessionDeleted,
   markSessionDeleted,
@@ -302,6 +303,26 @@ export interface Session {
   kind?: string;
   channel?: string | null;
   lastChannel?: string | null;
+  /** OpenClaw's persisted source metadata. Kept name-for-name for projection. */
+  origin?: {
+    label?: string;
+    provider?: string;
+    surface?: string;
+    chatType?: string;
+    from?: string;
+    to?: string;
+    nativeChannelId?: string;
+    nativeDirectUserId?: string;
+    accountId?: string;
+    threadId?: string | number;
+  };
+  spawnedBy?: string;
+  parentSessionKey?: string;
+  status?: string;
+  hasActiveRun?: boolean;
+  hasActiveSubagentRun?: boolean;
+  subagentRunState?: string;
+  systemSent?: boolean;
   // Per-session model/thinking/token data cached from sessions.list
   model?: string | null;
   thinkingLevel?: string | null;
@@ -1025,7 +1046,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messagesPerSession,
     } = get();
     const defs = defaults ?? prev;
-    const visibleIncomingSessions = withoutDeletedSessions(sessions);
+    const visibleIncomingSessions = coalesceSessionsByKey(withoutDeletedSessions(sessions));
     const persistedPins = readSessionPinPrefs();
     const previousByKey = new Map(previousSessions.map((session) => [session.key, session]));
     const incomingKeys = new Set(visibleIncomingSessions.map((session) => session.key));
@@ -1176,9 +1197,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     isSessionDeleted(key)
       ? state
       : {
-          sessions: updateSession(state.sessions, key, (session) =>
+          sessions: coalesceSessionsByKey(updateSession(state.sessions, key, (session) =>
             session.label === label ? session : { ...session, label },
-          ),
+          )),
         }
   )),
 

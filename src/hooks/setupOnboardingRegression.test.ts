@@ -6,7 +6,11 @@ const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'u
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const adapter = readFileSync(new URL('../api/tauri-adapter.ts', import.meta.url), 'utf8');
+const settingsStore = readFileSync(new URL('../stores/settingsStore.ts', import.meta.url), 'utf8');
+const settingsPage = readFileSync(new URL('../pages/SettingsPage.tsx', import.meta.url), 'utf8');
+const settingsDialog = readFileSync(new URL('../components/shared/AppSettingsDialog.tsx', import.meta.url), 'utf8');
 const setupCommand = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const gatewayCommand = readFileSync(new URL('../../src-tauri/src/commands/gateway.rs', import.meta.url), 'utf8');
 
 function flattenMessages(value: unknown, prefix = '', result: Record<string, unknown> = {}): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
@@ -41,6 +45,36 @@ test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () =
   );
 
   assert.match(stopped, /flow\.needsOnboarding \? "configure-openclaw" : "ready"/);
+});
+
+test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway readiness', () => {
+  const completion = setupFlow.slice(
+    setupFlow.indexOf('if (result.done || result.status === "done")'),
+    setupFlow.indexOf('const startOfficialOnboarding = useCallback'),
+  );
+
+  assert.match(completion, /await invoke<boolean>\("handoff_gateway_to_official_service", \{\}\)/);
+  assert.match(completion, /await invoke<boolean>\("probe_selected_gateway", \{\}\)/);
+  assert.match(completion, /replaceSetupStep\("error"\)/);
+  assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
+});
+
+test('BUG-ONB-17 setup endpoint cache removes legacy renderer Gateway credentials', () => {
+  const cache = setupFlow.slice(
+    setupFlow.indexOf('function cacheGatewayTarget'),
+    setupFlow.indexOf('export function useSetupFlow'),
+  );
+
+  assert.match(cache, /delete next\.gatewayToken/);
+  assert.doesNotMatch(cache, /next\.gatewayToken\s*=/);
+});
+
+test('BUG-ONB-24 URL-only settings changes preserve endpoint-scoped credentials', () => {
+  assert.doesNotMatch(settingsStore, /setItem\(['"]aegis-gateway-token/);
+  assert.match(settingsStore, /config\?\.save\?\.\(\{ gatewayUrl: url \}\)/);
+  assert.match(settingsPage, /if \(tokenDirty\) setGatewayToken\(editToken\.trim\(\)\)/);
+  assert.match(settingsDialog, /if \(tokenDirty\) setGatewayToken\(editToken\.trim\(\)\)/);
+  assert.match(adapter, /mergeDesktopGatewaySettings\(update, localStorage\)/);
 });
 
 test('BUG-ONB-05 install mode selection is explicit and confirmed by Next', () => {
@@ -191,8 +225,8 @@ test('BUG-CPI-06 workspace and Gateway progress paths are resolved from storage 
   assert.match(adapter, /async function readStorageRuntimePaths/);
   assert.match(adapter, /get_storage_setup_status/);
   assert.doesNotMatch(adapter, /~\/\.openclaw/);
-  assert.match(setupCommand, /let config_path = paths::config_path\(\)/);
-  assert.match(setupCommand, /Reading gateway port from \{\}\.\.\./);
+  assert.match(gatewayCommand, /let config_path = paths::config_path\(\)/);
+  assert.match(gatewayCommand, /let meta = ConfigMetadata::load\(&config_path\)/);
 });
 
 test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', () => {
@@ -213,7 +247,7 @@ test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', 
   // (system service or desktop app) serves the gateway afterwards.
   assert.match(gatewayService, /"gateway", "install", "--force", "--port", port\.as_str\(\)/);
   assert.match(gatewayService, /"gateway", "uninstall", "--json"/);
-  assert.match(gatewayService, /let args = \["gateway", "status", "--json"\];/);
+  assert.match(gatewayService, /fn service_status_args\(\)[\s\S]*"gateway", "status", "--json", "--no-probe"/);
   assert.match(gatewayService, /OpenClawRuntimeMode::Native/);
   assert.match(setupPage, /await window\.aegis\.config\.restart\(\)/);
 
@@ -225,4 +259,47 @@ test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', 
   ]) {
     assert.match(registration, new RegExp(command));
   }
+});
+
+test('BUG-ONB-18 unused prepare_gateway bridge is no longer part of the command surface', () => {
+  assert.doesNotMatch(adapter, /prepareGateway/);
+  assert.doesNotMatch(setupCommand, /prepare_gateway/);
+});
+
+test('BUG-ONB-21 Ready requires the official live model probe', () => {
+  const completion = setupFlow.slice(
+    setupFlow.indexOf('if (result.done || result.status === "done")'),
+    setupFlow.indexOf('const recoverLostWizardSession'),
+  );
+  const readyTransition = setupFlow.slice(
+    setupFlow.indexOf('const continueAfterGatewayReady'),
+    setupFlow.indexOf('// Gateway startup is an installation transition'),
+  );
+
+  assert.match(completion, /const modelProbe = await probeActiveRuntimeModel\(\)/);
+  assert.match(completion, /if \(!modelProbe\.ready\)/);
+  assert.ok(completion.indexOf('updateOnboardingRequirement(false)') > completion.indexOf('if (!modelProbe.ready)'));
+  assert.match(readyTransition, /onboardingRequired = !\(await probeActiveRuntimeModel\(\)\)\.ready/);
+});
+
+test('BUG-ONB-25 lost terminal sessions reconcile observable completion before restart', () => {
+  const recovery = setupFlow.slice(
+    setupFlow.indexOf('const recoverLostWizardSession'),
+    setupFlow.indexOf('const startOfficialOnboarding'),
+  );
+  assert.match(recovery, /resolveActiveRuntimeOnboardingRequirement\(\)/);
+  assert.match(recovery, /probeActiveRuntimeModel\(\)/);
+  assert.match(recovery, /return \{ done: true, status: "done" \}/);
+  assert.ok(recovery.indexOf('return await client.start()') > recovery.indexOf('if (modelProbe.ready)'));
+});
+
+test('BUG-ONB-26 official external URL and device code remain actionable', () => {
+  const wizard = setupPage.slice(
+    setupPage.indexOf('function WizardScreen'),
+    setupPage.indexOf('// ── 开机自启卡片'),
+  );
+  assert.match(wizard, /presentedStep\.externalUrl/);
+  assert.match(wizard, /deviceCode\.code/);
+  assert.match(wizard, /@tauri-apps\/plugin-shell/);
+  assert.match(wizard, /navigator\.clipboard\.writeText/);
 });

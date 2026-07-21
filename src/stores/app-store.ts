@@ -40,7 +40,10 @@ export type SetupLog = {
   step?: string;
   level?: SetupLogLevel;
   progress?: number;
+  diagnostic?: boolean;
 };
+
+const SETUP_LOG_LIMIT = 2_000;
 
 interface AppState {
   setupComplete: boolean | null; // null = 尚未完成首次向导判定
@@ -121,7 +124,10 @@ export const useAppStore = create<AppState>((set) => ({
   },
   setGatewayRunning: (v) => set({ gatewayRunning: v }),
   appendSetupLog: (log) => set((s) => ({
-    setupLogs: [...s.setupLogs.slice(-219), { ...log, ts: log.ts ?? Date.now() }],
+    setupLogs: [
+      ...s.setupLogs.slice(-(SETUP_LOG_LIMIT - 1)),
+      { ...log, ts: log.ts ?? Date.now() },
+    ],
   })),
   clearSetupLogs: () => set({ setupLogs: [] }),
   setPostStorageStep: (step) => set({ postStorageStep: step }),

@@ -20,6 +20,7 @@ import {
   MaskedInput,
 } from './components';
 import { ModelDropdown } from '@/components/shared/ModelDropdown';
+import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import {
   buildGatewayAgentConfigEntry,
   ensureMainGatewayAgentInList,
@@ -242,12 +243,12 @@ function AgentRow({ agent, displayIndex, isMain, onChange, onUpdate, onRemove }:
             'w-9 h-9 rounded-lg flex items-center justify-center text-sm flex-shrink-0',
             'bg-aegis-primary/10 border border-aegis-primary/20 text-aegis-primary font-bold'
           )}>
-            {(agent.name ?? agent.id).charAt(0).toUpperCase()}
+            {getAgentDisplayName(agent, agent.id).charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-sm text-aegis-text truncate">
-                {agent.name ?? agent.id}
+                {getAgentDisplayName(agent, agent.id)}
               </span>
               {isMain && (
                 <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-aegis-primary/10 border border-aegis-primary/20 text-aegis-primary">
@@ -396,7 +397,7 @@ function AgentRow({ agent, displayIndex, isMain, onChange, onUpdate, onRemove }:
       <ConfirmDialog
         open={confirmRemove}
         title={t('config.removeAgent')}
-        message={t('config.removeAgentConfirm', { name: agent.name ?? agent.id })}
+        message={t('config.removeAgentConfirm', { name: getAgentDisplayName(agent, agent.id) })}
         confirmLabel={t('config.removeAgent')}
         cancelLabel={t('common.cancel')}
         onConfirm={() => { setConfirmRemove(false); onRemove(); }}

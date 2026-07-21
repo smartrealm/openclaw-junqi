@@ -7,6 +7,9 @@ const setupFlowPanels = readFileSync(new URL('../components/setup/SetupFlowPanel
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const setupCommands = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const setupDiagnostics = readFileSync(new URL('../../src-tauri/src/commands/setup_diagnostics.rs', import.meta.url), 'utf8');
+const setupProgress = readFileSync(new URL('../../src-tauri/src/commands/setup_progress.rs', import.meta.url), 'utf8');
+const gatewayCommands = readFileSync(new URL('../../src-tauri/src/commands/gateway.rs', import.meta.url), 'utf8');
 const systemCommands = readFileSync(new URL('../../src-tauri/src/commands/system.rs', import.meta.url), 'utf8');
 const storageCommands = readFileSync(new URL('../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
 const nodeRuntime = readFileSync(new URL('../../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
@@ -14,6 +17,54 @@ const runtimePolicy = readFileSync(new URL('../../src-tauri/src/commands/runtime
 const paths = readFileSync(new URL('../../src-tauri/src/paths.rs', import.meta.url), 'utf8');
 const platform = readFileSync(new URL('../../src-tauri/src/platform.rs', import.meta.url), 'utf8');
 const nezhaUnixPlatform = readFileSync(new URL('../../src-tauri/src/nezha/platform/unix.rs', import.meta.url), 'utf8');
+const appStore = readFileSync(new URL('../stores/app-store.ts', import.meta.url), 'utf8');
+const tauriCommands = readFileSync(new URL('../api/tauri-commands.ts', import.meta.url), 'utf8');
+
+test('BUG-INSTALL-LOG-01 setup diagnostics retain the full install timeline', () => {
+  assert.match(setupDiagnostics, /const SETUP_SESSION_LOG: &str = "setup-session\.log"/);
+  assert.match(setupDiagnostics, /const SETUP_RUNS_DIRECTORY: &str = "setup-runs"/);
+  assert.match(setupDiagnostics, /matches!\(step, "node" \| "npm" \| "git" \| "openclaw" \| "gateway"\)/);
+  assert.match(setupDiagnostics, /pub fn get_setup_diagnostics_directory/);
+  assert.match(setupCommands, /reset_timeline_log\(&app, step\)/);
+  assert.match(appStore, /const SETUP_LOG_LIMIT = 2_000/);
+  assert.match(setupFlowPanels, /const visibleLogs = logs\.slice\(-500\)/);
+  assert.match(setupFlowPanels, /const text = logs[\s\S]*?\.map\(/);
+  assert.match(setupFlowPanels, /openSetupDiagnosticsDirectory/);
+  assert.match(tauriCommands, /get_setup_diagnostics_directory/);
+});
+
+test('BUG-INSTALL-LOG-06 through 11 preserve retries, raw process output, and exportable sessions', () => {
+  assert.match(setupDiagnostics, /const RETAINED_SETUP_RUNS: usize = 8/);
+  assert.match(setupDiagnostics, /dependency install attempt \{\} started/);
+  assert.doesNotMatch(setupDiagnostics, /SETUP_SESSION_LOG_MAX_BYTES|SETUP_SESSION_PREVIOUS_LOG/);
+  assert.match(setupDiagnostics, /pub fn record_process_output/);
+  assert.match(setupDiagnostics, /pub fn record_process_started/);
+  assert.match(setupDiagnostics, /pub fn record_process_finished/);
+  assert.match(setupDiagnostics, /pub fn export_setup_diagnostics_bundle/);
+  assert.match(setupProgress, /setup\.installPanel\.logWriteFailed/);
+  assert.match(setupCommands, /record_process_output\(&app_c, &step_c, &process_label, "stdout", &line\)/);
+  assert.match(setupCommands, /record_process_output\(&app_e, &step_e, &process_label, "stderr", &line\)/);
+  assert.match(setupCommands, /winget \{stream\} › \{display\}/);
+  assert.match(gatewayCommands, /record_process_output\([\s\S]*?"gateway"/);
+  assert.match(setupFlowPanels, /exportDiagnosticsBundle/);
+  assert.match(tauriCommands, /export_setup_diagnostics_bundle/);
+});
+
+test('BUG-INSTALL-LOG-02 download and npm diagnostics expose measurable bottlenecks', () => {
+  assert.match(setupCommands, /response headers received in/);
+  assert.match(setupCommands, /transfer_rate_mib_per_second/);
+  assert.match(setupCommands, /struct NpmFetchMetrics/);
+  assert.match(setupCommands, /npm network summary for/);
+  assert.match(setupCommands, /cache hits=\{\}/);
+  assert.match(setupCommands, /slowest=\{\}ms/);
+});
+
+test('BUG-INSTALL-LOG-05 Gateway startup uses the shared persistent diagnostic timeline', () => {
+  assert.match(gatewayCommands, /fn emit_gateway_log/);
+  assert.match(gatewayCommands, /record_timeline_note\(app, "gateway", &line\)/);
+  assert.match(gatewayCommands, /reset_timeline_log\(&app, "gateway"\)/);
+  assert.equal((gatewayCommands.match(/app\.emit\("gateway-log"/g) ?? []).length, 1);
+});
 
 test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /\{ id: "npm",\s+label: "npm"/);
@@ -25,13 +76,22 @@ test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /patchStep\("openclaw", "done", installedStatus\.version/);
 });
 
+test('BUG-INSTALL-12 Windows installs Git only after npm reports a missing Git process', () => {
+  assert.match(setupFlow, /function isMissingGitDependencyError/);
+  assert.match(setupFlow, /if \(isWindows\) \{[\s\S]*?"git",[\s\S]*?"skipped"/);
+  assert.match(
+    setupFlow,
+    /await installSelectedOpenclaw\(\)[\s\S]*isMissingGitDependencyError\(error\)[\s\S]*runDependencyInstall\(runId, "git", installGit\)[\s\S]*await installSelectedOpenclaw\(\)/,
+  );
+});
+
 test('bug 04 Windows setup installs system defaults from domestic vendor installers before package-manager fallback', () => {
   assert.match(setupCommands, /install_windows_system_node/);
   assert.match(setupCommands, /install_windows_system_node_from_mirrors/);
   assert.match(setupCommands, /install_windows_system_node_with_winget/);
   assert.match(setupCommands, /install_windows_system_git/);
   assert.match(setupCommands, /install_windows_system_git_from_mirrors/);
-  assert.match(setupCommands, /install_or_upgrade_winget_package/);
+  assert.match(setupCommands, /ensure_winget_package/);
   assert.match(setupCommands, /WINGET_NODE_LTS_PACKAGE/);
   assert.match(setupCommands, /WINGET_GIT_PACKAGE/);
   assert.match(setupCommands, /paths::configured_node_runtime_dir\(\)/);
@@ -77,7 +137,7 @@ test('bug 04 Windows setup installs system defaults from domestic vendor install
     setupCommands.indexOf('async fn install_windows_system_git('),
     setupCommands.indexOf('async fn install_windows_system_git_from_mirrors('),
   );
-  assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('install_or_upgrade_winget_package'));
+  assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('ensure_winget_package'));
 });
 
 test('dependency runtime locations are explicit onboarding choices instead of children of OpenClaw storage', () => {
@@ -116,6 +176,10 @@ test('system-installer fallback progress is translated in every supported locale
       'setup.git.systemPackageFallback',
       'setup.windows.installerWaiting',
       'setup.windows.packageManagerWaiting',
+      'setup.windows.adminPrompt',
+      'setup.node.runtimeSettling',
+      'setup.git.runtimeSettling',
+      'setup.git.onDemand',
     ]) {
       assert.equal(typeof messages[key], 'string', `${locale} is missing ${key}`);
       assert.notEqual((messages[key] as string).trim(), '', `${locale} has an empty ${key}`);
@@ -132,6 +196,27 @@ test('BUG-INSTALL-10 Windows installer and package-manager waits keep setup prog
   assert.match(setupCommands, /async fn run_winget_package_command[\s\S]*wait_for_controlled_child[\s\S]*report_package_manager_wait/);
   assert.match(setupCommands, /WindowsInstallProgress::new\(app, "node", "Node\.js", 0\.64, 0\.92\)/);
   assert.match(setupCommands, /WindowsInstallProgress::new\(app, "git", "Git", 0\.64, 0\.92\)/);
+});
+
+test('BUG-INSTALL-11 Windows installer progress does not fabricate completion percentages', () => {
+  assert.match(setupCommands, /progress bar at the phase boundary/);
+  assert.doesNotMatch(setupCommands, /expected_install_seconds/);
+  assert.match(setupCommands, /setup\.windows\.adminPrompt/);
+  assert.match(setupCommands, /wait_for_node_runtime_settle/);
+  assert.match(setupCommands, /wait_for_git_runtime_settle/);
+});
+
+test('BUG-INSTALL-13 winget installation is one forced, source-pinned operation', () => {
+  assert.match(setupCommands, /async fn ensure_winget_package/);
+  assert.match(setupCommands, /"install",[\s\S]*"--force",[\s\S]*"--source",[\s\S]*"winget"/);
+  assert.doesNotMatch(setupCommands, /"upgrade"[\s\S]*winget install/);
+});
+
+test('BUG-INSTALL-14 npm failures retain redacted diagnostics for conditional Git recovery', () => {
+  assert.match(setupCommands, /type NpmDiagnostics = Arc<Mutex<Vec<String>>>/);
+  assert.match(setupCommands, /record_npm_diagnostic/);
+  assert.match(setupCommands, /npm_diagnostic_text\(&diagnostics\)/);
+  assert.match(setupFlow, /isMissingGitDependencyError\(error\)/);
 });
 
 test('npm setup step is translated in every supported locale', () => {
@@ -211,7 +296,12 @@ test('Gateway setup errors expose explicit repair and direct retry actions', () 
 });
 
 test('setup failures are retained in the copyable activity log without a duplicate error card', () => {
+  const progressScreen = setupPage.slice(
+    setupPage.indexOf('function ProgressScreen'),
+    setupPage.indexOf('function WizardScreen'),
+  );
+
   assert.match(setupFlow, /appendSetupLog\(\{[\s\S]*?level: "error"/);
   assert.doesNotMatch(setupPage, /setup\.copyError/);
-  assert.doesNotMatch(setupPage, /navigator\.clipboard/);
+  assert.doesNotMatch(progressScreen, /navigator\.clipboard/);
 });

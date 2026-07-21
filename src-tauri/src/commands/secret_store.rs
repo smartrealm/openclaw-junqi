@@ -12,6 +12,7 @@
 
 use crate::paths;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 
 /// A secret stored in the keychain. The id is the ProviderAccount id;
@@ -87,9 +88,57 @@ fn keychain_service_name() -> &'static str {
     "junqi-desktop-provider-secrets"
 }
 
-fn credential_entry(account_id: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(keychain_service_name(), account_id)
+fn gateway_keychain_service_name() -> &'static str {
+    "junqi-desktop-gateway-credentials"
+}
+
+fn credential_entry_for(service: &str, account_id: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(service, account_id)
         .map_err(|error| format!("open system credential store: {error}"))
+}
+
+fn credential_entry(account_id: &str) -> Result<keyring::Entry, String> {
+    credential_entry_for(keychain_service_name(), account_id)
+}
+
+fn canonical_gateway_endpoint(endpoint: &str) -> Result<String, String> {
+    let mut url = url::Url::parse(endpoint.trim())
+        .map_err(|error| format!("Gateway endpoint is invalid: {error}"))?;
+    let canonical_scheme = match url.scheme() {
+        "http" | "ws" => "ws",
+        "https" | "wss" => "wss",
+        scheme => return Err(format!("Unsupported Gateway endpoint scheme: {scheme}")),
+    };
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("Gateway endpoint must not contain embedded credentials".into());
+    }
+    url.set_scheme(canonical_scheme)
+        .map_err(|_| "Failed to normalize Gateway endpoint scheme".to_string())?;
+    url.set_query(None);
+    url.set_fragment(None);
+    let host = url
+        .host_str()
+        .ok_or_else(|| "Gateway endpoint must include a host".to_string())?;
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| "Gateway endpoint must include a port".to_string())?;
+    let host = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_ascii_lowercase()
+    };
+    let path = url.path().trim_end_matches('/');
+    Ok(format!("{canonical_scheme}://{host}:{port}{path}"))
+}
+
+fn gateway_credential_account(endpoint: &str, scope: Option<&str>) -> Result<String, String> {
+    let canonical = canonical_gateway_endpoint(endpoint)?;
+    let scope = scope
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("endpoint");
+    let digest = Sha256::digest(format!("{scope}\0{canonical}").as_bytes());
+    Ok(format!("endpoint:{digest:x}"))
 }
 
 async fn store_in_keychain(account_id: &str, _label: &str, value: &str) -> Result<(), String> {
@@ -202,6 +251,68 @@ pub async fn list_provider_secrets() -> Result<Vec<StoredSecret>, String> {
     load_metadata_from(&metadata_path())
 }
 
+#[tauri::command]
+pub async fn store_gateway_credential(
+    endpoint: String,
+    scope: Option<String>,
+    value: String,
+) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err("Gateway credential cannot be empty".into());
+    }
+    let account_id = gateway_credential_account(&endpoint, scope.as_deref())?;
+    let value = value.trim().to_string();
+    let _guard = secret_operation().lock().await;
+    tokio::task::spawn_blocking(move || {
+        credential_entry_for(gateway_keychain_service_name(), &account_id)?
+            .set_password(&value)
+            .map_err(|error| format!("store Gateway credential in system vault: {error}"))
+    })
+    .await
+    .map_err(|error| format!("Gateway credential store task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn get_gateway_credential(
+    endpoint: String,
+    scope: Option<String>,
+) -> Result<Option<String>, String> {
+    let account_id = gateway_credential_account(&endpoint, scope.as_deref())?;
+    let _guard = secret_operation().lock().await;
+    tokio::task::spawn_blocking(move || {
+        match credential_entry_for(gateway_keychain_service_name(), &account_id)?.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(format!(
+                "read Gateway credential from system vault: {error}"
+            )),
+        }
+    })
+    .await
+    .map_err(|error| format!("Gateway credential read task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn delete_gateway_credential(
+    endpoint: String,
+    scope: Option<String>,
+) -> Result<(), String> {
+    let account_id = gateway_credential_account(&endpoint, scope.as_deref())?;
+    let _guard = secret_operation().lock().await;
+    tokio::task::spawn_blocking(move || {
+        match credential_entry_for(gateway_keychain_service_name(), &account_id)?
+            .delete_credential()
+        {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(format!(
+                "delete Gateway credential from system vault: {error}"
+            )),
+        }
+    })
+    .await
+    .map_err(|error| format!("Gateway credential delete task failed: {error}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,5 +392,41 @@ mod tests {
         assert!(json.contains("acc-1"));
         assert!(json.contains("OpenAI Work"));
         assert!(!json.contains("sk-")); // masked never contains raw key
+    }
+
+    #[test]
+    fn gateway_endpoint_normalization_matches_http_and_websocket_surfaces() {
+        assert_eq!(
+            canonical_gateway_endpoint("http://LOCALHOST:18789/").unwrap(),
+            "ws://localhost:18789"
+        );
+        assert_eq!(
+            gateway_credential_account(
+                "http://localhost:18789",
+                Some("native:/state/openclaw.json")
+            )
+            .unwrap(),
+            gateway_credential_account(
+                "ws://localhost:18789/",
+                Some("native:/state/openclaw.json")
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            gateway_credential_account("https://gateway.example/base/", None).unwrap(),
+            gateway_credential_account("wss://gateway.example:443/base", None).unwrap()
+        );
+        assert_ne!(
+            gateway_credential_account("ws://localhost:18789", Some("native:/state/openclaw.json"))
+                .unwrap(),
+            gateway_credential_account("ws://localhost:18789", Some("docker:/state/openclaw.json"))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn gateway_endpoint_rejects_embedded_credentials_and_unknown_schemes() {
+        assert!(canonical_gateway_endpoint("ws://token@example.com:18789").is_err());
+        assert!(canonical_gateway_endpoint("file:///tmp/gateway.sock").is_err());
     }
 }

@@ -10,7 +10,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   RefreshCw, BarChart3,
   Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight,
-  TrendingUp, TrendingDown, Minus,
+  TrendingUp, TrendingDown, Minus, MessageSquarePlus,
+  ChartNoAxesCombined, Blocks, Gauge, Clock3, FolderKanban, TerminalSquare,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { SceneTransition } from '@/components/shared/SceneTransition';
@@ -23,10 +24,13 @@ import clsx from 'clsx';
 import { themeColorVar } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { formatTokens } from '@/utils/format';
+import { isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
+import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { useSceneRecovery } from '@/motion/sceneRecovery';
 import { gateway } from '@/services/gateway';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { isFeatureEnabled } from '@/config/edition';
 import {
   budgetProgress,
   costChangePercent,
@@ -34,6 +38,12 @@ import {
   percentageOf,
   previousLocalDateKey,
 } from './dashboardMetrics';
+import {
+  buildDailyCostChartData,
+  formatActivityTime,
+  formatActivityTimeTitle,
+  shortModelName,
+} from './dashboardData';
 
 import {
   ContextRing, QuickAction, SessionItem, FeedItem, AgentItem,
@@ -206,11 +216,6 @@ export function DashboardPage() {
   const ctxMax       = mainSession?.contextTokens || 200_000;
   const usagePct     = percentageOf(ctxUsed, ctxMax);
 
-  // Active sessions
-  const activeSessions = useMemo(
-    () => sessions.filter((s: any) => Boolean(s.running) || (s.totalTokens || 0) > 0),
-    [sessions]
-  );
   const chatSessionByKey = useMemo(
     () => new Map(chatSessions.map((session) => [session.key, session])),
     [chatSessions],
@@ -218,11 +223,11 @@ export function DashboardPage() {
   const recentSessions = useMemo(() => {
     const byKey = new Map<string, any>();
     for (const s of sessions) {
-      if (!s?.key || String(s.key).includes(':subagent:')) continue;
+      if (!s?.key || isIsolatedExecutionSessionKey(String(s.key))) continue;
       byKey.set(s.key, s);
     }
     for (const s of chatSessions) {
-      if (!s?.key || String(s.key).includes(':subagent:')) continue;
+      if (!s?.key || isIsolatedExecutionSessionKey(String(s.key))) continue;
       byKey.set(s.key, { ...(byKey.get(s.key) ?? {}), ...s });
     }
     return sortSessionsByActivity(Array.from(byKey.values()).filter((s: any) => {
@@ -234,28 +239,10 @@ export function DashboardPage() {
     })).slice(0, 5);
   }, [sessions, chatSessions]);
 
-  // Match the upstream desktop chart: the cost API defines the available day
-  // buckets, and the category axis renders those compact MM-DD labels.
-  const chartData = useMemo(() => {
-    const sorted = [...allDaily]
-      .sort((left, right) => left.date.localeCompare(right.date))
-      .slice(-14);
-    return sorted.map((d: any) => {
-      const input = d.inputCost || 0;
-      const output = d.outputCost || 0;
-      const cache = (d.cacheReadCost || 0) + (d.cacheWriteCost || 0);
-      const total = d.totalCost || input + output + cache;
-      return {
-        date: d.date.slice(5),
-        input,
-        output,
-        cache,
-        other: Math.max(0, total - input - output - cache),
-        total,
-      };
-    });
-  }, [allDaily]);
-  const hasChartCost = chartData.some((entry) => entry.total > 0);
+  // OpenClaw returns continuous date buckets. Zero cost is still valid data
+  // (for example when pricing is unavailable), so it must retain the X axis.
+  const chartData = useMemo(() => buildDailyCostChartData(allDaily), [allDaily]);
+  const hasChartData = chartData.length > 0;
 
   const agentIdFromKey = useCallback((key?: string) => {
     const parts = String(key || '').split(':');
@@ -264,11 +251,11 @@ export function DashboardPage() {
 
   const modelForAgent = useCallback((agentId: string, usageRow?: any) => {
     const direct = usageRow?.model || usageRow?.totals?.model;
-    if (direct) return String(direct).split('/').pop() || direct;
+    if (direct) return shortModelName(direct);
     const sessionModel = sessions.find((s: any) => agentIdFromKey(s.key) === agentId && s.model)?.model;
-    if (sessionModel) return String(sessionModel).split('/').pop() || sessionModel;
+    if (sessionModel) return shortModelName(sessionModel);
     const agentModel = agents.find((a: any) => a.id === agentId)?.model;
-    if (agentModel) return String(agentModel).split('/').pop() || agentModel;
+    if (agentModel) return shortModelName(agentModel);
     return '—';
   }, [sessions, agents, agentIdFromKey]);
 
@@ -321,44 +308,53 @@ export function DashboardPage() {
   // Uptime
   const uptime = connectedSince.current ? Date.now() - connectedSince.current : 0;
 
-  // Resolve agent name from session key
-  const agentNameByKey = useMemo(() => {
-    const map: Record<string, string> = {};
-    agents.forEach((a: any) => { map[a.id] = a.name || a.id; });
-    return map;
-  }, [agents]);
-  const agentNameFor = (key: string) => {
-    const parts = key.split(':');
-    const agentId = parts.length >= 2 ? parts[1] : 'main';
-    return agentNameByKey[agentId] || agentId;
-  };
+  const agentDisplayNameFor = useCallback((agentId: string) => {
+    const fallback = t(getAgentName(agentId), { defaultValue: agentId });
+    return getAgentDisplayName(
+      agents.find((agent: any) => agent.id === agentId),
+      fallback,
+    );
+  }, [agents, t]);
+
+  const agentNameFor = useCallback(
+    (key: string) => agentDisplayNameFor(agentIdFromKey(key)),
+    [agentDisplayNameFor, agentIdFromKey],
+  );
 
   // Activity feed items
   const feedItems = useMemo(() => {
-    const items: { color: string; glowColor: string; text: string; time: string; sessionKey: string; agentName: string }[] = [];
-    activeSessions.slice(0, 6).forEach((s: any) => {
-      const key    = s.key || 'unknown';
-      const isMain = key === 'agent:main:main';
-      const merged = { ...s, ...(chatSessionByKey.get(key) ?? {}) };
-      const label = getSessionDisplayLabel(merged, {
-        mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
-        genericSessionLabel: t('dashboard.session', 'Session'),
-      });
-      items.push({
-        color: isMain ? themeColorVar('primary') : themeColorVar('accent'),
-        glowColor: isMain ? themeColorVar('primary', 0.38) : themeColorVar('accent', 0.38),
-        text:  t('dashboard.feedTokens', { label, n: formatTokens(s.totalTokens || 0) }),
-        time:  timeAgo(s.lastActive),
-        sessionKey: key,
-        agentName: agentNameFor(key),
-      });
-    });
-    const totalCompactions = sessions.reduce((n: number, s: any) => n + (s.compactions || 0), 0);
-    if (totalCompactions > 0) {
-      items.unshift({ color: themeColorVar('warning'), glowColor: themeColorVar('warning', 0.38), text: t('dashboardExtra.contextCompacted', { n: totalCompactions }), time: '—', sessionKey: '', agentName: '' });
-    }
-    return items;
-  }, [activeSessions, sessions, chatSessionByKey]);
+    return recentSessions
+      .map((s: any) => {
+        const key = s.key || 'unknown';
+        const isMain = key === 'agent:main:main';
+        const merged = { ...s, ...(chatSessionByKey.get(key) ?? {}) };
+        const timestamp = sessionActivityTime(merged);
+        const sessionModel = merged.model || s.model;
+        const fullModel = typeof sessionModel === 'string' && sessionModel.trim()
+          ? sessionModel.trim()
+          : agents.find((agent: any) => agent.id === agentIdFromKey(key))?.model;
+        const label = getSessionDisplayLabel(merged, {
+          mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+          genericSessionLabel: t('dashboard.session', 'Session'),
+        });
+        return {
+          color: isMain ? themeColorVar('primary') : themeColorVar('accent'),
+          glowColor: isMain ? themeColorVar('primary', 0.38) : themeColorVar('accent', 0.38),
+          text: label,
+          time: formatActivityTime(timestamp),
+          timeTitle: formatActivityTimeTitle(timestamp),
+          sessionKey: key,
+          agentName: agentNameFor(key),
+          model: shortModelName(fullModel),
+          modelTitle: typeof fullModel === 'string' ? fullModel : undefined,
+          tokens: formatTokens(merged.totalTokens || 0),
+          running: Boolean(merged.running || merged.hasActiveRun),
+          timestamp,
+        };
+      })
+      .filter((item) => item.timestamp > 0 || item.running)
+      .slice(0, 5);
+  }, [recentSessions, chatSessionByKey, agents, agentIdFromKey, agentNameFor, t]);
 
   // ── Render ───────────────────────────────────────────────────
   return (
@@ -596,13 +592,13 @@ export function DashboardPage() {
               <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{t('dashboard.inputCostLabel')}</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{t('dashboard.outputCostLabel')}</span>
-                {hasChartCost && chartData.some((d: any) => d.cache > 0) && (
+                {hasChartData && chartData.some((d: any) => d.cache > 0) && (
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{t('dashboard.cacheCostLabel', 'Cache')}</span>
                 )}
               </div>
             </div>
             <div className="relative min-h-[160px] flex-1">
-              {hasChartCost ? (
+              {hasChartData ? (
                 <Suspense fallback={<div className="h-full" />}>
                   <CostChart data={chartData} />
                 </Suspense>
@@ -664,12 +660,12 @@ export function DashboardPage() {
               agentList.slice(0, 5).map((a: any) => {
                 const id      = a.agentId || a.agent || a.id || 'unknown';
                 const tokenCount = a.totals?.totalTokens || 0;
-                const model = hasProviders ? modelForAgent(id, a) : '—';
+                const model = modelForAgent(id, a);
                 return (
                   <AgentItem
                     key={id}
                     emoji={getAgentEmoji(id)}
-                    name={t(getAgentName(id), { defaultValue: id })}
+                    name={agentDisplayNameFor(id)}
                     model={model}
                     tokens={formatTokens(tokenCount)}
                     tokenCount={tokenCount}
@@ -716,10 +712,48 @@ export function DashboardPage() {
             <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.quickActions')}</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
+            {isFeatureEnabled('chat') && (
+              <QuickAction icon={MessageSquarePlus} label={t('chat.newSession', 'New session')}
+                glowColor={themeColorVar('primary', 0.08)} bgColor={themeColorVar('primary', 0.1)} iconColor={themeColorVar('primary')}
+                onClick={() => navigate('/chat?agent=main&new=1')} />
+            )}
+            {isFeatureEnabled('agents') && (
+              <QuickAction icon={Bot} label={t('nav.agents', 'Agents')}
+                glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
+                onClick={() => navigate('/agents')} />
+            )}
+            {isFeatureEnabled('analytics') && (
+              <QuickAction icon={ChartNoAxesCombined} label={t('nav.usage', 'Usage')}
+                glowColor={themeColorVar('success', 0.08)} bgColor={themeColorVar('success', 0.1)} iconColor={themeColorVar('success')}
+                onClick={() => navigate('/analytics')} />
+            )}
+            {isFeatureEnabled('skills') && (
+              <QuickAction icon={Blocks} label={t('nav.skills', 'Skills')}
+                glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
+                onClick={() => navigate('/skills')} />
+            )}
+            <QuickAction icon={Activity} label={t('nav.activity', '活动中心')}
+              glowColor={themeColorVar('primary', 0.08)} bgColor={themeColorVar('primary', 0.1)} iconColor={themeColorVar('primary')}
+              onClick={() => navigate('/activity')} />
+            {isFeatureEnabled('agentRun') && (
+              <QuickAction icon={FolderKanban} label={t('nav.aiWorkspace', 'AI 工作台')}
+                glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
+                onClick={() => navigate('/ai-workspace')} />
+            )}
+            {isFeatureEnabled('terminal') && (
+              <QuickAction icon={TerminalSquare} label={t('nav.terminal', '终端')}
+                glowColor={themeColorVar('success', 0.08)} bgColor={themeColorVar('success', 0.1)} iconColor={themeColorVar('success')}
+                onClick={() => navigate('/terminal')} />
+            )}
+            {isFeatureEnabled('cron') && (
+              <QuickAction icon={Clock3} label={t('nav.cron', '定时任务')}
+                glowColor={themeColorVar('warning', 0.08)} bgColor={themeColorVar('warning', 0.1)} iconColor={themeColorVar('warning')}
+                onClick={() => navigate('/cron')} />
+            )}
             <QuickAction icon={RefreshCw} label={t('dashboard.compact')}
               glowColor={themeColorVar('warning', 0.08)} bgColor={themeColorVar('warning', 0.1)} iconColor={themeColorVar('warning')}
               onClick={() => void handleQuickAction('compact')} loading={quickActionLoading === 'compact'} disabled={!connected} />
-            <QuickAction icon={BarChart3} label={t('dashboard.systemStatus')}
+            <QuickAction icon={Gauge} label={t('dashboard.systemStatus')}
               glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
               onClick={() => void handleQuickAction('status')} loading={false} />
           </div>
@@ -750,7 +784,7 @@ export function DashboardPage() {
                 mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
                 genericSessionLabel: t('dashboard.session', 'Session'),
               });
-              const sModel = hasProviders ? ((s.model || '').split('/').pop() || '—') : '—';
+              const sModel = shortModelName(merged.model || s.model);
               const lastActiveIso = sessionActivityTime(merged)
                 ? new Date(sessionActivityTime(merged)).toISOString()
                 : undefined;
@@ -786,22 +820,34 @@ export function DashboardPage() {
               <Activity size={15} className="text-aegis-primary" />
               <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.activity')}</span>
             </div>
-            <span className="text-[10px] font-bold text-aegis-success bg-aegis-success-surface px-2 py-0.5 rounded-md tracking-normal animate-pulse-soft">
-              {t('dashboard.live', 'LIVE')}
-            </span>
+            <div className="flex items-center gap-2">
+              {connected && (
+                <span className="text-[10px] font-bold text-aegis-success bg-aegis-success-surface px-2 py-0.5 rounded-md tracking-normal animate-pulse-soft">
+                  {t('dashboard.live', 'LIVE')}
+                </span>
+              )}
+              <button type="button" onClick={() => navigate('/activity')} className="flex items-center gap-0.5 text-[11px] text-aegis-primary hover:underline">
+                {t('dashboard.viewAll')}<ChevronRight size={12} />
+              </button>
+            </div>
           </div>
 
           <div className="max-h-[220px] overflow-y-auto scrollbar-hidden">
             {feedItems.length > 0 ? (
               feedItems.map((item, i) => (
                 <FeedItem
-                  key={i}
+                  key={item.sessionKey}
                   color={item.color}
                   glowColor={item.glowColor}
                   text={item.text}
                   time={item.time}
+                  timeTitle={item.timeTitle}
                   isLast={i === feedItems.length - 1}
                   agentName={item.agentName}
+                  model={item.model}
+                  modelTitle={item.modelTitle}
+                  tokens={item.tokens}
+                  running={item.running}
                   onClick={item.sessionKey
                     ? () => { useChatStore.getState().openTab(item.sessionKey); navigate('/chat'); }
                     : undefined}

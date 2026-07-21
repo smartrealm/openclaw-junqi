@@ -8,11 +8,13 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
 import { SidebarRow, SidebarSection } from './SidebarRow';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
+import { getAgentDisplayName } from '@/utils/agentDisplayName';
 
 type NavigationItem = FeatureLinkedItem & { to: string; icon: React.ReactNode; label: string };
 
 function toolCategories(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<NavigationItem> {
   return [
+    { to: '/activity',  icon: <Activity size={14} />,  label: t('nav.activity', '活动中心'), feature: 'dashboard' },
     { to: '/workshop', icon: <Folder size={14} />,    label: t('nav.workspace', '工作空间'), feature: 'workshop' },
     { to: '/ai-workspace', icon: <Bot size={14} />,   label: t('nav.aiWorkspace', 'AI 工作台'), feature: 'agentRun' },
     { to: '/terminal', icon: <Terminal size={14} />,  label: t('nav.terminal', '终端'), feature: 'terminal' },
@@ -74,6 +76,9 @@ export function AgentsPanel() {
 
   const skillEntries = Object.entries(skillList);
   const enabledSkillEntries = skillEntries.filter(([, info]) => info.enabled !== false);
+  const enabledSkillPercent = skillEntries.length > 0
+    ? Math.round((enabledSkillEntries.length / skillEntries.length) * 100)
+    : 0;
 
   const sessionCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -102,7 +107,7 @@ export function AgentsPanel() {
       if (aRunning !== bRunning) return bRunning - aRunning;
       if (a.id === 'main') return -1;
       if (b.id === 'main') return 1;
-      return String(a.name || a.id).localeCompare(String(b.name || b.id));
+      return getAgentDisplayName(a).localeCompare(getAgentDisplayName(b));
     });
   }, [agents, runningIds, sessions, t]);
 
@@ -120,7 +125,10 @@ export function AgentsPanel() {
             {sortedAgents.map((a: any) => {
               const isLive = runningIds.has(a.id);
               const sessionCount = sessionCounts.get(a.id) ?? 0;
-              const displayName = String(a.name || a.id);
+              const displayName = getAgentDisplayName(
+                a,
+                a.id === 'main' ? t('agents.mainAgent', 'Main Agent') : a.id,
+              );
               const model = typeof a.model === 'string' ? a.model.split('/').pop() : '';
               return (
                 <button
@@ -157,17 +165,42 @@ export function AgentsPanel() {
           ))}
         </SidebarSection>
         {skillEntries.length > 0 && (
-          <SidebarSection label={t('sidebar.sharedSkills', '共享技能')}>
-            <SidebarRow
-              icon={<Puzzle size={14} />}
-              title={t('nav.skillManager', '技能管理')}
-              meta={t('sidebar.enabledSkillCount', { enabled: enabledSkillEntries.length, total: skillEntries.length, defaultValue: '{{enabled}} / {{total}} 已启用' })}
+          <div className="px-2 py-2">
+            <button
+              type="button"
               onClick={() => navigate('/skill-hub')}
-            />
-            <p className="px-4 pb-1 pt-0.5 text-[10.5px] leading-4 text-aegis-text-dim">
-              {t('sidebar.sharedSkillsHint', '当前技能由所有智能体共享，在技能管理中统一启停。')}
-            </p>
-          </SidebarSection>
+              title={t('sidebar.sharedSkillsHint', '当前技能由所有智能体共享，在技能管理中统一启停。')}
+              className="group w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-aegis-hover/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+            >
+              <span className="flex items-center gap-2.5">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-aegis-primary/10 text-aegis-primary">
+                  <Puzzle size={14} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <strong className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-aegis-text-secondary">
+                      {t('sidebar.sharedSkills', '共享技能')}
+                    </strong>
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[10.5px] text-aegis-text-dim transition-colors group-hover:text-aegis-primary">
+                      {t('nav.skillManager', '技能管理')}
+                      <ArrowUpRight size={11} aria-hidden="true" />
+                    </span>
+                  </span>
+                  <span className="mt-1 flex items-center gap-2">
+                    <span className="h-1 flex-1 overflow-hidden rounded-full bg-aegis-border/60">
+                      <span
+                        className="block h-full rounded-full bg-aegis-primary transition-[width] duration-300"
+                        style={{ width: `${enabledSkillPercent}%` }}
+                      />
+                    </span>
+                    <span className="shrink-0 font-mono text-[9.5px] tabular-nums text-aegis-text-dim">
+                      {enabledSkillEntries.length}/{skillEntries.length}
+                    </span>
+                  </span>
+                </span>
+              </span>
+            </button>
+          </div>
         )}
         {sortedAgents.length === 0 && <div className="px-4 py-3 text-[13px] text-aegis-text-dim">{t('sidebar.noAgents', '暂无已配置的智能体')}</div>}
       </div>
