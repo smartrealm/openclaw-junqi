@@ -1,4 +1,5 @@
 import { executeSessionLifecycleMutation } from '@/services/collaboration/sessionLifecycle';
+import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -13,6 +14,7 @@ type SessionResetDeps = {
   resetRemote: (sessionKey: string) => Promise<unknown>;
   warn: (...args: unknown[]) => void;
   notifyFailure: (detail: string) => void;
+  invalidateChatRun: (sessionKey: string) => void;
   dispatchReset: (sessionKey: string) => void;
 };
 
@@ -22,6 +24,7 @@ const defaultSessionResetDeps: SessionResetDeps = {
   notifyFailure: (detail) => {
     useNotificationStore.getState().addToast('error', '重置会话失败', detail);
   },
+  invalidateChatRun: (sessionKey) => gateway.invalidateChatSession(sessionKey),
   dispatchReset: (sessionKey) => {
     try {
       window.dispatchEvent(new CustomEvent('aegis:session-reset', { detail: { sessionKey } }));
@@ -80,6 +83,7 @@ async function performSessionReset(sessionKey: string): Promise<boolean> {
     if (failure) throw new Error(failure);
     if (isSessionDeleted(sessionKey)) return false;
 
+    sessionResetDeps.invalidateChatRun(sessionKey);
     const chat = useChatStore.getState();
     chat.clearQueue(sessionKey);
     chat.clearSessionMessages(sessionKey);

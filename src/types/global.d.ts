@@ -195,25 +195,6 @@ interface AegisAPI {
     delete: (payload?: { path?: string }) => Promise<{ success: boolean; path?: string; error?: string }>;
     removeRef?: (payload?: { path?: string; kind?: 'uploads' | 'outputs' | 'voice' }) => Promise<{ success: boolean; path?: string; error?: string }>;
     saveAs?: (payload?: { path?: string }) => Promise<{ success: boolean; canceled?: boolean; error?: string; path?: string; sourcePath?: string }>;
-    captureOutputs?: (payload?: { sessionKey?: string; agentId?: string; text?: string; runId?: string | null }) => Promise<{
-      success: boolean;
-      error?: string;
-      refs: Array<{
-        path?: string;
-        originalPath?: string;
-        managedPath?: string;
-        sessionKey?: string;
-        agentId?: string;
-        createdAt?: string;
-        kind?: string;
-        mimeType?: string;
-        size?: number;
-        workspaceRoot?: string;
-        relativePath?: string;
-        isCanonicalOutput?: boolean;
-        visibility?: 'user-output' | 'noncanonical-output' | 'internal';
-      }>;
-    }>;
     read?: (payload?: { path?: string }) => Promise<{ success: boolean; data?: string; mimeType?: string; error?: string; size?: number }>;
     cleanupSessionRefs?: (payload?: { sessionKey?: string; agentId?: string; kind?: 'uploads' | 'outputs' | 'voice' }) => Promise<
       | { success: true; removed: boolean; sessionKey: string }
@@ -337,6 +318,60 @@ interface AegisAPI {
     importFolder: () => Promise<{ success: boolean; skillName?: string; path?: string; error?: string }>;
     importZip: () => Promise<{ success: boolean; skillName?: string; path?: string; error?: string }>;
     delete: (skillKey: string) => Promise<{ success: boolean; error?: string }>;
+  };
+  // Selective Agent / Skill sharing packages. Files are selected in the UI,
+  // then written as a manifest-based ZIP by the desktop runtime.
+  sharePackages: {
+    scan: (root: string) => Promise<{
+      root: string;
+      entries: Array<{
+        path: string;
+        kind: 'file' | 'directory';
+        size: number;
+        recommended: boolean;
+        sensitive: boolean;
+        excludedReason?: string;
+      }>;
+      omittedDirectories: string[];
+    }>;
+    export: (request: {
+      kind: 'agent' | 'skill';
+      name: string;
+      root: string;
+      destination: string;
+      selectedPaths: string[];
+      includeSensitive: boolean;
+      metadata: Record<string, unknown>;
+    }) => Promise<{ destination: string; fileCount: number; totalBytes: number }>;
+    inspect: (sourcePath: string) => Promise<{
+      packagePath: string;
+      manifest: {
+        format: string;
+        version: number;
+        kind: 'agent' | 'skill';
+        name: string;
+        createdAt: number;
+        metadata: Record<string, unknown>;
+        files: Array<{ path: string; size: number; executable: boolean; sensitive: boolean }>;
+      };
+    }>;
+    previewImport: (request: {
+      sourcePath: string;
+      targetParent: string;
+      targetName: string;
+      selectedPaths: string[];
+    }) => Promise<{
+      targetPath: string;
+      selectedFiles: Array<{ path: string; size: number; executable: boolean; sensitive: boolean }>;
+      conflicts: Array<{ path: string; existingKind: 'file' | 'directory' | 'symlink' }>;
+    }>;
+    import: (request: {
+      sourcePath: string;
+      targetParent: string;
+      targetName: string;
+      selectedPaths: string[];
+      conflictStrategy: 'error' | 'skip' | 'overwrite';
+    }) => Promise<{ targetPath: string; importedFiles: number; skippedFiles: number }>;
   };
   // SkillsHub — Tencent CN mirror CLI integration
   skillshub?: {

@@ -36,7 +36,7 @@ import { changeLanguage } from '@/i18n';
 import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { applyConfirmedSessionDeletion } from '@/utils/sessionDelete';
-import { createLatestRequestGate } from '@/utils/sessionLifecycle';
+import { createLatestRequestGate, isSessionDeleted } from '@/utils/sessionLifecycle';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
@@ -116,6 +116,9 @@ export default function App() {
   const [gatewayRetrying, setGatewayRetrying] = useState(false);
   const connected = useChatStore((s) => s.connected);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const activeSessionAgentId = useChatStore(
+    (s) => s.sessions.find((session) => session.key === s.activeSessionKey)?.agentId,
+  );
   const setupComplete = useAppStore((s) => s.setupComplete);
   const setupHealthCheckedRef = useRef(false);
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
@@ -216,7 +219,7 @@ export default function App() {
   // This is the single polling call for all session metadata. The store's setSessions
   // synchronously applies the active session's data to the TitleBar state — no separate
   // loadTokenUsage needed.
-  const loadSessions = useCallback(async () => {
+  const loadSessions = useCallback(async (options: { reconcileChatRuns?: boolean } = {}): Promise<boolean> => {
     const requestGate = sessionListRequestGateRef.current;
     const requestId = requestGate.begin();
     try {
@@ -224,22 +227,27 @@ export default function App() {
       // file. Copy confirmed entries to OpenClaw before this read, then let
       // Gateway labels remain the sole source of truth.
       await migrateLegacySessionLabelsOnce();
-      if (!requestGate.isCurrent(requestId)) return;
+      if (!requestGate.isCurrent(requestId)) return false;
       const result = await gateway.getSessions();
-      if (!requestGate.isCurrent(requestId)) return;
+      if (!requestGate.isCurrent(requestId)) return false;
       const rawSessions = Array.isArray(result?.sessions) ? result.sessions : [];
       // Gateway-level defaults (configured model, context window)
       const defaults = result?.defaults
         ? { model: result.defaults.model ?? null, contextTokens: result.defaults.contextTokens ?? null }
         : undefined;
-      const sessions = rawSessions.map((s: any) => {
-        const key = s.key || s.sessionKey || 'unknown';
+      const sessions = rawSessions.flatMap((s: any) => {
+        const key = typeof s?.key === 'string' && s.key.trim()
+          ? s.key.trim()
+          : typeof s?.sessionKey === 'string' && s.sessionKey.trim()
+            ? s.sessionKey.trim()
+            : '';
+        if (!key) return [];
         const persistedModel = getSessionModelPref(key);
         const resolvedModel = s.model ?? persistedModel ?? null;
         if (typeof s.model === 'string' && s.model.trim().length > 0) {
           setSessionModelPref(key, s.model);
         }
-        return {
+        return [{
           key,
           sessionId: typeof s.sessionId === 'string' ? s.sessionId : undefined,
           agentId: typeof s.agentId === 'string' ? s.agentId : undefined,
@@ -267,12 +275,20 @@ export default function App() {
           contextTokens: s.contextTokens,
           compactionCount: s.compactionCount,
           running: s.running ?? false,
-        };
+        }];
       });
       // Always sync sessions/defaults, even when the session list is currently empty.
       // This keeps TitleBar model in sync from gateway defaults after config changes.
       setSessions(sessions, defaults);
-    } catch { /* silent */ }
+      if (options.reconcileChatRuns) {
+        gateway.reconcileChatSessionRuns(rawSessions);
+      } else {
+        gateway.observeActiveChatSessionRuns(rawSessions);
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }, [setSessions]);
 
   // ── Load Available Models from Gateway ──
@@ -346,6 +362,20 @@ export default function App() {
     }, 3000);
     return () => window.clearTimeout(timer);
   }, []);
+
+  // OpenClaw exposes durable transcript updates through a subscription scoped
+  // to one session. Keep the selected conversation attached to that official
+  // stream; the service serializes unsubscribe/subscribe transitions.
+  useEffect(() => {
+    const target = setupComplete && connected && activeSessionKey
+      ? {
+          sessionKey: activeSessionKey,
+          ...(activeSessionAgentId ? { agentId: activeSessionAgentId } : {}),
+        }
+      : null;
+    void gateway.synchronizeSessionTranscript(target)
+      .catch((error) => debugWarn('gateway', '[App] Unable to subscribe to selected session transcript:', error));
+  }, [activeSessionAgentId, activeSessionKey, connected, setupComplete]);
 
   // ── Cold-start boot overlay: keep visible until WebSocket is really connected
   // and show it for a minimum duration to avoid a flash/jump effect.
@@ -588,16 +618,6 @@ export default function App() {
     });
   }, []);
 
-  useEffect(() => {
-    const handleSessionInactive = (event: Event) => {
-      const sessionKey = (event as CustomEvent<{ sessionKey?: string }>).detail?.sessionKey;
-      if (!sessionKey) return;
-      useChatStore.getState().setIsTyping(false, sessionKey);
-    };
-    window.addEventListener('aegis:session-inactive', handleSessionInactive);
-    return () => window.removeEventListener('aegis:session-inactive', handleSessionInactive);
-  }, []);
-
   // ── Gateway Setup ──
   useEffect(() => {
     if (setupComplete !== true) return;
@@ -605,8 +625,11 @@ export default function App() {
     gateway.setCallbacks({
       onMessage: (msg) => {
         const rawSk = (msg as { sessionKey?: string }).sessionKey;
-        const sessionKey =
-          typeof rawSk === 'string' && rawSk.trim() ? rawSk : useChatStore.getState().activeSessionKey;
+        const sessionKey = typeof rawSk === 'string' ? rawSk.trim() : '';
+        if (!sessionKey) {
+          debugWarn('gateway', '[App] Ignoring unscoped Gateway message');
+          return;
+        }
         const { activeSessionKey: currentSessionKey } = useChatStore.getState();
         addMessage(msg, sessionKey);
         if (msg.role === 'assistant' && sessionKey === useChatStore.getState().activeSessionKey) {
@@ -685,6 +708,45 @@ export default function App() {
           });
         }
       },
+      onSessionRunReconciliation: ({ sessionKey, state }) => {
+        if (isSessionDeleted(sessionKey)) return;
+        const chat = useChatStore.getState();
+        if (state === 'active') {
+          chat.setIsTyping(true, sessionKey);
+          return;
+        }
+
+        const settle = () => {
+          if (!isSessionDeleted(sessionKey)) useChatStore.getState().setIsTyping(false, sessionKey);
+        };
+        const { activeSessionKey, historyLoader } = chat;
+        if (!historyLoader) {
+          settle();
+          return;
+        }
+        void historyLoader(sessionKey === activeSessionKey ? undefined : sessionKey, {
+          force: true,
+          background: sessionKey !== activeSessionKey,
+        }).finally(settle);
+      },
+      onStreamReconciliationNeeded: (sessionKey) => {
+        if (isSessionDeleted(sessionKey)) return;
+        const { activeSessionKey, historyLoader } = useChatStore.getState();
+        if (!historyLoader) return;
+        void historyLoader(sessionKey === activeSessionKey ? undefined : sessionKey, {
+          force: true,
+          background: sessionKey !== activeSessionKey,
+        });
+      },
+      onTranscriptChanged: (sessionKey) => {
+        if (isSessionDeleted(sessionKey)) return;
+        const { activeSessionKey, historyLoader } = useChatStore.getState();
+        if (!historyLoader) return;
+        void historyLoader(sessionKey === activeSessionKey ? undefined : sessionKey, {
+          force: true,
+          background: sessionKey !== activeSessionKey,
+        });
+      },
       onRetryState: (retry) => {
         if (retry.phase === 'exhausted' && manualGatewayRecoveryAwaitingConnectionRef.current) {
           manualGatewayRecoveryAwaitingConnectionRef.current = false;
@@ -716,34 +778,23 @@ export default function App() {
       },
       onStatusChange: (status) => {
         setConnectionStatus(status);
-        if (status.connected) {
-          queueMicrotask(() => {
-            const chat = useChatStore.getState();
-            for (const [sessionKey, queue] of Object.entries(chat.messageQueue)) {
-              if (queue.length > 0 && !chat.typingBySession[sessionKey]) {
-                void chat.drainQueue(sessionKey);
-              }
-            }
-          });
-        }
         // Feed WS lifecycle events into the state machine
         if (status.connected) {
           gatewayManager.notifyWsOpen();
         } else if (!status.connecting) {
           voiceRuntime.interruptAll();
           gatewayManager.notifyWsClose();
-          // Clear all per-session active flags on disconnect so the pet does not
-          // stay "working/typing/thinking" indefinitely if the stream was cut off
-          // before onStreamEnd fired (network drop, gateway crash, etc.).
+          // Do not release a queued turn from a transport failure. OpenClaw's
+          // sessions.list active-run snapshot decides it after reconnect.
+          gateway.clearChatTransportProjection();
+          gateway.resetSessionTranscriptTransport();
           const cs = useChatStore.getState();
-          const typingKeys = Object.keys(cs.typingBySession).filter((k) => cs.typingBySession[k]);
-          typingKeys.forEach((k) => cs.setIsTyping(false, k));
           const thinkingKeys = Object.keys(cs.thinkingBySession).filter(
             (k) => (cs.thinkingBySession[k]?.text?.length ?? 0) > 0,
           );
           thinkingKeys.forEach((k) => cs.clearThinking(k));
-          if (typingKeys.length || thinkingKeys.length) {
-            debugLog('app', '[App] 🧹 Cleared stale typing/thinking on disconnect');
+          if (thinkingKeys.length) {
+            debugLog('app', '[App] 🧹 Cleared live thinking on disconnect; pending turns await Gateway reconciliation');
           }
         }
         if (status.connected) {
@@ -755,7 +806,19 @@ export default function App() {
           const boot = useBootSequenceStore.getState();
           boot.markStageCompleted('connection', 'WebSocket handshake complete');
           boot.markStageRunning('config', 'Loading sessions');
-          void loadSessions().then(() => {
+          void loadSessions({ reconcileChatRuns: true }).then((sessionsLoaded) => {
+            if (!sessionsLoaded) {
+              boot.markStageError('config', 'Session load failed');
+              return;
+            }
+            queueMicrotask(() => {
+              const chat = useChatStore.getState();
+              for (const [sessionKey, queue] of Object.entries(chat.messageQueue)) {
+                if (queue.length > 0 && !chat.typingBySession[sessionKey]) {
+                  void chat.drainQueue(sessionKey);
+                }
+              }
+            });
             boot.markStageCompleted('config', 'Sessions ready');
             boot.markStageRunning('conversation', 'Warming recent conversation');
             const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
@@ -799,8 +862,6 @@ export default function App() {
                 useBootSequenceStore.getState().markStageCompleted('background', 'Models synced');
               });
             }, 1_500);
-          }).catch(() => {
-            boot.markStageError('config', 'Session load failed');
           });
         }
       },
@@ -1021,6 +1082,7 @@ export default function App() {
       window.removeEventListener('aegis:session-reset', handleSessionReset);
       window.removeEventListener('aegis:sessions-changed', handleSessionsChanged);
       window.removeEventListener('aegis:manual-reconnect', handleManualReconnect);
+      gateway.forgetSessionTranscript();
       gatewayManager.destroy();
     };
   }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, triggerGatewayReconnect, cancelGatewayMigrationRetry]);

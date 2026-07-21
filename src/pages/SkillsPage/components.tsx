@@ -2,8 +2,9 @@
 // Skills Page — Sub-components
 // ═══════════════════════════════════════════════════════════
 
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare, AlertCircle, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star } from 'lucide-react';
+import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare, AlertCircle, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
@@ -26,8 +27,10 @@ export interface MySkill extends SkillPersonaFields {
    * May differ from `slug` (the skillKey) when the skill's declared key doesn't match the
    * directory it was installed into — e.g. slug="self-improvement" but dirName="self-improving-agent".
    * Used for the delete IPC call which resolves by directory, not by skillKey.
-   */
+  */
   dirName?: string;
+  /** Absolute skill directory when the source can be shared as a local package. */
+  path?: string;
 }
 
 /** Map raw gateway source to a display group */
@@ -163,11 +166,12 @@ function HubBadge({ badge }: { badge?: 'official' | 'featured' }) {
 // MySkillRow — Installed skill (clean list item)
 // ═══════════════════════════════════════════════════════════
 
-export function MySkillRow({ skill, onToggle, index = 0, onDelete }: {
+export function MySkillRow({ skill, onToggle, index = 0, onDelete, onShare }: {
   skill: MySkill;
   onToggle: () => void;
   index?: number;
   onDelete?: (slug: string) => void;
+  onShare?: (skill: MySkill) => void;
 }) {
   const { t } = useTranslation();
   const color = SKILL_COLORS[index % SKILL_COLORS.length];
@@ -232,6 +236,19 @@ export function MySkillRow({ skill, onToggle, index = 0, onDelete }: {
 
       {/* Actions — toggle + optional persona chat (position preserved) */}
       <div className="flex items-center gap-1.5 pe-3 shrink-0">
+        {skill.path && onShare && (
+          <button
+            onClick={() => onShare(skill)}
+            title="Export share package"
+            aria-label="Export share package"
+            className="w-7 h-7 rounded-lg flex items-center justify-center border
+              border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim
+              hover:text-aegis-primary hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04]
+              transition-all"
+          >
+            <Share2 size={11} />
+          </button>
+        )}
         {(() => {
           const persona = resolvePersona(skill.persona);
           if (!persona) return null;
@@ -385,6 +402,12 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
 }) {
   const { t } = useTranslation();
   const isRed = accentColor === 'red';
+  const [activePane, setActivePane] = useState<'overview' | 'readme' | 'versions'>('overview');
+  useEffect(() => {
+    setActivePane('overview');
+  }, [skill?.slug]);
+  const hasReadme = Boolean(skill?.readme);
+  const hasVersions = Boolean(skill?.versions.length);
   return (
     <>
       {/* Backdrop */}
@@ -400,15 +423,15 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
         )}
       </AnimatePresence>
 
-      {/* Panel: left-cast shadow only when open; when closed the box still abuts the viewport and the shadow would bleed in. */}
+      {/* Detail workspace */}
       <div
         className={clsx(
-          'fixed top-[56px] bottom-0 z-[2147481001] w-[480px] max-w-full',
-          'bg-aegis-bg border-s border-[rgb(var(--aegis-overlay)/0.06)]',
+          'fixed top-[56px] bottom-0 z-[2147481001] w-[520px] max-w-full',
+          'bg-aegis-bg/95 backdrop-blur-xl border-s border-[rgb(var(--aegis-overlay)/0.09)]',
           open && 'shadow-[-12px_0_40px_rgba(0,0,0,0.3)]',
           'overflow-y-auto',
           'transition-[inset-inline-end] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
-          open ? 'end-0' : '-end-[480px] pointer-events-none',
+          open ? 'end-0' : '-end-[520px] pointer-events-none',
         )}
       >
         {loading ? (
@@ -417,30 +440,53 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
           </div>
         ) : skill ? (
           <>
-            {/* Close bar */}
-            <div className="sticky top-0 z-10 flex items-center gap-3 px-5 py-3
-              bg-aegis-bg border-b border-[rgb(var(--aegis-overlay)/0.06)]">
-              <button
-                onClick={onClose}
-                className="w-7 h-7 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)]
-                  bg-[rgb(var(--aegis-overlay)/0.03)] text-aegis-text-muted
-                  hover:text-aegis-danger hover:bg-aegis-danger/[0.06] transition-colors
-                  flex items-center justify-center"
-              >
-                <X size={14} />
-              </button>
-              <span className="font-semibold text-[14px] flex-1 truncate">{skill.name}</span>
+            {/* Header and view selector */}
+            <div className="sticky top-0 z-10 border-b border-[rgb(var(--aegis-overlay)/0.08)] bg-aegis-bg/95 px-5 pt-3 backdrop-blur-xl">
+              <div className="flex items-center gap-3 pb-3">
+                <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-aegis-text">{skill.name}</span>
+                <button
+                  onClick={onClose}
+                  title={t('common.close', 'Close')}
+                  className="grid size-7 shrink-0 place-items-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-danger/[0.08] hover:text-aegis-danger"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+              <div className="flex items-center gap-1" role="tablist" aria-label="Skill details">
+                {([
+                  { id: 'overview' as const, label: 'Overview', visible: true },
+                  { id: 'readme' as const, label: 'Readme', visible: hasReadme },
+                  { id: 'versions' as const, label: 'Versions', visible: hasVersions },
+                ]).filter((tab) => tab.visible).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={activePane === tab.id}
+                    onClick={() => setActivePane(tab.id)}
+                    className={clsx(
+                      'border-b-2 px-2.5 py-2 text-[10.5px] font-medium transition-colors',
+                      activePane === tab.id
+                        ? 'border-aegis-primary text-aegis-primary'
+                        : 'border-transparent text-aegis-text-dim hover:text-aegis-text-secondary',
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Header */}
-            <div className="px-6 pt-6 pb-4">
+            {activePane === 'overview' && <>
+            {/* Overview */}
+            <div className="px-5 pt-5 pb-4">
               <div className="flex items-start gap-3.5">
-                <div className="w-[52px] h-[52px] rounded-[13px] flex items-center justify-center text-[34px]
-                  bg-[rgb(var(--aegis-overlay)/0.025)] shrink-0">
+                <div className="w-11 h-11 rounded-lg flex items-center justify-center text-[26px]
+                  bg-[rgb(var(--aegis-overlay)/0.04)] shrink-0 border border-[rgb(var(--aegis-overlay)/0.06)]">
                   {skill.emoji}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[18px] font-bold tracking-tight flex items-center gap-2 flex-wrap mb-1">
+                  <div className="text-[17px] font-semibold flex items-center gap-2 flex-wrap mb-1">
                     {skill.name}
                     <HubBadge badge={skill.badge} />
                   </div>
@@ -450,31 +496,28 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                       {skill.owner}
                     </div>
                   )}
-                  <p className="text-[12.5px] text-aegis-text-secondary leading-relaxed">{skill.summary}</p>
+                  <p className="max-w-[44ch] text-[12px] leading-relaxed text-aegis-text-secondary">{skill.summary}</p>
                 </div>
               </div>
             </div>
 
             {/* Stats */}
-            <div className="mx-6 grid grid-cols-3 gap-px rounded-[10px] overflow-hidden border border-[rgb(var(--aegis-overlay)/0.06)]">
+            <div className="mx-5 grid grid-cols-3 divide-x divide-[rgb(var(--aegis-overlay)/0.06)] border-y border-[rgb(var(--aegis-overlay)/0.08)]">
               {[
                 { value: formatNum(skill.downloads), label: t('skillsExtra.downloads', 'Downloads') },
                 { value: String(skill.stars), label: t('skillsExtra.stars', 'Stars') },
                 { value: formatNum(skill.installs), label: t('skillsExtra.installs') },
               ].map(s => (
-                <div key={s.label} className="p-2.5 text-center bg-[rgb(var(--aegis-overlay)/0.015)]">
-                  <div className="text-base font-bold">{s.value}</div>
-                  <div className="text-[9.5px] text-aegis-text-dim uppercase tracking-wider mt-0.5">{s.label}</div>
+                <div key={s.label} className="py-2.5 text-center">
+                  <div className="text-[15px] font-semibold tabular-nums">{s.value}</div>
+                  <div className="mt-0.5 text-[9px] text-aegis-text-dim">{s.label}</div>
                 </div>
               ))}
             </div>
 
             {/* Install command */}
-            <div className="px-6 py-4">
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-[9px]
-                bg-[var(--aegis-code-bg,rgb(var(--aegis-overlay)/0.03))]
-                border border-[rgb(var(--aegis-overlay)/0.06)]
-                font-mono text-[11.5px] text-aegis-primary">
+            <div className="px-5 py-4">
+              <div className="flex items-center gap-2 border-s-2 border-aegis-primary/50 bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2.5 font-mono text-[11px] text-aegis-primary">
                 <code className="flex-1 truncate">{installCmd ?? `openclaw skills install ${skill.slug}`}</code>
                 <button
                   onClick={() => navigator.clipboard.writeText(installCmd ?? `openclaw skills install ${skill.slug}`)}
@@ -486,13 +529,13 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             </div>
 
             {/* Action buttons */}
-            <div className="px-6 pb-4 flex flex-col gap-2">
+            <div className="px-5 pb-5 flex flex-col gap-2">
               {/* Primary: Install / status */}
               <button
                 onClick={() => (installState === 'error' || installState === 'idle') ? onInstall?.(skill.slug) : undefined}
                 disabled={installState !== 'idle' && installState !== 'error'}
                 className={clsx(
-                  'w-full py-2.5 rounded-[9px] text-[12px] font-semibold transition-all',
+                  'w-full py-2.5 rounded-md text-[12px] font-semibold transition-all',
                   'flex items-center justify-center gap-1.5',
                   installState === 'done'
                     ? 'bg-aegis-success/10 border border-aegis-success/30 text-aegis-success cursor-default'
@@ -526,7 +569,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               )}
 
               {installState === 'error' && errorText && (
-                <div className="px-3 py-2.5 rounded-[9px] border border-aegis-danger/20 bg-aegis-danger/[0.04] text-[11.5px] leading-relaxed text-aegis-text-secondary">
+                <div className="border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[11.5px] leading-relaxed text-aegis-text-secondary">
                   {errorText}
                 </div>
               )}
@@ -534,7 +577,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               {installState === 'error' && secondaryActionLabel && onSecondaryAction && (
                 <button
                   onClick={onSecondaryAction}
-                  className="w-full py-2 rounded-[9px] text-[11.5px] font-medium
+                  className="w-full py-2 rounded-md text-[11.5px] font-medium
                     bg-[rgb(var(--aegis-overlay)/0.03)] border border-[rgb(var(--aegis-overlay)/0.06)]
                     text-aegis-text-secondary hover:border-[rgb(var(--aegis-overlay)/0.1)] transition-colors
                     flex items-center justify-center gap-1.5"
@@ -560,7 +603,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                   <button
                     onClick={handle}
                     title={t('skills.startChatWithPersona', 'Start chat with this persona')}
-                    className="w-full py-2 rounded-[9px] text-[11.5px] font-medium
+                    className="w-full py-2 rounded-md text-[11.5px] font-medium
                       bg-aegis-primary/[0.06] border border-aegis-primary/15 text-aegis-primary
                       hover:bg-aegis-primary/[0.1] transition-colors
                       flex items-center justify-center gap-1.5"
@@ -573,7 +616,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               {/* Secondary: View on source */}
               <button
                 onClick={() => window.open(externalUrl ?? `https://clawhub.ai/skills/${skill.slug}`, '_blank')}
-                className="w-full py-2 rounded-[9px] text-[11.5px] font-medium
+                className="w-full py-2 rounded-md text-[11.5px] font-medium
                   bg-[rgb(var(--aegis-overlay)/0.03)] border border-[rgb(var(--aegis-overlay)/0.06)]
                   text-aegis-text-secondary hover:border-[rgb(var(--aegis-overlay)/0.1)] transition-colors
                   flex items-center justify-center gap-1.5"
@@ -582,24 +625,22 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               </button>
             </div>
 
-            <div className="h-px mx-6 bg-[rgb(var(--aegis-overlay)/0.06)]" />
-
             {/* Requirements */}
             {(skill.requirements.env.length > 0 || skill.requirements.bin.length > 0) && (
-              <div className="px-6 py-4">
-                <h3 className="text-[12px] font-semibold text-aegis-text-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <div className="border-t border-[rgb(var(--aegis-overlay)/0.08)] px-5 py-4">
+                <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
                   <Wrench size={13} aria-hidden="true" />
                   {t('skillsExtra.requirements')}
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
                   {skill.requirements.env.map(e => (
-                    <span key={e} className="px-2 py-1 rounded-md text-[10.5px] font-mono
+                    <span key={e} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono
                       bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
                       <Key size={14} strokeWidth={1.75} /> {e}
                     </span>
                   ))}
                   {skill.requirements.bin.map(b => (
-                    <span key={b} className="px-2 py-1 rounded-md text-[10.5px] font-mono
+                    <span key={b} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono
                       bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
                       <Settings2 size={14} strokeWidth={1.75} /> {b}
                     </span>
@@ -607,18 +648,17 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                 </div>
               </div>
             )}
+            </>}
 
             {/* Readme */}
-            {skill.readme && (
-              <div className="px-6 pb-4">
-                <h3 className="text-[12px] font-semibold text-aegis-text-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            {activePane === 'readme' && skill.readme && (
+              <div className="px-5 py-5">
+                <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
                   <BookOpenText size={13} aria-hidden="true" />
                   Readme
                 </h3>
                 <div
-                  className="prose-sm max-h-[280px] overflow-y-auto p-4 rounded-[10px]
-                    bg-[var(--aegis-code-bg,rgb(var(--aegis-overlay)/0.03))]
-                    border border-[rgb(var(--aegis-overlay)/0.06)]
+                  className="prose-sm min-h-[320px] p-0
                     text-[12.5px] leading-relaxed text-aegis-text-secondary"
                   dangerouslySetInnerHTML={{ __html: skill.readme }}
                 />
@@ -626,15 +666,15 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             )}
 
             {/* Versions */}
-            {skill.versions.length > 0 && (
-              <div className="px-6 pb-8">
-                <h3 className="text-[12px] font-semibold text-aegis-text-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            {activePane === 'versions' && skill.versions.length > 0 && (
+              <div className="px-5 py-5">
+                <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
                   <FileText size={14} strokeWidth={1.75} /> Versions
                 </h3>
                 <ul className="space-y-0">
                   {skill.versions.map(v => (
-                    <li key={v.version} className="flex items-center gap-2 py-2
-                      border-b border-[rgb(var(--aegis-overlay)/0.04)] last:border-0 text-[11.5px]">
+                    <li key={v.version} className="flex items-center gap-2 py-2.5
+                      border-b border-[rgb(var(--aegis-overlay)/0.06)] last:border-0 text-[11.5px]">
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono
                         bg-aegis-primary/[0.06] text-aegis-primary">
                         v{v.version}

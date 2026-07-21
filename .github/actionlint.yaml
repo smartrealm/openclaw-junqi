@@ -7,3 +7,5 @@ self-hosted-runner:
     - ephemeral
     # GitHub-hosted public preview label. actionlint 1.7.7 does not yet ship it.
     - windows-11-arm
+    # GitHub-hosted Intel runner label. actionlint 1.7.7 does not yet ship it.
+    - macos-15-intel

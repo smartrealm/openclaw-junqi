@@ -61,6 +61,7 @@ pub mod session_labels;
 pub mod setup;
 pub mod setup_diagnostics;
 pub mod setup_progress;
+pub mod share_packages;
 pub mod skills;
 pub(crate) mod state_dir_probe;
 pub mod storage;

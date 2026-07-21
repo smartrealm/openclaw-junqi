@@ -27,12 +27,14 @@ describe('deleteSessionEverywhere', () => {
   let requests: string[];
   let failures: string[];
   let warnings: unknown[][];
+  let invalidated: string[];
 
   beforeEach(() => {
     __resetSessionLifecycleForTest();
     requests = [];
     failures = [];
     warnings = [];
+    invalidated = [];
     __setSessionDeleteDepsForTest({
       deleteRemote: async (key) => {
         requests.push(key);
@@ -40,6 +42,7 @@ describe('deleteSessionEverywhere', () => {
       },
       notifyFailure: (detail) => failures.push(detail),
       warn: (...args) => warnings.push(args),
+      invalidateChatRun: (key) => invalidated.push(key),
     });
   });
 
@@ -50,6 +53,7 @@ describe('deleteSessionEverywhere', () => {
 
     assert.equal(result, true);
     assert.deepEqual(requests, [TEST_KEY]);
+    assert.deepEqual(invalidated, [TEST_KEY]);
     assert.equal(useChatStore.getState().sessions.some((session) => session.key === TEST_KEY), false);
     assert.equal(useGatewayDataStore.getState().sessions.some((session) => session.key === TEST_KEY), false);
     assert.deepEqual(useChatStore.getState().openTabs, [MAIN_KEY]);

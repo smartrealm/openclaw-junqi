@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid } from 'lucide-react';
+import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid, FileArchive, Share2 } from 'lucide-react';
 import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
@@ -35,6 +35,7 @@ import { isCronSessionKey, isSubagentSessionKey } from '@/utils/sessionPresentat
 import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
 import { parseAgentWorkspaceSkills, type AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import { persistAgentSkillFilter } from './agentSkillConfig';
+import { ExportSharePackageDialog, ImportSharePackageDialog, type SharePackageManifest, type SharePackageSubject } from '@/components/shared/SharePackageDialog';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -607,6 +608,8 @@ export function AgentHubPage() {
   const [agentFormError, setAgentFormError] = useState<string | null>(null);
   const [settingsAgent, setSettingsAgent] = useState<AgentInfo | null>(null);
   const [workspaceView, setWorkspaceView] = useState<{ agent: AgentInfo; root?: string } | null>(null);
+  const [shareExportAgent, setShareExportAgent] = useState<AgentInfo | null>(null);
+  const [shareImportOpen, setShareImportOpen] = useState(false);
   const [newAgentSkillKeys, setNewAgentSkillKeys] = useState<string[]>([]);
   const [agentWorkspaceSkills, setAgentWorkspaceSkills] = useState<Record<string, AgentWorkspaceSkill[]>>({});
   const [loadingAgentSkills, setLoadingAgentSkills] = useState<Record<string, boolean>>({});
@@ -713,6 +716,45 @@ export function AgentHubPage() {
   const newAgentWorkspace = newAgent.workspace.trim() || effectiveDefaultAgentWorkspace.trim();
   const newAgentWorkspaceMissing = !newAgentWorkspace;
   const canCreateAgent = connected && !!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists && !newAgentWorkspaceMissing && !creatingAgent;
+
+  const shareExportSubject = useMemo<SharePackageSubject | null>(() => {
+    if (!shareExportAgent?.workspace) return null;
+    return {
+      kind: 'agent',
+      name: shareExportAgent.name || shareExportAgent.id,
+      root: shareExportAgent.workspace,
+      fileName: shareExportAgent.id,
+      metadata: {
+        agent: {
+          id: shareExportAgent.id,
+          name: shareExportAgent.name || shareExportAgent.id,
+          model: fmtModel(shareExportAgent.model) || undefined,
+        },
+      },
+    };
+  }, [shareExportAgent]);
+
+  const getImportedAgent = useCallback((manifest: SharePackageManifest) => {
+    const source = manifest.metadata.agent;
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+    const record = source as Record<string, unknown>;
+    const id = normalizeGatewayAgentId(String(record.id ?? ''));
+    const name = String(record.name ?? id).trim() || id;
+    const model = String(record.model ?? '').trim();
+    return { id, name, model };
+  }, []);
+
+  const validateImportedAgent = useCallback((manifest: SharePackageManifest) => {
+    const imported = getImportedAgent(manifest);
+    if (!imported?.id || !GATEWAY_AGENT_ID_RE.test(imported.id)) {
+      return 'The package does not contain a valid Agent ID.';
+    }
+    if (imported.id === MAIN_GATEWAY_AGENT_ID || agents.some((agent) => agent.id.toLowerCase() === imported.id)) {
+      return `An Agent named "${imported.id}" already exists.`;
+    }
+    if (!connected) return 'Connect to the Gateway before importing an Agent.';
+    return null;
+  }, [agents, connected, getImportedAgent]);
 
   // Sidebar "在线智能体" click navigates to /agents?agent=<id>. Open that
   // agent's settings panel automatically, matching in-page card click behavior.
@@ -1004,6 +1046,15 @@ export function AgentHubPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShareImportOpen(true)}
+            title="Import Agent package"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-aegis-primary/20 bg-aegis-primary/[0.06] px-3 py-1.5 text-[11px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/[0.12]"
+          >
+            <FileArchive size={13} />
+            <span className="hidden sm:inline">Import</span>
+          </button>
           {/* View Switcher */}
           <div className="flex gap-0.5 bg-[rgb(var(--aegis-overlay)/0.02)] border border-[rgb(var(--aegis-overlay)/0.06)] rounded-xl p-1">
             {([
@@ -1628,6 +1679,11 @@ export function AgentHubPage() {
                                 <button onClick={(e) => { e.stopPropagation(); navigate(`/chat?agent=${encodeURIComponent(agent.id)}&new=1`); }}
                                   title={t('skills.startChat', 'Start chat')}
                                   className="p-1.5 rounded-lg bg-aegis-primary/10 border border-aegis-primary/20 text-aegis-primary hover:bg-aegis-primary/16 transition-colors"><MessageSquare size={13} /></button>
+                                {agent.workspace && (
+                                  <button onClick={(e) => { e.stopPropagation(); setShareExportAgent(agent); }}
+                                    title="Export share package"
+                                    className="p-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-primary hover:border-aegis-primary/30 transition-colors"><Share2 size={13} /></button>
+                                )}
                                 <button onClick={(e) => { e.stopPropagation(); setSettingsAgent(agent); }}
                                   title={t('common.edit', 'Edit')}
                                   className="p-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-primary hover:border-aegis-primary/30 transition-colors"><Settings2 size={13} /></button>
@@ -1670,6 +1726,50 @@ export function AgentHubPage() {
       )}
 
       </>}
+
+      <ExportSharePackageDialog
+        open={shareExportAgent !== null}
+        subject={shareExportSubject}
+        onClose={() => setShareExportAgent(null)}
+        onExported={(result) => {
+          showAlert('Agent package exported', `${result.fileCount} files, ${Math.round(result.totalBytes / 1024)} KB`, 'success');
+        }}
+      />
+
+      <ImportSharePackageDialog
+        open={shareImportOpen}
+        acceptedKind="agent"
+        onClose={() => setShareImportOpen(false)}
+        onBeforeImport={(manifest) => validateImportedAgent(manifest)}
+        onImported={async ({ manifest, targetPath, importedFiles, skippedFiles }) => {
+          const imported = getImportedAgent(manifest);
+          if (!imported) throw new Error('The package does not contain Agent metadata.');
+          const created = await gateway.createAgent({
+            id: imported.id,
+            name: imported.name,
+            workspace: targetPath,
+            ...(imported.model ? { model: imported.model } : {}),
+          });
+          if (created?.agentId && created.agentId !== imported.id) {
+            throw new Error(`OpenClaw created Agent ${String(created.agentId)}; expected ${imported.id}.`);
+          }
+          if (imported.model) {
+            setAgentModels((current) => ({ ...current, [imported.id]: imported.model }));
+            setAgentExplicitModels((current) => ({ ...current, [imported.id]: true }));
+          }
+          await refreshGroup('agents');
+          setSelectedAgentId(imported.id);
+          setSettingsAgent({
+            id: imported.id,
+            name: imported.name,
+            model: imported.model,
+            workspace: targetPath,
+            configured: true,
+          });
+          const suffix = skippedFiles > 0 ? ` (${skippedFiles} skipped)` : '';
+          showAlert('Agent package imported', `${imported.name}: ${importedFiles} files${suffix}`, 'success');
+        }}
+      />
 
       {/* ══ Agent Settings Panel ══ */}
       <AgentSettingsPanel

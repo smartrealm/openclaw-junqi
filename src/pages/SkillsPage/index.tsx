@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
-import { Search, Loader2, RefreshCw, Package, Globe, FolderOpen, FileArchive, Upload, CheckCircle2, AlertCircle, Zap, ExternalLink, CalendarDays, Plug, Brain, FileText, Settings2, Wrench, Pencil, GitBranch, Mail, BookOpen, HeartPulse, Volume2, Gem, Puzzle, CloudSun, Palette, Mic, Bug } from 'lucide-react';
+import { Search, Loader2, RefreshCw, Package, Globe, FolderOpen, FileArchive, CheckCircle2, AlertCircle, Zap, ExternalLink, CalendarDays, Plug, Brain, FileText, Settings2, Wrench, Pencil, GitBranch, Mail, BookOpen, HeartPulse, Volume2, Gem, Puzzle, CloudSun, Palette, Mic, Bug } from 'lucide-react';
 import { Cube } from '@phosphor-icons/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { gateway } from '@/services/gateway';
@@ -27,6 +27,7 @@ import {
   type SkillDetail,
 } from './components';
 import { debugError, debugWarn } from '@/utils/debugLog';
+import { ExportSharePackageDialog, ImportSharePackageDialog, type SharePackageSubject } from '@/components/shared/SharePackageDialog';
 
 // ═══════════════════════════════════════════════════════════
 // ClawHub API
@@ -503,6 +504,7 @@ async function fetchManagedInstalledSkills(): Promise<{ skills: MySkill[]; avail
         enabled: true,
         source: 'openclaw-managed',
         dirName: skill.dirName,
+        path: skill.path,
       })),
     };
   } catch (err) {
@@ -555,6 +557,7 @@ function mergeInstalledSkills(scannedSkills: MySkill[], gatewaySkills: MySkill[]
         version: skill.version || existing.version,
         source: skill.source || existing.source,
         dirName: skill.dirName || existing.dirName,
+        path: skill.path || existing.path,
       };
       register(merged[existingIndex], existingIndex);
       continue;
@@ -602,6 +605,7 @@ async function fetchInstalledSkills(): Promise<MySkill[]> {
         enabled: s.disabled !== true && s.enabled !== false,
         source: s.source || 'openclaw-managed',
         dirName,
+        path: s.baseDir,
         persona: s.persona,
       };
     });
@@ -682,6 +686,8 @@ export function SkillsPage() {
   const [importStatus, setImportStatus] = useState<ImportStatus>({ kind: 'idle' });
   const [importMenuOpen, setImportMenuOpen] = useState(false);
   const importMenuRef = useRef<HTMLDivElement>(null);
+  const [shareExportSkill, setShareExportSkill] = useState<MySkill | null>(null);
+  const [shareImportOpen, setShareImportOpen] = useState(false);
 
   // Close import menu on outside click
   useEffect(() => {
@@ -1139,6 +1145,24 @@ export function SkillsPage() {
     }
   }, [loadMySkills]);
 
+  const shareExportSubject = useMemo<SharePackageSubject | null>(() => {
+    if (!shareExportSkill?.path) return null;
+    return {
+      kind: 'skill',
+      name: shareExportSkill.name,
+      root: shareExportSkill.path,
+      fileName: shareExportSkill.dirName || shareExportSkill.slug,
+      metadata: {
+        skill: {
+          slug: shareExportSkill.slug,
+          name: shareExportSkill.name,
+          dirName: shareExportSkill.dirName || shareExportSkill.slug,
+          version: shareExportSkill.version || undefined,
+        },
+      },
+    };
+  }, [shareExportSkill]);
+
   // ── Install skill ──
   // SkillHub: uses the skillhub CLI (auto-installs if missing).
   // ClawHub: uses native `openclaw skills install` in the main process.
@@ -1273,8 +1297,8 @@ export function SkillsPage() {
                   >
                     {importStatus.kind === 'importing'
                       ? <Loader2 size={12} className="animate-spin" />
-                      : <Upload size={12} />}
-                    {t('skills.importLocal')}
+                      : <FileArchive size={12} />}
+                    Import
                   </button>
 
                   {/* Dropdown menu */}
@@ -1289,6 +1313,21 @@ export function SkillsPage() {
                           bg-aegis-menu-bg border border-aegis-menu-border rounded-xl
                           shadow-[0_8px_32px_rgba(0,0,0,0.2)] overflow-hidden"
                       >
+                        <button
+                          onClick={() => {
+                            setImportMenuOpen(false);
+                            setShareImportOpen(true);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12.5px]
+                            text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)] transition-colors"
+                        >
+                          <FileArchive size={13} className="text-aegis-primary shrink-0" />
+                          <div className="text-start">
+                            <div className="font-medium">Import share package</div>
+                            <div className="text-[10px] text-aegis-text-dim">Preview files before importing</div>
+                          </div>
+                        </button>
+                        <div className="h-px mx-3 bg-aegis-menu-border" />
                         <button
                           onClick={() => runImport('folder')}
                           className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12.5px]
@@ -1365,6 +1404,7 @@ export function SkillsPage() {
                   skills={mySkills}
                   onToggle={toggleSkill}
                   onDelete={requestDelete}
+                  onShare={setShareExportSkill}
                 />
               )}
             </div>
@@ -1575,6 +1615,26 @@ export function SkillsPage() {
         onStartChat={(persona) => {
           window.dispatchEvent(new CustomEvent('aegis:open-new-session-picker', { detail: { persona } }));
           closeDetail();
+        }}
+      />
+
+      <ExportSharePackageDialog
+        open={shareExportSkill !== null}
+        subject={shareExportSubject}
+        onClose={() => setShareExportSkill(null)}
+        onExported={(result) => {
+          showAlert('Skill package exported', `${result.fileCount} files, ${Math.round(result.totalBytes / 1024)} KB`, 'success');
+        }}
+      />
+
+      <ImportSharePackageDialog
+        open={shareImportOpen}
+        acceptedKind="skill"
+        onClose={() => setShareImportOpen(false)}
+        onImported={async ({ manifest, importedFiles, skippedFiles }) => {
+          await loadMySkills();
+          const suffix = skippedFiles > 0 ? ` (${skippedFiles} skipped)` : '';
+          showAlert('Skill package imported', `${manifest.name}: ${importedFiles} files${suffix}`, 'success');
         }}
       />
 
@@ -1973,10 +2033,11 @@ function ClawHubOffline({
 // SkillGroups — grouped list (Built-In / Installed / Extra)
 // ═══════════════════════════════════════════════════════════
 
-function SkillGroups({ skills, onToggle, onDelete }: {
+function SkillGroups({ skills, onToggle, onDelete, onShare }: {
   skills: MySkill[];
   onToggle: (slug: string) => void;
   onDelete: (slug: string) => void;
+  onShare: (skill: MySkill) => void;
 }) {
   const { t } = useTranslation();
 
@@ -2031,6 +2092,7 @@ function SkillGroups({ skills, onToggle, onDelete }: {
                   index={idx}
                   onToggle={() => onToggle(skill.slug)}
                   onDelete={() => onDelete(skill.slug)}
+                  onShare={onShare}
                 />
               );
             })}

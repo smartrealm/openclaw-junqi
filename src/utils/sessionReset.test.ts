@@ -25,14 +25,17 @@ beforeEach(() => {
 
 test('clears local state only after the coordinated native reset succeeds', async () => {
   const events: string[] = [];
+  const invalidated: string[] = [];
   setSessionResetDependenciesForTests({
     resetRemote: async () => ({ success: true, sessionId: 'session-before' }),
+    invalidateChatRun: (key) => invalidated.push(key),
     dispatchReset: (key) => events.push(key),
   });
 
   assert.equal(await resetSessionEverywhere(KEY), true);
   assert.deepEqual(useChatStore.getState().messagesPerSession[KEY], []);
   assert.deepEqual(useChatStore.getState().messageQueue[KEY], []);
+  assert.deepEqual(invalidated, [KEY]);
   assert.deepEqual(events, [KEY]);
 });
 

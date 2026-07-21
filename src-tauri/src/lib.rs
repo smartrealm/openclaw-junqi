@@ -329,6 +329,12 @@ pub fn run() {
             commands::skills::install_skill,
             commands::skills::uninstall_skill,
             commands::skills::delete_skill,
+            // Selective Agent / Skill share packages
+            commands::share_packages::scan_share_package_source,
+            commands::share_packages::export_share_package,
+            commands::share_packages::inspect_share_package,
+            commands::share_packages::preview_share_package_import,
+            commands::share_packages::import_share_package,
             // Workspace path accessor (PR-15 @ file mention support)
             commands::workspace::get_workspace_path,
             // Notification local store (PR-0.6a — local read state only)

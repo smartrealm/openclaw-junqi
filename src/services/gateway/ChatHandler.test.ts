@@ -27,13 +27,10 @@ function resetChatStore() {
   });
 }
 
-function installWindowMock(captureOutputsImpl?: () => Promise<any>) {
+function installWindowMock() {
   (globalThis as any).__APP_VERSION__ = 'test';
   (globalThis as any).window = {
     aegis: {
-      managedFiles: {
-        captureOutputs: captureOutputsImpl || (async () => ({ success: true, refs: [] })),
-      },
     },
     __APP_VERSION__: 'test',
   };
@@ -182,51 +179,87 @@ test('agent lifecycle end seals the local assistant segment when chat.final is m
   assert.equal(storedMessages[0].responseState, 'final');
 });
 
-test('chat.final maps managedFiles capture refs using path field', async () => {
-  installWindowMock(async () => ({
-    success: true,
-    refs: [
-      {
-        path: '/Users/david/.openclaw/workspace/outputs/demo.md',
-        mimeType: 'text/markdown',
-        size: 1024,
-      },
-    ],
-  }));
+test('an old chat terminal cannot overwrite a newer OpenClaw run', async () => {
+  installWindowMock();
   const { ChatHandler } = await loadDeps();
   resetChatStore();
 
   const streamEnds: StreamEndCall[] = [];
-  const conn = {
+  const handler = new ChatHandler({
     callbacks: {
       onStreamChunk: () => {},
       onStreamEnd: (sessionKey: string, messageId: string, content: string, _media?: any, meta?: any) => {
         streamEnds.push({ sessionKey, messageId, content, meta });
       },
     },
-  } as any;
+  } as any);
+  const sessionKey = 'agent:main:run-fence';
 
-  const handler = new ChatHandler(conn);
-  const sessionKey = 'agent:main:session-c';
-  const runId = 'run-managed-files-path';
-
-  handler.handleEvent({
-    event: 'chat',
-    payload: {
-      sessionKey,
-      runId,
-      state: 'final',
-      message: { content: '📎 file: /Users/david/.openclaw/workspace/outputs/demo.md (text/markdown, ~1KB)' },
-    },
-  });
-
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId: 'run-old', state: 'delta', message: { content: 'old reply' },
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId: 'run-new', state: 'delta', message: { content: 'new reply' },
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId: 'run-old', state: 'final', message: { content: 'old final' },
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId: 'run-new', state: 'final', message: { content: 'new final' },
+  } });
 
   assert.equal(streamEnds.length, 1);
-  const refs = streamEnds[0].meta?.fileRefs;
-  assert.ok(Array.isArray(refs));
-  assert.equal(refs.length, 1);
-  assert.equal(refs[0].path, '/Users/david/.openclaw/workspace/outputs/demo.md');
+  assert.equal(streamEnds[0].content, 'new final');
+  assert.equal(streamEnds[0].meta?.runId, 'run-new');
+});
+
+test('a confirmed local reset rejects delayed chat terminals', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const streamEnds: StreamEndCall[] = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: (sessionKey: string, messageId: string, content: string, _media?: any, meta?: any) => {
+        streamEnds.push({ sessionKey, messageId, content, meta });
+      },
+    },
+  } as any);
+  const sessionKey = 'agent:main:reset-fence';
+
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId: 'run-reset', state: 'delta', message: { content: 'before reset' },
+  } });
+  handler.invalidateSession(sessionKey);
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId: 'run-reset', state: 'final', message: { content: 'late terminal' },
+  } });
+
+  assert.equal(streamEnds.length, 0);
+});
+
+test('durable session.message events refresh once per OpenClaw message sequence', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const refreshed: string[] = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onTranscriptChanged: (sessionKey: string) => refreshed.push(sessionKey),
+    },
+  } as any);
+  const sessionKey = 'agent:main:transcript';
+
+  handler.handleEvent({ event: 'session.message', payload: { sessionKey, messageSeq: 8 } });
+  handler.handleEvent({ event: 'session.message', payload: { sessionKey, messageSeq: 8 } });
+  await new Promise((resolve) => setTimeout(resolve, 90));
+
+  assert.deepEqual(refreshed, [sessionKey]);
 });
 
 test('chat.final treats workshop-shaped model text as untrusted display content', async () => {

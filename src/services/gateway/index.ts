@@ -15,6 +15,10 @@ import {
 } from './Connection';
 import { ChatHandler } from './ChatHandler';
 import {
+  OpenClawSessionTranscriptSubscription,
+  type OpenClawTranscriptTarget,
+} from './SessionTranscriptSubscription';
+import {
   GatewayAgentDisplayNameUpdateError,
   OpenClawAgentManagement,
 } from './AgentManagement';
@@ -32,6 +36,7 @@ export type {
   GatewayConnectionOptions,
   GatewayRequestOptions,
 };
+export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
 
 export interface GatewayAgentCreateParams {
   name: string;
@@ -65,6 +70,7 @@ export interface GatewayHistoryOptions {
 // ── Create instances ──
 const connection = new GatewayConnection();
 const chatHandler = new ChatHandler(connection);
+const transcriptSubscription = new OpenClawSessionTranscriptSubscription(connection);
 const SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS = 5_000;
 
 export { GatewayAgentDisplayNameUpdateError };
@@ -222,9 +228,24 @@ export const gateway = {
   // Setup
   setCallbacks(cb: GatewayCallbacks) { connection.setCallbacks(cb); },
 
+  // Live chat projection
+  invalidateChatSession(sessionKey: string) { chatHandler.invalidateSession(sessionKey); },
+  clearChatTransportProjection() { chatHandler.clearTransportProjection(); },
+  reconcileChatSessionRuns(sessions: unknown[]) { chatHandler.reconcileSessionRuns(sessions); },
+  observeActiveChatSessionRuns(sessions: unknown[]) { chatHandler.observeActiveSessionRuns(sessions); },
+  async synchronizeSessionTranscript(target: OpenClawTranscriptTarget | null) {
+    if (!connection.isConnected()) return;
+    await transcriptSubscription.synchronize(target);
+  },
+  resetSessionTranscriptTransport() { transcriptSubscription.resetTransport(); },
+  forgetSessionTranscript() { transcriptSubscription.forget(); },
+
   // Connection
   connect(url: string, token: string, deviceToken = '') { connection.connect(url, token, deviceToken); },
-  disconnect() { connection.disconnect(); },
+  disconnect() {
+    transcriptSubscription.resetTransport();
+    connection.disconnect();
+  },
   getStatus() { return connection.getStatus(); },
   getLastError() { return connection.getLastError(); },
 

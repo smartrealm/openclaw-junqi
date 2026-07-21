@@ -1,5 +1,6 @@
 /** Shared native OpenClaw session deletion flow. */
 import { executeSessionLifecycleMutation } from '@/services/collaboration/sessionLifecycle';
+import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -20,6 +21,7 @@ type SessionDeleteDeps = {
   deleteRemote: (sessionKey: string) => Promise<unknown>;
   warn: (...args: unknown[]) => void;
   notifyFailure: (detail: string) => void;
+  invalidateChatRun: (sessionKey: string) => void;
 };
 
 const defaultSessionDeleteDeps: SessionDeleteDeps = {
@@ -28,6 +30,7 @@ const defaultSessionDeleteDeps: SessionDeleteDeps = {
   notifyFailure: (detail) => {
     useNotificationStore.getState().addToast('error', '删除会话失败', detail);
   },
+  invalidateChatRun: (sessionKey) => gateway.invalidateChatSession(sessionKey),
 };
 
 let sessionDeleteDeps: SessionDeleteDeps = defaultSessionDeleteDeps;
@@ -90,6 +93,7 @@ export function applyConfirmedSessionDeletion(rawSessionKey: string, confirmedSe
   const sessionId = confirmedSessionId
     || chatStore.sessions.find((session) => session.key === sessionKey)?.sessionId;
   markSessionDeleted(sessionKey);
+  sessionDeleteDeps.invalidateChatRun(sessionKey);
   chatStore.clearQueue(sessionKey);
   if (sessionId) {
     useCollaborationStore.getState().clearSessionProjection({ sessionKey, sessionId });

@@ -13,8 +13,15 @@ import { parseButtons } from '@/utils/buttonParser';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
 import i18n from '@/i18n';
-import { GatewayConnection, type MediaInfo } from './Connection';
-import type { FileRef } from '@/types/RenderBlock';
+import {
+  GatewayConnection,
+  type MediaInfo,
+} from './Connection';
+import {
+  OpenClawChatRunProjection,
+  type OpenClawRunLease,
+  type OpenClawSessionRunReconciliation,
+} from './OpenClawChatRunProjection';
 
 // ── Workshop Command Parser ──
 // Parses [[workshop:action ...]] commands from agent messages
@@ -44,6 +51,7 @@ function sanitizeWorkshopCommands(content: string): WorkshopCommandResult {
 
 export class ChatHandler {
   // ── Streaming state ──
+  private readonly runProjection = new OpenClawChatRunProjection();
   private currentRunIdBySession = new Map<string, string>();
   private currentStreamContentBySession = new Map<string, string>();
   private currentMessageIdBySession = new Map<string, string>();
@@ -56,79 +64,93 @@ export class ChatHandler {
   // Buffer WebSocket chunks and flush to React every STREAM_FLUSH_MS
   // to reduce re-renders from every event to ~20 FPS max
   private static readonly STREAM_FLUSH_MS = 50;
+  private static readonly MAX_RUN_SESSION_BINDINGS = 512;
   private streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingStreams = new Map<string, { id: string; content: string; media?: MediaInfo; runId?: string | null }>();
   private sessionKeyByRunId = new Map<string, string>();
   private finalizeFallbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private transcriptRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private conn: GatewayConnection) {}
 
+  /** Drop a locally invalidated run after a confirmed reset or deletion. */
+  invalidateSession(sessionKey: string): void {
+    this.runProjection.invalidate(sessionKey);
+    this.clearSessionProjection(sessionKey);
+  }
+
+  /** A closed socket cannot deliver its old frames, but its run may continue remotely. */
+  clearTransportProjection(): void {
+    for (const sessionKey of this.runProjection.activeSessionKeys()) {
+      const active = this.runProjection.active(sessionKey);
+      this.clearSessionProjection(sessionKey);
+      if (active) this.bindRunToSession(sessionKey, active.runId);
+    }
+  }
+
+  /**
+   * Reconcile locally pending UI sessions against OpenClaw's authoritative
+   * sessions.list run state after a successful socket connection.
+   */
+  reconcileSessionRuns(sessions: unknown[]): void {
+    const pendingSessions = new Set([
+      ...this.runProjection.activeSessionKeys(),
+      ...Object.entries(useChatStore.getState().typingBySession)
+        .filter(([, typing]) => typing)
+        .map(([sessionKey]) => sessionKey),
+    ]);
+    this.applySessionRunReconciliations(
+      this.runProjection.reconcileSessionSnapshots(sessions, pendingSessions),
+    );
+  }
+
+  /** Observe runs discovered by a normal sessions refresh without settling local work. */
+  observeActiveSessionRuns(sessions: unknown[]): void {
+    this.applySessionRunReconciliations(this.runProjection.observeActiveSessionSnapshots(sessions));
+  }
+
+  private applySessionRunReconciliations(
+    resolutions: OpenClawSessionRunReconciliation[],
+  ): void {
+    for (const resolution of resolutions) {
+      if (resolution.state === 'settled') {
+        this.clearSessionProjection(resolution.sessionKey);
+      } else {
+        if (resolution.replacedRunId) {
+          this.closeCurrentStreamSegment(resolution.sessionKey, undefined, resolution.replacedRunId);
+          this.clearActiveResponse(resolution.sessionKey, resolution.replacedRunId);
+        }
+        if (resolution.activeRunId) this.bindRunToSession(resolution.sessionKey, resolution.activeRunId);
+      }
+      this.conn.callbacks?.onSessionRunReconciliation?.(resolution);
+    }
+  }
+
   private bindRunToSession(sessionKey: string, runId?: unknown) {
-    if (typeof runId === 'string' && runId.trim()) {
-      this.sessionKeyByRunId.set(runId, sessionKey);
+    const normalizedSessionKey = sessionKey.trim();
+    const normalizedRunId = typeof runId === 'string' ? runId.trim() : '';
+    if (normalizedSessionKey && normalizedRunId) {
+      this.sessionKeyByRunId.delete(normalizedRunId);
+      this.sessionKeyByRunId.set(normalizedRunId, normalizedSessionKey);
+      while (this.sessionKeyByRunId.size > ChatHandler.MAX_RUN_SESSION_BINDINGS) {
+        const oldestRunId = this.sessionKeyByRunId.keys().next().value;
+        if (oldestRunId === undefined) break;
+        this.sessionKeyByRunId.delete(oldestRunId);
+      }
     }
   }
 
   private resolveSessionKey(sessionKey?: unknown, runId?: unknown): string | null {
-    if (typeof sessionKey === 'string' && sessionKey.trim()) {
-      this.bindRunToSession(sessionKey, runId);
-      return sessionKey;
+    const normalizedSessionKey = typeof sessionKey === 'string' ? sessionKey.trim() : '';
+    if (normalizedSessionKey) {
+      this.bindRunToSession(normalizedSessionKey, runId);
+      return normalizedSessionKey;
     }
-    if (typeof runId === 'string' && runId.trim()) {
-      return this.sessionKeyByRunId.get(runId) || null;
+    const normalizedRunId = typeof runId === 'string' ? runId.trim() : '';
+    if (normalizedRunId) {
+      return this.sessionKeyByRunId.get(normalizedRunId) || null;
     }
     return null;
-  }
-
-  private static parseAgentIdFromSessionKey(sessionKey: string): string {
-    const match = sessionKey.match(/^agent:([^:]+):/);
-    return match?.[1] || 'main';
-  }
-
-  private formatFileSize(bytes: number): string {
-    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  private async captureManagedOutputRefs(sessionKey: string, runId: string | null, text: string): Promise<FileRef[]> {
-    const candidate = String(text || '').trim();
-    if (!candidate) return [];
-    try {
-      const agentId = ChatHandler.parseAgentIdFromSessionKey(sessionKey);
-      const captureFromText = window.aegis?.managedFiles?.captureOutputs;
-      if (typeof captureFromText !== 'function') return [];
-
-      const result = await captureFromText({
-        sessionKey,
-        agentId,
-        runId,
-        text: candidate,
-      });
-      if (!result?.success || !Array.isArray(result.refs)) return [];
-      const refs = (result.refs as unknown[])
-        .map((rawRef): FileRef | null => {
-          const ref = rawRef as Record<string, unknown> | null | undefined;
-          const filePath = String(ref?.path || ref?.managedPath || ref?.originalPath || '').trim();
-          if (!filePath) return null;
-          const mimeType = String(ref?.mimeType || 'application/octet-stream');
-          const size = Number(ref?.size || 0);
-          return {
-            path: filePath,
-            meta: `${mimeType}, ${this.formatFileSize(size)}`,
-            kind: ref?.kind === 'voice' ? 'voice' : 'file',
-            isCanonicalOutput: typeof ref?.isCanonicalOutput === 'boolean' ? ref.isCanonicalOutput : undefined,
-            workspaceRoot: typeof ref?.workspaceRoot === 'string' ? ref.workspaceRoot : undefined,
-            relativePath: typeof ref?.relativePath === 'string' ? ref.relativePath : undefined,
-          } satisfies FileRef;
-        })
-        .filter((ref): ref is FileRef => ref !== null);
-      return refs;
-    } catch (err) {
-      debugWarn('gateway', '[GW] capture output refs failed:', err);
-      return [];
-    }
   }
 
   /** Flush buffered stream content to the UI */
@@ -179,6 +201,23 @@ export class ChatHandler {
     }
   }
 
+  private clearTranscriptRefresh(sessionKey: string): void {
+    const timer = this.transcriptRefreshTimers.get(sessionKey);
+    if (timer) {
+      clearTimeout(timer);
+      this.transcriptRefreshTimers.delete(sessionKey);
+    }
+  }
+
+  private scheduleTranscriptRefresh(sessionKey: string): void {
+    if (this.transcriptRefreshTimers.has(sessionKey)) return;
+    const timer = setTimeout(() => {
+      this.transcriptRefreshTimers.delete(sessionKey);
+      this.conn.callbacks?.onTranscriptChanged?.(sessionKey);
+    }, 75);
+    this.transcriptRefreshTimers.set(sessionKey, timer);
+  }
+
   private getDisplayStreamText(text: string): string {
     let cleaned = stripDirectives(text);
     cleaned = cleaned.replace(/\[\[workshop:\w+(?:\s+\w+="[^"]*")*\]\]/g, '');
@@ -223,17 +262,36 @@ export class ChatHandler {
       : rawContent;
   }
 
-  private clearActiveResponse(sessionKey: string) {
+  private clearSessionProjection(sessionKey: string): void {
+    this.clearFinalizeFallback(sessionKey);
+    this.clearTranscriptRefresh(sessionKey);
+    const pending = this.pendingStreams.get(sessionKey);
+    if (pending) this.pendingStreams.delete(sessionKey);
+    this.clearActiveResponse(sessionKey);
+    for (const [runId, ownerSessionKey] of this.sessionKeyByRunId) {
+      if (ownerSessionKey === sessionKey) this.sessionKeyByRunId.delete(runId);
+    }
+  }
+
+  private clearActiveResponse(sessionKey: string, expectedRunId?: string): boolean {
     const runId = this.currentRunIdBySession.get(sessionKey);
+    if (expectedRunId && runId && runId !== expectedRunId) return false;
     if (runId) this.sessionKeyByRunId.delete(runId);
     this.currentStreamContentBySession.delete(sessionKey);
     this.currentRunIdBySession.delete(sessionKey);
     this.currentMessageIdBySession.delete(sessionKey);
     this.streamConsumedBySession.delete(sessionKey);
     this.textStreamSourceBySession.delete(sessionKey);
+    const pending = this.pendingStreams.get(sessionKey);
+    if (!expectedRunId || !pending?.runId || pending.runId === expectedRunId) {
+      this.pendingStreams.delete(sessionKey);
+    }
+    return true;
   }
 
-  private closeCurrentStreamSegment(sessionKey: string, media?: MediaInfo) {
+  private closeCurrentStreamSegment(sessionKey: string, media?: MediaInfo, expectedRunId?: string): boolean {
+    const activeRunId = this.currentRunIdBySession.get(sessionKey);
+    if (expectedRunId && activeRunId && activeRunId !== expectedRunId) return false;
     this.clearFinalizeFallback(sessionKey);
     this.forceFlushStream(sessionKey);
     const messageId = this.currentMessageIdBySession.get(sessionKey);
@@ -254,9 +312,33 @@ export class ChatHandler {
     }
     this.currentStreamContentBySession.delete(sessionKey);
     this.currentMessageIdBySession.delete(sessionKey);
+    return true;
   }
 
-  private async finalizeAssistantResponse(sessionKey: string, messageId: string, messageText: string, media?: MediaInfo, usage?: Record<string, number>, model?: string | null) {
+  private beginRun(sessionKey: string, runId: string): OpenClawRunLease | null {
+    const started = this.runProjection.begin(sessionKey, runId);
+    if (!started) return null;
+    if (started.replacedRunId) {
+      this.closeCurrentStreamSegment(sessionKey, undefined, started.replacedRunId);
+      this.clearActiveResponse(sessionKey, started.replacedRunId);
+    }
+    return started.lease;
+  }
+
+  private claimTerminal(sessionKey: string, runId: string): OpenClawRunLease | null {
+    return this.runProjection.claimTerminal(sessionKey, runId);
+  }
+
+  private finalizeAssistantResponse(
+    sessionKey: string,
+    messageId: string,
+    messageText: string,
+    lease: OpenClawRunLease,
+    media?: MediaInfo,
+    usage?: Record<string, number>,
+    model?: string | null,
+  ) {
+    if (!this.runProjection.complete(lease)) return;
     this.clearFinalizeFallback(sessionKey);
     this.forceFlushStream(sessionKey);
 
@@ -265,9 +347,9 @@ export class ChatHandler {
     let finalText = messageText
       ? this.getSegmentText(sessionKey, messageText)
       : segmentContent;
-    const runId = this.currentRunIdBySession.get(sessionKey) || null;
+    const runId = lease.runId;
     this.bindRunToSession(sessionKey, runId);
-    this.clearActiveResponse(sessionKey);
+    this.clearActiveResponse(sessionKey, runId);
 
     finalText = stripDirectives(finalText || '');
 
@@ -291,7 +373,6 @@ export class ChatHandler {
       useChatStore.getState().setQuickReplies([], sessionKey);
     }
 
-    const fileRefs = await this.captureManagedOutputRefs(sessionKey, runId, finalText);
     this.conn.callbacks?.onStreamEnd(
       sessionKey,
       messageId,
@@ -301,7 +382,6 @@ export class ChatHandler {
         state: 'final',
         refreshHistory: true,
         runId,
-        ...(fileRefs.length > 0 ? { fileRefs } : {}),
         ...(btnResult.buttons.length > 0 ? { decisionOptions: btnResult.buttons } : {}),
         ...(workshopEvents.length > 0 ? { workshopEvents } : {}),
         ...(usage ? { usage } : {}),
@@ -314,10 +394,13 @@ export class ChatHandler {
     const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
     if (!sessionKey) return;
 
-    const explicitRunId = typeof payload.runId === 'string' && payload.runId ? payload.runId : '';
+    const runId = typeof payload.runId === 'string' ? payload.runId.trim() : '';
+    if (!runId) {
+      debugWarn('gateway', '[GW] Ignoring assistant event without an OpenClaw runId');
+      return;
+    }
     const activeRunId = this.currentRunIdBySession.get(sessionKey) || '';
-    const runId = explicitRunId || activeRunId;
-    if (!runId) return;
+    if (!this.beginRun(sessionKey, runId)) return;
     this.bindRunToSession(sessionKey, runId);
 
     const data = payload.data ?? {};
@@ -362,14 +445,16 @@ export class ChatHandler {
   private handleLifecycleStream(payload: any) {
     const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
     if (!sessionKey) return;
-    const runId = typeof payload.runId === 'string' && payload.runId
-      ? payload.runId
-      : this.currentRunIdBySession.get(sessionKey) || '';
-    if (!runId) return;
-    this.bindRunToSession(sessionKey, runId);
+    const runId = typeof payload.runId === 'string' ? payload.runId.trim() : '';
+    if (!runId) {
+      debugWarn('gateway', '[GW] Ignoring lifecycle event without an OpenClaw runId');
+      return;
+    }
 
     const phase = typeof payload.data?.phase === 'string' ? payload.data.phase : '';
     if (phase === 'start') {
+      if (!this.beginRun(sessionKey, runId)) return;
+      this.bindRunToSession(sessionKey, runId);
       const active = this.currentRunIdBySession.get(sessionKey) || '';
       const currentText = this.currentStreamContentBySession.get(sessionKey) || '';
       if (active === runId && currentText.trim()) {
@@ -381,12 +466,13 @@ export class ChatHandler {
     }
 
     if (phase !== 'end') return;
+    if (!this.runProjection.active(sessionKey, runId)) return;
 
     this.forceFlushStream(sessionKey);
     this.clearFinalizeFallback(sessionKey);
     const timer = setTimeout(() => {
       const activeRunId = this.currentRunIdBySession.get(sessionKey);
-      if (!activeRunId || activeRunId !== runId) return;
+      if (!activeRunId || activeRunId !== runId || !this.runProjection.active(sessionKey, runId)) return;
       // Fallback seals the current assistant segment only — it must NOT trigger
       // onStreamEnd, which would flip typing=false and refreshHistory mid-run
       // (between tool rounds). The true run terminal state is owned exclusively
@@ -411,9 +497,14 @@ export class ChatHandler {
     if (!toolCallId) return;
     const msgId    = `tool-live-${toolCallId}`;
 
-    const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId) || 'agent:main:main';
+    const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
     const runId =
-      typeof payload.runId === 'string' && payload.runId.trim() ? payload.runId : null;
+      typeof payload.runId === 'string' && payload.runId.trim() ? payload.runId.trim() : '';
+    if (!sessionKey || !runId) {
+      debugWarn('gateway', '[GW] Ignoring tool event without an OpenClaw sessionKey and runId');
+      return;
+    }
+    if (!this.beginRun(sessionKey, runId)) return;
     this.bindRunToSession(sessionKey, runId);
 
     const store = useChatStore.getState();
@@ -520,11 +611,14 @@ export class ChatHandler {
   // ═══════════════════════════════════════════════════════════
   handleThinkingStream(payload: any) {
     const data = payload.data ?? {};
-    const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId) || 'agent:main:main';
-    const runId = payload.runId || this.currentRunIdBySession.get(sessionKey) || `thinking:${sessionKey}`;
+    const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
+    const runId = typeof payload.runId === 'string' ? payload.runId.trim() : '';
+    if (!sessionKey || !runId) {
+      debugWarn('gateway', '[GW] Ignoring thinking event without an OpenClaw sessionKey and runId');
+      return;
+    }
+    if (!this.beginRun(sessionKey, runId)) return;
     this.bindRunToSession(sessionKey, runId);
-
-    if (!runId) return;
 
     const store = useChatStore.getState();
     const previousThinking = store.thinkingBySession[sessionKey]?.text || '';
@@ -553,14 +647,30 @@ export class ChatHandler {
   handleEvent(msg: any) {
     const event = msg.event || '';
     const p = msg.payload || {};
-    const sessionKey = this.resolveSessionKey(p.sessionKey, p.runId) || p.sessionKey || '';
+    const sessionKey = this.resolveSessionKey(p.sessionKey, p.runId);
+
+    if (event === 'agent' || event === 'chat') {
+      const acceptance = this.runProjection.acceptEvent(event, p.runId, p.seq);
+      if (!acceptance.accepted) return;
+      if (acceptance.requiresHistoryRefresh && sessionKey && typeof p.runId === 'string') {
+        this.conn.callbacks?.onStreamReconciliationNeeded?.(sessionKey, p.runId);
+      }
+    }
+
+    if (event === 'session.message') {
+      const transcriptSessionKey = this.resolveSessionKey(p.sessionKey, p.runId);
+      if (!transcriptSessionKey || isIsolatedExecutionSessionKey(transcriptSessionKey)) return;
+      if (this.runProjection.acceptTranscriptUpdate(transcriptSessionKey, p.messageSeq)) {
+        this.scheduleTranscriptRefresh(transcriptSessionKey);
+      }
+      return;
+    }
 
     // ── Direct compaction detection from agent events ──
     // Instead of relying on polling tokenUsage.compactions (unreliable timing),
     // intercept the agent compaction event and inject CompactDivider immediately.
     if (event === 'agent' && p.stream === 'compaction' && p.data?.phase === 'end' && !p.data?.willRetry) {
-      const sk = p.sessionKey || '';
-      if (sk === 'agent:main:main' || !sk) {
+      if (sessionKey && !isIsolatedExecutionSessionKey(sessionKey)) {
         const now = Date.now();
         if (now - this.lastCompactionTs > 10_000) { // Dedup: max 1 per 10s
           this.lastCompactionTs = now;
@@ -569,7 +679,7 @@ export class ChatHandler {
             role: 'compaction',
             content: '',
             timestamp: new Date().toISOString(),
-          });
+          }, sessionKey);
           debugLog('gateway', '[GW] 📦 Compaction detected — divider injected');
         }
       }
@@ -692,10 +802,14 @@ export class ChatHandler {
 
     debugLog('gateway', '[GW] Chat event — state:', state, 'runId:', runId?.substring(0, 12), 'text length:', messageText.length, 'text preview:', messageText.substring(0, 80));
 
-    const stableRunKey = runId || this.currentRunIdBySession.get(sessionKey) || `runless:${sessionKey}`;
-    const mId = this.ensureActiveMessageId(sessionKey, stableRunKey, p);
-    const effectiveRunId = runId || mId;
-    if (sessionKey) this.bindRunToSession(sessionKey, effectiveRunId);
+    if (!sessionKey) return;
+    const protocolRunId = typeof runId === 'string' ? runId.trim() : '';
+    if (!protocolRunId) {
+      debugWarn('gateway', '[GW] Ignoring chat event without an OpenClaw runId');
+      return;
+    }
+    const effectiveRunId = protocolRunId;
+    this.bindRunToSession(sessionKey, effectiveRunId);
 
     // ── Reasoning message detection ──
     // When reasoningLevel='on', Gateway sends reasoning as a separate 'final'
@@ -703,29 +817,28 @@ export class ChatHandler {
     // We intercept it and store as thinking content for the next message.
     const reasoningPrefix = /^Reasoning:\s*/i;
     if (state === 'final' && messageText && reasoningPrefix.test(messageText)) {
+      if (!this.beginRun(sessionKey, effectiveRunId)) return;
       const reasoningText = messageText.replace(reasoningPrefix, '').trim();
       if (reasoningText) {
         debugLog('gateway', '[GW] 🧠 Reasoning message captured:', reasoningText.length, 'chars');
         // Store as live thinking, then it will be finalized onto the next assistant message
-        useChatStore.getState().setThinkingStream(runId || mId, reasoningText, sessionKey || 'agent:main:main');
+        useChatStore.getState().setThinkingStream(effectiveRunId, reasoningText, sessionKey);
       }
       this.clearFinalizeFallback(sessionKey);
-      this.clearActiveResponse(sessionKey);
+      this.clearActiveResponse(sessionKey, effectiveRunId);
       return; // Don't show as a regular message
     }
 
     switch (state) {
       case 'delta': {
+        if (!this.beginRun(sessionKey, effectiveRunId)) return;
+        const mId = this.ensureActiveMessageId(sessionKey, effectiveRunId, p);
         const source = this.textStreamSourceBySession.get(sessionKey);
         const activeRunId = this.currentRunIdBySession.get(sessionKey) || '';
         if (source === 'agent' && activeRunId === effectiveRunId) {
           break;
         }
         this.textStreamSourceBySession.set(sessionKey, 'chat');
-        if (activeRunId && activeRunId !== effectiveRunId) {
-          // New run started before previous stream fully settled; avoid cross-run bleed.
-          this.currentStreamContentBySession.delete(sessionKey);
-        }
         // Clean content for display (don't execute workshop commands during streaming)
         let cleaned = messageText;
         cleaned = stripDirectives(cleaned);
@@ -740,18 +853,20 @@ export class ChatHandler {
           this.currentRunIdBySession.set(sessionKey, effectiveRunId);
           // Micro-batch: buffer chunk, flush to React at most every 50ms
           const segmentText = this.getSegmentText(sessionKey, messageText);
-          this.bufferStreamChunk(sessionKey, mId, this.getDisplayStreamText(segmentText), media, runId || null);
+          this.bufferStreamChunk(sessionKey, mId, this.getDisplayStreamText(segmentText), media, effectiveRunId);
 
-          const sk = sessionKey || 'agent:main:main';
           const liveThinkingFromBlocks = extractThinkingContent(p.message?.content);
           if (liveThinkingFromBlocks) {
-            useChatStore.getState().setThinkingStream(effectiveRunId || mId, liveThinkingFromBlocks, sk);
+            useChatStore.getState().setThinkingStream(effectiveRunId, liveThinkingFromBlocks, sessionKey);
           }
         }
         break;
       }
 
       case 'final': {
+        const lease = this.claimTerminal(sessionKey, effectiveRunId);
+        if (!lease) return;
+        const mId = this.ensureActiveMessageId(sessionKey, effectiveRunId, p);
         // Message complete — use the most complete version available.
         // When tools are called mid-response, the final event may only contain
         // post-tool text. In that case, keep the accumulated streaming content.
@@ -769,27 +884,34 @@ export class ChatHandler {
             ? p.message.usage
             : undefined;
         const model = p.model ?? p.message?.model ?? null;
-        void this.finalizeAssistantResponse(sessionKey, mId, finalText, media, usage, model);
+        this.finalizeAssistantResponse(sessionKey, mId, finalText, lease, media, usage, model);
         break;
       }
 
       case 'error': {
+        const lease = this.claimTerminal(sessionKey, effectiveRunId);
+        if (!lease) return;
+        const mId = this.ensureActiveMessageId(sessionKey, effectiveRunId, p);
         this.forceFlushStream(sessionKey);
         this.clearFinalizeFallback(sessionKey);
         const errorText = p.errorMessage || i18n.t('errors.occurred');
-        this.clearActiveResponse(sessionKey);
-        useChatStore.getState().clearThinking(sessionKey || 'agent:main:main');
+        this.clearActiveResponse(sessionKey, effectiveRunId);
+        this.runProjection.complete(lease);
+        useChatStore.getState().clearThinking(sessionKey);
         this.conn.callbacks?.onStreamEnd(
-          sessionKey || 'agent:main:main',
+          sessionKey,
           mId,
           errorText,
           undefined,
-          { state: 'error', runId: runId || null },
+          { state: 'error', runId: effectiveRunId },
         );
         break;
       }
 
       case 'aborted': {
+        const lease = this.claimTerminal(sessionKey, effectiveRunId);
+        if (!lease) return;
+        const mId = this.ensureActiveMessageId(sessionKey, effectiveRunId, p);
         this.forceFlushStream(sessionKey);
         this.clearFinalizeFallback(sessionKey);
         // Use messageText from abort event, fall back to accumulated stream content
@@ -797,18 +919,19 @@ export class ChatHandler {
         const currentText = this.currentStreamContentBySession.get(sessionKey) || '';
         const sameRun = !activeRunId || activeRunId === effectiveRunId;
         const finalContent = messageText || (sameRun ? currentText : '');
-        this.clearActiveResponse(sessionKey);
-        useChatStore.getState().clearThinking(sessionKey || 'agent:main:main');
+        this.clearActiveResponse(sessionKey, effectiveRunId);
+        this.runProjection.complete(lease);
+        useChatStore.getState().clearThinking(sessionKey);
 
         // Strip directive tags (same as final case)
         const cleaned = finalContent ? stripDirectives(finalContent) : '';
 
         this.conn.callbacks?.onStreamEnd(
-          sessionKey || 'agent:main:main',
+          sessionKey,
           mId,
           cleaned || i18n.t('chat.stopped', 'Stopped'),
           undefined,
-          { state: 'aborted', runId: runId || null },
+          { state: 'aborted', runId: effectiveRunId, refreshHistory: true },
         );
         break;
       }

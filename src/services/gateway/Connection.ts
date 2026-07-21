@@ -64,6 +64,7 @@ export function getAppLocale(): string {
 // since GatewayCallbacks.onMessage references it.
 export interface ChatMessage {
   id: string;
+  sessionKey?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
@@ -93,10 +94,23 @@ export interface StreamEndMeta {
   model?: string | null;
 }
 
+export interface GatewaySessionRunReconciliation {
+  sessionKey: string;
+  state: 'active' | 'settled';
+  activeRunIds: string[];
+  activeRunId?: string;
+}
+
 export interface GatewayCallbacks {
   onMessage: (msg: ChatMessage) => void;
   onStreamChunk: (sessionKey: string, messageId: string, content: string, media?: MediaInfo, runId?: string | null) => void;
   onStreamEnd: (sessionKey: string, messageId: string, content: string, media?: MediaInfo, meta?: StreamEndMeta) => void;
+  /** Authoritative run state observed from OpenClaw sessions.list after reconnect. */
+  onSessionRunReconciliation?: (resolution: GatewaySessionRunReconciliation) => void;
+  /** A run sequence gap requires a durable history refresh before trusting live text. */
+  onStreamReconciliationNeeded?: (sessionKey: string, runId: string) => void;
+  /** An official `session.message` notification changed a durable transcript. */
+  onTranscriptChanged?: (sessionKey: string) => void;
   onStatusChange: (status: { connected: boolean; connecting: boolean; error?: string }) => void;
   onRetryState?: (state: GatewayRetryState) => void;
   /** Structured authorization failure from the Gateway protocol. */

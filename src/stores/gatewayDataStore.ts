@@ -128,9 +128,6 @@ function applyTaskStatus(store: ReturnType<typeof useGatewayDataStore.getState>,
       s.key === sessionKey ? { ...s, running: isActive, runningUpdatedAt: Date.now() } : s,
     ),
   );
-  if (!isActive) {
-    window.dispatchEvent(new CustomEvent('aegis:session-inactive', { detail: { sessionKey } }));
-  }
 }
 
 // ── Running Sub-Agent Tracking ───────────────────────────
@@ -603,6 +600,47 @@ export async function fetchFullUsage(limit = 2000): Promise<SessionsUsage | null
 // ═══════════════════════════════════════════════════════════
 
 const SUB_AGENT_RE = /^agent:([^:]+):subagent:/;
+const SUBAGENT_STALE_ACTIVE_GRACE_MS = 60_000;
+
+function timestampMs(value: unknown): number | null {
+  const numeric = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim())
+      ? Number(value)
+      : Number.NaN;
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizedState(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+/**
+ * OpenClaw exposes active-run state on sessions.list. Older rows can omit it,
+ * so only a recent timestamp with no contradictory lifecycle field is used as
+ * a compatibility fallback.
+ */
+export function isRunningSubagentSession(session: SessionInfo, now = Date.now()): boolean {
+  if (typeof session.hasActiveRun === 'boolean') return session.hasActiveRun;
+  if (typeof session.hasActiveSubagentRun === 'boolean') return session.hasActiveSubagentRun;
+
+  const state = normalizedState(session.subagentRunState || session.status);
+  const explicitlyActive = state === 'running' || state === 'active' || state === 'started' || state === 'working';
+  const hasExplicitTerminalState = Boolean(state) && !explicitlyActive;
+  if (hasExplicitTerminalState) return false;
+  if (session.running === true || explicitlyActive) {
+    return true;
+  }
+  if (session.running === false) return false;
+
+  const updatedAt = timestampMs(session.updatedAt ?? session.lastActivityAt ?? session.startedAt);
+  return updatedAt !== null && now >= updatedAt && now - updatedAt <= SUBAGENT_STALE_ACTIVE_GRACE_MS;
+}
 
 /**
  * Sync runningSubAgents from sessions data.
@@ -618,29 +656,17 @@ function syncRunningSubAgents() {
   const sessions = store.sessions;
   const prev = store.runningSubAgents;
 
-  // Any sub-agent session in sessions.list is active (completed ones get removed).
   // IMPORTANT: reuse the existing RunningSubAgent object when its fields are
   // unchanged so that the resulting array elements share references with `prev`.
   // This lets `changed` (below) stay false on a no-op poll and prevents
   // subscribers (AgentHub TreeView) from re-rendering and restarting SVG
   // <animateMotion> animations, which caused the visible flicker.
   const running: RunningSubAgent[] = [];
+  const now = Date.now();
   for (const s of sessions) {
     const match = s.key?.match(SUB_AGENT_RE);
     if (!match) continue;
-
-    // Skip ended sub-agents. The gateway keeps done sessions in sessions.list,
-    // and the API response may NOT include status/endedAt fields (those exist in
-    // sessions.json but not necessarily in sessions.list output). So we cannot
-    // rely on status==='done' alone.
-    //
-    // Use a updatedAt timeout instead: a sub-agent that hasn't updated in
-    // STALE_MS is considered finished. This is robust regardless of which
-    // fields the API returns, and prevents dead sub-agents from showing as
-    // perpetually RUNNING (which kept the pet stuck in "working" state).
-    const SUBAGENT_STALE_MS = 2 * 60_000; // 2 min
-    const upd = Number((s as any).updatedAt || 0);
-    if (upd > 0 && Date.now() - upd > SUBAGENT_STALE_MS) continue;
+    if (!isRunningSubagentSession(s, now)) continue;
 
     const agentId = match[1];
     const existing = prev.find((r) => r.sessionKey === s.key);
@@ -651,7 +677,7 @@ function syncRunningSubAgents() {
     } else {
       running.push({
         agentId,
-        startTime: existing?.startTime || Date.now(),
+        startTime: existing?.startTime || now,
         label,
         sessionKey: s.key,
       });

@@ -824,6 +824,13 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
   secrets: { audit: async () => ({ success: false }), reload: async () => ({ success: false }) },
   agentAuth: { syncMain: async () => ({ success: true }), rehydrateMainRuntime: async () => ({ success: true }) },
   skills: { listManaged: async () => ({ success: true, skills: [] }), importFolder: async () => ({ success: false }), importZip: async () => ({ success: false }), delete: async () => ({ success: false }) },
+  sharePackages: {
+    scan: (root: string) => invoke('scan_share_package_source', { root }),
+    export: (request: any) => invoke('export_share_package', { request }),
+    inspect: (sourcePath: string) => invoke('inspect_share_package', { sourcePath }),
+    previewImport: (request: any) => invoke('preview_share_package_import', { request }),
+    import: (request: any) => invoke('import_share_package', { request }),
+  },
   skillshub: { check: async () => ({ installed: false, path: null }), install: async () => ({ success: false }), installCli: async () => ({ success: false }) },
   clawhub: { openLogin: async () => ({ success: false }), loginCli: async () => ({ success: false }), authStatus: async () => ({ available: false, loggedIn: false, source: null, displayName: null }), searchCli: async () => ({ success: false, items: [] }), fetchJson: async () => ({ ok: false, status: 500, retryAfter: null }), install: async () => ({ success: false }) },
   managedFiles: {

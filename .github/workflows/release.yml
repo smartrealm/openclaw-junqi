@@ -186,6 +186,7 @@ jobs:
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # pinned 1.96.0
         with:
           toolchain: 1.96.0
+          components: rustfmt, clippy
 
       - name: Cache cargo registry & build
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -338,7 +339,7 @@ jobs:
 
       - name: Run structural smoke against pinned OpenClaw Docker image
         run: >-
-          pnpm collab:gateway:smoke --
+          node scripts/verify-collaboration-real-gateway.mjs
           --evidence-root release-evidence/gateway-structural
 
       - name: Verify structural evidence boundary
