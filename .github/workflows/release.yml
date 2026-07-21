@@ -569,10 +569,11 @@ jobs:
         with:
           # createUpdaterArtifacts requires a private updater key. Candidates
           # are deliberately unsigned, so disable only that artifact family
-          # through Tauri's config merge instead of passing a fake key.
+          # through Tauri's config merge instead of passing a fake key. A file
+          # path keeps this invocation portable across Bash and PowerShell.
           args: >-
             --target ${{ matrix.target }} ${{ matrix.bundle_args }}
-            --config '{"bundle":{"createUpdaterArtifacts":false}}'
+            --config src-tauri/tauri.no-updater-artifacts.conf.json
 
       - name: Sign Windows installers with Authenticode
         if: needs.verify-version.outputs.signing-enabled == 'true' && runner.os == 'Windows'

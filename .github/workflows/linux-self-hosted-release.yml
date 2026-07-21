@@ -254,7 +254,7 @@ jobs:
       - name: Build Linux installers
         run: >-
           pnpm tauri build --target x86_64-unknown-linux-gnu --bundles appimage,deb
-          --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          --config src-tauri/tauri.no-updater-artifacts.conf.json
 
       - name: Verify Linux installers
         id: installers

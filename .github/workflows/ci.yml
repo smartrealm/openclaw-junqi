@@ -232,7 +232,7 @@ jobs:
       - name: Build NSIS installer
         run: >-
           pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis
-          --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          --config src-tauri/tauri.no-updater-artifacts.conf.json
 
   ci:
     name: ✅ CI Summary
