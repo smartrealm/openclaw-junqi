@@ -9,6 +9,22 @@ export function hasTauriEventBridge(): boolean {
 }
 
 /**
+ * Tauri currently types `UnlistenFn` as synchronous, while the implementation
+ * performs an asynchronous IPC round trip. Window teardown can invalidate the
+ * native listener first, so cleanup must be both one-shot and rejection-safe.
+ */
+function releaseTauriListener(unlisten: UnlistenFn): void {
+  try {
+    const completion = unlisten() as unknown;
+    if (completion && typeof (completion as PromiseLike<unknown>).then === 'function') {
+      void Promise.resolve(completion).catch(() => undefined);
+    }
+  } catch {
+    // Teardown is best effort. A destroyed WebView may already own the listener.
+  }
+}
+
+/**
  * Tauri's listen() resolves asynchronously. If a React effect unmounts before the
  * promise resolves, a naive `.then(unlistens.push)` leaks the subscription.
  */
@@ -19,26 +35,30 @@ export function subscribeTauriEvent<T>(
 ): UnlistenFn {
   if (!hasTauriEventBridge()) return () => {};
 
-  let disposed = false;
+  let released = false;
   let unlisten: UnlistenFn | null = null;
+
+  const release = () => {
+    if (released) return;
+    released = true;
+    const activeUnlisten = unlisten;
+    unlisten = null;
+    if (activeUnlisten) releaseTauriListener(activeUnlisten);
+  };
 
   listen<T>(event, handler)
     .then((fn) => {
-      if (disposed) {
-        fn();
+      if (released) {
+        releaseTauriListener(fn);
         return;
       }
       unlisten = fn;
     })
     .catch((error) => {
-      if (!disposed) onError?.(error);
+      if (!released) onError?.(error);
     });
 
-  return () => {
-    disposed = true;
-    unlisten?.();
-    unlisten = null;
-  };
+  return release;
 }
 
 /** Emit across Tauri windows while remaining a safe no-op in browser previews. */
@@ -48,7 +68,10 @@ export async function emitTauriEvent<T>(event: string, payload?: T): Promise<voi
 }
 
 export function combineUnlisteners(unlisteners: UnlistenFn[]): UnlistenFn {
+  let released = false;
   return () => {
-    for (const unlisten of unlisteners) unlisten();
+    if (released) return;
+    released = true;
+    for (const unlisten of unlisteners) releaseTauriListener(unlisten);
   };
 }

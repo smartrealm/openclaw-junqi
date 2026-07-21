@@ -118,7 +118,7 @@ export default function DynamicIsland() {
     document.body.classList.add('junqi-dynamic-island-document');
     const root = document.getElementById('app-root');
     root?.classList.add('junqi-dynamic-island-root');
-    void emitTauriEvent('dynamic-island:ready');
+    void emitTauriEvent('dynamic-island:ready').catch(() => undefined);
 
     const unsubscribe = combineUnlisteners([
       subscribeTauriEvent<DynamicIslandSnapshot>('dynamic-island:update', (event) => {
@@ -135,7 +135,7 @@ export default function DynamicIsland() {
         }
       }),
       subscribeTauriEvent('dynamic-island:opened', () => {
-        void emitTauriEvent('dynamic-island:ready');
+        void emitTauriEvent('dynamic-island:ready').catch(() => undefined);
       }),
     ]);
     return () => {

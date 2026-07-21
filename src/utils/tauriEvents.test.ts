@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { emitTauriEvent, hasTauriEventBridge, subscribeTauriEvent } from './tauriEvents';
+import { combineUnlisteners, emitTauriEvent, hasTauriEventBridge, subscribeTauriEvent } from './tauriEvents';
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -28,6 +28,21 @@ test('plain browser previews do not register Tauri listeners', () => {
   } finally {
     host.__TAURI_INTERNALS__ = previous;
   }
+});
+
+test('listener cleanup is idempotent and absorbs asynchronous teardown failures', async () => {
+  let calls = 0;
+  const release = combineUnlisteners([
+    (() => {
+      calls += 1;
+      return Promise.reject(new Error('listener already released'));
+    }) as never,
+  ]);
+
+  release();
+  release();
+  await new Promise((resolve) => window.setTimeout(resolve, 0));
+  assert.equal(calls, 1);
 });
 
 test('feature code cannot bypass the lifecycle-safe Tauri event subscriber', () => {

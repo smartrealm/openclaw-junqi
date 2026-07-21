@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Check, ChevronDown, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, ShieldCheck, Terminal } from 'lucide-react';
+import { Check, ChevronDown, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
 import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
 import { useAppStore, type SetupLog, type StorageSetupDraft } from '@/stores/app-store';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
-import { useCollaborationMaintenance } from '@/hooks/useCollaborationMaintenance';
 
 interface StorageSetupStatus {
   configured: boolean;
@@ -91,6 +90,12 @@ function migrationSource(status: StorageSetupStatus, forceConfigure: boolean): s
   return forceConfigure ? status.stateDir : status.legacyDir;
 }
 
+function errorMessage(cause: unknown, fallback: string): string {
+  if (cause instanceof Error) return cause.message;
+  if (typeof cause === 'string') return cause;
+  return cause == null ? fallback : String(cause);
+}
+
 interface LocationRowProps {
   icon: ReactNode;
   label: string;
@@ -126,6 +131,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   const { t } = useTranslation();
   const storageDraft = useAppStore((state) => state.storageDraft);
   const setStorageDraft = useAppStore((state) => state.setStorageDraft);
+  const appendSetupLog = useAppStore((state) => state.appendSetupLog);
   const checkedRef = useRef(false);
   const mountedRef = useRef(false);
   const initialCompletionHandledRef = useRef(false);
@@ -152,7 +158,6 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   const [progress, setProgress] = useState<MigrationProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completion, setCompletion] = useState<StorageCompletion | null>(null);
-  const collaborationMaintenance = useCollaborationMaintenance();
 
   const loadStorageStatus = useCallback(async () => {
     setLoading(true);
@@ -181,11 +186,21 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       setMigrateExisting(draft?.migrateExisting ?? (forceConfigure || (!result.configured && result.legacyExists)));
       setShowLocations(draft?.showLocations ?? false);
     } catch (cause) {
-      if (mountedRef.current) setError(String(cause));
+      const message = errorMessage(cause, t('storage.unknownError', 'Unexpected storage error'));
+      appendSetupLog({
+        source: 'setup',
+        step: 'storage',
+        level: 'error',
+        message: t('storage.logLoadFailed', {
+          message,
+          defaultValue: 'Could not read storage configuration: {{message}}',
+        }),
+      });
+      if (mountedRef.current) setError(message);
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [forceConfigure, storageDraft]);
+  }, [appendSetupLog, forceConfigure, storageDraft, t]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -203,16 +218,24 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     const unlisten = subscribeTauriEvent<MigrationProgress>('storage-migration-progress', (event) => {
       if (cancelled) return;
       const payload = event.payload;
+      const message = payload.key ? t(payload.key, payload.message) : payload.message;
       setProgress({
         ...payload,
-        message: payload.key ? t(payload.key, payload.message) : payload.message,
+        message,
+      });
+      appendSetupLog({
+        source: 'setup',
+        step: 'storage',
+        level: payload.progress >= 1 ? 'success' : 'info',
+        message,
+        progress: payload.progress,
       });
     });
     return () => {
       cancelled = true;
       unlisten();
     };
-  }, [t]);
+  }, [appendSetupLog, t]);
 
   const usingLegacy = useMemo(
     () => Boolean(status && targetDir === status.legacyDir),
@@ -269,27 +292,37 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       const shouldMigrateSelectedState = !usingLegacy
         && migrateExisting
         && (forceConfigure || status.legacyExists);
-      const result = await collaborationMaintenance.runGuarded(
-        shouldMigrateSelectedState
-          ? 'storage-migration'
-          : usingLegacy
-            ? 'storage-activation'
-            : 'storage-clean-start',
-        () => invoke<StorageConfigureResult>('configure_storage', {
-          targetDir,
-          migrateExisting: shouldMigrateSelectedState,
-          locations: {
-            workspaceDir,
-            runtimeDir,
-            npmCacheDir: customNpmCache ? npmCacheDir.trim() || null : null,
-            npmPrefix: customNpmPrefix ? npmPrefix.trim() || null : null,
-            nodeRuntimeDir: status.customNodeRuntimeSupported && customNodeRuntime ? nodeRuntimeDir.trim() || null : null,
-            gitRuntimeDir: status.customGitRuntimeSupported && customGitRuntime ? gitRuntimeDir.trim() || null : null,
-            terminalIntegration,
-          },
-        }),
-      );
+      appendSetupLog({
+        source: 'setup',
+        step: 'storage',
+        level: 'info',
+        message: t('storage.logSaving', '正在保存 OpenClaw 数据位置…'),
+        progress: 0.02,
+      });
+      // Storage owns a native, single-flight transaction. It stops and
+      // restores the selected Gateway as needed, so an optional collaboration
+      // plugin must never become a prerequisite for first-run storage setup.
+      const result = await invoke<StorageConfigureResult>('configure_storage', {
+        targetDir,
+        migrateExisting: shouldMigrateSelectedState,
+        locations: {
+          workspaceDir,
+          runtimeDir,
+          npmCacheDir: customNpmCache ? npmCacheDir.trim() || null : null,
+          npmPrefix: customNpmPrefix ? npmPrefix.trim() || null : null,
+          nodeRuntimeDir: status.customNodeRuntimeSupported && customNodeRuntime ? nodeRuntimeDir.trim() || null : null,
+          gitRuntimeDir: status.customGitRuntimeSupported && customGitRuntime ? gitRuntimeDir.trim() || null : null,
+          terminalIntegration,
+        },
+      });
       if (!mountedRef.current) return;
+      appendSetupLog({
+        source: 'setup',
+        step: 'storage',
+        level: 'success',
+        message: t('storage.logSaved', 'OpenClaw 数据位置已保存'),
+        progress: 1,
+      });
       setStorageDraft(null);
       onReadyRef.current({
         createdFresh: result.createdFresh,
@@ -297,11 +330,21 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
         openclawRelocationRequired: result.openclawRelocationRequired,
       });
     } catch (cause) {
-      if (mountedRef.current) setError(String(cause));
+      const message = errorMessage(cause, t('storage.unknownError', 'Unexpected storage error'));
+      appendSetupLog({
+        source: 'setup',
+        step: 'storage',
+        level: 'error',
+        message: t('storage.logFailed', {
+          message,
+          defaultValue: 'Storage location was not saved: {{message}}',
+        }),
+      });
+      if (mountedRef.current) setError(message);
     } finally {
       if (mountedRef.current) setApplying(false);
     }
-  }, [applying, collaborationMaintenance, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, forceConfigure, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+  }, [appendSetupLog, applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, forceConfigure, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
 
   useEffect(() => {
     setCompletion(null);
@@ -353,11 +396,21 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       await rollbackRuntimeReconfiguration();
       await loadStorageStatus();
     } catch (cause) {
-      if (mountedRef.current) setError(String(cause));
+      const message = errorMessage(cause, t('storage.unknownError', 'Unexpected storage error'));
+      appendSetupLog({
+        source: 'setup',
+        step: 'storage',
+        level: 'error',
+        message: t('storage.logRecoveryFailed', {
+          message,
+          defaultValue: 'Could not recover the previous runtime change: {{message}}',
+        }),
+      });
+      if (mountedRef.current) setError(message);
     } finally {
       if (mountedRef.current) setRecoveringRuntime(false);
     }
-  }, [loadStorageStatus, recoveringRuntime]);
+  }, [appendSetupLog, loadStorageStatus, recoveringRuntime, t]);
 
   if (loading) {
     return (
@@ -712,34 +765,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
           </div>
         )}
 
-        {error && (
-          <div className="mt-5 border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">
-            <p className="break-all">{error}</p>
-            {collaborationMaintenance.issue?.activeRuns.length ? (
-              <ul className="mt-2 space-y-1 text-xs">
-                {collaborationMaintenance.issue.activeRuns.slice(0, 5).map((run) => (
-                  <li key={run.runId} className="flex min-w-0 items-center justify-between gap-3">
-                    <span className="truncate">{run.goal || run.runId}</span>
-                    <span className="shrink-0 font-mono text-[10px]">{run.status}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {collaborationMaintenance.issue?.recoveryRequired && (
-              <button
-                type="button"
-                onClick={() => { void collaborationMaintenance.recover(); }}
-                disabled={collaborationMaintenance.recovering}
-                className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-danger/30 px-3 text-xs font-semibold transition-colors hover:bg-aegis-danger/10 disabled:opacity-50"
-              >
-                {collaborationMaintenance.recovering
-                  ? <LoaderCircle size={13} className="animate-spin" />
-                  : <ShieldCheck size={13} />}
-                {t('storage.verifyAndReleaseMaintenance', '验证并解除维护')}
-              </button>
-            )}
-          </div>
-        )}
+        {error && <p className="mt-5 break-all border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">{error}</p>}
 
       </section>
     </SetupShell>
