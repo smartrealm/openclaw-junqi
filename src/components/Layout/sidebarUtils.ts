@@ -33,6 +33,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type SessionBucketKey = 'today' | 'withinWeek' | 'withinMonth' | 'older';
 
+export const SESSION_BUCKET_KEYS: readonly SessionBucketKey[] = [
+  'today',
+  'withinWeek',
+  'withinMonth',
+  'older',
+];
+
 export interface SessionBucket {
   key: SessionBucketKey;
   labelKey: string;
@@ -62,6 +69,29 @@ export function bucketSessionsByActivity(sessions: Session[], nowMs: number = Da
     byKey.get(getSessionBucketKey(sessionActivityTime(session), nowMs))?.sessions.push(session);
   }
   return buckets;
+}
+
+export function isSessionBucketKey(value: unknown): value is SessionBucketKey {
+  return typeof value === 'string' && SESSION_BUCKET_KEYS.includes(value as SessionBucketKey);
+}
+
+/**
+ * The preferred bucket reflects the user's explicit choice. Buckets that
+ * contain the selected conversation or live work are always added so those
+ * sessions cannot disappear behind a collapsed disclosure.
+ */
+export function resolveExpandedSessionBuckets(
+  buckets: readonly SessionBucket[],
+  preferredBucket: SessionBucketKey,
+  requiredSessionKeys: ReadonlySet<string>,
+): ReadonlySet<SessionBucketKey> {
+  const expanded = new Set<SessionBucketKey>([preferredBucket]);
+  for (const bucket of buckets) {
+    if (bucket.sessions.some((session) => requiredSessionKeys.has(session.key))) {
+      expanded.add(bucket.key);
+    }
+  }
+  return expanded;
 }
 
 export function isEmptyTransientSession(

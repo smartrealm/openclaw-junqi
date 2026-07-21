@@ -5,6 +5,8 @@ import {
   bucketSessionsByActivity,
   getSessionBucketKey,
   isEmptyTransientSession,
+  isSessionBucketKey,
+  resolveExpandedSessionBuckets,
   sortSessionsByActivity,
 } from './sidebarUtils';
 
@@ -61,6 +63,27 @@ test('bucketSessionsByActivity groups sessions and preserves activity ordering',
   assert.deepEqual(result.find((bucket) => bucket.key === 'older')?.sessions.map((s) => s.key), [
     'agent:main:older',
   ]);
+});
+
+test('session bucket disclosure keeps the preferred bucket and reveals required sessions', () => {
+  const now = new Date('2026-07-06T12:00:00.000Z').getTime();
+  const buckets = bucketSessionsByActivity([
+    sx({ key: 'agent:main:today', lastTimestamp: '2026-07-06T10:00:00.000Z' }),
+    sx({ key: 'agent:main:week', lastTimestamp: '2026-07-03T00:00:00.000Z' }),
+    sx({ key: 'agent:main:month', lastTimestamp: '2026-06-12T00:00:00.000Z' }),
+    sx({ key: 'agent:main:older', lastTimestamp: '2026-05-01T00:00:00.000Z' }),
+  ], now);
+
+  assert.deepEqual(
+    [...resolveExpandedSessionBuckets(
+      buckets,
+      'withinWeek',
+      new Set(['agent:main:month', 'agent:main:older']),
+    )],
+    ['withinWeek', 'withinMonth', 'older'],
+  );
+  assert.equal(isSessionBucketKey('today'), true);
+  assert.equal(isSessionBucketKey('yesterday'), false);
 });
 
 test('isEmptyTransientSession only removes untouched local placeholders', () => {
