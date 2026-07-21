@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 export const SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -383,4 +383,48 @@ CREATE TABLE IF NOT EXISTS tombstones (
 
 CREATE INDEX IF NOT EXISTS tombstones_deleted_at
 ON tombstones(deleted_at DESC, id DESC);
+
+-- Templates retain a source Run id as provenance without owning the Run. A
+-- retained or deleted Run must never destroy a reusable template definition.
+CREATE TABLE IF NOT EXISTS workflow_templates (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('PUBLISHED', 'ARCHIVED')),
+  current_version_id TEXT,
+  source_run_id TEXT,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS workflow_templates_published
+ON workflow_templates(status, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS workflow_template_versions (
+  id TEXT PRIMARY KEY,
+  template_id TEXT NOT NULL REFERENCES workflow_templates(id) ON DELETE CASCADE,
+  version_no INTEGER NOT NULL,
+  definition_json TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  source_run_id TEXT,
+  source_plan_revision_id TEXT,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(template_id, version_no)
+);
+
+CREATE INDEX IF NOT EXISTS workflow_template_versions_template
+ON workflow_template_versions(template_id, version_no DESC);
+
+CREATE TABLE IF NOT EXISTS workflow_run_templates (
+  run_id TEXT PRIMARY KEY REFERENCES collaboration_runs(id) ON DELETE CASCADE,
+  template_id TEXT NOT NULL REFERENCES workflow_templates(id) ON DELETE RESTRICT,
+  template_version_id TEXT NOT NULL REFERENCES workflow_template_versions(id) ON DELETE RESTRICT,
+  parameters_json TEXT NOT NULL,
+  parameter_digest TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS workflow_run_templates_template
+ON workflow_run_templates(template_id, template_version_id, created_at DESC);
 `;

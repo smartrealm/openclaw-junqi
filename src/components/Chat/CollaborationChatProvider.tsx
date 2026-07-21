@@ -23,6 +23,7 @@ import {
   type CollaborationSetupReason,
 } from '@/components/Collaboration';
 import {
+  collaborationClient,
   CollaborationClientError,
   createCollaborationWriteRequest,
 } from '@/services/collaboration/client';
@@ -45,6 +46,7 @@ import {
   isTerminalCollaborationRun,
   type CollaborationRunSummary,
   type CollaborationTombstone,
+  type CollaborationWorkflowTemplate,
   type CollaborationWriteRequest,
   type CollaborationWriteResponse,
 } from '@/services/collaboration/types';
@@ -392,6 +394,8 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
   const [localError, setLocalError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [workflowTemplates, setWorkflowTemplates] = useState<CollaborationWorkflowTemplate[]>([]);
+  const [instantiatingTemplateId, setInstantiatingTemplateId] = useState<string | null>(null);
   const [retryingDeletionJobId, setRetryingDeletionJobId] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -411,6 +415,10 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
   const sessionRef = useMemo(() => activeSession?.sessionId
     ? { sessionKey: activeSessionKey, sessionId: activeSession.sessionId }
     : null, [activeSession?.sessionId, activeSessionKey]);
+  const templateOriginMessage = useMemo(
+    () => [...messages].reverse().find((message) => message.role === 'user' && Boolean(message.nativeMessageId)) ?? null,
+    [messages],
+  );
 
   const projectionCurrent = isCollaborationProjectionCurrent(
     connected,
@@ -521,6 +529,8 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     setLocalError(null);
     setHistoryOpen(false);
     setHistoryLoading(false);
+    setWorkflowTemplates([]);
+    setInstantiatingTemplateId(null);
     setRetryingDeletionJobId(null);
     setSelectedRunId(null);
     setPendingAction(null);
@@ -595,6 +605,24 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
       setLocalError,
     );
   }, [refreshRun, syncRunEvents]);
+
+  const refreshWorkflowTemplates = useCallback(async () => {
+    const expectedInstanceId = useCollaborationStore.getState().collaborationInstanceId;
+    if (!expectedInstanceId) return;
+    const response = await collaborationClient.listWorkflowTemplates();
+    if (
+      response.collaborationInstanceId !== expectedInstanceId
+      || useCollaborationStore.getState().collaborationInstanceId !== expectedInstanceId
+    ) {
+      throw new CollaborationClientError(
+        'INVALID_RESPONSE',
+        'Workflow templates were returned by a different collaboration instance.',
+        'junqi.collab.workflow.template.list',
+        { expectedInstanceId, actualInstanceId: response.collaborationInstanceId },
+      );
+    }
+    setWorkflowTemplates(response.templates);
+  }, []);
 
   const openRun = useCallback((runId: string) => {
     setSelectedRunId(runId);
@@ -705,6 +733,106 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     t,
   ]);
 
+  const instantiateWorkflowTemplate = useCallback(async (template: CollaborationWorkflowTemplate) => {
+    if (!sessionRef || !templateOriginMessage?.nativeMessageId) {
+      setLocalError(t('collaboration.chat.originNotReady', 'The original message identity is not confirmed yet.'));
+      return;
+    }
+    const currentCapabilities = projectionCurrent && capabilities
+      ? capabilities
+      : await checkCapabilities(true);
+    if (!currentCapabilities) {
+      showSetup('plugin-missing');
+      return;
+    }
+    const capabilityIssue = collaborationCapabilityIssue(
+      currentCapabilities,
+      COLLABORATION_PLUGIN_BUNDLE,
+    );
+    if (capabilityIssue) {
+      showSetup('version-incompatible');
+      setLocalError(capabilityIssue.message);
+      return;
+    }
+    if (currentCapabilities.configured === false) {
+      showSetup('plugin-not-configured');
+      return;
+    }
+    const liveRuntimeIdentity = getCurrentRuntimeIdentity();
+    if (
+      !currentCapabilities.durableRuntime
+      || !isRuntimeEligible(liveRuntimeIdentity)
+      || liveRuntimeIdentity?.runtimeId !== currentCapabilities.collaborationInstanceId
+    ) {
+      showSetup('runtime-not-durable');
+      return;
+    }
+    const agentId = sessionAgentId(activeSessionKey, activeSession?.agentId);
+    if (!agentId) {
+      showSetup('error');
+      setLocalError(t('collaboration.chat.agentUnknown', 'The origin agent identity is unavailable.'));
+      return;
+    }
+
+    setInstantiatingTemplateId(template.id);
+    setPendingAction('WORKFLOW_TEMPLATE_INSTANTIATE');
+    setLocalError(null);
+    try {
+      const origin = {
+        runtimeId: currentCapabilities.collaborationInstanceId,
+        agentId,
+        sessionKey: sessionRef.sessionKey,
+        sessionId: sessionRef.sessionId,
+        nativeMessageId: templateOriginMessage.nativeMessageId,
+        ...(templateOriginMessage.clientMessageId ? { clientMessageId: templateOriginMessage.clientMessageId } : {}),
+        ...(activeSession?.channel ? { channel: activeSession.channel } : {}),
+      };
+      const request = await createCollaborationWriteRequest({
+        templateId: template.id,
+        origin,
+        goal: templateOriginMessage.content.trim() || template.currentVersion.definition.goal,
+        capabilitySnapshot: {
+          capturedAt: Date.now(),
+          desktopObservedFacts: {
+            targetFingerprint: liveRuntimeIdentity.targetFingerprint,
+            deploymentKind: liveRuntimeIdentity.deploymentKind,
+            persistence: liveRuntimeIdentity.persistence,
+            gatewayVersion: liveRuntimeIdentity.gatewayVersion,
+          },
+        },
+      }, { expectedCollaborationInstanceId: currentCapabilities.collaborationInstanceId });
+      const response = await executeCommand('junqi.collab.workflow.template.instantiate', request);
+      await syncSession(sessionRef);
+      if (response.runId) openRun(response.runId);
+    } catch (error) {
+      const existingRunId = existingCollaborationRunId(error);
+      if (existingRunId) {
+        await syncSession(sessionRef).catch(() => undefined);
+        openRun(existingRunId);
+        return;
+      }
+      setLocalError(collaborationErrorMessage(error));
+      showSetup('error');
+    } finally {
+      setInstantiatingTemplateId(null);
+      setPendingAction(null);
+    }
+  }, [
+    activeSession?.agentId,
+    activeSession?.channel,
+    activeSessionKey,
+    capabilities,
+    checkCapabilities,
+    executeCommand,
+    openRun,
+    projectionCurrent,
+    sessionRef,
+    showSetup,
+    syncSession,
+    t,
+    templateOriginMessage,
+  ]);
+
   const getMessageAction = useCallback((message: ChatMessage | undefined): MessageCollaborationAction | undefined => {
     if (!message || message.role !== 'user') return undefined;
     const ownRun = runs.find((run) =>
@@ -753,6 +881,9 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
           }
           setSelectedRunId((current) => current === runId ? null : current);
         }
+        if (submission.action === 'CREATE_TEMPLATE') {
+          await refreshWorkflowTemplates();
+        }
         setDialogAction(null);
         setDialogRunId(null);
         setActionPreview(null);
@@ -781,7 +912,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
       setActionSubmitting(false);
       setPendingAction(null);
     }
-  }, [refreshRun, runActionClient, sessionRef, showSetup, syncSession, syncTombstones, t]);
+  }, [refreshRun, refreshWorkflowTemplates, runActionClient, sessionRef, showSetup, syncSession, syncTombstones, t]);
 
   const directSubmission = useCallback((action: CollaborationRunAction): CollaborationRunActionSubmission | null => {
     switch (action) {
@@ -861,6 +992,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
         () => Promise.all([
           syncGlobalRuns({ includeArchived: true }),
           syncTombstones(),
+          refreshWorkflowTemplates(),
         ]),
         setLocalError,
       );
@@ -869,7 +1001,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     } finally {
       setHistoryLoading(false);
     }
-  }, [projectionCurrent, syncGlobalRuns, syncTombstones]);
+  }, [projectionCurrent, refreshWorkflowTemplates, syncGlobalRuns, syncTombstones]);
 
   const retrySessionSync = useCallback(() => {
     if (!projectionCurrent || !sessionRef) return;
@@ -939,6 +1071,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
         open={projectionCurrent && historyOpen}
         runs={allRuns}
         tombstones={projectionCurrent ? tombstones : []}
+        templates={projectionCurrent ? workflowTemplates : []}
         loading={historyLoading}
         error={projectionCurrent ? (localError || globalError) : null}
         selectedRunId={projectionCurrent ? selectedRunId : null}
@@ -948,6 +1081,10 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
         onSelectRun={openRun}
         onRetry={() => void openHistory()}
         onRetryCleanup={(tombstone) => void retryDeletionCleanup(tombstone)}
+        onInstantiateTemplate={projectionCurrent && templateOriginMessage
+          ? (template) => void instantiateWorkflowTemplate(template)
+          : undefined}
+        instantiatingTemplateId={instantiatingTemplateId}
       />
 
       {projectionCurrent && selectedRunId && (

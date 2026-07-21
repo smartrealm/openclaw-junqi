@@ -56,6 +56,7 @@ interface MutableRunGetResponse {
     interventions: unknown[];
     deliveries: unknown[];
     decisions: unknown[];
+    workflowTemplate?: unknown;
     finalArtifact: unknown;
   };
 }
@@ -114,6 +115,70 @@ test('run decoder rejects unknown states, invalid revisions, and missing identit
     item.mutate(response);
     expectWireError(() => decodeRunGetResponse(response, 'run-1'), item.path);
   }
+});
+
+test('workflow template catalog rejects persisted Agent candidates and decodes durable run provenance', () => {
+  const template = {
+    id: 'template-1',
+    name: 'Launch assessment',
+    status: 'PUBLISHED',
+    sourceRunId: 'run-source',
+    createdBy: 'operator',
+    createdAt: 10,
+    updatedAt: 20,
+    currentVersion: {
+      id: 'template-version-1',
+      templateId: 'template-1',
+      versionNo: 1,
+      digest: 'a'.repeat(64),
+      sourceRunId: 'run-source',
+      sourcePlanRevisionId: 'plan-source',
+      createdBy: 'operator',
+      createdAt: 10,
+      definition: {
+        schemaVersion: 1,
+        goal: 'Assess the launch',
+        workItems: [
+          { id: 'research', title: 'Research', dependencies: [] },
+          { id: 'review', title: 'Review', dependencies: ['research'] },
+        ],
+        synthesis: {
+          requiredEvidence: ['research'],
+          finalAnswerContract: 'Return a recommendation',
+        },
+      },
+    },
+  };
+  const decoded = decodeCollaborationReadResponse(
+    'junqi.collab.workflow.template.list',
+    { collaborationInstanceId: 'instance-1', templates: [template] },
+    {},
+  );
+  assert.equal(decoded.templates[0]?.name, 'Launch assessment');
+  assert.equal(decoded.templates[0]?.currentVersion.definition.workItems.length, 2);
+
+  const unsafe = structuredClone(template);
+  (unsafe.currentVersion.definition.workItems[0] as Record<string, unknown>).candidateAgentIds = ['stale-agent'];
+  expectWireError(
+    () => decodeCollaborationReadResponse(
+      'junqi.collab.workflow.template.list',
+      { collaborationInstanceId: 'instance-1', templates: [unsafe] },
+      {},
+    ),
+    'response.templates[0].currentVersion.definition.workItems[0].candidateAgentIds',
+  );
+
+  const run = runGetResponse();
+  run.snapshot.workflowTemplate = {
+    templateId: 'template-1',
+    templateVersionId: 'template-version-1',
+    templateName: 'Launch assessment',
+    templateVersionNo: 1,
+    templateDigest: 'a'.repeat(64),
+    parameterDigest: 'b'.repeat(64),
+    instantiatedAt: 30,
+  };
+  assert.equal(decodeRunGetResponse(run, 'run-1').snapshot.workflowTemplate?.templateId, 'template-1');
 });
 
 test('attempt abandon eligibility is backward-compatible and strictly typed when present', () => {

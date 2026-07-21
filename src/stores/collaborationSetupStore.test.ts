@@ -84,6 +84,7 @@ function capabilities(configured: boolean): CollaborationCapabilities {
       EVENT_CURSOR: true,
       SESSION_DELETE_CAS: true,
       WRITE_INSTANCE_FENCE: true,
+      WORKFLOW_TEMPLATES: true,
     },
     featureEvidence: {
       kind: 'DECLARED_PLUGIN_CONTRACT',

@@ -3622,6 +3622,7 @@
       "DELIVERY_ABANDON": "放弃交付",
       "EXPORT": "导出",
       "CLONE": "克隆",
+      "CREATE_TEMPLATE": "保存为模板",
       "ARCHIVE": "归档",
       "UNARCHIVE": "取消归档",
       "DELETE": "删除"
@@ -3651,7 +3652,8 @@
       "notAvailable": "不可用",
       "flowAbandonmentReason": "放弃原因",
       "flowAbandonmentReasonPlaceholder": "请记录为何立即删除比重试对账更安全。",
-      "confirmFlowReconciliationAbandonment": "我接受这项未完成的 Flow 对账将被放弃，且删除后无法恢复。"
+      "confirmFlowReconciliationAbandonment": "我接受这项未完成的 Flow 对账将被放弃，且删除后无法恢复。",
+      "templateName": "模板名称"
     },
     "risk": {
       "LOW": "低风险",
@@ -3685,6 +3687,12 @@
       "noWorkItems": "尚无工作项记录。",
       "planHistory": "计划版本",
       "planRevision": "计划版本 {{revision}}",
+      "templateSource": "模板来源",
+      "template": "模板",
+      "templateVersion": "版本",
+      "templateDigest": "模板摘要",
+      "instantiated": "实例化时间",
+      "approvalHistory": "审批记录",
       "attempts": "执行尝试",
       "noAttempts": "尚无执行尝试。",
       "runLevelAttempt": "运行级尝试",
@@ -3707,6 +3715,11 @@
       "timelineIncompleteReason": "原因",
       "noEvents": "尚未加载审计事件。"
     },
+    "decision": {
+      "PLAN_APPROVED": "计划已批准",
+      "WORKFLOW_TEMPLATE_CREATED": "模板已保存",
+      "WORKFLOW_TEMPLATE_INSTANTIATED": "模板已实例化"
+    },
     "drawer": {
       "title": "协作记录",
       "subtitle": "运行记录会跨会话留存。",
@@ -3715,6 +3728,10 @@
       "emptyHint": "从 Chat 创建的运行会在这里显示已留存的历史记录。",
       "runsHeading": "运行记录",
       "runList": "协作运行列表",
+      "templatesHeading": "工作流模板",
+      "templateList": "工作流模板",
+      "templateWorkItems": "{{count}} 个工作项",
+      "instantiateTemplate": "运行模板",
       "archived": "已归档",
       "count": "共 {{count}} 个运行",
       "deletedTitle": "已删除记录",

@@ -47,6 +47,7 @@ const READ_METHODS: readonly RpcDefinition[] = [
   { method: "junqi.collab.export.get", scope: "operator.read", handle: (service, params) => service.exportGet(params) },
   { method: "junqi.collab.export.download", scope: "operator.read", handle: (service, params) => service.exportDownload(params) },
   { method: "junqi.collab.maintenance.status", scope: "operator.read", handle: (service) => service.maintenanceStatus() },
+  { method: "junqi.collab.workflow.template.list", scope: "operator.read", handle: (service, params) => service.listWorkflowTemplates(params) },
 ] as const;
 
 const WRITE_METHODS: readonly RpcDefinition[] = [
@@ -59,6 +60,8 @@ const WRITE_METHODS: readonly RpcDefinition[] = [
   { method: "junqi.collab.run.cancel", scope: "operator.write", handle: (service, params) => service.cancelRun(params) },
   { method: "junqi.collab.run.reconcile", scope: "operator.write", handle: (service, params) => service.reconcileRun(params) },
   { method: "junqi.collab.run.clone", scope: "operator.write", handle: (service, params) => service.cloneRun(params) },
+  { method: "junqi.collab.workflow.template.createFromRun", scope: "operator.write", handle: (service, params) => service.createWorkflowTemplateFromRun(params) },
+  { method: "junqi.collab.workflow.template.instantiate", scope: "operator.write", handle: (service, params) => service.instantiateWorkflowTemplate(params) },
   { method: "junqi.collab.run.archive", scope: "operator.write", handle: (service, params) => service.archiveRun(params, true) },
   { method: "junqi.collab.run.unarchive", scope: "operator.write", handle: (service, params) => service.archiveRun(params, false) },
   { method: "junqi.collab.run.delete", scope: "operator.write", handle: (service, params) => service.deleteRun(params) },

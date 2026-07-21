@@ -5,7 +5,7 @@ runs. It owns workflow state, dispatch idempotency, recovery, audit events, and
 exact transcript delivery. JunQi is a client of the `junqi.collab.*` Gateway
 RPC surface; it is not the workflow scheduler.
 
-Current package baseline: plugin `0.3.0`, SQLite schema `12`, OpenClaw
+Current package baseline: plugin `0.4.0`, SQLite schema `13`, OpenClaw
 `>=2026.7.1 <2027.0.0`.
 
 ## Execution boundary
@@ -39,7 +39,7 @@ Build and inspect locally:
 ```bash
 npm run collab:build
 npm run collab:pack
-openclaw plugins install --force --pin npm-pack:packages/junqi-collab/dist/junqi-openclaw-collaboration-0.3.0.tgz
+openclaw plugins install --force --pin npm-pack:packages/junqi-collab/dist/junqi-openclaw-collaboration-0.4.0.tgz
 openclaw plugins inspect junqi-collab --runtime --json
 ```
 
@@ -61,7 +61,7 @@ command. Every mutation is fenced to the exact verified target fingerprint and
 connection id. Before replacement it must build a private offline tgz of the
 installed plugin, journal archive/content-tree hashes and config ownership, and
 fail before mutation when that backup is unavailable. Rollback has no registry
-fallback. Health confirmation requires the embedded plugin version, schema 12,
+fallback. Health confirmation requires the embedded plugin version, schema 13,
 `durableState`, both durable-runtime signals, and all required feature flags;
 otherwise the journal remains `RecoveryRequired`.
 

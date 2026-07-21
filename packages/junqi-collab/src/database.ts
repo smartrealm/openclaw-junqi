@@ -1267,7 +1267,15 @@ function securePermissions(target: string, mode: number): void {
 }
 
 function allowedActionsForRun(status: RunStatus, dispatchState: string, archiveState: string, terminal: boolean): string[] {
-  if (terminal) return ["EXPORT", "CLONE", archiveState === "ARCHIVED" ? "UNARCHIVE" : "ARCHIVE", "DELETE"];
+  if (terminal) {
+    return [
+      "EXPORT",
+      "CLONE",
+      ...(status === "COMPLETED" ? ["CREATE_TEMPLATE"] : []),
+      archiveState === "ARCHIVED" ? "UNARCHIVE" : "ARCHIVE",
+      "DELETE",
+    ];
+  }
   switch (status) {
     case "AWAITING_APPROVAL":
       return ["PLAN_REVISE", "PLAN_APPROVE", "CANCEL"];

@@ -125,6 +125,25 @@ function snapshot(): CollaborationRunSnapshot {
       { id: 'plan-1', revisionNo: 1, createdBy: 'planner', createdAt: NOW - 50_000 },
       { id: 'plan-2', revisionNo: 2, approvedBy: 'user', approvedAt: NOW - 40_000 },
     ],
+    decisions: [
+      {
+        id: 'decision-1',
+        runId: 'run-details',
+        decisionType: 'PLAN_APPROVED',
+        actor: 'operator',
+        payload: { assignments: { research: 'researcher', review: 'risk-reviewer' } },
+        createdAt: NOW - 35_000,
+      },
+    ],
+    workflowTemplate: {
+      templateId: 'template-launch',
+      templateVersionId: 'template-version-launch-1',
+      templateName: 'Launch assessment',
+      templateVersionNo: 1,
+      templateDigest: 'a'.repeat(64),
+      parameterDigest: 'b'.repeat(64),
+      instantiatedAt: NOW - 45_000,
+    },
     finalArtifact: { summary: 'Partial decision memo', confidence: 'medium' },
   };
 }
@@ -161,8 +180,9 @@ test('renders the graph and every traceability section from the canonical snapsh
   }));
 
   assert.match(html, /data-work-item-view="graph"/);
+  assert.match(html, /data-work-item-graph/);
+  assert.match(html, /data-work-item-edge="research-/);
   assert.match(html, /Collect launch evidence/);
-  assert.match(html, /Depends on: Collect launch evidence/);
   assert.match(html, /Source permission denied/);
   assert.match(html, /OpenClaw Task/);
   assert.match(html, /task-1/);
@@ -174,6 +194,10 @@ test('renders the graph and every traceability section from the canonical snapsh
   assert.match(html, /WORKER_FAILED/);
   assert.match(html, /Target revision 8/);
   assert.match(html, /Plan revision 2/);
+  assert.match(html, /Template source/);
+  assert.match(html, /Launch assessment/);
+  assert.match(html, /Approval history/);
+  assert.match(html, /Plan approved/);
   assert.match(html, /Partial decision memo/);
   assert.match(html, /INTERVENTION_CREATED/);
   assert.match(html, /data-collaboration-action="WORK_ITEM_RETRY"/);

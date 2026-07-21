@@ -4597,6 +4597,111 @@ test("clone validates the original request once and records its source run", asy
   }
 });
 
+test("workflow templates preserve a completed OpenClaw-backed DAG and require fresh approval before provisioning", async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-workflow-template-test-"));
+  const database = new CollaborationDatabase(":memory:");
+  const runtime = new FakeRuntime();
+  const service = createTestService(database, runtime, directory);
+  const sourceOrigin: OriginRef = {
+    runtimeId: "runtime-template-source",
+    agentId: "main",
+    sessionKey: "agent:main:template-source",
+    sessionId: "session-template-source",
+    nativeMessageId: "message-template-source",
+  };
+  const targetOrigin: OriginRef = {
+    runtimeId: "runtime-template-target",
+    agentId: "main",
+    sessionKey: "agent:main:template-target",
+    sessionId: "session-template-target",
+    nativeMessageId: "message-template-target",
+  };
+  service.start();
+  try {
+    const { runId: sourceRunId } = await startCollaborationUntilDelivery(
+      service,
+      database,
+      sourceOrigin,
+      "template-source",
+      "DELIVERED",
+    );
+    await waitUntil(() => database.getRunSummary(sourceRunId).status === "COMPLETED");
+    const source = database.getRunSummary(sourceRunId);
+
+    const createParams = writeParams({
+      commandId: "template-create",
+      runId: sourceRunId,
+      expectedRunRevision: source.revision,
+      name: "Launch assessment",
+    });
+    const created = service.createWorkflowTemplateFromRun(createParams);
+    const createdReplay = service.createWorkflowTemplateFromRun(createParams);
+    assert.equal(created.templateName, "Launch assessment");
+    assert.equal(createdReplay.replayed, true);
+    assert.equal(database.getCommandReceipt("template-create")?.source, "junqi.collab.workflow.template.createFromRun");
+    assert.ok(database.listEvents(sourceRunId, 0, 100).some(
+      (event) => event.eventType === "WORKFLOW_TEMPLATE_CREATED",
+    ));
+
+    const templateId = String(created.templateId);
+    const listed = service.listWorkflowTemplates({});
+    const templates = listed.templates as Array<Record<string, unknown>>;
+    assert.equal(templates.length, 1);
+    const currentVersion = templates[0]!.currentVersion as Record<string, unknown>;
+    const definition = currentVersion.definition as Record<string, unknown>;
+    const templateItems = definition.workItems as Array<Record<string, unknown>>;
+    assert.equal("candidateAgentIds" in templateItems[0]!, false);
+    assert.equal("candidateAgentIds" in templateItems[1]!, false);
+
+    const flowCreatesBeforeInstantiation = runtime.flowCreates;
+    const agentCallsBeforeInstantiation = runtime.runAgentCalls;
+    const instantiated = await service.instantiateWorkflowTemplate(writeParams({
+      commandId: "template-instantiate",
+      templateId,
+      origin: targetOrigin,
+      goal: "Assess the revised launch proposal",
+      parameters: { region: "APAC" },
+    }));
+    const instantiatedRunId = String(instantiated.runId);
+    const awaitingApproval = database.getRunSummary(instantiatedRunId);
+    assert.equal(awaitingApproval.status, "AWAITING_APPROVAL");
+    assert.equal(runtime.flowCreates, flowCreatesBeforeInstantiation);
+    assert.equal(runtime.runAgentCalls, agentCallsBeforeInstantiation);
+    assert.equal(
+      Number(database.db.prepare("SELECT COUNT(*) AS count FROM attempts WHERE run_id = ? AND kind = 'PLANNER'").get(instantiatedRunId)?.count),
+      0,
+    );
+    assert.equal(database.getCommandReceipt("template-instantiate")?.source, "junqi.collab.workflow.template.instantiate");
+
+    const snapshot = service.getRun({ runId: instantiatedRunId });
+    const workflowTemplate = snapshot.workflowTemplate as Record<string, unknown>;
+    assert.equal(workflowTemplate.templateId, templateId);
+    assert.equal(workflowTemplate.templateName, "Launch assessment");
+    const workItems = snapshot.workItems as Array<Record<string, unknown>>;
+    assert.deepEqual(workItems.map((item) => item.candidateAgentIds), [
+      ["coordinator", "worker"],
+      ["coordinator", "worker"],
+    ]);
+    assert.ok((snapshot.decisions as Array<Record<string, unknown>>).some(
+      (decision) => decision.decisionType === "WORKFLOW_TEMPLATE_INSTANTIATED",
+    ));
+
+    runtime.waitMode = "timeout";
+    service.approvePlan(writeParams({
+      commandId: "template-instantiate-approve",
+      runId: instantiatedRunId,
+      planRevisionId: awaitingApproval.currentPlanRevisionId,
+      expectedRunRevision: awaitingApproval.revision,
+      assignments: { research: "worker", review: "worker" },
+    }));
+    await waitUntil(() => runtime.flowCreates === flowCreatesBeforeInstantiation + 1);
+  } finally {
+    await service.stop();
+    database.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("cancelling a running collaboration confirms every active OpenClaw task before terminal state", async () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-cancel-test-"));
   const database = new CollaborationDatabase(":memory:");

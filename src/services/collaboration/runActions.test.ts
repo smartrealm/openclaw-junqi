@@ -283,6 +283,10 @@ test('every non-preview action maps to its exact plugin RPC contract', async () 
     },
     { submission: { action: 'EXPORT' }, method: 'junqi.collab.export.create' },
     { submission: { action: 'CLONE' }, method: 'junqi.collab.run.clone' },
+    {
+      submission: { action: 'CREATE_TEMPLATE', name: 'Reusable proposal review' },
+      method: 'junqi.collab.workflow.template.createFromRun',
+    },
     { submission: { action: 'ARCHIVE' }, method: 'junqi.collab.run.archive' },
     { submission: { action: 'UNARCHIVE' }, method: 'junqi.collab.run.unarchive' },
   ];
@@ -292,6 +296,22 @@ test('every non-preview action maps to its exact plugin RPC contract', async () 
     assert.equal(built.method, method, submission.action);
     assert.equal(built.request.expectedRunRevision, 7, submission.action);
   }
+});
+
+test('template creation binds the completed source run revision and a non-empty name', async () => {
+  const built = await buildRunAction(snapshot(['CREATE_TEMPLATE']), {
+    action: 'CREATE_TEMPLATE',
+    name: '  Launch review  ',
+  });
+  assert.equal(built.method, 'junqi.collab.workflow.template.createFromRun');
+  assert.equal(built.request.runId, 'run-1');
+  assert.equal(built.request.name, 'Launch review');
+  assert.equal(built.request.expectedRunRevision, 7);
+
+  await assert.rejects(
+    buildRunAction(snapshot(['CREATE_TEMPLATE']), { action: 'CREATE_TEMPLATE', name: '   ' }),
+    (error: unknown) => error instanceof CollaborationRunActionError && error.code === 'INVALID_ACTION_INPUT',
+  );
 });
 
 test('unknown attempt resolution binds the exact UNKNOWN attempt and run revision', async () => {

@@ -3,6 +3,8 @@ import {
   Archive,
   CircleDashed,
   GitFork,
+  Library,
+  Play,
   RefreshCw,
   Trash2,
   TriangleAlert,
@@ -11,7 +13,11 @@ import {
 import { cn } from '@/lib/utils';
 import { useModalFocusScope } from '@/hooks/useModalFocusScope';
 import { flowReconciliationAbandonmentAudit } from '@/services/collaboration/tombstoneAudit';
-import type { CollaborationRunSummary, CollaborationTombstone } from '@/services/collaboration/types';
+import type {
+  CollaborationRunSummary,
+  CollaborationTombstone,
+  CollaborationWorkflowTemplate,
+} from '@/services/collaboration/types';
 import {
   CollaborationRunStatusIcon,
   collaborationRunStatusLabel,
@@ -23,6 +29,7 @@ export interface CollaborationHistoryDrawerProps {
   open: boolean;
   runs: CollaborationRunSummary[];
   tombstones?: CollaborationTombstone[];
+  templates?: CollaborationWorkflowTemplate[];
   loading?: boolean;
   error?: string | null;
   selectedRunId?: string | null;
@@ -33,6 +40,8 @@ export interface CollaborationHistoryDrawerProps {
   onSelectRun?: (runId: string) => void;
   onRetry?: () => void;
   onRetryCleanup?: (tombstone: CollaborationTombstone) => void;
+  onInstantiateTemplate?: (template: CollaborationWorkflowTemplate) => void;
+  instantiatingTemplateId?: string | null;
   className?: string;
 }
 
@@ -59,6 +68,7 @@ export function CollaborationHistoryDrawer({
   open,
   runs,
   tombstones = [],
+  templates = [],
   loading = false,
   error,
   selectedRunId,
@@ -69,6 +79,8 @@ export function CollaborationHistoryDrawer({
   onSelectRun,
   onRetry,
   onRetryCleanup,
+  onInstantiateTemplate,
+  instantiatingTemplateId,
   className,
 }: CollaborationHistoryDrawerProps) {
   const text = useCollaborationText(translate);
@@ -91,6 +103,10 @@ export function CollaborationHistoryDrawer({
       .filter((run) => !deletedRunIds.has(run.runId))
       .sort((left, right) => right.updatedAt - left.updatedAt || right.createdAt - left.createdAt),
     [deletedRunIds, runs],
+  );
+  const sortedTemplates = useMemo(
+    () => [...templates].sort((left, right) => right.updatedAt - left.updatedAt || right.createdAt - left.createdAt),
+    [templates],
   );
 
   if (!open) return null;
@@ -150,7 +166,7 @@ export function CollaborationHistoryDrawer({
         )}
 
         <div className="min-h-0 flex-1 overflow-y-auto" aria-busy={loading || undefined}>
-          {loading && sortedRuns.length === 0 && sortedTombstones.length === 0 ? (
+          {loading && sortedRuns.length === 0 && sortedTombstones.length === 0 && sortedTemplates.length === 0 ? (
             <div className="space-y-0 px-4" aria-label={text('collaboration.drawer.loading', 'Loading collaboration history')}>
               {[0, 1, 2, 3].map((index) => (
                 <div key={index} className="border-b border-aegis-border py-4">
@@ -159,7 +175,7 @@ export function CollaborationHistoryDrawer({
                 </div>
               ))}
             </div>
-          ) : sortedRuns.length === 0 && sortedTombstones.length === 0 ? (
+          ) : sortedRuns.length === 0 && sortedTombstones.length === 0 && sortedTemplates.length === 0 ? (
             <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 px-6 text-center">
               <CircleDashed size={25} className="text-aegis-text-dim" aria-hidden />
               <div className="text-[12px] font-medium text-aegis-text-muted">
@@ -171,6 +187,43 @@ export function CollaborationHistoryDrawer({
             </div>
           ) : (
             <div>
+              {sortedTemplates.length > 0 && (
+                <section aria-labelledby="collaboration-templates-heading">
+                  <h3 id="collaboration-templates-heading" className="border-b border-aegis-border bg-[rgb(var(--aegis-overlay)/0.025)] px-4 py-2 text-[10px] font-medium text-aegis-text-dim">
+                    {text('collaboration.drawer.templatesHeading', 'Workflow templates')}
+                  </h3>
+                  <div role="list" aria-label={text('collaboration.drawer.templateList', 'Workflow templates')}>
+                    {sortedTemplates.map((template) => {
+                      const workItemCount = template.currentVersion.definition.workItems.length;
+                      const pending = instantiatingTemplateId === template.id;
+                      return (
+                        <div key={template.id} role="listitem" className="grid min-w-0 grid-cols-[18px_minmax(0,1fr)_32px] gap-x-2 border-b border-aegis-border px-4 py-3">
+                          <Library size={13} className="mt-0.5 text-aegis-primary" aria-hidden />
+                          <div className="min-w-0">
+                            <div className="line-clamp-2 break-words text-[11.5px] font-medium leading-4 text-aegis-text-secondary">{template.name}</div>
+                            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[9.5px] text-aegis-text-dim">
+                              <span className="font-mono">v{template.currentVersion.versionNo}</span>
+                              <span>{text('collaboration.drawer.templateWorkItems', '{{count}} work items', { count: workItemCount })}</span>
+                              <span className="font-mono tabular-nums">{formatUpdatedAt(template.updatedAt, locale)}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onInstantiateTemplate?.(template)}
+                            disabled={!onInstantiateTemplate || pending}
+                            aria-label={text('collaboration.drawer.instantiateTemplate', 'Run template')}
+                            title={text('collaboration.drawer.instantiateTemplate', 'Run template')}
+                            className="inline-flex h-8 w-8 items-center justify-center self-center rounded-md text-aegis-primary hover:bg-aegis-primary/[0.09] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {pending ? <RefreshCw size={13} className="animate-spin" aria-hidden /> : <Play size={13} aria-hidden />}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+
               {sortedRuns.length > 0 && (
                 <section aria-labelledby="collaboration-runs-heading">
                   <h3 id="collaboration-runs-heading" className="border-b border-aegis-border bg-[rgb(var(--aegis-overlay)/0.025)] px-4 py-2 text-[10px] font-medium text-aegis-text-dim">

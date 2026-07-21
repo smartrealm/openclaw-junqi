@@ -356,6 +356,52 @@ export interface CollaborationDeliverySnapshot {
   messageId?: string | null;
 }
 
+/** Agent-independent definition returned by the durable workflow-template catalog. */
+export interface CollaborationWorkflowTemplateDefinition {
+  schemaVersion: number;
+  goal: string;
+  workItems: Array<{
+    id: string;
+    title: string;
+    dependencies: string[];
+  }>;
+  synthesis: {
+    requiredEvidence: string[];
+    finalAnswerContract: string;
+  };
+}
+
+export interface CollaborationWorkflowTemplate {
+  id: string;
+  name: string;
+  status: 'PUBLISHED';
+  sourceRunId: string | null;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  currentVersion: {
+    id: string;
+    templateId: string;
+    versionNo: number;
+    digest: string;
+    sourceRunId: string | null;
+    sourcePlanRevisionId: string | null;
+    createdBy: string;
+    createdAt: number;
+    definition: CollaborationWorkflowTemplateDefinition;
+  };
+}
+
+export interface CollaborationWorkflowTemplateLink {
+  templateId: string;
+  templateVersionId: string;
+  templateName: string;
+  templateVersionNo: number;
+  templateDigest: string;
+  parameterDigest: string;
+  instantiatedAt: number;
+}
+
 export interface CollaborationRunSnapshot extends CollaborationRunSummary {
   snapshotRevision: number;
   workItems: CollaborationWorkItemSnapshot[];
@@ -365,6 +411,7 @@ export interface CollaborationRunSnapshot extends CollaborationRunSummary {
   planRevisions?: Array<Record<string, unknown>>;
   evidence?: Array<Record<string, unknown>>;
   decisions?: Array<Record<string, unknown>>;
+  workflowTemplate?: CollaborationWorkflowTemplateLink | null;
   finalArtifact?: Record<string, unknown> | null;
 }
 
@@ -389,6 +436,11 @@ export interface CollaborationRunListResponse {
   runs: CollaborationRunSummary[];
   nextCursor: string | null;
   snapshotRevision?: number;
+}
+
+export interface CollaborationWorkflowTemplateListResponse {
+  collaborationInstanceId: string;
+  templates: CollaborationWorkflowTemplate[];
 }
 
 export type CollaborationTombstoneCleanupStatus = 'COMPLETED' | 'PENDING' | 'PARTIAL';
@@ -465,6 +517,10 @@ export interface CollaborationEventsPage {
  * the store. Decoder dispatch and the client facade are derived from this map.
  */
 export interface CollaborationReadRpcContract {
+  'junqi.collab.workflow.template.list': {
+    params: { limit?: number };
+    response: CollaborationWorkflowTemplateListResponse;
+  };
   'junqi.collab.run.partial.preview': {
     params: { runId: string; workItemIds: string[] };
     response: CollaborationPartialPreview;
@@ -572,6 +628,8 @@ export type CollaborationWriteMethod =
   | 'junqi.collab.run.cancel'
   | 'junqi.collab.run.reconcile'
   | 'junqi.collab.run.clone'
+  | 'junqi.collab.workflow.template.createFromRun'
+  | 'junqi.collab.workflow.template.instantiate'
   | 'junqi.collab.run.archive'
   | 'junqi.collab.run.unarchive'
   | 'junqi.collab.run.delete'

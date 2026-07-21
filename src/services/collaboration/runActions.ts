@@ -44,6 +44,7 @@ export const COLLABORATION_RUN_ACTIONS = [
   'DELIVERY_ABANDON',
   'EXPORT',
   'CLONE',
+  'CREATE_TEMPLATE',
   'ARCHIVE',
   'UNARCHIVE',
   'DELETE',
@@ -149,6 +150,7 @@ export type CollaborationRunActionSubmission =
   | { action: 'DELIVERY_ABANDON'; deliveryId: string; confirmed: boolean }
   | { action: 'EXPORT' }
   | { action: 'CLONE'; goal?: string }
+  | { action: 'CREATE_TEMPLATE'; name: string }
   | { action: 'ARCHIVE' }
   | { action: 'UNARCHIVE' }
   | {
@@ -217,6 +219,7 @@ const ACTION_METHODS: Record<CollaborationRunAction, CollaborationWriteMethod> =
   DELIVERY_ABANDON: 'junqi.collab.delivery.abandon',
   EXPORT: 'junqi.collab.export.create',
   CLONE: 'junqi.collab.run.clone',
+  CREATE_TEMPLATE: 'junqi.collab.workflow.template.createFromRun',
   ARCHIVE: 'junqi.collab.run.archive',
   UNARCHIVE: 'junqi.collab.run.unarchive',
   DELETE: 'junqi.collab.run.delete',
@@ -237,6 +240,7 @@ const ACTIONS_REQUIRING_DIALOG = new Set<CollaborationRunAction>([
   'DELIVERY_ABANDON',
   'DELETE',
   'CLONE',
+  'CREATE_TEMPLATE',
 ]);
 
 export function isCollaborationRunAction(value: string): value is CollaborationRunAction {
@@ -691,6 +695,12 @@ export async function buildRunAction(
       payload = {
         runId: snapshot.runId,
         ...(submission.goal?.trim() ? { goal: submission.goal.trim() } : {}),
+      };
+      break;
+    case 'CREATE_TEMPLATE':
+      payload = {
+        runId: snapshot.runId,
+        name: requireNonEmpty(submission.name, 'name'),
       };
       break;
     case 'DELETE': {

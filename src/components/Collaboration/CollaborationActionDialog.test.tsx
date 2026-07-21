@@ -85,6 +85,23 @@ test('plan revision dialog displays the authoritative run and plan revisions', (
   assert.match(html, /data-modal-initial-focus="true"/);
 });
 
+test('template creation dialog is available only through the server-authorized completed-run action', () => {
+  const value = snapshot(['CREATE_TEMPLATE']);
+  value.status = 'COMPLETED';
+  value.dispatchState = 'CLOSED';
+  const html = renderToStaticMarkup(createElement(CollaborationActionDialog, {
+    open: true,
+    action: 'CREATE_TEMPLATE',
+    snapshot: value,
+    onClose: noop,
+    onSubmit: noop,
+  }));
+  assert.match(html, /Save as template/);
+  assert.match(html, /Template name/);
+  assert.match(html, /data-modal-initial-focus="true"/);
+  assert.match(html, /type="submit" disabled=""/);
+});
+
 test('work-item selection exposes entity revisions and only plan-approved agents', () => {
   const value = snapshot(['WORK_ITEM_REASSIGN']);
   value.attempts = [];

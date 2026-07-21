@@ -96,6 +96,7 @@ const ACTION_FALLBACKS: Record<CollaborationRunAction, string> = {
   DELIVERY_ABANDON: 'Abandon delivery',
   EXPORT: 'Export run',
   CLONE: 'Clone run',
+  CREATE_TEMPLATE: 'Save as template',
   ARCHIVE: 'Archive run',
   UNARCHIVE: 'Unarchive run',
   DELETE: 'Delete run',
@@ -203,6 +204,7 @@ export function CollaborationActionDialog({
   const [abandonmentReason, setAbandonmentReason] = useState('');
   const [attemptResolution, setAttemptResolution] = useState<CollaborationAttemptUnknownResolution | ''>('');
   const [cloneGoal, setCloneGoal] = useState('');
+  const [templateName, setTemplateName] = useState('');
   const [target, setTarget] = useState<OriginDraft>(() => originDraft(initialDelivery?.target));
   const busy = submitting || previewing;
 
@@ -219,6 +221,7 @@ export function CollaborationActionDialog({
     setAbandonmentReason('');
     setAttemptResolution('');
     setCloneGoal('');
+    setTemplateName('');
     const delivery = snapshot.deliveries.find((candidate) => candidate.id === initialEntityId);
     setTarget(originDraft(delivery?.target));
   }, [action, initialEntityId, open, previewConfirmationToken, snapshot.runId, snapshot.revision]);
@@ -369,6 +372,9 @@ export function CollaborationActionDialog({
         abandonmentReason,
       });
       break;
+    case 'CREATE_TEMPLATE':
+      valid = Boolean(templateName.trim());
+      break;
   }
 
   const selectDelivery = (deliveryId: string) => {
@@ -437,6 +443,9 @@ export function CollaborationActionDialog({
         break;
       case 'CLONE':
         submission = { action, ...(cloneGoal.trim() ? { goal: cloneGoal.trim() } : {}) };
+        break;
+      case 'CREATE_TEMPLATE':
+        submission = { action, name: templateName.trim() };
         break;
       case 'DELETE':
         submission = {
@@ -826,6 +835,19 @@ export function CollaborationActionDialog({
               </label>
             )}
 
+            {action === 'CREATE_TEMPLATE' && (
+              <label className="block">
+                <FieldLabel>{text('collaboration.actionDialog.templateName', 'Template name')}</FieldLabel>
+                <input
+                  value={templateName}
+                  onChange={(event) => setTemplateName(event.target.value)}
+                  maxLength={160}
+                  data-modal-initial-focus
+                  className={inputClassName}
+                />
+              </label>
+            )}
+
             {action === 'DELETE' && (
               <div className="rounded-md border border-aegis-danger/25 bg-aegis-danger/[0.06] p-3 text-[10.5px] leading-4 text-aegis-text-muted">
                 <div className="flex items-center gap-2 font-semibold text-aegis-danger">
@@ -934,7 +956,7 @@ export function CollaborationActionDialog({
               </div>
             )}
 
-            {!['PLAN_REVISE', 'PLAN_APPROVE', 'WORK_ITEM_INPUT_APPEND', 'WORK_ITEM_CANCEL', 'WORK_ITEM_RETRY', 'WORK_ITEM_REASSIGN', 'ATTEMPT_RESOLVE_UNKNOWN', 'PARTIAL', 'DELIVERY_RETRY', 'DELIVERY_RETARGET', 'DELIVERY_ABANDON', 'CLONE', 'DELETE'].includes(action) && (
+            {!['PLAN_REVISE', 'PLAN_APPROVE', 'WORK_ITEM_INPUT_APPEND', 'WORK_ITEM_CANCEL', 'WORK_ITEM_RETRY', 'WORK_ITEM_REASSIGN', 'ATTEMPT_RESOLVE_UNKNOWN', 'PARTIAL', 'DELIVERY_RETRY', 'DELIVERY_RETARGET', 'DELIVERY_ABANDON', 'CLONE', 'CREATE_TEMPLATE', 'DELETE'].includes(action) && (
               <p className="text-[11px] leading-4 text-aegis-text-muted">
                 {text('collaboration.actionDialog.directAction', 'This command will be sent with the displayed run revision.')}
               </p>

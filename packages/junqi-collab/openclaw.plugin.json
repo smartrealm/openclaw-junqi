@@ -1,7 +1,7 @@
 {
   "id": "junqi-collab",
   "name": "JunQi Collaboration",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Durable, auditable collaboration workflows across OpenClaw agents.",
   "activation": {
     "onStartup": true

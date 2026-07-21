@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   Bot,
@@ -8,15 +8,21 @@ import {
   FileCheck2,
   GitFork,
   History,
+  Library,
   List,
   Network,
   RefreshCw,
-  Route,
   Send,
   ShieldAlert,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hasUnresolvedResidualExecutionRisk } from '@/services/collaboration/types';
+import {
+  buildWorkflowGraphProjection,
+  workflowGraphEdgePath,
+  WORKFLOW_GRAPH_NODE_HEIGHT,
+  WORKFLOW_GRAPH_NODE_WIDTH,
+} from '@/services/collaboration/workflowGraph';
 import type {
   CollaborationAttemptSnapshot,
   CollaborationDeliverySnapshot,
@@ -148,44 +154,75 @@ function WorkItemGraph({
   items: CollaborationWorkItemSnapshot[];
   text: CollaborationTranslate;
 }) {
-  const titlesByLogicalId = new Map(items.map((item) => [item.logicalId, item.title]));
+  const graph = useMemo(() => buildWorkflowGraphProjection(items), [items]);
+  const markerId = useId().replace(/:/g, '');
   return (
-    <ol className="space-y-1" aria-label={text('collaboration.details.dagLabel', 'Work dependency graph')} data-work-item-view="graph">
-      {items.map((item) => (
-        <li
-          key={item.id}
-          className="relative grid min-w-0 grid-cols-[22px_minmax(0,1fr)] gap-x-2 border-s border-aegis-border py-2 ps-3 first:pt-0 last:pb-0 sm:grid-cols-[22px_minmax(0,1fr)_minmax(100px,auto)]"
-          data-work-item-id={item.id}
-          data-dependencies={item.dependencies.join(',')}
+    <div
+      className="overflow-x-auto rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.018)]"
+      role="img"
+      aria-label={text('collaboration.details.dagLabel', 'Work dependency graph')}
+      data-work-item-view="graph"
+      data-work-item-graph
+    >
+      <div className="relative min-w-full" style={{ width: graph.width, height: graph.height }}>
+        <svg
+          className="pointer-events-none absolute inset-0 overflow-visible"
+          width={graph.width}
+          height={graph.height}
+          aria-hidden
         >
-          <span className="-ms-[22px] flex h-[22px] w-[22px] items-center justify-center rounded-md border border-aegis-border bg-aegis-surface-solid">
-            <CollaborationWorkItemStatusIcon status={item.status} size={13} />
-          </span>
-          <div className="min-w-0">
-            <div className="break-words text-[12px] font-medium text-aegis-text-secondary">{item.title}</div>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-aegis-text-dim">
-              <span>{collaborationWorkItemStatusLabel(item.status, text)}</span>
-              <span>{text(`collaboration.risk.${item.riskLevel}`, item.riskLevel)}</span>
-              <span>{text(`collaboration.sideEffect.${item.sideEffectClass}`, item.sideEffectClass)}</span>
-            </div>
-            <div className="mt-1.5 flex min-w-0 items-start gap-1.5 text-[10px] text-aegis-text-muted">
-              <Route size={11} className="mt-0.5 shrink-0" aria-hidden />
-              <span className="min-w-0 break-words">
-                {item.dependencies.length === 0
-                  ? text('collaboration.details.rootWorkItem', 'No dependencies')
-                  : text('collaboration.details.dependsOn', 'Depends on: {{items}}', {
-                    items: item.dependencies.map((dependency) => titlesByLogicalId.get(dependency) ?? dependency).join(', '),
-                  })}
-              </span>
-            </div>
-          </div>
-          <div className="col-start-2 mt-1 min-w-0 truncate text-[10.5px] text-aegis-text-muted sm:col-start-3 sm:mt-0 sm:self-center sm:text-end" title={item.assignedAgentId ?? undefined}>
-            <Bot size={11} className="me-1 inline" aria-hidden />
-            {item.assignedAgentId ?? text('collaboration.card.unassignedAgent', 'Unassigned')}
-          </div>
-        </li>
-      ))}
-    </ol>
+          <defs>
+            <marker id={markerId} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M 0 0 L 8 4 L 0 8 z" className="fill-aegis-text-dim" />
+            </marker>
+          </defs>
+          {graph.edges.map((edge) => (
+            <path
+              key={edge.id}
+              d={workflowGraphEdgePath(edge)}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.25"
+              markerEnd={`url(#${markerId})`}
+              className="text-aegis-text-dim"
+              data-work-item-edge={edge.id}
+            />
+          ))}
+        </svg>
+        {graph.nodes.map((node) => {
+          const item = node.item;
+          return (
+            <article
+              key={item.id}
+              className="absolute overflow-hidden rounded-md border border-aegis-border bg-aegis-surface-solid px-2.5 py-2 shadow-sm"
+              style={{
+                width: WORKFLOW_GRAPH_NODE_WIDTH,
+                height: WORKFLOW_GRAPH_NODE_HEIGHT,
+                left: node.x,
+                top: node.y,
+              }}
+              data-work-item-id={item.id}
+              data-dependencies={item.dependencies.join(',')}
+            >
+              <div className="flex min-w-0 items-start gap-1.5">
+                <span className="mt-0.5 shrink-0"><CollaborationWorkItemStatusIcon status={item.status} size={13} /></span>
+                <div className="min-w-0">
+                  <div className="line-clamp-2 break-words text-[11px] font-medium leading-4 text-aegis-text-secondary">{item.title}</div>
+                  <div className="mt-0.5 truncate font-mono text-[9px] text-aegis-text-dim">{item.logicalId}</div>
+                </div>
+              </div>
+              <div className="mt-2 flex min-w-0 items-center justify-between gap-2 text-[9.5px] text-aegis-text-muted">
+                <span className="truncate">{collaborationWorkItemStatusLabel(item.status, text)}</span>
+                <span className="truncate" title={item.assignedAgentId ?? undefined}>
+                  <Bot size={10} className="me-0.5 inline" aria-hidden />
+                  {item.assignedAgentId ?? text('collaboration.card.unassignedAgent', 'Unassigned')}
+                </span>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -463,6 +500,91 @@ function PlanHistory({ plans, text, locale }: { plans: Array<Record<string, unkn
   );
 }
 
+function decisionLabel(decisionType: string, text: CollaborationTranslate): string {
+  const labels: Record<string, string> = {
+    PLAN_APPROVED: 'Plan approved',
+    WORKFLOW_TEMPLATE_CREATED: 'Template saved',
+    WORKFLOW_TEMPLATE_INSTANTIATED: 'Template instantiated',
+  };
+  return text(`collaboration.decision.${decisionType}`, labels[decisionType] ?? decisionType.replaceAll('_', ' '));
+}
+
+function Decisions({
+  decisions,
+  text,
+  locale,
+}: {
+  decisions: Array<Record<string, unknown>>;
+  text: CollaborationTranslate;
+  locale?: string;
+}) {
+  const ordered = [...decisions].sort((left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0));
+  return (
+    <div role="list">
+      {ordered.map((decision, index) => {
+        const id = readString(decision, 'id') ?? `decision-${index}`;
+        const decisionType = readString(decision, 'decisionType') ?? 'UNKNOWN';
+        const actor = readString(decision, 'actor');
+        const payload = decision.payload && typeof decision.payload === 'object' && !Array.isArray(decision.payload)
+          ? decision.payload as Record<string, unknown>
+          : undefined;
+        const assignments = payload?.assignments && typeof payload.assignments === 'object' && !Array.isArray(payload.assignments)
+          ? Object.entries(payload.assignments as Record<string, unknown>)
+            .filter(([, agentId]) => typeof agentId === 'string' && agentId.trim())
+            .map(([logicalId, agentId]) => `${logicalId}: ${agentId}`)
+          : [];
+        return (
+          <div key={id} role="listitem" className="border-b border-aegis-border py-2.5 last:border-b-0">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="break-words text-[11px] font-medium text-aegis-text-secondary">
+                {decisionLabel(decisionType, text)}
+              </span>
+              <span className="shrink-0 text-[9.5px] text-aegis-text-dim">
+                {formatDateTime(Number(decision.createdAt ?? 0), locale)}
+              </span>
+            </div>
+            <div className="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-[10px] text-aegis-text-muted">
+              {actor && <span>{actor}</span>}
+              {assignments.length > 0 && <span className="break-words font-mono">{assignments.join(', ')}</span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WorkflowTemplateSource({
+  link,
+  text,
+  locale,
+}: {
+  link: NonNullable<CollaborationRunSnapshot['workflowTemplate']>;
+  text: CollaborationTranslate;
+  locale?: string;
+}) {
+  return (
+    <dl className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-2 text-[10.5px] sm:grid-cols-2">
+      <div className="min-w-0 sm:col-span-2">
+        <dt className="text-aegis-text-dim">{text('collaboration.details.template', 'Template')}</dt>
+        <dd className="mt-0.5 break-words text-aegis-text-muted">{link.templateName}</dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-aegis-text-dim">{text('collaboration.details.templateVersion', 'Version')}</dt>
+        <dd className="mt-0.5 font-mono text-aegis-text-muted">v{link.templateVersionNo}</dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-aegis-text-dim">{text('collaboration.details.instantiated', 'Instantiated')}</dt>
+        <dd className="mt-0.5 text-aegis-text-muted">{formatDateTime(link.instantiatedAt, locale)}</dd>
+      </div>
+      <div className="min-w-0 sm:col-span-2">
+        <dt className="text-aegis-text-dim">{text('collaboration.details.templateDigest', 'Template digest')}</dt>
+        <dd className="mt-0.5 break-all font-mono text-[9.5px] text-aegis-text-muted">{link.templateDigest}</dd>
+      </div>
+    </dl>
+  );
+}
+
 export function CollaborationDetails({
   snapshot,
   events = [],
@@ -600,6 +722,18 @@ export function CollaborationDetails({
       {snapshot.planRevisions && snapshot.planRevisions.length > 0 && (
         <DetailSection title={text('collaboration.details.planHistory', 'Plan history')} icon={<GitFork size={14} />} count={snapshot.planRevisions.length}>
           <PlanHistory plans={snapshot.planRevisions} text={text} locale={locale} />
+        </DetailSection>
+      )}
+
+      {snapshot.workflowTemplate && (
+        <DetailSection title={text('collaboration.details.templateSource', 'Template source')} icon={<Library size={14} />}>
+          <WorkflowTemplateSource link={snapshot.workflowTemplate} text={text} locale={locale} />
+        </DetailSection>
+      )}
+
+      {snapshot.decisions && snapshot.decisions.length > 0 && (
+        <DetailSection title={text('collaboration.details.approvalHistory', 'Approval history')} icon={<CheckCircle2 size={14} />} count={snapshot.decisions.length}>
+          <Decisions decisions={snapshot.decisions} text={text} locale={locale} />
         </DetailSection>
       )}
 

@@ -90,6 +90,11 @@ import {
 } from "./residual-execution-risk-specification.js";
 import { RunDeletionRepository } from "./run-deletion-repository.js";
 import { CommandHandlerRegistry } from "./command-handler-registry.js";
+import { WorkflowTemplateRepository } from "./workflow-template-repository.js";
+import {
+  materializeWorkflowTemplatePlan,
+  workflowTemplateDefinitionFromPlan,
+} from "./workflow-template-domain.js";
 import {
   DEFAULT_RUNTIME_DEADLINE_POLICY,
   type RuntimeDeadlinePolicy,
@@ -268,6 +273,7 @@ export class CollaborationService {
   private readonly currentPlanScope: CurrentPlanScopeRepository;
   private readonly maintenanceLeaseSpecification: MaintenanceLeaseSpecification;
   private readonly maintenanceLeases: MaintenanceLeaseRepository;
+  private readonly workflowTemplates: WorkflowTemplateRepository;
   private readonly runtimeDeadlinePolicy: RuntimeDeadlinePolicy;
   private readonly commandHandlers: CommandHandlerRegistry;
   private scheduledCommandDrainAt: number | null = null;
@@ -296,6 +302,7 @@ export class CollaborationService {
     this.currentPlanScope = new CurrentPlanScopeRepository(database, this.settlementSpecification);
     this.maintenanceLeaseSpecification = new MaintenanceLeaseSpecification();
     this.maintenanceLeases = new MaintenanceLeaseRepository(database, this.maintenanceLeaseSpecification);
+    this.workflowTemplates = new WorkflowTemplateRepository(database);
     this.runtimeDeadlinePolicy = runtimeDeadlinePolicy;
     this.commandHandlers = new CommandHandlerRegistry([
       ["PLAN", async (command) => !(await this.executeAgentCommand(command, "PLANNER"))],
@@ -1410,6 +1417,7 @@ export class CollaborationService {
         "EVENT_CURSOR",
         "SESSION_DELETE_CAS",
         "WRITE_INSTANCE_FENCE",
+        "WORKFLOW_TEMPLATES",
       ],
       featureFlags: {
         sqliteAuthority: true,
@@ -1419,6 +1427,7 @@ export class CollaborationService {
         eventCursor: true,
         sessionDeleteCas: true,
         writeInstanceFence: true,
+        workflowTemplates: true,
         sessionResetCas: false,
         workboardMirror: false,
       },
@@ -2635,6 +2644,187 @@ export class CollaborationService {
       capabilityInput,
       sourceRun: { id: source.id, revision: source.revision },
     });
+  }
+
+  createWorkflowTemplateFromRun(paramsInput: Record<string, unknown>): Record<string, unknown> {
+    const params = parseJsonObject(paramsInput, "params");
+    const envelope = this.validateWriteEnvelope(params);
+    const operation = "junqi.collab.workflow.template.createFromRun";
+    const replay = this.replayedResponse(envelope.commandId, envelope.payloadHash, operation);
+    if (replay) return replay;
+    const sourceRunId = readString(params.runId, "runId");
+    const name = readBoundedRequiredString(
+      params.name,
+      "name",
+      PERSISTENCE_LIMITS.workflowTemplateNameBytes,
+    );
+    const source = this.requireRunRevision(sourceRunId, envelope.expectedRunRevision);
+    assertCondition(
+      source.status === "COMPLETED",
+      "INVALID_TRANSITION",
+      "Only a completed collaboration run can become a workflow template",
+    );
+    this.assertNoOpenResidualExecutionRisk(source.id, "create workflow template");
+    const sourcePlanRevisionId = source.currentPlanRevisionId;
+    if (!sourcePlanRevisionId) {
+      throw new CollaborationError("NOT_FOUND", "Completed run does not have a plan revision");
+    }
+    const sourcePlan = this.getPlanRow(sourcePlanRevisionId);
+    assertCondition(sourcePlan.run_id === source.id, "INVALID_REQUEST", "Plan revision belongs to another run");
+    const definition = workflowTemplateDefinitionFromPlan(
+      parseJson(sourcePlan.plan_json, {}),
+      { maxWorkItems: this.config.maxWorkItems },
+    );
+    let response: Record<string, unknown>;
+    this.database.transaction(() => {
+      const current = this.requireRunRevision(source.id, source.revision);
+      assertCondition(
+        current.status === "COMPLETED",
+        "INVALID_TRANSITION",
+        "Only a completed collaboration run can become a workflow template",
+      );
+      this.assertNoOpenResidualExecutionRisk(current.id, "create workflow template");
+      const template = this.workflowTemplates.createPublishedFromRun({
+        name,
+        definition,
+        sourceRunId: current.id,
+        sourcePlanRevisionId,
+        actor: "operator",
+      });
+      const eventPayload = {
+        templateId: template.id,
+        templateVersionId: template.currentVersion.id,
+        templateDigest: template.currentVersion.digest,
+      };
+      this.database.appendEvent(current.id, "WORKFLOW_TEMPLATE_CREATED", "workflow_template", template.id, current.revision, eventPayload);
+      this.insertDecision(current.id, envelope.commandId, "operator", "WORKFLOW_TEMPLATE_CREATED", eventPayload);
+      response = this.acceptedResponse(current.id, envelope.commandId, current.revision, false, {
+        ...eventPayload,
+        templateName: template.name,
+      });
+      this.recordImmediateCommandReceipt({
+        runId: current.id,
+        envelope,
+        operation,
+        payload: eventPayload,
+        effectKey: `collab:${current.id}:workflow-template:create:${envelope.commandId}`,
+        response,
+      });
+    });
+    this.emitChanged(source.id);
+    return response!;
+  }
+
+  listWorkflowTemplates(paramsInput: Record<string, unknown>): Record<string, unknown> {
+    const params = parseJsonObject(paramsInput, "params");
+    const requestedLimit = params.limit == null ? PERSISTENCE_LIMITS.workflowTemplates : readInteger(params.limit, "limit");
+    assertCondition(
+      requestedLimit >= 1 && requestedLimit <= PERSISTENCE_LIMITS.workflowTemplates,
+      "INVALID_REQUEST",
+      `limit must be between 1 and ${PERSISTENCE_LIMITS.workflowTemplates}`,
+    );
+    return {
+      collaborationInstanceId: this.database.instanceId,
+      templates: this.workflowTemplates.listPublished(requestedLimit).map((template) => this.workflowTemplates.toPublicRecord(template)),
+    };
+  }
+
+  async instantiateWorkflowTemplate(paramsInput: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const params = parseJsonObject(paramsInput, "params");
+    const envelope = this.validateWriteEnvelope(params);
+    const operation = "junqi.collab.workflow.template.instantiate";
+    const replay = this.replayedResponse(envelope.commandId, envelope.payloadHash, operation);
+    if (replay) return replay;
+    const templateId = readString(params.templateId, "templateId");
+    const origin = this.instanceIdentity.bindOrigin(parseOrigin(params.origin));
+    const goal = readBoundedRequiredString(params.goal, "goal", PERSISTENCE_LIMITS.goalBytes);
+    const capabilityInput = params.capabilitySnapshot == null
+      ? {}
+      : parseJsonObject(params.capabilitySnapshot, "capabilitySnapshot");
+    const parameters = params.parameters == null
+      ? {}
+      : parseJsonObject(params.parameters, "parameters");
+    this.assertConfigured();
+    this.assertMaintenanceInactive();
+    this.reconcileExpiredSessionMutations();
+    const identity = await this.awaitRuntime(
+      "readOrigin",
+      `read origin for ${operation}`,
+      () => this.runtime.readOrigin(origin),
+    );
+    assertCondition(identity.found, "ORIGIN_NOT_DURABLE", "The origin message is not present in the exact transcript");
+    assertCondition(identity.role === "user", "INVALID_REQUEST", "Workflow instantiation must originate from a user message");
+    const concurrentReplay = this.replayedResponse(envelope.commandId, envelope.payloadHash, operation);
+    if (concurrentReplay) return concurrentReplay;
+    const capabilitySnapshot = this.buildCapabilitySnapshot(capabilityInput);
+    const template = this.workflowTemplates.requirePublished(templateId);
+    materializeWorkflowTemplatePlan(template.currentVersion.definition, {
+      goal,
+      allowedAgentIds: this.allowedAgentIds(),
+      maxWorkItems: this.config.maxWorkItems,
+    });
+    const runId = newId("run");
+    const planId = newId("plan");
+    const now = nowMs();
+    let response: Record<string, unknown>;
+    this.reconcileExpiredSessionMutations();
+    this.database.transaction(() => {
+      this.assertMaintenanceInactive();
+      this.assertSessionMutationInactive(origin);
+      const currentTemplate = this.workflowTemplates.requirePublished(templateId);
+      const currentPlan = materializeWorkflowTemplatePlan(currentTemplate.currentVersion.definition, {
+        goal,
+        allowedAgentIds: this.allowedAgentIds(),
+        maxWorkItems: this.config.maxWorkItems,
+      });
+      const run = this.database.createRun({
+        id: runId,
+        origin,
+        goal: currentPlan.goal,
+        capabilitySnapshot,
+        ...(typeof capabilitySnapshot.configHash === "string" ? { configHash: capabilitySnapshot.configHash } : {}),
+      });
+      this.database.db
+        .prepare(
+          `INSERT INTO plan_revisions(id, run_id, revision_no, plan_json, digest, source_attempt_id, created_at)
+           VALUES (?, ?, 1, ?, ?, NULL, ?)`,
+        )
+        .run(planId, runId, stableStringify(currentPlan), sha256(currentPlan), now);
+      for (const item of currentPlan.workItems) this.insertWorkItem(runId, planId, item, now);
+      const link = this.workflowTemplates.linkRun({
+        runId,
+        templateId: currentTemplate.id,
+        templateVersionId: currentTemplate.currentVersion.id,
+        parameters,
+      });
+      const eventPayload = {
+        templateId: currentTemplate.id,
+        templateVersionId: currentTemplate.currentVersion.id,
+        templateDigest: currentTemplate.currentVersion.digest,
+        templateParameterDigest: link.parameterDigest,
+        planRevisionId: planId,
+      };
+      const updated = this.transitionRun(
+        runId,
+        run.revision,
+        "AWAITING_APPROVAL",
+        { currentPlanRevisionId: planId, dispatchState: "CLOSED" },
+        "WORKFLOW_TEMPLATE_INSTANTIATED",
+        eventPayload,
+      );
+      this.insertDecision(runId, envelope.commandId, "operator", "WORKFLOW_TEMPLATE_INSTANTIATED", eventPayload);
+      response = this.acceptedResponse(runId, envelope.commandId, updated.revision, false, eventPayload);
+      this.recordImmediateCommandReceipt({
+        runId,
+        envelope,
+        operation,
+        payload: eventPayload,
+        effectKey: `collab:${runId}:workflow-template:instantiate:${envelope.commandId}`,
+        response,
+      });
+    });
+    this.emitChanged(runId);
+    return response!;
   }
 
   deletePreview(paramsInput: Record<string, unknown>): Record<string, unknown> {
@@ -8786,6 +8976,38 @@ export class CollaborationService {
       .run(newId("decision"), runId, commandId, actor, type, stableStringify(payload), nowMs());
   }
 
+  /**
+   * Local domain mutations still use the durable command-receipt contract. This
+   * keeps template creation and instantiation idempotent without pretending an
+   * OpenClaw external effect was performed.
+   */
+  private recordImmediateCommandReceipt(params: {
+    runId: string;
+    envelope: ReturnType<typeof validateWriteEnvelope>;
+    operation: string;
+    payload: Record<string, unknown>;
+    effectKey: string;
+    response: Record<string, unknown>;
+  }): void {
+    this.database.insertCommand({
+      id: params.envelope.commandId,
+      runId: params.runId,
+      kind: "EXPORT",
+      receiptSource: params.operation,
+      payloadHash: params.envelope.payloadHash,
+      payload: { noop: true, ...params.payload },
+      effectKey: params.effectKey,
+      response: params.response,
+    });
+    assertCondition(
+      this.database.settleUnleasedCommand(params.envelope.commandId, "PENDING", "SUCCEEDED", {
+        response: params.response,
+      }),
+      "REVISION_CONFLICT",
+      "Workflow template command receipt changed before it could be committed",
+    );
+  }
+
   private resolveInterventions(runId: string, entityType: string, entityId: string, resolution: string): void {
     this.database.db
       .prepare(
@@ -9123,6 +9345,7 @@ export class CollaborationService {
       interventions: (this.database.db.prepare("SELECT * FROM interventions WHERE run_id = ? ORDER BY created_at ASC").all(runId) as SqlRow[]).map(interventionObject),
       deliveries: (this.database.db.prepare("SELECT * FROM deliveries WHERE run_id = ? ORDER BY target_revision ASC").all(runId) as SqlRow[]).map(deliveryObject),
       decisions: (this.database.db.prepare("SELECT * FROM decisions WHERE run_id = ? ORDER BY created_at ASC").all(runId) as SqlRow[]).map(decisionObject),
+      workflowTemplate: this.workflowTemplates.getRunProjection(runId),
       finalArtifact: finalArtifact ? finalArtifactObject(finalArtifact) : null,
       lastEventSequence: this.database.getLastSequence(runId),
     };

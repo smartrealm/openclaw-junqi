@@ -32,6 +32,7 @@ import type {
   CollaborationSessionMutationImpactResponse,
   CollaborationTombstone,
   CollaborationTombstoneListResponse,
+  CollaborationWorkflowTemplateListResponse,
   CollaborationWriteEnvelope,
   CollaborationWriteMethod,
   CollaborationWriteRequest,
@@ -447,6 +448,12 @@ export class CollaborationClient {
     params: CollaborationReadParams<'junqi.collab.run.partial.preview'>,
   ): Promise<CollaborationPartialPreview> {
     return this.readContract('junqi.collab.run.partial.preview', params);
+  }
+
+  async listWorkflowTemplates(
+    params: CollaborationReadParams<'junqi.collab.workflow.template.list'> = {},
+  ): Promise<CollaborationWorkflowTemplateListResponse> {
+    return this.readContract('junqi.collab.workflow.template.list', params);
   }
 
   async previewRunDeletion(

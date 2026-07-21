@@ -710,6 +710,38 @@ test("schema v12 freezes legacy Attempt execution runtimes without guessing ACP"
   }
 });
 
+test("schema v13 adds versioned workflow template tables without mutating existing runs", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v13-"));
+  const filePath = path.join(directory, "collaboration.sqlite");
+  const intermediate = new CollaborationDatabase(filePath);
+  try {
+    intermediate.createRun({ id: "v13-run", origin, goal: "preserve existing run", capabilitySnapshot: {} });
+    intermediate.db.exec(`
+      DROP TABLE workflow_run_templates;
+      DROP TABLE workflow_template_versions;
+      DROP TABLE workflow_templates;
+    `);
+    intermediate.setMetadata("schema_version", "12");
+  } finally {
+    intermediate.close();
+  }
+
+  const migrated = new CollaborationDatabase(filePath);
+  try {
+    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
+    assert.equal(migrated.getRunSummary("v13-run").goal, "preserve existing run");
+    for (const table of ["workflow_templates", "workflow_template_versions", "workflow_run_templates"]) {
+      const row = migrated.db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(table) as { name?: string } | undefined;
+      assert.equal(row?.name, table);
+    }
+  } finally {
+    migrated.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("database rejects a schema newer than this plugin without rewriting its version", () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-newer-"));
   const filePath = path.join(directory, "collaboration.sqlite");

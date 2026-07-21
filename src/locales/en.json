@@ -3598,6 +3598,7 @@
       "DELIVERY_ABANDON": "Abandon delivery",
       "EXPORT": "Export",
       "CLONE": "Clone",
+      "CREATE_TEMPLATE": "Save as template",
       "ARCHIVE": "Archive",
       "UNARCHIVE": "Unarchive",
       "DELETE": "Delete"
@@ -3627,7 +3628,8 @@
       "notAvailable": "Not available",
       "flowAbandonmentReason": "Reason for abandonment",
       "flowAbandonmentReasonPlaceholder": "Record why deleting now is safer than retrying reconciliation.",
-      "confirmFlowReconciliationAbandonment": "I accept that this unresolved Flow reconciliation will be abandoned and cannot be resumed after deletion."
+      "confirmFlowReconciliationAbandonment": "I accept that this unresolved Flow reconciliation will be abandoned and cannot be resumed after deletion.",
+      "templateName": "Template name"
     },
     "risk": {
       "LOW": "Low risk",
@@ -3661,6 +3663,12 @@
       "noWorkItems": "No work items recorded.",
       "planHistory": "Plan history",
       "planRevision": "Plan revision {{revision}}",
+      "templateSource": "Template source",
+      "template": "Template",
+      "templateVersion": "Version",
+      "templateDigest": "Template digest",
+      "instantiated": "Instantiated",
+      "approvalHistory": "Approval history",
       "attempts": "Attempts",
       "noAttempts": "No attempts recorded.",
       "runLevelAttempt": "Run-level attempt",
@@ -3683,6 +3691,11 @@
       "timelineIncompleteReason": "Reason",
       "noEvents": "No audit events loaded."
     },
+    "decision": {
+      "PLAN_APPROVED": "Plan approved",
+      "WORKFLOW_TEMPLATE_CREATED": "Template saved",
+      "WORKFLOW_TEMPLATE_INSTANTIATED": "Template instantiated"
+    },
     "drawer": {
       "title": "Collaboration history",
       "subtitle": "Runs remain available across chat sessions.",
@@ -3691,6 +3704,10 @@
       "emptyHint": "Runs created from Chat will appear here with their retained history.",
       "runsHeading": "Runs",
       "runList": "Collaboration runs",
+      "templatesHeading": "Workflow templates",
+      "templateList": "Workflow templates",
+      "templateWorkItems": "{{count}} work items",
+      "instantiateTemplate": "Run template",
       "archived": "Archived",
       "count": "{{count}} runs",
       "deletedTitle": "Deleted records",

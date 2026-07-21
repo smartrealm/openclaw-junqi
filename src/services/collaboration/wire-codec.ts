@@ -40,6 +40,10 @@ import {
   type CollaborationRunSummary,
   type CollaborationSessionMutationImpactResponse,
   type CollaborationWorkItemSnapshot,
+  type CollaborationWorkflowTemplate,
+  type CollaborationWorkflowTemplateDefinition,
+  type CollaborationWorkflowTemplateLink,
+  type CollaborationWorkflowTemplateListResponse,
   type CollaborationWriteResponse,
 } from './types';
 
@@ -678,6 +682,116 @@ function decodeOwnedRecords(
   return values;
 }
 
+function decodeWorkflowTemplateDefinition(
+  value: unknown,
+  path: string,
+): CollaborationWorkflowTemplateDefinition {
+  const source = record(value, path);
+  const workItems = array(source.workItems, `${path}.workItems`).map((item, index) => {
+    const itemPath = `${path}.workItems[${index}]`;
+    const workItem = record(item, itemPath);
+    if (Object.prototype.hasOwnProperty.call(workItem, 'candidateAgentIds')) {
+      fail(`${itemPath}.candidateAgentIds`, 'must not persist Agent assignment candidates');
+    }
+    return {
+      id: nonEmptyString(workItem.id, `${itemPath}.id`),
+      title: nonEmptyString(workItem.title, `${itemPath}.title`),
+      dependencies: stringArray(workItem.dependencies, `${itemPath}.dependencies`),
+    };
+  });
+  if (workItems.length === 0) fail(`${path}.workItems`, 'must not be empty');
+  assertUnique(workItems, `${path}.workItems`, (item) => item.id);
+  const synthesis = record(source.synthesis, `${path}.synthesis`);
+  return {
+    schemaVersion: integer(source.schemaVersion, `${path}.schemaVersion`),
+    goal: nonEmptyString(source.goal, `${path}.goal`),
+    workItems,
+    synthesis: {
+      requiredEvidence: stringArray(synthesis.requiredEvidence, `${path}.synthesis.requiredEvidence`),
+      finalAnswerContract: nonEmptyString(
+        synthesis.finalAnswerContract,
+        `${path}.synthesis.finalAnswerContract`,
+      ),
+    },
+  };
+}
+
+function decodeWorkflowTemplate(value: unknown, index: number): CollaborationWorkflowTemplate {
+  const path = `response.templates[${index}]`;
+  const source = record(value, path);
+  const status = nonEmptyString(source.status, `${path}.status`);
+  if (status !== 'PUBLISHED') fail(`${path}.status`, 'must be PUBLISHED');
+  const createdAt = integer(source.createdAt, `${path}.createdAt`);
+  const updatedAt = integer(source.updatedAt, `${path}.updatedAt`);
+  assertTimestampOrder(createdAt, updatedAt, path);
+  const versionPath = `${path}.currentVersion`;
+  const currentVersion = record(source.currentVersion, versionPath);
+  const templateId = nonEmptyString(source.id, `${path}.id`);
+  const versionTemplateId = nonEmptyString(currentVersion.templateId, `${versionPath}.templateId`);
+  if (versionTemplateId !== templateId) {
+    fail(`${versionPath}.templateId`, 'must match the template id');
+  }
+  const versionNo = integer(currentVersion.versionNo, `${versionPath}.versionNo`);
+  if (versionNo < 1) fail(`${versionPath}.versionNo`, 'must be at least 1');
+  return {
+    id: templateId,
+    name: nonEmptyString(source.name, `${path}.name`),
+    status: 'PUBLISHED',
+    sourceRunId: nullableString(source.sourceRunId, `${path}.sourceRunId`),
+    createdBy: nonEmptyString(source.createdBy, `${path}.createdBy`),
+    createdAt,
+    updatedAt,
+    currentVersion: {
+      id: nonEmptyString(currentVersion.id, `${versionPath}.id`),
+      templateId,
+      versionNo,
+      digest: sha256Hex(currentVersion.digest, `${versionPath}.digest`),
+      sourceRunId: nullableString(currentVersion.sourceRunId, `${versionPath}.sourceRunId`),
+      sourcePlanRevisionId: nullableString(
+        currentVersion.sourcePlanRevisionId,
+        `${versionPath}.sourcePlanRevisionId`,
+      ),
+      createdBy: nonEmptyString(currentVersion.createdBy, `${versionPath}.createdBy`),
+      createdAt: integer(currentVersion.createdAt, `${versionPath}.createdAt`),
+      definition: decodeWorkflowTemplateDefinition(currentVersion.definition, `${versionPath}.definition`),
+    },
+  };
+}
+
+function decodeWorkflowTemplateLink(value: unknown): CollaborationWorkflowTemplateLink | null {
+  if (value === null || value === undefined) return null;
+  const path = 'response.snapshot.workflowTemplate';
+  const source = record(value, path);
+  const templateVersionNo = integer(source.templateVersionNo, `${path}.templateVersionNo`);
+  if (templateVersionNo < 1) fail(`${path}.templateVersionNo`, 'must be at least 1');
+  return {
+    templateId: nonEmptyString(source.templateId, `${path}.templateId`),
+    templateVersionId: nonEmptyString(source.templateVersionId, `${path}.templateVersionId`),
+    templateName: nonEmptyString(source.templateName, `${path}.templateName`),
+    templateVersionNo,
+    templateDigest: sha256Hex(source.templateDigest, `${path}.templateDigest`),
+    parameterDigest: sha256Hex(source.parameterDigest, `${path}.parameterDigest`),
+    instantiatedAt: integer(source.instantiatedAt, `${path}.instantiatedAt`),
+  };
+}
+
+function decodeWorkflowTemplateList(
+  value: unknown,
+  _expected: { limit?: number },
+): CollaborationWorkflowTemplateListResponse {
+  const response = record(value, 'response');
+  const templates = array(response.templates, 'response.templates')
+    .map((template, index) => decodeWorkflowTemplate(template, index));
+  assertUnique(templates, 'response.templates', (template) => template.id);
+  return {
+    collaborationInstanceId: nonEmptyString(
+      response.collaborationInstanceId,
+      'response.collaborationInstanceId',
+    ),
+    templates,
+  };
+}
+
 export function decodeRunGetResponse(
   value: unknown,
   expectedRunId: string,
@@ -744,6 +858,7 @@ export function decodeRunGetResponse(
 
   const evidence = decodeOwnedRecords(source.evidence, 'response.snapshot.evidence', summary.runId);
   const decisions = decodeOwnedRecords(source.decisions, 'response.snapshot.decisions', summary.runId);
+  const workflowTemplate = decodeWorkflowTemplateLink(source.workflowTemplate);
   const finalArtifact = source.finalArtifact === null
     ? null
     : { ...record(source.finalArtifact, 'response.snapshot.finalArtifact') };
@@ -762,6 +877,7 @@ export function decodeRunGetResponse(
     planRevisions,
     evidence,
     decisions,
+    workflowTemplate,
     finalArtifact,
   };
   return { collaborationInstanceId, snapshot };
@@ -1314,6 +1430,7 @@ type CollaborationReadDecoderRegistry = {
 };
 
 const COLLABORATION_READ_DECODERS = {
+  'junqi.collab.workflow.template.list': decodeWorkflowTemplateList,
   'junqi.collab.run.partial.preview': decodePartialPreview,
   'junqi.collab.run.delete.preview': decodeDeletePreview,
   'junqi.collab.run.delete.get': decodeDeletionJob,

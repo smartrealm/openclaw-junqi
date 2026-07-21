@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { CollaborationRunSummary, CollaborationTombstone } from '@/services/collaboration/types';
+import type {
+  CollaborationRunSummary,
+  CollaborationTombstone,
+  CollaborationWorkflowTemplate,
+} from '@/services/collaboration/types';
 import { CollaborationHistoryDrawer } from './CollaborationHistoryDrawer';
 
 function run(overrides: Partial<CollaborationRunSummary> = {}): CollaborationRunSummary {
@@ -49,6 +53,38 @@ function tombstone(overrides: Partial<CollaborationTombstone> = {}): Collaborati
     flowReconciliationDiagnostic: null,
     flowReconciliationAbandonedAt: null,
     flowReconciliationAbandonReason: null,
+    ...overrides,
+  };
+}
+
+function template(overrides: Partial<CollaborationWorkflowTemplate> = {}): CollaborationWorkflowTemplate {
+  return {
+    id: 'template-1',
+    name: 'Launch assessment',
+    status: 'PUBLISHED',
+    sourceRunId: 'run-1',
+    createdBy: 'operator',
+    createdAt: 10,
+    updatedAt: 20,
+    currentVersion: {
+      id: 'template-version-1',
+      templateId: 'template-1',
+      versionNo: 1,
+      digest: 'a'.repeat(64),
+      sourceRunId: 'run-1',
+      sourcePlanRevisionId: 'plan-1',
+      createdBy: 'operator',
+      createdAt: 10,
+      definition: {
+        schemaVersion: 1,
+        goal: 'Assess the launch',
+        workItems: [
+          { id: 'research', title: 'Research', dependencies: [] },
+          { id: 'review', title: 'Review', dependencies: ['research'] },
+        ],
+        synthesis: { requiredEvidence: ['research'], finalAnswerContract: 'Recommendation' },
+      },
+    },
     ...overrides,
   };
 }
@@ -110,6 +146,22 @@ test('renders loading, empty, and recoverable error states', () => {
   assert.match(error, /role="alert"/);
   assert.match(error, /Gateway unavailable/);
   assert.match(error, />Retry</);
+});
+
+test('places reusable workflow templates in durable history with an explicit run control', () => {
+  const html = renderToStaticMarkup(createElement(CollaborationHistoryDrawer, {
+    open: true,
+    runs: [],
+    templates: [template()],
+    onClose: () => undefined,
+    onInstantiateTemplate: () => undefined,
+  }));
+
+  assert.match(html, />Workflow templates</);
+  assert.match(html, /Launch assessment/);
+  assert.match(html, />v1</);
+  assert.match(html, /2 work items/);
+  assert.match(html, /aria-label="Run template"/);
 });
 
 test('shows deleted audit records without rendering deleted run content and warns about unfinished cleanup', () => {

@@ -15,6 +15,7 @@ export const REQUIRED_COLLABORATION_FEATURES = [
   'EVENT_CURSOR',
   'SESSION_DELETE_CAS',
   'WRITE_INSTANCE_FENCE',
+  'WORKFLOW_TEMPLATES',
 ] as const;
 
 export interface CollaborationCapabilityIssue {

@@ -59,7 +59,7 @@ function validCapabilities(overrides: Record<string, unknown> = {}): Record<stri
       'SQLITE_AUTHORITY', 'COMMAND_OUTBOX', 'TASK_RECONCILE',
       'EXACT_TRANSCRIPT_DELIVERY', 'EXACT_TRANSCRIPT_IDENTITY',
       'PLUGIN_SUBAGENT_TASK_LOOKUP', 'PLUGIN_SUBAGENT_TASK_CANCEL',
-      'EVENT_CURSOR', 'SESSION_DELETE_CAS', 'WRITE_INSTANCE_FENCE',
+      'EVENT_CURSOR', 'SESSION_DELETE_CAS', 'WRITE_INSTANCE_FENCE', 'WORKFLOW_TEMPLATES',
     ],
     featureFlags: {
       sqliteAuthority: true,
@@ -69,6 +69,7 @@ function validCapabilities(overrides: Record<string, unknown> = {}): Record<stri
       eventCursor: true,
       sessionDeleteCas: true,
       writeInstanceFence: true,
+      workflowTemplates: true,
       sessionResetCas: false,
       workboardMirror: false,
     },
@@ -167,6 +168,24 @@ test('operational read facade dispatches exact methods and applies the shared co
   const client = new CollaborationClient(async (method, params = {}) => {
     calls.push({ method, params });
     switch (method) {
+      case 'junqi.collab.workflow.template.list':
+        return {
+          collaborationInstanceId: 'instance-1',
+          templates: [{
+            id: 'template-1', name: 'Launch assessment', status: 'PUBLISHED', sourceRunId: 'run-source',
+            createdBy: 'operator', createdAt: 1, updatedAt: 2,
+            currentVersion: {
+              id: 'template-version-1', templateId: 'template-1', versionNo: 1,
+              digest: 'a'.repeat(64), sourceRunId: 'run-source', sourcePlanRevisionId: 'plan-source',
+              createdBy: 'operator', createdAt: 1,
+              definition: {
+                schemaVersion: 1, goal: 'Assess the launch',
+                workItems: [{ id: 'research', title: 'Research', dependencies: [] }],
+                synthesis: { requiredEvidence: [], finalAnswerContract: 'Recommendation' },
+              },
+            },
+          }],
+        };
       case 'junqi.collab.run.partial.preview':
         return {
           runId: 'run-1', runRevision: 7,
@@ -205,6 +224,7 @@ test('operational read facade dispatches exact methods and applies the shared co
     }
   });
 
+  assert.equal((await client.listWorkflowTemplates()).templates[0]?.id, 'template-1');
   await client.previewPartialRun({ runId: 'run-1', workItemIds: ['research'] });
   await client.previewRunDeletion({ runId: 'run-1' });
   assert.equal((await client.getRunDeletionJob({
@@ -221,6 +241,7 @@ test('operational read facade dispatches exact methods and applies the shared co
   });
 
   assert.deepEqual(calls.map(({ method }) => method), [
+    'junqi.collab.workflow.template.list',
     'junqi.collab.run.partial.preview',
     'junqi.collab.run.delete.preview',
     'junqi.collab.run.delete.get',

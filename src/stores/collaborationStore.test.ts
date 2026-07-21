@@ -46,6 +46,8 @@ function capabilitiesResponse(collaborationInstanceId: string): Record<string, u
       'PLUGIN_SUBAGENT_TASK_CANCEL',
       'EVENT_CURSOR',
       'SESSION_DELETE_CAS',
+      'WRITE_INSTANCE_FENCE',
+      'WORKFLOW_TEMPLATES',
     ],
     featureFlags: {
       sqliteAuthority: true,
@@ -55,6 +57,8 @@ function capabilitiesResponse(collaborationInstanceId: string): Record<string, u
       eventCursor: true,
       sessionDeleteCas: true,
       sessionResetCas: false,
+      writeInstanceFence: true,
+      workflowTemplates: true,
       workboardMirror: false,
     },
     featureEvidence: {

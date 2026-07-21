@@ -66,6 +66,10 @@ export const PERSISTENCE_LIMITS = Object.freeze({
   eventsPerExport: 10_000,
   eventsPerPage: 500,
   exportBytes: 16 * 1024 * 1024,
+  workflowTemplateNameBytes: 160,
+  workflowTemplateDefinitionBytes: 128 * 1024,
+  workflowTemplateParametersBytes: 16 * 1024,
+  workflowTemplates: 200,
 } as const);
 
 const SENSITIVE_KEY = /^(?:authorization|proxyAuthorization|token|accessToken|refreshToken|idToken|apiKey|password|secret|prompt|systemPrompt|developerPrompt|chainOfThought|reasoning|thinking|toolOutput|rawOutput|rawTranscript|messages)$/i;
