@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
-   Theme: AEGIS Midnight — values ported 1:1 from hanshuaikang/nezha
+   Theme: AEGIS Midnight — values ported 1:1 from hanshuaikang/junqi
    themes.css (html.dark.midnight).
 
-   Unlike nezha — where midnight is two classes (dark + midnight)
+   Unlike junqi — where midnight is two classes (dark + midnight)
    layered on the same element — our data-theme is a single value.
    So this file is a FULL palette: it copies aegis-dark text/primary/
    status/data-viz tokens verbatim, then overrides the surface and

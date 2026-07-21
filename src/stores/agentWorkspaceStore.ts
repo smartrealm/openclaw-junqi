@@ -48,7 +48,7 @@ export interface AgentWorkspaceTask {
   createdAt: number;
   updatedAt: number;
   attentionRequestedAt?: number;
-  /** Nezha-style unsent new-task view. It stays out of the history until saved or run. */
+  /** JunQi-style unsent new-task view. It stays out of the history until saved or run. */
   isDraft?: boolean;
   starred?: boolean;
   sessionId?: string;

@@ -1,6 +1,6 @@
 import type React from "react";
 import { createPortal } from "react-dom";
-import { APP_PLATFORM } from "./_nezha-platform";
+import { APP_PLATFORM } from "./platform";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -8,10 +8,10 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy, smartCopy } from "./terminalCopyHelper";
-import { matchesTerminalNewline, TERMINAL_NEWLINE_SEQUENCE } from "@/_nezha_root/shortcuts";
+import { matchesTerminalNewline, TERMINAL_NEWLINE_SEQUENCE } from "@/junqi/shortcuts";
 import { TERMINAL_CONTEXT_MENU_STYLE } from "./terminalMenuStyles";
 import { Icon } from '@/components/shared/icons';
-import type { TerminalFontSize, FontFamily, ThemeVariant } from "./_nezha-types";
+import type { TerminalFontSize, FontFamily, ThemeVariant } from "./terminalTypes";
 import {
   applyTerminalThemeOnPanel,
   initTerminal,
@@ -1304,7 +1304,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       <>
         <div
           ref={containerRef}
-          className="nezha-xterm-host nezha-shell-xterm-host"
+          className="junqi-xterm-host junqi-shell-xterm-host"
           onMouseDown={() => {
             onFocusRef.current?.();
             terminalRef.current?.focus();

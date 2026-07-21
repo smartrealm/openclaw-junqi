@@ -1,7 +1,7 @@
 /**
- * ThemePicker — 1:1 port of hanshuaikang/nezha's ThemePanel.
+ * ThemePicker — 1:1 port of hanshuaikang/junqi's ThemePanel.
  *
- * Source: nezha/src/components/app-settings/ThemePanel.tsx
+ * Source: junqi/src/components/app-settings/ThemePanel.tsx
  *
  * Structural fidelity:
  *   - Top: "Follow system" toggle row with selectedLabel chip on the right.
@@ -11,34 +11,34 @@
  *   - aria-checked on cards (role=radio), aria-checked on toggle (role=switch).
  *
  * Style fidelity:
- *   nezha uses CSS vars from its own design system (--text-primary,
+ *   junqi uses CSS vars from its own design system (--text-primary,
  *   --bg-subtle, --control-active-fg, etc.). We map them to our aegis
  *   tokens via local CSS variables on the wrapper, so the inline-style
- *   code from nezha can be copied verbatim. See AEGIS_VAR_MAP below.
+ *   code from junqi can be copied verbatim. See AEGIS_VAR_MAP below.
  *
  * Behavior fidelity:
  *   themeMode ∈ {'system','dark','midnight','light','eyecare'}.
  *   We translate from our ThemeSetting ('system' | AegisTheme) by stripping
- *   the 'aegis-' prefix. See toNezhaMode / toAegisSetting.
+ *   the 'aegis-' prefix. See toJunQiMode / toAegisSetting.
  */
 import type React from 'react';
 import { Check, Monitor } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AegisTheme, ThemeSetting } from '@/theme/types';
 
-// ── Mode translation between our store shape and nezha's shape ──
+// ── Mode translation between our store shape and junqi's shape ──
 
-/** Nezha's narrower mode union (no `aegis-` prefix). */
-type NezhaMode = 'system' | 'dark' | 'midnight' | 'light' | 'eyecare';
-type NezhaManualMode = Exclude<NezhaMode, 'system'>;
+/** JunQi's narrower mode union (no `aegis-` prefix). */
+type JunQiMode = 'system' | 'dark' | 'midnight' | 'light' | 'eyecare';
+type JunQiManualMode = Exclude<JunQiMode, 'system'>;
 
-function toNezhaMode(setting: ThemeSetting): NezhaMode {
+function toJunQiMode(setting: ThemeSetting): JunQiMode {
   if (setting === 'system') return 'system';
   // ThemeSetting concrete values are all 'aegis-<mode>' — strip the prefix.
-  return setting.replace(/^aegis-/, '') as NezhaManualMode;
+  return setting.replace(/^aegis-/, '') as JunQiManualMode;
 }
 
-function toAegisSetting(mode: NezhaMode): ThemeSetting {
+function toAegisSetting(mode: JunQiMode): ThemeSetting {
   if (mode === 'system') return 'system';
   return `aegis-${mode}` as AegisTheme;
 }
@@ -56,11 +56,11 @@ interface ThemePickerProps {
 
 export function ThemePicker({ value, onChange, systemPrefersDark }: ThemePickerProps) {
   const { t } = useTranslation();
-  const themeMode = toNezhaMode(value);
-  const setThemeMode = (mode: NezhaMode) => onChange(toAegisSetting(mode));
+  const themeMode = toJunQiMode(value);
+  const setThemeMode = (mode: JunQiMode) => onChange(toAegisSetting(mode));
 
-  // Order matters — used for arrow-key navigation, matches nezha verbatim.
-  const manualThemeModes: NezhaManualMode[] = ['dark', 'midnight', 'light', 'eyecare'];
+  // Order matters — used for arrow-key navigation, matches junqi verbatim.
+  const manualThemeModes: JunQiManualMode[] = ['dark', 'midnight', 'light', 'eyecare'];
 
   // Chip on the right of the system row: "Following system · Dark" /
   // "Manual · Eye-care". Built from two i18n strings + a {mode} interp.
@@ -80,7 +80,7 @@ export function ThemePicker({ value, onChange, systemPrefersDark }: ThemePickerP
   }
 
   function handleManualThemeKeyDown(
-    mode: NezhaManualMode,
+    mode: JunQiManualMode,
     event: React.KeyboardEvent<HTMLButtonElement>,
   ) {
     const currentIndex = manualThemeModes.indexOf(mode);
@@ -115,7 +115,7 @@ export function ThemePicker({ value, onChange, systemPrefersDark }: ThemePickerP
     previewBorder,
     previewAccent,
   }: {
-    mode: NezhaManualMode;
+    mode: JunQiManualMode;
     title: string;
     description: string;
     previewBackground: string;
@@ -271,14 +271,14 @@ export function ThemePicker({ value, onChange, systemPrefersDark }: ThemePickerP
 
   return (
     <div
-      // Local re-declaration: nezha's tokens → our --aegis-* tokens.
+      // Local re-declaration: junqi's tokens → our --aegis-* tokens.
       // Defining them on the wrapper keeps the rest of the file a
-      // verbatim port of nezha's inline styles — no rewrites needed.
+      // verbatim port of junqi's inline styles — no rewrites needed.
       style={{
         display: 'flex',
         flexDirection: 'column',
         gap: 18,
-        // — nezha token aliases —
+        // — junqi token aliases —
         '--text-primary': 'rgb(var(--aegis-text))',
         '--text-secondary': 'rgb(var(--aegis-text-secondary))',
         '--text-hint': 'rgb(var(--aegis-text-muted))',

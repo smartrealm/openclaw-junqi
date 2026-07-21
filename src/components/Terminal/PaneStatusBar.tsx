@@ -6,7 +6,7 @@
 // Data sources: git_diff_shortstat / get_terminal_env / git_list_branches (Tauri IPC).
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { APP_PLATFORM } from "./_nezha-platform";
+import { APP_PLATFORM } from "./platform";
 import { invoke } from "@tauri-apps/api/core";
 import { debugError } from "@/utils/debugLog";
 import { Bot, Server, Wrench } from 'lucide-react';

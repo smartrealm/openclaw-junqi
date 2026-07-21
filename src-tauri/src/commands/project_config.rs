@@ -1,6 +1,6 @@
-// ── Project config (ported from nezha config.rs) ─────────────────────────────
+// ── JunQi project configuration ──────────────────────────────────────────────
 //
-// Manages `<project>/.nezha/config.toml` — per-project defaults for the agent
+// Manages `<project>/.junqi/config.toml` — per-project defaults for the agent
 // (default agent, default permission mode, prompt prefix) and Git workflow
 // (commit message prompt + timeout).
 //
@@ -8,20 +8,13 @@
 //   - Claude Code:  ~/.claude/settings.json
 //   - Codex:        ~/.codex/config.toml
 //
-// Adapted differences from upstream nezha:
-//   - `atomic_write` is inlined (junqi has no storage module).
-//   - `home_dir` uses `dirs::home_dir()` directly (junqi exposes it via
-//     `paths::desktop_dir()` which isn't a home-dir query).
-//   - `crate::platform::home_dir` is not exposed; we use `dirs` directly.
-
 use std::fs;
 use std::path::Path;
 use std::time::SystemTime;
 
 const DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS: u64 = 15;
 
-const DEFAULT_CONFIG: &str = r#"# Nezha project configuration
-# https://github.com/hanshuaikang/nezha
+const DEFAULT_CONFIG: &str = r#"# JunQi project configuration
 
 [agent]
 # Default agent to use for new tasks: "claude" or "codex"
@@ -96,7 +89,7 @@ impl Default for ProjectConfig {
 
 /// Atomically writes `content` to `path` via a unique temp file + rename.
 /// Temp file name includes pid + nanos timestamp so concurrent writes don't
-/// collide. This matches the behavior of nezha's `storage::atomic_write`.
+/// collide.
 fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     let uid = format!(
         "{}-{}",
@@ -125,13 +118,13 @@ fn agent_config_path(agent: &str) -> Result<std::path::PathBuf, String> {
     }
 }
 
-/// Creates `.nezha/config.toml` in the project directory if it doesn't already
-/// exist. Also ensures `.nezha/attachments/` exists. Returns the parsed config.
+/// Creates `.junqi/config.toml` in the project directory if it doesn't already
+/// exist. Also ensures `.junqi/attachments/` exists. Returns the parsed config.
 #[tauri::command]
 pub fn init_project_config(project_path: String) -> Result<ProjectConfig, String> {
-    let nezha_dir = Path::new(&project_path).join(".nezha");
-    let config_path = nezha_dir.join("config.toml");
-    let attachments_dir = nezha_dir.join("attachments");
+    let junqi_dir = Path::new(&project_path).join(".junqi");
+    let config_path = junqi_dir.join("config.toml");
+    let attachments_dir = junqi_dir.join("attachments");
 
     fs::create_dir_all(&attachments_dir).map_err(|e| e.to_string())?;
 
@@ -145,11 +138,11 @@ pub fn init_project_config(project_path: String) -> Result<ProjectConfig, String
     Ok(config)
 }
 
-/// Reads `.nezha/config.toml` from the project directory.
+/// Reads `.junqi/config.toml` from the project directory.
 /// Returns the default config if the file doesn't exist yet.
 #[tauri::command]
 pub fn read_project_config(project_path: String) -> Result<ProjectConfig, String> {
-    let config_path = Path::new(&project_path).join(".nezha").join("config.toml");
+    let config_path = Path::new(&project_path).join(".junqi").join("config.toml");
     if !config_path.exists() {
         return Ok(ProjectConfig::default());
     }
@@ -158,12 +151,12 @@ pub fn read_project_config(project_path: String) -> Result<ProjectConfig, String
     Ok(config)
 }
 
-/// Writes updated config to `.nezha/config.toml`, creating the directory if needed.
+/// Writes updated config to `.junqi/config.toml`, creating the directory if needed.
 #[tauri::command]
 pub fn write_project_config(project_path: String, config: ProjectConfig) -> Result<(), String> {
-    let nezha_dir = Path::new(&project_path).join(".nezha");
-    fs::create_dir_all(&nezha_dir).map_err(|e| e.to_string())?;
-    let config_path = nezha_dir.join("config.toml");
+    let junqi_dir = Path::new(&project_path).join(".junqi");
+    fs::create_dir_all(&junqi_dir).map_err(|e| e.to_string())?;
+    let config_path = junqi_dir.join("config.toml");
     let raw = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
     atomic_write(&config_path, &raw)
 }
@@ -211,6 +204,22 @@ mod tests {
     #[test]
     fn default_commit_timeout_is_15_seconds() {
         assert_eq!(default_commit_message_timeout_secs(), 15);
+    }
+
+    #[test]
+    fn project_config_uses_only_the_junqi_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-project-config-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        init_project_config(root.to_string_lossy().into_owned()).unwrap();
+
+        assert!(root.join(".junqi/config.toml").is_file());
+        assert!(root.join(".junqi/attachments").is_dir());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

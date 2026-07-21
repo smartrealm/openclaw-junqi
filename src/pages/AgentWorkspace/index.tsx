@@ -39,7 +39,7 @@ import { GitChanges, GitDiffViewer, GitHistory } from '@/components/Git';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import { FileExplorer } from '@/components/FileExplorer';
 import { ShellTerminalPanel } from '@/components/Terminal';
-import { getDefaultMonoFont, type FontFamily, type TerminalFontSize, type ThemeVariant } from '@/_nezha_root/types';
+import { getDefaultMonoFont, type FontFamily, type TerminalFontSize, type ThemeVariant } from '@/junqi/types';
 import { AgentRunView } from '@/pages/AgentRunView';
 import { AgentWorkspaceFileSearchDialog } from './FileSearchDialog';
 import { ProjectAvatar } from './ProjectAvatar';
@@ -53,7 +53,7 @@ import { useTheme } from '@/theme/useTheme';
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import { NotificationBell } from '@/components/shared/NotificationBell';
 import { UsagePopover } from '@/components/shared/UsagePopover';
-import { ENABLE_USAGE_INSIGHTS } from '@/components/Terminal/_nezha-platform';
+import { ENABLE_USAGE_INSIGHTS } from '@/components/Terminal/platform';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useTerminalPreferences } from '@/hooks/useTerminalPreferences';
@@ -425,8 +425,8 @@ export function AgentWorkspacePage() {
       setTaskDisplayWindow(readTaskDisplayWindow());
       setAttentionBadge(readAttentionBadge());
     };
-    window.addEventListener('nezha:app-settings-changed', reloadWorkspacePreferences);
-    return () => window.removeEventListener('nezha:app-settings-changed', reloadWorkspacePreferences);
+    window.addEventListener('junqi:app-settings-changed', reloadWorkspacePreferences);
+    return () => window.removeEventListener('junqi:app-settings-changed', reloadWorkspacePreferences);
   }, []);
   const selectedRunVisible = Boolean(
     selected

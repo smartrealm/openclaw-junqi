@@ -1,14 +1,14 @@
-// ── TimelineView — adapted from nezha (hanshuaikang/nezha/TimelineView) ────
+// ── TimelineView — adapted from junqi (hanshuaikang/junqi/TimelineView) ────
 //
 // Cross-day task timeline. Groups tasks into today / yesterday / earlier
 // (last 7 days) and sorts by creation time descending.
 //
-// Differences from upstream nezha TimelineView:
+// Differences from upstream junqi TimelineView:
 //   - Uses JunQi chat/workshop activity while preserving project labels.
-//   - Uses Tailwind + aegis CSS vars instead of nezha's `s.xxx` styles.
-//   - i18n via react-i18next (junqi's i18n) instead of nezha's useI18n.
+//   - Uses Tailwind + aegis CSS vars instead of junqi's `s.xxx` styles.
+//   - i18n via react-i18next (junqi's i18n) instead of junqi's useI18n.
 //
-// Source: nezha/src/components/nezha/TimelineView.tsx
+// Source: junqi/src/components/junqi/TimelineView.tsx
 
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';

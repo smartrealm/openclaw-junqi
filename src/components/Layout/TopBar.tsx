@@ -14,7 +14,7 @@ import {
   usePersistentNotifications,
   type PersistentNotificationItem,
 } from '@/hooks/usePersistentNotifications';
-import { APP_PLATFORM } from '@/components/Terminal/_nezha-platform';
+import { APP_PLATFORM } from '@/components/Terminal/platform';
 import {
   readTerminalSidebarMode,
   requestTerminalSidebarToggle,

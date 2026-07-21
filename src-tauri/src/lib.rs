@@ -213,7 +213,7 @@ pub fn run() {
             commands::terminal::terminal_write,
             commands::terminal::terminal_resize,
             commands::terminal::terminal_kill,
-            // Nezha-style shell terminal (multi-session, bounded channel, batched emit)
+            // JunQi-style shell terminal (multi-session, bounded channel, batched emit)
             commands::pty_neu::open_shell,
             commands::pty_neu::kill_shell,
             commands::pty_neu::send_input,
@@ -234,7 +234,7 @@ pub fn run() {
             commands::terminal_workspace::remove_terminal_workspace_worktree,
             commands::terminal_workspace_watch::set_terminal_workspace_watches,
             commands::terminal_workspace_watch::clear_terminal_workspace_watches,
-            // Nezha-style git commands
+            // JunQi-style git commands
             commands::git_neu::git_status,
             commands::git_neu::git_log,
             commands::git_neu::git_list_branches,
@@ -259,14 +259,14 @@ pub fn run() {
             commands::git_neu::git_remote_counts,
             commands::git_neu::generate_commit_message,
             commands::agent_assist::generate_task_name,
-            // Worktree task commands (ported from nezha git.rs)
+            // Worktree task commands (ported from junqi git.rs)
             commands::git_neu::create_task_worktree,
             commands::git_neu::merge_task_worktree,
             commands::git_neu::remove_task_worktree,
             commands::git_neu::worktree_diff_stats,
             commands::git_neu::git_diff_shortstat,
             commands::git_neu::git_file_diff_stats,
-            // Nezha-style file system commands
+            // JunQi-style file system commands
             commands::fs_neu::read_dir_entries,
             commands::fs_neu::read_compact_dir_entries,
             commands::fs_neu::read_file_content,
@@ -283,27 +283,27 @@ pub fn run() {
             commands::fs_neu::search_project_files,
             commands::fs_watcher::watch_dir,
             commands::fs_watcher::unwatch_dir,
-            // Session analytics (ported from nezha analytics.rs)
+            // Session analytics (ported from junqi analytics.rs)
             commands::session_analytics::read_session_metrics,
             commands::session_analytics::read_session_messages,
             commands::session_analytics::export_session_markdown,
-            // Project config (ported from nezha config.rs)
+            // Project config (ported from junqi config.rs)
             commands::project_config::init_project_config,
             commands::project_config::read_project_config,
             commands::project_config::write_project_config,
             commands::project_config::get_agent_config_file_path,
             commands::project_config::read_agent_config_file,
             commands::project_config::write_agent_config_file,
-            // App settings (ported from nezha app_settings.rs, simplified)
+            // App settings (ported from junqi app_settings.rs, simplified)
             commands::app_settings::load_app_settings,
             commands::app_settings::set_application_language,
             commands::app_settings::save_terminal_scrollback,
             commands::app_settings::save_terminal_shift_enter_newline,
             commands::app_settings::save_app_settings,
             commands::app_settings::detect_agent_paths,
-            // Hooks (minimal port of nezha hooks.rs)
+            // Hooks (minimal port of junqi hooks.rs)
             commands::hooks::get_hook_readiness,
-            // Skill hub (minimal port of nezha skills.rs)
+            // Skill hub (minimal port of junqi skills.rs)
             commands::skills::get_skill_hub_config,
             commands::skills::set_skill_hub_path,
             commands::skills::clear_skill_hub,
@@ -351,8 +351,6 @@ pub fn run() {
                 eprintln!("[runtime-reconfiguration] {error}");
             }
             commands::fs_watcher::init(app);
-            let _ = commands::hooks::ensure_installed();
-            commands::agent_event_watcher::start(app.handle().clone());
             // Use the default (Regular) activation policy so JunQi gets a Dock
             // tile with its icon and a Cmd+Tab entry — the whole point of
             // shipping a branded .app. The pet window is still skip_taskbar
@@ -554,7 +552,7 @@ pub fn run() {
                 }
             });
             tray::menu::setup_tray(app)?;
-            // Start system metrics background thread (Nezha-style state stream)
+            // Start system metrics background thread (JunQi-style state stream)
             commands::system_metrics::start_metrics_stream(app.handle().clone());
             Ok(())
         })
@@ -585,4 +583,13 @@ pub fn run() {
             };
         }
     });
+}
+
+#[cfg(test)]
+mod namespace_tests {
+    #[test]
+    fn application_startup_does_not_install_agent_hooks() {
+        let eager_install_call = ["hooks::", "ensure_installed"].concat();
+        assert!(!include_str!("lib.rs").contains(&eager_install_call));
+    }
 }

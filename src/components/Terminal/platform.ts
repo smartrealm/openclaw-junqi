@@ -2,9 +2,7 @@ export type AppPlatform = "windows" | "macos" | "other";
 
 type PlatformNavigator = Pick<Navigator, "platform" | "userAgent">;
 
-export function detectAppPlatform(
-  currentNavigator: PlatformNavigator | undefined = globalThis.navigator,
-): AppPlatform {
+export function detectAppPlatform(currentNavigator: PlatformNavigator | undefined = globalThis.navigator): AppPlatform {
   if (!currentNavigator) {
     return "other";
   }
@@ -24,10 +22,9 @@ export function detectAppPlatform(
 }
 
 export const APP_PLATFORM = detectAppPlatform();
+export const ENABLE_USAGE_INSIGHTS = APP_PLATFORM !== "windows";
 
-export function isAppleWebKit(
-  currentNavigator: PlatformNavigator | undefined = globalThis.navigator,
-): boolean {
+export function isAppleWebKit(currentNavigator: PlatformNavigator | undefined = globalThis.navigator): boolean {
   return currentNavigator?.userAgent.includes("AppleWebKit") ?? false;
 }
 

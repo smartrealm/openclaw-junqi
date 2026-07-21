@@ -548,7 +548,7 @@ export function SettingsPageFull() {
         </div>
       </GlassCard>
 
-      {/* Theme — 1:1 nezha ThemePanel: system toggle + 2×2 manual cards */}
+      {/* Theme — 1:1 junqi ThemePanel: system toggle + 2×2 manual cards */}
       <GlassCard delay={0.08}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
           <Moon size={16} className="text-aegis-primary" />

@@ -1,14 +1,14 @@
 // ═══════════════════════════════════════════════════════════
-// AgentRunView — 1:1 port of nezha's NewTaskView + RunningView
+// AgentRunView — 1:1 port of junqi's NewTaskView + RunningView
 //
-// Layout matches nezha's original:
+// Layout matches junqi's original:
 //   Header: dynamic GIF (agent-branded) + missing-file warning
 //   Body:   PromptEditor (@-mentions + image/text attachments)
 //   Footer: AgentPermSelector + LaunchModeSelector + Send/Save
 //   Running: terminal (xterm.js) + session metrics + worktree actions
 //
-// Source: nezha/src/components/NewTaskView.tsx (612 lines)
-//         nezha/src/components/RunningView.tsx (788 lines)
+// Source: junqi/src/components/NewTaskView.tsx (612 lines)
+//         junqi/src/components/RunningView.tsx (788 lines)
 // ═══════════════════════════════════════════════════════════
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -56,14 +56,14 @@ import {
   loadWebglAddon,
   refreshTerminalDisplay,
 } from '@/components/Terminal/terminalShared';
-import type { FontFamily, TerminalFontSize, ThemeVariant } from '@/components/Terminal/_nezha-types';
-import { getDefaultMonoFont } from '@/components/Terminal/_nezha-types';
+import type { FontFamily, TerminalFontSize, ThemeVariant } from '@/components/Terminal/terminalTypes';
+import { getDefaultMonoFont } from '@/components/Terminal/terminalTypes';
 import {
   DEFAULT_SHIFT_ENTER_NEWLINE,
   matchesTerminalNewline,
   normalizeShiftEnterNewline,
   TERMINAL_NEWLINE_SEQUENCE,
-} from '@/_nezha_root/shortcuts';
+} from '@/junqi/shortcuts';
 import { createTaskWorktreeArgs, mergeTaskWorktreeArgs, taskWorktreeArgs, worktreeDiffStatsArgs } from './agentWorktreeCommands';
 import { applyPlanModePrompt } from './agentPrompt';
 import claudeGif from '@/assets/gif/claude.gif';
@@ -81,7 +81,7 @@ async function loadTerminalDeps() {
   return { Terminal, FitAddon, Unicode11Addon };
 }
 
-// ── Types (matching nezha's types.ts) ──────────────────────────────────────
+// ── Types (matching junqi's types.ts) ──────────────────────────────────────
 
 export type AgentRunAgent = 'claude' | 'codex' | 'pi';
 type AgentType = AgentRunAgent;
@@ -483,7 +483,7 @@ export function AgentRunView({
   const [taskId] = useState(() => providedTaskId?.trim() || params.get('taskId')?.trim() || `task-${Date.now()}-${Math.random().toString(36).slice(2,8)}`);
   const workspaceTaskId = providedTaskId?.trim() || params.get('taskId')?.trim() || null;
 
-  // Match Nezha's fresh-task behavior: a project can supply default agent and
+  // Match JunQi's fresh-task behavior: a project can supply default agent and
   // permission mode. Never apply it to an existing or edited task.
   useEffect(() => {
     if (!initialIsDraft || initialPrompt.trim() || !projectPath) return;
@@ -793,8 +793,8 @@ export function AgentRunView({
         });
     };
     loadNewlineSetting();
-    window.addEventListener('nezha:app-settings-changed', loadNewlineSetting);
-    return () => window.removeEventListener('nezha:app-settings-changed', loadNewlineSetting);
+    window.addEventListener('junqi:app-settings-changed', loadNewlineSetting);
+    return () => window.removeEventListener('junqi:app-settings-changed', loadNewlineSetting);
   }, []);
 
   const writeTerm = useCallback((chunk: string) => {
@@ -1146,7 +1146,7 @@ export function AgentRunView({
     return `${agentLabel} 的实时任务钩子尚未安装。`;
   })();
 
-  // Match Nezha's NewTask draft behavior: configuration and prompt survive
+  // Match JunQi's NewTask draft behavior: configuration and prompt survive
   // project switches and application restarts, without persisting every key.
   useEffect(() => {
     if (!workspaceTaskId || running || isDone) return;

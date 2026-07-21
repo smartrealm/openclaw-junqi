@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
-   Nezha → Aegis CSS var bridge
+   JunQi → Aegis CSS var bridge
 
    Compatibility variables for components that were migrated from
-   Nezha but still refer to tokens like `--bg-panel` and
+   JunQi but still refer to tokens like `--bg-panel` and
    `--text-primary`. The canonical theme tokens remain `--aegis-*`.
    
    Must be imported AFTER themes/*.css so --aegis-* are defined.
@@ -66,7 +66,7 @@
   --brand-mark-fg: rgb(var(--aegis-text));
   --badge-muted-bg: rgba(var(--aegis-overlay) / 0.08);
 
-  /* radius — mapped for nezha components that use these directly */
+  /* radius — mapped for junqi components that use these directly */
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;

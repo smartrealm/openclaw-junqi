@@ -1,20 +1,12 @@
-// ── App settings (ported from nezha app_settings.rs, simplified) ─────────────
+// ── JunQi application settings ───────────────────────────────────────────────
 //
-// Persists user-level settings to `~/.nezha/settings.json`. Tracks:
+// Persists user-level settings to `<app-config>/settings.json`. Tracks:
 //   - claude_path / codex_path: optional override of the agent executable
 //   - send_shortcut: "enter" | "mod_enter"
 //   - terminal_shift_enter_newline: bool
 //   - claude_force_default_tui: bool
 //   - language: native menu locale synchronized from the webview
 //
-// Differences from nezha upstream:
-//   - `detect_path`, `login_shell_*`, `home_dir` are inlined here (junqi has no
-//     equivalent platform module exposing these).
-//   - Windows-only codex vendor resolution (`@openai/codex` bin detection) is
-//     dropped — macOS/Linux launch path uses PATH lookup.
-//   - `crate::hooks::regenerate_claude_settings()` integration is dropped —
-//     nezha-specific; junqi doesn't use that hook system yet.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -157,23 +149,16 @@ fn settings_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-fn home_dir() -> Option<PathBuf> {
-    dirs::home_dir()
-}
-
-fn nezha_dir() -> Result<PathBuf, String> {
-    let home = home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
-    Ok(home.join(".nezha"))
-}
-
-fn settings_path() -> Result<PathBuf, String> {
-    Ok(nezha_dir()?.join("settings.json"))
+fn settings_path() -> PathBuf {
+    crate::paths::app_config_dir().join("settings.json")
 }
 
 fn persist_settings(settings: &AppSettings) -> Result<(), String> {
-    let dir = nezha_dir()?;
+    let path = settings_path();
+    let dir = path
+        .parent()
+        .ok_or_else(|| "JunQi settings path has no parent directory".to_string())?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = settings_path()?;
     let raw = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
     atomic_write(&path, &raw)
 }
@@ -245,10 +230,7 @@ pub fn prime_login_shell_path() {
 }
 
 fn load_settings_unlocked() -> AppSettings {
-    let path = match settings_path() {
-        Ok(p) => p,
-        Err(_) => return AppSettings::default(),
-    };
+    let path = settings_path();
 
     if !path.exists() {
         // First run: detect paths and persist defaults.
@@ -413,6 +395,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn settings_are_stored_in_the_application_config_directory() {
+        assert_eq!(
+            settings_path(),
+            crate::paths::app_config_dir().join("settings.json")
+        );
+    }
+
+    #[test]
     fn terminal_scrollback_is_clamped_and_snapped() {
         assert_eq!(clamp_terminal_scrollback(0), 500);
         assert_eq!(clamp_terminal_scrollback(749), 500);
@@ -422,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_settings_receive_default_scrollback() {
+    fn missing_scrollback_uses_the_current_default() {
         let settings: AppSettings = serde_json::from_str(r#"{"send_shortcut":"enter"}"#).unwrap();
         assert_eq!(settings.terminal_scrollback, 1000);
     }

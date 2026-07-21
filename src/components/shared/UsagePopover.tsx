@@ -1,16 +1,16 @@
-// ── UsagePopover — minimal port of nezha's UsagePopover ───────────────────────
+// ── UsagePopover — minimal port of junqi's UsagePopover ───────────────────────
 //
 // Frontend popover that:
 //   1. Uses the shared cached usage snapshot while open
 //   2. Renders Claude (5h / 7d) + Codex (primary / secondary) usage bars
 //   3. Handles unavailable agent usage with a friendly placeholder
 //
-// Adapted differences from nezha:
-//   - Uses `react-i18next` (junqi's i18n) instead of nezha's useI18n.
+// Adapted differences from junqi:
+//   - Uses `react-i18next` (junqi's i18n) instead of junqi's useI18n.
 //   - Uses JunQi's shared useUsageSnapshot hook.
-//   - Uses Tailwind + aegis CSS variables instead of nezha's `s.xxx` styles.
+//   - Uses Tailwind + aegis CSS variables instead of junqi's `s.xxx` styles.
 //
-// Source: nezha/src/components/nezha/UsagePopover.tsx
+// Source: junqi/src/components/junqi/UsagePopover.tsx
 
 import { useState } from 'react';
 import * as Popover from '@radix-ui/react-popover';

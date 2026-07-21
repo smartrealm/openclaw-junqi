@@ -17,6 +17,6 @@ test('notification content follows the selected UI language without duplication'
   assert.doesNotMatch(source, /\{item\.bodyZh\}/);
 });
 
-test('notification dialog keeps the Nezha viewport-aware width', () => {
+test('notification dialog keeps the JunQi viewport-aware width', () => {
   assert.match(source, /min\(920px,calc\(100vw-48px\),calc\(\(100vh-96px\)\*4\/3\)\)/);
 });

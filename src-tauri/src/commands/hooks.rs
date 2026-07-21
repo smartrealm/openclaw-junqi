@@ -4,7 +4,7 @@
 use std::fs;
 use std::sync::{Mutex, OnceLock};
 
-/// Hook install status — mirrors nezha's `HookInstallStatus`.
+/// Hook install status for JunQi-managed agent integration.
 /// `script_installed` and `settings_linked` track the two halves of
 /// installation. They're `false` until `ensure_installed` runs successfully.
 #[derive(Clone, Debug, Default)]
@@ -30,9 +30,8 @@ pub struct HookAgentReadiness {
 
 static CACHED_STATUS: OnceLock<Mutex<HookInstallStatus>> = OnceLock::new();
 
-/// nezha-hook.mjs embedded as a string literal so the installer is self-contained.
-/// Source: src-tauri/src/nezha/nezha-hook.mjs (71 lines).
-const HOOK_SCRIPT: &str = include_str!("../nezha/nezha-hook.mjs");
+/// Embedded so task-scoped hook installation is self-contained.
+const HOOK_SCRIPT: &str = include_str!("../assets/junqi-agent-hook.mjs");
 
 fn cached_status() -> &'static Mutex<HookInstallStatus> {
     CACHED_STATUS.get_or_init(|| Mutex::new(HookInstallStatus::default()))
@@ -65,8 +64,8 @@ pub fn usable_for(_agent: &str) -> bool {
 }
 
 /// Run the hook installer. Writes:
-///   1. `~/.nezha/hooks/nezha-hook.mjs` — the event-collection script
-///   2. `~/.nezha/hooks/claude-settings.json` — Nezha's own settings file
+///   1. `<app-config>/agent-hooks/junqi-agent-hook.mjs` — event collection
+///   2. `<app-config>/agent-hooks/claude-settings.json` — isolated settings
 ///      (passed to Claude via `--settings`, never mutates user's settings.json)
 ///
 /// Returns the install status. Subsequent `usable_for("claude")` returns true
@@ -93,8 +92,7 @@ pub fn ensure_installed() -> HookInstallStatus {
 }
 
 fn hooks_dir_internal() -> Result<std::path::PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
-    Ok(home.join(".nezha").join("hooks"))
+    Ok(crate::paths::app_config_dir().join("agent-hooks"))
 }
 
 pub fn settings_path() -> Result<std::path::PathBuf, String> {
@@ -102,8 +100,7 @@ pub fn settings_path() -> Result<std::path::PathBuf, String> {
 }
 
 pub fn events_root() -> Result<std::path::PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
-    Ok(home.join(".nezha").join("events"))
+    Ok(crate::paths::app_config_dir().join("agent-events"))
 }
 
 pub fn events_dir_for(task_id: &str) -> Result<std::path::PathBuf, String> {
@@ -117,7 +114,7 @@ fn install_hook_files() -> Result<(String, String, String), String> {
     let dir: PathBuf = hooks_dir_internal()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {}", dir.display(), e))?;
 
-    let script_path = dir.join("nezha-hook.mjs");
+    let script_path = dir.join("junqi-agent-hook.mjs");
     std::fs::write(&script_path, HOOK_SCRIPT).map_err(|e| e.to_string())?;
     // Make the script executable on unix (best-effort; Windows ignores).
     #[cfg(unix)]
@@ -130,7 +127,7 @@ fn install_hook_files() -> Result<(String, String, String), String> {
         }
     }
 
-    // Build Nezha's isolated Claude settings file with hook entries only.
+    // Build JunQi's isolated Claude settings file with hook entries only.
     // User settings remain untouched and no unrelated scalar options are overridden.
     let settings = build_claude_settings(
         &node_path,
@@ -179,8 +176,8 @@ fn build_claude_settings(
 }
 
 const CODEX_HOOK_MIN_VERSION: &str = "0.131.0";
-const CODEX_BEGIN: &str = "# >>> nezha-managed-begin (do not edit; managed by Nezha) >>>";
-const CODEX_END: &str = "# <<< nezha-managed-end <<<";
+const CODEX_BEGIN: &str = "# >>> junqi-managed-begin (do not edit; managed by JunQi) >>>";
+const CODEX_END: &str = "# <<< junqi-managed-end <<<";
 const CODEX_EVENTS: &[&str] = &[
     "SessionStart",
     "UserPromptSubmit",
@@ -255,9 +252,7 @@ mod tests {
 
     static STATUS_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    /// Override the hooks dir for testing — production code reads from
-    /// `~/.nezha/hooks`, which we don't want to touch during unit tests.
-    /// This test-only module sets a unique temp dir each time.
+    /// Provide an isolated scratch directory for tests that exercise hook data.
     fn with_temp_hooks_dir<F: FnOnce()>(f: F) {
         let dir = std::env::temp_dir().join(format!(
             "junqi-hooks-test-{}-{}",
@@ -269,9 +264,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
 
-        // We can't easily mock the home dir without restructuring; the
-        // simplest test is to verify the constants and the script body are
-        // sane without actually writing to ~/.nezha.
+        // The test only verifies generated content and never installs global hooks.
         let _ = dir; // silence unused warning
 
         f();
@@ -282,10 +275,21 @@ mod tests {
         assert!(!HOOK_SCRIPT.is_empty());
         assert!(HOOK_SCRIPT.contains("#!/usr/bin/env node"));
         // Must reference the env vars the bridge depends on.
-        assert!(HOOK_SCRIPT.contains("NEZHA_TASK_ID"));
-        assert!(HOOK_SCRIPT.contains("NEZHA_EVENT_DIR"));
+        assert!(HOOK_SCRIPT.contains("JUNQI_TASK_ID"));
+        assert!(HOOK_SCRIPT.contains("JUNQI_EVENT_DIR"));
         // Must exit cleanly when env vars are absent (no side effects).
         assert!(HOOK_SCRIPT.contains("process.exit(0)"));
+    }
+
+    #[test]
+    fn hook_state_is_stored_in_the_application_config_directory() {
+        let root = crate::paths::app_config_dir();
+        assert_eq!(hooks_dir_internal().unwrap(), root.join("agent-hooks"));
+        assert_eq!(events_root().unwrap(), root.join("agent-events"));
+        assert_eq!(
+            settings_path().unwrap(),
+            root.join("agent-hooks/claude-settings.json")
+        );
     }
 
     #[test]
@@ -308,12 +312,12 @@ mod tests {
     fn claude_hook_settings_use_the_current_nested_schema() {
         let settings = build_claude_settings(
             "/opt/homebrew/bin/node",
-            std::path::Path::new("/tmp/nezha-hook.mjs"),
+            std::path::Path::new("/tmp/junqi-hook.mjs"),
             false,
         );
         assert_eq!(
             settings["hooks"]["Stop"][0]["hooks"][0]["command"],
-            "\"/opt/homebrew/bin/node\" \"/tmp/nezha-hook.mjs\""
+            "\"/opt/homebrew/bin/node\" \"/tmp/junqi-hook.mjs\""
         );
         assert!(settings.get("tui").is_none());
     }
@@ -322,7 +326,7 @@ mod tests {
     fn claude_hook_settings_can_force_the_default_tui_without_touching_user_settings() {
         let settings = build_claude_settings(
             "/opt/homebrew/bin/node",
-            std::path::Path::new("/tmp/nezha-hook.mjs"),
+            std::path::Path::new("/tmp/junqi-hook.mjs"),
             true,
         );
         assert_eq!(settings["tui"], "default");
@@ -394,7 +398,7 @@ mod tests {
     #[test]
     fn codex_hook_injection_is_idempotent_and_preserves_user_config() {
         let original = "model = \"gpt-5\"\n";
-        let first = inject_codex_text(original, "/usr/bin/node", "/tmp/nezha hook.mjs");
+        let first = inject_codex_text(original, "/usr/bin/node", "/tmp/junqi hook.mjs");
         let second = inject_codex_text(&first, "/opt/node/bin/node", "/tmp/new-hook.mjs");
         assert!(second.starts_with(original));
         assert_eq!(second.matches(CODEX_BEGIN).count(), 1);
@@ -413,12 +417,12 @@ mod tests {
     #[test]
     #[ignore] // run with: cargo test hooks::tests::install_hook_files_end_to_end -- --ignored
     fn install_hook_files_end_to_end() {
-        // Marked #[ignore] so the suite doesn't accidentally touch the real
-        // ~/.nezha/hooks dir on developer machines. Run explicitly when needed:
+        // Marked #[ignore] so the suite doesn't install hooks in the real app
+        // config directory on developer machines. Run explicitly when needed:
         //   cargo test hooks::tests::install_hook_files_end_to_end -- --ignored
         with_temp_hooks_dir(|| {
-            // Currently the install path is hard-coded to ~/.nezha/hooks via
-            // hooks_dir_internal(); full E2E would need a HOME override.
+            // The install path is derived from app_config_dir(); full E2E would
+            // need an app-config override.
             // For now, just verify the function returns Err gracefully when
             // the home dir is unwritable — which it isn't in a test env.
             let _ = ensure_installed();
@@ -462,8 +466,8 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
                 },
                 Some(ver) => HookAgentReadiness {
                     agent: "claude".to_string(),
-                    usable: usable_for("claude"),
-                    reason: (!usable_for("claude")).then(|| "not_installed".to_string()),
+                    usable: true,
+                    reason: None,
                     detected_version: Some(ver),
                     min_version: Some(claude_min.to_string()),
                 },
@@ -492,8 +496,8 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
                 },
                 Some(ver) => HookAgentReadiness {
                     agent: "codex".to_string(),
-                    usable: usable_for("codex"),
-                    reason: (!usable_for("codex")).then(|| "not_installed".to_string()),
+                    usable: true,
+                    reason: None,
                     detected_version: Some(ver),
                     min_version: Some(codex_min.to_string()),
                 },

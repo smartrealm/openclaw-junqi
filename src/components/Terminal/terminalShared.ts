@@ -1,10 +1,10 @@
 import { Terminal } from "@xterm/xterm";
-import { APP_PLATFORM } from './_nezha-platform';
+import { APP_PLATFORM } from './platform';
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { IS_MAC_WEBKIT } from "./_nezha-platform";
-import type { ThemeVariant } from "./_nezha-types";
+import { IS_MAC_WEBKIT } from "./platform";
+import type { ThemeVariant } from "./terminalTypes";
 // xterm 私有字段访问的显式契约——见 xterm-private.d.ts 头部说明。
 import type { XTermWithPrivates } from "./xterm-private.d";
 import { debugWarn } from "@/utils/debugLog";
@@ -345,7 +345,7 @@ function waitForFontReady(fontFamily: string, fontSize: number): Promise<void> {
   const primary = primaryFontFamily(fontFamily);
   const spec = primary ? `${fontSize}px "${primary}"` : null;
 
-  // nezha 用的都是系统字体，fonts.load 不会触发网络下载——仅 spec 字符串
+  // junqi 用的都是系统字体，fonts.load 不会触发网络下载——仅 spec 字符串
   // 解析失败时 reject（开发者拼接 bug），warn 出来便于排查。
   const load = spec
     ? fonts.load(spec).catch((err) => {
@@ -588,13 +588,13 @@ export function attachTerminalScrollbarAutoHide(term: Terminal, container: HTMLE
   const hideAfterScroll = () => {
     clearScrollHideTimer();
     scrollHideTimer = ownerWindow.setTimeout(() => {
-      container.classList.remove("nezha-xterm-scrolling");
+      container.classList.remove("junqi-xterm-scrolling");
       scrollHideTimer = null;
     }, 700);
   };
 
   const handleScroll = () => {
-    container.classList.add("nezha-xterm-scrolling");
+    container.classList.add("junqi-xterm-scrolling");
     hideAfterScroll();
   };
 
@@ -602,7 +602,7 @@ export function attachTerminalScrollbarAutoHide(term: Terminal, container: HTMLE
 
   return () => {
     clearScrollHideTimer();
-    container.classList.remove("nezha-xterm-scrolling");
+    container.classList.remove("junqi-xterm-scrolling");
     scrollDisposable.dispose();
   };
 }
@@ -718,7 +718,7 @@ export function refreshTerminalDisplay(term: Terminal): void {
  * - DOM renderer 的代价：高频 mousemove（鼠标在终端区域移动）+ 高速文本输出时
  *   持续中等卡顿（每次 mousemove 触发多个 row DOM 节点的 reflow/composite，
  *   rec10 实测 1233 mousemove/2.7s 下出现 511ms 单帧）
- * - Nezha 日常以"鼠标在终端区域活动"为主，长拖选区相对罕见，因此 WebGL 的
+ * - JunQi 日常以"鼠标在终端区域活动"为主，长拖选区相对罕见，因此 WebGL 的
  *   "偶发爆点"比 DOM 的"持续小卡顿"更可接受。
  *
  * 不要为了"避免偶发卡顿"再把这里关掉——见 timeline rec10。

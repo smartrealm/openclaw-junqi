@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./ProjectSettingsDialog.tsx', import.meta.url), 'utf8');
 
-test('project settings normalize legacy commit timeout values like Nezha', () => {
+test('project settings normalize legacy commit timeout values like JunQi', () => {
   assert.match(source, /commit_message_timeout_secs\?\: number/);
   assert.match(source, /DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS = 15/);
   assert.match(source, /MIN_COMMIT_MESSAGE_TIMEOUT_SECS = 1/);

@@ -167,7 +167,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   uiScale: savedUiScale,
   uiFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.uiFont) || '',
   monoFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.monoFont) || '',
-  terminalFontSize: Math.min(20, Math.max(10, Number(localStorage.getItem('nezha:terminalFontSize')) || 12)),
+  terminalFontSize: Math.min(20, Math.max(10, Number(localStorage.getItem('junqi:terminalFontSize')) || 12)),
   sidebarOpen: true,
   sidebarWidth: 280,
   settingsOpen: false,
@@ -228,7 +228,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   setTerminalFontSize: (size) => {
     const next = Math.min(20, Math.max(10, Math.round(size)));
-    localStorage.setItem('nezha:terminalFontSize', String(next));
+    localStorage.setItem('junqi:terminalFontSize', String(next));
     set({ terminalFontSize: next });
   },
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),

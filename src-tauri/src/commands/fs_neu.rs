@@ -1,7 +1,7 @@
-//! File-system commands ported from the nezha subsystem.
+//! File-system commands ported from the junqi subsystem.
 //!
 //! Adapted crate references:
-//!   crate::nezha::subprocess::configure_background_command
+//!   crate::junqi::subprocess::configure_background_command
 //!     → crate::platform::suppress_console_window
 //!
 //! Provides: read_dir_entries, read_file_content, read_image_preview,
@@ -767,7 +767,7 @@ pub async fn create_directory(path: String, project_path: String) -> Result<(), 
 }
 
 /// First-segment names under the project root that are never deletable through this command.
-const PROTECTED_FIRST_SEGMENTS: &[&str] = &[".git", ".nezha"];
+const PROTECTED_FIRST_SEGMENTS: &[&str] = &[".git", ".junqi"];
 
 /// Validate a deletion target.
 fn validate_existing_path_for_delete(

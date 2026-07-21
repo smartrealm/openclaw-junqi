@@ -1,5 +1,5 @@
 // ── PromptEditor.test.tsx ───────────────────────────────────────────────────
-// Unit tests for the shared PromptEditor component (nezha-style @ mention).
+// Unit tests for the shared PromptEditor component (junqi-style @ mention).
 // Run with: pnpm test
 import test from 'node:test';
 import assert from 'node:assert/strict';

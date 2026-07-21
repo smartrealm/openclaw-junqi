@@ -1,5 +1,5 @@
 import type { Terminal } from "@xterm/xterm";
-import { IS_MAC_WEBKIT, IS_OTHER_WEBKIT } from "./_nezha-platform";
+import { IS_MAC_WEBKIT, IS_OTHER_WEBKIT } from "./platform";
 
 type TerminalWithInput = Pick<Terminal, "input" | "textarea">;
 

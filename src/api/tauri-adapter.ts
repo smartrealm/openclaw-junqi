@@ -798,7 +798,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
   },
   attachments: { stage: async () => ({ success: false, staged: [] }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
   uploads: { list: async () => ({ success: true, rows: [], total: 0, root: "" }), open: async () => ({ success: false }), reveal: async () => ({ success: false }), exists: async () => ({ success: false, exists: false }), read: async () => ({ success: false }), delete: async () => ({ success: false }), saveAs: async () => ({ success: false }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
-  // Nezha-style system metrics event stream (background thread emits every 1s)
+  // JunQi-style system metrics event stream (background thread emits every 1s)
   systemMetrics: {
     onMetrics: (cb: (metrics: SystemMetricsPayload) => void) => {
       const p = listen("system-metrics", (event: any) => cb(event.payload as SystemMetricsPayload));

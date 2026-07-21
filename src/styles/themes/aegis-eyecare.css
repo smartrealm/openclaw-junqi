@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   Theme: AEGIS Eyecare — values ported 1:1 from hanshuaikang/nezha
+   Theme: AEGIS Eyecare — values ported 1:1 from hanshuaikang/junqi
    themes.css (html.eyecare). Warm sepia/low-contrast, brown accent.
    The eye-friendly light variant.
    ═══════════════════════════════════════════════════════════ */
@@ -33,7 +33,7 @@
   --aegis-text-muted:     122 108 79;   /* text-muted #7a6c4f */
   --aegis-text-dim:       168 152 118;  /* text-hint #a89876 */
 
-  /* ── Primary = nezha eyecare accent (brown) ── */
+  /* ── Primary = junqi eyecare accent (brown) ── */
   --aegis-primary:         176 123 62;   /* accent #b07b3e */
   --aegis-primary-hover:   149 97 42;    /* accent-hover #95612a */
   --aegis-primary-deep:    149 97 42;    /* accent-strong #95612a */

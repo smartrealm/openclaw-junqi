@@ -1,5 +1,5 @@
 // ── GitChanges — working-tree file status panel ────────────────────────────────
-// Ported from nezha's GitChanges with --aegis-* CSS var rewrites.
+// Ported from junqi's GitChanges with --aegis-* CSS var rewrites.
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
