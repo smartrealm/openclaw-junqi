@@ -1321,6 +1321,7 @@ async fn extract_node_archive(
 // ─── npm install with registry fallback ───────────────────────────────────────
 
 const NPM_INACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+const NPM_SLOW_FETCH_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(90);
 const NPM_DIAGNOSTIC_LINE_LIMIT: usize = 24;
 
 const NPM_NOISY_LOG_PREFIXES: &[&str] = &["npm verbose", "npm sill", "npm timing", "npm notice"];
@@ -1387,6 +1388,40 @@ fn npm_log_line_for_display(line: &str) -> Option<String> {
     }
 }
 
+fn npm_fetch_duration_ms(line: &str) -> Option<u64> {
+    if !line.to_ascii_lowercase().contains("npm http fetch") {
+        return None;
+    }
+    line.split_whitespace().rev().find_map(|token| {
+        token
+            .strip_suffix("ms")
+            .and_then(|value| value.parse::<u64>().ok())
+    })
+}
+
+fn observe_slow_npm_fetch(
+    line: &str,
+    source_label: &str,
+    slow_fetch_tx: &tokio::sync::watch::Sender<Option<String>>,
+    slow_fetch_triggered: &AtomicBool,
+) {
+    let Some(duration_ms) = npm_fetch_duration_ms(line) else {
+        return;
+    };
+    if duration_ms < NPM_SLOW_FETCH_THRESHOLD.as_millis() as u64
+        || slow_fetch_triggered.swap(true, Ordering::AcqRel)
+    {
+        return;
+    }
+    let reason = format!(
+        "{} npm tarball request took {}ms (slow-source threshold: {}s)",
+        source_label,
+        duration_ms,
+        NPM_SLOW_FETCH_THRESHOLD.as_secs()
+    );
+    let _ = slow_fetch_tx.send(Some(reason));
+}
+
 type NpmDiagnostics = Arc<Mutex<Vec<String>>>;
 
 fn record_npm_diagnostic(diagnostics: &NpmDiagnostics, line: &str) {
@@ -1413,6 +1448,7 @@ enum NpmWaitResult {
     Exited(std::io::Result<std::process::ExitStatus>),
     Inactive,
     DeadlineExceeded,
+    SlowSource(String),
 }
 
 struct NpmOutputTasks {
@@ -1476,6 +1512,24 @@ async fn wait_for_process_activity(
     inactivity_timeout: std::time::Duration,
     deadline: std::time::Instant,
 ) -> NpmWaitResult {
+    let (_slow_fetch_tx, mut slow_fetch_rx) = tokio::sync::watch::channel(None);
+    wait_for_process_activity_with_slow_signal(
+        child,
+        activity,
+        &mut slow_fetch_rx,
+        inactivity_timeout,
+        deadline,
+    )
+    .await
+}
+
+async fn wait_for_process_activity_with_slow_signal(
+    child: &mut tokio::process::Child,
+    activity: &mut tokio::sync::watch::Receiver<u64>,
+    slow_fetch: &mut tokio::sync::watch::Receiver<Option<String>>,
+    inactivity_timeout: std::time::Duration,
+    deadline: std::time::Instant,
+) -> NpmWaitResult {
     let wait = child.wait();
     tokio::pin!(wait);
     let deadline_wait = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline));
@@ -1489,6 +1543,13 @@ async fn wait_for_process_activity(
         tokio::select! {
             status = &mut wait => return NpmWaitResult::Exited(status),
             _ = &mut deadline_wait => return NpmWaitResult::DeadlineExceeded,
+            changed = slow_fetch.changed() => {
+                if changed.is_ok() {
+                    if let Some(reason) = slow_fetch.borrow().clone() {
+                        return NpmWaitResult::SlowSource(reason);
+                    }
+                }
+            }
             changed = activity.changed() => {
                 if changed.is_err() {
                     return NpmWaitResult::Exited(wait.await);
@@ -1557,6 +1618,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         ),
         prog_start,
     );
+    emit(
+        app,
+        step,
+        &format!("npm source diagnostics: {}", target.source_diagnostic()),
+        prog_start,
+    );
 
     for (reg_idx, source) in sources.into_iter().enumerate() {
         if deadline
@@ -1585,6 +1652,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             )
         })?;
         let reg_label = source.label();
+        let attempt_started = std::time::Instant::now();
         emit(
             app,
             step,
@@ -1636,6 +1704,8 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         };
         let child_pid = child.id();
         let (activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
+        let (slow_fetch_tx, mut slow_fetch_rx) = tokio::sync::watch::channel(None::<String>);
+        let slow_fetch_triggered = Arc::new(AtomicBool::new(false));
         let diagnostics = Arc::new(Mutex::new(Vec::new()));
 
         // Stream stdout to progress events so the user sees live npm output
@@ -1644,6 +1714,9 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let app_c = app.clone();
             let step_c = step.to_string();
             let activity_tx = activity_tx.clone();
+            let slow_fetch_tx = slow_fetch_tx.clone();
+            let slow_fetch_triggered = Arc::clone(&slow_fetch_triggered);
+            let source_label = reg_label.clone();
             let diagnostics = Arc::clone(&diagnostics);
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -1654,6 +1727,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     .map_err(|error| format!("Failed to read npm stdout: {error}"))?
                 {
                     activity_tx.send_modify(|sequence| *sequence += 1);
+                    observe_slow_npm_fetch(
+                        &line,
+                        &source_label,
+                        &slow_fetch_tx,
+                        &slow_fetch_triggered,
+                    );
                     let Some(line) = npm_log_line_for_display(&line) else {
                         continue;
                     };
@@ -1669,6 +1748,9 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let step_e = step.to_string();
             let tar_warning_count_e = Arc::clone(&tar_warning_count);
             let activity_tx = activity_tx.clone();
+            let slow_fetch_tx = slow_fetch_tx.clone();
+            let slow_fetch_triggered = Arc::clone(&slow_fetch_triggered);
+            let source_label = reg_label.clone();
             let diagnostics = Arc::clone(&diagnostics);
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -1679,6 +1761,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     .map_err(|error| format!("Failed to read npm stderr: {error}"))?
                 {
                     activity_tx.send_modify(|sequence| *sequence += 1);
+                    observe_slow_npm_fetch(
+                        &line,
+                        &source_label,
+                        &slow_fetch_tx,
+                        &slow_fetch_triggered,
+                    );
                     let Some(line) = npm_log_line_for_display(&line) else {
                         continue;
                     };
@@ -1724,9 +1812,10 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 }
             }
         });
-        let wait_result = wait_for_process_activity(
+        let wait_result = wait_for_process_activity_with_slow_signal(
             &mut child,
             &mut activity_rx,
+            &mut slow_fetch_rx,
             NPM_INACTIVITY_TIMEOUT,
             deadline,
         )
@@ -1772,6 +1861,31 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 }
                 continue;
             }
+            NpmWaitResult::SlowSource(reason) => {
+                let diagnostic = npm_diagnostic_text(&diagnostics);
+                last_err = if diagnostic.is_empty() {
+                    reason.clone()
+                } else {
+                    format!("{reason}; {diagnostic}")
+                };
+                if let Err(cleanup_error) = stop_npm_process(&mut child, child_pid, output).await {
+                    return Err(format!(
+                        "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
+                    ));
+                }
+                if reg_idx + 1 < total_regs {
+                    emit(
+                        app,
+                        step,
+                        &format!(
+                            "{} detected a slow transfer; switching to the fallback source immediately...",
+                            reg_label
+                        ),
+                        prog_start,
+                    );
+                }
+                continue;
+            }
             timeout @ (NpmWaitResult::Inactive | NpmWaitResult::DeadlineExceeded) => {
                 let deadline_expired = matches!(timeout, NpmWaitResult::DeadlineExceeded)
                     || std::time::Instant::now() >= deadline;
@@ -1810,6 +1924,16 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         };
 
         if status.success() {
+            emit(
+                app,
+                step,
+                &format!(
+                    "{} npm process completed in {}s; validating the staged package...",
+                    reg_label,
+                    attempt_started.elapsed().as_secs()
+                ),
+                prog_live,
+            );
             let tar_warnings = tar_warning_count.load(Ordering::Relaxed);
             if tar_warnings > 1 {
                 emit(
@@ -1877,6 +2001,17 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         } else {
             format!("npm 退出码 {}: {}", status.code().unwrap_or(-1), diagnostic)
         };
+        emit(
+            app,
+            step,
+            &format!(
+                "{} npm process exited after {}s: {}",
+                reg_label,
+                attempt_started.elapsed().as_secs(),
+                last_err
+            ),
+            prog_start,
+        );
         if reg_idx + 1 < total_regs {
             emit(
                 app,
@@ -5312,6 +5447,35 @@ mod tests {
             npm_log_line_for_display("npm warn deprecated package@1.0.0"),
             Some("npm warn deprecated package@1.0.0".into())
         );
+    }
+
+    #[test]
+    fn npm_fetch_duration_parser_reads_only_http_fetch_timings() {
+        assert_eq!(
+            npm_fetch_duration_ms(
+                "npm http fetch GET 200 https://cdn.example.test/package.tgz 156841ms (cache miss)"
+            ),
+            Some(156_841)
+        );
+        assert_eq!(
+            npm_fetch_duration_ms("npm warn deprecated package@1.0.0"),
+            None
+        );
+    }
+
+    #[test]
+    fn slow_npm_fetch_signal_is_emitted_once_without_leaking_urls() {
+        let (tx, rx) = tokio::sync::watch::channel(None::<String>);
+        let triggered = AtomicBool::new(false);
+        let line = "npm http fetch GET 200 https://user:secret@example.test/package.tgz 91000ms (cache miss)";
+
+        observe_slow_npm_fetch(line, "npmmirror.com (China mirror)", &tx, &triggered);
+        observe_slow_npm_fetch(line, "npmmirror.com (China mirror)", &tx, &triggered);
+
+        let reason = rx.borrow().clone().expect("slow source signal");
+        assert!(reason.contains("91000ms"));
+        assert!(!reason.contains("example.test"));
+        assert!(triggered.load(Ordering::Acquire));
     }
 
     #[test]

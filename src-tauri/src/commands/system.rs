@@ -226,6 +226,9 @@ impl OpenclawCommandContext {
             .env("OPENCLAW_LOCALE", &self.locale)
             .env("OPENCLAW_NO_RESPAWN", "1")
             .env("NO_COLOR", "1");
+        if openclaw_debug_enabled() {
+            command.env("OPENCLAW_DEBUG", "1");
+        }
         // Keep package-manager child operations on the same user-selected
         // npm installation as the OpenClaw entry point. These are process
         // scoped and never rewrite the user's npmrc.
@@ -237,6 +240,18 @@ impl OpenclawCommandContext {
         }
         platform::configure_background_command(command);
     }
+}
+
+fn openclaw_debug_enabled() -> bool {
+    cfg!(debug_assertions)
+        || std::env::var("JUNQI_OPENCLAW_DEBUG")
+            .ok()
+            .is_some_and(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
 }
 
 fn stable_openclaw_working_dir() -> Option<PathBuf> {
