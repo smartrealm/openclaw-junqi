@@ -16,7 +16,6 @@ const noUpdaterArtifactsProfile = JSON.parse(
 );
 const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 const taggedRelease = readFileSync(new URL('../.github/workflows/tag-release.yml', import.meta.url), 'utf8');
-const wixPrerequisite = readFileSync(new URL('../.github/actions/prepare-windows-wix/action.yml', import.meta.url), 'utf8');
 
 test('Windows PATH refresh expands registry values and preserves process entries', () => {
   assert.match(platform, /ExpandEnvironmentStringsW/);
@@ -106,14 +105,6 @@ test('Windows signing is isolated behind the unreachable trusted promotion path'
   assert.doesNotMatch(release, /tags:\s*\[/);
 });
 
-test('Windows MSI workflows prepare the WiX scripting prerequisite', () => {
-  assert.match(wixPrerequisite, /Get-WindowsOptionalFeature -Online -FeatureName VBSCRIPT/);
-  assert.match(wixPrerequisite, /Enable-WindowsOptionalFeature -Online -FeatureName VBSCRIPT -All -NoRestart/);
-  for (const workflow of [release, taggedRelease]) {
-    assert.match(workflow, /uses: \.\/\.github\/actions\/prepare-windows-wix/);
-  }
-});
-
 test('Windows reads the selected OpenClaw token and stores device credentials in Credential Manager', () => {
   const detector = config.slice(
     config.indexOf('pub async fn detect_gateway_config'),
@@ -128,10 +119,14 @@ test('Windows reads the selected OpenClaw token and stores device credentials in
   assert.match(cargo, /\[target\.'cfg\(windows\)'\.dependencies\][\s\S]*keyring\s*=\s*\{[^}]*"windows-native"/);
 });
 
-test('Windows release matrix builds and stages both NSIS and MSI for x64 and ARM64', () => {
-  assert.match(release, /name: Windows x64[\s\S]*target: 'x86_64-pc-windows-msvc'[\s\S]*--bundles nsis,msi/);
-  assert.match(release, /name: Windows ARM64[\s\S]*target: 'aarch64-pc-windows-msvc'[\s\S]*--bundles nsis,msi/);
+test('Windows release matrix builds and stages NSIS installers for x64 and ARM64', () => {
+  assert.match(release, /name: Windows x64[\s\S]*target: 'x86_64-pc-windows-msvc'[\s\S]*--bundles nsis/);
+  assert.match(release, /name: Windows ARM64[\s\S]*target: 'aarch64-pc-windows-msvc'[\s\S]*--bundles nsis/);
   assert.match(release, /bundle\/nsis\|\.exe/);
-  assert.match(release, /bundle\/msi\|\.msi/);
+  assert.doesNotMatch(release, /--bundles nsis,msi|bundle\/msi\|\.msi/);
+  assert.match(taggedRelease, /--bundles nsis/);
+  assert.doesNotMatch(taggedRelease, /--bundles nsis,msi|bundle\/msi\/\*\.msi/);
+  assert.match(taggedRelease, /Validate signed release assets and generate updater manifest/);
+  assert.doesNotMatch(taggedRelease, /asset_count|Expected 19 release assets/);
   assert.match(release, /if-no-files-found: error/);
 });

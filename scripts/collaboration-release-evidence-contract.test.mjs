@@ -100,20 +100,6 @@ describe('collaboration release evidence topology', () => {
       const source = await readFile(path.join(WORKFLOW_DIRECTORY, workflowFile), 'utf8');
       for (const match of source.matchAll(/^\s*(?:-\s*)?uses:\s*([^\s#]+)\s*(?:#.*)?$/gm)) {
         const reference = match[1];
-        if (reference.startsWith('./')) {
-          assert.match(
-            reference,
-            /^\.\/\.github\/actions\/[a-z0-9][a-z0-9-]*$/,
-            `${workflowFile} references an unsafe local action path: ${reference}`,
-          );
-          const actionManifest = path.join(REPOSITORY_ROOT, reference, 'action.yml');
-          const actionStat = await lstat(actionManifest);
-          assert.ok(
-            actionStat.isFile() && !actionStat.isSymbolicLink(),
-            `${workflowFile} local action must have a regular action.yml: ${reference}`,
-          );
-          continue;
-        }
         assert.match(
           reference,
           /@[0-9a-f]{40}$|@sha256:[0-9a-f]{64}$/,

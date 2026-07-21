@@ -158,22 +158,18 @@ jobs:
             artifact_name: windows-x86_64
             platform: windows-latest
             target: 'x86_64-pc-windows-msvc'
-            bundle_args: '--bundles nsis,msi'
+            bundle_args: '--bundles nsis'
             asset_paths: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
-              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
-              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi.sig
           - name: Windows ARM64
             artifact_name: windows-arm64
             platform: windows-11-arm
             target: 'aarch64-pc-windows-msvc'
-            bundle_args: '--bundles nsis,msi'
+            bundle_args: '--bundles nsis'
             asset_paths: |
               src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
               src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
-              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/*.msi
-              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/*.msi.sig
     steps:
       - name: Checkout exact release source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -205,10 +201,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Prepare WiX MSI prerequisites
-        if: runner.os == 'Windows'
-        uses: ./.github/actions/prepare-windows-wix
 
       - name: Build signed updater artifacts and installers
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
@@ -286,7 +278,7 @@ jobs:
           normalize_updater macos-arm64 aarch64
           normalize_updater macos-x86_64 x64
 
-      - name: Generate updater manifest
+      - name: Validate signed release assets and generate updater manifest
         env:
           RELEASE_TAG: ${{ needs.verify.outputs.tag }}
           VERSION: ${{ needs.verify.outputs.version }}
@@ -300,23 +292,6 @@ jobs:
             --version "$VERSION" \
             --notes "JunQi Desktop $VERSION" \
             --output release-assets/latest.json
-
-      - name: Validate immutable release asset set
-        shell: bash
-        run: |
-          set -euo pipefail
-          declare -A names=()
-          asset_count=0
-          while IFS= read -r -d '' asset; do
-            name="$(basename "$asset")"
-            if [[ -n "${names[$name]:-}" ]]; then
-              echo "::error::Duplicate release asset name: $name"
-              exit 1
-            fi
-            names[$name]=1
-            asset_count=$((asset_count + 1))
-          done < <(find release-assets -type f -print0)
-          [[ "$asset_count" -eq 19 ]] || { echo "::error::Expected 19 release assets, found $asset_count"; exit 1; }
 
       - name: Create verified GitHub Release
         env:

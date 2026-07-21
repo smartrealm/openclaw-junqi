@@ -450,27 +450,25 @@ jobs:
             stage_prefix: macos-x86_64
             asset_specs: |
               src-tauri/target/x86_64-apple-darwin/release/bundle/dmg|.dmg
-          # Windows — native MSVC runners for both supported architectures.
+          # Windows — NSIS is the supported hosted-runner installer path.
           - name: Windows x64
             artifact_name: windows-x86_64
             platform: windows-latest
             target: 'x86_64-pc-windows-msvc'
             rust_targets: 'x86_64-pc-windows-msvc'
-            bundle_args: '--bundles nsis,msi'
+            bundle_args: '--bundles nsis'
             stage_prefix: windows-x86_64
             asset_specs: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis|.exe
-              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi|.msi
           - name: Windows ARM64
             artifact_name: windows-arm64
             platform: windows-11-arm
             target: 'aarch64-pc-windows-msvc'
             rust_targets: 'aarch64-pc-windows-msvc'
-            bundle_args: '--bundles nsis,msi'
+            bundle_args: '--bundles nsis'
             stage_prefix: windows-arm64
             asset_specs: |
               src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis|.exe
-              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi|.msi
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -502,10 +500,6 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Prepare WiX MSI prerequisites
-        if: runner.os == 'Windows'
-        uses: ./.github/actions/prepare-windows-wix
 
       - name: Verify updater signing inputs
         if: needs.verify-version.outputs.signing-enabled == 'true'
