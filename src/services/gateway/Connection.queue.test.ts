@@ -4,7 +4,6 @@ import { CollaborationClient, CollaborationClientError } from '@/services/collab
 import {
   GatewayConnection,
   GatewayConnectionFenceError,
-  GatewayMessageQueueFullError,
   GatewayRpcError,
 } from './Connection';
 
@@ -19,7 +18,7 @@ function failedGatewayCall(
   });
 }
 
-describe('GatewayConnection offline queue identity', () => {
+describe('GatewayConnection request identity', () => {
   it('rejects an identity-fenced request before sending on a different connection', async () => {
     const connection = new GatewayConnection() as any;
     let sends = 0;
@@ -102,73 +101,6 @@ describe('GatewayConnection offline queue identity', () => {
         && error.actualConnectionId === 'connection-2',
     );
     connection.disconnect();
-  });
-
-  it('flushes the original idempotency key and session id', async () => {
-    const connection = new GatewayConnection() as any;
-    const payloads: any[] = [];
-    connection.request = async (method: string, payload: any) => {
-      payloads.push({ method, payload });
-      return { ok: true };
-    };
-
-    connection.enqueueMessage('hello', undefined, 'agent:main:main', 'client-message-1', 'session-1');
-    await connection.flushQueue();
-
-    assert.deepEqual(payloads, [{
-      method: 'chat.send',
-      payload: {
-        sessionKey: 'agent:main:main',
-        message: 'hello',
-        idempotencyKey: 'client-message-1',
-        sessionId: 'session-1',
-      },
-    }]);
-    assert.equal(connection.getQueueSize(), 0);
-  });
-
-  it('keeps the failed item and untouched tail in their original order', async () => {
-    const connection = new GatewayConnection() as any;
-    connection.enqueueMessage('one', undefined, 'session', 'id-1');
-    connection.enqueueMessage('two', undefined, 'session', 'id-2');
-    connection.enqueueMessage('three', undefined, 'session', 'id-3');
-    connection.request = async () => { throw new Error('offline'); };
-
-    await connection.flushQueue();
-    assert.equal(connection.getQueueSize(), 3);
-
-    const ids: string[] = [];
-    connection.request = async (_method: string, payload: any) => {
-      ids.push(payload.idempotencyKey);
-      return { ok: true };
-    };
-    await connection.flushQueue();
-
-    assert.deepEqual(ids, ['id-1', 'id-2', 'id-3']);
-  });
-
-  it('rejects queue overflow without silently evicting an acknowledged queued message', async () => {
-    const connection = new GatewayConnection() as any;
-    connection.MAX_QUEUE_SIZE = 2;
-    connection.enqueueMessage('one', undefined, 'session', 'id-1');
-    connection.enqueueMessage('two', undefined, 'session', 'id-2');
-
-    assert.throws(
-      () => connection.enqueueMessage('three', undefined, 'session', 'id-3'),
-      (error: unknown) => error instanceof GatewayMessageQueueFullError
-        && error.code === 'GATEWAY_MESSAGE_QUEUE_FULL'
-        && error.limit === 2,
-    );
-    assert.equal(connection.getQueueSize(), 2);
-
-    const ids: string[] = [];
-    connection.request = async (_method: string, payload: any) => {
-      ids.push(payload.idempotencyKey);
-      return { ok: true };
-    };
-    await connection.flushQueue();
-
-    assert.deepEqual(ids, ['id-1', 'id-2']);
   });
 
   it('preserves the stable Gateway RPC error contract without exposing envelope fields', async () => {

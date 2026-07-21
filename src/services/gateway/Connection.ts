@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════
 // GatewayConnection — Transport Layer
-// Handles WebSocket lifecycle, heartbeat, message queue,
+// Handles WebSocket lifecycle, heartbeat,
 // request/response, handshake, and pairing.
 // No chat logic, no tool logic — pure transport.
 // ═══════════════════════════════════════════════════════════
@@ -154,12 +154,12 @@ export class GatewayRpcError extends Error {
   }
 }
 
-export class GatewayMessageQueueFullError extends Error {
-  readonly code = 'GATEWAY_MESSAGE_QUEUE_FULL';
+export class GatewayDisconnectedError extends Error {
+  readonly code = 'GATEWAY_DISCONNECTED';
 
-  constructor(public readonly limit: number) {
-    super(`Offline message queue is full (${limit} messages)`);
-    this.name = 'GatewayMessageQueueFullError';
+  constructor() {
+    super('Gateway is not connected');
+    this.name = 'GatewayDisconnectedError';
   }
 }
 
@@ -187,15 +187,6 @@ function gatewayRpcError(value: unknown): GatewayRpcError {
     ? error.code
     : undefined;
   return new GatewayRpcError(message, code, error?.details);
-}
-
-// ── Queued message (pre-processed: attachments in gateway format, context injected) ──
-interface QueuedMessage {
-  message: string;
-  attachments?: any[];
-  sessionKey?: string;
-  idempotencyKey: string;
-  sessionId?: string;
 }
 
 export class GatewayConnection {
@@ -230,10 +221,6 @@ export class GatewayConnection {
   private heartbeatPingTimer: ReturnType<typeof setTimeout> | null = null;
   private msgRouter = new MessageRouter();
   private readonly HEARTBEAT_DEAD_MS = 90_000; // No traffic for 90s = dead
-
-  // ── Message Queue (buffer while disconnected) ──
-  private messageQueue: QueuedMessage[] = [];
-  private readonly MAX_QUEUE_SIZE = 50;
 
   // ── Last error for diagnostics (shown in OfflineOverlay) ──
   private lastError: string | null = null;
@@ -289,54 +276,6 @@ export class GatewayConnection {
   private stopHeartbeat() {
     if (this.heartbeatTimer) { clearTimeout(this.heartbeatTimer); this.heartbeatTimer = null; }
     if (this.heartbeatPingTimer) { clearTimeout(this.heartbeatPingTimer); this.heartbeatPingTimer = null; }
-  }
-
-  // ══════════════════════════════════════════════════════
-  // Message Queue Management
-  // ══════════════════════════════════════════════════════
-
-  enqueueMessage(
-    message: string,
-    attachments: any[] | undefined,
-    sessionKey: string | undefined,
-    idempotencyKey: string,
-    sessionId?: string,
-  ) {
-    if (this.messageQueue.length >= this.MAX_QUEUE_SIZE) {
-      throw new GatewayMessageQueueFullError(this.MAX_QUEUE_SIZE);
-    }
-    this.messageQueue.push({ message, attachments, sessionKey, idempotencyKey, sessionId });
-    debugLog('gateway', '[GW] 📦 Queued message — queue size:', this.messageQueue.length);
-  }
-
-  private async flushQueue() {
-    if (this.messageQueue.length === 0) return;
-    debugLog('gateway', '[GW] 📤 Flushing', this.messageQueue.length, 'queued messages');
-    const queued = [...this.messageQueue];
-    this.messageQueue = [];
-    for (let index = 0; index < queued.length; index += 1) {
-      const item = queued[index];
-      try {
-        await this.request('chat.send', {
-          sessionKey: item.sessionKey || 'agent:main:main',
-          message: item.message,
-          idempotencyKey: item.idempotencyKey,
-          ...(item.sessionId ? { sessionId: item.sessionId } : {}),
-          ...(item.attachments?.length ? { attachments: item.attachments } : {}),
-        });
-      } catch (err) {
-        debugError('gateway', '[GW] Failed to flush queued message:', err);
-        // Preserve the failed item and every item that had not been attempted.
-        // New messages queued concurrently remain behind this older batch.
-        this.messageQueue = [...queued.slice(index), ...this.messageQueue];
-        break;
-      }
-    }
-  }
-
-  /** Number of messages waiting in the offline queue */
-  getQueueSize(): number {
-    return this.messageQueue.length;
   }
 
   /** Returns true when the WebSocket is established and handshake succeeded */
@@ -600,7 +539,6 @@ export class GatewayConnection {
             void this.request('sessions.subscribe', {}).catch((error) => {
               debugWarn('gateway', '[GW] Unable to subscribe to session changes:', error);
             });
-            this.flushQueue();
           }
         } else {
           const err = response.error?.message || JSON.stringify(response);

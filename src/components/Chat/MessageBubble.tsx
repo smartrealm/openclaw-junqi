@@ -3,11 +3,11 @@ import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  Copy, Check, User, RefreshCw, RotateCcw, Pencil,
-  ChevronDown, ChevronRight, AlertTriangle, Trash2, Eye, Code2,
+  Copy, Check, User, RotateCcw, Pencil,
+  ChevronDown, ChevronRight, AlertTriangle, Eye, Code2,
   Sparkles, Bot, Globe, FileText,
   FileSpreadsheet, FileArchive, FileJson, FileCode2, Music, Film,
-  Kanban, Wrench, Brain, CheckCircle2, Info, GitFork, Loader2, LoaderCircle,
+  Kanban, Wrench, Brain, CheckCircle2, Info, GitFork, Loader2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -217,13 +217,12 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
 
 interface MessageBubbleProps {
   block: MessageBlock;
-  onEdit?: (messageId: string, content: string) => Promise<void>;
-  onResend?: (content: string) => void;
-  onRegenerate?: () => void;
+  onRecall?: (content: string) => void;
+  onRetry?: () => void;
   onErrorAction?: (action: string) => void;
-  onDelete?: () => void;
   deliveryStatus?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
   deliveryError?: string;
+  outboundAttachments?: Array<{ fileName: string; mimeType: string }>;
   historyTruncated?: boolean;
   historyTruncationReason?: string;
   onLoadFullMessage?: () => Promise<void>;
@@ -294,8 +293,8 @@ function FileCard({ path, meta }: { path: string; meta?: string }) {
 }
 
 // ── Action Button (icon-only, hover tooltip via title) ──
-function ActionBtn({ icon, label, onClick, danger, disabled }: {
-  icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean; disabled?: boolean;
+function ActionBtn({ icon, label, onClick, disabled }: {
+  icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean;
 }) {
   return (
     <button onClick={onClick} disabled={disabled}
@@ -304,7 +303,6 @@ function ActionBtn({ icon, label, onClick, danger, disabled }: {
         '[@media(pointer:coarse)]:h-[40px] [@media(pointer:coarse)]:w-[40px]',
         'hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text',
         'disabled:cursor-wait disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-aegis-text-muted',
-        danger && 'hover:bg-aegis-danger/10 hover:text-aegis-danger',
       )}
       title={label}
       aria-label={label}>
@@ -402,8 +400,9 @@ const markdownComponents = {
 };
 
 export const MessageBubble = memo(function MessageBubble({
-  block, onEdit, onResend, onRegenerate, onErrorAction, onDelete, collaborationAction,
-  deliveryStatus, deliveryError, historyTruncated, historyTruncationReason, onLoadFullMessage,
+  block, onRecall, onRetry, onErrorAction, collaborationAction,
+  deliveryStatus, deliveryError, outboundAttachments,
+  historyTruncated, historyTruncationReason, onLoadFullMessage,
 }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
   const agents = useGatewayDataStore((s) => s.agents);
@@ -418,13 +417,7 @@ export const MessageBubble = memo(function MessageBubble({
     || (activeAgentId === 'main' ? t('agents.mainAgent', 'Main Agent') : activeAgentId);
   const activeAgentLetter = activeAgentName.charAt(0) || 'M';
   const [copied, setCopied] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const [footerHovered, setFooterHovered] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState('');
-  const [editSaving, setEditSaving] = useState(false);
-  const [editRevision, setEditRevision] = useState(0);
-  const [errorActionDone, setErrorActionDone] = useState(false);
   const [loadingFullMessage, setLoadingFullMessage] = useState(false);
   const [fullMessageError, setFullMessageError] = useState('');
   const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
@@ -441,7 +434,6 @@ export const MessageBubble = memo(function MessageBubble({
   const contextOutputTokens = contextContent?.output ?? contextContent?.outputTokens ?? 0;
   const contextCacheRead = contextContent?.cacheRead ?? contextContent?.cacheReadInputTokens ?? 0;
   const contextCacheWrite = contextContent?.cacheWrite ?? contextContent?.cacheCreationInputTokens ?? 0;
-  const contextTotalTokens = contextInputTokens + contextOutputTokens + contextCacheRead + contextCacheWrite;
   const inlineUsageParts = [
     contextInputTokens ? `↑${ctxFmt(contextInputTokens)}` : '',
     contextOutputTokens ? `↓${ctxFmt(contextOutputTokens)}` : '',
@@ -450,24 +442,6 @@ export const MessageBubble = memo(function MessageBubble({
     contextContent?.contextPercent != null ? `${contextContent.contextPercent}% ${t('chat.context', '上下文')}` : '',
   ].filter(Boolean);
 
-  const submitEdit = async () => {
-    const nextContent = editText.trim();
-    if (!onEdit || editSaving || !nextContent) return;
-    if (nextContent === block.markdown.trim()) {
-      setIsEditing(false);
-      return;
-    }
-    setEditSaving(true);
-    try {
-      await onEdit(block.id, nextContent);
-      setEditRevision((revision) => revision + 1);
-      setIsEditing(false);
-    } catch (error) {
-      debugError('app', '[MessageBubble] Failed to edit user message:', error);
-    } finally {
-      setEditSaving(false);
-    }
-  };
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
   const content = block.markdown;
@@ -560,9 +534,7 @@ function stripInlineCodeTicks(md: string): string {
   return (
     <div
       className={clsx('group flex gap-2.5 items-start mx-1 mr-4 mb-2.5', isUser ? 'flex-row-reverse' : '')}
-      dir={dir}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}>
+      dir={dir}>
 
       {/* ── Avatar ── */}
       {isUser ? (
@@ -590,13 +562,8 @@ function stripInlineCodeTicks(md: string): string {
         style={{ width: '100%', maxWidth: 'min(640px, 72%)', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
 
         {/* Bubble */}
-
-        {/* Bubble */}
         <motion.div
-          key={`${block.id}-bubble-${editRevision}`}
-          initial={editRevision > 0 ? { opacity: 0.62, y: 3, scale: 0.995 } : false}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          key={`${block.id}-bubble`}
           className={clsx(
           'relative block rounded-xl py-2.5 transition-colors duration-150',
           'pl-4 pr-9 max-w-full box-border min-w-0 break-words group/bubble',
@@ -614,7 +581,7 @@ function stripInlineCodeTicks(md: string): string {
               the bubble border (4px inset). opacity-0 by default and reveals on
               bubble hover, focus, or after a successful copy. Sits in the
               reserved pr-9 gutter so it never overlaps text. */}
-          {!block.isStreaming && !isEditing && !isEmptyAssistantStreaming && (
+          {!block.isStreaming && !isEmptyAssistantStreaming && (
             <button onClick={handleCopy}
               className={clsx(
                 'absolute right-1 top-1 z-10',
@@ -671,40 +638,25 @@ function stripInlineCodeTicks(md: string): string {
             </div>
           )}
 
+          {outboundAttachments?.some((attachment) => !attachment.mimeType.startsWith('image/')) && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {outboundAttachments
+                .filter((attachment) => !attachment.mimeType.startsWith('image/'))
+                .map((attachment) => (
+                  <span
+                    key={`${attachment.fileName}:${attachment.mimeType}`}
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] px-2 py-1 text-[10.5px] text-aegis-text-muted"
+                    title={attachment.fileName}
+                  >
+                    <FileText size={11} className="shrink-0 text-aegis-primary" />
+                    <span className="truncate">{attachment.fileName}</span>
+                  </span>
+                ))}
+            </div>
+          )}
+
           {/* Content */}
-          {isEditing ? (
-            <motion.div
-              className="w-full"
-              initial={{ opacity: 0.72, y: 2 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.14, ease: 'easeOut' }}
-            >
-              <textarea autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                    event.preventDefault();
-                    void submitEdit();
-                  }
-                }}
-                className="w-full min-w-[320px] bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-2 text-[13px] text-aegis-text border border-aegis-border outline-none focus:border-aegis-primary/30 resize-y min-h-[60px]"
-                rows={Math.min(editText.split('\n').length + 1, 8)} />
-              <div className="flex gap-1.5 mt-1.5">
-                <motion.button
-                  type="button"
-                  onClick={() => { void submitEdit(); }}
-                  disabled={editSaving || !editText.trim()}
-                  whileTap={editSaving ? undefined : { scale: 0.96 }}
-                  className="inline-flex min-w-[58px] items-center justify-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50">
-                  {editSaving && <LoaderCircle size={11} className="animate-spin" aria-hidden="true" />}
-                  {editSaving ? t('chat.sending', 'Sending…') : t('chat.sendEdit', 'Send')}
-                </motion.button>
-                <button onClick={() => setIsEditing(false)} disabled={editSaving}
-                  className="px-2.5 py-1 rounded-lg text-[10px] font-semibold text-aegis-text-muted hover:text-aegis-text-secondary transition-colors disabled:cursor-not-allowed disabled:opacity-50">
-                  {t('chat.cancel', 'Cancel')}
-                </button>
-              </div>
-            </motion.div>
-          ) : block.isStreaming ? (
+          {block.isStreaming ? (
             <div className="flex flex-col gap-2">
               {content.trim() && (
                 <pre className="markdown-body text-[14px] leading-relaxed text-aegis-text whitespace-pre-wrap break-words font-[inherit]">
@@ -826,13 +778,11 @@ function stripInlineCodeTicks(md: string): string {
           {/* Error Action */}
           {errorAction && (
             <div className="mt-3 pt-2.5 border-t border-aegis-warning/15">
-              <button onClick={() => { setErrorActionDone(true); onErrorAction?.(errorAction.action); }}
-                disabled={errorActionDone}
+              <button onClick={() => { onErrorAction?.(errorAction.action); }}
                 className={clsx(
                   'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all',
                   'bg-aegis-warning/10 border border-aegis-warning/25 text-aegis-warning',
                   'hover:bg-aegis-warning/20 hover:border-aegis-warning/40',
-                  errorActionDone && 'opacity-40 pointer-events-none',
                 )}>
                 <AlertTriangle size={14} />
                 {t(errorAction.label, 'Reset Session')}
@@ -946,22 +896,16 @@ function stripInlineCodeTicks(md: string): string {
           )}>
             {/* Dot separator */}
             <span className="text-aegis-border text-[10px] select-none">·</span>
-            {/* Edit (user only) */}
-            {isUser && onEdit && (
-              <ActionBtn icon={<Pencil size={14} />} label={t('chat.edit', 'Edit')}
-                onClick={() => { setIsEditing(true); setEditText(block.markdown); }} />
+            {/* Recall copies the original text into the composer without mutating history. */}
+            {isUser && onRecall && (
+              <ActionBtn icon={<Pencil size={14} />} label={t('chat.recallToInput', 'Edit in composer')}
+                onClick={() => onRecall(block.markdown)} />
             )}
 
-            {/* Regenerate (assistant only) */}
-            {!isUser && onRegenerate && (
-              <ActionBtn icon={<RefreshCw size={14} />} label={t('chat.regenerate', 'Regenerate')}
-                onClick={onRegenerate} />
-            )}
-
-            {/* Retry (user only, as resend) */}
-            {isUser && onResend && (
-              <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.resend', 'Resend')}
-                onClick={() => onResend(block.markdown)} />
+            {/* Retry is available only for a delivery that actually failed. */}
+            {isUser && onRetry && (
+              <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.retryDelivery', 'Retry delivery')}
+                onClick={onRetry} />
             )}
 
             {isUser && collaborationAction && (
@@ -979,11 +923,6 @@ function stripInlineCodeTicks(md: string): string {
               />
             )}
 
-            {/* Delete */}
-            {onDelete && (
-              <ActionBtn icon={<Trash2 size={14} />} label={t('chat.delete', 'Delete')}
-                onClick={onDelete} danger />
-            )}
           </span>
         </div>
 

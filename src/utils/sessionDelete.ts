@@ -69,6 +69,19 @@ function clearDeletedSessionLocalPrefs(sessionKey: string): void {
   removeLocalStorageMapEntry(SESSION_TOPIC_PREFS_KEY, sessionKey);
 }
 
+function resumeQueuedMessages(sessionKey: string): void {
+  queueMicrotask(() => {
+    const chat = useChatStore.getState();
+    if (
+      chat.connected
+      && !chat.typingBySession[sessionKey]
+      && (chat.messageQueue[sessionKey]?.length ?? 0) > 0
+    ) {
+      void chat.drainQueue(sessionKey);
+    }
+  });
+}
+
 export function applyConfirmedSessionDeletion(rawSessionKey: string, confirmedSessionId?: string): boolean {
   const sessionKey = normalizeSessionKey(rawSessionKey);
   if (!sessionKey || isAgentMainSession(sessionKey)) return false;
@@ -98,7 +111,10 @@ async function performSessionDeletion(sessionKey: string): Promise<boolean> {
     const response = result !== null && typeof result === 'object' && !Array.isArray(result)
       ? result as Record<string, unknown>
       : null;
-    if (response?.cancelled === true) return false;
+    if (response?.cancelled === true) {
+      resumeQueuedMessages(sessionKey);
+      return false;
+    }
     const confirmed = response?.success === true
       || response?.ok === true
       || response?.deleted === true;
@@ -110,6 +126,7 @@ async function performSessionDeletion(sessionKey: string): Promise<boolean> {
   } catch (error) {
     sessionDeleteDeps.warn('[sessionDelete] gateway.deleteSession failed:', error);
     sessionDeleteDeps.notifyFailure(errorMessage(error));
+    resumeQueuedMessages(sessionKey);
     return false;
   }
 

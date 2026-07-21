@@ -20,97 +20,22 @@ import type { FileRef } from '@/types/RenderBlock';
 // Parses [[workshop:action ...]] commands from agent messages
 interface WorkshopCommandResult {
   cleanContent: string;
-  executed: string[];
+  blockedCount: number;
 }
 
-type WorkshopPriority = 'high' | 'medium' | 'low';
-type WorkshopStatus = 'queue' | 'inProgress' | 'review' | 'done';
-
-async function parseAndExecuteWorkshopCommands(content: string): Promise<WorkshopCommandResult> {
-  const executed: string[] = [];
+function sanitizeWorkshopCommands(content: string): WorkshopCommandResult {
   if (!content.includes('[[workshop:')) {
-    return { cleanContent: content.trim(), executed };
+    return { cleanContent: content.trim(), blockedCount: 0 };
   }
 
-  const { useWorkshopStore } = await import('@/stores/workshopStore');
-  const store = useWorkshopStore.getState();
-
-  // Pattern: [[workshop:action param1="value1" param2="value2"]]
+  let blockedCount = 0;
   const commandRegex = /\[\[workshop:(\w+)((?:\s+\w+="[^"]*")*)\]\]/g;
-
-  const cleanContent = content.replace(commandRegex, (_match, action, paramsStr) => {
-    try {
-      // Parse params
-      const params: Record<string, string> = {};
-      const paramRegex = /(\w+)="([^"]*)"/g;
-      let paramMatch;
-      while ((paramMatch = paramRegex.exec(paramsStr)) !== null) {
-        params[paramMatch[1]] = paramMatch[2];
-      }
-
-      switch (action) {
-        case 'add': {
-          const title = params.title || 'Untitled Task';
-          const priority = (params.priority as WorkshopPriority) || 'medium';
-          const description = params.description || '';
-          const assignedAgent = params.agent || undefined;
-
-          store.addTask({ title, priority, description, assignedAgent });
-          executed.push(`✅ Added task: "${title}"`);
-          break;
-        }
-
-        case 'move': {
-          const id = params.id;
-          const status = params.status as WorkshopStatus;
-          if (id && status && ['queue', 'inProgress', 'done'].includes(status)) {
-            store.moveTask(id, status);
-            executed.push(`✅ Moved task to ${status}`);
-          } else {
-            executed.push(`⚠️ Invalid move command`);
-          }
-          break;
-        }
-
-        case 'delete': {
-          const id = params.id;
-          if (id) {
-            store.deleteTask(id);
-            executed.push(`✅ Deleted task`);
-          } else {
-            executed.push(`⚠️ Invalid delete command`);
-          }
-          break;
-        }
-
-        case 'progress': {
-          const id = params.id;
-          const progress = parseInt(params.value || '0', 10);
-          if (id && !isNaN(progress)) {
-            store.setProgress(id, Math.min(100, Math.max(0, progress)));
-            executed.push(`✅ Updated progress to ${progress}%`);
-          }
-          break;
-        }
-
-        case 'list': {
-          const tasks = store.tasks;
-          const summary = tasks.map(t => `- [${t.status}] ${t.title}`).join('\n');
-          executed.push(`📋 Tasks:\n${summary}`);
-          break;
-        }
-
-        default:
-          executed.push(`⚠️ Unknown workshop command: ${action}`);
-      }
-    } catch (err) {
-      executed.push(`❌ Error executing command: ${err}`);
-    }
-
-    return ''; // Remove the command from displayed content
+  const cleanContent = content.replace(commandRegex, () => {
+    blockedCount += 1;
+    return '';
   });
 
-  return { cleanContent: cleanContent.trim(), executed };
+  return { cleanContent: cleanContent.trim(), blockedCount };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -346,19 +271,17 @@ export class ChatHandler {
 
     finalText = stripDirectives(finalText || '');
 
-    const { cleanContent, executed } = await parseAndExecuteWorkshopCommands(finalText);
-    const workshopEvents =
-      executed.length > 0
-        ? executed.map((text) => ({
-          kind: text.startsWith('⚠️') ? 'warning' : 'info',
-          text,
-        }))
-        : [];
-    if (executed.length > 0) {
-      finalText = cleanContent + (cleanContent ? '\n\n' : '') + executed.join('\n');
-    } else {
-      finalText = cleanContent || finalText;
-    }
+    const { cleanContent, blockedCount } = sanitizeWorkshopCommands(finalText);
+    const workshopEvents = blockedCount > 0
+      ? [{
+          kind: 'warning',
+          text: i18n.t(
+            'chat.untrustedWorkshopCommandIgnored',
+            'An untrusted text command was ignored. Use an authorized workspace action instead.',
+          ),
+        }]
+      : [];
+    finalText = cleanContent || (blockedCount > 0 ? '' : finalText);
 
     const btnResult = parseButtons(finalText);
     if (btnResult.buttons.length > 0) {

@@ -10,6 +10,7 @@ import type {
 } from './SessionMutationCoordinator';
 import { requestSessionMutationDialog } from './sessionMutationDialogStore';
 import { isCollaborationMethodUnavailable as isExactCollaborationMethodUnavailable } from './client';
+import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
 
 export interface SessionLifecycleMutationOutcome {
   success: boolean;
@@ -92,6 +93,14 @@ export async function executeSessionLifecycleMutation(
   const key = sessionKey.trim();
   if (!key) throw new Error('sessionKey is required');
 
+  return sessionMutationGate.run(key, () => executeGuardedSessionLifecycleMutation(key, action));
+}
+
+async function executeGuardedSessionLifecycleMutation(
+  key: string,
+  action: SessionMutationAction,
+): Promise<SessionLifecycleMutationOutcome> {
+
   const sessionId = await resolveSessionId(key);
   let capabilities: CollaborationCapabilities | null = null;
   try {
@@ -133,6 +142,9 @@ async function executeNativeSessionMutation(
   action: SessionMutationAction,
   sessionId: string | null,
 ): Promise<SessionLifecycleMutationOutcome> {
+  if (useChatStore.getState().typingBySession[sessionKey]) {
+    await gateway.abortChat(sessionKey);
+  }
   const coreResult = action === 'delete'
     ? await dependencies.deleteSession(sessionKey, true)
     : await dependencies.resetSession(sessionKey);

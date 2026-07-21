@@ -16,6 +16,8 @@ type HistoryLikeMessage = {
   isStreaming?: boolean;
   responseState?: 'streaming' | 'final' | 'error' | 'aborted';
   attachments?: unknown[];
+  outboundAttachments?: Array<{ fileName: string; mimeType: string }>;
+  retryPayload?: unknown;
 };
 
 function normalizeWhitespace(value: string): string {
@@ -118,6 +120,7 @@ export function reconcileHistoryMessageIds<T extends HistoryLikeMessage>(
     const previousMessage = previous[previousIndex];
     if (!previousMessage) return message;
     const attachments = message.attachments ?? previousMessage.attachments;
+    const outboundAttachments = message.outboundAttachments ?? previousMessage.outboundAttachments;
     const status = message.status ?? (previousMessage.status ? 'sent' : undefined);
     return {
       ...message,
@@ -125,6 +128,10 @@ export function reconcileHistoryMessageIds<T extends HistoryLikeMessage>(
       clientMessageId: message.clientMessageId ?? previousMessage.clientMessageId,
       nativeMessageId: message.nativeMessageId ?? previousMessage.nativeMessageId,
       ...(attachments !== undefined ? { attachments } : {}),
+      ...(outboundAttachments !== undefined ? { outboundAttachments } : {}),
+      ...(previousMessage.retryPayload !== undefined && status !== 'sent'
+        ? { retryPayload: previousMessage.retryPayload }
+        : {}),
       ...(status !== undefined ? { status } : {}),
       ...(previousMessage.deliveryError !== undefined ? { deliveryError: undefined } : {}),
     };

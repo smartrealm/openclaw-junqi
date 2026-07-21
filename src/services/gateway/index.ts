@@ -6,6 +6,7 @@
 
 import {
   GatewayConnection,
+  GatewayDisconnectedError,
   type GatewayCallbacks,
   type GatewayRequestOptions,
   type GatewayConnectionOptions,
@@ -234,8 +235,6 @@ export const gateway = {
     sessionKey = 'agent:main:main',
     identity: { clientMessageId?: string; sessionId?: string } = {},
   ) {
-    await sessionCommandCoordinator.waitForPending(sessionKey);
-
     const gwAttachments = attachments?.map((att) => {
       let rawBase64 = att.content || '';
       if (rawBase64.startsWith('data:')) {
@@ -249,23 +248,21 @@ export const gateway = {
       };
     });
 
-    // Queue if disconnected
-    if (!connection.isConnected()) {
-      const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
-      connection.enqueueMessage(message, gwAttachments, sessionKey, clientMessageId, identity.sessionId);
-      return { queued: true, queueSize: connection.getQueueSize(), clientMessageId };
-    }
-
-    // Enable reasoning stream lazily only when the user actually sends a message.
-    await connection.ensureReasoningStream(sessionKey);
-
     const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
-    return connection.request('chat.send', {
-      sessionKey,
-      ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
-      message,
-      idempotencyKey: clientMessageId,
-      ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
+    return sessionCommandCoordinator.runMutation(sessionKey, async () => {
+      // The renderer owns the only visible, cancellable retry queue. Keeping a
+      // second transport queue would acknowledge work that the UI cannot inspect.
+      if (!connection.isConnected()) throw new GatewayDisconnectedError();
+
+      // Enable reasoning stream lazily only when the user actually sends a message.
+      await connection.ensureReasoningStream(sessionKey);
+      return connection.request('chat.send', {
+        sessionKey,
+        ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
+        message,
+        idempotencyKey: clientMessageId,
+        ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
+      });
     });
   },
 
@@ -299,31 +296,49 @@ export const gateway = {
       ...(agentId ? { agentId } : {}),
     });
   },
-  async abortChat(sessionKey = 'agent:main:main') { return connection.request('chat.abort', { sessionKey }); },
-  async compactSession(sessionKey = 'agent:main:main') {
-    return connection.request('chat.send', {
+  async abortChat(sessionKey = 'agent:main:main') {
+    return sessionCommandCoordinator.runMutation(
       sessionKey,
-      message: '/compact',
-      idempotencyKey: `aegis-compact-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    });
+      () => connection.request('chat.abort', { sessionKey }),
+    );
+  },
+  async compactSession(sessionKey = 'agent:main:main') {
+    return sessionCommandCoordinator.runMutation(
+      sessionKey,
+      () => connection.request('chat.send', {
+        sessionKey,
+        message: '/compact',
+        idempotencyKey: `aegis-compact-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      }),
+    );
   },
 
   // Session Lifecycle
   async deleteSession(sessionKey: string, deleteTranscript = true, expectedSessionId?: string) {
-    const result = await connection.request('sessions.delete', {
-      key: sessionKey,
-      deleteTranscript,
-      ...(expectedSessionId ? { expectedSessionId } : {}),
-    });
-    assertVerifiedSessionMutationResult(result, 'delete', sessionKey);
-    await cleanupSessionArtifacts(sessionKey);
-    return result;
+    return sessionCommandCoordinator.runMutation(
+      sessionKey,
+      async () => {
+        const result = await connection.request('sessions.delete', {
+          key: sessionKey,
+          deleteTranscript,
+          ...(expectedSessionId ? { expectedSessionId } : {}),
+        });
+        assertVerifiedSessionMutationResult(result, 'delete', sessionKey);
+        await cleanupSessionArtifacts(sessionKey);
+        return result;
+      },
+    );
   },
   async resetSession(sessionKey: string) {
-    const result = await connection.request('sessions.reset', { key: sessionKey });
-    assertVerifiedSessionMutationResult(result, 'reset', sessionKey);
-    await cleanupSessionArtifacts(sessionKey);
-    return result;
+    return sessionCommandCoordinator.runMutation(
+      sessionKey,
+      async () => {
+        const result = await connection.request('sessions.reset', { key: sessionKey });
+        assertVerifiedSessionMutationResult(result, 'reset', sessionKey);
+        await cleanupSessionArtifacts(sessionKey);
+        return result;
+      },
+    );
   },
   async deleteSessionFenced(
     sessionKey: string,
@@ -331,24 +346,34 @@ export const gateway = {
     expectedSessionId: string,
     expectedConnectionId: string,
   ) {
-    const result = await connection.requestFenced('sessions.delete', {
-      key: sessionKey,
-      deleteTranscript,
-      expectedSessionId,
-    }, expectedConnectionId);
-    assertVerifiedSessionMutationResult(result, 'delete', sessionKey);
-    await cleanupSessionArtifacts(sessionKey);
-    return result;
+    return sessionCommandCoordinator.runMutation(
+      sessionKey,
+      async () => {
+        const result = await connection.requestFenced('sessions.delete', {
+          key: sessionKey,
+          deleteTranscript,
+          expectedSessionId,
+        }, expectedConnectionId);
+        assertVerifiedSessionMutationResult(result, 'delete', sessionKey);
+        await cleanupSessionArtifacts(sessionKey);
+        return result;
+      },
+    );
   },
   async resetSessionFenced(sessionKey: string, expectedConnectionId: string) {
-    const result = await connection.requestFenced(
-      'sessions.reset',
-      { key: sessionKey },
-      expectedConnectionId,
+    return sessionCommandCoordinator.runMutation(
+      sessionKey,
+      async () => {
+        const result = await connection.requestFenced(
+          'sessions.reset',
+          { key: sessionKey },
+          expectedConnectionId,
+        );
+        assertVerifiedSessionMutationResult(result, 'reset', sessionKey);
+        await cleanupSessionArtifacts(sessionKey);
+        return result;
+      },
     );
-    assertVerifiedSessionMutationResult(result, 'reset', sessionKey);
-    await cleanupSessionArtifacts(sessionKey);
-    return result;
   },
 
   // Session Settings
@@ -395,9 +420,6 @@ export const gateway = {
   },
   async getSessionTimeseries(key: string) { return connection.request('sessions.usage.timeseries', { key }); },
   async getSessionLogs(key: string, limit = 200) { return connection.request('sessions.usage.logs', { key, limit }); },
-
-  // Queue
-  getQueueSize() { return connection.getQueueSize(); },
 
   // Pairing
   getHttpBaseUrl() { return connection.getHttpBaseUrl(); },

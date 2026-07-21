@@ -42,7 +42,6 @@ export default function QuickChatRoot() {
         if (!isOwnedQuickChatSession(eventSessionKey, sessionKey)) return;
         voiceRuntime.finishStream(eventSessionKey, content, meta?.state ?? 'final', messageId, media?.mediaUrl);
         const store = useChatStore.getState();
-        store.setIsTyping(false, eventSessionKey);
         store.finalizeStreamingMessage(messageId, content, {
           ...(media ? { mediaUrl: media.mediaUrl, mediaType: media.mediaType } : {}),
           ...(meta?.runId ? { runId: meta.runId } : {}),
@@ -54,12 +53,19 @@ export default function QuickChatRoot() {
           ...(meta?.usage ? { usage: meta.usage } : {}),
           ...(meta?.model ? { model: meta.model } : {}),
         }, eventSessionKey);
+        store.setIsTyping(false, eventSessionKey);
       },
       onStatusChange: (status) => {
         if (!status.connected && !status.connecting) {
           voiceRuntime.interruptAll({ broadcast: false, preserveRemote: true });
         }
         useChatStore.getState().setConnectionStatus(status);
+        if (status.connected) {
+          const store = useChatStore.getState();
+          if ((store.messageQueue[sessionKey]?.length ?? 0) > 0 && !store.typingBySession[sessionKey]) {
+            void store.drainQueue(sessionKey);
+          }
+        }
       },
       onScopeError: (error) => useChatStore.getState().setConnectionStatus({
         connected: false,
@@ -75,9 +81,25 @@ export default function QuickChatRoot() {
         error: error instanceof Error ? error.message : String(error),
       });
     });
+    const unsubscribeQueue = useChatStore.subscribe((state, previous) => {
+      if (
+        previous.typingBySession[sessionKey] === true
+        && state.typingBySession[sessionKey] === false
+        && (state.messageQueue[sessionKey]?.length ?? 0) > 0
+      ) {
+        void state.drainQueue(sessionKey);
+      }
+    });
     return () => {
+      unsubscribeQueue();
       voiceRuntime.interrupt(sessionKey);
-      lease.release();
+      const store = useChatStore.getState();
+      store.clearQueue(sessionKey);
+      if (store.typingBySession[sessionKey]) {
+        void gateway.abortChat(sessionKey).catch(() => undefined).finally(() => lease.release());
+      } else {
+        lease.release();
+      }
     };
   }, [sessionKey]);
 

@@ -1,0 +1,362 @@
+# JunQi Desktop tagged release.
+#
+# The collaboration evidence workflow remains a stricter candidate pipeline.
+# This workflow preserves the established desktop distribution contract: a
+# version tag may publish only the exact, CI-approved commit already contained
+# in main, and every external action is pinned to a reviewed immutable SHA.
+
+name: Tagged Desktop Release
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: tagged-desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  NODE_VERSION: "22.23.1"
+
+jobs:
+  verify:
+    name: Verify release source
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      source-sha: ${{ steps.release.outputs.source_sha }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify version, tag target, and main ancestry
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="$GITHUB_REF_NAME"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Unsupported release tag: $tag"
+            exit 1
+          fi
+
+          package_version="$(jq -r '.version' package.json)"
+          cargo_version="$(awk -F\" '/^version[[:space:]]*=/ { print $2; exit }' src-tauri/Cargo.toml)"
+          tauri_version="$(jq -r '.version' src-tauri/tauri.conf.json)"
+          tag_version="${tag#v}"
+          if [[ "$package_version" != "$cargo_version" ]]; then
+            echo "::error::Desktop version mismatch: package=$package_version cargo=$cargo_version tauri=$tauri_version"
+            exit 1
+          fi
+          if [[ "$package_version" != "$tauri_version" ]]; then
+            echo "::error::Desktop version mismatch: package=$package_version cargo=$cargo_version tauri=$tauri_version"
+            exit 1
+          fi
+          if [[ "$tag_version" != "$package_version" ]]; then
+            echo "::error::Tag $tag does not match desktop version $package_version"
+            exit 1
+          fi
+
+          source_sha="$(git rev-parse 'HEAD^{commit}')"
+          tag_sha="$(git rev-parse "refs/tags/${tag}^{commit}")"
+          if [[ "$source_sha" != "$tag_sha" ]]; then
+            echo "::error::Checkout, event, and tag do not identify one immutable commit"
+            exit 1
+          fi
+          if [[ "$source_sha" != "$GITHUB_SHA" ]]; then
+            echo "::error::Checkout, event, and tag do not identify one immutable commit"
+            exit 1
+          fi
+
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$source_sha" origin/main; then
+            echo "::error::Tagged commit $source_sha is not contained in origin/main"
+            exit 1
+          fi
+
+          {
+            printf 'source_sha=%s\n' "$source_sha"
+            printf 'tag=%s\n' "$tag"
+            printf 'version=%s\n' "$package_version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require successful CI for the exact tagged commit
+        timeout-minutes: 32
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          readonly deadline="$(( $(date +%s) + 1800 ))"
+          readonly api_path="/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?event=push&head_sha=${SOURCE_SHA}&per_page=100"
+
+          while true; do
+            response="$(gh api "$api_path")"
+            successful_url="$(jq -r --arg sha "$SOURCE_SHA" '
+              [.workflow_runs[]? | select(.head_sha == $sha and .event == "push" and .status == "completed" and .conclusion == "success")]
+              | sort_by(.updated_at // .created_at // "") | last | .html_url // empty
+            ' <<<"$response")"
+            if [[ -n "$successful_url" ]]; then
+              echo "Verified CI for $SOURCE_SHA: $successful_url"
+              break
+            fi
+
+            failed_count="$(jq --arg sha "$SOURCE_SHA" '[.workflow_runs[]? | select(.head_sha == $sha and .event == "push" and .status == "completed" and .conclusion != "success")] | length' <<<"$response")"
+            active_count="$(jq --arg sha "$SOURCE_SHA" '[.workflow_runs[]? | select(.head_sha == $sha and .event == "push" and .status != "completed")] | length' <<<"$response")"
+            if [[ "$failed_count" -gt 0 && "$active_count" -eq 0 ]]; then
+              echo "::error::CI completed without success for tagged commit $SOURCE_SHA"
+              exit 1
+            fi
+            if [[ "$(date +%s)" -ge "$deadline" ]]; then
+              echo "::error::Timed out waiting for CI on tagged commit $SOURCE_SHA"
+              exit 1
+            fi
+            echo "Waiting for CI on $SOURCE_SHA; retrying in 15 seconds."
+            sleep 15
+          done
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: verify
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS ARM64
+            artifact_name: macos-arm64
+            platform: macos-15
+            target: 'aarch64-apple-darwin'
+            bundle_args: '--bundles app,dmg'
+            asset_paths: |
+              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+              src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
+              src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+          - name: macOS x64
+            artifact_name: macos-x86_64
+            platform: macos-15-intel
+            target: 'x86_64-apple-darwin'
+            bundle_args: '--bundles app,dmg'
+            asset_paths: |
+              src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+              src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
+              src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+          - name: Windows x64
+            artifact_name: windows-x86_64
+            platform: windows-latest
+            target: 'x86_64-pc-windows-msvc'
+            bundle_args: '--bundles nsis,msi'
+            asset_paths: |
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi.sig
+          - name: Windows ARM64
+            artifact_name: windows-arm64
+            platform: windows-11-arm
+            target: 'aarch64-pc-windows-msvc'
+            bundle_args: '--bundles nsis,msi'
+            asset_paths: |
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/*.msi
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/*.msi.sig
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.verify.outputs.source-sha }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # pinned 1.96.0
+        with:
+          toolchain: 1.96.0
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build signed updater artifacts and installers
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+        with:
+          args: --target ${{ matrix.target }} ${{ matrix.bundle_args }}
+
+      - name: Verify macOS disk image
+        if: runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=("src-tauri/target/${TARGET}/release/bundle/dmg/"*.dmg)
+          [[ ${#dmgs[@]} -eq 1 ]] || { echo "Expected exactly one DMG, found ${#dmgs[@]}"; exit 1; }
+          hdiutil verify "${dmgs[0]}"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: junqi-tag-${{ matrix.artifact_name }}-${{ github.run_id }}
+          overwrite: true
+          path: ${{ matrix.asset_paths }}
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.verify.outputs.source-sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download exact workflow artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: junqi-tag-*-${{ github.run_id }}
+          path: release-assets
+
+      - name: Normalize macOS updater names
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          normalize_updater() {
+            local artifact_name="$1"
+            local architecture="$2"
+            local source_dir="release-assets/junqi-tag-${artifact_name}-${GITHUB_RUN_ID}"
+            mapfile -d '' sources < <(find "$source_dir" -type f -name '*.app.tar.gz' -print0)
+            [[ ${#sources[@]} -eq 1 ]] || { echo "::error::Expected one updater in $source_dir"; exit 1; }
+            local target="$source_dir/JunQi Desktop_${VERSION}_${architecture}.app.tar.gz"
+            [[ -f "${sources[0]}.sig" ]] || { echo "::error::Missing updater signature for ${sources[0]}"; exit 1; }
+            mv "${sources[0]}" "$target"
+            mv "${sources[0]}.sig" "$target.sig"
+          }
+          normalize_updater macos-arm64 aarch64
+          normalize_updater macos-x86_64 x64
+
+      - name: Generate updater manifest
+        env:
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/generate-updater-manifest.mjs \
+            --assets-dir release-assets \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" \
+            --version "$VERSION" \
+            --notes "JunQi Desktop $VERSION" \
+            --output release-assets/latest.json
+
+      - name: Validate immutable release asset set
+        shell: bash
+        run: |
+          set -euo pipefail
+          declare -A names=()
+          asset_count=0
+          while IFS= read -r -d '' asset; do
+            name="$(basename "$asset")"
+            if [[ -n "${names[$name]:-}" ]]; then
+              echo "::error::Duplicate release asset name: $name"
+              exit 1
+            fi
+            names[$name]=1
+            asset_count=$((asset_count + 1))
+          done < <(find release-assets -type f -print0)
+          [[ "$asset_count" -eq 19 ]] || { echo "::error::Expected 19 release assets, found $asset_count"; exit 1; }
+
+      - name: Create verified GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $RELEASE_TAG already exists; refusing to overwrite assets"
+            exit 1
+          fi
+
+          assets=()
+          while IFS= read -r -d '' asset; do
+            assets+=("$asset")
+          done < <(find release-assets -type f -print0 | sort -z)
+
+          gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "JunQi Desktop $VERSION" \
+            --notes "JunQi Desktop $VERSION。安装包包含 macOS ARM64/x64 与 Windows x64/ARM64；附件 .sig 用于应用更新完整性验证。"
+
+  summary:
+    name: Release Summary
+    needs: [verify, build, publish]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report result
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+        shell: bash
+        run: |
+          {
+            echo "## JunQi Desktop $RELEASE_TAG"
+            echo
+            echo "| Stage | Result |"
+            echo "|---|---|"
+            echo "| Four-platform build | $BUILD_RESULT |"
+            echo "| GitHub Release | $PUBLISH_RESULT |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [[ "$BUILD_RESULT" == success && "$PUBLISH_RESULT" == success ]]

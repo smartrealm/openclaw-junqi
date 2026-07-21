@@ -18,9 +18,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { X, FileText, Folder, Sparkles, Minus, Maximize2, GripVertical, Square } from 'lucide-react';
+import { X, FileText, Folder, Sparkles, GripVertical, Square } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
+import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { AudioPlayer } from '@/components/Chat/AudioPlayer';
@@ -41,17 +42,24 @@ interface SeedFile {
 }
 
 const EMPTY_MESSAGES: ReturnType<typeof useChatStore.getState>['messages'] = [];
+const EMPTY_QUEUE: ReturnType<typeof useChatStore.getState>['messageQueue'][string] = [];
 
-function parseName(p: string): SeedFile {
-  // Strip file:// prefix that some OSes tack on, also handle URLs.
-  let path = p;
-  if (path.startsWith('file://')) path = path.slice(7);
-  // On Windows file:///C:/..., strip extra /
-  if (path.startsWith('file:')) path = path.slice(5);
-  const cleaned = path.split('/').pop() || path;
-  // Heuristic: dir = no dot in last segment (most files have ext)
-  const isDir = !cleaned.includes('.');
-  return { path, name: cleaned, isDir };
+function normalizeDroppedPath(input: string): string {
+  if (!input.startsWith('file:')) return input;
+  try {
+    const decoded = decodeURIComponent(new URL(input).pathname);
+    return /^\/[A-Za-z]:\//.test(decoded) ? decoded.slice(1) : decoded;
+  } catch {
+    return input.replace(/^file:\/\/+/, '');
+  }
+}
+
+async function inspectSeedFile(input: string): Promise<SeedFile> {
+  const path = normalizeDroppedPath(input);
+  const name = path.split(/[\\/]/).filter(Boolean).pop() || path;
+  const { stat } = await import('@tauri-apps/plugin-fs');
+  const metadata = await stat(path);
+  return { path, name, isDir: metadata.isDirectory };
 }
 
 export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: string } = {}) {
@@ -62,9 +70,13 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   const [files, setFiles] = useState<SeedFile[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [streamedReply, setStreamedReply] = useState('');
+  const [sendError, setSendError] = useState('');
   const [fallbackSessionKey] = useState(() => `quickchat:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`);
   const sessionKey = ownedSessionKey || fallbackSessionKey;
+  const isTyping = useChatStore((state) => Boolean(state.typingBySession[sessionKey]));
+  const queue = useChatStore((state) => state.messageQueue[sessionKey] ?? EMPTY_QUEUE);
+  const queueCount = queue.length;
+  const failedQueuedMessage = queue.find((message) => message.failed);
   const voiceOutputActive = useVoiceStore((state) =>
     state.remoteOutput !== null
       || ((state.phase === 'queued' || state.phase === 'speaking') && state.sessionKey === sessionKey),
@@ -94,8 +106,15 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   // has its own event bus, separate from the main window — that's exactly
   // what we want, so per-window fresh sessions don't pollute the main
   // store's seed key.
-  const applySeed = useCallback((paths: string[]) => {
-    const parsed = paths.map(parseName);
+  const applySeed = useCallback(async (paths: string[]) => {
+    const inspected = await Promise.allSettled(paths.map(inspectSeedFile));
+    const parsed = inspected.flatMap((result) => (
+      result.status === 'fulfilled' ? [result.value] : []
+    ));
+    if (parsed.length === 0 && paths.length > 0) {
+      setSendError(t('pet.quickChat.resourceReadFailed'));
+      return;
+    }
     setFiles(parsed);
     setText((current) => {
       if (current) return current;
@@ -117,11 +136,11 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   useEffect(() => {
     let disposed = false;
     const unlisten = subscribeTauriEvent<string[]>('quickchat:seed', (e) => {
-      if (!disposed) applySeed(e.payload);
+      if (!disposed) void applySeed(e.payload);
     });
     void invoke<string[]>('get_quickchat_seed')
       .then((initial) => {
-        if (!disposed && initial.length > 0) applySeed(initial);
+        if (!disposed && initial.length > 0) void applySeed(initial);
       })
       .catch(() => undefined);
     return () => {
@@ -135,9 +154,10 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || !connected) return;
     voiceRuntime.interruptGlobally(sessionKey);
     setSending(true);
+    setSendError('');
 
     const directoryLines = files
       .filter((file) => file.isDir)
@@ -174,13 +194,31 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         displayAttachments: displayAttachments(prepared),
       });
       setText('');
+      setFiles([]);
     } catch (err: any) {
-      setStreamedReply(t('pet.quickChat.sendError', { error: err?.message ?? String(err) }));
+      setSendError(t('pet.quickChat.sendError', { error: err?.message ?? String(err) }));
     } finally {
       setSending(false);
       setTimeout(() => messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }), 30);
     }
-  }, [text, sending, files, sessionKey, t]);
+  }, [text, sending, connected, files, sessionKey, t]);
+
+  const handleRetryQueuedMessage = useCallback(async () => {
+    if (!failedQueuedMessage) return;
+    setSendError('');
+    await useChatStore.getState().retryQueuedMessage(sessionKey, failedQueuedMessage.id);
+  }, [failedQueuedMessage, sessionKey]);
+
+  const handleStop = useCallback(async () => {
+    voiceRuntime.interruptGlobally(sessionKey);
+    useChatStore.getState().clearQueue(sessionKey);
+    if (!useChatStore.getState().typingBySession[sessionKey]) return;
+    try {
+      await gateway.abortChat(sessionKey);
+    } finally {
+      useChatStore.getState().setIsTyping(false, sessionKey);
+    }
+  }, [sessionKey]);
 
   const handleKey = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -190,8 +228,13 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   }, [handleSend]);
 
   const handleClose = useCallback(async () => {
+    if (useChatStore.getState().typingBySession[sessionKey]) {
+      await handleStop().catch(() => undefined);
+    } else {
+      useChatStore.getState().clearQueue(sessionKey);
+    }
     try { await invoke('close_quickchat'); } catch {}
-  }, []);
+  }, [handleStop, sessionKey]);
 
   return (
     <div className="flex flex-col h-screen bg-black/40 backdrop-blur-xl text-aegis-text select-none">
@@ -253,15 +296,30 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
             <div className="text-[11px] opacity-70">{t('pet.quickChat.emptyHint')}</div>
           </div>
         )}
-        {(lastAssistant || streamedReply || lastAssistantAudio) && (
+        {(lastAssistant || lastAssistantAudio) && (
           <div className="whitespace-pre-wrap break-words animate-in fade-in slide-in-from-bottom-2 duration-200">
-            {streamedReply || lastAssistant}
-            {sending && <span className="inline-block w-1.5 h-3.5 bg-aegis-primary ml-0.5 align-middle animate-pulse" />}
+            {lastAssistant}
+            {isTyping && <span className="inline-block w-1.5 h-3.5 bg-aegis-primary ml-0.5 align-middle animate-pulse" />}
             {lastAssistantAudio && lastAssistantComplete && (
               <div className="mt-2">
                 <AudioPlayer src={lastAssistantAudio} sessionKey={sessionKey} trackVoiceOutput />
               </div>
             )}
+          </div>
+        )}
+        {sendError && <div className="mt-2 text-[11px] text-aegis-danger">{sendError}</div>}
+        {failedQueuedMessage && (
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-aegis-danger">
+            <span className="min-w-0 flex-1 truncate" title={failedQueuedMessage.error}>
+              {failedQueuedMessage.error || t('chat.sendFailed')}
+            </span>
+            <button
+              type="button"
+              onClick={() => { void handleRetryQueuedMessage(); }}
+              className="shrink-0 rounded-md border border-aegis-danger/30 px-2 py-1 font-medium hover:bg-aegis-danger/10"
+            >
+              {t('common.retry')}
+            </button>
           </div>
         )}
       </div>
@@ -282,26 +340,39 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         />
         <div className="flex items-center justify-between mt-1.5 px-0.5">
           <div className="text-[10px] text-aegis-text-dim opacity-60">
-            {text.length > 0 && t('pet.quickChat.characterCount', { count: text.length })}
+            {queueCount > 0
+              ? t('chat.queueMore', { n: queueCount })
+              : text.length > 0 && t('pet.quickChat.characterCount', { count: text.length })}
           </div>
-          <button
-            onClick={voiceOutputActive ? () => voiceRuntime.interruptGlobally(sessionKey) : handleSend}
-            disabled={voiceOutputActive ? false : sending || !text.trim()}
-            className={clsx(
-              'px-3 py-1 rounded-md text-[11px] font-semibold transition-all',
-              (!voiceOutputActive && (sending || !text.trim()))
-                ? 'bg-white/10 text-aegis-text-dim cursor-not-allowed'
-                : 'bg-aegis-primary text-white hover:brightness-110'
+          <div className="flex items-center gap-1.5">
+            {(isTyping || voiceOutputActive) && (
+              <button
+                onClick={() => { void handleStop(); }}
+                className="flex h-7 w-7 items-center justify-center rounded-md bg-aegis-danger/80 text-white transition-colors hover:bg-aegis-danger"
+                title={t('chat.stopped')}
+              >
+                <Square size={11} fill="currentColor" />
+              </button>
             )}
-          >
-            {voiceOutputActive ? <Square size={13} /> : (sending ? t('pet.quickChat.sending') : t('pet.quickChat.send'))}
-          </button>
+            <button
+              onClick={handleSend}
+              disabled={sending || !connected || !text.trim()}
+              className={clsx(
+                'px-3 py-1 rounded-md text-[11px] font-semibold transition-all',
+                sending || !connected || !text.trim()
+                  ? 'bg-white/10 text-aegis-text-dim cursor-not-allowed'
+                  : 'bg-aegis-primary text-white hover:brightness-110'
+              )}
+            >
+              {sending
+                ? t('pet.quickChat.sending')
+                : isTyping
+                  ? t('input.queue', 'Queue')
+                  : t('pet.quickChat.send')}
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
-// Avoid unused import warning on Maximize/Minus for future use
-void Maximize2;
-void Minus;

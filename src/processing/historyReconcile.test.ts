@@ -57,6 +57,10 @@ test('CHAT-05 canonical refresh retains unmatched optimistic and failed tail mes
     role: 'user',
     content: 'retry me',
     status: 'failed' as const,
+    retryPayload: {
+      text: 'retry me',
+      attachments: [{ mimeType: 'text/plain', content: 'payload', fileName: 'note.txt' }],
+    },
   };
 
   assert.deepEqual(
@@ -66,6 +70,10 @@ test('CHAT-05 canonical refresh retains unmatched optimistic and failed tail mes
   assert.deepEqual(
     reconcileHistoryMessageIds([pending], []).map((message) => message.id),
     ['local-pending'],
+  );
+  assert.deepEqual(
+    (reconcileHistoryMessageIds([canonical[0], pending, failed], canonical)[2] as typeof failed | undefined)?.retryPayload,
+    failed.retryPayload,
   );
 });
 
@@ -78,6 +86,7 @@ test('CHAT-05 canonical user message clears a matched local failure state', () =
     timestamp: '2026-07-21T00:00:00.000Z',
     status: 'failed' as const,
     deliveryError: 'timeout',
+    retryPayload: { text: 'hello' },
   }];
   const incoming: ChatMessage[] = [{
     id: 'native',
@@ -92,4 +101,5 @@ test('CHAT-05 canonical user message clears a matched local failure state', () =
   assert.equal(message.id, 'local');
   assert.equal(message.status, 'sent');
   assert.equal(message.deliveryError, undefined);
+  assert.equal(message.retryPayload, undefined);
 });

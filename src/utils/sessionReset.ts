@@ -53,13 +53,29 @@ function errorMessage(error: unknown): string {
   return 'Gateway rejected session reset';
 }
 
+function resumeQueuedMessages(sessionKey: string): void {
+  queueMicrotask(() => {
+    const chat = useChatStore.getState();
+    if (
+      chat.connected
+      && !chat.typingBySession[sessionKey]
+      && (chat.messageQueue[sessionKey]?.length ?? 0) > 0
+    ) {
+      void chat.drainQueue(sessionKey);
+    }
+  });
+}
+
 async function performSessionReset(sessionKey: string): Promise<boolean> {
   try {
     const result = await sessionResetDeps.resetRemote(sessionKey);
     const outcome = result && typeof result === 'object'
       ? result as Record<string, unknown>
       : null;
-    if (outcome?.cancelled === true) return false;
+    if (outcome?.cancelled === true) {
+      resumeQueuedMessages(sessionKey);
+      return false;
+    }
     const failure = gatewayMutationFailure(result, 'Gateway rejected session reset');
     if (failure) throw new Error(failure);
     if (isSessionDeleted(sessionKey)) return false;
@@ -82,6 +98,7 @@ async function performSessionReset(sessionKey: string): Promise<boolean> {
     const message = errorMessage(error);
     sessionResetDeps.warn('[sessionReset] gateway.resetSession failed:', error);
     sessionResetDeps.notifyFailure(message);
+    resumeQueuedMessages(sessionKey);
     return false;
   }
 }

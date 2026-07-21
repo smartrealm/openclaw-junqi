@@ -5,6 +5,7 @@ import test from 'node:test';
 const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8');
 const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+const taggedRelease = readFileSync(new URL('../.github/workflows/tag-release.yml', import.meta.url), 'utf8');
 const tauri = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
 
 function dependencyMinor(version, label) {
@@ -90,4 +91,21 @@ test('trusted publication remains unreachable without a promotion decision', () 
 test('GitHub releases remain anchored to their pushed tag', () => {
   const publish = release.slice(release.indexOf('  publish:'), release.indexOf('  release:'));
   assert.doesNotMatch(publish, /--target\b/);
+});
+
+test('version tags retain a CI-gated four-platform desktop release path', () => {
+  assert.match(taggedRelease, /tags: \['v\*'\]/);
+  assert.match(taggedRelease, /git merge-base --is-ancestor "\$source_sha" origin\/main/);
+  assert.match(taggedRelease, /actions\/workflows\/ci\.yml\/runs\?event=push&head_sha=\$\{SOURCE_SHA\}/);
+  for (const target of [
+    'aarch64-apple-darwin',
+    'x86_64-apple-darwin',
+    'x86_64-pc-windows-msvc',
+    'aarch64-pc-windows-msvc',
+  ]) {
+    assert.match(taggedRelease, new RegExp(`target: '${target}'`));
+  }
+  assert.match(taggedRelease, /generate-updater-manifest\.mjs/);
+  assert.match(taggedRelease, /gh release create "\$RELEASE_TAG"/);
+  assert.doesNotMatch(taggedRelease, /--clobber/);
 });

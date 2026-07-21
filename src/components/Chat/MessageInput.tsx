@@ -116,7 +116,6 @@ export function MessageInput() {
   const runtimeLanguage = String(language);
   const dir = getDirection(language);
   const {
-    isSending,
     setIsSending,
     connected,
     setIsTyping,
@@ -124,8 +123,9 @@ export function MessageInput() {
     activeSessionKey,
     messages,
     historyLoader,
-    isLoadingHistory,
   } = useChatStore();
+  const isSending = useChatStore((state) => Boolean(state.sendingBySession[activeSessionKey]));
+  const isLoadingHistory = useChatStore((state) => Boolean(state.loadingHistoryBySession[activeSessionKey]));
   const isHistoryWarmupGate = connected && messages.length === 0 && isLoadingHistory;
   const voicePhase = useVoiceStore((state) => state.phase);
   const voiceSessionKey = useVoiceStore((state) => state.sessionKey);
@@ -141,7 +141,6 @@ export function MessageInput() {
   const removeQueuedMessage = useChatStore((s) => s.removeQueuedMessage);
   const updateQueuedMessage = useChatStore((s) => s.updateQueuedMessage);
   const retryQueuedMessage = useChatStore((s) => s.retryQueuedMessage);
-  const enqueueMessage = useChatStore((s) => s.enqueueMessage);
   const pendingCount = queue.length;
   const text = useChatStore((s) => s.drafts[activeSessionKey] || '');
   const files = useChatStore(
@@ -180,16 +179,18 @@ export function MessageInput() {
   const isComposingRef = useRef(false);
   const sendVoicePayload = useCallback(async (base64: string, mimeType: string, durationSec: number, previewUrl: string) => {
     if (!connected || isHistoryWarmupGate || !base64) return;
+    const sendSessionKey = activeSessionKey;
+    const sendSessionId = activeSessionId;
     setVoiceMode(false);
-    voiceRuntime.interruptGlobally(activeSessionKey);
+    voiceRuntime.interruptGlobally(sendSessionKey);
     const clientMessageId = createClientMessageId();
-    setIsSending(true);
+    setIsSending(true, sendSessionKey);
     try {
       const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'webm';
       const filename = `voice-${Date.now()}.${ext}`;
       // Local persistence supports retention and recovery. Gateway may run in
       // Docker or on another host, so transport must never depend on this path.
-      await window.aegis?.voice?.save?.(filename, base64, activeSessionKey).catch(() => null);
+      await window.aegis?.voice?.save?.(filename, base64, sendSessionKey).catch(() => null);
       const attachments = toGatewayAttachments([createPreparedAttachment({
         fileName: filename,
         mimeType,
@@ -197,8 +198,8 @@ export function MessageInput() {
         size: Math.floor(base64.length * 0.75),
       })]);
       await chatSendCoordinator.send({
-        sessionKey: activeSessionKey,
-        sessionId: activeSessionId,
+        sessionKey: sendSessionKey,
+        sessionId: sendSessionId,
         clientMessageId,
         message: t('voice.voiceMessage', { seconds: durationSec }),
         attachments,
@@ -208,7 +209,7 @@ export function MessageInput() {
       debugError('media', '[Voice] Send error:', err);
       if (err instanceof AttachmentValidationError) reportAttachmentError(err);
     } finally {
-      setIsSending(false);
+      setIsSending(false, sendSessionKey);
     }
   }, [activeSessionKey, activeSessionId, connected, isHistoryWarmupGate, reportAttachmentError, setIsSending, t]);
 
@@ -477,6 +478,12 @@ export function MessageInput() {
 
   useEffect(() => { textareaRef.current?.focus(); }, []);
 
+  useEffect(() => {
+    const focusComposer = () => textareaRef.current?.focus();
+    window.addEventListener('aegis:focus-composer', focusComposer);
+    return () => window.removeEventListener('aegis:focus-composer', focusComposer);
+  }, []);
+
   // ── Auto-resize textarea ──
   useEffect(() => {
     const el = textareaRef.current;
@@ -504,10 +511,10 @@ export function MessageInput() {
       const voiceActive = voice.remoteOutput !== null
         || ((voice.phase === 'queued' || voice.phase === 'speaking')
           && (voice.sessionKey == null || voice.sessionKey === activeSessionKey));
-      if (st.isTyping || voiceActive) {
+      if (st.typingBySession[activeSessionKey] || voiceActive) {
         e.preventDefault();
         voiceRuntime.interruptGlobally(activeSessionKey);
-        if (st.isTyping) {
+        if (st.typingBySession[activeSessionKey]) {
           gateway.abortChat(activeSessionKey).catch(() => {});
           st.clearQueue(activeSessionKey);
           st.setIsTyping(false, activeSessionKey);
@@ -515,10 +522,10 @@ export function MessageInput() {
         return;
       }
 
-      // ESC #2 — input focused: recall the last user message (and the reply that
-      // followed it) back into the session-scoped input box for editing.
+      // ESC #2 — input focused: copy the last user message back into the
+      // session-scoped composer. The Gateway transcript remains authoritative.
       if (document.activeElement !== textareaRef.current) return;
-      const msgs = st.messages;
+      const msgs = st.messagesPerSession[activeSessionKey] ?? [];
       let lastUserIdx = -1;
       for (let i = msgs.length - 1; i >= 0; i--) {
         if (msgs[i].role === 'user') { lastUserIdx = i; break; }
@@ -526,7 +533,6 @@ export function MessageInput() {
       if (lastUserIdx === -1) return;
       e.preventDefault();
       const lastUserMsg = msgs[lastUserIdx];
-      st.setMessages(msgs.slice(0, lastUserIdx), activeSessionKey);
       setText(lastUserMsg.content);
       textareaRef.current?.focus();
     };
@@ -561,8 +567,7 @@ export function MessageInput() {
     const sendFiles = [...files];
     const rawText = textareaRef.current?.value ?? text;
     const trimmed = rawText.trim();
-    const isAiTyping = !!useChatStore.getState().typingBySession[sendSessionKey];
-    if ((!trimmed && sendFiles.length === 0) || (!isAiTyping && isSending) || !connected || isHistoryWarmupGate) return;
+    if ((!trimmed && sendFiles.length === 0) || isSending || !connected || isHistoryWarmupGate) return;
 
     if (messages.length === 0 && historyLoader) {
       try {
@@ -595,7 +600,7 @@ export function MessageInput() {
 
     const clientMessageId = createClientMessageId();
     const timestamp = new Date().toISOString();
-    setIsSending(true);
+    setIsSending(true, sendSessionKey);
 
     try {
       const { budgetLimit } = useSettingsStore.getState();
@@ -617,23 +622,6 @@ export function MessageInput() {
         }
       }
 
-      const state = useChatStore.getState();
-      state.setDraft(sendSessionKey, '');
-      state.setPreparedAttachments(sendSessionKey, []);
-      state.setQuickReplies([], sendSessionKey);
-
-      if (state.typingBySession[sendSessionKey]) {
-        enqueueMessage(sendSessionKey, {
-          id: clientMessageId,
-          text: fullMessage,
-          timestamp,
-          ...(sendSessionId ? { sessionId: sendSessionId } : {}),
-          ...(attachmentsForGateway.length ? { attachments: attachmentsForGateway } : {}),
-          ...(previewImageAttachments.length ? { displayAttachments: previewImageAttachments } : {}),
-        });
-        return;
-      }
-
       voiceRuntime.interruptGlobally(sendSessionKey);
       await chatSendCoordinator.send({
         sessionKey: sendSessionKey,
@@ -644,10 +632,14 @@ export function MessageInput() {
         displayAttachments: previewImageAttachments,
         optimisticMessage: { timestamp },
       });
+      const state = useChatStore.getState();
+      state.setDraft(sendSessionKey, '');
+      state.setPreparedAttachments(sendSessionKey, []);
+      state.setQuickReplies([], sendSessionKey);
     } catch (error) {
       debugError('app', '[Send] Error:', error);
     } finally {
-      setIsSending(false);
+      setIsSending(false, sendSessionKey);
     }
   }, [
     text,
@@ -660,7 +652,6 @@ export function MessageInput() {
     messages,
     historyLoader,
     isHistoryWarmupGate,
-    enqueueMessage,
     t,
   ]);
 
@@ -1433,7 +1424,7 @@ export function MessageInput() {
                     await gateway.abortChat(activeSessionKey);
                     clearQueue(activeSessionKey);
                     setIsTyping(false, activeSessionKey);
-                    setIsSending(false);
+                    setIsSending(false, activeSessionKey);
                   }
                 } catch (err) {
                   debugError('app', '[Abort] Error:', err);

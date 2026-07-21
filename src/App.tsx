@@ -644,7 +644,6 @@ export default function App() {
         if (sessionKey === useChatStore.getState().activeSessionKey) {
           voiceRuntime.finishStream(sessionKey, content, meta?.state ?? 'final', messageId, media?.mediaUrl);
         }
-        setIsTyping(false, sessionKey);
         finalizeStreamingMessage(
           messageId,
           content,
@@ -661,6 +660,9 @@ export default function App() {
           },
           sessionKey,
         );
+        // The typing transition drains the next queued message, so finalize
+        // this response before releasing the session queue.
+        setIsTyping(false, sessionKey);
         const { activeSessionKey: currentSessionKey, historyLoader } = useChatStore.getState();
         if (sessionKey !== currentSessionKey) {
           markSessionCompleted(sessionKey);
@@ -714,6 +716,16 @@ export default function App() {
       },
       onStatusChange: (status) => {
         setConnectionStatus(status);
+        if (status.connected) {
+          queueMicrotask(() => {
+            const chat = useChatStore.getState();
+            for (const [sessionKey, queue] of Object.entries(chat.messageQueue)) {
+              if (queue.length > 0 && !chat.typingBySession[sessionKey]) {
+                void chat.drainQueue(sessionKey);
+              }
+            }
+          });
+        }
         // Feed WS lifecycle events into the state machine
         if (status.connected) {
           gatewayManager.notifyWsOpen();

@@ -180,6 +180,7 @@ test('CHAT-02 failed queue drain keeps the item and its attachments for explicit
     _groupsCache: {},
     typingBySession: { [MAIN_KEY]: false },
     isTyping: false,
+    connected: true,
     messageQueue: {
       [MAIN_KEY]: [{
         id: 'queued-1',

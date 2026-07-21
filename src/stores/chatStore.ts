@@ -8,9 +8,15 @@ import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/proc
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import { gateway } from '@/services/gateway';
 import type {
+  OutboundChatPayload,
   PreparedAttachment,
   QueuedChatMessage,
 } from '@/services/chat/types';
+import {
+  MAX_SESSION_MESSAGE_QUEUE_SIZE,
+  SessionMessageQueueFullError,
+} from '@/services/chat/types';
+import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
 import { useSettingsStore } from './settingsStore';
 import {
   coalesceSessionsByKey,
@@ -30,6 +36,17 @@ const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
 const OPEN_TABS_PREFS_KEY = 'aegis-open-tabs';
 const SESSION_PIN_PREFS_KEY = 'aegis:session-pin-prefs';
 const drainingQueueSessions = new Set<string>();
+
+function outboundPayloadFromQueue(message: QueuedChatMessage): OutboundChatPayload {
+  return {
+    text: message.text,
+    ...(message.sessionId ? { sessionId: message.sessionId } : {}),
+    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+    ...(message.displayAttachments?.length
+      ? { displayAttachments: message.displayAttachments }
+      : {}),
+  };
+}
 
 function persistOpenTabs(tabs: string[]): void {
   try {
@@ -284,6 +301,10 @@ export interface ChatMessage {
     content: string;
     fileName: string;
   }>;
+  /** Local delivery metadata. Never serialized into the OpenClaw transcript. */
+  outboundAttachments?: Array<{ fileName: string; mimeType: string }>;
+  /** Retained only while a delivery is queued or failed so retry is lossless. */
+  retryPayload?: OutboundChatPayload;
   // Tool call metadata (role === 'tool')
   toolName?: string;
   toolInput?: Record<string, any>;
@@ -507,10 +528,10 @@ interface ChatState {
   setPreparedAttachments: (key: string, files: PreparedAttachment[]) => void;
   removeQueuedMessage: (sessionKey: string, id: string) => void;
   updateQueuedMessage: (sessionKey: string, id: string, newText: string) => void;
-  isSending: boolean;
-  setIsSending: (sending: boolean) => void;
-  isLoadingHistory: boolean;
-  setIsLoadingHistory: (loading: boolean) => void;
+  sendingBySession: Record<string, boolean>;
+  setIsSending: (sending: boolean, sessionKey?: string) => void;
+  loadingHistoryBySession: Record<string, boolean>;
+  setIsLoadingHistory: (loading: boolean, sessionKey?: string) => void;
   // Called by MessageInput before first send — loads history if not yet loaded
   historyLoader: ((sessionKey?: string, options?: HistoryLoaderOptions) => Promise<void>) | null;
   setHistoryLoader: (fn: ((sessionKey?: string, options?: HistoryLoaderOptions) => Promise<void>) | null) => void;
@@ -997,6 +1018,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...state.thinkingBySession,
         [targetKey]: { runId: null, text: '' },
       },
+      sendingBySession: {
+        ...state.sendingBySession,
+        [targetKey]: false,
+      },
+      loadingHistoryBySession: {
+        ...state.loadingHistoryBySession,
+        [targetKey]: false,
+      },
       messagesPerSession: {
         ...state.messagesPerSession,
         [targetKey]: [],
@@ -1056,6 +1085,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...state.thinkingBySession,
         [key]: { runId: null, text: '' },
       },
+      sendingBySession: { ...state.sendingBySession, [key]: false },
+      loadingHistoryBySession: { ...state.loadingHistoryBySession, [key]: false },
       ...(isActive
         ? {
             messages: [],
@@ -1428,6 +1459,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { [key]: _queue, ...restMessageQueue } = state.messageQueue;
     const { [key]: _attachments, ...restDraftAttachments } = state.draftAttachments;
     const { [key]: _prepared, ...restPreparedAttachments } = state.preparedAttachments;
+    const { [key]: _sending, ...restSendingBySession } = state.sendingBySession;
+    const { [key]: _historyLoading, ...restLoadingHistoryBySession } = state.loadingHistoryBySession;
     const msgs = restMessages[newActive] || [];
     const blocks = restBlocks[newActive];
     const groups = restGroupsCache[newActive];
@@ -1447,6 +1480,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messageQueue: restMessageQueue,
       draftAttachments: restDraftAttachments,
       preparedAttachments: restPreparedAttachments,
+      sendingBySession: restSendingBySession,
+      loadingHistoryBySession: restLoadingHistoryBySession,
       quickReplies: restQuickReplies[newActive] || [],
       thinkingText: restThinking[newActive]?.text || '',
       thinkingRunId: restThinking[newActive]?.runId || null,
@@ -1514,17 +1549,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isTyping: false,
   typingBySession: {},
   messageQueue: {},
-  enqueueMessage: (sessionKey, message) => set((state) => ({
-    messageQueue: {
-      ...state.messageQueue,
-      [sessionKey]: [...(state.messageQueue[sessionKey] || []), message],
-    },
-  })),
+  enqueueMessage: (sessionKey, message) => set((state) => {
+    const queue = state.messageQueue[sessionKey] || [];
+    if (queue.length >= MAX_SESSION_MESSAGE_QUEUE_SIZE) {
+      throw new SessionMessageQueueFullError();
+    }
+    return {
+      messageQueue: {
+        ...state.messageQueue,
+        [sessionKey]: [...queue, message],
+      },
+    };
+  }),
   drainQueue: async (sessionKey) => {
     if (isSessionDeleted(sessionKey) || drainingQueueSessions.has(sessionKey)) return;
+    if (
+      !get().connected
+      || get().typingBySession[sessionKey]
+      || sessionMutationGate.isBlocked(sessionKey)
+    ) return;
     const next = get().messageQueue[sessionKey]?.[0];
     if (!next || next.failed) return;
     drainingQueueSessions.add(sessionKey);
+    const retryPayload = outboundPayloadFromQueue(next);
     // Mark typing so the drained reply is tracked through its lifecycle — its
     // completion (typing true→false) re-triggers the App.tsx drain subscription
     // to send the next queued item. Without this the subscription would fire in
@@ -1536,6 +1583,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       role: 'user', content: next.text,
       timestamp: next.timestamp, status: 'pending' as const,
       ...(next.displayAttachments?.length ? { attachments: next.displayAttachments } : {}),
+      retryPayload,
+      ...(next.attachments?.length
+        ? {
+            outboundAttachments: next.attachments.map((attachment) => ({
+              fileName: attachment.fileName,
+              mimeType: attachment.mimeType,
+            })),
+          }
+        : {}),
     }, sessionKey);
     get().updateMessage(sessionKey, next.id, { status: 'pending', deliveryError: undefined });
     get().setIsTyping(true, sessionKey);
@@ -1553,6 +1609,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       get().updateMessage(sessionKey, next.id, {
         status: result?.queued ? 'queued' : 'sent',
         deliveryError: undefined,
+        retryPayload: result?.queued ? retryPayload : undefined,
       });
       if (result?.queued) get().setIsTyping(false, sessionKey);
     } catch (error) {
@@ -1565,7 +1622,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           )),
         },
       }));
-      get().updateMessage(sessionKey, next.id, { status: 'failed', deliveryError: message });
+      get().updateMessage(sessionKey, next.id, {
+        status: 'failed',
+        deliveryError: message,
+        retryPayload,
+      });
       get().setIsTyping(false, sessionKey);
     } finally {
       drainingQueueSessions.delete(sessionKey);
@@ -1613,7 +1674,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         )),
       },
     }));
-    get().updateMessage(sessionKey, id, { content: newText });
+    const current = getSessionMessages(get(), sessionKey).find((message) => message.id === id);
+    get().updateMessage(sessionKey, id, {
+      content: newText,
+      ...(current?.retryPayload
+        ? { retryPayload: { ...current.retryPayload, text: newText } }
+        : {}),
+    });
   },
   queueSize: (sessionKey) => (get().messageQueue[sessionKey] || []).length,
   setIsTyping: (typing, sessionKey) =>
@@ -1628,10 +1695,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...(targetKey === state.activeSessionKey ? { isTyping: typing } : {}),
       };
     }),
-  isSending: false,
-  setIsSending: (sending) => set({ isSending: sending }),
-  isLoadingHistory: false,
-  setIsLoadingHistory: (loading) => set({ isLoadingHistory: loading }),
+  sendingBySession: {},
+  setIsSending: (sending, sessionKey) => set((state) => {
+    const targetKey = sessionKey ?? state.activeSessionKey;
+    if (isSessionDeleted(targetKey)) return state;
+    return {
+      sendingBySession: {
+        ...state.sendingBySession,
+        [targetKey]: sending,
+      },
+    };
+  }),
+  loadingHistoryBySession: {},
+  setIsLoadingHistory: (loading, sessionKey) => set((state) => {
+    const targetKey = sessionKey ?? state.activeSessionKey;
+    if (isSessionDeleted(targetKey)) return state;
+    return {
+      loadingHistoryBySession: {
+        ...state.loadingHistoryBySession,
+        [targetKey]: loading,
+      },
+    };
+  }),
   historyLoader: null,
   setHistoryLoader: (fn) => set({ historyLoader: fn }),
 

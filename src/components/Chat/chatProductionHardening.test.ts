@@ -25,6 +25,29 @@ test('CHAT-03 composer state and prepared attachments are keyed by session', () 
   assert.match(input, /s\.preparedAttachments\[activeSessionKey\]/);
   assert.match(input, /const sendSessionKey = activeSessionKey/);
   assert.match(store, /preparedAttachments: Record<string, PreparedAttachment\[\]>/);
+  assert.match(store, /sendingBySession: Record<string, boolean>/);
+  assert.match(store, /loadingHistoryBySession: Record<string, boolean>/);
+});
+
+test('CHAT-02 and CHAT-10 expose one cancellable queue and preserve transcript semantics', () => {
+  const connection = source('src/services/gateway/Connection.ts');
+  const send = source('src/services/chat/sendTransaction.ts');
+  const view = source('src/components/Chat/ChatView.tsx');
+  const bubble = source('src/components/Chat/MessageBubble.tsx');
+  const app = source('src/App.tsx');
+  assert.doesNotMatch(connection, /enqueueMessage|flushQueue|getQueueSize/);
+  assert.match(send, /sessionMutationGate\.isBlocked/);
+  assert.match(view, /handleRecallMessage/);
+  assert.doesNotMatch(view, /handleEditMessage|handleRegenerate|onDelete=/);
+  assert.doesNotMatch(bubble, /onRegenerate|onDelete\?|isEditing/);
+  const streamEnd = app.slice(
+    app.indexOf('onStreamEnd:'),
+    app.indexOf('onRetryState:'),
+  );
+  assert.ok(
+    streamEnd.indexOf('finalizeStreamingMessage(') < streamEnd.indexOf('setIsTyping(false, sessionKey)'),
+    'the current response must finalize before the queue is released',
+  );
 });
 
 test('CHAT-05 forced history refreshes queue behind the active request', () => {
@@ -75,6 +98,8 @@ test('React external-store selectors never allocate empty fallback snapshots', (
   const sidebar = source('src/components/Layout/NavSidebar.tsx');
   const sidebarPanels = source('src/components/Layout/NavSidebarPanels.tsx');
   assert.match(quickChat, /const EMPTY_MESSAGES:/);
+  assert.match(quickChat, /const EMPTY_QUEUE:/);
+  assert.match(quickChat, /retryQueuedMessage/);
   for (const candidate of [welcome, sidebar, sidebarPanels]) {
     assert.doesNotMatch(candidate, /use(?:Chat|GatewayData)Store\([^\n]+\?\?\s*(?:\[\]|\{\})/);
   }

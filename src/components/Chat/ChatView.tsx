@@ -204,13 +204,15 @@ function ChatViewContent() {
   const thinkingText = useChatStore((s) => s.thinkingText);
   const thinkingRunId = useChatStore((s) => s.thinkingRunId);
   const quickReplies = useChatStore((s) => s.quickReplies);
-  const isLoadingHistory = useChatStore((s) => s.isLoadingHistory);
 
   const { connected, connecting, connectionError } = useChatStore(
     useShallow((s) => ({ connected: s.connected, connecting: s.connecting, connectionError: s.connectionError }))
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const isLoadingHistory = useChatStore(
+    (s) => Boolean(s.loadingHistoryBySession[activeSessionKey]),
+  );
   const activeSessionId = useChatStore(
     (s) => s.sessions.find((session) => session.key === activeSessionKey)?.sessionId,
   );
@@ -262,6 +264,7 @@ function ChatViewContent() {
   const historyTimeoutCountBySession = useRef<Record<string, number>>({});
   const historyStartupRetryCountBySession = useRef<Record<string, number>>({});
   const [historyMetaBySession, setHistoryMetaBySession] = useState<Record<string, HistoryMeta>>({});
+  const [historyErrorBySession, setHistoryErrorBySession] = useState<Record<string, string | undefined>>({});
   const bottomSeenSignatureRef = useRef('');
   const lastAutoRevealedUserMessageIdRef = useRef('');
 
@@ -370,12 +373,19 @@ function ChatViewContent() {
             background: pending?.background === false || options.background !== true ? false : true,
           };
         }
-        await inFlightHistoryBySession.current[sessionKey];
+        let inFlightError: unknown;
+        try {
+          await inFlightHistoryBySession.current[sessionKey];
+        } catch (error) {
+          inFlightError = error;
+        }
         const queued = queuedForcedHistoryBySession.current[sessionKey];
         if (queued) {
           delete queuedForcedHistoryBySession.current[sessionKey];
           await loadHistory(sessionKey, queued);
+          return;
         }
+        if (inFlightError) throw inFlightError;
         return;
       }
 
@@ -425,7 +435,7 @@ function ChatViewContent() {
 
         latestHistoryRequestBySession.current[sessionKey] = requestId;
         const requestStartedAt = performance.now();
-        if (!options?.background) setIsLoadingHistory(true);
+        if (!options?.background) setIsLoadingHistory(true, sessionKey);
         try {
           const result = await gateway.getHistory(
             sessionKey,
@@ -500,9 +510,11 @@ function ChatViewContent() {
           }
           historyTimeoutCountBySession.current[sessionKey] = 0;
           historyStartupRetryCountBySession.current[sessionKey] = 0;
+          setHistoryErrorBySession((previous) => ({ ...previous, [sessionKey]: undefined }));
         } catch (err) {
           if (isSessionDeleted(sessionKey)) return;
           const errText = String(err);
+          setHistoryErrorBySession((previous) => ({ ...previous, [sessionKey]: errText }));
           const isHistoryUnavailableDuringStartup =
             /chat\.history/i.test(errText) &&
             /(unavailable|not available|not ready|warming|startup)/i.test(errText);
@@ -527,6 +539,9 @@ function ChatViewContent() {
                 void loadHistory(sessionKey, { force: true, background: true });
               }, retryDelay);
             }
+            if (!options?.background) {
+              throw err instanceof Error ? err : new Error(errText);
+            }
             return;
           }
           debugError('app', '[ChatView] History load failed:', err);
@@ -550,16 +565,21 @@ function ChatViewContent() {
                 void loadHistory(sessionKey, { force: true, background: true });
               }, retryDelay);
             }
+            if (!options?.background) {
+              throw err instanceof Error ? err : new Error(errText);
+            }
             return;
+          }
+          if (!options?.background) {
+            throw err instanceof Error ? err : new Error(errText);
           }
         } finally {
           delete inFlightHistoryBySession.current[sessionKey];
           if (
             !options?.background
             && latestHistoryRequestBySession.current[sessionKey] === requestId
-            && useChatStore.getState().activeSessionKey === sessionKey
           ) {
-            setIsLoadingHistory(false);
+            setIsLoadingHistory(false, sessionKey);
           }
         }
       })();
@@ -586,6 +606,8 @@ function ChatViewContent() {
     setIsRefreshing(true);
     try {
       await loadHistory(undefined, { force: true });
+    } catch (error) {
+      debugError('app', '[ChatView] Manual history refresh failed:', error);
     } finally {
       setTimeout(() => setIsRefreshing(false), 500);
     }
@@ -711,93 +733,29 @@ function ChatViewContent() {
     revealConversationTail({ instant: true });
   }, [activeSessionKey, activeHistoryMeta?.loaded, revealConversationTail]);
 
-  const handleEditMessage = useCallback(async (messageId: string, content: string) => {
-    const text = content.trim();
-    if (!text) return;
+  const handleRecallMessage = useCallback((content: string) => {
+    useChatStore.getState().setDraft(activeSessionKey, content);
+    window.dispatchEvent(new Event('aegis:focus-composer'));
+  }, [activeSessionKey]);
 
-    const state = useChatStore.getState();
-    const originalMessages = state.messagesPerSession[activeSessionKey] ?? [];
-    const messageIndex = originalMessages.findIndex((message) => message.id === messageId && message.role === 'user');
-    if (messageIndex < 0) throw new Error(`User message ${messageId} is no longer available`);
-    voiceRuntime.interruptGlobally(activeSessionKey);
-
-    if (state.typingBySession[activeSessionKey]) {
-      await gateway.abortChat(activeSessionKey).catch(() => undefined);
-    }
-
-    const clientMessageId = createClientMessageId();
-    const editedMessage: ChatMessage = {
-      ...originalMessages[messageIndex],
-      id: clientMessageId,
-      clientMessageId,
-      content: text,
-      timestamp: new Date().toISOString(),
-      status: 'pending',
-      deliveryError: undefined,
-    };
-    const optimisticMessages = [
-      ...originalMessages.slice(0, messageIndex),
-      editedMessage,
-    ];
-    state.setMessages(optimisticMessages, activeSessionKey);
+  const handleRetryMessage = useCallback(async (sourceMessage: ChatMessage) => {
+    const payload = sourceMessage.retryPayload ?? { text: sourceMessage.content };
+    const clientMessageId = sourceMessage.clientMessageId ?? sourceMessage.id;
     revealConversationTail({ instant: true });
-    state.setIsTyping(true, activeSessionKey);
     try {
       await chatSendCoordinator.send({
         sessionKey: activeSessionKey,
-        message: text,
+        message: payload.text,
         clientMessageId,
-        sessionId: activeSessionId,
+        sessionId: payload.sessionId ?? activeSessionId,
+        attachments: payload.attachments,
+        displayAttachments: payload.displayAttachments,
         optimisticMessage: false,
-      });
-    } catch (err) {
-      const currentMessages = useChatStore.getState().messagesPerSession[activeSessionKey] ?? [];
-      const stillOptimistic = currentMessages.length === optimisticMessages.length
-        && currentMessages.every((message, index) => (
-          message.id === optimisticMessages[index].id
-          && message.content === optimisticMessages[index].content
-        ));
-      if (stillOptimistic) {
-        useChatStore.getState().setMessages(originalMessages, activeSessionKey);
-        useChatStore.getState().setIsTyping(false, activeSessionKey);
-      }
-      throw err;
-    }
-  }, [activeSessionKey, activeSessionId, revealConversationTail]);
-
-  const handleResend = useCallback(async (content: string) => {
-    const clientMessageId = createClientMessageId();
-    revealConversationTail({ instant: true });
-    try {
-      await chatSendCoordinator.send({
-        sessionKey: activeSessionKey,
-        message: content,
-        clientMessageId,
-        sessionId: activeSessionId,
       });
     } catch (error) {
-      debugError('app', '[Resend] Send error:', error);
+      debugError('app', '[Retry] Send error:', error);
     }
   }, [activeSessionKey, activeSessionId, revealConversationTail]);
-
-  // Regenerate: re-send the last user message
-  const handleRegenerate = useCallback(() => {
-    const lastUserMsg = [...renderBlocks].reverse().find(
-      (b) => b.type === 'message' && b.role === 'user'
-    );
-    if (lastUserMsg && lastUserMsg.type === 'message') {
-      const clientMessageId = createClientMessageId();
-      revealConversationTail({ instant: true });
-      voiceRuntime.interruptGlobally(activeSessionKey);
-      void chatSendCoordinator.send({
-        sessionKey: activeSessionKey,
-        message: lastUserMsg.markdown,
-        clientMessageId,
-        sessionId: activeSessionId,
-        optimisticMessage: false,
-      }).catch((error) => debugError('app', '[Regenerate] Send error:', error));
-    }
-  }, [renderBlocks, activeSessionKey, activeSessionId, revealConversationTail]);
 
   // ── Error Action Handler — called by MessageBubble when user clicks an error action button ──
   const handleErrorAction = useCallback(async (action: string) => {
@@ -944,12 +902,14 @@ function ChatViewContent() {
           <Suspense fallback={<MessageBubbleFallback block={block} />}>
             <MessageBubble
               block={block}
-              onEdit={block.role === 'user' ? handleEditMessage : undefined}
-              onResend={block.role === 'user' ? handleResend : undefined}
-              onRegenerate={block.role === 'assistant' ? handleRegenerate : undefined}
+              onRecall={block.role === 'user' ? handleRecallMessage : undefined}
+              onRetry={block.role === 'user' && sourceMessage?.status === 'failed'
+                ? () => handleRetryMessage(sourceMessage)
+                : undefined}
               onErrorAction={block.role === 'assistant' ? handleErrorAction : undefined}
               deliveryStatus={sourceMessage?.status}
               deliveryError={sourceMessage?.deliveryError}
+              outboundAttachments={sourceMessage?.outboundAttachments}
               historyTruncated={sourceMessage?.historyTruncated}
               historyTruncationReason={sourceMessage?.historyTruncationReason}
               onLoadFullMessage={sourceMessage?.historyTruncated
@@ -958,11 +918,6 @@ function ChatViewContent() {
               collaborationAction={block.role === 'user'
                 ? collaboration.getMessageAction(sourceMessage)
                 : undefined}
-              onDelete={() => {
-                const st = useChatStore.getState();
-                const key = st.activeSessionKey;
-                st.setMessages((st.messagesPerSession[key] || []).filter((m) => m.id !== block.id), key);
-              }}
             />
           </Suspense>
         );
@@ -972,9 +927,8 @@ function ChatViewContent() {
     }
   }, [
     collaboration,
-    handleEditMessage,
-    handleResend,
-    handleRegenerate,
+    handleRecallMessage,
+    handleRetryMessage,
     handleInlineButtonClick,
     handleDecisionSelect,
     handleErrorAction,
@@ -1114,6 +1068,24 @@ function ChatViewContent() {
               </button>
             </span>
           )}
+        </div>
+      )}
+
+      {historyErrorBySession[activeSessionKey] && connected && (
+        <div className="shrink-0 border-b border-aegis-warning/20 bg-aegis-warning/[0.06] px-4 py-2">
+          <div className="flex items-center justify-between gap-3 text-[11px] text-aegis-warning">
+            <span className="min-w-0 truncate" title={historyErrorBySession[activeSessionKey]}>
+              {t('chat.historySyncFailed', 'Conversation history could not be synchronized.')}
+            </span>
+            <button
+              type="button"
+              onClick={() => { void handleRefresh(); }}
+              disabled={isRefreshing || isLoadingHistory}
+              className="shrink-0 rounded-md border border-aegis-warning/35 px-2 py-1 font-medium hover:bg-aegis-warning/10 disabled:opacity-50"
+            >
+              {t('common.retry', 'Retry')}
+            </button>
+          </div>
         </div>
       )}
 
