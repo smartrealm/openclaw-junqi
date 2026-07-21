@@ -3,6 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Icon } from '@/components/shared/icons';
+import { KookyAgentIcon, hasKookyAgentIcon } from './KookyAgentIcon';
 import {
   getTerminalAgentOverviewSnapshot,
   subscribeTerminalAgentOverview,
@@ -11,7 +12,11 @@ import {
 } from './terminalAgentRegistry';
 
 function agentVisual(agent: string): { icon: ReactNode; tint: string; label: string } {
-  return Icon.agent[agent] ?? { icon: Icon.agent.claude.icon, tint: '888888', label: agent || 'Agent' };
+  const fallback = Icon.agent[agent] ?? { icon: Icon.agent.claude.icon, tint: '888888', label: agent || 'Agent' };
+  return {
+    ...fallback,
+    icon: hasKookyAgentIcon(agent) ? <KookyAgentIcon agent={agent} size={16} /> : fallback.icon,
+  };
 }
 
 export type AgentPanelMode = Exclude<TerminalAgentPanelMode, 'hidden'>;
@@ -104,7 +109,7 @@ export function AgentOverviewPanel({ mode = 'full' }: AgentOverviewPanelProps) {
         <span style={{ fontSize: 13, fontWeight: 600, color: 'rgb(var(--aegis-text))', fontFamily: '"JetBrains Mono", monospace' }}>
           {t('terminal.agents', 'agents')}
         </span>
-        <span style={{ fontSize: 10, fontWeight: 500, color: 'rgb(var(--aegis-text-dim))', background: 'rgb(var(--aegis-card))', borderRadius: 4, padding: '1px 6px', fontFamily: '"JetBrains Mono", monospace' }}>
+        <span style={{ fontSize: 10, fontWeight: 500, color: 'rgb(var(--aegis-text-dim))', fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>
           {entries.length}
         </span>
       </div>

@@ -1,9 +1,7 @@
 import type { Workspace } from '@/workspace/types';
-import {
-  TERMINAL_AGENT_LAUNCHERS,
-  type TerminalAgentId,
-} from './terminalAgentCatalog';
+import type { TerminalAgentId } from './terminalAgentCatalog';
 import type { TerminalSessionOverviewEntry } from './terminalSessionRegistry';
+import type { TerminalLaunchTarget } from './terminalLaunchCatalog';
 
 export interface TerminalPaletteRecentDirectory {
   path: string;
@@ -14,15 +12,16 @@ export type TerminalPaletteItem =
   | { id: string; title: string; subtitle: string; kind: 'workspace'; workspaceId: string }
   | { id: string; title: string; subtitle: string; kind: 'tab'; shellId: string }
   | { id: string; title: string; subtitle: string; kind: 'worktree'; workspaceId: string }
-  | { id: string; title: string; subtitle: string; kind: 'agent'; agent: TerminalAgentId }
+  | { id: string; title: string; subtitle: string; kind: 'agent'; launcherId: string; iconAgent?: TerminalAgentId }
   | { id: string; title: string; subtitle: string; kind: 'terminal' }
+  | { id: string; title: string; subtitle: string; kind: 'preset'; presetId: string }
   | { id: string; title: string; subtitle: string; kind: 'ssh' }
   | { id: string; title: string; subtitle: string; kind: 'recent'; path: string };
 
 export interface BuildTerminalPaletteInput {
   workspaces: Workspace[];
   sessions: readonly TerminalSessionOverviewEntry[];
-  availableAgents: readonly TerminalAgentId[];
+  launchTargets: readonly TerminalLaunchTarget[];
   recentDirectories: readonly TerminalPaletteRecentDirectory[];
   worktreeWorkspaceIds: ReadonlySet<string>;
   workspaceDefaultLabel: string;
@@ -106,23 +105,27 @@ export function buildTerminalPaletteItems(input: BuildTerminalPaletteInput): Ter
     });
   }
 
-  items.push({
-    id: 'terminal',
-    title: 'Open Terminal',
-    subtitle: 'shell',
-    kind: 'terminal',
-  });
-  const available = new Set(input.availableAgents);
-  for (const agentId of input.availableAgents) {
-    const agent = TERMINAL_AGENT_LAUNCHERS.find((candidate) => candidate.id === agentId);
-    if (!agent || !available.has(agent.id)) continue;
-    items.push({
-      id: `agent:${agent.id}`,
-      title: `Open ${agent.label}`,
-      subtitle: 'agent',
-      kind: 'agent',
-      agent: agent.id,
-    });
+  for (const target of input.launchTargets) {
+    if (target.kind === 'terminal') {
+      items.push({ id: 'terminal', title: 'Open Terminal', subtitle: 'shell', kind: 'terminal' });
+    } else if (target.kind === 'preset') {
+      items.push({
+        id: `preset:${target.id}`,
+        title: `Open ${target.label}`,
+        subtitle: 'terminal preset',
+        kind: 'preset',
+        presetId: target.id,
+      });
+    } else {
+      items.push({
+        id: `agent:${target.id}`,
+        title: `Open ${target.label}`,
+        subtitle: 'agent',
+        kind: 'agent',
+        launcherId: target.id,
+        ...(target.iconAgent ? { iconAgent: target.iconAgent } : {}),
+      });
+    }
   }
   items.push({
     id: 'ssh',

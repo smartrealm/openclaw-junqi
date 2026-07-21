@@ -34,7 +34,12 @@ test('terminal palette indexes live workspaces, tabs, worktrees, agents, SSH, an
     sessions: [{
       shellId: 'shell-1', paneId: 'pane-source', workspaceId: 'source', title: 'API', projectPath: '/repo/junqi', updatedAt: 1, focus: () => {},
     }],
-    availableAgents: ['codex', 'pi'],
+    launchTargets: [
+      { kind: 'terminal', id: 'terminal', label: 'Terminal' },
+      { kind: 'preset', id: 'preset-1', label: 'Repository', path: '/repo/junqi' },
+      { kind: 'agent', id: 'codex', label: 'Codex', command: 'codex', iconAgent: 'codex' },
+      { kind: 'agent', id: 'pi', label: 'Pi', command: 'pi', iconAgent: 'pi' },
+    ],
     recentDirectories: [{ name: 'other', path: '/repo/other' }],
     worktreeWorkspaceIds: new Set(['source']),
     workspaceDefaultLabel: 'Workspace',
@@ -46,6 +51,7 @@ test('terminal palette indexes live workspaces, tabs, worktrees, agents, SSH, an
     'tab:shell-1',
     'workspace:worktree',
     'terminal',
+    'preset:preset-1',
     'agent:codex',
     'agent:pi',
     'ssh',

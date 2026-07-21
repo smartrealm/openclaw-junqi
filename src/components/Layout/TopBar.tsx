@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo, useS
 import { useNavigate } from 'react-router-dom';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, ChevronDown, ExternalLink, FolderOpen, PanelLeftOpen, PanelLeftClose, PanelLeft, PanelRightOpen, Bell, Search } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ExternalLink, FolderOpen, PanelLeftOpen, PanelLeftClose, PanelLeft, PanelRightOpen, Bell, Search, LayoutGrid } from 'lucide-react';
 import clsx from 'clsx';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -31,6 +31,12 @@ import {
   getTerminalKeepAwakeSnapshot,
   subscribeTerminalKeepAwake,
 } from '@/components/Terminal/terminalKeepAwake';
+import {
+  getTerminalOpenInPreferencesSnapshot,
+  setTerminalOpenInLastUsed,
+  subscribeTerminalOpenInPreferences,
+  visibleTerminalOpenInApps,
+} from '@/components/Terminal/terminalOpenInPreferences';
 import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
 import { resolveNotificationTarget } from '@/utils/notificationTarget';
 import {
@@ -60,11 +66,16 @@ function TerminalOpenInControl({ directory }: { directory: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
-  const storageKey = 'junqi:terminal-open-in-app';
-  const preferredId = (() => {
-    try { return localStorage.getItem(storageKey) ?? ''; } catch { return ''; }
-  })();
-  const primary = apps.find((app) => app.id === preferredId) ?? apps[0] ?? null;
+  const preferences = useSyncExternalStore(
+    subscribeTerminalOpenInPreferences,
+    getTerminalOpenInPreferencesSnapshot,
+    getTerminalOpenInPreferencesSnapshot,
+  );
+  const visibleApps = useMemo(
+    () => visibleTerminalOpenInApps(apps, preferences),
+    [apps, preferences],
+  );
+  const primary = visibleApps.find((app) => app.id === preferences.lastUsedAppId) ?? visibleApps[0] ?? null;
   const canOpen = Boolean(directory && primary);
 
   useEffect(() => {
@@ -92,7 +103,7 @@ function TerminalOpenInControl({ directory }: { directory: string }) {
     if (!directory) return;
     try {
       await invoke('open_terminal_workspace_in_app', { appId: app.id, path: directory });
-      try { localStorage.setItem(storageKey, app.id); } catch {}
+      setTerminalOpenInLastUsed(app.id);
       setError('');
       setMenuOpen(false);
     } catch {
@@ -102,7 +113,7 @@ function TerminalOpenInControl({ directory }: { directory: string }) {
   }, [directory, t]);
 
   return (
-    <div ref={wrapRef} className="relative flex h-[28px] shrink-0 items-center" style={{ opacity: apps.length > 0 ? 1 : 0.45 }}>
+    <div ref={wrapRef} className="terminal-kooky-open-in relative flex h-[28px] shrink-0 items-center" style={{ opacity: visibleApps.length > 0 ? 1 : 0.45 }}>
       <button
         type="button"
         disabled={!canOpen}
@@ -111,11 +122,11 @@ function TerminalOpenInControl({ directory }: { directory: string }) {
         aria-label={primary ? t('terminal.openInPrimary', { app: primary.label, defaultValue: `Open in ${primary.label}` }) : t('terminal.openIn', 'Open in...')}
         className="flex h-[28px] w-[24px] items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text disabled:cursor-default disabled:hover:bg-transparent"
       >
-        {primary?.id === 'file-manager' ? <FolderOpen size={14} /> : <ExternalLink size={13} />}
+        {primary?.id === 'finder' ? <FolderOpen size={14} /> : <ExternalLink size={13} />}
       </button>
       <button
         type="button"
-        disabled={apps.length === 0}
+        disabled={visibleApps.length === 0}
         onClick={() => setMenuOpen((open) => !open)}
         title={t('terminal.openIn', 'Open in...')}
         aria-label={t('terminal.openIn', 'Open in...')}
@@ -125,14 +136,14 @@ function TerminalOpenInControl({ directory }: { directory: string }) {
       </button>
       {menuOpen && (
         <div className="absolute end-0 top-[32px] z-[100] w-[220px] overflow-hidden rounded-[6px] border border-aegis-border/70 bg-aegis-elevated p-1 shadow-[0_10px_28px_rgb(0_0_0_/_0.35)]">
-          {apps.map((app) => (
+          {visibleApps.map((app) => (
             <button
               key={app.id}
               type="button"
               onClick={() => void openIn(app)}
               className="flex h-8 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11px] text-aegis-text transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.08)]"
             >
-              {app.id === 'file-manager' ? <FolderOpen size={13} /> : <ExternalLink size={12} />}
+              {app.id === 'finder' ? <FolderOpen size={13} /> : <ExternalLink size={12} />}
               <span className="min-w-0 flex-1 truncate">{app.label}</span>
               {app.id === primary?.id && <span className="h-1.5 w-1.5 rounded-full bg-aegis-primary" />}
             </button>
@@ -169,7 +180,7 @@ function TerminalKeepAwakeControl() {
       onClick={cycleTerminalKeepAwakeMode}
       title={title}
       aria-label={title}
-      className="relative flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[5px] transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+      className="terminal-kooky-keep-awake relative flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[5px] transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
     >
       {enabled && (
         <span
@@ -461,6 +472,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
         // everything (native lights, sidebar toggle, AI pill, bell) shares
         // the same horizontal centre line at y=16.
         'h-[32px] shrink-0 flex items-center gap-1.5 chrome-bg select-none relative z-20 border-b border-aegis-border/30',
+        terminalChrome && 'terminal-kooky-topbar',
         isMac ? 'ps-[82px] pe-3' : 'px-3',
       )}
     >
@@ -496,7 +508,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
           onClick={requestTerminalCommandPalette}
           title={t('terminal.commandPalette', 'Search workspace, tab, agent')}
           aria-label={t('terminal.commandPalette', 'Search workspace, tab, agent')}
-          className="absolute left-1/2 flex h-[24px] w-[min(340px,calc(100%_-_180px))] -translate-x-1/2 items-center gap-2 rounded-[5px] border border-aegis-border/50 bg-[rgb(var(--aegis-overlay)/0.06)] px-2.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:border-aegis-border hover:bg-[rgb(var(--aegis-overlay)/0.1)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          className="terminal-kooky-search-trigger absolute left-1/2 flex h-[24px] w-[min(340px,calc(100%_-_180px))] -translate-x-1/2 items-center gap-2 rounded-[5px] border border-aegis-border/50 bg-[rgb(var(--aegis-overlay)/0.06)] px-2.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:border-aegis-border hover:bg-[rgb(var(--aegis-overlay)/0.1)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
         >
           <Search size={13} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{t('terminal.commandPalette', 'Search workspace, tab, agent')}</span>
@@ -540,12 +552,12 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
           onClick={requestTerminalAgentPanelToggle}
           title={t('terminal.agentPanelToggle', 'Toggle agent panel')}
           aria-label={t('terminal.agentPanelToggle', 'Toggle agent panel')}
-          className="ml-auto flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          className="terminal-kooky-agent-toggle ml-auto flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
         >
-          <PanelRightOpen size={15} />
+          <LayoutGrid size={14} strokeWidth={1.7} />
         </button>
       )}
-      <div ref={notifRef} className={clsx('relative shrink-0', !terminalChrome && 'ml-auto')}>
+      <div ref={notifRef} className={clsx('relative shrink-0', terminalChrome && 'terminal-kooky-notification', !terminalChrome && 'ml-auto')}>
         <button
           type="button"
           onClick={() => setPanelOpen((value) => {
@@ -563,7 +575,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
               : 'text-aegis-text-secondary hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.12)]',
           )}
         >
-          <Bell size={16} />
+          <Bell size={terminalChrome ? 14 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
           {unread > 0 && (
             <span className="absolute top-0 end-0 min-w-[12px] h-[12px] px-[2px] flex items-center justify-center rounded-full bg-aegis-danger text-white text-[8px] font-bold leading-none">
               {unread > 9 ? '9+' : unread}

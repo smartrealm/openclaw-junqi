@@ -5,9 +5,9 @@
 //! app cannot turn this command into a generic process launcher.
 
 use serde::Serialize;
-use std::process::Command;
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
+use std::process::Command;
 
 #[derive(Clone, Copy)]
 struct TerminalOpenInSpec {
@@ -18,12 +18,7 @@ struct TerminalOpenInSpec {
 
 const OPEN_IN_APPS: &[TerminalOpenInSpec] = &[
     TerminalOpenInSpec {
-        id: "file-manager",
-        label: "File Manager",
-        binary: None,
-    },
-    TerminalOpenInSpec {
-        id: "code",
+        id: "vscode",
         label: "VS Code",
         binary: Some("code"),
     },
@@ -63,7 +58,7 @@ const OPEN_IN_APPS: &[TerminalOpenInSpec] = &[
         binary: Some("kiro"),
     },
     TerminalOpenInSpec {
-        id: "idea",
+        id: "intellij",
         label: "IntelliJ IDEA",
         binary: Some("idea"),
     },
@@ -102,6 +97,11 @@ const OPEN_IN_APPS: &[TerminalOpenInSpec] = &[
         label: "Warp",
         binary: None,
     },
+    TerminalOpenInSpec {
+        id: "finder",
+        label: "File Manager",
+        binary: None,
+    },
 ];
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -118,8 +118,11 @@ fn open_in_spec(id: &str) -> Option<TerminalOpenInSpec> {
 #[cfg(target_os = "macos")]
 fn macos_bundle_names(id: &str) -> &'static [&'static str] {
     match id {
-        "file-manager" => &["Finder.app"],
-        "code" => &["Visual Studio Code.app", "Visual Studio Code - Insiders.app"],
+        "finder" => &["Finder.app"],
+        "vscode" => &[
+            "Visual Studio Code.app",
+            "Visual Studio Code - Insiders.app",
+        ],
         "cursor" => &["Cursor.app"],
         "windsurf" => &["Windsurf.app"],
         "zed" => &["Zed.app", "Zed Preview.app"],
@@ -127,7 +130,7 @@ fn macos_bundle_names(id: &str) -> &'static [&'static str] {
         "antigravity" => &["Antigravity.app"],
         "trae" => &["Trae.app"],
         "kiro" => &["Kiro.app"],
-        "idea" => &["IntelliJ IDEA.app", "IntelliJ IDEA CE.app"],
+        "intellij" => &["IntelliJ IDEA.app", "IntelliJ IDEA CE.app"],
         "pycharm" => &["PyCharm.app", "PyCharm CE.app"],
         "webstorm" => &["WebStorm.app"],
         "xcode" => &["Xcode.app"],
@@ -167,7 +170,7 @@ fn macos_application_path(app: TerminalOpenInSpec) -> Option<PathBuf> {
 }
 
 fn open_in_app_is_installed(app: &TerminalOpenInSpec) -> bool {
-    if app.id == "file-manager" {
+    if app.id == "finder" {
         return true;
     }
     #[cfg(target_os = "macos")]
@@ -186,7 +189,7 @@ fn installed_open_in_apps() -> Vec<TerminalOpenInApp> {
             id: app.id.to_string(),
             label: {
                 #[cfg(target_os = "macos")]
-                if app.id == "file-manager" {
+                if app.id == "finder" {
                     "Finder".to_string()
                 } else {
                     app.label.to_string()
@@ -204,17 +207,21 @@ fn installed_open_in_apps() -> Vec<TerminalOpenInApp> {
 pub async fn list_terminal_open_in_apps() -> Vec<TerminalOpenInApp> {
     tokio::task::spawn_blocking(installed_open_in_apps)
         .await
-        .unwrap_or_else(|_| vec![TerminalOpenInApp {
-            id: "file-manager".to_string(),
-            label: "File Manager".to_string(),
-        }])
+        .unwrap_or_else(|_| {
+            vec![TerminalOpenInApp {
+                id: "finder".to_string(),
+                label: "File Manager".to_string(),
+            }]
+        })
 }
 
 #[tauri::command]
 pub async fn open_terminal_workspace_in_app(app_id: String, path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let app = open_in_spec(app_id.trim()).ok_or_else(|| "unsupported Open In application".to_string())?;
-        let directory = crate::commands::terminal_workspace::resolve_terminal_workspace_directory(path)?;
+        let app = open_in_spec(app_id.trim())
+            .ok_or_else(|| "unsupported Open In application".to_string())?;
+        let directory =
+            crate::commands::terminal_workspace::resolve_terminal_workspace_directory(path)?;
         #[cfg(target_os = "macos")]
         if let Some(application) = macos_application_path(app) {
             let mut command = Command::new("open");
@@ -235,7 +242,7 @@ pub async fn open_terminal_workspace_in_app(app_id: String, path: String) -> Res
             command
                 .spawn()
                 .map_err(|error| format!("open {}: {error}", app.label))?;
-        } else if app.id == "file-manager" {
+        } else if app.id == "finder" {
             crate::platform::open_in_explorer(&directory)
                 .map_err(|error| format!("open file manager: {error}"))?;
         } else {
@@ -253,8 +260,8 @@ mod tests {
 
     #[test]
     fn open_in_catalog_has_a_safe_file_manager_fallback() {
-        assert_eq!(OPEN_IN_APPS.first().map(|app| app.id), Some("file-manager"));
-        assert!(open_in_spec("file-manager").is_some());
+        assert_eq!(OPEN_IN_APPS.last().map(|app| app.id), Some("finder"));
+        assert!(open_in_spec("finder").is_some());
         assert!(open_in_spec("/bin/sh").is_none());
     }
 
@@ -263,8 +270,8 @@ mod tests {
     fn macos_catalog_covers_kooky_editor_and_terminal_bundle_names() {
         use super::macos_bundle_names;
 
-        assert!(macos_bundle_names("code").contains(&"Visual Studio Code.app"));
+        assert!(macos_bundle_names("vscode").contains(&"Visual Studio Code.app"));
         assert!(macos_bundle_names("iterm").contains(&"iTerm.app"));
-        assert!(macos_bundle_names("file-manager").contains(&"Finder.app"));
+        assert!(macos_bundle_names("finder").contains(&"Finder.app"));
     }
 }

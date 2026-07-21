@@ -19,7 +19,7 @@ import {
 import {
   TERMINAL_AGENT_PANEL_TOGGLE_EVENT,
   TERMINAL_COMMAND_PALETTE_EVENT,
-  requestTerminalAgentLaunch,
+  requestTerminalLaunch,
 } from "@/components/Terminal/terminalChromeEvents";
 import {
   ensureTerminalAgentAvailability,
@@ -30,8 +30,17 @@ import { terminalAgentLauncher } from "@/components/Terminal/terminalAgentCatalo
 import {
   getTerminalAgentPreferencesSnapshot,
   subscribeTerminalAgentPreferences,
-  visibleTerminalAgentIds,
 } from "@/components/Terminal/terminalAgentPreferences";
+import {
+  getTerminalPresetPreferencesSnapshot,
+  subscribeTerminalPresetPreferences,
+} from "@/components/Terminal/terminalPresets";
+import {
+  getTerminalCustomAgentPreferencesSnapshot,
+  subscribeTerminalCustomAgentPreferences,
+} from "@/components/Terminal/terminalCustomAgents";
+import { buildTerminalLaunchTargets, type TerminalLaunchTarget } from "@/components/Terminal/terminalLaunchCatalog";
+import { APP_PLATFORM } from "@/components/Terminal/platform";
 import {
   getTerminalSessionOverviewSnapshot,
   subscribeTerminalSessionOverview,
@@ -66,11 +75,11 @@ import { useRef, useState, useCallback, useEffect, useMemo, useSyncExternalStore
 import { homeDir } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, ChevronRight, Clock3, FolderOpen, FolderTree, GitBranch, Layers, Plus, RefreshCw, Search, Server, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
+import { ChevronRight, Clock3, FolderOpen, FolderTree, GitBranch, Layers, Plus, RefreshCw, Search, Server, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
 import { Icon } from '@/components/shared/icons';
+import { KookyAgentIcon } from '@/components/Terminal/KookyAgentIcon';
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/junqi/types";
 import type { Workspace } from "@/workspace/types";
-import { getDefaultMonoFont } from "@/junqi/types";
 import { takePendingTerminalCommands } from '@/services/terminalCommandQueue';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useTerminalPreferences } from '@/hooks/useTerminalPreferences';
@@ -102,7 +111,9 @@ export function TerminalPage() {
   const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
   const { scrollback: terminalScrollback, shiftEnterNewline: terminalShiftEnterNewline } = useTerminalPreferences();
   const configuredMonoFont = useSettingsStore((state) => state.monoFont);
-  const monoFontFamily = (configuredMonoFont || getDefaultMonoFont()) as FontFamily;
+  // Kooky embeds JetBrains Mono, so a clean install renders the same terminal
+  // metrics on macOS and Windows instead of depending on local font setup.
+  const monoFontFamily = (configuredMonoFont || '"Kooky JetBrains Mono", "JetBrains Mono", ui-monospace, monospace') as FontFamily;
   const [projectPath, setProjectPath] = useState(".");
   const [recentDirectories, setRecentDirectories] = useState<TerminalWorkspaceDirectory[]>([]);
   const addToast = useNotificationStore((state) => state.addToast);
@@ -252,10 +263,23 @@ export function TerminalPage() {
     getTerminalAgentPreferencesSnapshot,
     getTerminalAgentPreferencesSnapshot,
   );
-  const visibleAvailableAgentIds = useMemo(() => {
-    const available = new Set(agentAvailability.agents);
-    return visibleTerminalAgentIds(agentPreferences).filter((agent) => available.has(agent));
-  }, [agentAvailability.agents, agentPreferences]);
+  const presetPreferences = useSyncExternalStore(
+    subscribeTerminalPresetPreferences,
+    getTerminalPresetPreferencesSnapshot,
+    getTerminalPresetPreferencesSnapshot,
+  );
+  const customAgentPreferences = useSyncExternalStore(
+    subscribeTerminalCustomAgentPreferences,
+    getTerminalCustomAgentPreferencesSnapshot,
+    getTerminalCustomAgentPreferencesSnapshot,
+  );
+  const terminalLaunchTargets = useMemo(() => buildTerminalLaunchTargets({
+    availableAgentIds: new Set(agentAvailability.agents),
+    agentPreferences,
+    presetPreferences,
+    customAgentPreferences,
+    platform: APP_PLATFORM === 'windows' ? 'windows' : 'posix',
+  }), [agentAvailability.agents, agentPreferences, customAgentPreferences, presetPreferences]);
   const [worktreeEligibleWorkspaceIds, setWorktreeEligibleWorkspaceIds] = useState<Set<string>>(() => new Set());
   const hasTerminalActiveWork = useMemo(() => (
     terminalAgents.some((entry) => entry.state === 'running')
@@ -396,6 +420,21 @@ export function TerminalPage() {
       created.path,
     );
     if (!workspace) throw new Error(t('terminal.worktreeCreateStateFailed'));
+  }, [t]);
+
+  const adoptWorktreeWorkspaces = useCallback(async (
+    parentId: string,
+    requested: readonly TerminalWorkspaceWorktree[],
+  ) => {
+    const parent = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === parentId);
+    if (!parent) throw new Error(t('terminal.worktreeSourceMissing'));
+    const live = await invoke<TerminalWorkspaceWorktree[]>('list_terminal_workspace_worktrees', {
+      projectPath: parent.projectDirectory || parent.workingDirectory,
+    });
+    const requestedPaths = new Set(requested.map((worktree) => worktree.path));
+    const stillPresent = (live ?? []).filter((worktree) => requestedPaths.has(worktree.path));
+    if (stillPresent.length === 0) throw new Error(t('terminal.worktreeAdoptMissing', 'The selected worktree is no longer available.'));
+    useWorkspaceStore.getState().adoptWorktreeWorkspaces(parent.id, stillPresent);
   }, [t]);
 
   const closeWorktreeWorkspace = useCallback(async (workspace: Workspace, deleteOnDisk: boolean) => {
@@ -552,7 +591,7 @@ export function TerminalPage() {
   }, []);
 
   return (
-    <div style={{ display: "flex", flex: 1, flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--terminal-bg)" }}>
+    <div className="terminal-kooky-workbench" style={{ display: "flex", flex: 1, flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--terminal-bg)" }}>
       <div style={{ display: "flex", flex: 1, minHeight: 0, position: 'relative' }}>
 
         {sidebarMode !== "hidden" && (
@@ -575,6 +614,7 @@ export function TerminalPage() {
             onClearRecentDirectories={clearRecentDirectories}
             onCloseWorkspace={(id) => useWorkspaceStore.getState().closeWorkspace(id)}
             onCreateWorktree={createWorktreeWorkspace}
+            onAdoptWorktrees={adoptWorktreeWorkspaces}
             worktreeEligibleWorkspaceIds={worktreeEligibleWorkspaceIds}
             worktreeCreateRequestId={worktreeCreateRequestId}
             onWorktreeCreateRequestHandled={() => setWorktreeCreateRequestId(null)}
@@ -654,8 +694,9 @@ export function TerminalPage() {
         {agentPanelMode !== 'hidden' && (
           <aside
             aria-label={t('terminal.agents', 'Agents')}
+            className="terminal-kooky-agent-panel"
             style={{
-              width: agentPanelMode === 'full' ? 256 : 44,
+              width: agentPanelMode === 'full' ? 230 : 44,
               flexShrink: 0,
               minWidth: 0,
               overflow: 'hidden',
@@ -675,12 +716,12 @@ export function TerminalPage() {
       onClose={() => setCmdPaletteOpen(false)}
       workspaces={workspaces}
       sessions={terminalSessions}
-      availableAgents={visibleAvailableAgentIds}
+      launchTargets={terminalLaunchTargets}
       worktreeWorkspaceIds={worktreeEligibleWorkspaceIds}
       recentDirectories={recentDirectories}
       onSelectWorkspace={(id) => useWorkspaceStore.getState().setActive(id)}
       onOpenTerminal={() => window.dispatchEvent(new Event('junqi:new-terminal-tab'))}
-      onLaunchAgent={requestTerminalAgentLaunch}
+      onLaunch={requestTerminalLaunch}
       onCreateWorktree={requestCreateWorktree}
       onCreateSshWorkspace={requestCreateSshWorkspace}
       onOpenRecentDirectory={openWorkspaceDirectory}
@@ -884,6 +925,22 @@ function ProjectWorkspaceRow({
   const subtitle = workspace.worktreeParentId
     ? workspace.worktreeBranch || projectPath
     : projectPath;
+  const workspaceSessions = useSyncExternalStore(
+    subscribeTerminalSessionOverview,
+    getTerminalSessionOverviewSnapshot,
+    getTerminalSessionOverviewSnapshot,
+  );
+  const activeSession = workspaceSessions.find((session) => session.workspaceId === workspace.id && session.agent)
+    ?? workspaceSessions.find((session) => session.workspaceId === workspace.id);
+  const workspaceGlyph = (
+    <KookyAgentIcon
+      agent={activeSession?.agent}
+      size={16}
+      fallback={workspace.sshRemoteHost
+        ? <Server size={15} strokeWidth={1.8} />
+        : <TerminalIcon size={15} strokeWidth={1.7} />}
+    />
+  );
 
   useEffect(() => {
     if (renaming) {
@@ -947,6 +1004,7 @@ function ProjectWorkspaceRow({
       <>
       <div
         draggable={draggable}
+        className="terminal-kooky-workspace-row"
         title={workspace.worktreeParentId ? `${title} - ${subtitle}` : title}
         onClick={onSelect}
         onContextMenu={(event) => {
@@ -971,7 +1029,7 @@ function ProjectWorkspaceRow({
           color: active ? 'rgb(var(--aegis-text))' : 'rgb(var(--aegis-text-dim))',
         }}
       >
-        {workspace.sshRemoteHost ? <Server size={15} strokeWidth={1.8} /> : workspace.worktreeParentId ? <GitBranch size={15} strokeWidth={1.8} /> : <FolderOpen size={15} strokeWidth={1.8} />}
+        {workspaceGlyph}
         {active && <span style={{ position: 'absolute', top: 5, right: 5, width: 5, height: 5, borderRadius: '50%', background: 'rgb(var(--aegis-primary))' }} />}
       </div>
       {contextMenuContent}
@@ -981,6 +1039,7 @@ function ProjectWorkspaceRow({
 
   return (
     <div
+      className="terminal-kooky-workspace-row"
       draggable={draggable && !renaming}
       onClick={() => { if (!renaming) onSelect(); }}
       onDoubleClick={() => { if (onRename) beginRename(); }}
@@ -1001,8 +1060,8 @@ function ProjectWorkspaceRow({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       style={{
-        minHeight: 48, display: 'flex', alignItems: 'center', gap: 8, margin: '2px 6px',
-        padding: `7px 8px 7px ${10 + depth * 18}px`, borderRadius: 6, cursor: 'pointer', position: 'relative',
+        minHeight: 0, display: 'flex', alignItems: 'center', gap: 8, margin: '2px 8px',
+        padding: '11px 12px', borderRadius: 6, cursor: 'pointer', position: 'relative',
         background: active ? 'rgb(var(--aegis-overlay) / 0.12)' : hovered ? 'rgb(var(--aegis-overlay) / 0.06)' : 'transparent',
         boxShadow: dragTargetPosition === 'before'
           ? 'inset 0 2px 0 rgb(var(--aegis-primary) / 0.9)'
@@ -1012,17 +1071,7 @@ function ProjectWorkspaceRow({
         color: active ? 'rgb(var(--aegis-text))' : 'rgb(var(--aegis-text-dim))',
       }}
     >
-      {hasChildren ? (
-        <button
-          type="button"
-          aria-label={collapsed ? 'Expand worktrees' : 'Collapse worktrees'}
-          onClick={(event) => { event.stopPropagation(); onToggleChildren(); }}
-          style={{ width: 18, height: 18, border: 'none', background: 'transparent', color: 'inherit', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-        >
-          <ChevronRight size={13} style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 120ms ease' }} />
-        </button>
-      ) : <span style={{ width: 18, flexShrink: 0 }} />}
-      {workspace.sshRemoteHost ? <Server size={14} strokeWidth={1.8} style={{ flexShrink: 0 }} /> : workspace.worktreeParentId ? <GitBranch size={14} strokeWidth={1.8} style={{ flexShrink: 0 }} /> : <FolderOpen size={14} strokeWidth={1.8} style={{ flexShrink: 0 }} />}
+      <span style={{ display: 'inline-flex', flexShrink: 0 }}>{workspaceGlyph}</span>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         {renaming ? (
           <input
@@ -1101,7 +1150,7 @@ function WorkspaceRowMenuItem({ label, onClick, danger = false, disabled = false
 function WorkspaceSidebarPanel({
   mode, width, onWidthChange, onResizeActiveChange, content, onContentChange, projectPath, workspaces, recentDirectories, activeWorkspaceId,
   onSelectWorkspace, onCreateWorkspace, onCreateSshWorkspace, onOpenFolder, onOpenRecentDirectory,
-  onClearRecentDirectories, onCloseWorkspace, onCreateWorktree, worktreeEligibleWorkspaceIds, worktreeCreateRequestId, onWorktreeCreateRequestHandled,
+  onClearRecentDirectories, onCloseWorkspace, onCreateWorktree, onAdoptWorktrees, worktreeEligibleWorkspaceIds, worktreeCreateRequestId, onWorktreeCreateRequestHandled,
   onCloseWorktree, onRenameWorkspace, onMoveWorkspace, onDuplicateWorkspace, onCloseOtherWorkspaces, onRevealWorkspace,
   renameWorkspaceRequestId, onRenameWorkspaceRequestHandled, closeWorkspaceRequestId, onCloseWorkspaceRequestHandled, sshWorkspaceRequestVersion,
 }: {
@@ -1123,6 +1172,7 @@ function WorkspaceSidebarPanel({
   onClearRecentDirectories: () => void | Promise<unknown>;
   onCloseWorkspace: (id: string) => void;
   onCreateWorktree: (parentId: string, branch: string, startPoint?: string) => Promise<void>;
+  onAdoptWorktrees: (parentId: string, worktrees: readonly TerminalWorkspaceWorktree[]) => Promise<void>;
   worktreeEligibleWorkspaceIds: Set<string>;
   worktreeCreateRequestId: string | null;
   onWorktreeCreateRequestHandled: () => void;
@@ -1215,7 +1265,7 @@ function WorkspaceSidebarPanel({
   }, [finishResize, mode]);
 
   return (
-    <div style={{
+    <div className="terminal-kooky-sidebar" style={{
       width: panelWidth, flexShrink: 0, display: 'flex', flexDirection: 'column',
       borderInlineEnd: '1px solid rgb(255 255 255 / 0.07)',
       background: 'rgb(var(--aegis-surface))',
@@ -1227,10 +1277,10 @@ function WorkspaceSidebarPanel({
           sidebar is intentionally just a workspace navigator. */}
       {mode === 'full' ? (
         <div style={{
-          height: 46, display: 'flex', alignItems: 'center',
+          height: 40, display: 'flex', alignItems: 'center',
           padding: '0 10px 0 14px', gap: 6, flexShrink: 0,
         }}>
-          <span style={{
+          <span className="terminal-kooky-sidebar-brand" style={{
             flex: 1, fontSize: 15, fontFamily: 'inherit', color: 'rgb(var(--aegis-text))',
             fontWeight: 500, letterSpacing: 0,
           }}>junqi</span>
@@ -1247,19 +1297,9 @@ function WorkspaceSidebarPanel({
           >
             <Plus size={13} strokeWidth={2.5} />
           </button>
-          <button
-            type="button"
-            onClick={() => setSshWorkspaceDialogOpen(true)}
-            title={t('terminal.sshWorkspaceCreate')}
-            style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 5, color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer' }}
-            onMouseEnter={(event) => { event.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; event.currentTarget.style.color = 'rgb(var(--aegis-text))'; }}
-            onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; event.currentTarget.style.color = 'rgb(var(--aegis-text-dim))'; }}
-          >
-            <Server size={13} strokeWidth={2} />
-          </button>
         </div>
       ) : (
-        <div style={{ height: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <button
             onClick={onCreateWorkspace}
             title={t('terminal.workspaceNew')}
@@ -1273,18 +1313,8 @@ function WorkspaceSidebarPanel({
           >
             <Plus size={13} strokeWidth={2.5} />
           </button>
-          <button
-            type="button"
-            onClick={() => setSshWorkspaceDialogOpen(true)}
-            title={t('terminal.sshWorkspaceCreate')}
-            style={{ width: 24, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 6, color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer' }}
-          >
-            <Server size={13} strokeWidth={2} />
-          </button>
         </div>
       )}
-
-      <div style={{ height: 1, flexShrink: 0, background: 'rgb(var(--aegis-overlay) / 0.08)' }} />
 
       {/* ── 工作区列表 ──────────────────────────── */}
       {showingFiles ? (
@@ -1399,8 +1429,8 @@ function WorkspaceSidebarPanel({
       {/* ── 底部视图切换 / 打开目录（full 模式） ── */}
       {mode === 'full' && (
         <>
-          <div style={{ height: 1, background: 'rgb(255 255 255 / 0.05)', flexShrink: 0 }} />
-          <div style={{ height: 34, display: 'flex', alignItems: 'center', gap: 2, padding: '0 6px' }}>
+          <div className="terminal-kooky-sidebar-footer" style={{ height: 1, background: 'rgb(255 255 255 / 0.05)', flexShrink: 0 }} />
+          <div className="terminal-kooky-sidebar-footer" style={{ height: 34, display: 'flex', alignItems: 'center', gap: 2, padding: '0 6px' }}>
             <button
               type="button"
               onClick={() => onContentChange('workspaces')}
@@ -1489,9 +1519,16 @@ function WorkspaceSidebarPanel({
       {worktreeCreateParent && (
         <TerminalWorktreeCreateDialog
           workspace={worktreeCreateParent}
+          existingWorktreePaths={new Set(workspaces
+            .filter((workspace) => workspace.worktreeParentId === worktreeCreateParent.id)
+            .map((workspace) => workspace.worktreePath || workspace.workingDirectory))}
           onClose={() => setWorktreeCreateParent(null)}
           onCreate={async (branch, startPoint) => {
             await onCreateWorktree(worktreeCreateParent.id, branch, startPoint);
+            setWorktreeCreateParent(null);
+          }}
+          onAdopt={async (worktrees) => {
+            await onAdoptWorktrees(worktreeCreateParent.id, worktrees);
             setWorktreeCreateParent(null);
           }}
         />
@@ -1530,18 +1567,23 @@ function WorkspaceSidebarPanel({
   );
 }
 
-function TerminalWorktreeCreateDialog({ workspace, onClose, onCreate }: {
+function TerminalWorktreeCreateDialog({ workspace, existingWorktreePaths, onClose, onCreate, onAdopt }: {
   workspace: Workspace;
+  existingWorktreePaths: ReadonlySet<string>;
   onClose: () => void;
   onCreate: (branch: string, startPoint?: string) => Promise<void>;
+  onAdopt: (worktrees: readonly TerminalWorkspaceWorktree[]) => Promise<void>;
 }) {
   const { t } = useTranslation();
-  const [mode, setMode] = useState<'new' | 'existing'>('new');
+  const [mode, setMode] = useState<'new' | 'existing' | 'adopt'>('new');
   const [branch, setBranch] = useState('');
   const [existingBranch, setExistingBranch] = useState('');
   const [startPoint, setStartPoint] = useState('HEAD');
   const [branches, setBranches] = useState<TerminalWorkspaceBranch[]>([]);
+  const [diskWorktrees, setDiskWorktrees] = useState<TerminalWorkspaceWorktree[]>([]);
+  const [selectedAdoptPaths, setSelectedAdoptPaths] = useState<Set<string>>(() => new Set());
   const [branchesLoading, setBranchesLoading] = useState(true);
+  const [worktreesLoading, setWorktreesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1551,9 +1593,13 @@ function TerminalWorktreeCreateDialog({ workspace, onClose, onCreate }: {
     () => branches.filter((candidate) => !candidate.remote && !candidate.current),
     [branches],
   );
+  const adoptableWorktrees = useMemo(
+    () => diskWorktrees.filter((worktree) => !existingWorktreePaths.has(worktree.path)),
+    [diskWorktrees, existingWorktreePaths],
+  );
   useEffect(() => {
     if (mode === 'new') inputRef.current?.focus();
-    else existingBranchRef.current?.focus();
+    else if (mode === 'existing') existingBranchRef.current?.focus();
   }, [mode]);
   useEffect(() => {
     let cancelled = false;
@@ -1570,19 +1616,35 @@ function TerminalWorktreeCreateDialog({ workspace, onClose, onCreate }: {
       .finally(() => { if (!cancelled) setBranchesLoading(false); });
     return () => { cancelled = true; };
   }, [projectPath]);
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<TerminalWorkspaceWorktree[]>('list_terminal_workspace_worktrees', { projectPath })
+      .then((result) => { if (!cancelled) setDiskWorktrees(result ?? []); })
+      .catch(() => { if (!cancelled) setDiskWorktrees([]); })
+      .finally(() => { if (!cancelled) setWorktreesLoading(false); });
+    return () => { cancelled = true; };
+  }, [projectPath]);
 
   const submit = async () => {
     const value = mode === 'new' ? branch.trim() : existingBranch.trim();
-    if (!value || submitting) return;
+    const selected = adoptableWorktrees.filter((worktree) => selectedAdoptPaths.has(worktree.path));
+    if ((mode === 'adopt' ? selected.length === 0 : !value) || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      await onCreate(value, mode === 'new' && startPoint !== 'HEAD' ? startPoint : undefined);
+      if (mode === 'adopt') await onAdopt(selected);
+      else await onCreate(value, mode === 'new' && startPoint !== 'HEAD' ? startPoint : undefined);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
       setSubmitting(false);
     }
   };
+  const toggleAdoptPath = (path: string) => setSelectedAdoptPaths((current) => {
+    const next = new Set(current);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    return next;
+  });
 
   return (
     <div role="dialog" aria-modal="true" aria-label={t('terminal.worktreeCreate')} style={terminalModalBackdropStyle} onMouseDown={onClose}>
@@ -1591,9 +1653,13 @@ function TerminalWorktreeCreateDialog({ workspace, onClose, onCreate }: {
         <div style={terminalModalTitleStyle}>{workspace.name}</div>
         <div style={terminalModalPathStyle}>{workspace.projectDirectory || workspace.workingDirectory}</div>
         <div role="group" aria-label={t('terminal.worktreeMode', 'Worktree mode')} style={{ display: 'inline-flex', alignSelf: 'flex-start', gap: 2, padding: 2, border: '1px solid rgb(var(--aegis-overlay) / 0.14)', borderRadius: 5, background: 'rgb(var(--aegis-surface))' }}>
-          {(['new', 'existing'] as const).map((candidate) => (
+          {(['new', 'existing', 'adopt'] as const).map((candidate) => (
             <button key={candidate} type="button" onClick={() => { setMode(candidate); setError(null); }} style={{ height: 26, padding: '0 9px', border: 'none', borderRadius: 3, cursor: 'pointer', fontSize: 10.5, color: mode === candidate ? '#fff' : 'rgb(var(--aegis-text-dim))', background: mode === candidate ? 'rgb(var(--aegis-primary))' : 'transparent' }}>
-              {candidate === 'new' ? t('terminal.worktreeNewBranch', 'New branch') : t('terminal.worktreeExistingBranch', 'Existing branch')}
+              {candidate === 'new'
+                ? t('terminal.worktreeNewBranch', 'New branch')
+                : candidate === 'existing'
+                  ? t('terminal.worktreeExistingBranch', 'Existing branch')
+                  : t('terminal.worktreeAdopt', 'Adopt existing')}
             </button>
           ))}
         </div>
@@ -1613,18 +1679,39 @@ function TerminalWorktreeCreateDialog({ workspace, onClose, onCreate }: {
               </select>
             </label>
           </>
-        ) : (
+        ) : mode === 'existing' ? (
           <label style={terminalModalLabelStyle}>
             {t('terminal.worktreeExistingBranch', 'Existing branch')}
             <select ref={existingBranchRef} value={existingBranch} onChange={(event) => setExistingBranch(event.target.value)} disabled={branchesLoading || localBranches.length === 0} style={terminalModalInputStyle}>
               {localBranches.length === 0 ? <option value="">{branchesLoading ? t('common.loading', 'Loading...') : t('terminal.worktreeNoAvailableBranch', 'No available local branches')}</option> : localBranches.map((candidate) => <option key={candidate.name} value={candidate.name}>{candidate.name}</option>)}
             </select>
           </label>
+        ) : (
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div style={{ color: 'rgb(var(--aegis-text-dim))', fontSize: 11.5 }}>{t('terminal.worktreeAdoptDescription', 'Select existing Git worktrees to show in this sidebar.')}</div>
+            {worktreesLoading ? (
+              <div style={{ color: 'rgb(var(--aegis-text-dim))', fontSize: 11 }}>{t('common.loading', 'Loading...')}</div>
+            ) : adoptableWorktrees.length === 0 ? (
+              <div style={{ color: 'rgb(var(--aegis-text-dim))', fontSize: 11 }}>{t('terminal.worktreeNoAdoptable', 'No unadopted worktrees found')}</div>
+            ) : (
+              <div style={{ maxHeight: 176, overflowY: 'auto', border: '1px solid rgb(var(--aegis-overlay) / 0.13)', borderRadius: 4 }}>
+                {adoptableWorktrees.map((worktree) => (
+                  <label key={worktree.path} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '7px 8px', cursor: 'pointer', borderBottom: '1px solid rgb(var(--aegis-overlay) / 0.08)' }}>
+                    <input type="checkbox" checked={selectedAdoptPaths.has(worktree.path)} onChange={() => toggleAdoptPath(worktree.path)} />
+                    <span style={{ display: 'grid', minWidth: 0, gap: 2 }}>
+                      <span style={{ color: 'rgb(var(--aegis-text))', fontFamily: '"JetBrains Mono", monospace', fontSize: 11 }}>{worktree.branch}</span>
+                      <span style={terminalModalPathStyle}>{worktree.path}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {error && <div style={{ color: 'rgb(239 68 68)', fontSize: 11, lineHeight: 1.45 }}>{error}</div>}
         <div style={terminalModalActionsStyle}>
           <button type="button" onClick={onClose} disabled={submitting} style={terminalModalSecondaryButtonStyle}>{t('common.cancel', 'Cancel')}</button>
-          <button type="button" onClick={() => void submit()} disabled={!(mode === 'new' ? branch.trim() : existingBranch.trim()) || submitting} style={terminalModalPrimaryButtonStyle}>{submitting ? t('common.creating', 'Creating...') : t('terminal.worktreeCreate')}</button>
+          <button type="button" onClick={() => void submit()} disabled={mode === 'adopt' ? selectedAdoptPaths.size === 0 || submitting : !(mode === 'new' ? branch.trim() : existingBranch.trim()) || submitting} style={terminalModalPrimaryButtonStyle}>{submitting ? t('common.working', 'Working...') : mode === 'adopt' ? t('terminal.worktreeAdopt', 'Adopt existing') : t('terminal.worktreeCreate')}</button>
         </div>
       </div>
     </div>
@@ -1759,19 +1846,19 @@ const terminalModalPrimaryButtonStyle: React.CSSProperties = { height: 30, paddi
 // ──────────────────────────────────────────────────────────────
 
 function CommandPaletteModal({
-  open, onClose, workspaces, sessions, availableAgents, worktreeWorkspaceIds, recentDirectories,
-  onSelectWorkspace, onOpenTerminal, onLaunchAgent, onCreateWorktree, onCreateSshWorkspace, onOpenRecentDirectory,
+  open, onClose, workspaces, sessions, launchTargets, worktreeWorkspaceIds, recentDirectories,
+  onSelectWorkspace, onOpenTerminal, onLaunch, onCreateWorktree, onCreateSshWorkspace, onOpenRecentDirectory,
 }: {
   open: boolean;
   onClose: () => void;
   workspaces: Workspace[];
   sessions: ReturnType<typeof getTerminalSessionOverviewSnapshot>;
-  availableAgents: ReturnType<typeof getTerminalAgentAvailabilitySnapshot>['agents'];
+  launchTargets: readonly TerminalLaunchTarget[];
   worktreeWorkspaceIds: ReadonlySet<string>;
   recentDirectories: TerminalWorkspaceDirectory[];
   onSelectWorkspace: (id: string) => void;
   onOpenTerminal: () => void;
-  onLaunchAgent: (agent: Parameters<typeof requestTerminalAgentLaunch>[0]) => void;
+  onLaunch: (launcherId: string) => void;
   onCreateWorktree: (workspaceId: string) => void;
   onCreateSshWorkspace: () => void;
   onOpenRecentDirectory: (path: string) => void | Promise<unknown>;
@@ -1796,11 +1883,11 @@ function CommandPaletteModal({
   const paletteIndex = useMemo(() => buildTerminalPaletteItems({
     workspaces,
     sessions,
-    availableAgents,
+    launchTargets,
     recentDirectories,
     worktreeWorkspaceIds,
     workspaceDefaultLabel: t('terminal.workspaceDefault'),
-  }), [availableAgents, recentDirectories, sessions, t, workspaces, worktreeWorkspaceIds]);
+  }), [launchTargets, recentDirectories, sessions, t, workspaces, worktreeWorkspaceIds]);
   const items = useMemo(
     () => matchTerminalPaletteItems(query, paletteIndex),
     [paletteIndex, query],
@@ -1825,8 +1912,11 @@ function CommandPaletteModal({
       case 'terminal':
         onOpenTerminal();
         break;
+      case 'preset':
+        onLaunch(item.presetId);
+        break;
       case 'agent':
-        onLaunchAgent(item.agent);
+        onLaunch(item.launcherId);
         break;
       case 'ssh':
         onCreateSshWorkspace();
@@ -1836,7 +1926,7 @@ function CommandPaletteModal({
         break;
     }
     onClose();
-  }, [onClose, onCreateSshWorkspace, onCreateWorktree, onLaunchAgent, onOpenRecentDirectory, onOpenTerminal, onSelectWorkspace, sessions]);
+  }, [onClose, onCreateSshWorkspace, onCreateWorktree, onLaunch, onOpenRecentDirectory, onOpenTerminal, onSelectWorkspace, sessions]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
@@ -1863,10 +1953,10 @@ function CommandPaletteModal({
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgb(0 0 0 / 0.5)' }} />
-      <div style={{
-        position: 'fixed', top: '18%', left: '50%', transform: 'translateX(-50%)',
-        zIndex: 1000, width: 500, maxHeight: 420,
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'transparent' }} />
+      <div className="terminal-kooky-command-palette" style={{
+        position: 'fixed', top: 120, left: '50%', transform: 'translateX(-50%)',
+        zIndex: 1000, width: 'min(720px, calc(100vw - 32px))', height: 'min(440px, calc(100vh - 144px))',
         background: 'rgb(var(--aegis-elevated))',
         border: '1px solid rgb(255 255 255 / 0.12)',
         borderRadius: 10, boxShadow: '0 20px 60px rgb(0 0 0 / 0.6)',
@@ -1887,7 +1977,7 @@ function CommandPaletteModal({
               color: 'rgb(var(--aegis-text))',
             }}
           />
-          <span style={{ fontSize: 10, color: 'rgb(var(--aegis-text-dim))', opacity: 0.5 }}>{t('terminal.paletteCloseHint')}</span>
+          <span style={{ fontSize: 10, color: 'rgb(var(--aegis-text-dim))', opacity: 0.5 }}>⌘P</span>
         </div>
         {/* Results */}
         <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
@@ -1898,12 +1988,12 @@ function CommandPaletteModal({
           )}
           {items.map((item, idx) => {
             const isSelected = idx === selectedIdx;
-            const isAction = item.kind === 'terminal' || item.kind === 'agent' || item.kind === 'worktree' || item.kind === 'ssh';
-            const agentVisual = item.kind === 'agent' ? Icon.agent[item.agent] : null;
-            const icon = item.kind === 'terminal' || item.kind === 'tab'
+            const isAction = item.kind === 'terminal' || item.kind === 'preset' || item.kind === 'agent' || item.kind === 'worktree' || item.kind === 'ssh';
+            const agentVisual = item.kind === 'agent' && item.iconAgent ? Icon.agent[item.iconAgent] : null;
+            const icon = item.kind === 'terminal' || item.kind === 'preset' || item.kind === 'tab'
               ? <TerminalIcon size={14} strokeWidth={1.9} />
               : item.kind === 'agent'
-                ? agentVisual?.icon ?? <Layers size={14} strokeWidth={1.9} />
+                ? <KookyAgentIcon agent={item.iconAgent} size={16} fallback={agentVisual?.icon ?? <Layers size={14} strokeWidth={1.9} />} />
                 : item.kind === 'worktree'
                   ? <GitBranch size={14} strokeWidth={1.9} />
                   : item.kind === 'ssh'
@@ -1929,16 +2019,13 @@ function CommandPaletteModal({
                   {icon}
                 </span>
                 <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontFamily: '"JetBrains Mono", monospace', color: isAction ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text))' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace', color: 'rgb(var(--aegis-text))' }}>
                     {item.title}
                   </span>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))', opacity: 0.72 }}>
                     {item.subtitle}
                   </span>
                 </span>
-                {isSelected && (
-                  <Check size={13} strokeWidth={2} color="rgb(var(--aegis-text-dim))" />
-                )}
               </div>
             );
           })}

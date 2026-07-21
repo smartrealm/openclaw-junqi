@@ -1,0 +1,194 @@
+/* Kooky terminal chrome. This scope deliberately does not alter the rest of
+   JunQi: the terminal is its own workbench rather than a themed card inside
+   the product shell. */
+
+@font-face {
+  font-family: 'Kooky Onest';
+  src: url('../assets/kooky/fonts/Onest.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Kooky JetBrains Mono';
+  src: url('../assets/kooky/fonts/JetBrainsMono-Regular.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+.terminal-kooky-app,
+.terminal-kooky-topbar {
+  --kooky-surface: #282c34;
+  --kooky-chrome: #252931;
+  --kooky-raised: #343941;
+  --kooky-text: #efeff1;
+  --kooky-muted: #8c9099;
+  --kooky-faint: #616670;
+  --kooky-hairline: rgb(239 239 241 / 0.07);
+  --aegis-bg: var(--kooky-surface);
+  --aegis-bg-solid: var(--kooky-surface);
+  --aegis-surface: var(--kooky-chrome);
+  --aegis-surface-solid: var(--kooky-chrome);
+  --aegis-surface-elevated: var(--kooky-chrome);
+  --aegis-elevated: var(--kooky-surface);
+  --aegis-elevated-solid: var(--kooky-surface);
+  --aegis-card: var(--kooky-raised);
+  --aegis-card-solid: var(--kooky-raised);
+  --aegis-chrome: var(--kooky-surface);
+  --aegis-input: var(--kooky-raised);
+  --aegis-border: var(--kooky-hairline);
+  --aegis-border-hover: rgb(239 239 241 / 0.12);
+  --aegis-border-active: rgb(239 239 241 / 0.18);
+  --aegis-hover: rgb(239 239 241 / 0.07);
+  --aegis-menu-bg: #252931;
+  --aegis-menu-hover: rgb(239 239 241 / 0.07);
+  --aegis-menu-active: rgb(239 239 241 / 0.15);
+  --aegis-menu-border: rgb(239 239 241 / 0.08);
+  --aegis-menu-shadow: 0 10px 30px rgb(0 0 0 / 0.42);
+  --aegis-text: 239 239 241;
+  --aegis-text-secondary: 202 204 210;
+  --aegis-text-muted: 140 144 153;
+  --aegis-text-dim: 97 102 112;
+  --aegis-primary: 104 176 219;
+  --aegis-primary-hover: 126 190 228;
+  --aegis-primary-deep: 80 152 202;
+  --aegis-status-running: 104 176 219;
+  --aegis-status-attention: 232 176 102;
+  --aegis-status-idle: 140 144 153;
+  --aegis-status-failed: 232 102 102;
+  --terminal-bg: var(--kooky-surface);
+  --terminal-surface: var(--kooky-surface);
+  --terminal-elevated: var(--kooky-surface);
+  --terminal-border: var(--kooky-hairline);
+  --terminal-text: var(--kooky-text);
+  --terminal-text-dim: var(--kooky-muted);
+  --terminal-cursor: #efeff1;
+  --terminal-cursor-accent: #282c34;
+  --terminal-selection: rgb(239 239 241 / 0.18);
+  --ansi-black: #6d727c;
+  --ansi-red: #e06c75;
+  --ansi-green: #98c379;
+  --ansi-yellow: #e5c07b;
+  --ansi-blue: #61afef;
+  --ansi-magenta: #c678dd;
+  --ansi-cyan: #56b6c2;
+  --ansi-white: #abb2bf;
+  --ansi-bright-black: #7f848e;
+  --ansi-bright-red: #e06c75;
+  --ansi-bright-green: #98c379;
+  --ansi-bright-yellow: #e5c07b;
+  --ansi-bright-blue: #61afef;
+  --ansi-bright-magenta: #c678dd;
+  --ansi-bright-cyan: #56b6c2;
+  --ansi-bright-white: #efeff1;
+  background: var(--kooky-surface) !important;
+  color: var(--kooky-text);
+  font-family: 'Kooky Onest', 'Inter', system-ui, sans-serif;
+}
+
+.terminal-kooky-topbar {
+  gap: 0 !important;
+  padding-right: 8px !important;
+  border-color: var(--kooky-hairline) !important;
+}
+
+.terminal-kooky-topbar.chrome-bg {
+  background: var(--kooky-surface) !important;
+}
+
+.terminal-kooky-search-trigger {
+  width: 280px;
+  height: 22px;
+  border-color: transparent !important;
+  background: rgb(239 239 241 / 0.05) !important;
+  font-family: 'Kooky JetBrains Mono', monospace;
+  font-size: 11px !important;
+}
+
+.terminal-kooky-search-trigger:hover {
+  background: rgb(239 239 241 / 0.10) !important;
+}
+
+.terminal-kooky-open-in,
+.terminal-kooky-agent-toggle,
+.terminal-kooky-notification,
+.terminal-kooky-keep-awake {
+  margin-left: 2px;
+}
+
+.terminal-kooky-workbench {
+  isolation: isolate;
+}
+
+.terminal-kooky-sidebar,
+.terminal-kooky-agent-panel {
+  background: var(--kooky-chrome) !important;
+  border-color: var(--kooky-hairline) !important;
+}
+
+.terminal-kooky-sidebar-brand {
+  font-family: 'Kooky Onest', 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+}
+
+.terminal-kooky-sidebar-footer {
+  border-color: var(--kooky-hairline) !important;
+}
+
+.terminal-kooky-workspace-row,
+.terminal-kooky-tab {
+  font-family: 'Kooky Onest', 'Inter', system-ui, sans-serif;
+}
+
+.terminal-kooky-pane {
+  background: var(--kooky-surface) !important;
+  border-color: var(--kooky-hairline) !important;
+}
+
+.terminal-kooky-pane-tabs {
+  height: 40px !important;
+  padding: 0 8px !important;
+  background: var(--kooky-chrome) !important;
+  border-color: var(--kooky-hairline) !important;
+}
+
+.terminal-kooky-pane-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.terminal-kooky-tab {
+  height: 28px !important;
+  border-radius: 6px !important;
+  padding: 0 12px !important;
+}
+
+.terminal-kooky-workbench .xterm,
+.terminal-kooky-workbench .xterm-viewport,
+.terminal-kooky-workbench .xterm-screen {
+  background: var(--kooky-surface) !important;
+}
+
+.terminal-kooky-workbench .xterm {
+  font-family: 'Kooky JetBrains Mono', 'JetBrains Mono', ui-monospace, monospace !important;
+}
+
+.terminal-kooky-command-palette,
+.terminal-kooky-menu,
+.terminal-kooky-modal {
+  font-family: 'Kooky JetBrains Mono', 'JetBrains Mono', ui-monospace, monospace;
+  background: var(--kooky-chrome) !important;
+  border-color: rgb(239 239 241 / 0.10) !important;
+}
+
+.terminal-kooky-app .route-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(239 239 241 / 0.10);
+}
+
+@media (max-width: 760px) {
+  .terminal-kooky-search-trigger {
+    width: min(280px, calc(100vw - 180px));
+  }
+}

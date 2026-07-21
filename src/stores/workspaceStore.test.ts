@@ -167,7 +167,7 @@ test('created worktrees stay beside their source and retain source project owner
   assert.equal(useWorkspaceStore.getState().activeWorkspaceId, worktree?.id);
 });
 
-test('worktree reconciliation adopts external children and removes stale persisted rows', () => {
+test('worktree reconciliation prunes stale adopted rows without auto-adopting external worktrees', () => {
   const source = resetStore('/repo-a');
   const retained = useWorkspaceStore.getState().createWorktreeWorkspace(
     source.id,
@@ -191,12 +191,22 @@ test('worktree reconciliation adopts external children and removes stale persist
   const children = state.workspaces.filter((workspace) => workspace.worktreeParentId === source.id);
   assert.deepEqual(children.map((workspace) => workspace.worktreePath), [
     '/repo-a-feature-retained',
-    '/repo-a-feature-external',
   ]);
   assert.equal(children[0]?.id, retained!.id);
-  assert.equal(children[1]?.worktreeBranch, 'feature/external');
   assert.equal(state.workspaces.some((workspace) => workspace.id === stale!.id), false);
   assert.equal(state.activeWorkspaceId, source.id);
+});
+
+test('explicit worktree adoption materializes only the worktrees the user selected', () => {
+  const source = resetStore('/repo-a');
+  useWorkspaceStore.getState().adoptWorktreeWorkspaces(source.id, [
+    { path: '/repo-a-feature-picked', branch: 'feature/picked', name: 'picked' },
+  ]);
+
+  const children = useWorkspaceStore.getState().workspaces.filter((workspace) => workspace.worktreeParentId === source.id);
+  assert.deepEqual(children.map((workspace) => workspace.worktreePath), ['/repo-a-feature-picked']);
+  assert.equal(children[0]?.worktreeBranch, 'feature/picked');
+  assert.equal(useWorkspaceStore.getState().activeWorkspaceId, children[0]?.id);
 });
 
 test('SSH workspaces do not inherit the active local cwd when they split', () => {

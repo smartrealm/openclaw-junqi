@@ -5,13 +5,19 @@
 //
 // Data sources: git_diff_shortstat / get_terminal_env / git_list_branches (Tauri IPC).
 
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback, useSyncExternalStore } from "react";
 import { APP_PLATFORM } from "./platform";
 import { invoke } from "@tauri-apps/api/core";
 import { debugError } from "@/utils/debugLog";
 import { Bot, Server, Wrench } from 'lucide-react';
 import { formatTerminalToolDuration, type ShellProxyInfo, type TerminalAgentActivity, type TerminalToolCall } from './shellLifecycle';
 import { terminalAgentLauncher } from './terminalAgentCatalog';
+import {
+  getTerminalStatusPreferencesSnapshot,
+  subscribeTerminalStatusPreferences,
+  visibleTerminalStatusItems,
+  type TerminalStatusItem,
+} from './terminalStatusPreferences';
 
 // ── Shared pill style (kooky StatusSegment / bracket-bordered pill) ───────
 const pillBase: React.CSSProperties = {
@@ -354,10 +360,14 @@ function RemoteHostSlot({ host }: { host: string }) {
 
 interface TerminalEnvInfo { node_version: string | null; python_venv: string | null; go_version: string | null; }
 
-function EnvPills({ projectPath }: { projectPath: string }) {
+function useTerminalEnvironment(projectPath: string, enabled: boolean): TerminalEnvInfo | null {
   const [env, setEnv] = useState<TerminalEnvInfo | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setEnv(null);
+      return undefined;
+    }
     let cancelled = false;
     const refresh = () => {
       invoke<TerminalEnvInfo>("get_terminal_env", { projectPath })
@@ -368,16 +378,9 @@ function EnvPills({ projectPath }: { projectPath: string }) {
     const timer = window.setInterval(refresh, 15_000);
     window.addEventListener('focus', refresh);
     return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener('focus', refresh); };
-  }, [projectPath]);
+  }, [enabled, projectPath]);
 
-  if (!env) return null;
-  return (
-    <>
-      {env.node_version && <NodeVersionSlot version={env.node_version} />}
-      {env.python_venv  && <PythonVenvSlot  venv={env.python_venv}     />}
-      {env.go_version   && <GoVersionSlot   version={env.go_version}   />}
-    </>
-  );
+  return env;
 }
 
 // ── PaneStatusBar ──────────────────────────────────────────────────────────
@@ -399,6 +402,26 @@ export interface PaneStatusBarProps {
 export function PaneStatusBar({
   projectPath, paneId, onToggleComposer, composerActive, canZoom, isZoomed, onZoom, proxy, agentActivity, toolCalls, remoteHost,
 }: PaneStatusBarProps) {
+  const statusPreferences = useSyncExternalStore(
+    subscribeTerminalStatusPreferences,
+    getTerminalStatusPreferencesSnapshot,
+    getTerminalStatusPreferencesSnapshot,
+  );
+  const visibleItems = visibleTerminalStatusItems(statusPreferences);
+  const environment = useTerminalEnvironment(projectPath, !remoteHost);
+  const hasItem = (item: TerminalStatusItem) => visibleItems.includes(item);
+  const statusSegment = (item: TerminalStatusItem): React.ReactNode => {
+    if (item === 'remote-login') return remoteHost ? <RemoteHostSlot key={item} host={remoteHost} /> : null;
+    if (remoteHost) return null;
+    switch (item) {
+      case 'python-venv': return environment?.python_venv ? <PythonVenvSlot key={item} venv={environment.python_venv} /> : null;
+      case 'node-version': return environment?.node_version ? <NodeVersionSlot key={item} version={environment.node_version} /> : null;
+      case 'proxy': return proxy ? <ProxySlot key={item} proxy={proxy} /> : null;
+      case 'git-branch': return <GitBranchSlot key={item} projectPath={projectPath} />;
+      case 'git-diff': return <GitDiffSlot key={item} projectPath={projectPath} />;
+      case 'tool-calls': return null;
+    }
+  };
 
   useEffect(() => {
     const h = (e: Event) => {
@@ -440,15 +463,13 @@ export function PaneStatusBar({
         </svg>
       </StatusBarIconButton>
 
+      {hasItem('tool-calls') && toolCalls && toolCalls.length > 0 && <ToolCallSlot calls={toolCalls} />}
+      {hasItem('tool-calls') && (!toolCalls || toolCalls.length === 0) && agentActivity && <AgentActivitySlot activity={agentActivity} />}
+
       {/* Spacer — FlowLayout maxWidth:infinity equivalent */}
       {/* RIGHT — env pills + git pills (trailing, wraps on narrow panes) */}
       <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-        {remoteHost ? <RemoteHostSlot host={remoteHost} /> : <EnvPills projectPath={projectPath} />}
-        {agentActivity && <AgentActivitySlot activity={agentActivity} />}
-        {toolCalls && toolCalls.length > 0 && <ToolCallSlot calls={toolCalls} />}
-        {!remoteHost && proxy && <ProxySlot proxy={proxy} />}
-        {!remoteHost && <GitBranchSlot projectPath={projectPath} />}
-        {!remoteHost && <GitDiffSlot projectPath={projectPath} />}
+        {visibleItems.filter((item) => item !== 'tool-calls').map(statusSegment)}
       </div>
     </div>
   );

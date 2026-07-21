@@ -481,8 +481,9 @@ pub async fn create_terminal_workspace_worktree(
 }
 
 /// Discover every sibling worktree Git currently knows about. This is read
-/// only: the terminal sidebar uses it to reconcile worktrees created outside
-/// JunQi and to discard persisted child rows whose directories disappeared.
+/// only: the terminal sidebar uses it for explicit adoption and to discard
+/// persisted child rows whose directories disappeared. Discovery alone never
+/// changes the user's sidebar membership.
 #[tauri::command]
 pub async fn list_terminal_workspace_worktrees(
     project_path: String,

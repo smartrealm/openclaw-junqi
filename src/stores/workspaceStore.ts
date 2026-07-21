@@ -46,6 +46,7 @@ interface WorkspaceStoreState {
   createWorkspace: (name?: string, workingDirectory?: string) => Workspace;
   createSshWorkspace: (host: string) => Workspace | null;
   createWorktreeWorkspace: (parentId: string, branch: string, workingDirectory: string) => Workspace | null;
+  adoptWorktreeWorkspaces: (parentId: string, worktrees: readonly TerminalWorktreeDescriptor[]) => void;
   reconcileWorktreeFamily: (parentId: string, worktrees: readonly TerminalWorktreeDescriptor[]) => void;
   closeWorkspace: (id: string) => void;
   closeOtherWorkspaces: (id: string) => void;
@@ -208,6 +209,27 @@ function makeLeaf(config: Partial<LeafConfig>, cwd: string): PaneLeaf {
   });
 }
 
+function makeWorktreeWorkspace(
+  parent: Workspace,
+  descriptor: TerminalWorktreeDescriptor,
+): Workspace | null {
+  const directory = nonEmptyPath(descriptor.path);
+  const branch = nonEmptyText(descriptor.branch) || 'detached';
+  if (!directory) return null;
+  const root = defaultLeaf('shell', undefined, directory);
+  return {
+    id: newPaneId(),
+    name: nonEmptyText(descriptor.name) || branch,
+    projectDirectory: parent.projectDirectory || parent.workingDirectory,
+    workingDirectory: directory,
+    root,
+    focusedPaneId: root.id,
+    worktreeParentId: parent.id,
+    worktreeBranch: branch,
+    worktreePath: directory,
+  };
+}
+
 export const useWorkspaceStore = create<WorkspaceStoreState>()(
   persist(
     (set, get) => ({
@@ -292,18 +314,12 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         const directory = nonEmptyPath(workingDirectory);
         const normalizedBranch = nonEmptyText(branch);
         if (!parent || !directory || !normalizedBranch || parent.worktreeParentId) return null;
-        const leaf = defaultLeaf('shell', undefined, directory);
-        const child: Workspace = {
-          id: newPaneId(),
+        const child = makeWorktreeWorkspace(parent, {
+          path: directory,
+          branch: normalizedBranch,
           name: normalizedBranch,
-          projectDirectory: parent.projectDirectory || parent.workingDirectory,
-          workingDirectory: directory,
-          root: leaf,
-          focusedPaneId: leaf.id,
-          worktreeParentId: parent.id,
-          worktreeBranch: normalizedBranch,
-          worktreePath: directory,
-        };
+        });
+        if (!child) return null;
         set((current) => {
           const parentIndex = current.workspaces.findIndex((workspace) => workspace.id === parent.id);
           const afterFamily = current.workspaces.findIndex((workspace, index) => (
@@ -322,49 +338,56 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         return child;
       },
 
+      adoptWorktreeWorkspaces: (parentId, descriptors) => set((state) => {
+        const parent = state.workspaces.find((workspace) => workspace.id === parentId);
+        if (!parent || parent.worktreeParentId || parent.sshRemoteHost) return {};
+        const existingChildren = state.workspaces.filter((workspace) => workspace.worktreeParentId === parent.id);
+        const knownPaths = new Set(existingChildren.map((workspace) => workspacePathKey(workspace.worktreePath || workspace.workingDirectory)));
+        const additions: Workspace[] = [];
+        for (const descriptor of descriptors) {
+          const path = workspacePathKey(descriptor.path);
+          if (!path || knownPaths.has(path)) continue;
+          const child = makeWorktreeWorkspace(parent, descriptor);
+          if (!child) continue;
+          knownPaths.add(path);
+          additions.push(child);
+        }
+        if (additions.length === 0) return {};
+        const parentIndex = state.workspaces.findIndex((workspace) => workspace.id === parent.id);
+        if (parentIndex < 0) return {};
+        let insertAt = parentIndex + 1;
+        while (state.workspaces[insertAt]?.worktreeParentId === parent.id) insertAt += 1;
+        return {
+          workspaces: [
+            ...state.workspaces.slice(0, insertAt),
+            ...additions,
+            ...state.workspaces.slice(insertAt),
+          ],
+          activeWorkspaceId: additions[additions.length - 1]!.id,
+        };
+      }),
+
       reconcileWorktreeFamily: (parentId, worktrees) => set((state) => {
         const parent = state.workspaces.find((workspace) => workspace.id === parentId);
         if (!parent || parent.worktreeParentId || parent.sshRemoteHost) return {};
 
         const existingChildren = state.workspaces.filter((workspace) => workspace.worktreeParentId === parent.id);
-        const existingByPath = new Map(existingChildren.map((workspace) => [
-          workspacePathKey(workspace.worktreePath || workspace.workingDirectory),
-          workspace,
-        ]));
-        const seenPaths = new Set<string>();
-        const children: Workspace[] = [];
-
-        for (const descriptor of worktrees) {
-          const path = workspacePathKey(descriptor.path);
+        const diskByPath = new Map(worktrees.map((descriptor) => [workspacePathKey(descriptor.path), descriptor]));
+        // Kooky v0.19+ treats the sidebar as the source of truth. Discovery
+        // only prunes stale adopted children; it never auto-adopts every CLI
+        // worktree found on disk.
+        const children = existingChildren.flatMap((existing) => {
+          const descriptor = diskByPath.get(workspacePathKey(existing.worktreePath || existing.workingDirectory));
+          if (!descriptor) return [];
           const branch = nonEmptyText(descriptor.branch) || 'detached';
-          if (!path || seenPaths.has(path)) continue;
-          seenPaths.add(path);
-
-          const existing = existingByPath.get(path);
-          if (existing) {
-            children.push({
-              ...existing,
-              projectDirectory: parent.projectDirectory || parent.workingDirectory,
-              workingDirectory: descriptor.path,
-              worktreePath: descriptor.path,
-              worktreeBranch: branch,
-            });
-            continue;
-          }
-
-          const root = defaultLeaf('shell', undefined, descriptor.path);
-          children.push({
-            id: newPaneId(),
-            name: nonEmptyText(descriptor.name) || branch,
+          return [{
+            ...existing,
             projectDirectory: parent.projectDirectory || parent.workingDirectory,
             workingDirectory: descriptor.path,
-            root,
-            focusedPaneId: root.id,
-            worktreeParentId: parent.id,
-            worktreeBranch: branch,
             worktreePath: descriptor.path,
-          });
-        }
+            worktreeBranch: branch,
+          }];
+        });
 
         const retained = state.workspaces.filter((workspace) => workspace.worktreeParentId !== parent.id);
         const parentIndex = retained.findIndex((workspace) => workspace.id === parent.id);
@@ -379,7 +402,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         const unchanged = currentChildIds.length === nextChildIds.length
           && currentChildIds.every((id, index) => id === nextChildIds[index])
           && children.every((child) => {
-            const previous = existingByPath.get(workspacePathKey(child.worktreePath || child.workingDirectory));
+            const previous = existingChildren.find((workspace) => workspace.id === child.id);
             return previous
               && previous.workingDirectory === child.workingDirectory
               && previous.worktreePath === child.worktreePath

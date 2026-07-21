@@ -17,10 +17,15 @@ export function requestTerminalAgentPanelToggle(): void {
   requestTerminalChromeAction(TERMINAL_AGENT_PANEL_TOGGLE_EVENT);
 }
 
-/** Ask the focused terminal pane to create an actual local CLI tab. */
-export function requestTerminalAgentLaunch(agent: TerminalAgentId): void {
+/** Ask the focused terminal pane to resolve and launch one real catalog row. */
+export function requestTerminalLaunch(launcherId: string): void {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent<{ agent: TerminalAgentId }>(TERMINAL_AGENT_LAUNCH_EVENT, {
-    detail: { agent },
+  window.dispatchEvent(new CustomEvent<{ launcherId: string }>(TERMINAL_AGENT_LAUNCH_EVENT, {
+    detail: { launcherId },
   }));
+}
+
+/** Backward-compatible builtin shortcut used by Ask Agent surfaces. */
+export function requestTerminalAgentLaunch(agent: TerminalAgentId): void {
+  requestTerminalLaunch(agent);
 }

@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { TerminalPage } from './TerminalPage';
 import { debugError } from '@/utils/debugLog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import type { TerminalAgentId } from '@/components/Terminal/terminalAgentCatalog';
 
 interface TerminalWindowHandoff {
   shell: {
@@ -12,6 +13,7 @@ interface TerminalWindowHandoff {
     customTitle?: string;
     cwd?: string;
     proxy?: { summary: string; entries: string[] } | null;
+    launcherAgent?: TerminalAgentId;
   };
   runId: string;
   snapshot: string;

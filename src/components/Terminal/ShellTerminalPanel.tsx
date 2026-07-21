@@ -11,6 +11,7 @@ import { attachSmartCopy, smartCopy } from "./terminalCopyHelper";
 import { matchesTerminalNewline, TERMINAL_NEWLINE_SEQUENCE } from "@/junqi/shortcuts";
 import { TERMINAL_CONTEXT_MENU_STYLE } from "./terminalMenuStyles";
 import { Icon } from '@/components/shared/icons';
+import { KookyAgentIcon } from './KookyAgentIcon';
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "./terminalTypes";
 import {
   applyTerminalThemeOnPanel,
@@ -83,7 +84,7 @@ import {
 } from './terminalPtyHandoff';
 import { combineUnlisteners, hasTauriEventBridge, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { ChevronDown, Code2, Plus, Terminal as TerminalIcon, X, SplitSquareHorizontal, SplitSquareVertical, RotateCcw } from "lucide-react";
+import { Code2, Plus, Terminal as TerminalIcon, X, SplitSquareHorizontal, SplitSquareVertical, RotateCcw } from "lucide-react";
 import { useI18n } from "./i18n-fallback";
 import { PaneStatusBar } from "./PaneStatusBar";
 import { PaneComposerBar } from "./PaneComposerBar";
@@ -104,6 +105,23 @@ import {
   subscribeTerminalAgentPreferences,
   visibleTerminalAgentIds,
 } from './terminalAgentPreferences';
+import {
+  getTerminalPresetPreferencesSnapshot,
+  subscribeTerminalPresetPreferences,
+} from './terminalPresets';
+import {
+  getTerminalCustomAgentPreferencesSnapshot,
+  subscribeTerminalCustomAgentPreferences,
+} from './terminalCustomAgents';
+import {
+  buildTerminalLaunchTargets,
+  findTerminalLaunchTarget,
+  type TerminalLaunchTarget,
+} from './terminalLaunchCatalog';
+import {
+  getTerminalAppearancePreferencesSnapshot,
+  subscribeTerminalAppearancePreferences,
+} from './terminalAppearancePreferences';
 import { TERMINAL_AGENT_LAUNCH_EVENT } from './terminalChromeEvents';
 import {
   removeTerminalSessionOverview,
@@ -132,6 +150,7 @@ function computeShellTitle(shell: ShellSession): string {
 
 interface TabShellItemProps {
   title: string;
+  agent?: TerminalAgentId;
   status: ShellRuntimeState;
   exitCode?: number | null;
   selected: boolean;
@@ -157,7 +176,7 @@ interface TabShellItemProps {
 }
 
 function TabShellItem({
-  title, status, exitCode, selected, index, totalCount,
+  title, agent, status, exitCode, selected, index, totalCount,
   onSelect, onClose, onCloseOthers, onCloseToRight, onCloseAll, onRename,
   onDuplicate, onMoveToNewWindow, onSplitH, onSplitV, onRevealDirectory,
   onDragStart, onDragEnter, onDragEnd, onExternalDrop, renameRequested = false, onRenameRequestHandled,
@@ -241,6 +260,7 @@ function TabShellItem({
   return (
     <>
       <div
+        className="terminal-kooky-tab"
         draggable={!renaming}
         onClick={onSelect}
         onDoubleClick={(e) => {
@@ -270,7 +290,7 @@ function TabShellItem({
         onDragEnd={() => { setDragOver(false); onDragEnd?.(); }}
         style={{
           display: "flex", alignItems: "center", gap: 7,
-          padding: "5px 10px", height: 32, minWidth: 0,
+          padding: "5px 10px", height: 28, minWidth: 0,
           borderRadius: 6, flexShrink: 0, cursor: "pointer",
           background: dragOver ? "rgb(var(--aegis-primary)/0.15)"
             : selected ? "rgb(var(--aegis-overlay)/0.10)"
@@ -283,7 +303,11 @@ function TabShellItem({
         }}
       >
         <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
-          <TerminalIcon size={12} color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"} />
+          <KookyAgentIcon
+            agent={agent}
+            size={15}
+            fallback={<TerminalIcon size={12} color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"} />}
+          />
           {status === 'failed' || (status === 'exited' && exitCode !== 0 && exitCode != null) ? (
             <span
               title={exitCode != null ? `exit ${exitCode}` : t('terminal.failed', 'Terminal stopped unexpectedly')}
@@ -458,15 +482,21 @@ interface ShellSession {
   /** Serialized xterm state supplied by a separate terminal window. */
   handoffSnapshot?: string;
   agentActivity?: TerminalAgentActivity;
+  /** Launcher visual only; runtime activity still comes from real hooks. */
+  launcherAgent?: TerminalAgentId;
   toolCalls?: TerminalToolCall[];
   restartNonce: number;
 }
 
 function terminalLauncherIcon(id: string): React.ReactNode {
   const registered = Icon.agent[id];
-  return registered
-    ? <span style={{ color: `#${registered.tint}`, display: 'inline-flex' }}>{registered.icon}</span>
-    : <Code2 size={13} />;
+  return <KookyAgentIcon
+    agent={id}
+    size={16}
+    fallback={registered
+      ? <span style={{ color: `#${registered.tint}`, display: 'inline-flex' }}>{registered.icon}</span>
+      : <Code2 size={13} />}
+  />;
 }
 
 const TERMINAL_SHELL_TRANSFER_MIME = 'application/x-junqi-terminal-shell';
@@ -474,14 +504,14 @@ const TERMINAL_SHELL_MOVED_EVENT = 'junqi:terminal-shell-moved';
 
 interface TerminalShellTransferPayload {
   sourceProjectId: string;
-  shell: Pick<ShellSession, 'id' | 'generatedTitle' | 'customTitle' | 'cwd' | 'proxy'>;
+  shell: Pick<ShellSession, 'id' | 'generatedTitle' | 'customTitle' | 'cwd' | 'proxy' | 'launcherAgent'>;
   runId?: string;
   /** Spawn-pinned SSH workspace host. Runtime-only, like the PTY id. */
   sshHost?: string;
 }
 
 interface TerminalWindowHandoff {
-  shell: Pick<ShellSession, 'id' | 'generatedTitle' | 'customTitle' | 'cwd' | 'proxy'>;
+  shell: Pick<ShellSession, 'id' | 'generatedTitle' | 'customTitle' | 'cwd' | 'proxy' | 'launcherAgent'>;
   runId: string;
   snapshot: string;
   sshHost?: string;
@@ -499,6 +529,7 @@ function parseTerminalShellTransfer(raw: string): TerminalShellTransferPayload |
         ...(typeof value.shell.customTitle === 'string' ? { customTitle: value.shell.customTitle } : {}),
         ...(typeof value.shell.cwd === 'string' && value.shell.cwd ? { cwd: value.shell.cwd } : {}),
         ...(value.shell.proxy && typeof value.shell.proxy === 'object' ? { proxy: value.shell.proxy as ShellProxyInfo } : {}),
+        ...(typeof value.shell.launcherAgent === 'string' && isTerminalAgentId(value.shell.launcherAgent) ? { launcherAgent: value.shell.launcherAgent } : {}),
       },
       ...(typeof value.runId === 'string' && value.runId ? { runId: value.runId } : {}),
       ...(typeof value.sshHost === 'string' && value.sshHost.trim() ? { sshHost: value.sshHost.trim() } : {}),
@@ -565,6 +596,7 @@ function loadShellState(projectId: string): { shells: ShellSession[]; activeShel
             id: shell.id,
             ...titleState,
             ...(typeof shell.cwd === 'string' && shell.cwd.trim() ? { cwd: shell.cwd.trim() } : {}),
+            ...(typeof shell.launcherAgent === 'string' && isTerminalAgentId(shell.launcherAgent) ? { launcherAgent: shell.launcherAgent } : {}),
             status: 'starting' as const,
             restartNonce: 0,
           };
@@ -582,11 +614,12 @@ function loadShellState(projectId: string): { shells: ShellSession[]; activeShel
 
 function saveShellState(projectId: string, shells: ShellSession[], activeShellId: string | null, nextIndex: number): void {
   try {
-    const persistedShells = shells.map(({ id, generatedTitle, customTitle, cwd }) => ({
+    const persistedShells = shells.map(({ id, generatedTitle, customTitle, cwd, launcherAgent }) => ({
       id,
       generatedTitle,
       ...(customTitle ? { customTitle } : {}),
       ...(cwd ? { cwd } : {}),
+      ...(launcherAgent ? { launcherAgent } : {}),
     }));
     localStorage.setItem(shellPersistKey(projectId), JSON.stringify({ shells: persistedShells, activeShellId, nextIndex }));
   } catch {}
@@ -670,6 +703,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     ref,
   ) {
     const { t } = useI18n();
+    const terminalAppearance = useSyncExternalStore(
+      subscribeTerminalAppearancePreferences,
+      getTerminalAppearancePreferencesSnapshot,
+      getTerminalAppearancePreferencesSnapshot,
+    );
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<XTerm | null>(null);
     const [termCtxMenu, setTermCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -682,6 +720,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const terminalScrollbackRef = useRef(terminalScrollback);
     const terminalShiftEnterNewlineRef = useRef(terminalShiftEnterNewline);
     const monoFontFamilyRef = useRef(monoFontFamily);
+    const terminalCursorStyleRef = useRef(terminalAppearance.cursorStyle);
     const onReadyRef = useRef(onReady);
     const onLifecycleChangeRef = useRef(onLifecycleChange);
     const onRunIdChangeRef = useRef(onRunIdChange);
@@ -707,6 +746,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     terminalScrollbackRef.current = terminalScrollback;
     terminalShiftEnterNewlineRef.current = terminalShiftEnterNewline;
     monoFontFamilyRef.current = monoFontFamily;
+    terminalCursorStyleRef.current = terminalAppearance.cursorStyle;
     onReadyRef.current = onReady;
     onLifecycleChangeRef.current = onLifecycleChange;
     onRunIdChangeRef.current = onRunIdChange;
@@ -724,6 +764,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       restartNonce,
     );
     const launchProjectPath = launchPathStateRef.current.path;
+
+    useEffect(() => {
+      if (!terminalRef.current) return;
+      terminalRef.current.options.cursorStyle = terminalAppearance.cursorStyle;
+      refreshTerminalDisplay(terminalRef.current);
+    }, [terminalAppearance.cursorStyle]);
 
     const sendInput = useCallback((data: string) => {
       const runId = runIdRef.current;
@@ -834,6 +880,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         terminalScrollbackRef.current,
         terminalFontSizeRef.current,
         monoFontFamilyRef.current,
+        terminalCursorStyleRef.current,
       );
       applyTerminalThemeOnPanel(term, themeVariantRef.current, container);
       terminalRef.current = term;
@@ -1444,32 +1491,33 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       getTerminalAgentPreferencesSnapshot,
       getTerminalAgentPreferencesSnapshot,
     );
-    const visibleAgentIds = useMemo(
-      () => visibleTerminalAgentIds(agentPreferences),
-      [agentPreferences],
+    const presetPreferences = useSyncExternalStore(
+      subscribeTerminalPresetPreferences,
+      getTerminalPresetPreferencesSnapshot,
+      getTerminalPresetPreferencesSnapshot,
     );
+    const customAgentPreferences = useSyncExternalStore(
+      subscribeTerminalCustomAgentPreferences,
+      getTerminalCustomAgentPreferencesSnapshot,
+      getTerminalCustomAgentPreferencesSnapshot,
+    );
+    const visibleAgentIds = useMemo(() => visibleTerminalAgentIds(agentPreferences), [agentPreferences]);
     const availableAgentIds = useMemo(
       () => new Set(agentAvailability.agents),
       [agentAvailability.agents],
     );
     const availableLaunchers = useMemo(
-      () => visibleAgentIds
-        .filter((agent) => availableAgentIds.has(agent))
-        .map(terminalAgentLauncher),
+      () => visibleAgentIds.filter((agent) => availableAgentIds.has(agent)).map(terminalAgentLauncher),
       [availableAgentIds, visibleAgentIds],
     );
-    const unavailableLaunchers = useMemo(
-      () => visibleAgentIds
-        .filter((agent) => !availableAgentIds.has(agent))
-        .map(terminalAgentLauncher),
-      [availableAgentIds, visibleAgentIds],
-    );
-    const defaultLauncher = agentPreferences.defaultLauncherId
-      && agentPreferences.defaultLauncherId !== 'terminal'
-      && availableAgentIds.has(agentPreferences.defaultLauncherId)
-      && visibleAgentIds.includes(agentPreferences.defaultLauncherId)
-      ? terminalAgentLauncher(agentPreferences.defaultLauncherId)
-      : null;
+    const launchTargets = useMemo(() => buildTerminalLaunchTargets({
+      availableAgentIds,
+      agentPreferences,
+      presetPreferences,
+      customAgentPreferences,
+      platform: APP_PLATFORM === 'windows' ? 'windows' : 'posix',
+    }), [agentPreferences, availableAgentIds, customAgentPreferences, presetPreferences]);
+    const defaultLauncher = findTerminalLaunchTarget(agentPreferences.defaultLauncherId, launchTargets);
     const [terminalDropActive, setTerminalDropActive] = useState(false);
     const [workspacePathDropActive, setWorkspacePathDropActive] = useState(false);
     const activeShellIdRef = useRef(activeShellId);
@@ -1798,39 +1846,76 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       return () => window.removeEventListener("keydown", handler);
     }, [paneFocused]);
 
-    const handleAddShell = useCallback((agent?: { command: string; title: string }) => {
+    const handleAddShell = useCallback((launch?: {
+      command?: string;
+      title?: string;
+      cwd?: string;
+      iconAgent?: TerminalAgentId;
+    }) => {
       const activeCwd = isRemoteWorkspace
         ? undefined
-        : shells.find((shell) => shell.id === activeShellId)?.cwd || projectPath;
+        : launch?.cwd || shells.find((shell) => shell.id === activeShellId)?.cwd || projectPath;
       const nextShell = createShellSession(projectId, nextShellIndexRef.current++, activeCwd);
-      if (agent) {
-        nextShell.generatedTitle = agent.title;
-        pendingTerminalCommandsRef.current.push(`${agent.command}\n`);
+      if (launch?.title) nextShell.generatedTitle = launch.title;
+      if (launch?.iconAgent) nextShell.launcherAgent = launch.iconAgent;
+      if (launch?.command) {
+        pendingTerminalCommandsRef.current.push(`${launch.command}\n`);
       }
       setShells((prev) => [...prev, nextShell]);
       setActiveShellId(nextShell.id);
       if (!isRemoteWorkspace && activeCwd) onDirectoryChangeRef.current?.(activeCwd);
     }, [activeShellId, isRemoteWorkspace, projectId, projectPath, shells]);
 
+    const launchTarget = useCallback(async (target: TerminalLaunchTarget) => {
+      if (target.kind === 'terminal') {
+        handleAddShell();
+        return;
+      }
+      if (target.kind === 'agent') {
+        handleAddShell({ command: target.command, title: target.label, iconAgent: target.iconAgent });
+        return;
+      }
+      if (isRemoteWorkspace) {
+        addToast(
+          'info',
+          t('terminal.presetUnavailableRemoteTitle', 'Terminal preset stays local'),
+          t('terminal.presetUnavailableRemote', 'Choose a local workspace before opening this directory preset.'),
+        );
+        return;
+      }
+      try {
+        const directory = await invoke<{ path: string }>('open_terminal_workspace_directory', { path: target.path });
+        if (!directory?.path) throw new Error('directory is unavailable');
+        handleAddShell({ cwd: directory.path });
+      } catch (error) {
+        addToast(
+          'error',
+          t('terminal.presetOpenFailedTitle', 'Cannot open terminal preset'),
+          error instanceof Error ? error.message : t('terminal.presetOpenFailed', 'The preset directory is unavailable.'),
+        );
+      }
+    }, [addToast, handleAddShell, isRemoteWorkspace, t]);
+
     const handleAskAgent = useCallback((agent: TerminalAgentId, selection: string) => {
-      handleAddShell({
-        command: terminalAgentLaunchCommand(agent, selection, APP_PLATFORM === 'windows' ? 'windows' : 'posix'),
-        title: terminalAgentLauncher(agent).label,
-      });
+        handleAddShell({
+          command: terminalAgentLaunchCommand(agent, selection, APP_PLATFORM === 'windows' ? 'windows' : 'posix'),
+          title: terminalAgentLauncher(agent).label,
+          iconAgent: agent,
+        });
     }, [handleAddShell]);
 
     useEffect(() => {
       const launchAgent = (event: Event) => {
         if (!isActive || !paneFocused) return;
-        const agent = (event as CustomEvent<{ agent?: unknown }>).detail?.agent;
-        if (typeof agent !== 'string' || !isTerminalAgentId(agent)) return;
-        if (!availableAgentIds.has(agent) || !visibleAgentIds.includes(agent)) return;
-        const launcher = terminalAgentLauncher(agent);
-        handleAddShell({ command: launcher.id, title: launcher.label });
+        const launcherId = (event as CustomEvent<{ launcherId?: unknown }>).detail?.launcherId;
+        if (typeof launcherId !== 'string') return;
+        const target = findTerminalLaunchTarget(launcherId, launchTargets);
+        if (!target) return;
+        void launchTarget(target);
       };
       window.addEventListener(TERMINAL_AGENT_LAUNCH_EVENT, launchAgent);
       return () => window.removeEventListener(TERMINAL_AGENT_LAUNCH_EVENT, launchAgent);
-    }, [availableAgentIds, handleAddShell, isActive, paneFocused, visibleAgentIds]);
+    }, [isActive, launchTargets, launchTarget, paneFocused]);
 
     useEffect(() => {
       const addTab = () => {
@@ -1973,6 +2058,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
           ...(shell.customTitle ? { customTitle: shell.customTitle } : {}),
           ...(shell.cwd ? { cwd: shell.cwd } : {}),
           ...(shell.proxy ? { proxy: shell.proxy } : {}),
+          ...(shell.launcherAgent ? { launcherAgent: shell.launcherAgent } : {}),
         },
         runId: shell.runId,
         snapshot: shellRefs.current[shell.id]?.serializeSnapshot() ?? '',
@@ -2025,6 +2111,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
             ...(payload.shell.customTitle ? { customTitle: payload.shell.customTitle } : {}),
             ...(!isRemoteWorkspace && payload.shell.cwd ? { cwd: payload.shell.cwd } : {}),
             ...(payload.shell.proxy ? { proxy: payload.shell.proxy } : {}),
+            ...(payload.shell.launcherAgent ? { launcherAgent: payload.shell.launcherAgent } : {}),
             runId: payload.runId,
             ...(options.snapshot !== undefined ? { handoffSnapshot: options.snapshot } : {}),
             status: 'running' as const,
@@ -2038,6 +2125,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       if (!keepsLivePty && !importsExternalPty) {
         imported.generatedTitle = payload.shell.generatedTitle;
         if (payload.shell.customTitle) imported.customTitle = payload.shell.customTitle;
+        if (payload.shell.launcherAgent) imported.launcherAgent = payload.shell.launcherAgent;
       }
       setShells((previous) => {
         if (options.replaceExisting) return [imported];
@@ -2115,16 +2203,76 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       return () => window.removeEventListener(TERMINAL_SHELL_MOVED_EVENT, handleTransfer);
     }, [onClose, projectId, shells]);
 
+    // Kooky keeps this control directly after the last tab; the split buttons
+    // are a separate trailing group and must not push the `+` to the edge.
+    const addTabControl = (
+      <div ref={addMenuRef} style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
+        <button
+          ref={addMenuButtonRef}
+          onClick={() => {
+            if (defaultLauncher) {
+              void launchTarget(defaultLauncher);
+            } else if (launchTargets.length <= 1) {
+              void launchTarget(launchTargets[0]!);
+            } else {
+              setAddMenuOpen((open) => !open);
+            }
+          }}
+          title={t('terminal.newTerminal')}
+          style={{ width: 28, height: 28, borderRadius: 5, border: 'none', background: addMenuOpen ? 'rgb(var(--aegis-overlay)/0.08)' : 'transparent', color: 'rgb(var(--aegis-text-secondary))', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'background 0.12s, color 0.12s' }}
+          onMouseEnter={(event) => { event.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; event.currentTarget.style.color = 'rgb(var(--aegis-text))'; }}
+          onMouseLeave={(event) => { if (!addMenuOpen) { event.currentTarget.style.background = 'transparent'; event.currentTarget.style.color = 'rgb(var(--aegis-text-secondary))'; } }}
+        >
+          <Plus size={14} />
+        </button>
+        {addMenuOpen && createPortal(
+          <div
+            ref={addMenuPopupRef}
+            role="menu"
+            className="terminal-kooky-menu"
+            style={{
+              position: 'fixed',
+              left: Math.max(8, Math.min(addMenuButtonRef.current?.getBoundingClientRect().left ?? 8, window.innerWidth - 228)),
+              top: Math.max(8, Math.min((addMenuButtonRef.current?.getBoundingClientRect().bottom ?? 32) + 4, window.innerHeight - 368)),
+              zIndex: 2147482000,
+              width: 220,
+              maxHeight: 360,
+              overflowY: 'auto',
+              padding: 4,
+              borderRadius: 6,
+              ...TERMINAL_CONTEXT_MENU_STYLE,
+            }}
+          >
+            {launchTargets.map((target) => (
+              <TerminalLaunchMenuItem
+                key={target.id}
+                icon={target.kind === 'agent'
+                  ? terminalLauncherIcon(target.iconAgent ?? target.id)
+                  : <TerminalIcon size={13} />}
+                label={target.label}
+                onClick={() => {
+                  void launchTarget(target);
+                  setAddMenuOpen(false);
+                }}
+              />
+            ))}
+          </div>,
+          document.body,
+        )}
+      </div>
+    );
+
     return (
       <div
         ref={panelRef}
+        className="terminal-kooky-pane"
         onDragOverCapture={handleWorkspacePathDragOver}
         onDragLeaveCapture={handleWorkspacePathDragLeave}
         onDropCapture={handleWorkspacePathDrop}
         style={{
           flex: 1,
           height: height != null ? height : undefined,
-          borderTop: "1px solid var(--aegis-border)",
+          borderTop: "none",
           display: "flex",
           flexDirection: "column",
           background: "var(--aegis-elevated)",
@@ -2145,12 +2293,13 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           {/* Tab strip — kooky TabBarView 1:1 (chromeBackground = terminal-bg) */}
           <div
+            className="terminal-kooky-pane-tabs"
             onDoubleClick={(event) => {
               // Kooky zooms the native window only from the tab strip's empty
               // chrome; controls and tabs retain their own double-click behavior.
               if (event.target === event.currentTarget) toggleWindowZoom();
             }}
-            style={{ display: "flex", alignItems: "center", height: 32, flexShrink: 0, padding: "0 8px", gap: 2, background: "var(--terminal-bg)" }}
+            style={{ display: "flex", alignItems: "center", height: 40, flexShrink: 0, padding: "0 8px", gap: 2, background: "var(--terminal-bg)" }}
           >
             <div
               onDragOver={(event) => {
@@ -2170,6 +2319,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                   <TabShellItem
                     key={shell.id}
                     title={tabTitle}
+                    agent={shell.agentActivity?.agent ?? shell.launcherAgent}
                     status={shell.status}
                     exitCode={shell.exitCode}
                     selected={selected}
@@ -2229,6 +2379,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                           ...(shell.customTitle ? { customTitle: shell.customTitle } : {}),
                           ...(shell.cwd ? { cwd: shell.cwd } : {}),
                           ...(shell.proxy ? { proxy: shell.proxy } : {}),
+                          ...(shell.launcherAgent ? { launcherAgent: shell.launcherAgent } : {}),
                         },
                         ...(shell.runId ? { runId: shell.runId } : {}),
                         ...(isRemoteWorkspace ? { sshHost: sshHost?.trim() } : {}),
@@ -2269,92 +2420,10 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                   />
                 );
               })}
+              {addTabControl}
             </div>
             {/* Trailing split buttons (kooky TabBarView.splitButtons pattern) */}
             <div style={{ display: "flex", gap: 2, paddingRight: 4, flexShrink: 0 }}>
-              <div ref={addMenuRef} style={{ position: 'relative' }}>
-                <button
-                  ref={addMenuButtonRef}
-                  onClick={() => {
-                    if (agentPreferences.defaultLauncherId === 'terminal') {
-                      handleAddShell();
-                    } else if (defaultLauncher) {
-                      handleAddShell({ command: defaultLauncher.id, title: defaultLauncher.label });
-                    } else if (availableLaunchers.length === 0) {
-                      handleAddShell();
-                    } else {
-                      setAddMenuOpen((open) => !open);
-                    }
-                  }}
-                  title={t("terminal.newTerminal")}
-                  style={{ width: 32, height: 28, borderRadius: 5, border: "none", background: addMenuOpen ? 'rgb(var(--aegis-overlay)/0.08)' : "transparent", color: "rgb(var(--aegis-text-secondary))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 1, flexShrink: 0, transition: "background 0.12s, color 0.12s" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; e.currentTarget.style.color = 'rgb(var(--aegis-text))'; }}
-                  onMouseLeave={(e) => { if (!addMenuOpen) { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-secondary))'; } }}
-                >
-                  <Plus size={14} /><ChevronDown size={10} />
-                </button>
-                {addMenuOpen && createPortal(
-                  <div
-                    ref={addMenuPopupRef}
-                    role="menu"
-                    style={{
-                      position: 'fixed',
-                      left: Math.max(8, Math.min((addMenuButtonRef.current?.getBoundingClientRect().right ?? window.innerWidth) - 220, window.innerWidth - 228)),
-                      top: Math.max(8, Math.min((addMenuButtonRef.current?.getBoundingClientRect().bottom ?? 32) + 4, window.innerHeight - 368)),
-                      zIndex: 2147482000,
-                      width: 220,
-                      maxHeight: 360,
-                      overflowY: 'auto',
-                      padding: 4,
-                      borderRadius: 6,
-                      ...TERMINAL_CONTEXT_MENU_STYLE,
-                    }}
-                  >
-                    <TerminalLaunchMenuItem icon={<TerminalIcon size={13} />} label={t('terminal.newTerminal')} onClick={() => { handleAddShell(); setAddMenuOpen(false); }} />
-                    <div style={{ height: 1, margin: '3px 0', background: 'rgb(var(--aegis-overlay)/0.08)' }} />
-                    {availableLaunchers.length > 0 && (
-                      <div style={{ padding: '5px 8px 3px', color: 'rgb(var(--aegis-text-dim))', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase' }}>
-                        {t('terminal.availableAgents', 'Available')}
-                      </div>
-                    )}
-                    {availableLaunchers.map((launcher) => (
-                      <TerminalLaunchMenuItem
-                        key={launcher.id}
-                        icon={terminalLauncherIcon(launcher.id)}
-                        label={launcher.label}
-                        onClick={() => {
-                          handleAddShell({ command: launcher.id, title: launcher.label });
-                          setAddMenuOpen(false);
-                        }}
-                      />
-                    ))}
-                    {agentAvailability.status === 'loading' && (
-                      <div style={{ padding: '7px 8px', color: 'rgb(var(--aegis-text-dim))', fontSize: 11.5 }}>
-                        {t('terminal.detectingAgents', 'Detecting installed AI CLIs...')}
-                      </div>
-                    )}
-                    {agentAvailability.status === 'ready' && unavailableLaunchers.length > 0 && (
-                      <>
-                        <div style={{ height: 1, margin: '3px 0', background: 'rgb(var(--aegis-overlay)/0.08)' }} />
-                        <div style={{ padding: '5px 8px 3px', color: 'rgb(var(--aegis-text-dim))', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase' }}>
-                          {t('terminal.unavailableAgents', 'Not detected')}
-                        </div>
-                        {unavailableLaunchers.map((launcher) => (
-                          <TerminalLaunchMenuItem
-                            key={launcher.id}
-                            icon={terminalLauncherIcon(launcher.id)}
-                            label={launcher.label}
-                            meta={t('terminal.notInstalled', 'Not installed')}
-                            disabled
-                            onClick={() => undefined}
-                          />
-                        ))}
-                      </>
-                    )}
-                  </div>,
-                  document.body,
-                )}
-              </div>
               <button
                 onClick={onSplitHorizontal ?? (() => {})}
                 title={APP_PLATFORM === 'macos' ? t('terminal.splitRightShortcutMac', 'Split Right (⌘D)') : t('terminal.splitRightShortcut', 'Split Right (Ctrl+Alt+D)')}

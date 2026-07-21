@@ -4,7 +4,8 @@ import {
   type TerminalAgentId,
 } from './terminalAgentCatalog';
 
-export type TerminalDefaultLauncherId = 'terminal' | TerminalAgentId | null;
+/** A saved id is resolved against the live launch catalog at click time. */
+export type TerminalDefaultLauncherId = string | null;
 
 export interface TerminalAgentPreferencesSnapshot {
   orderedAgentIds: readonly TerminalAgentId[];
@@ -42,11 +43,10 @@ function normalize(value: StoredTerminalAgentPreferences | null | undefined): Te
     ...ALL_AGENT_IDS.filter((id) => !known.has(id)),
   ]);
   const hiddenAgentIds = Object.freeze(uniqueAgentIds(value?.hiddenAgentIds));
-  const defaultLauncherId = value?.defaultLauncherId === 'terminal'
-    ? 'terminal'
-    : typeof value?.defaultLauncherId === 'string' && isTerminalAgentId(value.defaultLauncherId)
-      ? value.defaultLauncherId
-      : null;
+  const defaultLauncherId = typeof value?.defaultLauncherId === 'string'
+    && value.defaultLauncherId.trim()
+    ? value.defaultLauncherId.trim()
+    : null;
   return Object.freeze({ orderedAgentIds, hiddenAgentIds, defaultLauncherId });
 }
 
