@@ -1,6 +1,7 @@
 import type { Workspace } from './types';
 
-function normalizeWorkspacePath(path: string): string {
+/** Stable comparison key for POSIX, Windows drive, and UNC workspace paths. */
+export function workspacePathKey(path: string): string {
   let normalized = path.replace(/\\/g, '/');
 
   if (/^\/\/\?\/unc\//i.test(normalized)) {
@@ -18,7 +19,7 @@ function normalizeWorkspacePath(path: string): string {
 
 export function workspacePathsEqual(left: string, right: string): boolean {
   if (!left || !right) return false;
-  return normalizeWorkspacePath(left) === normalizeWorkspacePath(right);
+  return workspacePathKey(left) === workspacePathKey(right);
 }
 
 export function findWorkspaceForDirectory(

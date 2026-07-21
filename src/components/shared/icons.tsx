@@ -255,6 +255,7 @@ export const Icon = {
     agy:            { icon: phos(ArrowCircleUp, 14),     tint: '4285F4', label: 'Antigravity CLI' },
     kimi:           { icon: phos(MoonPh, 14),            tint: 'C9C3D6', label: 'Kimi Code' },
     opencode:       { icon: phos(BracketsCurly, 14),     tint: 'B0B0B0', label: 'OpenCode' },
+    droid:          { icon: phos(CubePh, 14),            tint: 'C9CDD3', label: 'Droid' },
     aider:          { icon: phos(WrenchPh, 14),          tint: '44AA44', label: 'Aider' },
     qwen:           { icon: phos(BrainPh, 14),           tint: '6600CC', label: 'Qwen CLI' },
   } as Record<string, { icon: React.ReactNode; tint: string; label: string }>,

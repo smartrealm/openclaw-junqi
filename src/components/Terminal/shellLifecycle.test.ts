@@ -69,7 +69,9 @@ test('agent OSC title markers only affect JunQi-owned agent state', () => {
   });
   assert.equal(parseJunqiAgentStatusTitle('junqi-agent:codex:ended'), null);
   assert.equal(parseJunqiAgentStatusTitle('plain terminal title'), undefined);
-  assert.equal(parseJunqiAgentStatusTitle('junqi-agent:gemini:running'), undefined);
+  assert.deepEqual(parseJunqiAgentStatusTitle('junqi-agent:gemini:running'), {
+    agent: 'gemini', state: 'running',
+  });
 });
 
 test('tool hook events retain a bounded per-shell timeline and complete matching calls', () => {
@@ -149,11 +151,19 @@ test('legacy persisted titles migrate without losing manual renames', () => {
 test('Ask Agent preserves the selected terminal text as exactly one shell argument', () => {
   assert.equal(
     terminalAgentLaunchCommand('claude', "fix 'quoted' value\nand keep spacing", 'posix'),
-    "claude 'fix '\"'\"'quoted'\"'\"' value\nand keep spacing'",
+    "claude -- 'fix '\"'\"'quoted'\"'\"' value\nand keep spacing'",
   );
   assert.equal(
     terminalAgentLaunchCommand('codex', "it's a path with spaces", 'windows'),
-    "codex 'it''s a path with spaces'",
+    "codex -- 'it''s a path with spaces'",
+  );
+  assert.equal(
+    terminalAgentLaunchCommand('amp', 'inspect the selected output', 'posix'),
+    "amp -x 'inspect the selected output'",
+  );
+  assert.equal(
+    terminalAgentLaunchCommand('agy', 'continue interactively', 'posix'),
+    "agy -i 'continue interactively'",
   );
 });
 

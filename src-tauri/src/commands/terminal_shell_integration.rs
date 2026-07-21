@@ -15,7 +15,24 @@ use portable_pty::CommandBuilder;
 use tauri::{AppHandle, Manager};
 
 const INTEGRATION_DIR: &str = "terminal-shell";
-const JUNQI_AGENT_SHIMS: [&str; 3] = ["claude", "codex", "opencode"];
+// Keep this in the same order as the terminal Agent catalog. Each wrapper
+// delegates to a real binary discovered after its own directory on PATH; it
+// only adds lifecycle markers around that process.
+const JUNQI_AGENT_SHIMS: [&str; 13] = [
+    "claude",
+    "codex",
+    "gemini",
+    "opencode",
+    "amp",
+    "cursor-agent",
+    "copilot",
+    "grok",
+    "agy",
+    "kimi",
+    "pi",
+    "kiro-cli",
+    "droid",
+];
 #[cfg(any(windows, test))]
 const POWERSHELL_LAUNCH_ARGS: [&str; 5] = [
     "-NoLogo",
@@ -298,7 +315,17 @@ function global:__JunQiInvokeAgent {
 }
 function global:claude { __JunQiInvokeAgent -Name "claude" @args }
 function global:codex { __JunQiInvokeAgent -Name "codex" @args }
+function global:gemini { __JunQiInvokeAgent -Name "gemini" @args }
 function global:opencode { __JunQiInvokeAgent -Name "opencode" @args }
+function global:amp { __JunQiInvokeAgent -Name "amp" @args }
+function global:cursor-agent { __JunQiInvokeAgent -Name "cursor-agent" @args }
+function global:copilot { __JunQiInvokeAgent -Name "copilot" @args }
+function global:grok { __JunQiInvokeAgent -Name "grok" @args }
+function global:agy { __JunQiInvokeAgent -Name "agy" @args }
+function global:kimi { __JunQiInvokeAgent -Name "kimi" @args }
+function global:pi { __JunQiInvokeAgent -Name "pi" @args }
+function global:kiro-cli { __JunQiInvokeAgent -Name "kiro-cli" @args }
+function global:droid { __JunQiInvokeAgent -Name "droid" @args }
 "#
 }
 
@@ -407,7 +434,7 @@ JUNQI_AGENT_WRAPPER
   chmod 700 "$_junqi_bin/$_junqi_slug"
 }
 
-for _junqi_slug in claude codex opencode; do
+for _junqi_slug in claude codex gemini opencode amp cursor-agent copilot grok agy kimi pi kiro-cli droid; do
   _junqi_write_agent_wrapper "$_junqi_slug"
 done
 unset _junqi_slug
@@ -744,7 +771,7 @@ mod tests {
         let bootstrap = remote_agent_bootstrap_script();
         assert!(bootstrap.contains("mktemp -d"));
         assert!(bootstrap.contains("trap 'rm -rf \"$_junqi_root\"' 0 HUP INT TERM"));
-        assert!(bootstrap.contains("for _junqi_slug in claude codex opencode"));
+        assert!(bootstrap.contains("for _junqi_slug in claude codex gemini opencode amp cursor-agent copilot grok agy kimi pi kiro-cli droid"));
         assert!(bootstrap.contains("junqi-agent:%s:running"));
         assert!(bootstrap.contains("junqi-agent:%s:ended"));
         assert!(bootstrap.contains("zsh -i"));

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Check, Loader2, Minus, Plus, RotateCcw, TerminalSquare } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Eye, EyeOff, Loader2, Minus, Plus, RotateCcw, TerminalSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -11,6 +11,16 @@ import {
   TERMINAL_SETTINGS_CHANGED_EVENT,
   useTerminalPreferences,
 } from '@/hooks/useTerminalPreferences';
+import { terminalAgentLauncher } from '@/components/Terminal/terminalAgentCatalog';
+import {
+  getTerminalAgentPreferencesSnapshot,
+  moveTerminalAgent,
+  resetTerminalAgentPreferences,
+  setTerminalAgentHidden,
+  setTerminalDefaultLauncher,
+  subscribeTerminalAgentPreferences,
+  visibleTerminalAgentIds,
+} from '@/components/Terminal/terminalAgentPreferences';
 
 const SCROLLBACK_OPTIONS = [500, 1000, 2000, 3000, 5000] as const;
 const MONO_FONT_OPTIONS = ['', 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', 'IBM Plex Mono'] as const;
@@ -41,6 +51,82 @@ function PreferenceSwitch({ checked, disabled, label, onChange }: {
         checked ? 'translate-x-[21px] bg-aegis-primary rtl:-translate-x-[21px]' : 'translate-x-0 bg-aegis-text-dim',
       )} />
     </button>
+  );
+}
+
+function TerminalAgentLaunchPreferences() {
+  const { t } = useTranslation();
+  const preferences = useSyncExternalStore(
+    subscribeTerminalAgentPreferences,
+    getTerminalAgentPreferencesSnapshot,
+    getTerminalAgentPreferencesSnapshot,
+  );
+  const hidden = new Set(preferences.hiddenAgentIds);
+  const visible = visibleTerminalAgentIds(preferences);
+
+  return (
+    <GlassCard delay={0.12}>
+      <div className="divide-y divide-aegis-border/60">
+        <div className="grid gap-4 pb-4 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
+          <div>
+            <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.defaultLauncher', '新标签页默认项')}</div>
+            <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.defaultLauncherHint', '默认项不可用时保留选择菜单。')}</p>
+          </div>
+          <select
+            value={preferences.defaultLauncherId ?? ''}
+            onChange={(event) => {
+              const value = event.target.value;
+              setTerminalDefaultLauncher(value === '' ? null : value === 'terminal' ? 'terminal' : value as typeof visible[number]);
+            }}
+            className="h-9 rounded-md border border-aegis-border bg-aegis-input px-3 text-[12px] text-aegis-text outline-none focus:border-aegis-primary/55"
+          >
+            <option value="">{t('terminalSettings.showLaunchMenu', '显示选择菜单')}</option>
+            <option value="terminal">{t('terminal.newTerminal', 'Terminal')}</option>
+            {preferences.orderedAgentIds.map((id) => (
+              <option key={id} value={id} disabled={hidden.has(id)}>{terminalAgentLauncher(id).label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="pt-4">
+          <div className="mb-2 text-[13px] font-medium text-aegis-text">{t('terminalSettings.launcherOrder', '智能体菜单')}</div>
+          <div className="overflow-hidden rounded-md border border-aegis-border/70">
+            {preferences.orderedAgentIds.map((id, index) => {
+              const launcher = terminalAgentLauncher(id);
+              const isHidden = hidden.has(id);
+              return (
+                <div key={id} className="flex h-10 items-center gap-1.5 border-b border-aegis-border/50 px-2 last:border-b-0">
+                  <span className={clsx('min-w-0 flex-1 truncate text-[12px]', isHidden ? 'text-aegis-text-dim line-through' : 'text-aegis-text')}>{launcher.label}</span>
+                  <button
+                    type="button"
+                    onClick={() => moveTerminalAgent(id, -1)}
+                    disabled={index === 0}
+                    title={t('terminalSettings.moveAgentUp', '上移')}
+                    aria-label={t('terminalSettings.moveAgentUp', '上移')}
+                    className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"
+                  ><ArrowUp size={13} /></button>
+                  <button
+                    type="button"
+                    onClick={() => moveTerminalAgent(id, 1)}
+                    disabled={index === preferences.orderedAgentIds.length - 1}
+                    title={t('terminalSettings.moveAgentDown', '下移')}
+                    aria-label={t('terminalSettings.moveAgentDown', '下移')}
+                    className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"
+                  ><ArrowDown size={13} /></button>
+                  <button
+                    type="button"
+                    onClick={() => setTerminalAgentHidden(id, !isHidden)}
+                    title={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')}
+                    aria-label={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')}
+                    className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text"
+                  >{isHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </GlassCard>
   );
 }
 
@@ -102,6 +188,7 @@ export function TerminalSettingsPanel() {
     setTerminalFontSize(12);
     setMonoFont('');
     setShiftEnterNewline(DEFAULT_TERMINAL_SHIFT_ENTER_NEWLINE);
+    resetTerminalAgentPreferences();
     setSaveState('saving');
     setError(null);
     try {
@@ -172,6 +259,8 @@ export function TerminalSettingsPanel() {
           <PreferenceSwitch checked={shiftEnterNewline} disabled={preferences.loading || saveState === 'saving'} label={t('terminalSettings.shiftEnter', 'Shift+Enter 换行')} onChange={(next) => void saveShiftEnter(next)} />
         </div>
       </GlassCard>
+
+      <TerminalAgentLaunchPreferences />
 
       {(error || preferences.error) && <div role="alert" className="rounded-md border border-aegis-danger/25 bg-aegis-danger/8 px-3 py-2 text-[12px] text-aegis-danger">{t('terminalSettings.saveFailed', '终端设置保存失败：{{error}}', { error: error || preferences.error })}</div>}
     </section>

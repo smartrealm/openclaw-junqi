@@ -1,4 +1,6 @@
 pub mod cli_tools;
+pub mod terminal_keep_awake;
+pub mod terminal_open_in;
 pub mod collaboration_bootstrap;
 pub mod collaboration_owner;
 pub mod font;

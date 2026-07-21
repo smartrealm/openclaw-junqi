@@ -1,7 +1,7 @@
 import type React from "react";
 import { createPortal } from "react-dom";
 import { APP_PLATFORM } from "./platform";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, forwardRef, useImperativeHandle } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
@@ -88,6 +88,27 @@ import { useI18n } from "./i18n-fallback";
 import { PaneStatusBar } from "./PaneStatusBar";
 import { PaneComposerBar } from "./PaneComposerBar";
 import { PaneSearchBar } from "./PaneSearchBar";
+import { removeTerminalAgentOverview, upsertTerminalAgentOverview } from './terminalAgentRegistry';
+import {
+  isTerminalAgentId,
+  terminalAgentLauncher,
+  type TerminalAgentLauncher,
+} from './terminalAgentCatalog';
+import {
+  ensureTerminalAgentAvailability,
+  getTerminalAgentAvailabilitySnapshot,
+  subscribeTerminalAgentAvailability,
+} from './terminalAgentAvailability';
+import {
+  getTerminalAgentPreferencesSnapshot,
+  subscribeTerminalAgentPreferences,
+  visibleTerminalAgentIds,
+} from './terminalAgentPreferences';
+import { TERMINAL_AGENT_LAUNCH_EVENT } from './terminalChromeEvents';
+import {
+  removeTerminalSessionOverview,
+  upsertTerminalSessionOverview,
+} from './terminalSessionRegistry';
 import type { Terminal as XTermType } from '@xterm/xterm';
 import "@xterm/xterm/css/xterm.css";
 
@@ -441,32 +462,6 @@ interface ShellSession {
   restartNonce: number;
 }
 
-interface DetectedCliTool {
-  id: string;
-  label: string;
-  cmd_no_nl: string;
-}
-
-const TERMINAL_AGENT_LAUNCHERS = [
-  { id: 'claude', label: 'Claude Code' },
-  { id: 'codex', label: 'Codex' },
-  { id: 'gemini', label: 'Gemini CLI' },
-  { id: 'opencode', label: 'OpenCode' },
-  { id: 'amp', label: 'Amp' },
-  { id: 'cursor-agent', label: 'Cursor CLI' },
-  { id: 'copilot', label: 'Copilot CLI' },
-  { id: 'grok', label: 'Grok Build' },
-  { id: 'agy', label: 'Antigravity CLI' },
-  { id: 'kimi', label: 'Kimi Code' },
-  { id: 'pi', label: 'Pi' },
-  { id: 'kiro-cli', label: 'Kiro CLI' },
-  { id: 'droid', label: 'Droid' },
-  { id: 'aider', label: 'Aider' },
-  { id: 'qwen', label: 'Qwen CLI' },
-] as const;
-
-const TERMINAL_AGENT_LAUNCHER_IDS = new Set<string>(TERMINAL_AGENT_LAUNCHERS.map((launcher) => launcher.id));
-
 function terminalLauncherIcon(id: string): React.ReactNode {
   const registered = Icon.agent[id];
   return registered
@@ -518,6 +513,8 @@ interface Props {
   /** Remote workspace destination. When set, each tab owns an SSH PTY. */
   sshHost?: string;
   projectId: string;
+  /** Owning terminal workspace; used by the live command-palette index. */
+  workspaceId?: string;
   isActive?: boolean;
   onClose: () => void;
   themeVariant: ThemeVariant;
@@ -533,6 +530,8 @@ interface Props {
   onSplitVertical?: () => void;
   /** Only the focused pane is allowed to claim keyboard focus / global shortcuts. */
   paneFocused?: boolean;
+  /** Makes this panel's workspace visible before a cross-workspace tab jump. */
+  onWorkspaceFocus?: () => void;
   onPaneFocus?: () => void;
   onDirectoryChange?: (cwd: string) => void;
   /** kooky StatusBarIconButton zoom — wired from PaneTreeView */
@@ -628,6 +627,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   onFocus?: () => void;
   onRestart?: () => void;
   onAskAgent?: (agent: TerminalAgentId, selection: string) => void;
+  askAgentLaunchers?: readonly TerminalAgentLauncher[];
   onProxyChange?: (proxy: ShellProxyInfo | null) => void;
   canZoom?: boolean;
   isZoomed?: boolean;
@@ -660,6 +660,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       onFocus,
       onRestart,
       onAskAgent,
+      askAgentLaunchers = [],
       onProxyChange,
       canZoom = false,
       isZoomed = false,
@@ -880,11 +881,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           listen<TerminalHookEvent>('terminal-hook', (event) => {
             const hook = event.payload;
             if (hook.shellId !== shellId || hook.runId !== runIdRef.current) return;
-            if (hook.kind === 'lifecycle') {
-              if (hook.event === 'ended') onAgentActivityChangeRef.current?.(null);
-              else if (
-                (hook.event === 'running' || hook.event === 'attention')
-                && (hook.agent === 'claude' || hook.agent === 'codex' || hook.agent === 'opencode')
+              if (hook.kind === 'lifecycle') {
+                if (hook.event === 'ended') onAgentActivityChangeRef.current?.(null);
+                else if (
+                  (hook.event === 'running' || hook.event === 'attention')
+                && isTerminalAgentId(hook.agent)
               ) {
                 onAgentActivityChangeRef.current?.({ agent: hook.agent, state: hook.event });
               }
@@ -1270,21 +1271,32 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         onMouseDown={(e) => e.stopPropagation()}
         style={{
           position: 'fixed',
-          left: Math.max(8, Math.min(termCtxMenu.x, window.innerWidth - 180)),
-          top: Math.max(8, Math.min(termCtxMenu.y, window.innerHeight - 230)),
+          left: Math.max(8, Math.min(termCtxMenu.x, window.innerWidth - 248)),
+          top: Math.max(8, Math.min(termCtxMenu.y, window.innerHeight - 488)),
           zIndex: 2147482000,
-          minWidth: 150,
-          padding: '4px 0',
+          width: 240,
+          maxHeight: 480,
+          overflowY: 'auto',
+          padding: 6,
           borderRadius: 6,
           ...TERMINAL_CONTEXT_MENU_STYLE,
           display: 'flex',
           flexDirection: 'column',
         }}
       >
-        {selectedText && <>
-          <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => askAgent('claude')}>Ask Claude Code</button>
-          <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => askAgent('codex')}>Ask Codex</button>
-          <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => askAgent('opencode')}>Ask OpenCode</button>
+        {selectedText && askAgentLaunchers.length > 0 && <>
+          {askAgentLaunchers.map((launcher) => (
+            <button
+              key={launcher.id}
+              style={{ ...menuItemStyle, display: 'flex', alignItems: 'center', gap: 8 }}
+              onMouseEnter={(event) => { event.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; }}
+              onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
+              onClick={() => askAgent(launcher.id)}
+            >
+              <span style={{ display: 'flex', width: 16, justifyContent: 'center' }}>{terminalLauncherIcon(launcher.id)}</span>
+              <span>{`Ask ${launcher.label}`}</span>
+            </button>
+          ))}
           <div style={{ height: 1, background: 'rgb(var(--aegis-overlay)/0.08)', margin: '3px 0' }} />
         </>}
         <button disabled={!selectedText} style={{ ...menuItemStyle, opacity: selectedText ? 1 : 0.45, cursor: selectedText ? 'pointer' : 'default' }} onMouseEnter={(e) => { if (selectedText) e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; }} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => void copySelection()}>{t('terminal.copy', 'Copy')}</button>
@@ -1365,6 +1377,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       projectPath,
       sshHost,
       projectId,
+      workspaceId,
       isActive = true,
       onClose,
       themeVariant,
@@ -1381,6 +1394,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       isZoomed,
       onZoom,
       paneFocused = isActive,
+      onWorkspaceFocus,
       onPaneFocus,
       onDirectoryChange,
       resizeSuspended = false,
@@ -1420,16 +1434,132 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     const addMenuRef = useRef<HTMLDivElement>(null);
     const addMenuPopupRef = useRef<HTMLDivElement>(null);
     const addMenuButtonRef = useRef<HTMLButtonElement>(null);
-    const [detectedLaunchers, setDetectedLaunchers] = useState<DetectedCliTool[]>([]);
-    const [launchersLoading, setLaunchersLoading] = useState(false);
-    const launchersLoadedRef = useRef(false);
+    const agentAvailability = useSyncExternalStore(
+      subscribeTerminalAgentAvailability,
+      getTerminalAgentAvailabilitySnapshot,
+      getTerminalAgentAvailabilitySnapshot,
+    );
+    const agentPreferences = useSyncExternalStore(
+      subscribeTerminalAgentPreferences,
+      getTerminalAgentPreferencesSnapshot,
+      getTerminalAgentPreferencesSnapshot,
+    );
+    const visibleAgentIds = useMemo(
+      () => visibleTerminalAgentIds(agentPreferences),
+      [agentPreferences],
+    );
+    const availableAgentIds = useMemo(
+      () => new Set(agentAvailability.agents),
+      [agentAvailability.agents],
+    );
+    const availableLaunchers = useMemo(
+      () => visibleAgentIds
+        .filter((agent) => availableAgentIds.has(agent))
+        .map(terminalAgentLauncher),
+      [availableAgentIds, visibleAgentIds],
+    );
+    const unavailableLaunchers = useMemo(
+      () => visibleAgentIds
+        .filter((agent) => !availableAgentIds.has(agent))
+        .map(terminalAgentLauncher),
+      [availableAgentIds, visibleAgentIds],
+    );
+    const defaultLauncher = agentPreferences.defaultLauncherId
+      && agentPreferences.defaultLauncherId !== 'terminal'
+      && availableAgentIds.has(agentPreferences.defaultLauncherId)
+      && visibleAgentIds.includes(agentPreferences.defaultLauncherId)
+      ? terminalAgentLauncher(agentPreferences.defaultLauncherId)
+      : null;
     const [terminalDropActive, setTerminalDropActive] = useState(false);
     const [workspacePathDropActive, setWorkspacePathDropActive] = useState(false);
     const activeShellIdRef = useRef(activeShellId);
+    const trackedAgentShellIdsRef = useRef(new Set<string>());
+    const trackedSessionShellIdsRef = useRef(new Set<string>());
     activeShellIdRef.current = activeShellId;
     const onDirectoryChangeRef = useRef(onDirectoryChange);
     onDirectoryChangeRef.current = onDirectoryChange;
     useTerminalDropTarget(projectId, panelRef);
+
+    useEffect(() => {
+      void ensureTerminalAgentAvailability();
+    }, []);
+
+    // Palette navigation indexes the real mounted tabs. It never reconstructs
+    // a shell from localStorage, so focusing an entry preserves its live PTY.
+    useEffect(() => {
+      const liveSessionShellIds = new Set<string>();
+      for (const shell of shells) {
+        liveSessionShellIds.add(shell.id);
+        upsertTerminalSessionOverview({
+          shellId: shell.id,
+          paneId: projectId,
+          ...(workspaceId ? { workspaceId } : {}),
+          title: computeShellTitle(shell),
+          projectPath: isRemoteWorkspace
+            ? `ssh://${sshHost?.trim() || 'remote'}`
+            : shell.cwd || projectPath,
+          ...(shell.agentActivity ? { agent: shell.agentActivity.agent } : {}),
+          ...(isRemoteWorkspace && sshHost?.trim() ? { remoteHost: sshHost.trim() } : {}),
+          runtimeState: shell.status,
+          focus: () => {
+            onWorkspaceFocus?.();
+            setActiveShellId(shell.id);
+            if (!isRemoteWorkspace && shell.cwd) onDirectoryChangeRef.current?.(shell.cwd);
+            onPaneFocus?.();
+          },
+        });
+      }
+
+      for (const shellId of trackedSessionShellIdsRef.current) {
+        if (!liveSessionShellIds.has(shellId)) removeTerminalSessionOverview(shellId);
+      }
+      trackedSessionShellIdsRef.current = liveSessionShellIds;
+    }, [isRemoteWorkspace, onPaneFocus, onWorkspaceFocus, projectId, projectPath, shells, sshHost, workspaceId]);
+
+    useEffect(() => () => {
+      for (const shellId of trackedSessionShellIdsRef.current) {
+        removeTerminalSessionOverview(shellId);
+      }
+      trackedSessionShellIdsRef.current.clear();
+    }, []);
+
+    // Kooky keeps the agent monitor scoped to live terminal sessions. Mirror
+    // that here from JunQi's real shell-hook state, rather than guessing from
+    // task history or process ids.
+    useEffect(() => {
+      const liveAgentShellIds = new Set<string>();
+      for (const shell of shells) {
+        if (!shell.agentActivity) continue;
+        liveAgentShellIds.add(shell.id);
+        upsertTerminalAgentOverview({
+          shellId: shell.id,
+          agent: shell.agentActivity.agent,
+          state: shell.agentActivity.state,
+          title: computeShellTitle(shell),
+          projectPath: isRemoteWorkspace
+            ? `ssh://${sshHost?.trim() || 'remote'}`
+            : shell.cwd || projectPath,
+          focus: () => {
+            onWorkspaceFocus?.();
+            setActiveShellId(shell.id);
+            if (!isRemoteWorkspace && shell.cwd) onDirectoryChangeRef.current?.(shell.cwd);
+            onPaneFocus?.();
+          },
+        });
+      }
+
+      for (const shellId of trackedAgentShellIdsRef.current) {
+        if (!liveAgentShellIds.has(shellId)) removeTerminalAgentOverview(shellId);
+      }
+      trackedAgentShellIdsRef.current = liveAgentShellIds;
+    }, [isRemoteWorkspace, onPaneFocus, onWorkspaceFocus, projectPath, shells, sshHost]);
+
+    useEffect(() => () => {
+      for (const shellId of trackedAgentShellIdsRef.current) {
+        removeTerminalAgentOverview(shellId);
+      }
+      trackedAgentShellIdsRef.current.clear();
+    }, []);
 
     const reopenLastClosedShell = useCallback(() => {
       const closed = takeRecentlyClosedTerminalShell();
@@ -1683,12 +1813,24 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     }, [activeShellId, isRemoteWorkspace, projectId, projectPath, shells]);
 
     const handleAskAgent = useCallback((agent: TerminalAgentId, selection: string) => {
-      const title = agent === 'claude' ? 'Claude Code' : agent === 'codex' ? 'Codex' : 'OpenCode';
       handleAddShell({
         command: terminalAgentLaunchCommand(agent, selection, APP_PLATFORM === 'windows' ? 'windows' : 'posix'),
-        title,
+        title: terminalAgentLauncher(agent).label,
       });
     }, [handleAddShell]);
+
+    useEffect(() => {
+      const launchAgent = (event: Event) => {
+        if (!isActive || !paneFocused) return;
+        const agent = (event as CustomEvent<{ agent?: unknown }>).detail?.agent;
+        if (typeof agent !== 'string' || !isTerminalAgentId(agent)) return;
+        if (!availableAgentIds.has(agent) || !visibleAgentIds.includes(agent)) return;
+        const launcher = terminalAgentLauncher(agent);
+        handleAddShell({ command: launcher.id, title: launcher.label });
+      };
+      window.addEventListener(TERMINAL_AGENT_LAUNCH_EVENT, launchAgent);
+      return () => window.removeEventListener(TERMINAL_AGENT_LAUNCH_EVENT, launchAgent);
+    }, [availableAgentIds, handleAddShell, isActive, paneFocused, visibleAgentIds]);
 
     useEffect(() => {
       const addTab = () => {
@@ -1717,20 +1859,6 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       document.addEventListener('mousedown', close);
       return () => document.removeEventListener('mousedown', close);
     }, [addMenuOpen]);
-
-    useEffect(() => {
-      if (!addMenuOpen || launchersLoadedRef.current || launchersLoading) return;
-      setLaunchersLoading(true);
-      void invoke<DetectedCliTool[]>('detect_cli_tools')
-        .then((tools) => {
-          setDetectedLaunchers((tools ?? []).filter((tool) => (
-            TERMINAL_AGENT_LAUNCHER_IDS.has(tool.id) && Boolean(tool.cmd_no_nl?.trim())
-          )));
-          launchersLoadedRef.current = true;
-        })
-        .catch(() => setDetectedLaunchers([]))
-        .finally(() => setLaunchersLoading(false));
-    }, [addMenuOpen, launchersLoading]);
 
     const updateShell = useCallback((shellId: string, patch: Partial<ShellSession>) => {
       setShells((previous) => previous.map((shell) => (
@@ -1987,10 +2115,6 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       return () => window.removeEventListener(TERMINAL_SHELL_MOVED_EVENT, handleTransfer);
     }, [onClose, projectId, shells]);
 
-    const detectedLauncherById = new Map(detectedLaunchers.map((launcher) => [launcher.id, launcher]));
-    const availableLaunchers = TERMINAL_AGENT_LAUNCHERS.filter((launcher) => detectedLauncherById.has(launcher.id));
-    const unavailableLaunchers = TERMINAL_AGENT_LAUNCHERS.filter((launcher) => !detectedLauncherById.has(launcher.id));
-
     return (
       <div
         ref={panelRef}
@@ -2151,7 +2275,17 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
               <div ref={addMenuRef} style={{ position: 'relative' }}>
                 <button
                   ref={addMenuButtonRef}
-                  onClick={() => setAddMenuOpen((open) => !open)}
+                  onClick={() => {
+                    if (agentPreferences.defaultLauncherId === 'terminal') {
+                      handleAddShell();
+                    } else if (defaultLauncher) {
+                      handleAddShell({ command: defaultLauncher.id, title: defaultLauncher.label });
+                    } else if (availableLaunchers.length === 0) {
+                      handleAddShell();
+                    } else {
+                      setAddMenuOpen((open) => !open);
+                    }
+                  }}
                   title={t("terminal.newTerminal")}
                   style={{ width: 32, height: 28, borderRadius: 5, border: "none", background: addMenuOpen ? 'rgb(var(--aegis-overlay)/0.08)' : "transparent", color: "rgb(var(--aegis-text-secondary))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 1, flexShrink: 0, transition: "background 0.12s, color 0.12s" }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; e.currentTarget.style.color = 'rgb(var(--aegis-text))'; }}
@@ -2189,19 +2323,17 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                         icon={terminalLauncherIcon(launcher.id)}
                         label={launcher.label}
                         onClick={() => {
-                          const detected = detectedLauncherById.get(launcher.id);
-                          if (!detected) return;
-                          handleAddShell({ command: detected.cmd_no_nl, title: launcher.label });
+                          handleAddShell({ command: launcher.id, title: launcher.label });
                           setAddMenuOpen(false);
                         }}
                       />
                     ))}
-                    {launchersLoading && (
+                    {agentAvailability.status === 'loading' && (
                       <div style={{ padding: '7px 8px', color: 'rgb(var(--aegis-text-dim))', fontSize: 11.5 }}>
                         {t('terminal.detectingAgents', 'Detecting installed AI CLIs...')}
                       </div>
                     )}
-                    {!launchersLoading && unavailableLaunchers.length > 0 && (
+                    {agentAvailability.status === 'ready' && unavailableLaunchers.length > 0 && (
                       <>
                         <div style={{ height: 1, margin: '3px 0', background: 'rgb(var(--aegis-overlay)/0.08)' }} />
                         <div style={{ padding: '5px 8px 3px', color: 'rgb(var(--aegis-text-dim))', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase' }}>
@@ -2300,6 +2432,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 }}
                 onRestart={() => restartShell(shell.id)}
                 onAskAgent={handleAskAgent}
+                askAgentLaunchers={availableLaunchers}
                 onProxyChange={(proxy) => updateShell(shell.id, { proxy })}
                 canZoom={canZoom}
                 isZoomed={isZoomed}

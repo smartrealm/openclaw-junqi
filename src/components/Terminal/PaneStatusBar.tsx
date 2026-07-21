@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { debugError } from "@/utils/debugLog";
 import { Bot, Server, Wrench } from 'lucide-react';
 import { formatTerminalToolDuration, type ShellProxyInfo, type TerminalAgentActivity, type TerminalToolCall } from './shellLifecycle';
+import { terminalAgentLauncher } from './terminalAgentCatalog';
 
 // ── Shared pill style (kooky StatusSegment / bracket-bordered pill) ───────
 const pillBase: React.CSSProperties = {
@@ -264,8 +265,7 @@ function ProxySlot({ proxy }: { proxy: ShellProxyInfo }) {
 
 function AgentActivitySlot({ activity }: { activity: TerminalAgentActivity }) {
   const pill = usePillHover();
-  const label = activity.agent === 'claude' ? 'Claude Code'
-    : activity.agent === 'codex' ? 'Codex' : 'OpenCode';
+  const label = terminalAgentLauncher(activity.agent).label;
   const needsAttention = activity.state === 'attention';
   return (
     <span title={`${label} ${needsAttention ? 'needs attention' : 'running'}`} style={{ ...pillBase, ...pill.style, color: 'rgb(var(--aegis-text))', cursor: 'default' }} {...pill.handlers}>

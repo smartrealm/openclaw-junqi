@@ -1,3 +1,12 @@
+import { isTerminalAgentId } from './terminalAgentCatalog';
+import type { TerminalAgentId } from './terminalAgentCatalog';
+
+export type { TerminalAgentId } from './terminalAgentCatalog';
+export {
+  quoteTerminalAgentPrompt,
+  terminalAgentLaunchCommand,
+} from './terminalAgentCatalog';
+
 export type ShellRuntimeState = 'starting' | 'running' | 'exited' | 'failed';
 
 export interface ShellOutputEvent {
@@ -28,8 +37,6 @@ export interface ShellLaunchPathState {
   restartNonce: number;
   path: string;
 }
-
-export type TerminalAgentId = 'claude' | 'codex' | 'opencode';
 
 export interface TerminalAgentActivity {
   agent: TerminalAgentId;
@@ -150,21 +157,6 @@ export function clearRecentlyClosedTerminalShells(): void {
   RECENTLY_CLOSED_TERMINAL_SHELLS.length = 0;
 }
 
-/** Quote a user-selected terminal snippet as one argument for the current shell. */
-export function quoteTerminalAgentPrompt(prompt: string, platform: 'windows' | 'posix'): string {
-  if (platform === 'windows') return `'${prompt.replace(/'/g, "''")}'`;
-  return `'${prompt.replace(/'/g, "'\"'\"'")}'`;
-}
-
-/** Kooky-style Ask Agent launch command, kept independent of React for tests. */
-export function terminalAgentLaunchCommand(
-  agent: TerminalAgentId,
-  prompt: string,
-  platform: 'windows' | 'posix',
-): string {
-  return `${agent} ${quoteTerminalAgentPrompt(prompt, platform)}`;
-}
-
 /**
  * Keep one launch directory for the lifetime of a shell run. OSC 7 updates
  * the session's live cwd, but must not change the effect identity and restart
@@ -233,7 +225,7 @@ export function parseJunqiAgentStatusTitle(raw: string): TerminalAgentActivity |
   const value = raw.trim();
   if (!value.startsWith('junqi-agent:')) return undefined;
   const [agent, state] = value.slice('junqi-agent:'.length).split(':', 2);
-  if (agent !== 'claude' && agent !== 'codex' && agent !== 'opencode') return undefined;
+  if (!isTerminalAgentId(agent)) return undefined;
   if (state === 'running' || state === 'attention') return { agent, state };
   if (state === 'ended') return null;
   return undefined;

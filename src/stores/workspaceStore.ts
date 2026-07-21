@@ -26,6 +26,13 @@ import {
   type SplitDirection,
   type Workspace,
 } from '@/workspace/types';
+import { workspacePathKey } from '@/workspace/projectWorkspace';
+
+export interface TerminalWorktreeDescriptor {
+  path: string;
+  branch: string;
+  name: string;
+}
 
 interface WorkspaceStoreState {
   workspaces: Workspace[];
@@ -39,6 +46,7 @@ interface WorkspaceStoreState {
   createWorkspace: (name?: string, workingDirectory?: string) => Workspace;
   createSshWorkspace: (host: string) => Workspace | null;
   createWorktreeWorkspace: (parentId: string, branch: string, workingDirectory: string) => Workspace | null;
+  reconcileWorktreeFamily: (parentId: string, worktrees: readonly TerminalWorktreeDescriptor[]) => void;
   closeWorkspace: (id: string) => void;
   closeOtherWorkspaces: (id: string) => void;
   duplicateWorkspace: (id: string) => Workspace | null;
@@ -313,6 +321,79 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         });
         return child;
       },
+
+      reconcileWorktreeFamily: (parentId, worktrees) => set((state) => {
+        const parent = state.workspaces.find((workspace) => workspace.id === parentId);
+        if (!parent || parent.worktreeParentId || parent.sshRemoteHost) return {};
+
+        const existingChildren = state.workspaces.filter((workspace) => workspace.worktreeParentId === parent.id);
+        const existingByPath = new Map(existingChildren.map((workspace) => [
+          workspacePathKey(workspace.worktreePath || workspace.workingDirectory),
+          workspace,
+        ]));
+        const seenPaths = new Set<string>();
+        const children: Workspace[] = [];
+
+        for (const descriptor of worktrees) {
+          const path = workspacePathKey(descriptor.path);
+          const branch = nonEmptyText(descriptor.branch) || 'detached';
+          if (!path || seenPaths.has(path)) continue;
+          seenPaths.add(path);
+
+          const existing = existingByPath.get(path);
+          if (existing) {
+            children.push({
+              ...existing,
+              projectDirectory: parent.projectDirectory || parent.workingDirectory,
+              workingDirectory: descriptor.path,
+              worktreePath: descriptor.path,
+              worktreeBranch: branch,
+            });
+            continue;
+          }
+
+          const root = defaultLeaf('shell', undefined, descriptor.path);
+          children.push({
+            id: newPaneId(),
+            name: nonEmptyText(descriptor.name) || branch,
+            projectDirectory: parent.projectDirectory || parent.workingDirectory,
+            workingDirectory: descriptor.path,
+            root,
+            focusedPaneId: root.id,
+            worktreeParentId: parent.id,
+            worktreeBranch: branch,
+            worktreePath: descriptor.path,
+          });
+        }
+
+        const retained = state.workspaces.filter((workspace) => workspace.worktreeParentId !== parent.id);
+        const parentIndex = retained.findIndex((workspace) => workspace.id === parent.id);
+        if (parentIndex < 0) return {};
+        const workspaces = [
+          ...retained.slice(0, parentIndex + 1),
+          ...children,
+          ...retained.slice(parentIndex + 1),
+        ];
+        const currentChildIds = existingChildren.map((workspace) => workspace.id);
+        const nextChildIds = children.map((workspace) => workspace.id);
+        const unchanged = currentChildIds.length === nextChildIds.length
+          && currentChildIds.every((id, index) => id === nextChildIds[index])
+          && children.every((child) => {
+            const previous = existingByPath.get(workspacePathKey(child.worktreePath || child.workingDirectory));
+            return previous
+              && previous.workingDirectory === child.workingDirectory
+              && previous.worktreePath === child.worktreePath
+              && previous.worktreeBranch === child.worktreeBranch
+              && previous.projectDirectory === child.projectDirectory;
+          });
+        if (unchanged) return {};
+
+        const activeWorkspaceId = state.activeWorkspaceId && currentChildIds.includes(state.activeWorkspaceId)
+          && !nextChildIds.includes(state.activeWorkspaceId)
+          ? parent.id
+          : state.activeWorkspaceId;
+        return { workspaces, activeWorkspaceId };
+      }),
 
       closeWorkspace: (id) => set((state) => {
         const index = state.workspaces.findIndex((workspace) => workspace.id === id);

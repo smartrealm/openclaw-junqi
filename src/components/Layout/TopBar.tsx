@@ -1,13 +1,15 @@
-import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, PanelLeftOpen, PanelLeftClose, PanelLeft, Bell } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ExternalLink, FolderOpen, PanelLeftOpen, PanelLeftClose, PanelLeft, PanelRightOpen, Bell, Search } from 'lucide-react';
 import clsx from 'clsx';
+import { invoke } from '@tauri-apps/api/core';
 
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { NotificationType } from '@/stores/notificationStore';
 import type { NotificationPanelItem } from '@/components/Layout/NotificationPanel';
 import {
@@ -20,6 +22,15 @@ import {
   requestTerminalSidebarToggle,
   TERMINAL_SIDEBAR_MODE_EVENT,
 } from '@/components/Terminal/terminalSidebarEvents';
+import {
+  requestTerminalAgentPanelToggle,
+  requestTerminalCommandPalette,
+} from '@/components/Terminal/terminalChromeEvents';
+import {
+  cycleTerminalKeepAwakeMode,
+  getTerminalKeepAwakeSnapshot,
+  subscribeTerminalKeepAwake,
+} from '@/components/Terminal/terminalKeepAwake';
 import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
 import { resolveNotificationTarget } from '@/utils/notificationTarget';
 import {
@@ -35,6 +46,150 @@ type AiStatus = 'disconnected' | 'connecting' | 'working' | 'idle';
 
 function persistentNotificationType(level: string): NotificationType {
   return level === 'error' || level === 'warning' ? 'error' : 'info';
+}
+
+interface TerminalOpenInApp {
+  id: string;
+  label: string;
+}
+
+/** Kooky-style split Open In control backed by fixed, locally detected apps. */
+function TerminalOpenInControl({ directory }: { directory: string }) {
+  const { t } = useTranslation();
+  const [apps, setApps] = useState<TerminalOpenInApp[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [error, setError] = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const storageKey = 'junqi:terminal-open-in-app';
+  const preferredId = (() => {
+    try { return localStorage.getItem(storageKey) ?? ''; } catch { return ''; }
+  })();
+  const primary = apps.find((app) => app.id === preferredId) ?? apps[0] ?? null;
+  const canOpen = Boolean(directory && primary);
+
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<TerminalOpenInApp[]>('list_terminal_open_in_apps')
+      .then((available) => {
+        if (!cancelled) setApps(available ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setApps([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', dismiss);
+    return () => document.removeEventListener('mousedown', dismiss);
+  }, [menuOpen]);
+
+  const openIn = useCallback(async (app: TerminalOpenInApp) => {
+    if (!directory) return;
+    try {
+      await invoke('open_terminal_workspace_in_app', { appId: app.id, path: directory });
+      try { localStorage.setItem(storageKey, app.id); } catch {}
+      setError('');
+      setMenuOpen(false);
+    } catch {
+      setError(t('terminal.openInFailed', 'The selected application could not open this workspace.'));
+      setMenuOpen(true);
+    }
+  }, [directory, t]);
+
+  return (
+    <div ref={wrapRef} className="relative flex h-[28px] shrink-0 items-center" style={{ opacity: apps.length > 0 ? 1 : 0.45 }}>
+      <button
+        type="button"
+        disabled={!canOpen}
+        onClick={() => { if (primary) void openIn(primary); }}
+        title={primary ? t('terminal.openInPrimary', { app: primary.label, defaultValue: `Open in ${primary.label}` }) : t('terminal.openIn', 'Open in...')}
+        aria-label={primary ? t('terminal.openInPrimary', { app: primary.label, defaultValue: `Open in ${primary.label}` }) : t('terminal.openIn', 'Open in...')}
+        className="flex h-[28px] w-[24px] items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text disabled:cursor-default disabled:hover:bg-transparent"
+      >
+        {primary?.id === 'file-manager' ? <FolderOpen size={14} /> : <ExternalLink size={13} />}
+      </button>
+      <button
+        type="button"
+        disabled={apps.length === 0}
+        onClick={() => setMenuOpen((open) => !open)}
+        title={t('terminal.openIn', 'Open in...')}
+        aria-label={t('terminal.openIn', 'Open in...')}
+        className="flex h-[28px] w-[15px] items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text disabled:cursor-default disabled:hover:bg-transparent"
+      >
+        <ChevronDown size={10} />
+      </button>
+      {menuOpen && (
+        <div className="absolute end-0 top-[32px] z-[100] w-[220px] overflow-hidden rounded-[6px] border border-aegis-border/70 bg-aegis-elevated p-1 shadow-[0_10px_28px_rgb(0_0_0_/_0.35)]">
+          {apps.map((app) => (
+            <button
+              key={app.id}
+              type="button"
+              onClick={() => void openIn(app)}
+              className="flex h-8 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11px] text-aegis-text transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.08)]"
+            >
+              {app.id === 'file-manager' ? <FolderOpen size={13} /> : <ExternalLink size={12} />}
+              <span className="min-w-0 flex-1 truncate">{app.label}</span>
+              {app.id === primary?.id && <span className="h-1.5 w-1.5 rounded-full bg-aegis-primary" />}
+            </button>
+          ))}
+          {error && <div className="px-2 py-1.5 text-[10px] leading-4 text-aegis-danger">{error}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Kooky-style hardware-light control, backed by a real native sleep lease. */
+function TerminalKeepAwakeControl() {
+  const { t } = useTranslation();
+  const keepAwake = useSyncExternalStore(
+    subscribeTerminalKeepAwake,
+    getTerminalKeepAwakeSnapshot,
+    getTerminalKeepAwakeSnapshot,
+  );
+  const title = keepAwake.error
+    ? t('terminal.keepAwakeError', 'Keep-awake could not be updated. Click to retry.')
+    : keepAwake.mode === 'always'
+      ? t('terminal.keepAwakeAlways', 'Always awake - click to turn off')
+      : keepAwake.mode === 'auto'
+        ? keepAwake.keepingAwake
+          ? t('terminal.keepAwakeActive', 'Keeping this computer awake while a terminal agent or SSH session is active - click for always')
+          : t('terminal.keepAwakeAuto', 'Keep awake: auto - holds while terminal agents or SSH sessions work - click for always')
+        : t('terminal.keepAwakeOff', 'Keep awake: off - click for auto');
+  const enabled = keepAwake.mode !== 'off';
+
+  return (
+    <button
+      type="button"
+      onClick={cycleTerminalKeepAwakeMode}
+      title={title}
+      aria-label={title}
+      className="relative flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[5px] transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+    >
+      {enabled && (
+        <span
+          aria-hidden="true"
+          className="absolute h-[13px] w-[13px] rounded-full border border-[#4de873]/55 transition-opacity"
+          style={{ opacity: keepAwake.mode === 'always' ? 1 : 0 }}
+        />
+      )}
+      <span
+        aria-hidden="true"
+        className="h-[7px] w-[7px] rounded-full"
+        style={{
+          background: enabled ? '#4de873' : 'rgb(var(--aegis-text-dim) / 0.45)',
+          boxShadow: enabled ? '0 0 5px rgb(77 232 115 / 0.7)' : 'none',
+          opacity: keepAwake.pending ? 0.58 : 1,
+          animation: enabled ? 'aegis-pulse 1.5s ease-in-out infinite' : 'none',
+        }}
+      />
+    </button>
+  );
 }
 
 export function toNotificationPanelItem(
@@ -131,6 +286,12 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     : sidebarTarget === 'agent-workspace'
       ? requestAgentWorkspaceSidebarToggle
       : cycleSidebar;
+  const terminalChrome = sidebarTarget === 'terminal';
+  const terminalOpenDirectory = useWorkspaceStore((state) => {
+    const active = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
+    if (!active || active.sshRemoteHost) return '';
+    return active.worktreePath || active.projectDirectory || active.workingDirectory;
+  });
 
   // Zoom cancellation: webview setZoom scales everything, but traffic lights
   // are native window chrome → we cancel the zoom on the bar so they stay
@@ -329,35 +490,62 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
         </button>
       )}
 
-      {/* Center — AI status */}
-      <button
-        type="button"
-        onClick={statusClickable ? onStatusClick : undefined}
-        disabled={!statusClickable}
-        title={statusText}
-        className={clsx(
-          'absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] border transition-colors',
-          showBack ? 'max-w-[calc(50%_-_80px)]' : 'max-w-[50%]',
-          status === 'idle' && 'border-transparent text-aegis-text-muted',
-          status === 'working' && 'border-aegis-primary/25 text-aegis-primary bg-aegis-primary/[0.06] hover:bg-aegis-primary/[0.12] cursor-pointer',
-          status === 'connecting' && 'border-transparent text-aegis-warning',
-          status === 'disconnected' && 'border-aegis-danger/25 text-aegis-danger bg-aegis-danger/[0.05] hover:bg-aegis-danger/[0.1] cursor-pointer',
-        )}
-      >
-        <span
+      {terminalChrome ? (
+        <button
+          type="button"
+          onClick={requestTerminalCommandPalette}
+          title={t('terminal.commandPalette', 'Search workspace, tab, agent')}
+          aria-label={t('terminal.commandPalette', 'Search workspace, tab, agent')}
+          className="absolute left-1/2 flex h-[24px] w-[min(340px,calc(100%_-_180px))] -translate-x-1/2 items-center gap-2 rounded-[5px] border border-aegis-border/50 bg-[rgb(var(--aegis-overlay)/0.06)] px-2.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:border-aegis-border hover:bg-[rgb(var(--aegis-overlay)/0.1)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+        >
+          <Search size={13} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{t('terminal.commandPalette', 'Search workspace, tab, agent')}</span>
+          <kbd className="shrink-0 rounded border border-aegis-border/60 px-1 font-mono text-[9px] text-aegis-text-muted">⌘P</kbd>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={statusClickable ? onStatusClick : undefined}
+          disabled={!statusClickable}
+          title={statusText}
           className={clsx(
-            'w-[5px] h-[5px] rounded-full shrink-0',
-            status === 'idle' && 'bg-aegis-success',
-            status === 'working' && 'bg-aegis-primary animate-pulse',
-            status === 'connecting' && 'bg-aegis-warning animate-pulse',
-            status === 'disconnected' && 'bg-aegis-text-dim',
+            'absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] border transition-colors',
+            showBack ? 'max-w-[calc(50%_-_80px)]' : 'max-w-[50%]',
+            status === 'idle' && 'border-transparent text-aegis-text-muted',
+            status === 'working' && 'border-aegis-primary/25 text-aegis-primary bg-aegis-primary/[0.06] hover:bg-aegis-primary/[0.12] cursor-pointer',
+            status === 'connecting' && 'border-transparent text-aegis-warning',
+            status === 'disconnected' && 'border-aegis-danger/25 text-aegis-danger bg-aegis-danger/[0.05] hover:bg-aegis-danger/[0.1] cursor-pointer',
           )}
-        />
-        <span className="truncate">{statusText}</span>
-      </button>
+        >
+          <span
+            className={clsx(
+              'w-[5px] h-[5px] rounded-full shrink-0',
+              status === 'idle' && 'bg-aegis-success',
+              status === 'working' && 'bg-aegis-primary animate-pulse',
+              status === 'connecting' && 'bg-aegis-warning animate-pulse',
+              status === 'disconnected' && 'bg-aegis-text-dim',
+            )}
+          />
+          <span className="truncate">{statusText}</span>
+        </button>
+      )}
 
       {/* Right — notifications (kooky: 28x28, cornerRadius 5, icon 12pt) */}
-      <div ref={notifRef} className="ml-auto relative shrink-0">
+      {terminalChrome && (
+        <TerminalOpenInControl directory={terminalOpenDirectory} />
+      )}
+      {terminalChrome && (
+        <button
+          type="button"
+          onClick={requestTerminalAgentPanelToggle}
+          title={t('terminal.agentPanelToggle', 'Toggle agent panel')}
+          aria-label={t('terminal.agentPanelToggle', 'Toggle agent panel')}
+          className="ml-auto flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+        >
+          <PanelRightOpen size={15} />
+        </button>
+      )}
+      <div ref={notifRef} className={clsx('relative shrink-0', !terminalChrome && 'ml-auto')}>
         <button
           type="button"
           onClick={() => setPanelOpen((value) => {
@@ -396,6 +584,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
           </Suspense>
         )}
       </div>
+      {terminalChrome && <TerminalKeepAwakeControl />}
     </div>
   );
 }

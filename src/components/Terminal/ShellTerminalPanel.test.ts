@@ -40,10 +40,13 @@ test('context-menu rename waits for the menu click to finish before focusing the
   assert.match(source, /cancelAnimationFrame\(pendingRenameFrameRef\.current\)/);
 });
 
-test('terminal launcher menu is portaled and populated from detected CLI tools', () => {
-  assert.match(source, /invoke<DetectedCliTool\[]>\('detect_cli_tools'\)/);
+test('terminal launcher menu is portaled and shares CLI availability with launch preferences', () => {
+  assert.match(source, /ensureTerminalAgentAvailability/);
+  assert.match(source, /subscribeTerminalAgentAvailability/);
+  assert.match(source, /subscribeTerminalAgentPreferences/);
+  assert.match(source, /visibleTerminalAgentIds/);
   assert.match(source, /addMenuOpen && createPortal/);
-  assert.match(source, /TERMINAL_AGENT_LAUNCHERS/);
+  assert.match(source, /defaultLauncher/);
   assert.match(source, /terminalLauncherIcon/);
 });
 
