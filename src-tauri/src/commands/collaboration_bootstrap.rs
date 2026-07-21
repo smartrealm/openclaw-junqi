@@ -4017,6 +4017,24 @@ fn parse_archived_journal(raw: &[u8]) -> Result<CollaborationBootstrapJournal, S
     Ok(journal)
 }
 
+/// Writes an archived journal as one owned operation. Consuming the file keeps
+/// the archive commit boundary portable: Windows must not rename the staging
+/// directory while its journal handle is still open.
+fn persist_archived_bootstrap_journal(
+    mut file: std::fs::File,
+    archived: &CollaborationBootstrapJournal,
+) -> Result<(), String> {
+    let payload = serde_json::to_vec_pretty(archived)
+        .map_err(|error| format!("Failed to encode the archived bootstrap journal: {error}"))?;
+    if payload.len() > 512 * 1024 {
+        return Err("Archived bootstrap journal exceeds the 512 KiB limit".to_string());
+    }
+    use std::io::Write;
+    file.write_all(&payload)
+        .and_then(|_| file.sync_all())
+        .map_err(|error| format!("Failed to persist the archived bootstrap journal: {error}"))
+}
+
 #[cfg(any(not(unix), test))]
 fn load_archived_journal(path: &Path) -> Result<CollaborationBootstrapJournal, String> {
     let raw = std::fs::read(path)
@@ -4310,22 +4328,12 @@ fn archive_abandoned_bootstrap(
             return Err("The bootstrap journal contains an inconsistent plugin backup".to_string());
         }
 
-        let payload = serde_json::to_vec_pretty(&archived)
-            .map_err(|error| format!("Failed to encode the archived bootstrap journal: {error}"))?;
-        if payload.len() > 512 * 1024 {
-            return Err("Archived bootstrap journal exceeds the 512 KiB limit".to_string());
-        }
-        let mut file = staging.create_regular_file(
+        let file = staging.create_regular_file(
             OsStr::new("journal.json"),
             0o600,
             "archived bootstrap journal",
         )?;
-        use std::io::Write;
-        file.write_all(&payload)
-            .and_then(|_| file.sync_all())
-            .map_err(|error| {
-                format!("Failed to persist the archived bootstrap journal: {error}")
-            })?;
+        persist_archived_bootstrap_journal(file, &archived)?;
         staging.sync("bootstrap archive staging directory")?;
         archive_root.rename_child_noreplace(
             OsStr::new(&staging_name),
@@ -4474,12 +4482,6 @@ fn archive_abandoned_bootstrap(
         return Err("The bootstrap journal contains an inconsistent plugin backup".to_string());
     }
 
-    let payload = serde_json::to_vec_pretty(&archived)
-        .map_err(|error| format!("Failed to encode the archived bootstrap journal: {error}"))?;
-    if payload.len() > 512 * 1024 {
-        let _ = std::fs::remove_dir_all(&staging);
-        return Err("Archived bootstrap journal exceeds the 512 KiB limit".to_string());
-    }
     let staged_journal = staging.join("journal.json");
     let mut options = std::fs::OpenOptions::new();
     options.create_new(true).write(true);
@@ -4488,13 +4490,13 @@ fn archive_abandoned_bootstrap(
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options
+    let file = options
         .open(&staged_journal)
         .map_err(|error| format!("Failed to create the archived bootstrap journal: {error}"))?;
-    use std::io::Write;
-    file.write_all(&payload)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| format!("Failed to persist the archived bootstrap journal: {error}"))?;
+    if let Err(error) = persist_archived_bootstrap_journal(file, &archived) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(error);
+    }
     sync_parent_directory(&staged_journal)?;
     std::fs::rename(&staging, &final_directory)
         .map_err(|error| format!("Failed to commit the archived bootstrap evidence: {error}"))?;
