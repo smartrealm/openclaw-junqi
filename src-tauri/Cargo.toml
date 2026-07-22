@@ -1,6 +1,6 @@
 [package]
 name = "junqi-desktop"
-version = "1.4.4"
+version = "1.4.5"
 edition = "2021"
 authors = ["浚启智境科技有限公司"]
 
