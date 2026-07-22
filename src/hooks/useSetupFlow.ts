@@ -243,7 +243,7 @@ export function useSetupFlow(
     setupStep, setupError, installMode, postStorageStep, gatewayRunning,
     replaceSetupStep, navigateSetup, goBackSetup,
     setSetupError, setSetupComplete, setPostStorageStep,
-    setGatewayRunning, setInstallMode, setSetupStatus, clearSetupLogs, appendSetupLog,
+    setGatewayRunning, setInstallMode, setSetupStatus, appendSetupLog,
   } = useAppStore();
   const { t } = useTranslation();
   const [installTarget, setInstallTarget] = useState<InstallTarget | null>(null);
@@ -626,6 +626,7 @@ export function useSetupFlow(
 
   // ── Helpers ──
   function patchStep(id: string, status: StepStatus, detail?: string) {
+    const current = stepsRef.current.find((step) => step.id === id);
     commitSteps(stepsRef.current.map((s) =>
       s.id === id
         ? {
@@ -636,6 +637,15 @@ export function useSetupFlow(
           }
         : s
     ));
+
+    if (!detail || (current?.status === status && current.detail === detail)) return;
+    appendSetupLog({
+      source: "setup",
+      step: id,
+      message: detail,
+      level: status === "error" ? "error" : status === "done" ? "success" : "info",
+      progress: status === "done" ? 1 : undefined,
+    });
   }
 
   function ensureStepBefore(step: StepState, beforeId: string) {
@@ -1082,7 +1092,6 @@ export function useSetupFlow(
 
   const runNativeSetup = useCallback(async (existingRunId?: number): Promise<boolean> => {
     const runId = existingRunId ?? beginRun();
-    clearSetupLogs();
     const s = [...INITIAL_NATIVE_STEPS];
     commitSteps(s);
     try {
@@ -1235,11 +1244,10 @@ export function useSetupFlow(
       return false;
     }
   }, [beginRun, isRunActive, replaceSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
-      setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement, startGatewayAction, runDependencyInstall]);
+      setSetupError, appendSetupLog, updateOnboardingRequirement, startGatewayAction, runDependencyInstall]);
 
   const runDockerSetup = useCallback(async (existingRunId?: number): Promise<boolean> => {
     const runId = existingRunId ?? beginRun();
-    clearSetupLogs();
     commitSteps([...INITIAL_DOCKER_STEPS]);
     try {
       replaceSetupStep("checking");
@@ -1262,7 +1270,7 @@ export function useSetupFlow(
       return false;
     }
   }, [beginRun, isRunActive, replaceSetupStep, t, report, commitSteps,
-      setGatewayRunning, setSetupError, clearSetupLogs, appendSetupLog, startGatewayAction]);
+      setGatewayRunning, setSetupError, appendSetupLog, startGatewayAction]);
 
   const selectMode = useCallback(async (mode: InstallMode) => {
     const runId = beginRun();
@@ -1750,10 +1758,8 @@ export function useSetupFlow(
     if (destination === "storage") {
       setForceStorageSelection(true);
     }
-    // Navigation is not a new installation attempt. Keep the completed
-    // stage results and their logs available when the user returns to inspect
-    // an earlier choice; `beginRun` creates the explicit boundary that clears
-    // results for a genuinely new attempt.
+    // Navigation and retries retain the same diagnostic timeline so the user
+    // can inspect each completed stage and compare a later attempt with it.
     presentSetupStep(destination);
   }, [cancelActiveRun, setSetupError, setNeedsGit, goBackSetup, gatewayRunning, commitSteps, presentSetupStep, rollbackRuntimeReconfiguration, appendSetupLog, report, replaceSetupStep, setForceStorageSelection, setupStep]);
 

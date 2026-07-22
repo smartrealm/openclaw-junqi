@@ -10,6 +10,7 @@ export interface PersistentNotificationItem {
   title: string;
   body: string;
   bodyZh: string | null;
+  agent?: string | null;
   url: string | null;
   createdAt: string;
   isRead: boolean;
@@ -43,6 +44,34 @@ export function withAllNotificationsRead(
       item.isRead ? item : { ...item, isRead: true }
     )),
     unreadCount: 0,
+  };
+}
+
+export function withNotificationsRead(
+  result: PersistentNotificationResult | null,
+  ids: readonly string[],
+): PersistentNotificationResult | null {
+  if (!result) return null;
+  const selected = new Set(ids);
+  const notifications = result.notifications.map((item) => (
+    selected.has(item.id) ? { ...item, isRead: true } : item
+  ));
+  return {
+    notifications,
+    unreadCount: notifications.filter((item) => !item.isRead).length,
+  };
+}
+
+export function withoutNotifications(
+  result: PersistentNotificationResult | null,
+  ids: readonly string[],
+): PersistentNotificationResult | null {
+  if (!result) return null;
+  const selected = new Set(ids);
+  const notifications = result.notifications.filter((item) => !selected.has(item.id));
+  return {
+    notifications,
+    unreadCount: notifications.filter((item) => !item.isRead).length,
   };
 }
 
@@ -143,6 +172,16 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
     );
   }, [runMutation]);
 
+  const markReadMany = useCallback(async (ids: readonly string[]) => {
+    const selected = [...new Set(ids.filter(Boolean))];
+    if (selected.length === 0) return;
+    await runMutation(
+      'mark_all_notifications_read',
+      { ids: selected },
+      () => setResult((current) => withNotificationsRead(current, selected)),
+    );
+  }, [runMutation]);
+
   const clear = useCallback(async () => {
     await runMutation(
       'clear_notifications',
@@ -151,5 +190,15 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
     );
   }, [runMutation]);
 
-  return { result, loading, error, refresh, markRead, markAllRead, clear };
+  const clearMany = useCallback(async (ids: readonly string[]) => {
+    const selected = [...new Set(ids.filter(Boolean))];
+    if (selected.length === 0) return;
+    await runMutation(
+      'clear_notifications',
+      { ids: selected },
+      () => setResult((current) => withoutNotifications(current, selected)),
+    );
+  }, [runMutation]);
+
+  return { result, loading, error, refresh, markRead, markAllRead, markReadMany, clear, clearMany };
 }

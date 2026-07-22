@@ -17,10 +17,11 @@ test('terminal and AI workspaces own their left rail and top-bar toggle channels
   assert.match(topBar, /requestAgentWorkspaceSidebarToggle/);
 });
 
-test('settings, terminal and AI workspace expose a safe route-level back action', () => {
+test('terminal owns its chrome while settings and AI workspace expose a safe route-level back action', () => {
   assert.match(appLayout, /showBack=\{showRouteBack\}/);
-  assert.match(appLayout, /showRouteBack = isTerminalPage \|\| isAgentWorkspacePage \|\| isSettingsPage/);
-  assert.match(appLayout, /routeBackFallback = isTerminalPage \|\| isAgentWorkspacePage \? '\/tools' : '\/'/);
+  assert.match(appLayout, /showRouteBack = isAgentWorkspacePage \|\| isSettingsPage/);
+  assert.match(appLayout, /routeBackFallback = isAgentWorkspacePage \? '\/tools' : '\/'/);
+  assert.match(appLayout, /!isWorkspacePage && !isTerminalPage && <TabBar \/>/);
   assert.match(topBar, /window\.history\.state/);
   assert.match(topBar, /navigate\(-1\)/);
   assert.match(topBar, /navigate\(backFallback\)/);

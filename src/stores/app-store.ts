@@ -43,7 +43,9 @@ export type SetupLog = {
   diagnostic?: boolean;
 };
 
-const SETUP_LOG_LIMIT = 2_000;
+// Setup can stream verbose npm and Gateway output for several minutes. Keep a
+// bounded, session-local history large enough for an entire onboarding run.
+const SETUP_LOG_LIMIT = 10_000;
 
 interface AppState {
   setupComplete: boolean | null; // null = 尚未完成首次向导判定
@@ -68,7 +70,6 @@ interface AppState {
   setInstallMode: (mode: InstallMode) => void;
   setGatewayRunning: (v: boolean) => void;
   appendSetupLog: (log: Omit<SetupLog, "ts"> & { ts?: number }) => void;
-  clearSetupLogs: () => void;
   setPostStorageStep: (step: PostStorageStep) => void;
   setStorageDraft: (draft: StorageSetupDraft | null) => void;
 }
@@ -123,13 +124,23 @@ export const useAppStore = create<AppState>((set) => ({
     set({ installMode: mode });
   },
   setGatewayRunning: (v) => set({ gatewayRunning: v }),
-  appendSetupLog: (log) => set((s) => ({
-    setupLogs: [
-      ...s.setupLogs.slice(-(SETUP_LOG_LIMIT - 1)),
-      { ...log, ts: log.ts ?? Date.now() },
-    ],
-  })),
-  clearSetupLogs: () => set({ setupLogs: [] }),
+  appendSetupLog: (log) => set((s) => {
+    const nextLog = { ...log, ts: log.ts ?? Date.now() };
+    const previous = s.setupLogs.at(-1);
+    const isDuplicate = previous
+      && previous.source === nextLog.source
+      && previous.step === nextLog.step
+      && previous.message === nextLog.message
+      && previous.level === nextLog.level
+      && previous.diagnostic === nextLog.diagnostic;
+    if (isDuplicate) return s;
+    return {
+      setupLogs: [
+        ...s.setupLogs.slice(-(SETUP_LOG_LIMIT - 1)),
+        nextLog,
+      ],
+    };
+  }),
   setPostStorageStep: (step) => set({ postStorageStep: step }),
   setStorageDraft: (draft) => set({ storageDraft: draft }),
 }));

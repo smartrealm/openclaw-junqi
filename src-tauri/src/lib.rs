@@ -118,6 +118,9 @@ pub fn run() {
             // Fonts
             commands::font::get_system_fonts,
             commands::cli_tools::detect_cli_tools,
+            commands::terminal_keep_awake::set_terminal_keep_awake,
+            commands::terminal_open_in::list_terminal_open_in_apps,
+            commands::terminal_open_in::open_terminal_workspace_in_app,
             // Screenshot
             commands::screenshot::screenshot_check_permission,
             commands::screenshot::screenshot_interactive,
@@ -248,6 +251,7 @@ pub fn run() {
             commands::terminal_workspace::remove_terminal_recent_workspace,
             commands::terminal_workspace::clear_terminal_recent_workspaces,
             commands::terminal_workspace::create_terminal_workspace_worktree,
+            commands::terminal_workspace::list_terminal_workspace_worktrees,
             commands::terminal_workspace::remove_terminal_workspace_worktree,
             commands::terminal_workspace_watch::set_terminal_workspace_watches,
             commands::terminal_workspace_watch::clear_terminal_workspace_watches,
@@ -596,6 +600,7 @@ pub fn run() {
             }
         }
         if let RunEvent::Exit = event {
+            commands::terminal_keep_awake::shutdown();
             // Kill the gateway child process on app exit
             let state = app_handle.state::<GatewayProcess>();
             if let Ok(mut child_lock) = state.child.lock() {

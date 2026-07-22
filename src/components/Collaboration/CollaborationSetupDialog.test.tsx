@@ -57,9 +57,16 @@ function capabilities(agents: CollaborationCapabilities['configuredAgents']): Co
   };
 }
 
-function render(agentCapabilities: CollaborationCapabilities, allowedAgentIds: string[]): string {
+function render(
+  agentCapabilities: CollaborationCapabilities,
+  allowedAgentIds: string[],
+  options: {
+    identity?: RuntimeIdentity;
+    decision?: Parameters<typeof CollaborationSetupPanel>[0]['decision'];
+  } = {},
+): string {
   return renderToStaticMarkup(createElement(CollaborationSetupPanel, {
-    decision: {
+    decision: options.decision ?? {
       kind: 'ready',
       canApply: false,
       canRecover: false,
@@ -67,7 +74,7 @@ function render(agentCapabilities: CollaborationCapabilities, allowedAgentIds: s
       pluginVersion: '0.1.0',
       expectedVersion: '0.1.0',
     },
-    identity,
+    identity: options.identity ?? identity,
     probe,
     status: null,
     capabilities: agentCapabilities,
@@ -121,4 +128,22 @@ test('setup panel closes the zero-Agent dead end with a create action', () => {
   const html = render(capabilities([]), []);
   assert.match(html, /No OpenClaw Agent is configured/);
   assert.match(html, /Create Agent/);
+});
+
+test('unverified Gateway setup does not expose a plugin package or target metadata', () => {
+  const html = render(capabilities([]), [], {
+    identity: { ...identity, verified: false },
+    decision: {
+      kind: 'identity_unavailable',
+      canApply: false,
+      canRecover: false,
+      targetClass: 'unknown',
+      pluginVersion: null,
+      expectedVersion: '0.1.0',
+      blockedReason: 'A verified Gateway connection is required.',
+    },
+  });
+
+  assert.match(html, /Verified Gateway required/);
+  assert.doesNotMatch(html, /Fixed plugin package|SHA-256|Plugin state/);
 });

@@ -6,7 +6,7 @@ import { minutesToMs, todayStr } from './pomodoroDomain';
 function notifyPomodoro(title: string) {
   void import('@/services/notifications').then((mod) => {
     mod.notifications.notify({ type: 'task_complete', title, body: title });
-  });
+  }).catch(() => undefined);
 }
 
 /**

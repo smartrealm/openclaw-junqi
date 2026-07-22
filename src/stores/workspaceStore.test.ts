@@ -167,6 +167,48 @@ test('created worktrees stay beside their source and retain source project owner
   assert.equal(useWorkspaceStore.getState().activeWorkspaceId, worktree?.id);
 });
 
+test('worktree reconciliation prunes stale adopted rows without auto-adopting external worktrees', () => {
+  const source = resetStore('/repo-a');
+  const retained = useWorkspaceStore.getState().createWorktreeWorkspace(
+    source.id,
+    'feature/retained',
+    '/repo-a-feature-retained',
+  );
+  const stale = useWorkspaceStore.getState().createWorktreeWorkspace(
+    source.id,
+    'feature/stale',
+    '/repo-a-feature-stale',
+  );
+  assert.ok(retained && stale);
+  useWorkspaceStore.setState({ activeWorkspaceId: stale!.id });
+
+  useWorkspaceStore.getState().reconcileWorktreeFamily(source.id, [
+    { path: '/repo-a-feature-retained', branch: 'feature/retained', name: 'retained' },
+    { path: '/repo-a-feature-external', branch: 'feature/external', name: 'external' },
+  ]);
+
+  const state = useWorkspaceStore.getState();
+  const children = state.workspaces.filter((workspace) => workspace.worktreeParentId === source.id);
+  assert.deepEqual(children.map((workspace) => workspace.worktreePath), [
+    '/repo-a-feature-retained',
+  ]);
+  assert.equal(children[0]?.id, retained!.id);
+  assert.equal(state.workspaces.some((workspace) => workspace.id === stale!.id), false);
+  assert.equal(state.activeWorkspaceId, source.id);
+});
+
+test('explicit worktree adoption materializes only the worktrees the user selected', () => {
+  const source = resetStore('/repo-a');
+  useWorkspaceStore.getState().adoptWorktreeWorkspaces(source.id, [
+    { path: '/repo-a-feature-picked', branch: 'feature/picked', name: 'picked' },
+  ]);
+
+  const children = useWorkspaceStore.getState().workspaces.filter((workspace) => workspace.worktreeParentId === source.id);
+  assert.deepEqual(children.map((workspace) => workspace.worktreePath), ['/repo-a-feature-picked']);
+  assert.equal(children[0]?.worktreeBranch, 'feature/picked');
+  assert.equal(useWorkspaceStore.getState().activeWorkspaceId, children[0]?.id);
+});
+
 test('SSH workspaces do not inherit the active local cwd when they split', () => {
   resetStore('/repo-a');
   const remote = useWorkspaceStore.getState().createSshWorkspace('dev@bastion');

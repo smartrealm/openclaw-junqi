@@ -16,6 +16,7 @@ use rand::RngCore;
 use tauri::{AppHandle, Emitter, Manager};
 
 const HOOK_EVENT_NAME: &str = "terminal-hook";
+const HOOK_AGENT_ID: &str = "claude";
 const MAX_HOOK_MESSAGE_BYTES: u64 = 16 * 1024;
 const MAX_IDENTIFIER_BYTES: usize = 2 * 1024;
 const TERMINAL_HOOK_SCRIPT: &str = include_str!("../assets/junqi-terminal-hook.mjs");
@@ -76,6 +77,13 @@ fn valid_wire_value(value: &str, limit: usize) -> bool {
     !value.is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
 }
 
+/// The session bridge installs only JunQi's managed Claude Code hook. Keep the
+/// wire identity tied to that implementation rather than allowing a local
+/// terminal process to relabel its activity as another catalog agent.
+fn is_supported_hook_agent(value: &str) -> bool {
+    value == HOOK_AGENT_ID
+}
+
 fn optional_wire_value(value: Option<String>) -> Option<String> {
     value.filter(|value| valid_wire_value(value, MAX_IDENTIFIER_BYTES))
 }
@@ -124,6 +132,7 @@ fn emit_incoming(app: &AppHandle, token: &str, message: IncomingHookEvent) {
     if message.token != token
         || !valid_wire_value(&message.surface, 256)
         || !valid_wire_value(&message.run_id, 256)
+        || !is_supported_hook_agent(&message.agent)
     {
         return;
     }
@@ -218,7 +227,10 @@ pub fn session_environment(
 
 #[cfg(test)]
 mod tests {
-    use super::{hook_script_command, optional_wire_value, shell_command_quote, valid_wire_value};
+    use super::{
+        hook_script_command, is_supported_hook_agent, optional_wire_value, shell_command_quote,
+        valid_wire_value,
+    };
 
     #[test]
     fn hook_wire_validation_rejects_control_data() {
@@ -229,6 +241,13 @@ mod tests {
             Some("readme.md".to_string())
         );
         assert_eq!(optional_wire_value(Some("bad\u{0}".to_string())), None);
+    }
+
+    #[test]
+    fn hook_wire_identity_is_limited_to_the_managed_claude_bridge() {
+        assert!(is_supported_hook_agent("claude"));
+        assert!(!is_supported_hook_agent("codex"));
+        assert!(!is_supported_hook_agent("claude\n"));
     }
 
     #[test]

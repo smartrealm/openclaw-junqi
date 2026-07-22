@@ -419,9 +419,9 @@ test('BUG-GL10 status polling is serial and invalidates in-flight results on cle
   assert.match(statusObserver, /pollGeneration \+= 1/);
   assert.match(statusObserver, /if \(!isCurrent\(\)\) return/g);
   assert.equal(
-    (statusObserver.match(/if \(stopped\) fn\(\)/g) ?? []).length,
+    (statusObserver.match(/subscribeTauriEvent\(/g) ?? []).length,
     2,
-    'late Tauri listener registrations must immediately unsubscribe after cleanup',
+    'both status listeners must use the lifecycle-safe subscription boundary',
   );
 });
 

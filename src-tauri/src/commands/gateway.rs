@@ -16,6 +16,26 @@ fn emit_gateway_log(app: &AppHandle, message: impl AsRef<str>) {
     }
 }
 
+/// Reports a user-visible Gateway lifecycle boundary to both live consumers and
+/// the process ring buffer. Startup can spend significant time in filesystem,
+/// service-manager, and process operations, so every blocking boundary must be
+/// observable through the same channel as child stdout/stderr.
+fn report_gateway_lifecycle(
+    app: &AppHandle,
+    state: &GatewayProcess,
+    level: crate::state::gateway_process::LogLevel,
+    message: impl AsRef<str>,
+) {
+    let message = message.as_ref().to_string();
+    emit_gateway_log(app, &message);
+    crate::state::gateway_process::push_log(
+        &state.logs,
+        crate::state::gateway_process::LogSource::Lifecycle,
+        level,
+        message,
+    );
+}
+
 fn gateway_log_stream(source: crate::state::gateway_process::LogSource) -> &'static str {
     match source {
         crate::state::gateway_process::LogSource::ChildStdout
@@ -2385,6 +2405,12 @@ pub(crate) async fn start_gateway_locked(
     port: Option<u16>,
 ) -> Result<GatewayStatus, String> {
     crate::commands::setup_diagnostics::reset_timeline_log(&app, "gateway");
+    report_gateway_lifecycle(
+        &app,
+        &state,
+        crate::state::gateway_process::LogLevel::Info,
+        "Preparing OpenClaw Gateway...",
+    );
     if !matches!(
         paths::active_runtime_mode(),
         paths::OpenClawRuntimeMode::Native
@@ -2396,6 +2422,12 @@ pub(crate) async fn start_gateway_locked(
     crate::commands::system::ensure_openclaw_relocation_complete()?;
     // Load config metadata once. This single read serves both port resolution
     // and env_vars injection, avoiding duplicate IO later in the function.
+    report_gateway_lifecycle(
+        &app,
+        &state,
+        crate::state::gateway_process::LogLevel::Info,
+        "Reading the selected Gateway configuration...",
+    );
     let config_path = paths::config_path();
     let meta = ConfigMetadata::load(&config_path);
     let port = port.unwrap_or(meta.port);
@@ -2415,6 +2447,12 @@ pub(crate) async fn start_gateway_locked(
     // OpenClaw enforces a non-contiguous Node.js support matrix. Repair the
     // desktop-managed runtime before spawning so an incompatible system Node
     // cannot produce a crash/retry loop (notably Node 24.14.x on Windows).
+    report_gateway_lifecycle(
+        &app,
+        &state,
+        crate::state::gateway_process::LogLevel::Info,
+        "Detecting the selected Node.js and OpenClaw runtime...",
+    );
     let openclaw = crate::commands::system::resolve_openclaw_binary_async()
         .await
         .ok_or_else(|| "OpenClaw not found. Run: npm install -g openclaw".to_string())?;
@@ -2431,6 +2469,12 @@ pub(crate) async fn start_gateway_locked(
         .as_deref()
         .map(std::path::Path::new)
         .ok_or("The compatible Node.js runtime did not report an executable path")?;
+    report_gateway_lifecycle(
+        &app,
+        &state,
+        crate::state::gateway_process::LogLevel::Info,
+        "Compatible runtime is ready; validating the selected OpenClaw data directory...",
+    );
     crate::commands::openclaw_state_dir::verify_node_state_directory(node_path, &base_dir).await?;
     if let Some(config_parent) = config_path.parent() {
         if !paths::paths_refer_to_same_location(config_parent, &base_dir) {
@@ -2465,6 +2509,12 @@ pub(crate) async fn start_gateway_locked(
     // Take one bounded ownership snapshot. A missing/unreachable official
     // service is a normal foreground-start condition; it must not be queried
     // again or turned into a hard failure before `gateway run` is spawned.
+    report_gateway_lifecycle(
+        &app,
+        &state,
+        crate::state::gateway_process::LogLevel::Info,
+        format!("Checking Gateway service ownership on port {}...", port),
+    );
     let service_identity = crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
         &base_dir,
         &config_path,
@@ -2482,10 +2532,9 @@ pub(crate) async fn start_gateway_locked(
             Err(error) => {
                 let message =
                     format!("Gateway service inspection skipped before foreground start: {error}");
-                emit_gateway_log(&app, &message);
-                crate::state::gateway_process::push_log(
-                    &state.logs,
-                    crate::state::gateway_process::LogSource::Lifecycle,
+                report_gateway_lifecycle(
+                    &app,
+                    &state,
                     crate::state::gateway_process::LogLevel::Warn,
                     message,
                 );
@@ -2502,6 +2551,12 @@ pub(crate) async fn start_gateway_locked(
             && inspection.ownership
                 == crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale
         {
+            report_gateway_lifecycle(
+                &app,
+                &state,
+                crate::state::gateway_process::LogLevel::Info,
+                "Aligning the selected Gateway service with the current locale and runtime...",
+            );
             if inspection.running {
                 crate::commands::gateway_service::stop_selected_gateway_service_verified(
                     &runtime,
@@ -2550,6 +2605,12 @@ pub(crate) async fn start_gateway_locked(
     // `/healthz` proves an OpenClaw process is alive, but does not prove it
     // belongs to JunQi's selected state/config pair. Confirm the configured
     // bearer token before attaching to an external process on the shared port.
+    report_gateway_lifecycle(
+        &app,
+        &state,
+        crate::state::gateway_process::LogLevel::Info,
+        format!("Probing 127.0.0.1:{} for an existing Gateway...", port),
+    );
     if is_gateway_healthy(port).await {
         if !gateway_matches_config(port, &config_path).await {
             return Err(format!(
@@ -2565,6 +2626,12 @@ pub(crate) async fn start_gateway_locked(
             None,
             "start_gateway: authenticated existing endpoint",
         );
+        report_gateway_lifecycle(
+            &app,
+            &state,
+            crate::state::gateway_process::LogLevel::Info,
+            "Authenticated existing Gateway is ready; reusing it.",
+        );
         return Ok(GatewayStatus {
             running: true,
             port,
@@ -2577,6 +2644,12 @@ pub(crate) async fn start_gateway_locked(
     // spawning another child. Report the collision before replacing an owned
     // child, so the user gets an actionable diagnosis instead of a timeout.
     if !crate::commands::gateway_supervisor::is_port_available(port).await {
+        report_gateway_lifecycle(
+            &app,
+            &state,
+            crate::state::gateway_process::LogLevel::Error,
+            format!("Port {} is occupied by a non-Gateway process.", port),
+        );
         return Err(format!(
             "Port {} is occupied by a process that is not a healthy OpenClaw Gateway. Stop that process or choose another Gateway port, then retry.",
             port
@@ -2590,6 +2663,12 @@ pub(crate) async fn start_gateway_locked(
         None,
         None,
         "start_gateway: beginning spawn sequence",
+    );
+    report_gateway_lifecycle(
+        &app,
+        &state,
+        crate::state::gateway_process::LogLevel::Info,
+        "No reusable Gateway was found; starting the desktop-managed Gateway...",
     );
     #[derive(Clone, Copy)]
     enum GatewayStartStage {
@@ -2649,15 +2728,11 @@ pub(crate) async fn start_gateway_locked(
     };
     if let Some(mut old) = old_child {
         crate::commands::gateway_supervisor::terminate_owned_gateway(&mut old).await;
-        emit_gateway_log(
+        report_gateway_lifecycle(
             &app,
-            "Waiting for the previous Gateway process to release its port...",
-        );
-        crate::state::gateway_process::push_log(
-            &state.logs,
-            crate::state::gateway_process::LogSource::Lifecycle,
+            &state,
             crate::state::gateway_process::LogLevel::Info,
-            "start_gateway: waiting for previous owned child's port to free".to_string(),
+            "Waiting for the previous Gateway process to release its port...",
         );
         // Handles TCP TIME_WAIT on Windows and delayed process teardown.
         if let Err(error) =
@@ -2689,24 +2764,22 @@ pub(crate) async fn start_gateway_locked(
     std::fs::create_dir_all(&base_dir)
         .map_err(|error| format!("Failed to create OpenClaw state directory: {error}"))?;
     if let Some(probe_node) = crate::commands::state_dir_probe::probe_node_path(&node) {
-        emit_gateway_log(&app, "Checking state directory write capability...");
-        crate::state::gateway_process::push_log(
-            &state.logs,
-            crate::state::gateway_process::LogSource::Lifecycle,
+        report_gateway_lifecycle(
+            &app,
+            &state,
             crate::state::gateway_process::LogLevel::Info,
-            "start_gateway: probing state directory chmod capability".to_string(),
+            "Checking state directory write capability...",
         );
         match crate::commands::state_dir_probe::probe_chmod_capability(&probe_node, &base_dir).await
         {
             crate::commands::state_dir_probe::ChmodProbeOutcome::Unsupported(detail) => {
                 let message =
                     crate::commands::state_dir_probe::chmod_unsupported_message(&base_dir, &detail);
-                emit_gateway_log(&app, &message);
-                crate::state::gateway_process::push_log(
-                    &state.logs,
-                    crate::state::gateway_process::LogSource::Lifecycle,
+                report_gateway_lifecycle(
+                    &app,
+                    &state,
                     crate::state::gateway_process::LogLevel::Error,
-                    message.clone(),
+                    &message,
                 );
                 return Err(message);
             }
@@ -2719,10 +2792,9 @@ pub(crate) async fn start_gateway_locked(
                 let message = format!(
                     "State directory write capability probe was inconclusive ({detail}); continuing, the Gateway readiness check will catch any real problem"
                 );
-                emit_gateway_log(&app, &message);
-                crate::state::gateway_process::push_log(
-                    &state.logs,
-                    crate::state::gateway_process::LogSource::Lifecycle,
+                report_gateway_lifecycle(
+                    &app,
+                    &state,
                     crate::state::gateway_process::LogLevel::Warn,
                     message,
                 );
@@ -2747,6 +2819,12 @@ pub(crate) async fn start_gateway_locked(
         )
         .await?;
         if was_running {
+            report_gateway_lifecycle(
+                &app,
+                &state,
+                crate::state::gateway_process::LogLevel::Info,
+                "Gateway service was rebound; waiting for it to become reachable...",
+            );
             if !wait_for_selected_gateway(port, &config_path, 45).await {
                 return Err(format!(
                     "Rebound OpenClaw Gateway service did not become ready on port {}",
@@ -2767,6 +2845,12 @@ pub(crate) async fn start_gateway_locked(
             });
         }
     } else if let Some(inspection) = service_inspection {
+        report_gateway_lifecycle(
+            &app,
+            &state,
+            crate::state::gateway_process::LogLevel::Info,
+            "Reconciling the selected Gateway service before foreground startup...",
+        );
         if stop_offline_gateway_service(
             &app,
             &runtime,
@@ -2813,6 +2897,13 @@ pub(crate) async fn start_gateway_locked(
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+
+    report_gateway_lifecycle(
+        &app,
+        &state,
+        crate::state::gateway_process::LogLevel::Info,
+        "Launching the OpenClaw Gateway process...",
+    );
 
     #[cfg(windows)]
     {
@@ -2873,12 +2964,14 @@ pub(crate) async fn start_gateway_locked(
     }
 
     // Emit initial status
-    emit_gateway_log(&app, "Gateway process started, waiting for ready...");
-    crate::state::gateway_process::push_log(
-        &state.logs,
-        crate::state::gateway_process::LogSource::Lifecycle,
+    report_gateway_lifecycle(
+        &app,
+        &state,
         crate::state::gateway_process::LogLevel::Info,
-        format!("start_gateway invoked (port={})", port),
+        format!(
+            "Gateway process started on port {}; waiting for readiness...",
+            port
+        ),
     );
 
     // A spawned process is not yet a running Gateway. Keep ownership local

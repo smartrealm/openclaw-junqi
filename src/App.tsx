@@ -823,7 +823,7 @@ export default function App() {
               const chat = useChatStore.getState();
               for (const [sessionKey, queue] of Object.entries(chat.messageQueue)) {
                 if (queue.length > 0 && !chat.typingBySession[sessionKey]) {
-                  void chat.drainQueue(sessionKey);
+                  void chat.drainQueue(sessionKey).catch(() => undefined);
                 }
               }
             });
@@ -866,10 +866,12 @@ export default function App() {
             }
             deferredModelSyncTimerRef.current = setTimeout(() => {
               deferredModelSyncTimerRef.current = null;
-              void loadAvailableModels().finally(() => {
+              void loadAvailableModels().catch(() => undefined).finally(() => {
                 useBootSequenceStore.getState().markStageCompleted('background', 'Models synced');
               });
             }, 1_500);
+          }).catch(() => {
+            boot.markStageError('config', 'Session load failed');
           });
         }
       },
@@ -960,7 +962,7 @@ export default function App() {
                   t('offline.controlUiUnavailable', '暂时无法打开 Control UI，请完成 Gateway 恢复后重试。'),
                 );
               }
-            });
+            }).catch(() => undefined);
           }
         }
       }

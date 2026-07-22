@@ -480,6 +480,40 @@ pub async fn create_terminal_workspace_worktree(
     .map_err(|error| format!("create worktree task failed: {error}"))?
 }
 
+/// Discover every sibling worktree Git currently knows about. This is read
+/// only: the terminal sidebar uses it for explicit adoption and to discard
+/// persisted child rows whose directories disappeared. Discovery alone never
+/// changes the user's sidebar membership.
+#[tauri::command]
+pub async fn list_terminal_workspace_worktrees(
+    project_path: String,
+) -> Result<Vec<TerminalWorkspaceWorktree>, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_root = terminal_worktree_repo_root(&project_path)?;
+        listed_terminal_worktrees(&repo_root)?
+            .into_iter()
+            .filter(|path| !same_path(path, &repo_root))
+            .map(|path| {
+                let branch = git_stdout(&path, &["branch", "--show-current"])
+                    .ok()
+                    .filter(|branch| !branch.is_empty())
+                    .unwrap_or_else(|| "detached".to_string());
+                let name = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| branch.clone());
+                Ok(TerminalWorkspaceWorktree {
+                    path: path_string(&path),
+                    branch,
+                    name,
+                })
+            })
+            .collect()
+    })
+    .await
+    .map_err(|error| format!("list worktree task failed: {error}"))?
+}
+
 /// Remove a worktree only after it has been rediscovered through the source
 /// repository. This prevents a stale sidebar record from deleting an arbitrary
 /// directory. The branch delete is deliberately best-effort: the worktree is
@@ -496,11 +530,17 @@ pub async fn remove_terminal_workspace_worktree(
         if !terminal_worktree_belongs_to_repo(&repo_root, &target)? {
             return Err("worktree is not registered under this repository".to_string());
         }
+        // A worktree created outside JunQi may use a branch name that our
+        // create dialog deliberately rejects. The worktree removal itself is
+        // still safe after repository membership has been verified; skip only
+        // the optional branch delete for such names.
+        let branch = validate_terminal_worktree_branch(&branch).ok();
         let target_text = path_string(&target);
         git_stdout(&repo_root, &["worktree", "remove", "--force", &target_text])?;
 
-        let branch = validate_terminal_worktree_branch(&branch)?;
-        let _ = git_stdout(&repo_root, &["branch", "-D", &branch]);
+        if let Some(branch) = branch {
+            let _ = git_stdout(&repo_root, &["branch", "-D", &branch]);
+        }
         Ok(())
     })
     .await

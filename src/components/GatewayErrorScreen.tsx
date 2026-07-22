@@ -112,7 +112,7 @@ export function GatewayErrorScreen({
   // but the file is still broken — e.g. crash triggered by invalid config)
   useEffect(() => {
     if (window.aegis?.config?.validateOpenclawJson) {
-      void window.aegis.config.validateOpenclawJson().then(setConfigValidation);
+      void window.aegis.config.validateOpenclawJson().then(setConfigValidation).catch(() => setConfigValidation(null));
     }
   }, []);
 

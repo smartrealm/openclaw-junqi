@@ -58,6 +58,11 @@ export function ChannelQrLoginDialog({
         setRenderedQrDataUrl(dataUrl);
         setQrRenderFailed(!dataUrl);
       }
+    }).catch(() => {
+      if (!cancelled) {
+        setRenderedQrDataUrl(null);
+        setQrRenderFailed(true);
+      }
     });
     return () => { cancelled = true; };
   }, [state.qrContent]);

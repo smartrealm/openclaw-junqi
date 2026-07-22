@@ -108,8 +108,10 @@ function PaneNodeRenderer({
           projectPath={workspace.sshRemoteHost ? '' : node.config.cwd || workspace.workingDirectory || projectPath}
           sshHost={workspace.sshRemoteHost}
           projectId={node.id}
+          workspaceId={workspace.id}
           isActive={workspaceActive}
           paneFocused={workspaceActive && isFocused}
+          onWorkspaceFocus={() => useWorkspaceStore.getState().setActive(workspace.id)}
           onPaneFocus={() => onFocus(node.id)}
           onDirectoryChange={(cwd) => {
             if (!workspace.sshRemoteHost) useWorkspaceStore.getState().setPaneCwd(node.id, cwd, workspace.id);

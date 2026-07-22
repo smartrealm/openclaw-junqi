@@ -195,6 +195,8 @@ export function SettingsPageFull() {
     let cancelled = false;
     void window.aegis?.pairing?.getToken(gatewayUrl.trim() || undefined).then((token) => {
       if (!cancelled) setHasStoredGatewayToken(Boolean(token));
+    }).catch(() => {
+      if (!cancelled) setHasStoredGatewayToken(false);
     });
     return () => { cancelled = true; };
   }, [activeTab, gatewayUrl]);
