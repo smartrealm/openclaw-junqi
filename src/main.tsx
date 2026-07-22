@@ -64,10 +64,11 @@ earlyBootstrap();
   await import('./api/tauri-adapter');
   await import('./i18n');
   await import('@/styles/index.css');
-  const [React, ReactDOM, ErrorBoundary] = await Promise.all([
+  const [React, ReactDOM, ErrorBoundary, Tooltip] = await Promise.all([
     import('react'),
     import('react-dom/client'),
     import('@/components/shared/ErrorBoundary'),
+    import('@/components/ui/tooltip'),
   ]);
 
   // Auxiliary windows share the SPA entry but use deliberately lightweight
@@ -97,7 +98,10 @@ earlyBootstrap();
   ReactDOM.createRoot(document.getElementById('app-root')!).render(
     React.createElement(React.StrictMode, null,
       React.createElement(ErrorBoundary.ErrorBoundary, null,
-        React.createElement(Root)
+        React.createElement(Tooltip.TooltipProvider, {
+          delayDuration: 350,
+          children: React.createElement(Root),
+        })
       )
     )
   );
