@@ -36,6 +36,14 @@ test('terminal rename disables tab dragging while the input owns focus', () => {
   assert.match(source, /cancelRename\(\)/);
 });
 
+test('terminal activity updates cannot steal focus from a rename input', () => {
+  assert.match(source, /const onActiveTermChangeRef = useRef\(onActiveTermChange\)/);
+  assert.match(source, /onActiveTermChangeRef\.current = onActiveTermChange/);
+  assert.match(source, /onActiveTermChangeRef\.current\?\.\(terminalRef\.current as unknown as XTermType\)/);
+  assert.match(source, /\}, \[isActive, isFocused, requestResize\]\);/);
+  assert.doesNotMatch(source, /\}, \[isActive, isFocused, onActiveTermChange, requestResize\]\);/);
+});
+
 test('context-menu rename waits for the menu click to finish before focusing the input', () => {
   assert.match(source, /const startRename = \(deferred = false\) =>/);
   assert.match(source, /if \(deferred\) pendingRenameFrameRef\.current = requestAnimationFrame\(open\)/);

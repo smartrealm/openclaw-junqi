@@ -711,6 +711,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const monoFontFamilyRef = useRef(monoFontFamily);
     const terminalCursorStyleRef = useRef(terminalAppearance.cursorStyle);
     const onReadyRef = useRef(onReady);
+    const onActiveTermChangeRef = useRef(onActiveTermChange);
     const onLifecycleChangeRef = useRef(onLifecycleChange);
     const onRunIdChangeRef = useRef(onRunIdChange);
     const onAgentActivityChangeRef = useRef(onAgentActivityChange);
@@ -737,6 +738,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     monoFontFamilyRef.current = monoFontFamily;
     terminalCursorStyleRef.current = terminalAppearance.cursorStyle;
     onReadyRef.current = onReady;
+    onActiveTermChangeRef.current = onActiveTermChange;
     onLifecycleChangeRef.current = onLifecycleChange;
     onRunIdChangeRef.current = onRunIdChange;
     onAgentActivityChangeRef.current = onAgentActivityChange;
@@ -873,7 +875,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       );
       applyTerminalThemeOnPanel(term, themeVariantRef.current, container);
       terminalRef.current = term;
-      if (isActiveRef.current) onActiveTermChange?.(term as unknown as XTermType);
+      if (isActiveRef.current) onActiveTermChangeRef.current?.(term as unknown as XTermType);
       fitAddonRef.current = fitAddon;
 
       let disposeCharSizeOverride: (() => void) | null = null;
@@ -1167,7 +1169,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         disposeOscAgentStatus?.dispose();
         resizeObserver?.disconnect();
         if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
-        if (isActiveRef.current) onActiveTermChange?.(null);
+        if (isActiveRef.current) onActiveTermChangeRef.current?.(null);
         terminalRef.current = null;
         fitAddonRef.current = null;
         serializeAddonRef.current = null;
@@ -1183,7 +1185,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
     useEffect(() => {
       if (!isActive) return;
-      if (terminalRef.current) onActiveTermChange?.(terminalRef.current as unknown as XTermType);
+      if (terminalRef.current) onActiveTermChangeRef.current?.(terminalRef.current as unknown as XTermType);
       window.requestAnimationFrame(() => {
         if (!fitAddonRef.current || !terminalRef.current || !containerRef.current) return;
         const s = safeFit(fitAddonRef.current, terminalRef.current, containerRef.current);
@@ -1191,7 +1193,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         refreshTerminalDisplay(terminalRef.current);
         if (isFocused) terminalRef.current.focus();
       });
-    }, [isActive, isFocused, onActiveTermChange, requestResize]);
+    }, [isActive, isFocused, requestResize]);
 
     useEffect(() => {
       if (terminalRef.current && containerRef.current) {
