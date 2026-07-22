@@ -471,7 +471,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
   }, [disabled]);
 
   return (
-    <div className="flex items-center gap-3 w-full px-3 py-2" dir={dir}>
+    <div className="flex w-full items-center gap-3" dir={dir}>
       {/* Waveform — full width */}
       <div className="flex-1 h-10 flex items-center">
         <canvas ref={canvasRef} width={400} height={40} className="w-full h-full rounded" />

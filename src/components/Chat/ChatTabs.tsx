@@ -853,6 +853,7 @@ export function ChatTabs() {
   }, [openTabs, reorderTabs]);
 
   const activeTabIndex = openTabs.indexOf(activeSessionKey);
+  const hasMultipleTabs = openTabs.length > 1;
   const canSwitchPrev = activeTabIndex > 0;
   const canSwitchNext = activeTabIndex >= 0 && activeTabIndex < openTabs.length - 1;
   const switchRelativeTab = useCallback((direction: -1 | 1) => {
@@ -1135,21 +1136,23 @@ export function ChatTabs() {
       role="tablist"
       aria-label={t('chat.sessions', 'Chat sessions')}
     >
-      <button
-        type="button"
-        onClick={() => switchRelativeTab(-1)}
-        disabled={!canSwitchPrev}
-        className={clsx(
-          'h-full w-8 shrink-0 flex items-center justify-center border-r border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
-          canSwitchPrev
-            ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
-            : 'text-aegis-text-dim/35 cursor-not-allowed',
-        )}
-        aria-label={t('chat.previousSession', 'Previous session')}
-        title={t('chat.previousSession', 'Previous session')}
-      >
-        <ChevronLeft size={14} />
-      </button>
+      {hasMultipleTabs && (
+        <button
+          type="button"
+          onClick={() => switchRelativeTab(-1)}
+          disabled={!canSwitchPrev}
+          className={clsx(
+            'h-full w-8 shrink-0 flex items-center justify-center border-r border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
+            canSwitchPrev
+              ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
+              : 'text-aegis-text-dim/35 cursor-not-allowed',
+          )}
+          aria-label={t('chat.previousSession', 'Previous session')}
+          title={t('chat.previousSession', 'Previous session')}
+        >
+          <ChevronLeft size={14} />
+        </button>
+      )}
 
       {/* ── Scrollable tab strip ── */}
       <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1277,21 +1280,23 @@ export function ChatTabs() {
       </div>
       </DndContext>
 
-      <button
-        type="button"
-        onClick={() => switchRelativeTab(1)}
-        disabled={!canSwitchNext}
-        className={clsx(
-          'h-full w-8 shrink-0 flex items-center justify-center border-l border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
-          canSwitchNext
-            ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
-            : 'text-aegis-text-dim/35 cursor-not-allowed',
-        )}
-        aria-label={t('chat.nextSession', 'Next session')}
-        title={t('chat.nextSession', 'Next session')}
-      >
-        <ChevronRight size={14} />
-      </button>
+      {hasMultipleTabs && (
+        <button
+          type="button"
+          onClick={() => switchRelativeTab(1)}
+          disabled={!canSwitchNext}
+          className={clsx(
+            'h-full w-8 shrink-0 flex items-center justify-center border-l border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
+            canSwitchNext
+              ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
+              : 'text-aegis-text-dim/35 cursor-not-allowed',
+          )}
+          aria-label={t('chat.nextSession', 'Next session')}
+          title={t('chat.nextSession', 'Next session')}
+        >
+          <ChevronRight size={14} />
+        </button>
+      )}
 
       {/* Tooltip rendered in portal so it is not clipped by overflow-x-auto */}
       {showTooltip && tooltipPosition &&

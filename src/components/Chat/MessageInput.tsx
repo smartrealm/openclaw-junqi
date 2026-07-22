@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Send, Paperclip, Camera, Mic, X, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio, Smile, RefreshCw, Plus, AtSign } from 'lucide-react';
+import { Send, Paperclip, Camera, Mic, X, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio, RefreshCw, Plus, AtSign } from 'lucide-react';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { Icon } from '@/components/shared/icons';
@@ -30,7 +30,6 @@ import { debugError } from '@/utils/debugLog';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
 
-const EmojiPicker = lazy(() => import('./EmojiPicker').then((m) => ({ default: m.EmojiPicker })));
 const ScreenshotPicker = lazy(() => import('./ScreenshotPicker').then((m) => ({ default: m.ScreenshotPicker })));
 const VoiceRecorder = lazy(() => import('./VoiceRecorder').then((m) => ({ default: m.VoiceRecorder })));
 
@@ -61,57 +60,6 @@ function estimateWavDuration(base64: string): number {
   } catch {
     return 0;
   }
-}
-
-function DeferredEmojiPicker({
-  onSelect,
-  disabled,
-  title,
-}: {
-  onSelect: (emoji: string) => void;
-  disabled?: boolean;
-  title: string;
-}) {
-  const [armed, setArmed] = useState(false);
-
-  if (!armed) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          if (!disabled) setArmed(true);
-        }}
-        disabled={disabled}
-        className={clsx(
-          'grid size-[34px] place-items-center rounded-lg transition-colors',
-          'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
-          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30',
-        )}
-        title={title}
-        aria-label={title}
-      >
-        <Smile size={17} />
-      </button>
-    );
-  }
-
-  return (
-    <Suspense
-      fallback={
-        <button
-          type="button"
-          disabled
-          className="grid size-[34px] place-items-center rounded-lg text-aegis-text-dim opacity-60"
-          title={title}
-          aria-label={title}
-        >
-          <Smile size={17} />
-        </button>
-      }
-    >
-      <EmojiPicker onSelect={onSelect} disabled={disabled} defaultOpen />
-    </Suspense>
-  );
 }
 
 export function MessageInput() {
@@ -1054,29 +1002,36 @@ export function MessageInput() {
 
       {/* Input Area */}
       {voiceMode ? (
-        <Suspense
-          fallback={
-            <div className="flex items-center gap-3 w-full px-3 py-2" dir={dir}>
-              <div className="flex-1 h-10 rounded bg-[rgb(var(--aegis-overlay)/0.04)] animate-pulse" />
-              <span className="text-[13px] font-mono text-aegis-text-muted shrink-0 min-w-[40px] text-center" dir="ltr">
-                0:00
-              </span>
-              <button
-                onClick={() => setVoiceMode(false)}
-                className="p-2 rounded-lg hover:bg-aegis-danger/20 text-aegis-danger transition-colors"
-                title={t('voice.cancel')}
-              >
-                <X size={18} />
-              </button>
-            </div>
-          }
-        >
-          <VoiceRecorder
-            onSendVoice={handleVoiceSend}
-            onCancel={() => setVoiceMode(false)}
-            disabled={!connected || isHistoryWarmupGate}
-          />
-        </Suspense>
+        <div className="flex items-end gap-2 p-3" dir={dir}>
+          <div className={clsx(
+            'relative flex min-h-[52px] flex-1 items-center rounded-2xl border border-[rgb(var(--aegis-overlay)/0.06)] bg-aegis-surface px-3 py-2',
+            'transition-all duration-200 focus-within:border-aegis-primary/30',
+            'focus-within:shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.06),0_0_16px_rgb(var(--aegis-primary)/0.08)]',
+          )}>
+            <Suspense
+              fallback={
+                <div className="flex w-full items-center gap-3" dir={dir}>
+                  <div className="h-10 flex-1 animate-pulse rounded bg-[rgb(var(--aegis-overlay)/0.04)]" />
+                  <span className="min-w-[40px] shrink-0 text-center font-mono text-[13px] text-aegis-text-muted" dir="ltr">0:00</span>
+                  <button
+                    type="button"
+                    onClick={() => setVoiceMode(false)}
+                    className="rounded-lg p-2 text-aegis-danger transition-colors hover:bg-aegis-danger/20"
+                    title={t('voice.cancel')}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              }
+            >
+              <VoiceRecorder
+                onSendVoice={handleVoiceSend}
+                onCancel={() => setVoiceMode(false)}
+                disabled={!connected || isHistoryWarmupGate}
+              />
+            </Suspense>
+          </div>
+        </div>
       ) : (
         <div className="flex items-end gap-2 p-3" dir={dir}>
           {/* Input Wrapper (matches mockup) */}
@@ -1488,12 +1443,6 @@ export function MessageInput() {
               dir={dir} />
 
             <div className="flex shrink-0 items-center gap-0.5">
-              <DeferredEmojiPicker
-                onSelect={(emoji) => { setText((prev) => prev + emoji); textareaRef.current?.focus(); }}
-                disabled={!connected || isHistoryWarmupGate}
-                title={t('input.emoji')}
-              />
-
               <div ref={voiceMenuRef} className="relative">
                 <button
                   type="button"
