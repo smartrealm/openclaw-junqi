@@ -84,9 +84,10 @@ fn normalize_owner_id(value: &str) -> Result<String, String> {
     if owner.is_empty() || owner.len() > 128 {
         return Err("invalid terminal keep-awake owner".to_string());
     }
-    if !owner.bytes().all(|byte| {
-        byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':')
-    }) {
+    if !owner
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+    {
         return Err("invalid terminal keep-awake owner".to_string());
     }
     Ok(owner.to_string())
@@ -154,7 +155,8 @@ fn acquire_keep_awake_lease() -> Result<KeepAwakeLease, String> {
     thread::Builder::new()
         .name("junqi-terminal-keep-awake".to_string())
         .spawn(move || {
-            let applied = unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) } != 0;
+            let applied =
+                unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) } != 0;
             let _ = ready_tx.send(applied);
             if !applied {
                 return;
@@ -176,7 +178,9 @@ fn acquire_keep_awake_lease() -> Result<KeepAwakeLease, String> {
         .map_err(|error| format!("start Windows keep-awake worker: {error}"))?;
 
     match ready_rx.recv_timeout(Duration::from_secs(2)) {
-        Ok(true) => Ok(KeepAwakeLease::Windows(WindowsKeepAwakeLease { stop: stop_tx })),
+        Ok(true) => Ok(KeepAwakeLease::Windows(WindowsKeepAwakeLease {
+            stop: stop_tx,
+        })),
         Ok(false) => Err("Windows rejected the keep-awake request".to_string()),
         Err(error) => Err(format!("wait for Windows keep-awake worker: {error}")),
     }
@@ -225,7 +229,10 @@ mod tests {
 
     #[test]
     fn keep_awake_owner_ids_are_bounded_and_non_shell_like() {
-        assert_eq!(normalize_owner_id("terminal:main").as_deref(), Ok("terminal:main"));
+        assert_eq!(
+            normalize_owner_id("terminal:main").as_deref(),
+            Ok("terminal:main")
+        );
         assert!(normalize_owner_id("terminal main").is_err());
         assert!(normalize_owner_id("terminal;rm").is_err());
     }
@@ -236,7 +243,10 @@ mod tests {
         use super::macos_caffeinate_command;
 
         let command = macos_caffeinate_command(42);
-        assert_eq!(command.get_program().to_string_lossy(), "/usr/bin/caffeinate");
+        assert_eq!(
+            command.get_program().to_string_lossy(),
+            "/usr/bin/caffeinate"
+        );
         assert_eq!(
             command
                 .get_args()
