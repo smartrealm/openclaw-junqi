@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useSetupProgress } from '@/hooks/useSetupProgress';
 import {
   Dialog,
   DialogContent,
@@ -213,6 +214,39 @@ function DecisionMessage({ decision }: { decision: CollaborationSetupViewDecisio
   );
 }
 
+function CollaborationGatewayProgress({
+  decision,
+  mutation,
+}: Pick<CollaborationSetupPanelProps, 'decision' | 'mutation'>) {
+  const { t } = useTranslation();
+  const gatewayProgress = useSetupProgress('gateway');
+  const active = mutation === 'apply' || mutation === 'restart' || decision.kind === 'health_pending';
+  if (!active) return null;
+  const fallback = mutation === 'apply'
+    ? { progress: 0.28, message: t('collaboration.bootstrap.preparing', '正在准备协作能力…') }
+    : decision.kind === 'health_pending'
+      ? { progress: 0.82, message: t('collaboration.bootstrap.verifying', '正在验证 Gateway 是否已就绪…') }
+      : { progress: 0.58, message: t('gateway.progress.restart', '正在重启 OpenClaw Gateway…') };
+  // Applying the bundled archive has no Gateway event yet. Only consume live
+  // Gateway progress once the operation actually restarts or verifies it.
+  const liveProgress = mutation === 'restart' || decision.kind === 'health_pending'
+    ? gatewayProgress
+    : null;
+  const progress = Math.round(Math.max(0, Math.min(1, liveProgress?.progress ?? fallback.progress)) * 100);
+  const message = liveProgress?.message ?? fallback.message;
+  return (
+    <section className="overflow-hidden rounded-md border border-aegis-primary/15 bg-[rgb(var(--aegis-overlay)/0.035)]" aria-label={t('collaboration.bootstrap.progress', '协作启用进度')}>
+      <div className="h-1.5 bg-aegis-surface" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+        <div className="h-full bg-aegis-primary transition-[width] duration-300 ease-out" style={{ width: `${progress}%` }} />
+      </div>
+      <div className="flex items-start justify-between gap-3 px-3 py-2 text-[10px]">
+        <span className="min-w-0 font-semibold leading-4 text-aegis-primary">{message}</span>
+        <span className="shrink-0 font-mono tabular-nums text-aegis-text-muted">{progress}%</span>
+      </div>
+    </section>
+  );
+}
+
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -261,6 +295,7 @@ export function CollaborationSetupPanel({
   onRestart,
 }: CollaborationSetupPanelProps) {
   const { t } = useTranslation();
+  const [technicalDetailsOpen, setTechnicalDetailsOpen] = useState(false);
   const TargetIcon = targetIcon(decision.targetClass);
   const journal = status?.journal;
   const plugin = probe?.plugin;
@@ -304,8 +339,21 @@ export function CollaborationSetupPanel({
   return (
     <div className="min-h-0 space-y-3 overflow-y-auto px-5 pb-5">
       <DecisionMessage decision={decision} />
+      <CollaborationGatewayProgress decision={decision} mutation={mutation} />
 
       {targetVerified && (
+        <button
+          type="button"
+          onClick={() => setTechnicalDetailsOpen((open) => !open)}
+          className="text-[10px] text-aegis-text-dim hover:text-aegis-text-muted"
+        >
+          {technicalDetailsOpen
+            ? t('collaboration.bootstrap.hideTechnicalDetails', '隐藏技术详情')
+            : t('collaboration.bootstrap.showTechnicalDetails', '查看技术详情')}
+        </button>
+      )}
+
+      {targetVerified && technicalDetailsOpen && (
         <>
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <section className="rounded-md border border-aegis-border bg-aegis-surface-solid p-3" aria-label={t('collaboration.bootstrap.target', 'Runtime target')}>
@@ -642,10 +690,10 @@ export function CollaborationSetupPanel({
           <button type="button" className={cn(buttonBase, 'border-aegis-primary/35 bg-aegis-primary text-white hover:bg-aegis-primary/90')} disabled={!decision.canApply || Boolean(mutation)} onClick={onApply}>
             {mutation === 'apply' ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Plug size={13} aria-hidden />}
             {decision.kind === 'install'
-              ? t('collaboration.bootstrap.install', 'Install fixed plugin')
+              ? t('collaboration.bootstrap.enable', '启用协作')
               : decision.kind === 'update'
-                ? t('collaboration.bootstrap.update', 'Update fixed plugin')
-                : t('collaboration.bootstrap.repair', 'Repair fixed plugin')}
+                ? t('collaboration.bootstrap.updateCapability', '更新协作能力')
+                : t('collaboration.bootstrap.repairCapability', '修复协作能力')}
           </button>
         )}
       </div>
@@ -673,7 +721,7 @@ export function CollaborationSetupDialog() {
       <DialogContent className="max-h-[min(760px,92dvh)] w-[min(760px,calc(100vw-24px))] max-w-none gap-0 overflow-hidden border-aegis-border bg-aegis-bg-solid p-0 text-aegis-text shadow-float sm:rounded-lg">
         <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
           <DialogTitle className="text-[15px] font-semibold text-aegis-text">
-            {t('collaboration.bootstrap.title', 'Collaboration runtime')}
+            {t('collaboration.bootstrap.enableTitle', '启用多 Agent 协作')}
           </DialogTitle>
           <DialogDescription className="mt-1 text-[10.5px] leading-4 text-aegis-text-muted">
             {decision.kind === 'identity_unavailable'
