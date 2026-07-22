@@ -27,7 +27,6 @@ import {
   openSetupDiagnosticsDirectory,
   type OpenclawStatus,
 } from "@/api/tauri-commands";
-import { GatewayLifecyclePanel } from "@/components/settings/GatewayLifecyclePanel";
 import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
 
@@ -161,8 +160,7 @@ function LogPanel({ logs }: { logs: SetupLog[] }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const logText = logs
-    .slice(-160)
-    .map((log) => `[${log.source}] ${log.message}`)
+    .map(formatSetupLogLine)
     .join("\n");
   const copyLogs = () => {
     if (!logText) return;
@@ -190,7 +188,7 @@ function LogPanel({ logs }: { logs: SetupLog[] }) {
         {logs.length === 0 ? (
           <div className="text-aegis-text-dim">{t("setup.logsEmpty")}</div>
         ) : (
-          logs.slice(-160).map((log, i) => (
+          logs.map((log, i) => (
             <div
               key={`${log.source}-${i}`}
               className={clsx(
@@ -794,6 +792,13 @@ function logTone(level: SetupLog["level"]): string {
   }
 }
 
+function formatSetupLogLine(log: SetupLog): string {
+  const timestamp = new Date(log.ts).toLocaleTimeString();
+  const source = log.step ?? log.source;
+  const diagnostic = log.diagnostic ? " [diagnostic]" : "";
+  return `${timestamp} [${source}]${diagnostic} ${log.message}`;
+}
+
 function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   const { t } = useTranslation();
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -803,8 +808,6 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   const [directoryError, setDirectoryError] = useState(false);
   const [exportingBundle, setExportingBundle] = useState(false);
   const [bundleExportState, setBundleExportState] = useState<"idle" | "success" | "error">("idle");
-  const visibleLogs = logs.slice(-500);
-
   useEffect(() => {
     if (!followRef.current || !viewportRef.current) return;
     viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
@@ -812,7 +815,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
 
   const copyLogs = () => {
     const text = logs
-      .map((log) => `${new Date(log.ts).toLocaleTimeString()} [${log.step ?? log.source}]${log.diagnostic ? " [diagnostic]" : ""} ${log.message}`)
+      .map(formatSetupLogLine)
       .join("\n");
     if (!text) return;
     void navigator.clipboard?.writeText(text).then(() => {
@@ -922,9 +925,9 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
         }}
         className="h-[342px] overflow-auto px-4 py-3 font-mono text-[11px] leading-5"
       >
-        {visibleLogs.length === 0 ? (
+        {logs.length === 0 ? (
           <div className="py-10 text-center text-aegis-text-dim">{t("setup.logsEmpty")}</div>
-        ) : visibleLogs.map((log, index) => (
+        ) : logs.map((log, index) => (
           <div
             key={`${log.ts}-${index}-${log.message}`}
             className="grid grid-cols-[58px_minmax(0,1fr)] gap-x-2 border-b border-aegis-border/35 py-1.5 last:border-0 sm:grid-cols-[58px_72px_minmax(0,1fr)]"
@@ -986,16 +989,8 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
           </div>
           <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
           <p className="mt-1 max-w-[62ch] text-sm leading-6 text-aegis-text-muted">{currentDescription}</p>
-          {flow.statusMessage && (
-            <div className="mt-3 rounded-md border border-aegis-border bg-aegis-bg/55 px-3 py-2 font-mono text-xs leading-5 text-aegis-text-secondary">
-              {flow.statusMessage}
-            </div>
-          )}
-          {flow.installTarget && (
+          {current?.id === "openclaw" && flow.installTarget && (
             <InstallTargetCard target={flow.installTarget} />
-          )}
-          {current?.id === "gateway" && !isReady && (
-            <GatewayLifecyclePanel variant="compact" className="mt-3" />
           )}
         </div>
         <div className="flex flex-col justify-center rounded-xl border border-aegis-border/70 bg-aegis-bg/55 px-4 py-3">

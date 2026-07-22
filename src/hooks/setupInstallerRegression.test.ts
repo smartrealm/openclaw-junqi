@@ -25,11 +25,27 @@ test('BUG-INSTALL-LOG-01 setup diagnostics retain the full install timeline', ()
   assert.match(setupDiagnostics, /matches!\(step, "node" \| "npm" \| "git" \| "openclaw" \| "gateway"\)/);
   assert.match(setupDiagnostics, /pub fn get_setup_diagnostics_directory/);
   assert.match(setupCommands, /reset_timeline_log\(&app, step\)/);
-  assert.match(appStore, /const SETUP_LOG_LIMIT = 2_000/);
-  assert.match(setupFlowPanels, /const visibleLogs = logs\.slice\(-500\)/);
+  assert.match(appStore, /const SETUP_LOG_LIMIT = 10_000/);
+  assert.doesNotMatch(setupFlowPanels, /logs\.slice\(-500\)|logs\.slice\(-160\)/);
+  assert.doesNotMatch(setupFlow, /clearSetupLogs/);
+  assert.match(setupFlowPanels, /logs\.map\(\(log, index\) =>/);
   assert.match(setupFlowPanels, /const text = logs[\s\S]*?\.map\(/);
   assert.match(setupFlowPanels, /openSetupDiagnosticsDirectory/);
   assert.match(tauriCommands, /get_setup_diagnostics_directory/);
+});
+
+test('Gateway preparation has one current-state surface and keeps installation target details scoped to OpenClaw', () => {
+  assert.doesNotMatch(setupFlowPanels, /GatewayLifecyclePanel/);
+  assert.doesNotMatch(setupFlowPanels, /flow\.statusMessage/);
+  assert.match(setupFlowPanels, /current\?\.id === "openclaw" && flow\.installTarget/);
+});
+
+test('step transitions populate the shared activity log even when no installer process runs', () => {
+  assert.match(
+    setupFlow,
+    /function patchStep[\s\S]*?appendSetupLog\(\{[\s\S]*?step: id,[\s\S]*?message: detail/,
+  );
+  assert.match(appStore, /const isDuplicate = previous[\s\S]*?previous\.message === nextLog\.message/);
 });
 
 test('BUG-INSTALL-LOG-06 through 11 preserve retries, raw process output, and exportable sessions', () => {
@@ -60,8 +76,12 @@ test('BUG-INSTALL-LOG-02 download and npm diagnostics expose measurable bottlene
 
 test('BUG-INSTALL-LOG-05 Gateway startup uses the shared persistent diagnostic timeline', () => {
   assert.match(gatewayCommands, /fn emit_gateway_log/);
+  assert.match(gatewayCommands, /fn report_gateway_lifecycle/);
   assert.match(gatewayCommands, /record_timeline_note\(app, "gateway", &line\)/);
   assert.match(gatewayCommands, /reset_timeline_log\(&app, "gateway"\)/);
+  assert.match(gatewayCommands, /Preparing OpenClaw Gateway/);
+  assert.match(gatewayCommands, /Checking Gateway service ownership/);
+  assert.match(gatewayCommands, /Launching the OpenClaw Gateway process/);
   assert.equal((gatewayCommands.match(/app\.emit\("gateway-log"/g) ?? []).length, 1);
 });
 

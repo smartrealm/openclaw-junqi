@@ -33,6 +33,10 @@ test('dynamic island commands and auxiliary root stay wired into Tauri', () => {
   const lib = read('src-tauri/src/lib.rs');
   const main = read('src/main.tsx');
   const tray = read('src-tauri/src/tray/menu.rs');
+  const capability = JSON.parse(read('src-tauri/capabilities/default.json')) as {
+    windows: string[];
+    permissions: string[];
+  };
   for (const command of [
     'open_dynamic_island',
     'close_dynamic_island',
@@ -45,6 +49,17 @@ test('dynamic island commands and auxiliary root stay wired into Tauri', () => {
   assert.match(main, /windowLabel === 'dynamic-island'/);
   assert.match(main, /import\('\.\/dynamic-island\/DynamicIsland'\)/);
   assert.match(tray, /toggle_dynamic_island/);
+  assert.ok(capability.windows.includes('dynamic-island'));
+  assert.ok(capability.permissions.includes('core:event:allow-emit'));
+  assert.ok(capability.permissions.includes('core:event:allow-listen'));
+});
+
+test('dynamic island lifecycle does not surface event transport failures as global rejections', () => {
+  const island = read('src/dynamic-island/DynamicIsland.tsx');
+  const runtime = read('src/dynamic-island/DynamicIslandRuntime.tsx');
+
+  assert.match(island, /emitTauriEvent\('dynamic-island:ready'\)\.catch\(\(\) => undefined\)/);
+  assert.match(runtime, /void openAndSynchronize\(\)\.catch\(\(\) => undefined\)/);
 });
 
 test('file drag handoff cannot steal the operating-system drop target', () => {

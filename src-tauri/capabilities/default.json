@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
-  "description": "Capability for all JunQi windows (main, pet, quickchat, control UI)",
-  "windows": ["main", "pet", "quickchat", "control-ui"],
+  "description": "Capability for all JunQi windows (main, pet, quickchat, dynamic island, control UI)",
+  "windows": ["main", "pet", "quickchat", "dynamic-island", "control-ui"],
   "permissions": [
     "core:default",
     "core:window:allow-hide",

@@ -109,10 +109,12 @@ export default function DynamicIslandRuntime() {
 
   useEffect(() => {
     if (shouldShow) {
-      void invoke('open_dynamic_island').then(async () => {
+      const openAndSynchronize = async () => {
+        await invoke('open_dynamic_island');
         await invoke('set_dynamic_island_click_through', { ignore: resourceDropRef.current?.phase === 'dragging' }).catch(() => undefined);
         await emitTauriEvent('dynamic-island:update', latestSnapshotRef.current);
-      });
+      };
+      void openAndSynchronize().catch(() => undefined);
     } else {
       void invoke('close_dynamic_island').catch(() => undefined);
     }

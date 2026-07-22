@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { APP_PLATFORM } from "./platform";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, forwardRef, useImperativeHandle } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -83,7 +82,7 @@ import {
   takeTerminalPtyHandoffSnapshot,
   unregisterTerminalPtyOwner,
 } from './terminalPtyHandoff';
-import { combineUnlisteners, hasTauriEventBridge, subscribeTauriEvent } from '@/utils/tauriEvents';
+import { combineUnlisteners, hasTauriEventBridge, subscribeTauriEvent, subscribeTauriEventReady } from '@/utils/tauriEvents';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { PERSISTENT_NOTIFICATIONS_CHANGED_EVENT } from '@/hooks/usePersistentNotifications';
 import { Code2, Plus, Terminal as TerminalIcon, X, SplitSquareHorizontal, SplitSquareVertical, RotateCcw } from "lucide-react";
@@ -896,7 +895,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
       const subscribe = async () => {
         const [outputUnlisten, exitUnlisten, hookUnlisten] = await Promise.all([
-          listen<ShellOutputEvent>('shell-output', (event) => {
+          subscribeTauriEventReady<ShellOutputEvent>('shell-output', (event) => {
             if (
               event.payload.shell_id === shellId
               && event.payload.run_id === runIdRef.current
@@ -906,7 +905,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
               writer.write(event.payload.data);
             }
           }),
-          listen<ShellExitEvent>('shell-exit', (event) => {
+          subscribeTauriEventReady<ShellExitEvent>('shell-exit', (event) => {
             if (event.payload.shell_id !== shellId || event.payload.run_id !== runIdRef.current) return;
             onLifecycleChangeRef.current?.(
               shellStateFromExit(event.payload),
@@ -915,7 +914,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             onRunIdChangeRef.current?.(null);
             unregisterTerminalPtyOwner(shellId, rendererInstanceIdRef.current);
           }),
-          listen<TerminalHookEvent>('terminal-hook', (event) => {
+          subscribeTauriEventReady<TerminalHookEvent>('terminal-hook', (event) => {
             const hook = event.payload;
             if (hook.shellId !== shellId || hook.runId !== runIdRef.current) return;
               if (hook.kind === 'lifecycle') {

@@ -25,7 +25,7 @@ export interface SystemMetricsPayload {
 import { invoke } from "@tauri-apps/api/core";
 import type { EnsureResult, LogEntry } from './tauri-commands';
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { DEFAULT_GATEWAY_PORT, defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import {
   loadOrCreateDeviceIdentity,
@@ -95,9 +95,9 @@ function dispatchGatewayProgress(detail: GatewayProgressEvent): void {
 // Rust owns the restart lifecycle. Bridge its structured, line-oriented events
 // once at the adapter boundary so every renderer surface sees the same progress.
 try {
-  listen<string>('gateway-restart-progress', (event) => {
+  subscribeTauriEvent<string>('gateway-restart-progress', (event) => {
     dispatchGatewayProgress(gatewayRestartProgressFromLog(String(event.payload ?? '')));
-  }).catch(() => {});
+  });
 } catch {
   // Browser-only previews do not have the Tauri event bridge.
 }
@@ -145,10 +145,10 @@ try {
 let _gwConfig: any = null;
 let _gwReady = false;
 try {
-  listen("gateway-config", (event: any) => {
+  subscribeTauriEvent("gateway-config", (event: any) => {
     _gwConfig = event.payload;
     _gwReady = true;
-  }).catch(() => {});
+  });
 } catch {}
 
 // ── Resolve gateway config via Chain of Responsibility ──
@@ -598,15 +598,8 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
         requestImmediatePoll();
       };
 
-      listen("gateway-log", handleGatewayLog).then((fn: any) => {
-        if (stopped) fn();
-        else unlistenFn = fn;
-      }).catch(() => {});
-      let unlistenRestartFn: (() => void) | null = null;
-      listen("gateway-restart-progress", handleRestartProgress).then((fn: any) => {
-        if (stopped) fn();
-        else unlistenRestartFn = fn;
-      }).catch(() => {});
+      unlistenFn = subscribeTauriEvent("gateway-log", handleGatewayLog);
+      const unlistenRestartFn = subscribeTauriEvent("gateway-restart-progress", handleRestartProgress);
       window.addEventListener(GATEWAY_RESTART_STARTED_EVENT, handleRestartStarted);
       window.addEventListener(GATEWAY_RESTART_FINISHED_EVENT, handleRestartFinished);
 
@@ -775,20 +768,16 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     resize: (id: string, cols: number, rows: number) => invoke("terminal_resize", { id, cols, rows }),
     kill: (id: string) => invoke("terminal_kill", { id }),
     onData: (callback: (id: string, data: string) => void) => {
-      let unlisten: (() => void) | null = null;
-      let pending = true;
-      listen<{ id: string; data: string }>("terminal-data", (e) => callback(e.payload.id, e.payload.data))
-        .then((fn) => { if (pending) unlisten = fn; else fn(); })
-        .catch(() => {});
-      return () => { pending = false; unlisten?.(); };
+      return subscribeTauriEvent<{ id: string; data: string }>(
+        "terminal-data",
+        (event) => callback(event.payload.id, event.payload.data),
+      );
     },
     onExit: (callback: (id: string, exitCode: number, signal?: number) => void) => {
-      let unlisten: (() => void) | null = null;
-      let pending = true;
-      listen<{ id: string; exit_code: number }>("terminal-exit", (e) => callback(e.payload.id, e.payload.exit_code))
-        .then((fn) => { if (pending) unlisten = fn; else fn(); })
-        .catch(() => {});
-      return () => { pending = false; unlisten?.(); };
+      return subscribeTauriEvent<{ id: string; exit_code: number }>(
+        "terminal-exit",
+        (event) => callback(event.payload.id, event.payload.exit_code),
+      );
     },
   },
   notify: async (t: string, b: string) => { if ("Notification" in window && Notification.permission === "granted") new Notification(t, { body: b }); },
@@ -845,8 +834,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
   // JunQi-style system metrics event stream (background thread emits every 1s)
   systemMetrics: {
     onMetrics: (cb: (metrics: SystemMetricsPayload) => void) => {
-      const p = listen("system-metrics", (event: any) => cb(event.payload as SystemMetricsPayload));
-      return () => { p.then((fn: any) => fn()).catch(() => {}); };
+      return subscribeTauriEvent<SystemMetricsPayload>("system-metrics", (event) => cb(event.payload));
     },
   },
   voice: {
