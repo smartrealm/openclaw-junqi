@@ -113,7 +113,7 @@ export function CollaborationHistoryDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-[2147481000] bg-[rgb(0_0_0/0.46)]"
+      className="fixed inset-x-0 bottom-0 top-[32px] z-[2147481000] bg-[rgb(0_0_0/0.46)]"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();

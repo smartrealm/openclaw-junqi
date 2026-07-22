@@ -175,7 +175,7 @@ export function deriveCollaborationSetupView(
     pluginVersion,
     expectedVersion: state.bundle.pluginVersion,
   };
-  if (state.loading && (!state.probe || !state.status)) {
+  if (state.loading) {
     return { ...base, kind: 'loading', canApply: false, canRecover: false };
   }
   if (!state.identity?.verified) {
@@ -184,7 +184,6 @@ export function deriveCollaborationSetupView(
       kind: 'identity_unavailable',
       canApply: false,
       canRecover: false,
-      blockedReason: 'A verified Gateway connection is required.',
     };
   }
   if (state.mutation || state.status?.busy || state.probe?.busy) {
@@ -543,7 +542,9 @@ export function createCollaborationSetupStore(
       set({
         identity,
         loading: true,
-        ...(options.clearError ? { error: null } : {}),
+        // Refreshes observe a new connection epoch. Diagnostics from the
+        // previous Gateway instance must not be rendered against it.
+        error: null,
       });
       try {
         const [status, probe, resolvedBundle, capabilities] = await Promise.all([

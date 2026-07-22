@@ -382,6 +382,10 @@ export class ChatHandler {
   private beginRun(sessionKey: string, runId: string): OpenClawRunLease | null {
     const started = this.runProjection.begin(sessionKey, runId);
     if (!started) return null;
+    // Any run event is an authoritative acknowledgement that the Gateway
+    // accepted the user's request. Do not keep its optimistic bubble pending
+    // while the assistant is working or after a later abort.
+    useChatStore.getState().confirmPendingMessageDeliveries(sessionKey);
     if (started.replacedRunId) {
       this.closeCurrentStreamSegment(sessionKey, undefined, started.replacedRunId);
       this.clearActiveResponse(sessionKey, started.replacedRunId);

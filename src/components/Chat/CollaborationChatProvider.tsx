@@ -69,6 +69,7 @@ type MessageCollaborationAction = {
 };
 
 interface CollaborationChatContextValue {
+  available: boolean;
   runs: CollaborationRunSummary[];
   sessionSync: CollaborationSessionSyncState | null;
   getMessageAction: (message: ChatMessage | undefined) => MessageCollaborationAction | undefined;
@@ -347,10 +348,10 @@ export function CollaborationSessionDockView({
           type="button"
           onClick={onOpenHistory}
           className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[10.5px] font-medium text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50"
-          title={text('collaboration.drawer.title', 'Collaboration history')}
+          title={text('collaboration.drawer.title', 'Collaboration runs')}
         >
           <History size={13} aria-hidden />
-          <span className="hidden sm:inline">{text('collaboration.chat.history', 'History')}</span>
+          <span className="hidden sm:inline">{text('collaboration.chat.history', 'Runs')}</span>
         </button>
       </div>
     </section>
@@ -1020,6 +1021,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
   }, [executeCommand, instanceId, syncTombstones]);
 
   const context = useMemo<CollaborationChatContextValue>(() => ({
+    available: projectionCurrent,
     runs,
     sessionSync,
     getMessageAction,
@@ -1039,6 +1041,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     retrySessionSync,
     runs,
     sessionSync,
+    projectionCurrent,
   ]);
 
   const selectedSnapshot = projectionCurrent && selectedRunId
@@ -1139,19 +1142,6 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
         />
       )}
 
-      <button
-        type="button"
-        onClick={() => void openHistory()}
-        disabled={!projectionCurrent}
-        className="fixed bottom-[92px] end-5 z-30 inline-flex h-9 items-center gap-1.5 rounded-md border border-aegis-border bg-aegis-elevated-solid px-2.5 text-[11px] font-medium text-aegis-text-muted shadow-float hover:border-aegis-border-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-45"
-        title={t('collaboration.drawer.title', 'Collaboration history')}
-      >
-        {runs.some((run) => !isTerminalCollaborationRun(run.status))
-          ? <GitFork size={14} className="text-aegis-primary" />
-          : <History size={14} />}
-        <span>{t('collaboration.chat.history', 'Collaboration')}</span>
-        {runs.length > 0 && <span className="font-mono text-[10px] text-aegis-text-dim">{runs.length}</span>}
-      </button>
     </CollaborationChatContext.Provider>
   );
 }
@@ -1160,6 +1150,11 @@ export function useCollaborationChat(): CollaborationChatContextValue {
   const context = useContext(CollaborationChatContext);
   if (!context) throw new Error('useCollaborationChat must be used within CollaborationChatProvider');
   return context;
+}
+
+/** Chat chrome may render before collaboration capability hydration. */
+export function useOptionalCollaborationChat(): CollaborationChatContextValue | null {
+  return useContext(CollaborationChatContext);
 }
 
 export function CollaborationSessionDock() {

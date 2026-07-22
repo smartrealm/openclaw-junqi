@@ -191,6 +191,31 @@ test('thinking-prefix removal does not restore a stale streaming fragment', () =
   assert.equal(message?.isStreaming, false);
 });
 
+test('Gateway acceptance settles an optimistic user message without waiting for the reply', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    messages: [],
+    renderBlocks: [],
+    responseGroups: [],
+    messagesPerSession: {},
+    _blocksCache: {},
+    _groupsCache: {},
+  });
+
+  const store = useChatStore.getState();
+  store.addMessage({
+    id: 'accepted-user-message',
+    role: 'user',
+    content: 'Stop should not leave this message sending.',
+    timestamp: '2026-07-22T00:00:00.000Z',
+    status: 'pending',
+  }, MAIN_KEY);
+  store.confirmPendingMessageDeliveries(MAIN_KEY, ['accepted-user-message']);
+
+  const message = useChatStore.getState().messagesPerSession[MAIN_KEY]?.find((item) => item.id === 'accepted-user-message');
+  assert.equal(message?.status, 'sent');
+});
+
 test('CHAT-02 failed queue drain keeps the item and its attachments for explicit retry', async () => {
   seedSessions(MAIN_KEY);
   useChatStore.setState({

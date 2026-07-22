@@ -56,6 +56,7 @@ import type { RuntimeIdentity } from '@/types/gatewayRuntime';
 
 interface CollaborationSetupPanelProps {
   decision: CollaborationSetupViewDecision;
+  loading: boolean;
   identity: RuntimeIdentity | null;
   probe: CollaborationBootstrapProbe | null;
   status: CollaborationBootstrapStatus | null;
@@ -269,6 +270,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 
 export function CollaborationSetupPanel({
   decision,
+  loading,
   identity,
   probe,
   status,
@@ -682,8 +684,8 @@ export function CollaborationSetupPanel({
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-aegis-border pt-3">
-        <button type="button" className={cn(buttonBase, 'border-aegis-border text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)]')} disabled={Boolean(mutation)} onClick={onRefresh}>
-          <RefreshCw size={13} className={mutation ? 'animate-spin' : ''} aria-hidden />
+        <button type="button" className={cn(buttonBase, 'border-aegis-border text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)]')} disabled={Boolean(mutation) || loading} onClick={onRefresh}>
+          <RefreshCw size={13} className={(mutation || loading) ? 'animate-spin' : ''} aria-hidden />
           {t('collaboration.bootstrap.refresh', 'Refresh')}
         </button>
         {(decision.kind === 'install' || decision.kind === 'repair' || decision.kind === 'update') && (
@@ -731,6 +733,7 @@ export function CollaborationSetupDialog() {
         </DialogHeader>
         <CollaborationSetupPanel
           decision={decision}
+          loading={state.loading}
           identity={state.identity}
           probe={state.probe}
           status={state.status}

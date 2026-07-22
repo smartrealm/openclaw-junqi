@@ -386,6 +386,8 @@ interface ChatState {
   messages: ChatMessage[];
   addMessage: (msg: ChatMessage, sessionKey?: string) => void;
   updateMessage: (sessionKey: string, messageId: string, patch: Partial<ChatMessage>) => void;
+  /** Resolve optimistic user messages after the Gateway accepts their run. */
+  confirmPendingMessageDeliveries: (sessionKey: string, messageIds?: readonly string[]) => void;
   updateStreamingMessage: (
     id: string,
     content: string,
@@ -772,6 +774,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const updated = [...current];
     updated[index] = { ...updated[index], ...patch };
     get().setMessages(updated, sessionKey);
+  },
+
+  confirmPendingMessageDeliveries: (sessionKey, messageIds) => {
+    const state = get();
+    const current = getSessionMessages(state, sessionKey);
+    const targetIds = messageIds ? new Set(messageIds) : null;
+    let changed = false;
+    const updated = current.map((message) => {
+      if (
+        message.role !== 'user'
+        || message.status !== 'pending'
+        || (targetIds && !targetIds.has(message.id))
+      ) return message;
+      changed = true;
+      return { ...message, status: 'sent' as const, deliveryError: undefined };
+    });
+    if (changed) get().setMessages(updated, sessionKey);
   },
 
   updateStreamingMessage: (id, content, extra, sessionKey) => {

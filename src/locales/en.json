@@ -3589,7 +3589,7 @@
       "latestSessionRun": "Latest collaboration",
       "workItemProgress": "{{completed}}/{{total}}",
       "activeRunCount": "{{count}} active",
-      "history": "History"
+      "history": "Runs"
     },
     "card": {
       "ariaLabel": "Collaboration run: {{goal}}",
@@ -3809,7 +3809,7 @@
       "WORKFLOW_TEMPLATE_INSTANTIATED": "Template instantiated"
     },
     "drawer": {
-      "title": "Collaboration history",
+      "title": "Collaboration runs",
       "subtitle": "Runs remain available across chat sessions.",
       "loading": "Loading collaboration history",
       "empty": "No collaboration runs yet.",
