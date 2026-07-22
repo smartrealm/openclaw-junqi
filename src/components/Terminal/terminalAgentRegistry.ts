@@ -52,6 +52,14 @@ export function upsertTerminalAgentOverview(input: TerminalAgentOverviewInput): 
     || existing.title !== title
     || existing.projectPath !== projectPath;
 
+  // Focus closures are recreated by the pane renderer. Updating that closure
+  // is not observable session data, so do not wake useSyncExternalStore
+  // subscribers and create a render-registration loop.
+  if (!changed && existing) {
+    existing.focus = input.focus;
+    return;
+  }
+
   entries.set(shellId, {
     shellId,
     agent: input.agent,

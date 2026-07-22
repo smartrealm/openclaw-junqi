@@ -52,6 +52,14 @@ export function upsertTerminalSessionOverview(input: TerminalSessionOverviewInpu
     || existing.remoteHost !== input.remoteHost
     || existing.runtimeState !== input.runtimeState;
 
+  // The panel supplies a fresh focus closure on each render. Keeping that
+  // callback current must not publish a new external-store snapshot: doing so
+  // rerenders the panel and immediately re-enters this registration effect.
+  if (!changed && existing) {
+    existing.focus = input.focus;
+    return;
+  }
+
   entries.set(shellId, {
     shellId,
     paneId: input.paneId,

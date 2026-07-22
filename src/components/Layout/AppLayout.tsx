@@ -85,11 +85,10 @@ export function AppLayout() {
   const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
   const isSettingsPage = matchPath('/settings/*', location.pathname) !== null;
   const usesGlobalSidebar = !isWorkspacePage && !isTerminalPage && !isAgentWorkspacePage;
-  // Kooky owns the terminal window chrome itself. A route-level back control
-  // or global tab strip adds a second navigation layer that does not exist in
-  // the reference interaction model.
-  const showRouteBack = isAgentWorkspacePage || isSettingsPage;
-  const routeBackFallback = isAgentWorkspacePage ? '/tools' : '/';
+  // The terminal keeps JunQi's terminal-specific window chrome and receives a
+  // route-level back action without adding a second toolbar.
+  const showRouteBack = isTerminalPage || isAgentWorkspacePage || isSettingsPage;
+  const routeBackFallback = isTerminalPage || isAgentWorkspacePage ? '/tools' : '/';
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();

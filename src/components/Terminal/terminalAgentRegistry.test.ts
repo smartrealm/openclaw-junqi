@@ -42,3 +42,23 @@ test('terminal agent registry prioritizes attention and removes ended shells', (
   unsubscribe();
   clearTerminalAgentOverview();
 });
+
+test('refreshing an agent focus closure keeps the overview snapshot stable', () => {
+  clearTerminalAgentOverview();
+  let notifications = 0;
+  const unsubscribe = subscribeTerminalAgentOverview(() => { notifications += 1; });
+  const entry = {
+    shellId: 'shell-1', agent: 'codex' as const, state: 'running' as const,
+    title: 'Terminal', projectPath: '/repo',
+  };
+
+  upsertTerminalAgentOverview({ ...entry, focus: () => undefined });
+  const firstSnapshot = getTerminalAgentOverviewSnapshot();
+  upsertTerminalAgentOverview({ ...entry, focus: () => undefined });
+
+  assert.strictEqual(getTerminalAgentOverviewSnapshot(), firstSnapshot);
+  assert.equal(notifications, 1);
+
+  unsubscribe();
+  clearTerminalAgentOverview();
+});

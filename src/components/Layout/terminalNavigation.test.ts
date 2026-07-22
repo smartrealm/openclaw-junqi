@@ -10,17 +10,18 @@ test('Tools opens its catalog before the dedicated terminal route', () => {
   assert.match(tabBar, /id: 'tools'.*path: '\/tools'/);
 });
 
-test('terminal and AI workspaces own their left rail and top-bar toggle channels', () => {
+test('terminal keeps JunQi terminal chrome and its real sidebar controls', () => {
   assert.match(appLayout, /usesGlobalSidebar = !isWorkspacePage && !isTerminalPage && !isAgentWorkspacePage/);
-  assert.match(appLayout, /isAgentWorkspacePage \? 'agent-workspace' : 'app'/);
+  assert.match(appLayout, /terminal-kooky-app/);
+  assert.match(appLayout, /sidebarTarget=\{isTerminalPage \? 'terminal' : isAgentWorkspacePage \? 'agent-workspace' : 'app'\}/);
   assert.match(topBar, /requestTerminalSidebarToggle/);
   assert.match(topBar, /requestAgentWorkspaceSidebarToggle/);
 });
 
-test('terminal owns its chrome while settings and AI workspace expose a safe route-level back action', () => {
+test('terminal, settings, and AI workspace expose a safe JunQi route-level back action', () => {
   assert.match(appLayout, /showBack=\{showRouteBack\}/);
-  assert.match(appLayout, /showRouteBack = isAgentWorkspacePage \|\| isSettingsPage/);
-  assert.match(appLayout, /routeBackFallback = isAgentWorkspacePage \? '\/tools' : '\/'/);
+  assert.match(appLayout, /showRouteBack = isTerminalPage \|\| isAgentWorkspacePage \|\| isSettingsPage/);
+  assert.match(appLayout, /routeBackFallback = isTerminalPage \|\| isAgentWorkspacePage \? '\/tools' : '\/'/);
   assert.match(appLayout, /!isWorkspacePage && !isTerminalPage && <TabBar \/>/);
   assert.match(topBar, /window\.history\.state/);
   assert.match(topBar, /navigate\(-1\)/);
