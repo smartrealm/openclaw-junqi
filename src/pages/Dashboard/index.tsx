@@ -40,6 +40,7 @@ import {
 } from './dashboardMetrics';
 import {
   buildDailyCostChartData,
+  getDailyCostAvailability,
   formatActivityTime,
   formatActivityTimeTitle,
   shortModelName,
@@ -242,7 +243,9 @@ export function DashboardPage() {
   // OpenClaw returns continuous date buckets. Zero cost is still valid data
   // (for example when pricing is unavailable), so it must retain the X axis.
   const chartData = useMemo(() => buildDailyCostChartData(allDaily), [allDaily]);
-  const hasChartData = chartData.length > 0;
+  const costAvailability = useMemo(() => getDailyCostAvailability(allDaily), [allDaily]);
+  const hasChartData = costAvailability.hasPricedCost;
+  const hasTokenChartData = costAvailability.hasDatedEntries && costAvailability.totalTokens > 0;
 
   const agentIdFromKey = useCallback((key?: string) => {
     const parts = String(key || '').split(':');
@@ -588,19 +591,26 @@ export function DashboardPage() {
               <div className="flex items-center gap-2">
                 <TrendingUp size={15} className="text-aegis-primary" />
                 <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.dailyCostChart')}</span>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{t('dashboard.inputCostLabel')}</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{t('dashboard.outputCostLabel')}</span>
-                {hasChartData && chartData.some((d: any) => d.cache > 0) && (
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{t('dashboard.cacheCostLabel', 'Cache')}</span>
+                {!hasChartData && hasTokenChartData && (
+                  <span className="rounded bg-aegis-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-aegis-warning">
+                    {t('dashboard.usageUnpriced', '用量 · 未估价')}
+                  </span>
                 )}
               </div>
+              {(hasChartData || hasTokenChartData) && (
+                <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{hasChartData ? t('dashboard.inputCostLabel') : t('dashboard.input')}</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{hasChartData ? t('dashboard.outputCostLabel') : t('dashboard.output')}</span>
+                  {chartData.some((d: any) => hasChartData ? d.cache > 0 : d.cacheTokens > 0) && (
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{hasChartData ? t('dashboard.cacheCostLabel', 'Cache') : t('dashboard.cacheTokenLabel', 'Cache')}</span>
+                  )}
+                </div>
+              )}
             </div>
             <div className="relative min-h-[160px] flex-1">
-              {hasChartData ? (
+              {(hasChartData || hasTokenChartData) ? (
                 <Suspense fallback={<div className="h-full" />}>
-                  <CostChart data={chartData} />
+                  <CostChart data={chartData} metric={hasChartData ? 'cost' : 'tokens'} />
                 </Suspense>
               ) : !connected ? (
                 <div className="absolute inset-0 flex items-center justify-center text-[13px] text-aegis-text-dim">

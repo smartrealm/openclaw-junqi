@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent } from '@/utils/tauriEvents';
+import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import {
   EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
   isVoiceActivePhase,
@@ -31,7 +32,7 @@ import './dynamic-island.css';
 
 type IslandAction =
   | { type: 'open-task'; taskId: string }
-  | { type: 'quick-chat' }
+  | { type: 'open-session'; sessionKey: string }
   | { type: 'toggle-dnd' }
   | { type: 'pomodoro-toggle' }
   | { type: 'pomodoro-stop' }
@@ -262,7 +263,7 @@ export default function DynamicIsland() {
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
           >
             <span className={`junqi-island-orb ${attentionCount > 0 ? 'is-attention' : ''}`}>
-              <img src="/src/assets/brand/junqi-emblem.svg" alt="" />
+              <JunQiLogo variant="emblem" className="junqi-island-brand-emblem" title="JunQi" />
             </span>
             <span className="junqi-island-compact-copy">
               <strong>{headline}</strong>
@@ -356,7 +357,7 @@ export default function DynamicIsland() {
               </div>
 
               <footer className="junqi-island-controls">
-                <button type="button" onClick={() => action({ type: 'quick-chat' })} title={chinese ? '快捷对话' : 'Quick chat'}><MessageCircle size={16} /><span>{chinese ? '对话' : 'Chat'}</span></button>
+                <button type="button" onClick={() => action({ type: 'open-session', sessionKey: snapshot.sessionKey })} title={chinese ? '回到当前会话' : 'Return to current chat'}><MessageCircle size={16} /><span>{chinese ? '会话' : 'Chat'}</span></button>
                 <button type="button" className={snapshot.pomodoro.running ? 'is-active' : ''} onClick={() => action({ type: 'pomodoro-toggle' })} title={chinese ? '专注计时' : 'Focus timer'}>
                   {snapshot.pomodoro.running && !snapshot.pomodoro.paused ? <Pause size={15} /> : <Play size={15} />}
                   <span>{remaining || (chinese ? '专注' : 'Focus')}</span>

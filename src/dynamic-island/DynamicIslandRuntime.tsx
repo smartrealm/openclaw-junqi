@@ -15,7 +15,7 @@ import { isVoiceActivePhase, selectDynamicIslandTasks, shouldShowDynamicIsland, 
 
 type IslandAction =
   | { type: 'open-task'; taskId: string }
-  | { type: 'quick-chat' }
+  | { type: 'open-session'; sessionKey: string }
   | { type: 'toggle-dnd' }
   | { type: 'pomodoro-toggle' }
   | { type: 'pomodoro-stop' }
@@ -29,6 +29,7 @@ export default function DynamicIslandRuntime() {
   const connected = useChatStore((state) => state.connected);
   const connecting = useChatStore((state) => state.connecting);
   const sessionRunning = useChatStore((state) => state.isTyping);
+  const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const localVoicePhase = useVoiceStore((state) => state.phase);
   const localVoiceQueueLength = useVoiceStore((state) => state.queueLength);
   const remoteVoiceOutput = useVoiceStore((state) => state.remoteOutput);
@@ -79,6 +80,7 @@ export default function DynamicIslandRuntime() {
 
   const snapshot = useMemo<DynamicIslandSnapshot>(() => ({
     revision: ++revisionRef.current,
+    sessionKey: activeSessionKey,
     connected,
     connecting,
     sessionRunning,
@@ -103,7 +105,7 @@ export default function DynamicIslandRuntime() {
       body: latestToast.body,
     } : null,
     resourceDrop,
-  }), [autoExpand, connected, connecting, dndMode, latestToast, petEnabled, pomodoro, resourceDrop, sessionRunning, visibleTasks, voicePhase, voiceQueueLength]);
+  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, latestToast, petEnabled, pomodoro, resourceDrop, sessionRunning, visibleTasks, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
 
@@ -166,9 +168,14 @@ export default function DynamicIslandRuntime() {
           useAgentWorkspaceStore.getState().selectTask(action.taskId);
           void invoke('dynamic_island_focus_main', { route: '/ai-workspace' });
           break;
-        case 'quick-chat':
-          void invoke('open_quickchat_with_files', { paths: [] });
+        case 'open-session': {
+          const chat = useChatStore.getState();
+          if (action.sessionKey && chat.sessions.some((session) => session.key === action.sessionKey)) {
+            chat.setActiveSession(action.sessionKey);
+          }
+          void invoke('dynamic_island_focus_main', { route: '/chat' });
           break;
+        }
         case 'toggle-dnd': {
           const next = !useSettingsStore.getState().dndMode;
           useSettingsStore.getState().setDndMode(next);

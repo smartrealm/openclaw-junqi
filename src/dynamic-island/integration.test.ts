@@ -70,6 +70,21 @@ test('file drag handoff cannot steal the operating-system drop target', () => {
   assert.match(runtime, /set_dynamic_island_click_through', \{ ignore: false \}/);
 });
 
+test('island returns to the existing chat session and uses packaged JunQi branding', () => {
+  const island = read('src/dynamic-island/DynamicIsland.tsx');
+  const runtime = read('src/dynamic-island/DynamicIslandRuntime.tsx');
+  const styles = read('src/dynamic-island/dynamic-island.css');
+
+  assert.match(island, /JunQiLogo/);
+  assert.match(island, /type: 'open-session', sessionKey: snapshot\.sessionKey/);
+  assert.doesNotMatch(island, /src="\/src\/assets\/brand\/junqi-emblem\.svg"/);
+  assert.match(runtime, /chat\.setActiveSession\(action\.sessionKey\)/);
+  assert.match(runtime, /dynamic_island_focus_main', \{ route: '\/chat' \}/);
+  assert.doesNotMatch(runtime, /open_quickchat_with_files', \{ paths: \[\] \}/);
+  assert.match(styles, /var\(--aegis-bg-frosted\)/);
+  assert.match(styles, /var\(--aegis-primary\)/);
+});
+
 test('settings expose conditional display and important-activity expansion', () => {
   const settings = read('src/pages/SettingsPage.tsx');
   const zh = JSON.parse(read('src/locales/zh.json')) as { settings: Record<string, string> };

@@ -27,6 +27,7 @@ export interface DynamicIslandDrop {
 
 export interface DynamicIslandSnapshot {
   revision: number;
+  sessionKey: string;
   connected: boolean;
   connecting: boolean;
   sessionRunning: boolean;
@@ -51,6 +52,7 @@ export function isVoiceActivePhase(phase: VoicePhase): boolean {
 
 export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   revision: 0,
+  sessionKey: '',
   connected: false,
   connecting: false,
   sessionRunning: false,

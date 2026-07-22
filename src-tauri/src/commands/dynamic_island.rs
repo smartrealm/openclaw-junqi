@@ -18,6 +18,8 @@ const ANIMATION_FRAMES: u64 = 14;
 const FRAME_DURATION_MS: u64 = 12;
 #[cfg(target_os = "macos")]
 const MACOS_STATUS_BAR_WINDOW_LEVEL: isize = 25;
+#[cfg(target_os = "macos")]
+const MACOS_SAFE_AREA_MARGIN: f64 = 8.0;
 
 static ANIMATION_GENERATION: AtomicU64 = AtomicU64::new(0);
 static LAST_MAIN_MONITOR: OnceLock<Mutex<Option<MonitorGeometry>>> = OnceLock::new();
@@ -48,6 +50,7 @@ struct IslandFrame {
     y: f64,
     width: f64,
     height: f64,
+    monitor_x: f64,
 }
 
 fn top_inset() -> f64 {
@@ -69,6 +72,7 @@ fn frame_for_monitor(monitor: MonitorGeometry, width: f64, height: f64) -> Islan
         y: logical_y + top_inset(),
         width,
         height,
+        monitor_x: logical_x,
     }
 }
 
@@ -138,18 +142,39 @@ fn set_frame(window: &WebviewWindow, frame: IslandFrame) -> Result<(), String> {
     let ns_window = window.ns_window().map_err(|error| error.to_string())? as usize;
     window
         .run_on_main_thread(move || unsafe {
-            use objc2::{class, msg_send, runtime::AnyObject};
+            use objc2::{class, msg_send, runtime::AnyObject, sel};
             use objc2_foundation::{NSPoint, NSRect, NSSize};
 
             let screens: *mut AnyObject = msg_send![class!(NSScreen), screens];
-            let primary: *mut AnyObject = msg_send![screens, objectAtIndex: 0usize];
-            if primary.is_null() {
+            let count: usize = msg_send![screens, count];
+            if screens.is_null() || count == 0 {
                 return;
             }
-            let primary_frame: NSRect = msg_send![primary, frame];
-            let primary_top = primary_frame.origin.y + primary_frame.size.height;
+            let target_center_x = frame.monitor_x + frame.width / 2.0;
+            let mut screen: *mut AnyObject = msg_send![screens, objectAtIndex: 0usize];
+            for index in 0..count {
+                let candidate: *mut AnyObject = msg_send![screens, objectAtIndex: index];
+                let candidate_frame: NSRect = msg_send![candidate, frame];
+                if target_center_x >= candidate_frame.origin.x
+                    && target_center_x <= candidate_frame.origin.x + candidate_frame.size.width
+                {
+                    screen = candidate;
+                    break;
+                }
+            }
+            let screen_frame: NSRect = msg_send![screen, frame];
+            let supports_safe_area: bool = msg_send![screen, respondsToSelector: sel!(safeAreaInsets)];
+            let safe_top = if supports_safe_area {
+                let insets: objc2_foundation::NSEdgeInsets = msg_send![screen, safeAreaInsets];
+                insets.top
+            } else {
+                0.0
+            };
             let cocoa_frame = NSRect::new(
-                NSPoint::new(frame.x, primary_top - frame.y - frame.height),
+                NSPoint::new(
+                    screen_frame.origin.x + (screen_frame.size.width - frame.width) / 2.0,
+                    screen_frame.origin.y + screen_frame.size.height - safe_top - MACOS_SAFE_AREA_MARGIN - frame.height,
+                ),
                 NSSize::new(frame.width, frame.height),
             );
             let ns_window = ns_window as *mut AnyObject;
@@ -168,6 +193,7 @@ fn current_frame(window: &WebviewWindow) -> Result<IslandFrame, String> {
         y: position.y as f64 / scale,
         width: size.width as f64 / scale,
         height: size.height as f64 / scale,
+        monitor_x: position.x as f64 / scale,
     })
 }
 
@@ -184,6 +210,7 @@ fn interpolate(from: IslandFrame, to: IslandFrame, progress: f64) -> IslandFrame
         y: lerp(from.y, to.y),
         width: lerp(from.width, to.width),
         height: lerp(from.height, to.height),
+        monitor_x: lerp(from.monitor_x, to.monitor_x),
     }
 }
 
@@ -353,12 +380,14 @@ mod tests {
             y: 8.0,
             width: 286.0,
             height: 48.0,
+            monitor_x: 40.0,
         };
         let to = IslandFrame {
             x: -20.0,
             y: 8.0,
             width: 420.0,
             height: 248.0,
+            monitor_x: -20.0,
         };
         assert_eq!(interpolate(from, to, 0.0), from);
         assert_eq!(interpolate(from, to, 1.0), to);
