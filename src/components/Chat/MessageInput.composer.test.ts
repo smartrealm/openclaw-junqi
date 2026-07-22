@@ -31,6 +31,16 @@ test('composer keeps dictation observable and recoverable', () => {
   assert.match(wake, /setEnabled\(false\);\s+setError\(null\);\s+updatePhase\('idle'\)/);
 });
 
+test('queued messages use a collapsed dispatch control instead of a second message timeline', () => {
+  const input = source('src/components/Chat/MessageInput.tsx');
+
+  assert.match(input, /Pending dispatch is a compact control, never a second message timeline/);
+  assert.match(input, /onClick=\{\(\) => setQueueExpanded\(\(value\) => !value\)\}/);
+  assert.match(input, /\{queueExpanded && \(/);
+  assert.doesNotMatch(input, /const COLLAPSE_AT/);
+  assert.doesNotMatch(input, /const visible = queue/);
+});
+
 test('composer menu labels are localized in every shipped language', () => {
   const keys = [
     'addContent',

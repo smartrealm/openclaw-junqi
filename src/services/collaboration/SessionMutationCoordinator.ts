@@ -1,4 +1,10 @@
-import { assertVerifiedSessionMutationResult, gateway } from '@/services/gateway';
+import {
+  assertVerifiedSessionMutationResult,
+  gateway,
+  GatewayRpcError,
+  GatewaySessionMutationRejectedError,
+} from '@/services/gateway';
+import { resolveOpenClawSessionMutationOutcome } from './OpenClawSessionMutationOutcome';
 import {
   collaborationClient,
   CollaborationClientError,
@@ -52,12 +58,26 @@ export interface SessionMutationExecutionResult {
   operationId: string;
   action: SessionMutationAction;
   strategy: SessionMutationStrategy;
-  status: 'ABORTED' | 'RECOVERED' | 'COMPLETED';
+  status:
+    | 'ABORTED'
+    | 'RECOVERED'
+    | 'COMPLETED'
+    | 'COMPLETION_PENDING'
+    | 'FAILURE_COMPLETION_PENDING'
+    | 'OUTCOME_PENDING';
   /** True only when the core RPC and mutation.complete both succeeded. */
   success: boolean;
+  /** The OpenClaw core mutation was verified even if collaboration bookkeeping still needs recovery. */
+  coreMutationCommitted: boolean;
+  /** Durable collaboration bookkeeping must be recovered before another mutation is attempted. */
+  collaborationRecoveryRequired: boolean;
   mutationId: string | null;
   impact: SessionMutationImpact;
   coreRpcResult?: unknown;
+  /** Sanitized core failure retained while only the durable failure completion remains pending. */
+  coreFailureDiagnostic?: Record<string, unknown>;
+  /** New official identity observed while resolving an ambiguous reset. */
+  resolvedSessionId?: string | null;
   completion?: CollaborationWriteResponse;
 }
 
@@ -74,6 +94,7 @@ export type SessionMutationCoordinatorErrorCode =
   | 'CANCELLATION_TIMEOUT'
   | 'CORE_RPC_NOT_ALLOWED'
   | 'CORE_RPC_FAILED'
+  | 'CORE_RPC_OUTCOME_UNKNOWN'
   | 'COMPLETION_FAILED';
 
 export class SessionMutationCoordinatorError extends Error {
@@ -82,6 +103,8 @@ export class SessionMutationCoordinatorError extends Error {
     message: string,
     public readonly details: Record<string, unknown> = {},
     public readonly originalError?: unknown,
+    public readonly committedResult?: SessionMutationExecutionResult,
+    public readonly pendingResult?: SessionMutationExecutionResult,
   ) {
     super(message);
     this.name = 'SessionMutationCoordinatorError';
@@ -111,6 +134,7 @@ export interface SessionMutationCoordinatorDependencies {
   ): Promise<void | CollaborationWriteResponse>;
   deleteSession(sessionKey: string, deleteTranscript: true, expectedSessionId: string): Promise<unknown>;
   resetSession(sessionKey: string): Promise<unknown>;
+  describeSession?(sessionKey: string): Promise<unknown>;
   now(): number;
   sleep(ms: number): Promise<void>;
   randomUUID(): string;
@@ -126,8 +150,17 @@ function coordinatorError(
   message: string,
   details: Record<string, unknown> = {},
   originalError?: unknown,
+  committedResult?: SessionMutationExecutionResult,
+  pendingResult?: SessionMutationExecutionResult,
 ): SessionMutationCoordinatorError {
-  return new SessionMutationCoordinatorError(code, message, details, originalError);
+  return new SessionMutationCoordinatorError(
+    code,
+    message,
+    details,
+    originalError,
+    committedResult,
+    pendingResult,
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -352,6 +385,12 @@ function coreRpcFailure(
   }
 }
 
+function isDefinitiveCoreMutationError(error: unknown): boolean {
+  return error instanceof GatewayRpcError
+    || error instanceof GatewaySessionMutationRejectedError
+    || (error instanceof Error && error.name === 'CoreSessionMutationError');
+}
+
 function validateWriteResponse(
   response: CollaborationWriteResponse,
   expectedCommandId: string,
@@ -428,7 +467,10 @@ export class SessionMutationCoordinator {
     const timeoutMs = positiveInteger(request.timeoutMs, DEFAULT_TIMEOUT_MS, 'timeoutMs', true);
     const pollIntervalMs = positiveInteger(request.pollIntervalMs, DEFAULT_POLL_INTERVAL_MS, 'pollIntervalMs');
     const impact = await this.inspectImpact(request);
-    if (!impact.strategies.includes(strategy)) {
+    const preparedFence = impact.activeMutation?.status === 'PREPARED'
+      ? impact.activeMutation
+      : null;
+    if (!preparedFence && !impact.strategies.includes(strategy)) {
       throw coordinatorError(
         'UNSUPPORTED_STRATEGY',
         `${strategy} is not supported for the current session mutation impact`,
@@ -436,23 +478,33 @@ export class SessionMutationCoordinator {
       );
     }
 
-    if (strategy === 'ABORT') {
+    if (!preparedFence && strategy === 'ABORT') {
       return {
         operationId,
         action: request.action,
         strategy,
         status: 'ABORTED',
         success: false,
+        coreMutationCommitted: false,
+        collaborationRecoveryRequired: false,
         mutationId: null,
         impact,
       };
     }
 
-    if (strategy === 'RECOVER') {
+    if (!preparedFence && strategy === 'RECOVER') {
       return this.recoverExpiredMutation(request, impact, operationId);
     }
 
-    if (impact.activeMutation) {
+    if (preparedFence && (strategy === 'ABORT' || strategy === 'RECOVER')) {
+      throw coordinatorError(
+        'UNSUPPORTED_STRATEGY',
+        `${strategy} cannot replace an existing prepared session mutation policy`,
+        { operationId, mutationId: preparedFence.mutationId, policy: preparedFence.policy },
+      );
+    }
+
+    if (impact.activeMutation && !preparedFence) {
       throw coordinatorError(
         'MUTATION_ALREADY_ACTIVE',
         'A session mutation fence is already active and must be completed or recovered first',
@@ -460,19 +512,36 @@ export class SessionMutationCoordinator {
       );
     }
 
-    let prepared: PreparedMutation;
-    try {
-      prepared = await this.prepare(request, strategy, operationId);
-    } catch (error) {
+    const effectiveStrategy: SessionMutationPolicy = preparedFence?.policy
+      ?? (strategy as SessionMutationPolicy);
+    if (!POLICIES.has(effectiveStrategy)) {
       throw coordinatorError(
-        'PREPARE_FAILED',
-        'The collaboration plugin did not confirm the durable session mutation fence',
-        { operationId, prepareError: errorDiagnostic(error, 'MUTATION_PREPARE_FAILED') },
-        error,
+        'UNSUPPORTED_STRATEGY',
+        `${strategy} cannot continue a prepared session mutation`,
+        { operationId, mutationId: preparedFence?.mutationId ?? null },
       );
     }
+
+    let prepared: PreparedMutation;
+    if (preparedFence) {
+      prepared = {
+        mutationId: preparedFence.mutationId,
+        activeRuns: impact.activeRuns,
+      };
+    } else {
+      try {
+        prepared = await this.prepare(request, effectiveStrategy, operationId);
+      } catch (error) {
+        throw coordinatorError(
+          'PREPARE_FAILED',
+          'The collaboration plugin did not confirm the durable session mutation fence',
+          { operationId, prepareError: errorDiagnostic(error, 'MUTATION_PREPARE_FAILED') },
+          error,
+        );
+      }
+    }
     let readyImpact: SessionMutationImpact;
-    if (strategy === 'CANCEL_AND_WAIT') {
+    if (effectiveStrategy === 'CANCEL_AND_WAIT') {
       await this.cancelRuns(request, prepared.activeRuns, operationId, prepared.mutationId);
       readyImpact = await this.waitUntilCoreRpcAllowed(
         request,
@@ -484,7 +553,7 @@ export class SessionMutationCoordinator {
     } else {
       readyImpact = await this.inspectImpact(request);
       this.assertPreparedFence(readyImpact, prepared.mutationId, operationId);
-      if (!readyImpact.coreRpcAllowed || (strategy === 'PROCEED' && readyImpact.activeRuns.length > 0)) {
+      if (!readyImpact.coreRpcAllowed || (effectiveStrategy === 'PROCEED' && readyImpact.activeRuns.length > 0)) {
         throw coordinatorError(
           'CORE_RPC_NOT_ALLOWED',
           'The collaboration plugin did not authorize the core session mutation',
@@ -497,7 +566,135 @@ export class SessionMutationCoordinator {
       }
     }
 
-    return this.executeCoreRpc(request, strategy, operationId, prepared.mutationId, readyImpact);
+    return this.executeCoreRpc(request, effectiveStrategy, operationId, prepared.mutationId, readyImpact);
+  }
+
+  async completeCommittedMutation(
+    requestInput: SessionMutationExecutionRequest,
+    committed: SessionMutationExecutionResult,
+  ): Promise<SessionMutationExecutionResult> {
+    const request = normalizeRequest(requestInput);
+    const operationId = requiredString(request.operationId, 'operationId');
+    const mutationId = requiredString(committed.mutationId, 'committed.mutationId');
+    if (
+      committed.status !== 'COMPLETION_PENDING'
+      || committed.success
+      || !committed.coreMutationCommitted
+      || !committed.collaborationRecoveryRequired
+      || committed.operationId !== operationId
+      || committed.action !== request.action
+      || committed.impact.collaborationInstanceId !== request.collaborationInstanceId
+      || !sameScope(committed.impact, request)
+      || !POLICIES.has(committed.strategy as SessionMutationPolicy)
+    ) {
+      throw coordinatorError(
+        'INVALID_REQUEST',
+        'The pending session mutation completion does not match this operation',
+        { operationId, mutationId },
+      );
+    }
+
+    let completion: CollaborationWriteResponse;
+    try {
+      completion = await this.completeMutation(request, mutationId, true, null, operationId);
+    } catch (error) {
+      throw coordinatorError(
+        'COMPLETION_FAILED',
+        'The core session mutation finished, but its durable collaboration record could not be completed',
+        {
+          mutationId,
+          operationId,
+          coreRpcSucceeded: true,
+          completionError: errorDiagnostic(error, 'MUTATION_COMPLETE_FAILED'),
+        },
+        error,
+        committed,
+      );
+    }
+
+    return {
+      ...committed,
+      status: 'COMPLETED',
+      success: true,
+      collaborationRecoveryRequired: false,
+      completion,
+    };
+  }
+
+  async resolvePendingCoreMutation(
+    requestInput: SessionMutationExecutionRequest,
+    pending: SessionMutationExecutionResult,
+  ): Promise<SessionMutationExecutionResult> {
+    const request = normalizeRequest(requestInput);
+    const operationId = requiredString(request.operationId, 'operationId');
+    const mutationId = requiredString(pending.mutationId, 'pending.mutationId');
+    if (
+      (pending.status !== 'OUTCOME_PENDING' && pending.status !== 'FAILURE_COMPLETION_PENDING')
+      || pending.success
+      || pending.coreMutationCommitted
+      || !pending.collaborationRecoveryRequired
+      || pending.operationId !== operationId
+      || pending.action !== request.action
+      || pending.impact.collaborationInstanceId !== request.collaborationInstanceId
+      || !sameScope(pending.impact, request)
+      || !POLICIES.has(pending.strategy as SessionMutationPolicy)
+    ) {
+      throw coordinatorError(
+        'INVALID_REQUEST',
+        'The pending core mutation outcome does not match this operation',
+        { operationId, mutationId },
+      );
+    }
+
+    if (pending.status === 'FAILURE_COMPLETION_PENDING') {
+      return this.completeKnownCoreFailure(request, pending, operationId, mutationId);
+    }
+
+    const resolution = await this.describeCoreOutcome(request);
+    if (resolution.state === 'unknown') {
+      throw this.unknownCoreOutcomeError(request, pending.strategy as SessionMutationPolicy, operationId, mutationId, pending.impact);
+    }
+    if (resolution.state === 'not-committed') {
+      return this.completeKnownCoreFailure(
+        request,
+        {
+          ...pending,
+          status: 'FAILURE_COMPLETION_PENDING',
+        },
+        operationId,
+        mutationId,
+      );
+    }
+
+    const committed: SessionMutationExecutionResult = {
+      ...pending,
+      status: 'COMPLETION_PENDING',
+      coreMutationCommitted: true,
+      resolvedSessionId: resolution.nextSessionId,
+    };
+    try {
+      const completion = await this.completeMutation(request, mutationId, true, null, operationId);
+      return {
+        ...committed,
+        status: 'COMPLETED',
+        success: true,
+        collaborationRecoveryRequired: false,
+        completion,
+      };
+    } catch (error) {
+      throw coordinatorError(
+        'COMPLETION_FAILED',
+        'The core session mutation finished, but its durable collaboration record could not be completed',
+        {
+          mutationId,
+          operationId,
+          coreRpcSucceeded: true,
+          completionError: errorDiagnostic(error, 'MUTATION_COMPLETE_FAILED'),
+        },
+        error,
+        committed,
+      );
+    }
   }
 
   private async prepare(
@@ -662,13 +859,34 @@ export class SessionMutationCoordinator {
   ): Promise<SessionMutationExecutionResult> {
     let coreRpcResult: unknown;
     let coreError: unknown = null;
+    let resolvedSessionId: string | null | undefined;
     try {
       coreRpcResult = request.action === 'delete'
         ? await this.dependencies.deleteSession(request.sessionKey, true, request.sessionId)
         : await this.dependencies.resetSession(request.sessionKey);
       coreError = coreRpcFailure(coreRpcResult, request.action, request.sessionKey);
     } catch (error) {
-      coreError = error;
+      if (isDefinitiveCoreMutationError(error)) {
+        coreError = error;
+      } else {
+        const resolution = await this.describeCoreOutcome(request);
+        if (resolution.state === 'unknown') {
+          throw this.unknownCoreOutcomeError(
+            request,
+            strategy,
+            operationId,
+            mutationId,
+            impact,
+            error,
+          );
+        }
+        if (resolution.state === 'committed') {
+          resolvedSessionId = resolution.nextSessionId;
+          coreError = null;
+        } else {
+          coreError = error;
+        }
+      }
     }
 
     const succeeded = coreError === null;
@@ -677,6 +895,36 @@ export class SessionMutationCoordinator {
     try {
       completion = await this.completeMutation(request, mutationId, succeeded, diagnostic, operationId);
     } catch (error) {
+      const committedResult: SessionMutationExecutionResult | undefined = succeeded
+        ? {
+            operationId,
+            action: request.action,
+            strategy,
+            status: 'COMPLETION_PENDING',
+            success: false,
+            coreMutationCommitted: true,
+            collaborationRecoveryRequired: true,
+            mutationId,
+            impact,
+            coreRpcResult,
+            ...(resolvedSessionId !== undefined ? { resolvedSessionId } : {}),
+          }
+        : undefined;
+      const pendingResult: SessionMutationExecutionResult | undefined = succeeded
+        ? undefined
+        : {
+            operationId,
+            action: request.action,
+            strategy,
+            status: 'FAILURE_COMPLETION_PENDING',
+            success: false,
+            coreMutationCommitted: false,
+            collaborationRecoveryRequired: true,
+            mutationId,
+            impact,
+            coreRpcResult,
+            ...(diagnostic ? { coreFailureDiagnostic: diagnostic } : {}),
+          };
       throw coordinatorError(
         'COMPLETION_FAILED',
         'The core session mutation finished, but its durable collaboration record could not be completed',
@@ -688,6 +936,8 @@ export class SessionMutationCoordinator {
           completionError: errorDiagnostic(error, 'MUTATION_COMPLETE_FAILED'),
         },
         error,
+        committedResult,
+        pendingResult,
       );
     }
 
@@ -695,7 +945,7 @@ export class SessionMutationCoordinator {
       throw coordinatorError(
         'CORE_RPC_FAILED',
         'The OpenClaw core session mutation failed; the failure was recorded and the fence was released',
-        { operationId, mutationId, coreError: diagnostic, completion },
+        { operationId, mutationId, coreError: diagnostic, completion, fenceReleased: true },
         coreError,
       );
     }
@@ -706,11 +956,98 @@ export class SessionMutationCoordinator {
       strategy,
       status: 'COMPLETED',
       success: true,
+      coreMutationCommitted: true,
+      collaborationRecoveryRequired: false,
       mutationId,
       impact,
       coreRpcResult,
+      ...(resolvedSessionId !== undefined ? { resolvedSessionId } : {}),
       completion,
     };
+  }
+
+  private async describeCoreOutcome(request: SessionMutationExecutionRequest) {
+    if (!this.dependencies.describeSession) return { state: 'unknown' as const };
+    try {
+      const description = await this.dependencies.describeSession(request.sessionKey);
+      return resolveOpenClawSessionMutationOutcome(request.action, request.sessionId, description);
+    } catch {
+      return { state: 'unknown' as const };
+    }
+  }
+
+  private async completeKnownCoreFailure(
+    request: SessionMutationExecutionRequest,
+    pending: SessionMutationExecutionResult,
+    operationId: string,
+    mutationId: string,
+  ): Promise<never> {
+    const diagnostic = pending.coreFailureDiagnostic ?? {
+      code: 'CORE_RPC_NOT_COMMITTED',
+      message: 'OpenClaw still advertises the original session identity',
+    };
+    let completion: CollaborationWriteResponse;
+    try {
+      completion = await this.completeMutation(request, mutationId, false, diagnostic, operationId);
+    } catch (error) {
+      const pendingResult: SessionMutationExecutionResult = {
+        ...pending,
+        status: 'FAILURE_COMPLETION_PENDING',
+      };
+      throw coordinatorError(
+        'COMPLETION_FAILED',
+        'The OpenClaw core session mutation did not commit, but its durable failure record could not be completed',
+        {
+          mutationId,
+          operationId,
+          coreRpcSucceeded: false,
+          coreError: diagnostic,
+          completionError: errorDiagnostic(error, 'MUTATION_COMPLETE_FAILED'),
+        },
+        error,
+        undefined,
+        pendingResult,
+      );
+    }
+    throw coordinatorError(
+      'CORE_RPC_FAILED',
+      'The OpenClaw core session mutation did not commit; the failure was recorded and the fence was released',
+      { operationId, mutationId, coreError: diagnostic, completion, fenceReleased: true },
+    );
+  }
+
+  private unknownCoreOutcomeError(
+    request: SessionMutationExecutionRequest,
+    strategy: SessionMutationPolicy,
+    operationId: string,
+    mutationId: string,
+    impact: SessionMutationImpact,
+    originalError?: unknown,
+  ): SessionMutationCoordinatorError {
+    const pendingResult: SessionMutationExecutionResult = {
+      operationId,
+      action: request.action,
+      strategy,
+      status: 'OUTCOME_PENDING',
+      success: false,
+      coreMutationCommitted: false,
+      collaborationRecoveryRequired: true,
+      mutationId,
+      impact,
+    };
+    return coordinatorError(
+      'CORE_RPC_OUTCOME_UNKNOWN',
+      'OpenClaw may have completed the session mutation, but its result could not be verified. The collaboration fence remains active.',
+      {
+        operationId,
+        mutationId,
+        coreError: errorDiagnostic(originalError, 'CORE_RPC_DELIVERY_UNKNOWN'),
+        fenceReleased: false,
+      },
+      originalError,
+      undefined,
+      pendingResult,
+    );
   }
 
   private async recoverExpiredMutation(
@@ -722,13 +1059,30 @@ export class SessionMutationCoordinator {
     if (!impact.recoveryRequired || mutation?.status !== 'EXPIRED') {
       throw coordinatorError('UNSUPPORTED_STRATEGY', 'RECOVER requires an expired session mutation fence');
     }
+    const resolution = await this.describeCoreOutcome(request);
+    const committed = resolution.state === 'committed';
+    const recoveryError = committed
+      ? null
+      : resolution.state === 'not-committed'
+        ? {
+            code: 'CORE_RPC_NOT_COMMITTED',
+            message: 'OpenClaw still advertises the original session identity',
+            recoveredBy: 'session-mutation-coordinator',
+          }
+        : {
+            code: 'CORE_RPC_OUTCOME_UNKNOWN',
+            message: 'The mutation lease expired before JunQi could prove the core RPC result',
+            recoveredBy: 'session-mutation-coordinator',
+          };
     let completion: CollaborationWriteResponse;
     try {
-      completion = await this.completeMutation(request, mutation.mutationId, false, {
-        code: 'CORE_RPC_OUTCOME_UNKNOWN',
-        message: 'The mutation lease expired before JunQi could prove the core RPC result',
-        recoveredBy: 'session-mutation-coordinator',
-      }, operationId);
+      completion = await this.completeMutation(
+        request,
+        mutation.mutationId,
+        committed,
+        recoveryError,
+        operationId,
+      );
     } catch (error) {
       throw coordinatorError(
         'COMPLETION_FAILED',
@@ -746,9 +1100,12 @@ export class SessionMutationCoordinator {
       action: request.action,
       strategy: 'RECOVER',
       status: 'RECOVERED',
-      success: false,
+      success: committed,
+      coreMutationCommitted: committed,
+      collaborationRecoveryRequired: false,
       mutationId: mutation.mutationId,
       impact,
+      ...(resolution.state === 'committed' ? { resolvedSessionId: resolution.nextSessionId } : {}),
       completion,
     };
   }
@@ -788,6 +1145,7 @@ const defaultDependencies: SessionMutationCoordinatorDependencies = {
     gateway.deleteSession(sessionKey, deleteTranscript, expectedSessionId)
   ),
   resetSession: (sessionKey) => gateway.resetSession(sessionKey),
+  describeSession: (sessionKey) => gateway.describeSession(sessionKey),
   now: () => Date.now(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   randomUUID: () => globalThis.crypto.randomUUID(),

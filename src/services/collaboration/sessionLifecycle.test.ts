@@ -34,6 +34,8 @@ function completed(request: SessionMutationRequest): SessionMutationExecutionRes
     strategy: 'PROCEED',
     status: 'COMPLETED',
     success: true,
+    coreMutationCommitted: true,
+    collaborationRecoveryRequired: false,
     mutationId: 'mutation-1',
     impact: {
       ...request,
@@ -80,6 +82,27 @@ test('routes an installed collaboration runtime through the global impact dialog
   }]);
 });
 
+test('reports a verified core deletion as successful while collaboration bookkeeping awaits recovery', async () => {
+  setSessionLifecycleDependenciesForTests({
+    bootstrapCollaboration: async () => capabilities,
+    requestDialog: async (request) => ({
+      ...completed(request),
+      status: 'COMPLETION_PENDING',
+      success: false,
+      coreMutationCommitted: true,
+      collaborationRecoveryRequired: true,
+    }),
+  });
+
+  const result = await executeSessionLifecycleMutation(KEY, 'delete');
+
+  assert.equal(result.success, true);
+  assert.equal(result.cancelled, false);
+  assert.equal(result.coordinated, true);
+  assert.equal(result.collaborationRecoveryRequired, true);
+  assert.equal(result.result?.status, 'COMPLETION_PENDING');
+});
+
 test('uses the official native deletion RPC when collaboration is not installed', async () => {
   const calls: unknown[][] = [];
   setSessionLifecycleDependenciesForTests({
@@ -96,7 +119,7 @@ test('uses the official native deletion RPC when collaboration is not installed'
 
   assert.equal(result.success, true);
   assert.equal(result.coordinated, false);
-  assert.deepEqual(calls, [[KEY, true]]);
+  assert.deepEqual(calls, [[KEY, true, 'session-1']]);
 });
 
 test('coordinates reset through the installed collaboration runtime without requiring a nonstandard CAS flag', async () => {
@@ -145,13 +168,14 @@ test('allows official native reset without a locally cached session identity', a
     listSessions: async () => ({ sessions: [{ key: KEY }] }),
     resetSession: async () => {
       resetCalls += 1;
-      return { success: true, key: KEY };
+      return { success: true, key: KEY, entry: { sessionId: 'session-2' } };
     },
   });
 
   const result = await executeSessionLifecycleMutation(KEY, 'reset');
   assert.equal(result.success, true);
-  assert.equal(result.sessionId, null);
+  assert.equal(result.sessionId, 'session-2');
+  assert.equal(result.previousSessionId, null);
   assert.equal(resetCalls, 1);
 });
 

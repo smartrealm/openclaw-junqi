@@ -1,8 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { useChatStore, type Session } from './chatStore';
+import {
+  selectActiveSessionThinking,
+  selectActiveSessionTyping,
+  useChatStore,
+  type Session,
+} from './chatStore';
 import { normalizeHistoryMessage } from '@/processing/normalizeHistoryMessage';
 import { gateway } from '@/services/gateway';
+import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
 
 const MAIN_KEY = 'agent:main:main';
 const OTHER_KEY = 'agent:worker:main';
@@ -80,6 +86,145 @@ test('setSessions follows the Gateway session list after a deletion', () => {
   assert.equal(state.sessions.some((session) => session.key === MAIN_KEY), true);
   assert.deepEqual(state.openTabs, [MAIN_KEY]);
   assert.equal(state.activeSessionKey, MAIN_KEY);
+});
+
+test('a partial sessions.list page preserves sessions outside the current page', () => {
+  const outsidePageKey = 'agent:worker:outside-partial-page';
+  useChatStore.setState({
+    sessions: [
+      { key: MAIN_KEY, label: 'Main' },
+      { key: outsidePageKey, label: 'Outside page' },
+    ],
+    openTabs: [MAIN_KEY, outsidePageKey],
+    activeSessionKey: outsidePageKey,
+  });
+
+  useChatStore.getState().setSessions(
+    [{ key: MAIN_KEY, label: 'Main updated' }],
+    undefined,
+    { completeSnapshot: false },
+  );
+
+  const state = useChatStore.getState();
+  assert.equal(state.sessions.find((session) => session.key === MAIN_KEY)?.label, 'Main updated');
+  assert.equal(state.sessions.some((session) => session.key === outsidePageKey), true);
+  assert.deepEqual(state.openTabs, [MAIN_KEY, outsidePageKey]);
+  assert.equal(state.activeSessionKey, outsidePageKey);
+});
+
+test('setSessions stores metadata without bypassing the run projection', () => {
+  useChatStore.setState({
+    sessions: [{ key: MAIN_KEY, label: 'Main', hasActiveRun: true }],
+    activeSessionKey: MAIN_KEY,
+    typingBySession: { [MAIN_KEY]: true },
+    typingStartedAtBySession: { [MAIN_KEY]: 1_000 },
+    thinkingBySession: { [MAIN_KEY]: { runId: 'run-stale', text: 'still thinking' } },
+  });
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main', hasActiveRun: false },
+  ]);
+
+  const state = useChatStore.getState();
+  assert.equal(state.sessions.find((session) => session.key === MAIN_KEY)?.hasActiveRun, false);
+  assert.equal(state.typingBySession[MAIN_KEY], true);
+  assert.equal(state.typingStartedAtBySession[MAIN_KEY], 1_000);
+  assert.deepEqual(state.thinkingBySession[MAIN_KEY], { runId: 'run-stale', text: 'still thinking' });
+});
+
+test('sessionId rotation atomically replaces transcript state and preserves user preferences', () => {
+  const transitions: Array<{ previousSessionId: string; nextSessionId: string }> = [];
+  const unsubscribe = subscribeSessionIdentityTransitions((transition) => {
+    if (transition.sessionKey === OTHER_KEY) transitions.push(transition);
+  });
+  useChatStore.setState({
+    sessions: [
+      { key: MAIN_KEY, label: 'Main', sessionId: 'main-id' },
+      { key: OTHER_KEY, label: 'Old transcript', sessionId: 'old-id', pinned: true },
+    ],
+    activeSessionKey: OTHER_KEY,
+    messages: [{ id: 'old', role: 'assistant', content: 'old', timestamp: '2026-01-01' }],
+    messagesPerSession: {
+      [OTHER_KEY]: [{ id: 'old', role: 'assistant', content: 'old', timestamp: '2026-01-01' }],
+    },
+    typingBySession: { [OTHER_KEY]: true },
+    thinkingBySession: { [OTHER_KEY]: { runId: 'run-old', text: 'old thought' } },
+    messageQueue: { [OTHER_KEY]: [{ id: 'queued-old', text: 'old', timestamp: '2026-01-01' }] },
+    drafts: { [OTHER_KEY]: 'keep this draft' },
+  });
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main', sessionId: 'main-id' },
+    { key: OTHER_KEY, label: 'New transcript', sessionId: 'new-id' },
+  ]);
+  unsubscribe();
+
+  const state = useChatStore.getState();
+  assert.equal(state.messagesPerSession[OTHER_KEY], undefined);
+  assert.equal(state.typingBySession[OTHER_KEY], undefined);
+  assert.equal(state.thinkingBySession[OTHER_KEY], undefined);
+  assert.equal(state.messageQueue[OTHER_KEY], undefined);
+  assert.deepEqual(state.messages, []);
+  assert.equal(state.drafts[OTHER_KEY], 'keep this draft');
+  assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.pinned, true);
+  assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.sessionId, 'new-id');
+  assert.deepEqual(transitions, [{
+    sessionKey: OTHER_KEY,
+    previousSessionId: 'old-id',
+    nextSessionId: 'new-id',
+  }]);
+});
+
+test('settleSessionRunUi atomically clears one session without disturbing another', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    typingBySession: { [MAIN_KEY]: true, [OTHER_KEY]: true },
+    typingStartedAtBySession: { [MAIN_KEY]: 1_000, [OTHER_KEY]: 2_000 },
+    thinkingBySession: {
+      [MAIN_KEY]: { runId: 'run-main', text: 'main thinking' },
+      [OTHER_KEY]: { runId: 'run-other', text: 'other thinking' },
+    },
+    sendingBySession: { [MAIN_KEY]: true, [OTHER_KEY]: true },
+  });
+
+  useChatStore.getState().settleSessionRunUi(MAIN_KEY);
+
+  const state = useChatStore.getState();
+  assert.equal(selectActiveSessionTyping(state), false);
+  assert.deepEqual(selectActiveSessionThinking(state), { runId: null, text: '' });
+  assert.equal(state.typingStartedAtBySession[MAIN_KEY], undefined);
+  assert.equal(state.sendingBySession[MAIN_KEY], false);
+  assert.equal(state.typingBySession[OTHER_KEY], true);
+  assert.equal(state.typingStartedAtBySession[OTHER_KEY], 2_000);
+  assert.deepEqual(state.thinkingBySession[OTHER_KEY], { runId: 'run-other', text: 'other thinking' });
+  assert.equal(state.sendingBySession[OTHER_KEY], true);
+});
+
+test('setMessages enforces one projection per message id and keeps terminal state', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.getState().setMessages([
+    {
+      id: 'same-live-id',
+      role: 'assistant',
+      content: 'Complete answer.',
+      timestamp: '2026-07-22T00:00:00.000Z',
+      isStreaming: false,
+      responseState: 'final',
+    },
+    {
+      id: 'same-live-id',
+      role: 'assistant',
+      content: 'Complete answer.',
+      timestamp: '2026-07-22T00:00:00.000Z',
+      isStreaming: true,
+      responseState: 'streaming',
+    },
+  ], MAIN_KEY);
+
+  const messages = useChatStore.getState().messagesPerSession[MAIN_KEY];
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].responseState, 'final');
+  assert.equal(messages[0].isStreaming, false);
 });
 
 test('removeSession closes the tab, switches active session, and persists tab order', () => {
@@ -191,6 +336,103 @@ test('thinking-prefix removal does not restore a stale streaming fragment', () =
   assert.equal(message?.isStreaming, false);
 });
 
+test('an explicit empty terminal removes an obsolete streamed draft', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    messages: [],
+    renderBlocks: [],
+    responseGroups: [],
+    messagesPerSession: {},
+    _blocksCache: {},
+    _groupsCache: {},
+    thinkingBySession: {},
+  });
+
+  const store = useChatStore.getState();
+  store.updateStreamingMessage('empty-final', 'obsolete draft', { runId: 'run-empty' }, MAIN_KEY);
+  store.finalizeStreamingMessage('empty-final', '', { runId: 'run-empty' }, MAIN_KEY);
+
+  assert.equal(
+    useChatStore.getState().messagesPerSession[MAIN_KEY]?.some((item) => item.id === 'empty-final'),
+    false,
+  );
+});
+
+test('a media-only terminal creates a renderable assistant message', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    messages: [],
+    renderBlocks: [],
+    responseGroups: [],
+    messagesPerSession: {},
+    _blocksCache: {},
+    _groupsCache: {},
+    thinkingBySession: {},
+  });
+
+  useChatStore.getState().finalizeStreamingMessage('media-final', '', {
+    runId: 'run-media',
+    mediaUrl: 'https://media.invalid/answer.mp3',
+    mediaType: 'audio',
+  }, MAIN_KEY);
+
+  const message = useChatStore.getState().messagesPerSession[MAIN_KEY]?.[0];
+  assert.equal(message?.mediaUrl, 'https://media.invalid/answer.mp3');
+  assert.equal(message?.isStreaming, false);
+});
+
+test('composer snapshot consumption preserves edits and attachments added during delivery', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    drafts: { [MAIN_KEY]: 'sent text plus a new edit' },
+    preparedAttachments: {
+      [MAIN_KEY]: [
+        {
+          id: 'sent-file',
+          type: 'file',
+          mimeType: 'text/plain',
+          content: 'c2VudA==',
+          fileName: 'sent.txt',
+          isImage: false,
+          size: 4,
+        },
+        {
+          id: 'new-file',
+          type: 'file',
+          mimeType: 'text/plain',
+          content: 'bmV3',
+          fileName: 'new.txt',
+          isImage: false,
+          size: 3,
+        },
+      ],
+    },
+  });
+
+  useChatStore.getState().consumeComposerSnapshot(MAIN_KEY, {
+    text: 'sent text',
+    attachmentIds: ['sent-file'],
+  });
+
+  assert.equal(useChatStore.getState().drafts[MAIN_KEY], 'sent text plus a new edit');
+  assert.deepEqual(
+    useChatStore.getState().preparedAttachments[MAIN_KEY].map((file) => file.id),
+    ['new-file'],
+  );
+});
+
+test('composer snapshot consumption clears only an unchanged sent draft', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({ drafts: { [MAIN_KEY]: 'sent text' }, preparedAttachments: {} });
+
+  useChatStore.getState().consumeComposerSnapshot(MAIN_KEY, {
+    text: 'sent text',
+    attachmentIds: [],
+  });
+
+  assert.equal(useChatStore.getState().drafts[MAIN_KEY], '');
+});
+
 test('Gateway acceptance settles an optimistic user message without waiting for the reply', () => {
   seedSessions(MAIN_KEY);
   useChatStore.setState({
@@ -226,7 +468,6 @@ test('CHAT-02 failed queue drain keeps the item and its attachments for explicit
     _blocksCache: {},
     _groupsCache: {},
     typingBySession: { [MAIN_KEY]: false },
-    isTyping: false,
     connected: true,
     messageQueue: {
       [MAIN_KEY]: [{
@@ -272,6 +513,46 @@ test('CHAT-02 failed queue drain keeps the item and its attachments for explicit
   }
 });
 
+test('a cached terminal acknowledgement re-arms the queue pump after its guard releases', async () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    messages: [],
+    messagesPerSession: { [MAIN_KEY]: [] },
+    renderBlocks: [],
+    responseGroups: [],
+    _blocksCache: {},
+    _groupsCache: {},
+    typingBySession: { [MAIN_KEY]: false },
+    connected: true,
+    messageQueue: {
+      [MAIN_KEY]: [
+        { id: 'cached-ack-1', text: 'first', timestamp: new Date(0).toISOString() },
+        { id: 'cached-ack-2', text: 'second', timestamp: new Date(1).toISOString() },
+      ],
+    },
+  });
+
+  const originalSend = gateway.sendMessage;
+  const delivered: string[] = [];
+  try {
+    gateway.sendMessage = async (message) => {
+      delivered.push(message);
+      // Mirrors a cached `ok`/`timeout` ACK: ChatHandler settles the run before
+      // drainQueue's await continuation releases its single-session guard.
+      useChatStore.getState().setIsTyping(false, MAIN_KEY);
+      return { runId: `run-${delivered.length}`, status: 'ok' };
+    };
+
+    await useChatStore.getState().drainQueue(MAIN_KEY);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    assert.deepEqual(delivered, ['first', 'second']);
+    assert.deepEqual(useChatStore.getState().messageQueue[MAIN_KEY], []);
+  } finally {
+    gateway.sendMessage = originalSend;
+  }
+});
+
 test('CHAT-02 queue actions immediately update the active transcript', () => {
   seedSessions(MAIN_KEY);
   useChatStore.getState().setMessages([
@@ -281,6 +562,10 @@ test('CHAT-02 queue actions immediately update the active transcript', () => {
       content: 'first draft',
       timestamp: new Date(0).toISOString(),
       status: 'failed',
+      retryPayload: {
+        text: 'first draft',
+        attachments: [{ mimeType: 'application/octet-stream', content: 'AAAA', fileName: 'one.bin' }],
+      },
     },
     {
       id: 'queued-2',
@@ -288,6 +573,10 @@ test('CHAT-02 queue actions immediately update the active transcript', () => {
       content: 'second draft',
       timestamp: new Date(1).toISOString(),
       status: 'queued',
+      retryPayload: {
+        text: 'second draft',
+        attachments: [{ mimeType: 'application/octet-stream', content: 'AAAA', fileName: 'two.bin' }],
+      },
     },
   ], MAIN_KEY);
   useChatStore.setState({
@@ -308,10 +597,12 @@ test('CHAT-02 queue actions immediately update the active transcript', () => {
   state = useChatStore.getState();
   assert.equal(state.messageQueue[MAIN_KEY].some((message) => message.id === 'queued-1'), false);
   assert.equal(state.messages[0]?.status, 'cancelled');
+  assert.equal(state.messages[0]?.retryPayload, undefined);
 
   state.clearQueue(MAIN_KEY);
   state = useChatStore.getState();
   assert.deepEqual(state.messageQueue[MAIN_KEY], []);
   assert.equal(state.messages[1]?.status, 'cancelled');
+  assert.equal(state.messages[1]?.retryPayload, undefined);
   assert.equal(state.messagesPerSession[MAIN_KEY][1]?.status, 'cancelled');
 });

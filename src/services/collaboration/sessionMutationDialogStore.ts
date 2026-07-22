@@ -3,11 +3,14 @@ import type {
   SessionMutationExecutionResult,
   SessionMutationRequest,
 } from './SessionMutationCoordinator';
+import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
 
 export interface SessionMutationDialogEntry {
   id: string;
+  operationId: string;
   request: SessionMutationRequest;
   requestedAt: number;
+  committedResult: SessionMutationExecutionResult | null;
 }
 
 interface SessionMutationDialogState {
@@ -15,7 +18,11 @@ interface SessionMutationDialogState {
 }
 
 interface PendingEntry extends SessionMutationDialogEntry {
+  identity: string;
+  promise: Promise<SessionMutationExecutionResult | null>;
   resolve: (result: SessionMutationExecutionResult | null) => void;
+  reported: boolean;
+  releaseRetainedGate?: () => void;
 }
 
 const queue: PendingEntry[] = [];
@@ -36,13 +43,21 @@ function identityKey(request: SessionMutationRequest): string {
   ]);
 }
 
+function dialogEntry(entry: PendingEntry): SessionMutationDialogEntry {
+  return {
+    id: entry.id,
+    operationId: entry.operationId,
+    request: entry.request,
+    requestedAt: entry.requestedAt,
+    committedResult: entry.committedResult,
+  };
+}
+
 function publishNext(): void {
   if (active || queue.length === 0) return;
   active = queue.shift() ?? null;
   useSessionMutationDialogStore.setState({
-    current: active
-      ? { id: active.id, request: active.request, requestedAt: active.requestedAt }
-      : null,
+    current: active ? dialogEntry(active) : null,
   });
 }
 
@@ -57,18 +72,49 @@ export function requestSessionMutationDialog(
   const pending = new Promise<SessionMutationExecutionResult | null>((resolve) => {
     settle = resolve;
   });
-  const result = pending.finally(() => {
-    if (requestsByIdentity.get(key) === result) requestsByIdentity.delete(key);
-  });
-  requestsByIdentity.set(key, result);
+  requestsByIdentity.set(key, pending);
   queue.push({
     id: globalThis.crypto.randomUUID(),
+    operationId: `operation-${globalThis.crypto.randomUUID()}`,
     request,
     requestedAt: Date.now(),
+    committedResult: null,
+    identity: key,
+    promise: pending,
     resolve: settle,
+    reported: false,
   });
   publishNext();
-  return result;
+  return pending;
+}
+
+/** Resolve a verified core mutation while keeping its collaboration recovery UI active. */
+export function reportSessionCoreCommit(
+  entryId: string,
+  result: SessionMutationExecutionResult,
+): boolean {
+  if (
+    !active
+    || active.id !== entryId
+    || active.reported
+    || active.operationId !== result.operationId
+    || active.request.action !== result.action
+    || result.status !== 'COMPLETION_PENDING'
+    || !result.coreMutationCommitted
+    || !result.collaborationRecoveryRequired
+    || result.impact.runtimeId !== active.request.runtimeId
+    || result.impact.sessionKey !== active.request.sessionKey
+    || result.impact.sessionId !== active.request.sessionId
+    || result.impact.collaborationInstanceId !== active.request.collaborationInstanceId
+  ) {
+    return false;
+  }
+  active.reported = true;
+  active.committedResult = result;
+  active.releaseRetainedGate = sessionMutationGate.retain(active.request.sessionKey);
+  active.resolve(result);
+  useSessionMutationDialogStore.setState({ current: dialogEntry(active) });
+  return true;
 }
 
 export function settleSessionMutationDialog(
@@ -76,17 +122,39 @@ export function settleSessionMutationDialog(
   result: SessionMutationExecutionResult | null,
 ): boolean {
   if (!active || active.id !== entryId) return false;
+  if (
+    active.committedResult
+    && (
+      !result
+      || result.operationId !== active.operationId
+      || result.mutationId !== active.committedResult.mutationId
+      || result.status !== 'COMPLETED'
+      || !result.success
+      || !result.coreMutationCommitted
+      || result.collaborationRecoveryRequired
+      || !result.completion
+    )
+  ) {
+    return false;
+  }
   const completed = active;
   active = null;
   useSessionMutationDialogStore.setState({ current: null });
-  completed.resolve(result);
+  if (!completed.reported) completed.resolve(result);
+  completed.releaseRetainedGate?.();
+  if (requestsByIdentity.get(completed.identity) === completed.promise) {
+    requestsByIdentity.delete(completed.identity);
+  }
   queueMicrotask(publishNext);
   return true;
 }
 
 export function resetSessionMutationDialogStoreForTests(): void {
-  active?.resolve(null);
-  for (const entry of queue.splice(0)) entry.resolve(null);
+  active?.releaseRetainedGate?.();
+  if (active && !active.reported) active.resolve(null);
+  for (const entry of queue.splice(0)) {
+    if (!entry.reported) entry.resolve(null);
+  }
   active = null;
   requestsByIdentity.clear();
   useSessionMutationDialogStore.setState({ current: null });

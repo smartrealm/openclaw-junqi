@@ -2,6 +2,7 @@
 // 不在组件内联逻辑 — 全部抽到此处，方便单元测试
 
 import type { Session } from '@/stores/chatStore';
+import { isUnmaterializedLocalSession } from '@/utils/sessionLifecycle';
 
 export function isSessionActive(sx: Session): boolean {
   if (sx.running === true) return true;
@@ -100,7 +101,7 @@ export function isEmptyTransientSession(
 ): boolean {
   if (!session) return false;
   if (session.key === 'agent:main:main') return false;
-  if (!session.createdAt) return false;
+  if (!isUnmaterializedLocalSession(session, messages)) return false;
   if (session.pinned || session.archived) return false;
   if (isSessionActive(session)) return false;
   if (messages && messages.length > 0) return false;

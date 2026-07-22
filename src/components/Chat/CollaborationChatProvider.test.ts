@@ -99,7 +99,7 @@ test('shows collaboration projections only for the exact verified connection and
   ), false);
 });
 
-test('session dock prioritizes active work and exposes durable history without duplicating the transcript card', () => {
+test('session dock prioritizes active work and exposes durable runs without duplicating the transcript card', () => {
   const archived = collaborationRun({
     runId: 'run-complete',
     status: 'COMPLETED',
@@ -124,7 +124,7 @@ test('session dock prioritizes active work and exposes durable history without d
   assert.match(html, /data-collaboration-session-dock/);
   assert.match(html, /Review the release impact/);
   assert.match(html, /1\/2/);
-  assert.match(html, /History/);
+  assert.match(html, /Runs/);
 });
 
 test('requests a forced capability bootstrap after reconnect or runtime identity replacement', () => {

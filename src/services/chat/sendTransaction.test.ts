@@ -33,6 +33,34 @@ test('CHAT-02 rejected send records a retryable failure and releases typing', as
   assert.deepEqual(queued, []);
 });
 
+test('an ambiguous transport result stays pending until official reconciliation', async () => {
+  const messages = new Map<string, ChatMessage>();
+  const typing: boolean[] = [];
+  const coordinator = new ChatSendCoordinator(
+    { sendMessage: async () => ({ deliveryUncertain: true as const, runId: 'client-uncertain' }) },
+    () => ({
+      addMessage(message) { messages.set(message.id, message); },
+      updateMessage(_sessionKey, id, patch) {
+        const current = messages.get(id);
+        if (current) messages.set(id, { ...current, ...patch });
+      },
+      setIsTyping(value) { typing.push(value); },
+      typingBySession: {},
+      enqueueMessage() {},
+    }),
+  );
+
+  await coordinator.send({
+    sessionKey: 'session-a',
+    message: 'maybe delivered',
+    clientMessageId: 'client-uncertain',
+  });
+
+  assert.equal(messages.get('client-uncertain')?.status, 'pending');
+  assert.deepEqual(messages.get('client-uncertain')?.retryPayload, { text: 'maybe delivered' });
+  assert.deepEqual(typing, [true]);
+});
+
 test('CHAT-02 active sessions use the visible session queue without touching the transport', async () => {
   const messages = new Map<string, ChatMessage>();
   const typing: boolean[] = [];

@@ -42,6 +42,27 @@ export class SessionRunFence {
     return { lease: this.lease(sessionKey, runId, state), replacedRunId };
   }
 
+  /**
+   * Adopt a run from an authoritative OpenClaw snapshot.
+   *
+   * Transport invalidation retires run ids so delayed frames cannot resurrect
+   * them. A later `chat.history.inFlightRun` or exact `activeRunIds` snapshot is
+   * stronger evidence and may explicitly revive that same id.
+   */
+  adopt(sessionKey: string, runId: string): SessionRunStart {
+    const state = this.stateFor(sessionKey);
+    if (state.activeRunId === runId) {
+      return { lease: this.lease(sessionKey, runId, state), replacedRunId: null };
+    }
+
+    const replacedRunId = state.activeRunId;
+    if (replacedRunId) this.retire(state, replacedRunId);
+    state.retiredRunIds = state.retiredRunIds.filter((retiredRunId) => retiredRunId !== runId);
+    state.generation += 1;
+    state.activeRunId = runId;
+    return { lease: this.lease(sessionKey, runId, state), replacedRunId };
+  }
+
   /** Claims a terminal event without allowing it to overwrite a newer run. */
   claimTerminal(sessionKey: string, runId: string): SessionRunLease | null {
     const state = this.stateFor(sessionKey);

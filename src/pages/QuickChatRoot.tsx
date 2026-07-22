@@ -4,6 +4,8 @@ import { gateway } from '@/services/gateway';
 import { GatewayClientLease } from '@/services/gateway/GatewayClientLease';
 import { useChatStore } from '@/stores/chatStore';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { normalizeHistoryMessages } from '@/processing/normalizeHistoryMessage';
+import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
 
 /** Quick Chat owns one generated session and must not speak main-window events. */
 export function isOwnedQuickChatSession(sessionKey: string, ownedSessionKey: string): boolean {
@@ -19,6 +21,24 @@ export default function QuickChatRoot() {
 
   useEffect(() => {
     const lease = leaseRef.current!;
+    let disposed = false;
+    let historyGeneration = 0;
+    const refreshHistory = async () => {
+      const generation = ++historyGeneration;
+      const observation = gateway.captureChatSessionRunObservation(sessionKey);
+      const response = await gateway.getHistory(sessionKey, 200, 15_000);
+      if (disposed || generation !== historyGeneration) return;
+      gateway.reconcileChatHistoryRunState(sessionKey, response, observation);
+      const rawMessages = Array.isArray(response?.messages) ? response.messages : [];
+      const canonical = dedupeHistoryMessages(normalizeHistoryMessages(rawMessages));
+      const store = useChatStore.getState();
+      const previous = store.getCachedMessages(sessionKey) ?? [];
+      store.setMessages(reconcileHistoryMessageIds(previous, canonical), sessionKey);
+    };
+    const reconcileRun = async () => {
+      await gateway.reconcileChatSessionRun(sessionKey);
+      await refreshHistory();
+    };
     gateway.setCallbacks({
       onMessage: (message) => {
         const explicitKey = (message as { sessionKey?: string }).sessionKey;
@@ -53,18 +73,46 @@ export default function QuickChatRoot() {
           ...(meta?.usage ? { usage: meta.usage } : {}),
           ...(meta?.model ? { model: meta.model } : {}),
         }, eventSessionKey);
-        store.setIsTyping(false, eventSessionKey);
+        store.settleSessionRunUi(eventSessionKey);
+        void refreshHistory().catch(() => undefined);
+      },
+      onSessionRunReconciliation: (resolution) => {
+        if (!isOwnedQuickChatSession(resolution.sessionKey, sessionKey)) return;
+        const store = useChatStore.getState();
+        if (resolution.state === 'active') {
+          store.setIsTyping(true, resolution.sessionKey);
+        } else {
+          store.settleSessionRunUi(resolution.sessionKey);
+          void refreshHistory().catch(() => undefined);
+        }
+      },
+      onStreamReconciliationNeeded: (eventSessionKey) => {
+        if (!isOwnedQuickChatSession(eventSessionKey, sessionKey)) return;
+        void reconcileRun().catch(() => undefined);
+      },
+      onSessionRunReconciliationNeeded: (eventSessionKey) => {
+        if (!isOwnedQuickChatSession(eventSessionKey, sessionKey)) return;
+        void reconcileRun().catch(() => undefined);
+      },
+      onTranscriptChanged: (eventSessionKey) => {
+        if (!isOwnedQuickChatSession(eventSessionKey, sessionKey)) return;
+        void refreshHistory().catch(() => undefined);
       },
       onStatusChange: (status) => {
         if (!status.connected && !status.connecting) {
           voiceRuntime.interruptAll({ broadcast: false, preserveRemote: true });
+          gateway.clearChatTransportProjection();
+          gateway.resetSessionTranscriptTransport();
         }
         useChatStore.getState().setConnectionStatus(status);
         if (status.connected) {
-          const store = useChatStore.getState();
-          if ((store.messageQueue[sessionKey]?.length ?? 0) > 0 && !store.typingBySession[sessionKey]) {
-            void store.drainQueue(sessionKey);
-          }
+          void reconcileRun().catch(() => undefined).finally(() => {
+            if (disposed) return;
+            const store = useChatStore.getState();
+            if ((store.messageQueue[sessionKey]?.length ?? 0) > 0 && !store.typingBySession[sessionKey]) {
+              void store.drainQueue(sessionKey);
+            }
+          });
         }
       },
       onScopeError: (error) => useChatStore.getState().setConnectionStatus({
@@ -91,12 +139,16 @@ export default function QuickChatRoot() {
       }
     });
     return () => {
+      disposed = true;
+      historyGeneration += 1;
       unsubscribeQueue();
       voiceRuntime.interrupt(sessionKey);
       const store = useChatStore.getState();
       store.clearQueue(sessionKey);
       if (store.typingBySession[sessionKey]) {
-        void gateway.abortChat(sessionKey).catch(() => undefined).finally(() => lease.release());
+        void gateway.abortChat(sessionKey)
+          .catch(() => undefined)
+          .finally(() => lease.release());
       } else {
         lease.release();
       }

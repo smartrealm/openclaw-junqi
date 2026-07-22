@@ -17,14 +17,14 @@ import { GlassCard } from '@/components/shared/GlassCard';
 import { SceneTransition } from '@/components/shared/SceneTransition';
 import { DashboardIcon } from '@/components/shared/DashboardIcon';
 import { Sparkline } from '@/components/shared/Sparkline';
-import { useChatStore } from '@/stores/chatStore';
+import { useChatStore, type Session } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll, ensureGroupFresh } from '@/stores/gatewayDataStore';
 import { sessionActivityTime, sortSessionsByActivity } from '@/components/Layout/sidebarUtils';
 import clsx from 'clsx';
 import { themeColorVar } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { formatTokens } from '@/utils/format';
-import { isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
+import { isIsolatedExecutionSessionKey, projectSessionActivity } from '@/utils/sessionPresentation';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { useSceneRecovery } from '@/motion/sceneRecovery';
 import { gateway } from '@/services/gateway';
@@ -92,7 +92,17 @@ const getAgentName = (id: string) => {
 export function DashboardPage() {
   const { t }      = useTranslation();
   const navigate   = useNavigate();
-  const { connected, availableModels, modelsLoading, sessions: chatSessions } = useChatStore();
+  const {
+    connected,
+    availableModels,
+    modelsLoading,
+    sessions: chatSessions,
+    activeSessionKey,
+    typingBySession,
+    typingStartedAtBySession,
+    thinkingBySession,
+    sendingBySession,
+  } = useChatStore();
   const budgetLimit = useSettingsStore((s) => s.budgetLimit);
   const hasProviders = availableModels.length > 0;
 
@@ -127,11 +137,44 @@ export function DashboardPage() {
     if (!connected)                             connectedSince.current = null;
   }, [connected]);
 
-  // Agent status derived from all sessions, not only main.
+  const activitySessions = useMemo(() => {
+    const byKey = new Map<string, Session>();
+    for (const session of sessions) {
+      if (!session?.key) continue;
+      byKey.set(session.key, {
+        ...session,
+        label: typeof session.label === 'string' && session.label.trim()
+          ? session.label
+          : session.key,
+      });
+    }
+    for (const session of chatSessions) {
+      byKey.set(session.key, { ...(byKey.get(session.key) ?? {}), ...session });
+    }
+    return [...byKey.values()];
+  }, [chatSessions, sessions]);
+
+  const activityProjection = useMemo(() => projectSessionActivity({
+    sessions: activitySessions,
+    activeSessionKey,
+    typingBySession,
+    typingStartedAtBySession,
+    thinkingBySession,
+    sendingBySession,
+  }), [
+    activeSessionKey,
+    activitySessions,
+    sendingBySession,
+    thinkingBySession,
+    typingBySession,
+    typingStartedAtBySession,
+  ]);
+
+  // Agent status is the same projection consumed by chat and navigation.
   const agentStatus: 'idle' | 'working' | 'offline' = useMemo(() => {
     if (!connected) return 'offline';
-    return sessions.some((s: any) => Boolean(s.running)) ? 'working' : 'idle';
-  }, [connected, sessions]);
+    return activityProjection.active.length > 0 ? 'working' : 'idle';
+  }, [activityProjection.active.length, connected]);
 
   // ── Manual Refresh ──────────────────────────────────────────
   const handleRefresh = useCallback(async () => {
@@ -233,12 +276,13 @@ export function DashboardPage() {
     }
     return sortSessionsByActivity(Array.from(byKey.values()).filter((s: any) => {
       if (s.archived) return false;
-      if (s.running || s.hasPendingCompletion || s.lastMessage || s.lastTimestamp || s.lastActive) return true;
+      if (activityProjection.bySessionKey.get(s.key)?.active
+        || s.hasPendingCompletion || s.lastMessage || s.lastTimestamp || s.lastActive) return true;
       if ((s.totalTokens || 0) > 0) return true;
       if (s.key === 'agent:main:main') return true;
       return Boolean(s.label && s.label !== 'Main Session');
     })).slice(0, 5);
-  }, [sessions, chatSessions]);
+  }, [activityProjection, sessions, chatSessions]);
 
   // OpenClaw returns continuous date buckets. Zero cost is still valid data
   // (for example when pricing is unavailable), so it must retain the X axis.
@@ -271,16 +315,17 @@ export function DashboardPage() {
       const id = row.agentId || row.agent || row.id || 'main';
       byAgent.set(id, { ...row, agentId: id, activeSessions: 0, running: false });
     }
-    for (const s of sessions) {
+    for (const s of activitySessions) {
       const id = agentIdFromKey(s.key);
       const prev = byAgent.get(id) || { agentId: id, totals: { totalCost: 0 }, activeSessions: 0, running: false };
-      const isActive = Boolean(s.running) || (s.totalTokens || 0) > 0 || Boolean(s.lastActive);
+      const isRunning = activityProjection.bySessionKey.get(s.key)?.active === true;
+      const isActive = isRunning || (s.totalTokens || 0) > 0 || Boolean(s.lastActive);
       if (!isActive) continue;
       byAgent.set(id, {
         ...prev,
         agentId: id,
         activeSessions: (prev.activeSessions || 0) + 1,
-        running: Boolean(prev.running || s.running),
+        running: Boolean(prev.running || isRunning),
         lastActive: s.lastActive || prev.lastActive,
         model: prev.model || s.model,
         totals: {
@@ -293,7 +338,7 @@ export function DashboardPage() {
     return Array.from(byAgent.values())
       .filter((a: any) => (a.activeSessions || 0) > 0 || (a.totals?.totalCost || 0) > 0)
       .sort((a: any, b: any) => Number(b.running) - Number(a.running) || (b.totals?.totalCost || 0) - (a.totals?.totalCost || 0));
-  }, [usageData, sessions, agentIdFromKey]);
+  }, [activityProjection, activitySessions, usageData, agentIdFromKey]);
 
   const activeAgentTokenTotal = useMemo(
     () => agentList.reduce((sum: number, a: any) => sum + (a.totals?.totalTokens || 0), 0),
@@ -351,13 +396,13 @@ export function DashboardPage() {
           model: shortModelName(fullModel),
           modelTitle: typeof fullModel === 'string' ? fullModel : undefined,
           tokens: formatTokens(merged.totalTokens || 0),
-          running: Boolean(merged.running || merged.hasActiveRun),
+          running: activityProjection.bySessionKey.get(key)?.active === true,
           timestamp,
         };
       })
       .filter((item) => item.timestamp > 0 || item.running)
       .slice(0, 5);
-  }, [recentSessions, chatSessionByKey, agents, agentIdFromKey, agentNameFor, t]);
+  }, [activityProjection, recentSessions, chatSessionByKey, agents, agentIdFromKey, agentNameFor, t]);
 
   // ── Render ───────────────────────────────────────────────────
   return (

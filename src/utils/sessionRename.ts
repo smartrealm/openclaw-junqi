@@ -14,6 +14,7 @@ import { debugWarn } from '@/utils/debugLog';
 import {
   gatewayMutationFailure,
   isSessionDeleted,
+  isUnmaterializedLocalSession,
   normalizeSessionKey,
 } from '@/utils/sessionLifecycle';
 
@@ -59,9 +60,21 @@ function errorMessage(error: unknown): string {
   }
 }
 
-function confirmedLabel(response: unknown, requestedLabel: string): string {
-  const entry = (response as { entry?: { label?: unknown } } | null)?.entry;
-  return typeof entry?.label === 'string' ? entry.label.trim() : requestedLabel;
+function confirmedLabel(response: unknown, sessionKey: string, requestedLabel: string): string {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    throw new Error('Gateway returned an invalid session label response');
+  }
+  const result = response as Record<string, unknown>;
+  if (result.ok !== true || result.key !== sessionKey) {
+    throw new Error('Gateway did not confirm the requested session label mutation');
+  }
+  if (!result.entry || typeof result.entry !== 'object' || Array.isArray(result.entry)) {
+    throw new Error('Gateway returned no session entry after label mutation');
+  }
+  const label = (result.entry as Record<string, unknown>).label;
+  if (typeof label === 'string') return label.trim();
+  if (!requestedLabel && (label === undefined || label === null)) return '';
+  throw new Error('Gateway returned no confirmed session label');
 }
 
 function applyConfirmedLabel(sessionKey: string, label: string): void {
@@ -87,11 +100,21 @@ async function performSessionRename(
 ): Promise<SessionRenameResult> {
   if (isSessionDeleted(sessionKey)) return { ok: false, error: 'Session has been deleted' };
 
+  const chat = useChatStore.getState();
+  const localSession = chat.sessions.find((session) => session.key === sessionKey);
+  if (isUnmaterializedLocalSession(localSession, chat.messagesPerSession[sessionKey])) {
+    if (latestRenameBySession.get(sessionKey) !== operationId) {
+      return { ok: true, label: localSession?.label ?? requestedLabel, superseded: true };
+    }
+    applyConfirmedLabel(sessionKey, requestedLabel);
+    return { ok: true, label: requestedLabel };
+  }
+
   try {
     const response = await sessionRenameDeps.patchLabel(sessionKey, requestedLabel || null);
     const failure = gatewayMutationFailure(response, 'Gateway rejected session label mutation');
     if (failure) throw new Error(failure);
-    const label = confirmedLabel(response, requestedLabel);
+    const label = confirmedLabel(response, sessionKey, requestedLabel);
     if (latestRenameBySession.get(sessionKey) !== operationId || isSessionDeleted(sessionKey)) {
       const currentLabel = useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.label;
       return { ok: true, label: currentLabel ?? label, superseded: true };

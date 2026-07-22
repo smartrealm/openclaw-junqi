@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { AgentWorkspaceTask } from '@/stores/agentWorkspaceStore';
 import {
   EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
+  formatElapsedTime,
   formatRemainingTime,
   selectDynamicIslandTasks,
   shouldShowDynamicIsland,
@@ -57,6 +58,11 @@ test('remaining time freezes while paused and uses stable tabular format', () =>
     },
   };
   assert.equal(formatRemainingTime(paused, 10_000), '01:01');
+});
+
+test('session activity elapsed time stays readable under one minute and after one minute', () => {
+  assert.equal(formatElapsedTime(10_000, 28_000), '00:18');
+  assert.equal(formatElapsedTime(10_000, 90_000), '01:20');
 });
 
 test('the island is conditional unless a file drag needs immediate feedback', () => {

@@ -16,6 +16,7 @@ import { GatewaySelfRescuePanel } from '@/components/GatewaySelfRescuePanel';
 import type { AegisTheme } from '@/theme/types';
 import { setThemeWithTransition } from '@/motion/themeTransition';
 import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
+import { projectSessionActivity } from '@/utils/sessionPresentation';
 
 const THEME_CYCLE: AegisTheme[] = ['aegis-dark', 'aegis-light', 'aegis-eyecare', 'aegis-midnight'];
 
@@ -31,6 +32,11 @@ export function StatusBar() {
   const currentModel = useChatStore((st) => st.currentModel);
   const tokenUsage = useChatStore((st) => st.tokenUsage);
   const sessions = useChatStore((st) => st.sessions);
+  const activeSessionKey = useChatStore((st) => st.activeSessionKey);
+  const typingBySession = useChatStore((st) => st.typingBySession);
+  const typingStartedAtBySession = useChatStore((st) => st.typingStartedAtBySession);
+  const thinkingBySession = useChatStore((st) => st.thinkingBySession);
+  const sendingBySession = useChatStore((st) => st.sendingBySession);
   const uiScale = useSettingsStore((st) => st.uiScale);
   const theme = useSettingsStore((st) => st.theme);
   const petEnabled = usePetStore((st) => st.enabled);
@@ -45,7 +51,22 @@ export function StatusBar() {
 
   const modelLabel = (currentModel || '').split('/').pop() || '';
   const ctxPct = tokenUsage?.percentage ?? 0;
-  const runningCount = useMemo(() => sessions.filter((sx) => sx.running).length, [sessions]);
+  const activityProjection = useMemo(() => projectSessionActivity({
+    sessions,
+    activeSessionKey,
+    typingBySession,
+    typingStartedAtBySession,
+    thinkingBySession,
+    sendingBySession,
+  }), [
+    activeSessionKey,
+    sendingBySession,
+    sessions,
+    thinkingBySession,
+    typingBySession,
+    typingStartedAtBySession,
+  ]);
+  const runningCount = activityProjection.active.length;
   const totalTokens = useMemo(() => sessions.reduce((s, sx) => s + (sx.totalTokens ?? 0), 0), [sessions]);
 
   const port = useMemo(() => {

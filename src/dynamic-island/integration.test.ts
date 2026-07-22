@@ -76,7 +76,9 @@ test('island returns to the existing chat session and uses packaged JunQi brandi
   const styles = read('src/dynamic-island/dynamic-island.css');
 
   assert.match(island, /JunQiLogo/);
-  assert.match(island, /type: 'open-session', sessionKey: snapshot\.sessionKey/);
+  assert.match(island, /type: 'open-session', sessionKey: primarySessionActivity\?\.sessionKey \|\| snapshot\.sessionKey/);
+  assert.match(island, /snapshot\.sessionActivities\.slice\(0, 2\)/);
+  assert.match(island, /formatElapsedTime\(activity\.startedAt, now\)/);
   assert.doesNotMatch(island, /src="\/src\/assets\/brand\/junqi-emblem\.svg"/);
   assert.match(runtime, /chat\.setActiveSession\(action\.sessionKey\)/);
   assert.match(runtime, /dynamic_island_focus_main', \{ route: '\/chat' \}/);

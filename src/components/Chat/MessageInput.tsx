@@ -5,7 +5,7 @@ import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { Icon } from '@/components/shared/icons';
 import { useTranslation } from 'react-i18next';
-import { useChatStore } from '@/stores/chatStore';
+import { selectActiveSessionTyping, useChatStore } from '@/stores/chatStore';
 import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useVoiceStore } from '@/stores/voiceStore';
@@ -48,12 +48,6 @@ const EMPTY_QUEUE: QueuedChatMessage[] = [];
 const EMPTY_PATHS: string[] = [];
 const EMPTY_PREPARED_ATTACHMENTS: PreparedAttachment[] = [];
 
-function pendingDeliveryMessageIds(sessionKey: string): string[] {
-  return (useChatStore.getState().messagesPerSession[sessionKey] ?? [])
-    .filter((message) => message.role === 'user' && message.status === 'pending')
-    .map((message) => message.id);
-}
-
 function estimateWavDuration(base64: string): number {
   try {
     const raw = atob(base64);
@@ -77,12 +71,11 @@ export function MessageInput() {
   const {
     setIsSending,
     connected,
-    setIsTyping,
-    isTyping,
     activeSessionKey,
     messages,
     historyLoader,
   } = useChatStore();
+  const isTyping = useChatStore(selectActiveSessionTyping);
   const isSending = useChatStore((state) => Boolean(state.sendingBySession[activeSessionKey]));
   const isLoadingHistory = useChatStore((state) => Boolean(state.loadingHistoryBySession[activeSessionKey]));
   const isHistoryWarmupGate = connected && messages.length === 0 && isLoadingHistory;
@@ -131,7 +124,7 @@ export function MessageInput() {
       'error',
     );
   }, [t]);
-  const [screenshotOpen, setScreenshotOpen] = useState(false);
+  const [screenshotSessionKey, setScreenshotSessionKey] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState(false);
   const [composerMenu, setComposerMenu] = useState<'add' | 'voice' | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null); // image preview URL
@@ -190,10 +183,9 @@ export function MessageInput() {
   const handleVoiceWakeDetected = useCallback(() => {
     voiceRuntime.interruptGlobally(activeSessionKey);
     if (useChatStore.getState().typingBySession[activeSessionKey]) {
-      const pendingIds = pendingDeliveryMessageIds(activeSessionKey);
+      useChatStore.getState().clearQueue(activeSessionKey);
       void gateway.abortChat(activeSessionKey)
-        .then(() => useChatStore.getState().confirmPendingMessageDeliveries(activeSessionKey, pendingIds))
-        .catch(() => undefined);
+        .catch((error) => debugError('gateway', '[Voice] Unable to stop active response:', error));
     }
   }, [activeSessionKey]);
 
@@ -210,11 +202,14 @@ export function MessageInput() {
   const stopActiveAssistantForVoiceInput = useCallback(async () => {
     voiceRuntime.interruptGlobally(activeSessionKey);
     if (useChatStore.getState().typingBySession[activeSessionKey]) {
-      const pendingIds = pendingDeliveryMessageIds(activeSessionKey);
-      await gateway.abortChat(activeSessionKey).catch((error) => {
-        debugError('gateway', '[Voice] Unable to stop active response:', error);
-      });
-      useChatStore.getState().confirmPendingMessageDeliveries(activeSessionKey, pendingIds);
+      useChatStore.getState().clearQueue(activeSessionKey);
+      await gateway.abortChat(activeSessionKey).then(
+        () => undefined,
+        (error) => {
+          debugError('gateway', '[Voice] Unable to stop active response:', error);
+          return undefined;
+        },
+      );
     }
   }, [activeSessionKey]);
 
@@ -258,6 +253,10 @@ export function MessageInput() {
 
   useEffect(() => {
     setComposerMenu(null);
+    setQueueExpanded(false);
+    setEditingQueueIdx(null);
+    setConfirmingDeleteIdx(null);
+    setConfirmingClear(false);
   }, [activeSessionKey]);
   // Queue strip UI states
   const [queueExpanded, setQueueExpanded] = useState(false);
@@ -539,12 +538,9 @@ export function MessageInput() {
         e.preventDefault();
         voiceRuntime.interruptGlobally(activeSessionKey);
         if (st.typingBySession[activeSessionKey]) {
-          const pendingIds = pendingDeliveryMessageIds(activeSessionKey);
           void gateway.abortChat(activeSessionKey)
-            .then(() => st.confirmPendingMessageDeliveries(activeSessionKey, pendingIds))
-            .catch(() => undefined);
+            .catch((error) => debugError('gateway', '[Abort] Error:', error));
           st.clearQueue(activeSessionKey);
-          st.setIsTyping(false, activeSessionKey);
         }
         return;
       }
@@ -650,7 +646,7 @@ export function MessageInput() {
       }
 
       voiceRuntime.interruptGlobally(sendSessionKey);
-      await chatSendCoordinator.send({
+      const delivery = chatSendCoordinator.send({
         sessionKey: sendSessionKey,
         sessionId: sendSessionId,
         message: fullMessage,
@@ -660,9 +656,12 @@ export function MessageInput() {
         optimisticMessage: { timestamp },
       });
       const state = useChatStore.getState();
-      state.setDraft(sendSessionKey, '');
-      state.setPreparedAttachments(sendSessionKey, []);
+      state.consumeComposerSnapshot(sendSessionKey, {
+        text: rawText,
+        attachmentIds: sendFiles.map((file) => file.id),
+      });
       state.setQuickReplies([], sendSessionKey);
+      await delivery;
     } catch (error) {
       debugError('app', '[Send] Error:', error);
     } finally {
@@ -720,9 +719,11 @@ export function MessageInput() {
   };
 
   const handleScreenshotCapture = (dataUrl: string) => {
+    const sessionKey = screenshotSessionKey;
+    if (!sessionKey) return;
     const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
     try {
-      setFiles((prev) => [...prev, createPreparedAttachment({
+      updateSessionFiles(sessionKey, (prev) => [...prev, createPreparedAttachment({
         fileName: `screenshot-${Date.now()}.png`,
         base64,
         mimeType: 'image/png',
@@ -841,24 +842,27 @@ export function MessageInput() {
         </div>
       )}
 
-      {/* Queue Strip — messages waiting for the AI to finish its current reply */}
+      {/* Pending dispatch is a compact control, never a second message timeline. */}
       {queue.length > 0 && (() => {
-        const COLLAPSE_AT = 2;
-        const visible = queueExpanded ? queue : queue.slice(0, COLLAPSE_AT);
-        const hidden = queue.length - visible.length;
         return (
-        <div className="px-4 pt-3" dir={dir}>
-          <div className="rounded-xl ring-1 ring-aegis-warning/15 bg-aegis-warning/[0.06] overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center gap-2 px-3 py-2">
-              <Clock size={13} className="text-aegis-warning shrink-0" />
-              <span className="text-[12px] font-medium text-aegis-warning flex-1">
-                {queue.length} {t('chat.queueTitle')}
-                {waitSeconds !== null && <span className="ml-2 text-[11px] font-normal text-aegis-text-muted">{t('chat.queueWait', { s: waitSeconds })}</span>}
-              </span>
+        <div className="px-4 pt-2" dir={dir}>
+          <div className="overflow-hidden border border-aegis-warning/15 bg-aegis-warning/[0.045]">
+            <div className="flex min-h-9 items-center gap-2 px-3">
+              <Clock size={13} className="shrink-0 text-aegis-warning" />
+              <button
+                type="button"
+                onClick={() => setQueueExpanded((value) => !value)}
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[12px] font-medium text-aegis-warning transition-colors hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                aria-expanded={queueExpanded}
+                aria-label={t('chat.queueTitle')}
+              >
+                <span>{t('chat.queueTitle')} {queue.length}</span>
+                {waitSeconds !== null && <span className="truncate text-[11px] font-normal text-aegis-text-muted">{t('chat.queueWait', { s: waitSeconds })}</span>}
+                {queueExpanded ? <ChevronUp size={14} className="ml-auto shrink-0" /> : <ChevronDown size={14} className="ml-auto shrink-0" />}
+              </button>
               {confirmingClear ? (
                 <>
-                  <span className="text-[11px] text-aegis-text-muted mr-0.5">{t('chat.queueClearConfirm')}</span>
+                  <span className="max-w-32 truncate text-[11px] text-aegis-text-muted">{t('chat.queueClearConfirm')}</span>
                   <button onClick={() => { clearQueue(activeSessionKey); setConfirmingClear(false); setQueueExpanded(false); }}
                     className="w-6 h-6 rounded-md flex items-center justify-center text-aegis-danger hover:bg-aegis-danger/10 transition-colors"
                     title={t('chat.queueClear')}>
@@ -876,20 +880,12 @@ export function MessageInput() {
                     title={t('chat.queueClear')}>
                     <Trash2 size={13} />
                   </button>
-                  {queue.length > COLLAPSE_AT && (
-                    <button onClick={() => setQueueExpanded((v) => !v)}
-                      className="w-6 h-6 rounded-md flex items-center justify-center text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-                      title={queueExpanded ? t('common.collapse', 'Collapse') : t('common.expand', 'Expand')}>
-                      {queueExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </button>
-                  )}
                 </>
               )}
             </div>
-            {/* Visible list (always present, shows 2 collapsed or all expanded) */}
-            {visible.length > 0 && (
-              <div className="max-h-[144px] overflow-y-auto scrollbar-hidden border-t border-aegis-warning/15">
-                {visible.map((item, idx) => (
+            {queueExpanded && (
+              <div className="max-h-[176px] overflow-y-auto border-t border-aegis-warning/15 scrollbar-hidden">
+                {queue.map((item, idx) => (
                   <div key={item.id} className="flex items-start gap-2 px-3 py-2 border-b border-aegis-warning/10 last:border-b-0">
                     {editingQueueIdx === idx ? (
                       <div className="flex-1 min-w-0">
@@ -967,11 +963,6 @@ export function MessageInput() {
                     )}
                   </div>
                 ))}
-                {hidden > 0 && !queueExpanded && (
-                  <div className="flex items-center justify-center py-1.5 text-[11px] text-aegis-text-muted border-t border-aegis-warning/10">
-                    <span>{t('chat.queueMore', { n: hidden })}</span>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1098,7 +1089,7 @@ export function MessageInput() {
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => { setComposerMenu(null); setScreenshotOpen(true); }}
+                    onClick={() => { setComposerMenu(null); setScreenshotSessionKey(activeSessionKey); }}
                     className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
                   >
                     <Camera size={14} className="shrink-0 text-aegis-primary" />
@@ -1549,12 +1540,10 @@ export function MessageInput() {
                 try {
                   voiceRuntime.interruptGlobally(activeSessionKey);
                   if (isTyping || isSending) {
-                    const pendingIds = pendingDeliveryMessageIds(activeSessionKey);
-                    await gateway.abortChat(activeSessionKey);
-                    useChatStore.getState().confirmPendingMessageDeliveries(activeSessionKey, pendingIds);
+                    // Prevent the typing true->false transition from draining a
+                    // queued turn before the abort acknowledgement returns.
                     clearQueue(activeSessionKey);
-                    setIsTyping(false, activeSessionKey);
-                    setIsSending(false, activeSessionKey);
+                    await gateway.abortChat(activeSessionKey);
                   }
                 } catch (err) {
                   debugError('app', '[Abort] Error:', err);
@@ -1568,11 +1557,11 @@ export function MessageInput() {
         </div>
       )}
 
-      {screenshotOpen && (
+      {screenshotSessionKey && (
         <Suspense fallback={null}>
           <ScreenshotPicker
-            open={screenshotOpen}
-            onClose={() => setScreenshotOpen(false)}
+            open={Boolean(screenshotSessionKey)}
+            onClose={() => setScreenshotSessionKey(null)}
             onCapture={handleScreenshotCapture}
           />
         </Suspense>

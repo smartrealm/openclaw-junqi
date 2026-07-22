@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { usePetStore } from '@/stores/petStore';
 import { useVoiceStore } from '@/stores/voiceStore';
@@ -11,7 +13,15 @@ import { notifications } from '@/services/notifications';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent, subscribeTauriListener } from '@/utils/tauriEvents';
-import { isVoiceActivePhase, selectDynamicIslandTasks, shouldShowDynamicIsland, type DynamicIslandDrop, type DynamicIslandSnapshot } from './model';
+import { projectSessionActivity } from '@/utils/sessionPresentation';
+import {
+  isVoiceActivePhase,
+  selectDynamicIslandTasks,
+  shouldShowDynamicIsland,
+  type DynamicIslandDrop,
+  type DynamicIslandSessionActivity,
+  type DynamicIslandSnapshot,
+} from './model';
 
 type IslandAction =
   | { type: 'open-task'; taskId: string }
@@ -23,13 +33,19 @@ type IslandAction =
   | { type: 'hide' };
 
 export default function DynamicIslandRuntime() {
+  const { t } = useTranslation();
   const enabled = useSettingsStore((state) => state.dynamicIslandEnabled);
   const autoExpand = useSettingsStore((state) => state.dynamicIslandAutoExpand);
   const dndMode = useSettingsStore((state) => state.dndMode);
   const connected = useChatStore((state) => state.connected);
   const connecting = useChatStore((state) => state.connecting);
-  const sessionRunning = useChatStore((state) => state.isTyping);
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
+  const chatSessions = useChatStore((state) => state.sessions);
+  const typingBySession = useChatStore((state) => state.typingBySession);
+  const typingStartedAtBySession = useChatStore((state) => state.typingStartedAtBySession);
+  const thinkingBySession = useChatStore((state) => state.thinkingBySession);
+  const sendingBySession = useChatStore((state) => state.sendingBySession);
+  const gatewayAgents = useGatewayDataStore((state) => state.agents);
   const localVoicePhase = useVoiceStore((state) => state.phase);
   const localVoiceQueueLength = useVoiceStore((state) => state.queueLength);
   const remoteVoiceOutput = useVoiceStore((state) => state.remoteOutput);
@@ -50,6 +66,38 @@ export default function DynamicIslandRuntime() {
   resourceDropRef.current = resourceDrop;
 
   const visibleTasks = useMemo(() => selectDynamicIslandTasks(tasks), [tasks]);
+  const activityProjection = useMemo(() => projectSessionActivity({
+    sessions: chatSessions,
+    activeSessionKey,
+    typingBySession,
+    typingStartedAtBySession,
+    thinkingBySession,
+    sendingBySession,
+  }), [activeSessionKey, chatSessions, sendingBySession, thinkingBySession, typingBySession, typingStartedAtBySession]);
+  const sessionActivities = useMemo<DynamicIslandSessionActivity[]>(() => {
+    const observedAt = Date.now();
+    return activityProjection.active.map((activity) => {
+      const { sessionKey, session } = activity;
+      const agentId = session?.agentId || sessionKey.split(':')[1] || 'main';
+      const agentName = gatewayAgents.find((agent) => agent.id === agentId)?.name || agentId;
+      const title = session?.topic?.trim()
+        || session?.label?.trim()
+        || (agentId === 'main'
+          ? t('chat.currentSession')
+          : t('chat.agentSession', { agent: agentName }));
+      const phase: DynamicIslandSessionActivity['phase'] = activity.phase === 'thinking'
+        ? 'thinking'
+        : 'generating';
+      return {
+        sessionKey,
+        agentName,
+        sessionTitle: title,
+        phase,
+        startedAt: activity.startedAt ?? observedAt,
+      };
+    });
+  }, [activityProjection, gatewayAgents, t]);
+  const sessionRunning = activityProjection.active.length > 0;
   const voiceActive = isVoiceActivePhase(voicePhase);
   const shouldShow = shouldShowDynamicIsland({
     enabled,
@@ -84,6 +132,7 @@ export default function DynamicIslandRuntime() {
     connected,
     connecting,
     sessionRunning,
+    sessionActivities,
     voicePhase,
     voiceQueueLength,
     petEnabled,
@@ -105,7 +154,7 @@ export default function DynamicIslandRuntime() {
       body: latestToast.body,
     } : null,
     resourceDrop,
-  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, latestToast, petEnabled, pomodoro, resourceDrop, sessionRunning, visibleTasks, voicePhase, voiceQueueLength]);
+  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, latestToast, petEnabled, pomodoro, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
 

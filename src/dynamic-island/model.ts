@@ -12,6 +12,14 @@ export interface DynamicIslandTask {
   updatedAt: number;
 }
 
+export interface DynamicIslandSessionActivity {
+  sessionKey: string;
+  agentName: string;
+  sessionTitle: string;
+  phase: 'thinking' | 'generating';
+  startedAt: number;
+}
+
 export interface DynamicIslandNotice {
   id: string;
   type: NotificationType;
@@ -31,6 +39,7 @@ export interface DynamicIslandSnapshot {
   connected: boolean;
   connecting: boolean;
   sessionRunning: boolean;
+  sessionActivities: DynamicIslandSessionActivity[];
   voicePhase: VoicePhase;
   voiceQueueLength: number;
   petEnabled: boolean;
@@ -56,6 +65,7 @@ export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   connected: false,
   connecting: false,
   sessionRunning: false,
+  sessionActivities: [],
   voicePhase: 'idle',
   voiceQueueLength: 0,
   petEnabled: false,
@@ -169,4 +179,11 @@ export function formatRemainingTime(snapshot: DynamicIslandSnapshot, now: number
   const minutesPart = Math.floor(seconds / 60).toString().padStart(2, '0');
   const secondsPart = (seconds % 60).toString().padStart(2, '0');
   return `${minutesPart}:${secondsPart}`;
+}
+
+export function formatElapsedTime(startedAt: number, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const secondsPart = (seconds % 60).toString().padStart(2, '0');
+  return minutes !== '00' ? `${minutes}:${secondsPart}` : `00:${secondsPart}`;
 }

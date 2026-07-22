@@ -12,10 +12,12 @@ import { useTranslation } from 'react-i18next';
 import {
   SessionMutationCoordinatorError,
   sessionMutationCoordinator,
+  type SessionMutationExecutionResult,
   type SessionMutationImpact,
   type SessionMutationStrategy,
 } from '@/services/collaboration/SessionMutationCoordinator';
 import {
+  reportSessionCoreCommit,
   settleSessionMutationDialog,
   useSessionMutationDialogStore,
 } from '@/services/collaboration/sessionMutationDialogStore';
@@ -28,6 +30,7 @@ const STRATEGY_ORDER: SessionMutationStrategy[] = [
 ];
 
 function defaultStrategy(impact: SessionMutationImpact): SessionMutationStrategy | null {
+  if (impact.activeMutation?.status === 'PREPARED') return impact.activeMutation.policy;
   return STRATEGY_ORDER.find((strategy) => impact.strategies.includes(strategy)) ?? null;
 }
 
@@ -39,6 +42,7 @@ export function SessionMutationDialog() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingOutcome, setPendingOutcome] = useState<SessionMutationExecutionResult | null>(null);
 
   useEffect(() => {
     if (!entry) {
@@ -47,12 +51,14 @@ export function SessionMutationDialog() {
       setError(null);
       setLoading(false);
       setSubmitting(false);
+      setPendingOutcome(null);
       return;
     }
     let current = true;
     setImpact(null);
     setStrategy(null);
     setError(null);
+    setPendingOutcome(null);
     setLoading(true);
     void sessionMutationCoordinator.inspectImpact(entry.request)
       .then((nextImpact) => {
@@ -73,16 +79,21 @@ export function SessionMutationDialog() {
   }, [entry?.id]);
 
   const selectableStrategies = useMemo(
-    () => STRATEGY_ORDER.filter((candidate) => impact?.strategies.includes(candidate)),
+    () => impact?.activeMutation?.status === 'PREPARED'
+      ? [impact.activeMutation.policy]
+      : STRATEGY_ORDER.filter((candidate) => impact?.strategies.includes(candidate)),
     [impact],
   );
 
   if (!entry) return null;
 
   const deleting = entry.request.action === 'delete';
+  const completionPending = entry.committedResult !== null;
+  const outcomePending = pendingOutcome !== null;
+  const recoveryPending = completionPending || outcomePending;
   const ActionIcon = deleting ? Trash2 : RotateCcw;
   const close = () => {
-    if (!submitting) settleSessionMutationDialog(entry.id, null);
+    if (!submitting && !recoveryPending) settleSessionMutationDialog(entry.id, null);
   };
   const reloadImpact = async () => {
     setLoading(true);
@@ -98,36 +109,66 @@ export function SessionMutationDialog() {
     }
   };
   const submit = async () => {
-    if (!strategy || submitting) return;
+    if (submitting || (!recoveryPending && !strategy)) return;
     setSubmitting(true);
     setError(null);
     try {
-      const result = await sessionMutationCoordinator.execute({
+      const request = {
         ...entry.request,
+        operationId: entry.operationId,
         timeoutMs: 120_000,
         pollIntervalMs: 750,
-      }, strategy);
+      };
+      const result = completionPending
+        ? await sessionMutationCoordinator.completeCommittedMutation(request, entry.committedResult!)
+        : outcomePending
+          ? await sessionMutationCoordinator.resolvePendingCoreMutation(request, pendingOutcome)
+          : await sessionMutationCoordinator.execute(request, strategy!);
       settleSessionMutationDialog(entry.id, result);
     } catch (cause) {
-      const detail = cause instanceof Error ? cause.message : String(cause);
-      const mutationId = cause instanceof SessionMutationCoordinatorError
-        && typeof cause.details.mutationId === 'string'
-        ? cause.details.mutationId
-        : null;
+      const detail = cause instanceof SessionMutationCoordinatorError
+        && cause.code === 'CORE_RPC_OUTCOME_UNKNOWN'
+        ? t(
+          'collaboration.sessionMutation.outcomeUnknown',
+          'OpenClaw may have completed this change, but the result is not yet verifiable. Keep this dialog open and retry verification.',
+        )
+        : cause instanceof Error ? cause.message : String(cause);
+      const pendingCommit = cause instanceof SessionMutationCoordinatorError
+        ? cause.committedResult
+        : undefined;
+      const unresolvedOutcome = cause instanceof SessionMutationCoordinatorError
+        ? cause.pendingResult
+        : undefined;
+      if (pendingCommit) {
+        setPendingOutcome(null);
+        reportSessionCoreCommit(entry.id, pendingCommit);
+      } else if (unresolvedOutcome) {
+        setPendingOutcome(unresolvedOutcome);
+      } else if (outcomePending) {
+        setPendingOutcome(null);
+      }
+      let refreshedImpact: SessionMutationImpact | null = null;
       try {
         const nextImpact = await sessionMutationCoordinator.inspectImpact(entry.request);
+        refreshedImpact = nextImpact;
         setImpact(nextImpact);
         setStrategy(defaultStrategy(nextImpact));
       } catch {
         // Keep the last authoritative impact visible when the refresh also fails.
       }
-      const fenceHint = mutationId
+      const recoveryHint = pendingCommit?.collaborationRecoveryRequired
+        ? t(
+          'collaboration.sessionMutation.ledgerRecoveryRequired',
+          'The session change completed in OpenClaw, but the collaboration ledger still needs recovery. Keep this dialog open and retry recovery.',
+        )
+        : '';
+      const fenceHint = refreshedImpact?.mutationFenceActive === true
         ? t(
           'collaboration.sessionMutation.fenceRetained',
           'The collaboration fence remains active. Retry recovery before changing this session.',
         )
         : '';
-      setError(fenceHint ? `${detail} ${fenceHint}` : detail);
+      setError([detail, recoveryHint, fenceHint].filter(Boolean).join(' '));
     } finally {
       setSubmitting(false);
     }
@@ -183,7 +224,7 @@ export function SessionMutationDialog() {
           <button
             type="button"
             onClick={close}
-            disabled={submitting}
+            disabled={submitting || recoveryPending}
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text disabled:opacity-40"
             title={t('common.cancel', 'Cancel')}
             aria-label={t('common.cancel', 'Cancel')}
@@ -278,35 +319,41 @@ export function SessionMutationDialog() {
           )}
         </div>
 
-        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-aegis-border px-4 py-3">
-          <button
-            type="button"
-            onClick={() => void reloadImpact()}
-            disabled={loading || submitting}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text disabled:opacity-40"
-          >
-            {loading ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-            {t('common.retry', 'Retry')}
-          </button>
-          <div className="flex items-center gap-2">
+        <footer className={`flex shrink-0 items-center gap-3 border-t border-aegis-border px-4 py-3 ${recoveryPending ? 'justify-end' : 'justify-between'}`}>
+          {!recoveryPending && (
             <button
               type="button"
-              onClick={close}
-              disabled={submitting}
-              className="h-8 rounded-md px-3 text-[11px] text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text disabled:opacity-40"
+              onClick={() => void reloadImpact()}
+              disabled={loading || submitting}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text disabled:opacity-40"
             >
-              {t('common.cancel', 'Cancel')}
+              {loading ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+              {t('common.refresh', 'Refresh')}
             </button>
+          )}
+          <div className="flex items-center gap-2">
+            {!recoveryPending && (
+              <button
+                type="button"
+                onClick={close}
+                disabled={submitting}
+                className="h-8 rounded-md px-3 text-[11px] text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text disabled:opacity-40"
+              >
+                {t('common.cancel', 'Cancel')}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void submit()}
-              disabled={!impact || !strategy || loading || submitting}
+              disabled={(!recoveryPending && (!impact || !strategy)) || loading || submitting}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-danger/30 bg-aegis-danger/[0.08] px-3 text-[11px] font-medium text-aegis-danger hover:bg-aegis-danger/[0.14] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting ? <Loader2 size={13} className="animate-spin" /> : <ActionIcon size={13} />}
-              {deleting
-                ? t('collaboration.sessionMutation.confirmDelete', 'Delete')
-                : t('collaboration.sessionMutation.confirmReset', 'Reset')}
+              {recoveryPending
+                ? t('common.retry', 'Retry')
+                : deleting
+                  ? t('collaboration.sessionMutation.confirmDelete', 'Delete')
+                  : t('collaboration.sessionMutation.confirmReset', 'Reset')}
             </button>
           </div>
         </footer>

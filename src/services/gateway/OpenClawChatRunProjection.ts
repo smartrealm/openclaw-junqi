@@ -13,12 +13,133 @@ export interface OpenClawRunEventAcceptance {
   requiresHistoryRefresh: boolean;
 }
 
+export interface OpenClawRunEventDescriptor {
+  /** Terminal chat events may legally reuse the last delta sequence. */
+  terminal?: boolean;
+}
+
+export type OpenClawChatSendAcknowledgement =
+  | { state: 'active'; runId: string }
+  | { state: 'settled'; runId: string }
+  | { state: 'unknown' };
+
+export type OpenClawChatAbortAcknowledgement =
+  | { state: 'aborted'; runIds: string[] }
+  | { state: 'not_aborted'; runIds: [] }
+  | { state: 'unknown'; runIds: [] };
+
+export interface OpenClawSessionListSnapshot {
+  sessions: unknown[];
+  complete: boolean;
+}
+
+export interface OpenClawInFlightRunSnapshot {
+  runId: string;
+  text: string;
+  plan?: unknown;
+}
+
+const ACTIVE_CHAT_SEND_STATUSES = new Set(['started', 'in_flight']);
+const SETTLED_CHAT_SEND_STATUSES = new Set(['ok', 'timeout']);
+
+/**
+ * Classify the response to OpenClaw's idempotent `chat.send` RPC.
+ *
+ * A retried request can report an already-running or already-terminal turn.
+ * The run id must still equal the submitted idempotency key before the response
+ * is allowed to mutate this renderer's run projection.
+ */
+export function classifyOpenClawChatSendAcknowledgement(
+  response: unknown,
+  expectedRunId: string,
+): OpenClawChatSendAcknowledgement {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    return { state: 'unknown' };
+  }
+  const record = response as Record<string, unknown>;
+  const runId = typeof record.runId === 'string' ? record.runId.trim() : '';
+  const status = typeof record.status === 'string' ? record.status.trim() : '';
+  if (!runId || runId !== expectedRunId.trim()) return { state: 'unknown' };
+  if (ACTIVE_CHAT_SEND_STATUSES.has(status)) return { state: 'active', runId };
+  if (SETTLED_CHAT_SEND_STATUSES.has(status)) return { state: 'settled', runId };
+  return { state: 'unknown' };
+}
+
+/** Classify OpenClaw's official `chat.abort` result without inferring success. */
+export function classifyOpenClawChatAbortAcknowledgement(
+  response: unknown,
+): OpenClawChatAbortAcknowledgement {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    return { state: 'unknown', runIds: [] };
+  }
+  const record = response as Record<string, unknown>;
+  if (record.ok !== true || typeof record.aborted !== 'boolean' || !Array.isArray(record.runIds)) {
+    return { state: 'unknown', runIds: [] };
+  }
+  const runIds = [...new Set(record.runIds.flatMap((runId) => {
+    const normalized = typeof runId === 'string' ? runId.trim() : '';
+    return normalized ? [normalized] : [];
+  }))];
+  if (!record.aborted) return { state: 'not_aborted', runIds: [] };
+  return runIds.length > 0
+    ? { state: 'aborted', runIds }
+    : { state: 'unknown', runIds: [] };
+}
+
+/** Preserve the pagination proof attached to an OpenClaw sessions.list result. */
+export function parseOpenClawSessionListSnapshot(response: unknown): OpenClawSessionListSnapshot {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    return { sessions: [], complete: false };
+  }
+  const record = response as Record<string, unknown>;
+  const hasSessionsArray = Array.isArray(record.sessions);
+  const sessions = hasSessionsArray ? record.sessions as unknown[] : [];
+  if (!hasSessionsArray) return { sessions, complete: false };
+  if (record.hasMore === false) return { sessions, complete: true };
+  if (record.hasMore === true) return { sessions, complete: false };
+
+  const totalCount = typeof record.totalCount === 'number' && Number.isSafeInteger(record.totalCount)
+    ? record.totalCount
+    : null;
+  const offset = typeof record.offset === 'number' && Number.isSafeInteger(record.offset) && record.offset >= 0
+    ? record.offset
+    : null;
+  return {
+    sessions,
+    complete: totalCount !== null
+      && totalCount >= 0
+      && offset !== null
+      && offset + sessions.length >= totalCount,
+  };
+}
+
+/** Parse the documented `chat.history.inFlightRun` recovery projection. */
+export function parseOpenClawInFlightRunSnapshot(
+  response: unknown,
+): OpenClawInFlightRunSnapshot | null {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return null;
+  const raw = (response as Record<string, unknown>).inFlightRun;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const runId = typeof record.runId === 'string' ? record.runId.trim() : '';
+  if (!runId || typeof record.text !== 'string') return null;
+  return {
+    runId,
+    text: record.text,
+    ...(Object.prototype.hasOwnProperty.call(record, 'plan') ? { plan: record.plan } : {}),
+  };
+}
+
 export interface OpenClawSessionRunReconciliation {
   sessionKey: string;
   state: 'active' | 'settled';
   activeRunIds: string[];
   activeRunId?: string;
   replacedRunId?: string;
+}
+
+export interface OpenClawSessionReconciliationOptions {
+  settleMissing?: boolean;
 }
 
 interface SessionRunSnapshot {
@@ -34,22 +155,28 @@ const MAX_TRACKED_SEQUENCES = 512;
  *
  * It owns run identity, per-source sequence monotonicity and the authoritative
  * `sessions.list` reconciliation surface. UI code must only consume the
- * decisions it returns; it must not infer terminal state from lifecycle or
- * task-status events.
+ * decisions it returns; task and presentation metadata must not mutate run
+ * state outside this projection.
  */
 export class OpenClawChatRunProjection {
   private readonly fence = new SessionRunFence();
+  private readonly anonymousActiveSessions = new Set<string>();
   private readonly sequenceBySource: Record<OpenClawRunEventSource, Map<string, number>> = {
     agent: new Map(),
     chat: new Map(),
   };
-  private readonly historyRefreshRequestedByRunId = new Map<string, true>();
+  private readonly terminalSequenceBySource: Record<OpenClawRunEventSource, Map<string, number>> = {
+    agent: new Map(),
+    chat: new Map(),
+  };
+  private readonly lastHistoryRefreshSequenceByRunId = new Map<string, number>();
   private readonly transcriptSequenceBySession = new Map<string, number>();
 
   acceptEvent(
     source: OpenClawRunEventSource,
     runId: unknown,
     sequence: unknown,
+    descriptor: OpenClawRunEventDescriptor = {},
   ): OpenClawRunEventAcceptance {
     if (typeof runId !== 'string' || !runId.trim()) {
       return { accepted: true, requiresHistoryRefresh: false };
@@ -61,14 +188,30 @@ export class OpenClawChatRunProjection {
     const acceptedByRunId = this.sequenceBySource[source];
     const previous = acceptedByRunId.get(runId);
     if (previous !== undefined && sequence <= previous) {
-      return { accepted: false, requiresHistoryRefresh: false };
+      const terminalAtSequence = this.terminalSequenceBySource[source].get(runId);
+      const isTerminalAfterLastDelta = descriptor.terminal === true
+        && sequence === previous
+        && terminalAtSequence !== sequence;
+      if (!isTerminalAfterLastDelta) {
+        return { accepted: false, requiresHistoryRefresh: false };
+      }
     }
     this.rememberSequence(acceptedByRunId, runId, sequence);
 
-    const requiresHistoryRefresh = previous !== undefined
+    if (descriptor.terminal === true) {
+      this.rememberSequence(this.terminalSequenceBySource[source], runId, sequence);
+    }
+
+    // `agent.seq` is the complete run event sequence. `chat.seq` is a sparse
+    // text projection and legitimately jumps over tool/reasoning events.
+    const hasAgentGap = source === 'agent'
+      && previous !== undefined
       && sequence > previous + 1
-      && !this.historyRefreshRequestedByRunId.has(runId);
-    if (requiresHistoryRefresh) this.rememberSequence(this.historyRefreshRequestedByRunId, runId, true);
+      && this.lastHistoryRefreshSequenceByRunId.get(runId) !== sequence;
+    const requiresHistoryRefresh = hasAgentGap;
+    if (requiresHistoryRefresh) {
+      this.rememberSequence(this.lastHistoryRefreshSequenceByRunId, runId, sequence);
+    }
     return { accepted: true, requiresHistoryRefresh };
   }
 
@@ -88,11 +231,14 @@ export class OpenClawChatRunProjection {
   }
 
   begin(sessionKey: string, runId: string): OpenClawRunStart | null {
+    this.anonymousActiveSessions.delete(sessionKey);
     return this.fence.begin(sessionKey, runId);
   }
 
   claimTerminal(sessionKey: string, runId: string): OpenClawRunLease | null {
-    return this.fence.claimTerminal(sessionKey, runId);
+    const lease = this.fence.claimTerminal(sessionKey, runId);
+    if (lease) this.anonymousActiveSessions.delete(sessionKey);
+    return lease;
   }
 
   active(sessionKey: string, runId?: string): OpenClawRunLease | null {
@@ -100,22 +246,53 @@ export class OpenClawChatRunProjection {
   }
 
   complete(lease: OpenClawRunLease): boolean {
-    return this.fence.complete(lease);
+    const completed = this.fence.complete(lease);
+    if (completed) this.anonymousActiveSessions.delete(lease.sessionKey);
+    return completed;
   }
 
   invalidate(sessionKey: string): void {
+    this.anonymousActiveSessions.delete(sessionKey);
+    this.transcriptSequenceBySession.delete(sessionKey);
     this.fence.invalidate(sessionKey);
   }
 
   activeSessionKeys(): string[] {
-    return this.fence.activeSessionKeys();
+    return [...new Set([
+      ...this.fence.activeSessionKeys(),
+      ...this.anonymousActiveSessions,
+    ])];
+  }
+
+  hasActiveSession(sessionKey: string): boolean {
+    return Boolean(this.fence.active(sessionKey)) || this.anonymousActiveSessions.has(sessionKey);
+  }
+
+  /** Adopt the exact run id from `chat.history.inFlightRun`. */
+  adoptInFlightRun(sessionKey: string, runId: string): OpenClawSessionRunReconciliation {
+    this.anonymousActiveSessions.delete(sessionKey);
+    const adopted = this.fence.adopt(sessionKey, runId);
+    return {
+      sessionKey,
+      state: 'active',
+      activeRunIds: [runId],
+      activeRunId: adopted.lease.runId,
+      ...(adopted.replacedRunId ? { replacedRunId: adopted.replacedRunId } : {}),
+    };
   }
 
   reconcileSessionSnapshots(
     sessions: unknown[],
     pendingSessionKeys: Iterable<string>,
+    options: OpenClawSessionReconciliationOptions = {},
   ): OpenClawSessionRunReconciliation[] {
     const snapshots = this.snapshotBySession(sessions);
+    const observedSessionKeys = new Set(
+      sessions.flatMap((raw) => {
+        const sessionKey = this.readSessionKey(raw);
+        return sessionKey ? [sessionKey] : [];
+      }),
+    );
 
     // A run can be created outside this renderer (another client, a channel,
     // or a restored Gateway). It must still enter the same authoritative
@@ -128,16 +305,47 @@ export class OpenClawChatRunProjection {
     const decisions: OpenClawSessionRunReconciliation[] = [];
     for (const sessionKey of sessionKeys) {
       const snapshot = snapshots.get(sessionKey);
-      if (!snapshot) continue;
+      if (!snapshot) {
+        // Older gateways can return the row without live-run fields. That is
+        // unknown state, not evidence that the session or run disappeared.
+        if (observedSessionKeys.has(sessionKey)) continue;
+        if (!options.settleMissing) continue;
+        const active = this.fence.active(sessionKey);
+        if (active) this.fence.complete(active);
+        this.anonymousActiveSessions.delete(sessionKey);
+        decisions.push({ sessionKey, state: 'settled', activeRunIds: [] });
+        continue;
+      }
       if (snapshot.hasActiveRun) {
-        decisions.push(this.reconcileActiveSnapshot(snapshot, true));
+        const decision = this.reconcileActiveSnapshot(snapshot, true);
+        if (decision) decisions.push(decision);
         continue;
       }
       const active = this.fence.active(sessionKey);
       if (active) this.fence.complete(active);
+      this.anonymousActiveSessions.delete(sessionKey);
       decisions.push({ sessionKey, state: 'settled', activeRunIds: [] });
     }
     return decisions;
+  }
+
+  unresolvedSessionKeys(
+    sessions: unknown[],
+    pendingSessionKeys: Iterable<string>,
+    options: OpenClawSessionReconciliationOptions = {},
+  ): string[] {
+    const snapshotSessionKeys = new Set(this.snapshotBySession(sessions).keys());
+    const observedSessionKeys = new Set(
+      sessions.flatMap((raw) => {
+        const sessionKey = this.readSessionKey(raw);
+        return sessionKey ? [sessionKey] : [];
+      }),
+    );
+    return [...new Set(pendingSessionKeys)].filter((sessionKey) => {
+      if (snapshotSessionKeys.has(sessionKey)) return false;
+      if (options.settleMissing && !observedSessionKeys.has(sessionKey)) return false;
+      return true;
+    });
   }
 
   /**
@@ -149,7 +357,9 @@ export class OpenClawChatRunProjection {
   observeActiveSessionSnapshots(sessions: unknown[]): OpenClawSessionRunReconciliation[] {
     const decisions: OpenClawSessionRunReconciliation[] = [];
     for (const snapshot of this.snapshotBySession(sessions).values()) {
-      if (snapshot.hasActiveRun) decisions.push(this.reconcileActiveSnapshot(snapshot, false));
+      if (!snapshot.hasActiveRun) continue;
+      const decision = this.reconcileActiveSnapshot(snapshot, false);
+      if (decision) decisions.push(decision);
     }
     return decisions;
   }
@@ -157,34 +367,41 @@ export class OpenClawChatRunProjection {
   private reconcileActiveSnapshot(
     snapshot: SessionRunSnapshot,
     allowReplacingCurrentRun: boolean,
-  ): OpenClawSessionRunReconciliation {
+  ): OpenClawSessionRunReconciliation | null {
     const current = this.fence.active(snapshot.sessionKey);
     let activeRunId: string | undefined;
     let replacedRunId: string | undefined;
 
     if (snapshot.activeRunIds.length === 0) {
-      // A true flag without identities can represent another OpenClaw
-      // projection. During reconnect, retire an old local identity so it
-      // cannot claim future terminal events. During ordinary refresh, keep a
-      // current local lease until a stronger observation arrives.
-      if (current && allowReplacingCurrentRun) {
-        replacedRunId = current.runId;
-        this.fence.invalidate(snapshot.sessionKey);
-      } else if (current) {
+      // OpenClaw documents that a true hasActiveRun without an exact run-id
+      // membership can describe another runtime projection. Authoritative
+      // reconciliation must therefore release a retained local lease; an
+      // ordinary refresh remains observational and keeps it until stronger
+      // evidence arrives.
+      if (!allowReplacingCurrentRun && current) {
         activeRunId = current.runId;
+      } else if (allowReplacingCurrentRun) {
+        if (current && this.fence.complete(current)) replacedRunId = current.runId;
+        this.anonymousActiveSessions.add(snapshot.sessionKey);
+      } else if (!this.anonymousActiveSessions.has(snapshot.sessionKey)) {
+        return null;
       }
     } else if (current && snapshot.activeRunIds.includes(current.runId)) {
       activeRunId = current.runId;
     } else if (current && !allowReplacingCurrentRun) {
       activeRunId = current.runId;
     } else {
-      const adopted = this.fence.begin(snapshot.sessionKey, snapshot.activeRunIds[0]);
+      this.anonymousActiveSessions.delete(snapshot.sessionKey);
+      const adopted = this.adoptSnapshotRun(snapshot);
       if (adopted) {
         activeRunId = adopted.lease.runId;
         replacedRunId = adopted.replacedRunId ?? undefined;
-      } else if (current && allowReplacingCurrentRun) {
-        replacedRunId = current.runId;
-        this.fence.invalidate(snapshot.sessionKey);
+      } else if (allowReplacingCurrentRun) {
+        if (current && this.fence.complete(current)) replacedRunId = current.runId;
+        this.anonymousActiveSessions.add(snapshot.sessionKey);
+      } else {
+        // An ordinary refresh cannot resurrect an already-terminal run.
+        return null;
       }
     }
 
@@ -197,6 +414,14 @@ export class OpenClawChatRunProjection {
     };
   }
 
+  private adoptSnapshotRun(snapshot: SessionRunSnapshot): SessionRunStart | null {
+    for (const runId of snapshot.activeRunIds) {
+      const adopted = this.fence.begin(snapshot.sessionKey, runId);
+      if (adopted) return adopted;
+    }
+    return null;
+  }
+
   private snapshotBySession(sessions: unknown[]): Map<string, SessionRunSnapshot> {
     const snapshots = new Map<string, SessionRunSnapshot>();
     for (const raw of sessions) {
@@ -207,14 +432,10 @@ export class OpenClawChatRunProjection {
   }
 
   private parseSessionRunSnapshot(raw: unknown): SessionRunSnapshot | null {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const sessionKey = this.readSessionKey(raw);
+    if (!sessionKey || !raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const row = raw as Record<string, unknown>;
-    const sessionKey = typeof row.key === 'string'
-      ? row.key.trim()
-      : typeof row.sessionKey === 'string'
-        ? row.sessionKey.trim()
-        : '';
-    if (!sessionKey || typeof row.hasActiveRun !== 'boolean') return null;
+    if (typeof row.hasActiveRun !== 'boolean') return null;
     const activeRunIds = Array.isArray(row.activeRunIds)
       ? [...new Set(row.activeRunIds.flatMap((runId) => {
           const normalized = typeof runId === 'string' ? runId.trim() : '';
@@ -222,6 +443,16 @@ export class OpenClawChatRunProjection {
         }))]
       : [];
     return { sessionKey, hasActiveRun: row.hasActiveRun, activeRunIds };
+  }
+
+  private readSessionKey(raw: unknown): string {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return '';
+    const row = raw as Record<string, unknown>;
+    return typeof row.key === 'string'
+      ? row.key.trim()
+      : typeof row.sessionKey === 'string'
+        ? row.sessionKey.trim()
+        : '';
   }
 
   private rememberSequence<T>(target: Map<string, T>, key: string, value: T): void {

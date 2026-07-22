@@ -7,13 +7,16 @@
 import {
   GatewayConnection,
   GatewayDisconnectedError,
+  GatewayRpcError,
   type GatewayCallbacks,
   type GatewayRequestOptions,
   type GatewayConnectionOptions,
   type ChatMessage,
   type MediaInfo,
 } from './Connection';
-import { ChatHandler } from './ChatHandler';
+import { ChatHandler, type ChatSessionRunObservation } from './ChatHandler';
+import { parseOpenClawSessionListSnapshot } from './OpenClawChatRunProjection';
+import { OpenClawSessionRunReconciler } from './OpenClawSessionRunResolver';
 import {
   OpenClawSessionTranscriptSubscription,
   type OpenClawTranscriptTarget,
@@ -37,6 +40,16 @@ export type {
   GatewayRequestOptions,
 };
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
+export { GatewayConnectionFenceError, GatewayDisconnectedError, GatewayRpcError } from './Connection';
+
+export class GatewaySessionMutationRejectedError extends Error {
+  readonly code = 'SESSION_MUTATION_REJECTED';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'GatewaySessionMutationRejectedError';
+  }
+}
 
 export interface GatewayAgentCreateParams {
   name: string;
@@ -44,6 +57,28 @@ export interface GatewayAgentCreateParams {
   model?: string;
   emoji?: string;
   avatar?: string;
+}
+
+export interface GatewayChatSendDeliveryUncertain {
+  deliveryUncertain: true;
+  runId: string;
+}
+
+interface GatewayChatSendDeliveryObserved {
+  deliveryObserved: true;
+  runId: string;
+}
+
+export function isGatewayChatSendDeliveryUncertain(
+  value: unknown,
+): value is GatewayChatSendDeliveryUncertain {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && (value as Record<string, unknown>).deliveryUncertain === true
+    && typeof (value as Record<string, unknown>).runId === 'string',
+  );
 }
 
 export interface GatewayAgentCreateResult {
@@ -72,6 +107,7 @@ const connection = new GatewayConnection();
 const chatHandler = new ChatHandler(connection);
 const transcriptSubscription = new OpenClawSessionTranscriptSubscription(connection);
 const SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS = 5_000;
+const RUN_STATE_LOOKUP_TIMEOUT_MS = 5_000;
 
 export { GatewayAgentDisplayNameUpdateError };
 
@@ -134,16 +170,24 @@ export function assertVerifiedSessionMutationResult(
       : typeof response?.message === 'string'
         ? response.message
         : `OpenClaw returned an unverifiable response for session ${action}`;
-    throw new Error(detail);
+    throw new GatewaySessionMutationRejectedError(detail);
   }
   if (expectedSessionKey !== undefined) {
     const returnedKey = typeof response?.key === 'string' ? response.key.trim() : '';
     if (!returnedKey || returnedKey !== expectedSessionKey) {
-      throw new Error(`OpenClaw returned a different session key for ${action}`);
+      throw new GatewaySessionMutationRejectedError(`OpenClaw returned a different session key for ${action}`);
     }
   }
   if (action === 'delete' && response.deleted !== true) {
-    throw new Error('OpenClaw did not confirm that the session was deleted');
+    throw new GatewaySessionMutationRejectedError('OpenClaw did not confirm that the session was deleted');
+  }
+  if (action === 'reset') {
+    const entry = response.entry !== null && typeof response.entry === 'object' && !Array.isArray(response.entry)
+      ? response.entry as Record<string, unknown>
+      : null;
+    if (typeof entry?.sessionId !== 'string' || !entry.sessionId.trim()) {
+      throw new GatewaySessionMutationRejectedError('OpenClaw did not return the reset session identity');
+    }
   }
   return;
 }
@@ -218,6 +262,33 @@ const requestPrivileged = createPrivilegedRequester(connection);
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
 });
+const sessionRunReconciler = new OpenClawSessionRunReconciler({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, connectionId) => connection.requestFenced(
+    method,
+    params,
+    connectionId,
+    { timeoutMs: RUN_STATE_LOOKUP_TIMEOUT_MS },
+  ),
+  captureObservation: (sessionKey) => chatHandler.captureSessionRunObservation(sessionKey),
+  isObservationCurrent: (observation) => (
+    chatHandler.isSessionRunObservationCurrent(observation as ChatSessionRunObservation)
+  ),
+  applyMissing: (sessionKey) => chatHandler.settleMissingSession(sessionKey),
+  applyHistory: (sessionKey, response, observation) => {
+    chatHandler.reconcileHistoryRunState(
+      sessionKey,
+      response,
+      observation as ChatSessionRunObservation,
+    );
+  },
+  onError: (sessionKey, error) => {
+    debugWarn('gateway', `[gateway] Could not reconcile run state for ${sessionKey}:`, error);
+  },
+});
 
 // Collaboration plugin streams are refresh hints, not chat/agent activity.
 // Route them through the typed bridge before the generic ChatHandler path.
@@ -231,8 +302,37 @@ export const gateway = {
   // Live chat projection
   invalidateChatSession(sessionKey: string) { chatHandler.invalidateSession(sessionKey); },
   clearChatTransportProjection() { chatHandler.clearTransportProjection(); },
-  reconcileChatSessionRuns(sessions: unknown[]) { chatHandler.reconcileSessionRuns(sessions); },
+  capturePendingChatSessionRunObservations() {
+    return chatHandler.capturePendingSessionRunObservations();
+  },
+  reconcileChatSessionRuns(
+    response: unknown,
+    observations?: readonly ChatSessionRunObservation[],
+  ) {
+    const snapshot = parseOpenClawSessionListSnapshot(response);
+    const unresolved = chatHandler.reconcileSessionRuns(
+      snapshot.sessions,
+      { settleMissing: snapshot.complete },
+      observations,
+    );
+    if (unresolved.length > 0) {
+      void Promise.all(unresolved.map((sessionKey) => sessionRunReconciler.reconcile(sessionKey)));
+    }
+  },
   observeActiveChatSessionRuns(sessions: unknown[]) { chatHandler.observeActiveSessionRuns(sessions); },
+  captureChatSessionRunObservation(sessionKey: string) {
+    return chatHandler.captureSessionRunObservation(sessionKey);
+  },
+  reconcileChatSessionRun(sessionKey: string) {
+    return sessionRunReconciler.reconcile(sessionKey);
+  },
+  reconcileChatHistoryRunState(
+    sessionKey: string,
+    response: unknown,
+    observation?: ChatSessionRunObservation,
+  ) {
+    chatHandler.reconcileHistoryRunState(sessionKey, response, observation);
+  },
   async synchronizeSessionTranscript(target: OpenClawTranscriptTarget | null) {
     if (!connection.isConnected()) return;
     await transcriptSubscription.synchronize(target);
@@ -270,25 +370,56 @@ export const gateway = {
     });
 
     const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
-    return sessionCommandCoordinator.runMutation(sessionKey, async () => {
-      // The renderer owns the only visible, cancellable retry queue. Keeping a
-      // second transport queue would acknowledge work that the UI cannot inspect.
-      if (!connection.isConnected()) throw new GatewayDisconnectedError();
+    chatHandler.beginPendingSend(sessionKey, clientMessageId);
+    let requestDispatched = false;
+    try {
+      const result = await sessionCommandCoordinator.runMutation(sessionKey, async () => {
+        // The renderer owns the only visible, cancellable retry queue. Keeping a
+        // second transport queue would acknowledge work that the UI cannot inspect.
+        if (!connection.isConnected()) throw new GatewayDisconnectedError();
 
-      // Enable reasoning stream lazily only when the user actually sends a message.
-      await connection.ensureReasoningStream(sessionKey);
-      return connection.request('chat.send', {
-        sessionKey,
-        ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
-        message,
-        idempotencyKey: clientMessageId,
-        ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
+        // Enable reasoning stream lazily only when the user actually sends a message.
+        await connection.ensureReasoningStream(sessionKey);
+        if (!connection.isConnected()) throw new GatewayDisconnectedError();
+        requestDispatched = true;
+        return connection.request('chat.send', {
+          sessionKey,
+          ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
+          message,
+          idempotencyKey: clientMessageId,
+          ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
+        });
       });
-    });
+      const acknowledgement = chatHandler.reconcileSendAcknowledgement(
+        sessionKey,
+        clientMessageId,
+        result,
+      );
+      if (acknowledgement !== 'unknown') return result;
+      if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
+        return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
+      }
+      return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
+    } catch (error) {
+      if (chatHandler.isSendObserved(sessionKey, clientMessageId)) {
+        return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
+      }
+      if (requestDispatched && !(error instanceof GatewayRpcError)) {
+        if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
+          return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
+        }
+        return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
+      }
+      chatHandler.failPendingSend(sessionKey, clientMessageId);
+      throw error;
+    }
   },
 
   // Sessions & Agents
   async getSessions() { return connection.request('sessions.list', {}); },
+  async describeSession(sessionKey: string) {
+    return connection.request('sessions.describe', { key: sessionKey });
+  },
   async getAgents() { return connection.request('agents.list', {}); },
   async createAgent(agent: GatewayAgentCreatePayload) { return agentManagement.create(agent); },
   async updateAgent(agentId: string, patch: GatewayAgentUpdateParams) {
@@ -321,7 +452,12 @@ export const gateway = {
     // Abort is a control-plane request. Waiting behind a long-running
     // chat.send request makes it impossible to stop a response whose send
     // acknowledgement was lost or delayed.
-    return connection.request('chat.abort', { sessionKey });
+    const runId = chatHandler.abortRunId(sessionKey);
+    const result = await connection.request('chat.abort', {
+      sessionKey,
+      ...(runId ? { runId } : {}),
+    });
+    return chatHandler.reconcileAbortAcknowledgement(sessionKey, result);
   },
   async compactSession(sessionKey = 'agent:main:main') {
     return sessionCommandCoordinator.runMutation(
@@ -339,7 +475,7 @@ export const gateway = {
     return sessionCommandCoordinator.runMutation(
       sessionKey,
       async () => {
-        const result = await connection.request('sessions.delete', {
+        const result = await requestPrivileged<Record<string, unknown>>('sessions.delete', {
           key: sessionKey,
           deleteTranscript,
           ...(expectedSessionId ? { expectedSessionId } : {}),
@@ -370,11 +506,17 @@ export const gateway = {
     return sessionCommandCoordinator.runMutation(
       sessionKey,
       async () => {
-        const result = await connection.requestFenced('sessions.delete', {
+        if (connection.getAttestedConnectionId() !== expectedConnectionId) {
+          throw new Error('The verified Gateway connection changed before session deletion');
+        }
+        const result = await requestPrivileged<Record<string, unknown>>('sessions.delete', {
           key: sessionKey,
           deleteTranscript,
           expectedSessionId,
-        }, expectedConnectionId);
+        });
+        if (connection.getAttestedConnectionId() !== expectedConnectionId) {
+          throw new Error('The verified Gateway connection changed while session deletion was completing');
+        }
         assertVerifiedSessionMutationResult(result, 'delete', sessionKey);
         await cleanupSessionArtifacts(sessionKey);
         return result;

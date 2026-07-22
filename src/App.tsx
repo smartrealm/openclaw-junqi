@@ -16,9 +16,11 @@ const BootTimelineOverlay = lazy(() => import('@/components/BootTimelineOverlay'
 const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
 const DynamicIslandRuntime = lazy(() => import('@/dynamic-island/DynamicIslandRuntime'));
 import { useChatStore } from '@/stores/chatStore';
+import { useCollaborationStore } from '@/stores/collaborationStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
+import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
 import {
@@ -33,7 +35,9 @@ import {
   OPENCLAW_UPDATE_MAINTENANCE_STARTED,
 } from '@/services/openclawUpdateLifecycle';
 import { changeLanguage } from '@/i18n';
-import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
+import { clearSessionModelPref, getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
+import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
+import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { applyConfirmedSessionDeletion } from '@/utils/sessionDelete';
 import { createLatestRequestGate, isSessionDeleted } from '@/utils/sessionLifecycle';
@@ -95,6 +99,7 @@ export default function App() {
     finalizeStreamingMessage,
     setConnectionStatus,
     setIsTyping,
+    settleSessionRunUi,
     incrementSessionUnread,
     markSessionCompleted,
     setSessions,
@@ -228,9 +233,13 @@ export default function App() {
       // Gateway labels remain the sole source of truth.
       await migrateLegacySessionLabelsOnce();
       if (!requestGate.isCurrent(requestId)) return false;
+      const runObservations = options.reconcileChatRuns
+        ? gateway.capturePendingChatSessionRunObservations()
+        : undefined;
       const result = await gateway.getSessions();
       if (!requestGate.isCurrent(requestId)) return false;
-      const rawSessions = Array.isArray(result?.sessions) ? result.sessions : [];
+      const sessionListSnapshot = parseOpenClawSessionListSnapshot(result);
+      const rawSessions = sessionListSnapshot.sessions;
       // Gateway-level defaults (configured model, context window)
       const defaults = result?.defaults
         ? { model: result.defaults.model ?? null, contextTokens: result.defaults.contextTokens ?? null }
@@ -264,8 +273,10 @@ export default function App() {
           spawnedBy: typeof s.spawnedBy === 'string' ? s.spawnedBy : undefined,
           parentSessionKey: typeof s.parentSessionKey === 'string' ? s.parentSessionKey : undefined,
           status: typeof s.status === 'string' ? s.status : undefined,
-          hasActiveRun: s.hasActiveRun === true,
-          hasActiveSubagentRun: s.hasActiveSubagentRun === true,
+          // Keep an omitted run field as unknown. Treating it as `false`
+          // races local streaming state on older Gateway versions.
+          hasActiveRun: typeof s.hasActiveRun === 'boolean' ? s.hasActiveRun : undefined,
+          hasActiveSubagentRun: typeof s.hasActiveSubagentRun === 'boolean' ? s.hasActiveSubagentRun : undefined,
           subagentRunState: typeof s.subagentRunState === 'string' ? s.subagentRunState : undefined,
           systemSent: s.systemSent === true,
           // Per-session metadata for TitleBar
@@ -279,9 +290,9 @@ export default function App() {
       });
       // Always sync sessions/defaults, even when the session list is currently empty.
       // This keeps TitleBar model in sync from gateway defaults after config changes.
-      setSessions(sessions, defaults);
+      setSessions(sessions, defaults, { completeSnapshot: sessionListSnapshot.complete });
       if (options.reconcileChatRuns) {
-        gateway.reconcileChatSessionRuns(rawSessions);
+        gateway.reconcileChatSessionRuns(result, runObservations);
       } else {
         gateway.observeActiveChatSessionRuns(rawSessions);
       }
@@ -610,9 +621,21 @@ export default function App() {
 
   // ── Auto-drain the message queue when an AI reply completes ──
   // Fires once per response (on the typing true→false transition) for any session,
-  // covering both streaming (finalizeStreamingMessage) and non-streaming (onMessage)
-  // completion paths — both set typingBySession[key]=false. drainQueue re-arms typing
+  // covering stream terminals and authoritative run reconciliation. Both
+  // settle typingBySession[key]; drainQueue re-arms typing
   // so the next completion drains the next item, until the queue is empty.
+  useEffect(() => {
+    return subscribeSessionIdentityTransitions((transition) => {
+      sessionTranscriptFence.invalidate(transition.sessionKey);
+      gateway.invalidateChatSession(transition.sessionKey);
+      clearSessionModelPref(transition.sessionKey);
+      useCollaborationStore.getState().clearSessionProjection({
+        sessionKey: transition.sessionKey,
+        sessionId: transition.previousSessionId,
+      });
+    });
+  }, []);
+
   useEffect(() => {
     return useChatStore.subscribe((state, prev) => {
       const cur = state.typingBySession;
@@ -629,6 +652,16 @@ export default function App() {
   // ── Gateway Setup ──
   useEffect(() => {
     if (setupComplete !== true) return;
+
+    const refreshDurableTranscript = (sessionKey: string) => {
+      if (isSessionDeleted(sessionKey)) return;
+      const { activeSessionKey, historyLoader } = useChatStore.getState();
+      if (!historyLoader) return;
+      void historyLoader(sessionKey === activeSessionKey ? undefined : sessionKey, {
+        force: true,
+        background: sessionKey !== activeSessionKey,
+      });
+    };
 
     gateway.setCallbacks({
       onMessage: (msg) => {
@@ -691,9 +724,9 @@ export default function App() {
           },
           sessionKey,
         );
-        // The typing transition drains the next queued message, so finalize
-        // this response before releasing the session queue.
-        setIsTyping(false, sessionKey);
+        // Finalize the message before atomically releasing every transient run
+        // indicator; the typing transition then drains the next queued turn.
+        settleSessionRunUi(sessionKey);
         const { activeSessionKey: currentSessionKey, historyLoader } = useChatStore.getState();
         if (sessionKey !== currentSessionKey) {
           markSessionCompleted(sessionKey);
@@ -723,37 +756,45 @@ export default function App() {
           chat.setIsTyping(true, sessionKey);
           return;
         }
-
-        const settle = () => {
-          if (!isSessionDeleted(sessionKey)) useChatStore.getState().setIsTyping(false, sessionKey);
-        };
+        // The run projection owns terminal state. End the visible activity
+        // immediately; durable history reconciliation may continue in the
+        // background without keeping dots, timers or the stop action alive.
+        chat.settleSessionRunUi(sessionKey);
         const { activeSessionKey, historyLoader } = chat;
-        if (!historyLoader) {
-          settle();
-          return;
-        }
+        if (!historyLoader) return;
         void historyLoader(sessionKey === activeSessionKey ? undefined : sessionKey, {
           force: true,
           background: sessionKey !== activeSessionKey,
-        }).finally(settle);
+        });
       },
       onStreamReconciliationNeeded: (sessionKey) => {
-        if (isSessionDeleted(sessionKey)) return;
-        const { activeSessionKey, historyLoader } = useChatStore.getState();
-        if (!historyLoader) return;
-        void historyLoader(sessionKey === activeSessionKey ? undefined : sessionKey, {
-          force: true,
-          background: sessionKey !== activeSessionKey,
-        });
+        refreshDurableTranscript(sessionKey);
+        void gateway.reconcileChatSessionRun(sessionKey);
+      },
+      onSessionRunReconciliationNeeded: (sessionKey) => {
+        void gateway.reconcileChatSessionRun(sessionKey);
       },
       onTranscriptChanged: (sessionKey) => {
-        if (isSessionDeleted(sessionKey)) return;
-        const { activeSessionKey, historyLoader } = useChatStore.getState();
-        if (!historyLoader) return;
-        void historyLoader(sessionKey === activeSessionKey ? undefined : sessionKey, {
-          force: true,
-          background: sessionKey !== activeSessionKey,
-        });
+        refreshDurableTranscript(sessionKey);
+      },
+      onTranscriptMessage: (notice) => {
+        if (notice.liveProjected || isSessionDeleted(notice.sessionKey)) return;
+        const currentSessionKey = useChatStore.getState().activeSessionKey;
+        if (notice.sessionKey !== currentSessionKey) {
+          incrementSessionUnread(notice.sessionKey);
+          if (notice.role === 'assistant') markSessionCompleted(notice.sessionKey);
+        }
+        const isOnChat = window.location.hash === '#/chat'
+          || window.location.hash.startsWith('#/chat?');
+        if (!document.hasFocus() || !isOnChat || notice.sessionKey !== currentSessionKey) {
+          void notifyLazy({
+            type: notice.role === 'assistant' ? 'task_complete' : 'message',
+            title: notice.role === 'assistant'
+              ? t('notifications.replyComplete')
+              : t('notifications.newMessage'),
+            body: notice.text.substring(0, 120),
+          });
+        }
       },
       onRetryState: (retry) => {
         if (retry.phase === 'exhausted' && manualGatewayRecoveryAwaitingConnectionRef.current) {
@@ -1020,7 +1061,7 @@ export default function App() {
       ) {
         applyConfirmedSessionDeletion(detail.sessionKey);
       }
-      setTimeout(() => void loadSessions(), 250);
+      setTimeout(() => void loadSessions({ reconcileChatRuns: true }), 250);
     };
     window.addEventListener('aegis:sessions-changed', handleSessionsChanged);
 

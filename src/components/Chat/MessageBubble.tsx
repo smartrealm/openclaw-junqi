@@ -14,6 +14,7 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { getDirection } from '@/i18n';
 import type { MessageBlock, Artifact, MetaItem } from '@/types/RenderBlock';
+import type { ResponseGroupMessagePosition } from '@/processing/buildResponseGroups';
 import { Icon } from '@/components/shared/icons';
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import clsx from 'clsx';
@@ -217,6 +218,8 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
 
 interface MessageBubbleProps {
   block: MessageBlock;
+  sessionKey?: string;
+  groupPosition?: ResponseGroupMessagePosition;
   onRecall?: (content: string) => void;
   onRetry?: () => void;
   onErrorAction?: (action: string) => void;
@@ -230,6 +233,197 @@ interface MessageBubbleProps {
     state: 'confirming' | 'ready' | 'active';
     onClick?: () => void;
   };
+}
+
+function agentIdFromSessionKey(sessionKey?: string | null): string {
+  if (!sessionKey) return 'main';
+  const parts = sessionKey.split(':');
+  return parts[0] === 'agent' && parts[1] ? parts[1] : 'main';
+}
+
+function useAgentPresentation(sessionKey?: string | null) {
+  const { t } = useTranslation();
+  const agents = useGatewayDataStore((state) => state.agents);
+  const agentId = agentIdFromSessionKey(sessionKey);
+  const name = agents.find((agent) => agent.id === agentId)?.name
+    || (agentId === 'main' ? t('agents.mainAgent', 'Main Agent') : agentId);
+  return { name, letter: name.charAt(0) || 'M' };
+}
+
+export function AssistantResponseAvatar({
+  sessionKey,
+  className,
+}: {
+  sessionKey?: string | null;
+  className?: string;
+}) {
+  const agent = useAgentPresentation(sessionKey);
+  return (
+    <div
+      className={clsx(
+        'w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-sm ring-1 ring-aegis-primary/20',
+        className,
+      )}
+      style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--aegis-primary)), rgb(var(--aegis-primary-deep)))' }}
+      aria-label={agent.name}
+    >
+      {agent.name === 'Claude Code' ? (
+        <Sparkles size={14} className="text-white" />
+      ) : agent.name === 'Codex' ? (
+        <Bot size={14} className="text-white" />
+      ) : (
+        <span className="text-[10px] font-bold text-white">{agent.letter}</span>
+      )}
+    </div>
+  );
+}
+
+function compactTokenCount(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}m`;
+  if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(value < 10000 ? 1 : 0).replace(/\.0$/, '')}k`;
+  return String(value);
+}
+
+function responseDuration(block?: MessageBlock | null): string {
+  const context = block?.meta?.find((item) => item.kind === 'context')?.content;
+  if (!context) return '';
+  try {
+    const duration = (JSON.parse(context) as { duration?: number }).duration;
+    if (typeof duration !== 'number' || !Number.isFinite(duration)) return '';
+    if (duration < 60) return `${duration}s`;
+    return `${Math.floor(duration / 60)}m ${duration % 60}s`;
+  } catch {
+    return '';
+  }
+}
+
+export function AssistantResponseFooter({
+  sessionKey,
+  block,
+  timestamp,
+  status = 'final',
+  className,
+}: {
+  sessionKey?: string | null;
+  block?: MessageBlock | null;
+  timestamp: string;
+  status?: 'streaming' | 'final' | 'error' | 'aborted';
+  className?: string;
+}) {
+  const { t, i18n } = useTranslation();
+  const agent = useAgentPresentation(sessionKey);
+  const messageDate = (() => {
+    const parsed = new Date(timestamp);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  })();
+  const dateLabel = messageDate
+    ? (i18n.language.startsWith('zh')
+        ? `${messageDate.getFullYear()}年${messageDate.getMonth() + 1}月${messageDate.getDate()}日`
+        : messageDate.toLocaleString(i18n.language, { year: 'numeric', month: 'short', day: 'numeric' }))
+    : '';
+  const timeLabel = messageDate
+    ? `${String(messageDate.getHours()).padStart(2, '0')}:${String(messageDate.getMinutes()).padStart(2, '0')}`
+    : '';
+  const contextMeta = block?.meta?.find((item) => item.kind === 'context')?.content;
+  const context = contextMeta
+    ? (() => {
+        try {
+          return JSON.parse(contextMeta) as {
+            input?: number;
+            inputTokens?: number;
+            output?: number;
+            outputTokens?: number;
+            cacheRead?: number;
+            cacheReadInputTokens?: number;
+            cacheWrite?: number;
+            cacheCreationInputTokens?: number;
+            contextPercent?: number | null;
+            model?: string;
+          };
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+  const input = context?.input ?? context?.inputTokens ?? 0;
+  const output = context?.output ?? context?.outputTokens ?? 0;
+  const cacheRead = context?.cacheRead ?? context?.cacheReadInputTokens ?? 0;
+  const cacheWrite = context?.cacheWrite ?? context?.cacheCreationInputTokens ?? 0;
+  const duration = responseDuration(block);
+  const contextModel = context?.model || block?.model || '';
+  const hasContext = input > 0
+    || output > 0
+    || cacheRead > 0
+    || cacheWrite > 0
+    || context?.contextPercent != null
+    || Boolean(contextModel)
+    || Boolean(duration);
+
+  return (
+    <div
+      className={clsx('flex flex-wrap items-center gap-x-1.5 gap-y-1 select-none', className)}
+      data-response-footer
+    >
+      {(status === 'error' || status === 'aborted') && (
+        <StatusIcon
+          status={status === 'error' ? 'error' : 'cancelled'}
+          size={13}
+        />
+      )}
+      <span className="text-[11px] font-medium text-aegis-text-muted">{agent.name}</span>
+      <span className="inline-flex items-center gap-1 text-[10px] text-aegis-text-muted">
+        <span>{dateLabel}</span>
+        <time className="tabular-nums" dateTime={timestamp}>{timeLabel}</time>
+        {duration && (
+          <>
+            <span className="text-aegis-border">·</span>
+            <span className="tabular-nums text-aegis-text-dim">{duration}</span>
+          </>
+        )}
+      </span>
+      {hasContext && (
+        <details className="group/context inline-flex items-center gap-1.5 text-[10px] text-aegis-text-dim font-mono tabular-nums">
+          <summary
+            className={clsx(
+              'inline-flex min-h-[22px] cursor-pointer list-none items-center gap-1 rounded-full border px-1.5 py-0.5 select-none',
+              'border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] transition-colors',
+              'hover:border-aegis-primary/35 hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45',
+              '[&::-webkit-details-marker]:hidden',
+            )}
+            title={t('chat.showContextDetails', '显示消息上下文详情')}
+          >
+            <ChevronRight size={10} className="shrink-0 transition-transform group-open/context:rotate-90" />
+            <span>{t('chat.context', '上下文')}</span>
+          </summary>
+          <span className="inline-flex items-center gap-2 rounded-full border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] px-2 py-0.5">
+            {input > 0 && <span className="text-blue-400">↑{compactTokenCount(input)}</span>}
+            {output > 0 && <span className="text-emerald-400">↓{compactTokenCount(output)}</span>}
+            {cacheRead > 0 && <span className="text-aegis-text-dim/80">R{compactTokenCount(cacheRead)}</span>}
+            {cacheWrite > 0 && <span className="text-aegis-text-dim/80">W{compactTokenCount(cacheWrite)}</span>}
+            {context?.contextPercent != null && (
+              <span className={clsx(
+                context.contextPercent >= 90
+                  ? 'text-aegis-danger'
+                  : context.contextPercent >= 75
+                    ? 'text-aegis-warning'
+                    : 'text-aegis-text-dim',
+              )}>
+                {context.contextPercent}% {t('chat.context', '上下文')}
+              </span>
+            )}
+            {duration && <span>{t('chat.contextDuration', '耗时')} <span className="text-aegis-text">{duration}</span></span>}
+            {contextModel && (
+              <span className="rounded bg-[rgb(var(--aegis-overlay)/0.06)] px-1.5 py-px text-aegis-text">
+                {contextModel.includes('/') ? contextModel.split('/').pop() : contextModel}
+              </span>
+            )}
+          </span>
+        </details>
+      )}
+    </div>
+  );
 }
 
 function isLocalFilePath(value?: string) {
@@ -400,47 +594,17 @@ const markdownComponents = {
 };
 
 export const MessageBubble = memo(function MessageBubble({
-  block, onRecall, onRetry, onErrorAction, collaborationAction,
+  block, sessionKey, onRecall, onRetry, onErrorAction, collaborationAction,
   deliveryStatus, deliveryError, outboundAttachments,
   historyTruncated, historyTruncationReason, onLoadFullMessage,
+  groupPosition = 'standalone',
 }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
-  const agents = useGatewayDataStore((s) => s.agents);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
-  const activeAgentId = (() => {
-    if (!activeSessionKey) return 'main';
-    const parts = activeSessionKey.split(':');
-    return parts[0] === 'agent' && parts[1] ? parts[1] : 'main';
-  })();
-  const activeAgentName =
-    agents.find((a) => a.id === activeAgentId)?.name
-    || (activeAgentId === 'main' ? t('agents.mainAgent', 'Main Agent') : activeAgentId);
-  const activeAgentLetter = activeAgentName.charAt(0) || 'M';
+  const responseSessionKey = sessionKey ?? activeSessionKey;
   const [copied, setCopied] = useState(false);
-  const [footerHovered, setFooterHovered] = useState(false);
   const [loadingFullMessage, setLoadingFullMessage] = useState(false);
   const [fullMessageError, setFullMessageError] = useState('');
-  const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
-  const contextContent = contextMeta?.content
-    ? (() => { try { return JSON.parse(contextMeta.content) as { input?: number; inputTokens?: number; output?: number; outputTokens?: number; cacheRead?: number; cacheReadInputTokens?: number; cacheWrite?: number; cacheCreationInputTokens?: number; contextPercent?: number | null; model?: string; formatted?: string; duration?: number }; } catch { return null; } })()
-    : null;
-  const ctxFmt = (n: number) => {
-    if (!Number.isFinite(n)) return '0';
-    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}m`;
-    if (Math.abs(n) >= 1000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0).replace(/\.0$/, '')}k`;
-    return String(n);
-  };
-  const contextInputTokens = contextContent?.input ?? contextContent?.inputTokens ?? 0;
-  const contextOutputTokens = contextContent?.output ?? contextContent?.outputTokens ?? 0;
-  const contextCacheRead = contextContent?.cacheRead ?? contextContent?.cacheReadInputTokens ?? 0;
-  const contextCacheWrite = contextContent?.cacheWrite ?? contextContent?.cacheCreationInputTokens ?? 0;
-  const inlineUsageParts = [
-    contextInputTokens ? `↑${ctxFmt(contextInputTokens)}` : '',
-    contextOutputTokens ? `↓${ctxFmt(contextOutputTokens)}` : '',
-    contextCacheRead ? `R${ctxFmt(contextCacheRead)}` : '',
-    contextCacheWrite ? `W${ctxFmt(contextCacheWrite)}` : '',
-    contextContent?.contextPercent != null ? `${contextContent.contextPercent}% ${t('chat.context', '上下文')}` : '',
-  ].filter(Boolean);
 
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
@@ -485,37 +649,13 @@ function stripInlineCodeTicks(md: string): string {
   // ── Timestamp formatting ──────────────────────────────────────────────────
   const msgDate = (() => { try { const d = new Date(block.timestamp); return isNaN(d.getTime()) ? null : d; } catch { return null; } })();
 
-  const dateLabel = msgDate
-    ? (i18n.language.startsWith('zh')
-        ? `${msgDate.getFullYear()}年${msgDate.getMonth() + 1}月${msgDate.getDate()}日`
-        : msgDate.toLocaleString(i18n.language, { year: 'numeric', month: 'short', day: 'numeric' }))
-    : '';
-
   const timeLabel = msgDate
     ? `${String(msgDate.getHours()).padStart(2, '0')}:${String(msgDate.getMinutes()).padStart(2, '0')}`
     : '';
 
-  // Duration string from base.block timestamp diff — approximate, not millisecond-exact,
-  // but good enough for the footer readout.
-  const durationStr = (() => {
-    if (!contextContent?.duration && contextContent?.duration !== 0) return '';
-    const sec = contextContent.duration;
-    if (sec < 60) return `${sec}s`;
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}m ${s}s`;
-  })();
-
-  const modelInfo = (() => {
-    if (block.role !== 'assistant' || !block.model) return null;
-    const trimmed = block.model.trim();
-    if (!trimmed) return null;
-    const slashIndex = trimmed.indexOf('/');
-    if (slashIndex === -1 || slashIndex === trimmed.length - 1) return { provider: '', model: trimmed, full: trimmed };
-    return { provider: trimmed.slice(0, slashIndex), model: trimmed.slice(slashIndex + 1), full: trimmed };
-  })();
-  const contextModel = contextContent?.model || modelInfo?.full || block.model || '';
   const isEmptyAssistantStreaming = !isUser && block.isStreaming && !content.trim() && block.images.length === 0 && block.artifacts.length === 0 && !block.audio;
+  const showAvatar = groupPosition === 'standalone' || groupPosition === 'first';
+  const showFooter = groupPosition === 'standalone' || groupPosition === 'last';
   const [waitElapsedSec, setWaitElapsedSec] = useState(0);
 
   useEffect(() => {
@@ -537,24 +677,17 @@ function stripInlineCodeTicks(md: string): string {
       dir={dir}>
 
       {/* ── Avatar ── */}
-      {isUser ? (
-        <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5
-          bg-aegis-primary/15 border border-aegis-primary/25">
-          <User size={14} className="text-aegis-primary" />
-        </div>
+      {showAvatar ? (
+        isUser ? (
+          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5
+            bg-aegis-primary/15 border border-aegis-primary/25">
+            <User size={14} className="text-aegis-primary" />
+          </div>
+        ) : (
+          <AssistantResponseAvatar sessionKey={responseSessionKey} />
+        )
       ) : (
-        <div
-          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-sm ring-1 ring-aegis-primary/20"
-          style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--aegis-primary)), rgb(var(--aegis-primary-deep)))' }}
-        >
-          {activeAgentName === 'Claude Code' ? (
-            <Sparkles size={14} className="text-white" />
-          ) : activeAgentName === 'Codex' ? (
-            <Bot size={14} className="text-white" />
-          ) : (
-            <span className="text-[10px] font-bold text-white">{activeAgentLetter}</span>
-          )}
-        </div>
+        <div className="w-8 shrink-0" aria-hidden />
       )}
 
       {/* ── Content Column ── */}
@@ -604,7 +737,7 @@ function stripInlineCodeTicks(md: string): string {
               <Suspense fallback={<MediaFallback className="h-10 w-full" />}>
                 <AudioPlayer
                   src={block.audio}
-                  sessionKey={activeSessionKey}
+                  sessionKey={responseSessionKey}
                   trackVoiceOutput={!isUser}
                 />
               </Suspense>
@@ -791,24 +924,8 @@ function stripInlineCodeTicks(md: string): string {
           )}
         </motion.div>
 
-        {/* ── Footer: agent | time + duration | context | model | actions ── */}
-        <div className={clsx(
-          'flex items-center mt-1 flex-wrap select-none',
-          isUser && 'justify-end',
-        )} style={{ gap: 6, rowGap: 3 }}
-          onMouseEnter={() => setFooterHovered(true)}
-          onMouseLeave={() => setFooterHovered(false)}
-        >
-
-          {/* Sender name (assistant only) */}
-          {!isUser && (
-            <span className="text-[11px] font-medium text-aegis-text-muted">
-              {activeAgentName}
-            </span>
-          )}
-
-          {/* Timestamp + duration — AI: "Jun 25 14:32 · 12s", User: "14:32" */}
-          {isUser ? (
+        {showFooter && (isUser ? (
+          <div className="mt-1 flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 select-none">
             <span className="inline-flex items-center gap-1.5">
               <time className="text-[10px] text-aegis-text-muted tabular-nums" dateTime={block.timestamp || ''}>
                 {timeLabel}
@@ -825,90 +942,20 @@ function stripInlineCodeTicks(md: string): string {
                 </span>
               )}
             </span>
-          ) : (
-            <span className="inline-flex items-center text-[10px] text-aegis-text-muted" style={{ gap: 4 }}>
-              <span>{dateLabel}</span>
-              <time className="tabular-nums" dateTime={block.timestamp || ''}>{timeLabel}</time>
-              {durationStr && (
-                <>
-                  <span className="text-aegis-border">·</span>
-                  <span className="tabular-nums text-aegis-text-dim">{durationStr}</span>
-                </>
-              )}
-            </span>
-          )}
-
-          {/* Edit indicator */}
-          {(block as { editedAt?: string }).editedAt && (
-            <span className="text-[10px] text-aegis-text-dim italic">· {t('chat.edited', 'edited')}</span>
-          )}
-
-          {/* Context / usage metadata — OpenClaw-style inline details. */}
-          {!isUser && (inlineUsageParts.length > 0 || contextModel || durationStr) && (
-            <details className="group/context inline-flex items-center gap-1.5 text-[10px] text-aegis-text-dim font-mono tabular-nums">
-              <summary
-                className={clsx(
-                  'inline-flex min-h-[22px] cursor-pointer list-none items-center gap-1 rounded-full border px-1.5 py-0.5 select-none',
-                  'border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] transition-colors',
-                  'hover:border-aegis-primary/35 hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45',
-                  '[&::-webkit-details-marker]:hidden',
-                )}
-                title={t('chat.showContextDetails', '显示消息上下文详情')}
-              >
-                <ChevronRight
-                  size={10}
-                  className="shrink-0 transition-transform group-open/context:rotate-90"
-                  style={{ strokeWidth: 2 }}
-                />
-                <span>{t('chat.context', '上下文')}</span>
-              </summary>
-              <span className="inline-flex items-center gap-2 rounded-full border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] px-2 py-0.5">
-                {contextInputTokens > 0 && <span className="text-blue-400">↑{ctxFmt(contextInputTokens)}</span>}
-                {contextOutputTokens > 0 && <span className="text-emerald-400">↓{ctxFmt(contextOutputTokens)}</span>}
-                {contextCacheRead > 0 && <span className="text-aegis-text-dim/80">R{ctxFmt(contextCacheRead)}</span>}
-                {contextCacheWrite > 0 && <span className="text-aegis-text-dim/80">W{ctxFmt(contextCacheWrite)}</span>}
-                {contextContent?.contextPercent != null && (
-                  <span className={clsx(
-                    contextContent.contextPercent >= 90
-                      ? 'text-aegis-danger'
-                      : contextContent.contextPercent >= 75
-                        ? 'text-aegis-warning'
-                        : 'text-aegis-text-dim',
-                  )}>
-                    {contextContent.contextPercent}% {t('chat.context', '上下文')}
-                  </span>
-                )}
-                {durationStr && <span className="text-aegis-text-dim">{t('chat.contextDuration', '耗时')} <span className="text-aegis-text">{durationStr}</span></span>}
-                {contextModel && (
-                  <span className="rounded bg-[rgb(var(--aegis-overlay)/0.06)] px-1.5 py-px text-aegis-text">
-                    {contextModel.includes('/') ? contextModel.split('/').pop() : contextModel}
-                  </span>
-                )}
-              </span>
-            </details>
-          )}
-
-          {/* ── Action buttons (show on footer hover, independent of bubble) ── */}
-          <span className={clsx(
-            'inline-flex items-center gap-0.5 transition-opacity duration-150',
-            (footerHovered || isUser) ? 'opacity-100' : 'opacity-0',
-          )}>
-            {/* Dot separator */}
+            {(block as { editedAt?: string }).editedAt && (
+              <span className="text-[10px] text-aegis-text-dim italic">· {t('chat.edited', 'edited')}</span>
+            )}
+            <span className="inline-flex items-center gap-0.5">
             <span className="text-aegis-border text-[10px] select-none">·</span>
-            {/* Recall copies the original text into the composer without mutating history. */}
-            {isUser && onRecall && (
+            {onRecall && (
               <ActionBtn icon={<Pencil size={14} />} label={t('chat.recallToInput', 'Edit in composer')}
                 onClick={() => onRecall(block.markdown)} />
             )}
-
-            {/* Retry is available only for a delivery that actually failed. */}
-            {isUser && onRetry && (
+            {onRetry && (
               <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.retryDelivery', 'Retry delivery')}
                 onClick={onRetry} />
             )}
-
-            {isUser && collaborationAction && (
+            {collaborationAction && (
               <ActionBtn
                 icon={collaborationAction.state === 'confirming'
                   ? <Loader2 size={14} className="animate-spin" />
@@ -922,9 +969,17 @@ function stripInlineCodeTicks(md: string): string {
                 disabled={collaborationAction.state === 'confirming' || !collaborationAction.onClick}
               />
             )}
-
-          </span>
-        </div>
+            </span>
+          </div>
+        ) : (
+          <AssistantResponseFooter
+            sessionKey={responseSessionKey}
+            block={block}
+            timestamp={block.timestamp}
+            status={block.responseState}
+            className="mt-1"
+          />
+        ))}
 
       </div>
     </div>

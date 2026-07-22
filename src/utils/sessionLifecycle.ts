@@ -1,12 +1,24 @@
 type SessionKeyLike = {
   key?: string;
+  sessionId?: string;
   createdAt?: string | number;
   updatedAt?: string | number;
   lastActive?: string | number;
   lastTimestamp?: string | number;
 };
 
-const deletedSessionKeys = new Set<string>();
+type LocalSessionLike = SessionKeyLike & {
+  localOnly?: boolean;
+};
+
+/**
+ * A deleted OpenClaw transcript is identified by both its stable routing key
+ * and its ephemeral session id.  Keeping the id prevents a confirmed delete
+ * from hiding a later transcript that legitimately reuses the same key.
+ * `null` is retained only when the Gateway could not provide an identity; in
+ * that fail-closed case an explicit local restore is required.
+ */
+const deletedSessionIdentities = new Map<string, string | null>();
 let fallbackKeySequence = 0;
 
 export function normalizeSessionKey(value: string): string {
@@ -17,23 +29,64 @@ export function isAgentMainSession(sessionKey: string): boolean {
   return /^agent:[^:]+:main$/.test(normalizeSessionKey(sessionKey));
 }
 
-export function markSessionDeleted(sessionKey: string): void {
+function normalizeSessionId(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function markSessionDeleted(sessionKey: string, sessionId?: string | null): void {
   const key = normalizeSessionKey(sessionKey);
-  if (key && !isAgentMainSession(key)) deletedSessionKeys.add(key);
+  if (key && !isAgentMainSession(key)) {
+    deletedSessionIdentities.set(key, normalizeSessionId(sessionId));
+  }
 }
 
 export function restoreSessionKey(sessionKey: string): void {
   const key = normalizeSessionKey(sessionKey);
-  if (key) deletedSessionKeys.delete(key);
+  if (key) deletedSessionIdentities.delete(key);
 }
 
-export function isSessionDeleted(sessionKey: string): boolean {
+export function isSessionDeleted(sessionKey: string, sessionId?: string | null): boolean {
   const key = normalizeSessionKey(sessionKey);
-  return Boolean(key) && deletedSessionKeys.has(key);
+  if (!key || !deletedSessionIdentities.has(key)) return false;
+  const deletedSessionId = deletedSessionIdentities.get(key) ?? null;
+  const candidateSessionId = normalizeSessionId(sessionId);
+  return !deletedSessionId || !candidateSessionId || deletedSessionId === candidateSessionId;
 }
 
 export function withoutDeletedSessions<T extends SessionKeyLike>(sessions: T[]): T[] {
-  return sessions.filter((session) => !isSessionDeleted(session.key ?? ''));
+  return sessions.filter((session) => {
+    const key = normalizeSessionKey(session.key ?? '');
+    if (!key || !deletedSessionIdentities.has(key)) return true;
+    const deletedSessionId = deletedSessionIdentities.get(key) ?? null;
+    const incomingSessionId = normalizeSessionId(session.sessionId);
+    if (deletedSessionId && incomingSessionId && deletedSessionId !== incomingSessionId) {
+      deletedSessionIdentities.delete(key);
+      return true;
+    }
+    return false;
+  });
+}
+
+export function hasSessionIdentityChanged(
+  previousSessionId: string | null | undefined,
+  nextSessionId: string | null | undefined,
+): boolean {
+  const previous = normalizeSessionId(previousSessionId);
+  const next = normalizeSessionId(nextSessionId);
+  return Boolean(previous && next && previous !== next);
+}
+
+/** A renderer placeholder has no corresponding OpenClaw transcript yet. */
+export function isUnmaterializedLocalSession(
+  session: LocalSessionLike | undefined,
+  messages: readonly unknown[] | undefined,
+): boolean {
+  return Boolean(
+    session
+    && session.localOnly === true
+    && !normalizeSessionId(session.sessionId)
+    && (!messages || messages.length === 0),
+  );
 }
 
 function sessionRevision(session: SessionKeyLike): number {
@@ -138,6 +191,6 @@ export function createAgentSessionKey(agentId: string): string {
 }
 
 export function __resetSessionLifecycleForTest(): void {
-  deletedSessionKeys.clear();
+  deletedSessionIdentities.clear();
   fallbackKeySequence = 0;
 }

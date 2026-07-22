@@ -16,7 +16,7 @@
  * quickchat.rs builder), so we render our own draggable title bar.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { X, FileText, Folder, Sparkles, GripVertical, Square } from 'lucide-react';
 import clsx from 'clsx';
@@ -24,7 +24,6 @@ import { useChatStore } from '@/stores/chatStore';
 import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { useVoiceStore } from '@/stores/voiceStore';
-import { AudioPlayer } from '@/components/Chat/AudioPlayer';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
 import {
@@ -34,6 +33,13 @@ import {
 } from '@/services/chat/attachments';
 import { useTranslation } from 'react-i18next';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
+import { projectResponseGroupChrome } from '@/processing/buildResponseGroups';
+import { projectResponseGroupToRenderBlocks } from '@/processing/projectResponseGroup';
+import { groupExecutionProcessBlocks } from '@/components/Chat/executionProcessGrouping';
+import { ExecutionProcessGroup } from '@/components/Chat/ExecutionProcessGroup';
+import type { MessageBlock, RenderBlock } from '@/types/RenderBlock';
+import type { ResponseGroup } from '@/types/ResponseGroup';
+import { projectQuickChatResponseGroups } from './quickChatProjection';
 
 interface SeedFile {
   path: string;
@@ -43,6 +49,18 @@ interface SeedFile {
 
 const EMPTY_MESSAGES: ReturnType<typeof useChatStore.getState>['messages'] = [];
 const EMPTY_QUEUE: ReturnType<typeof useChatStore.getState>['messageQueue'][string] = [];
+const EMPTY_RESPONSE_GROUPS: ResponseGroup[] = [];
+
+const AssistantResponseAvatar = lazy(() => import('@/components/Chat/MessageBubble').then((module) => ({ default: module.AssistantResponseAvatar })));
+const AssistantResponseFooter = lazy(() => import('@/components/Chat/MessageBubble').then((module) => ({ default: module.AssistantResponseFooter })));
+const MessageBubble = lazy(() => import('@/components/Chat/MessageBubble').then((module) => ({ default: module.MessageBubble })));
+const InlineButtonBar = lazy(() => import('@/components/Chat/InlineButtonBar').then((module) => ({ default: module.InlineButtonBar })));
+const ThinkingBubble = lazy(() => import('@/components/Chat/ThinkingBubble').then((module) => ({ default: module.ThinkingBubble })));
+const ToolCallBubble = lazy(() => import('@/components/Chat/ToolCallBubble').then((module) => ({ default: module.ToolCallBubble })));
+const DecisionCard = lazy(() => import('@/components/Chat/ResultCards').then((module) => ({ default: module.DecisionCard })));
+const FileResultCard = lazy(() => import('@/components/Chat/ResultCards').then((module) => ({ default: module.FileResultCard })));
+const SessionEventCard = lazy(() => import('@/components/Chat/ResultCards').then((module) => ({ default: module.SessionEventCard })));
+const WorkshopEventCard = lazy(() => import('@/components/Chat/ResultCards').then((module) => ({ default: module.WorkshopEventCard })));
 
 function normalizeDroppedPath(input: string): string {
   if (!input.startsWith('file:')) return input;
@@ -82,23 +100,18 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       || ((state.phase === 'queued' || state.phase === 'speaking') && state.sessionKey === sessionKey),
   );
 
-  // Read the latest streamed assistant message for this session from this
-  // WebView's chat store. Gateway history remains the cross-window authority.
-  // gateway streams without us re-implementing the stream pipeline.
+  // Gateway-normalized response groups are the single projection authority in
+  // both the main chat and QuickChat. The compact window must not reconstruct
+  // tool/file/decision state from plain assistant text.
   const messages = useChatStore((s) =>
     sessionKey ? s.messagesPerSession[sessionKey] ?? EMPTY_MESSAGES : EMPTY_MESSAGES
   );
-  const lastAssistantMessage = (() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'assistant' && typeof messages[i].content === 'string') {
-        return messages[i];
-      }
-    }
-    return null;
-  })();
-  const lastAssistant = lastAssistantMessage?.content as string || '';
-  const lastAssistantAudio = lastAssistantMessage?.mediaUrl || '';
-  const lastAssistantComplete = Boolean(lastAssistantMessage && !lastAssistantMessage.isStreaming);
+  const responseGroups = useChatStore((state) => state._groupsCache[sessionKey] ?? EMPTY_RESPONSE_GROUPS);
+  const quickChatResponseGroups = useMemo(
+    () => projectQuickChatResponseGroups(responseGroups),
+    [responseGroups],
+  );
+  const typingStartedAt = useChatStore((state) => state.typingStartedAtBySession[sessionKey]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
 
@@ -215,10 +228,146 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     if (!useChatStore.getState().typingBySession[sessionKey]) return;
     try {
       await gateway.abortChat(sessionKey);
-    } finally {
-      useChatStore.getState().setIsTyping(false, sessionKey);
+    } catch (error) {
+      setSendError(t('pet.quickChat.sendError', {
+        error: error instanceof Error ? error.message : String(error),
+      }));
     }
-  }, [sessionKey]);
+  }, [sessionKey, t]);
+
+  const handleStructuredChoice = useCallback(async (value: string) => {
+    const message = value.trim();
+    if (!message || sending || !connected) return;
+    voiceRuntime.interruptGlobally(sessionKey);
+    setSending(true);
+    setSendError('');
+    try {
+      await chatSendCoordinator.send({
+        sessionKey,
+        message,
+        clientMessageId: createClientMessageId(),
+      });
+    } catch (error) {
+      setSendError(t('pet.quickChat.sendError', {
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setSending(false);
+    }
+  }, [connected, sending, sessionKey, t]);
+
+  const renderQuickChatBlock = useCallback((block: RenderBlock) => {
+    switch (block.type) {
+      case 'message':
+        return (
+          <Suspense fallback={<div className="ml-[46px] min-h-8 animate-pulse rounded-lg bg-white/[0.04]" />}>
+            <MessageBubble block={block} sessionKey={sessionKey} groupPosition="middle" />
+          </Suspense>
+        );
+      case 'tool':
+        return (
+          <Suspense fallback={<div className="ml-[46px] h-7 animate-pulse rounded bg-white/[0.04]" />}>
+            <ToolCallBubble tool={{
+              toolName: block.toolName,
+              input: block.input,
+              output: block.output,
+              status: block.status,
+              durationMs: block.durationMs,
+            }} />
+          </Suspense>
+        );
+      case 'thinking':
+        return (
+          <Suspense fallback={<div className="ml-[46px] h-7 animate-pulse rounded bg-white/[0.04]" />}>
+            <ThinkingBubble content={block.content} isStreaming={block.isStreaming} />
+          </Suspense>
+        );
+      case 'file-output':
+        return <Suspense fallback={null}><FileResultCard files={block.files} /></Suspense>;
+      case 'decision':
+        return (
+          <Suspense fallback={null}>
+            <DecisionCard options={block.options} onSelect={(value) => { void handleStructuredChoice(value); }} />
+          </Suspense>
+        );
+      case 'workshop-event':
+        return <Suspense fallback={null}><WorkshopEventCard events={block.events} /></Suspense>;
+      case 'session-event':
+        return <Suspense fallback={null}><SessionEventCard event={block.event} /></Suspense>;
+      case 'inline-buttons':
+        return (
+          <Suspense fallback={null}>
+            <InlineButtonBar
+              buttons={block.rows.map((row) => row.buttons)}
+              onCallback={(value) => { void handleStructuredChoice(value); }}
+            />
+          </Suspense>
+        );
+      case 'compaction':
+        return null;
+      default:
+        return null;
+    }
+  }, [handleStructuredChoice, sessionKey]);
+
+  const renderQuickChatGroup = useCallback((group: ResponseGroup, appendTyping: boolean) => {
+    const blocks = projectResponseGroupToRenderBlocks(group);
+    const rows = groupExecutionProcessBlocks(blocks);
+    const chrome = projectResponseGroupChrome(group);
+    const representative = chrome.owner === 'group' && chrome.representativeMessageId
+      ? blocks.find((block): block is MessageBlock => (
+          block.type === 'message' && block.id === chrome.representativeMessageId
+        )) ?? null
+      : null;
+    const footerTimestamp = representative?.timestamp
+      ?? group.blocks[group.blocks.length - 1]?.timestamp
+      ?? group.timestamp;
+    const hasStreamingText = blocks.some((block) => (
+      block.type === 'message' && block.isStreaming && block.markdown.trim().length > 0
+    ));
+
+    return (
+      <section key={group.id} className="relative space-y-2 py-1" data-quickchat-response-group={group.id}>
+        {chrome.owner === 'group' && (
+          <Suspense fallback={<div className="absolute left-1 top-1 h-8 w-8 animate-pulse rounded-full bg-aegis-primary/15" />}>
+            <AssistantResponseAvatar sessionKey={group.sessionKey} className="absolute left-1 top-1 z-[1]" />
+          </Suspense>
+        )}
+        {rows.map((row, index) => row.type === 'execution' ? (
+          <ExecutionProcessGroup
+            key={`execution-${row.blocks[0]?.id ?? index}`}
+            blocks={row.blocks}
+            streaming={group.status === 'streaming'}
+            renderBlock={renderQuickChatBlock}
+          />
+        ) : (
+          <div key={row.block.id}>{renderQuickChatBlock(row.block)}</div>
+        ))}
+        {appendTyping && !hasStreamingText && (
+          <div className="ml-[46px] inline-flex items-center gap-1.5 rounded-lg border border-aegis-primary/20 bg-aegis-primary/[0.06] px-2.5 py-2" aria-label={t('chat.assistantPreparing', 'Assistant is preparing a response')}>
+            {[0, 1, 2].map((index) => (
+              <span
+                key={index}
+                className="h-1.5 w-1.5 rounded-full bg-aegis-primary animate-pulse"
+                style={{ animationDelay: `${index * 140}ms` }}
+              />
+            ))}
+          </div>
+        )}
+        {chrome.owner === 'group' && (
+          <Suspense fallback={<div className="ml-[46px] h-4 w-28 animate-pulse rounded bg-white/[0.04]" />}>
+            <AssistantResponseFooter
+              sessionKey={group.sessionKey}
+              block={representative}
+              timestamp={footerTimestamp}
+              status={group.status}
+              className="ml-[46px] mr-2"
+            />
+          </Suspense>
+        )}
+      </section>
+    );
+  }, [renderQuickChatBlock, t]);
 
   const handleKey = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -235,6 +384,17 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     }
     try { await invoke('close_quickchat'); } catch {}
   }, [handleStop, sessionKey]);
+
+  useEffect(() => {
+    const container = messagesRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+  }, [quickChatResponseGroups, isTyping]);
+
+  const lastQuickChatGroupIndex = quickChatResponseGroups.length - 1;
+  const typingOwnerGroupIndex = quickChatResponseGroups[lastQuickChatGroupIndex]?.role === 'assistant'
+    ? lastQuickChatGroupIndex
+    : -1;
 
   return (
     <div className="flex flex-col h-screen bg-black/40 backdrop-blur-xl text-aegis-text select-none">
@@ -286,26 +446,41 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         </div>
       )}
 
-      {/* Streamed reply area — reads from chatStore so it stays in sync
-          with the main app's view of the same session. */}
+      {/* Uses the same normalized response groups as the main chat. */}
       <div ref={messagesRef} className="flex-1 overflow-y-auto px-4 py-3 text-[13px] leading-relaxed">
-        {!lastAssistant && files.length === 0 && (
+        {quickChatResponseGroups.length === 0 && !isTyping && messages.length === 0 && files.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center text-aegis-text-dim gap-1.5">
             <Sparkles size={24} className="opacity-30" />
             <div className="text-[12px]">{t('pet.quickChat.emptyTitle')}</div>
             <div className="text-[11px] opacity-70">{t('pet.quickChat.emptyHint')}</div>
           </div>
         )}
-        {(lastAssistant || lastAssistantAudio) && (
-          <div className="whitespace-pre-wrap break-words animate-in fade-in slide-in-from-bottom-2 duration-200">
-            {lastAssistant}
-            {isTyping && <span className="inline-block w-1.5 h-3.5 bg-aegis-primary ml-0.5 align-middle animate-pulse" />}
-            {lastAssistantAudio && lastAssistantComplete && (
-              <div className="mt-2">
-                <AudioPlayer src={lastAssistantAudio} sessionKey={sessionKey} trackVoiceOutput />
-              </div>
-            )}
-          </div>
+        {quickChatResponseGroups.map((group, index) => (
+          renderQuickChatGroup(group, isTyping && index === typingOwnerGroupIndex)
+        ))}
+        {isTyping && typingOwnerGroupIndex < 0 && (
+          <section className="relative space-y-2 py-1" data-quickchat-response-group="typing">
+            <Suspense fallback={<div className="absolute left-1 top-1 h-8 w-8 animate-pulse rounded-full bg-aegis-primary/15" />}>
+              <AssistantResponseAvatar sessionKey={sessionKey} className="absolute left-1 top-1" />
+            </Suspense>
+            <div className="ml-[46px] inline-flex items-center gap-1.5 rounded-lg border border-aegis-primary/20 bg-aegis-primary/[0.06] px-2.5 py-2" aria-label={t('chat.assistantPreparing', 'Assistant is preparing a response')}>
+              {[0, 1, 2].map((index) => (
+                <span
+                  key={index}
+                  className="h-1.5 w-1.5 rounded-full bg-aegis-primary animate-pulse"
+                  style={{ animationDelay: `${index * 140}ms` }}
+                />
+              ))}
+            </div>
+            <Suspense fallback={null}>
+              <AssistantResponseFooter
+                sessionKey={sessionKey}
+                timestamp={new Date(typingStartedAt ?? Date.now()).toISOString()}
+                status="streaming"
+                className="ml-[46px] mr-2"
+              />
+            </Suspense>
+          </section>
         )}
         {sendError && <div className="mt-2 text-[11px] text-aegis-danger">{sendError}</div>}
         {failedQueuedMessage && (

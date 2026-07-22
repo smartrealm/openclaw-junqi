@@ -173,3 +173,43 @@ test('preserves tool duration aliases when rebuilding history tool blocks', () =
   assert.equal(toolBlock.status, 'done');
   assert.equal(toolBlock.durationMs, 1234);
 });
+
+test('keeps structured assistant output when visible text is empty', () => {
+  const normalized: NormalizedMessage = {
+    ...createAssistantMessage(''),
+    mediaUrl: 'voice-output.mp3',
+    attachments: [{
+      mimeType: 'image/png',
+      content: 'data:image/png;base64,AA==',
+      fileName: 'result.png',
+    }],
+    thinkingContent: 'Checking the result',
+    fileRefs: [{ path: 'result.txt' }],
+    decisionOptions: [{ text: 'Continue', value: 'continue' }],
+    workshopEvents: [{ kind: 'updated', text: 'Task updated' }],
+    sessionEvents: [{ kind: 'info', text: 'Session ready' }],
+  };
+
+  const blocks = buildSemanticBlocks(normalized, { toolIntentEnabled: true });
+  const messageBlock = blocks.find((block) => block.type === 'message-content');
+
+  assert.ok(messageBlock && messageBlock.type === 'message-content');
+  assert.equal(messageBlock.markdown, '');
+  assert.equal(messageBlock.audio, 'voice-output.mp3');
+  assert.equal(messageBlock.images.length, 1);
+  assert.deepEqual(
+    blocks.map((block) => block.type),
+    ['thinking', 'message-content', 'file-output', 'decision', 'workshop-event', 'session-event'],
+  );
+});
+
+test('does not create an empty message bubble for card-only output', () => {
+  const normalized: NormalizedMessage = {
+    ...createAssistantMessage(''),
+    decisionOptions: [{ text: 'Continue', value: 'continue' }],
+  };
+
+  const blocks = buildSemanticBlocks(normalized, { toolIntentEnabled: true });
+
+  assert.deepEqual(blocks.map((block) => block.type), ['decision']);
+});

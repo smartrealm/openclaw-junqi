@@ -45,7 +45,7 @@ test('CHAT-02 and CHAT-10 expose one cancellable queue and preserve transcript s
     app.indexOf('onRetryState:'),
   );
   assert.ok(
-    streamEnd.indexOf('finalizeStreamingMessage(') < streamEnd.indexOf('setIsTyping(false, sessionKey)'),
+    streamEnd.indexOf('finalizeStreamingMessage(') < streamEnd.indexOf('settleSessionRunUi(sessionKey)'),
     'the current response must finalize before the queue is released',
   );
 });

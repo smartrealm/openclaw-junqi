@@ -379,7 +379,7 @@ export function usePetStateEmitter() {
       if (emotion === 'thinking') {
         message = voiceListening
           ? i18n.t('voice.runtimeListening', { defaultValue: '聆听中' })
-          : (cs.thinkingText || '').slice(0, 60) || undefined;
+          : (cs.thinkingBySession[cs.activeSessionKey]?.text || '').slice(0, 60) || undefined;
         taskLabel = activeAgentName;
       } else if (emotion === 'typing' && voiceSpeaking && !typing) {
         message = i18n.t('voice.runtimeSpeaking', { defaultValue: '语音回复中' });

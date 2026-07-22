@@ -55,6 +55,8 @@ import {
 
 const GATEWAY_RESTART_STARTED_EVENT = 'aegis:gateway-restart-started';
 const GATEWAY_RESTART_FINISHED_EVENT = 'aegis:gateway-restart-finished';
+const IMAGE_SAVE_DOWNLOAD_TIMEOUT_MS = 30_000;
+const IMAGE_SAVE_MAX_BYTES = 64 * 1024 * 1024;
 
 /** Encode arbitrary-sized binary data without exceeding JS argument limits. */
 export function bytesToBase64(bytes: Uint8Array): string {
@@ -689,12 +691,39 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     try {
       const { save } = await import("@tauri-apps/plugin-dialog");
       const { writeFile } = await import("@tauri-apps/plugin-fs");
-      // Convert data URL to bytes and save
-      const b64 = src.replace(/^data:image\/\w+;base64,/, "");
-      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const path = await save({ defaultPath: suggestedName, filters: [{ name: "Images", extensions: ["png"] }] });
-      if (path) { await writeFile(path, bytes); return { success: true, path }; }
-      return { success: false, error: "Cancelled" };
+      const extension = suggestedName.split('.').pop()?.toLowerCase() || 'png';
+      const path = await save({ defaultPath: suggestedName, filters: [{ name: "Images", extensions: [extension] }] });
+      if (!path) return { success: false, canceled: true };
+
+      let bytes: Uint8Array;
+      if (/^data:[^;]+;base64,/i.test(src)) {
+        const b64 = src.replace(/^data:[^;]+;base64,/i, "");
+        if (Math.ceil(b64.length * 3 / 4) > IMAGE_SAVE_MAX_BYTES) {
+          throw new Error('Image download exceeds the 64 MB save limit');
+        }
+        bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      } else if (/^(https?:|blob:)/i.test(src)) {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), IMAGE_SAVE_DOWNLOAD_TIMEOUT_MS);
+        try {
+          const response = await fetch(src, { signal: controller.signal });
+          if (!response.ok) throw new Error(`Image download failed (${response.status})`);
+          const declaredBytes = Number(response.headers.get('content-length'));
+          if (Number.isFinite(declaredBytes) && declaredBytes > IMAGE_SAVE_MAX_BYTES) {
+            throw new Error('Image download exceeds the 64 MB save limit');
+          }
+          bytes = new Uint8Array(await response.arrayBuffer());
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      } else {
+        throw new Error("Unsupported image source");
+      }
+      if (bytes.byteLength > IMAGE_SAVE_MAX_BYTES) {
+        throw new Error('Image download exceeds the 64 MB save limit');
+      }
+      await writeFile(path, bytes);
+      return { success: true, path };
     } catch (e: any) { return { success: false, error: String(e) }; }
   } },
   screenshot: {

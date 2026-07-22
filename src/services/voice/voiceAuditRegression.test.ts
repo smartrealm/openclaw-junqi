@@ -36,7 +36,14 @@ test('BUG-07 all direct chat send paths interrupt voice first', () => {
   const chat = read('../../components/Chat/ChatView.tsx');
   const quick = read('../../pages/QuickChatPage.tsx');
   assert.match(input, /if \(st\.typingBySession\[activeSessionKey\] \|\| voiceActive\)/);
-  assert.match(input, /voiceRuntime\.interruptGlobally\(sendSessionKey\);\s+await chatSendCoordinator\.send/);
+  const voiceSend = input.slice(
+    input.indexOf('const sendVoicePayload'),
+    input.indexOf('const handleVoiceWakeCapture'),
+  );
+  assert.ok(
+    voiceSend.indexOf('voiceRuntime.interruptGlobally(sendSessionKey)')
+      < voiceSend.indexOf('await chatSendCoordinator.send'),
+  );
   assert.match(chat, /voiceRuntime\.interruptGlobally\(activeSessionKey\)/);
   assert.match(quick, /voiceRuntime\.interruptGlobally\(sessionKey\)/);
 });

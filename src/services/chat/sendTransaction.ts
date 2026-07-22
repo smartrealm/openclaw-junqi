@@ -1,4 +1,4 @@
-import { gateway } from '@/services/gateway';
+import { gateway, isGatewayChatSendDeliveryUncertain } from '@/services/gateway';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { useChatStore, type ChatMessage } from '@/stores/chatStore';
 import type { GatewayAttachment, QueuedChatMessage } from './types';
@@ -132,6 +132,7 @@ export class ChatSendCoordinator {
     state.updateMessage(request.sessionKey, clientMessageId, {
       status: 'pending',
       deliveryError: undefined,
+      retryPayload,
     });
     state.setIsTyping(true, request.sessionKey);
 
@@ -142,11 +143,14 @@ export class ChatSendCoordinator {
         request.sessionKey,
         { clientMessageId, sessionId: request.sessionId },
       ) as { queued?: boolean } | undefined;
-      state.updateMessage(request.sessionKey, clientMessageId, {
-        status: result?.queued ? 'queued' : 'sent',
-        deliveryError: undefined,
-        retryPayload: result?.queued ? retryPayload : undefined,
-      });
+      const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
+      if (!deliveryUncertain) {
+        state.updateMessage(request.sessionKey, clientMessageId, {
+          status: result?.queued ? 'queued' : 'sent',
+          deliveryError: undefined,
+          retryPayload: result?.queued ? retryPayload : undefined,
+        });
+      }
       if (result?.queued) state.setIsTyping(false, request.sessionKey);
       return result;
     } catch (error) {

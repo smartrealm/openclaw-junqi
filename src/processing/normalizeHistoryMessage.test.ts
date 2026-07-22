@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   normalizeCachedChatMessageContent,
   normalizeHistoryMessage,
+  normalizeHistoryMessages,
 } from './normalizeHistoryMessage';
 import { normalizeGatewayMessage } from './normalizeGatewayMessage';
 
@@ -78,4 +79,70 @@ test('upgrades cached block content before chat consumers call string methods', 
   const upgraded = normalizeCachedChatMessageContent(legacy);
   assert.equal(upgraded.content.trim(), 'cached question');
   assert.deepEqual(upgraded.rawContent, legacy.content);
+});
+
+test('keeps every display projection emitted from one OpenClaw transcript record', () => {
+  const messages = normalizeHistoryMessages([
+    { role: 'assistant', content: 'Before the tool', __openclaw: { id: 'native-shared', seq: 8 } },
+    { role: 'tool', content: 'Tool result', __openclaw: { id: 'native-shared', seq: 8 } },
+    { role: 'assistant', content: 'After the tool', __openclaw: { id: 'native-shared', seq: 8 } },
+  ]);
+
+  assert.equal(new Set(messages.map((message) => message.id)).size, 3);
+  assert.deepEqual(messages.map((message) => message.nativeMessageId), [
+    'native-shared',
+    'native-shared',
+    'native-shared',
+  ]);
+  assert.deepEqual(messages.map((message) => message.content), [
+    'Before the tool',
+    'Tool result',
+    'After the tool',
+  ]);
+});
+
+test('restores OpenClaw persisted Media fields with their index-aligned types', () => {
+  const message = normalizeHistoryMessage({
+    role: 'user',
+    content: 'Inspect these files.',
+    MediaPaths: [
+      'C:\\Users\\Test\\.openclaw\\media\\screen shot.png',
+      'C:\\Users\\Test\\.openclaw\\media\\report.pdf',
+      'C:\\Users\\Test\\.openclaw\\media\\voice.ogg',
+    ],
+    MediaTypes: ['image/png', 'application/pdf', 'audio/ogg'],
+  });
+
+  assert.deepEqual(message.attachments, [{
+    mimeType: 'image/png',
+    content: 'aegis-media:C:\\Users\\Test\\.openclaw\\media\\screen shot.png',
+    fileName: 'screen shot.png',
+  }]);
+  assert.deepEqual(message.fileRefs, [{
+    path: 'C:\\Users\\Test\\.openclaw\\media\\report.pdf',
+    meta: 'application/pdf',
+    kind: 'file',
+  }]);
+  assert.equal(message.mediaUrl, 'aegis-media:C:\\Users\\Test\\.openclaw\\media\\voice.ogg');
+  assert.equal(message.mediaType, 'audio/ogg');
+  assert.deepEqual(message.outboundAttachments, [
+    { fileName: 'screen shot.png', mimeType: 'image/png' },
+    { fileName: 'report.pdf', mimeType: 'application/pdf' },
+    { fileName: 'voice.ogg', mimeType: 'audio/ogg' },
+  ]);
+});
+
+test('prefers OpenClaw MediaUrls while preserving sparse Media arrays', () => {
+  const message = normalizeHistoryMessage({
+    role: 'user',
+    content: '',
+    MediaPaths: ['ignored-local.png', '', 'local-third.png'],
+    MediaUrls: ['https://gateway.invalid/media/image.png', '', 'https://gateway.invalid/media/third.png'],
+    MediaTypes: ['image/png', '', 'image/png'],
+  });
+
+  assert.deepEqual(message.attachments?.map((item) => item.content), [
+    'https://gateway.invalid/media/image.png',
+    'https://gateway.invalid/media/third.png',
+  ]);
 });

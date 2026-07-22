@@ -1,6 +1,12 @@
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import type { SemanticBlock } from '@/types/SemanticBlock';
 
+export type ResponseGroupMessagePosition = 'standalone' | 'first' | 'middle' | 'last';
+
+export type ResponseGroupChromeProjection =
+  | { owner: 'group'; representativeMessageId: string | null }
+  | { owner: 'message'; representativeMessageId: null };
+
 function inferGroupRole(block: SemanticBlock): ResponseGroup['role'] {
   switch (block.type) {
     case 'message-content':
@@ -54,7 +60,19 @@ function createGroup(block: SemanticBlock): ResponseGroup {
 function canAppend(last: ResponseGroup | null, block: SemanticBlock): boolean {
   if (!last) return false;
   if (block.type === 'compaction') return false;
-  return last.id === `group:${block.sessionKey}:${buildIdentity(block)}`;
+  if (last.sessionKey !== block.sessionKey) return false;
+
+  if (last.id === `group:${block.sessionKey}:${buildIdentity(block)}`) {
+    return true;
+  }
+
+  // Historical rows do not always carry a run id. A user row is the durable
+  // turn boundary in that representation, so adjacent assistant-side rows
+  // belong to the same response until another user/system group starts.
+  return last.role === 'assistant'
+    && inferGroupRole(block) === 'assistant'
+    && !last.runId
+    && !block.runId;
 }
 
 export function buildResponseGroups(blocks: SemanticBlock[]): ResponseGroup[] {
@@ -79,4 +97,48 @@ export function buildResponseGroups(blocks: SemanticBlock[]): ResponseGroup[] {
   }
 
   return groups;
+}
+
+export function projectResponseGroupMessagePositions(
+  group: ResponseGroup,
+): ReadonlyMap<string, ResponseGroupMessagePosition> {
+  const messageIds = group.blocks
+    .filter((block) => block.type === 'message-content')
+    .map((block) => block.id);
+  const positions = new Map<string, ResponseGroupMessagePosition>();
+
+  if (messageIds.length === 1) {
+    positions.set(messageIds[0], 'standalone');
+    return positions;
+  }
+
+  messageIds.forEach((id, index) => {
+    positions.set(
+      id,
+      index === 0 ? 'first' : index === messageIds.length - 1 ? 'last' : 'middle',
+    );
+  });
+
+  return positions;
+}
+
+/**
+ * Assistant chrome belongs to the response, not to an individual text block.
+ * This keeps one avatar and one trailing footer even when a response ends in a
+ * tool/result block or contains no message-content block at all.
+ */
+export function projectResponseGroupChrome(
+  group: ResponseGroup,
+): ResponseGroupChromeProjection {
+  if (group.role !== 'assistant') {
+    return { owner: 'message', representativeMessageId: null };
+  }
+
+  const representative = [...group.blocks]
+    .reverse()
+    .find((block) => block.type === 'message-content' && block.role === 'assistant');
+  return {
+    owner: 'group',
+    representativeMessageId: representative?.id ?? null,
+  };
 }

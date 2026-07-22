@@ -88,11 +88,11 @@ test('session bucket disclosure keeps the preferred bucket and reveals required 
 
 test('isEmptyTransientSession only removes untouched local placeholders', () => {
   assert.equal(isEmptyTransientSession(
-    sx({ key: 'agent:main:s-empty', label: '新会话', createdAt: 123 }),
+    sx({ key: 'agent:main:s-empty', label: '新会话', createdAt: 123, localOnly: true }),
     [],
   ), true);
   assert.equal(isEmptyTransientSession(
-    sx({ key: 'agent:main:s-content', label: '新会话', createdAt: 123, totalTokens: 1 }),
+    sx({ key: 'agent:main:s-content', label: '新会话', createdAt: 123, localOnly: true, totalTokens: 1 }),
     [],
   ), false);
   assert.equal(isEmptyTransientSession(

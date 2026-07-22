@@ -5,7 +5,7 @@ import type { ResponseGroup } from '@/types/ResponseGroup';
 import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
 import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
-import { gateway } from '@/services/gateway';
+import { gateway, isGatewayChatSendDeliveryUncertain } from '@/services/gateway';
 import type {
   OutboundChatPayload,
   PreparedAttachment,
@@ -13,15 +13,22 @@ import type {
 } from '@/services/chat/types';
 import {
   MAX_SESSION_MESSAGE_QUEUE_SIZE,
+  MAX_SESSION_MESSAGE_QUEUE_BYTES,
   SessionMessageQueueFullError,
+  SessionMessageQueuePayloadLimitError,
+  queuedChatMessageBytes,
 } from '@/services/chat/types';
 import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
+import {
+  collectSessionIdentityTransitions,
+  publishSessionIdentityTransitions,
+} from '@/services/chat/sessionIdentityTransition';
 import { useSettingsStore } from './settingsStore';
 import {
   coalesceSessionsByKey,
+  hasSessionIdentityChanged,
   isAgentMainSession,
   isSessionDeleted,
-  markSessionDeleted,
   restoreSessionKey,
   withoutDeletedSessions,
 } from '@/utils/sessionLifecycle';
@@ -119,6 +126,17 @@ function persistSessionTopicPref(sessionKey: string, topic: string | undefined):
     if (topic && topic.trim()) {
       prefs[sessionKey] = topic.trim();
     }
+    localStorage.setItem(SESSION_TOPIC_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // ignore persistence errors
+  }
+}
+
+function clearSessionTopicPref(sessionKey: string): void {
+  try {
+    const prefs = readSessionTopicPrefs();
+    if (!Object.prototype.hasOwnProperty.call(prefs, sessionKey)) return;
+    delete prefs[sessionKey];
     localStorage.setItem(SESSION_TOPIC_PREFS_KEY, JSON.stringify(prefs));
   } catch {
     // ignore persistence errors
@@ -270,9 +288,7 @@ const upsertSession = (
 };
 
 function isLocalPlaceholderSession(session: Session): boolean {
-  const createdAt = session.createdAt;
-  return typeof createdAt === 'number'
-    || (typeof createdAt === 'string' && createdAt.trim().length > 0);
+  return session.localOnly === true && !session.sessionId;
 }
 
 export interface ChatMessage {
@@ -281,6 +297,8 @@ export interface ChatMessage {
   clientMessageId?: string;
   /** OpenClaw transcript message id. Required before a collaboration can anchor here. */
   nativeMessageId?: string;
+  /** Stable display projection within one native transcript record. */
+  nativeProjectionId?: string;
   role: 'user' | 'assistant' | 'system' | 'tool' | 'compaction';
   /** Optional subtype — e.g. 'model-switch' for inline model-change notices. */
   kind?: 'model-switch' | string;
@@ -372,6 +390,8 @@ export interface Session {
   // User-controlled lifecycle flags (SPEC: archive + pin)
   pinned?: boolean;
   archived?: boolean;
+  /** Renderer-only marker; removed as soon as sessions.list materializes it. */
+  localOnly?: boolean;
 }
 
 export interface TokenUsage {
@@ -436,7 +456,11 @@ interface ChatState {
   // Sessions
   sessions: Session[];
   activeSessionKey: string;
-  setSessions: (sessions: Session[], defaults?: { model: string | null; contextTokens: number | null }) => void;
+  setSessions: (
+    sessions: Session[],
+    defaults?: { model: string | null; contextTokens: number | null },
+    options?: { completeSnapshot?: boolean },
+  ) => void;
   setSessionIdentity: (key: string, sessionId: string, agentId?: string) => void;
   /** Append a new session to the sidebar immediately (before the gateway's
    *  sessions.list reply). Used by per-agent "+ New Session" buttons in
@@ -502,11 +526,18 @@ interface ChatState {
   drafts: Record<string, string>;
   setDraft: (key: string, text: string) => void;
   getDraft: (key: string) => string;
+  consumeComposerSnapshot: (key: string, snapshot: {
+    text: string;
+    attachmentIds: readonly string[];
+  }) => void;
 
-  // UI State — `isTyping` mirrors the active session's entry in `typingBySession`
-  isTyping: boolean;
+  // UI State — session activity has one source of truth.
   typingBySession: Record<string, boolean>;
+  /** Started timestamps keep background activity surfaces truthful and measurable. */
+  typingStartedAtBySession: Record<string, number>;
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
+  /** Atomically release every transient run indicator for one session. */
+  settleSessionRunUi: (sessionKey?: string) => void;
   messageQueue: Record<string, QueuedChatMessage[]>;
   enqueueMessage: (sessionKey: string, message: QueuedChatMessage) => void;
   drainQueue: (sessionKey: string) => Promise<void>;
@@ -545,8 +576,6 @@ interface ChatState {
   setQuickReplies: (buttons: Array<{ text: string; value: string }>, sessionKey?: string) => void;
 
   // Thinking stream (live reasoning display)
-  thinkingText: string;
-  thinkingRunId: string | null;
   thinkingBySession: Record<string, { runId: string | null; text: string }>;
   setThinkingStream: (runId: string, text: string, sessionKey?: string) => void;
   clearThinking: (sessionKey?: string) => void;
@@ -559,6 +588,16 @@ interface ChatState {
   setConnectionStatus: (status: { connected: boolean; connecting: boolean; error?: string }) => void;
   setRestarting: (v: boolean) => void;
 }
+
+export const selectActiveSessionTyping = (state: ChatState): boolean =>
+  Boolean(state.typingBySession[state.activeSessionKey]);
+
+const EMPTY_THINKING_STATE = Object.freeze({ runId: null, text: '' });
+
+export const selectActiveSessionThinking = (
+  state: ChatState,
+): { runId: string | null; text: string } =>
+  state.thinkingBySession[state.activeSessionKey] ?? EMPTY_THINKING_STATE;
 
 // ─── Helper: derive TitleBar state from a cached Session ───
 // Called synchronously on tab switch — applies session's model/thinking/tokens instantly.
@@ -587,6 +626,72 @@ function titleBarStateFromSession(
 
 const getSessionMessages = (state: ChatState, key: string): ChatMessage[] =>
   state.messagesPerSession[key] ?? (key === state.activeSessionKey ? state.messages : []);
+
+function withoutSessionKeys<T>(
+  record: Record<string, T>,
+  sessionKeys: ReadonlySet<string>,
+): Record<string, T> {
+  if (sessionKeys.size === 0) return record;
+  return Object.fromEntries(
+    Object.entries(record).filter(([sessionKey]) => !sessionKeys.has(sessionKey)),
+  );
+}
+
+/**
+ * Transcript-scoped state must never survive an OpenClaw sessionId rotation.
+ * Logical conversation preferences (tabs, pin, label, draft and unsent
+ * attachments) intentionally remain keyed by sessionKey.
+ */
+function clearTranscriptStateForIdentityChanges(
+  state: ChatState,
+  sessionKeys: ReadonlySet<string>,
+): Partial<ChatState> {
+  if (sessionKeys.size === 0) return {};
+  const activeChanged = sessionKeys.has(state.activeSessionKey);
+  return {
+    messagesPerSession: withoutSessionKeys(state.messagesPerSession, sessionKeys),
+    _blocksCache: withoutSessionKeys(state._blocksCache, sessionKeys),
+    _groupsCache: withoutSessionKeys(state._groupsCache, sessionKeys),
+    typingBySession: withoutSessionKeys(state.typingBySession, sessionKeys),
+    typingStartedAtBySession: withoutSessionKeys(state.typingStartedAtBySession, sessionKeys),
+    quickRepliesBySession: withoutSessionKeys(state.quickRepliesBySession, sessionKeys),
+    thinkingBySession: withoutSessionKeys(state.thinkingBySession, sessionKeys),
+    sendingBySession: withoutSessionKeys(state.sendingBySession, sessionKeys),
+    loadingHistoryBySession: withoutSessionKeys(state.loadingHistoryBySession, sessionKeys),
+    messageQueue: withoutSessionKeys(state.messageQueue, sessionKeys),
+    ...(activeChanged
+      ? {
+          messages: [],
+          renderBlocks: [],
+          responseGroups: [],
+          quickReplies: [],
+          manualModelOverride: null,
+        }
+      : {}),
+  };
+}
+
+const coalesceMessagesById = (messages: ChatMessage[]): ChatMessage[] => {
+  const indexById = new Map<string, number>();
+  const result: ChatMessage[] = [];
+  for (const message of messages) {
+    const existingIndex = indexById.get(message.id);
+    if (existingIndex === undefined) {
+      indexById.set(message.id, result.length);
+      result.push(message);
+      continue;
+    }
+
+    const existing = result[existingIndex];
+    const existingIsLive = existing.isStreaming === true || existing.responseState === 'streaming';
+    const incomingIsLive = message.isStreaming === true || message.responseState === 'streaming';
+    // A terminal projection is authoritative over a delayed live copy. For
+    // equal lifecycle states, the later snapshot carries the newest fields.
+    if (!existingIsLive && incomingIsLive) continue;
+    result[existingIndex] = { ...existing, ...message };
+  }
+  return result;
+};
 
 const createRawHistoryPayload = (messages: ChatMessage[], sessionKey: string) =>
   messages.map((msg) => ({
@@ -715,14 +820,7 @@ const projectSessionMessages = (
       ...state._groupsCache,
       [targetKey]: derived.groups,
     },
-    ...(isActive
-      ? {
-          messages,
-          renderBlocks: derived.blocks,
-          responseGroups: derived.groups,
-          ...(options.clearThinking ? { thinkingText: '', thinkingRunId: null } : {}),
-        }
-      : {}),
+    ...(isActive ? { messages, renderBlocks: derived.blocks, responseGroups: derived.groups } : {}),
   };
 };
 
@@ -831,12 +929,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const derived = recomputeDerived(updated, targetKey);
       const isActive = targetKey === state.activeSessionKey;
+      const wasTyping = state.typingBySession[targetKey] === true;
       return {
         typingBySession: {
           ...state.typingBySession,
           [targetKey]: true,
         },
-        ...(isActive ? { messages: updated, renderBlocks: derived.blocks, responseGroups: derived.groups, isTyping: true } : {}),
+        typingStartedAtBySession: wasTyping
+          ? state.typingStartedAtBySession
+          : { ...state.typingStartedAtBySession, [targetKey]: Date.now() },
+        ...(isActive ? { messages: updated, renderBlocks: derived.blocks, responseGroups: derived.groups } : {}),
         messagesPerSession: {
           ...state.messagesPerSession,
           [targetKey]: updated,
@@ -875,20 +977,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const sessionThinking = state.thinkingBySession[targetKey];
       const thinkingContent = sessionThinking?.text || undefined;
       const finalContent = stripThinkingPrefix(content, thinkingContent);
-      const hasFinalSnapshot = Boolean(content.trim());
+      const finalHasRenderablePayload = Boolean(
+        finalContent.trim()
+        || thinkingContent
+        || extra?.mediaUrl
+        || extra?.fileRefs?.length
+        || extra?.decisionOptions?.length
+        || extra?.workshopEvents?.length
+        || extra?.sessionEvents?.length,
+      );
 
       if (existingIdx >= 0) {
         const existing = currentMessages[existingIdx];
-        const finalHasRenderablePayload = Boolean(
-          finalContent.trim()
-          || thinkingContent
-          || extra?.mediaUrl
-          || extra?.fileRefs?.length
-          || extra?.decisionOptions?.length
-          || extra?.workshopEvents?.length
-          || extra?.sessionEvents?.length,
-        );
-        if (isEmptyAssistantStreamPlaceholder(existing) && !finalHasRenderablePayload) {
+        if (existing.role === 'assistant' && !finalHasRenderablePayload) {
           const updated = currentMessages.filter((message) => message.id !== id);
           return projectSessionMessages(state, targetKey, updated, { clearThinking: true });
         }
@@ -896,10 +997,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         updated[existingIdx] = {
           ...updated[existingIdx],
-          // An empty result from thinking-prefix removal is intentional. Only
-          // fall back to the live text when the Gateway did not send a final
-          // snapshot at all.
-          content: hasFinalSnapshot ? finalContent : updated[existingIdx].content,
+          // The caller has already selected the canonical terminal snapshot or
+          // its protocol-defined fallback. An empty value is therefore final.
+          content: finalContent,
           runId: extra?.runId ?? updated[existingIdx].runId ?? null,
           isStreaming: false,
           responseState: extra?.responseState ?? 'final',
@@ -936,15 +1036,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 messages: updated,
                 renderBlocks: derived.blocks,
                 responseGroups: derived.groups,
-                thinkingText: '',
-                thinkingRunId: null,
               }
             : {}),
         };
       }
       // Message not found — this happens when post-tool-call text arrives
       // with a new runId that had no preceding delta events. Create a new message.
-      if (finalContent && finalContent.trim()) {
+      if (finalHasRenderablePayload) {
         const newMsg: ChatMessage = {
           id,
           role: 'assistant',
@@ -986,8 +1084,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 messages: updated,
                 renderBlocks: derived.blocks,
                 responseGroups: derived.groups,
-                thinkingText: '',
-                thinkingRunId: null,
               }
             : {}),
         };
@@ -997,9 +1093,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ...state.thinkingBySession,
           [targetKey]: { runId: null, text: '' },
         },
-        ...(targetKey === state.activeSessionKey
-          ? { thinkingText: '', thinkingRunId: null }
-          : {}),
       };
     });
   },
@@ -1007,18 +1100,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setMessages: (msgs, sessionKey) => set((state) => {
     const targetKey = sessionKey ?? state.activeSessionKey;
     if (isSessionDeleted(targetKey)) return state;
-    const derived = recomputeDerived(msgs, targetKey);
+    const canonicalMessages = coalesceMessagesById(msgs);
+    const derived = recomputeDerived(canonicalMessages, targetKey);
     const isActive = targetKey === state.activeSessionKey;
     const currentSession = state.sessions.find((session) => session.key === targetKey);
     return {
       sessions: updateSession(state.sessions, targetKey, (session) => ({
         ...session,
-        topic: resolveAndPersistSessionTopic(targetKey, session.topic, msgs, session.lastMessage),
+        topic: resolveAndPersistSessionTopic(targetKey, session.topic, canonicalMessages, session.lastMessage),
       })),
-      ...(isActive ? { messages: msgs, renderBlocks: derived.blocks, responseGroups: derived.groups } : {}),
+      ...(isActive ? { messages: canonicalMessages, renderBlocks: derived.blocks, responseGroups: derived.groups } : {}),
       messagesPerSession: {
         ...state.messagesPerSession,
-        [targetKey]: msgs,
+        [targetKey]: canonicalMessages,
       },
       _blocksCache: {
         ...state._blocksCache,
@@ -1039,6 +1133,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...state.typingBySession,
         [targetKey]: false,
       },
+      typingStartedAtBySession: Object.fromEntries(
+        Object.entries(state.typingStartedAtBySession).filter(([key]) => key !== targetKey),
+      ),
       quickRepliesBySession: {
         ...state.quickRepliesBySession,
         [targetKey]: [],
@@ -1072,10 +1169,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             messages: [],
             renderBlocks: [],
             responseGroups: [],
-            isTyping: false,
             quickReplies: [],
-            thinkingText: '',
-            thinkingRunId: null,
           }
         : {}),
     };
@@ -1088,13 +1182,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   cacheMessagesForSession: (key, msgs) => set((state) => {
     if (isSessionDeleted(key)) return state;
-    const derived = recomputeDerived(msgs, key);
+    const canonicalMessages = coalesceMessagesById(msgs);
+    const derived = recomputeDerived(canonicalMessages, key);
     return {
       sessions: updateSession(state.sessions, key, (session) => ({
         ...session,
-        topic: resolveAndPersistSessionTopic(key, session.topic, msgs, session.lastMessage),
+        topic: resolveAndPersistSessionTopic(key, session.topic, canonicalMessages, session.lastMessage),
       })),
-      messagesPerSession: { ...state.messagesPerSession, [key]: msgs },
+      messagesPerSession: { ...state.messagesPerSession, [key]: canonicalMessages },
       _blocksCache: { ...state._blocksCache, [key]: derived.blocks },
       _groupsCache: { ...state._groupsCache, [key]: derived.groups },
     };
@@ -1109,6 +1204,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       _blocksCache: { ...state._blocksCache, [key]: [] },
       _groupsCache: { ...state._groupsCache, [key]: [] },
       typingBySession: { ...state.typingBySession, [key]: false },
+      typingStartedAtBySession: Object.fromEntries(
+        Object.entries(state.typingStartedAtBySession).filter(([sessionKey]) => sessionKey !== key),
+      ),
       quickRepliesBySession: { ...state.quickRepliesBySession, [key]: [] },
       thinkingBySession: {
         ...state.thinkingBySession,
@@ -1121,10 +1219,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             messages: [],
             renderBlocks: [],
             responseGroups: [],
-            isTyping: false,
             quickReplies: [],
-            thinkingText: '',
-            thinkingRunId: null,
           }
         : {}),
     };
@@ -1134,24 +1229,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [{ key: MAIN_SESSION, label: 'Main Session' }],
   activeSessionKey: MAIN_SESSION,
 
-  setSessions: (sessions, defaults) => {
+  setSessions: (sessions, defaults, options) => {
+    const stateBeforeMerge = get();
     const {
       activeSessionKey,
       manualModelOverride,
       sessionDefaults: prev,
       sessions: previousSessions,
       messagesPerSession,
-    } = get();
+    } = stateBeforeMerge;
     const defs = defaults ?? prev;
     const visibleIncomingSessions = coalesceSessionsByKey(withoutDeletedSessions(sessions));
     const persistedPins = readSessionPinPrefs();
     const previousByKey = new Map(previousSessions.map((session) => [session.key, session]));
+    const identityTransitions = collectSessionIdentityTransitions(
+      previousSessions,
+      visibleIncomingSessions,
+    );
+    const changedIdentityKeys = new Set(identityTransitions.map((transition) => transition.sessionKey));
+    changedIdentityKeys.forEach(clearSessionTopicPref);
+    const transcriptReset = clearTranscriptStateForIdentityChanges(stateBeforeMerge, changedIdentityKeys);
+    const retainedMessageCache = transcriptReset.messagesPerSession ?? messagesPerSession;
     const incomingKeys = new Set(visibleIncomingSessions.map((session) => session.key));
     const mergedSessions = visibleIncomingSessions.map((session) => {
       const previous = previousByKey.get(session.key);
-      const hasCachedMessages = Object.prototype.hasOwnProperty.call(messagesPerSession, session.key);
-      const cachedMessages = hasCachedMessages ? messagesPerSession[session.key] ?? [] : [];
-      const hydratedTopic = previous?.topic ?? getSessionTopicPref(session.key);
+      const hasCachedMessages = Object.prototype.hasOwnProperty.call(retainedMessageCache, session.key);
+      const cachedMessages = hasCachedMessages ? retainedMessageCache[session.key] ?? [] : [];
+      const hydratedTopic = changedIdentityKeys.has(session.key)
+        ? undefined
+        : previous?.topic ?? getSessionTopicPref(session.key);
       const merged: Session = {
         ...session,
         // OpenClaw's `sessions.list` response is authoritative for labels.
@@ -1167,45 +1273,68 @@ export const useChatStore = create<ChatState>((set, get) => ({
         topic: hasCachedMessages
           ? resolveAndPersistSessionTopic(session.key, hydratedTopic, cachedMessages, session.lastMessage)
           : resolveAndPersistSessionTopic(session.key, hydratedTopic, [], session.lastMessage),
-        unread: previous?.unread ?? session.unread ?? 0,
-        hasPendingCompletion: previous?.hasPendingCompletion ?? session.hasPendingCompletion ?? false,
+        unread: changedIdentityKeys.has(session.key)
+          ? session.unread ?? 0
+          : previous?.unread ?? session.unread ?? 0,
+        hasPendingCompletion: changedIdentityKeys.has(session.key)
+          ? session.hasPendingCompletion ?? false
+          : previous?.hasPendingCompletion ?? session.hasPendingCompletion ?? false,
       };
       return session.key === activeSessionKey ? clearSessionAttentionState(merged) : merged;
     });
-    const localOnlySessions = previousSessions.filter((session) => {
+    const retainedPreviousSessions = previousSessions.filter((session) => {
       if (incomingKeys.has(session.key)) return false;
+      if (options?.completeSnapshot === false) return true;
       if (session.archived) return false;
       return isLocalPlaceholderSession(session);
     });
-    const nextSessions = [...mergedSessions, ...localOnlySessions];
+    const nextSessions = [...mergedSessions, ...retainedPreviousSessions];
     const hasAuthoritativeMainSession = visibleIncomingSessions.some((session) => isAgentMainSession(session.key));
-    const removedCanonicalSessionKeys = hasAuthoritativeMainSession
+    const removedCanonicalSessionKeys = options?.completeSnapshot !== false && hasAuthoritativeMainSession
       ? previousSessions.flatMap((session) => {
           if (incomingKeys.has(session.key) || isAgentMainSession(session.key)) return [];
           return isLocalPlaceholderSession(session) ? [] : [session.key];
         })
       : [];
-    removedCanonicalSessionKeys.forEach(markSessionDeleted);
     const active = nextSessions.find((s) => s.key === activeSessionKey);
     const titleBar = titleBarStateFromSession(active, defs);
     set({
+      ...transcriptReset,
       sessions: nextSessions,
       ...(defaults ? { sessionDefaults: defs } : {}),
       currentThinking: titleBar.currentThinking,
       tokenUsage: titleBar.tokenUsage,
       // Only update currentModel if there is no manual override in effect.
-      ...(manualModelOverride ? {} : { currentModel: titleBar.currentModel }),
+      ...(manualModelOverride && !changedIdentityKeys.has(activeSessionKey)
+        ? {}
+        : { currentModel: titleBar.currentModel }),
     });
+    publishSessionIdentityTransitions(identityTransitions);
     removedCanonicalSessionKeys.forEach((key) => get().removeSession(key));
   },
 
-  setSessionIdentity: (key, sessionId, agentId) => set((state) => ({
-    sessions: upsertSession(state.sessions, key, (session) => ({
-      ...session,
-      sessionId,
-      ...(agentId ? { agentId } : {}),
-    })),
-  })),
+  setSessionIdentity: (key, sessionId, agentId) => {
+    const previousSessionId = get().sessions.find((session) => session.key === key)?.sessionId;
+    const changed = hasSessionIdentityChanged(previousSessionId, sessionId);
+    if (changed) clearSessionTopicPref(key);
+    set((state) => ({
+      ...(changed ? clearTranscriptStateForIdentityChanges(state, new Set([key])) : {}),
+      sessions: upsertSession(state.sessions, key, (session) => ({
+        ...session,
+        sessionId,
+        localOnly: false,
+        ...(agentId ? { agentId } : {}),
+        ...(changed ? { topic: undefined, unread: 0, hasPendingCompletion: false } : {}),
+      })),
+    }));
+    if (changed) {
+      publishSessionIdentityTransitions([{
+        sessionKey: key,
+        previousSessionId: previousSessionId!.trim(),
+        nextSessionId: sessionId.trim(),
+      }]);
+    }
+  },
 
   setActiveSession: (key) => {
     if (isSessionDeleted(key)) return;
@@ -1225,10 +1354,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: msgs,
       renderBlocks: blocks ?? recomputeBlocks(msgs, key),
       responseGroups: groups ?? recomputeGroups(msgs, key),
-      isTyping: state.typingBySession[key] || false,
       quickReplies: state.quickRepliesBySession[key] || [],
-      thinkingText: state.thinkingBySession[key]?.text || '',
-      thinkingRunId: state.thinkingBySession[key]?.runId || null,
       ...titleBar,
     });
   },
@@ -1274,17 +1400,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const msgs = state.messagesPerSession[session.key] || [];
       const blocks = state._blocksCache[session.key];
       const groups = state._groupsCache[session.key];
-      const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
+      const localSession = { ...session, localOnly: true };
+      const titleBar = titleBarStateFromSession(localSession, state.sessionDefaults);
       const activeState = {
         openTabs,
         activeSessionKey: session.key,
         messages: msgs,
         renderBlocks: blocks ?? recomputeBlocks(msgs, session.key),
         responseGroups: groups ?? recomputeGroups(msgs, session.key),
-        isTyping: state.typingBySession[session.key] || false,
         quickReplies: state.quickRepliesBySession[session.key] || [],
-        thinkingText: state.thinkingBySession[session.key]?.text || '',
-        thinkingRunId: state.thinkingBySession[session.key]?.runId || null,
         ...titleBar,
       };
       if (exists) {
@@ -1292,7 +1416,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       return {
         ...activeState,
-        sessions: [...state.sessions, session],
+        sessions: [...state.sessions, localSession],
       };
     });
   },
@@ -1403,10 +1527,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: cached,
         renderBlocks: blocks ?? recomputeBlocks(cached, key),
         responseGroups: groups ?? recomputeGroups(cached, key),
-        isTyping: state.typingBySession[key] || false,
         quickReplies: state.quickRepliesBySession[key] || [],
-        thinkingText: state.thinkingBySession[key]?.text || '',
-        thinkingRunId: state.thinkingBySession[key]?.runId || null,
         ...titleBar,
       };
     }
@@ -1422,10 +1543,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: msgs,
       renderBlocks: blocks ?? recomputeBlocks(msgs, key),
       responseGroups: groups ?? recomputeGroups(msgs, key),
-      isTyping: state.typingBySession[key] || false,
       quickReplies: state.quickRepliesBySession[key] || [],
-      thinkingText: state.thinkingBySession[key]?.text || '',
-      thinkingRunId: state.thinkingBySession[key]?.runId || null,
       ...titleBar,
     };
   }),
@@ -1451,10 +1569,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: msgs,
       renderBlocks: blocks ?? recomputeBlocks(msgs, newActive),
       responseGroups: groups ?? recomputeGroups(msgs, newActive),
-      isTyping: state.typingBySession[newActive] || false,
       quickReplies: state.quickRepliesBySession[newActive] || [],
-      thinkingText: state.thinkingBySession[newActive]?.text || '',
-      thinkingRunId: state.thinkingBySession[newActive]?.runId || null,
       ...titleBar,
     };
   }),
@@ -1482,6 +1597,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { [key]: _blocks, ...restBlocks } = state._blocksCache;
     const { [key]: _groupsRm, ...restGroupsCache } = state._groupsCache;
     const { [key]: _typingRm, ...restTyping } = state.typingBySession;
+    const { [key]: _typingStartedAt, ...restTypingStartedAt } = state.typingStartedAtBySession;
     const { [key]: _qr, ...restQuickReplies } = state.quickRepliesBySession;
     const { [key]: _thinking, ...restThinking } = state.thinkingBySession;
     const { [key]: _draft, ...restDrafts } = state.drafts;
@@ -1503,6 +1619,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       _blocksCache: restBlocks,
       _groupsCache: restGroupsCache,
       typingBySession: restTyping,
+      typingStartedAtBySession: restTypingStartedAt,
       quickRepliesBySession: restQuickReplies,
       thinkingBySession: restThinking,
       drafts: restDrafts,
@@ -1512,12 +1629,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sendingBySession: restSendingBySession,
       loadingHistoryBySession: restLoadingHistoryBySession,
       quickReplies: restQuickReplies[newActive] || [],
-      thinkingText: restThinking[newActive]?.text || '',
-      thinkingRunId: restThinking[newActive]?.runId || null,
       messages: msgs,
       renderBlocks: blocks ?? recomputeBlocks(msgs, newActive),
       responseGroups: groups ?? recomputeGroups(msgs, newActive),
-      isTyping: restTyping[newActive] || false,
       ...titleBar,
     };
   }),
@@ -1575,13 +1689,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   modelsLoading: true,
 
   // ── UI State ──
-  isTyping: false,
   typingBySession: {},
+  typingStartedAtBySession: {},
   messageQueue: {},
   enqueueMessage: (sessionKey, message) => set((state) => {
     const queue = state.messageQueue[sessionKey] || [];
     if (queue.length >= MAX_SESSION_MESSAGE_QUEUE_SIZE) {
       throw new SessionMessageQueueFullError();
+    }
+    const payloadBytes = queue.reduce((total, item) => total + queuedChatMessageBytes(item), 0)
+      + queuedChatMessageBytes(message);
+    if (payloadBytes > MAX_SESSION_MESSAGE_QUEUE_BYTES) {
+      throw new SessionMessageQueuePayloadLimitError();
     }
     return {
       messageQueue: {
@@ -1629,17 +1748,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
         clientMessageId: next.id,
         sessionId: next.sessionId,
       }) as { queued?: boolean } | undefined;
+      const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
       set((state) => ({
         messageQueue: {
           ...state.messageQueue,
           [sessionKey]: (state.messageQueue[sessionKey] || []).filter((item) => item.id !== next.id),
         },
       }));
-      get().updateMessage(sessionKey, next.id, {
-        status: result?.queued ? 'queued' : 'sent',
-        deliveryError: undefined,
-        retryPayload: result?.queued ? retryPayload : undefined,
-      });
+      get().updateMessage(sessionKey, next.id, deliveryUncertain
+        ? { status: 'pending', deliveryError: undefined, retryPayload }
+        : {
+            status: result?.queued ? 'queued' : 'sent',
+            deliveryError: undefined,
+            retryPayload: result?.queued ? retryPayload : undefined,
+          });
       if (result?.queued) get().setIsTyping(false, sessionKey);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'Message delivery failed');
@@ -1659,6 +1781,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       get().setIsTyping(false, sessionKey);
     } finally {
       drainingQueueSessions.delete(sessionKey);
+      // A cached terminal chat.send acknowledgement can settle typing before
+      // this drain releases its re-entry guard. Re-arm the queue pump after
+      // the guard is gone so the next item is not stranded waiting for a
+      // transition that already happened.
+      queueMicrotask(() => {
+        const state = get();
+        const queued = state.messageQueue[sessionKey]?.[0];
+        if (
+          queued
+          && !queued.failed
+          && state.connected
+          && !state.typingBySession[sessionKey]
+          && !sessionMutationGate.isBlocked(sessionKey)
+          && !isSessionDeleted(sessionKey)
+        ) {
+          void state.drainQueue(sessionKey);
+        }
+      });
     }
   },
   retryQueuedMessage: async (sessionKey, id) => {
@@ -1682,7 +1822,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const messages = getSessionMessages(get(), sessionKey);
     if (!messages.some((message) => queuedIds.has(message.id))) return;
     get().setMessages(messages.map((message) => (
-      queuedIds.has(message.id) ? { ...message, status: 'cancelled' as const } : message
+      queuedIds.has(message.id)
+        ? { ...message, status: 'cancelled' as const, retryPayload: undefined }
+        : message
     )), sessionKey);
   },
   removeQueuedMessage: (sessionKey, id) => {
@@ -1692,7 +1834,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         [sessionKey]: (state.messageQueue[sessionKey] || []).filter((message) => message.id !== id),
       },
     }));
-    get().updateMessage(sessionKey, id, { status: 'cancelled' });
+    get().updateMessage(sessionKey, id, { status: 'cancelled', retryPayload: undefined });
   },
   updateQueuedMessage: (sessionKey, id, newText) => {
     set((state) => ({
@@ -1716,14 +1858,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => {
       const targetKey = sessionKey ?? state.activeSessionKey;
       if (isSessionDeleted(targetKey)) return state;
+      const wasTyping = state.typingBySession[targetKey] === true;
+      const typingStartedAtBySession = { ...state.typingStartedAtBySession };
+      if (typing && !wasTyping) typingStartedAtBySession[targetKey] = Date.now();
+      if (!typing) delete typingStartedAtBySession[targetKey];
       return {
         typingBySession: {
           ...state.typingBySession,
           [targetKey]: typing,
         },
-        ...(targetKey === state.activeSessionKey ? { isTyping: typing } : {}),
+        typingStartedAtBySession,
       };
     }),
+  settleSessionRunUi: (sessionKey) => set((state) => {
+    const targetKey = sessionKey ?? state.activeSessionKey;
+    if (isSessionDeleted(targetKey)) return state;
+    const typingStartedAtBySession = { ...state.typingStartedAtBySession };
+    delete typingStartedAtBySession[targetKey];
+    return {
+      typingBySession: { ...state.typingBySession, [targetKey]: false },
+      typingStartedAtBySession,
+      thinkingBySession: {
+        ...state.thinkingBySession,
+        [targetKey]: { runId: null, text: '' },
+      },
+      sendingBySession: { ...state.sendingBySession, [targetKey]: false },
+    };
+  }),
   sendingBySession: {},
   setIsSending: (sending, sessionKey) => set((state) => {
     const targetKey = sessionKey ?? state.activeSessionKey;
@@ -1755,6 +1916,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     isSessionDeleted(key) ? state : { drafts: { ...state.drafts, [key]: text } }
   )),
   getDraft: (key) => get().drafts[key] || '',
+  consumeComposerSnapshot: (key, snapshot) => set((state) => {
+    if (isSessionDeleted(key)) return state;
+    const sentAttachmentIds = new Set(snapshot.attachmentIds);
+    const currentFiles = state.preparedAttachments[key] ?? [];
+    const remainingFiles = currentFiles.filter((file) => !sentAttachmentIds.has(file.id));
+    const currentText = state.drafts[key] ?? '';
+    return {
+      ...(currentText === snapshot.text
+        ? { drafts: { ...state.drafts, [key]: '' } }
+        : {}),
+      ...(remainingFiles.length !== currentFiles.length
+        ? { preparedAttachments: { ...state.preparedAttachments, [key]: remainingFiles } }
+        : {}),
+    };
+  }),
 
   // ── Quick Replies ──
   quickReplies: [],
@@ -1772,8 +1948,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   }),
 
   // ── Thinking Stream ──
-  thinkingText: '',
-  thinkingRunId: null,
   thinkingBySession: {},
   setThinkingStream: (runId, text, sessionKey) => set((state) => {
     const targetKey = sessionKey ?? state.activeSessionKey;
@@ -1783,7 +1957,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...state.thinkingBySession,
         [targetKey]: { runId, text },
       },
-      ...(targetKey === state.activeSessionKey ? { thinkingRunId: runId, thinkingText: text } : {}),
     };
   }),
   clearThinking: (sessionKey) => set((state) => {
@@ -1793,7 +1966,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...state.thinkingBySession,
         [targetKey]: { runId: null, text: '' },
       },
-      ...(targetKey === state.activeSessionKey ? { thinkingText: '', thinkingRunId: null } : {}),
     };
   }),
 

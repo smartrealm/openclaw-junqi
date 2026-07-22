@@ -1,9 +1,23 @@
 class SessionMutationGate {
   private readonly activeCounts = new Map<string, number>();
+  private readonly retainedCounts = new Map<string, number>();
   private readonly pending = new Map<string, Promise<unknown>>();
 
   isBlocked(sessionKey: string): boolean {
-    return (this.activeCounts.get(sessionKey) ?? 0) > 0;
+    return (this.activeCounts.get(sessionKey) ?? 0) > 0
+      || (this.retainedCounts.get(sessionKey) ?? 0) > 0;
+  }
+
+  retain(sessionKey: string): () => void {
+    this.retainedCounts.set(sessionKey, (this.retainedCounts.get(sessionKey) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const remaining = (this.retainedCounts.get(sessionKey) ?? 1) - 1;
+      if (remaining > 0) this.retainedCounts.set(sessionKey, remaining);
+      else this.retainedCounts.delete(sessionKey);
+    };
   }
 
   async run<T>(sessionKey: string, operation: () => Promise<T>): Promise<T> {

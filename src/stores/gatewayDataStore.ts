@@ -6,6 +6,7 @@ import {
   markSessionDeleted,
   withoutDeletedSessions,
 } from '@/utils/sessionLifecycle';
+import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -345,7 +346,8 @@ async function fetchSessions() {
   try {
     const res = await gw.request('sessions.list', {});
     if (!sessionsRequestGate.isCurrent(requestId)) return;
-    const rawList: SessionInfo[] = Array.isArray(res?.sessions) ? res.sessions : [];
+    const sessionListSnapshot = parseOpenClawSessionListSnapshot(res);
+    const rawList = sessionListSnapshot.sessions as SessionInfo[];
 
     // Merge: preserve event-enriched runningUpdatedAt that the server does not return.
     // IMPORTANT: polling must NEVER generate a new runningUpdatedAt timestamp by itself.
@@ -355,7 +357,7 @@ async function fetchSessions() {
     // Rule: always carry forward the existing runningUpdatedAt; never mint a new one here.
     const prev = store.sessions;
     const prevByKey = new Map(prev.map((s) => [s.key, s]));
-    const list = rawList.map((s) => {
+    const incomingList = rawList.map((s) => {
       const existing = prevByKey.get(s.key);
       if (!existing) return s; // new session: no runningUpdatedAt — isFreshRunning returns false
       // Always preserve the event-driven runningUpdatedAt regardless of running state change.
@@ -366,6 +368,10 @@ async function fetchSessions() {
         runningUpdatedAt: s.running ? existing.runningUpdatedAt : undefined,
       };
     });
+    const incomingKeys = new Set(incomingList.map((session) => session.key));
+    const list = sessionListSnapshot.complete
+      ? incomingList
+      : [...incomingList, ...prev.filter((session) => !incomingKeys.has(session.key))];
 
     // Skip store update if nothing meaningful changed (avoids unnecessary React re-renders)
     const same = prev.length === list.length
@@ -744,11 +750,12 @@ export function handleGatewayEvent(event: string, payload: any) {
   const store = useGatewayDataStore.getState();
 
   switch (event) {
-    // OpenClaw emits this after sessions.patch/delete for every client that
-    // subscribed to session events. Refresh both data surfaces instead of
-    // manufacturing a local shadow label.
+    // OpenClaw emits this for metadata, lifecycle and transcript changes to
+    // subscribed clients. Refresh both data surfaces instead of manufacturing
+    // local shadow state.
     case 'sessions.changed': {
       const reason = typeof payload?.reason === 'string' ? payload.reason : '';
+      const phase = typeof payload?.phase === 'string' ? payload.phase : '';
       const sessionKey = typeof payload?.sessionKey === 'string'
         ? payload.sessionKey.trim()
         : typeof payload?.key === 'string'
@@ -756,14 +763,21 @@ export function handleGatewayEvent(event: string, payload: any) {
           : '';
       if (reason === 'delete' || reason === 'deleted') {
         if (sessionKey) {
-          markSessionDeleted(sessionKey);
+          const sessionId = typeof payload?.sessionId === 'string'
+            ? payload.sessionId
+            : store.sessions.find((session) => session.key === sessionKey)?.sessionId;
+          markSessionDeleted(sessionKey, sessionId);
           sessionsRequestGate.invalidate();
           store.setSessions(store.sessions.filter((session) => session.key !== sessionKey));
         }
       }
-      if (['patch', 'plugin-patch', 'delete', 'deleted', 'create', 'new', 'reset'].includes(reason)) {
-        scheduleSessionsChangedRefresh({ reason, sessionKey: sessionKey || undefined });
-      }
+      // The event itself is OpenClaw's invalidation contract. Lifecycle and
+      // transcript updates commonly carry `phase` rather than `reason`, so all
+      // sessions.changed events refresh the authoritative session projection.
+      scheduleSessionsChangedRefresh({
+        reason: reason || phase || 'gateway-event',
+        sessionKey: sessionKey || undefined,
+      });
       break;
     }
 

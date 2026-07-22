@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
-import { useChatStore } from '@/stores/chatStore';
+import { selectActiveSessionTyping, useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
 
@@ -17,7 +17,8 @@ export function TypingIndicator() {
   const { language } = useSettingsStore();
   const agents = useGatewayDataStore((s) => s.agents);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
-  const isTyping = useChatStore((s) => s.isTyping);
+  const isTyping = useChatStore(selectActiveSessionTyping);
+  const typingStartedAt = useChatStore((s) => s.typingStartedAtBySession[s.activeSessionKey]);
   const dir = getDirection(language);
   const activeAgentId = (() => {
     if (!activeSessionKey) return 'main';
@@ -29,21 +30,23 @@ export function TypingIndicator() {
     || (activeAgentId === 'main' ? t('agents.mainAgent', 'Main Agent') : activeAgentId);
   const activeAgentLetter = activeAgentName.charAt(0) || 'M';
 
-  // Track when streaming began so we can render an elapsed-time chip
-  // alongside the dots. Reset on every re-mount of the indicator (which
-  // happens whenever isTyping flips false→true, since ChatView conditionally
-  // renders this component). The interval ticks every second while
-  // visible; cheap and avoids a global timer in the store.
+  // The store owns the start instant. This keeps elapsed time truthful when
+  // the footer remounts while a response is still running.
   const [elapsedSec, setElapsedSec] = useState(0);
   useEffect(() => {
-    if (!isTyping) return;
-    const started = Date.now();
-    setElapsedSec(0);
+    if (!isTyping || !typingStartedAt) {
+      setElapsedSec(0);
+      return;
+    }
+    const updateElapsed = () => {
+      setElapsedSec(Math.max(0, Math.floor((Date.now() - typingStartedAt) / 1000)));
+    };
+    updateElapsed();
     const id = setInterval(() => {
-      setElapsedSec(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+      updateElapsed();
     }, 1000);
     return () => clearInterval(id);
-  }, [isTyping]);
+  }, [isTyping, typingStartedAt]);
 
   // Adaptive format: under a minute reads as "Ns" (3s, 12s, 59s); at
   // and beyond one minute it flips to "m:ss" (1:00, 1:23, 10:00). The

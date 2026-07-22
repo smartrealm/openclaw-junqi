@@ -11,6 +11,7 @@ import {
   gatewayMutationFailure,
   isAgentMainSession,
   isSessionDeleted,
+  isUnmaterializedLocalSession,
   markSessionDeleted,
   normalizeSessionKey,
 } from '@/utils/sessionLifecycle';
@@ -92,7 +93,7 @@ export function applyConfirmedSessionDeletion(rawSessionKey: string, confirmedSe
   const chatStore = useChatStore.getState();
   const sessionId = confirmedSessionId
     || chatStore.sessions.find((session) => session.key === sessionKey)?.sessionId;
-  markSessionDeleted(sessionKey);
+  markSessionDeleted(sessionKey, sessionId);
   sessionDeleteDeps.invalidateChatRun(sessionKey);
   chatStore.clearQueue(sessionKey);
   if (sessionId) {
@@ -105,7 +106,17 @@ export function applyConfirmedSessionDeletion(rawSessionKey: string, confirmedSe
   return true;
 }
 
+function removeUnmaterializedLocalSession(sessionKey: string): boolean {
+  const chatStore = useChatStore.getState();
+  const session = chatStore.sessions.find((candidate) => candidate.key === sessionKey);
+  if (!isUnmaterializedLocalSession(session, chatStore.messagesPerSession[sessionKey])) return false;
+  clearDeletedSessionLocalPrefs(sessionKey);
+  chatStore.removeSession(sessionKey);
+  return true;
+}
+
 async function performSessionDeletion(sessionKey: string): Promise<boolean> {
+  if (removeUnmaterializedLocalSession(sessionKey)) return true;
   if (isSessionDeleted(sessionKey)) return applyConfirmedSessionDeletion(sessionKey);
 
   try {

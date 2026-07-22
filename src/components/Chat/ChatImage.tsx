@@ -1,9 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Download, Maximize2, X, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
 import clsx from 'clsx';
 import { debugError, debugLog } from '@/utils/debugLog';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 // ═══════════════════════════════════════════════════════════
 // ChatImage — Image display with save, zoom, and lightbox
@@ -16,6 +18,19 @@ interface ChatImageProps {
   maxWidth?: string;
   maxHeight?: string;
   className?: string;
+}
+
+interface ImageSaveResult {
+  success: boolean;
+  path?: string;
+  canceled?: boolean;
+  error?: string;
+}
+
+export function classifyImageSaveResult(result: ImageSaveResult | null | undefined): 'saved' | 'cancelled' | 'failed' {
+  if (result?.success) return 'saved';
+  if (result?.canceled || /^(?:cancelled|canceled)$/i.test(result?.error?.trim() ?? '')) return 'cancelled';
+  return 'failed';
 }
 
 // ── Resolve image source ──
@@ -98,11 +113,14 @@ function extractFilename(src: string, alt?: string): string {
 // ── Save image via Electron IPC ──
 async function saveImage(src: string, suggestedName: string): Promise<void> {
   try {
-    // Use Electron IPC to save
     const result = await window.aegis?.image?.save(src, suggestedName);
-    if (result?.success) {
-      debugLog('media', '[ChatImage] Saved to:', result.path);
+    const outcome = classifyImageSaveResult(result);
+    if (outcome === 'saved') {
+      debugLog('media', '[ChatImage] Saved to:', result?.path);
+      return;
     }
+    if (outcome === 'cancelled') return;
+    throw new Error(result?.error || 'Image save did not complete');
   } catch (err) {
     debugError('media', '[ChatImage] Save failed:', err);
     // Fallback: open in browser to allow right-click save
@@ -122,6 +140,14 @@ interface LightboxProps {
 
 export function ImageLightbox({ src, alt, onClose }: LightboxProps) {
   const { t } = useTranslation();
+  const uiScale = useSettingsStore((state) => state.uiScale);
+  const topBarHeight = useMemo(() => {
+    if (typeof document === 'undefined') return 0;
+    const value = Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--aegis-topbar-h'),
+    );
+    return Number.isFinite(value) ? value : 0;
+  }, []);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -172,12 +198,19 @@ export function ImageLightbox({ src, alt, onClose }: LightboxProps) {
     saveImage(resolveImageSrcSync(src) ?? src, filename);
   };
 
-  return (
+  const lightbox = (
     <div
-      className="fixed inset-x-0 bottom-0 top-[32px] z-[9999] flex items-center justify-center"
-      style={{ background: 'var(--aegis-bg-frosted)', backdropFilter: 'blur(8px)' }}
+      className="fixed inset-x-0 bottom-0 z-[9999] flex items-center justify-center"
+      style={{
+        top: `${topBarHeight * (100 / Math.max(1, uiScale))}px`,
+        background: 'var(--aegis-bg-frosted)',
+        backdropFilter: 'blur(8px)',
+      }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       onWheel={handleWheel}
+      role="dialog"
+      aria-modal="true"
+      aria-label={alt || t('media.attachment', 'Attachment')}
     >
       {/* Top bar */}
       <div className="absolute top-0 left-0 right-0 h-12 flex items-center justify-between px-4 z-10"
@@ -236,6 +269,7 @@ export function ImageLightbox({ src, alt, onClose }: LightboxProps) {
       </div>
     </div>
   );
+  return typeof document === 'undefined' ? lightbox : createPortal(lightbox, document.body);
 }
 
 // ═══════════════════════════════════════════════════════════

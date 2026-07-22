@@ -121,7 +121,9 @@ describe('session lifecycle regression fixes', () => {
     const gatewaySource = readFileSync(new URL('../stores/gatewayDataStore.ts', import.meta.url), 'utf8');
     const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
     assert.match(gatewaySource, /detail: eventDetail/);
+    assert.match(gatewaySource, /reason: reason \|\| phase \|\| 'gateway-event'/);
     assert.match(appSource, /applyConfirmedSessionDeletion\(detail\.sessionKey\)/);
+    assert.match(appSource, /loadSessions\(\{ reconcileChatRuns: true \}\)/);
   });
 
   test('BUG-02 confirmed external deletion closes the active tab and selects a valid fallback', () => {
@@ -151,6 +153,23 @@ describe('session lifecycle regression fixes', () => {
     assert.equal(useGatewayDataStore.getState().sessions.some((session) => session.key === SESSION_KEY), false);
   });
 
+  test('BUG-03 a deleted identity does not hide a replacement with the same key', () => {
+    seedSession();
+    useChatStore.getState().setSessionIdentity(SESSION_KEY, 'session-old');
+    applyConfirmedSessionDeletion(SESSION_KEY, 'session-old');
+
+    useChatStore.getState().setSessions([
+      { key: MAIN_KEY, label: 'Main', sessionId: 'main-id' },
+      { key: SESSION_KEY, label: 'Replacement', sessionId: 'session-new' },
+    ]);
+
+    assert.equal(isSessionDeleted(SESSION_KEY), false);
+    assert.equal(
+      useChatStore.getState().sessions.find((session) => session.key === SESSION_KEY)?.sessionId,
+      'session-new',
+    );
+  });
+
   test('BUG-04 rename rejects explicit Gateway failures without changing local state', async () => {
     seedSession();
     const failures: string[] = [];
@@ -176,7 +195,7 @@ describe('session lifecycle regression fixes', () => {
       patchLabel: async (_key, label) => {
         calls.push(label);
         if (label === 'First') return firstResponse;
-        return { entry: { label } };
+        return { ok: true, key: SESSION_KEY, entry: { label } };
       },
       notifyFailure: () => {},
       warn: () => {},
@@ -187,7 +206,7 @@ describe('session lifecycle regression fixes', () => {
     await Promise.resolve();
     assert.deepEqual(calls, ['First']);
 
-    releaseFirst({ entry: { label: 'First' } });
+    releaseFirst({ ok: true, key: SESSION_KEY, entry: { label: 'First' } });
     const [firstResult, secondResult] = await Promise.all([first, second]);
 
     assert.equal(firstResult.ok && firstResult.superseded, true);

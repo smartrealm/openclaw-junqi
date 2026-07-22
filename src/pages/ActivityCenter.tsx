@@ -28,7 +28,7 @@ import { agentTaskNeedsAttention } from '@/pages/AgentWorkspace/taskListModel';
 import { sessionActivityTime } from '@/components/Layout/sidebarUtils';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
-import { sessionExecutionState } from '@/utils/sessionPresentation';
+import { projectSessionActivity, type SessionActivity } from '@/utils/sessionPresentation';
 import { formatTokens } from '@/utils/format';
 import { shortModelName, formatActivityTimeTitle } from '@/pages/Dashboard/dashboardData';
 import { activitySessionMetrics, mergeActivitySessions, type ActivitySessionRecord } from '@/utils/activitySessions';
@@ -135,12 +135,12 @@ function workspaceEntry(task: AgentWorkspaceTask, labels: ActivityLabels): Activ
 
 function sessionEntry(
   record: ActivitySessionRecord,
+  activity: SessionActivity,
   agents: Array<{ id: string; name?: string }>,
   labels: ActivityLabels,
 ): ActivityEntry | null {
   const session = record.session;
-  const execution = sessionExecutionState(session);
-  const status = execution;
+  const status = activity.state;
   const attention = session.hasPendingCompletion === true
     || ['input_required', 'awaiting_review', 'attention'].includes(String(session.status).toLowerCase());
   const timestamp = sessionActivityTime(session);
@@ -198,6 +198,11 @@ export function ActivityCenterPage() {
   const navigate = useNavigate();
   const connected = useChatStore((state) => state.connected);
   const chatSessions = useChatStore((state) => state.sessions);
+  const activeSessionKey = useChatStore((state) => state.activeSessionKey);
+  const typingBySession = useChatStore((state) => state.typingBySession);
+  const typingStartedAtBySession = useChatStore((state) => state.typingStartedAtBySession);
+  const thinkingBySession = useChatStore((state) => state.thinkingBySession);
+  const sendingBySession = useChatStore((state) => state.sendingBySession);
   const gatewaySessions = useGatewayDataStore((state) => state.sessions);
   const agents = useGatewayDataStore((state) => state.agents);
   const sessionsUsage = useGatewayDataStore((state) => state.sessionsUsage);
@@ -226,13 +231,26 @@ export function ActivityCenterPage() {
     void refreshSkills();
   }, [refreshSkills]);
 
+  const sessionRecords = useMemo(() => mergeActivitySessions({
+    usageSessions: sessionsUsage?.sessions,
+    gatewaySessions,
+    chatSessions,
+  }), [chatSessions, gatewaySessions, sessionsUsage?.sessions]);
+  const activityProjection = useMemo(() => projectSessionActivity({
+    sessions: sessionRecords.map((record) => record.session),
+    activeSessionKey,
+    typingBySession,
+    typingStartedAtBySession,
+    thinkingBySession,
+    sendingBySession,
+  }), [activeSessionKey, sendingBySession, sessionRecords, thinkingBySession, typingBySession, typingStartedAtBySession]);
+
   const entries = useMemo(() => {
-    const sessionEntries = mergeActivitySessions({
-      usageSessions: sessionsUsage?.sessions,
-      gatewaySessions,
-      chatSessions,
-    })
-      .map((record) => sessionEntry(record, agents, labels))
+    const sessionEntries = sessionRecords
+      .map((record) => {
+        const activity = activityProjection.bySessionKey.get(record.session.key);
+        return activity ? sessionEntry(record, activity, agents, labels) : null;
+      })
       .filter((entry): entry is ActivityEntry => Boolean(entry));
     return [
       ...workspaceTasks.filter((task) => !task.isDraft).map((task) => workspaceEntry(task, labels)),
@@ -244,7 +262,7 @@ export function ActivityCenterPage() {
         if (right.status === 'running' && left.status !== 'running') return 1;
         return right.timestamp - left.timestamp;
       });
-  }, [agents, chatSessions, gatewaySessions, labels, sessionsUsage, workspaceTasks]);
+  }, [activityProjection, agents, labels, sessionRecords, workspaceTasks]);
 
   const visibleEntries = useMemo(() => entries.filter((entry) => entryMatches(entry, filter)), [entries, filter]);
   const attentionEntries = useMemo(() => entries.filter((entry) => entry.attention), [entries]);

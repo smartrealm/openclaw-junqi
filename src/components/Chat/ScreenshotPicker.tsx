@@ -1,7 +1,8 @@
 // Screenshot Picker — native macOS screencapture integration.
 // Clean card UI with primary interactive capture + fallback options.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Monitor, AppWindow, Loader2, Camera, Crosshair, ShieldAlert, ChevronRight, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -20,61 +21,81 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
   const [loading, setLoading] = useState(true);
   const [capturing, setCapturing] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const operationGeneration = useRef(0);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      operationGeneration.current += 1;
+      return;
+    }
+    const generation = ++operationGeneration.current;
     setPermissionDenied(false);
     setLoading(true);
-    tryInteractive();
-    loadWindows();
+    void tryInteractive(generation);
+    void loadWindows(generation);
+    return () => {
+      if (operationGeneration.current === generation) operationGeneration.current += 1;
+    };
   }, [open]);
 
   const [interacting, setInteracting] = useState(false);
 
-  const tryInteractive = async () => {
+  const tryInteractive = async (generation = ++operationGeneration.current) => {
     const api = (window.aegis?.screenshot as any)?.captureInteractive as
       | (() => Promise<{ success: boolean; data?: string; cancelled?: boolean; tccDenied?: boolean }>)
       | undefined;
     if (!api) return;
     setInteracting(true);
     const result = await api();
+    if (operationGeneration.current !== generation) return;
     setInteracting(false);
     if (result?.success && result.data) { onCapture(result.data); onClose(); return; }
     if ((result as any)?.tccDenied) setPermissionDenied(true);
   };
 
-  const loadWindows = async () => {
+  const loadWindows = async (generation: number) => {
     try {
       const sources = await (window.aegis?.screenshot as any)?.getSources?.()
         || await window.aegis?.screenshot.getWindows() || null;
+      if (operationGeneration.current !== generation) return;
       if (Array.isArray(sources)) setWindows(sources.filter((w: WindowSource) => w.name));
-    } catch {} finally { setLoading(false); }
+    } catch {} finally {
+      if (operationGeneration.current === generation) setLoading(false);
+    }
   };
 
   const captureScreen = async () => {
+    const generation = ++operationGeneration.current;
     setCapturing('screen');
     try {
       const r: any = await window.aegis?.screenshot.capture?.();
+      if (operationGeneration.current !== generation) return;
       if (r?.success && r.data) { onCapture(r.data); onClose(); return; }
       if (r?.tccDenied) setPermissionDenied(true);
-    } catch {} finally { setCapturing(null); }
+    } catch {} finally {
+      if (operationGeneration.current === generation) setCapturing(null);
+    }
   };
 
   const captureWindow = async (id: string) => {
+    const generation = ++operationGeneration.current;
     setCapturing(id);
     try {
       const r: any = await window.aegis?.screenshot.captureWindow(id);
+      if (operationGeneration.current !== generation) return;
       if (r?.success && r.data) { onCapture(r.data); onClose(); }
-    } catch {} finally { setCapturing(null); }
+    } catch {} finally {
+      if (operationGeneration.current === generation) setCapturing(null);
+    }
   };
 
   if (!open) return null;
 
-  return (
+  const picker = (
     <div className={clsx(
       'fixed inset-0 z-50 flex items-end justify-center pb-6',
       interacting ? 'bg-transparent' : 'bg-black/30'
-    )} onClick={interacting ? undefined : onClose}>
+    )} onClick={interacting ? undefined : onClose} role="dialog" aria-modal="true">
       <div
         className="w-[420px] max-h-[70vh] rounded-2xl bg-aegis-menu-bg border border-aegis-menu-border shadow-2xl overflow-hidden animate-fade-in"
         style={{ boxShadow: '0 -8px 40px rgba(0,0,0,0.4)' }}
@@ -119,7 +140,7 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
             <>
               {/* ── Primary: Interactive capture ── */}
               <button
-                onClick={tryInteractive}
+                onClick={() => void tryInteractive()}
                 className={clsx(
                   'w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all mb-3',
                   'border-aegis-primary/25 bg-gradient-to-br from-aegis-primary/8 to-aegis-primary/3 hover:from-aegis-primary/12 hover:to-aegis-primary/5',
@@ -191,4 +212,5 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
       </div>
     </div>
   );
+  return typeof document === 'undefined' ? picker : createPortal(picker, document.body);
 }

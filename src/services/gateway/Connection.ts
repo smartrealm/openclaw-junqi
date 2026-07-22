@@ -101,6 +101,17 @@ export interface GatewaySessionRunReconciliation {
   activeRunId?: string;
 }
 
+export interface GatewayTranscriptMessageNotice {
+  sessionKey: string;
+  role: string;
+  text: string;
+  nativeMessageId?: string;
+  clientMessageId?: string;
+  messageSeq?: number;
+  /** True when the same socket already projected this run through live events. */
+  liveProjected: boolean;
+}
+
 export interface GatewayCallbacks {
   onMessage: (msg: ChatMessage) => void;
   onStreamChunk: (sessionKey: string, messageId: string, content: string, media?: MediaInfo, runId?: string | null) => void;
@@ -109,8 +120,12 @@ export interface GatewayCallbacks {
   onSessionRunReconciliation?: (resolution: GatewaySessionRunReconciliation) => void;
   /** A run sequence gap requires a durable history refresh before trusting live text. */
   onStreamReconciliationNeeded?: (sessionKey: string, runId: string) => void;
+  /** A durable transcript snapshot could not be tied to the locally active run. */
+  onSessionRunReconciliationNeeded?: (sessionKey: string) => void;
   /** An official `session.message` notification changed a durable transcript. */
   onTranscriptChanged?: (sessionKey: string) => void;
+  /** Typed durable message notice for unread and notification projection only. */
+  onTranscriptMessage?: (notice: GatewayTranscriptMessageNotice) => void;
   onStatusChange: (status: { connected: boolean; connecting: boolean; error?: string }) => void;
   onRetryState?: (state: GatewayRetryState) => void;
   /** Structured authorization failure from the Gateway protocol. */
@@ -295,6 +310,11 @@ export class GatewayConnection {
   /** Returns true when the WebSocket is established and handshake succeeded */
   isConnected(): boolean {
     return this.connected;
+  }
+
+  /** The attested socket identity used by requestFenced. */
+  getAttestedConnectionId(): string | null {
+    return this.runtimeIdentityConnectionId;
   }
 
   // ══════════════════════════════════════════════════════
@@ -642,7 +662,7 @@ export class GatewayConnection {
         },
         role: 'operator',
         scopes,
-        caps: ['streaming'],
+        caps: ['tool-events'],
         commands: [],
         permissions: {},
         auth: {

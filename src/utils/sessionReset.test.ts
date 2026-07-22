@@ -27,16 +27,24 @@ test('clears local state only after the coordinated native reset succeeds', asyn
   const events: string[] = [];
   const invalidated: string[] = [];
   setSessionResetDependenciesForTests({
-    resetRemote: async () => ({ success: true, sessionId: 'session-before' }),
+    resetRemote: async () => ({
+      success: true,
+      previousSessionId: 'session-before',
+      sessionId: 'session-after',
+    }),
     invalidateChatRun: (key) => invalidated.push(key),
     dispatchReset: (key) => events.push(key),
   });
 
   assert.equal(await resetSessionEverywhere(KEY), true);
-  assert.deepEqual(useChatStore.getState().messagesPerSession[KEY], []);
-  assert.deepEqual(useChatStore.getState().messageQueue[KEY], []);
+  assert.equal(useChatStore.getState().messagesPerSession[KEY], undefined);
+  assert.equal(useChatStore.getState().messageQueue[KEY], undefined);
   assert.deepEqual(invalidated, [KEY]);
   assert.deepEqual(events, [KEY]);
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === KEY)?.sessionId,
+    'session-after',
+  );
 });
 
 test('preserves local state when the mutation is cancelled', async () => {
@@ -60,4 +68,24 @@ test('preserves local state and reports a core failure', async () => {
   assert.equal(await resetSessionEverywhere(KEY), false);
   assert.equal(useChatStore.getState().messagesPerSession[KEY]?.length, 1);
   assert.deepEqual(failures, ['reset rejected']);
+});
+
+test('resets an unmaterialized local session without calling OpenClaw', async () => {
+  let requests = 0;
+  useChatStore.setState({ sessions: [], messages: [], messagesPerSession: {} });
+  useChatStore.getState().addLocalSession({
+    key: KEY,
+    label: 'New session',
+    agentId: 'main',
+    createdAt: Date.now(),
+  });
+  setSessionResetDependenciesForTests({
+    resetRemote: async () => {
+      requests += 1;
+      return { success: true };
+    },
+  });
+
+  assert.equal(await resetSessionEverywhere(KEY), true);
+  assert.equal(requests, 0);
 });

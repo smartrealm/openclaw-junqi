@@ -34,7 +34,7 @@ describe('applySessionRename', () => {
     __setSessionRenameDepsForTest({
       patchLabel: async (key, label) => {
         patches.push({ key, label });
-        return { entry: label === null ? {} : { label } };
+        return { ok: true, key, entry: label === null ? {} : { label } };
       },
       warn: (...args) => warnings.push(args),
     });
@@ -68,7 +68,7 @@ describe('applySessionRename', () => {
     __setSessionRenameDepsForTest({
       patchLabel: async (key, label) => {
         patches.push({ key, label });
-        return { entry: { label: 'Confirmed by Gateway' } };
+        return { ok: true, key, entry: { label: 'Confirmed by Gateway' } };
       },
       warn: (...args) => warnings.push(args),
     });
@@ -107,5 +107,20 @@ describe('applySessionRename', () => {
 
     assert.deepEqual(result, { ok: false, error: 'Missing session key' });
     assert.deepEqual(patches, []);
+  });
+
+  test('renames an unmaterialized local session without calling OpenClaw', async () => {
+    useChatStore.getState().addLocalSession({
+      key: TEST_KEY,
+      label: 'New session',
+      agentId: 'test',
+      createdAt: Date.now(),
+    });
+
+    const result = await applySessionRename(TEST_KEY, 'Local draft');
+
+    assert.deepEqual(result, { ok: true, label: 'Local draft' });
+    assert.deepEqual(patches, []);
+    assert.equal(chatLabel(), 'Local draft');
   });
 });

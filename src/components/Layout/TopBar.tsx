@@ -43,6 +43,7 @@ import { TerminalOpenInAppIcon, type TerminalOpenInApp } from '@/components/Term
 import { isTerminalAgentId } from '@/components/Terminal/terminalAgentCatalog';
 import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
 import { resolveNotificationTarget } from '@/utils/notificationTarget';
+import { projectSessionActivity } from '@/utils/sessionPresentation';
 import {
   AGENT_WORKSPACE_SIDEBAR_MODE_EVENT,
   readAgentWorkspaceSidebarMode,
@@ -320,15 +321,24 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
   const connected = useChatStore((s) => s.connected);
   const connecting = useChatStore((s) => s.connecting);
   const typingBySession = useChatStore((s) => s.typingBySession);
+  const typingStartedAtBySession = useChatStore((s) => s.typingStartedAtBySession);
   const thinkingBySession = useChatStore((s) => s.thinkingBySession);
+  const sendingBySession = useChatStore((s) => s.sendingBySession);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const sessions = useChatStore((s) => s.sessions);
   const agents = useGatewayDataStore((s) => s.agents);
   const currentModel = useChatStore((s) => s.currentModel);
 
-  const workingKeys = Object.keys(typingBySession).filter((k) => typingBySession[k]);
+  const activityProjection = useMemo(() => projectSessionActivity({
+    sessions,
+    activeSessionKey,
+    typingBySession,
+    typingStartedAtBySession,
+    thinkingBySession,
+    sendingBySession,
+  }), [activeSessionKey, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
+  const workingKeys = activityProjection.active.map((activity) => activity.sessionKey);
   const workingCount = workingKeys.length;
-  const activeWorking = !!typingBySession[activeSessionKey];
   const status: AiStatus = !connected && !connecting
     ? 'disconnected'
     : connecting
@@ -337,29 +347,26 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
         ? 'working'
         : 'idle';
 
-  // Live elapsed timer while the AI is working.
+  const workingDisplayKey = activityProjection.workingDisplayKey;
+  const displayActivity = workingDisplayKey
+    ? activityProjection.bySessionKey.get(workingDisplayKey) ?? null
+    : null;
+
+  // The projection carries the store-owned start instant for the selected run.
   const [elapsed, setElapsed] = useState(0);
-  const startRef = useRef<number | null>(null);
   useEffect(() => {
-    if (status === 'working') {
-      if (startRef.current == null) startRef.current = Date.now();
-      const id = setInterval(() => {
-        setElapsed(Math.floor((Date.now() - (startRef.current ?? Date.now())) / 1000));
-      }, 1000);
-      return () => clearInterval(id);
+    const startedAt = displayActivity?.startedAt;
+    if (status !== 'working' || !startedAt) {
+      setElapsed(0);
+      return undefined;
     }
-    startRef.current = null;
-    setElapsed(0);
-    return undefined;
-  }, [status]);
+    const updateElapsed = () => setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    updateElapsed();
+    const id = window.setInterval(updateElapsed, 1_000);
+    return () => window.clearInterval(id);
+  }, [displayActivity?.startedAt, status]);
 
   // ── Multi-agent awareness ─────────────────────────────────────────────
-  const workingDisplayKey = (() => {
-    if (activeWorking) return activeSessionKey;
-    if (workingKeys.length === 0) return null;
-    const thinkingFresh = workingKeys.find((k) => (thinkingBySession?.[k]?.text?.length ?? 0) > 0);
-    return thinkingFresh ?? workingKeys[0];
-  })();
   const isBackground = !!workingDisplayKey && workingDisplayKey !== activeSessionKey;
 
   const displayKey = workingDisplayKey ?? activeSessionKey;
@@ -367,18 +374,22 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
   const agentId = displayKey.split(':')[1] || 'main';
   const activeAgentId = activeSessionKey.split(':')[1] || 'main';
   const sessionLabel = displaySession?.label || '';
-  const displayThinking = (thinkingBySession?.[displayKey]?.text?.length ?? 0) > 0;
+  const displayThinking = displayActivity?.phase === 'thinking';
   const modelShort = (displaySession?.model || currentModel || '').split('/').pop() || '';
-  const elapsedText = elapsed >= 60
-    ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
-    : `${elapsed}s`;
+  const elapsedText = displayActivity?.startedAt
+    ? elapsed >= 60
+      ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
+      : `${elapsed}s`
+    : '';
 
   const onStatusClick = useCallback(() => {
-    if (status === 'working') navigate('/chat');
-    else if (status === 'disconnected') {
+    if (status === 'working' && workingDisplayKey) {
+      useChatStore.getState().openTab(workingDisplayKey);
+      navigate('/chat');
+    } else if (status === 'disconnected') {
       void gatewayManager.restart();
     }
-  }, [status, navigate]);
+  }, [navigate, status, workingDisplayKey]);
 
   const statusClickable = status === 'working' || status === 'disconnected';
 
@@ -468,7 +479,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     const prefix = isBackground
       ? t('topbar.backgroundPrefix', { agent: activeAgentId, defaultValue: 'BG · {{agent}} · ' })
       : '';
-    workingText = `${prefix}${agentPart} · ${phase} · ${modelShort} · ${elapsedText}`.replace(/\s·\s$/, '');
+    workingText = `${prefix}${[agentPart, phase, modelShort, elapsedText].filter(Boolean).join(' · ')}`;
   }
 
   const statusText =

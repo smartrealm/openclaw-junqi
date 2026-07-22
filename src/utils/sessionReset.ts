@@ -4,9 +4,12 @@ import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { debugWarn } from '@/utils/debugLog';
+import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import {
   gatewayMutationFailure,
   isSessionDeleted,
+  isUnmaterializedLocalSession,
   normalizeSessionKey,
 } from '@/utils/sessionLifecycle';
 
@@ -70,6 +73,14 @@ function resumeQueuedMessages(sessionKey: string): void {
 }
 
 async function performSessionReset(sessionKey: string): Promise<boolean> {
+  const localState = useChatStore.getState();
+  const localSession = localState.sessions.find((session) => session.key === sessionKey);
+  if (isUnmaterializedLocalSession(localSession, localState.messagesPerSession[sessionKey])) {
+    localState.clearQueue(sessionKey);
+    localState.clearSessionMessages(sessionKey);
+    localState.clearSessionTokens(sessionKey);
+    return true;
+  }
   try {
     const result = await sessionResetDeps.resetRemote(sessionKey);
     const outcome = result && typeof result === 'object'
@@ -83,18 +94,28 @@ async function performSessionReset(sessionKey: string): Promise<boolean> {
     if (failure) throw new Error(failure);
     if (isSessionDeleted(sessionKey)) return false;
 
-    sessionResetDeps.invalidateChatRun(sessionKey);
     const chat = useChatStore.getState();
+    const previousSessionId = typeof outcome?.previousSessionId === 'string' && outcome.previousSessionId.trim()
+      ? outcome.previousSessionId.trim()
+      : chat.sessions.find((session) => session.key === sessionKey)?.sessionId ?? null;
+    const nextSessionId = typeof outcome?.sessionId === 'string' && outcome.sessionId.trim()
+      ? outcome.sessionId.trim()
+      : null;
+    sessionTranscriptFence.invalidate(sessionKey);
+    sessionResetDeps.invalidateChatRun(sessionKey);
     chat.clearQueue(sessionKey);
     chat.clearSessionMessages(sessionKey);
     chat.clearSessionTokens(sessionKey);
-    chat.clearThinking(sessionKey);
-    chat.setIsTyping(false, sessionKey);
-    const sessionId = typeof outcome?.sessionId === 'string' && outcome.sessionId.trim()
-      ? outcome.sessionId.trim()
-      : null;
-    if (sessionId) {
-      useCollaborationStore.getState().clearSessionProjection({ sessionKey, sessionId });
+    chat.settleSessionRunUi(sessionKey);
+    if (previousSessionId) {
+      useCollaborationStore.getState().clearSessionProjection({ sessionKey, sessionId: previousSessionId });
+    }
+    if (nextSessionId) {
+      chat.setSessionIdentity(sessionKey, nextSessionId);
+      const gatewayState = useGatewayDataStore.getState();
+      gatewayState.setSessions(gatewayState.sessions.map((session) => (
+        session.key === sessionKey ? { ...session, sessionId: nextSessionId } : session
+      )));
     }
     sessionResetDeps.dispatchReset(sessionKey);
     return true;

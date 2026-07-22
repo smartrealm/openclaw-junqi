@@ -27,11 +27,11 @@ import { createAgentSessionKey, isAgentMainSession } from '@/utils/sessionLifecy
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import {
   agentIdFromSessionKey,
-  isSessionExecutionActive,
   parentSessionKeyForSession,
   partitionSessionsForPresentation,
-  sessionExecutionState,
+  projectSessionActivity,
   type BackgroundActivityKind,
+  type SessionActivity,
 } from '@/utils/sessionPresentation';
 import { resolveBackgroundActivityNavigation } from '@/utils/backgroundActivityNavigation';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
@@ -103,11 +103,12 @@ function cleanupEmptyActiveSession(nextSessionKey?: string): boolean {
 // ═══════════════════════════════════════════════════════════
 // 4 个 Panel — 真正 React 组件，hooks 各组件内独立调用
 // ═══════════════════════════════════════════════════════════
-function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
+function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity }: {
   session: Session;
   sessionKey: string;
   currentTitle: string;
   isActive: boolean;
+  activity: SessionActivity;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -121,11 +122,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
   const agentFallbackName = agentId === 'main' ? t('agents.mainAgent', 'Main Agent') : agentId;
   const agentName = getAgentDisplayName(agents.find((agent: any) => agent?.id === agentId), agentFallbackName);
   const agentLabel = compactMeta(agentName, 20);
-  const isTyping = useChatStore((st) => Boolean(st.typingBySession[sessionKey]));
-  const thinkingState = useChatStore((st) => st.thinkingBySession[sessionKey]);
-  const isWorking = session.running === true
-    || isTyping
-    || Boolean(thinkingState?.runId || thinkingState?.text);
+  const isWorking = activity.active;
   const hasPendingCompletion = session.hasPendingCompletion === true && !isWorking;
   const timeLabel = formatSidebarTime(sessionActivityTime(session));
   const canDelete = !isAgentMainSession(sessionKey);
@@ -329,7 +326,9 @@ function WorkbenchPanel() {
   const agents = useGatewayDataStore((st) => st.agents);
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
   const typingBySession = useChatStore((st) => st.typingBySession);
+  const typingStartedAtBySession = useChatStore((st) => st.typingStartedAtBySession);
   const thinkingBySession = useChatStore((st) => st.thinkingBySession);
+  const sendingBySession = useChatStore((st) => st.sendingBySession);
   const [nowMs, setNowMs] = useState(Date.now());
   const [backgroundUserOpen, setBackgroundUserOpen] = useState(false);
   const [preferredBucket, setPreferredBucket] = useState<SessionBucketKey>(readPreferredSessionBucket);
@@ -354,27 +353,33 @@ function WorkbenchPanel() {
     [cronJobs, sessions],
   );
   const visibleSessions = presentation.conversations;
+  const activityProjection = useMemo(() => projectSessionActivity({
+    sessions: sessions.filter((session) => !session.archived),
+    activeSessionKey: activeKey,
+    jobs: cronJobs,
+    typingBySession,
+    typingStartedAtBySession,
+    thinkingBySession,
+    sendingBySession,
+  }), [activeKey, cronJobs, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const backgroundTotal = Object.values(presentation.background)
     .reduce((total, group) => total + group.length, 0);
   const backgroundRunning = Object.values(presentation.background)
-    .some((group) => group.some(isSessionExecutionActive));
+    .some((group) => group.some((session) => activityProjection.bySessionKey.get(session.key)?.active));
   const buckets = useMemo(() => bucketSessionsByActivity(visibleSessions, nowMs), [visibleSessions, nowMs]);
   const requiredSessionKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const session of visibleSessions) {
-      const thinking = thinkingBySession[session.key];
       if (
         session.key === activeKey
-        || isSessionExecutionActive(session)
         || session.hasPendingCompletion === true
-        || typingBySession[session.key]
-        || Boolean(thinking?.runId || thinking?.text)
+        || activityProjection.bySessionKey.get(session.key)?.active
       ) {
         keys.add(session.key);
       }
     }
     return keys;
-  }, [activeKey, thinkingBySession, typingBySession, visibleSessions]);
+  }, [activeKey, activityProjection, visibleSessions]);
   const expandedBucketKeys = useMemo(
     () => resolveExpandedSessionBuckets(buckets, preferredBucket, requiredSessionKeys),
     [buckets, preferredBucket, requiredSessionKeys],
@@ -426,10 +431,15 @@ function WorkbenchPanel() {
     }
   }, [preferredBucket]);
 
-  const renderRow = (sx: typeof visibleSessions[number]) => (
-    <SessionRowItem key={sx.key} session={sx} sessionKey={sx.key}
-      currentTitle={sessionTitle(sx, firstUserByKey[sx.key])} isActive={sx.key === activeKey} />
-  );
+  const renderRow = (sx: typeof visibleSessions[number]) => {
+    const activity = activityProjection.bySessionKey.get(sx.key);
+    if (!activity) return null;
+    return (
+      <SessionRowItem key={sx.key} session={sx} sessionKey={sx.key}
+        currentTitle={sessionTitle(sx, firstUserByKey[sx.key])} isActive={sx.key === activeKey}
+        activity={activity} />
+    );
+  };
 
   const toggleBucket = (key: SessionBucketKey) => {
     setPreferredBucket((current) => current === key && key !== 'today' ? 'today' : key);
@@ -580,7 +590,7 @@ function WorkbenchPanel() {
                 .filter((item) => presentation.background[item.kind].length > 0)
                 .map((item) => {
                   const group = sortSessionsByActivity(presentation.background[item.kind]);
-                  const running = group.some(isSessionExecutionActive);
+                  const running = group.some((session) => activityProjection.bySessionKey.get(session.key)?.active);
                   const { Icon } = item;
                   return (
                     <div key={item.kind}>
@@ -591,7 +601,7 @@ function WorkbenchPanel() {
                       </div>
                       <div className="space-y-0.5 pl-2">
                         {group.map((session) => {
-                          const state = sessionExecutionState(session);
+                          const state = activityProjection.bySessionKey.get(session.key)?.state ?? 'unknown';
                           const isSelected = item.kind === 'subagent'
                             ? location.pathname === '/chat' && activeKey === session.key
                             : routedBackgroundSessionKey === session.key;

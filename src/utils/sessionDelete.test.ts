@@ -59,6 +59,32 @@ describe('deleteSessionEverywhere', () => {
     assert.deepEqual(useChatStore.getState().openTabs, [MAIN_KEY]);
   });
 
+  test('converges local deletion when the core commit is verified but collaboration recovery remains', async () => {
+    seed();
+    __setSessionDeleteDepsForTest({
+      deleteRemote: async (key) => {
+        requests.push(key);
+        return {
+          success: true,
+          coordinated: true,
+          collaborationRecoveryRequired: true,
+        };
+      },
+      notifyFailure: (detail) => failures.push(detail),
+      warn: (...args) => warnings.push(args),
+      invalidateChatRun: (key) => invalidated.push(key),
+    });
+
+    const result = await deleteSessionEverywhere(TEST_KEY);
+
+    assert.equal(result, true);
+    assert.deepEqual(requests, [TEST_KEY]);
+    assert.deepEqual(invalidated, [TEST_KEY]);
+    assert.deepEqual(failures, []);
+    assert.equal(useChatStore.getState().sessions.some((session) => session.key === TEST_KEY), false);
+    assert.equal(useGatewayDataStore.getState().sessions.some((session) => session.key === TEST_KEY), false);
+  });
+
   test('keeps the session visible when the Gateway rejects deletion', async () => {
     seed();
     __setSessionDeleteDepsForTest({
@@ -109,5 +135,26 @@ describe('deleteSessionEverywhere', () => {
     assert.equal(result, false);
     assert.deepEqual(requests, []);
     assert.equal(useChatStore.getState().sessions.some((session) => session.key === MAIN_KEY), true);
+  });
+
+  test('removes an unmaterialized local session without calling OpenClaw', async () => {
+    useChatStore.setState({
+      sessions: [{ key: MAIN_KEY, label: 'Main' }],
+      openTabs: [MAIN_KEY],
+      activeSessionKey: MAIN_KEY,
+      messagesPerSession: {},
+    });
+    useChatStore.getState().addLocalSession({
+      key: TEST_KEY,
+      label: 'New session',
+      agentId: 'worker',
+      createdAt: Date.now(),
+    });
+
+    const result = await deleteSessionEverywhere(TEST_KEY);
+
+    assert.equal(result, true);
+    assert.deepEqual(requests, []);
+    assert.equal(useChatStore.getState().sessions.some((session) => session.key === TEST_KEY), false);
   });
 });

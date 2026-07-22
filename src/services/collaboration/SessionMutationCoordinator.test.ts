@@ -7,6 +7,7 @@ import {
   type ActiveSessionMutation,
   type SessionMutationAction,
   type SessionMutationCoordinatorDependencies,
+  type SessionMutationExecutionResult,
   type SessionMutationRequest,
 } from './SessionMutationCoordinator';
 import type {
@@ -112,9 +113,11 @@ interface Harness {
   cancellations: Array<{ run: CollaborationRunReference; request: CollaborationWriteRequest<any> }>;
   deletes: Array<[string, true, string]>;
   resets: string[];
+  describes: string[];
   impactParams: Array<Record<string, unknown>>;
   sleeps: number[];
   setCoreResult(value: unknown): void;
+  setDescription(value: unknown): void;
   setImpactFailure(error: unknown): void;
   setWriteFailure(method: CollaborationWriteMethod, error: unknown): void;
   setCancellationFailure(runId: string, error: unknown): void;
@@ -125,6 +128,7 @@ function harness(impacts: Record<string, unknown>[]): Harness {
   const cancellations: Array<{ run: CollaborationRunReference; request: CollaborationWriteRequest<any> }> = [];
   const deletes: Array<[string, true, string]> = [];
   const resets: string[] = [];
+  const describes: string[] = [];
   const impactParams: Array<Record<string, unknown>> = [];
   const sleeps: number[] = [];
   const failures = new Map<CollaborationWriteMethod, unknown>();
@@ -136,7 +140,9 @@ function harness(impacts: Record<string, unknown>[]): Harness {
     success: true,
     key: BASE_REQUEST.sessionKey,
     deleted: true,
+    entry: { sessionId: 'native-session-2' },
   };
+  let descriptionResult: unknown = { session: { sessionId: BASE_REQUEST.sessionId } };
 
   const dependencies: SessionMutationCoordinatorDependencies = {
     getCollaborationInstanceId: async () => 'instance-1',
@@ -202,6 +208,11 @@ function harness(impacts: Record<string, unknown>[]): Harness {
       if (coreResult instanceof Error) throw coreResult;
       return coreResult;
     },
+    describeSession: async (sessionKey) => {
+      describes.push(sessionKey);
+      if (descriptionResult instanceof Error) throw descriptionResult;
+      return descriptionResult;
+    },
     now: () => now,
     sleep: async (ms) => {
       sleeps.push(ms);
@@ -216,11 +227,16 @@ function harness(impacts: Record<string, unknown>[]): Harness {
     cancellations,
     deletes,
     resets,
+    describes,
     impactParams,
     sleeps,
     setCoreResult(value) { coreResult = value; },
+    setDescription(value) { descriptionResult = value; },
     setImpactFailure(error) { impactFailure = error; },
-    setWriteFailure(method, error) { failures.set(method, error); },
+    setWriteFailure(method, error) {
+      if (error === undefined) failures.delete(method);
+      else failures.set(method, error);
+    },
     setCancellationFailure(runId, error) { cancellationFailures.set(runId, error); },
   };
 }
@@ -380,6 +396,32 @@ test('PROCEED deletes with expectedSessionId and reports success only after comp
   assert.equal(result.completion?.status, 'COMPLETED');
 });
 
+test('a PREPARED fence resumes its stored mutation and policy without preparing again', async () => {
+  const run = activeRun();
+  const prepared = mutation('delete', { policy: 'STOP_AND_RETARGET_LATER' });
+  const preparedImpact = impact({
+    runs: [run],
+    activeMutation: prepared,
+    strategies: ['PROCEED'],
+    coreRpcAllowed: true,
+  });
+  const testHarness = harness([preparedImpact, preparedImpact]);
+
+  const result = await testHarness.coordinator.execute(
+    { ...BASE_REQUEST, operationId: 'resume-prepared' },
+    'PROCEED',
+  );
+
+  assert.equal(result.strategy, 'STOP_AND_RETARGET_LATER');
+  assert.equal(result.mutationId, 'mutation-1');
+  assert.deepEqual(testHarness.writes.map((call) => call.method), [
+    'junqi.collab.session.mutation.complete',
+  ]);
+  assert.equal(testHarness.writes[0]?.request.commandId, 'session-mutation:resume-prepared:complete');
+  assert.equal(testHarness.cancellations.length, 0);
+  assert.equal(testHarness.deletes.length, 1);
+});
+
 test('reset uses the non-CAS core method only after a prepared empty-session fence', async () => {
   const request = { ...BASE_REQUEST, action: 'reset' as const };
   const prepared = mutation('reset');
@@ -505,6 +547,8 @@ test('core RPC rejection is durably completed as failed before CORE_RPC_FAILED i
       assert.ok(error instanceof SessionMutationCoordinatorError);
       assert.equal(error.code, 'CORE_RPC_FAILED');
       assert.equal(error.details.mutationId, 'mutation-1');
+      assert.equal(error.details.fenceReleased, true);
+      assert.equal(error.committedResult, undefined);
       return true;
     },
   );
@@ -562,6 +606,62 @@ test('a mismatched key or unconfirmed delete effect is durably recorded as core 
   }
 });
 
+test('a lost reset acknowledgement is proven from the official replacement identity', async () => {
+  const request = { ...BASE_REQUEST, action: 'reset' as const, operationId: 'ambiguous-reset' };
+  const prepared = mutation('reset');
+  const testHarness = harness([
+    impact({ request, strategies: ['PROCEED'] }),
+    impact({ request, activeMutation: prepared, strategies: ['PROCEED'], coreRpcAllowed: true }),
+  ]);
+  testHarness.setCoreResult(new Error('Request timeout (120000ms)'));
+  testHarness.setDescription({ session: { key: request.sessionKey, sessionId: 'native-session-2' } });
+
+  const result = await testHarness.coordinator.execute(request, 'PROCEED');
+
+  assert.equal(result.success, true);
+  assert.equal(result.coreMutationCommitted, true);
+  assert.equal(result.resolvedSessionId, 'native-session-2');
+  assert.deepEqual(testHarness.resets, [request.sessionKey]);
+  assert.deepEqual(testHarness.describes, [request.sessionKey]);
+  assert.equal(testHarness.writes.at(-1)?.request.success, true);
+});
+
+test('an unprovable core result keeps the fence and retry never replays the core RPC', async () => {
+  const request = { ...BASE_REQUEST, action: 'reset' as const, operationId: 'unknown-reset' };
+  const prepared = mutation('reset');
+  const testHarness = harness([
+    impact({ request, strategies: ['PROCEED'] }),
+    impact({ request, activeMutation: prepared, strategies: ['PROCEED'], coreRpcAllowed: true }),
+  ]);
+  testHarness.setCoreResult(new Error('socket closed after request dispatch'));
+  testHarness.setDescription(new Error('Gateway is not connected'));
+
+  let pending: SessionMutationExecutionResult | undefined;
+  await assert.rejects(
+    testHarness.coordinator.execute(request, 'PROCEED'),
+    (error: unknown) => {
+      assert.ok(error instanceof SessionMutationCoordinatorError);
+      assert.equal(error.code, 'CORE_RPC_OUTCOME_UNKNOWN');
+      assert.equal(error.details.fenceReleased, false);
+      pending = error.pendingResult;
+      assert.equal(pending?.status, 'OUTCOME_PENDING');
+      return true;
+    },
+  );
+  assert.deepEqual(testHarness.writes.map((call) => call.method), [
+    'junqi.collab.session.mutation.prepare',
+  ]);
+
+  testHarness.setDescription({ session: { key: request.sessionKey, sessionId: 'native-session-2' } });
+  const result = await testHarness.coordinator.resolvePendingCoreMutation(request, pending!);
+
+  assert.equal(result.success, true);
+  assert.equal(result.resolvedSessionId, 'native-session-2');
+  assert.deepEqual(testHarness.resets, [request.sessionKey]);
+  assert.equal(testHarness.writes.at(-1)?.method, 'junqi.collab.session.mutation.complete');
+  assert.equal(testHarness.writes.at(-1)?.request.success, true);
+});
+
 test('complete failure after a successful core RPC never reports mutation success', async () => {
   const prepared = mutation('delete');
   const testHarness = harness([
@@ -579,10 +679,123 @@ test('complete failure after a successful core RPC never reports mutation succes
       assert.ok(error instanceof SessionMutationCoordinatorError);
       assert.equal(error.code, 'COMPLETION_FAILED');
       assert.equal(error.details.coreRpcSucceeded, true);
+      assert.equal(error.committedResult?.status, 'COMPLETION_PENDING');
+      assert.equal(error.committedResult?.coreMutationCommitted, true);
+      assert.equal(error.committedResult?.collaborationRecoveryRequired, true);
+      assert.deepEqual(error.committedResult?.coreRpcResult, {
+        success: true,
+        key: BASE_REQUEST.sessionKey,
+        deleted: true,
+        entry: { sessionId: 'native-session-2' },
+      });
       return true;
     },
   );
   assert.equal(testHarness.deletes.length, 1);
+});
+
+test('complete failure after a known core failure retries only the durable failure record', async () => {
+  const prepared = mutation('delete');
+  const testHarness = harness([
+    impact({ strategies: ['PROCEED'] }),
+    impact({ activeMutation: prepared, strategies: ['PROCEED'], coreRpcAllowed: true }),
+  ]);
+  testHarness.setCoreResult(new Error('OpenClaw rejected the delete request'));
+  testHarness.setWriteFailure(
+    'junqi.collab.session.mutation.complete',
+    new Error('completion acknowledgement lost'),
+  );
+
+  let pending: NonNullable<SessionMutationCoordinatorError['pendingResult']> | undefined;
+  await assert.rejects(
+    testHarness.coordinator.execute(
+      { ...BASE_REQUEST, operationId: 'stable-failure-completion' },
+      'PROCEED',
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof SessionMutationCoordinatorError);
+      assert.equal(error.code, 'COMPLETION_FAILED');
+      pending = error.pendingResult;
+      assert.equal(pending?.status, 'FAILURE_COMPLETION_PENDING');
+      assert.equal(pending?.coreMutationCommitted, false);
+      return true;
+    },
+  );
+  assert.equal(testHarness.deletes.length, 1);
+
+  testHarness.setWriteFailure('junqi.collab.session.mutation.complete', undefined);
+  await assert.rejects(
+    testHarness.coordinator.resolvePendingCoreMutation(
+      { ...BASE_REQUEST, operationId: 'stable-failure-completion' },
+      pending!,
+    ),
+    assertCoordinatorError('CORE_RPC_FAILED'),
+  );
+
+  assert.equal(testHarness.deletes.length, 1);
+  assert.equal(testHarness.describes.length, 1);
+  assert.deepEqual(testHarness.writes.map((call) => call.method), [
+    'junqi.collab.session.mutation.prepare',
+    'junqi.collab.session.mutation.complete',
+    'junqi.collab.session.mutation.complete',
+  ]);
+  assert.equal(testHarness.writes[1]?.request.commandId, 'session-mutation:stable-failure-completion:complete');
+  assert.equal(testHarness.writes[2]?.request.commandId, 'session-mutation:stable-failure-completion:complete');
+  assert.equal(testHarness.writes[2]?.request.success, false);
+});
+
+test('a known committed result retries only complete with the original operation id', async () => {
+  const prepared = mutation('delete');
+  const testHarness = harness([
+    impact({ strategies: ['PROCEED'] }),
+    impact({ activeMutation: prepared, strategies: ['PROCEED'], coreRpcAllowed: true }),
+  ]);
+  testHarness.setWriteFailure(
+    'junqi.collab.session.mutation.complete',
+    new Error('completion acknowledgement lost'),
+  );
+
+  let committed: NonNullable<SessionMutationCoordinatorError['committedResult']> | undefined;
+  await assert.rejects(
+    testHarness.coordinator.execute(
+      { ...BASE_REQUEST, operationId: 'stable-completion' },
+      'PROCEED',
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof SessionMutationCoordinatorError);
+      committed = error.committedResult;
+      assert.ok(committed);
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    testHarness.coordinator.completeCommittedMutation(
+      { ...BASE_REQUEST, operationId: 'different-completion' },
+      committed!,
+    ),
+    assertCoordinatorError('INVALID_REQUEST'),
+  );
+  assert.equal(testHarness.deletes.length, 1);
+  assert.equal(testHarness.writes.length, 2);
+
+  testHarness.setWriteFailure('junqi.collab.session.mutation.complete', undefined);
+  const result = await testHarness.coordinator.completeCommittedMutation(
+    { ...BASE_REQUEST, operationId: 'stable-completion' },
+    committed!,
+  );
+
+  assert.equal(result.status, 'COMPLETED');
+  assert.equal(result.success, true);
+  assert.equal(result.collaborationRecoveryRequired, false);
+  assert.equal(testHarness.deletes.length, 1);
+  assert.deepEqual(testHarness.writes.map((call) => call.method), [
+    'junqi.collab.session.mutation.prepare',
+    'junqi.collab.session.mutation.complete',
+    'junqi.collab.session.mutation.complete',
+  ]);
+  assert.equal(testHarness.writes[1]?.request.commandId, 'session-mutation:stable-completion:complete');
+  assert.equal(testHarness.writes[2]?.request.commandId, 'session-mutation:stable-completion:complete');
 });
 
 test('RECOVER closes an expired fence as unknown without replaying the core RPC', async () => {
@@ -596,6 +809,7 @@ test('RECOVER closes an expired fence as unknown without replaying the core RPC'
     strategies: ['RECOVER'],
     coreRpcAllowed: false,
   })]);
+  testHarness.setDescription(new Error('Gateway unavailable'));
 
   const result = await testHarness.coordinator.execute(
     { ...BASE_REQUEST, operationId: 'recover-op' },
@@ -611,4 +825,30 @@ test('RECOVER closes an expired fence as unknown without replaying the core RPC'
   assert.equal(testHarness.writes[0]?.request.commandId, 'session-mutation:recover-op:complete');
   assert.equal(testHarness.writes[0]?.request.success, false);
   assert.equal((testHarness.writes[0]?.request.error as Record<string, unknown>).code, 'CORE_RPC_OUTCOME_UNKNOWN');
+});
+
+test('RECOVER records a proven expired delete as successful without replaying delete', async () => {
+  const expired = mutation('delete', {
+    status: 'EXPIRED',
+    policy: 'PROCEED',
+    result: { reason: 'LEASE_EXPIRED' },
+  });
+  const testHarness = harness([impact({
+    activeMutation: expired,
+    strategies: ['RECOVER'],
+    coreRpcAllowed: false,
+  })]);
+  testHarness.setDescription({ session: null });
+
+  const result = await testHarness.coordinator.execute(
+    { ...BASE_REQUEST, operationId: 'recover-committed-delete' },
+    'RECOVER',
+  );
+
+  assert.equal(result.status, 'RECOVERED');
+  assert.equal(result.success, true);
+  assert.equal(result.coreMutationCommitted, true);
+  assert.equal(testHarness.deletes.length, 0);
+  assert.equal(testHarness.writes[0]?.request.success, true);
+  assert.equal(testHarness.writes[0]?.request.error, null);
 });

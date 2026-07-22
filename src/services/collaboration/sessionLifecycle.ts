@@ -17,6 +17,8 @@ export interface SessionLifecycleMutationOutcome {
   cancelled: boolean;
   coordinated: boolean;
   sessionId: string | null;
+  previousSessionId: string | null;
+  collaborationRecoveryRequired: boolean;
   result?: SessionMutationExecutionResult;
   coreResult?: unknown;
 }
@@ -25,7 +27,7 @@ interface SessionLifecycleDependencies {
   bootstrapCollaboration(): Promise<CollaborationCapabilities>;
   requestDialog(request: SessionMutationRequest): Promise<SessionMutationExecutionResult | null>;
   listSessions(): Promise<unknown>;
-  deleteSession(sessionKey: string, deleteTranscript: true): Promise<unknown>;
+  deleteSession(sessionKey: string, deleteTranscript: true, expectedSessionId: string): Promise<unknown>;
   resetSession(sessionKey: string): Promise<unknown>;
 }
 
@@ -33,7 +35,9 @@ const defaultDependencies: SessionLifecycleDependencies = {
   bootstrapCollaboration: () => useCollaborationStore.getState().bootstrap(),
   requestDialog: requestSessionMutationDialog,
   listSessions: () => gateway.getSessions(),
-  deleteSession: (sessionKey, deleteTranscript) => gateway.deleteSession(sessionKey, deleteTranscript),
+  deleteSession: (sessionKey, deleteTranscript, expectedSessionId) => (
+    gateway.deleteSession(sessionKey, deleteTranscript, expectedSessionId)
+  ),
   resetSession: (sessionKey) => gateway.resetSession(sessionKey),
 };
 
@@ -49,6 +53,12 @@ function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function resetSessionId(result: unknown): string | null {
+  const entry = record(record(result)?.entry);
+  const sessionId = entry?.sessionId;
+  return typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null;
 }
 
 /** Only an exact missing collaboration method is eligible for the native path. */
@@ -125,11 +135,17 @@ async function executeGuardedSessionLifecycleMutation(
       action,
     };
     const result = await dependencies.requestDialog(request);
+    const coreResult = result?.coreRpcResult;
+    const nextSessionId = action === 'reset'
+      ? result?.resolvedSessionId ?? resetSessionId(coreResult)
+      : sessionId;
     return {
-      success: result?.success === true,
+      success: result?.success === true || result?.coreMutationCommitted === true,
       cancelled: result === null || result.status === 'ABORTED',
       coordinated: true,
-      sessionId,
+      sessionId: nextSessionId,
+      previousSessionId: sessionId,
+      collaborationRecoveryRequired: result?.collaborationRecoveryRequired === true,
       ...(result ? { result } : {}),
     };
   }
@@ -145,15 +161,20 @@ async function executeNativeSessionMutation(
   if (useChatStore.getState().typingBySession[sessionKey]) {
     await gateway.abortChat(sessionKey);
   }
+  if (action === 'delete' && !sessionId) {
+    throw new Error('The native OpenClaw session identity is unavailable. Refresh sessions and try again.');
+  }
   const coreResult = action === 'delete'
-    ? await dependencies.deleteSession(sessionKey, true)
+    ? await dependencies.deleteSession(sessionKey, true, sessionId!)
     : await dependencies.resetSession(sessionKey);
   assertVerifiedSessionMutationResult(coreResult, action, sessionKey);
   return {
     success: true,
     cancelled: false,
     coordinated: false,
-    sessionId,
+    sessionId: action === 'reset' ? resetSessionId(coreResult) : sessionId,
+    previousSessionId: sessionId,
+    collaborationRecoveryRequired: false,
     coreResult,
   };
 }

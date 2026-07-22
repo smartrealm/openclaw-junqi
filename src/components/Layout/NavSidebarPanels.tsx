@@ -9,6 +9,7 @@ import { useSkillsStore } from '@/stores/skillsStore';
 import { SidebarRow, SidebarSection } from './SidebarRow';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
+import { agentIdFromSessionKey, projectSessionActivity } from '@/utils/sessionPresentation';
 
 type NavigationItem = FeatureLinkedItem & { to: string; icon: React.ReactNode; label: string };
 
@@ -56,6 +57,11 @@ export function AgentsPanel() {
   const navigate = useNavigate();
   const agents = useGatewayDataStore((st) => st.agents);
   const sessions = useChatStore((st) => st.sessions);
+  const activeSessionKey = useChatStore((st) => st.activeSessionKey);
+  const typingBySession = useChatStore((st) => st.typingBySession);
+  const typingStartedAtBySession = useChatStore((st) => st.typingStartedAtBySession);
+  const thinkingBySession = useChatStore((st) => st.thinkingBySession);
+  const sendingBySession = useChatStore((st) => st.sendingBySession);
   const skillList = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
 
@@ -63,16 +69,22 @@ export function AgentsPanel() {
     void refreshSkills();
   }, [refreshSkills]);
 
+  const activityProjection = useMemo(() => projectSessionActivity({
+    sessions,
+    activeSessionKey,
+    typingBySession,
+    typingStartedAtBySession,
+    thinkingBySession,
+    sendingBySession,
+  }), [activeSessionKey, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const runningIds = useMemo(() => {
     const set = new Set<string>();
-    for (const sx of sessions) {
-      if (!sx?.key || typeof sx.key !== 'string') continue;
-      if (sx.running !== true) continue;
-      const parts = sx.key.split(':');
-      if (parts[0] === 'agent' && parts[1]) set.add(parts[1]);
+    for (const activity of activityProjection.active) {
+      const agentId = activity.session?.agentId || agentIdFromSessionKey(activity.sessionKey);
+      if (agentId) set.add(agentId);
     }
     return set;
-  }, [sessions]);
+  }, [activityProjection]);
 
   const skillEntries = Object.entries(skillList);
   const enabledSkillEntries = skillEntries.filter(([, info]) => info.enabled !== false);

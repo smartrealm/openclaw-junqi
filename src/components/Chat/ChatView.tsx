@@ -4,7 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { useChatStore, type ChatMessage } from '@/stores/chatStore';
+import {
+  selectActiveSessionThinking,
+  selectActiveSessionTyping,
+  useChatStore,
+  type ChatMessage,
+} from '@/stores/chatStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
@@ -13,12 +18,18 @@ import { showConfirm } from '@/components/shared/AlertDialog';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
 import { resolveHistoryPageMetadata } from '@/services/chat/historyPagination';
+import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
 import {
   normalizeCachedChatMessageContent,
   normalizeHistoryMessage,
   normalizeHistoryMessages,
 } from '@/processing/normalizeHistoryMessage';
+import {
+  projectResponseGroupChrome,
+  projectResponseGroupMessagePositions,
+  type ResponseGroupMessagePosition,
+} from '@/processing/buildResponseGroups';
 import { projectResponseGroupToRenderBlocks } from '@/processing/projectResponseGroup';
 import type {
   DecisionBlock,
@@ -60,6 +71,8 @@ const DEFAULT_GATEWAY_WS_URL = defaultGatewayWsUrl();
 const InlineButtonBar = lazy(() => import('./InlineButtonBar').then((m) => ({ default: m.InlineButtonBar })));
 const DecisionCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.DecisionCard })));
 const FileResultCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.FileResultCard })));
+const AssistantResponseAvatar = lazy(() => import('./MessageBubble').then((m) => ({ default: m.AssistantResponseAvatar })));
+const AssistantResponseFooter = lazy(() => import('./MessageBubble').then((m) => ({ default: m.AssistantResponseFooter })));
 const MessageBubble = lazy(() => import('./MessageBubble').then((m) => ({ default: m.MessageBubble })));
 const MessageInput = lazy(() => import('./MessageInput').then((m) => ({ default: m.MessageInput })));
 const SessionEventCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.SessionEventCard })));
@@ -69,10 +82,21 @@ const TypingIndicator = lazy(() => import('./TypingIndicator').then((m) => ({ de
 const QuickReplyBar = lazy(() => import('./QuickReplyBar').then((m) => ({ default: m.QuickReplyBar })));
 const WorkshopEventCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.WorkshopEventCard })));
 
-function MessageBubbleFallback({ block }: { block: MessageBlock }) {
+function MessageBubbleFallback({
+  block,
+  groupPosition = 'standalone',
+}: {
+  block: MessageBlock;
+  groupPosition?: ResponseGroupMessagePosition;
+}) {
   const isUser = block.role === 'user';
+  const usesGroupChrome = !isUser && groupPosition === 'middle';
   return (
-    <div className={clsx('flex px-5 py-2.5', isUser ? 'justify-end' : 'justify-start')}>
+    <div className={clsx(
+      'flex py-2.5',
+      usesGroupChrome ? 'pl-[46px] pr-4' : 'px-5',
+      isUser ? 'justify-end' : 'justify-start',
+    )}>
       <div
         className={clsx(
           'max-w-[82%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
@@ -200,9 +224,8 @@ function ChatViewContent() {
   const renderBlocks = useChatStore((s) => s.renderBlocks);
   const responseGroups = useChatStore((s) => s.responseGroups);
   const messages = useChatStore((s) => s.messages);
-  const isTyping = useChatStore((s) => s.isTyping);
-  const thinkingText = useChatStore((s) => s.thinkingText);
-  const thinkingRunId = useChatStore((s) => s.thinkingRunId);
+  const isTyping = useChatStore(selectActiveSessionTyping);
+  const { text: thinkingText, runId: thinkingRunId } = useChatStore(selectActiveSessionThinking);
   const quickReplies = useChatStore((s) => s.quickReplies);
 
   const { connected, connecting, connectionError } = useChatStore(
@@ -423,6 +446,10 @@ function ChatViewContent() {
 
       const task = (async () => {
         const requestId = ++historyRequestSeq.current;
+        const transcriptToken = sessionTranscriptFence.capture(
+          sessionKey,
+          useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.sessionId,
+        );
         const boot = useBootSequenceStore.getState();
         const shouldTrackConversationStage =
           boot.stages.conversation.status === 'pending' || boot.stages.conversation.status === 'running';
@@ -437,6 +464,7 @@ function ChatViewContent() {
         const requestStartedAt = performance.now();
         if (!options?.background) setIsLoadingHistory(true, sessionKey);
         try {
+          const runObservation = gateway.captureChatSessionRunObservation(sessionKey);
           const result = await gateway.getHistory(
             sessionKey,
             HISTORY_LIMIT,
@@ -444,20 +472,25 @@ function ChatViewContent() {
             { offset: 0 },
           );
           const requestMs = Math.round(performance.now() - requestStartedAt);
-          if (latestHistoryRequestBySession.current[sessionKey] !== requestId || isSessionDeleted(sessionKey)) return;
+          const historySessionId = typeof result?.sessionId === 'string' ? result.sessionId : undefined;
+          if (
+            latestHistoryRequestBySession.current[sessionKey] !== requestId
+            || isSessionDeleted(sessionKey)
+            || !sessionTranscriptFence.isCurrent(transcriptToken, historySessionId)
+          ) return;
 
           const normalizeStartedAt = performance.now();
           const rawMessages = Array.isArray(result?.messages) ? result.messages : [];
-          const historySessionId = typeof result?.sessionId === 'string' ? result.sessionId : undefined;
           const historyAgentId = typeof result?.sessionInfo?.agentId === 'string'
             ? result.sessionInfo.agentId
             : undefined;
           if (historySessionId) setSessionIdentity(sessionKey, historySessionId, historyAgentId);
           const { hasMore, nextOffset } = resolveHistoryPageMetadata(result, 0);
           const mappedMessages = normalizeHistoryMessages(rawMessages);
+          const canonicalMessages = dedupeHistoryMessages(mappedMessages);
 
           const previousMessages = getCachedMessages(sessionKey) ?? [];
-          const messages = reconcileHistoryMessageIds(previousMessages, dedupeHistoryMessages(mappedMessages));
+          const messages = reconcileHistoryMessageIds(previousMessages, canonicalMessages);
           const normalizeMs = Math.round(performance.now() - normalizeStartedAt);
 
           const shouldProgressivelyHydrate =
@@ -465,9 +498,16 @@ function ChatViewContent() {
           if (shouldProgressivelyHydrate) {
             setMessages(messages.slice(-20), sessionKey);
             requestAnimationFrame(() => {
-              if (latestHistoryRequestBySession.current[sessionKey] !== requestId || isSessionDeleted(sessionKey)) return;
+              if (
+                latestHistoryRequestBySession.current[sessionKey] !== requestId
+                || isSessionDeleted(sessionKey)
+                || !sessionTranscriptFence.isCurrent(transcriptToken, historySessionId)
+              ) return;
               const latestMessages = useChatStore.getState().messagesPerSession[sessionKey] ?? [];
-              const hydratedMessages = reconcileHistoryMessageIds(latestMessages, messages);
+              // Reconcile the immutable Gateway snapshot against the newest
+              // local tail. Reusing the first-pass result here would reinsert a
+              // one-frame-old streaming snapshot beside its newer copy.
+              const hydratedMessages = reconcileHistoryMessageIds(latestMessages, canonicalMessages);
               setMessages(hydratedMessages, sessionKey);
               cacheMessagesForSession(sessionKey, hydratedMessages);
               setHistoryMetaBySession((prev) => ({
@@ -495,6 +535,11 @@ function ChatViewContent() {
               },
             }));
           }
+
+          // OpenClaw includes the authoritative live run and buffered text in
+          // chat.history so switching sessions or reconnecting does not lose
+          // the in-progress response. Adopt it after durable rows are applied.
+          gateway.reconcileChatHistoryRunState(sessionKey, result, runObservation);
 
           debugLog(
             'app',
@@ -622,6 +667,10 @@ function ChatViewContent() {
     const meta = historyMetaBySession[sk];
     if (!meta || !meta.hasMore) return;
     isLoadingOlderRef.current = true;
+    const transcriptToken = sessionTranscriptFence.capture(
+      sk,
+      useChatStore.getState().sessions.find((session) => session.key === sk)?.sessionId,
+    );
     setHasUnreadBelow(false);
     try {
       const { prependOlderMessages } = await import('@/processing/mergeHistory');
@@ -632,7 +681,8 @@ function ChatViewContent() {
         HISTORY_REQUEST_TIMEOUT_MS,
         { offset: requestedOffset },
       );
-      if (isSessionDeleted(sk)) return;
+      const pageSessionId = typeof page?.sessionId === 'string' ? page.sessionId : undefined;
+      if (isSessionDeleted(sk) || !sessionTranscriptFence.isCurrent(transcriptToken, pageSessionId)) return;
       const normalized = normalizeHistoryMessages(
         Array.isArray(page?.messages) ? page.messages : [],
       );
@@ -831,7 +881,11 @@ function ChatViewContent() {
   }, [activeAgentId, activeSessionKey, t]);
 
   // ── Render a single block (used by Virtuoso) ──
-  const renderBlock = useCallback((block: RenderBlock) => {
+  const renderBlock = useCallback((
+    block: RenderBlock,
+    groupPosition: ResponseGroupMessagePosition = 'standalone',
+    responseSessionKey: string = activeSessionKey,
+  ) => {
     switch (block.type) {
       case 'compaction':
         return <CompactDivider timestamp={block.timestamp} label={t('chat.contextCompactedLabel', 'Context Compacted')} />;
@@ -899,9 +953,11 @@ function ChatViewContent() {
       case 'message':
         const sourceMessage = messages.find((message) => message.id === block.id);
         return (
-          <Suspense fallback={<MessageBubbleFallback block={block} />}>
+          <Suspense fallback={<MessageBubbleFallback block={block} groupPosition={groupPosition} />}>
             <MessageBubble
               block={block}
+              sessionKey={responseSessionKey}
+              groupPosition={groupPosition}
               onRecall={block.role === 'user' ? handleRecallMessage : undefined}
               onRetry={block.role === 'user' && sourceMessage?.status === 'failed'
                 ? () => handleRetryMessage(sourceMessage)
@@ -933,36 +989,76 @@ function ChatViewContent() {
     handleDecisionSelect,
     handleErrorAction,
     handleLoadFullMessage,
+    activeSessionKey,
     messages,
   ]);
 
   const renderGroup = useCallback((index: number, group: ResponseGroup) => {
     const blocks = projectResponseGroupToRenderBlocks(group);
+    const chrome = projectResponseGroupChrome(group);
+    const messagePositions = projectResponseGroupMessagePositions(group);
     const groupedBlocks = groupExecutionProcessBlocks(blocks);
     const isStreaming = group.status === 'streaming' || blocks.some((block) => block.isStreaming);
+    const representativeBlock = chrome.owner === 'group' && chrome.representativeMessageId
+      ? blocks.find((block): block is MessageBlock => (
+          block.type === 'message' && block.id === chrome.representativeMessageId
+        )) ?? null
+      : null;
+    const footerTimestamp = representativeBlock?.timestamp
+      ?? group.blocks[group.blocks.length - 1]?.timestamp
+      ?? group.timestamp;
     return (
       <div
         className={clsx(
-          'px-1',
+          'relative px-1',
           group.role === 'assistant' ? 'space-y-2.5 py-1.5' : 'space-y-2 py-0.5',
         )}
         data-group-id={group.id}
         data-group-index={index}
+        data-response-chrome-owner={chrome.owner}
       >
-        {groupedBlocks.map((row, rowIndex) => (
-          row.type === 'execution' ? (
-            <ExecutionProcessGroup
-              key={`execution-${row.blocks[0]?.id ?? rowIndex}`}
-              blocks={row.blocks}
-              streaming={isStreaming}
-              renderBlock={renderBlock}
+        {chrome.owner === 'group' && (
+          <Suspense fallback={<div className="absolute left-2 top-2 h-8 w-8 rounded-full bg-aegis-primary/15 animate-pulse" />}>
+            <AssistantResponseAvatar
+              sessionKey={group.sessionKey}
+              className="absolute left-1 top-1 z-[1]"
             />
-          ) : (
+          </Suspense>
+        )}
+        {groupedBlocks.map((row, rowIndex) => {
+          if (row.type === 'execution') {
+            return (
+              <ExecutionProcessGroup
+                key={`execution-${row.blocks[0]?.id ?? rowIndex}`}
+                blocks={row.blocks}
+                streaming={isStreaming}
+                renderBlock={(block) => renderBlock(block, 'middle', group.sessionKey)}
+              />
+            );
+          }
+
+          const groupPosition = chrome.owner === 'group'
+            ? 'middle'
+            : row.block.type === 'message'
+            ? messagePositions.get(row.block.id) ?? 'standalone'
+            : 'standalone';
+          return (
             <div key={row.block.id}>
-              {renderBlock(row.block)}
+              {renderBlock(row.block, groupPosition, group.sessionKey)}
             </div>
-          )
-        ))}
+          );
+        })}
+        {chrome.owner === 'group' && (
+          <Suspense fallback={<div className="ml-[46px] h-4 w-32 rounded bg-[rgb(var(--aegis-overlay)/0.04)] animate-pulse" />}>
+            <AssistantResponseFooter
+              sessionKey={group.sessionKey}
+              block={representativeBlock}
+              timestamp={footerTimestamp}
+              status={group.status}
+              className="ml-[46px] mr-4 mt-1"
+            />
+          </Suspense>
+        )}
       </div>
     );
   }, [renderBlock]);

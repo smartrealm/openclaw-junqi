@@ -190,15 +190,14 @@ export function buildSemanticBlocks(
 
   const baseText = role === 'user' ? stripUserMeta(normalized.text) : normalized.text;
   const cleanedText = stripDirectives(baseText);
-  if (!cleanedText || isNoise(cleanedText)) return [];
-
-  const markdown = role === 'assistant' ? autoDetectCode(cleanedText) : cleanedText;
+  const visibleText = cleanedText && !isNoise(cleanedText) ? cleanedText : '';
+  const markdown = role === 'assistant' ? autoDetectCode(visibleText) : visibleText;
   const { cleanText: textAfterArtifacts, artifacts } = parseArtifacts(markdown);
   let cleanText = textAfterArtifacts;
 
   let fileRefs = normalized.fileRefs ?? [];
-  if (role === 'assistant' && !normalized.fileRefs?.length) {
-    const fileRefResult = extractFileRefs(cleanText || markdown);
+  if (role === 'assistant' && !normalized.fileRefs?.length && cleanText) {
+    const fileRefResult = extractFileRefs(cleanText);
     fileRefs = fileRefResult.files;
     cleanText = fileRefResult.cleanText;
   }
@@ -206,15 +205,15 @@ export function buildSemanticBlocks(
   // Keep history replay behavior aligned with live-stream handling:
   // strip [[button:...]] markers from visible markdown and keep options structured.
   let parsedQuickReplies: Array<{ text: string; value: string }> = [];
-  if (role === 'assistant') {
-    const quickReplyResult = extractQuickReplies(cleanText || markdown);
+  if (role === 'assistant' && cleanText) {
+    const quickReplyResult = extractQuickReplies(cleanText);
     cleanText = quickReplyResult.cleanText;
     parsedQuickReplies = quickReplyResult.buttons;
   }
 
   const images = extractAttachmentImages(normalized.attachments);
   const meta = role === 'assistant'
-    ? buildAssistantMeta(cleanText || markdown, normalized, options)
+    ? buildAssistantMeta(cleanText, normalized, options)
     : [];
 
   const blocks: SemanticBlock[] = [];
@@ -226,17 +225,24 @@ export function buildSemanticBlocks(
     } satisfies ThinkingSemanticBlock);
   }
 
-  blocks.push({
-    ...base,
-    type: 'message-content',
-    role,
-    markdown: cleanText || markdown,
-    model: role === 'assistant' ? (normalized.model ?? null) : null,
-    artifacts,
-    images,
-    audio: normalized.mediaUrl || undefined,
-    ...(meta.length > 0 ? { meta } : {}),
-  } satisfies MessageSemanticBlock);
+  const hasMessageSurface = Boolean(cleanText.trim())
+    || artifacts.length > 0
+    || images.length > 0
+    || Boolean(normalized.mediaUrl);
+
+  if (hasMessageSurface) {
+    blocks.push({
+      ...base,
+      type: 'message-content',
+      role,
+      markdown: cleanText,
+      model: role === 'assistant' ? (normalized.model ?? null) : null,
+      artifacts,
+      images,
+      audio: normalized.mediaUrl || undefined,
+      ...(meta.length > 0 ? { meta } : {}),
+    } satisfies MessageSemanticBlock);
+  }
 
   if (role === 'assistant' && fileRefs.length > 0) {
     blocks.push({
