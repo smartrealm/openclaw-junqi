@@ -76,6 +76,17 @@ export interface ModelConfig {
   fallbacks?: string[];
 }
 
+/**
+ * OpenClaw accepts both the concise string form and the structured form for
+ * text, image, and generation model settings. Keep the union at the boundary
+ * so a read/save round trip never turns a valid string into an invalid object.
+ */
+export type ModelReferenceConfig = ModelConfig | string;
+
+export interface ModelPolicyConfig {
+  allow?: string[];
+}
+
 export interface ModelEntry {
   alias?: string;
   supportsImage?: boolean;
@@ -127,26 +138,29 @@ export interface CompactionConfig {
 
 export interface AgentDefaults {
   models?: Record<string, ModelEntry>;
+  modelPolicy?: ModelPolicyConfig;
   workspace?: string;
   contextPruning?: ContextPruningConfig;
   compaction?: CompactionConfig;
   heartbeat?: HeartbeatConfig;
   maxConcurrent?: number;
   subagents?: SubagentConfig;
-  model?: ModelConfig;
-  imageModel?: ModelConfig;
-  imageGenerationModel?: ModelConfig;
-  videoGenerationModel?: ModelConfig;
+  model?: ModelReferenceConfig;
+  imageModel?: ModelReferenceConfig;
+  imageGenerationModel?: ModelReferenceConfig;
+  videoGenerationModel?: ModelReferenceConfig;
   thinkingDefault?: string;
 }
 
 export interface AgentConfig {
   id: string;
   name?: string;
-  model?: ModelConfig;
-  imageModel?: ModelConfig;
-  imageGenerationModel?: ModelConfig;
-  videoGenerationModel?: ModelConfig;
+  model?: ModelReferenceConfig;
+  imageModel?: ModelReferenceConfig;
+  imageGenerationModel?: ModelReferenceConfig;
+  videoGenerationModel?: ModelReferenceConfig;
+  models?: Record<string, ModelEntry>;
+  modelPolicy?: ModelPolicyConfig;
   workspace?: string;
   heartbeat?: HeartbeatConfig;
   subagents?: SubagentConfig;

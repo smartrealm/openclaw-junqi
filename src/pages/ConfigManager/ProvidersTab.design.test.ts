@@ -41,3 +41,17 @@ test('the providers overview uses one compact summary instead of stat cards', as
   assert.match(overview, /data-testid="provider-compact-summary"/);
   assert.doesNotMatch(overview, /<StatCard/);
 });
+
+test('routing controls expose ordered fallbacks and guard configured-only mode', async () => {
+  const source = await read('./ProvidersTab.tsx');
+  const overview = source.slice(
+    source.indexOf('{/* ── A) Overview Hero Card'),
+    source.indexOf('{/* ── B) Unified Providers List'),
+  );
+
+  assert.match(overview, /data-testid="model-routing-health"/);
+  assert.match(source, /data-testid="default-model-fallback-chain"/);
+  assert.match(overview, /requestModelCatalogMode/);
+  assert.match(overview, /replaceModeBlocked/);
+  assert.match(overview, /DefaultFallbackChainControls/);
+});

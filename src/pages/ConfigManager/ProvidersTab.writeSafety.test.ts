@@ -5,6 +5,7 @@ import {
   buildDefaultsWithResolvedModels,
   buildFetchedModelAdditions,
 } from './providerDefaults';
+import { getModelPrimary } from './modelReference';
 
 test('buildDefaultsWithResolvedModels falls back when primary model was removed', () => {
   const defaults = buildDefaultsWithResolvedModels({
@@ -20,7 +21,7 @@ test('buildDefaultsWithResolvedModels falls back when primary model was removed'
     },
   });
 
-  assert.equal(defaults.model?.primary, 'qwen/qwen3.6-plus');
+  assert.equal(getModelPrimary(defaults.model), 'qwen/qwen3.6-plus');
 });
 
 test('buildDefaultsWithResolvedModels clears invalid image primary without leaving an empty object', () => {
@@ -36,7 +37,7 @@ test('buildDefaultsWithResolvedModels clears invalid image primary without leavi
   assert.equal(defaults.imageModel, undefined);
 });
 
-test('buildDefaultsWithResolvedModels picks first image-capable model when current image primary is gone', () => {
+test('buildDefaultsWithResolvedModels preserves an explicit image model outside the local catalog', () => {
   const defaults = buildDefaultsWithResolvedModels({
     defaults: {
       imageModel: { primary: 'openai/removed' },
@@ -47,7 +48,7 @@ test('buildDefaultsWithResolvedModels picks first image-capable model when curre
     },
   });
 
-  assert.equal(defaults.imageModel?.primary, 'openai/gpt-4o');
+  assert.equal(getModelPrimary(defaults.imageModel), 'openai/removed');
 });
 
 test('buildDefaultsWithResolvedModels recognizes provider metadata image modalities', () => {
@@ -59,10 +60,10 @@ test('buildDefaultsWithResolvedModels recognizes provider metadata image modalit
     },
   });
 
-  assert.equal(defaults.imageModel?.primary, 'custom/vision');
+  assert.equal(getModelPrimary(defaults.imageModel), 'custom/vision');
 });
 
-test('buildDefaultsWithResolvedModels removes primary configs when no models remain', () => {
+test('buildDefaultsWithResolvedModels clears a removed text model but preserves an explicit image model', () => {
   const defaults = buildDefaultsWithResolvedModels({
     defaults: {
       model: { primary: 'openai/removed' },
@@ -72,7 +73,7 @@ test('buildDefaultsWithResolvedModels removes primary configs when no models rem
   });
 
   assert.equal(defaults.model, undefined);
-  assert.equal(defaults.imageModel, undefined);
+  assert.equal(getModelPrimary(defaults.imageModel), 'openai/removed');
 });
 
 test('buildFetchedModelAdditions skips existing models and duplicate fetched ids', () => {
@@ -93,7 +94,7 @@ test('buildFetchedModelAdditions skips existing models and duplicate fetched ids
   ]);
 });
 
-test('applyFetchedModelAdditionsToDefaults preserves fetched model capabilities and resolves defaults', () => {
+test('applyFetchedModelAdditionsToDefaults preserves fetched capabilities without replacing an explicit image model', () => {
   const defaults = applyFetchedModelAdditionsToDefaults({
     defaults: {
       model: { primary: 'openai/removed' },
@@ -110,6 +111,6 @@ test('applyFetchedModelAdditionsToDefaults preserves fetched model capabilities 
   assert.equal(defaults.models?.['qwen/vision']?.alias, 'vision');
   assert.equal(defaults.models?.['qwen/vision']?.supportsImage, true);
   assert.deepEqual(defaults.models?.['qwen/vision']?.input, ['text', 'image']);
-  assert.equal(defaults.model?.primary, 'qwen/text-only');
-  assert.equal(defaults.imageModel?.primary, 'qwen/vision');
+  assert.equal(getModelPrimary(defaults.model), 'qwen/text-only');
+  assert.equal(getModelPrimary(defaults.imageModel), 'openai/removed');
 });

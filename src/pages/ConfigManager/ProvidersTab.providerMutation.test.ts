@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyProviderAddition, applyProviderRemoval } from './ProvidersTab';
+import { getModelPrimary } from './modelReference';
 
 test('applyProviderAddition normalizes provider ids, profile keys, model ids, and custom secrets', () => {
   const next = applyProviderAddition(
@@ -32,7 +33,7 @@ test('applyProviderAddition normalizes provider ids, profile keys, model ids, an
     'my-vllm/model-a',
     'my-vllm/model-b',
   ]);
-  assert.equal(next.agents?.defaults?.model?.primary, 'my-vllm/model-a');
+  assert.equal(getModelPrimary(next.agents?.defaults?.model), 'my-vllm/model-a');
 });
 
 test('applyProviderAddition migrates case-drifted provider config instead of duplicating it', () => {
@@ -120,7 +121,7 @@ test('applyProviderRemoval removes matching provider config, models, and orphan 
   assert.equal(next.env?.vars?.CUSTOM_VLLM_SECRET, undefined);
   assert.equal(next.env?.vars?.KEEP_ME, 'value');
   assert.equal(next.agents?.defaults?.models?.['my-vllm/model-a'], undefined);
-  assert.equal(next.agents?.defaults?.model?.primary, 'openai/gpt-4o');
+  assert.equal(getModelPrimary(next.agents?.defaults?.model), 'openai/gpt-4o');
 });
 
 test('applyProviderRemoval keeps shared env refs still used by another provider', () => {
@@ -196,7 +197,7 @@ test('applyProviderRemoval keeps provider resources when another auth profile st
   assert.equal(next.models?.providers?.openai?.baseUrl, 'https://api.openai.com/v1');
   assert.equal(next.env?.vars?.OPENAI_API_KEY, 'secret');
   assert.ok(next.agents?.defaults?.models?.['openai/gpt-4o']);
-  assert.equal(next.agents?.defaults?.model?.primary, 'openai/gpt-4o');
+  assert.equal(getModelPrimary(next.agents?.defaults?.model), 'openai/gpt-4o');
 });
 
 test('BUG-MP-08 removing a profile also repairs official auth order', () => {

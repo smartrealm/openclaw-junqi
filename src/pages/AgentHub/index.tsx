@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid, FileArchive, Share2 } from 'lucide-react';
+import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid, FileArchive, Share2, X } from 'lucide-react';
 import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
@@ -27,6 +27,7 @@ import {
   GATEWAY_AGENT_ID_RE,
   MAIN_GATEWAY_AGENT_ID,
   normalizeGatewayAgentId,
+  suggestDedicatedGatewayAgentWorkspace,
 } from '@/utils/gatewayAgentFlow';
 import clsx from 'clsx';
 import { themeHex, themeAlpha, dataColor } from '@/utils/theme-colors';
@@ -34,7 +35,14 @@ import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { isCronSessionKey, isSubagentSessionKey } from '@/utils/sessionPresentation';
 import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
 import { parseAgentWorkspaceSkills, type AgentWorkspaceSkill } from './agentWorkspaceSkills';
-import { persistAgentSkillFilter } from './agentSkillConfig';
+import { persistAgentCreationOverrides } from './agentCreationConfig';
+import { ModelDropdown } from '@/components/shared/ModelDropdown';
+import {
+  buildAgentShareMetadata,
+  buildImportedAgentConfigEntry,
+  readImportedAgentShareMetadata,
+  type ImportedAgentShareDefinition,
+} from './agentShareDefinition';
 import { ExportSharePackageDialog, ImportSharePackageDialog, type SharePackageManifest, type SharePackageSubject } from '@/components/shared/SharePackageDialog';
 
 // ═══════════════════════════════════════════════════════════
@@ -148,15 +156,133 @@ function fmtModel(m: any): string {
   return String(m);
 }
 
+type NewAgentModelMode = 'inherit' | 'strict' | 'fallbacks';
+type NewAgentWorkspaceMode = 'dedicated' | 'shared';
+type NewAgentSkillsMode = 'inherit' | 'custom';
+
 interface NewAgentDraft {
   id: string;
   name: string;
   model: string;
+  modelMode: NewAgentModelMode;
+  fallbacks: string[];
   workspace: string;
-  inheritWorkspace: boolean;
+  workspaceMode: NewAgentWorkspaceMode;
+  skillsMode: NewAgentSkillsMode;
 }
 
-const emptyNewAgent: NewAgentDraft = { id: '', name: '', model: '', workspace: '', inheritWorkspace: false };
+const emptyNewAgent: NewAgentDraft = {
+  id: '',
+  name: '',
+  model: '',
+  modelMode: 'inherit',
+  fallbacks: [],
+  workspace: '',
+  workspaceMode: 'dedicated',
+  skillsMode: 'inherit',
+};
+
+interface WizardModelOption {
+  id: string;
+  label?: string;
+  alias?: string;
+}
+
+function NewAgentFallbackPicker({
+  primary,
+  values,
+  availableModels,
+  disabled,
+  onChange,
+}: {
+  primary: string;
+  values: string[];
+  availableModels: WizardModelOption[];
+  disabled?: boolean;
+  onChange: (next: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  const [manualRef, setManualRef] = useState('');
+  const selectable = availableModels.filter((model) => model.id !== primary && !values.includes(model.id));
+  const add = (value: string) => {
+    const ref = value.trim();
+    if (!ref || ref === primary || values.includes(ref)) return;
+    onChange([...values, ref]);
+    setManualRef('');
+  };
+  const move = (index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (target < 0 || target >= values.length) return;
+    const next = [...values];
+    [next[index], next[target]] = [next[target], next[index]];
+    onChange(next);
+  };
+
+  return (
+    <div className="mt-3 border-t border-[rgb(var(--aegis-overlay)/0.08)] pt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value=""
+          disabled={disabled || selectable.length === 0}
+          onChange={(event) => {
+            if (event.target.value) add(event.target.value);
+          }}
+          aria-label={t('agentHub.wizard.addFallback', 'Add fallback')}
+          className="min-w-[180px] flex-1 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-xs text-aegis-text outline-none focus:border-aegis-primary/50 disabled:opacity-45"
+        >
+          <option value="">{t('agentHub.wizard.addFallback', 'Add fallback')}</option>
+          {selectable.map((model) => <option key={model.id} value={model.id}>{model.alias || model.label || model.id}</option>)}
+        </select>
+        <input
+          value={manualRef}
+          disabled={disabled}
+          onChange={(event) => setManualRef(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              add(manualRef);
+            }
+          }}
+          placeholder={t('agentHub.wizard.fallbackManualPlaceholder', 'provider/model')}
+          className="min-w-[150px] flex-1 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 font-mono text-xs text-aegis-text placeholder:text-aegis-text-dim outline-none focus:border-aegis-primary/50 disabled:opacity-45"
+        />
+        <button
+          type="button"
+          disabled={disabled || !manualRef.trim()}
+          onClick={() => add(manualRef)}
+          className="grid size-9 place-items-center rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-aegis-primary transition-colors hover:bg-aegis-primary/16 disabled:cursor-not-allowed disabled:opacity-35"
+          title={t('common.add', 'Add')}
+          aria-label={t('agentHub.wizard.addFallback', 'Add fallback')}
+        >
+          <Plus size={14} />
+        </button>
+      </div>
+      {values.length > 0 ? (
+        <ol className="mt-2 space-y-1.5">
+          {values.map((fallback, index) => (
+            <li key={fallback} className="flex items-center gap-2 rounded-lg border border-[rgb(var(--aegis-overlay)/0.07)] bg-[rgb(var(--aegis-overlay)/0.02)] px-2.5 py-1.5">
+              <span className="w-4 shrink-0 text-center font-mono text-[10px] text-aegis-text-dim">{index + 1}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-aegis-text-secondary" title={fallback}>{fallback}</span>
+              <button type="button" disabled={disabled || index === 0} onClick={() => move(index, -1)} title={t('agentHub.wizard.moveFallbackEarlier', 'Move earlier')} aria-label={t('agentHub.wizard.moveFallbackEarlier', 'Move earlier')} className="grid size-7 place-items-center rounded text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text disabled:opacity-30">
+                <ChevronDown size={13} className="rotate-180" />
+              </button>
+              <button type="button" disabled={disabled || index === values.length - 1} onClick={() => move(index, 1)} title={t('agentHub.wizard.moveFallbackLater', 'Move later')} aria-label={t('agentHub.wizard.moveFallbackLater', 'Move later')} className="grid size-7 place-items-center rounded text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text disabled:opacity-30">
+                <ChevronDown size={13} />
+              </button>
+              <button type="button" disabled={disabled} onClick={() => onChange(values.filter((item) => item !== fallback))} title={t('common.remove', 'Remove')} aria-label={t('common.remove', 'Remove')} className="grid size-7 place-items-center rounded text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400 disabled:opacity-30">
+                <X size={13} />
+              </button>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="mt-2 text-[10px] leading-4 text-aegis-text-dim">
+          {t('agentHub.wizard.fallbackRequired', 'Add at least one fallback to enable ordered failover.')}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function extractPrimaryModel(raw: unknown): string {
   if (typeof raw === 'string') return raw;
@@ -584,7 +710,7 @@ function ActivityFeed({ sessions, agents }: { sessions: SessionInfo[]; agents: A
 export function AgentHubPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { connected } = useChatStore();
+  const { connected, availableModels } = useChatStore();
   const rawSessions = useGatewayDataStore((s) => s.sessions);
   const agents = useGatewayDataStore((s) => s.agents) as AgentInfo[];
   const runningSubAgents = useGatewayDataStore((s) => s.runningSubAgents);
@@ -619,28 +745,34 @@ export function AgentHubPage() {
   // Stored in local state so polling refreshes of agents.list can't overwrite it.
   const [agentModels, setAgentModels] = useState<Record<string, string>>({});
   const [agentExplicitModels, setAgentExplicitModels] = useState<Record<string, boolean>>({});
+  const [agentDefinitions, setAgentDefinitions] = useState<Record<string, Record<string, unknown>>>({});
   const [agentChannels, setAgentChannels] = useState<Record<string, string[]>>({});
   const [defaultAgentModel, setDefaultAgentModel] = useState('');
   const [defaultAgentWorkspace, setDefaultAgentWorkspace] = useState('');
 
   const loadAgentConfigMeta = useCallback(() => {
     if (!connected) return Promise.resolve();
-    gateway.call('config.get', {}).then((snap: any) => {
-      const cfgList: any[] = snap?.config?.agents?.list ?? [];
+    return gateway.call('config.get', {}).then((snap: any) => {
+      const config = snap?.config ?? snap;
+      const cfgList: any[] = config?.agents?.list ?? [];
       const models: Record<string, string> = {};
       const explicit: Record<string, boolean> = {};
+      const definitions: Record<string, Record<string, unknown>> = {};
       const channelMap: Record<string, string[]> = {};
-      const defaults = snap?.config?.agents?.defaults ?? {};
+      const defaults = config?.agents?.defaults ?? {};
       const defaultModel = extractPrimaryModel(defaults.model);
       for (const cfg of cfgList) {
         if (!cfg?.id) continue;
+        if (typeof cfg === 'object' && !Array.isArray(cfg)) {
+          definitions[cfg.id] = { ...cfg };
+        }
         const m = extractPrimaryModel(cfg.model);
         if (m) {
           models[cfg.id] = m;
           explicit[cfg.id] = true;
         }
       }
-      const channels = snap?.config?.channels ?? {};
+      const channels = config?.channels ?? {};
       for (const [channelId, channelConfig] of Object.entries(channels as Record<string, any>)) {
         if (channelId === 'modelByChannel' || !channelConfig || typeof channelConfig !== 'object') continue;
         if (typeof channelConfig.agentId === 'string' && channelConfig.agentId) {
@@ -656,6 +788,7 @@ export function AgentHubPage() {
       }
       setAgentModels(models);
       setAgentExplicitModels(explicit);
+      setAgentDefinitions(definitions);
       setAgentChannels(channelMap);
       setDefaultAgentModel(defaultModel);
       setDefaultAgentWorkspace(typeof defaults.workspace === 'string' ? defaults.workspace : '');
@@ -713,35 +846,51 @@ export function AgentHubPage() {
   const newAgentIdExists = !!normalizedNewAgentId && (normalizedNewAgentId === MAIN_GATEWAY_AGENT_ID || agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId));
   const newAgentIdInvalid = !!normalizedNewAgentId && !GATEWAY_AGENT_ID_RE.test(normalizedNewAgentId);
   const effectiveDefaultAgentWorkspace = defaultAgentWorkspace || agents.find((agent) => agent.id === MAIN_GATEWAY_AGENT_ID)?.workspace || '';
-  const newAgentWorkspace = newAgent.workspace.trim() || effectiveDefaultAgentWorkspace.trim();
+  const suggestedDedicatedWorkspace = suggestDedicatedGatewayAgentWorkspace(
+    effectiveDefaultAgentWorkspace,
+    normalizedNewAgentId,
+  );
+  const newAgentWorkspace = newAgent.workspaceMode === 'shared'
+    ? effectiveDefaultAgentWorkspace.trim()
+    : newAgent.workspace.trim() || suggestedDedicatedWorkspace;
   const newAgentWorkspaceMissing = !newAgentWorkspace;
-  const canCreateAgent = connected && !!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists && !newAgentWorkspaceMissing && !creatingAgent;
+  const newAgentModelMissing = newAgent.modelMode !== 'inherit' && !newAgent.model.trim();
+  const newAgentFallbacksMissing = newAgent.modelMode === 'fallbacks' && newAgent.fallbacks.length === 0;
+  const canCreateAgent = connected
+    && !!normalizedNewAgentId
+    && !newAgentIdInvalid
+    && !newAgentIdExists
+    && !newAgentWorkspaceMissing
+    && !newAgentModelMissing
+    && !newAgentFallbacksMissing
+    && !creatingAgent;
+  const canQuickCreateAgent = canCreateAgent
+    && newAgent.modelMode === 'inherit'
+    && newAgent.skillsMode === 'inherit';
 
   const shareExportSubject = useMemo<SharePackageSubject | null>(() => {
     if (!shareExportAgent?.workspace) return null;
+    const agent = buildAgentShareMetadata({
+      id: shareExportAgent.id,
+      name: shareExportAgent.name,
+      model: shareExportAgent.model,
+      definition: agentDefinitions[shareExportAgent.id],
+    });
     return {
       kind: 'agent',
-      name: shareExportAgent.name || shareExportAgent.id,
+      name: agent.name,
       root: shareExportAgent.workspace,
       fileName: shareExportAgent.id,
       metadata: {
-        agent: {
-          id: shareExportAgent.id,
-          name: shareExportAgent.name || shareExportAgent.id,
-          model: fmtModel(shareExportAgent.model) || undefined,
-        },
+        agent,
       },
     };
-  }, [shareExportAgent]);
+  }, [agentDefinitions, shareExportAgent]);
 
   const getImportedAgent = useCallback((manifest: SharePackageManifest) => {
-    const source = manifest.metadata.agent;
-    if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
-    const record = source as Record<string, unknown>;
-    const id = normalizeGatewayAgentId(String(record.id ?? ''));
-    const name = String(record.name ?? id).trim() || id;
-    const model = String(record.model ?? '').trim();
-    return { id, name, model };
+    const imported = readImportedAgentShareMetadata(manifest.metadata);
+    if (!imported) return null;
+    return { ...imported, id: normalizeGatewayAgentId(imported.id) };
   }, []);
 
   const validateImportedAgent = useCallback((manifest: SharePackageManifest) => {
@@ -749,12 +898,34 @@ export function AgentHubPage() {
     if (!imported?.id || !GATEWAY_AGENT_ID_RE.test(imported.id)) {
       return 'The package does not contain a valid Agent ID.';
     }
-    if (imported.id === MAIN_GATEWAY_AGENT_ID || agents.some((agent) => agent.id.toLowerCase() === imported.id)) {
+    if (imported.id === MAIN_GATEWAY_AGENT_ID || agents.some((agent) => agent.id.toLowerCase() === imported.id.toLowerCase())) {
       return `An Agent named "${imported.id}" already exists.`;
     }
     if (!connected) return 'Connect to the Gateway before importing an Agent.';
     return null;
   }, [agents, connected, getImportedAgent]);
+
+  const restoreImportedAgentDefinition = useCallback(async (
+    imported: ImportedAgentShareDefinition,
+    targetPath: string,
+  ) => {
+    const snap: any = await gateway.call('config.get', {});
+    const config = snap?.config ?? snap;
+    const currentList = Array.isArray(config?.agents?.list)
+      ? [...config.agents.list]
+      : [];
+    if (currentList.some((entry: any) => String(entry?.id ?? '').trim().toLowerCase() === imported.id.toLowerCase())) {
+      throw new Error(`An Agent named "${imported.id}" already exists.`);
+    }
+
+    const entry = buildImportedAgentConfigEntry(imported, targetPath);
+    await gateway.callPrivileged('config.patch', {
+      raw: JSON.stringify({ agents: { list: [...currentList, entry] } }),
+      ...(snap?.baseHash || snap?.hash ? { baseHash: snap.baseHash ?? snap.hash } : {}),
+      replacePaths: ['agents.list'],
+    });
+    return entry;
+  }, []);
 
   // Sidebar "在线智能体" click navigates to /agents?agent=<id>. Open that
   // agent's settings panel automatically, matching in-page card click behavior.
@@ -777,6 +948,8 @@ export function AgentHubPage() {
     if (searchParams.get('new') === '1') {
       setShowAddForm(true);
       setNewAgentStep(0);
+      setNewAgent(emptyNewAgent);
+      setNewAgentSkillKeys([]);
       const next = new URLSearchParams(searchParams);
       next.delete('new');
       setSearchParams(next, { replace: true });
@@ -785,7 +958,11 @@ export function AgentHubPage() {
 
   const handleCreateAgent = async () => {
     if (creatingAgent) return;
-    const payload = buildGatewayAgentCreatePayload(newAgent, effectiveDefaultAgentWorkspace);
+    const payload = buildGatewayAgentCreatePayload({
+      ...newAgent,
+      workspace: newAgentWorkspace,
+      model: newAgent.modelMode === 'inherit' ? '' : newAgent.model,
+    }, effectiveDefaultAgentWorkspace);
     if (!payload.id) return;
     if (!GATEWAY_AGENT_ID_RE.test(payload.id)) {
       setAgentFormError(t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'));
@@ -793,6 +970,14 @@ export function AgentHubPage() {
     }
     if (!payload.workspace) {
       setAgentFormError(t('agentHub.addForm.workspaceRequired', 'Choose a workspace or configure a default Agent workspace.'));
+      return;
+    }
+    if (newAgentModelMissing) {
+      setAgentFormError(t('agentHub.wizard.modelRequired', 'Choose a model for this Agent override.'));
+      return;
+    }
+    if (newAgentFallbacksMissing) {
+      setAgentFormError(t('agentHub.wizard.fallbackRequired', 'Add at least one fallback to enable ordered failover.'));
       return;
     }
     const duplicate = agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId) || normalizedNewAgentId === MAIN_GATEWAY_AGENT_ID;
@@ -811,13 +996,19 @@ export function AgentHubPage() {
       if (created?.agentId !== payload.id) {
         throw new Error(`OpenClaw created Agent ${String(created?.agentId || 'unknown')}; expected ${payload.id}`);
       }
-      if (newAgentSkillKeys.length > 0) {
+      const creationOverrides = {
+        ...(newAgent.skillsMode === 'custom' ? { skills: newAgentSkillKeys } : {}),
+        ...(newAgent.modelMode === 'fallbacks' && payload.model
+          ? { model: { primary: payload.model, fallbacks: newAgent.fallbacks } }
+          : {}),
+      };
+      if (Object.keys(creationOverrides).length > 0) {
         try {
-          await persistAgentSkillFilter(payload.id, newAgentSkillKeys);
-        } catch (skillError) {
+          await persistAgentCreationOverrides(gateway, payload.id, creationOverrides);
+        } catch (overrideError) {
           showAlert(
-            t('agentHub.skillsSaveWarningTitle', 'Agent created; skills need attention'),
-            skillError instanceof Error ? skillError.message : String(skillError),
+            t('agentHub.creationOverrideWarningTitle', 'Agent created; configuration needs attention'),
+            overrideError instanceof Error ? overrideError.message : String(overrideError),
             'warning',
           );
         }
@@ -1053,7 +1244,7 @@ export function AgentHubPage() {
             className="inline-flex items-center gap-1.5 rounded-lg border border-aegis-primary/20 bg-aegis-primary/[0.06] px-3 py-1.5 text-[11px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/[0.12]"
           >
             <FileArchive size={13} />
-            <span className="hidden sm:inline">Import</span>
+            <span className="hidden sm:inline">{t('agentHub.importPackage', 'Import package')}</span>
           </button>
           {/* View Switcher */}
           <div className="flex gap-0.5 bg-[rgb(var(--aegis-overlay)/0.02)] border border-[rgb(var(--aegis-overlay)/0.06)] rounded-xl p-1">
@@ -1179,6 +1370,8 @@ export function AgentHubPage() {
                         if (next) {
                           setNewAgentStep(0);
                           setAgentFormError(null);
+                          setNewAgent(emptyNewAgent);
+                          setNewAgentSkillKeys([]);
                         }
                         return next;
                       });
@@ -1202,11 +1395,14 @@ export function AgentHubPage() {
                               t('agentHub.wizard.review', 'Review'),
                             ];
                             const canGoNext = newAgentStep === 0
-                              ? canCreateAgent || (!!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists)
-                              : newAgentStep === 2
-                                ? !newAgentWorkspaceMissing
-                              : true;
+                              ? !!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists
+                              : newAgentStep === 1
+                                ? !newAgentModelMissing && !newAgentFallbacksMissing
+                                : newAgentStep === 2
+                                  ? !newAgentWorkspaceMissing
+                                  : true;
                             const workspaceErrorVisible = newAgentStep >= 2 && newAgentWorkspaceMissing;
+                            const modelErrorVisible = newAgentStep >= 1 && (newAgentModelMissing || newAgentFallbacksMissing);
                             return (
                           <div className="space-y-4">
                             <div className="flex items-start justify-between gap-3">
@@ -1215,7 +1411,7 @@ export function AgentHubPage() {
                                   {t('agentHub.addNewAgent', 'Add New Agent')}
                                 </div>
                                 <div className="mt-1 text-[11px] text-aegis-text-dim">
-                                  {t('agentHub.wizard.subtitle', 'Create the agent, then continue with workspace, skills, and channel setup.')}
+                                  {t('agentHub.wizard.subtitle', 'Create a safe base Agent now, or configure its model, workspace, and skills first.')}
                                 </div>
                               </div>
                               <div className="rounded-lg border border-aegis-primary/20 bg-aegis-primary/10 px-2 py-1 text-[10px] font-bold text-aegis-primary">
@@ -1259,54 +1455,210 @@ export function AgentHubPage() {
                             )}
 
                             {newAgentStep === 1 && (
-                              <div className="space-y-2">
-                                <div className="text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.modelPlaceholder', 'Model')}</div>
-                                <input disabled={creatingAgent} placeholder={defaultAgentModel || 'provider/model'} value={newAgent.model} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, model: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
-                                <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2 text-[11px] text-aegis-text-dim">
-                                  {newAgent.model.trim()
-                                    ? t('agentHub.wizard.modelExplicit', 'This agent will use the selected model.')
-                                    : t('agentHub.wizard.modelInherited', 'Leave empty to inherit the default agent model.')}
-                                  {defaultAgentModel && <span className="ms-1 font-mono">{defaultAgentModel}</span>}
+                              <div className="space-y-3">
+                                <div>
+                                  <div className="text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.modelPlaceholder', 'Model')}</div>
+                                  <p className="mt-1 text-[11px] leading-5 text-aegis-text-dim">
+                                    {t('agentHub.wizard.modelRoutingHint', 'Choose inheritance, a strict single model, or an ordered fallback chain.')}
+                                  </p>
                                 </div>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label={t('agentHub.addForm.modelPlaceholder', 'Model')}>
+                                  {([
+                                    ['inherit', t('agentHub.wizard.modelInherit', 'Inherit defaults'), t('agentHub.wizard.modelInheritHint', 'Use the global primary and its fallbacks.')],
+                                    ['strict', t('agentHub.wizard.modelStrict', 'Strict model'), t('agentHub.wizard.modelStrictHint', 'Use one primary model only.')],
+                                    ['fallbacks', t('agentHub.wizard.modelFallbacks', 'Fallback chain'), t('agentHub.wizard.modelFallbacksHint', 'Set a primary and ordered backups.')],
+                                  ] as const).map(([mode, label, hint]) => (
+                                    <button
+                                      key={mode}
+                                      type="button"
+                                      role="radio"
+                                      aria-checked={newAgent.modelMode === mode}
+                                      disabled={creatingAgent}
+                                      onClick={() => {
+                                        setAgentFormError(null);
+                                        setNewAgent((current) => ({ ...current, modelMode: mode }));
+                                      }}
+                                      className={clsx(
+                                        'min-h-[78px] rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-45',
+                                        newAgent.modelMode === mode
+                                          ? 'border-aegis-primary/45 bg-aegis-primary/10 text-aegis-primary'
+                                          : 'border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] text-aegis-text-secondary hover:border-aegis-primary/25',
+                                      )}
+                                    >
+                                      <div className="text-[11px] font-bold">{label}</div>
+                                      <div className="mt-1 text-[9px] leading-4 text-aegis-text-dim">{hint}</div>
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {newAgent.modelMode === 'inherit' ? (
+                                  <div className="border-s-2 border-aegis-primary/60 bg-aegis-primary/5 px-3 py-2.5 text-[11px] leading-5 text-aegis-text-muted">
+                                    {defaultAgentModel
+                                      ? <><span>{t('agentHub.wizard.modelInheritedFrom', 'Inherited primary:')}</span><span className="ms-1 font-mono text-aegis-text">{defaultAgentModel}</span></>
+                                      : t('agentHub.wizard.modelNoDefault', 'No default primary is configured yet. You can set one later in Model Providers.')}
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <ModelDropdown
+                                      value={newAgent.model || null}
+                                      onChange={(model) => {
+                                        setAgentFormError(null);
+                                        setNewAgent((current) => ({ ...current, model }));
+                                      }}
+                                      disabled={creatingAgent}
+                                      placeholder={t('agentHub.wizard.selectRuntimeModel', 'Select a runtime model')}
+                                    />
+                                    {availableModels.length === 0 && (
+                                      <input
+                                        disabled={creatingAgent}
+                                        placeholder="provider/model"
+                                        value={newAgent.model}
+                                        onChange={(event) => {
+                                          setAgentFormError(null);
+                                          setNewAgent((current) => ({ ...current, model: event.target.value }));
+                                        }}
+                                        className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 font-mono text-xs text-aegis-text placeholder:text-aegis-text-dim outline-none focus:border-aegis-primary/50 disabled:opacity-50"
+                                      />
+                                    )}
+                                    {availableModels.length > 0 && (
+                                      <details className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2 text-[10px] text-aegis-text-dim">
+                                        <summary className="cursor-pointer font-semibold text-aegis-text-muted">{t('agentHub.wizard.unlistedModel', 'Use an unlisted model reference')}</summary>
+                                        <input
+                                          disabled={creatingAgent}
+                                          placeholder="provider/model"
+                                          value={newAgent.model}
+                                          onChange={(event) => {
+                                            setAgentFormError(null);
+                                            setNewAgent((current) => ({ ...current, model: event.target.value }));
+                                          }}
+                                          className="mt-2 w-full rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-2.5 py-2 font-mono text-xs text-aegis-text placeholder:text-aegis-text-dim outline-none focus:border-aegis-primary/50 disabled:opacity-50"
+                                        />
+                                      </details>
+                                    )}
+                                    {newAgent.modelMode === 'strict' && (
+                                      <p className="text-[10px] leading-4 text-aegis-text-dim">
+                                        {t('agentHub.wizard.strictModelHint', 'A per-Agent string model is strict and does not inherit default fallbacks.')}
+                                      </p>
+                                    )}
+                                    {newAgent.modelMode === 'fallbacks' && (
+                                      <NewAgentFallbackPicker
+                                        primary={newAgent.model.trim()}
+                                        values={newAgent.fallbacks}
+                                        availableModels={availableModels}
+                                        disabled={creatingAgent || !newAgent.model.trim()}
+                                        onChange={(fallbacks) => setNewAgent((current) => ({ ...current, fallbacks }))}
+                                      />
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             )}
 
                             {newAgentStep === 2 && (
-                              <div className="space-y-2">
-                                <div className="text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.workspacePlaceholder', 'Workspace')}</div>
-                                <input disabled={creatingAgent || newAgent.inheritWorkspace} placeholder={effectiveDefaultAgentWorkspace || '/path/to/workspace'} value={newAgent.workspace} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, workspace: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
-                                <label className="flex items-start gap-2 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2 text-[11px] text-aegis-text-muted">
-                                  <input
-                                    type="checkbox"
-                                    disabled={creatingAgent || !effectiveDefaultAgentWorkspace}
-                                    checked={newAgent.inheritWorkspace}
-                                    onChange={(e) => {
+                              <div className="space-y-3">
+                                <div>
+                                  <div className="text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.workspacePlaceholder', 'Workspace')}</div>
+                                  <p className="mt-1 text-[11px] leading-5 text-aegis-text-dim">
+                                    {t('agentHub.wizard.workspaceIsolationHint', 'A dedicated workspace keeps this Agent bootstrap files and working context separate.')}
+                                  </p>
+                                </div>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t('agentHub.addForm.workspacePlaceholder', 'Workspace')}>
+                                  <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={newAgent.workspaceMode === 'dedicated'}
+                                    disabled={creatingAgent}
+                                    onClick={() => {
                                       setAgentFormError(null);
-                                      setNewAgent(p => ({ ...p, inheritWorkspace: e.target.checked, workspace: e.target.checked ? '' : p.workspace }));
+                                      setNewAgent((current) => ({ ...current, workspaceMode: 'dedicated' }));
                                     }}
-                                    className="mt-0.5 accent-aegis-primary"
-                                  />
-                                  <span className="leading-relaxed">
-                                    {t('agentHub.addForm.inheritWorkspace', 'Inherit default workspace')}
-                                    {effectiveDefaultAgentWorkspace && (
-                                      <span className="block font-mono text-[9px] text-aegis-text-dim truncate">
-                                        {effectiveDefaultAgentWorkspace}
-                                      </span>
+                                    className={clsx(
+                                      'rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-45',
+                                      newAgent.workspaceMode === 'dedicated'
+                                        ? 'border-aegis-primary/45 bg-aegis-primary/10 text-aegis-primary'
+                                        : 'border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] text-aegis-text-secondary hover:border-aegis-primary/25',
                                     )}
-                                  </span>
-                                </label>
+                                  >
+                                    <div className="text-[11px] font-bold">{t('agentHub.wizard.dedicatedWorkspace', 'Dedicated workspace')}</div>
+                                    <div className="mt-1 text-[9px] leading-4 text-aegis-text-dim">{t('agentHub.wizard.dedicatedWorkspaceHint', 'Recommended for an independent Agent.')}</div>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={newAgent.workspaceMode === 'shared'}
+                                    disabled={creatingAgent || !effectiveDefaultAgentWorkspace}
+                                    onClick={() => {
+                                      setAgentFormError(null);
+                                      setNewAgent((current) => ({ ...current, workspaceMode: 'shared' }));
+                                    }}
+                                    className={clsx(
+                                      'rounded-lg border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                                      newAgent.workspaceMode === 'shared'
+                                        ? 'border-amber-400/40 bg-amber-500/8 text-amber-200'
+                                        : 'border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] text-aegis-text-secondary hover:border-amber-400/25',
+                                    )}
+                                  >
+                                    <div className="text-[11px] font-bold">{t('agentHub.wizard.sharedWorkspace', 'Reuse default workspace')}</div>
+                                    <div className="mt-1 text-[9px] leading-4 text-aegis-text-dim">{t('agentHub.wizard.sharedWorkspaceHint', 'Shares files and bootstrap context with the default workspace.')}</div>
+                                  </button>
+                                </div>
+                                <input
+                                  disabled={creatingAgent || newAgent.workspaceMode === 'shared'}
+                                  placeholder={suggestedDedicatedWorkspace || effectiveDefaultAgentWorkspace || '/path/to/workspace'}
+                                  value={newAgent.workspaceMode === 'shared' ? effectiveDefaultAgentWorkspace : (newAgent.workspace || suggestedDedicatedWorkspace)}
+                                  onChange={(event) => {
+                                    setAgentFormError(null);
+                                    setNewAgent((current) => ({ ...current, workspace: event.target.value }));
+                                  }}
+                                  className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.05)] px-3 py-2 font-mono text-xs text-aegis-text placeholder:text-aegis-text-dim outline-none focus:border-aegis-primary/50 disabled:opacity-50"
+                                />
+                                {newAgent.workspaceMode === 'dedicated' && suggestedDedicatedWorkspace && !newAgent.workspace.trim() && (
+                                  <p className="text-[10px] leading-4 text-aegis-text-dim">
+                                    {t('agentHub.wizard.suggestedWorkspace', 'Suggested dedicated path')}: <span className="font-mono text-aegis-text-secondary">{suggestedDedicatedWorkspace}</span>
+                                  </p>
+                                )}
+                                {newAgent.workspaceMode === 'shared' && (
+                                  <p className="flex items-start gap-1.5 text-[10px] leading-4 text-amber-200">
+                                    <AlertCircle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                                    {t('agentHub.wizard.sharedWorkspaceWarning', 'This Agent will share files and bootstrap instructions with the default workspace.')}
+                                  </p>
+                                )}
                               </div>
                             )}
 
                             {newAgentStep === 3 && (
-                              <div className="space-y-2">
+                              <div className="space-y-3">
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="text-[10px] font-bold text-aegis-text-muted">{t('nav.agentSkills', 'Agent Skills')}</div>
                                   <button type="button" onClick={() => navigate('/skill-hub')} className="text-[10px] font-bold text-aegis-primary hover:underline">
                                     {t('common.manage', 'Manage')}
                                   </button>
                                 </div>
-                                {enabledSkills.length > 0 ? (
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t('nav.agentSkills', 'Agent Skills')}>
+                                  {([
+                                    ['inherit', t('agentHub.wizard.skillsInherit', 'Inherit default skills'), t('agentHub.wizard.skillsInheritHint', 'Keep the global Agent skill policy.')],
+                                    ['custom', t('agentHub.wizard.skillsCustom', 'Choose skills'), t('agentHub.wizard.skillsCustomHint', 'Write an explicit Agent skill list.')],
+                                  ] as const).map(([mode, label, hint]) => (
+                                    <button
+                                      key={mode}
+                                      type="button"
+                                      role="radio"
+                                      aria-checked={newAgent.skillsMode === mode}
+                                      disabled={creatingAgent}
+                                      onClick={() => setNewAgent((current) => ({ ...current, skillsMode: mode }))}
+                                      className={clsx(
+                                        'rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-45',
+                                        newAgent.skillsMode === mode
+                                          ? 'border-aegis-primary/45 bg-aegis-primary/10 text-aegis-primary'
+                                          : 'border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] text-aegis-text-secondary hover:border-aegis-primary/25',
+                                      )}
+                                    >
+                                      <div className="text-[11px] font-bold">{label}</div>
+                                      <div className="mt-1 text-[9px] leading-4 text-aegis-text-dim">{hint}</div>
+                                    </button>
+                                  ))}
+                                </div>
+                                {newAgent.skillsMode === 'custom' && (enabledSkills.length > 0 ? (
                                   <div className="grid grid-cols-2 gap-2">
                                     {enabledSkills.slice(0, 8).map(([slug, info]) => {
                                       const checked = newAgentSkillKeys.includes(slug);
@@ -1332,6 +1684,12 @@ export function AgentHubPage() {
                                   <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-3 text-[11px] text-aegis-text-dim">
                                     {t('sidebar.noAgentSkills', 'No available skills')}
                                   </div>
+                                ))}
+                                {newAgent.skillsMode === 'custom' && newAgentSkillKeys.length === 0 && (
+                                  <p className="flex items-start gap-1.5 text-[10px] leading-4 text-amber-200">
+                                    <AlertCircle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                                    {t('agentHub.wizard.skillsNoneExplicit', 'No skills selected. This writes an explicit empty list and disables inherited skills for this Agent.')}
+                                  </p>
                                 )}
                               </div>
                             )}
@@ -1341,9 +1699,17 @@ export function AgentHubPage() {
                                 {[
                                   [t('agentHub.addForm.agentIdPlaceholder', 'Agent ID *'), normalizedNewAgentId || '—'],
                                   [t('agentHub.addForm.namePlaceholder', 'Name'), newAgent.name.trim() || normalizedNewAgentId || '—'],
-                                  [t('agentSettings.model', 'Model'), newAgent.model.trim() || defaultAgentModel || t('agentHub.inherited', 'Inherited')],
+                                  [t('agentSettings.model', 'Model'), newAgent.modelMode === 'inherit'
+                                    ? `${t('agentHub.inherited', 'Inherited')}: ${defaultAgentModel || t('config.notSet', 'Not set')}`
+                                    : newAgent.modelMode === 'fallbacks'
+                                      ? `${newAgent.model.trim()} + ${t('config.fallbackCount', '{{count}} fallbacks', { count: newAgent.fallbacks.length })}`
+                                      : `${t('agentHub.wizard.modelStrict', 'Strict model')}: ${newAgent.model.trim() || t('config.notSet', 'Not set')}`],
                                   [t('agentSettings.workspace', 'Workspace'), newAgentWorkspace || t('agentHub.inherited', 'Inherited')],
-                                  [t('nav.agentSkills', 'Agent Skills'), selectedNewAgentSkills.length > 0 ? selectedNewAgentSkills.map(([, info]) => info.name).join(', ') : t('sidebar.noAgentSkills', 'No available skills')],
+                                  [t('nav.agentSkills', 'Agent Skills'), newAgent.skillsMode === 'inherit'
+                                    ? t('agentHub.wizard.skillsInherit', 'Inherit default skills')
+                                    : selectedNewAgentSkills.length > 0
+                                      ? selectedNewAgentSkills.map(([, info]) => info.name).join(', ')
+                                      : t('agentHub.wizard.skillsNoneExplicit', 'No skills selected')],
                                   [t('agentSettings.channels', 'Channels'), t('agentHub.wizard.configureAfterCreate', 'Configure after creation')],
                                 ].map(([label, value]) => (
                                   <div key={label} className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2">
@@ -1354,7 +1720,7 @@ export function AgentHubPage() {
                               </div>
                             )}
 
-                            {(agentFormError || newAgentIdInvalid || newAgentIdExists || workspaceErrorVisible || !connected) && (
+                            {(agentFormError || newAgentIdInvalid || newAgentIdExists || workspaceErrorVisible || modelErrorVisible || !connected) && (
                               <div className="flex items-start gap-2 rounded-lg border border-aegis-danger/20 bg-aegis-danger/10 px-3 py-2 text-[11px] leading-relaxed text-aegis-danger">
                                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
                                 <span>
@@ -1365,7 +1731,11 @@ export function AgentHubPage() {
                                         ? t('agentHub.addForm.duplicateId', 'This agent ID already exists.')
                                         : workspaceErrorVisible
                                           ? t('agentHub.addForm.workspaceRequired', 'Choose a workspace or configure a default workspace before creating the agent.')
-                                          : t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'))}
+                                          : modelErrorVisible
+                                            ? (newAgentFallbacksMissing
+                                              ? t('agentHub.wizard.fallbackRequired', 'Add at least one fallback to enable ordered failover.')
+                                              : t('agentHub.wizard.modelRequired', 'Choose a model for this Agent override.'))
+                                            : t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'))}
                                 </span>
                               </div>
                             )}
@@ -1374,6 +1744,18 @@ export function AgentHubPage() {
                                 {t('common.cancel', 'Cancel')}
                               </button>
                               <div className="flex gap-2">
+                                {newAgentStep === 0 && (
+                                  <button
+                                    type="button"
+                                    disabled={!canQuickCreateAgent}
+                                    onClick={handleCreateAgent}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-aegis-primary/30 bg-aegis-primary/15 px-4 py-2 text-sm font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/22 disabled:cursor-not-allowed disabled:opacity-35"
+                                    title={t('agentHub.wizard.quickCreateHint', 'Create with inherited model and a dedicated workspace')}
+                                  >
+                                    {creatingAgent ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                                    {t('agentHub.wizard.quickCreate', 'Create base agent')}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   disabled={creatingAgent || newAgentStep === 0}
@@ -1387,10 +1769,10 @@ export function AgentHubPage() {
                                     type="button"
                                     disabled={!canGoNext || creatingAgent}
                                     onClick={() => setNewAgentStep((s) => Math.min(steps.length - 1, s + 1))}
-                                    className="px-4 py-2 rounded-lg bg-aegis-primary/15 border border-aegis-primary/25 text-aegis-primary text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
-                                  >
-                                    {t('common.next', 'Next')}
-                                  </button>
+                                  className="px-4 py-2 rounded-lg bg-aegis-primary/15 border border-aegis-primary/25 text-aegis-primary text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                  {newAgentStep === 0 ? t('agentHub.wizard.customize', 'Customize') : t('common.next', 'Next')}
+                                </button>
                                 ) : (
                                   <button onClick={handleCreateAgent} disabled={!canCreateAgent} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary/20 border border-aegis-primary/30 text-aegis-primary text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed">
                                     {creatingAgent && <Loader2 size={14} className="animate-spin" />}
@@ -1744,25 +2126,18 @@ export function AgentHubPage() {
         onImported={async ({ manifest, targetPath, importedFiles, skippedFiles }) => {
           const imported = getImportedAgent(manifest);
           if (!imported) throw new Error('The package does not contain Agent metadata.');
-          const created = await gateway.createAgent({
-            id: imported.id,
-            name: imported.name,
-            workspace: targetPath,
-            ...(imported.model ? { model: imported.model } : {}),
-          });
-          if (created?.agentId && created.agentId !== imported.id) {
-            throw new Error(`OpenClaw created Agent ${String(created.agentId)}; expected ${imported.id}.`);
-          }
-          if (imported.model) {
-            setAgentModels((current) => ({ ...current, [imported.id]: imported.model }));
+          const entry = await restoreImportedAgentDefinition(imported, targetPath);
+          const importedModel = extractPrimaryModel(entry.model);
+          if (importedModel) {
+            setAgentModels((current) => ({ ...current, [imported.id]: importedModel }));
             setAgentExplicitModels((current) => ({ ...current, [imported.id]: true }));
           }
-          await refreshGroup('agents');
+          await Promise.all([refreshGroup('agents'), loadAgentConfigMeta()]);
           setSelectedAgentId(imported.id);
           setSettingsAgent({
             id: imported.id,
             name: imported.name,
-            model: imported.model,
+            model: importedModel,
             workspace: targetPath,
             configured: true,
           });

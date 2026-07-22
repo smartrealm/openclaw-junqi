@@ -422,7 +422,9 @@ export const gateway = {
 
   // Models & Usage
   async getSessionStatus(sessionKey = 'agent:main:main') { return connection.request('sessions.list', {}); },
-  async getAvailableModels() { return connection.request('models.list', {}); },
+  async getAvailableModels(view: 'default' | 'configured' | 'all' = 'configured') {
+    return connection.request('models.list', { view });
+  },
   async call(method: string, params: any = {}, options?: GatewayRequestOptions) {
     return connection.request(method, params, options);
   },

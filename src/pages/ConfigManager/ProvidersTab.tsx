@@ -8,7 +8,7 @@ import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image, ArrowUp, ArrowDown, Circle, Zap } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
 import type {
@@ -29,7 +29,7 @@ import {
   type ProviderCatalogEntry,
   type ProviderTab,
 } from './providerTemplates';
-import { MaskedInput, ChipList, ChipInput } from './components';
+import { MaskedInput, ChipList, ChipInput, ToggleSwitch } from './components';
 import { buildProviderSubmissionModelIds } from './providerModelSelection';
 import { gateway } from '@/services/gateway';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
@@ -49,7 +49,14 @@ import {
   buildDefaultsWithResolvedModels,
   buildFetchedModelAdditions,
 } from './providerDefaults';
+import { getModelFallbacks, getModelPrimary, setModelFallbacks, setModelPrimary } from './modelReference';
+import {
+  hasBlockingModelRoutingIssue,
+  inspectModelRouting,
+  type ModelRoutingIssue,
+} from './modelRoutingHealth';
 import { Badge, StatusDot } from '@/components/shared/badge';
+import { showConfirm } from '@/components/shared/AlertDialog';
 import { AUTH_MODE_INFO, normalizeProviderAuthMode } from '@/types/providerAuthMode';
 import { OPENCLAW_API_PROTOCOLS, normalizeOpenClawApiProtocol } from '@/types/openclawApiProtocol';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
@@ -76,8 +83,10 @@ import {
   providerProbeProfileKey,
 } from './providerAuthFlow';
 import {
+  getModelPolicyAllow,
   hasProviderWildcard,
   setModelCatalogMode,
+  setModelPolicyAllow,
   setProviderAuthOrder,
   setProviderWildcard,
 } from './providerPolicy';
@@ -275,6 +284,9 @@ function resolveImagePrimaryModel(
   availableModelIds: string[],
   imageSupportMap?: Map<string, boolean>,
 ): string | undefined {
+  if (currentImagePrimary && !availableModelIds.includes(currentImagePrimary)) {
+    return currentImagePrimary;
+  }
   if (
     currentImagePrimary &&
     availableModelIds.includes(currentImagePrimary) &&
@@ -435,6 +447,122 @@ function DefaultModelControls({
       </div>
     </div>
   );
+}
+
+interface DefaultFallbackChainControlsProps {
+  primaryModel?: string;
+  fallbacks: string[];
+  models: Record<string, ModelEntry>;
+  onChange: (fallbacks: string[]) => void;
+  disabled?: boolean;
+}
+
+/** Ordered fallbacks are a routing policy, not a flat model tag list. */
+function DefaultFallbackChainControls({
+  primaryModel,
+  fallbacks,
+  models,
+  onChange,
+  disabled = false,
+}: DefaultFallbackChainControlsProps) {
+  const { t } = useTranslation();
+  const [candidate, setCandidate] = useState('');
+  const options = Object.entries(models).filter(([id]) => id !== primaryModel && !fallbacks.includes(id));
+
+  const addFallback = () => {
+    if (!candidate || candidate === primaryModel || fallbacks.includes(candidate)) return;
+    onChange([...fallbacks, candidate]);
+    setCandidate('');
+  };
+  const moveFallback = (from: number, direction: -1 | 1) => {
+    const to = from + direction;
+    if (to < 0 || to >= fallbacks.length) return;
+    const next = [...fallbacks];
+    [next[from], next[to]] = [next[to], next[from]];
+    onChange(next);
+  };
+
+  return (
+    <div className="border-t border-aegis-border pt-4" data-testid="default-model-fallback-chain">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-aegis-text">
+            {t('config.defaultModelFallbacks', 'Default fallback chain')}
+          </div>
+          <p className="mt-1 text-[11px] leading-5 text-aegis-text-muted">
+            {t('config.defaultModelFallbacksHint', 'OpenClaw tries these models in order after the primary model fails.')}
+          </p>
+        </div>
+        <div className="flex min-w-0 items-center gap-2 sm:w-[260px]">
+          <select
+            value={candidate}
+            disabled={disabled || options.length === 0}
+            onChange={(event) => setCandidate(event.target.value)}
+            aria-label={t('config.addFallbackModel', 'Add fallback model')}
+            className="min-w-0 flex-1 rounded-md border border-aegis-border bg-aegis-surface px-2 py-1.5 text-xs text-aegis-text outline-none focus:border-aegis-primary disabled:opacity-50"
+          >
+            <option value="">{t('config.addFallbackModel', 'Add fallback model')}</option>
+            {options.map(([id, entry]) => <option key={id} value={id}>{modelDisplayLabel(id, entry)}</option>)}
+          </select>
+          <button
+            type="button"
+            disabled={disabled || !candidate}
+            onClick={addFallback}
+            className="grid size-8 shrink-0 place-items-center rounded-md border border-aegis-primary/25 bg-aegis-primary/8 text-aegis-primary transition-colors hover:bg-aegis-primary/14 disabled:cursor-not-allowed disabled:opacity-45"
+            title={t('common.add', 'Add')}
+            aria-label={t('config.addFallbackModel', 'Add fallback model')}
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+      </div>
+
+      {fallbacks.length > 0 ? (
+        <ol className="mt-3 space-y-1.5" aria-label={t('config.defaultModelFallbacks', 'Default fallback chain')}>
+          {fallbacks.map((fallback, index) => (
+            <li key={fallback} className="flex min-w-0 items-center gap-2 border-b border-aegis-border/70 py-1.5 last:border-b-0">
+              <span className="w-5 shrink-0 text-center font-mono text-[10px] text-aegis-text-dim">{index + 1}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-aegis-text-secondary" title={fallback}>{fallback}</span>
+              <div className="flex shrink-0 items-center gap-0.5">
+                <button type="button" disabled={disabled || index === 0} onClick={() => moveFallback(index, -1)} className="grid size-7 place-items-center rounded text-aegis-text-muted hover:bg-aegis-overlay/10 hover:text-aegis-text disabled:opacity-30" title={t('config.moveFallbackEarlier', 'Move earlier')} aria-label={t('config.moveFallbackEarlier', 'Move earlier')}>
+                  <ArrowUp size={13} />
+                </button>
+                <button type="button" disabled={disabled || index === fallbacks.length - 1} onClick={() => moveFallback(index, 1)} className="grid size-7 place-items-center rounded text-aegis-text-muted hover:bg-aegis-overlay/10 hover:text-aegis-text disabled:opacity-30" title={t('config.moveFallbackLater', 'Move later')} aria-label={t('config.moveFallbackLater', 'Move later')}>
+                  <ArrowDown size={13} />
+                </button>
+                <button type="button" disabled={disabled} onClick={() => onChange(fallbacks.filter((item) => item !== fallback))} className="grid size-7 place-items-center rounded text-aegis-text-muted hover:bg-red-500/10 hover:text-red-400 disabled:opacity-30" title={t('common.remove', 'Remove')} aria-label={t('common.remove', 'Remove')}>
+                  <X size={13} />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="mt-3 text-[11px] text-aegis-text-dim">
+          {t('config.noFallbackModels', 'No fallback models configured. The default uses its primary model only.')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function modelRoutingIssueMessage(t: TFunction, issue: ModelRoutingIssue): string {
+  switch (issue.kind) {
+    case 'missing-primary':
+      return t('config.routingIssueMissingPrimary', 'Choose a default primary model before relying on this route.');
+    case 'replace-without-explicit-models':
+      return t('config.routingIssueReplaceWithoutModels', 'Configured-only mode needs at least one model in models.providers.');
+    case 'replace-primary-not-explicit':
+      return t('config.routingIssueReplacePrimary', 'The default primary model is not declared by an explicit provider.');
+    case 'replace-fallback-not-explicit':
+      return t('config.routingIssueReplaceFallback', 'One or more fallback models are not declared by an explicit provider.');
+    case 'fallback-repeats-primary':
+      return t('config.routingIssueRepeatedFallback', 'A fallback repeats the primary model and will not provide failover.');
+    case 'policy-rule-unmatched':
+      return t('config.routingIssueUnmatchedPolicy', 'A session access rule has no match in the configured-only preview.');
+    default:
+      return '';
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -787,7 +915,7 @@ export function applyProviderAddition(
   }
 
   const firstSelectedModel = normalizedModels[0];
-  const currentPrimary = next.agents?.defaults?.model?.primary;
+  const currentPrimary = getModelPrimary(next.agents?.defaults?.model);
   const shouldOverridePrimary =
     !currentPrimary || currentPrimary.startsWith('anthropic/');
   const primaryStillValid = currentPrimary && currentPrimary in existingModels;
@@ -798,13 +926,14 @@ export function applyProviderAddition(
     : primaryStillValid
       ? currentPrimary
       : Object.keys(existingModels)[0];
-  const currentImagePrimary = next.agents?.defaults?.imageModel?.primary;
+  const currentImagePrimary = getModelPrimary(next.agents?.defaults?.imageModel);
   const modelIds = Object.keys(existingModels);
   const imageSupportMap = buildConfiguredImageSupportMap(existingModels);
   const imagePrimaryStillValid =
-    currentImagePrimary &&
-    currentImagePrimary in existingModels &&
-    isModelImageCapable(currentImagePrimary, imageSupportMap);
+    currentImagePrimary && (
+      !(currentImagePrimary in existingModels)
+      || isModelImageCapable(currentImagePrimary, imageSupportMap)
+    );
   const nextImagePrimary = requestedImagePrimary
     ? (isModelImageCapable(requestedImagePrimary, imageSupportMap) ? requestedImagePrimary : undefined)
     : imagePrimaryStillValid
@@ -3281,10 +3410,10 @@ export function ProvidersTab({
     () => buildConfiguredImageSupportMap(allModels),
     [allModels]
   );
-  const primaryModel = config.agents?.defaults?.model?.primary;
-  const imagePrimaryModel = config.agents?.defaults?.imageModel?.primary;
-  const imageGenerationPrimaryModel = config.agents?.defaults?.imageGenerationModel?.primary;
-  const videoGenerationPrimaryModel = config.agents?.defaults?.videoGenerationModel?.primary;
+  const primaryModel = getModelPrimary(config.agents?.defaults?.model);
+  const imagePrimaryModel = getModelPrimary(config.agents?.defaults?.imageModel);
+  const imageGenerationPrimaryModel = getModelPrimary(config.agents?.defaults?.imageGenerationModel);
+  const videoGenerationPrimaryModel = getModelPrimary(config.agents?.defaults?.videoGenerationModel);
   const imageGenerationOptions = useMemo(
     () => Array.from(new Set([
       ...GENERATED_IMAGE_GENERATION_MODELS.map((entry) => entry.id),
@@ -3316,19 +3445,12 @@ export function ProvidersTab({
       ...prev,
       agents: {
         ...prev.agents,
-        defaults: {
-          ...prev.agents?.defaults,
-          model: {
-            ...prev.agents?.defaults?.model,
-            primary: desiredPrimary,
-          },
-          imageModel: desiredImagePrimary
-            ? {
-              ...prev.agents?.defaults?.imageModel,
-              primary: desiredImagePrimary,
-            }
-            : undefined,
-        },
+        defaults: buildDefaultsWithResolvedModels({
+          defaults: prev.agents?.defaults,
+          models: prev.agents?.defaults?.models ?? {},
+          primary: desiredPrimary,
+          imagePrimary: desiredImagePrimary,
+        }),
       },
     }));
   }, [allModelImageSupportMap, allModels, imagePrimaryModel, onChange, primaryModel]);
@@ -3343,6 +3465,18 @@ export function ProvidersTab({
   );
   const modelCount = Object.keys(allModels).length;
   const aliasCount = Object.values(allModels).filter((m) => m.alias).length;
+  const modelPolicyAllow = getModelPolicyAllow(config);
+  const modelAccessRestricted = modelPolicyAllow.length > 0;
+  const firstConfigurableModel = primaryModel ?? Object.keys(allModels)[0];
+  const defaultModelFallbacks = getModelFallbacks(config.agents?.defaults?.model);
+  const routingHealth = useMemo(() => inspectModelRouting(config), [config]);
+  const replaceModeHealth = useMemo(
+    () => inspectModelRouting(setModelCatalogMode(config, 'replace')),
+    [config],
+  );
+  const replaceModeBlocked = replaceModeHealth.issues.some(
+    (issue) => issue.kind === 'replace-without-explicit-models',
+  );
 
   // ── Open modal (optionally with a pre-selected template) ──
   const openModal = useCallback((template?: ProviderTemplate) => {
@@ -3356,13 +3490,56 @@ export function ProvidersTab({
       agents: {
         ...prev.agents,
         defaults: buildDefaultsWithResolvedModels({
-          defaults: prev.agents?.defaults,
+          defaults: {
+            ...prev.agents?.defaults,
+            model: getModelFallbacks(prev.agents?.defaults?.model).includes(modelId)
+              ? setModelFallbacks(
+                prev.agents?.defaults?.model,
+                getModelFallbacks(prev.agents?.defaults?.model).filter((fallback) => fallback !== modelId),
+              )
+              : prev.agents?.defaults?.model,
+          },
           models: prev.agents?.defaults?.models ?? {},
           primary: modelId || undefined,
         }),
       },
     }));
   }, [onChange]);
+
+  const setDefaultModelFallbacks = useCallback((fallbacks: string[]) => {
+    onChange((prev) => {
+      const primary = getModelPrimary(prev.agents?.defaults?.model);
+      const nextFallbacks = Array.from(new Set(
+        fallbacks.map((fallback) => fallback.trim()).filter((fallback) => Boolean(fallback) && fallback !== primary),
+      ));
+      return {
+        ...prev,
+        agents: {
+          ...prev.agents,
+          defaults: {
+            ...prev.agents?.defaults,
+            model: setModelFallbacks(prev.agents?.defaults?.model, nextFallbacks),
+          },
+        },
+      };
+    });
+  }, [onChange]);
+
+  const requestModelCatalogMode = useCallback((mode: 'merge' | 'replace') => {
+    if ((config.models?.mode ?? 'merge') === mode) return;
+    if (mode === 'replace') {
+      if (replaceModeBlocked) return;
+      if (hasBlockingModelRoutingIssue(replaceModeHealth)) {
+        showConfirm(
+          t('config.replaceModeReviewTitle', 'Review configured-only routing'),
+          t('config.replaceModeReviewMessage', 'Some primary or fallback models are not declared by explicit providers. Switching now can leave the route unavailable until you fix those references.'),
+          () => onChange((prev) => setModelCatalogMode(prev, 'replace')),
+        );
+        return;
+      }
+    }
+    onChange((prev) => setModelCatalogMode(prev, mode));
+  }, [config.models?.mode, onChange, replaceModeBlocked, replaceModeHealth, t]);
 
   const setDefaultImageModel = useCallback((modelId: string) => {
     onChange((prev) => ({
@@ -3374,6 +3551,38 @@ export function ProvidersTab({
           models: prev.agents?.defaults?.models ?? {},
           imagePrimary: modelId || undefined,
         }),
+      },
+    }));
+  }, [onChange]);
+
+  const setDefaultImageGenerationModel = useCallback((modelId: string) => {
+    onChange((prev) => ({
+      ...prev,
+      agents: {
+        ...prev.agents,
+        defaults: {
+          ...prev.agents?.defaults,
+          imageGenerationModel: setModelPrimary(
+            prev.agents?.defaults?.imageGenerationModel,
+            modelId || undefined,
+          ),
+        },
+      },
+    }));
+  }, [onChange]);
+
+  const setDefaultVideoGenerationModel = useCallback((modelId: string) => {
+    onChange((prev) => ({
+      ...prev,
+      agents: {
+        ...prev.agents,
+        defaults: {
+          ...prev.agents?.defaults,
+          videoGenerationModel: setModelPrimary(
+            prev.agents?.defaults?.videoGenerationModel,
+            modelId || undefined,
+          ),
+        },
       },
     }));
   }, [onChange]);
@@ -3438,28 +3647,168 @@ export function ProvidersTab({
               <span>{label}</span>
             </span>
           ))}
-          <div className="ml-auto inline-flex items-center gap-1 rounded-md border border-aegis-border bg-aegis-surface p-0.5">
-            {(['merge', 'replace'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                disabled={saving}
-                aria-pressed={(config.models?.mode ?? 'merge') === mode}
-                onClick={() => onChange((prev) => setModelCatalogMode(prev, mode))}
-                className={clsx(
-                  'rounded px-2 py-1 text-[11px] font-medium transition-colors',
-                  (config.models?.mode ?? 'merge') === mode
-                    ? 'bg-aegis-primary/15 text-aegis-primary'
-                    : 'text-aegis-text-muted hover:text-aegis-text',
-                )}
-                title={mode === 'merge'
-                  ? t('config.modelsModeMergeHint', 'Keep built-in models and overlay configured providers')
-                  : t('config.modelsModeReplaceHint', 'Use only explicitly configured providers')}
-              >
-                {mode}
-              </button>
-            ))}
+        </div>
+
+        <div
+          className="mt-4 grid gap-4 border-t border-aegis-border pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
+          aria-label={t('config.modelRouting', 'Model routing controls')}
+          data-testid="model-routing-controls"
+        >
+          <div className="min-w-0">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold text-aegis-text">
+                  {t('config.modelCatalog', 'Model catalog')}
+                </div>
+                <p id="model-catalog-hint" className="mt-1 text-[11px] leading-5 text-aegis-text-muted">
+                  {(config.models?.mode ?? 'merge') === 'merge'
+                    ? t('config.modelsModeMergeHint', 'Keep built-in models and overlay configured providers')
+                    : t('config.modelsModeReplaceHint', 'Use only explicitly configured providers')}
+                </p>
+              </div>
+              <div className="inline-flex shrink-0 items-center gap-1 rounded-md border border-aegis-border bg-aegis-surface p-0.5" aria-describedby="model-catalog-hint">
+                {(['merge', 'replace'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={saving || (mode === 'replace' && replaceModeBlocked)}
+                    aria-pressed={(config.models?.mode ?? 'merge') === mode}
+                    onClick={() => requestModelCatalogMode(mode)}
+                    className={clsx(
+                      'rounded px-2 py-1 text-[11px] font-medium transition-colors',
+                      (config.models?.mode ?? 'merge') === mode
+                        ? 'bg-aegis-primary/15 text-aegis-primary'
+                        : 'text-aegis-text-muted hover:text-aegis-text',
+                    )}
+                    title={mode === 'merge'
+                      ? t('config.modelsModeMergeHint', 'Keep built-in models and overlay configured providers')
+                      : replaceModeBlocked
+                        ? t('config.modelsModeReplaceBlocked', 'Add explicit provider models before using configured-only mode')
+                        : t('config.modelsModeReplaceHint', 'Use only explicitly configured providers')}
+                  >
+                    {mode === 'merge'
+                      ? t('config.modelCatalogMerge', 'Merge')
+                      : t('config.modelCatalogConfiguredOnly', 'Configured only')}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
+
+          <div className="min-w-0 border-t border-aegis-border pt-4 lg:border-s lg:border-t-0 lg:ps-4 lg:pt-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-aegis-text">
+                  <ShieldCheck size={14} className="text-aegis-primary" aria-hidden="true" />
+                  {t('config.sessionModelAccess', 'Session model access')}
+                </div>
+                <p className="mt-1 text-[11px] leading-5 text-aegis-text-muted">
+                  {t('config.sessionModelAccessHint', 'Limits models users can choose for session overrides. It does not change the default model or provider credentials.')}
+                </p>
+              </div>
+              <ToggleSwitch
+                value={modelAccessRestricted}
+                disabled={saving || (!modelAccessRestricted && !firstConfigurableModel)}
+                onChange={(enabled) => onChange((prev) => setModelPolicyAllow(
+                  prev,
+                  enabled
+                    ? [getModelPrimary(prev.agents?.defaults?.model) ?? Object.keys(prev.agents?.defaults?.models ?? {})[0]].filter(Boolean) as string[]
+                    : undefined,
+                ))}
+                label={modelAccessRestricted
+                  ? t('config.restricted', 'Restricted')
+                  : t('config.unrestricted', 'Any configured model')}
+              />
+            </div>
+            {modelAccessRestricted && (
+              <div className="mt-3">
+                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted">
+                  {t('config.allowedModelRules', 'Allowed model rules')}
+                </label>
+                <ChipInput
+                  values={modelPolicyAllow}
+                  onChange={(rules) => onChange((prev) => setModelPolicyAllow(prev, rules))}
+                  placeholder={t('config.allowedModelRulePlaceholder', 'provider/model, provider/*, or alias')}
+                />
+                <p className="mt-1.5 text-[10px] leading-4 text-aegis-text-dim">
+                  {t('config.allowedModelRulesHint', 'Use a full model reference, a provider wildcard, or a configured alias.')}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 border-t border-aegis-border pt-4" data-testid="model-routing-health">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-aegis-text">
+                <ShieldCheck size={14} className={hasBlockingModelRoutingIssue(routingHealth) ? 'text-amber-400' : 'text-aegis-success'} aria-hidden="true" />
+                {t('config.modelRoutingHealth', 'Routing readiness')}
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-aegis-text-muted">
+                {routingHealth.mode === 'replace'
+                  ? t('config.modelRoutingReplaceHint', 'Configured-only mode is checked against models declared under each provider.')
+                  : t('config.modelRoutingMergeHint', 'Merge mode can include runtime and built-in provider catalog entries.')}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5 text-[10px] font-medium">
+              <span className="rounded-md border border-aegis-border bg-aegis-surface px-2 py-1 text-aegis-text-secondary">
+                {t('config.primaryModel', 'Primary')}: <span className="font-mono text-aegis-text">{routingHealth.primary ?? t('config.notSet', 'Not set')}</span>
+              </span>
+              <span className="rounded-md border border-aegis-border bg-aegis-surface px-2 py-1 text-aegis-text-secondary">
+                {t('config.fallbackCount', '{{count}} fallbacks', { count: routingHealth.fallbacks.length })}
+              </span>
+              {routingHealth.mode === 'replace' && (
+                <span className="rounded-md border border-aegis-border bg-aegis-surface px-2 py-1 text-aegis-text-secondary">
+                  {t('config.explicitModelCount', '{{count}} explicit models', { count: routingHealth.explicitProviderModels.length })}
+                </span>
+              )}
+              {modelAccessRestricted && (
+                <span className="rounded-md border border-aegis-primary/20 bg-aegis-primary/8 px-2 py-1 text-aegis-primary">
+                  {t('config.allowedConfiguredCount', '{{count}} configured choices allowed', { count: routingHealth.allowedConfiguredModels.length })}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {replaceModeBlocked && (config.models?.mode ?? 'merge') !== 'replace' && (
+            <div role="alert" className="mt-3 flex items-start gap-2 border-s-2 border-amber-400/70 bg-amber-500/5 px-3 py-2 text-[11px] leading-5 text-amber-200">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>{t('config.modelsModeReplaceBlocked', 'Add explicit provider models before using configured-only mode')}</span>
+            </div>
+          )}
+
+          {routingHealth.issues.length > 0 && (
+            <div className="mt-3 space-y-1.5" role="status" aria-live="polite">
+              {routingHealth.issues.map((issue, index) => (
+                <div
+                  key={`${issue.kind}:${issue.refs?.join(',') ?? index}`}
+                  className={clsx(
+                    'flex items-start gap-2 border-s-2 px-3 py-2 text-[11px] leading-5',
+                    issue.severity === 'error'
+                      ? 'border-red-400/75 bg-red-500/5 text-red-200'
+                      : issue.severity === 'warning'
+                        ? 'border-amber-400/75 bg-amber-500/5 text-amber-200'
+                        : 'border-blue-400/65 bg-blue-500/5 text-blue-200',
+                  )}
+                >
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0">
+                    {modelRoutingIssueMessage(t, issue)}
+                    {issue.refs?.length ? <span className="ms-1 font-mono text-[10px]">{issue.refs.join(', ')}</span> : null}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DefaultFallbackChainControls
+            primaryModel={primaryModel}
+            fallbacks={defaultModelFallbacks}
+            models={allModels}
+            onChange={setDefaultModelFallbacks}
+            disabled={saving || !primaryModel}
+          />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
@@ -3534,13 +3883,16 @@ export function ProvidersTab({
               <div className="text-[10px] text-aegis-text-muted uppercase tracking-wider font-bold">
                 {t('config.imageGenerationModel', 'Image Generation Model')}
               </div>
-              <div className="text-sm font-bold text-emerald-400 truncate mt-0.5">
-                {imageGenerationPrimaryModel ?? (
-                  <span className="text-aegis-text-muted font-normal italic">
-                    {t('config.notSet', 'Not set')}
-                  </span>
-                )}
-              </div>
+              <select
+                value={imageGenerationPrimaryModel ?? ''}
+                disabled={saving}
+                onChange={(event) => setDefaultImageGenerationModel(event.target.value)}
+                aria-label={t('config.imageGenerationModel', 'Image Generation Model')}
+                className="mt-1 w-full min-w-0 rounded border border-aegis-border bg-aegis-elevated px-2 py-1.5 text-xs font-semibold text-emerald-400 outline-none focus:border-emerald-400 disabled:opacity-50"
+              >
+                <option value="">{t('config.notSet', 'Not set')}</option>
+                {imageGenerationOptions.map((id) => <option key={id} value={id}>{id}</option>)}
+              </select>
             </div>
           </div>
           <div className="flex items-center gap-3 p-3.5 bg-aegis-surface border border-pink-500/20 rounded-xl">
@@ -3556,13 +3908,16 @@ export function ProvidersTab({
               <div className="text-[10px] text-aegis-text-muted uppercase tracking-wider font-bold">
                 {t('config.videoGenerationModel', 'Video Generation Model')}
               </div>
-              <div className="text-sm font-bold text-pink-400 truncate mt-0.5">
-                {videoGenerationPrimaryModel ?? (
-                  <span className="text-aegis-text-muted font-normal italic">
-                    {t('config.notSet', 'Not set')}
-                  </span>
-                )}
-              </div>
+              <select
+                value={videoGenerationPrimaryModel ?? ''}
+                disabled={saving}
+                onChange={(event) => setDefaultVideoGenerationModel(event.target.value)}
+                aria-label={t('config.videoGenerationModel', 'Video Generation Model')}
+                className="mt-1 w-full min-w-0 rounded border border-aegis-border bg-aegis-elevated px-2 py-1.5 text-xs font-semibold text-pink-400 outline-none focus:border-pink-400 disabled:opacity-50"
+              >
+                <option value="">{t('config.notSet', 'Not set')}</option>
+                {videoGenerationOptions.map((id) => <option key={id} value={id}>{id}</option>)}
+              </select>
             </div>
           </div>
         </div>
@@ -3669,77 +4024,9 @@ export function ProvidersTab({
             </h3>
           </div>
           <div className="p-4">
-            <DefaultModelControls
-              models={allModels}
-              primaryModel={primaryModel}
-              imageModel={imagePrimaryModel}
-              imageSupportMap={allModelImageSupportMap}
-              disabled={saving}
-              onSetPrimary={setDefaultTextModel}
-              onSetImageModel={setDefaultImageModel}
-            />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 my-4">
-              <div className="rounded-lg border border-aegis-border bg-aegis-surface p-3">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted mb-1.5">
-                  {t('config.imageGenerationModel', 'Image Generation Model')}
-                </div>
-                <select
-                  className="w-full rounded-lg border border-aegis-border bg-aegis-elevated px-2 py-2 text-xs text-aegis-text"
-                  value={imageGenerationPrimaryModel ?? ''}
-                  disabled={saving}
-                  onChange={(e) => {
-                    const value = e.target.value || undefined;
-                    onChange((prev) => ({
-                      ...prev,
-                      agents: {
-                        ...prev.agents,
-                        defaults: {
-                          ...prev.agents?.defaults,
-                          imageGenerationModel: value
-                            ? { ...prev.agents?.defaults?.imageGenerationModel, primary: value }
-                            : undefined,
-                        },
-                      },
-                    }));
-                  }}
-                >
-                  <option value="">{t('config.notSet', 'Not set')}</option>
-                  {imageGenerationOptions.map((id) => (
-                    <option key={id} value={id}>{id}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="rounded-lg border border-aegis-border bg-aegis-surface p-3">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted mb-1.5">
-                  {t('config.videoGenerationModel', 'Video Generation Model')}
-                </div>
-                <select
-                  className="w-full rounded-lg border border-aegis-border bg-aegis-elevated px-2 py-2 text-xs text-aegis-text"
-                  value={videoGenerationPrimaryModel ?? ''}
-                  disabled={saving}
-                  onChange={(e) => {
-                    const value = e.target.value || undefined;
-                    onChange((prev) => ({
-                      ...prev,
-                      agents: {
-                        ...prev.agents,
-                        defaults: {
-                          ...prev.agents?.defaults,
-                          videoGenerationModel: value
-                            ? { ...prev.agents?.defaults?.videoGenerationModel, primary: value }
-                            : undefined,
-                        },
-                      },
-                    }));
-                  }}
-                >
-                  <option value="">{t('config.notSet', 'Not set')}</option>
-                  {videoGenerationOptions.map((id) => (
-                    <option key={id} value={id}>{id}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            <p className="mb-3 text-[11px] leading-5 text-aegis-text-muted">
+              {t('config.modelsAndAliasesHint', 'Manage the available model references and aliases. Default routing is configured above.')}
+            </p>
             <ChipList
               models={allModels}
               primaryModel={primaryModel}

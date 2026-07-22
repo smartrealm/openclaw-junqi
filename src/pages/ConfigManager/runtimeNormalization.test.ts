@@ -5,6 +5,7 @@ import {
   normalizeAgentsForRuntime,
   normalizeModelsProvidersForRuntime,
 } from './runtimeNormalization';
+import { getModelPrimary } from './modelReference';
 
 const generatedProviderCatalog = {
   qwen: [
@@ -324,7 +325,7 @@ test('BUG-MP-08 does not turn provider wildcard allowlists into provider model r
   assert.deepEqual(normalized?.openai?.models, []);
 });
 
-test('normalizeAgentsForRuntime preserves explicit image model only when catalog marks it image-capable', () => {
+test('normalizeAgentsForRuntime normalizes structured model refs without changing image selection', () => {
   const agents: GatewayRuntimeConfig['agents'] = {
     defaults: {
       model: { primary: 'qwen/qwen3-coder-plus' },
@@ -339,11 +340,11 @@ test('normalizeAgentsForRuntime preserves explicit image model only when catalog
     canonicalizeModelRef,
   });
 
-  assert.equal(normalized?.defaults?.model?.primary, 'qwen/qwen3-coder-plus');
-  assert.equal(normalized?.defaults?.imageModel?.primary, 'qwen/qwen3.6-plus');
+  assert.equal(getModelPrimary(normalized?.defaults?.model), 'qwen/qwen3-coder-plus');
+  assert.equal(getModelPrimary(normalized?.defaults?.imageModel), 'qwen/qwen3.6-plus');
 });
 
-test('normalizeAgentsForRuntime falls back to primary only when primary is image-capable', () => {
+test('normalizeAgentsForRuntime preserves an explicit image model when static metadata disagrees', () => {
   const agents: GatewayRuntimeConfig['agents'] = {
     defaults: {
       model: { primary: 'openai/gpt-4o' },
@@ -358,10 +359,10 @@ test('normalizeAgentsForRuntime falls back to primary only when primary is image
     canonicalizeModelRef,
   });
 
-  assert.equal(normalized?.defaults?.imageModel?.primary, 'openai/gpt-4o');
+  assert.equal(getModelPrimary(normalized?.defaults?.imageModel), 'qwen/qwen3-coder-plus');
 });
 
-test('normalizeAgentsForRuntime clears image model when neither requested nor primary model is image-capable', () => {
+test('normalizeAgentsForRuntime never clears an explicit image model during generic save normalization', () => {
   const agents: GatewayRuntimeConfig['agents'] = {
     defaults: {
       model: { primary: 'qwen/qwen3-coder-plus' },
@@ -376,7 +377,7 @@ test('normalizeAgentsForRuntime clears image model when neither requested nor pr
     canonicalizeModelRef,
   });
 
-  assert.equal(normalized?.defaults?.imageModel, undefined);
+  assert.equal(getModelPrimary(normalized?.defaults?.imageModel), 'qwen/qwen3-coder-plus');
 });
 
 test('normalizeAgentsForRuntime keeps explicit image model for custom provider when config declares image support', () => {
@@ -401,7 +402,7 @@ test('normalizeAgentsForRuntime keeps explicit image model for custom provider w
     canonicalizeModelRef,
   });
 
-  assert.equal(normalized?.defaults?.imageModel?.primary, 'custom/local-vision');
+  assert.equal(getModelPrimary(normalized?.defaults?.imageModel), 'custom/local-vision');
 });
 
 test('normalizeAgentsForRuntime strips UI-only agent model metadata before writing config', () => {
@@ -437,7 +438,7 @@ test('normalizeAgentsForRuntime strips UI-only agent model metadata before writi
   });
 });
 
-test('normalizeAgentsForRuntime clears unknown custom image model when image support is not declared', () => {
+test('normalizeAgentsForRuntime preserves an unknown custom image model', () => {
   const agents: GatewayRuntimeConfig['agents'] = {
     defaults: {
       model: { primary: 'custom/local-text' },
@@ -460,7 +461,28 @@ test('normalizeAgentsForRuntime clears unknown custom image model when image sup
     canonicalizeModelRef,
   });
 
-  assert.equal(normalized?.defaults?.imageModel, undefined);
+  assert.equal(getModelPrimary(normalized?.defaults?.imageModel), 'custom/local-vision');
+});
+
+test('normalizeAgentsForRuntime preserves valid compact string model forms', () => {
+  const normalized = normalizeAgentsForRuntime({
+    agents: {
+      defaults: {
+        model: 'custom/text',
+        imageModel: 'custom/vision',
+        imageGenerationModel: 'custom/image-gen',
+        videoGenerationModel: 'custom/video-gen',
+      },
+    },
+    providers: undefined,
+    generatedProviderCatalog,
+    canonicalizeModelRef,
+  });
+
+  assert.equal(normalized?.defaults?.model, 'custom/text');
+  assert.equal(normalized?.defaults?.imageModel, 'custom/vision');
+  assert.equal(normalized?.defaults?.imageGenerationModel, 'custom/image-gen');
+  assert.equal(normalized?.defaults?.videoGenerationModel, 'custom/video-gen');
 });
 
 test('normalizeAgentsForRuntime injects main agent when agents.list misses it', () => {
