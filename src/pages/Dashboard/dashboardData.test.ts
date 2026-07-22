@@ -62,6 +62,36 @@ test('daily cost availability keeps token activity separate from unavailable pri
   });
 });
 
+test('daily cost availability uses component costs and tokens when aggregate fields are absent', () => {
+  assert.deepEqual(getDailyCostAvailability([{
+    date: '2026-07-20',
+    inputCost: 0.4,
+    outputCost: 0.6,
+    input: 12_000,
+    output: 8_000,
+    cacheRead: 2_000,
+  }]), {
+    hasDatedEntries: true,
+    hasPricedCost: true,
+    totalTokens: 22_000,
+    missingCostEntries: 0,
+  });
+});
+
+test('daily cost availability retains partial-pricing evidence alongside known cost', () => {
+  assert.deepEqual(getDailyCostAvailability([{
+    date: '2026-07-20',
+    totalCost: 1.2,
+    totalTokens: 8_000,
+    missingCostEntries: 3,
+  }]), {
+    hasDatedEntries: true,
+    hasPricedCost: true,
+    totalTokens: 8_000,
+    missingCostEntries: 3,
+  });
+});
+
 test('activity metadata uses compact local time and short model names', () => {
   const timestamp = new Date(2026, 6, 20, 9, 5, 7).getTime();
   assert.equal(formatActivityTime(timestamp), '07-20 09:05');

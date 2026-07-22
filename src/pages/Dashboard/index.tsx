@@ -596,6 +596,14 @@ export function DashboardPage() {
                     {t('dashboard.usageUnpriced', '用量 · 未估价')}
                   </span>
                 )}
+                {hasChartData && costAvailability.missingCostEntries > 0 && (
+                  <span className="rounded bg-aegis-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-aegis-warning">
+                    {t('dashboard.costPartiallyPriced', {
+                      count: costAvailability.missingCostEntries,
+                      defaultValue: '部分估价 · {{count}} 条调用未定价',
+                    })}
+                  </span>
+                )}
               </div>
               {(hasChartData || hasTokenChartData) && (
                 <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">

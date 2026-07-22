@@ -343,6 +343,7 @@
     "costToday": "今日成本",
     "dailyCostChart": "每日費用（14 天）",
     "usageUnpriced": "用量 · 未估價",
+    "costPartiallyPriced": "部分估價 · {{count}} 次呼叫未定價",
     "rolling30Cost": "近 30 天費用",
     "noBudgetLimit": "未設置預算上限",
     "budgetUsage": "{{used}} / {{limit}} · {{percent}}%",

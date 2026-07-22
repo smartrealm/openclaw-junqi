@@ -50,7 +50,6 @@ struct IslandFrame {
     y: f64,
     width: f64,
     height: f64,
-    monitor_x: f64,
 }
 
 fn top_inset() -> f64 {
@@ -72,7 +71,6 @@ fn frame_for_monitor(monitor: MonitorGeometry, width: f64, height: f64) -> Islan
         y: logical_y + top_inset(),
         width,
         height,
-        monitor_x: logical_x,
     }
 }
 
@@ -128,7 +126,7 @@ fn target_frame(app: &AppHandle, expanded: bool) -> Result<IslandFrame, String> 
 }
 
 #[cfg(not(target_os = "macos"))]
-fn set_frame(window: &WebviewWindow, frame: IslandFrame) -> Result<(), String> {
+fn set_frame(_app: &AppHandle, window: &WebviewWindow, frame: IslandFrame) -> Result<(), String> {
     window
         .set_size(Size::Logical(LogicalSize::new(frame.width, frame.height)))
         .map_err(|error| error.to_string())?;
@@ -138,8 +136,16 @@ fn set_frame(window: &WebviewWindow, frame: IslandFrame) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn set_frame(window: &WebviewWindow, frame: IslandFrame) -> Result<(), String> {
-    let ns_window = window.ns_window().map_err(|error| error.to_string())? as usize;
+fn set_frame(app: &AppHandle, window: &WebviewWindow, frame: IslandFrame) -> Result<(), String> {
+    let island_ns_window = window.ns_window().map_err(|error| error.to_string())? as usize;
+    // Tauri's monitor geometry is useful for the initial window position, but
+    // it cannot reliably identify vertically stacked or mixed-DPI NSScreens.
+    // The main window already belongs to the intended screen, so use that
+    // native association when calculating the notch/safe-area anchor.
+    let main_ns_window = app
+        .get_webview_window("main")
+        .and_then(|main| main.ns_window().ok())
+        .map(|window| window as usize);
     window
         .run_on_main_thread(move || unsafe {
             use objc2::{class, msg_send, runtime::AnyObject, sel};
@@ -150,20 +156,25 @@ fn set_frame(window: &WebviewWindow, frame: IslandFrame) -> Result<(), String> {
             if screens.is_null() || count == 0 {
                 return;
             }
-            let target_center_x = frame.monitor_x + frame.width / 2.0;
-            let mut screen: *mut AnyObject = msg_send![screens, objectAtIndex: 0usize];
-            for index in 0..count {
-                let candidate: *mut AnyObject = msg_send![screens, objectAtIndex: index];
-                let candidate_frame: NSRect = msg_send![candidate, frame];
-                if target_center_x >= candidate_frame.origin.x
-                    && target_center_x <= candidate_frame.origin.x + candidate_frame.size.width
-                {
-                    screen = candidate;
-                    break;
-                }
-            }
+            let fallback_screen: *mut AnyObject = msg_send![screens, objectAtIndex: 0usize];
+            let island_window = island_ns_window as *mut AnyObject;
+            let island_screen: *mut AnyObject = msg_send![island_window, screen];
+            let main_screen: *mut AnyObject = main_ns_window
+                .map(|window| {
+                    let window = window as *mut AnyObject;
+                    msg_send![window, screen]
+                })
+                .unwrap_or(std::ptr::null_mut());
+            let screen = if !main_screen.is_null() {
+                main_screen
+            } else if !island_screen.is_null() {
+                island_screen
+            } else {
+                fallback_screen
+            };
             let screen_frame: NSRect = msg_send![screen, frame];
-            let supports_safe_area: bool = msg_send![screen, respondsToSelector: sel!(safeAreaInsets)];
+            let supports_safe_area: bool =
+                msg_send![screen, respondsToSelector: sel!(safeAreaInsets)];
             let safe_top = if supports_safe_area {
                 let insets: objc2_foundation::NSEdgeInsets = msg_send![screen, safeAreaInsets];
                 insets.top
@@ -173,13 +184,15 @@ fn set_frame(window: &WebviewWindow, frame: IslandFrame) -> Result<(), String> {
             let cocoa_frame = NSRect::new(
                 NSPoint::new(
                     screen_frame.origin.x + (screen_frame.size.width - frame.width) / 2.0,
-                    screen_frame.origin.y + screen_frame.size.height - safe_top - MACOS_SAFE_AREA_MARGIN - frame.height,
+                    screen_frame.origin.y + screen_frame.size.height
+                        - safe_top
+                        - MACOS_SAFE_AREA_MARGIN
+                        - frame.height,
                 ),
                 NSSize::new(frame.width, frame.height),
             );
-            let ns_window = ns_window as *mut AnyObject;
-            let _: () = msg_send![ns_window, setLevel: MACOS_STATUS_BAR_WINDOW_LEVEL];
-            let _: () = msg_send![ns_window, setFrame: cocoa_frame, display: true];
+            let _: () = msg_send![island_window, setLevel: MACOS_STATUS_BAR_WINDOW_LEVEL];
+            let _: () = msg_send![island_window, setFrame: cocoa_frame, display: true];
         })
         .map_err(|error| error.to_string())
 }
@@ -193,7 +206,6 @@ fn current_frame(window: &WebviewWindow) -> Result<IslandFrame, String> {
         y: position.y as f64 / scale,
         width: size.width as f64 / scale,
         height: size.height as f64 / scale,
-        monitor_x: position.x as f64 / scale,
     })
 }
 
@@ -210,7 +222,6 @@ fn interpolate(from: IslandFrame, to: IslandFrame, progress: f64) -> IslandFrame
         y: lerp(from.y, to.y),
         width: lerp(from.width, to.width),
         height: lerp(from.height, to.height),
-        monitor_x: lerp(from.monitor_x, to.monitor_x),
     }
 }
 
@@ -225,12 +236,12 @@ fn animate_to(app: AppHandle, window: WebviewWindow, expanded: bool) -> Result<u
                 return;
             }
             let frame = interpolate(from, to, frame_index as f64 / ANIMATION_FRAMES as f64);
-            if set_frame(&window, frame).is_err() {
+            if set_frame(&app, &window, frame).is_err() {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(FRAME_DURATION_MS)).await;
         }
-        let _ = set_frame(&window, to);
+        let _ = set_frame(&app, &window, to);
     });
     Ok(generation)
 }
@@ -241,7 +252,7 @@ pub async fn open_dynamic_island(app: AppHandle) -> Result<(), String> {
     ANIMATION_GENERATION.fetch_add(1, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window(DYNAMIC_ISLAND_LABEL) {
         let frame = target_frame(&app, false)?;
-        set_frame(&window, frame)?;
+        set_frame(&app, &window, frame)?;
         window.show().map_err(|error| error.to_string())?;
         let _ = window.emit("dynamic-island:opened", ());
         return Ok(());
@@ -276,7 +287,7 @@ pub async fn open_dynamic_island(app: AppHandle) -> Result<(), String> {
         let _ = window.set_visible_on_all_workspaces(true);
     }
 
-    set_frame(&window, frame)?;
+    set_frame(&app, &window, frame)?;
 
     Ok(())
 }
@@ -347,7 +358,7 @@ pub async fn reposition_dynamic_island(app: AppHandle) -> Result<(), String> {
         .get_webview_window(DYNAMIC_ISLAND_LABEL)
         .ok_or_else(|| "Dynamic island window is not open".to_string())?;
     let expanded = current_frame(&window)?.height > (COMPACT_HEIGHT + EXPANDED_HEIGHT) / 2.0;
-    set_frame(&window, target_frame(&app, expanded)?)
+    set_frame(&app, &window, target_frame(&app, expanded)?)
 }
 
 #[tauri::command]
@@ -380,14 +391,12 @@ mod tests {
             y: 8.0,
             width: 286.0,
             height: 48.0,
-            monitor_x: 40.0,
         };
         let to = IslandFrame {
             x: -20.0,
             y: 8.0,
             width: 420.0,
             height: 248.0,
-            monitor_x: -20.0,
         };
         assert_eq!(interpolate(from, to, 0.0), from);
         assert_eq!(interpolate(from, to, 1.0), to);

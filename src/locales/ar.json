@@ -284,6 +284,7 @@
     "costRetry": "إعادة المحاولة",
     "costToday": "تكلفة اليوم",
     "dailyCostChart": "التكلفة اليومية (14 يوم)",
+    "costPartiallyPriced": "تسعير جزئي · {{count}} استدعاءات دون تسعير",
     "rolling30Cost": "آخر 30 يومًا",
     "noBudgetLimit": "لم يتم تعيين حد للميزانية",
     "budgetUsage": "{{used}} / {{limit}} · {{percent}}%",

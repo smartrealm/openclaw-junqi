@@ -39,22 +39,47 @@ function nonNegativeNumber(value: unknown): number {
     : 0;
 }
 
+type DatedDashboardDailyCostEntry = DashboardDailyCostEntry & { date: string };
+
+function recentDatedEntries(
+  entries: DashboardDailyCostEntry[],
+  limit: number,
+): DatedDashboardDailyCostEntry[] {
+  return entries
+    .filter((entry): entry is DatedDashboardDailyCostEntry => (
+      typeof entry?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)
+    ))
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(-Math.max(0, limit));
+}
+
+function knownCost(entry: DashboardDailyCostEntry): number {
+  const componentCost = nonNegativeNumber(entry.inputCost)
+    + nonNegativeNumber(entry.outputCost)
+    + nonNegativeNumber(entry.cacheReadCost)
+    + nonNegativeNumber(entry.cacheWriteCost);
+  return Math.max(nonNegativeNumber(entry.totalCost), componentCost);
+}
+
+function tokenTotal(entry: DashboardDailyCostEntry): number {
+  const componentTokens = nonNegativeNumber(entry.input)
+    + nonNegativeNumber(entry.output)
+    + nonNegativeNumber(entry.cacheRead)
+    + nonNegativeNumber(entry.cacheWrite);
+  return Math.max(nonNegativeNumber(entry.totalTokens), componentTokens);
+}
+
 export function buildDailyCostChartData(
   entries: DashboardDailyCostEntry[],
   limit = 14,
 ): DashboardCostChartPoint[] {
-  return entries
-    .filter((entry): entry is DashboardDailyCostEntry & { date: string } => (
-      typeof entry?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)
-    ))
-    .sort((left, right) => left.date.localeCompare(right.date))
-    .slice(-Math.max(0, limit))
+  return recentDatedEntries(entries, limit)
     .map((entry) => {
       const input = nonNegativeNumber(entry.inputCost);
       const output = nonNegativeNumber(entry.outputCost);
       const cache = nonNegativeNumber(entry.cacheReadCost) + nonNegativeNumber(entry.cacheWriteCost);
-      const knownCost = input + output + cache;
-      const total = Math.max(nonNegativeNumber(entry.totalCost), knownCost);
+      const componentCost = input + output + cache;
+      const total = knownCost(entry);
       const inputTokens = nonNegativeNumber(entry.input);
       const outputTokens = nonNegativeNumber(entry.output);
       const cacheTokens = nonNegativeNumber(entry.cacheRead) + nonNegativeNumber(entry.cacheWrite);
@@ -63,12 +88,12 @@ export function buildDailyCostChartData(
         input,
         output,
         cache,
-        other: Math.max(0, total - knownCost),
+        other: Math.max(0, total - componentCost),
         total,
         inputTokens,
         outputTokens,
         cacheTokens,
-        totalTokens: Math.max(nonNegativeNumber(entry.totalTokens), inputTokens + outputTokens + cacheTokens),
+        totalTokens: tokenTotal(entry),
       };
     });
 }
@@ -82,17 +107,12 @@ export function getDailyCostAvailability(
   entries: DashboardDailyCostEntry[],
   limit = 14,
 ): DashboardCostAvailability {
-  const recent = entries
-    .filter((entry): entry is DashboardDailyCostEntry & { date: string } => (
-      typeof entry?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)
-    ))
-    .sort((left, right) => left.date.localeCompare(right.date))
-    .slice(-Math.max(0, limit));
+  const recent = recentDatedEntries(entries, limit);
 
   return recent.reduce<DashboardCostAvailability>((summary, entry) => ({
     hasDatedEntries: true,
-    hasPricedCost: summary.hasPricedCost || nonNegativeNumber(entry.totalCost) > 0,
-    totalTokens: summary.totalTokens + nonNegativeNumber(entry.totalTokens),
+    hasPricedCost: summary.hasPricedCost || knownCost(entry) > 0,
+    totalTokens: summary.totalTokens + tokenTotal(entry),
     missingCostEntries: summary.missingCostEntries + nonNegativeNumber(entry.missingCostEntries),
   }), {
     hasDatedEntries: false,

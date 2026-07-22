@@ -343,6 +343,7 @@
     "costToday": "今日成本",
     "dailyCostChart": "每日费用（14 天）",
     "usageUnpriced": "用量 · 未估价",
+    "costPartiallyPriced": "部分估价 · {{count}} 条调用未定价",
     "rolling30Cost": "近 30 天费用",
     "noBudgetLimit": "未设置预算上限",
     "budgetUsage": "{{used}} / {{limit}} · {{percent}}%",

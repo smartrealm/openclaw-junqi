@@ -343,6 +343,7 @@
     "costToday": "cost today",
     "dailyCostChart": "Daily Cost (14 days)",
     "usageUnpriced": "Usage · unpriced",
+    "costPartiallyPriced": "Partial pricing · {{count}} calls unpriced",
     "rolling30Cost": "Last 30 days",
     "noBudgetLimit": "No budget limit",
     "budgetUsage": "{{used}} / {{limit}} · {{percent}}%",
