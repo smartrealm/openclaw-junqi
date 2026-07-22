@@ -16,7 +16,6 @@ import {
   CollaborationActionDialog,
   CollaborationDetails,
   CollaborationHistoryDrawer,
-  CollaborationSetupNotice,
   CollaborationRunStatusIcon,
   collaborationRunStatusLabel,
   type CollaborationActionContext,
@@ -388,9 +387,6 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
 
   const [runtimeIdentity, setRuntimeIdentity] = useState(getCurrentRuntimeIdentity);
   const [projectionConnectionId, setProjectionConnectionId] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [setupOpen, setSetupOpen] = useState(false);
-  const [setupReason, setSetupReason] = useState<CollaborationSetupReason | undefined>();
   const [localError, setLocalError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -469,7 +465,6 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     if (!connected || !expectedConnectionId) return null;
     const generation = ++capabilityCheckGeneration.current;
     capabilityCheckInFlight.current = true;
-    setChecking(true);
     setLocalError(null);
     try {
       const currentCapabilities = await bootstrap(force);
@@ -520,7 +515,6 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     } finally {
       if (generation === capabilityCheckGeneration.current) {
         capabilityCheckInFlight.current = false;
-        setChecking(false);
       }
     }
   }, [bootstrap, connected, runtimeIdentity?.connectionId]);
@@ -546,7 +540,6 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     if (!connected || !runtimeIdentity?.verified) {
       capabilityCheckGeneration.current += 1;
       capabilityCheckInFlight.current = false;
-      setChecking(false);
       setProjectionConnectionId(null);
       clearConnectionScopedUi();
       if (!disconnectedProjectionInvalidated.current) {
@@ -631,8 +624,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
   }, [refreshRunTrace]);
 
   const showSetup = useCallback((reason?: CollaborationSetupReason) => {
-    setSetupReason(reason);
-    setSetupOpen(true);
+    requestCollaborationRuntimeSetup(reason ?? 'error');
   }, []);
 
   const startRun = useCallback(async (message: ChatMessage) => {
@@ -1058,11 +1050,6 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
   const actionSnapshot = projectionCurrent && dialogRunId
     ? snapshotsByRunId[dialogRunId]
     : undefined;
-  const capabilityRecord = capabilities as unknown as Record<string, unknown> | null;
-  const availableAgentCount = Array.isArray(capabilityRecord?.configuredAgents)
-    ? capabilityRecord.configuredAgents.length
-    : undefined;
-
   return (
     <CollaborationChatContext.Provider value={context}>
       {children}
@@ -1150,34 +1137,6 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
           }}
           onSubmit={submitDialogAction}
         />
-      )}
-
-      {setupOpen && (
-        <div
-          className="fixed inset-0 z-[2147481100] flex items-center justify-center bg-black/45 p-4"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setSetupOpen(false);
-          }}
-        >
-          <div className="w-[min(560px,94vw)]">
-            <CollaborationSetupNotice
-              capabilities={capabilities}
-              loading={checking}
-              error={localError}
-              reason={setupReason}
-              availableAgentCount={availableAgentCount}
-              expectedSchemaVersion={COLLABORATION_PLUGIN_BUNDLE.schemaVersion}
-              showReady
-              onDismiss={() => setSetupOpen(false)}
-              onRetry={() => void checkCapabilities(true)}
-              onPrimaryAction={(reason) => {
-                requestCollaborationRuntimeSetup(reason);
-                setSetupOpen(false);
-              }}
-            />
-          </div>
-        </div>
       )}
 
       <button

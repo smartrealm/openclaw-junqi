@@ -276,6 +276,7 @@ export function CollaborationSetupPanel({
     'openclaw gateway restart',
   ].join('\n');
   const pluginReady = Boolean(plugin?.installed && plugin.enabled && plugin.status === 'loaded');
+  const targetVerified = identity?.verified === true;
   const availableAgents = capabilities?.configuredAgents ?? [];
   const activeCollaborationCount = capabilities?.maintenance?.activeRuns?.length ?? 0;
   const agentPolicyMutationBlocked = capabilities?.maintenance?.active !== false
@@ -304,60 +305,64 @@ export function CollaborationSetupPanel({
     <div className="min-h-0 space-y-3 overflow-y-auto px-5 pb-5">
       <DecisionMessage decision={decision} />
 
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-        <section className="rounded-md border border-aegis-border bg-aegis-surface-solid p-3" aria-label={t('collaboration.bootstrap.target', 'Runtime target')}>
-          <div className="flex items-center gap-2">
-            <TargetIcon size={15} className="text-aegis-text-muted" aria-hidden />
-            <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.target', 'Runtime target')}</h3>
-            <span className="ms-auto text-[10px] font-medium text-aegis-text-muted">{targetLabel(decision.targetClass)}</span>
-          </div>
-          <dl className="mt-2 grid grid-cols-[92px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[10px] leading-4">
-            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.identity', 'Identity')}</dt>
-            <dd className={statusTone(Boolean(identity?.verified))}>{identity?.verified ? t('collaboration.bootstrap.verified', 'Verified') : t('collaboration.bootstrap.unverified', 'Unavailable')}</dd>
-            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.gateway', 'Gateway')}</dt>
-            <dd className="truncate font-mono text-aegis-text-muted" title={identity?.gatewayVersion}>{identity?.gatewayVersion || 'Unknown'}</dd>
-            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.fingerprint', 'Fingerprint')}</dt>
-            <dd className="truncate font-mono text-aegis-text-muted" title={identity?.targetFingerprint}>{shortFingerprint(identity?.targetFingerprint)}</dd>
-            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.continuity', 'Desktop exit')}</dt>
-            <dd className={statusTone(Boolean(identity?.desktopExitContinuity))}>{identity?.desktopExitContinuity ? t('collaboration.bootstrap.continues', 'Continues running') : t('collaboration.bootstrap.stops', 'Stops or unknown')}</dd>
-          </dl>
-        </section>
+      {targetVerified && (
+        <>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <section className="rounded-md border border-aegis-border bg-aegis-surface-solid p-3" aria-label={t('collaboration.bootstrap.target', 'Runtime target')}>
+              <div className="flex items-center gap-2">
+                <TargetIcon size={15} className="text-aegis-text-muted" aria-hidden />
+                <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.target', 'Runtime target')}</h3>
+                <span className="ms-auto text-[10px] font-medium text-aegis-text-muted">{targetLabel(decision.targetClass)}</span>
+              </div>
+              <dl className="mt-2 grid grid-cols-[92px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[10px] leading-4">
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.identity', 'Identity')}</dt>
+                <dd className={statusTone(Boolean(identity?.verified))}>{identity?.verified ? t('collaboration.bootstrap.verified', 'Verified') : t('collaboration.bootstrap.unverified', 'Unavailable')}</dd>
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.gateway', 'Gateway')}</dt>
+                <dd className="truncate font-mono text-aegis-text-muted" title={identity?.gatewayVersion}>{identity?.gatewayVersion || 'Unknown'}</dd>
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.fingerprint', 'Fingerprint')}</dt>
+                <dd className="truncate font-mono text-aegis-text-muted" title={identity?.targetFingerprint}>{shortFingerprint(identity?.targetFingerprint)}</dd>
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.continuity', 'Desktop exit')}</dt>
+                <dd className={statusTone(Boolean(identity?.desktopExitContinuity))}>{identity?.desktopExitContinuity ? t('collaboration.bootstrap.continues', 'Continues running') : t('collaboration.bootstrap.stops', 'Stops or unknown')}</dd>
+              </dl>
+            </section>
 
-        <section className="rounded-md border border-aegis-border bg-aegis-surface-solid p-3" aria-label={t('collaboration.bootstrap.plugin', 'Plugin state')}>
-          <div className="flex items-center gap-2">
-            <Plug size={15} className="text-aegis-text-muted" aria-hidden />
-            <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.plugin', 'Plugin state')}</h3>
-            <span className={cn('ms-auto text-[10px] font-medium', statusTone(pluginReady))}>
-              {pluginReady ? t('collaboration.bootstrap.loaded', 'Loaded') : plugin?.installed ? t('collaboration.bootstrap.needsRepair', 'Needs repair') : t('collaboration.bootstrap.notInstalled', 'Not installed')}
-            </span>
+            <section className="rounded-md border border-aegis-border bg-aegis-surface-solid p-3" aria-label={t('collaboration.bootstrap.plugin', 'Plugin state')}>
+              <div className="flex items-center gap-2">
+                <Plug size={15} className="text-aegis-text-muted" aria-hidden />
+                <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.plugin', 'Plugin state')}</h3>
+                <span className={cn('ms-auto text-[10px] font-medium', statusTone(pluginReady))}>
+                  {pluginReady ? t('collaboration.bootstrap.loaded', 'Loaded') : plugin?.installed ? t('collaboration.bootstrap.needsRepair', 'Needs repair') : t('collaboration.bootstrap.notInstalled', 'Not installed')}
+                </span>
+              </div>
+              <dl className="mt-2 grid grid-cols-[92px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[10px] leading-4">
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.installedVersion', 'Installed')}</dt>
+                <dd className="font-mono text-aegis-text-muted">{plugin?.version || 'None'}</dd>
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.expectedVersion', 'This JunQi')}</dt>
+                <dd className="font-mono text-aegis-text-muted">{bundle.pluginVersion}</dd>
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.schema', 'Schema')}</dt>
+                <dd className="font-mono text-aegis-text-muted">{bundle.schemaVersion}</dd>
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.configured', 'Agent config')}</dt>
+                <dd className={statusTone(capabilities?.configured === true)}>{capabilities?.configured === true ? t('collaboration.bootstrap.configuredYes', 'Configured') : t('collaboration.bootstrap.configuredNo', 'Not confirmed')}</dd>
+              </dl>
+            </section>
           </div>
-          <dl className="mt-2 grid grid-cols-[92px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[10px] leading-4">
-            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.installedVersion', 'Installed')}</dt>
-            <dd className="font-mono text-aegis-text-muted">{plugin?.version || 'None'}</dd>
-            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.expectedVersion', 'This JunQi')}</dt>
-            <dd className="font-mono text-aegis-text-muted">{bundle.pluginVersion}</dd>
-            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.schema', 'Schema')}</dt>
-            <dd className="font-mono text-aegis-text-muted">{bundle.schemaVersion}</dd>
-            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.configured', 'Agent config')}</dt>
-            <dd className={statusTone(capabilities?.configured === true)}>{capabilities?.configured === true ? t('collaboration.bootstrap.configuredYes', 'Configured') : t('collaboration.bootstrap.configuredNo', 'Not confirmed')}</dd>
-          </dl>
-        </section>
-      </div>
 
-      <section className="rounded-md border border-aegis-border px-3 py-2.5" aria-label={t('collaboration.bootstrap.fixedPackage', 'Fixed plugin package')}>
-        <div className="flex items-center gap-2">
-          <ShieldCheck size={15} className="text-aegis-primary" aria-hidden />
-          <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.fixedPackage', 'Fixed plugin package')}</h3>
-          <span className="ms-auto font-mono text-[10px] text-aegis-text-muted">v{bundle.pluginVersion}</span>
-        </div>
-        <div className="mt-2 flex min-w-0 items-center gap-2 rounded bg-[rgb(var(--aegis-overlay)/0.035)] px-2 py-1.5">
-          <code className="min-w-0 flex-1 break-all font-mono text-[9.5px] leading-4 text-aegis-text-dim">SHA-256 {bundle.sha256}</code>
-          <CopyButton value={bundle.sha256} label={t('collaboration.bootstrap.copyHash', 'Copy SHA-256')} />
-        </div>
-        <p className="mt-1.5 text-[9.5px] leading-4 text-aegis-text-dim">
-          {t('collaboration.bootstrap.noPicker', 'Package selection is locked to the archive shipped with this JunQi build. Arbitrary files are not accepted by this workflow.')}
-        </p>
-      </section>
+          <section className="rounded-md border border-aegis-border px-3 py-2.5" aria-label={t('collaboration.bootstrap.fixedPackage', 'Fixed plugin package')}>
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={15} className="text-aegis-primary" aria-hidden />
+              <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.fixedPackage', 'Fixed plugin package')}</h3>
+              <span className="ms-auto font-mono text-[10px] text-aegis-text-muted">v{bundle.pluginVersion}</span>
+            </div>
+            <div className="mt-2 flex min-w-0 items-center gap-2 rounded bg-[rgb(var(--aegis-overlay)/0.035)] px-2 py-1.5">
+              <code className="min-w-0 flex-1 break-all font-mono text-[9.5px] leading-4 text-aegis-text-dim">SHA-256 {bundle.sha256}</code>
+              <CopyButton value={bundle.sha256} label={t('collaboration.bootstrap.copyHash', 'Copy SHA-256')} />
+            </div>
+            <p className="mt-1.5 text-[9.5px] leading-4 text-aegis-text-dim">
+              {t('collaboration.bootstrap.noPicker', 'Package selection is locked to the archive shipped with this JunQi build. Arbitrary files are not accepted by this workflow.')}
+            </p>
+          </section>
+        </>
+      )}
 
       {pluginReady && (
         <section
@@ -671,7 +676,9 @@ export function CollaborationSetupDialog() {
             {t('collaboration.bootstrap.title', 'Collaboration runtime')}
           </DialogTitle>
           <DialogDescription className="mt-1 text-[10.5px] leading-4 text-aegis-text-muted">
-            {t('collaboration.bootstrap.description', 'Install, recover and verify the durable OpenClaw collaboration plugin for the currently connected runtime.')}
+            {decision.kind === 'identity_unavailable'
+              ? t('collaboration.bootstrap.identityDescription', 'Complete Gateway verification before JunQi reads or changes its collaboration plugin.')
+              : t('collaboration.bootstrap.description', 'This is only needed for durable multi-agent workflows; normal Chat and Gateway use do not require the collaboration plugin.')}
           </DialogDescription>
         </DialogHeader>
         <CollaborationSetupPanel

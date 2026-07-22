@@ -24,6 +24,17 @@ struct RuntimeEvidence {
     accepted_observed_paths: Vec<(PathBuf, PathBuf)>,
 }
 
+/// OpenClaw's documented `hello-ok` contract does not expose local state or
+/// config paths. For a JunQi-managed local runtime, an authenticated native
+/// probe using the selected config is equivalent evidence that the endpoint
+/// accepts that config's Gateway credential. It may supplement absent paths,
+/// but it must never override paths explicitly reported by the Gateway.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SelectedConfigAttestation {
+    Unavailable,
+    Authenticated,
+}
+
 #[derive(Debug)]
 struct ParsedEndpoint {
     canonical: String,
@@ -145,6 +156,7 @@ fn target_fingerprint(
 fn resolve_from_evidence(
     observation: GatewayHelloObservation,
     evidence: RuntimeEvidence,
+    selected_config_attestation: SelectedConfigAttestation,
 ) -> RuntimeIdentity {
     let deployment = deployment_kind(evidence.mode);
     let managed = !matches!(deployment, RuntimeDeploymentKind::External);
@@ -202,10 +214,14 @@ fn resolve_from_evidence(
             }
         }
         _ => {
-            if managed {
+            if managed && selected_config_attestation != SelectedConfigAttestation::Authenticated {
                 issues.push(RuntimeIdentityIssue::MissingRuntimePaths);
+                RuntimeAttestation::Unavailable
+            } else if managed {
+                RuntimeAttestation::Matched
+            } else {
+                RuntimeAttestation::Unavailable
             }
-            RuntimeAttestation::Unavailable
         }
     };
 
@@ -331,7 +347,29 @@ pub async fn resolve_gateway_runtime_identity(
     gateway_state: State<'_, GatewayProcess>,
     identity_state: State<'_, RuntimeIdentityState>,
 ) -> Result<RuntimeIdentity, String> {
-    let identity = resolve_from_evidence(observation, runtime_evidence(&gateway_state)?);
+    let evidence = runtime_evidence(&gateway_state)?;
+    let selected_config_attestation = if matches!(
+        evidence.mode,
+        GatewayRuntimeMode::ManagedChild
+            | GatewayRuntimeMode::SystemService
+            | GatewayRuntimeMode::Docker
+    ) && observation.state_dir.as_deref().is_none()
+        && observation.config_path.as_deref().is_none()
+    {
+        if crate::commands::gateway::gateway_matches_config(
+            evidence.port,
+            &evidence.local_config_path,
+        )
+        .await
+        {
+            SelectedConfigAttestation::Authenticated
+        } else {
+            SelectedConfigAttestation::Unavailable
+        }
+    } else {
+        SelectedConfigAttestation::Unavailable
+    };
+    let identity = resolve_from_evidence(observation, evidence, selected_config_attestation);
     if !identity_state.store(identity.clone())? {
         return Err(
             "Gateway connection was invalidated before identity resolution completed".into(),
@@ -394,6 +432,7 @@ mod tests {
         let identity = resolve_from_evidence(
             observation("conn-managed"),
             evidence(GatewayRuntimeMode::ManagedChild),
+            SelectedConfigAttestation::Unavailable,
         );
         assert!(identity.verified);
         assert_eq!(identity.persistence, RuntimePersistence::DesktopBound);
@@ -406,7 +445,11 @@ mod tests {
         let mut hello = observation("conn-mismatch");
         hello.state_dir = Some("/tmp/another-runtime".to_string());
         hello.config_path = Some("/tmp/another-runtime/openclaw.json".to_string());
-        let identity = resolve_from_evidence(hello, evidence(GatewayRuntimeMode::SystemService));
+        let identity = resolve_from_evidence(
+            hello,
+            evidence(GatewayRuntimeMode::SystemService),
+            SelectedConfigAttestation::Authenticated,
+        );
         assert!(!identity.verified);
         assert!(!identity.desktop_mutation_allowed);
         assert_eq!(identity.path_attestation, RuntimeAttestation::Mismatched);
@@ -416,12 +459,44 @@ mod tests {
     }
 
     #[test]
+    fn managed_runtime_without_hello_paths_uses_authenticated_selected_config() {
+        let mut hello = observation("conn-config-attested");
+        hello.state_dir = None;
+        hello.config_path = None;
+
+        let unverified = resolve_from_evidence(
+            hello.clone(),
+            evidence(GatewayRuntimeMode::SystemService),
+            SelectedConfigAttestation::Unavailable,
+        );
+        assert!(!unverified.verified);
+        assert_eq!(unverified.path_attestation, RuntimeAttestation::Unavailable);
+        assert!(unverified
+            .issues
+            .contains(&RuntimeIdentityIssue::MissingRuntimePaths));
+
+        let verified = resolve_from_evidence(
+            hello,
+            evidence(GatewayRuntimeMode::SystemService),
+            SelectedConfigAttestation::Authenticated,
+        );
+        assert!(verified.verified);
+        assert_eq!(verified.path_attestation, RuntimeAttestation::Matched);
+        assert!(verified.desktop_mutation_allowed);
+        assert!(verified.desktop_exit_continuity);
+    }
+
+    #[test]
     fn external_runtime_is_observable_but_never_desktop_mutable() {
         let mut hello = observation("conn-external");
         hello.endpoint = "wss://gateway.example.test".to_string();
         hello.state_dir = Some("/srv/openclaw".to_string());
         hello.config_path = Some("/srv/openclaw/openclaw.json".to_string());
-        let identity = resolve_from_evidence(hello, evidence(GatewayRuntimeMode::External));
+        let identity = resolve_from_evidence(
+            hello,
+            evidence(GatewayRuntimeMode::External),
+            SelectedConfigAttestation::Unavailable,
+        );
         assert!(identity.verified);
         assert_eq!(identity.ownership, RuntimeOwnership::Remote);
         assert_eq!(identity.persistence, RuntimePersistence::Unknown);
@@ -434,10 +509,12 @@ mod tests {
         let first = resolve_from_evidence(
             observation("conn-one"),
             evidence(GatewayRuntimeMode::ManagedChild),
+            SelectedConfigAttestation::Unavailable,
         );
         let second = resolve_from_evidence(
             observation("conn-two"),
             evidence(GatewayRuntimeMode::ManagedChild),
+            SelectedConfigAttestation::Unavailable,
         );
         assert_eq!(first.target_fingerprint, second.target_fingerprint);
     }
@@ -452,7 +529,11 @@ mod tests {
             PathBuf::from(DOCKER_STATE_DIR),
             PathBuf::from(DOCKER_CONFIG_PATH),
         )];
-        let identity = resolve_from_evidence(hello, docker_evidence);
+        let identity = resolve_from_evidence(
+            hello,
+            docker_evidence,
+            SelectedConfigAttestation::Unavailable,
+        );
         assert!(identity.verified);
         assert_eq!(identity.install_target, RuntimeInstallTarget::DockerExec);
         assert!(identity.desktop_exit_continuity);

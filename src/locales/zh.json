@@ -3799,11 +3799,12 @@
     },
     "bootstrap": {
       "title": "协作运行环境",
-      "description": "为当前连接的运行环境安装、恢复并验证可持久运行的 OpenClaw 协作插件。",
+      "description": "此功能仅用于可持久运行的多 Agent 工作流；普通 Chat 与 Gateway 不需要安装协作插件。",
       "loadingTitle": "正在检查协作运行环境",
       "loadingBody": "JunQi 正在核验目标、插件状态和恢复日志。",
       "identityTitle": "需要已验证的 Gateway",
       "identityBody": "请连接目标 Gateway，并等待运行环境身份验证完成。",
+      "identityDescription": "完成 Gateway 身份验证后，JunQi 才会读取或修改该运行环境的协作插件。",
       "busyTitle": "运行环境正在处理操作",
       "busyBody": "请保持此窗口打开。操作中断时，持久化日志会保留恢复状态。",
       "recoveryTitle": "需要恢复安装操作",

@@ -3259,14 +3259,7 @@ async fn install_windows_system_node_from_mirrors(
         WindowsInstallerFailure::source_unavailable("Windows Installer (msiexec) is unavailable")
     })?;
     let installer_log = temp_dir.join("node-msi.log");
-    let args = vec![
-        std::ffi::OsString::from("/i"),
-        installer.into_os_string(),
-        std::ffi::OsString::from("/qn"),
-        std::ffi::OsString::from("/norestart"),
-        std::ffi::OsString::from("/L*V"),
-        installer_log.clone().into_os_string(),
-    ];
+    let args = WindowsMsiInvocation::quiet_install(&installer, &installer_log).arguments();
     let installer_result = run_windows_installer(
         &msiexec,
         &args,
@@ -3289,6 +3282,13 @@ async fn install_windows_system_node_from_mirrors(
             app,
             "node",
             &format!("msiexec verbose log preserved at {}", path.display()),
+        );
+    } else {
+        emit_diagnostic(
+            app,
+            "node",
+            "The Node.js MSI did not create a verbose log before it exited; the exact elevated invocation is recorded in this timeline.",
+            0.92,
         );
     }
     let installer_result = installer_result.map_err(|error| match preserved_log {
@@ -3384,40 +3384,117 @@ fn platform_path(primary: &str, fallback: &str) -> Option<PathBuf> {
     (!path.is_empty()).then(|| PathBuf::from(path))
 }
 
+/// Structured MSI invocation keeps option tokens and path values separate
+/// until the final ShellExecuteExW boundary. ShellExecuteExW accepts one
+/// parameter string, so quoting every argument is tempting but makes the
+/// native invocation diverge from Microsoft's documented `msiexec` form.
+/// This type owns the canonical ordering and leaves switches unquoted.
+#[cfg(any(windows, test))]
+struct WindowsMsiInvocation {
+    package: PathBuf,
+    verbose_log: PathBuf,
+}
+
+#[cfg(any(windows, test))]
+impl WindowsMsiInvocation {
+    fn quiet_install(package: &Path, verbose_log: &Path) -> Self {
+        Self {
+            package: package.to_path_buf(),
+            verbose_log: verbose_log.to_path_buf(),
+        }
+    }
+
+    fn arguments(&self) -> Vec<std::ffi::OsString> {
+        vec![
+            std::ffi::OsString::from("/i"),
+            self.package.clone().into_os_string(),
+            std::ffi::OsString::from("/qn"),
+            std::ffi::OsString::from("/norestart"),
+            std::ffi::OsString::from("/L*V"),
+            self.verbose_log.clone().into_os_string(),
+        ]
+    }
+}
+
+/// Quote a single Windows command-line value only when its contents require
+/// it. This is the standard backslash-before-quote encoding used by Windows
+/// process creation APIs and preserves path boundaries without quoting option
+/// switches such as `/i` and `/qn`.
+#[cfg(any(windows, test))]
+fn quote_windows_command_line_value(value: &str) -> String {
+    if !value.is_empty()
+        && !value
+            .chars()
+            .any(|character| character.is_whitespace() || character == '"')
+    {
+        return value.to_string();
+    }
+
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('"');
+    let mut backslashes = 0_usize;
+    for character in value.chars() {
+        if character == '\\' {
+            backslashes += 1;
+            continue;
+        }
+        if character == '"' {
+            quoted.extend(std::iter::repeat_n('\\', backslashes * 2 + 1));
+        } else {
+            quoted.extend(std::iter::repeat_n('\\', backslashes));
+        }
+        quoted.push(character);
+        backslashes = 0;
+    }
+    quoted.extend(std::iter::repeat_n('\\', backslashes * 2));
+    quoted.push('"');
+    quoted
+}
+
 #[cfg(windows)]
 fn windows_installer_command_line(args: &[std::ffi::OsString]) -> Result<Vec<u16>, String> {
     use std::os::windows::ffi::OsStrExt;
 
-    let mut command_line = Vec::new();
-    for (index, arg) in args.iter().enumerate() {
-        if index > 0 {
-            command_line.push(b' ' as u16);
-        }
-        let value = arg.as_os_str().encode_wide().collect::<Vec<_>>();
-        if value.contains(&0) {
-            return Err("Windows installer argument contains a NUL character".into());
-        }
-        command_line.push(b'\"' as u16);
-        let mut backslashes = 0_usize;
-        for unit in value {
-            if unit == b'\\' as u16 {
-                backslashes += 1;
-                continue;
+    let values = args
+        .iter()
+        .map(|arg| {
+            let units = arg.as_os_str().encode_wide().collect::<Vec<_>>();
+            if units.contains(&0) {
+                return Err("Windows installer argument contains a NUL character".to_string());
             }
-            if unit == b'\"' as u16 {
-                command_line.extend(std::iter::repeat_n(b'\\' as u16, backslashes * 2 + 1));
-                command_line.push(unit);
-            } else {
-                command_line.extend(std::iter::repeat_n(b'\\' as u16, backslashes));
-                command_line.push(unit);
-            }
-            backslashes = 0;
-        }
-        command_line.extend(std::iter::repeat_n(b'\\' as u16, backslashes * 2));
-        command_line.push(b'\"' as u16);
-    }
-    command_line.push(0);
-    Ok(command_line)
+            String::from_utf16(&units)
+                .map_err(|_| "Windows installer argument is not valid UTF-16".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let command_line = values
+        .iter()
+        .map(|value| quote_windows_command_line_value(value))
+        .collect::<Vec<_>>()
+        .join(" ");
+    Ok(command_line
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect())
+}
+
+#[cfg(windows)]
+fn windows_installer_display_command(
+    executable: &Path,
+    args: &[std::ffi::OsString],
+) -> Result<String, WindowsInstallerFailure> {
+    let parameters = windows_installer_command_line(args)
+        .map_err(WindowsInstallerFailure::source_unavailable)?;
+    let parameters = String::from_utf16(&parameters[..parameters.len().saturating_sub(1)])
+        .map_err(|_| {
+            WindowsInstallerFailure::source_unavailable(
+                "Windows installer command line is not valid UTF-16",
+            )
+        })?;
+    Ok(format!(
+        "{} {}",
+        quote_windows_command_line_value(&executable.display().to_string()),
+        parameters
+    ))
 }
 
 #[cfg(any(windows, test))]
@@ -3551,6 +3628,7 @@ fn windows_installer_exit_failure(tool: &str, exit_code: u32) -> WindowsInstalle
     let detail = match exit_code {
         1603 => "Windows Installer reported a fatal installation error",
         1618 => "another Windows Installer transaction is already running",
+        1639 => "Windows Installer rejected an invalid command line; review the recorded elevated installer command",
         1638 => "another version of this product is already installed",
         _ => "the elevated installer reported a non-success result",
     };
@@ -3917,6 +3995,21 @@ async fn run_windows_installer(
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
+    let invocation = windows_installer_display_command(executable, args)?;
+    emit_diagnostic(
+        progress.app,
+        progress.step,
+        &format!(
+            "Launching elevated {} installer: {invocation}",
+            progress.tool
+        ),
+        progress.progress(),
+    );
+    record_timeline_note(
+        progress.app,
+        progress.step,
+        &format!("elevated installer command: {invocation}"),
+    );
     progress.report_admin_prompt();
     let started = std::time::Instant::now();
     let mut process = launch_elevated_windows_process(executable, args, progress.tool).await?;
@@ -3941,7 +4034,7 @@ async fn run_windows_installer(
         process.exit_code.map(i64::from),
         started.elapsed(),
     );
-    result
+    result.map_err(|error| error.with_context(format!("installer command: {invocation}")))
 }
 
 #[cfg(windows)]
@@ -6432,6 +6525,43 @@ mod tests {
         assert!(windows_installer_exit_succeeded(3010));
         assert!(!windows_installer_exit_succeeded(1603));
         assert!(!windows_installer_exit_succeeded(1618));
+    }
+
+    #[test]
+    fn windows_msi_command_line_keeps_switches_canonical_and_quotes_paths() {
+        let invocation = WindowsMsiInvocation::quiet_install(
+            Path::new(r"C:\Users\Jun Qi\AppData\Local\Temp\node-v24.18.0-x64.msi"),
+            Path::new(r"C:\Users\Jun Qi\AppData\Local\Temp\node-msi.log"),
+        );
+        let command_line = invocation
+            .arguments()
+            .iter()
+            .map(|argument| quote_windows_command_line_value(&argument.to_string_lossy()))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        assert_eq!(
+            command_line,
+            r#"/i "C:\Users\Jun Qi\AppData\Local\Temp\node-v24.18.0-x64.msi" /qn /norestart /L*V "C:\Users\Jun Qi\AppData\Local\Temp\node-msi.log""#,
+        );
+    }
+
+    #[test]
+    fn windows_command_line_quote_escapes_embedded_quotes_and_trailing_slashes() {
+        assert_eq!(quote_windows_command_line_value(""), "\"\"");
+        let value = "C:\\path with space\\\"quoted\"\\";
+        assert_eq!(
+            quote_windows_command_line_value(value),
+            "\"C:\\path with space\\\\\\\"quoted\\\"\\\\\"",
+        );
+    }
+
+    #[test]
+    fn windows_installer_invalid_command_line_is_actionable() {
+        let error = windows_installer_exit_failure("Node.js", 1639);
+        assert!(error.message().contains("1639"));
+        assert!(error.message().contains("invalid command line"));
+        assert!(error.requires_runtime_recheck());
     }
 
     #[test]
