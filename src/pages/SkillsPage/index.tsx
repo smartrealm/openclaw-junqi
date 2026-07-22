@@ -1275,7 +1275,7 @@ export function SkillsPage() {
         <>
           {activeTab === 'my' && (
             <div>
-              {/* ── Import toolbar ── */}
+              {/* ── Package and local-import toolbar ── */}
               <div className="flex items-center justify-between mb-4">
                 <p className="text-[11px] text-aegis-text-dim">
                   {mySkills.length > 0
@@ -1283,51 +1283,46 @@ export function SkillsPage() {
                     : null}
                 </p>
 
-                {/* Import button + dropdown */}
-                <div className="relative" ref={importMenuRef}>
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setImportMenuOpen(v => !v)}
-                    disabled={importStatus.kind === 'importing'}
+                    type="button"
+                    onClick={() => setShareImportOpen(true)}
                     className={clsx(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11.5px] font-medium border transition-all',
-                      importStatus.kind === 'importing'
-                        ? 'opacity-50 cursor-wait border-aegis-primary/20 text-aegis-primary'
-                        : 'border-aegis-primary/20 text-aegis-primary hover:bg-aegis-primary/[0.06] hover:border-aegis-primary/30',
+                      'border-aegis-primary/20 bg-aegis-primary/[0.06] text-aegis-primary hover:bg-aegis-primary/[0.12] hover:border-aegis-primary/30',
                     )}
                   >
-                    {importStatus.kind === 'importing'
-                      ? <Loader2 size={12} className="animate-spin" />
-                      : <FileArchive size={12} />}
-                    Import
+                    <FileArchive size={12} />
+                    {t('skills.importSharePackage', 'Import package')}
                   </button>
 
-                  {/* Dropdown menu */}
-                  <AnimatePresence>
-                    {importMenuOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -4, scale: 0.97 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -4, scale: 0.97 }}
-                        transition={{ duration: 0.1 }}
-                        className="absolute end-0 top-full mt-1.5 z-50 w-52
-                          bg-aegis-menu-bg border border-aegis-menu-border rounded-xl
-                          shadow-[0_8px_32px_rgba(0,0,0,0.2)] overflow-hidden"
-                      >
-                        <button
-                          onClick={() => {
-                            setImportMenuOpen(false);
-                            setShareImportOpen(true);
-                          }}
-                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12.5px]
-                            text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)] transition-colors"
+                  <div className="relative" ref={importMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setImportMenuOpen(v => !v)}
+                      disabled={importStatus.kind === 'importing'}
+                      title={t('skills.addLocalSkill', 'Add local skill')}
+                      aria-label={t('skills.addLocalSkill', 'Add local skill')}
+                      className={clsx(
+                        'grid size-8 place-items-center rounded-lg border transition-all',
+                        importStatus.kind === 'importing'
+                          ? 'cursor-wait border-aegis-primary/20 text-aegis-primary opacity-50'
+                          : 'border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.06] hover:text-aegis-primary',
+                      )}
+                    >
+                      {importStatus.kind === 'importing'
+                        ? <Loader2 size={13} className="animate-spin" />
+                        : <FolderOpen size={13} />}
+                    </button>
+                    <AnimatePresence>
+                      {importMenuOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -4, scale: 0.97 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                          transition={{ duration: 0.1 }}
+                          className="absolute end-0 top-full z-50 mt-1.5 w-52 overflow-hidden rounded-lg border border-aegis-menu-border bg-aegis-menu-bg shadow-[0_8px_32px_rgba(0,0,0,0.2)]"
                         >
-                          <FileArchive size={13} className="text-aegis-primary shrink-0" />
-                          <div className="text-start">
-                            <div className="font-medium">Import share package</div>
-                            <div className="text-[10px] text-aegis-text-dim">Preview files before importing</div>
-                          </div>
-                        </button>
-                        <div className="h-px mx-3 bg-aegis-menu-border" />
                         <button
                           onClick={() => runImport('folder')}
                           className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12.5px]
@@ -1351,9 +1346,10 @@ export function SkillsPage() {
                             <div className="text-[10px] text-aegis-text-dim">{t('skills.importFromZipHint')}</div>
                           </div>
                         </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
               </div>
 

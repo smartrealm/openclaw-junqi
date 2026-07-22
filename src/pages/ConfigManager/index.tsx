@@ -26,6 +26,7 @@ import {
   normalizeAuthProfilesFromDisk,
 } from './configUtils';
 import { deriveProviderApiKeyEnvKey, preserveProviderSecretsFromDisk } from './providerSecretResolver';
+import { getModelPrimary } from './modelReference';
 import { FloatingSaveButton, ChangesPill } from './components';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
@@ -430,7 +431,7 @@ export function ConfigManagerPage() {
       }
 
       // 3. Write the already validated candidate.
-      const savedPrimaryModel = toWrite.agents?.defaults?.model?.primary ?? null;
+      const savedPrimaryModel = getModelPrimary(toWrite.agents?.defaults?.model) ?? null;
       const writeResult = await window.aegis.config.write(configPath, toWrite);
       if (!writeResult.success) {
         throw new Error(writeResult.error || t('config.saveFailed'));

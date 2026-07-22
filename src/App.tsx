@@ -292,7 +292,7 @@ export default function App() {
   }, [setSessions]);
 
   // ── Load Available Models from Gateway ──
-  // Uses Chain of Responsibility: config.get(WS) → openclaw.json(file) → agents+sessions.
+  // Uses Chain of Responsibility: models.list(WS) → config.get(WS) → openclaw.json(file) → agents+sessions.
   // Each strategy returns models or null (delegate to next).
   const loadAvailableModels = useCallback(async () => {
     const applyModels = async (models: ModelEntry[]) => {
@@ -319,8 +319,12 @@ export default function App() {
     };
 
     const [
-      { ModelLoaderChain, ConfigGetLoader, FileReadLoader, AgentsSessionLoader },
-      { extractAvailableModelsFromConfig, hasConfiguredModelProviders },
+      { ModelLoaderChain, GatewayModelsListLoader, ConfigGetLoader, FileReadLoader, AgentsSessionLoader },
+      {
+        extractAvailableModelsFromConfig,
+        extractAvailableModelsFromGatewayResult,
+        hasConfiguredModelProviders,
+      },
     ] = await Promise.all([
       import('@/services/gateway/modelLoaders'),
       import('@/services/gateway/modelCatalog'),
@@ -329,10 +333,14 @@ export default function App() {
     const ctx = {
       hasProviders: hasConfiguredModelProviders,
       extractModels: extractAvailableModelsFromConfig,
+      extractRuntimeModels: extractAvailableModelsFromGatewayResult,
     };
 
-    // Chain: WS config.get → file read → agents+sessions
+    // The configured runtime view applies OpenClaw's current policy, provider
+    // plugins, and `models.mode` semantics. File inference only protects a
+    // disconnected gateway during recovery.
     const chain = new ModelLoaderChain([
+      new GatewayModelsListLoader((m, p) => gateway.call(m, p)),
       new ConfigGetLoader((m, p) => gateway.call(m, p)),
       new FileReadLoader(async () => {
         if (!window.aegis?.config?.read) return null;

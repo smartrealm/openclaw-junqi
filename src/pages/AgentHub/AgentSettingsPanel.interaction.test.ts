@@ -33,13 +33,26 @@ test('the drawer presents only parsed agent workspace skills', async () => {
   assert.doesNotMatch(panel, /useSkillsStore/);
 });
 
-test('creating an agent persists selected skills as the native allowlist', async () => {
+test('creating an agent persists skill and fallback overrides through a guarded Gateway patch', async () => {
   const page = await read('./index.tsx');
 
   assert.match(page, /await gateway\.createAgent\(payload\)/);
-  assert.match(page, /await persistAgentSkillFilter\(payload\.id, newAgentSkillKeys\)/);
+  assert.match(page, /await persistAgentCreationOverrides\(gateway, payload\.id, creationOverrides\)/);
+  assert.match(page, /newAgent\.skillsMode === 'custom'/);
+  assert.match(page, /newAgent\.modelMode === 'fallbacks'/);
   assert.match(page, /created\?\.agentId !== payload\.id/);
-  assert.doesNotMatch(page, /gateway\.createAgent\([^)]*skills/);
+  assert.doesNotMatch(page, /window\.aegis\.config\.write/);
+  assert.doesNotMatch(page, /persistAgentSkillFilter/);
+});
+
+test('the add-agent flow supports a one-action base agent and explicit workspace isolation', async () => {
+  const page = await read('./index.tsx');
+
+  assert.match(page, /suggestDedicatedGatewayAgentWorkspace/);
+  assert.match(page, /newAgent\.workspaceMode === 'dedicated'/);
+  assert.match(page, /Create base agent/);
+  assert.match(page, /modelMode: 'inherit'/);
+  assert.match(page, /Default fallback chain|Fallback chain/);
 });
 
 test('agent skill failures have an explicit retry state', async () => {
@@ -50,4 +63,16 @@ test('agent skill failures have an explicit retry state', async () => {
   assert.match(panel, /onClick=\{onRetryAgentSkills\}/);
   assert.match(page, /setAgentSkillErrors/);
   assert.doesNotMatch(page, /catch \{\s*setAgentWorkspaceSkills\([^\n]*\[\]/);
+});
+
+test('agent settings edits ordered fallback configuration through config.patch', async () => {
+  const panel = await read('./AgentSettingsPanel.tsx');
+
+  assert.match(panel, /fallbackChanged \|\| isModelReferenceObject\(storedModelConfig\)/);
+  assert.match(panel, /setModelFallbacks\(/);
+  assert.match(panel, /selectedFallbacks/);
+  assert.match(panel, /Fallback chain/);
+  assert.match(panel, /gateway\.callPrivileged\('config\.patch'/);
+  assert.match(panel, /replacePaths: \['agents\.list'\]/);
+  assert.match(panel, /getModelFallbacks\(nextModel\)/);
 });

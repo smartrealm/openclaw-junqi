@@ -1,5 +1,6 @@
 import type { GatewayRuntimeConfig } from './types';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
+import { normalizeModelReferenceConfig } from './modelReference';
 
 export interface GeneratedProviderCatalogEntry {
   id: string;
@@ -215,60 +216,25 @@ export function normalizeAgentsForRuntime(params: {
     })()
     : agents.defaults.models;
 
-  const modelSupportMap = new Map<string, boolean>();
-  for (const rows of Object.values(params.generatedProviderCatalog)) {
-    for (const model of rows) {
-      const normalizedId = params.canonicalizeModelRef(model.id);
-      if (!normalizedId || typeof model.supportsImage !== 'boolean') continue;
-      modelSupportMap.set(normalizedId, model.supportsImage);
-    }
-  }
-  for (const [providerId, providerConfig] of Object.entries(params.providers ?? {})) {
-    const canonicalProvider = providerId.trim().toLowerCase();
-    const models = Array.isArray((providerConfig as any)?.models) ? (providerConfig as any).models : [];
-    for (const model of models) {
-      const normalizedId = params.canonicalizeModelRef(
-        `${canonicalProvider}/${String(model?.id ?? '').trim()}`
-      );
-      const supportsImage = resolveModelSupportsImage(model);
-      if (!normalizedId || typeof supportsImage !== 'boolean') continue;
-      modelSupportMap.set(normalizedId, supportsImage);
-    }
-  }
-
-  const primaryModelRef = params.canonicalizeModelRef(agents.defaults.model?.primary);
-  const requestedImageModelRef = params.canonicalizeModelRef(agents.defaults.imageModel?.primary);
-  const nextImagePrimary =
-    requestedImageModelRef && modelSupportMap.get(requestedImageModelRef) === true
-      ? requestedImageModelRef
-      : primaryModelRef && modelSupportMap.get(primaryModelRef) === true
-        ? primaryModelRef
-        : undefined;
-
   return {
     ...agents,
     list: ensureMainAgentInList(agents.list),
     defaults: {
       ...agents.defaults,
       models: nextModels,
-      model: agents.defaults.model
-        ? { ...agents.defaults.model, primary: primaryModelRef }
-        : agents.defaults.model,
-      imageModel: nextImagePrimary
-        ? { ...(agents.defaults.imageModel ?? {}), primary: nextImagePrimary }
-        : undefined,
-      imageGenerationModel: agents.defaults.imageGenerationModel
-        ? {
-          ...agents.defaults.imageGenerationModel,
-          primary: params.canonicalizeModelRef(agents.defaults.imageGenerationModel.primary),
-        }
-        : agents.defaults.imageGenerationModel,
-      videoGenerationModel: agents.defaults.videoGenerationModel
-        ? {
-          ...agents.defaults.videoGenerationModel,
-          primary: params.canonicalizeModelRef(agents.defaults.videoGenerationModel.primary),
-        }
-        : agents.defaults.videoGenerationModel,
+      // Capability discovery can be incomplete for plugins and custom
+      // providers. Normalize refs only; never discard an explicit model just
+      // because the desktop catalog cannot currently prove its capabilities.
+      model: normalizeModelReferenceConfig(agents.defaults.model, params.canonicalizeModelRef),
+      imageModel: normalizeModelReferenceConfig(agents.defaults.imageModel, params.canonicalizeModelRef),
+      imageGenerationModel: normalizeModelReferenceConfig(
+        agents.defaults.imageGenerationModel,
+        params.canonicalizeModelRef,
+      ),
+      videoGenerationModel: normalizeModelReferenceConfig(
+        agents.defaults.videoGenerationModel,
+        params.canonicalizeModelRef,
+      ),
     },
   };
 }

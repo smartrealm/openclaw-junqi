@@ -7,6 +7,7 @@ import {
   removeProviderModel,
   updateProviderModel,
 } from './providerModelMutations';
+import { getModelFallbacks, getModelPrimary } from './modelReference';
 
 function assertModelConfigOmits(config: ModelConfig | string | undefined, modelRef: string): void {
   if (typeof config === 'string') {
@@ -48,8 +49,8 @@ test('addProviderModel keeps provider declarations and agent defaults in sync', 
     supportsImage: true,
     input: ['text', 'image'],
   });
-  assert.equal(next.agents?.defaults?.model?.primary, 'openai/gpt-4o');
-  assert.equal(next.agents?.defaults?.imageModel?.primary, 'openai/gpt-4o');
+  assert.equal(getModelPrimary(next.agents?.defaults?.model), 'openai/gpt-4o');
+  assert.equal(getModelPrimary(next.agents?.defaults?.imageModel), 'openai/gpt-4o');
 });
 
 test('buildEditableProviderModels includes provider-only rows without overriding agent metadata', () => {
@@ -199,7 +200,7 @@ test('provider alias migration merges equivalent agent model metadata', () => {
     params: { temperature: 0.2 },
     streaming: true,
   });
-  assert.equal(next.agents?.defaults?.model?.primary, 'qwen/qwen3.6-plus');
+  assert.equal(getModelPrimary(next.agents?.defaults?.model), 'qwen/qwen3.6-plus');
 });
 
 test('provider alias migration merges canonical and legacy provider configs without data loss', () => {
@@ -282,7 +283,7 @@ test('removeProviderModel removes a model across canonical and legacy provider k
     ['legacy-only', 'canonical-only'],
   );
   assert.equal(next.agents?.defaults?.models?.['qwen/remove-me'], undefined);
-  assert.equal(next.agents?.defaults?.model?.primary, 'qwen/canonical-only');
+  assert.equal(getModelPrimary(next.agents?.defaults?.model), 'qwen/canonical-only');
 });
 
 test('removeProviderModel clears provider models and every default and agent reference', () => {
@@ -336,8 +337,8 @@ test('removeProviderModel clears provider models and every default and agent ref
   assert.deepEqual(next.models?.providers?.openai?.models?.map((model) => model.id), ['keep-me']);
   assert.equal(next.agents?.defaults?.models?.[removed], undefined);
   assert.ok(next.agents?.defaults?.models?.[kept]);
-  assert.equal(next.agents?.defaults?.model?.primary, kept);
-  assert.equal(next.agents?.defaults?.imageModel?.primary, kept);
+  assert.equal(getModelPrimary(next.agents?.defaults?.model), kept);
+  assert.equal(getModelPrimary(next.agents?.defaults?.imageModel), kept);
 
   assertModelConfigOmits(next.agents?.defaults?.model, removed);
   assertModelConfigOmits(next.agents?.defaults?.imageModel, removed);
@@ -380,7 +381,7 @@ test('disabling the current image model falls back to another image-capable mode
     supportsImage: false,
   });
 
-  assert.equal(next.agents?.defaults?.imageModel?.primary, 'openai/vision-b');
+  assert.equal(getModelPrimary(next.agents?.defaults?.imageModel), 'openai/vision-b');
 });
 
 test('disabling image support also rewrites per-agent image model references', () => {
@@ -406,10 +407,10 @@ test('disabling image support also rewrites per-agent image model references', (
     supportsImage: false,
   });
 
-  assert.equal(next.agents?.defaults?.imageModel?.primary, 'custom/vision-b');
+  assert.equal(getModelPrimary(next.agents?.defaults?.imageModel), 'custom/vision-b');
   for (const agent of next.agents?.list ?? []) {
-    assert.equal(agent.imageModel?.primary, 'custom/vision-b');
-    assert.equal(agent.imageModel?.fallbacks?.includes('custom/vision-a') ?? false, false);
+    assert.equal(getModelPrimary(agent.imageModel), 'custom/vision-b');
+    assert.equal(getModelFallbacks(agent.imageModel).includes('custom/vision-a'), false);
   }
 });
 

@@ -38,6 +38,33 @@ export function normalizeGatewayAgentId(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, '-');
 }
 
+/**
+ * OpenClaw agents should not accidentally share the main workspace. The CLI's
+ * conventional layout is `workspace-<agentId>` next to the default workspace;
+ * this only suggests that path, and the user can still edit it before create.
+ */
+export function suggestDedicatedGatewayAgentWorkspace(
+  defaultWorkspace: string | undefined,
+  agentId: string | undefined,
+): string {
+  const base = String(defaultWorkspace ?? '').trim();
+  const id = normalizeGatewayAgentId(String(agentId ?? ''));
+  if (!base || !id || !GATEWAY_AGENT_ID_RE.test(id)) return '';
+
+  const separator = base.includes('\\') && !base.includes('/') ? '\\' : '/';
+  const withoutTrailingSeparator = base.replace(/[\\/]+$/, '') || (separator === '\\' ? '\\' : '/');
+  const parts = withoutTrailingSeparator.split(/[\\/]/);
+  const leaf = parts[parts.length - 1] ?? '';
+  const suggestedLeaf = `workspace-${id}`;
+
+  if (/^workspace(?:-[a-z0-9_-]+)?$/i.test(leaf)) {
+    const parent = parts.slice(0, -1).join(separator);
+    if (!parent) return `${separator}${suggestedLeaf}`;
+    return `${parent}${separator}${suggestedLeaf}`;
+  }
+  return `${withoutTrailingSeparator}-${id}`;
+}
+
 export function isValidGatewayAgentId(value: string): boolean {
   return GATEWAY_AGENT_ID_RE.test(value);
 }

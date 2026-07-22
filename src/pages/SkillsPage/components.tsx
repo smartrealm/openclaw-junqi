@@ -2,8 +2,9 @@
 // Skills Page — Sub-components
 // ═══════════════════════════════════════════════════════════
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import DOMPurify from 'dompurify';
 import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare, AlertCircle, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -408,6 +409,11 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
   }, [skill?.slug]);
   const hasReadme = Boolean(skill?.readme);
   const hasVersions = Boolean(skill?.versions.length);
+  const safeReadme = useMemo(
+    () => DOMPurify.sanitize(skill?.readme ?? ''),
+    [skill?.readme],
+  );
+  const resolvedPersona = resolvePersona(persona);
   return (
     <>
       {/* Backdrop */}
@@ -417,7 +423,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed top-[56px] end-0 bottom-0 start-0 z-[2147481000] bg-black/40 backdrop-blur-sm"
+            className="fixed top-[56px] end-0 bottom-0 start-0 z-[2147481000] bg-black/35"
             onClick={onClose}
           />
         )}
@@ -426,12 +432,12 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
       {/* Detail workspace */}
       <div
         className={clsx(
-          'fixed top-[56px] bottom-0 z-[2147481001] w-[520px] max-w-full',
-          'bg-aegis-bg/95 backdrop-blur-xl border-s border-[rgb(var(--aegis-overlay)/0.09)]',
+          'fixed top-[56px] bottom-[6px] z-[2147481001] flex w-[460px] max-w-[calc(100vw-12px)] flex-col',
+          'bg-aegis-bg border-s border-[rgb(var(--aegis-overlay)/0.09)]',
           open && 'shadow-[-12px_0_40px_rgba(0,0,0,0.3)]',
-          'overflow-y-auto',
+          'overflow-hidden',
           'transition-[inset-inline-end] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
-          open ? 'end-0' : '-end-[520px] pointer-events-none',
+          open ? 'end-0' : '-end-[460px] pointer-events-none',
         )}
       >
         {loading ? (
@@ -440,19 +446,29 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
           </div>
         ) : skill ? (
           <>
-            {/* Header and view selector */}
-            <div className="sticky top-0 z-10 border-b border-[rgb(var(--aegis-overlay)/0.08)] bg-aegis-bg/95 px-5 pt-3 backdrop-blur-xl">
-              <div className="flex items-center gap-3 pb-3">
-                <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-aegis-text">{skill.name}</span>
+            <header className="shrink-0 border-b border-[rgb(var(--aegis-overlay)/0.08)] bg-aegis-bg px-4 pt-3">
+              <div className="flex items-center gap-2.5 pb-3">
+                <div className="grid size-9 shrink-0 place-items-center rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.035)] text-[20px]">
+                  {skill.emoji}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-[13px] font-semibold text-aegis-text">{skill.name}</span>
+                    <HubBadge badge={skill.badge} />
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[10px] text-aegis-text-dim">{skill.slug}</div>
+                </div>
                 <button
+                  type="button"
                   onClick={onClose}
                   title={t('common.close', 'Close')}
+                  aria-label={t('common.close', 'Close')}
                   className="grid size-7 shrink-0 place-items-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-danger/[0.08] hover:text-aegis-danger"
                 >
                   <X size={15} />
                 </button>
               </div>
-              <div className="flex items-center gap-1" role="tablist" aria-label="Skill details">
+              <div className="flex items-center gap-1" role="tablist" aria-label={t('skills.skillDetails', 'Skill details')}>
                 {([
                   { id: 'overview' as const, label: 'Overview', visible: true },
                   { id: 'readme' as const, label: 'Readme', visible: hasReadme },
@@ -475,34 +491,22 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                   </button>
                 ))}
               </div>
-            </div>
+            </header>
 
+            <div className="min-h-0 flex-1 overflow-y-auto">
             {activePane === 'overview' && <>
-            {/* Overview */}
-            <div className="px-5 pt-5 pb-4">
-              <div className="flex items-start gap-3.5">
-                <div className="w-11 h-11 rounded-lg flex items-center justify-center text-[26px]
-                  bg-[rgb(var(--aegis-overlay)/0.04)] shrink-0 border border-[rgb(var(--aegis-overlay)/0.06)]">
-                  {skill.emoji}
+            <div className="px-4 py-4">
+              {skill.ownerAvatar && (
+                <div className="mb-2 flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted">
+                  <img src={skill.ownerAvatar} alt="" className="size-4 rounded-full" />
+                  <span className="truncate">{skill.owner}</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[17px] font-semibold flex items-center gap-2 flex-wrap mb-1">
-                    {skill.name}
-                    <HubBadge badge={skill.badge} />
-                  </div>
-                  {skill.ownerAvatar && (
-                    <div className="flex items-center gap-1.5 text-[11.5px] text-aegis-text-muted mb-2">
-                      <img src={skill.ownerAvatar} alt="" className="w-4 h-4 rounded-full" />
-                      {skill.owner}
-                    </div>
-                  )}
-                  <p className="max-w-[44ch] text-[12px] leading-relaxed text-aegis-text-secondary">{skill.summary}</p>
-                </div>
-              </div>
+              )}
+              <p className="max-w-[48ch] text-[12px] leading-5 text-aegis-text-secondary">{skill.summary}</p>
             </div>
 
             {/* Stats */}
-            <div className="mx-5 grid grid-cols-3 divide-x divide-[rgb(var(--aegis-overlay)/0.06)] border-y border-[rgb(var(--aegis-overlay)/0.08)]">
+            <div className="grid grid-cols-3 divide-x divide-[rgb(var(--aegis-overlay)/0.06)] border-y border-[rgb(var(--aegis-overlay)/0.08)]">
               {[
                 { value: formatNum(skill.downloads), label: t('skillsExtra.downloads', 'Downloads') },
                 { value: String(skill.stars), label: t('skillsExtra.stars', 'Stars') },
@@ -516,11 +520,14 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             </div>
 
             {/* Install command */}
-            <div className="px-5 py-4">
-              <div className="flex items-center gap-2 border-s-2 border-aegis-primary/50 bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2.5 font-mono text-[11px] text-aegis-primary">
+            <div className="border-b border-[rgb(var(--aegis-overlay)/0.08)] px-4 py-3">
+              <div className="flex items-center gap-2 border-s-2 border-aegis-primary/50 bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2 font-mono text-[11px] text-aegis-primary">
                 <code className="flex-1 truncate">{installCmd ?? `openclaw skills install ${skill.slug}`}</code>
                 <button
+                  type="button"
                   onClick={() => navigator.clipboard.writeText(installCmd ?? `openclaw skills install ${skill.slug}`)}
+                  title={t('common.copy', 'Copy')}
+                  aria-label={t('common.copy', 'Copy')}
                   className="text-aegis-text-dim hover:text-aegis-primary transition-colors shrink-0"
                 >
                   <Copy size={13} />
@@ -528,14 +535,74 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               </div>
             </div>
 
-            {/* Action buttons */}
-            <div className="px-5 pb-5 flex flex-col gap-2">
-              {/* Primary: Install / status */}
+            {installState === 'error' && errorText && (
+              <div className="mx-4 mt-3 border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[11.5px] leading-relaxed text-aegis-text-secondary">
+                {errorText}
+              </div>
+            )}
+
+            {(skill.requirements.env.length > 0 || skill.requirements.bin.length > 0) && (
+              <div className="px-4 py-4">
+                <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
+                  <Wrench size={13} aria-hidden="true" />
+                  {t('skillsExtra.requirements')}
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {skill.requirements.env.map(e => (
+                    <span key={e} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
+                      <Key size={12} strokeWidth={1.75} /> {e}
+                    </span>
+                  ))}
+                  {skill.requirements.bin.map(b => (
+                    <span key={b} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
+                      <Settings2 size={12} strokeWidth={1.75} /> {b}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            </>}
+
+            {activePane === 'readme' && skill.readme && (
+              <div className="px-4 py-4">
+                <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
+                  <BookOpenText size={13} aria-hidden="true" />
+                  {t('skills.readme', 'Readme')}
+                </h3>
+                <div
+                  className="prose-sm min-h-[320px] text-[12.5px] leading-relaxed text-aegis-text-secondary"
+                  dangerouslySetInnerHTML={{ __html: safeReadme }}
+                />
+              </div>
+            )}
+
+            {activePane === 'versions' && skill.versions.length > 0 && (
+              <div className="px-4 py-4">
+                <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
+                  <FileText size={14} strokeWidth={1.75} /> {t('skills.versions', 'Versions')}
+                </h3>
+                <ul className="space-y-0">
+                  {skill.versions.map(v => (
+                    <li key={v.version} className="flex items-center gap-2 border-b border-[rgb(var(--aegis-overlay)/0.06)] py-2.5 text-[11.5px] last:border-0">
+                      <span className="rounded bg-aegis-primary/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-aegis-primary">v{v.version}</span>
+                      {v.latest && <span className="rounded bg-aegis-success px-1.5 py-0.5 text-[9px] font-bold text-aegis-btn-primary-text">latest</span>}
+                      <span className="min-w-0 flex-1 truncate text-aegis-text-secondary">{v.changelog}</span>
+                      <span className="shrink-0 text-[10px] text-aegis-text-dim">{v.date}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            </div>
+
+            <footer className="shrink-0 border-t border-[rgb(var(--aegis-overlay)/0.08)] bg-aegis-bg px-4 py-3">
+              <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={() => (installState === 'error' || installState === 'idle') ? onInstall?.(skill.slug) : undefined}
                 disabled={installState !== 'idle' && installState !== 'error'}
                 className={clsx(
-                  'w-full py-2.5 rounded-md text-[12px] font-semibold transition-all',
+                  'flex-1 rounded-md py-2.5 text-[12px] font-semibold transition-all',
                   'flex items-center justify-center gap-1.5',
                   installState === 'done'
                     ? 'bg-aegis-success/10 border border-aegis-success/30 text-aegis-success cursor-default'
@@ -544,10 +611,10 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                       : installState === 'installing'
                         ? isRed
                           ? 'bg-red-500/[0.07] border border-red-500/20 text-red-400 cursor-wait opacity-70'
-                          : 'bg-aegis-primary/[0.07] border border-aegis-primary/20 text-aegis-primary cursor-wait opacity-70'
+                          : 'bg-aegis-primary text-aegis-btn-primary-text cursor-wait opacity-70'
                         : isRed
                           ? 'bg-red-500/[0.08] border border-red-500/20 text-red-400 hover:bg-red-500/[0.14] cursor-pointer'
-                          : 'bg-aegis-primary/[0.08] border border-aegis-primary/20 text-aegis-primary hover:bg-aegis-primary/[0.14] cursor-pointer',
+                          : 'bg-aegis-primary text-aegis-btn-primary-text hover:brightness-110 cursor-pointer',
                 )}
               >
                 {installState === 'installing' ? (
@@ -560,138 +627,37 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                   <><Download size={13} /> {installLabel ?? t('skillsExtra.install', 'Install')}</>
                 )}
               </button>
-
-              {/* After install: show hint that skill activates automatically on next message */}
-              {installState === 'done' && doneHint && (
-                <p className="text-center text-[11px] text-aegis-text-dim py-0.5">
-                  {doneHint}
-                </p>
+              {resolvedPersona && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onStartChat) onStartChat(resolvedPersona);
+                      else window.dispatchEvent(new CustomEvent('aegis:open-new-session-picker', { detail: { persona: resolvedPersona } }));
+                    }}
+                    title={t('skills.startChatWithPersona', 'Start chat with this persona')}
+                    aria-label={t('skills.startChatWithPersona', 'Start chat with this persona')}
+                    className="grid size-9 shrink-0 place-items-center rounded-md border border-aegis-primary/20 bg-aegis-primary/[0.06] text-aegis-primary transition-colors hover:bg-aegis-primary/[0.12]"
+                  >
+                    <MessageSquare size={14} />
+                  </button>
               )}
-
-              {installState === 'error' && errorText && (
-                <div className="border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[11.5px] leading-relaxed text-aegis-text-secondary">
-                  {errorText}
-                </div>
-              )}
-
+              <button
+                type="button"
+                onClick={() => window.open(externalUrl ?? `https://clawhub.ai/skills/${skill.slug}`, '_blank')}
+                title={externalLabel ?? t('skillsExtra.viewOnClawHub', 'View on ClawHub')}
+                aria-label={externalLabel ?? t('skillsExtra.viewOnClawHub', 'View on ClawHub')}
+                className="grid size-9 shrink-0 place-items-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.06] hover:text-aegis-primary"
+              >
+                <ExternalLink size={14} />
+              </button>
+              </div>
+              {installState === 'done' && doneHint && <p className="mt-2 text-center text-[10px] text-aegis-text-dim">{doneHint}</p>}
               {installState === 'error' && secondaryActionLabel && onSecondaryAction && (
-                <button
-                  onClick={onSecondaryAction}
-                  className="w-full py-2 rounded-md text-[11.5px] font-medium
-                    bg-[rgb(var(--aegis-overlay)/0.03)] border border-[rgb(var(--aegis-overlay)/0.06)]
-                    text-aegis-text-secondary hover:border-[rgb(var(--aegis-overlay)/0.1)] transition-colors
-                    flex items-center justify-center gap-1.5"
-                >
+                <button type="button" onClick={onSecondaryAction} className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] px-3 py-2 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:border-aegis-primary/30 hover:text-aegis-primary">
                   <ExternalLink size={12} /> {secondaryActionLabel}
                 </button>
               )}
-
-              {/* Persona: Start chat (only when skill carries a persona) */}
-              {(() => {
-                const resolved = resolvePersona(persona);
-                if (!resolved) return null;
-                const handle = () => {
-                  if (onStartChat) {
-                    onStartChat(resolved);
-                  } else {
-                    window.dispatchEvent(new CustomEvent('aegis:open-new-session-picker', {
-                      detail: { persona: resolved },
-                    }));
-                  }
-                };
-                return (
-                  <button
-                    onClick={handle}
-                    title={t('skills.startChatWithPersona', 'Start chat with this persona')}
-                    className="w-full py-2 rounded-md text-[11.5px] font-medium
-                      bg-aegis-primary/[0.06] border border-aegis-primary/15 text-aegis-primary
-                      hover:bg-aegis-primary/[0.1] transition-colors
-                      flex items-center justify-center gap-1.5"
-                  >
-                    <MessageSquare size={12} /> {t('skills.startChat', 'Start chat')}
-                  </button>
-                );
-              })()}
-
-              {/* Secondary: View on source */}
-              <button
-                onClick={() => window.open(externalUrl ?? `https://clawhub.ai/skills/${skill.slug}`, '_blank')}
-                className="w-full py-2 rounded-md text-[11.5px] font-medium
-                  bg-[rgb(var(--aegis-overlay)/0.03)] border border-[rgb(var(--aegis-overlay)/0.06)]
-                  text-aegis-text-secondary hover:border-[rgb(var(--aegis-overlay)/0.1)] transition-colors
-                  flex items-center justify-center gap-1.5"
-              >
-                <ExternalLink size={12} /> {externalLabel ?? t('skillsExtra.viewOnClawHub', 'View on ClawHub')}
-              </button>
-            </div>
-
-            {/* Requirements */}
-            {(skill.requirements.env.length > 0 || skill.requirements.bin.length > 0) && (
-              <div className="border-t border-[rgb(var(--aegis-overlay)/0.08)] px-5 py-4">
-                <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
-                  <Wrench size={13} aria-hidden="true" />
-                  {t('skillsExtra.requirements')}
-                </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {skill.requirements.env.map(e => (
-                    <span key={e} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono
-                      bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
-                      <Key size={14} strokeWidth={1.75} /> {e}
-                    </span>
-                  ))}
-                  {skill.requirements.bin.map(b => (
-                    <span key={b} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono
-                      bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
-                      <Settings2 size={14} strokeWidth={1.75} /> {b}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            </>}
-
-            {/* Readme */}
-            {activePane === 'readme' && skill.readme && (
-              <div className="px-5 py-5">
-                <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
-                  <BookOpenText size={13} aria-hidden="true" />
-                  Readme
-                </h3>
-                <div
-                  className="prose-sm min-h-[320px] p-0
-                    text-[12.5px] leading-relaxed text-aegis-text-secondary"
-                  dangerouslySetInnerHTML={{ __html: skill.readme }}
-                />
-              </div>
-            )}
-
-            {/* Versions */}
-            {activePane === 'versions' && skill.versions.length > 0 && (
-              <div className="px-5 py-5">
-                <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
-                  <FileText size={14} strokeWidth={1.75} /> Versions
-                </h3>
-                <ul className="space-y-0">
-                  {skill.versions.map(v => (
-                    <li key={v.version} className="flex items-center gap-2 py-2.5
-                      border-b border-[rgb(var(--aegis-overlay)/0.06)] last:border-0 text-[11.5px]">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono
-                        bg-aegis-primary/[0.06] text-aegis-primary">
-                        v{v.version}
-                      </span>
-                      {v.latest && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold
-                          bg-aegis-success text-aegis-btn-primary-text">
-                          latest
-                        </span>
-                      )}
-                      <span className="text-aegis-text-secondary flex-1 truncate">{v.changelog}</span>
-                      <span className="text-[10px] text-aegis-text-dim shrink-0">{v.date}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            </footer>
           </>
         ) : null}
       </div>

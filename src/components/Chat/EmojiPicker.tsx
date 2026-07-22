@@ -73,16 +73,18 @@ export function EmojiPicker({ onSelect, disabled, defaultOpen = false }: EmojiPi
     <div ref={containerRef} className="relative">
       {/* Trigger Button */}
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         disabled={disabled}
         className={clsx(
-          'p-2 rounded-xl transition-colors',
+          'grid size-[34px] place-items-center rounded-lg transition-colors',
           open
             ? 'bg-aegis-primary/20 text-aegis-primary'
-            : 'hover:bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim hover:text-aegis-text-muted',
-          'disabled:opacity-30'
+            : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
+          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30'
         )}
         title={t('input.emoji')}
+        aria-label={t('input.emoji')}
       >
         <Smile size={17} />
       </button>

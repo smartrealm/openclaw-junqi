@@ -1,4 +1,5 @@
 import type { GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
+import { getModelPrimary } from '@/pages/ConfigManager/modelReference';
 import { getTemplateById, type ProviderTemplate } from '@/pages/ConfigManager/providerTemplates';
 import {
   extractEnvRefKey,
@@ -51,7 +52,7 @@ function parseModelRef(modelRef: string): { providerId: string; modelId: string 
 }
 
 function firstModelRef(config: GatewayRuntimeConfig): string {
-  const primary = String(config.agents?.defaults?.model?.primary ?? '').trim();
+  const primary = getModelPrimary(config.agents?.defaults?.model) ?? '';
   if (primary) return primary;
   return Object.keys(config.agents?.defaults?.models ?? {})[0] ?? '';
 }
@@ -62,7 +63,7 @@ function configuredModelRefs(config: GatewayRuntimeConfig): string[] {
     const ref = String(value ?? '').trim();
     if (parseModelRef(ref)) refs.add(ref);
   };
-  add(config.agents?.defaults?.model?.primary);
+  add(getModelPrimary(config.agents?.defaults?.model));
   for (const ref of Object.keys(config.agents?.defaults?.models ?? {})) add(ref);
   return [...refs];
 }

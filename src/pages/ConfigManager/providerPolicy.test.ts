@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  getModelPolicyAllow,
   hasProviderWildcard,
   setModelCatalogMode,
+  setModelPolicyAllow,
   setProviderAuthOrder,
   setProviderWildcard,
 } from './providerPolicy';
@@ -34,4 +36,24 @@ test('BUG-MP-08 auth order is deduplicated and limited to the provider', () => {
   };
   const next = setProviderAuthOrder(config, 'openai', ['openai:b', 'anthropic:a', 'openai:b', 'openai:a']);
   assert.deepEqual(next.auth?.order?.openai, ['openai:b', 'openai:a']);
+});
+
+test('model policy rules are normalized and can be removed without disturbing defaults', () => {
+  const config = {
+    agents: {
+      defaults: {
+        model: { primary: 'openai/gpt-4o' },
+        modelPolicy: { allow: ['openai/*', ' OpenAI/* ', 'fast'] },
+      },
+    },
+  };
+
+  assert.deepEqual(getModelPolicyAllow(config), ['openai/*', 'fast']);
+
+  const unrestricted = setModelPolicyAllow(config, []);
+  assert.equal(unrestricted.agents?.defaults?.modelPolicy, undefined);
+  assert.deepEqual(unrestricted.agents?.defaults?.model, { primary: 'openai/gpt-4o' });
+
+  const restricted = setModelPolicyAllow(unrestricted, [' qwen/* ', 'qwen/*', 'preferred']);
+  assert.deepEqual(restricted.agents?.defaults?.modelPolicy?.allow, ['qwen/*', 'preferred']);
 });

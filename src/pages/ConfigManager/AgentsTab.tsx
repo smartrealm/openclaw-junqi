@@ -28,6 +28,12 @@ import {
   MAIN_GATEWAY_AGENT_ID,
   normalizeGatewayAgentId,
 } from '@/utils/gatewayAgentFlow';
+import {
+  getModelFallbacks,
+  getModelPrimary,
+  setModelFallbacks,
+  setModelPrimary,
+} from './modelReference';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -220,7 +226,7 @@ function AgentRow({ agent, displayIndex, isMain, onChange, onUpdate, onRemove }:
   const [open, setOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
-  const primaryModel = agent.model?.primary ?? '';
+  const primaryModel = getModelPrimary(agent.model) ?? '';
   const heartbeatEnabled = !!agent.heartbeat?.every;
   const isDefault = !!agent.isDefault;
 
@@ -308,9 +314,9 @@ function AgentRow({ agent, displayIndex, isMain, onChange, onUpdate, onRemove }:
             </FormField>
             <FormField label={t('config.primaryModel')} hint={t('config.inheritedFromDefaults')}>
               <ModelDropdown
-                value={agent.model?.primary || null}
+                value={primaryModel || null}
                 onChange={(v) =>
-                  onUpdate({ model: { ...agent.model, primary: v || undefined } })
+                  onUpdate({ model: setModelPrimary(agent.model, v || undefined) })
                 }
                 placeholder={t('config.inheritedFromDefaults')}
               />
@@ -625,8 +631,8 @@ export function AgentsTab({ config, onChange }: AgentsTabProps) {
   };
 
   // Fallback models from model.fallbacks
-  const fallbackModels = defaults.model?.fallbacks ?? [];
-  const primaryModel   = defaults.model?.primary ?? '';
+  const fallbackModels = getModelFallbacks(defaults.model);
+  const primaryModel   = getModelPrimary(defaults.model) ?? '';
 
   return (
     <div className="flex flex-col gap-4">
@@ -653,7 +659,7 @@ export function AgentsTab({ config, onChange }: AgentsTabProps) {
             <ModelDropdown
               value={primaryModel || null}
               onChange={(v) =>
-                patchDefaults({ model: { ...defaults.model, primary: v || undefined } })
+                patchDefaults({ model: setModelPrimary(defaults.model, v || undefined) })
               }
               placeholder="anthropic/claude-sonnet-4.5"
             />
@@ -663,7 +669,7 @@ export function AgentsTab({ config, onChange }: AgentsTabProps) {
             <FallbackModelPicker
               values={fallbackModels}
               onChange={(vals) =>
-                patchDefaults({ model: { ...defaults.model, fallbacks: vals } })
+                patchDefaults({ model: setModelFallbacks(defaults.model, vals) })
               }
             />
           </FormField>

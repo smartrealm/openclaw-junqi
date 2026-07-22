@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   extractAvailableModelsFromConfig,
+  extractAvailableModelsFromGatewayResult,
   hasConfiguredModelProviders,
 } from './modelCatalog';
 
@@ -103,4 +104,70 @@ test('hasConfiguredModelProviders detects auth profile provider aliases', () => 
       },
     },
   }), true);
+});
+
+test('replace mode exposes only explicit provider model declarations', () => {
+  const models = extractAvailableModelsFromConfig({
+    agents: {
+      defaults: {
+        models: {
+          'openai/gpt-4o': { alias: 'fast' },
+        },
+      },
+    },
+    models: {
+      mode: 'replace',
+      providers: {
+        openai: {
+          models: [{ id: 'gpt-4o', name: 'GPT-4o' }],
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(models, [
+    { id: 'openai/gpt-4o', label: 'GPT-4o', alias: 'fast' },
+  ]);
+  assert.equal(models.some((model) => model.id === 'openai/gpt-5.6'), false);
+});
+
+test('model policy filters config fallback models by full refs, provider wildcards, and aliases', () => {
+  const models = extractAvailableModelsFromConfig({
+    agents: {
+      defaults: {
+        modelPolicy: { allow: ['openai/*', 'preferred'] },
+        models: {
+          'qwen/qwen3.6-plus': { alias: 'preferred' },
+        },
+      },
+    },
+    models: {
+      mode: 'replace',
+      providers: {
+        openai: { models: [{ id: 'gpt-4o' }] },
+        qwen: { models: [{ id: 'qwen3.6-plus' }] },
+        anthropic: { models: [{ id: 'claude-sonnet-4-6' }] },
+      },
+    },
+  });
+
+  assert.deepEqual(models.map((model) => model.id), [
+    'openai/gpt-4o',
+    'qwen/qwen3.6-plus',
+  ]);
+});
+
+test('gateway models.list parser keeps only available runtime models and scopes provider ids', () => {
+  const models = extractAvailableModelsFromGatewayResult({
+    models: [
+      { provider: 'openai', id: 'gpt-4o', name: 'GPT-4o', alias: 'fast', input: ['text', 'image'] },
+      { provider: 'qwen', id: 'qwen3.6-plus', available: false },
+      { id: 'anthropic/claude-sonnet-4-6', name: 'Sonnet' },
+    ],
+  });
+
+  assert.deepEqual(models, [
+    { id: 'openai/gpt-4o', label: 'GPT-4o', alias: 'fast', supportsImage: true },
+    { id: 'anthropic/claude-sonnet-4-6', label: 'Sonnet' },
+  ]);
 });

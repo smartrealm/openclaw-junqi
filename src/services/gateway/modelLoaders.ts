@@ -9,10 +9,26 @@ export interface ModelEntry { id: string; label: string; alias?: string; support
 export interface ModelLoadContext {
   hasProviders: (config: any) => boolean;
   extractModels: (config: any) => ModelEntry[];
+  extractRuntimeModels?: (result: unknown) => ModelEntry[];
 }
 export interface ModelLoaderStrategy {
   name: string;
   load(ctx: ModelLoadContext): Promise<ModelEntry[] | null>;
+}
+
+/** Strategy 0: Gateway's authoritative configured-model view. */
+export class GatewayModelsListLoader implements ModelLoaderStrategy {
+  name = 'models.list';
+  constructor(private call: (m: string, p: any) => Promise<any>) {}
+
+  async load(ctx: ModelLoadContext): Promise<ModelEntry[] | null> {
+    if (!ctx.extractRuntimeModels) return null;
+    let raw: any;
+    try { raw = await this.call('models.list', { view: 'configured' }); }
+    catch { return null; }
+    const models = ctx.extractRuntimeModels(raw);
+    return models.length > 0 ? models : null;
+  }
 }
 
 /** Strategy 1: WebSocket config.get (reflects runtime state). */
@@ -75,7 +91,9 @@ export class AgentsSessionLoader implements ModelLoaderStrategy {
       const agentsResult = await this.getAgents();
       const agents = Array.isArray(agentsResult?.agents) ? agentsResult.agents : [];
       for (const agent of agents) {
-        const modelId = agent?.model?.primary;
+        const modelId = typeof agent?.model === 'string'
+          ? agent.model
+          : agent?.model?.primary;
         if (modelId && !modelMap.has(modelId)) modelMap.set(modelId, { id: modelId, label: modelId });
       }
     } catch { /* ignore */ }

@@ -1,6 +1,7 @@
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
-import type { AgentDefaults, ModelConfig, ModelEntry } from './types';
+import type { AgentDefaults, ModelEntry, ModelReferenceConfig } from './types';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
+import { getModelPrimary, setModelPrimary } from './modelReference';
 
 function normalizeProviderIdForCatalog(providerId: string): string {
   const normalized = providerId.trim().toLowerCase();
@@ -66,6 +67,12 @@ function resolveImagePrimaryModel(
   availableModelIds: string[],
   imageSupportMap?: Map<string, boolean>,
 ): string | undefined {
+  // A plugin-owned or externally discovered image model is valid even when the
+  // local editor has not loaded its capability metadata yet. Preserve that
+  // explicit setting rather than deleting it during an unrelated provider edit.
+  if (currentImagePrimary && !availableModelIds.includes(currentImagePrimary)) {
+    return currentImagePrimary;
+  }
   if (
     currentImagePrimary &&
     availableModelIds.includes(currentImagePrimary) &&
@@ -76,11 +83,11 @@ function resolveImagePrimaryModel(
   return availableModelIds.find((id) => isModelImageCapable(id, imageSupportMap));
 }
 
-function modelConfigWithPrimary(config: ModelConfig | undefined, primary: string | undefined): ModelConfig | undefined {
-  if (primary) return { ...(config ?? {}), primary };
-  if (!config) return undefined;
-  const { primary: _primary, ...rest } = config;
-  return Object.keys(rest).length > 0 ? rest : undefined;
+function modelConfigWithPrimary(
+  config: ModelReferenceConfig | undefined,
+  primary: string | undefined,
+): ModelReferenceConfig | undefined {
+  return setModelPrimary(config, primary);
 }
 
 export function buildDefaultsWithResolvedModels(params: {
@@ -91,13 +98,13 @@ export function buildDefaultsWithResolvedModels(params: {
 }): AgentDefaults {
   const modelIds = Object.keys(params.models);
   const imageSupportMap = buildConfiguredImageSupportMap(params.models);
-  const requestedPrimary = params.primary ?? params.defaults?.model?.primary;
+  const requestedPrimary = params.primary ?? getModelPrimary(params.defaults?.model);
   const nextPrimary =
     requestedPrimary && modelIds.includes(requestedPrimary)
       ? requestedPrimary
       : modelIds[0] ?? undefined;
   const nextImagePrimary = resolveImagePrimaryModel(
-    params.imagePrimary ?? params.defaults?.imageModel?.primary,
+    params.imagePrimary ?? getModelPrimary(params.defaults?.imageModel),
     modelIds,
     imageSupportMap,
   );

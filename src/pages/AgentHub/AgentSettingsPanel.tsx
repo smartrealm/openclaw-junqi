@@ -17,13 +17,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Save, Loader2,
   Cpu, Check, ChevronDown, Activity, AlertCircle,
-  Search, FolderOpen, Clock, Zap, MessageSquare, Puzzle,
+  Search, FolderOpen, Clock, Zap, MessageSquare, Puzzle, Plus, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { themeHex, themeAlpha } from '@/utils/theme-colors';
 import type { GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
+import {
+  getModelFallbacks,
+  getModelPrimary,
+  isModelReferenceObject,
+  setModelFallbacks,
+  setModelPrimary,
+} from '@/pages/ConfigManager/modelReference';
 import { getChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
 import {
   addChannel,
@@ -98,16 +105,8 @@ interface ConfigAgent {
 interface ConfigGetResponse {
   baseHash?: string;
   hash?: string;
-  config?: {
-    agents?: {
-      defaults?: {
-        model?: string | { primary?: string; fallbacks?: string[] };
-        workspace?: string;
-      };
-      list?: ConfigAgent[];
-    };
-    [k: string]: unknown;
-  };
+  config?: GatewayRuntimeConfig;
+  agents?: GatewayRuntimeConfig['agents'];
 }
 
 type ChannelGroupForPanel = ChannelGroupView & { name: string };
@@ -116,14 +115,22 @@ type ChannelGroupForPanel = ChannelGroupView & { name: string };
 // Helpers
 // ═══════════════════════════════════════════════════════════
 
-/** Flexible model ID matching — handles provider/model vs bare model */
+/** Model identity must include the provider; same-named models are distinct routes. */
 function modelsMatch(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  // Compare just the model name part (after the last /)
-  const nameA = a.includes('/') ? a.split('/').pop() : a;
-  const nameB = b.includes('/') ? b.split('/').pop() : b;
-  return nameA === nameB;
+  return a.trim() !== '' && a.trim() === b.trim();
+}
+
+function sameModelReferences(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((model, index) => model === right[index]);
+}
+
+function canonicalizeSelectedModel(value: string, options: ModelOption[]): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.includes('/')) return trimmed;
+  const matches = options.filter((option) => (
+    option.id.split('/').pop() === trimmed || option.alias === trimmed
+  ));
+  return matches.length === 1 ? matches[0].id : trimmed;
 }
 
 /** Parse any shape the models.list API might return */
@@ -284,6 +291,8 @@ export function AgentSettingsPanel({
   const [agentName, setAgentName] = useState('');
   const [workspace, setWorkspace] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
+  const [selectedFallbacks, setSelectedFallbacks] = useState<string[]>([]);
+  const [fallbackCandidate, setFallbackCandidate] = useState('');
   const [modelInherited, setModelInherited] = useState(false);
   const [channelsExpanded, setChannelsExpanded] = useState(false);
 
@@ -291,6 +300,9 @@ export function AgentSettingsPanel({
   const [origName, setOrigName] = useState('');
   const [origWorkspace, setOrigWorkspace] = useState('');
   const [origModel, setOrigModel] = useState('');
+  const [storedModelConfig, setStoredModelConfig] = useState<ConfigAgent['model']>();
+  const [configSnapshot, setConfigSnapshot] = useState<GatewayRuntimeConfig | null>(null);
+  const [configBaseHash, setConfigBaseHash] = useState<string | undefined>();
 
   // Track which agent we last initialized for — prevents polling
   // refreshes from overwriting unsaved user edits.
@@ -356,9 +368,10 @@ export function AgentSettingsPanel({
         if (cancelled) return;
 
         const snap = res as ConfigGetResponse;
+        const runtimeConfig = snap.config ?? (snap.agents ? snap as GatewayRuntimeConfig : undefined);
 
         // Find this agent's entry in config.agents.list
-        const agentConfig = snap?.config?.agents?.list?.find(
+        const agentConfig = runtimeConfig?.agents?.list?.find(
           (a: ConfigAgent) => a.id === currentAgent.id
         );
 
@@ -370,7 +383,7 @@ export function AgentSettingsPanel({
           : (rawModel && typeof rawModel === 'object' && 'primary' in rawModel)
             ? String((rawModel as Record<string, unknown>).primary ?? '')
             : '';
-        const rawDefaultModel = snap?.config?.agents?.defaults?.model;
+        const rawDefaultModel = runtimeConfig?.agents?.defaults?.model;
         const defaultModel = typeof rawDefaultModel === 'string'
           ? rawDefaultModel
           : (rawDefaultModel && typeof rawDefaultModel === 'object' && 'primary' in rawDefaultModel)
@@ -388,6 +401,11 @@ export function AgentSettingsPanel({
         setOrigWorkspace(resolvedWorkspace);
         setSelectedModel(resolvedModel);
         setOrigModel(resolvedModel);
+        setStoredModelConfig(rawModel);
+        setSelectedFallbacks(getModelFallbacks(rawModel));
+        setFallbackCandidate('');
+        setConfigSnapshot(runtimeConfig ?? null);
+        setConfigBaseHash(snap.baseHash ?? snap.hash);
         setModelInherited(!cfgModel && !!defaultModel);
         setInitializedForId(currentAgent.id);
       })
@@ -438,6 +456,7 @@ export function AgentSettingsPanel({
   const nameChanged = trimmedAgentName !== origName;
   const workspaceChanged = trimmedWorkspace !== origWorkspace;
   const modelChanged = !modelsMatch(selectedModel, origModel);
+  const fallbackChanged = !sameModelReferences(selectedFallbacks, getModelFallbacks(storedModelConfig));
   const agentRef = useRef(agent);
   const agentSessionsRef = useRef(agentSessions);
   const selectedModelRef = useRef(selectedModel);
@@ -446,8 +465,13 @@ export function AgentSettingsPanel({
   agentSessionsRef.current = agentSessions;
   selectedModelRef.current = selectedModel;
   tRef.current = t;
-  const hasChanges = nameChanged || workspaceChanged || modelChanged;
-  const canSave = hasChanges && !!trimmedAgentName && !saving && !loadingConfig && !configError;
+  const hasChanges = nameChanged || workspaceChanged || modelChanged || fallbackChanged;
+  const canSave = hasChanges
+    && !!trimmedAgentName
+    && (!fallbackChanged || !!selectedModel.trim())
+    && !saving
+    && !loadingConfig
+    && !configError;
 
   // ── Save handler ──
   // Send only fields accepted by the official agents.update RPC.
@@ -460,12 +484,55 @@ export function AgentSettingsPanel({
       const patch: Partial<AgentForPanel> = {};
       if (nameChanged) patch.name = trimmedAgentName;
       if (workspaceChanged) patch.workspace = trimmedWorkspace;
-      if (selectedModel && modelChanged) patch.model = selectedModel;
+      const modelToSave = canonicalizeSelectedModel(selectedModel, models);
+      if (modelToSave && (modelChanged || fallbackChanged)) patch.model = modelToSave;
 
       if (Object.keys(patch).length > 0) {
-        // agents.update persists to config file (writeConfigFile) AND updates runtime
-        // No need for config.get/config.set — agents.update handles everything
-        await gateway.updateAgent(agent.id, patch);
+        const mustPreserveStructuredModel = Boolean(
+          patch.model && configSnapshot && (fallbackChanged || isModelReferenceObject(storedModelConfig)),
+        );
+        if (mustPreserveStructuredModel && patch.model && configSnapshot) {
+          const list = Array.isArray(configSnapshot.agents?.list)
+            ? [...configSnapshot.agents.list]
+            : [];
+          const index = list.findIndex((entry) => entry.id === agent.id);
+          const current = index >= 0 ? list[index] : { id: agent.id };
+          const nextModel = setModelFallbacks(
+            setModelPrimary(storedModelConfig, patch.model),
+            selectedFallbacks.filter((fallback) => fallback !== patch.model),
+          );
+          const nextEntry: ConfigAgent = {
+            ...current,
+            model: nextModel,
+          };
+          if (nameChanged) nextEntry.name = trimmedAgentName;
+          if (workspaceChanged) {
+            if (trimmedWorkspace) nextEntry.workspace = trimmedWorkspace;
+            else delete nextEntry.workspace;
+          }
+          if (index >= 0) list[index] = nextEntry;
+          else list.push(nextEntry);
+
+          // `agents.update` only accepts a string model. Patch the full agent
+          // list with a base-hash guard when an existing fallback chain must be
+          // retained.
+          await gateway.callPrivileged('config.patch', {
+            raw: JSON.stringify({ agents: { list } }),
+            ...(configBaseHash ? { baseHash: configBaseHash } : {}),
+            replacePaths: ['agents.list'],
+          });
+          setStoredModelConfig(nextModel);
+          setSelectedFallbacks(getModelFallbacks(nextModel));
+          setConfigSnapshot({
+            ...configSnapshot,
+            agents: { ...configSnapshot.agents, list },
+          });
+        } else {
+          // Simple model changes remain on the official agent RPC, which also
+          // updates the active runtime immediately.
+          await gateway.updateAgent(agent.id, patch);
+          if (patch.model) setStoredModelConfig(patch.model);
+        }
 
         // Update local store so agent cards reflect the new model immediately
         const store = useGatewayDataStore.getState();
@@ -478,7 +545,8 @@ export function AgentSettingsPanel({
 
       setOrigName(trimmedAgentName);
       setOrigWorkspace(trimmedWorkspace);
-      setOrigModel(selectedModel);
+      if (patch.model) setSelectedModel(patch.model);
+      setOrigModel(modelToSave || selectedModel);
       if (patch.model) setModelInherited(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -490,7 +558,23 @@ export function AgentSettingsPanel({
     } finally {
       setSaving(false);
     }
-  }, [agent, selectedModel, onSaved, t, nameChanged, workspaceChanged, modelChanged, trimmedAgentName, trimmedWorkspace]);
+  }, [
+    agent,
+    configBaseHash,
+    configSnapshot,
+    fallbackChanged,
+    modelChanged,
+    models,
+    nameChanged,
+    onSaved,
+    selectedModel,
+    selectedFallbacks,
+    storedModelConfig,
+    t,
+    trimmedAgentName,
+    trimmedWorkspace,
+    workspaceChanged,
+  ]);
 
   const requestClose = useCallback(() => {
     if (saving) return;
@@ -676,6 +760,24 @@ export function AgentSettingsPanel({
   const currentProvider = (selectedModel || origModel).includes('/')
     ? (selectedModel || origModel).split('/')[0]
     : '';
+  const fallbackOptions = models.filter((model) => (
+    !modelsMatch(model.id, selectedModel) && !selectedFallbacks.includes(model.id)
+  ));
+  const addFallback = (modelRef: string) => {
+    const fallback = canonicalizeSelectedModel(modelRef, models);
+    if (!fallback || modelsMatch(fallback, selectedModel) || selectedFallbacks.includes(fallback)) return;
+    setSelectedFallbacks((current) => [...current, fallback]);
+    setFallbackCandidate('');
+  };
+  const moveFallback = (from: number, direction: -1 | 1) => {
+    const to = from + direction;
+    if (to < 0 || to >= selectedFallbacks.length) return;
+    setSelectedFallbacks((current) => {
+      const next = [...current];
+      [next[from], next[to]] = [next[to], next[from]];
+      return next;
+    });
+  };
 
   return (
     <AnimatePresence>
@@ -971,6 +1073,7 @@ export function AgentSettingsPanel({
                                     key={m.id}
                                     onClick={() => {
                                       setSelectedModel(m.id);
+                                      setSelectedFallbacks((current) => current.filter((fallback) => fallback !== m.id));
                                       setModelDropdownOpen(false);
                                       setModelSearch('');
                                     }}
@@ -1030,6 +1133,69 @@ export function AgentSettingsPanel({
                           </motion.div>
                         )}
                       </AnimatePresence>
+                    </div>
+                    <div className="mt-3 border-t border-[rgb(var(--aegis-overlay)/0.08)] pt-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted">
+                            {t('agentSettings.modelFallbacks', 'Fallback chain')}
+                          </div>
+                          <p className="mt-1 text-[10px] leading-4 text-aegis-text-dim">
+                            {t('agentSettings.modelFallbacksHint', 'OpenClaw tries these models in order after this Agent primary fails.')}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] px-1.5 py-0.5 text-[9px] font-bold text-aegis-text-dim">
+                          {selectedFallbacks.length}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <select
+                          value={fallbackCandidate}
+                          disabled={!selectedModel || fallbackOptions.length === 0 || saving}
+                          onChange={(event) => setFallbackCandidate(event.target.value)}
+                          aria-label={t('agentSettings.addFallbackModel', 'Add fallback model')}
+                          className="min-w-0 flex-1 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-2.5 py-2 text-[11px] text-aegis-text outline-none focus:border-aegis-primary/40 disabled:opacity-45"
+                        >
+                          <option value="">{t('agentSettings.addFallbackModel', 'Add fallback model')}</option>
+                          {fallbackOptions.map((model) => <option key={model.id} value={model.id}>{model.alias || model.displayName || model.id}</option>)}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={!fallbackCandidate || saving}
+                          onClick={() => addFallback(fallbackCandidate)}
+                          title={t('common.add', 'Add')}
+                          aria-label={t('agentSettings.addFallbackModel', 'Add fallback model')}
+                          className="grid size-8 shrink-0 place-items-center rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-aegis-primary hover:bg-aegis-primary/16 disabled:cursor-not-allowed disabled:opacity-35"
+                        >
+                          <Plus size={13} />
+                        </button>
+                      </div>
+
+                      {selectedFallbacks.length > 0 ? (
+                        <ol className="mt-2 space-y-1">
+                          {selectedFallbacks.map((fallback, index) => (
+                            <li key={fallback} className="flex min-w-0 items-center gap-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.07)] bg-[rgb(var(--aegis-overlay)/0.025)] px-2 py-1.5">
+                              <span className="w-3 shrink-0 text-center font-mono text-[9px] text-aegis-text-dim">{index + 1}</span>
+                              <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-aegis-text-secondary" title={fallback}>{fallback}</span>
+                              <button type="button" disabled={saving || index === 0} onClick={() => moveFallback(index, -1)} title={t('agentSettings.moveFallbackEarlier', 'Move earlier')} aria-label={t('agentSettings.moveFallbackEarlier', 'Move earlier')} className="grid size-6 place-items-center rounded text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text disabled:opacity-30">
+                                <ArrowUp size={12} />
+                              </button>
+                              <button type="button" disabled={saving || index === selectedFallbacks.length - 1} onClick={() => moveFallback(index, 1)} title={t('agentSettings.moveFallbackLater', 'Move later')} aria-label={t('agentSettings.moveFallbackLater', 'Move later')} className="grid size-6 place-items-center rounded text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text disabled:opacity-30">
+                                <ArrowDown size={12} />
+                              </button>
+                              <button type="button" disabled={saving} onClick={() => setSelectedFallbacks((current) => current.filter((model) => model !== fallback))} title={t('common.remove', 'Remove')} aria-label={t('common.remove', 'Remove')} className="grid size-6 place-items-center rounded text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400 disabled:opacity-30">
+                                <X size={12} />
+                              </button>
+                            </li>
+                          ))}
+                        </ol>
+                      ) : (
+                        <p className="mt-2 flex items-start gap-1.5 text-[10px] leading-4 text-aegis-text-dim">
+                          <AlertCircle size={12} className="mt-0.5 shrink-0 text-aegis-primary" aria-hidden="true" />
+                          {t('agentSettings.modelFallbacksEmpty', 'No fallback is configured. This Agent will use its primary model only.')}
+                        </p>
+                      )}
                     </div>
                   </div>
 

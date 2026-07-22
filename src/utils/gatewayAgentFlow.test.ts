@@ -6,6 +6,7 @@ import {
   ensureMainGatewayAgentInList,
   isValidGatewayAgentId,
   normalizeGatewayAgentId,
+  suggestDedicatedGatewayAgentWorkspace,
 } from './gatewayAgentFlow';
 
 test('normalizeGatewayAgentId lowercases and hyphenates whitespace', () => {
@@ -50,6 +51,18 @@ test('buildGatewayAgentCreatePayload uses the default workspace required by Open
       workspace: '/srv/openclaw/workspace',
     },
   );
+});
+
+test('suggestDedicatedGatewayAgentWorkspace keeps a new agent isolated from the default workspace', () => {
+  assert.equal(
+    suggestDedicatedGatewayAgentWorkspace('~/.openclaw/workspace', 'Research Assistant'),
+    '~/.openclaw/workspace-research-assistant',
+  );
+  assert.equal(
+    suggestDedicatedGatewayAgentWorkspace('C:\\Users\\wei\\.openclaw\\workspace-main', 'ops'),
+    'C:\\Users\\wei\\.openclaw\\workspace-ops',
+  );
+  assert.equal(suggestDedicatedGatewayAgentWorkspace('/tmp/workspace', 'bad id!'), '');
 });
 
 test('buildGatewayAgentConfigEntry emits the config agents.list shape', () => {

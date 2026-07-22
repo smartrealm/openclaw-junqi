@@ -1,12 +1,12 @@
 import type {
   GatewayRuntimeConfig,
-  ModelConfig,
   ModelEntry,
   ModelProviderConfig,
   ModelProviderModelEntry,
 } from './types';
 import { buildDefaultsWithResolvedModels } from './providerDefaults';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
+import { getModelPrimary, rewriteModelReferenceConfig } from './modelReference';
 
 function normalizeProviderId(value: string): string {
   const normalized = value.trim().toLowerCase();
@@ -159,31 +159,6 @@ function findEquivalentModelRefs(
   });
 }
 
-function rewriteModelConfig(
-  value: ModelConfig | string | undefined,
-  refs: ReadonlySet<string>,
-  replacement?: string,
-): ModelConfig | string | undefined {
-  if (typeof value === 'string') {
-    return refs.has(value) ? replacement : value;
-  }
-  if (!value) return value;
-
-  const next = { ...value };
-  if (next.primary && refs.has(next.primary)) {
-    if (replacement) next.primary = replacement;
-    else delete next.primary;
-  }
-  if (Array.isArray(next.fallbacks)) {
-    next.fallbacks = Array.from(new Set(next.fallbacks.flatMap((ref) => {
-      if (!refs.has(ref)) return [ref];
-      return replacement ? [replacement] : [];
-    })));
-    if (next.fallbacks.length === 0) delete next.fallbacks;
-  }
-  return Object.keys(next).length > 0 ? next : undefined;
-}
-
 function rewriteAgentModelReferences(
   config: GatewayRuntimeConfig,
   refs: ReadonlySet<string>,
@@ -192,20 +167,20 @@ function rewriteAgentModelReferences(
   const defaults = config.agents?.defaults;
   const list = config.agents?.list?.map((agent) => ({
     ...agent,
-    model: rewriteModelConfig(agent.model, refs, replacement) as ModelConfig | undefined,
-    imageModel: rewriteModelConfig(agent.imageModel, refs, replacement) as ModelConfig | undefined,
-    imageGenerationModel: rewriteModelConfig(agent.imageGenerationModel, refs, replacement) as ModelConfig | undefined,
-    videoGenerationModel: rewriteModelConfig(agent.videoGenerationModel, refs, replacement) as ModelConfig | undefined,
+    model: rewriteModelReferenceConfig(agent.model, refs, replacement),
+    imageModel: rewriteModelReferenceConfig(agent.imageModel, refs, replacement),
+    imageGenerationModel: rewriteModelReferenceConfig(agent.imageGenerationModel, refs, replacement),
+    videoGenerationModel: rewriteModelReferenceConfig(agent.videoGenerationModel, refs, replacement),
   }));
   return {
     ...config.agents,
     defaults: defaults
       ? {
         ...defaults,
-        model: rewriteModelConfig(defaults.model, refs, replacement) as ModelConfig | undefined,
-        imageModel: rewriteModelConfig(defaults.imageModel, refs, replacement) as ModelConfig | undefined,
-        imageGenerationModel: rewriteModelConfig(defaults.imageGenerationModel, refs, replacement) as ModelConfig | undefined,
-        videoGenerationModel: rewriteModelConfig(defaults.videoGenerationModel, refs, replacement) as ModelConfig | undefined,
+        model: rewriteModelReferenceConfig(defaults.model, refs, replacement),
+        imageModel: rewriteModelReferenceConfig(defaults.imageModel, refs, replacement),
+        imageGenerationModel: rewriteModelReferenceConfig(defaults.imageGenerationModel, refs, replacement),
+        videoGenerationModel: rewriteModelReferenceConfig(defaults.videoGenerationModel, refs, replacement),
       }
       : defaults,
     list,
@@ -350,18 +325,18 @@ export function updateProviderModel(params: {
   if (params.supportsImage !== false) return next;
 
   const disabledRefs = new Set([normalizedRef, params.modelRef.trim()]);
-  const fallbackImageModel = next.agents?.defaults?.imageModel?.primary;
+  const fallbackImageModel = getModelPrimary(next.agents?.defaults?.imageModel);
   return {
     ...next,
     agents: {
       ...next.agents,
       list: next.agents?.list?.map((agent) => ({
         ...agent,
-        imageModel: rewriteModelConfig(
+        imageModel: rewriteModelReferenceConfig(
           agent.imageModel,
           disabledRefs,
           fallbackImageModel,
-        ) as ModelConfig | undefined,
+        ),
       })),
     },
   };
