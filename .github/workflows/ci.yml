@@ -3,13 +3,15 @@
 #
 # Runs on push to main/daxia and PRs targeting either integration branch. Five jobs:
 #   1. rust        — cargo check + cargo test --lib (catches backend regressions)
-#   2. frontend    — pnpm install + tsc --noEmit + lint (catches type / style regressions)
+#   2. frontend    — pnpm install + actionlint + lint (catches type / style regressions)
 #   3. tests       — Desktop + collaboration plugin tests
 #   4. build       — Vite production build (catches bundler / asset regressions)
-#   5. windows     — native MSVC compile + NSIS installer (catches Windows-only regressions)
+#   5. windows     — native MSVC compile + Rust tests (catches Windows-only regressions)
 #
-# Linux jobs validate the shared code paths; the Windows job compiles and
-# packages natively so platform-specific APIs never wait for a release build.
+# Linux jobs validate the shared code paths; Windows packaging belongs to the
+# signed tag workflow so a release does not build the same NSIS installer twice.
+# Direct daxia pushes skip the costly native Windows job; main and pull-request
+# validation still run it before a tagged release may proceed.
 # The single required check is the `ci` summary at the bottom.
 #
 # Cache strategy: pnpm via setup-node cache, cargo via Swatinemo cache with
@@ -131,10 +133,6 @@ jobs:
           --workdir /repo
           rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
-      - name: TypeScript check
-        # tsc with no emit — fastest possible type validation, no JS output.
-        run: npx tsc --noEmit
-
       - name: Frontend lint
         # `lint` is the repository's maintained frontend quality gate: it
         # enforces architectural boundaries and a no-emit TypeScript check.
@@ -193,17 +191,9 @@ jobs:
       - name: Vite production build
         run: pnpm build
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: dist-${{ github.run_id }}
-          overwrite: true
-          path: dist/
-          retention-days: 7
-          if-no-files-found: error
-
   windows:
-    name: Windows (compile + test + NSIS)
+    name: Windows (compile + test)
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -250,13 +240,6 @@ jobs:
           CARGO_NET_OFFLINE: "true"
         run: cargo test --lib --target x86_64-pc-windows-msvc --no-fail-fast
 
-      - name: Build NSIS installer
-        env:
-          CARGO_NET_OFFLINE: "true"
-        run: >-
-          pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis
-          --config src-tauri/tauri.no-updater-artifacts.conf.json
-
   ci:
     name: ✅ CI Summary
     needs: [rust, frontend, tests, build, windows]
@@ -269,7 +252,7 @@ jobs:
              [ "${{ needs.frontend.result }}" != "success" ] || \
              [ "${{ needs.tests.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
-             [ "${{ needs.windows.result }}" != "success" ]; then
+             { [ "${{ needs.windows.result }}" != "success" ] && [ "${{ needs.windows.result }}" != "skipped" ]; }; then
             echo "::error::One or more jobs failed:"
             echo "  rust:      ${{ needs.rust.result }}"
             echo "  frontend:  ${{ needs.frontend.result }}"

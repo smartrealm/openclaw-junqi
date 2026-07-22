@@ -4,11 +4,8 @@
 # Builds the Tauri desktop app on macOS and Windows in parallel and
 # uploads installers as workflow artifacts. A future trusted promotion may
 # create a public GitHub Release with those installers attached. Candidate
-# triggers are:
-#   - push to main (fresh, unsigned, short-lived candidate binaries)
-#   - workflow_dispatch (manual, unsigned candidate builds)
-# Tag push v* is intentionally not a trigger. A default-branch promotion
-# controller must be added before any privileged release path is enabled.
+# builds are manual, unsigned diagnostics. Tagged releases own the only
+# automatic four-platform build so the same source is not packaged twice.
 #
 # Why all desktop platforms in one workflow rather than separate files:
 #   - one place to read the matrix, cache strategy, artifact naming
@@ -21,15 +18,13 @@
 #   - uses beforeBuildCommand from tauri.conf.json while this workflow keeps
 #     target architectures and installer formats explicit
 #
-# Artifact retention: 14 days. GitHub Releases are permanent; main-branch
+# Artifact retention: 14 days. GitHub Releases are permanent; manual candidate
 # artifacts remain intentionally short-lived.
 # ═══════════════════════════════════════════════════════════
 
 name: Release Build
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       ref:

@@ -70,8 +70,9 @@ test('candidate artifacts are flattened and bound to the immutable workflow run'
   assert.doesNotMatch(release, /path:\s*\$\{\{ matrix\.installer_paths \}\}/);
 });
 
-test('tag-owned workflow code cannot enter the release candidate path', () => {
-  assert.match(release, /branches: \[main\]/);
+test('release candidates are manual and tag-owned workflow code cannot enter their path', () => {
+  assert.match(release, /workflow_dispatch:/);
+  assert.doesNotMatch(release, /push:\s*\n\s*branches:\s*\[main\]/);
   assert.doesNotMatch(release, /tags:\s*\[/);
   assert.match(release, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(release, /persist-credentials: false/);
@@ -97,6 +98,7 @@ test('version tags retain a CI-gated four-platform desktop release path', () => 
   assert.match(taggedRelease, /tags: \['v\*'\]/);
   assert.match(taggedRelease, /git merge-base --is-ancestor "\$source_sha" origin\/main/);
   assert.match(taggedRelease, /actions\/workflows\/ci\.yml\/runs\?event=push&head_sha=\$\{SOURCE_SHA\}/);
+  assert.match(taggedRelease, /\.head_branch == "main"/);
   for (const target of [
     'aarch64-apple-darwin',
     'x86_64-apple-darwin',

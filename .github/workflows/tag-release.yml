@@ -104,7 +104,7 @@ jobs:
           while true; do
             response="$(gh api "$api_path")"
             successful_url="$(jq -r --arg sha "$SOURCE_SHA" '
-              [.workflow_runs[]? | select(.head_sha == $sha and .event == "push" and .status == "completed" and .conclusion == "success")]
+              [.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status == "completed" and .conclusion == "success")]
               | sort_by(.updated_at // .created_at // "") | last | .html_url // empty
             ' <<<"$response")"
             if [[ -n "$successful_url" ]]; then
@@ -112,8 +112,8 @@ jobs:
               break
             fi
 
-            failed_count="$(jq --arg sha "$SOURCE_SHA" '[.workflow_runs[]? | select(.head_sha == $sha and .event == "push" and .status == "completed" and .conclusion != "success")] | length' <<<"$response")"
-            active_count="$(jq --arg sha "$SOURCE_SHA" '[.workflow_runs[]? | select(.head_sha == $sha and .event == "push" and .status != "completed")] | length' <<<"$response")"
+            failed_count="$(jq --arg sha "$SOURCE_SHA" '[.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status == "completed" and .conclusion != "success")] | length' <<<"$response")"
+            active_count="$(jq --arg sha "$SOURCE_SHA" '[.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status != "completed")] | length' <<<"$response")"
             if [[ "$failed_count" -gt 0 && "$active_count" -eq 0 ]]; then
               echo "::error::CI completed without success for tagged commit $SOURCE_SHA"
               exit 1

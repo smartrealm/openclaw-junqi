@@ -132,12 +132,14 @@ test('Windows release matrix builds and stages NSIS installers for x64 and ARM64
   assert.match(release, /if-no-files-found: error/);
 });
 
-test('Cargo dependencies are prefetched before Windows builds run offline', () => {
+test('Cargo dependencies are prefetched before native Windows validation and release packaging', () => {
   for (const workflow of [ci, release, taggedRelease]) {
     assert.match(workflow, /Fetch locked Rust dependencies/);
     assert.match(workflow, /node scripts\/fetch-cargo-dependencies\.mjs --target/);
   }
-  assert.match(ci, /Build NSIS installer[\s\S]*CARGO_NET_OFFLINE: "true"/);
+  assert.match(ci, /Run native Windows Rust tests[\s\S]*CARGO_NET_OFFLINE: "true"/);
+  assert.match(ci, /if: github\.event_name != 'push' \|\| github\.ref == 'refs\/heads\/main'/);
+  assert.doesNotMatch(ci, /Build NSIS installer/);
   assert.match(release, /Build unsigned candidate[\s\S]*CARGO_NET_OFFLINE: "true"/);
   assert.match(taggedRelease, /Build signed updater artifacts and installers[\s\S]*CARGO_NET_OFFLINE: "true"/);
 });
