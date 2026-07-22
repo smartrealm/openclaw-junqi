@@ -1777,7 +1777,10 @@ export function useSetupFlow(
 
   const enterWorkspace = useCallback((origin?: Element | null) => {
     cancelActiveRun();
-    enterWorkspaceWithTransition(() => setSetupComplete(true), origin);
+    enterWorkspaceWithTransition(() => {
+      window.location.hash = '/ai-workspace';
+      setSetupComplete(true);
+    }, origin);
   }, [cancelActiveRun, setSetupComplete]);
 
   const detectDocker = useCallback(async () => {

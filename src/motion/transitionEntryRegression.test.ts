@@ -23,7 +23,7 @@ test('enter-workspace actions forward their button origin to the transition coor
     read('./workspaceEntryTransition.ts'),
   ]);
   assert.match(page, /flow\.enterWorkspace\(event\.currentTarget\)/);
-  assert.match(flow, /enterWorkspaceWithTransition\(\(\) => setSetupComplete\(true\), origin\)/);
+  assert.match(flow, /enterWorkspaceWithTransition\(\(\) => \{[\s\S]*?setSetupComplete\(true\);[\s\S]*?\}, origin\)/);
   assert.match(transition, /circularViewTransition\.run/);
 });
 

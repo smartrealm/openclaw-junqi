@@ -466,7 +466,7 @@ export function DashboardPage() {
                 </motion.div>
               </AnimatePresence>
             </div>
-            <p className="text-[12px] text-aegis-text-dim">{t('dashboard.commandCenter')}</p>
+            <p className="text-[12px] text-aegis-text-dim">{t('dashboard.openclawControlPlane', 'OpenClaw control plane')}</p>
           </div>
         </div>
 

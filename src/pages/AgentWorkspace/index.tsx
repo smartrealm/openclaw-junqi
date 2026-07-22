@@ -72,6 +72,9 @@ import {
 import { nextWorkspaceSidebarMode, type WorkspaceSidebarMode } from '@/components/Layout/workspaceSidebarChannel';
 import { SceneTransition } from '@/components/shared/SceneTransition';
 import { useSkillsStore } from '@/stores/skillsStore';
+import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { OpenClawOnboarding } from '@/components/OpenClawOnboarding/OpenClawOnboarding';
 
 type RightPanel = 'files' | 'changes' | 'history' | 'capabilities' | null;
 type DiffTarget =
@@ -231,6 +234,9 @@ export function AgentWorkspacePage() {
   const monoFontFamily = (configuredMonoFont || getDefaultMonoFont()) as FontFamily;
   const skills = useSkillsStore((state) => state.skills);
   const refreshSkills = useSkillsStore((state) => state.refresh);
+  const connected = useChatStore((state) => state.connected);
+  const gatewayAgents = useGatewayDataStore((state) => state.agents);
+  const gatewaySessions = useGatewayDataStore((state) => state.sessions);
   const darkTheme = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
   const { scrollback: terminalScrollback, shiftEnterNewline: terminalShiftEnterNewline } = useTerminalPreferences();
   const workspaces = useWorkspaceStore((state) => state.workspaces);
@@ -1239,16 +1245,29 @@ export function AgentWorkspacePage() {
             </WorkspaceContentScene>
           ) : !projectPath ? (
             <WorkspaceContentScene key="no-project">
-              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                <FileText size={28} className="text-aegis-text-dim" />
-                <p className="text-sm text-aegis-text-dim">选择一个本地项目以开始创建任务。</p>
-                <button
-                  type="button"
-                  onClick={() => void openProjectWorkspace()}
-                  className="inline-flex items-center gap-2 rounded bg-aegis-primary px-3 py-2 text-xs font-semibold text-white"
-                >
-                  <Plus size={14} />选择本地项目
-                </button>
+              <div className="h-full overflow-y-auto px-4 py-5 sm:px-6">
+                <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-4">
+                  <OpenClawOnboarding
+                    connected={connected}
+                    agents={gatewayAgents}
+                    sessions={gatewaySessions}
+                    onNavigate={navigate}
+                  />
+                  <div className="flex min-h-[136px] flex-col items-center justify-center gap-3 border border-dashed border-aegis-border px-6 text-center">
+                    <FileText size={24} className="text-aegis-text-dim" />
+                    <div>
+                      <p className="text-sm font-medium text-aegis-text-secondary">{t('agentWorkspace.projectOptional', 'Add a project when you want an agent to work on local files.')}</p>
+                      <p className="mt-1 text-[11px] text-aegis-text-dim">{t('agentWorkspace.projectOptionalHint', 'OpenClaw chat, agents, skills, and channels work without a local project.')}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void openProjectWorkspace()}
+                      className="inline-flex items-center gap-2 rounded bg-aegis-primary px-3 py-2 text-xs font-semibold text-white"
+                    >
+                      <Plus size={14} />{t('agentWorkspace.addProject', 'Add project')}
+                    </button>
+                  </div>
+                </div>
               </div>
             </WorkspaceContentScene>
           ) : !selected ? (
