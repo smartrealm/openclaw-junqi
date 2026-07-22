@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { debugError } from '@/utils/debugLog';
+import { releaseTauriUnlisten, subscribeTauriListener } from '@/utils/tauriEvents';
 
 export interface TerminalDropTargetBounds {
   targetId: string;
@@ -128,17 +129,12 @@ export function useTerminalDropTarget(
 
     try {
       const appWindow = getCurrentWindow();
-      void Promise.all([
-        appWindow.onScaleChanged(scheduleSync),
-      ]).then((registered) => {
-        if (disposed) {
-          registered.forEach((unlisten) => unlisten());
-          return;
-        }
-        unlisteners.push(...registered);
-      }).catch((error) => {
-        if (!disposed) debugError('terminal', '[terminal] unable to observe window bounds:', error);
-      });
+      unlisteners.push(subscribeTauriListener(
+        () => appWindow.onScaleChanged(scheduleSync),
+        (error) => {
+          if (!disposed) debugError('terminal', '[terminal] unable to observe window bounds:', error);
+        },
+      ));
     } catch (error) {
       if (!disposed) debugError('terminal', '[terminal] unable to access the current window:', error);
     }
@@ -151,7 +147,7 @@ export function useTerminalDropTarget(
       if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
       window.removeEventListener('resize', scheduleSync);
-      unlisteners.forEach((unlisten) => unlisten());
+      unlisteners.forEach((unlisten) => releaseTauriUnlisten(unlisten));
       remove();
     };
   }, [elementRef, targetId]);

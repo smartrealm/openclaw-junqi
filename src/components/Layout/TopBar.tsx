@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo, useS
 import { useNavigate } from 'react-router-dom';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, ChevronDown, ExternalLink, FolderOpen, PanelLeftOpen, PanelLeftClose, PanelLeft, PanelRightOpen, Bell, Search, LayoutGrid } from 'lucide-react';
+import { AppWindow, ArrowLeft, ChevronDown, PanelLeftOpen, PanelLeftClose, PanelLeft, PanelRightOpen, Bell, Search, LayoutGrid } from 'lucide-react';
 import clsx from 'clsx';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -38,6 +38,8 @@ import {
   subscribeTerminalOpenInPreferences,
   visibleTerminalOpenInApps,
 } from '@/components/Terminal/terminalOpenInPreferences';
+import { TerminalKookyMenuItem } from '@/components/Terminal/KookyMenu';
+import { TerminalOpenInAppIcon, type TerminalOpenInApp } from '@/components/Terminal/TerminalOpenInAppIcon';
 import { isTerminalAgentId } from '@/components/Terminal/terminalAgentCatalog';
 import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
 import { resolveNotificationTarget } from '@/utils/notificationTarget';
@@ -57,11 +59,6 @@ function persistentNotificationType(level: string): NotificationType {
   if (level === 'attention') return 'message';
   if (level === 'completed') return 'task_complete';
   return 'info';
-}
-
-interface TerminalOpenInApp {
-  id: string;
-  label: string;
 }
 
 /** Kooky-style split Open In control backed by fixed, locally detected apps. */
@@ -118,16 +115,16 @@ function TerminalOpenInControl({ directory }: { directory: string }) {
   }, [directory, t]);
 
   return (
-    <div ref={wrapRef} className="terminal-kooky-open-in relative ml-auto flex h-[28px] shrink-0 items-center" style={{ opacity: visibleApps.length > 0 ? 1 : 0.45 }}>
+    <div ref={wrapRef} className="terminal-kooky-open-in relative ml-auto flex h-[26px] shrink-0 items-center" style={{ opacity: visibleApps.length > 0 ? 1 : 0.45 }}>
       <button
         type="button"
         disabled={!canOpen}
         onClick={() => { if (primary) void openIn(primary); }}
         title={primary ? t('terminal.openInPrimary', { app: primary.label, defaultValue: `Open in ${primary.label}` }) : t('terminal.openIn', 'Open in...')}
         aria-label={primary ? t('terminal.openInPrimary', { app: primary.label, defaultValue: `Open in ${primary.label}` }) : t('terminal.openIn', 'Open in...')}
-        className="flex h-[28px] w-[24px] items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text disabled:cursor-default disabled:hover:bg-transparent"
+        className="flex h-[26px] w-[24px] items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text disabled:cursor-default disabled:hover:bg-transparent"
       >
-        {primary?.id === 'finder' ? <FolderOpen size={14} /> : <ExternalLink size={13} />}
+        {primary ? <TerminalOpenInAppIcon app={primary} size={16} /> : <AppWindow size={12} strokeWidth={1.7} />}
       </button>
       <button
         type="button"
@@ -135,23 +132,19 @@ function TerminalOpenInControl({ directory }: { directory: string }) {
         onClick={() => setMenuOpen((open) => !open)}
         title={t('terminal.openIn', 'Open in...')}
         aria-label={t('terminal.openIn', 'Open in...')}
-        className="flex h-[28px] w-[15px] items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text disabled:cursor-default disabled:hover:bg-transparent"
+        className="flex h-[26px] w-[15px] items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text disabled:cursor-default disabled:hover:bg-transparent"
       >
         <ChevronDown size={10} />
       </button>
       {menuOpen && (
-        <div className="absolute end-0 top-[32px] z-[100] w-[220px] overflow-hidden rounded-[6px] border border-aegis-border/70 bg-aegis-elevated p-1 shadow-[0_10px_28px_rgb(0_0_0_/_0.35)]">
+        <div className="terminal-kooky-menu absolute end-0 top-[30px] z-[100] w-[220px] border p-1 shadow-[0_10px_28px_rgb(0_0_0_/_0.35)]">
           {visibleApps.map((app) => (
-            <button
+            <TerminalKookyMenuItem
               key={app.id}
-              type="button"
+              label={app.label}
               onClick={() => void openIn(app)}
-              className="flex h-8 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11px] text-aegis-text transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.08)]"
-            >
-              {app.id === 'finder' ? <FolderOpen size={13} /> : <ExternalLink size={12} />}
-              <span className="min-w-0 flex-1 truncate">{app.label}</span>
-              {app.id === primary?.id && <span className="h-1.5 w-1.5 rounded-full bg-aegis-primary" />}
-            </button>
+              leading={<TerminalOpenInAppIcon app={app} size={16} />}
+            />
           ))}
           {error && <div className="px-2 py-1.5 text-[10px] leading-4 text-aegis-danger">{error}</div>}
         </div>
@@ -297,10 +290,10 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     ? workspaceSidebarMode === 'full' ? 'expanded' : workspaceSidebarMode === 'compact' ? 'mini' : 'hidden'
     : sidebarMode;
   const collapseIcon = effectiveSidebarMode === 'expanded'
-    ? <PanelLeftClose size={terminalChrome ? 14 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
+    ? <PanelLeftClose size={terminalChrome ? 12 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
     : effectiveSidebarMode === 'mini'
-      ? <PanelLeft size={terminalChrome ? 14 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
-      : <PanelLeftOpen size={terminalChrome ? 14 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />;
+      ? <PanelLeft size={terminalChrome ? 12 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
+      : <PanelLeftOpen size={terminalChrome ? 12 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />;
   const collapseTitle = effectiveSidebarMode === 'expanded'
     ? t('nav.sidebarToMini', 'Collapse to icons')
     : effectiveSidebarMode === 'mini'
@@ -316,6 +309,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     if (!active || active.sshRemoteHost) return '';
     return active.worktreePath || active.projectDirectory || active.workingDirectory;
   });
+  const terminalPaletteShortcut = APP_PLATFORM === 'macos' ? '⌘P' : 'Ctrl+P';
 
   // Zoom cancellation: webview setZoom scales everything, but traffic lights
   // are native window chrome → we cancel the zoom on the bar so they stay
@@ -530,11 +524,11 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
           onClick={requestTerminalCommandPalette}
           title={t('terminal.commandPalette', 'Search workspace, tab, agent')}
           aria-label={t('terminal.commandPalette', 'Search workspace, tab, agent')}
-          className="terminal-kooky-search-trigger absolute left-1/2 flex h-[24px] w-[min(340px,calc(100%_-_180px))] -translate-x-1/2 items-center gap-2 rounded-[5px] border border-aegis-border/50 bg-[rgb(var(--aegis-overlay)/0.06)] px-2.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:border-aegis-border hover:bg-[rgb(var(--aegis-overlay)/0.1)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          className="terminal-kooky-search-trigger absolute left-1/2 flex -translate-x-1/2 items-center gap-[7px] rounded-[5px] border border-aegis-border/50 bg-[rgb(var(--aegis-overlay)/0.06)] px-2.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:border-aegis-border hover:bg-[rgb(var(--aegis-overlay)/0.1)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
         >
-          <Search size={13} className="shrink-0" />
+          <Search size={10} strokeWidth={2} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{t('terminal.commandPalette', 'Search workspace, tab, agent')}</span>
-          <kbd className="shrink-0 rounded border border-aegis-border/60 px-1 font-mono text-[9px] text-aegis-text-muted">⌘P</kbd>
+          <kbd className="shrink-0 font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[10px] font-medium text-aegis-text-muted/55">{terminalPaletteShortcut}</kbd>
         </button>
       ) : (
         <button
@@ -576,7 +570,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
           aria-label={t('terminal.agentPanelToggle', 'Toggle agent panel')}
           className="terminal-kooky-agent-toggle flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
         >
-          <LayoutGrid size={14} strokeWidth={1.7} />
+          <LayoutGrid size={12} strokeWidth={1.7} />
         </button>
       )}
       <div ref={notifRef} className={clsx('relative shrink-0', terminalChrome && 'terminal-kooky-notification', !terminalChrome && 'ml-auto')}>
@@ -597,7 +591,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
               : 'text-aegis-text-secondary hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.12)]',
           )}
         >
-          <Bell size={terminalChrome ? 14 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
+          <Bell size={terminalChrome ? 12 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
           {terminalChrome && unread > 0 ? (
             <span className="absolute end-[5px] top-[5px] h-[6px] w-[6px] rounded-full bg-[#e86868]" />
           ) : unread > 0 && (

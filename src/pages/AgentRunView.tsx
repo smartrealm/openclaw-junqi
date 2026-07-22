@@ -773,7 +773,7 @@ export function AgentRunView({
       if (size && runningRef.current) {
         void invoke('agent_resize_pty', { taskId, cols: size.cols, rows: size.rows }).catch(() => undefined);
       }
-    });
+    }).catch(() => undefined);
   }, [monoFontFamily, taskId]);
 
   useEffect(() => {

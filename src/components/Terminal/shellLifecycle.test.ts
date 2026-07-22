@@ -4,6 +4,7 @@ import {
   advanceShellLaunchPath,
   applyTerminalToolCallEvent,
   beginShellRename,
+  formatTerminalElapsedDuration,
   formatTerminalToolDuration,
   markStalledTerminalToolCalls,
   clearRecentlyClosedTerminalShells,
@@ -100,6 +101,12 @@ test('orphan tool calls stall after one minute and accept a late completion', ()
     shellId: 'shell-1', runId: 'run-1', agent: 'claude', kind: 'tool', event: 'post', toolName: 'Read', success: true,
   }, 61_000)!;
   assert.equal(recovered[0].state, 'success');
+});
+
+test('tool durations keep Kooky day and hour formatting for retained histories', () => {
+  assert.equal(formatTerminalElapsedDuration(999), '1.0s');
+  assert.equal(formatTerminalElapsedDuration(3_661_000), '1:01:01');
+  assert.equal(formatTerminalElapsedDuration(183_845_000), '2d 3:04:05');
 });
 
 test('OSC cwd changes do not replace a running shell launch path', () => {

@@ -32,7 +32,7 @@ test('terminal palette indexes live workspaces, tabs, worktrees, agents, SSH, an
   const items = buildTerminalPaletteItems({
     workspaces,
     sessions: [{
-      shellId: 'shell-1', paneId: 'pane-source', workspaceId: 'source', title: 'API', projectPath: '/repo/junqi', updatedAt: 1, focus: () => {},
+      shellId: 'shell-1', paneId: 'pane-source', workspaceId: 'source', title: 'API', projectPath: '/repo/junqi', agent: 'claude', updatedAt: 1, focus: () => {},
     }],
     launchTargets: [
       { kind: 'terminal', id: 'terminal', label: 'Terminal' },
@@ -58,5 +58,8 @@ test('terminal palette indexes live workspaces, tabs, worktrees, agents, SSH, an
     'recent:/repo/other',
   ]);
   assert.equal(matchTerminalPaletteItems('api', items)[0]?.id, 'tab:shell-1');
+  assert.deepEqual(items.find((item) => item.id === 'tab:shell-1'), {
+    id: 'tab:shell-1', title: 'API', subtitle: 'tab in JunQi', kind: 'tab', shellId: 'shell-1', iconAgent: 'claude',
+  });
   assert.equal(items.some((item) => item.id === 'agent:droid'), false);
 });

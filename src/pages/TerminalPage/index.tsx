@@ -20,6 +20,7 @@ import {
 import {
   TERMINAL_AGENT_PANEL_TOGGLE_EVENT,
   TERMINAL_COMMAND_PALETTE_EVENT,
+  TERMINAL_FILE_TREE_REVEAL_EVENT,
   requestTerminalLaunch,
 } from "@/components/Terminal/terminalChromeEvents";
 import {
@@ -78,7 +79,7 @@ import { useRef, useState, useCallback, useEffect, useMemo, useSyncExternalStore
 import { homeDir } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { ChevronRight, Clock3, FolderOpen, FolderTree, GitBranch, Layers, Plus, RefreshCw, Search, Server, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
+import { ChevronRight, Clock3, FolderOpen, FolderTree, GitBranch, Layers, Plus, Search, Server, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
 import { Icon } from '@/components/shared/icons';
 import { KookyAgentIcon } from '@/components/Terminal/KookyAgentIcon';
 import { TerminalKookyMenuDivider, TerminalKookyMenuItem } from '@/components/Terminal/KookyMenu';
@@ -201,6 +202,25 @@ export function TerminalPage() {
   useEffect(() => {
     try { localStorage.setItem('junqi:terminal-sidebar-content', sidebarContent); } catch {}
   }, [sidebarContent]);
+  const [fileTreeRootOverride, setFileTreeRootOverride] = useState<{ workspaceId: string; root: string } | null>(null);
+
+  useEffect(() => {
+    const revealFileTree = (event: Event) => {
+      const detail = (event as CustomEvent<{ repositoryRoot?: string }>).detail;
+      const root = typeof detail?.repositoryRoot === 'string' ? detail.repositoryRoot.trim() : '';
+      setSidebarMode('full');
+      setSidebarContent('files');
+      setFileTreeRootOverride(root && workspace ? { workspaceId: workspace.id, root } : null);
+    };
+    window.addEventListener(TERMINAL_FILE_TREE_REVEAL_EVENT, revealFileTree);
+    return () => window.removeEventListener(TERMINAL_FILE_TREE_REVEAL_EVENT, revealFileTree);
+  }, [workspace]);
+
+  useEffect(() => {
+    setFileTreeRootOverride((current) => (
+      current && current.workspaceId !== workspace?.id ? null : current
+    ));
+  }, [workspace?.id]);
 
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [agentPanelMode, setAgentPanelMode] = useState<TerminalAgentPanelMode>(() => {
@@ -601,6 +621,10 @@ export function TerminalPage() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  const sidebarFileRoot = fileTreeRootOverride?.workspaceId === workspace?.id
+    ? fileTreeRootOverride?.root
+    : undefined;
+
   return (
     <div className="terminal-kooky-workbench" style={{ display: "flex", flex: 1, flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--terminal-bg)" }}>
       <div style={{ display: "flex", flex: 1, minHeight: 0, position: 'relative' }}>
@@ -613,7 +637,11 @@ export function TerminalPage() {
             onResizeActiveChange={setSidebarResizeActive}
             content={sidebarContent}
             onContentChange={setSidebarContent}
-            projectPath={workspace?.sshRemoteHost ? '' : workspace?.projectDirectory || workspace?.workingDirectory || projectPath}
+            projectPath={workspace?.sshRemoteHost
+              ? ''
+              : sidebarFileRoot
+                ? sidebarFileRoot
+                : workspace?.projectDirectory || workspace?.workingDirectory || projectPath}
             workspaces={workspaces}
             recentDirectories={recentDirectories}
             activeWorkspaceId={activeWorkspaceId}
@@ -1339,22 +1367,12 @@ function WorkspaceSidebarPanel({
       {/* ── 工作区列表 ──────────────────────────── */}
       {showingFiles ? (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ minHeight: 46, display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px 6px 12px', borderBottom: '1px solid rgb(255 255 255 / 0.06)' }}>
-            <FolderOpen size={14} strokeWidth={1.8} color="rgb(var(--aegis-primary))" style={{ flexShrink: 0 }} />
+          <div style={{ minHeight: 46, display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px 8px', borderBottom: '1px solid rgb(var(--aegis-overlay) / 0.07)' }}>
+            <FolderOpen size={11} strokeWidth={1.8} color="rgb(var(--aegis-text) / 0.6)" style={{ flexShrink: 0 }} />
             <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text))' }} title={projectPath}>{fileRootName}</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 9.5, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))' }} title={projectPath}>{projectPath}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, fontFamily: '"Kooky Onest", "Onest", sans-serif', fontWeight: 500, color: 'rgb(var(--aegis-text))' }} title={projectPath}>{fileRootName}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))' }} title={projectPath}>{projectPath}</span>
             </span>
-            <button
-              type="button"
-              onClick={() => setFileTreeVersion((version) => version + 1)}
-              title={t('terminal.refreshFiles')}
-              style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer', flexShrink: 0 }}
-              onMouseEnter={(event) => { (event.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay) / 0.08)'; (event.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
-              onMouseLeave={(event) => { (event.currentTarget as HTMLElement).style.background = 'transparent'; (event.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
-            >
-              <RefreshCw size={13} strokeWidth={1.9} />
-            </button>
           </div>
           {fileRootAvailable ? (
             <TerminalWorkspaceFiles root={projectPath} refreshVersion={fileTreeVersion} />
@@ -1875,11 +1893,17 @@ function CommandPaletteModal({
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (open) { setTimeout(() => inputRef.current?.focus(), 50); setQuery(''); setSelectedIdx(0); }
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 50);
+      setQuery('');
+      setSelectedIdx(0);
+      setHoveredItemId(null);
+    }
   }, [open]);
 
   useEffect(() => {
@@ -1971,9 +1995,9 @@ function CommandPaletteModal({
         borderRadius: 10, boxShadow: '0 20px 60px rgb(0 0 0 / 0.6)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
-        {/* Search input */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgb(255 255 255 / 0.07)' }}>
-          <Search size={14} strokeWidth={2.3} color="rgb(var(--aegis-text-dim))" />
+        {/* Kooky CommandPaletteView.searchField */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgb(255 255 255 / 0.07)' }}>
+          <Search size={13} strokeWidth={2} color="rgb(var(--aegis-text-dim))" />
           <input
             ref={inputRef}
             value={query}
@@ -1982,27 +2006,27 @@ function CommandPaletteModal({
             placeholder={t('terminal.searchWorkspace', '搜索工作区、操作…')}
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
-              fontSize: 13, fontFamily: '"JetBrains Mono", monospace',
+              fontSize: 13, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace',
               color: 'rgb(var(--aegis-text))',
             }}
           />
-          <span style={{ fontSize: 10, color: 'rgb(var(--aegis-text-dim))', opacity: 0.5 }}>⌘P</span>
         </div>
-        {/* Results */}
-        <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+        {/* Kooky CommandPaletteView.resultsList caps the scroll surface at 360pt. */}
+        <div ref={listRef} style={{ maxHeight: 360, overflowY: 'auto' }}>
           {items.length === 0 && (
-            <div style={{ padding: '20px', textAlign: 'center', color: 'rgb(var(--aegis-text-dim))', fontSize: 12, fontFamily: '"JetBrains Mono", monospace' }}>
+            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'rgb(var(--aegis-text-dim))', fontSize: 12, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>
               {t('terminal.noResults')}
             </div>
           )}
           {items.map((item, idx) => {
             const isSelected = idx === selectedIdx;
-            const isAction = item.kind === 'terminal' || item.kind === 'preset' || item.kind === 'agent' || item.kind === 'worktree' || item.kind === 'ssh';
-            const agentVisual = item.kind === 'agent' && item.iconAgent ? Icon.agent[item.iconAgent] : null;
-            const icon = item.kind === 'terminal' || item.kind === 'preset' || item.kind === 'tab'
-              ? <TerminalIcon size={14} strokeWidth={1.9} />
-              : item.kind === 'agent'
-                ? <KookyAgentIcon agent={item.iconAgent} size={16} fallback={agentVisual?.icon ?? <Layers size={14} strokeWidth={1.9} />} />
+            const isHovered = item.id === hoveredItemId;
+            const iconAgent = item.kind === 'agent' || item.kind === 'tab' ? item.iconAgent : undefined;
+            const agentVisual = iconAgent ? Icon.agent[iconAgent] : null;
+            const icon = iconAgent
+              ? <KookyAgentIcon agent={iconAgent} size={14} fallback={agentVisual?.icon ?? <Layers size={14} strokeWidth={1.9} />} />
+              : item.kind === 'terminal' || item.kind === 'preset'
+                ? <TerminalIcon size={14} strokeWidth={1.9} />
                 : item.kind === 'worktree'
                   ? <GitBranch size={14} strokeWidth={1.9} />
                   : item.kind === 'ssh'
@@ -2010,28 +2034,27 @@ function CommandPaletteModal({
                     : item.kind === 'recent'
                       ? <Clock3 size={14} strokeWidth={1.9} />
                       : <FolderOpen size={14} strokeWidth={1.9} />;
-            const iconColor = agentVisual ? `#${agentVisual.tint}` : isAction
-              ? 'rgb(var(--aegis-primary))'
-              : 'rgb(var(--aegis-text-dim))';
+            const iconColor = agentVisual ? `#${agentVisual.tint}` : 'rgb(var(--aegis-text-dim))';
             return (
               <div
                 key={item.id}
                 onClick={() => activateItem(item)}
-                onMouseEnter={() => setSelectedIdx(idx)}
+                onMouseEnter={() => setHoveredItemId(item.id)}
+                onMouseLeave={() => setHoveredItemId((current) => current === item.id ? null : current)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '0 14px', minHeight: 46, cursor: 'pointer',
-                  background: isSelected ? 'rgb(var(--aegis-overlay)/0.10)' : 'transparent',
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '9px 16px', cursor: 'pointer',
+                  background: isSelected ? 'rgb(var(--aegis-overlay)/0.15)' : isHovered ? 'rgb(var(--aegis-overlay)/0.07)' : 'transparent',
                 }}
               >
                 <span style={{ display: 'flex', color: iconColor, flexShrink: 0 }}>
                   {icon}
                 </span>
                 <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace', color: 'rgb(var(--aegis-text))' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace', color: 'rgb(var(--aegis-text))' }}>
                     {item.title}
                   </span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))', opacity: 0.72 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10.5, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))', opacity: 0.72 }}>
                     {item.subtitle}
                   </span>
                 </span>

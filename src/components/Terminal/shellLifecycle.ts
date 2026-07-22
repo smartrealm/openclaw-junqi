@@ -113,15 +113,23 @@ export function markStalledTerminalToolCalls(
   ));
 }
 
-export function formatTerminalToolDuration(call: TerminalToolCall, now = Date.now()): string {
-  const elapsed = Math.max(0, (call.completedAt ?? now) - call.startedAt);
+/** Kooky-compatible elapsed-time label shared by a tool pill and its history. */
+export function formatTerminalElapsedDuration(elapsedMs: number): string {
+  const elapsed = Math.max(0, elapsedMs);
   if (elapsed < 1_000) return `${(elapsed / 1_000).toFixed(1)}s`;
   const seconds = Math.floor(elapsed / 1_000);
   if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
+  const minutes = Math.floor(seconds / 60) % 60;
+  const hours = Math.floor(seconds / 3_600) % 24;
+  const days = Math.floor(seconds / 86_400);
   const remainder = seconds % 60;
-  if (minutes < 60) return `${minutes}:${String(remainder).padStart(2, '0')}`;
-  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+  if (seconds < 3_600) return `${minutes}:${String(remainder).padStart(2, '0')}`;
+  if (seconds < 86_400) return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+  return `${days}d ${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+}
+
+export function formatTerminalToolDuration(call: TerminalToolCall, now = Date.now()): string {
+  return formatTerminalElapsedDuration((call.completedAt ?? now) - call.startedAt);
 }
 
 export interface ReopenableTerminalShell {

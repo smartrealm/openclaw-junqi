@@ -1,16 +1,13 @@
 // ── Global error trap (must be FIRST) ──
 // xtermSafePatch must install BEFORE the error handler so it can
 // suppress harmless "dimensions" / "syncScrollArea" errors before
-// they hit the showError trap (which replaces the entire app DOM).
+// they reach the user-visible failure overlay.
 import { installXtermSafePatch } from './components/Terminal/xtermSafePatch';
+import { showFatalErrorOverlay } from './runtime/fatalErrorOverlay';
 installXtermSafePatch();
 
-function showError(title: string, detail: string) {
-  document.getElementById('app-root')!.innerHTML =
-    `<div style="display:flex;flex-direction:column;height:100vh;align-items:center;justify-content:center;background:#0c1015;color:white;font-family:monospace;gap:8px;padding:20px">` +
-    `<h2 style="color:#ef4444">${title}</h2>` +
-    `<pre style="color:#f87171;font-size:11px;max-width:600px;white-space:pre-wrap">${detail}</pre>` +
-    `</div>`;
+function showError(title: string, detail: unknown) {
+  showFatalErrorOverlay(title, detail);
 }
 
 function isBenignResizeObserverError(message: unknown): boolean {

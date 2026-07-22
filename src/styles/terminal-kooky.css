@@ -250,6 +250,98 @@
   background: rgb(var(--aegis-overlay) / 0.07);
 }
 
+.terminal-kooky-tool-call-pill {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 8px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--aegis-text-dim));
+  border-radius: 4px;
+  background: transparent;
+  color: rgb(var(--aegis-text));
+  cursor: pointer;
+  font: 400 11px/1.2 'Kooky JetBrains Mono', 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}
+
+.terminal-kooky-tool-call-pill:hover {
+  background: rgb(var(--aegis-overlay) / 0.07);
+}
+
+.terminal-kooky-tool-call-icon,
+.terminal-kooky-tool-call-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.terminal-kooky-tool-call-icon,
+.terminal-kooky-tool-call-separator,
+.terminal-kooky-tool-call-waiting {
+  color: rgb(var(--aegis-text-muted));
+}
+
+.terminal-kooky-tool-call-name,
+.terminal-kooky-tool-call-identifier,
+.terminal-kooky-tool-call-duration {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.terminal-kooky-tool-call-identifier--compact {
+  max-width: 200px;
+}
+
+.terminal-kooky-tool-call-history {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgb(var(--aegis-overlay) / 0.1);
+  border-radius: 0;
+  background: var(--kooky-chrome, rgb(var(--aegis-surface)));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+  color: rgb(var(--aegis-text));
+  font: 400 11px/1.2 'Kooky JetBrains Mono', 'JetBrains Mono', monospace;
+}
+
+.terminal-kooky-tool-call-history-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgb(var(--aegis-overlay) / 0.07);
+}
+
+.terminal-kooky-tool-call-history-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-block: 4px;
+}
+
+.terminal-kooky-tool-call-history-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 14px;
+}
+
+.terminal-kooky-tool-call-history-row + .terminal-kooky-tool-call-history-row {
+  border-top: 1px solid rgb(var(--aegis-overlay) / 0.07);
+}
+
+.terminal-kooky-tool-call-history-empty {
+  display: flex;
+  min-height: calc(100% - 8px);
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: rgb(var(--aegis-text-muted));
+}
+
 .terminal-kooky-app .route-scrollbar::-webkit-scrollbar-thumb {
   background: rgb(239 239 241 / 0.10);
 }
@@ -257,5 +349,11 @@
 @media (max-width: 760px) {
   .terminal-kooky-search-trigger {
     width: min(280px, calc(100vw - 180px));
+  }
+}
+
+@media (max-width: 520px) {
+  .terminal-kooky-search-trigger {
+    display: none;
   }
 }

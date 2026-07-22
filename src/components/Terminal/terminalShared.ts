@@ -777,7 +777,7 @@ export function loadWebglAddon(term: Terminal): WebglAddonHandle {
           refreshCharSizeAfterFontReady(term, fontFamily);
           scheduleTextureAtlasRefresh(term);
         }
-      });
+      }).catch(() => undefined);
     } catch (err) {
       debugWarn("terminal", "[terminal] WebGL addon unavailable; using xterm DOM renderer", err);
       /* 不支持 WebGL 时降级，不影响功能 */

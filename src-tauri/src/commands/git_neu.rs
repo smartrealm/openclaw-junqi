@@ -1679,13 +1679,20 @@ pub struct GitDiffSummary {
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub struct GitFileDiffStat {
     pub path: String,
+    /// Repository-root-relative display path. The file tree consumes the
+    /// absolute `path`; status popovers need this stable, compact label.
+    pub relative_path: String,
     pub insertions: i32,
     pub deletions: i32,
 }
 
 #[derive(serde::Serialize)]
 pub struct GitFileDiffResponse {
+    /// Root requested by the terminal file tree.
     pub root: String,
+    /// Git's canonical top-level directory when the request is inside a
+    /// repository. This lets the status bar reveal the same tree Kooky does.
+    pub repository_root: Option<String>,
     pub files: Vec<GitFileDiffStat>,
 }
 
@@ -1749,11 +1756,13 @@ fn parse_numstat_z(stdout: &[u8], repository_root: &Path) -> Vec<GitFileDiffStat
             continue;
         }
 
+        let relative_path = relative.to_string_lossy().into_owned();
         result.push(GitFileDiffStat {
             path: repository_root
-                .join(relative)
+                .join(&relative)
                 .to_string_lossy()
                 .into_owned(),
+            relative_path,
             insertions,
             deletions,
         });
@@ -1827,6 +1836,7 @@ pub async fn git_file_diff_stats(project_path: String) -> Result<GitFileDiffResp
         .map_err(|error| format!("Cannot resolve workspace root: {error}"))?;
     let empty_response = || GitFileDiffResponse {
         root: workspace_root.to_string_lossy().into_owned(),
+        repository_root: None,
         files: Vec::new(),
     };
     let root_output = run_git_with_timeout(
@@ -1870,13 +1880,14 @@ pub async fn git_file_diff_stats(project_path: String) -> Result<GitFileDiffResp
 
     Ok(GitFileDiffResponse {
         root: workspace_root.to_string_lossy().into_owned(),
+        repository_root: Some(repository_root.to_string_lossy().into_owned()),
         files: parse_numstat_z(&output.stdout, &repository_root),
     })
 }
 
 #[cfg(test)]
 mod terminal_file_diff_tests {
-    use super::{parse_numstat_z, WorktreeCreated};
+    use super::{parse_numstat_z, GitFileDiffResponse, GitFileDiffStat, WorktreeCreated};
 
     #[test]
     fn worktree_created_matches_the_junqi_frontend_contract() {
@@ -1894,6 +1905,25 @@ mod terminal_file_diff_tests {
     }
 
     #[test]
+    fn terminal_file_diff_response_exposes_tree_and_repository_roots() {
+        let value = serde_json::to_value(GitFileDiffResponse {
+            root: "/workspace/current-directory".to_string(),
+            repository_root: Some("/workspace".to_string()),
+            files: vec![GitFileDiffStat {
+                path: "/workspace/src/main.rs".to_string(),
+                relative_path: "src/main.rs".to_string(),
+                insertions: 3,
+                deletions: 1,
+            }],
+        })
+        .expect("terminal diff response must serialize");
+
+        assert_eq!(value["root"], "/workspace/current-directory");
+        assert_eq!(value["repository_root"], "/workspace");
+        assert_eq!(value["files"][0]["relative_path"], "src/main.rs");
+    }
+
+    #[test]
     fn numstat_z_parses_regular_and_binary_files() {
         let root = std::env::temp_dir().join("junqi-numstat-root");
         let parsed = parse_numstat_z(b"10\t2\tsrc/main.rs\0-\t-\tassets/logo.png\0", &root);
@@ -1903,8 +1933,10 @@ mod terminal_file_diff_tests {
             parsed[0].path,
             root.join("assets/logo.png").to_string_lossy()
         );
+        assert_eq!(parsed[0].relative_path, "assets/logo.png");
         assert_eq!((parsed[0].insertions, parsed[0].deletions), (0, 0));
         assert_eq!(parsed[1].path, root.join("src/main.rs").to_string_lossy());
+        assert_eq!(parsed[1].relative_path, "src/main.rs");
         assert_eq!((parsed[1].insertions, parsed[1].deletions), (10, 2));
     }
 
@@ -1915,6 +1947,7 @@ mod terminal_file_diff_tests {
 
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].path, root.join("new name.rs").to_string_lossy());
+        assert_eq!(parsed[0].relative_path, "new name.rs");
         assert_eq!((parsed[0].insertions, parsed[0].deletions), (4, 1));
     }
 

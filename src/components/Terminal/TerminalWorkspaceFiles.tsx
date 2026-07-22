@@ -4,15 +4,12 @@ import { useTranslation } from 'react-i18next';
 import {
   ChevronDown,
   ChevronRight,
-  Copy,
-  ExternalLink,
   File,
   Folder,
   FolderOpen,
   FolderX,
   Link,
   Loader2,
-  SquareTerminal,
 } from 'lucide-react';
 import { useNotificationStore } from '@/stores/notificationStore';
 import {
@@ -28,6 +25,8 @@ import {
 import { debugError } from '@/utils/debugLog';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { TERMINAL_CONTEXT_MENU_STYLE } from './terminalMenuStyles';
+import { TerminalKookyMenuDivider, TerminalKookyMenuItem } from './KookyMenu';
+import { requestTerminalInput } from './terminalChromeEvents';
 import {
   serializeTerminalWorkspacePathDrop,
   TERMINAL_WORKSPACE_PATH_MIME,
@@ -84,12 +83,14 @@ function TerminalWorkspaceFileNode({
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [hovered, setHovered] = useState(false);
   const requestIdRef = useRef(0);
   const lastDirectoryToggleAtRef = useRef(0);
   const lastRefreshVersionRef = useRef(refreshVersion);
   // Keep every symlink leaf-only. An in-project link can point back to an
   // ancestor, and expanding it would make an unbounded tree representable.
-  const canExpand = entry.is_dir && !entry.is_symlink;
+  const isDirectory = entry.is_dir;
+  const canExpand = isDirectory && !entry.is_symlink;
 
   useEffect(() => {
     if (!canExpand || !expanded) return;
@@ -133,19 +134,19 @@ function TerminalWorkspaceFileNode({
     if (expanded) void loadChildren(false);
   }, [expanded, loadChildren, refreshVersion]);
 
-  const handleClick = useCallback(async () => {
+  const handleClick = useCallback(() => {
     onSelect(entry);
     if (!canExpand) return;
     const now = Date.now();
-    if (now - lastDirectoryToggleAtRef.current < 280 || loading) return;
+    if (now - lastDirectoryToggleAtRef.current < 280) return;
     lastDirectoryToggleAtRef.current = now;
     if (expanded) {
       setExpanded(false);
       return;
     }
-    await loadChildren();
     setExpanded(true);
-  }, [canExpand, entry, expanded, loadChildren, loading, onSelect]);
+    if (children === null) void loadChildren();
+  }, [canExpand, children, entry, expanded, loadChildren, onSelect]);
 
   const handleDragStart = useCallback((event: React.DragEvent<HTMLButtonElement>) => {
     event.dataTransfer.effectAllowed = 'copy';
@@ -161,16 +162,27 @@ function TerminalWorkspaceFileNode({
   const diff = canExpand
     ? (expanded ? undefined : diffIndex.directories.get(pathKey))
     : diffIndex.files.get(pathKey);
-  const pathIndent = 8 + depth * 13;
+  const pathIndent = 8 + depth * 14;
   const menuLeft = contextMenu
     ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 228))
     : 0;
   const menuTop = contextMenu
-    ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - (canExpand ? 146 : 180)))
+    ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - (isDirectory ? 146 : 180)))
     : 0;
+  const rowBackground = selected
+    ? 'rgb(var(--aegis-overlay) / 0.15)'
+    : hovered ? 'rgb(var(--aegis-overlay) / 0.07)' : 'transparent';
+  const rowTextColor = selected
+    ? 'rgb(var(--aegis-text))'
+    : `rgb(var(--aegis-text) / ${hovered ? 0.95 : 0.82})`;
+  const rowIconColor = selected
+    ? 'rgb(var(--aegis-text))'
+    : isDirectory
+      ? 'rgb(var(--aegis-text) / 0.6)'
+      : hovered ? 'rgb(var(--aegis-text) / 0.72)' : 'rgb(var(--aegis-text-muted))';
 
   return (
-    <div>
+    <div className="terminal-kooky-file-tree-node">
       <button
         type="button"
         draggable
@@ -184,29 +196,38 @@ function TerminalWorkspaceFileNode({
         onDragStart={handleDragStart}
         title={entry.path}
         style={{
-          width: '100%', minWidth: 0, height: 28, display: 'flex', alignItems: 'center', gap: 5,
-          paddingInlineStart: pathIndent, paddingInlineEnd: 8,
-          background: selected ? 'rgb(var(--aegis-primary) / 0.13)' : 'transparent',
-          border: 'none', borderRadius: 4, color: selected ? 'rgb(var(--aegis-text))' : 'rgb(var(--aegis-text-dim))',
+          position: 'relative', width: '100%', minWidth: 0, minHeight: 24, display: 'flex', alignItems: 'center', gap: 0,
+          padding: '3.5px 8px', paddingInlineStart: pathIndent,
+          background: rowBackground,
+          border: 'none', borderRadius: 6, color: rowTextColor,
           cursor: 'pointer', textAlign: 'start', opacity: entry.is_gitignored ? 0.5 : 1,
         }}
-        onMouseEnter={(event) => {
-          if (!selected) (event.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay) / 0.06)';
-        }}
-        onMouseLeave={(event) => {
-          if (!selected) (event.currentTarget as HTMLElement).style.background = 'transparent';
-        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
+        {depth > 0 && (
+          <span aria-hidden="true" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+            {Array.from({ length: depth }, (_, level) => (
+              <span
+                key={level}
+                style={{
+                  position: 'absolute', insetBlock: 0, insetInlineStart: 8 + level * 14 + 6.5,
+                  width: 1, background: 'rgb(var(--aegis-overlay) / 0.07)',
+                }}
+              />
+            ))}
+          </span>
+        )}
         {canExpand ? (
-          loading ? <Loader2 size={12} className="shrink-0 animate-spin" />
-            : expanded ? <ChevronDown size={12} className="shrink-0" />
-              : <ChevronRight size={12} className="shrink-0" />
-        ) : <span style={{ width: 12, flexShrink: 0 }} />}
+          loading ? <Loader2 size={9} className="shrink-0 animate-spin" style={{ width: 14, color: selected || hovered ? 'rgb(var(--aegis-text-muted))' : 'rgb(var(--aegis-text-dim))', position: 'relative' }} />
+            : expanded ? <ChevronDown size={9} strokeWidth={2.5} style={{ width: 14, flexShrink: 0, color: selected || hovered ? 'rgb(var(--aegis-text-muted))' : 'rgb(var(--aegis-text-dim))', position: 'relative' }} />
+              : <ChevronRight size={9} strokeWidth={2.5} style={{ width: 14, flexShrink: 0, color: selected || hovered ? 'rgb(var(--aegis-text-muted))' : 'rgb(var(--aegis-text-dim))', position: 'relative' }} />
+        ) : <span style={{ width: 14, flexShrink: 0, position: 'relative' }} />}
         {canExpand
-          ? (expanded ? <FolderOpen size={13} className="shrink-0 text-aegis-primary/75" /> : <Folder size={13} className="shrink-0 text-aegis-primary/75" />)
-          : entry.is_symlink ? <Link size={13} className="shrink-0" />
-          : <File size={13} className="shrink-0" />}
-        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontFamily: '"JetBrains Mono", monospace' }}>
+          ? (expanded ? <FolderOpen size={11} style={{ width: 17, flexShrink: 0, color: rowIconColor, position: 'relative' }} /> : <Folder size={11} style={{ width: 17, flexShrink: 0, color: rowIconColor, position: 'relative' }} />)
+          : entry.is_symlink ? <Link size={11} style={{ width: 17, flexShrink: 0, color: rowIconColor, position: 'relative' }} />
+          : <File size={11} style={{ width: 17, flexShrink: 0, color: rowIconColor, position: 'relative' }} />}
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, lineHeight: '15px', fontFamily: '"Kooky Onest", "Onest", sans-serif', paddingInlineStart: 2, position: 'relative' }}>
           {entry.name}
         </span>
         {diff && <TerminalGitDiffBadge counts={diff} />}
@@ -239,32 +260,29 @@ function TerminalWorkspaceFileNode({
         <div
           role="menu"
           onMouseDown={(event) => event.stopPropagation()}
+          className="terminal-kooky-menu"
           style={{
             position: 'fixed', left: menuLeft, top: menuTop, zIndex: 700,
-            minWidth: 220, padding: '4px 0', borderRadius: 6,
+            minWidth: 220, padding: 4, borderRadius: 0,
             ...TERMINAL_CONTEXT_MENU_STYLE,
           }}
         >
-          {!canExpand && (
-            <TerminalWorkspaceFileMenuItem
-              icon={<ExternalLink size={13} />}
+          {!isDirectory && (
+            <TerminalKookyMenuItem
               label={t('terminal.openWithSystem')}
               onClick={() => { setContextMenu(null); onOpen(entry); }}
             />
           )}
-          <TerminalWorkspaceFileMenuItem
-            icon={<FolderOpen size={13} />}
+          <TerminalKookyMenuItem
             label={t('terminal.revealInFileManager')}
             onClick={() => { setContextMenu(null); onReveal(entry); }}
           />
-          <div style={{ height: 1, margin: '4px 0', background: 'rgb(255 255 255 / 0.07)' }} />
-          <TerminalWorkspaceFileMenuItem
-            icon={<Copy size={13} />}
+          <TerminalKookyMenuDivider />
+          <TerminalKookyMenuItem
             label={t('terminal.copyPath')}
             onClick={() => { setContextMenu(null); onCopyPath(entry); }}
           />
-          <TerminalWorkspaceFileMenuItem
-            icon={<SquareTerminal size={13} />}
+          <TerminalKookyMenuItem
             label={t('terminal.insertPath')}
             onClick={() => { setContextMenu(null); onInsertPath(entry); }}
           />
@@ -277,44 +295,16 @@ function TerminalWorkspaceFileNode({
 function TerminalGitDiffBadge({ counts }: { counts: TerminalGitDiffCounts }) {
   if (counts.insertions === 0 && counts.deletions === 0) {
     return (
-      <span style={{ marginInlineStart: 'auto', flexShrink: 0, fontSize: 9.5, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))' }}>
-        +/-
+      <span style={{ marginInlineStart: 'auto', flexShrink: 0, paddingInlineStart: 4, fontSize: 10, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-muted))', position: 'relative' }}>
+        ±
       </span>
     );
   }
   return (
-    <span style={{ marginInlineStart: 'auto', flexShrink: 0, display: 'inline-flex', gap: 4, fontSize: 9.5, fontFamily: '"JetBrains Mono", monospace' }}>
-      {counts.insertions > 0 && <span style={{ color: 'rgb(34 197 94)' }}>+{counts.insertions}</span>}
-      {counts.deletions > 0 && <span style={{ color: 'rgb(239 68 68)' }}>-{counts.deletions}</span>}
+    <span style={{ marginInlineStart: 'auto', flexShrink: 0, display: 'inline-flex', gap: 5, paddingInlineStart: 4, fontSize: 10, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace', position: 'relative' }}>
+      {counts.insertions > 0 && <span style={{ color: 'rgb(115 199 128)' }}><span style={{ color: 'rgb(115 199 128 / 0.6)' }}>+</span>{counts.insertions}</span>}
+      {counts.deletions > 0 && <span style={{ color: 'rgb(232 102 102)' }}><span style={{ color: 'rgb(232 102 102 / 0.6)' }}>−</span>{counts.deletions}</span>}
     </span>
-  );
-}
-
-function TerminalWorkspaceFileMenuItem({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      style={{
-        width: '100%', height: 28, display: 'flex', alignItems: 'center', gap: 8,
-        padding: '0 10px', background: 'transparent', border: 'none', cursor: 'pointer',
-        color: 'rgb(var(--aegis-text))', fontSize: 11.5, fontFamily: '"JetBrains Mono", monospace', textAlign: 'start',
-      }}
-      onMouseEnter={(event) => { (event.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay) / 0.08)'; }}
-      onMouseLeave={(event) => { (event.currentTarget as HTMLElement).style.background = 'transparent'; }}
-    >
-      <span style={{ display: 'flex', color: 'rgb(var(--aegis-text-dim))' }}>{icon}</span>
-      {label}
-    </button>
   );
 }
 
@@ -334,6 +324,7 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [gitDiffs, setGitDiffs] = useState<Awaited<ReturnType<typeof readTerminalGitFileDiff>>>(() => ({
     root,
+    repository_root: null,
     files: [],
   }));
   const requestIdRef = useRef(0);
@@ -429,7 +420,7 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
       const next = await readTerminalGitFileDiff(root);
       if (requestId === gitRequestIdRef.current) setGitDiffs(next);
     } catch {
-      if (requestId === gitRequestIdRef.current) setGitDiffs({ root, files: [] });
+      if (requestId === gitRequestIdRef.current) setGitDiffs({ root, repository_root: null, files: [] });
     }
   }, [root]);
 
@@ -441,7 +432,7 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
 
   useEffect(() => {
     setEntries(null);
-    setGitDiffs({ root, files: [] });
+    setGitDiffs({ root, repository_root: null, files: [] });
     setSelectedPath(null);
     setExpandedDirectories(new Set());
     void refresh();
@@ -502,7 +493,7 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
   const handleInsertPath = useCallback(async (entry: FsEntry) => {
     try {
       const input = await terminalPathInput(entry.path, root);
-      window.dispatchEvent(new CustomEvent('junqi:paste-terminal-input', { detail: { input } }));
+      requestTerminalInput(input);
     } catch (error) {
       reportFailure('terminal.pathInsertFailedTitle', 'terminal.pathInsertFailed', error);
     }

@@ -1369,7 +1369,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             position: "absolute",
             inset: 0,
             overflow: "hidden",
-            padding: "4px 0 16px 6px",
+            // Kooky PaneTreeView gives the terminal surface one uniform 8pt inset.
+            padding: "8px",
             cursor: "text",
             visibility: isActive ? "visible" : "hidden",
             pointerEvents: isActive ? "auto" : "none",

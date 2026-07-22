@@ -24,10 +24,46 @@ function releaseTauriListener(unlisten: UnlistenFn): void {
   }
 }
 
+/** Compatibility export for consumers that own window-scoped listeners. */
+export function releaseTauriUnlisten(unlisten: UnlistenFn | null | undefined): void {
+  if (unlisten) releaseTauriListener(unlisten);
+}
+
 type TauriEventSubscription = {
   release: UnlistenFn;
   ready: Promise<void>;
 };
+
+/** Own any Tauri listener registration, including window-scoped listeners. */
+export function subscribeTauriListener(
+  register: () => Promise<UnlistenFn>,
+  onError?: (error: unknown) => void,
+): UnlistenFn {
+  let released = false;
+  let unlisten: UnlistenFn | null = null;
+  const release = () => {
+    if (released) return;
+    released = true;
+    const active = unlisten;
+    unlisten = null;
+    if (active) releaseTauriListener(active);
+  };
+
+  let ready: Promise<UnlistenFn>;
+  try {
+    ready = register();
+  } catch (error) {
+    onError?.(error);
+    return release;
+  }
+  void ready.then((fn) => {
+    if (released) releaseTauriListener(fn);
+    else unlisten = fn;
+  }).catch((error) => {
+    if (!released) onError?.(error);
+  });
+  return release;
+}
 
 function createTauriEventSubscription<T>(
   event: string,
@@ -45,7 +81,17 @@ function createTauriEventSubscription<T>(
     if (activeUnlisten) releaseTauriListener(activeUnlisten);
   };
 
-  const ready = listen<T>(event, handler)
+  const safeHandler: EventCallback<T> = (payload) => {
+    try {
+      const result = (handler as (...args: Parameters<EventCallback<T>>) => unknown)(payload);
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        void Promise.resolve(result).catch((error) => onError?.(error));
+      }
+    } catch (error) {
+      onError?.(error);
+    }
+  };
+  const ready = listen<T>(event, safeHandler)
     .then((fn) => {
       if (released) {
         releaseTauriListener(fn);

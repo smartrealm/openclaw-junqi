@@ -10,7 +10,7 @@ export interface TerminalPaletteRecentDirectory {
 
 export type TerminalPaletteItem =
   | { id: string; title: string; subtitle: string; kind: 'workspace'; workspaceId: string }
-  | { id: string; title: string; subtitle: string; kind: 'tab'; shellId: string }
+  | { id: string; title: string; subtitle: string; kind: 'tab'; shellId: string; iconAgent?: TerminalAgentId }
   | { id: string; title: string; subtitle: string; kind: 'worktree'; workspaceId: string }
   | { id: string; title: string; subtitle: string; kind: 'agent'; launcherId: string; iconAgent?: TerminalAgentId }
   | { id: string; title: string; subtitle: string; kind: 'terminal' }
@@ -87,6 +87,7 @@ export function buildTerminalPaletteItems(input: BuildTerminalPaletteInput): Ter
         subtitle: `tab in ${title}`,
         kind: 'tab',
         shellId: session.shellId,
+        ...(session.agent ? { iconAgent: session.agent } : {}),
       });
     }
   }
@@ -102,6 +103,7 @@ export function buildTerminalPaletteItems(input: BuildTerminalPaletteInput): Ter
       subtitle: 'tab',
       kind: 'tab',
       shellId: session.shellId,
+      ...(session.agent ? { iconAgent: session.agent } : {}),
     });
   }
 

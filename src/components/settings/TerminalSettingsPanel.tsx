@@ -54,6 +54,7 @@ import {
   subscribeTerminalOpenInPreferences,
   orderedTerminalOpenInApps,
 } from '@/components/Terminal/terminalOpenInPreferences';
+import { TerminalOpenInAppIcon, type TerminalOpenInApp } from '@/components/Terminal/TerminalOpenInAppIcon';
 import {
   getTerminalStatusPreferencesSnapshot,
   moveTerminalStatusItem,
@@ -352,11 +353,6 @@ function TerminalCustomAgentPreferences() {
   );
 }
 
-interface TerminalOpenInApp {
-  id: string;
-  label: string;
-}
-
 function TerminalOpenInPreferences() {
   const { t } = useTranslation();
   const [apps, setApps] = useState<TerminalOpenInApp[]>([]);
@@ -397,6 +393,7 @@ function TerminalOpenInPreferences() {
           const isHidden = hidden.has(app.id);
           return (
             <div key={app.id} className={clsx('flex h-10 items-center gap-1.5 border-b border-aegis-border/50 px-2 last:border-b-0', isHidden && 'opacity-55')}>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center text-aegis-text-muted"><TerminalOpenInAppIcon app={app} size={16} /></span>
               <span className="min-w-0 flex-1 truncate text-[12px] text-aegis-text">{app.label}</span>
               {preferences.lastUsedAppId === app.id && <span className="text-[9px] text-aegis-primary">{t('terminalSettings.defaultLauncher', '默认')}</span>}
               <button type="button" title={t('terminalSettings.moveAgentUp', '上移')} aria-label={t('terminalSettings.moveAgentUp', '上移')} onClick={() => moveTerminalOpenInApp(app.id, -1, orderedApps.map((entry) => entry.id))} disabled={index === 0} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowUp size={13} /></button>

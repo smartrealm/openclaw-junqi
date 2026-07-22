@@ -63,3 +63,8 @@ test('context-menu copy shares the smart copy fallback path', () => {
   assert.match(source, /await smartCopy\(terminal\)/);
   assert.match(source, /disabled=\{!selectedText\}/);
 });
+
+test('terminal content keeps Kooky’s uniform eight-point pane inset', () => {
+  assert.match(source, /padding: "8px"/);
+  assert.doesNotMatch(source, /padding: "4px 0 16px 6px"/);
+});
