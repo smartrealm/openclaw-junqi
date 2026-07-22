@@ -1,6 +1,7 @@
 @import './primitives.css';
 @import './fonts.css';
 @import './terminal.css';
+@import './terminal-kooky.css';
 @import './themes/aegis-dark.css';
 @import './themes/aegis-midnight.css';
 @import './themes/aegis-light.css';

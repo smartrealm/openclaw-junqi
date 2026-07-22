@@ -85,8 +85,11 @@ export function AppLayout() {
   const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
   const isSettingsPage = matchPath('/settings/*', location.pathname) !== null;
   const usesGlobalSidebar = !isWorkspacePage && !isTerminalPage && !isAgentWorkspacePage;
-  const showRouteBack = isTerminalPage || isAgentWorkspacePage || isSettingsPage;
-  const routeBackFallback = isTerminalPage || isAgentWorkspacePage ? '/tools' : '/';
+  // Kooky owns the terminal window chrome itself. A route-level back control
+  // or global tab strip adds a second navigation layer that does not exist in
+  // the reference interaction model.
+  const showRouteBack = isAgentWorkspacePage || isSettingsPage;
+  const routeBackFallback = isAgentWorkspacePage ? '/tools' : '/';
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
@@ -110,10 +113,10 @@ export function AppLayout() {
   }, [location.pathname]);
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-aegis-bg relative">
+    <div className={`h-screen flex flex-col overflow-hidden bg-aegis-bg relative${isTerminalPage ? ' terminal-kooky-app' : ''}`}>
       {/* ── Ambient Background Glow (from conceptual JSX) ── */}
-      <div className="ambient-glow-teal" />
-      <div className="ambient-glow-purple" />
+      {!isTerminalPage && <div className="ambient-glow-teal" />}
+      {!isTerminalPage && <div className="ambient-glow-purple" />}
 
       {/* ── Custom window-chrome top bar ── */}
       <TopBar
@@ -124,7 +127,7 @@ export function AppLayout() {
       />
 
       {/* ── Navigation tabs ── */}
-      {!isWorkspacePage && <TabBar />}
+      {!isWorkspacePage && !isTerminalPage && <TabBar />}
 
       <div className="flex flex-1 min-h-0 relative z-[1]" dir={dir}>
         {usesGlobalSidebar && (
@@ -160,9 +163,11 @@ export function AppLayout() {
       {/* Pomodoro break overlay — enlarged pet + countdown, only during break phase */}
       <LazyPetBreakOverlayHost />
       {/* Keep workspace utilities available at the bottom-right on every route. */}
-      <Suspense fallback={<StatusBarFallback />}>
-        <StatusBar />
-      </Suspense>
+      {!isTerminalPage && (
+        <Suspense fallback={<StatusBarFallback />}>
+          <StatusBar />
+        </Suspense>
+      )}
       {/* Command Palette overlay */}
       <LazyCommandPaletteHost />
     </div>

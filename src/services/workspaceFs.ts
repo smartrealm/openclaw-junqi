@@ -24,12 +24,14 @@ export interface ImagePreview {
 
 export interface TerminalGitFileDiff {
   path: string;
+  relative_path: string;
   insertions: number;
   deletions: number;
 }
 
 export interface TerminalGitFileDiffResponse {
   root: string;
+  repository_root: string | null;
   files: TerminalGitFileDiff[];
 }
 

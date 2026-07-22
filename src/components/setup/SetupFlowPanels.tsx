@@ -167,7 +167,7 @@ function LogPanel({ logs }: { logs: SetupLog[] }) {
     void navigator.clipboard?.writeText(logText).then(() => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
-    });
+    }).catch(() => undefined);
   };
 
   return (
@@ -821,7 +821,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
     void navigator.clipboard?.writeText(text).then(() => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
-    });
+    }).catch(() => undefined);
   };
 
   const openDiagnosticsDirectory = async () => {

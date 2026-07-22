@@ -433,6 +433,8 @@ function ConnectPanel() {
     let cancelled = false;
     void window.aegis?.pairing?.getToken(gatewayUrl.trim() || undefined).then((token) => {
       if (!cancelled) setHasStoredToken(Boolean(token));
+    }).catch(() => {
+      if (!cancelled) setHasStoredToken(false);
     });
     return () => { cancelled = true; };
   }, [gatewayUrl]);

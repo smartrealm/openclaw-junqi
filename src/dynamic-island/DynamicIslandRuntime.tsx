@@ -10,7 +10,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { notifications } from '@/services/notifications';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
-import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent } from '@/utils/tauriEvents';
+import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent, subscribeTauriListener } from '@/utils/tauriEvents';
 import { isVoiceActivePhase, selectDynamicIslandTasks, shouldShowDynamicIsland, type DynamicIslandDrop, type DynamicIslandSnapshot } from './model';
 
 type IslandAction =
@@ -135,8 +135,13 @@ export default function DynamicIslandRuntime() {
         .catch(() => { if (active) setMainMinimized(false); });
     };
     refresh();
-    void mainWindow.onResized(refresh).then((unlisten) => active ? unlisteners.push(unlisten) : unlisten());
-    void mainWindow.onFocusChanged(refresh).then((unlisten) => active ? unlisteners.push(unlisten) : unlisten());
+    const onListenerError = () => {
+      if (active) setMainMinimized(false);
+    };
+    unlisteners.push(
+      subscribeTauriListener(() => mainWindow.onResized(refresh), onListenerError),
+      subscribeTauriListener(() => mainWindow.onFocusChanged(refresh), onListenerError),
+    );
     const fallbackTimer = window.setInterval(refresh, 1_000);
     return () => {
       active = false;

@@ -82,8 +82,35 @@ export function minimumContrastRatioFor(variant: ThemeVariant): number {
 // 这里把行为收敛到共享函数，两个终端入口走同一条路径。
 function themeOnPanel(variant: ThemeVariant, container: HTMLElement) {
   const theme = themeFor(variant);
-  const background = window.getComputedStyle(container).getPropertyValue("--terminal-bg").trim();
-  return background ? { ...theme, background } : theme;
+  const styles = window.getComputedStyle(container);
+  const color = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
+  // Read the mounted pane rather than :root. Kooky makes the terminal theme
+  // the authority for the surrounding chrome; JunQi's terminal workbench
+  // follows the same rule without recoloring unrelated product routes.
+  return {
+    ...theme,
+    background: color('--terminal-bg', theme.background),
+    foreground: color('--terminal-text', theme.foreground),
+    cursor: color('--terminal-cursor', theme.cursor),
+    cursorAccent: color('--terminal-cursor-accent', theme.cursorAccent),
+    selectionBackground: color('--terminal-selection', theme.selectionBackground),
+    black: color('--ansi-black', theme.black),
+    red: color('--ansi-red', theme.red),
+    green: color('--ansi-green', theme.green),
+    yellow: color('--ansi-yellow', theme.yellow),
+    blue: color('--ansi-blue', theme.blue),
+    magenta: color('--ansi-magenta', theme.magenta),
+    cyan: color('--ansi-cyan', theme.cyan),
+    white: color('--ansi-white', theme.white),
+    brightBlack: color('--ansi-bright-black', theme.brightBlack),
+    brightRed: color('--ansi-bright-red', theme.brightRed),
+    brightGreen: color('--ansi-bright-green', theme.brightGreen),
+    brightYellow: color('--ansi-bright-yellow', theme.brightYellow),
+    brightBlue: color('--ansi-bright-blue', theme.brightBlue),
+    brightMagenta: color('--ansi-bright-magenta', theme.brightMagenta),
+    brightCyan: color('--ansi-bright-cyan', theme.brightCyan),
+    brightWhite: color('--ansi-bright-white', theme.brightWhite),
+  };
 }
 
 export function applyTerminalThemeOnPanel(
@@ -496,12 +523,13 @@ export function initTerminal(
   scrollback = 1000,
   fontSize = 12,
   fontFamily = "monospace",
+  cursorStyle: 'block' | 'bar' | 'underline' = 'block',
 ): InitTerminalResult {
   const term = new Terminal({
     convertEol: false,
     scrollback,
     cursorBlink: true,
-    cursorStyle: 'block',
+    cursorStyle,
     fontFamily,
     fontSize,
     theme: themeFor(variant),
@@ -749,7 +777,7 @@ export function loadWebglAddon(term: Terminal): WebglAddonHandle {
           refreshCharSizeAfterFontReady(term, fontFamily);
           scheduleTextureAtlasRefresh(term);
         }
-      });
+      }).catch(() => undefined);
     } catch (err) {
       debugWarn("terminal", "[terminal] WebGL addon unavailable; using xterm DOM renderer", err);
       /* 不支持 WebGL 时降级，不影响功能 */

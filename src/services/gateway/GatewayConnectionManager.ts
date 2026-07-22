@@ -286,10 +286,14 @@ export class GatewayConnectionManager {
         }, () => this.isCurrent(generation));
         break;
       case 'START':
-        void executeStart().then((result) => this.completeStart(result, generation));
+        void executeStart()
+          .then((result) => this.completeStart(result, generation))
+          .catch((error) => this.completeStart({ success: false, error: String(error) }, generation));
         break;
       case 'START_DOCKER':
-        void executeDockerStart().then((result) => this.completeStart(result, generation));
+        void executeDockerStart()
+          .then((result) => this.completeStart(result, generation))
+          .catch((error) => this.completeStart({ success: false, error: String(error) }, generation));
         break;
       case 'SHOW_ERROR':
         // error already committed by dispatch

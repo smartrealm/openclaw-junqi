@@ -224,7 +224,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
         void navigator.clipboard?.writeText(value).then(() => {
           setCopied(true);
           window.setTimeout(() => setCopied(false), 1500);
-        });
+        }).catch(() => undefined);
       }}
       className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text"
     >

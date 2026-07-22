@@ -20,7 +20,7 @@ export default function DragDropRuntime() {
 
   useEffect(() => {
     const unlisten = combineUnlisteners([
-      subscribeTauriEvent<string[]>('aegis:file-dropped', async (e) => {
+      subscribeTauriEvent<string[]>('aegis:file-dropped', (e) => {
         debugLog('app', '[aegis] file-dropped', e.payload);
         const paths = e.payload ?? [];
         if (paths.length === 0) return;
@@ -29,8 +29,8 @@ export default function DragDropRuntime() {
         dragSfxStop.current?.();
         dragSfxStop.current = null;
         const soundOn = useSettingsStore.getState().soundEnabled;
-        void playPetSfxLazy('drop', soundOn);
-        void playPetSfxLazy('munch', soundOn);
+        void playPetSfxLazy('drop', soundOn).catch(() => undefined);
+        void playPetSfxLazy('munch', soundOn).catch(() => undefined);
 
         window.dispatchEvent(new CustomEvent('aegis:pet-swallow', {
           detail: { count: paths.length },
@@ -57,7 +57,7 @@ export default function DragDropRuntime() {
             return;
           }
           dragSfxStop.current = stop ?? null;
-        });
+        }).catch(() => undefined);
       }),
       subscribeTauriEvent('aegis:drag-inactive', () => {
         debugLog('app', '[aegis] drag-inactive');
