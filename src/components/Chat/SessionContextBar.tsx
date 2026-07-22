@@ -369,13 +369,6 @@ export function SessionContextBar() {
             ? <Check size={13} />
             : <RotateCcw size={13} className={clsx('transition-transform', isRefreshing && 'animate-spin')} />}
         </button>
-        <button
-          onClick={() => window.dispatchEvent(new Event('aegis:open-new-session-picker'))}
-          className="p-1.5 rounded-md transition-colors text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)]"
-          title={t('chat.newTab', 'New tab')}
-        >
-          <Plus size={13} />
-        </button>
       </div>
     </div>
   );
