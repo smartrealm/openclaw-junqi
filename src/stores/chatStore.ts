@@ -398,6 +398,8 @@ interface ChatState {
     },
     sessionKey?: string
   ) => void;
+  /** Remove a stream-only assistant placeholder that has no renderable payload. */
+  discardEmptyStreamingMessage: (id: string, sessionKey?: string) => void;
   finalizeStreamingMessage: (
     id: string,
     content: string,
@@ -645,6 +647,18 @@ const stripThinkingPrefix = (content: string, thinkingContent?: string): string 
   return content;
 };
 
+const isEmptyAssistantStreamPlaceholder = (message: ChatMessage): boolean =>
+  message.role === 'assistant'
+  && message.isStreaming === true
+  && !message.content.trim()
+  && !message.mediaUrl
+  && !message.attachments?.length
+  && !message.fileRefs?.length
+  && !message.decisionOptions?.length
+  && !message.workshopEvents?.length
+  && !message.sessionEvents?.length
+  && !message.thinkingContent;
+
 const recomputeBlocks = (messages: ChatMessage[], sessionKey: string): RenderBlock[] => {
   const raw = createRawHistoryPayload(messages, sessionKey);
   const settings = useSettingsStore.getState();
@@ -683,6 +697,46 @@ const recomputeDerived = (messages: ChatMessage[], sessionKey: string): { blocks
   const groups = buildResponseGroups(semanticBlocks);
   const blocks = groups.flatMap((group) => projectSemanticBlocksToRenderBlocks(group.blocks));
   return { blocks, groups };
+};
+
+const projectSessionMessages = (
+  state: ChatState,
+  targetKey: string,
+  messages: ChatMessage[],
+  options: { clearThinking?: boolean } = {},
+) => {
+  const derived = recomputeDerived(messages, targetKey);
+  const isActive = targetKey === state.activeSessionKey;
+  return {
+    ...(options.clearThinking
+      ? {
+          thinkingBySession: {
+            ...state.thinkingBySession,
+            [targetKey]: { runId: null, text: '' },
+          },
+        }
+      : {}),
+    messagesPerSession: {
+      ...state.messagesPerSession,
+      [targetKey]: messages,
+    },
+    _blocksCache: {
+      ...state._blocksCache,
+      [targetKey]: derived.blocks,
+    },
+    _groupsCache: {
+      ...state._groupsCache,
+      [targetKey]: derived.groups,
+    },
+    ...(isActive
+      ? {
+          messages,
+          renderBlocks: derived.blocks,
+          responseGroups: derived.groups,
+          ...(options.clearThinking ? { thinkingText: '', thinkingRunId: null } : {}),
+        }
+      : {}),
+  };
 };
 
 const getSessionBlocks = (state: ChatState, key: string, messages: ChatMessage[]): RenderBlock[] =>
@@ -783,6 +837,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (isSessionDeleted(targetKey)) return state;
       const currentMessages = getSessionMessages(state, targetKey);
       const existingIdx = currentMessages.findIndex((m) => m.id === id);
+      // Whitespace and presentation-only directives must not allocate a new
+      // assistant message. A tool boundary can otherwise strand it streaming.
+      if (existingIdx < 0 && !content.trim() && !extra?.mediaUrl) return state;
       let updated: ChatMessage[];
       if (existingIdx >= 0) {
         updated = [...currentMessages];
@@ -855,6 +912,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
+  discardEmptyStreamingMessage: (id, sessionKey) => {
+    set((state) => {
+      const targetKey = sessionKey ?? state.activeSessionKey;
+      if (isSessionDeleted(targetKey)) return state;
+      const currentMessages = getSessionMessages(state, targetKey);
+      const existingIdx = currentMessages.findIndex((message) => message.id === id);
+      if (existingIdx < 0 || !isEmptyAssistantStreamPlaceholder(currentMessages[existingIdx])) return state;
+
+      const updated = currentMessages.filter((message) => message.id !== id);
+      return projectSessionMessages(state, targetKey, updated);
+    });
+  },
+
   finalizeStreamingMessage: (id, content, extra, sessionKey) => {
     set((state) => {
       const targetKey = sessionKey ?? state.activeSessionKey;
@@ -866,6 +936,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const finalContent = stripThinkingPrefix(content, thinkingContent);
 
       if (existingIdx >= 0) {
+        const existing = currentMessages[existingIdx];
+        const finalHasRenderablePayload = Boolean(
+          finalContent.trim()
+          || thinkingContent
+          || extra?.mediaUrl
+          || extra?.fileRefs?.length
+          || extra?.decisionOptions?.length
+          || extra?.workshopEvents?.length
+          || extra?.sessionEvents?.length,
+        );
+        if (isEmptyAssistantStreamPlaceholder(existing) && !finalHasRenderablePayload) {
+          const updated = currentMessages.filter((message) => message.id !== id);
+          return projectSessionMessages(state, targetKey, updated, { clearThinking: true });
+        }
         const updated = [...currentMessages];
 
         updated[existingIdx] = {

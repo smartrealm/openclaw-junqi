@@ -177,6 +177,9 @@ export class ChatHandler {
 
   /** Buffer a stream chunk — actual UI update happens at most every STREAM_FLUSH_MS */
   private bufferStreamChunk(sessionKey: string, id: string, content: string, media?: MediaInfo, runId?: string | null) {
+    // A directive-only or whitespace segment cannot render on its own. Do not
+    // allocate an assistant placeholder that a later tool boundary could strand.
+    if (!content.trim() && !media) return;
     this.pendingStreams.set(sessionKey, { id, content, media, runId });
 
     if (!this.streamFlushTimer) {
@@ -297,7 +300,7 @@ export class ChatHandler {
     const messageId = this.currentMessageIdBySession.get(sessionKey);
     const content = this.currentStreamContentBySession.get(sessionKey) || '';
     const segmentText = this.getSegmentText(sessionKey, content);
-    if (messageId && segmentText.trim()) {
+    if (messageId && (segmentText.trim() || media)) {
       const runId = this.currentRunIdBySession.get(sessionKey) || null;
       useChatStore.getState().finalizeStreamingMessage(
         messageId,
@@ -309,6 +312,8 @@ export class ChatHandler {
         },
         sessionKey,
       );
+    } else if (messageId) {
+      useChatStore.getState().discardEmptyStreamingMessage(messageId, sessionKey);
     }
     this.currentStreamContentBySession.delete(sessionKey);
     this.currentMessageIdBySession.delete(sessionKey);

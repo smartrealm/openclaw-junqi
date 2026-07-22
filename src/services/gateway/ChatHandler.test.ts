@@ -179,6 +179,54 @@ test('agent lifecycle end seals the local assistant segment when chat.final is m
   assert.equal(storedMessages[0].responseState, 'final');
 });
 
+test('tool boundaries discard an empty streamed assistant segment', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const { useChatStore } = (globalThis as any).__chatDeps as { useChatStore: any };
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: (sessionKey: string, messageId: string, content: string, media?: any, runId?: string | null) => {
+        useChatStore.getState().updateStreamingMessage(messageId, content, {
+          ...(media ? { mediaUrl: media.mediaUrl, mediaType: media.mediaType } : {}),
+          ...(runId ? { runId } : {}),
+          responseState: 'streaming',
+        }, sessionKey);
+      },
+      onStreamEnd: (sessionKey: string, messageId: string, content: string, media?: any, meta?: any) => {
+        useChatStore.getState().finalizeStreamingMessage(messageId, content, {
+          ...(media ? { mediaUrl: media.mediaUrl, mediaType: media.mediaType } : {}),
+          ...(meta?.runId ? { runId: meta.runId } : {}),
+          responseState: meta?.state ?? 'final',
+        }, sessionKey);
+      },
+    },
+  } as any);
+  const sessionKey = 'agent:main:tool-boundary';
+  const runId = 'run-tool-boundary';
+
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId, state: 'delta', message: { content: 'Tool preparation is complete.' },
+  } });
+  handler.handleToolStream({ sessionKey, runId, data: {
+    toolCallId: 'tool-first', name: 'search', phase: 'start', args: {},
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId, state: 'delta', message: { content: '   ' },
+  } });
+  handler.handleEvent({ event: 'agent', payload: {
+    sessionKey, runId, stream: 'lifecycle', data: { phase: 'end' },
+  } });
+
+  await new Promise((resolve) => setTimeout(resolve, 260));
+
+  const assistants = (useChatStore.getState().messagesPerSession[sessionKey] ?? [])
+    .filter((message: any) => message.role === 'assistant');
+  assert.deepEqual(assistants.map((message: any) => message.content), ['Tool preparation is complete.']);
+  assert.equal(assistants.some((message: any) => message.isStreaming), false);
+});
+
 test('an old chat terminal cannot overwrite a newer OpenClaw run', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();
