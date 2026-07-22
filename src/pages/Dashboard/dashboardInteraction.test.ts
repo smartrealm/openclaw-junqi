@@ -40,9 +40,12 @@ test('dashboard global usage requests cover every agent', () => {
   assert.match(gateway, /getCostSummary[\s\S]*agentScope: 'all'/);
 });
 
-test('dashboard uses the canonical agent display name and preserves zero-cost date axes', () => {
+test('dashboard uses the canonical agent display name and distinguishes unpriced token activity', () => {
   assert.match(dashboard, /getAgentDisplayName\(/);
-  assert.match(dashboard, /const hasChartData = chartData\.length > 0/);
+  assert.match(dashboard, /const hasChartData = costAvailability\.hasPricedCost/);
+  assert.match(dashboard, /const hasTokenChartData = costAvailability\.hasDatedEntries && costAvailability\.totalTokens > 0/);
+  assert.match(dashboard, /dashboard\.usageUnpriced/);
+  assert.match(dashboard, /dashboard\.costPartiallyPriced/);
   assert.doesNotMatch(dashboard, /hasChartCost/);
 });
 
