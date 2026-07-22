@@ -643,8 +643,10 @@ export function createCollaborationSetupStore(
       } catch (error) {
         set({ error: errorText(error) });
       } finally {
+        const operationError = get().error;
         set({ mutation: null });
         await get().refresh();
+        if (operationError && !get().error) set({ error: operationError });
       }
     },
 
@@ -781,8 +783,10 @@ export function createCollaborationSetupStore(
       } catch (error) {
         set({ error: errorText(error) });
       } finally {
+        const operationError = get().error;
         set({ mutation: null });
         await get().refresh();
+        if (operationError && !get().error) set({ error: operationError });
       }
     },
 
