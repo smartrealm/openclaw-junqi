@@ -49,7 +49,9 @@ const BUNDLED_METADATA_RESOURCE: &str = "collaboration/metadata.json";
 const BUNDLED_ARCHIVE_RESOURCE: &str = "collaboration/junqi-collab.tgz";
 const BUNDLED_METADATA_JSON: &str = include_str!("../../resources/collaboration/metadata.json");
 const MAX_ABANDONED_BOOTSTRAP_ARCHIVES: usize = 8;
-const REQUIRED_COLLABORATION_FEATURES: [&str; 10] = [
+// Keep this in lockstep with the Desktop capability contract. A loaded plugin
+// is not healthy for JunQi workflows unless it can also provide templates.
+const REQUIRED_COLLABORATION_FEATURES: [&str; 11] = [
     "SQLITE_AUTHORITY",
     "COMMAND_OUTBOX",
     "TASK_RECONCILE",
@@ -60,6 +62,7 @@ const REQUIRED_COLLABORATION_FEATURES: [&str; 10] = [
     "EVENT_CURSOR",
     "SESSION_DELETE_CAS",
     "WRITE_INSTANCE_FENCE",
+    "WORKFLOW_TEMPLATES",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -7529,6 +7532,17 @@ mod tests {
             .remove("WRITE_INSTANCE_FENCE");
         assert_eq!(
             validate_confirmed_capabilities(&missing_instance_fence, &journal)
+                .unwrap_err()
+                .0,
+            "COLLABORATION_FEATURES_MISSING"
+        );
+
+        let (mut missing_workflow_templates, journal) = valid_health_fixture();
+        missing_workflow_templates
+            .features
+            .remove("WORKFLOW_TEMPLATES");
+        assert_eq!(
+            validate_confirmed_capabilities(&missing_workflow_templates, &journal)
                 .unwrap_err()
                 .0,
             "COLLABORATION_FEATURES_MISSING"
