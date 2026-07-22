@@ -234,6 +234,7 @@ export function useVoiceWake({
     recognitionRef.current = null;
     if (recognition) { try { recognition.stop(); } catch {} }
     setEnabled(false);
+    setError(null);
     updatePhase('idle');
   }, [updatePhase]);
 

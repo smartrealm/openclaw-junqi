@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Send, Paperclip, Camera, Mic, X, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio, Smile, RefreshCw } from 'lucide-react';
+import { Send, Paperclip, Camera, Mic, X, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio, Smile, RefreshCw, Plus, AtSign } from 'lucide-react';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { Icon } from '@/components/shared/icons';
@@ -77,16 +77,18 @@ function DeferredEmojiPicker({
   if (!armed) {
     return (
       <button
+        type="button"
         onClick={() => {
           if (!disabled) setArmed(true);
         }}
         disabled={disabled}
         className={clsx(
-          'p-2 rounded-xl transition-colors',
-          'hover:bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim hover:text-aegis-text-muted',
-          'disabled:opacity-30',
+          'grid size-[34px] place-items-center rounded-lg transition-colors',
+          'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
+          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30',
         )}
         title={title}
+        aria-label={title}
       >
         <Smile size={17} />
       </button>
@@ -97,9 +99,11 @@ function DeferredEmojiPicker({
     <Suspense
       fallback={
         <button
+          type="button"
           disabled
-          className="p-2 rounded-xl text-aegis-text-dim opacity-60"
+          className="grid size-[34px] place-items-center rounded-lg text-aegis-text-dim opacity-60"
           title={title}
+          aria-label={title}
         >
           <Smile size={17} />
         </button>
@@ -174,8 +178,11 @@ export function MessageInput() {
   }, [t]);
   const [screenshotOpen, setScreenshotOpen] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [composerMenu, setComposerMenu] = useState<'add' | 'voice' | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null); // image preview URL
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+  const voiceMenuRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const sendVoicePayload = useCallback(async (base64: string, mimeType: string, durationSec: number, previewUrl: string) => {
     if (!connected || isHistoryWarmupGate || !base64) return;
@@ -241,6 +248,57 @@ export function MessageInput() {
     lang: runtimeLanguage === 'zh-TW' ? 'zh-TW' : runtimeLanguage === 'zh' ? 'zh-CN' : runtimeLanguage === 'ar' ? 'ar-SA' : 'en-US',
     sessionKey: activeSessionKey,
   });
+
+  const stopActiveAssistantForVoiceInput = useCallback(async () => {
+    voiceRuntime.interruptGlobally(activeSessionKey);
+    if (useChatStore.getState().typingBySession[activeSessionKey]) {
+      await gateway.abortChat(activeSessionKey).catch((error) => {
+        debugError('gateway', '[Voice] Unable to stop active response:', error);
+      });
+    }
+  }, [activeSessionKey]);
+
+  const startVoiceRecording = useCallback(() => {
+    void (async () => {
+      setComposerMenu(null);
+      if (voiceWake.enabled || voiceWake.error) await voiceWake.stop();
+      await stopActiveAssistantForVoiceInput();
+      setVoiceMode(true);
+    })();
+  }, [stopActiveAssistantForVoiceInput, voiceWake.enabled, voiceWake.error, voiceWake.stop]);
+
+  const toggleDictation = useCallback(() => {
+    void (async () => {
+      setComposerMenu(null);
+      if (voiceWake.enabled) {
+        await voiceWake.stop();
+        textareaRef.current?.focus();
+        return;
+      }
+      await stopActiveAssistantForVoiceInput();
+      await voiceWake.start();
+      textareaRef.current?.focus();
+    })();
+  }, [stopActiveAssistantForVoiceInput, voiceWake.enabled, voiceWake.start, voiceWake.stop]);
+
+  const dictationStatus = voiceWake.phase === 'transcribing' || voiceWake.phase === 'wake_detected'
+    ? t('input.dictationProcessing', '正在识别语音…')
+    : t('input.dictationListening', '正在听写');
+
+  useEffect(() => {
+    if (!composerMenu) return;
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (addMenuRef.current?.contains(target) || voiceMenuRef.current?.contains(target)) return;
+      setComposerMenu(null);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [composerMenu]);
+
+  useEffect(() => {
+    setComposerMenu(null);
+  }, [activeSessionKey]);
   // Queue strip UI states
   const [queueExpanded, setQueueExpanded] = useState(false);
   const [editingQueueIdx, setEditingQueueIdx] = useState<number | null>(null);
@@ -504,6 +562,12 @@ export function MessageInput() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (composerMenu) {
+        e.preventDefault();
+        setComposerMenu(null);
+        textareaRef.current?.focus();
+        return;
+      }
       const st = useChatStore.getState();
 
       // ESC #1 — AI is replying: abort the current response (works from anywhere).
@@ -538,7 +602,7 @@ export function MessageInput() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activeSessionKey]);
+  }, [activeSessionKey, composerMenu]);
 
   const [waitSeconds, setWaitSeconds] = useState<number | null>(null);
   useEffect(() => {
@@ -952,6 +1016,42 @@ export function MessageInput() {
         );
       })()}
 
+      {voiceWake.enabled && !voiceMode && (
+        <div className="mx-3 mt-2 flex min-h-9 items-center gap-2 border-s-2 border-aegis-primary/70 bg-aegis-primary/[0.055] px-3 py-1.5 text-[11px] text-aegis-text-secondary" role="status">
+          <Radio size={13} className="shrink-0 animate-pulse text-aegis-primary" />
+          <span className="min-w-0 flex-1 truncate font-medium">{dictationStatus}</span>
+          <button
+            type="button"
+            onClick={toggleDictation}
+            className="shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/[0.1] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          >
+            {t('input.stopDictation', '停止听写')}
+          </button>
+        </div>
+      )}
+      {voiceWake.error && !voiceMode && (
+        <div className="mx-3 mt-2 flex min-h-9 items-center gap-2 border-s-2 border-aegis-danger/70 bg-aegis-danger/[0.055] px-3 py-1.5 text-[11px] text-aegis-text-secondary" role="alert">
+          <Mic size={13} className="shrink-0 text-aegis-danger" />
+          <span className="min-w-0 flex-1 truncate" title={voiceWake.error}>{t('input.voiceInputFailed', '语音输入不可用')}：{voiceWake.error}</span>
+          <button
+            type="button"
+            onClick={toggleDictation}
+            className="shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/[0.1] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          >
+            {t('input.retryVoiceInput', '重试')}
+          </button>
+          <button
+            type="button"
+            onClick={() => { void voiceWake.stop(); }}
+            className="grid size-6 shrink-0 place-items-center rounded-md text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+            title={t('input.dismissVoiceInputError', '关闭')}
+            aria-label={t('input.dismissVoiceInputError', '关闭')}
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
       {/* Input Area */}
       {voiceMode ? (
         <Suspense
@@ -981,70 +1081,67 @@ export function MessageInput() {
         <div className="flex items-end gap-2 p-3" dir={dir}>
           {/* Input Wrapper (matches mockup) */}
           <div className={clsx(
-            'flex items-center gap-2 px-3 py-2 rounded-2xl flex-1',
+            'relative flex items-center gap-2 px-3 py-2 rounded-2xl flex-1',
             'bg-aegis-surface border border-[rgb(var(--aegis-overlay)/0.06)]',
             'transition-all duration-200',
             'focus-within:border-aegis-primary/30',
             'focus-within:shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.06),0_0_16px_rgb(var(--aegis-primary)/0.08)]',
             !connected && 'opacity-40'
           )} onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
-            {/* Action Buttons */}
-            <DeferredEmojiPicker
-              onSelect={(emoji) => { setText((prev) => prev + emoji); textareaRef.current?.focus(); }}
-              disabled={!connected}
-              title={t('input.emoji')}
-            />
-            {[
-              { icon: Paperclip, action: handleFileSelect, title: t('input.attachFile') },
-              { icon: Camera, action: () => setScreenshotOpen(true), title: t('input.screenshot') },
-              {
-                icon: Mic,
-                action: () => { void (async () => {
-                  voiceRuntime.interruptAll();
-                  if (useChatStore.getState().typingBySession[activeSessionKey]) {
-                    await gateway.abortChat(activeSessionKey).catch(() => undefined);
-                  }
-                  if (voiceWake.enabled) await voiceWake.stop();
-                  setVoiceMode(true);
-                })(); },
-                title: t('input.voiceRecord'),
-                disabled: !connected || isHistoryWarmupGate,
-              },
-              {
-                icon: Radio,
-                action: () => { void (async () => {
-                  if (voiceWake.enabled) {
-                    await voiceWake.stop();
-                    return;
-                  }
-                  await voiceWake.start();
-                })(); },
-                title: voiceWake.enabled
-                  ? (voiceWake.phase === 'wake_detected'
-                      ? t('input.voiceWakeListening', '正在聆听…')
-                      : t('input.voiceWakeStop', '关闭语音输入'))
-                  : t('input.voiceWakeStart', '开启语音输入'),
-                disabled: !connected,
-                active: voiceWake.enabled,
-              },
-            ].map(({ icon: Icon, action, title, disabled, active }) => (
-              <button key={title} onClick={action} disabled={disabled}
+            <div ref={addMenuRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setComposerMenu((current) => current === 'add' ? null : 'add')}
+                disabled={!connected || isHistoryWarmupGate}
                 className={clsx(
-                  'w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0',
-                  'bg-[rgb(var(--aegis-overlay)/0.03)] border-none',
-                  active
-                    ? 'text-aegis-primary bg-aegis-primary/10 hover:bg-aegis-primary/15'
-                    : 'text-aegis-text-muted hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)]',
-                  'transition-colors disabled:opacity-30'
+                  'grid size-[34px] place-items-center rounded-lg transition-colors',
+                  composerMenu === 'add'
+                    ? 'bg-aegis-primary/12 text-aegis-primary'
+                    : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
+                  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30',
                 )}
-                title={title}>
-                <Icon size={16} />
+                title={t('input.addContent', '添加内容')}
+                aria-label={t('input.addContent', '添加内容')}
+                aria-haspopup="menu"
+                aria-expanded={composerMenu === 'add'}
+              >
+                <Plus size={17} />
               </button>
-            ))}
+              {composerMenu === 'add' && (
+                <div
+                  role="menu"
+                  aria-label={t('input.addContent', '添加内容')}
+                  className={clsx(
+                    'absolute bottom-full z-50 mb-2 w-40 overflow-hidden border border-aegis-menu-border bg-aegis-menu-bg p-1 shadow-[var(--aegis-menu-shadow)]',
+                    dir === 'rtl' ? 'right-0' : 'left-0',
+                  )}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setComposerMenu(null); void handleFileSelect(); }}
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                  >
+                    <Paperclip size={14} className="shrink-0 text-aegis-primary" />
+                    {t('input.attachFile')}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setComposerMenu(null); setScreenshotOpen(true); }}
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                  >
+                    <Camera size={14} className="shrink-0 text-aegis-primary" />
+                    {t('input.screenshot')}
+                  </button>
+                </div>
+              )}
+            </div>
 
-            {/* ✨ Skills button — opens @ skills picker */}
+            {/* @ skills and workspace files */}
             <div className="relative shrink-0">
               <button
+                type="button"
                 onClick={() => {
                   const el = textareaRef.current;
                   if (!el) return;
@@ -1070,7 +1167,7 @@ export function MessageInput() {
                 )}
                 title={t('input.skills', '技能')}
               >
-                <Sparkles size={16} />
+                <AtSign size={16} />
               </button>
             </div>
 
@@ -1389,6 +1486,73 @@ export function MessageInput() {
                 'max-h-[180px] scrollbar-hidden'
               )}
               dir={dir} />
+
+            <div className="flex shrink-0 items-center gap-0.5">
+              <DeferredEmojiPicker
+                onSelect={(emoji) => { setText((prev) => prev + emoji); textareaRef.current?.focus(); }}
+                disabled={!connected || isHistoryWarmupGate}
+                title={t('input.emoji')}
+              />
+
+              <div ref={voiceMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (voiceWake.enabled) {
+                      toggleDictation();
+                      return;
+                    }
+                    setComposerMenu((current) => current === 'voice' ? null : 'voice');
+                  }}
+                  disabled={!connected || isHistoryWarmupGate}
+                  className={clsx(
+                    'relative grid size-[34px] place-items-center rounded-lg transition-colors',
+                    voiceWake.enabled
+                      ? 'bg-aegis-primary/12 text-aegis-primary hover:bg-aegis-primary/18'
+                      : composerMenu === 'voice'
+                        ? 'bg-aegis-primary/12 text-aegis-primary'
+                        : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
+                    'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30',
+                  )}
+                  title={voiceWake.enabled ? t('input.stopDictation', '停止听写') : t('input.voiceInput', '语音输入')}
+                  aria-label={voiceWake.enabled ? t('input.stopDictation', '停止听写') : t('input.voiceInput', '语音输入')}
+                  aria-haspopup={voiceWake.enabled ? undefined : 'menu'}
+                  aria-expanded={composerMenu === 'voice'}
+                >
+                  <Mic size={16} />
+                  {voiceWake.enabled && <span className="absolute end-1 top-1 size-1.5 rounded-full bg-aegis-primary ring-2 ring-aegis-surface" />}
+                </button>
+                {composerMenu === 'voice' && (
+                  <div
+                    role="menu"
+                    aria-label={t('input.voiceInputMenu', '语音输入选项')}
+                    className={clsx(
+                      'absolute bottom-full z-50 mb-2 w-40 overflow-hidden border border-aegis-menu-border bg-aegis-menu-bg p-1 shadow-[var(--aegis-menu-shadow)]',
+                      dir === 'rtl' ? 'right-0' : 'left-0',
+                    )}
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={startVoiceRecording}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                    >
+                      <Mic size={14} className="shrink-0 text-aegis-primary" />
+                      {t('input.recordVoice', '录制语音')}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={toggleDictation}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                    >
+                      <Radio size={14} className="shrink-0 text-aegis-primary" />
+                      {t('input.continuousDictation', '连续听写')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* Send button — always available. Becomes "Queue" while the AI is
                 running: handleSend routes the text into messageQueue automatically
