@@ -74,6 +74,7 @@ function render(
       pluginVersion: '0.1.0',
       expectedVersion: '0.1.0',
     },
+    loading: false,
     identity: options.identity ?? identity,
     probe,
     status: null,
@@ -140,7 +141,6 @@ test('unverified Gateway setup does not expose a plugin package or target metada
       targetClass: 'unknown',
       pluginVersion: null,
       expectedVersion: '0.1.0',
-      blockedReason: 'A verified Gateway connection is required.',
     },
   });
 

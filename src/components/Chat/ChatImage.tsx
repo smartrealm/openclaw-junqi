@@ -120,7 +120,7 @@ interface LightboxProps {
   onClose: () => void;
 }
 
-function Lightbox({ src, alt, onClose }: LightboxProps) {
+export function ImageLightbox({ src, alt, onClose }: LightboxProps) {
   const { t } = useTranslation();
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -174,7 +174,7 @@ function Lightbox({ src, alt, onClose }: LightboxProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
+      className="fixed inset-x-0 bottom-0 top-[32px] z-[9999] flex items-center justify-center"
       style={{ background: 'var(--aegis-bg-frosted)', backdropFilter: 'blur(8px)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       onWheel={handleWheel}
@@ -329,7 +329,7 @@ export function ChatImage({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
 
       {/* Lightbox */}
       {showLightbox && (
-        <Lightbox
+        <ImageLightbox
           src={resolvedSrc}
           alt={alt}
           onClose={() => setShowLightbox(false)}

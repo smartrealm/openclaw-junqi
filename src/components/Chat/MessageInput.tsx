@@ -29,6 +29,7 @@ import { formatBytes } from '@/utils/format';
 import { debugError } from '@/utils/debugLog';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
+import { ImageLightbox } from './ChatImage';
 
 const ScreenshotPicker = lazy(() => import('./ScreenshotPicker').then((m) => ({ default: m.ScreenshotPicker })));
 const VoiceRecorder = lazy(() => import('./VoiceRecorder').then((m) => ({ default: m.VoiceRecorder })));
@@ -46,6 +47,12 @@ const EMPTY_QUEUE: QueuedChatMessage[] = [];
 // when the consumer wires the result into a useEffect dep.
 const EMPTY_PATHS: string[] = [];
 const EMPTY_PREPARED_ATTACHMENTS: PreparedAttachment[] = [];
+
+function pendingDeliveryMessageIds(sessionKey: string): string[] {
+  return (useChatStore.getState().messagesPerSession[sessionKey] ?? [])
+    .filter((message) => message.role === 'user' && message.status === 'pending')
+    .map((message) => message.id);
+}
 
 function estimateWavDuration(base64: string): number {
   try {
@@ -183,7 +190,10 @@ export function MessageInput() {
   const handleVoiceWakeDetected = useCallback(() => {
     voiceRuntime.interruptGlobally(activeSessionKey);
     if (useChatStore.getState().typingBySession[activeSessionKey]) {
-      void gateway.abortChat(activeSessionKey).catch(() => undefined);
+      const pendingIds = pendingDeliveryMessageIds(activeSessionKey);
+      void gateway.abortChat(activeSessionKey)
+        .then(() => useChatStore.getState().confirmPendingMessageDeliveries(activeSessionKey, pendingIds))
+        .catch(() => undefined);
     }
   }, [activeSessionKey]);
 
@@ -200,9 +210,11 @@ export function MessageInput() {
   const stopActiveAssistantForVoiceInput = useCallback(async () => {
     voiceRuntime.interruptGlobally(activeSessionKey);
     if (useChatStore.getState().typingBySession[activeSessionKey]) {
+      const pendingIds = pendingDeliveryMessageIds(activeSessionKey);
       await gateway.abortChat(activeSessionKey).catch((error) => {
         debugError('gateway', '[Voice] Unable to stop active response:', error);
       });
+      useChatStore.getState().confirmPendingMessageDeliveries(activeSessionKey, pendingIds);
     }
   }, [activeSessionKey]);
 
@@ -527,7 +539,10 @@ export function MessageInput() {
         e.preventDefault();
         voiceRuntime.interruptGlobally(activeSessionKey);
         if (st.typingBySession[activeSessionKey]) {
-          gateway.abortChat(activeSessionKey).catch(() => {});
+          const pendingIds = pendingDeliveryMessageIds(activeSessionKey);
+          void gateway.abortChat(activeSessionKey)
+            .then(() => st.confirmPendingMessageDeliveries(activeSessionKey, pendingIds))
+            .catch(() => undefined);
           st.clearQueue(activeSessionKey);
           st.setIsTyping(false, activeSessionKey);
         }
@@ -1534,7 +1549,9 @@ export function MessageInput() {
                 try {
                   voiceRuntime.interruptGlobally(activeSessionKey);
                   if (isTyping || isSending) {
+                    const pendingIds = pendingDeliveryMessageIds(activeSessionKey);
                     await gateway.abortChat(activeSessionKey);
+                    useChatStore.getState().confirmPendingMessageDeliveries(activeSessionKey, pendingIds);
                     clearQueue(activeSessionKey);
                     setIsTyping(false, activeSessionKey);
                     setIsSending(false, activeSessionKey);
@@ -1563,12 +1580,11 @@ export function MessageInput() {
 
       {/* Image lightbox */}
       {lightbox && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md" onClick={() => setLightbox(null)}>
-          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors z-10">
-            <X size={20} className="text-white" />
-          </button>
-          <img src={lightbox} alt="Preview" className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
-        </div>
+        <ImageLightbox
+          src={lightbox}
+          alt={t('media.attachment', 'Attachment')}
+          onClose={() => setLightbox(null)}
+        />
       )}
     </div>
   );

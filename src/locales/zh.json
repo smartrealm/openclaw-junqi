@@ -3613,7 +3613,7 @@
       "latestSessionRun": "最近一次协作",
       "workItemProgress": "{{completed}}/{{total}}",
       "activeRunCount": "{{count}} 项进行中",
-      "history": "历史记录"
+      "history": "协作运行"
     },
     "card": {
       "ariaLabel": "协作运行：{{goal}}",
@@ -3833,7 +3833,7 @@
       "WORKFLOW_TEMPLATE_INSTANTIATED": "模板已实例化"
     },
     "drawer": {
-      "title": "协作记录",
+      "title": "协作运行",
       "subtitle": "运行记录会跨会话留存。",
       "loading": "正在加载协作记录",
       "empty": "还没有协作运行。",

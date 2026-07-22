@@ -134,7 +134,7 @@ export function CollaborationHistoryDrawer({
 
   const surface = (
     <div
-      className="collaboration-history-drawer-backdrop fixed inset-0 bg-[rgb(0_0_0/0.46)]"
+      className="collaboration-history-drawer-backdrop fixed inset-x-0 bottom-0 top-[32px] bg-[rgb(0_0_0/0.46)]"
       data-state={open ? 'open' : 'closed'}
       style={{ zIndex: 'var(--z-application-overlay)' }}
       role="presentation"

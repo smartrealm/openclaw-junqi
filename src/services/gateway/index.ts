@@ -318,10 +318,10 @@ export const gateway = {
     });
   },
   async abortChat(sessionKey = 'agent:main:main') {
-    return sessionCommandCoordinator.runMutation(
-      sessionKey,
-      () => connection.request('chat.abort', { sessionKey }),
-    );
+    // Abort is a control-plane request. Waiting behind a long-running
+    // chat.send request makes it impossible to stop a response whose send
+    // acknowledgement was lost or delayed.
+    return connection.request('chat.abort', { sessionKey });
   },
   async compactSession(sessionKey = 'agent:main:main') {
     return sessionCommandCoordinator.runMutation(

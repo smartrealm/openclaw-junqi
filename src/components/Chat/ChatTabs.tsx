@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil, Plus } from 'lucide-react';
+import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
 import { IconButton } from '@/components/shared/button/Button';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +23,8 @@ import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
 import { debugWarn } from '@/utils/debugLog';
 import { applyPersonaToSessionDraft } from '@/utils/personaDraft';
+import { useOptionalCollaborationChat } from './CollaborationChatProvider';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 // ═══════════════════════════════════════════════════════════
 // ChatTabs — Browser-style tab bar
@@ -816,6 +818,7 @@ function SortableTab({ id, children, disabled }: { id: string; children: React.R
 
 export function ChatTabs() {
   const { t } = useTranslation();
+  const collaboration = useOptionalCollaborationChat();
   const {
     openTabs,
     activeSessionKey,
@@ -1137,21 +1140,25 @@ export function ChatTabs() {
       aria-label={t('chat.sessions', 'Chat sessions')}
     >
       {hasMultipleTabs && (
-        <button
-          type="button"
-          onClick={() => switchRelativeTab(-1)}
-          disabled={!canSwitchPrev}
-          className={clsx(
-            'h-full w-8 shrink-0 flex items-center justify-center border-r border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
-            canSwitchPrev
-              ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
-              : 'text-aegis-text-dim/35 cursor-not-allowed',
-          )}
-          aria-label={t('chat.previousSession', 'Previous session')}
-          title={t('chat.previousSession', 'Previous session')}
-        >
-          <ChevronLeft size={14} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => switchRelativeTab(-1)}
+              disabled={!canSwitchPrev}
+              className={clsx(
+                'h-full w-8 shrink-0 flex items-center justify-center border-r border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
+                canSwitchPrev
+                  ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
+                  : 'text-aegis-text-dim/35 cursor-not-allowed',
+              )}
+              aria-label={t('chat.previousSession', 'Previous session')}
+            >
+              <ChevronLeft size={14} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('chat.previousSession', 'Previous session')}</TooltipContent>
+        </Tooltip>
       )}
 
       {/* ── Scrollable tab strip ── */}
@@ -1281,21 +1288,47 @@ export function ChatTabs() {
       </DndContext>
 
       {hasMultipleTabs && (
-        <button
-          type="button"
-          onClick={() => switchRelativeTab(1)}
-          disabled={!canSwitchNext}
-          className={clsx(
-            'h-full w-8 shrink-0 flex items-center justify-center border-l border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
-            canSwitchNext
-              ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
-              : 'text-aegis-text-dim/35 cursor-not-allowed',
-          )}
-          aria-label={t('chat.nextSession', 'Next session')}
-          title={t('chat.nextSession', 'Next session')}
-        >
-          <ChevronRight size={14} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => switchRelativeTab(1)}
+              disabled={!canSwitchNext}
+              className={clsx(
+                'h-full w-8 shrink-0 flex items-center justify-center border-l border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
+                canSwitchNext
+                  ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
+                  : 'text-aegis-text-dim/35 cursor-not-allowed',
+              )}
+              aria-label={t('chat.nextSession', 'Next session')}
+            >
+              <ChevronRight size={14} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('chat.nextSession', 'Next session')}</TooltipContent>
+        </Tooltip>
+      )}
+
+      {collaboration && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={collaboration.openHistory}
+              disabled={!collaboration.available}
+              className="relative h-full w-8 shrink-0 border-l border-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-muted transition-colors hover:bg-aegis-primary/[0.06] hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-aegis-text-muted"
+              aria-label={t('collaboration.drawer.title', 'Collaboration runs')}
+            >
+              <GitFork size={14} className="mx-auto" aria-hidden />
+              {collaboration.runs.length > 0 && (
+                <span className="absolute end-0.5 top-1 min-w-3 rounded-full bg-aegis-primary px-0.5 text-center text-[8px] leading-3 text-white">
+                  {collaboration.runs.length > 9 ? '9+' : collaboration.runs.length}
+                </span>
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('collaboration.drawer.title', 'Collaboration runs')}</TooltipContent>
+        </Tooltip>
       )}
 
       {/* Tooltip rendered in portal so it is not clipped by overflow-x-auto */}
@@ -1378,19 +1411,23 @@ export function ChatTabs() {
       })()}
 
       <div className="relative shrink-0 h-full" ref={newPickerRef}>
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new Event('aegis:open-new-session-picker'))}
-          className={clsx(
-            'h-full w-9 flex items-center justify-center border-l border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
-            'text-aegis-text-muted hover:text-aegis-primary hover:bg-aegis-primary/[0.06]',
-            showNewPicker && 'text-aegis-primary bg-aegis-primary/[0.06]',
-          )}
-          aria-label={t('chat.newSession', 'New session')}
-          title={t('chat.newSession', 'New session')}
-        >
-          <Plus size={14} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event('aegis:open-new-session-picker'))}
+              className={clsx(
+                'h-full w-9 flex items-center justify-center border-l border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
+                'text-aegis-text-muted hover:text-aegis-primary hover:bg-aegis-primary/[0.06]',
+                showNewPicker && 'text-aegis-primary bg-aegis-primary/[0.06]',
+              )}
+              aria-label={t('chat.newSession', 'New session')}
+            >
+              <Plus size={14} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('chat.newSession', 'New session')}</TooltipContent>
+        </Tooltip>
         <NewSessionPicker
           open={showNewPicker}
           onClose={() => { setShowNewPicker(false); setPendingPersona(null); }}
