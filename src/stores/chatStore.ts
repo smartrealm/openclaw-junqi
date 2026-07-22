@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import type { RenderBlock } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
-import { parseHistory, parseHistoryMessage } from '@/processing/ContentParser';
 import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
 import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
@@ -659,45 +658,31 @@ const isEmptyAssistantStreamPlaceholder = (message: ChatMessage): boolean =>
   && !message.sessionEvents?.length
   && !message.thinkingContent;
 
-const recomputeBlocks = (messages: ChatMessage[], sessionKey: string): RenderBlock[] => {
+const buildCanonicalSemanticBlocks = (messages: ChatMessage[], sessionKey: string) => {
   const raw = createRawHistoryPayload(messages, sessionKey);
   const settings = useSettingsStore.getState();
   const chat = useChatStore.getState();
-  return parseHistory(raw, settings.toolIntentEnabled, {
-    tokenUsage: chat.tokenUsage,
-    currentModel: chat.currentModel,
-  });
-};
-
-const recomputeGroups = (messages: ChatMessage[], sessionKey: string): ResponseGroup[] => {
-  const raw = createRawHistoryPayload(messages, sessionKey);
-  const settings = useSettingsStore.getState();
-  const chat = useChatStore.getState();
-  const semanticBlocks = raw.flatMap((message) =>
+  return raw.flatMap((message) =>
     buildSemanticBlocks(normalizeGatewayMessage(message), {
       toolIntentEnabled: settings.toolIntentEnabled,
       tokenUsage: chat.tokenUsage,
       currentModel: chat.currentModel,
     }),
   );
-  return buildResponseGroups(semanticBlocks);
 };
+
+const recomputeGroups = (messages: ChatMessage[], sessionKey: string): ResponseGroup[] =>
+  buildResponseGroups(buildCanonicalSemanticBlocks(messages, sessionKey));
 
 const recomputeDerived = (messages: ChatMessage[], sessionKey: string): { blocks: RenderBlock[]; groups: ResponseGroup[] } => {
-  const raw = createRawHistoryPayload(messages, sessionKey);
-  const settings = useSettingsStore.getState();
-  const chat = useChatStore.getState();
-  const semanticBlocks = raw.flatMap((message) =>
-    buildSemanticBlocks(normalizeGatewayMessage(message), {
-      toolIntentEnabled: settings.toolIntentEnabled,
-      tokenUsage: chat.tokenUsage,
-      currentModel: chat.currentModel,
-    }),
-  );
+  const semanticBlocks = buildCanonicalSemanticBlocks(messages, sessionKey);
   const groups = buildResponseGroups(semanticBlocks);
   const blocks = groups.flatMap((group) => projectSemanticBlocksToRenderBlocks(group.blocks));
   return { blocks, groups };
 };
+
+const recomputeBlocks = (messages: ChatMessage[], sessionKey: string): RenderBlock[] =>
+  recomputeDerived(messages, sessionKey).blocks;
 
 const projectSessionMessages = (
   state: ChatState,
@@ -739,9 +724,6 @@ const projectSessionMessages = (
   };
 };
 
-const getSessionBlocks = (state: ChatState, key: string, messages: ChatMessage[]): RenderBlock[] =>
-  state._blocksCache[key] ?? (key === state.activeSessionKey ? state.renderBlocks : recomputeBlocks(messages, key));
-
 export const useChatStore = create<ChatState>((set, get) => ({
   // ── Messages (active session) ──
   messages: [],
@@ -757,46 +739,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const currentMessages = getSessionMessages(state, targetKey);
       if (currentMessages.some((m) => m.id === msg.id)) return state;
       const updated = [...currentMessages, msg];
-
-      const settings = useSettingsStore.getState();
-      const chat = useChatStore.getState();
-      const newBlocks = parseHistoryMessage(
-        {
-          id: msg.id,
-          sessionKey: targetKey,
-          runId: msg.runId,
-          role: msg.role,
-          kind: msg.kind,
-          content: msg.content,
-          rawContent: msg.rawContent,
-          timestamp: msg.timestamp,
-          responseState: msg.responseState,
-          toolName: msg.toolName,
-          toolInput: msg.toolInput,
-          toolOutput: msg.toolOutput,
-          toolStatus: msg.toolStatus,
-          toolDurationMs: msg.toolDurationMs,
-          thinkingContent: msg.thinkingContent,
-          mediaUrl: msg.mediaUrl,
-          mediaType: msg.mediaType,
-          attachments: msg.attachments,
-          fileRefs: msg.fileRefs,
-          decisionOptions: msg.decisionOptions,
-          workshopEvents: msg.workshopEvents,
-          sessionEvents: msg.sessionEvents,
-          usage: msg.usage,
-          model: msg.model,
-          isStreaming: msg.isStreaming,
-        },
-        settings.toolIntentEnabled,
-        {
-          tokenUsage: chat.tokenUsage,
-          currentModel: chat.currentModel,
-        },
-      );
-
-      const updatedBlocks = [...getSessionBlocks(state, targetKey, currentMessages), ...newBlocks];
-      const updatedGroups = recomputeGroups(updated, targetKey);
+      const derived = recomputeDerived(updated, targetKey);
       const isActive = targetKey === state.activeSessionKey;
 
       return {
@@ -804,18 +747,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ...session,
           topic: resolveAndPersistSessionTopic(targetKey, session.topic, updated, session.lastMessage),
         })),
-        ...(isActive ? { messages: updated, renderBlocks: updatedBlocks, responseGroups: updatedGroups } : {}),
+        ...(isActive ? { messages: updated, renderBlocks: derived.blocks, responseGroups: derived.groups } : {}),
         messagesPerSession: {
           ...state.messagesPerSession,
           [targetKey]: updated,
         },
         _blocksCache: {
           ...state._blocksCache,
-          [targetKey]: updatedBlocks,
+          [targetKey]: derived.blocks,
         },
         _groupsCache: {
           ...state._groupsCache,
-          [targetKey]: updatedGroups,
+          [targetKey]: derived.groups,
         },
       };
     });
@@ -867,46 +810,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ];
       }
 
-      const blocks = [...getSessionBlocks(state, targetKey, currentMessages)];
-      const blockIdx = blocks.findIndex((b) => b.id === id);
-      if (blockIdx >= 0) {
-        blocks[blockIdx] = {
-          ...blocks[blockIdx],
-          ...(blocks[blockIdx].type === 'message' ? { markdown: content } : {}),
-          isStreaming: true,
-        } as RenderBlock;
-      } else {
-        blocks.push({
-          type: 'message' as const,
-          id,
-          role: 'assistant' as const,
-          markdown: content,
-          artifacts: [],
-          images: [],
-          isStreaming: true,
-          timestamp: new Date().toISOString(),
-        });
-      }
-
-      const groups = recomputeGroups(updated, targetKey);
+      const derived = recomputeDerived(updated, targetKey);
       const isActive = targetKey === state.activeSessionKey;
       return {
         typingBySession: {
           ...state.typingBySession,
           [targetKey]: true,
         },
-        ...(isActive ? { messages: updated, renderBlocks: blocks, responseGroups: groups, isTyping: true } : {}),
+        ...(isActive ? { messages: updated, renderBlocks: derived.blocks, responseGroups: derived.groups, isTyping: true } : {}),
         messagesPerSession: {
           ...state.messagesPerSession,
           [targetKey]: updated,
         },
         _blocksCache: {
           ...state._blocksCache,
-          [targetKey]: blocks,
+          [targetKey]: derived.blocks,
         },
         _groupsCache: {
           ...state._groupsCache,
-          [targetKey]: groups,
+          [targetKey]: derived.groups,
         },
       };
     });
@@ -934,6 +856,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const sessionThinking = state.thinkingBySession[targetKey];
       const thinkingContent = sessionThinking?.text || undefined;
       const finalContent = stripThinkingPrefix(content, thinkingContent);
+      const hasFinalSnapshot = Boolean(content.trim());
 
       if (existingIdx >= 0) {
         const existing = currentMessages[existingIdx];
@@ -954,7 +877,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         updated[existingIdx] = {
           ...updated[existingIdx],
-          content: finalContent || updated[existingIdx].content,
+          // An empty result from thinking-prefix removal is intentional. Only
+          // fall back to the live text when the Gateway did not send a final
+          // snapshot at all.
+          content: hasFinalSnapshot ? finalContent : updated[existingIdx].content,
           runId: extra?.runId ?? updated[existingIdx].runId ?? null,
           isStreaming: false,
           responseState: extra?.responseState ?? 'final',

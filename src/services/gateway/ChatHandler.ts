@@ -30,6 +30,13 @@ interface WorkshopCommandResult {
   blockedCount: number;
 }
 
+type TextStreamSource = 'agent' | 'chat';
+
+interface TextStreamSnapshots {
+  agent?: string;
+  chat?: string;
+}
+
 function sanitizeWorkshopCommands(content: string): WorkshopCommandResult {
   if (!content.includes('[[workshop:')) {
     return { cleanContent: content.trim(), blockedCount: 0 };
@@ -56,8 +63,9 @@ export class ChatHandler {
   private currentStreamContentBySession = new Map<string, string>();
   private currentMessageIdBySession = new Map<string, string>();
   private syntheticMessageCounterBySession = new Map<string, number>();
-  private streamConsumedBySession = new Map<string, number>();
-  private textStreamSourceBySession = new Map<string, 'chat' | 'agent'>();
+  private completedStreamTextBySession = new Map<string, string>();
+  private textStreamSnapshotsBySession = new Map<string, TextStreamSnapshots>();
+  private toolStartedAtByKey = new Map<string, number>();
   private lastCompactionTs: number = 0;
 
   // ── Stream micro-batching ──
@@ -259,10 +267,56 @@ export class ChatHandler {
   }
 
   private getSegmentText(sessionKey: string, rawContent: string): string {
-    const consumed = this.streamConsumedBySession.get(sessionKey) || 0;
-    return consumed > 0 && rawContent.length > consumed
-      ? rawContent.slice(consumed)
+    const completed = this.completedStreamTextBySession.get(sessionKey) || '';
+    return completed && rawContent.startsWith(completed)
+      ? rawContent.slice(completed.length)
       : rawContent;
+  }
+
+  private recordCompletedStreamSegment(sessionKey: string, rawContent: string, segmentText: string): void {
+    if (!segmentText) return;
+    const completed = this.completedStreamTextBySession.get(sessionKey) || '';
+    this.completedStreamTextBySession.set(
+      sessionKey,
+      completed && rawContent.startsWith(completed) ? rawContent : `${completed}${segmentText}`,
+    );
+  }
+
+  private sourceSnapshot(sessionKey: string, source: TextStreamSource): string {
+    return this.textStreamSnapshotsBySession.get(sessionKey)?.[source] || '';
+  }
+
+  private updateStreamSnapshot(sessionKey: string, source: TextStreamSource, nextText: string): string {
+    const snapshots = this.textStreamSnapshotsBySession.get(sessionKey) || {};
+    const previous = snapshots[source] || '';
+    const normalized = previous && previous.startsWith(nextText)
+      ? previous
+      : nextText;
+    const nextSnapshots = { ...snapshots, [source]: normalized };
+    this.textStreamSnapshotsBySession.set(sessionKey, nextSnapshots);
+
+    const agent = nextSnapshots.agent || '';
+    const chat = nextSnapshots.chat || '';
+    if (!agent) return chat;
+    if (!chat) return agent;
+    if (agent.startsWith(chat)) return agent;
+    if (chat.startsWith(agent)) return chat;
+    // The channels normally mirror one another. If they diverge, preserve the
+    // longer snapshot instead of silently discarding the later source.
+    return chat.length >= agent.length ? chat : agent;
+  }
+
+  private toolTimingKey(sessionKey: string, runId: string, toolCallId: string): string {
+    return `${sessionKey}\u0000${runId}\u0000${toolCallId}`;
+  }
+
+  private clearToolTimings(sessionKey: string, runId?: string): void {
+    const prefix = `${sessionKey}\u0000${runId ?? ''}`;
+    for (const key of this.toolStartedAtByKey.keys()) {
+      if (runId ? key.startsWith(prefix) : key.startsWith(`${sessionKey}\u0000`)) {
+        this.toolStartedAtByKey.delete(key);
+      }
+    }
   }
 
   private clearSessionProjection(sessionKey: string): void {
@@ -283,8 +337,9 @@ export class ChatHandler {
     this.currentStreamContentBySession.delete(sessionKey);
     this.currentRunIdBySession.delete(sessionKey);
     this.currentMessageIdBySession.delete(sessionKey);
-    this.streamConsumedBySession.delete(sessionKey);
-    this.textStreamSourceBySession.delete(sessionKey);
+    this.completedStreamTextBySession.delete(sessionKey);
+    this.textStreamSnapshotsBySession.delete(sessionKey);
+    this.clearToolTimings(sessionKey, runId);
     const pending = this.pendingStreams.get(sessionKey);
     if (!expectedRunId || !pending?.runId || pending.runId === expectedRunId) {
       this.pendingStreams.delete(sessionKey);
@@ -315,6 +370,10 @@ export class ChatHandler {
     } else if (messageId) {
       useChatStore.getState().discardEmptyStreamingMessage(messageId, sessionKey);
     }
+    this.recordCompletedStreamSegment(sessionKey, content, segmentText);
+    // A tool boundary starts a fresh live segment. The completed prefix above
+    // still lets either stream channel report a full cumulative snapshot.
+    this.textStreamSnapshotsBySession.delete(sessionKey);
     this.currentStreamContentBySession.delete(sessionKey);
     this.currentMessageIdBySession.delete(sessionKey);
     return true;
@@ -404,21 +463,15 @@ export class ChatHandler {
       debugWarn('gateway', '[GW] Ignoring assistant event without an OpenClaw runId');
       return;
     }
-    const activeRunId = this.currentRunIdBySession.get(sessionKey) || '';
     if (!this.beginRun(sessionKey, runId)) return;
     this.bindRunToSession(sessionKey, runId);
 
     const data = payload.data ?? {};
     const fullText = typeof data.text === 'string' ? data.text : '';
     const delta = typeof data.delta === 'string' ? data.delta : '';
-    const nextText = fullText || ((this.currentStreamContentBySession.get(sessionKey) || '') + delta);
+    const previousSourceText = this.sourceSnapshot(sessionKey, 'agent');
+    const nextText = fullText || `${previousSourceText}${delta}`;
     if (!nextText) return;
-
-    const source = this.textStreamSourceBySession.get(sessionKey);
-    if (source === 'chat' && activeRunId === runId) return;
-    if (!source || activeRunId !== runId) {
-      this.textStreamSourceBySession.set(sessionKey, 'agent');
-    }
 
     this.clearFinalizeFallback(sessionKey);
     const currentStreamContent = this.currentStreamContentBySession.get(sessionKey) || '';
@@ -429,21 +482,18 @@ export class ChatHandler {
       && !fullText.startsWith(currentStreamContent);
     if (shouldSplit) {
       this.closeCurrentStreamSegment(sessionKey);
-      this.streamConsumedBySession.delete(sessionKey);
     }
     const messageId = this.ensureActiveMessageId(sessionKey, runId, payload);
-    const comparisonBaseLength = shouldSplit ? 0 : currentStreamContent.length;
-    if (nextText.length >= comparisonBaseLength) {
-      this.currentStreamContentBySession.set(sessionKey, nextText);
-      this.currentRunIdBySession.set(sessionKey, runId);
-      this.bindRunToSession(sessionKey, runId);
-      const segmentText = this.getSegmentText(sessionKey, nextText);
-      this.bufferStreamChunk(sessionKey, messageId, this.getDisplayStreamText(segmentText), undefined, runId);
+    const selectedText = this.updateStreamSnapshot(sessionKey, 'agent', nextText);
+    this.currentStreamContentBySession.set(sessionKey, selectedText);
+    this.currentRunIdBySession.set(sessionKey, runId);
+    this.bindRunToSession(sessionKey, runId);
+    const segmentText = this.getSegmentText(sessionKey, selectedText);
+    this.bufferStreamChunk(sessionKey, messageId, this.getDisplayStreamText(segmentText), undefined, runId);
 
-      const liveThinking = extractThinkingContent(data.content ?? data.message?.content);
-      if (liveThinking) {
-        useChatStore.getState().setThinkingStream(runId, liveThinking, sessionKey);
-      }
+    const liveThinking = extractThinkingContent(data.content ?? data.message?.content);
+    if (liveThinking) {
+      useChatStore.getState().setThinkingStream(runId, liveThinking, sessionKey);
     }
   }
 
@@ -463,9 +513,7 @@ export class ChatHandler {
       const active = this.currentRunIdBySession.get(sessionKey) || '';
       const currentText = this.currentStreamContentBySession.get(sessionKey) || '';
       if (active === runId && currentText.trim()) {
-        const consumed = currentText.length;
         this.closeCurrentStreamSegment(sessionKey);
-        this.streamConsumedBySession.set(sessionKey, consumed);
       }
       return;
     }
@@ -518,9 +566,7 @@ export class ChatHandler {
     if (phase === 'start') {
       const currentContent = this.currentStreamContentBySession.get(sessionKey) || '';
       if (currentContent.trim()) {
-        const newConsumed = currentContent.length;
         this.closeCurrentStreamSegment(sessionKey);
-        this.streamConsumedBySession.set(sessionKey, newConsumed);
       }
       // Tool is starting — add a 'running' card (idempotent)
       const msgs = listFor();
@@ -541,6 +587,8 @@ export class ChatHandler {
           sessionKey,
         );
       }
+      const timingKey = this.toolTimingKey(sessionKey, runId, toolCallId);
+      if (!this.toolStartedAtByKey.has(timingKey)) this.toolStartedAtByKey.set(timingKey, Date.now());
       return;
     }
 
@@ -568,8 +616,10 @@ export class ChatHandler {
       const idx  = msgs.findIndex((m) => m.id === msgId);
       if (idx >= 0) {
         const updated = [...msgs];
-        const startTs = typeof payload.ts === 'number' ? payload.ts : 0;
-        const durationMs = startTs > 0 ? Date.now() - startTs : undefined;
+        const timingKey = this.toolTimingKey(sessionKey, runId, toolCallId);
+        const startedAt = this.toolStartedAtByKey.get(timingKey);
+        this.toolStartedAtByKey.delete(timingKey);
+        const durationMs = startedAt === undefined ? undefined : Math.max(0, Date.now() - startedAt);
         updated[idx] = {
           ...updated[idx],
           runId: runId ?? updated[idx].runId ?? null,
@@ -838,32 +888,16 @@ export class ChatHandler {
       case 'delta': {
         if (!this.beginRun(sessionKey, effectiveRunId)) return;
         const mId = this.ensureActiveMessageId(sessionKey, effectiveRunId, p);
-        const source = this.textStreamSourceBySession.get(sessionKey);
-        const activeRunId = this.currentRunIdBySession.get(sessionKey) || '';
-        if (source === 'agent' && activeRunId === effectiveRunId) {
-          break;
-        }
-        this.textStreamSourceBySession.set(sessionKey, 'chat');
-        // Clean content for display (don't execute workshop commands during streaming)
-        let cleaned = messageText;
-        cleaned = stripDirectives(cleaned);
-        // Strip workshop commands visually (don't execute — that happens on final)
-        cleaned = cleaned.replace(/\[\[workshop:\w+(?:\s+\w+="[^"]*")*\]\]/g, '');
-        // Strip button markers visually
-        cleaned = cleaned.replace(/\[\[button:[^\]]+\]\]/g, '');
+        if (!messageText && !media) break;
+        const selectedText = this.updateStreamSnapshot(sessionKey, 'chat', messageText);
+        this.currentStreamContentBySession.set(sessionKey, selectedText);
+        this.currentRunIdBySession.set(sessionKey, effectiveRunId);
+        const segmentText = this.getSegmentText(sessionKey, selectedText);
+        this.bufferStreamChunk(sessionKey, mId, this.getDisplayStreamText(segmentText), media, effectiveRunId);
 
-        const currentStreamContent = this.currentStreamContentBySession.get(sessionKey) || '';
-        if (cleaned.length >= currentStreamContent.length || messageText.length >= currentStreamContent.length) {
-          this.currentStreamContentBySession.set(sessionKey, messageText); // Keep RAW for final processing
-          this.currentRunIdBySession.set(sessionKey, effectiveRunId);
-          // Micro-batch: buffer chunk, flush to React at most every 50ms
-          const segmentText = this.getSegmentText(sessionKey, messageText);
-          this.bufferStreamChunk(sessionKey, mId, this.getDisplayStreamText(segmentText), media, effectiveRunId);
-
-          const liveThinkingFromBlocks = extractThinkingContent(p.message?.content);
-          if (liveThinkingFromBlocks) {
-            useChatStore.getState().setThinkingStream(effectiveRunId, liveThinkingFromBlocks, sessionKey);
-          }
+        const liveThinkingFromBlocks = extractThinkingContent(p.message?.content);
+        if (liveThinkingFromBlocks) {
+          useChatStore.getState().setThinkingStream(effectiveRunId, liveThinkingFromBlocks, sessionKey);
         }
         break;
       }

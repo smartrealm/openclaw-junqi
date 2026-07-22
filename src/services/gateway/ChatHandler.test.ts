@@ -227,6 +227,94 @@ test('tool boundaries discard an empty streamed assistant segment', async () => 
   assert.equal(assistants.some((message: any) => message.isStreaming), false);
 });
 
+test('tool boundaries preserve an independent final text snapshot', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const streamEnds: StreamEndCall[] = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: (sessionKey: string, messageId: string, content: string, _media?: any, meta?: any) => {
+        streamEnds.push({ sessionKey, messageId, content, meta });
+      },
+    },
+  } as any);
+  const sessionKey = 'agent:main:tool-final-snapshot';
+  const runId = 'run-tool-final-snapshot';
+
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId, state: 'delta', message: { content: 'Prefix before the tool. ' },
+  } });
+  handler.handleToolStream({ sessionKey, runId, data: {
+    toolCallId: 'tool-final-snapshot', name: 'search', phase: 'start', args: {},
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId, state: 'delta', message: { content: 'Post-tool draft.' },
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId, state: 'final', message: { content: 'Post-tool final text that is longer than the earlier prefix.' },
+  } });
+
+  assert.equal(streamEnds.length, 1);
+  assert.equal(streamEnds[0].content, 'Post-tool final text that is longer than the earlier prefix.');
+});
+
+test('tool duration uses the locally recorded start instant', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const originalNow = Date.now;
+  try {
+    Date.now = () => 1_000;
+    const handler = new ChatHandler({ callbacks: { onStreamChunk: () => {}, onStreamEnd: () => {} } } as any);
+    const sessionKey = 'agent:main:tool-duration';
+    const runId = 'run-tool-duration';
+    handler.handleToolStream({ sessionKey, runId, ts: 99_999, data: {
+      toolCallId: 'tool-duration', name: 'search', phase: 'start', args: {},
+    } });
+    Date.now = () => 3_500;
+    handler.handleToolStream({ sessionKey, runId, ts: 3_500, data: {
+      toolCallId: 'tool-duration', name: 'search', phase: 'result', result: 'done',
+    } });
+
+    const { useChatStore } = (globalThis as any).__chatDeps as { useChatStore: any };
+    const tool = (useChatStore.getState().messagesPerSession[sessionKey] ?? [])
+      .find((message: any) => message.id === 'tool-live-tool-duration');
+    assert.equal(tool?.toolDurationMs, 2_500);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('dual text streams retain the more complete compatible snapshot', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const chunks: string[] = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: (_sessionKey: string, _messageId: string, content: string) => chunks.push(content),
+      onStreamEnd: () => {},
+    },
+  } as any);
+  const sessionKey = 'agent:main:dual-stream';
+  const runId = 'run-dual-stream';
+
+  handler.handleEvent({ event: 'agent', payload: {
+    sessionKey, runId, stream: 'assistant', data: { text: 'Short draft' },
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey, runId, state: 'delta', message: { content: 'Short draft with the complete continuation.' },
+  } });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  assert.equal(chunks.at(-1), 'Short draft with the complete continuation.');
+});
+
 test('an old chat terminal cannot overwrite a newer OpenClaw run', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();

@@ -169,6 +169,28 @@ test('history cache preserves structured Gateway blocks through ChatStore projec
   )));
 });
 
+test('thinking-prefix removal does not restore a stale streaming fragment', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    messages: [],
+    renderBlocks: [],
+    responseGroups: [],
+    messagesPerSession: {},
+    _blocksCache: {},
+    _groupsCache: {},
+    thinkingBySession: {},
+  });
+
+  const store = useChatStore.getState();
+  store.updateStreamingMessage('thinking-final', 'partial streamed answer', { runId: 'run-thinking' }, MAIN_KEY);
+  store.setThinkingStream('run-thinking', 'same final snapshot', MAIN_KEY);
+  store.finalizeStreamingMessage('thinking-final', 'same final snapshot', { runId: 'run-thinking' }, MAIN_KEY);
+
+  const message = useChatStore.getState().messagesPerSession[MAIN_KEY]?.find((item) => item.id === 'thinking-final');
+  assert.equal(message?.content, '');
+  assert.equal(message?.isStreaming, false);
+});
+
 test('CHAT-02 failed queue drain keeps the item and its attachments for explicit retry', async () => {
   seedSessions(MAIN_KEY);
   useChatStore.setState({
