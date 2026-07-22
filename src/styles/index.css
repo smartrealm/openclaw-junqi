@@ -564,6 +564,42 @@ html {
   to   { opacity: 0; transform: scale(0.95); }
 }
 
+@keyframes collaboration-drawer-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes collaboration-drawer-backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes collaboration-drawer-panel-in {
+  from { opacity: 0.72; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes collaboration-drawer-panel-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0.72; transform: translateX(100%); }
+}
+
+.collaboration-history-drawer-backdrop[data-state='open'] {
+  animation: collaboration-drawer-backdrop-in 160ms ease-out both;
+}
+
+.collaboration-history-drawer-backdrop[data-state='closed'] {
+  animation: collaboration-drawer-backdrop-out 140ms ease-in both;
+}
+
+.collaboration-history-drawer-panel[data-state='open'] {
+  animation: collaboration-drawer-panel-in 220ms var(--aegis-ease-standard) both;
+}
+
+.collaboration-history-drawer-panel[data-state='closed'] {
+  animation: collaboration-drawer-panel-out 160ms ease-in both;
+}
+
 [data-radix-popper-content-wrapper] > *,
 .aegis-popover,
 [data-aegis-popover] {
@@ -614,6 +650,8 @@ html {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .collaboration-history-drawer-backdrop,
+  .collaboration-history-drawer-panel,
   .aegis-workspace-entry-fallback #app-root {
     animation: none;
   }

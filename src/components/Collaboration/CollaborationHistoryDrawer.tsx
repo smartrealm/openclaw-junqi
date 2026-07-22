@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Archive,
   CircleDashed,
@@ -64,6 +65,14 @@ function abbreviatedDigest(digest: string): string {
   return digest.length > 24 ? `${digest.slice(0, 12)}...${digest.slice(-8)}` : digest;
 }
 
+function applicationOverlayPortalTarget(): HTMLElement | null {
+  if (typeof document === 'undefined') return null;
+  const { body } = document;
+  return body && typeof body.appendChild === 'function' ? body : null;
+}
+
+const DRAWER_EXIT_DURATION_MS = 160;
+
 export function CollaborationHistoryDrawer({
   open,
   runs,
@@ -84,12 +93,23 @@ export function CollaborationHistoryDrawer({
   className,
 }: CollaborationHistoryDrawerProps) {
   const text = useCollaborationText(translate);
+  const [isPresent, setIsPresent] = useState(open);
   const panelRef = useModalFocusScope<HTMLElement>({
     active: open,
     onEscape: onClose,
     initialFocus: 'container',
     layer: 20,
   });
+
+  useEffect(() => {
+    if (open) {
+      setIsPresent(true);
+      return;
+    }
+    if (!isPresent) return;
+    const timer = window.setTimeout(() => setIsPresent(false), DRAWER_EXIT_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [isPresent, open]);
   const sortedTombstones = useMemo(
     () => [...tombstones].sort((left, right) => right.deletedAt - left.deletedAt),
     [tombstones],
@@ -109,11 +129,14 @@ export function CollaborationHistoryDrawer({
     [templates],
   );
 
-  if (!open) return null;
+  const shouldRender = open || isPresent;
+  if (!shouldRender) return null;
 
-  return (
+  const surface = (
     <div
-      className="fixed inset-0 z-[2147481000] bg-[rgb(0_0_0/0.46)]"
+      className="collaboration-history-drawer-backdrop fixed inset-0 bg-[rgb(0_0_0/0.46)]"
+      data-state={open ? 'open' : 'closed'}
+      style={{ zIndex: 'var(--z-application-overlay)' }}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -122,13 +145,15 @@ export function CollaborationHistoryDrawer({
       <aside
         ref={panelRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={open || undefined}
+        aria-hidden={!open || undefined}
         aria-labelledby="collaboration-history-title"
-        tabIndex={-1}
+        tabIndex={open ? -1 : undefined}
         className={cn(
-          'absolute inset-y-0 end-0 flex w-[min(92vw,420px)] min-w-0 flex-col border-s border-aegis-border bg-aegis-bg-solid text-aegis-text shadow-float outline-none',
+          'collaboration-history-drawer-panel absolute inset-y-0 end-0 flex w-[min(92vw,420px)] min-w-0 flex-col border-s border-aegis-border bg-aegis-bg-solid text-aegis-text shadow-float outline-none',
           className,
         )}
+        data-state={open ? 'open' : 'closed'}
       >
         <header className="flex min-w-0 items-start justify-between gap-3 border-b border-aegis-border px-4 py-4">
           <div className="min-w-0">
@@ -145,9 +170,10 @@ export function CollaborationHistoryDrawer({
           <button
             type="button"
             onClick={onClose}
+            disabled={!open}
             aria-label={text('collaboration.common.close', 'Close')}
             title={text('collaboration.common.close', 'Close')}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-aegis-text-muted transition-[background-color,color,transform] duration-150 hover:scale-105 hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text active:scale-90 disabled:pointer-events-none"
           >
             <X size={16} aria-hidden />
           </button>
@@ -406,4 +432,10 @@ export function CollaborationHistoryDrawer({
       </aside>
     </div>
   );
+
+  // SSR tests use a document shim without a mountable body. The desktop
+  // runtime portals to the real body so route-level stacking contexts cannot
+  // leak controls into the drawer.
+  const portalTarget = applicationOverlayPortalTarget();
+  return portalTarget ? createPortal(surface, portalTarget) : surface;
 }

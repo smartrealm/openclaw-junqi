@@ -143,6 +143,11 @@
   --z-toast:         500;
   --z-tooltip:       600;
 
+  /* Portal surfaces escape route-level stacking contexts. Keep modal
+     interaction above legacy local overlays, while global toasts remain free
+     to report an outcome above a modal when needed. */
+  --z-application-overlay: 2147482500;
+
   /* ═══════════════════════════════════════
      Typography Scale
      --aegis-fs-*  : font-size
