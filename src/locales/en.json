@@ -2732,7 +2732,7 @@
       },
       "ready": {
         "title": "Ready",
-        "description": "Enter workspace"
+        "description": "Enter dashboard"
       }
     },
     "installPanel": {
@@ -2749,8 +2749,8 @@
       "exportLogsFailed": "Could not export installation diagnostics",
       "logWriteFailed": "Installation diagnostics could not be written to disk",
       "runningStep": "Running: {{step}}",
-      "keepOpen": "Keep this window open during installation. Click Enter workspace when setup is complete.",
-      "readyHint": "Gateway is ready. Click Enter workspace to continue.",
+      "keepOpen": "Keep this window open during installation. Click Enter dashboard when setup is complete.",
+      "readyHint": "Gateway is ready. Click Enter dashboard to continue.",
       "errorHint": "Copy the error details or go back to choose another setup method."
     },
     "stepStatus": {
@@ -2798,7 +2798,7 @@
     "detecting": "Detecting OpenClaw installation...",
     "settingUp": "Setting up JunQi Desktop",
     "subtitle": "Installing required components. This may take a few minutes.",
-    "readySubtitle": "Gateway is verified. Sessions and background data will sync after you enter the workspace.",
+    "readySubtitle": "Gateway is verified. Sessions and background data will sync after you enter the dashboard.",
     "runtimePreferences": "Runtime preferences",
     "autostart": {
       "title": "Start OpenClaw at login",
@@ -2811,8 +2811,8 @@
       "disabling": "Turning off autostart…",
       "switching": "Switching how OpenClaw runs, one moment…"
     },
-    "petReadyHint": "You can enter the workspace now.",
-    "enterWorkspace": "Enter workspace",
+    "petReadyHint": "You can enter the dashboard now.",
+    "enterDashboard": "Enter dashboard",
     "openclawDetectedTitle": "OpenClaw is installed",
     "modeNative": "Native Install",
     "modeNativeDesc": "Install Node.js, Git, and OpenClaw directly on your machine. Best for most users.",
@@ -3362,7 +3362,7 @@
   "setup.installComplete": "Required components installed",
   "setup.gatewayConnected": "Gateway is ready",
   "setup.gatewayReadySubtitle": "Gateway has started. Click Next to begin the official OpenClaw setup wizard.",
-  "setup.installCompleteSubtitle": "Installation and configuration are complete. The next step only starts Gateway; you still enter the workspace manually afterward.",
+  "setup.installCompleteSubtitle": "Installation and configuration are complete. The next step only starts Gateway; you still enter the dashboard manually afterward.",
   "setup.installCompleteGatewayPending": "Gateway configuration is ready. Start Gateway to continue.",
   "setup.gatewayPrepareWillRetry": "Gateway preparation did not complete: {{error}}. Starting Gateway will retry automatically.",
   "setup.installPanel.gatewayPendingHint": "Required components are complete. Start Gateway to move to the next step.",

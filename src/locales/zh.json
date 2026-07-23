@@ -2726,7 +2726,7 @@
       },
       "ready": {
         "title": "完成",
-        "description": "进入工作台"
+        "description": "进入仪表盘"
       }
     },
     "installPanel": {
@@ -2743,8 +2743,8 @@
       "exportLogsFailed": "无法导出安装诊断包",
       "logWriteFailed": "安装诊断日志无法写入磁盘",
       "runningStep": "正在执行：{{step}}",
-      "keepOpen": "安装过程中请保持窗口打开。完成后点击进入工作台。",
-      "readyHint": "Gateway 已就绪。点击进入工作台继续。",
+      "keepOpen": "安装过程中请保持窗口打开。完成后点击进入仪表盘。",
+      "readyHint": "Gateway 已就绪。点击进入仪表盘继续。",
       "errorHint": "请复制错误信息或返回上一步重新选择安装方式。"
     },
     "stepStatus": {
@@ -2792,7 +2792,7 @@
     "detecting": "正在检测 OpenClaw 安装...",
     "settingUp": "正在配置 JunQi Desktop",
     "subtitle": "正在安装必需组件，可能需要几分钟。",
-    "readySubtitle": "Gateway 已验证可用。进入工作台后，会话和后台数据将在后台同步。",
+    "readySubtitle": "Gateway 已验证可用。进入仪表盘后，会话和后台数据将在后台同步。",
     "runtimePreferences": "运行偏好",
     "autostart": {
       "title": "OpenClaw 开机自动运行",
@@ -2805,8 +2805,8 @@
       "disabling": "正在关闭开机自启…",
       "switching": "正在切换 OpenClaw 的运行方式，请稍候…"
     },
-    "petReadyHint": "可以进入工作台了",
-    "enterWorkspace": "进入工作台",
+    "petReadyHint": "可以进入仪表盘了",
+    "enterDashboard": "进入仪表盘",
     "openclawDetectedTitle": "OpenClaw 已安装",
     "modeNative": "本地安装",
     "modeNativeDesc": "直接在您的电脑上安装 Node.js、Git 和 OpenClaw。适合大多数用户。",
@@ -3386,7 +3386,7 @@
   "setup.installComplete": "必需组件已安装完成",
   "setup.gatewayConnected": "Gateway 已就绪",
   "setup.gatewayReadySubtitle": "Gateway 已启动。点击下一步开始 OpenClaw 官方配置向导。",
-  "setup.installCompleteSubtitle": "安装与配置已完成。下一步只会启动 Gateway，启动后仍需手动进入工作台。",
+  "setup.installCompleteSubtitle": "安装与配置已完成。下一步只会启动 Gateway，启动后仍需手动进入仪表盘。",
   "setup.installCompleteGatewayPending": "Gateway 配置已准备，点击启动 Gateway 继续。",
   "setup.gatewayPrepareWillRetry": "Gateway 准备检查未完成：{{error}}。点击启动时将自动重试。",
   "setup.installPanel.gatewayPendingHint": "必需组件已完成。点击启动 Gateway 进入下一步。",

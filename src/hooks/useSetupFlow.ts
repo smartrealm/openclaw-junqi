@@ -189,7 +189,7 @@ export interface SetupFlow {
   goBack: () => Promise<void>;
   retryGit: () => void;
   retryNode: () => void;
-  enterWorkspace: (origin?: Element | null) => void;
+  enterDashboard: (origin?: Element | null) => void;
 }
 
 const INITIAL_NATIVE_STEPS: StepState[] = [
@@ -462,7 +462,7 @@ export function useSetupFlow(
   // ── 挂载后自动检测 ──
   // 先读取后端持久化的运行时选择；只有 Native 才检查宿主机 OpenClaw。
   // 然后 probe_gateway_port（Rust 侧从选定配置读取实际端口）。检测只能推进向导步骤，不能写入
-  // “已完成”标记；该标记必须由用户点击“进入工作台”后写入。
+  // “已完成”标记；该标记必须由用户点击“进入仪表盘”后写入。
   useEffect(() => {
     if (setupStep !== "detecting") return;
     let cancelled = false;
@@ -498,7 +498,7 @@ export function useSetupFlow(
           setInstallTarget({ tier: "existing", path: oclaw.path, version: oclaw.version ?? undefined });
         }
         // 选定运行时已满足探测条件，继续检查 Gateway 是否已监听。这里不直接
-        // 进入工作台，避免用户在向导中前后切换时被跳过确认步骤。
+        // 进入仪表盘，避免用户在向导中前后切换时被跳过确认步骤。
         try {
           // 不传端口时由 Rust 读取配置；读取失败时使用共享运行时默认值。
           const reachable: boolean = await invoke("probe_selected_gateway", {});
@@ -1760,7 +1760,7 @@ export function useSetupFlow(
     runNativeSetup();
   }, [setSetupError, runNativeSetup]);
 
-  const enterWorkspace = useCallback((origin?: Element | null) => {
+  const enterDashboard = useCallback((origin?: Element | null) => {
     cancelActiveRun();
     enterWorkspaceWithTransition(() => {
       // The official wizard and live model probe already authenticated this
@@ -1846,6 +1846,6 @@ export function useSetupFlow(
     goBack,
     retryGit,
     retryNode,
-    enterWorkspace,
+    enterDashboard,
   };
 }

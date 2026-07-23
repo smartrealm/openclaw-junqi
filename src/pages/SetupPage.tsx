@@ -439,7 +439,7 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       } : undefined}
       nextAction={
         setupStep === "ready"
-          ? { label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }
+          ? { label: t("setup.enterDashboard"), onClick: (event) => flow.enterDashboard(event.currentTarget) }
           : isGatewayReady
             ? {
                 label: gatewayReadyChecking
@@ -1019,7 +1019,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       subtitle={t("setup.readySubtitle")}
       logs={logs}
       previousAction={{ onClick: flow.goBack }}
-      nextAction={{ label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }}
+      nextAction={{ label: t("setup.enterDashboard"), onClick: (event) => flow.enterDashboard(event.currentTarget) }}
     >
       <div className="flex flex-col items-center gap-5 py-5 text-center">
         <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-aegis-success/10 text-aegis-success ring-4 ring-aegis-success/10">

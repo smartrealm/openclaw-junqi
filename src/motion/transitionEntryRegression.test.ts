@@ -16,13 +16,13 @@ test('all visible theme selectors use the shared transition service', async () =
   }
 });
 
-test('enter-workspace actions forward their button origin to the transition coordinator', async () => {
+test('enter-dashboard actions forward their button origin to the transition coordinator', async () => {
   const [page, flow, transition] = await Promise.all([
     read('../pages/SetupPage.tsx'),
     read('../hooks/useSetupFlow.ts'),
     read('./workspaceEntryTransition.ts'),
   ]);
-  assert.match(page, /flow\.enterWorkspace\(event\.currentTarget\)/);
+  assert.match(page, /flow\.enterDashboard\(event\.currentTarget\)/);
   assert.match(flow, /enterWorkspaceWithTransition\(\(\) => \{[\s\S]*?setSetupComplete\(true\);[\s\S]*?\}, origin\)/);
   assert.match(transition, /circularViewTransition\.run/);
 });

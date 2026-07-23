@@ -89,7 +89,7 @@ const SETUP_DONE_MARKER = "3";
 const setupPreviouslyDone = localStorage.getItem("junqi-setup-done") === SETUP_DONE_MARKER;
 
 export const useAppStore = create<AppState>((set) => ({
-  // 首次安装从品牌/语言/主题选择开始；只有用户明确进入工作台后，
+  // 首次安装从品牌/语言/主题选择开始；只有用户明确进入仪表盘后，
   // 后续启动才跳过向导，运行时健康检查交给工作台 Gateway 管理。
   setupComplete: setupPreviouslyDone ? true : null,
   setupStep: (setupPreviouslyDone ? "ready" : "welcome") as SetupStep,

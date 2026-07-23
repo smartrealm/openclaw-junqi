@@ -36,7 +36,7 @@ const SETUP_STEPS = [
   { id: "storage", titleKey: "setup.steps.storage.title", titleFallback: "Data location", descriptionKey: "setup.steps.storage.description", descriptionFallback: "Configuration / Workspace" },
   { id: "runtime", titleKey: "setup.steps.runtime.title", titleFallback: "Runtime", descriptionKey: "setup.steps.runtime.description", descriptionFallback: "Install and start Gateway" },
   { id: "configuration", titleKey: "setup.steps.configuration.title", titleFallback: "OpenClaw setup", descriptionKey: "setup.steps.configuration.description", descriptionFallback: "Models / credentials / channels" },
-  { id: "ready", titleKey: "setup.steps.ready.title", titleFallback: "Complete", descriptionKey: "setup.steps.ready.description", descriptionFallback: "Enter workspace" },
+  { id: "ready", titleKey: "setup.steps.ready.title", titleFallback: "Complete", descriptionKey: "setup.steps.ready.description", descriptionFallback: "Enter dashboard" },
 ] as const;
 
 export const STEP_META: Record<string, { titleKey: string; titleFallback: string; descriptionKey: string; descriptionFallback: string }> = {

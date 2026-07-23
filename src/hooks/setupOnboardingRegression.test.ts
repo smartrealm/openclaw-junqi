@@ -175,7 +175,7 @@ test('BUG-ONB-15 setup navigation has one complete six-step translation contract
     storage: { title: '数据位置', description: '配置与工作区' },
     runtime: { title: '运行时', description: '安装并启动 Gateway' },
     configuration: { title: 'OpenClaw 配置', description: '模型、凭据与渠道' },
-    ready: { title: '完成', description: '进入工作台' },
+    ready: { title: '完成', description: '进入仪表盘' },
   };
   const enExpected = {
     identity: { title: 'Preferences', description: 'Language / Theme' },
@@ -183,7 +183,7 @@ test('BUG-ONB-15 setup navigation has one complete six-step translation contract
     storage: { title: 'Data location', description: 'Configuration / Workspace' },
     runtime: { title: 'Runtime', description: 'Install and start Gateway' },
     configuration: { title: 'OpenClaw setup', description: 'Models / credentials / channels' },
-    ready: { title: 'Ready', description: 'Enter workspace' },
+    ready: { title: 'Ready', description: 'Enter dashboard' },
   };
 
   assert.deepEqual(zh.setup.steps, zhExpected);
@@ -241,14 +241,16 @@ test('BUG-ONB-30 verified Gateway handoff cannot start cold recovery', () => {
   assert.match(coldRecovery, /workspaceStartupMode,/);
 });
 
-test('BUG-ONB-31 entering the workbench lands on the dashboard', () => {
+test('BUG-ONB-31 the explicit dashboard action lands on the dashboard', () => {
   const entry = setupFlow.slice(
-    setupFlow.indexOf('const enterWorkspace = useCallback'),
-    setupFlow.indexOf('return {', setupFlow.indexOf('const enterWorkspace = useCallback')),
+    setupFlow.indexOf('const enterDashboard = useCallback'),
+    setupFlow.indexOf('return {', setupFlow.indexOf('const enterDashboard = useCallback')),
   );
 
   assert.match(entry, /window\.location\.hash = '\/';/);
   assert.doesNotMatch(entry, /ai-workspace/);
+  assert.match(setupPage, /setup\.enterDashboard/);
+  assert.doesNotMatch(setupPage, /setup\.enterWorkspace/);
 });
 
 test('BUG-ONB-10 setup leaves system tools and npm cache at their native defaults', () => {
