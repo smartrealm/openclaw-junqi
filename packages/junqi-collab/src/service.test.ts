@@ -2490,7 +2490,13 @@ test("retention removes only expired terminal runs without unresolved work", () 
       .prepare("UPDATE collaboration_runs SET reconcile_state = 'ATTENTION_REQUIRED' WHERE id = ?")
       .run(failedFlowMirror);
 
-    assert.equal(service.runRetentionSweep(referenceTime), 1);
+    // A sweep has a bounded wall-clock budget and may spend it recovering stale
+    // export staging first. Exercise its direct continuations, as production does.
+    let removed = 0;
+    for (let sweep = 0; sweep < 8 && removed === 0; sweep += 1) {
+      removed += service.runRetentionSweep(referenceTime);
+    }
+    assert.equal(removed, 1);
     assert.equal(existsSync(artifactPath), false);
     assert.equal(existsSync(stagedArtifactPath), false);
     assert.equal(existsSync(orphanStagingDirectory), false);
