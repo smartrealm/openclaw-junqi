@@ -12,7 +12,6 @@ const PetRuntime = lazy(() => import('@/pet/PetRuntime'));
 const SetupPage = lazy(() => import('@/pages/SetupPage').then(m => ({ default: m.SetupPage })));
 const PairingScreen = lazy(() => import('@/components/PairingScreen').then(m => ({ default: m.PairingScreen })));
 const GatewayErrorScreen = lazy(() => import('@/components/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
-const BootTimelineOverlay = lazy(() => import('@/components/BootTimelineOverlay').then(m => ({ default: m.BootTimelineOverlay })));
 const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
 const DynamicIslandRuntime = lazy(() => import('@/dynamic-island/DynamicIslandRuntime'));
 import { useChatStore } from '@/stores/chatStore';
@@ -111,7 +110,6 @@ export default function App() {
 
   // ── Auto-Pairing State ──
   const [pairingIssue, setPairingIssue] = useState<GatewayAuthorizationIssue | null>(null);
-  const needsPairing = pairingIssue !== null;
   const pairingTriggeredRef = useRef(false);
   const deferredModelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -132,10 +130,9 @@ export default function App() {
   const setupHealthCheckedRef = useRef(false);
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
   const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
-  const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
+  const [coldStartRecoveryActive, setColdStartRecoveryActive] = useState(true);
   const [openclawUpdateActive, setOpenclawUpdateActive] = useState(false);
-  const bootOverlayStartedAtRef = useRef(Date.now());
-  const bootOverlayDismissedRef = useRef(false);
+  const coldStartRecoveryCompletedRef = useRef(false);
   const lastGatewayToastKeyRef = useRef<string | null>(null);
   const lastGatewayErrorToastRef = useRef<string | null>(null);
   const gatewayBootErrorRef = useRef<string | null>(null);
@@ -157,10 +154,6 @@ export default function App() {
     gatewayMigrationRetryCoordinatorRef.current = createGatewayMigrationRetryCoordinator();
   }
   const openControlUiAfterRecoveryRef = useRef(false);
-  const [bootRecoveryAttempt, setBootRecoveryAttempt] = useState(0);
-  const [bootRecoveryReady, setBootRecoveryReady] = useState(false);
-  const [bootRecoveryRestarting, setBootRecoveryRestarting] = useState(false);
-  const [bootRecoveryLogs, setBootRecoveryLogs] = useState<string[]>([]);
 
   // The local marker is only a cache. Validate the selected Gateway identity
   // before bypassing SetupPage; a moved/removed npm prefix or a stale service
@@ -195,23 +188,18 @@ export default function App() {
   useEffect(() => {
     const handleUpdateMaintenanceStarted = () => {
       setOpenclawUpdateActive(true);
-      bootOverlayDismissedRef.current = false;
-      bootOverlayStartedAtRef.current = Date.now();
+      coldStartRecoveryCompletedRef.current = false;
       bootRecoveryStartedRef.current = false;
-      setBootRecoveryAttempt(0);
-      setBootRecoveryReady(false);
-      setBootRecoveryRestarting(false);
-      setBootRecoveryLogs([]);
       useBootSequenceStore.getState().reset();
       if (!useChatStore.getState().connected) {
-        setBootOverlayVisible(true);
+        setColdStartRecoveryActive(true);
       }
     };
     const handleUpdateMaintenanceFinished = () => {
       setOpenclawUpdateActive(false);
       if (useChatStore.getState().connected) {
-        bootOverlayDismissedRef.current = true;
-        setBootOverlayVisible(false);
+        coldStartRecoveryCompletedRef.current = true;
+        setColdStartRecoveryActive(false);
       }
     };
 
@@ -404,10 +392,9 @@ export default function App() {
   const surfaceVerifiedGatewayHandoffFailure = useCallback(() => {
     if (!verifiedGatewayHandoffRef.current) return;
     verifiedGatewayHandoffRef.current = false;
-    bootOverlayDismissedRef.current = false;
-    bootOverlayStartedAtRef.current = Date.now();
+    coldStartRecoveryCompletedRef.current = false;
     setWorkspaceStartupMode('cold');
-    setBootOverlayVisible(true);
+    setColdStartRecoveryActive(true);
   }, [setWorkspaceStartupMode]);
 
   // Setup has already completed an authenticated Gateway and model probe. Keep
@@ -416,8 +403,8 @@ export default function App() {
   useEffect(() => {
     if (workspaceStartupMode !== 'verified-gateway-handoff') return;
     verifiedGatewayHandoffRef.current = true;
-    bootOverlayDismissedRef.current = true;
-    setBootOverlayVisible(false);
+    coldStartRecoveryCompletedRef.current = true;
+    setColdStartRecoveryActive(false);
     const timeout = window.setTimeout(() => {
       if (!useChatStore.getState().connected) {
         surfaceVerifiedGatewayHandoffFailure();
@@ -432,27 +419,16 @@ export default function App() {
     setWorkspaceStartupMode('cold');
   }, [connected, setWorkspaceStartupMode, workspaceStartupMode]);
 
-  // ── Cold-start boot overlay: keep visible until WebSocket is really connected
-  // and show it for a minimum duration to avoid a flash/jump effect.
-  // Close boot overlay as soon as we're connected. A minimum 2s display prevents
-  // a jarring flash for fast local boots — the previous 4s was too long when
-  // users were waiting through a real failure and caused the 'still connecting'
-  // perception. The ref guard prevents re-opening on transient disconnects.
+  // Cold-start recovery is lifecycle state, not a rendering gate. The
+  // workbench remains available while the Gateway connects in the background.
   useEffect(() => {
-    if (bootOverlayDismissedRef.current) return;
-    if (!connected) { setBootOverlayVisible(true); return; }
-    const elapsed = Date.now() - bootOverlayStartedAtRef.current;
-    const delay = Math.max(0, 2000 - elapsed);
-    const timer = setTimeout(() => {
-      bootOverlayDismissedRef.current = true;
-      setBootOverlayVisible(false);
-    }, delay);
-    return () => clearTimeout(timer);
+    if (!connected || coldStartRecoveryCompletedRef.current) return;
+    coldStartRecoveryCompletedRef.current = true;
+    setColdStartRecoveryActive(false);
   }, [connected]);
 
   const addBootRecoveryLog = useCallback((line: string) => {
-    const ts = new Date().toLocaleTimeString();
-    setBootRecoveryLogs((prev) => [...prev.slice(-24), `[${ts}] ${line}`]);
+    debugLog('gateway', `[recovery] ${line}`);
   }, []);
 
   /**
@@ -493,22 +469,6 @@ export default function App() {
     return gatewayMigrationRetryCoordinatorRef.current?.wait(delayMs) ?? Promise.resolve(true);
   }, [addBootRecoveryLog, emitGatewayProgress]);
 
-  const triggerGatewayReconnect = useCallback((label = 'manual', minimumProgress = 0.30) => {
-    addBootRecoveryLog(`Reconnect requested (${label})`);
-    setBootRecoveryAttempt(0);
-    setBootRecoveryReady(false);
-    const reconnectProgress = Math.min(0.96, Math.max(0.30, minimumProgress));
-    const syncingProgress = Math.min(0.98, Math.max(0.65, reconnectProgress + 0.03));
-    emitGatewayProgress('Reconnecting to OpenClaw Gateway…', reconnectProgress, 'gateway.progress.reconnect');
-    // Allow the auto-recovery effect to re-arm if the user clicks "reconnect"
-    // stays true after the first recovery attempt and blocks all subsequent retries.
-    bootRecoveryStartedRef.current = false;
-    emitGatewayProgress('Detecting, connecting, and syncing runtime state…', syncingProgress, 'gateway.progress.detectConnectSync');
-    // Use reconnect() instead of reset() — triggers an immediate status probe
-    // so we don't wait up to 2s for the periodic poller to drive the FSM.
-    try { gatewayManager.reconnect(); } catch {}
-  }, [addBootRecoveryLog, emitGatewayProgress]);
-
   const restartGatewayFromBoot = useCallback(async (diagnostic?: string) => {
     if (!(await waitForGatewayMigrationLock(diagnostic))) return false;
     if (!window.aegis?.gateway?.retry) {
@@ -519,8 +479,6 @@ export default function App() {
       openControlUiAfterRecoveryRef.current = false;
       return false;
     }
-    setBootRecoveryRestarting(true);
-    setBootRecoveryReady(true);
     addBootRecoveryLog('Restarting Gateway service…');
     emitGatewayProgress('Restarting OpenClaw Gateway…', 0.15, 'gateway.progress.restart');
     try {
@@ -550,14 +508,8 @@ export default function App() {
         setGatewayBootLogs(formatGatewayLogs(logs));
       }
       return false;
-    } finally {
-      setBootRecoveryRestarting(false);
     }
   }, [addBootRecoveryLog, emitGatewayProgress, waitForGatewayMigrationLock]);
-
-  const openBootLogs = useCallback(() => {
-    try { window.location.hash = '#/logs'; } catch {}
-  }, []);
 
   // During boot, separate two different failures:
   // 1. Gateway process is running, but the WebSocket handshake is late.
@@ -574,21 +526,14 @@ export default function App() {
     if (connected) {
       cancelGatewayMigrationRetry();
       bootRecoveryStartedRef.current = false;
-      setBootRecoveryAttempt(0);
-      setBootRecoveryReady(false);
-      setBootRecoveryRestarting(false);
       return;
     }
-    if (!bootOverlayVisible || bootOverlayDismissedRef.current || bootRecoveryStartedRef.current) return;
+    if (!coldStartRecoveryActive || coldStartRecoveryCompletedRef.current || bootRecoveryStartedRef.current) return;
     if (!window.aegis?.gateway?.retry) return; // not under Tauri — nothing to restart
     bootRecoveryStartedRef.current = true;
-    setBootRecoveryLogs([]);
 
     let cancelled = false;
     const startGatewayRecovery = async (reason: string) => {
-      setBootRecoveryAttempt(0);
-      setBootRecoveryReady(false);
-      setBootRecoveryRestarting(true);
       addBootRecoveryLog(`Starting Gateway recovery immediately (${reason})…`);
       emitGatewayProgress('Starting OpenClaw Gateway…', 0.20, 'gateway.progress.starting');
       try {
@@ -617,8 +562,6 @@ export default function App() {
         addBootRecoveryLog(`ensure_gateway_running exception: ${String(err)}`);
         emitGatewayProgress('Gateway recovery failed, attempting restart…', 0.45, 'gateway.progress.ensureFailed');
         await restartGatewayFromBoot(String(err));
-      } finally {
-        if (!cancelled) setBootRecoveryRestarting(false);
       }
     };
 
@@ -653,7 +596,7 @@ export default function App() {
       cancelled = true;
       cancelGatewayMigrationRetry();
     };
-  }, [connected, bootOverlayVisible, openclawUpdateActive, setupComplete, workspaceStartupMode, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot, cancelGatewayMigrationRetry]);
+  }, [connected, coldStartRecoveryActive, openclawUpdateActive, setupComplete, workspaceStartupMode, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot, cancelGatewayMigrationRetry]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
@@ -850,9 +793,8 @@ export default function App() {
         if (retry.phase === 'exhausted') {
           surfaceVerifiedGatewayHandoffFailure();
         }
-        if (bootOverlayDismissedRef.current) return;
+        if (coldStartRecoveryCompletedRef.current) return;
         if (retry.phase === 'attempting') {
-          setBootRecoveryAttempt(retry.attempt);
           addBootRecoveryLog(`WebSocket connection attempt ${retry.attempt}/${retry.maxAttempts} started`);
           return;
         }
@@ -863,8 +805,6 @@ export default function App() {
           return;
         }
         if (retry.phase === 'exhausted') {
-          setBootRecoveryAttempt(retry.maxAttempts);
-          setBootRecoveryReady(true);
           addBootRecoveryLog(`All ${retry.maxAttempts} connection attempts failed; self-rescue is ready`);
         }
       },
@@ -982,16 +922,6 @@ export default function App() {
       setGatewayBootError(snap.error);
       gatewayBootErrorRef.current = snap.error;
       setGatewayBootLogs(snap.logs);
-      if (snap.logs?.stdout || snap.logs?.stderr) {
-        const incoming = [snap.logs.stdout, snap.logs.stderr]
-          .filter(Boolean)
-          .flatMap((block) => block.split('\n'))
-          .filter(Boolean);
-        setBootRecoveryLogs((prev) => {
-          const seen = new Set(prev);
-          return [...prev, ...incoming.filter((line) => !seen.has(line))].slice(-80);
-        });
-      }
       setGatewayRetrying(snap.retrying);
 
       // `selectedGatewayReady` is backed by probe_selected_gateway, which
@@ -1007,7 +937,7 @@ export default function App() {
       lastGatewayToastKeyRef.current = toastKey;
       // Normal reconnect/connecting/connected transitions are too noisy.
       // Notify only when a real error appears, and once when that error recovers.
-      if (bootOverlayDismissedRef.current) {
+      if (coldStartRecoveryCompletedRef.current) {
         if (snap.error && snap.error !== previousError) {
           lastGatewayErrorToastRef.current = snap.error;
           void addToastLazy(
@@ -1117,7 +1047,7 @@ export default function App() {
     window.addEventListener('aegis:sessions-changed', handleSessionsChanged);
 
     // Every visible recovery entry point dispatches this event. App owns the
-    // process lifecycle so the OfflineOverlay and StatusBar cannot race each
+    // process lifecycle so Dashboard and StatusBar cannot race each
     // other with separate ensure/restart sequences.
     const handleManualReconnect = (event: Event) => {
       const detail = (event as CustomEvent<{
@@ -1187,7 +1117,7 @@ export default function App() {
       gateway.forgetSessionTranscript();
       gatewayManager.destroy();
     };
-  }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, triggerGatewayReconnect, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure]);
+  }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure]);
 
 
   // ── Pairing Handlers ──
@@ -1258,22 +1188,6 @@ export default function App() {
             retrying={gatewayRetrying}
             onRetry={handleGatewayRetry}
             onRecovered={handleGatewayRecovered}
-          />
-        </Suspense>
-      )}
-
-      {bootOverlayVisible && workspaceStartupMode !== 'verified-gateway-handoff' && !gatewayOptionalRoute && !gatewayBootError && !needsPairing && (
-        <Suspense fallback={null}>
-          <BootTimelineOverlay
-            recovery={{
-              attempt: bootRecoveryAttempt,
-              showRestart: bootRecoveryReady,
-              restarting: bootRecoveryRestarting,
-              logs: bootRecoveryLogs,
-              onReconnect: () => triggerGatewayReconnect('button'),
-              onRestart: () => void restartGatewayFromBoot(gatewayBootErrorRef.current ?? undefined),
-              onOpenLogs: openBootLogs,
-            }}
           />
         </Suspense>
       )}

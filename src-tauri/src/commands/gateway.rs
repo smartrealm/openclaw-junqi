@@ -3318,7 +3318,7 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
     if child_alive {
         // Probe the local gateway port so `running` reflects "ready to serve",
         // not just "process is alive". Returning false here
-        // causes the UI to keep waiting — BootTimelineOverlay will retry.
+        // causes the connection lifecycle to keep waiting and retry.
         if gateway_matches_config(port, &config_path).await {
             if can_reconcile {
                 reconcile_runtime_observation(

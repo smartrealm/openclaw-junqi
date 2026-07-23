@@ -251,7 +251,7 @@ export class GatewayConnection {
   private msgRouter = new MessageRouter();
   private readonly HEARTBEAT_DEAD_MS = 90_000; // No traffic for 90s = dead
 
-  // ── Last error for diagnostics (shown in OfflineOverlay) ──
+  // ── Last error for diagnostics and recovery surfaces ──
   private lastError: string | null = null;
   private readonly requestedScopes: readonly GatewayOperatorScope[];
   private readonly transient: boolean;

@@ -955,68 +955,94 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   );
 }
 
-export type InstallationConsoleSummaryState = "installation" | "gateway-ready" | "hidden";
+export type InstallationConsoleSummary =
+  | { kind: "installation" }
+  | { kind: "gateway-ready" }
+  | { kind: "model-checking" }
+  | { kind: "model-check-failed"; message: string };
 
 type InstallationConsoleProps = {
   flow: SetupFlow;
   logs: SetupLog[];
   setupStep: string;
-  summaryState?: InstallationConsoleSummaryState;
+  summary?: InstallationConsoleSummary;
 };
 
 export function InstallationConsole({
   flow,
   logs,
   setupStep,
-  summaryState = "installation",
+  summary = { kind: "installation" },
 }: InstallationConsoleProps) {
   const { t } = useTranslation();
   const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
-  const isGatewayReady = setupStep === "gateway-ready";
-  const isReady = setupStep === "ready" || isGatewayReady;
+  const modelChecking = summary.kind === "model-checking";
+  const modelCheckFailed = summary.kind === "model-check-failed";
+  const isReady = setupStep === "ready" || summary.kind === "gateway-ready";
   const percent = isReady
     ? 100
     : installationCompletionPercent(flow.steps);
-  const isError = setupStep === "error";
+  const isError = setupStep === "error" || modelCheckFailed;
   useEffect(() => {
     if (isError) setMobileView("logs");
   }, [isError]);
   const currentMeta = current ? STEP_META[current.id] : null;
-  const currentTitle = summaryState === "gateway-ready"
-    ? t("setup.gatewayConnected", "Gateway 已就绪")
-    : installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
-  const currentDescription = summaryState === "gateway-ready"
-    ? t("setup.gatewayReadySubtitle", "OpenClaw Gateway 已启动。请点击下一步继续。")
-    : currentMeta
-      ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
-      : t("setup.subtitle");
-  const showSummary = summaryState !== "hidden";
+  const currentTitle = modelChecking
+    ? t("setup.gatewayReadyCheckingTitle", "正在检查 OpenClaw 配置")
+    : modelCheckFailed
+      ? t("setup.gatewayReadyContinueFailedTitle", "无法进入下一步")
+      : summary.kind === "gateway-ready"
+        ? t("setup.gatewayConnected", "Gateway 已就绪")
+        : installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
+  const currentDescription = modelChecking
+    ? t(
+        "setup.gatewayReadyCheckingDescription",
+        "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
+      )
+    : modelCheckFailed
+      ? summary.message
+      : summary.kind === "gateway-ready"
+        ? t("setup.gatewayReadySubtitle", "OpenClaw Gateway 已启动。请点击下一步继续。")
+        : currentMeta
+          ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
+          : t("setup.subtitle");
+  const summaryLabel = modelChecking
+    ? t("setup.gatewayReadyCheckingAction", "正在检查配置…")
+    : isReady
+      ? t("setup.ready", "就绪")
+      : isError
+        ? t("setup.error", "安装遇到问题")
+        : t("setup.installPanel.current", "当前执行");
+  const showProgress = !modelChecking && !modelCheckFailed;
 
   return (
     <div className="space-y-4">
-      {showSummary && (
-        <div className={clsx(
-          "grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_168px]",
-          isError ? "border-red-500/35 bg-red-500/5" : isReady ? "border-aegis-success/35 bg-aegis-success/5" : "border-aegis-primary/30 bg-aegis-primary/5",
-        )}>
-          <div className="min-w-0">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
-              {isReady ? <CheckCircle2 size={15} className="text-aegis-success" /> : isError ? <X size={15} className="text-red-300" /> : <CircleDot size={15} className="text-aegis-primary" />}
-              {isReady
-                ? t("setup.ready", "就绪")
+      <div className={clsx(
+        "grid gap-3 rounded-xl border p-4",
+        showProgress && "md:grid-cols-[1fr_168px]",
+        isError ? "border-red-500/35 bg-red-500/5" : isReady ? "border-aegis-success/35 bg-aegis-success/5" : "border-aegis-primary/30 bg-aegis-primary/5",
+      )}>
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
+            {modelChecking
+              ? <RefreshCw size={15} className="animate-spin text-aegis-primary" />
+              : isReady
+                ? <CheckCircle2 size={15} className="text-aegis-success" />
                 : isError
-                    ? t("setup.error", "安装遇到问题")
-                    : t("setup.installPanel.current", "当前执行")}
-            </div>
-            <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
-            <p className="mt-1 max-w-[62ch] text-sm leading-6 text-aegis-text-muted">{currentDescription}</p>
-            {current?.id === "openclaw" && flow.installTarget && (
-              <InstallTargetCard target={flow.installTarget} />
-            )}
+                  ? <X size={15} className="text-red-300" />
+                  : <CircleDot size={15} className="text-aegis-primary" />}
+            {summaryLabel}
           </div>
+          <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
+          <p className="mt-1 max-w-[62ch] text-sm leading-6 text-aegis-text-muted">{currentDescription}</p>
+          {current?.id === "openclaw" && flow.installTarget && (
+            <InstallTargetCard target={flow.installTarget} />
+          )}
+        </div>
+        {showProgress && (
           <div className="flex flex-col justify-center rounded-xl border border-aegis-border/70 bg-aegis-bg/55 px-4 py-3">
             <div className="text-[11px] font-semibold text-aegis-text-dim">{t("setup.installPanel.progress", "总进度")}</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums text-aegis-text">{percent}%</div>
@@ -1036,8 +1062,8 @@ export function InstallationConsole({
             </div>
             <div className="mt-2 text-[11px] text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
         <div className="flex gap-1 border-b border-aegis-border p-2 lg:hidden">

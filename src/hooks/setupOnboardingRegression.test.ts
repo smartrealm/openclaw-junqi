@@ -222,11 +222,13 @@ test('BUG-ONB-28 a verified setup Gateway hands off without replaying cold boot'
 });
 
 test('BUG-ONB-29 model verification owns the active setup status after Gateway startup', () => {
-  assert.match(setupFlowPanels, /export type InstallationConsoleSummaryState = "installation" \| "gateway-ready" \| "hidden";/);
-  assert.match(setupFlowPanels, /const showSummary = summaryState !== "hidden";/);
-  assert.match(setupFlowPanels, /summaryState === "gateway-ready"/);
-  assert.match(setupPage, /const installationSummaryState: InstallationConsoleSummaryState = gatewayReadyChecking/);
-  assert.match(setupPage, /summaryState=\{installationSummaryState\}/);
+  assert.match(setupFlowPanels, /export type InstallationConsoleSummary =/);
+  assert.match(setupFlowPanels, /kind: "model-checking"/);
+  assert.match(setupFlowPanels, /kind: "model-check-failed"; message: string/);
+  assert.match(setupFlowPanels, /const showProgress = !modelChecking && !modelCheckFailed/);
+  assert.match(setupPage, /const installationSummary: InstallationConsoleSummary = gatewayReadyChecking/);
+  assert.match(setupPage, /summary=\{installationSummary\}/);
+  assert.doesNotMatch(setupPage, /gatewayReadyChecking && \([\s\S]*?<StatusPanel/);
 });
 
 test('BUG-ONB-30 verified Gateway handoff cannot start cold recovery', () => {
@@ -237,6 +239,16 @@ test('BUG-ONB-30 verified Gateway handoff cannot start cold recovery', () => {
 
   assert.match(coldRecovery, /if \(workspaceStartupMode === 'verified-gateway-handoff'\) return;/);
   assert.match(coldRecovery, /workspaceStartupMode,/);
+});
+
+test('BUG-ONB-31 entering the workbench lands on the dashboard', () => {
+  const entry = setupFlow.slice(
+    setupFlow.indexOf('const enterWorkspace = useCallback'),
+    setupFlow.indexOf('return {', setupFlow.indexOf('const enterWorkspace = useCallback')),
+  );
+
+  assert.match(entry, /window\.location\.hash = '\/';/);
+  assert.doesNotMatch(entry, /ai-workspace/);
 });
 
 test('BUG-ONB-10 setup leaves system tools and npm cache at their native defaults', () => {

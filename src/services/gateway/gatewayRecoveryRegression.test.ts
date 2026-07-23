@@ -341,9 +341,9 @@ test('BUG-02 service restart failures use the managed gateway fallback', () => {
 
 test('BUG-03 gateway manager snapshots include collected logs', () => {
   const manager = source('src/services/gateway/GatewayConnectionManager.ts');
-  const overlay = source('src/components/BootTimelineOverlay.tsx');
+  const errorScreen = source('src/components/GatewayErrorScreen.tsx');
   assert.match(manager, /logs: this\.logs/);
-  assert.match(overlay, /recovery\.logs\.length > 0/);
+  assert.match(errorScreen, /logs=\{combinedLogs\}/);
 });
 
 test('BUG-03 normal gateway logs do not report the process as restarting', () => {
@@ -437,27 +437,24 @@ test('BUG-GL10 status polling is serial and invalidates in-flight results on cle
 });
 
 test('BUG-05 recovery log surfaces retain useful diagnostic context', () => {
-  const offline = source('src/components/OfflineOverlay.tsx');
-  const boot = source('src/components/BootTimelineOverlay.tsx');
-  assert.match(offline, /max-h-24/);
-  assert.match(offline, /slice\(-12\)/);
-  assert.match(offline, /copyRecoveryLogs/);
-  assert.match(boot, /max-h-64/);
-  assert.match(boot, /slice\(-40\)/);
+  const errorScreen = source('src/components/GatewayErrorScreen.tsx');
+  assert.match(errorScreen, /const combinedLogs =/);
+  assert.match(errorScreen, /max-h-48/);
+  assert.match(errorScreen, /logs=\{combinedLogs\}/);
 });
 
-test('BUG-GL11 offline recovery shares the App route and exposes determinate progress', () => {
-  const offline = source('src/components/OfflineOverlay.tsx');
+test('BUG-GL11 nonblocking recovery shares the App route and exposes determinate progress', () => {
+  const dashboard = source('src/pages/Dashboard/index.tsx');
+  const statusBar = source('src/components/Layout/StatusBar.tsx');
   const adapter = source('src/api/tauri-adapter.ts');
   const app = source('src/App.tsx');
   const settings = source('src/pages/SettingsPage.tsx');
   const console = source('src-tauri/src/commands/console.rs');
-  assert.match(offline, /useSetupProgress\('gateway'\)/);
-  assert.match(offline, /aegis:manual-reconnect/);
-  assert.match(offline, /role="progressbar"/);
-  assert.match(offline, /<GatewaySelfRescuePanel/);
-  assert.match(offline, /action:\s*'reconnect'\s*\|\s*'restart'/);
-  assert.doesNotMatch(offline, /gateway\?\.ensureRunning/);
+  assert.match(dashboard, /useSetupProgress\('gateway'\)/);
+  assert.match(dashboard, /aegis:manual-reconnect/);
+  assert.match(dashboard, /role="status"/);
+  assert.match(statusBar, /<GatewaySelfRescuePanel/);
+  assert.doesNotMatch(dashboard, /gateway\?\.ensureRunning/);
   assert.match(adapter, /gatewayRestartProgressFromLog/);
   assert.doesNotMatch(adapter.slice(adapter.indexOf('consoleUi:'), adapter.indexOf('\n  logs:')), /plugin-shell/);
   assert.match(app, /openControlUiAfterRecoveryRef/);
@@ -467,15 +464,23 @@ test('BUG-GL11 offline recovery shares the App route and exposes determinate pro
 });
 
 test('BUG-06 stalled boot exposes the complete self-rescue center', () => {
-  const boot = source('src/components/BootTimelineOverlay.tsx');
+  const statusBar = source('src/components/Layout/StatusBar.tsx');
   const panel = source('src/components/GatewaySelfRescuePanel.tsx');
-  assert.match(boot, /recovery\?\.showRestart[\s\S]*<GatewaySelfRescuePanel/);
-  assert.match(boot, /onReconnect=\{recovery\.onReconnect\}/);
-  assert.match(boot, /onOpenLogs=\{recovery\.onOpenLogs\}/);
-  assert.match(boot, /logs=\{recovery\.logs\.slice\(-40\)\.join/);
+  assert.match(statusBar, /gatewayPanelOpen[\s\S]*<GatewaySelfRescuePanel/);
+  assert.match(statusBar, /onOpenLogs=/);
+  assert.match(statusBar, /aegis:manual-reconnect/);
   assert.match(panel, /runOpenClawRepair/);
   assert.match(panel, /disabled=\{actionDisabled\}/);
   assert.match(panel, /<GatewayRescueChat/);
+});
+
+test('Gateway startup keeps the routed workbench visible', () => {
+  const app = source('src/App.tsx');
+  const layout = source('src/components/Layout/AppLayout.tsx');
+  const dashboard = source('src/pages/Dashboard/index.tsx');
+  assert.doesNotMatch(app, /BootTimelineOverlay/);
+  assert.doesNotMatch(layout, /OfflineOverlay/);
+  assert.match(dashboard, /!connected && \(/);
 });
 
 test('BUG-06 recovery logs remain reachable while Gateway is offline', () => {
@@ -483,7 +488,7 @@ test('BUG-06 recovery logs remain reachable while Gateway is offline', () => {
   assert.match(routes, /['"]\/logs['"]/);
 });
 
-test('BUG-07 WebSocket retry has one owner, deadline, and real UI attempt events', () => {
+test('BUG-07 WebSocket retry has one owner, deadline, and routes exhaustion into recovery', () => {
   const connection = source('src/services/gateway/Connection.ts');
   const app = source('src/App.tsx');
   assert.match(connection, /connect\(\s*url: string,\s*token: string,\s*deviceToken = '',\s*resetReconnectAttempts = true/);
@@ -492,7 +497,8 @@ test('BUG-07 WebSocket retry has one owner, deadline, and real UI attempt events
   assert.match(connection, /CONNECTION_ATTEMPT_TIMEOUT_MS = 8_000/);
   assert.match(connection, /emitRetryState\('exhausted'/);
   assert.doesNotMatch(app, /scheduleReconnectRetries|bootRecoveryTimersRef/);
-  assert.match(app, /onRetryState:[\s\S]*retry\.phase === 'exhausted'[\s\S]*setBootRecoveryReady\(true\)/);
+  assert.match(app, /onRetryState:[\s\S]*retry\.phase === 'exhausted'[\s\S]*surfaceVerifiedGatewayHandoffFailure\(\)/);
+  assert.match(app, /retry\.phase === 'exhausted'[\s\S]*self-rescue is ready/);
 });
 
 test('BUG-08 an automatic retry can promote the manager directly to connected', () => {

@@ -1767,7 +1767,7 @@ export function useSetupFlow(
       // connection. Preserve that fact through the route transition so the
       // workbench can hydrate in the background instead of replaying cold boot.
       setWorkspaceStartupMode("verified-gateway-handoff");
-      window.location.hash = '/ai-workspace';
+      window.location.hash = '/';
       setSetupComplete(true);
     }, origin);
   }, [cancelActiveRun, setSetupComplete, setWorkspaceStartupMode]);

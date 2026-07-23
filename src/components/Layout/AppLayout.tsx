@@ -3,22 +3,19 @@
 // + Ambient background glow (from conceptual design)
 // ═══════════════════════════════════════════════════════════
 
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useLayoutEffect, useRef } from 'react';
 import { matchPath, Outlet, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { TopBar } from '@/components/Layout/TopBar';
 import { TabBar } from '@/components/Layout/TabBar';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
-import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { getDirection } from '@/i18n';
-import { isGatewayOptionalPath } from '@/utils/gatewayOptionalRoutes';
 
 const CommandPalette = lazy(() => import('@/components/CommandPalette').then(m => ({ default: m.CommandPalette })));
 const PetBreakOverlay = lazy(() => import('@/pet/PetBreakOverlay').then(m => ({ default: m.PetBreakOverlay })));
-const OfflineOverlay = lazy(() => import('@/components/OfflineOverlay').then(m => ({ default: m.OfflineOverlay })));
 const NavSidebar = lazy(() => import('@/components/Layout/NavSidebar').then(m => ({ default: m.NavSidebar })));
 const StatusBar = lazy(() => import('@/components/Layout/StatusBar').then(m => ({ default: m.StatusBar })));
 
@@ -80,7 +77,6 @@ export function AppLayout() {
   const dir = getDirection(language);
   const location = useLocation();
   const routeScrollRef = useRef<HTMLDivElement>(null);
-  const { connected } = useChatStore();
   const isWorkspacePage = matchPath('/welcome', location.pathname) !== null;
   const isTerminalPage = matchPath('/terminal/*', location.pathname) !== null;
   const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
@@ -93,18 +89,6 @@ export function AppLayout() {
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
-
-  // Show offline overlay on pages that need Gateway, when not connected.
-  // A 600ms grace period prevents the overlay from flashing on brief
-  // disconnect/reconnect cycles (e.g. when the user clicks "重连").
-  const isOfflinePage = isGatewayOptionalPath(location.pathname);
-  const wantsOffline = !connected && !isOfflinePage;
-  const [showOffline, setShowOffline] = useState(false);
-  useEffect(() => {
-    if (!wantsOffline) { setShowOffline(false); return; }
-    const t = setTimeout(() => setShowOffline(true), 600);
-    return () => clearTimeout(t);
-  }, [wantsOffline]);
 
   // The route viewport persists between tabs. Reset it before paint so the
   // scrollbar never renders at the previous page's position and then jumps.
@@ -153,13 +137,6 @@ export function AppLayout() {
           </div>
         </main>
       </div>
-      {showOffline && (
-        <div className="fixed inset-0 z-[9000] bg-aegis-bg/94 backdrop-blur-xl">
-          <Suspense fallback={null}>
-            <OfflineOverlay />
-          </Suspense>
-        </div>
-      )}
       {/* Pomodoro break overlay — enlarged pet + countdown, only during break phase */}
       <LazyPetBreakOverlayHost />
       {/* Keep workspace utilities available at the bottom-right on every route. */}

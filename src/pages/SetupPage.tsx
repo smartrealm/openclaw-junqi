@@ -50,7 +50,7 @@ import {
   InstallationConsole,
   currentStepOf,
   installStepTitle,
-  type InstallationConsoleSummaryState,
+  type InstallationConsoleSummary,
   OpenClawRuntimeDetails,
   SetupShell,
   StatusPanel,
@@ -399,17 +399,16 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const active = setupStep === "ready" ? 5 : 3;
   const isGatewayReady = setupStep === "gateway-ready";
   const gatewayReadyChecking = isGatewayReady && flow.gatewayReadyContinuation.status === "checking";
-  // The model probe is the active operation after Gateway startup. Keep the
-  // completed installation timeline below it as history, without echoing an
-  // old Gateway step as a second current-state banner.
-  const installationSummaryState: InstallationConsoleSummaryState = gatewayReadyChecking
-    ? "hidden"
-    : isGatewayReady
-      ? "gateway-ready"
-      : "installation";
   const gatewayReadyError = isGatewayReady && flow.gatewayReadyContinuation.status === "failed"
     ? flow.gatewayReadyContinuation.error
     : null;
+  const installationSummary: InstallationConsoleSummary = gatewayReadyChecking
+    ? { kind: "model-checking" }
+    : gatewayReadyError
+      ? { kind: "model-check-failed", message: gatewayReadyError }
+      : isGatewayReady
+        ? { kind: "gateway-ready" }
+        : { kind: "installation" };
   const currentInstallStep = currentStepOf(flow.steps);
   const canRepairGateway = setupStep === "error" && currentInstallStep?.id === "gateway";
   // BUG-CPI-07：自愈梯子（更新→重装）已确认这些插件不可自动修复，
@@ -474,28 +473,6 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
             : { label: runningStepLabel, disabled: true, loading: true, icon: "none" }
       }
     >
-      {gatewayReadyChecking && (
-        <div className="mb-3">
-          <StatusPanel
-            icon={<LoaderCircle size={22} className="animate-spin" />}
-            title={t("setup.gatewayReadyCheckingTitle", "正在检查 OpenClaw 配置")}
-            message={t(
-              "setup.gatewayReadyCheckingDescription",
-              "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
-            )}
-          />
-        </div>
-      )}
-      {gatewayReadyError && (
-        <div className="mb-3">
-          <StatusPanel
-            icon={<AlertTriangle size={22} />}
-            tone="danger"
-            title={t("setup.gatewayReadyContinueFailedTitle", "无法进入下一步")}
-            message={gatewayReadyError}
-          />
-        </div>
-      )}
       {hasBrokenPlugins && (
         <div className="mb-3 space-y-2">
           <StatusPanel
@@ -527,7 +504,7 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         flow={flow}
         logs={logs}
         setupStep={setupStep}
-        summaryState={installationSummaryState}
+        summary={installationSummary}
       />
     </SetupShell>
   );
