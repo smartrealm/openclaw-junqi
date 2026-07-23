@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, AlertCircle, Bot, Check, ChevronDown, Copy, Link2, ListFilter, Loader2, LogOut, MessageSquare, Pencil, Play, Plus, Power, QrCode, RefreshCw, Save, Settings2, ShieldCheck, Square, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, AlertCircle, Bot, Check, ChevronDown, Copy, Download, Link2, ListFilter, Loader2, LogOut, MessageSquare, Pencil, Play, Plus, Power, QrCode, RefreshCw, Save, Settings2, ShieldCheck, Square, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
@@ -33,8 +33,10 @@ import {
   buildChannelSetupCommand,
   channelAccountStatus,
   channelLinkMode,
+  installManagedExternalChannelPlugin,
   loadOfficialChannelCapability,
   loadOfficialChannelCatalog,
+  managedExternalChannelPlugin,
   redactChannelSecrets,
   type ChannelsRuntimeSnapshot,
   type OfficialChannelCatalog,
@@ -52,6 +54,17 @@ function channelIcon(id: string) {
   return label;
 }
 
+function catalogEntryStateLabel(
+  t: ReturnType<typeof useTranslation>['t'],
+  catalog: OfficialChannelCatalog,
+  entry: OfficialChannelCatalogEntry,
+) {
+  if (catalog.source === 'offline-fallback') {
+    return t('channelsCenter.catalogUnavailable', 'OpenClaw catalog unavailable');
+  }
+  return `${entry.installed ? t('channelsCenter.installed', 'Installed') : t('channelsCenter.installable', 'Installable')} · ${entry.origin}`;
+}
+
 type ChannelGroupWithName = ChannelGroupView & { name: string };
 type ReadinessFilter = 'all' | ChannelAccountReadinessState;
 
@@ -59,6 +72,8 @@ interface EditingAccountState {
   mode: 'new' | 'edit';
   group: ChannelGroupWithName;
   account?: ChannelAccountBinding;
+  /** Draft channel defaults for a just-installed plugin, not yet persisted. */
+  baseConfig?: GatewayRuntimeConfig;
 }
 
 interface GatewayUiStatus {
@@ -306,6 +321,7 @@ export function ChannelsCenterPage() {
   const [accountActionBusy, setAccountActionBusy] = useState('');
   const [channelLogPayloads, setChannelLogPayloads] = useState<Record<string, unknown>>({});
   const [channelLogsBusy, setChannelLogsBusy] = useState('');
+  const [pluginInstalling, setPluginInstalling] = useState('');
   const [qrTarget, setQrTarget] = useState<{ channelId: string; accountId: string } | null>(null);
   const [capabilityByChannel, setCapabilityByChannel] = useState<Record<string, OfficialChannelCapability | null>>({});
   const savingRef = useRef(false);
@@ -610,10 +626,11 @@ export function ChannelsCenterPage() {
       );
       return;
     }
+    const baseConfig = editingAccount.baseConfig ?? config;
     const next = editingAccount.mode === 'new'
-      ? addChannelAccount(config, editingAccount.group.id, accountId, accountConfig)
+      ? addChannelAccount(baseConfig, editingAccount.group.id, accountId, accountConfig)
       : upsertChannelAccount(
-        config,
+        baseConfig,
         editingAccount.group.id,
         editingAccount.account ?? { id: accountId, source: 'account' },
         accountConfig,
@@ -661,7 +678,55 @@ export function ChannelsCenterPage() {
         return;
       }
     }
+    const managedPlugin = managedExternalChannelPlugin(entry.id);
+    if (managedPlugin && entry.installed && config) {
+      // Keep the draft out of live React state until the user explicitly
+      // saves credentials. The schema is read from the installed OpenClaw
+      // plugin, so JunQi never invents DingTalk configuration fields.
+      const draftConfig: GatewayRuntimeConfig = {
+        ...config,
+        channels: {
+          ...(config.channels ?? {}),
+          // The plugin owns all non-universal defaults. In particular, do
+          // not carry JunQi's retired DingTalk streaming fields into a live
+          // OpenClaw schema.
+          [entry.id]: { enabled: true },
+        },
+      };
+      const draftGroup = buildChannelGroups(draftConfig).find((group) => group.id === entry.id);
+      if (draftGroup) {
+        setEditingAccount({ mode: 'new', group: { ...draftGroup, name: channelName(t, entry.id) }, baseConfig: draftConfig });
+        return;
+      }
+    }
     openChannelTerminal(buildChannelSetupCommand(entry.id));
+  };
+
+  const handleInstallManagedPlugin = async (channelId: string) => {
+    const plugin = managedExternalChannelPlugin(channelId);
+    const currentEntry = catalog.entries.find((entry) => entry.id === channelId);
+    if (!plugin || currentEntry?.installed || pluginInstalling) return;
+    setPluginInstalling(channelId);
+    try {
+      const result = await installManagedExternalChannelPlugin(channelId);
+      await Promise.all([load(), loadOfficialState(true)]);
+      showAlert(
+        t('channelsCenter.pluginInstalled', 'Official plugin installed'),
+        t('channelsCenter.pluginInstalledHint', {
+          channel: channelName(t, result.channel),
+          defaultValue: `${channelName(t, result.channel)} is installed by OpenClaw. Configure its credentials next.`,
+        }),
+        'success',
+      );
+    } catch (reason: any) {
+      showAlert(
+        t('channelsCenter.pluginInstallFailed', 'Plugin installation failed'),
+        reason?.message || String(reason),
+        'error',
+      );
+    } finally {
+      setPluginInstalling('');
+    }
   };
 
   const handleExpand = (group: ChannelGroupWithName, open: boolean) => {
@@ -901,6 +966,13 @@ export function ChannelsCenterPage() {
                 {filteredGroups.map((group) => {
                   const open = expanded === group.id;
                   const originalAccountCount = groups.find((item) => item.id === group.id)?.accounts.length ?? group.accounts.length;
+                  const catalogEntry = catalog.entries.find((entry) => entry.id === group.id);
+                  const managedPlugin = managedExternalChannelPlugin(group.id);
+                  const pluginMissing = Boolean(
+                    managedPlugin
+                    && catalog.source === 'openclaw-cli'
+                    && catalogEntry?.installed === false,
+                  );
                   return (
                     <div key={group.id} className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] overflow-hidden">
                       <button onClick={() => handleExpand(group, open)} className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left hover:bg-[rgb(var(--aegis-overlay)/0.03)]">
@@ -926,6 +998,17 @@ export function ChannelsCenterPage() {
                       {open && (
                         <div className="border-t border-[rgb(var(--aegis-overlay)/0.08)] px-4 py-4 space-y-4">
                           <div className="flex flex-wrap items-center gap-2">
+                            {pluginMissing && (
+                              <button
+                                type="button"
+                                onClick={() => void handleInstallManagedPlugin(group.id)}
+                                disabled={saving || Boolean(pluginInstalling)}
+                                className="inline-flex items-center gap-2 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 px-3 py-1.5 text-[12px] font-semibold text-aegis-primary disabled:opacity-50"
+                              >
+                                {pluginInstalling === group.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                                {t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
+                              </button>
+                            )}
                             <button onClick={() => handleToggle(group.id, !group.enabled)} disabled={saving} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text">
                               <ShieldCheck size={13} />
                               {group.enabled ? t('channelsCenter.disable', 'Disable') : t('channelsCenter.enable', 'Enable')}
@@ -1073,18 +1156,52 @@ export function ChannelsCenterPage() {
               {t('channelsCenter.addChannels', 'Add channels')}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {addableEntries.map((entry) => (
-                <button key={entry.id} onClick={() => handleAdd(entry)} disabled={!config || saving} className="flex items-center gap-3 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] px-3 py-2.5 text-left hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04] disabled:opacity-50">
-                  <div className="w-8 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] flex items-center justify-center text-[10px] font-bold text-aegis-text-muted">
-                    {channelIcon(entry.id)}
+              {addableEntries.map((entry) => {
+                const managedPlugin = managedExternalChannelPlugin(entry.id);
+                const pluginMissing = Boolean(
+                  managedPlugin
+                  && catalog.source === 'openclaw-cli'
+                  && !entry.installed,
+                );
+                const installBusy = pluginInstalling === entry.id;
+                return (
+                  <div key={entry.id} className="flex items-center gap-2 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] p-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleAdd(entry)}
+                      disabled={!config || saving || pluginMissing}
+                      title={pluginMissing ? t('channelsCenter.installPluginFirst', 'Install the official plugin first') : t('channelsCenter.configureChannel', 'Configure channel')}
+                      className="flex min-w-0 flex-1 items-center gap-3 rounded px-1 py-0.5 text-left hover:bg-aegis-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] text-[10px] font-bold text-aegis-text-muted">
+                        {channelIcon(entry.id)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-bold text-aegis-text">{channelName(t, entry.id)}</div>
+                        <div className="truncate text-[10px] text-aegis-text-dim">
+                          {pluginMissing
+                            ? `${t('channelsCenter.officialExternalPlugin', 'Official external plugin')} · ${t('channelsCenter.installable', 'Installable')}`
+                            : catalogEntryStateLabel(t, catalog, entry)}
+                        </div>
+                      </div>
+                      <Plus size={14} className="shrink-0 text-aegis-primary" />
+                    </button>
+                    {pluginMissing && (
+                      <button
+                        type="button"
+                        onClick={() => void handleInstallManagedPlugin(entry.id)}
+                        disabled={!config || saving || Boolean(pluginInstalling)}
+                        title={t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
+                        aria-label={t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
+                        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-aegis-primary/25 bg-aegis-primary/10 px-2 text-[11px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/16 disabled:cursor-wait disabled:opacity-50"
+                      >
+                        {installBusy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                        {t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
+                      </button>
+                    )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-bold text-aegis-text">{channelName(t, entry.id)}</div>
-                    <div className="text-[10px] text-aegis-text-dim truncate">{entry.installed ? t('channelsCenter.installed', 'Installed') : t('channelsCenter.installable', 'Installable')} · {entry.origin}</div>
-                  </div>
-                  <Plus size={14} className="text-aegis-primary" />
-                </button>
-              ))}
+                );
+              })}
             </div>
           </section>
 

@@ -435,6 +435,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
   },
   channelRuntime: {
     catalog: () => invoke('get_openclaw_channel_catalog'),
+    install: (channel: string) => invoke('install_openclaw_channel_plugin', { channel }),
     capabilities: (channel: string) => invoke('get_openclaw_channel_capabilities', { channel }),
     status: (channel?: string, probe = false) => invoke('get_openclaw_channel_status', {
       channel: channel ?? null,

@@ -56,13 +56,6 @@ export interface GatewayConfigInfo {
   http_url: string;
   config_path: string | null;
   runtime_mode: GatewayRuntimeMode;
-  connection_mode: 'local' | 'remote';
-}
-export interface OpenclawOnboardingReadiness {
-  required: boolean;
-  reason: string | null;
-  runtime_mode: GatewayRuntimeMode;
-  connection_mode: 'local' | 'remote';
 }
 export interface TerminalIntegrationStatus {
   requested: boolean;
@@ -178,9 +171,6 @@ export const checkDocker = () => invoke<DockerStatus>("check_docker");
 export const pullOpenclawImage = (tag?: string) => invoke<string>("pull_openclaw_image", { tag });
 export const startDockerGateway = (port?: number, tag?: string) => invoke<GatewayStatus>("start_docker_gateway", { port, tag });
 export const detectGatewayConfig = () => invoke<GatewayConfigInfo>("detect_gateway_config");
-export const getOpenclawOnboardingReadiness = () => (
-  invoke<OpenclawOnboardingReadiness>("get_openclaw_onboarding_readiness")
-);
 export const setActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
   invoke<void>("set_active_gateway_runtime", { mode })
 );
@@ -198,7 +188,7 @@ export const rollbackRuntimeReconfiguration = () => (
 );
 
 /** Result of ensure_gateway_running — see src-tauri/src/commands/ensure.rs */
-export type GatewayMode = 'native' | 'docker' | 'remote' | 'unavailable';
+export type GatewayMode = 'native' | 'docker' | 'unavailable';
 export interface EnsureResult {
   mode: GatewayMode;
   healthy: boolean;

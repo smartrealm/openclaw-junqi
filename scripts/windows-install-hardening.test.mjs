@@ -112,8 +112,7 @@ test('Windows reads the selected OpenClaw token and stores device credentials in
     config.indexOf('pub async fn set_active_gateway_runtime'),
   );
   assert.match(detector, /paths::active_config_path\(\)/);
-  assert.match(detector, /literal_gateway_token_from_config/);
-  assert.match(detector, /literal_remote_gateway_token_from_config/);
+  assert.match(detector, /extract_token_from_config/);
   assert.match(detector, /ws_url/);
   assert.match(gatewayCredentials, /store_system_credential/);
   assert.match(gatewayCredentials, /get_system_credential/);

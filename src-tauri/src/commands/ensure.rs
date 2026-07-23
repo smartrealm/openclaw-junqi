@@ -26,8 +26,6 @@ pub enum GatewayMode {
     Native,
     /// Docker container (`maxauto-openclaw`).
     Docker,
-    /// A configured Gateway that is owned by another machine/process.
-    Remote,
     /// Nothing reachable.
     Unavailable,
 }
@@ -62,14 +60,12 @@ async fn probe_docker_gateway_port(port: u16) -> bool {
 fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {
     let raw = std::fs::read_to_string(config_path).ok()?;
     let v = crate::commands::config::parse_openclaw_config(&raw).ok()?;
-    match crate::commands::config::gateway_connection_mode_from_config(&v) {
-        crate::commands::config::GatewayConnectionMode::Local => {
-            crate::commands::config::literal_gateway_token_from_config(&v)
-        }
-        crate::commands::config::GatewayConnectionMode::Remote => {
-            crate::commands::config::literal_remote_gateway_token_from_config(&v)
-        }
-    }
+    v.get("gateway")?
+        .get("auth")?
+        .get("token")?
+        .as_str()
+        .filter(|token| !token.trim().is_empty())
+        .map(|s| s.to_string())
 }
 
 /// 从 JunQi 管理的 Docker 配置读取 Gateway token。
@@ -87,13 +83,6 @@ fn read_gateway_port() -> u16 {
         Ok(v) => v,
         Err(_) => return crate::commands::config::default_gateway_port(),
     };
-    if crate::commands::config::gateway_connection_mode_from_config(&v)
-        == crate::commands::config::GatewayConnectionMode::Remote
-    {
-        return crate::commands::config::remote_gateway_urls(&v)
-            .map(|(_, _, port)| port)
-            .unwrap_or_else(|_| crate::commands::config::default_gateway_port());
-    }
     crate::commands::config::gateway_port_from_config(&v)
         .unwrap_or_else(crate::commands::config::default_gateway_port)
 }
@@ -207,34 +196,6 @@ pub async fn ensure_gateway_running(
     paths::validate_runtime_mode(selected_mode)?;
     let port = read_gateway_port();
     *state.port.lock().map_err(|e| e.to_string())? = port;
-
-    let config_path = paths::active_config_path();
-    let selected_connection_mode = std::fs::read_to_string(&config_path)
-        .ok()
-        .and_then(|raw| crate::commands::config::parse_openclaw_config(&raw).ok())
-        .map(|config| crate::commands::config::gateway_connection_mode_from_config(&config))
-        .unwrap_or(crate::commands::config::GatewayConnectionMode::Local);
-    if selected_connection_mode == crate::commands::config::GatewayConnectionMode::Remote {
-        let healthy = crate::commands::gateway::gateway_matches_config(port, &config_path).await;
-        state.transition(
-            Some(if healthy {
-                GatewayLifecycle::Running
-            } else {
-                GatewayLifecycle::Error
-            }),
-            Some(GatewayRuntimeMode::External),
-            None,
-            "ensure_gateway_running: checked configured remote gateway",
-        );
-        return Ok(EnsureResult {
-            mode: GatewayMode::Remote,
-            healthy,
-            port,
-            token: read_gateway_token(&config_path),
-            attempted_fallback: false,
-            error: (!healthy).then(|| "Configured remote Gateway is unreachable".to_string()),
-        });
-    }
 
     if matches!(selected_mode, OpenClawRuntimeMode::Docker) {
         return ensure_selected_docker_gateway(app, &state, port).await;

@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  addChannel,
   addChannelAccount,
   assessChannelAccountReadiness,
   buildChannelGroups,
@@ -117,6 +118,11 @@ describe('channelConfig', () => {
       missingFields: ['clientSecret'],
       messages: ['missing_credentials'],
     });
+  });
+
+  test('new DingTalk channel drafts do not write retired streaming fields', () => {
+    const next = addChannel(cfg({ channels: {} }), 'dingtalk-connector');
+    assert.deepEqual(next.channels?.['dingtalk-connector'], { enabled: true });
   });
 
   test('binding changes use root official bindings and preserve specific and ACP routes', () => {

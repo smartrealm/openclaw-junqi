@@ -35,6 +35,7 @@ import {
 } from '@/utils/sessionPresentation';
 import { resolveBackgroundActivityNavigation } from '@/utils/backgroundActivityNavigation';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
+import { JunQiLogo } from '@/components/shared/JunQiLogo';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
 const ToolsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.ToolsPanel })));
@@ -729,12 +730,23 @@ function ExpandedView({ tab }: { tab: SidebarTab }) {
   );
 }
 
-function MiniView({ tab }: { tab: SidebarTab }) {
+function MiniView({ tab, showProductHome = false }: { tab: SidebarTab; showProductHome?: boolean }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const items = filterEnabledNavigationItems(miniItemsFor(tab, t));
   return (
     <nav className="flex flex-col items-center gap-1 px-2">
+      {showProductHome && (
+        <button
+          type="button"
+          onClick={() => navigate('/')}
+          title="JunQi"
+          aria-label="JunQi"
+          className="mb-1 grid h-9 w-9 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text"
+        >
+          <JunQiLogo variant="emblem" className="h-5 w-5" />
+        </button>
+      )}
       {/* Active-tab chip — single text label at top so users always know
           which panel they're seeing in mini mode. Without this the icons
           alone give no semantic context. */}
@@ -798,9 +810,12 @@ function miniItemsFor(
 // NavSidebar 顶层
 // ═══════════════════════════════════════════════════════════
 
-export function NavSidebar() {
+export function NavSidebar({ presentation = 'default' }: { presentation?: 'default' | 'terminal-rail' }) {
   const location = useLocation();
-  const sidebarMode = useSettingsStore((s) => s.sidebarMode);
+  const storedSidebarMode = useSettingsStore((s) => s.sidebarMode);
+  // Terminal keeps its own project tree. The product rail stays compact so
+  // route navigation remains available without duplicating two full sidebars.
+  const sidebarMode = presentation === 'terminal-rail' ? 'mini' : storedSidebarMode;
   const isHidden = sidebarMode === 'hidden';
   const isMini = sidebarMode === 'mini';
   const isExpanded = sidebarMode === 'expanded';
@@ -833,7 +848,7 @@ export function NavSidebar() {
       }}
       aria-label="侧边导航栏"
     >
-      {isMini  ? <MiniView tab={tab} /> : null}
+      {isMini  ? <MiniView tab={tab} showProductHome={presentation === 'terminal-rail'} /> : null}
       {isExpanded ? <ExpandedView tab={tab} /> : null}
     </aside>
   );

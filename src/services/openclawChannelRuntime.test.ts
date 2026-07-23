@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildChannelSetupCommand,
   channelLinkMode,
+  managedExternalChannelPlugin,
   normalizeOfficialChannelCapability,
   normalizeOfficialChannelCatalog,
   redactChannelSecrets,
@@ -45,6 +46,15 @@ describe('openclawChannelRuntime', () => {
   test('builds safe cross-platform CLI commands and rejects flag injection', () => {
     assert.equal(buildChannelSetupCommand('telegram', 'work'), 'openclaw channels add --channel telegram --account work\n');
     assert.throws(() => buildChannelSetupCommand('--delete'), /unsupported characters/);
+  });
+
+  test('labels only the reviewed DingTalk package as a managed external plugin', () => {
+    assert.deepEqual(managedExternalChannelPlugin('dingtalk-connector'), {
+      channelId: 'dingtalk-connector',
+      npmSpec: '@dingtalk-real-ai/dingtalk-connector',
+    });
+    assert.equal(managedExternalChannelPlugin('telegram'), null);
+    assert.equal(managedExternalChannelPlugin('dingtalk-connector;whoami'), null);
   });
 
   test('recursively redacts nested channel credentials', () => {

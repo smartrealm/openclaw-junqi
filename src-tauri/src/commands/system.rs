@@ -1,7 +1,6 @@
 use crate::commands::node_runtime::{NodeRequirementSource, NodeRuntimeRequirement};
 use crate::paths;
 use crate::platform;
-use portable_pty::CommandBuilder;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -249,27 +248,6 @@ impl OpenclawCommandContext {
         }
         platform::configure_background_command(command);
     }
-
-    fn apply_to_pty(&self, command: &mut CommandBuilder) {
-        if let Some(working_dir) = self.working_dir.as_ref().filter(|path| path.is_dir()) {
-            command.cwd(working_dir);
-        }
-        command.env("PATH", &self.search_path);
-        command.env("OPENCLAW_STATE_DIR", &self.state_dir);
-        command.env("OPENCLAW_CONFIG_PATH", &self.config_path);
-        command.env("OPENCLAW_LOCALE", &self.locale);
-        command.env("OPENCLAW_NO_RESPAWN", "1");
-        command.env("NO_COLOR", "1");
-        if openclaw_debug_enabled() {
-            command.env("OPENCLAW_DEBUG", "1");
-        }
-        if let Some(prefix) = &self.npm_prefix {
-            command.env("npm_config_prefix", prefix);
-        }
-        if let Some(cache) = &self.npm_cache_dir {
-            command.env("npm_config_cache", cache);
-        }
-    }
 }
 
 fn openclaw_debug_enabled() -> bool {
@@ -335,31 +313,6 @@ impl NativeOpenclawRuntime {
             }
         };
         context.apply(&mut command);
-        if let NativeOpenclawLaunchSpec::NodeScript { node, .. } = &self.launch {
-            command.env(
-                "PATH",
-                search_path_with_executable_parent(node, &context.search_path),
-            );
-        }
-        if let Some(prefix) = &self.npm_prefix {
-            command.env("npm_config_prefix", prefix);
-        }
-        command
-    }
-
-    /// Build the same OpenClaw invocation contract for an interactive PTY.
-    /// The onboarding terminal must use the selected Node/package/runtime
-    /// rather than relying on whichever `openclaw` happens to be on PATH.
-    pub(crate) fn pty_command(&self, context: &OpenclawCommandContext) -> CommandBuilder {
-        let mut command = match &self.launch {
-            NativeOpenclawLaunchSpec::NodeScript { node, entry } => {
-                let mut command = CommandBuilder::new(node);
-                command.arg(entry);
-                command
-            }
-            NativeOpenclawLaunchSpec::Executable { program } => CommandBuilder::new(program),
-        };
-        context.apply_to_pty(&mut command);
         if let NativeOpenclawLaunchSpec::NodeScript { node, .. } = &self.launch {
             command.env(
                 "PATH",

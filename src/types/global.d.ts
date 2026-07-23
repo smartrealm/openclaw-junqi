@@ -63,6 +63,12 @@ interface AegisAPI {
   };
   channelRuntime: {
     catalog: () => Promise<Record<string, unknown>>;
+    install: (channel: string) => Promise<{
+      channel: string;
+      npmSpec: string;
+      alreadyInstalled: boolean;
+      installed: boolean;
+    }>;
     capabilities: (channel: string) => Promise<Record<string, unknown>>;
     status: (channel?: string, probe?: boolean) => Promise<Record<string, unknown>>;
     logs: (channel?: string, lines?: number) => Promise<Record<string, unknown>>;

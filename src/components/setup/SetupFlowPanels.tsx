@@ -34,7 +34,7 @@ const SETUP_STEPS = [
   { id: "identity", titleKey: "setup.steps.identity.title", titleFallback: "Preferences", descriptionKey: "setup.steps.identity.description", descriptionFallback: "Language / Theme" },
   { id: "environment", titleKey: "setup.steps.environment.title", titleFallback: "Environment", descriptionKey: "setup.steps.environment.description", descriptionFallback: "OpenClaw / Docker" },
   { id: "storage", titleKey: "setup.steps.storage.title", titleFallback: "Data location", descriptionKey: "setup.steps.storage.description", descriptionFallback: "Configuration / Workspace" },
-  { id: "runtime", titleKey: "setup.steps.runtime.title", titleFallback: "Runtime", descriptionKey: "setup.steps.runtime.description", descriptionFallback: "Install OpenClaw runtime" },
+  { id: "runtime", titleKey: "setup.steps.runtime.title", titleFallback: "Runtime", descriptionKey: "setup.steps.runtime.description", descriptionFallback: "Install and start Gateway" },
   { id: "configuration", titleKey: "setup.steps.configuration.title", titleFallback: "OpenClaw setup", descriptionKey: "setup.steps.configuration.description", descriptionFallback: "Models / credentials / channels" },
   { id: "ready", titleKey: "setup.steps.ready.title", titleFallback: "Complete", descriptionKey: "setup.steps.ready.description", descriptionFallback: "Enter workspace" },
 ] as const;
