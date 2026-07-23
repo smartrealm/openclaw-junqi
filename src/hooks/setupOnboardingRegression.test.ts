@@ -214,7 +214,7 @@ test('BUG-ONB-10 setup leaves system tools and npm cache at their native default
 test('BUG-CPI-03 macOS missing Node runs the domestic system-installer recovery path', () => {
   assert.match(setupFlow, /let setupNode = await checkSetupNode\(\)/);
   assert.doesNotMatch(setupFlow, /useMacSystemRecovery/);
-  assert.match(setupFlow, /if \(!nodeStatus\.available\)[\s\S]*?await runDependencyInstall\(runId, "node", \(operationId\) => installNode\(false, operationId\)\)/);
+  assert.match(setupFlow, /if \(!nodeStatus\.available\)[\s\S]*?setupNode = await runDependencyInstall\([\s\S]*?installNode\(false, operationId\)/);
   assert.match(setupCommand, /install_macos_system_node/);
   assert.match(setupCommand, /Command::new\("\/usr\/bin\/open"\)/);
   assert.doesNotMatch(setupPage, /nodejs\.org/);

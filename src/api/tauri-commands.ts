@@ -131,7 +131,7 @@ export interface MaintenanceReport {
 export const checkNode = () => invoke<NodeStatus>("check_node");
 export const checkSetupNode = () => invoke<SetupNodeStatus>("check_setup_node");
 export const repairSetupNodeRuntime = (operationId?: string) => (
-  invoke<string>("repair_setup_node_runtime", { operationId })
+  invoke<SetupNodeStatus>("repair_setup_node_runtime", { operationId })
 );
 export const checkGit = () => invoke<GitStatus>("check_git");
 export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");
@@ -144,7 +144,7 @@ export const getCollaborationMaintenanceOwner = (legacyOwner?: string) => invoke
 );
 export const runMaintenanceScan = () => invoke<MaintenanceReport>("run_maintenance_scan");
 export const installNode = (force = false, operationId?: string) => (
-  invoke<string>("install_node", { force, operationId })
+  invoke<SetupNodeStatus>("install_node", { force, operationId })
 );
 export const installGit = (operationId?: string) => (
   invoke<string>("install_git", { operationId })

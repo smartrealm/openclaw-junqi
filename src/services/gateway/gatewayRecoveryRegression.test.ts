@@ -84,14 +84,25 @@ test('BUG-GSC01 application lifecycle requests use the manager core', () => {
 
 test('managed Gateway start owns readiness and preserves process diagnostics', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
+  const gatewayService = source('src-tauri/src/commands/gateway_service.rs');
+  const processControl = source('src-tauri/src/commands/process_control.rs');
   const setup = source('src/hooks/useSetupFlow.ts');
-  assert.match(gateway, /MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 90/);
+  assert.match(gateway, /struct GatewayStartupPolicy/);
+  assert.match(gateway, /first_output_timeout:[\s\S]*cfg!\(windows\)[\s\S]*120/);
+  assert.match(gateway, /readiness_after_output:[\s\S]*from_secs\(90\)/);
+  assert.match(gateway, /observed_bound_port/);
+  assert.match(gateway, /did not pass OpenClaw health and authentication checks/);
+  assert.match(gateway, /observed_bound_port/);
+  assert.match(gateway, /did not pass OpenClaw health and authentication checks/);
   assert.match(gateway, /child\.try_wait\(\)[\s\S]*gateway_matches_config\(port, &config_path\)\.await/);
   assert.match(gateway, /OPENCLAW_GATEWAY_LIVENESS_PATH: &str = "healthz"/);
   assert.doesNotMatch(gateway, /TcpStream::connect/);
   assert.match(gateway, /terminate_owned_gateway\(&mut child\)\.await/);
   assert.match(gateway, /Recent Gateway output/);
   assert.match(gateway, /managed child health check passed/);
+  assert.match(gatewayService, /run_command_output_confirmed/);
+  assert.match(gatewayService, /error\.cleanup_confirmed\(\)/);
+  assert.match(processControl, /terminate_grouped_process_tree_confirmed/);
   assert.match(setup, /waitForGatewayReady\(runId, isDockerRuntime \? 30_000 : 10_000, status\?\.port\)/);
 });
 

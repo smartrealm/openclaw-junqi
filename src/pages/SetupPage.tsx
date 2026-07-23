@@ -1104,6 +1104,7 @@ export function SetupPage() {
         level: classifySetupMessage(message, detail.error),
         progress: detail.progress ?? undefined,
         diagnostic: detail.diagnostic,
+        coalesceKey: detail.logSlot ?? undefined,
       });
     });
 

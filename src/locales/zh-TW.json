@@ -3339,6 +3339,7 @@
   "setup.gatewayReadyCheckingDescription": "正在驗證目前模型是否可用；完成後將進入官方配置嚮導或完成頁。",
   "setup.gatewayReadyContinueFailedTitle": "無法進入下一步",
   "setup.gatewayReadyContinueFailed": "無法進入下一步：{{error}}",
+  "setup.runtimeSetupFailedUnchanged": "安裝或啟動失敗，目前運行模式未發生變化",
   "setup.installCompleteSubtitle": "安裝與配置已完成。下一步只會啟動 Gateway，啟動後仍需手動進入工作臺。",
   "setup.installCompleteGatewayPending": "Gateway 配置已準備，點擊啟動 Gateway 繼續。",
   "setup.gatewayPrepareWillRetry": "Gateway 準備檢查未完成：{{error}}。點擊啟動時將自動重試。",

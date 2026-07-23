@@ -11,6 +11,8 @@ use std::time::Duration;
 
 const SERVICE_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const STARTUP_SERVICE_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
+const SERVICE_COMMAND_STDOUT_LIMIT: usize = 512 * 1024;
+const SERVICE_COMMAND_STDERR_LIMIT: usize = 128 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GatewayServiceOwnership {
@@ -27,6 +29,24 @@ pub(crate) struct GatewayServiceInspection {
     pub ownership: GatewayServiceOwnership,
     pub installed: bool,
     pub running: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct GatewayServiceStartInspectionError {
+    message: String,
+    cleanup_confirmed: bool,
+}
+
+impl GatewayServiceStartInspectionError {
+    pub(crate) fn cleanup_confirmed(&self) -> bool {
+        self.cleanup_confirmed
+    }
+}
+
+impl std::fmt::Display for GatewayServiceStartInspectionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -421,17 +441,49 @@ async fn run_service_command_with_timeout(
     args: &[&str],
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
+    run_service_command_controlled(runtime, identity, search_path, args, timeout)
+        .await
+        .map_err(|error| format_service_command_error(args, &error))
+}
+
+async fn run_service_command_controlled(
+    runtime: &system::NativeOpenclawRuntime,
+    identity: &GatewayServiceIdentity,
+    search_path: Option<&str>,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<std::process::Output, crate::commands::process_control::ControlledOutputError> {
     let context = identity.command_context(search_path);
     let mut command = runtime.command(&context);
-    command
-        .args(args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-    tokio::time::timeout(timeout, command.output())
-        .await
-        .map_err(|_| format!("OpenClaw service command timed out: {}", args.join(" ")))?
-        .map_err(|error| format!("Failed to run OpenClaw service command: {error}"))
+    command.args(args);
+    crate::commands::process_control::run_command_output_confirmed(
+        command,
+        crate::commands::process_control::ControlledOutputLimits {
+            timeout,
+            stdout_bytes: SERVICE_COMMAND_STDOUT_LIMIT,
+            stderr_bytes: SERVICE_COMMAND_STDERR_LIMIT,
+        },
+    )
+    .await
+}
+
+fn format_service_command_error(
+    args: &[&str],
+    error: &crate::commands::process_control::ControlledOutputError,
+) -> String {
+    if error.is_timeout() && error.cleanup_confirmed() {
+        format!(
+            "OpenClaw service command timed out and its process tree was cleaned before continuing: {} ({error})",
+            args.join(" ")
+        )
+    } else if !error.cleanup_confirmed() {
+        format!(
+            "OpenClaw service command failed and process-tree cleanup could not be confirmed: {} ({error})",
+            args.join(" ")
+        )
+    } else {
+        format!("Failed to run OpenClaw service command: {error}")
+    }
 }
 
 fn command_success(output: &std::process::Output, args: &[&str]) -> Result<(), String> {
@@ -475,17 +527,26 @@ pub(crate) async fn inspect_gateway_service_state_for_start(
     runtime: &system::NativeOpenclawRuntime,
     identity: &GatewayServiceIdentity,
     search_path: Option<&str>,
-) -> Result<GatewayServiceInspection, String> {
+) -> Result<GatewayServiceInspection, GatewayServiceStartInspectionError> {
     let args = service_status_args();
-    let output = run_service_command_with_timeout(
+    let output = run_service_command_controlled(
         runtime,
         identity,
         search_path,
         &args,
         STARTUP_SERVICE_STATUS_TIMEOUT,
     )
-    .await?;
-    parse_service_status_output(&output, &args).map(|document| inspect_document(document, identity))
+    .await
+    .map_err(|error| GatewayServiceStartInspectionError {
+        message: format_service_command_error(&args, &error),
+        cleanup_confirmed: error.cleanup_confirmed(),
+    })?;
+    parse_service_status_output(&output, &args)
+        .map(|document| inspect_document(document, identity))
+        .map_err(|message| GatewayServiceStartInspectionError {
+            message,
+            cleanup_confirmed: true,
+        })
 }
 
 pub(crate) async fn inspect_gateway_service_state(

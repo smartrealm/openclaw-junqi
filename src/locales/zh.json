@@ -3575,6 +3575,7 @@
   "setup.gatewayReadyCheckingDescription": "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
   "setup.gatewayReadyContinueFailedTitle": "无法进入下一步",
   "setup.gatewayReadyContinueFailed": "无法进入下一步：{{error}}",
+  "setup.runtimeSetupFailedUnchanged": "安装或启动失败，当前运行模式未发生变化",
   "storage.save": "保存位置",
   "storage.saved": "存储位置已保存，请点击下一步继续。",
   "storage.logSaving": "正在保存 OpenClaw 数据位置…",

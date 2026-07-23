@@ -41,6 +41,8 @@ export type SetupLog = {
   level?: SetupLogLevel;
   progress?: number;
   diagnostic?: boolean;
+  /** Renderer-only slot for replacing high-frequency progress rows. */
+  coalesceKey?: string;
 };
 
 // Setup can stream verbose npm and Gateway output for several minutes. Keep a
@@ -126,13 +128,33 @@ export const useAppStore = create<AppState>((set) => ({
   setGatewayRunning: (v) => set({ gatewayRunning: v }),
   appendSetupLog: (log) => set((s) => {
     const nextLog = { ...log, ts: log.ts ?? Date.now() };
+    if (nextLog.coalesceKey) {
+      let matchIndex = -1;
+      for (let index = s.setupLogs.length - 1; index >= 0; index -= 1) {
+        const existing = s.setupLogs[index];
+        if (
+          existing.source === nextLog.source
+          && existing.step === nextLog.step
+          && existing.coalesceKey === nextLog.coalesceKey
+        ) {
+          matchIndex = index;
+          break;
+        }
+      }
+      if (matchIndex >= 0) {
+        const setupLogs = [...s.setupLogs];
+        setupLogs[matchIndex] = nextLog;
+        return { setupLogs };
+      }
+    }
     const previous = s.setupLogs.at(-1);
     const isDuplicate = previous
       && previous.source === nextLog.source
       && previous.step === nextLog.step
       && previous.message === nextLog.message
       && previous.level === nextLog.level
-      && previous.diagnostic === nextLog.diagnostic;
+      && previous.diagnostic === nextLog.diagnostic
+      && previous.coalesceKey === nextLog.coalesceKey;
     if (isDuplicate) return s;
     return {
       setupLogs: [

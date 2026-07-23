@@ -11,6 +11,7 @@ test("structured setup events retain step, error, and normalized local progress"
       error: null,
       key: null,
       params: { path: "/tmp/openclaw" },
+      logSlot: null,
       status: null,
     }),
     {
@@ -21,6 +22,7 @@ test("structured setup events retain step, error, and normalized local progress"
       error: null,
       key: null,
       params: { path: "/tmp/openclaw" },
+      logSlot: null,
       status: null,
     },
   );
@@ -35,8 +37,19 @@ test("plain legacy events remain readable without inventing metadata", () => {
     error: null,
     key: null,
     params: {},
+    logSlot: null,
     status: null,
   });
+});
+
+test("structured setup events retain renderer log slots", () => {
+  const event = normalizeSetupProgressPayload({
+    step: "node",
+    message: "Downloading 42%",
+    progress: 0.42,
+    logSlot: "download-run-1",
+  });
+  assert.equal(event?.logSlot, "download-run-1");
 });
 
 test("structured setup events ignore non-string translation parameters", () => {

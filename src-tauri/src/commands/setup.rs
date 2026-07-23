@@ -26,7 +26,9 @@ use crate::commands::setup_diagnostics::{
     record_process_finished, record_process_output, record_process_started, record_timeline_note,
     reset_timeline_log,
 };
-use crate::commands::setup_progress::{emit, emit_diagnostic, emit_keyed, emit_keyed_with_params};
+use crate::commands::setup_progress::{
+    emit, emit_coalesced, emit_diagnostic, emit_keyed, emit_keyed_with_params,
+};
 use crate::paths;
 use crate::platform;
 use crate::state::GatewayProcess;
@@ -945,8 +947,10 @@ async fn download_with_fallback_with_budget(
         .build()
         .map_err(|error| format!("Failed to initialize downloader: {error}"))?;
     let mut last_error = "no download source responded".to_string();
+    let download_run_id = uuid::Uuid::new_v4().simple().to_string();
     for (index, (url, label)) in sources.iter().enumerate() {
         operation.ensure_active()?;
+        let log_slot = format!("download-{download_run_id}-{}", index + 1);
         let source_started = std::time::Instant::now();
         // A mirror that stalls or errors out must still leave a trace: without
         // this, hopping to the next source looks identical to a slow single
@@ -973,7 +977,7 @@ async fn download_with_fallback_with_budget(
                 unreachable!("a new download attempt cannot start with an expired source deadline")
             }
         };
-        emit(
+        emit_coalesced(
             app,
             step,
             &format!(
@@ -982,6 +986,7 @@ async fn download_with_fallback_with_budget(
                 sources.len(),
                 label
             ),
+            &log_slot,
             prog_start,
         );
         let (connect_timeout, connect_limit) = attempt.absolute_remaining().map_err(|timeout| {
@@ -1169,7 +1174,7 @@ async fn download_with_fallback_with_budget(
                         compact_elapsed(elapsed),
                     )
                 };
-                emit(app, step, &detail, progress);
+                emit_coalesced(app, step, &detail, &log_slot, progress);
             }
         }
         if let Some(error) = stream_error {
@@ -1213,7 +1218,7 @@ async fn download_with_fallback_with_budget(
                 transfer_rate_mib_per_second(downloaded, completed_elapsed),
             ),
         );
-        emit(
+        emit_coalesced(
             app,
             step,
             &format!(
@@ -1221,6 +1226,7 @@ async fn download_with_fallback_with_budget(
                 label,
                 total.max(downloaded) as f64 / 1024.0 / 1024.0
             ),
+            &log_slot,
             prog_end,
         );
         return Ok(downloaded);
@@ -2548,6 +2554,21 @@ pub struct SetupNodeStatus {
     pub requirement_error: Option<String>,
 }
 
+impl SetupNodeStatus {
+    fn verified(
+        runtime: crate::commands::system::NodeRuntimeContract,
+        requirement: &NodeRuntimeRequirement,
+    ) -> Self {
+        let (node, npm) = runtime.into_statuses();
+        Self {
+            node,
+            npm,
+            requirement: Some(requirement.expression().to_string()),
+            requirement_error: None,
+        }
+    }
+}
+
 /// Resolve the executable Node.js+npm pair required for package installation.
 /// The system resolver already preserves an explicit user-selected Node.js
 /// runtime as an exclusive candidate and otherwise chooses the first complete
@@ -2740,21 +2761,20 @@ pub async fn check_setup_node() -> Result<SetupNodeStatus, String> {
 pub async fn repair_setup_node_runtime(
     app: tauri::AppHandle,
     operation_id: Option<String>,
-) -> Result<String, String> {
+) -> Result<SetupNodeStatus, String> {
     let operation =
         DependencyInstallOperation::begin(&app, DependencyInstallTool::Node, operation_id)?;
     paths::validate_runtime_overrides()?;
     let requirement = setup_node_requirement_for_operation(&operation).await?;
     if let Ok(runtime) = resolve_complete_node_runtime_contract(&requirement).await {
         operation.ensure_active()?;
-        return Ok(ready_node_runtime_message(&runtime));
+        return Ok(SetupNodeStatus::verified(runtime, &requirement));
     }
-    install_node_for_requirement_with_operation(app, requirement.clone(), false, &operation)
-        .await?;
+    let repaired =
+        install_node_for_requirement_with_operation(app, requirement.clone(), false, &operation)
+            .await?;
     operation.ensure_active()?;
-    let repaired = resolve_complete_node_runtime_contract(&requirement).await?;
-    operation.ensure_active()?;
-    Ok(ready_node_runtime_message(&repaired))
+    Ok(SetupNodeStatus::verified(repaired, &requirement))
 }
 
 #[tauri::command]
@@ -2762,18 +2782,19 @@ pub async fn install_node(
     app: tauri::AppHandle,
     force: Option<bool>,
     operation_id: Option<String>,
-) -> Result<String, String> {
+) -> Result<SetupNodeStatus, String> {
     let operation =
         DependencyInstallOperation::begin(&app, DependencyInstallTool::Node, operation_id)?;
     paths::validate_runtime_overrides()?;
     let requirement = setup_node_requirement_for_operation(&operation).await?;
-    install_node_for_requirement_with_operation(
+    let runtime = install_node_for_requirement_with_operation(
         app,
-        requirement,
+        requirement.clone(),
         force.unwrap_or(false),
         &operation,
     )
-    .await
+    .await?;
+    Ok(SetupNodeStatus::verified(runtime, &requirement))
 }
 
 pub(crate) async fn update_managed_node_runtime(app: tauri::AppHandle) -> Result<String, String> {
@@ -2788,14 +2809,16 @@ pub(crate) async fn update_managed_node_runtime(app: tauri::AppHandle) -> Result
     #[cfg(all(not(windows), not(target_os = "macos")))]
     let result = {
         if paths::configured_node_runtime_dir().is_some() {
-            return install_node_for_requirement(app, requirement, true, None).await;
+            return install_node_for_requirement(app, requirement, true, None)
+                .await
+                .map(|runtime| ready_node_runtime_message(&runtime));
         }
         Err(
             "The active Node.js installation is managed by the operating system; update it with the system package manager"
                 .into(),
         )
     };
-    result
+    result.map(|runtime| ready_node_runtime_message(&runtime))
 }
 
 async fn install_node_for_requirement(
@@ -2803,7 +2826,7 @@ async fn install_node_for_requirement(
     requirement: NodeRuntimeRequirement,
     force: bool,
     operation_id: Option<String>,
-) -> Result<String, String> {
+) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     let operation =
         DependencyInstallOperation::begin(&app, DependencyInstallTool::Node, operation_id)?;
     install_node_for_requirement_with_operation(app, requirement, force, &operation).await
@@ -2827,7 +2850,7 @@ async fn install_node_for_requirement_with_operation(
     requirement: NodeRuntimeRequirement,
     force: bool,
     operation: &DependencyInstallOperation,
-) -> Result<String, String> {
+) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     operation.ensure_active()?;
     // Windows system installers own elevated child processes. Their explicit
     // budget is enforced inside the controlled installer runner so an outer
@@ -2862,7 +2885,7 @@ async fn install_node_for_requirement_inner(
     requirement: NodeRuntimeRequirement,
     force: bool,
     operation: &DependencyInstallOperation,
-) -> Result<String, String> {
+) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     let _guard = wait_for_dependency_install_lock(
         NODE_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(())),
         operation,
@@ -2895,7 +2918,7 @@ async fn install_node_for_requirement_inner(
     let result = {
         if !force {
             if let Ok(detected) = resolve_complete_node_runtime_contract(&requirement).await {
-                return Ok(ready_node_runtime_message(&detected));
+                return Ok(detected);
             }
         }
         Err(format!(
@@ -2913,18 +2936,16 @@ async fn install_portable_node_runtime(
     force: bool,
     target: PathBuf,
     operation: &DependencyInstallOperation,
-) -> Result<String, String> {
+) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     operation.ensure_active()?;
     let target_node = runtime_binary(&target, "node");
     if !force {
-        if let Ok((version, npm_version)) =
-            validate_node_runtime_pair(&target_node, &requirement).await
+        if validate_node_runtime_pair(&target_node, &requirement)
+            .await
+            .is_ok()
         {
             operation.ensure_active()?;
-            return Ok(format!(
-                "Node.js {version} with npm {npm_version} already installed at {}",
-                target_node.display()
-            ));
+            return resolve_complete_node_runtime_contract(&requirement).await;
         }
     }
     validate_runtime_target_for_activation(&target, "Node.js")?;
@@ -3011,10 +3032,8 @@ async fn install_portable_node_runtime(
         "setup.node.done",
         1.0,
     );
-    Ok(format!(
-        "Node.js {detected} installed at {}",
-        target.display()
-    ))
+    operation.ensure_active()?;
+    resolve_complete_node_runtime_contract(&requirement).await
 }
 
 #[cfg(windows)]
@@ -3023,12 +3042,12 @@ async fn install_windows_system_node(
     requirement: NodeRuntimeRequirement,
     force: bool,
     operation: &DependencyInstallOperation,
-) -> Result<String, String> {
+) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     operation.ensure_active()?;
     if !force {
         if let Ok(current) = resolve_complete_node_runtime_contract(&requirement).await {
             operation.ensure_active()?;
-            return Ok(ready_node_runtime_message(&current));
+            return Ok(current);
         }
     }
 
@@ -3072,12 +3091,12 @@ async fn install_macos_system_node(
     requirement: NodeRuntimeRequirement,
     force: bool,
     operation: &DependencyInstallOperation,
-) -> Result<String, String> {
+) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     operation.ensure_active()?;
     if !force {
         if let Ok(current) = resolve_complete_node_runtime_contract(&requirement).await {
             operation.ensure_active()?;
-            return Ok(ready_node_runtime_message(&current));
+            return Ok(current);
         }
     }
 
@@ -3160,7 +3179,7 @@ async fn install_macos_system_node(
                 "setup.node.systemReady",
                 1.0,
             );
-            return Ok(ready_node_runtime_message(&installed));
+            return Ok(installed);
         }
         if started.elapsed() >= timeout {
             let _ = child.kill().await;
@@ -3195,7 +3214,7 @@ async fn install_windows_system_node_from_mirrors(
     requirement: &NodeRuntimeRequirement,
     budget: DependencyInstallBudget,
     operation: &DependencyInstallOperation,
-) -> Result<String, WindowsInstallerFailure> {
+) -> Result<crate::commands::system::NodeRuntimeContract, WindowsInstallerFailure> {
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
@@ -3310,7 +3329,7 @@ async fn install_windows_system_node_from_mirrors(
         "setup.node.systemReady",
         1.0,
     );
-    Ok(ready_node_runtime_message(&installed))
+    Ok(installed)
 }
 
 #[cfg(windows)]
@@ -3319,7 +3338,7 @@ async fn install_windows_system_node_with_winget(
     requirement: &NodeRuntimeRequirement,
     budget: DependencyInstallBudget,
     operation: &DependencyInstallOperation,
-) -> Result<String, WindowsInstallerFailure> {
+) -> Result<crate::commands::system::NodeRuntimeContract, WindowsInstallerFailure> {
     ensure_winget_package(
         app,
         "node",
@@ -3370,7 +3389,7 @@ async fn install_windows_system_node_with_winget(
         "setup.node.systemReady",
         1.0,
     );
-    Ok(ready_node_runtime_message(&installed))
+    Ok(installed)
 }
 
 #[cfg(windows)]
@@ -4358,7 +4377,7 @@ async fn ensure_node_runtime(
             "setup.node.autoRepair",
             0.1,
         );
-        install_node_for_requirement(app.clone(), requirement.clone(), false, None)
+        runtime = install_node_for_requirement(app.clone(), requirement.clone(), false, None)
             .await
             .map_err(|error| {
                 format!(
@@ -4366,7 +4385,6 @@ async fn ensure_node_runtime(
                     requirement.expression()
                 )
             })?;
-        runtime = crate::commands::system::NodeRuntimeContract::resolve(requirement).await?;
     }
 
     if !runtime.node().available {

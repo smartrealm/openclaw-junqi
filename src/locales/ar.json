@@ -2487,6 +2487,7 @@
   "setup.gatewayReadyCheckingDescription": "جارٍ التحقق من النموذج الحالي. بعد اكتمال الفحص ستنتقل إلى معالج الإعداد الرسمي أو شاشة الإكمال.",
   "setup.gatewayReadyContinueFailedTitle": "تعذر المتابعة",
   "setup.gatewayReadyContinueFailed": "تعذر المتابعة: {{error}}",
+  "setup.runtimeSetupFailedUnchanged": "فشل الإعداد أو بدء التشغيل؛ لم يتغير وضع التشغيل المحدد",
   "setup.openclawUpdate.latestVersion": "الإصدار المتاح",
   "setup.openclawUpdate.unknown": "غير معروف",
   "setup.openclawUpdate.check": "التحقق من التحديثات",

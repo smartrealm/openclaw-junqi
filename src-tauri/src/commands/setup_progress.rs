@@ -17,6 +17,8 @@ pub struct SetupProgress {
     pub key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<BTreeMap<String, String>>,
+    #[serde(rename = "logSlot", skip_serializing_if = "Option::is_none")]
+    pub log_slot: Option<String>,
     pub progress: Option<f64>,
     #[serde(default)]
     pub diagnostic: bool,
@@ -29,6 +31,7 @@ pub struct SetupProgress {
 struct SetupProgressMetadata<'a> {
     key: Option<&'a str>,
     params: Option<BTreeMap<String, String>>,
+    log_slot: Option<&'a str>,
     progress: Option<f64>,
     diagnostic: bool,
     error: Option<&'a str>,
@@ -41,6 +44,28 @@ pub fn emit(app: &tauri::AppHandle, step: &str, message: &str, progress: f64) {
         step,
         message,
         SetupProgressMetadata {
+            progress: Some(progress),
+            ..Default::default()
+        },
+    );
+}
+
+/// Emit a normal progress event whose visible console row may be replaced by
+/// a later event from the same operation. The durable setup timeline still
+/// records every event before it reaches the renderer.
+pub fn emit_coalesced(
+    app: &tauri::AppHandle,
+    step: &str,
+    message: &str,
+    log_slot: &str,
+    progress: f64,
+) {
+    emit_event(
+        app,
+        step,
+        message,
+        SetupProgressMetadata {
+            log_slot: Some(log_slot),
             progress: Some(progress),
             ..Default::default()
         },
@@ -149,6 +174,7 @@ pub(crate) fn emit_log_write_failure(app: &tauri::AppHandle, step: &str, error: 
             message: "Setup diagnostics could not be written to disk".into(),
             key: Some("setup.installPanel.logWriteFailed".into()),
             params: None,
+            log_slot: None,
             progress: None,
             diagnostic: true,
             error: Some(error.into()),
@@ -184,6 +210,9 @@ fn record_timeline(
             line.push_str(&format!("  [{joined}]"));
         }
     }
+    if let Some(log_slot) = metadata.log_slot {
+        line.push_str(&format!("  [log-slot={log_slot}]"));
+    }
     if let Some(error) = metadata.error {
         line.push_str(&format!("  ERROR: {error}"));
     }
@@ -204,6 +233,7 @@ fn emit_event(
             message: message.into(),
             key: metadata.key.map(str::to_owned),
             params: metadata.params,
+            log_slot: metadata.log_slot.map(str::to_owned),
             progress: metadata.progress.map(|value| value.clamp(0.0, 1.0)),
             diagnostic: metadata.diagnostic,
             error: metadata.error.map(str::to_owned),

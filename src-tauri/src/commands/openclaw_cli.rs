@@ -8,7 +8,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 const MAX_DIAGNOSTIC_CHARS: usize = 2_048;
 
@@ -279,114 +279,32 @@ where
         .env("OPENCLAW_STATE_DIR", &target.state_dir)
         .env("OPENCLAW_CONFIG_PATH", &target.config_path)
         .env("OPENCLAW_NO_RESPAWN", "1")
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
+        .env("NO_COLOR", "1");
     platform::configure_background_command(&mut command);
-    configure_cli_process_tree(&mut command);
-
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Failed to start the selected OpenClaw binary: {error}"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "OpenClaw CLI stdout was not captured".to_string())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "OpenClaw CLI stderr was not captured".to_string())?;
-
-    let execution = tokio::time::timeout(limits.timeout, async {
-        tokio::try_join!(
-            async {
-                child
-                    .wait()
-                    .await
-                    .map_err(|error| format!("process wait failed: {error}"))
-            },
-            read_limited(stdout, limits.stdout_bytes, "stdout"),
-            read_limited(stderr, limits.stderr_bytes, "stderr")
-        )
-    })
-    .await;
-
-    match execution {
-        Ok(Ok((status, stdout, stderr))) => Ok(OpenClawCliOutput {
-            status,
-            stdout,
-            stderr,
-        }),
-        Ok(Err(error)) => {
-            terminate_cli_child(&mut child, Duration::from_secs(5)).await;
-            Err(format!("OpenClaw CLI execution failed: {error}"))
-        }
-        Err(_) => {
-            terminate_cli_child(&mut child, Duration::from_secs(5)).await;
-            Err(format!(
-                "OpenClaw CLI timed out after {} seconds",
+    let output = crate::commands::process_control::run_command_output_confirmed(
+        command,
+        crate::commands::process_control::ControlledOutputLimits {
+            timeout: limits.timeout,
+            stdout_bytes: limits.stdout_bytes,
+            stderr_bytes: limits.stderr_bytes,
+        },
+    )
+    .await
+    .map_err(|error| {
+        if error.is_timeout() {
+            format!(
+                "OpenClaw CLI timed out after {} seconds: {error}",
                 limits.timeout.as_secs()
-            ))
+            )
+        } else {
+            format!("OpenClaw CLI execution failed: {error}")
         }
-    }
-}
-
-fn configure_cli_process_tree(command: &mut tokio::process::Command) {
-    #[cfg(unix)]
-    {
-        command.process_group(0);
-    }
-    #[cfg(windows)]
-    {
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
-    }
-}
-
-async fn terminate_cli_child(child: &mut tokio::process::Child, timeout_budget: Duration) {
-    let pid = child.id();
-    #[cfg(unix)]
-    if let Some(pid) = pid
-        .filter(|value| *value > 1)
-        .and_then(|value| i32::try_from(value).ok())
-    {
-        // The child is the leader of the process group created above.
-        let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
-    }
-    #[cfg(windows)]
-    if let Some(pid) = pid {
-        let _ = tokio::time::timeout(
-            timeout_budget,
-            crate::commands::process_control::terminate_windows_process_tree(pid),
-        )
-        .await;
-    }
-    let _ = child.start_kill();
-    let _ = tokio::time::timeout(timeout_budget, child.wait()).await;
-}
-
-async fn read_limited<R>(mut reader: R, limit: usize, stream: &str) -> Result<Vec<u8>, String>
-where
-    R: AsyncRead + Unpin,
-{
-    let mut output = Vec::new();
-    let mut chunk = [0_u8; 8_192];
-    loop {
-        let count = reader
-            .read(&mut chunk)
-            .await
-            .map_err(|error| format!("{stream} read failed: {error}"))?;
-        if count == 0 {
-            return Ok(output);
-        }
-        if output.len().saturating_add(count) > limit {
-            return Err(format!("{stream} exceeded the {limit} byte limit"));
-        }
-        output.extend_from_slice(&chunk[..count]);
-    }
+    })?;
+    Ok(OpenClawCliOutput {
+        status: output.status,
+        stdout: output.stdout,
+        stderr: output.stderr,
+    })
 }
 
 async fn command_output(

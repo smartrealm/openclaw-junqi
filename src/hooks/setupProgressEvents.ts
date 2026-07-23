@@ -5,6 +5,7 @@ export interface SetupProgressEvent {
   message: string;
   key: string | null;
   params: Record<string, string>;
+  logSlot: string | null;
   progress: number | null;
   diagnostic: boolean;
   error: string | null;
@@ -25,6 +26,7 @@ export function normalizeSetupProgressPayload(payload: unknown): SetupProgressEv
       message,
       key: null,
       params: {},
+      logSlot: null,
       progress: null,
       diagnostic: false,
       error: null,
@@ -48,6 +50,7 @@ export function normalizeSetupProgressPayload(payload: unknown): SetupProgressEv
     message: value.message.trim(),
     key: typeof value.key === "string" && value.key ? value.key : null,
     params,
+    logSlot: typeof value.logSlot === "string" && value.logSlot ? value.logSlot : null,
     progress: rawProgress == null ? null : Math.max(0, Math.min(100, Math.round(rawProgress * 100))),
     diagnostic: value.diagnostic === true,
     error: typeof value.error === "string" && value.error ? value.error : null,

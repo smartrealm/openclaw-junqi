@@ -71,6 +71,9 @@ test("BUG-INSTALL-08 dependency downloads stream bytes and report actual totals"
   assert.match(setup, /file\.write_all\(&chunk\)\.await/);
   assert.match(setup, /downloaded as f64 \/ total as f64/);
   assert.doesNotMatch(setup, /response\.bytes\(\)\.await/);
+  assert.match(setup, /emit_coalesced\(app, step, &detail, &log_slot, progress\)/);
+  assert.match(setupProgress, /pub log_slot: Option<String>/);
+  assert.match(progressEvents, /logSlot:/);
 });
 
 test("BUG-INSTALL-09 Windows installers request elevation and retain exit status", () => {

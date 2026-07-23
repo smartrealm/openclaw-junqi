@@ -1114,9 +1114,12 @@ export function useSetupFlow(
         patchStep("node", "running", t("setup.installingNode"));
         replaceSetupStep("install-node");
         reportPhase("node", t("setup.installingNode"), 20);
-        await runDependencyInstall(runId, "node", (operationId) => installNode(false, operationId));
+        setupNode = await runDependencyInstall(
+          runId,
+          "node",
+          (operationId) => installNode(false, operationId),
+        );
         if (!isRunActive(runId)) return false;
-        setupNode = await checkSetupNode();
         const installedNode = setupNode.node;
         nodeStatus = installedNode;
         setNodeRequirement(setupNode.requirement);
@@ -1137,9 +1140,8 @@ export function useSetupFlow(
         patchStep("npm", "running", t("setup.repairingNodeRuntime", "正在修复所选 Node.js 运行时…"));
         replaceSetupStep("install-node");
         reportPhase("node", t("setup.repairingNodeRuntime", "正在修复所选 Node.js 运行时…"), 20);
-        await runDependencyInstall(runId, "node", repairSetupNodeRuntime);
+        setupNode = await runDependencyInstall(runId, "node", repairSetupNodeRuntime);
         if (!isRunActive(runId)) return false;
-        setupNode = await checkSetupNode();
         nodeStatus = setupNode.node;
         npmStatus = setupNode.npm;
         setNodeRequirement(setupNode.requirement);
@@ -1374,10 +1376,23 @@ export function useSetupFlow(
         }
       }
       if (!isRunActive(runId)) return;
-      // The "restored" wording is only accurate when the previous Gateway
-      // actually came back up; claiming it unconditionally hid a second,
-      // silent failure from the user.
-      if (restoreSucceeded) {
+      // A failed retry of the already-selected mode is not a runtime switch.
+      // Keep that outcome distinct from a real switch-and-rollback transaction
+      // so the setup log never claims a restoration that did not happen.
+      if (!switchedMode) {
+        appendSetupLog({
+          source: "setup",
+          step: "gateway",
+          message: `${mode} setup failed; the selected runtime mode did not change`,
+          level: "warn",
+        });
+        report(
+          t(
+            "setup.runtimeSetupFailedUnchanged",
+            "安装或启动失败，当前运行模式未发生变化",
+          ),
+        );
+      } else if (restoreSucceeded) {
         appendSetupLog({
           source: "setup",
           step: "gateway",

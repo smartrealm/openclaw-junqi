@@ -1449,14 +1449,31 @@ pub(crate) async fn wait_for_selected_gateway(
     false
 }
 
-// A freshly installed OpenClaw/Node.js pair is untouched by Windows Defender's
-// on-access scanner; its first execution (this readiness wait) can stall for
-// tens of seconds while the scanner works through node.exe and the package's
-// full node_modules tree before the process produces any output at all. 60s
-// was tuned for an already-scanned/cached binary; give a cold start headroom
-// instead of killing a Gateway that is merely slow to start for the first time.
-const MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 90;
-const MANAGED_GATEWAY_START_HEARTBEAT_SECS: u64 = 15;
+/// Startup has two independently observable phases. A freshly installed
+/// Windows runtime may spend significant time in on-access scanning before the
+/// first OpenClaw log line; after output starts, readiness should have its own
+/// bounded window. Treating both as one deadline kills healthy cold starts and
+/// makes a silent pre-bootstrap stall indistinguishable from a slow channel.
+#[derive(Clone, Copy)]
+struct GatewayStartupPolicy {
+    first_output_timeout: std::time::Duration,
+    readiness_after_output: std::time::Duration,
+    heartbeat_interval: std::time::Duration,
+}
+
+impl GatewayStartupPolicy {
+    fn current() -> Self {
+        Self {
+            first_output_timeout: std::time::Duration::from_secs(if cfg!(windows) {
+                120
+            } else {
+                90
+            }),
+            readiness_after_output: std::time::Duration::from_secs(90),
+            heartbeat_interval: std::time::Duration::from_secs(15),
+        }
+    }
+}
 
 fn managed_gateway_diagnostics(state: &GatewayProcess, started_at_ms: i64, limit: usize) -> String {
     let Ok(logs) = state.logs.lock() else {
@@ -1481,6 +1498,10 @@ fn managed_gateway_diagnostics(state: &GatewayProcess, started_at_ms: i64, limit
         .collect::<Vec<_>>();
     lines.reverse();
     lines.join("\n")
+}
+
+fn managed_gateway_has_child_output(state: &GatewayProcess, started_at_ms: i64) -> bool {
+    !managed_gateway_diagnostics(state, started_at_ms, 1).is_empty()
 }
 
 fn with_managed_gateway_diagnostics(
@@ -1561,7 +1582,7 @@ fn spawn_log_reader(
     reader: impl tokio::io::AsyncRead + Unpin + Send + 'static,
     source: crate::state::gateway_process::LogSource,
     process: &'static str,
-) {
+) -> tokio::task::JoinHandle<()> {
     use crate::state::gateway_process::{push_log, LogLevel};
     use tokio::io::{AsyncBufReadExt, BufReader};
     tokio::spawn(async move {
@@ -1593,7 +1614,18 @@ fn spawn_log_reader(
             emit_gateway_log(&app, &line);
             push_log(&state.logs, source, LogLevel::Info, line);
         }
-    });
+    })
+}
+
+async fn finish_gateway_log_readers(readers: &mut Vec<tokio::task::JoinHandle<()>>) {
+    for mut reader in readers.drain(..) {
+        if tokio::time::timeout(std::time::Duration::from_secs(2), &mut reader)
+            .await
+            .is_err()
+        {
+            reader.abort();
+        }
+    }
 }
 
 /// Like `spawn_log_reader` but also emits to `gateway-restart-progress`
@@ -2529,7 +2561,7 @@ pub(crate) async fn start_gateway_locked(
         .await
         {
             Ok(inspection) => Some(inspection),
-            Err(error) => {
+            Err(error) if error.cleanup_confirmed() => {
                 let message =
                     format!("Gateway service inspection skipped before foreground start: {error}");
                 report_gateway_lifecycle(
@@ -2539,6 +2571,18 @@ pub(crate) async fn start_gateway_locked(
                     message,
                 );
                 None
+            }
+            Err(error) => {
+                let message = format!(
+                    "Gateway service inspection could not safely hand off to a foreground process: {error}"
+                );
+                report_gateway_lifecycle(
+                    &app,
+                    &state,
+                    crate::state::gateway_process::LogLevel::Error,
+                    &message,
+                );
+                return Err(message);
             }
         };
 
@@ -2894,9 +2938,40 @@ pub(crate) async fn start_gateway_locked(
     for (k, v) in &extra_env_vars {
         cmd.env(k, v);
     }
-    cmd.stdout(std::process::Stdio::piped())
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+
+    let runtime_identity = runtime.identity();
+    crate::commands::setup_diagnostics::record_timeline_note(
+        &app,
+        "gateway",
+        &format!(
+            "launch.contract node={} package={} executable={} state={} config={} cwd={}",
+            runtime_identity
+                .node
+                .as_deref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "none".into()),
+            runtime_identity
+                .package_dir
+                .as_deref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "none".into()),
+            runtime_identity
+                .executable
+                .as_deref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "none".into()),
+            base_dir.display(),
+            config_path.display(),
+            paths::stable_openclaw_working_dir()
+                .as_deref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "none".into()),
+        ),
+    );
 
     report_gateway_lifecycle(
         &app,
@@ -2946,21 +3021,22 @@ pub(crate) async fn start_gateway_locked(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
+    let mut log_readers = Vec::new();
     if let Some(out) = stdout {
-        spawn_log_reader(
+        log_readers.push(spawn_log_reader(
             app.clone(),
             out,
             crate::state::gateway_process::LogSource::ChildStdout,
             "openclaw-gateway",
-        );
+        ));
     }
     if let Some(err) = stderr {
-        spawn_log_reader(
+        log_readers.push(spawn_log_reader(
             app.clone(),
             err,
             crate::state::gateway_process::LogSource::ChildStderr,
             "openclaw-gateway",
-        );
+        ));
     }
 
     // Emit initial status
@@ -2979,13 +3055,19 @@ pub(crate) async fn start_gateway_locked(
     // times out. This gives every caller one cross-platform readiness contract
     // and preserves the real stderr instead of reducing failures to a UI timer.
     let startup_started_at = std::time::Instant::now();
-    let startup_deadline =
-        startup_started_at + std::time::Duration::from_secs(MANAGED_GATEWAY_START_TIMEOUT_SECS);
-    let mut next_heartbeat_at =
-        startup_started_at + std::time::Duration::from_secs(MANAGED_GATEWAY_START_HEARTBEAT_SECS);
+    let startup_policy = GatewayStartupPolicy::current();
+    let mut observed_child_output = false;
+    let mut observed_bound_port = false;
+    let mut startup_deadline = startup_started_at + startup_policy.first_output_timeout;
+    let mut next_heartbeat_at = startup_started_at + startup_policy.heartbeat_interval;
     start_failure_guard.stage(GatewayStartStage::Readiness);
     loop {
         let now = std::time::Instant::now();
+        if !observed_child_output && managed_gateway_has_child_output(&state, startup_started_at_ms)
+        {
+            observed_child_output = true;
+            startup_deadline = now + startup_policy.readiness_after_output;
+        }
         if now >= next_heartbeat_at {
             let elapsed = now.duration_since(startup_started_at).as_secs();
             emit_gateway_log(
@@ -2995,13 +3077,11 @@ pub(crate) async fn start_gateway_locked(
                     port, elapsed
                 ),
             );
-            next_heartbeat_at =
-                now + std::time::Duration::from_secs(MANAGED_GATEWAY_START_HEARTBEAT_SECS);
+            next_heartbeat_at = now + startup_policy.heartbeat_interval;
         }
         match child.try_wait() {
             Ok(Some(status)) => {
-                // Let the async stdout/stderr readers flush their final lines.
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                finish_gateway_log_readers(&mut log_readers).await;
                 let msg = with_managed_gateway_diagnostics(
                     format!("Gateway exited before becoming ready ({})", status),
                     &state,
@@ -3021,6 +3101,7 @@ pub(crate) async fn start_gateway_locked(
             Ok(None) => {}
             Err(error) => {
                 crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
+                finish_gateway_log_readers(&mut log_readers).await;
                 return Err(format!("Failed to check Gateway process status: {}", error));
             }
         }
@@ -3029,17 +3110,44 @@ pub(crate) async fn start_gateway_locked(
             break;
         }
 
+        if !observed_bound_port
+            && !crate::commands::gateway_supervisor::is_port_available(port).await
+        {
+            observed_bound_port = true;
+            emit_gateway_log(
+                &app,
+                format!(
+                    "Port {} became occupied during Gateway startup; waiting for OpenClaw health and authentication checks...",
+                    port
+                ),
+            );
+        }
+
         if std::time::Instant::now() >= startup_deadline {
             crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
+            finish_gateway_log_readers(&mut log_readers).await;
             let _ = crate::commands::gateway_supervisor::wait_for_port_free(port, 5_000).await;
-            let msg = with_managed_gateway_diagnostics(
-                format!(
-                    "Gateway process did not become reachable on 127.0.0.1:{} within {} seconds",
-                    port, MANAGED_GATEWAY_START_TIMEOUT_SECS
+            let elapsed = startup_started_at.elapsed().as_secs();
+            let timeout_reason = match (observed_child_output, observed_bound_port) {
+                (false, false) => format!(
+                    "Gateway produced no startup output and never bound 127.0.0.1:{} within {} seconds",
+                    port, elapsed
                 ),
-                &state,
-                startup_started_at_ms,
-            );
+                (false, true) => format!(
+                    "Gateway produced no startup output; port {} became occupied, but the endpoint did not pass OpenClaw health and authentication checks within {} seconds",
+                    port, elapsed
+                ),
+                (true, false) => format!(
+                    "Gateway produced startup output but never bound 127.0.0.1:{} within {} seconds",
+                    port, elapsed
+                ),
+                (true, true) => format!(
+                    "Gateway produced startup output and port {} became occupied, but the endpoint did not pass OpenClaw health and authentication checks within {} seconds",
+                    port, elapsed
+                ),
+            };
+            let msg =
+                with_managed_gateway_diagnostics(timeout_reason, &state, startup_started_at_ms);
             emit_gateway_log(&app, &msg);
             crate::commands::setup_diagnostics::record_process_finished(
                 &app,

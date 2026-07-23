@@ -811,7 +811,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   useEffect(() => {
     if (!followRef.current || !viewportRef.current) return;
     viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
-  }, [logs.length]);
+  }, [logs]);
 
   const copyLogs = () => {
     const text = logs

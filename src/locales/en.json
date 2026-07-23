@@ -3551,6 +3551,7 @@
   "setup.gatewayReadyCheckingDescription": "Verifying the current model. You will continue to the official setup wizard or the completion screen when the check finishes.",
   "setup.gatewayReadyContinueFailedTitle": "Unable to continue",
   "setup.gatewayReadyContinueFailed": "Unable to continue: {{error}}",
+  "setup.runtimeSetupFailedUnchanged": "Setup or startup failed; the selected runtime mode did not change",
   "storage.save": "Save location",
   "storage.saved": "Storage location saved. Click Next to continue.",
   "storage.logSaving": "Saving the OpenClaw data location…",
