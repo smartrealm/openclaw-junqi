@@ -2709,7 +2709,7 @@
       },
       "runtime": {
         "title": "Runtime",
-        "description": "Install and start Gateway"
+        "description": "Install OpenClaw runtime"
       },
       "configuration": {
         "title": "OpenClaw setup",
@@ -2883,9 +2883,17 @@
     "wizard": {
       "title": "Configure OpenClaw",
       "subtitle": "Complete model, credential, workspace, and Gateway setup through the official OpenClaw flow.",
+      "cliSubtitle": "Use the official OpenClaw wizard to complete model, workspace, and Gateway setup.",
+      "remoteSubtitle": "Use the official OpenClaw wizard to configure a remote Gateway connection.",
+      "running": "Waiting for the official OpenClaw wizard to finish",
+      "terminal": "Official OpenClaw configuration terminal",
+      "desktopOnly": "The official setup wizard is available only in the desktop app.",
       "connecting": "Connecting to the official OpenClaw setup wizard…",
       "connectingAction": "Connecting",
       "connectionTimeout": "Gateway started, but the setup wizard connection timed out.",
+      "cliExited": "The official OpenClaw setup wizard ended with exit code {{code}}.",
+      "incomplete": "The OpenClaw wizard has not completed the required configuration. Finish it in the terminal and retry.",
+      "remoteUnavailable": "The remote OpenClaw Gateway could not be reached. Check the address and credentials in the official wizard.",
       "handoffNotReady": "OpenClaw setup completed, but the selected Gateway could not be verified after the runtime handoff. Repair it and try again.",
       "failed": "The OpenClaw setup wizard failed.",
       "missingStep": "The OpenClaw setup wizard did not return its next step.",

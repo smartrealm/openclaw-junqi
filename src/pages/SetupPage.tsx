@@ -8,9 +8,7 @@ import {
   Check,
   CheckCircle2,
   Container,
-  Copy,
   Circle,
-  ExternalLink,
   Globe2,
   LoaderCircle,
   Monitor,
@@ -23,7 +21,7 @@ import {
   Sun,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/stores/app-store";
@@ -35,7 +33,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { changeLanguage } from "@/i18n";
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from "@/i18n/languages";
 import { useSetupFlow } from "@/hooks/useSetupFlow";
-import type { SetupFlow, StepState } from "@/hooks/useSetupFlow";
+import type { GatewayConnectionMode, SetupFlow, StepState } from "@/hooks/useSetupFlow";
 import type { DockerStatus, GatewayAutostartStatus } from "@/api/tauri-commands";
 import {
   detectStateDirSplit,
@@ -57,18 +55,8 @@ import {
 } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
 import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
+import { OfficialOnboardingTerminal } from "@/components/setup/OfficialOnboardingTerminal";
 import { OpenClawUpdatePanel } from "@/components/shared/OpenClawUpdatePanel";
-import { ChannelEnrollmentDialog } from "@/components/channels/ChannelEnrollmentDialog";
-import { type OpenClawWizardStep } from "@/services/openclawWizard";
-import {
-  FeishuQrWizardBridge,
-  FeishuQrWizardSessionChangedError,
-  isFeishuQrSetupMethodStep,
-} from "@/services/feishuQrWizardBridge";
-import {
-  cancelChannelEnrollment,
-  type ChannelEnrollmentCompletion,
-} from "@/services/channelEnrollment";
 import {
   setupStepMessageKey,
   setupStepProgress,
@@ -514,332 +502,28 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   );
 }
 
-function wizardInitialValue(step: OpenClawWizardStep): unknown {
-  if (step.type === "confirm") return Boolean(step.initialValue);
-  if (step.type === "multiselect") return Array.isArray(step.initialValue) ? step.initialValue : [];
-  if (step.type === "select") {
-    const options = Array.isArray(step.options) ? step.options : [];
-    return options.some((option) => wizardValuesEqual(option.value, step.initialValue))
-      ? step.initialValue
-      : options[0]?.value;
-  }
-  if (step.type === "text") return typeof step.initialValue === "string" ? step.initialValue : "";
-  if (step.type === "action") return true;
-  return undefined;
-}
-
-function wizardValuesEqual(left: unknown, right: unknown): boolean {
-  if (Object.is(left, right)) return true;
-  try { return JSON.stringify(left) === JSON.stringify(right); } catch { return false; }
-}
-
-function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
+function OfficialOnboardingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const step = flow.wizardStep;
-  const [value, setValue] = useState<unknown>(() => step ? wizardInitialValue(step) : undefined);
-  const [feishuDomain, setFeishuDomain] = useState<"feishu" | "lark">("feishu");
-  const [enrollmentDomain, setEnrollmentDomain] = useState<"feishu" | "lark" | null>(null);
-  const [enrollmentFinalizing, setEnrollmentFinalizing] = useState(false);
-  const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
-  const [pendingEnrollment, setPendingEnrollment] = useState<ChannelEnrollmentCompletion | null>(null);
-  const [deviceCodeCopied, setDeviceCodeCopied] = useState(false);
-  const enrollmentFinalizingRef = useRef(enrollmentFinalizing);
-  const pendingEnrollmentRef = useRef<ChannelEnrollmentCompletion | null>(null);
-
-  useEffect(() => {
-    enrollmentFinalizingRef.current = enrollmentFinalizing;
-  }, [enrollmentFinalizing]);
-
-  useEffect(() => {
-    pendingEnrollmentRef.current = pendingEnrollment;
-  }, [pendingEnrollment]);
-
-  useEffect(() => () => {
-    const completion = pendingEnrollmentRef.current;
-    if (completion) void cancelChannelEnrollment(completion.sessionId);
-  }, []);
-
-  useEffect(() => {
-    setValue(step ? wizardInitialValue(step) : undefined);
-    setDeviceCodeCopied(false);
-    if (!enrollmentFinalizingRef.current) {
-      setEnrollmentDomain(null);
-      setEnrollmentError(null);
-      setPendingEnrollment(null);
-    }
-  }, [step?.id]);
-
-  if (!step) {
-    return (
-      <SetupShell
-        active={4}
-        title={t("setup.wizard.title", "配置 OpenClaw")}
-        subtitle={t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
-        logs={logs}
-        previousAction={{ onClick: flow.goBack, disabled: flow.wizardSubmitting }}
-        nextAction={{
-          label: flow.wizardRecoveryRequired
-            ? t("setup.wizard.reclaim", "重新接管向导")
-            : flow.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
-          onClick: () => void (flow.wizardRecoveryRequired ? flow.reclaimWizard() : flow.retryWizard()),
-          disabled: flow.wizardSubmitting && !flow.wizardError,
-          loading: flow.wizardSubmitting,
-          icon: "none",
-        }}
-      >
-        <div className={clsx("rounded-lg border p-4 text-sm leading-6", flow.wizardError ? "border-red-500/25 bg-red-500/5 text-red-300" : "border-aegis-primary/25 bg-aegis-primary/5 text-aegis-text-secondary")}>
-          {flow.wizardError || t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
-        </div>
-      </SetupShell>
-    );
-  }
-
-  // Gateway owns wizard presentation and language. Keep its rendered step
-  // intact so local, remote, and externally managed Gateways behave alike.
-  const presentedStep = step;
-  const deviceCode = presentedStep.deviceCode;
-  const feishuQrSetupMethod = isFeishuQrSetupMethodStep(presentedStep);
-  const options = Array.isArray(presentedStep.options) ? presentedStep.options : [];
-  const selectedValues = Array.isArray(value) ? value : [];
-  const toggleMulti = (optionValue: unknown) => {
-    setValue((current: unknown) => {
-      const values = Array.isArray(current) ? current : [];
-      return values.some((item) => wizardValuesEqual(item, optionValue))
-        ? values.filter((item) => !wizardValuesEqual(item, optionValue))
-        : [...values, optionValue];
-    });
-  };
-  const blocked = !feishuQrSetupMethod
-    && (step.type === "select" || step.type === "multiselect")
-    && options.length === 0;
-  const messageRenderedInBody = presentedStep.type === "confirm"
-    || presentedStep.type === "note"
-    || presentedStep.type === "progress"
-    || presentedStep.type === "action";
-  const wizardTitle = feishuQrSetupMethod
-    ? t("setup.wizard.channelEnrollment.title", "扫描二维码连接飞书")
-    : presentedStep.title || t("setup.wizard.title", "配置 OpenClaw");
-  const wizardSubtitle = feishuQrSetupMethod
-    ? t("setup.wizard.channelEnrollment.subtitle", "使用手机扫码创建应用，JunQi 会继续完成 OpenClaw 官方配置。")
-    : messageRenderedInBody
-      ? t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。")
-      : presentedStep.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。");
-  const handleEnrollmentFailure = async (completion: ChannelEnrollmentCompletion, error: unknown) => {
-    if (error instanceof FeishuQrWizardSessionChangedError) {
-      await cancelChannelEnrollment(completion.sessionId);
-      setPendingEnrollment(null);
-      setEnrollmentError(t("setup.wizard.channelEnrollment.handoffFailed", "扫码已验证，但 OpenClaw 配置未能继续。请重新生成二维码后重试。"));
-      return;
-    }
-    setPendingEnrollment(completion);
-    setEnrollmentError(t("setup.wizard.channelEnrollment.handoffRecoverable", "扫码已验证，但 OpenClaw 配置会话需要恢复。点击“继续配置”即可，无需重新扫码。"));
-  };
-  const completeEnrollment = async (completion: ChannelEnrollmentCompletion, initialStep: OpenClawWizardStep) => {
-    enrollmentFinalizingRef.current = true;
-    setEnrollmentFinalizing(true);
-    try {
-      await new FeishuQrWizardBridge(completion).complete(initialStep, flow.submitWizardStep);
-      setEnrollmentDomain(null);
-      setPendingEnrollment(null);
-    } catch (error) {
-      setEnrollmentDomain(null);
-      await handleEnrollmentFailure(completion, error);
-    } finally {
-      enrollmentFinalizingRef.current = false;
-      setEnrollmentFinalizing(false);
-    }
-  };
-  const handleEnrollmentConnected = async (completion: ChannelEnrollmentCompletion) => {
-    await completeEnrollment(completion, step);
-  };
-  const resumeEnrollment = async () => {
-    const completion = pendingEnrollment;
-    if (!completion) return;
-    enrollmentFinalizingRef.current = true;
-    setEnrollmentFinalizing(true);
-    try {
-      const result = await flow.retryWizard();
-      if (!result || result.done || !result.step) {
-        throw new Error('OpenClaw did not return a resumable Feishu step.');
-      }
-      await new FeishuQrWizardBridge(completion).complete(result.step, flow.submitWizardStep);
-      setPendingEnrollment(null);
-      setEnrollmentError(null);
-    } catch (error) {
-      await handleEnrollmentFailure(completion, error);
-    } finally {
-      enrollmentFinalizingRef.current = false;
-      setEnrollmentFinalizing(false);
-    }
-  };
-  const openWizardExternalUrl = async () => {
-    if (!presentedStep.externalUrl) return;
-    let target: URL;
-    try {
-      target = new URL(presentedStep.externalUrl);
-      if (target.protocol !== 'https:' && target.protocol !== 'http:') return;
-    } catch {
-      return;
-    }
-    try {
-      const { open } = await import('@tauri-apps/plugin-shell');
-      await open(target.toString());
-    } catch {
-      window.open(target.toString(), '_blank', 'noopener,noreferrer');
-    }
-  };
-  const copyWizardDeviceCode = async () => {
-    if (!deviceCode?.code) return;
-    try {
-      await navigator.clipboard.writeText(deviceCode.code);
-      setDeviceCodeCopied(true);
-    } catch {
-      setDeviceCodeCopied(false);
-    }
-  };
-
+  const remote = flow.connectionMode === "remote";
   return (
     <SetupShell
       active={4}
-      title={wizardTitle}
-      subtitle={wizardSubtitle}
+      title={t("setup.wizard.title", "配置 OpenClaw")}
+      subtitle={remote
+        ? t("setup.wizard.remoteSubtitle", "使用 OpenClaw 官方向导配置远程 Gateway 连接。")
+        : t("setup.wizard.cliSubtitle", "使用 OpenClaw 官方向导完成模型、工作区与 Gateway 配置。")}
       logs={logs}
-      previousAction={{
-        label: t("setup.previousStep", "上一步"),
-        onClick: flow.wizardCanGoBack ? flow.backWizard : flow.goBack,
-        disabled: flow.wizardSubmitting || Boolean(enrollmentDomain) || enrollmentFinalizing,
-      }}
-      nextAction={{
-        label: pendingEnrollment
-          ? t("setup.wizard.channelEnrollment.resume", "继续配置")
-          : feishuQrSetupMethod
-          ? t("setup.wizard.channelEnrollment.start", "显示二维码")
-          : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
-        onClick: () => {
-          if (pendingEnrollment) {
-            void resumeEnrollment();
-            return;
-          }
-          if (feishuQrSetupMethod) {
-            setEnrollmentError(null);
-            setEnrollmentDomain(feishuDomain);
-            return;
-          }
-          void flow.submitWizardStep(step.id, value);
-        },
-        disabled: flow.wizardSubmitting || blocked || enrollmentFinalizing,
-        loading: flow.wizardSubmitting || enrollmentFinalizing,
-        icon: "next",
-      }}
+      wide
     >
-      <div className="space-y-4" dir="auto">
-        {feishuQrSetupMethod && (
-          <div className="space-y-4 rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
-            <p>{t("setup.wizard.channelEnrollment.description", "扫码会创建并验证飞书应用；凭据只会临时交给 OpenClaw 官方向导，不会显示在 JunQi 页面中。")}</p>
-            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t("setup.wizard.channelEnrollment.domain", "服务区域")}>
-              {([
-                ["feishu", t("setup.wizard.channelEnrollment.feishu", "飞书")],
-                ["lark", t("setup.wizard.channelEnrollment.lark", "Lark")],
-              ] as const).map(([domain, label]) => {
-                const selected = feishuDomain === domain;
-                return (
-                  <button key={domain} type="button" role="radio" aria-checked={selected} onClick={() => setFeishuDomain(domain)} className={clsx("rounded-md border px-3 py-2 text-sm font-semibold transition", selected ? "border-aegis-primary bg-aegis-primary/10 text-aegis-text" : "border-aegis-border bg-aegis-surface text-aegis-text-secondary hover:border-aegis-primary/40")}>
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        {presentedStep.type === "text" && (
-          <input
-            type={presentedStep.sensitive ? "password" : "text"}
-            value={typeof value === "string" ? value : ""}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder={presentedStep.placeholder}
-            aria-label={presentedStep.title || t("setup.wizard.textInput", "OpenClaw 配置值")}
-            autoComplete={presentedStep.sensitive ? "new-password" : "off"}
-            className="w-full rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2.5 text-sm text-aegis-text outline-none focus:border-aegis-primary"
-          />
-        )}
-        {presentedStep.type === "confirm" && (
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-aegis-border bg-aegis-surface p-4 text-sm text-aegis-text">
-            <input type="checkbox" checked={Boolean(value)} onChange={(event) => setValue(event.target.checked)} className="h-4 w-4 accent-[rgb(var(--aegis-primary))]" />
-            <span>{presentedStep.message || t("setup.wizard.confirm", "确认并继续")}</span>
-          </label>
-        )}
-        {presentedStep.type === "select" && !feishuQrSetupMethod && (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {options.map((option, index) => {
-              const selected = wizardValuesEqual(value, option.value);
-              return (
-                <button key={`${step.id}-${index}`} type="button" onClick={() => setValue(option.value)} className={clsx("flex min-h-[64px] items-start gap-3 rounded-lg border p-3 text-start transition", selected ? "border-aegis-primary bg-aegis-primary/8" : "border-aegis-border bg-aegis-surface hover:border-aegis-primary/40")}>
-                  {selected ? <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-aegis-primary" /> : <Circle size={17} className="mt-0.5 shrink-0 text-aegis-text-dim" />}
-                  <span>
-                    <span className="block text-sm font-semibold text-aegis-text">{option.label}</span>
-                    {option.hint && <span className="mt-1 block text-xs leading-5 text-aegis-text-muted">{option.hint}</span>}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {presentedStep.type === "multiselect" && (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {options.map((option, index) => {
-              const selected = selectedValues.some((item) => wizardValuesEqual(item, option.value));
-              return (
-                <label key={`${step.id}-${index}`} className={clsx("flex cursor-pointer items-start gap-3 rounded-lg border p-3", selected ? "border-aegis-primary bg-aegis-primary/8" : "border-aegis-border bg-aegis-surface")}>
-                  <input type="checkbox" checked={selected} onChange={() => toggleMulti(option.value)} className="mt-0.5 h-4 w-4 accent-[rgb(var(--aegis-primary))]" />
-                  <span><span className="block text-sm font-semibold text-aegis-text">{option.label}</span>{option.hint && <span className="mt-1 block text-xs leading-5 text-aegis-text-muted">{option.hint}</span>}</span>
-                </label>
-              );
-            })}
-          </div>
-        )}
-        {(presentedStep.type === "note" || presentedStep.type === "progress" || presentedStep.type === "action") && (
-          <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
-            <pre className="whitespace-pre-wrap break-words font-[inherit]">{presentedStep.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</pre>
-          </div>
-        )}
-        {(presentedStep.externalUrl || deviceCode) && (
-          <div className="space-y-3 border-t border-aegis-border pt-4">
-            {deviceCode && (
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <code className="block break-all font-mono text-lg font-semibold text-aegis-text" dir="ltr">{deviceCode.code}</code>
-                  {deviceCode.message && deviceCode.message !== presentedStep.message && (
-                    <p className="mt-1 text-xs leading-5 text-aegis-text-muted">{deviceCode.message}</p>
-                  )}
-                  {deviceCode.expiresInMinutes && (
-                    <p className="mt-1 text-xs text-aegis-text-dim">{t("setup.wizard.deviceCodeExpires", { count: deviceCode.expiresInMinutes, defaultValue: "Expires in {{count}} minutes" })}</p>
-                  )}
-                </div>
-                <button type="button" onClick={() => void copyWizardDeviceCode()} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-aegis-border px-3 text-sm font-semibold text-aegis-text-secondary hover:border-aegis-primary/40 hover:text-aegis-text">
-                  <Copy size={15} />
-                  {deviceCodeCopied ? t("common.copied", "Copied") : t("common.copy", "Copy")}
-                </button>
-              </div>
-            )}
-            {presentedStep.externalUrl && (
-              <button type="button" onClick={() => void openWizardExternalUrl()} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-aegis-primary px-3 text-sm font-semibold text-aegis-btn-primary-text hover:bg-[rgb(var(--aegis-primary-hover))]">
-                <ExternalLink size={15} />
-                {t("setup.wizard.openAuthorization", "Open authorization")}
-              </button>
-            )}
-          </div>
-        )}
-        {enrollmentError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{enrollmentError}</div>}
-        {flow.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{flow.wizardError}</div>}
-      </div>
-      {enrollmentDomain && (
-        <ChannelEnrollmentDialog
-          channel="feishu"
-          domain={enrollmentDomain}
-          finalizing={enrollmentFinalizing}
-          onClose={() => setEnrollmentDomain(null)}
-          onConnected={(completion) => { void handleEnrollmentConnected(completion); }}
-        />
+      <OfficialOnboardingTerminal
+        onExit={(exitCode) => { void flow.completeOfficialOnboarding(exitCode); }}
+        onCancelled={() => { void flow.goBack(); }}
+        onStarted={flow.clearOfficialOnboardingError}
+      />
+      {flow.onboardingError && (
+        <div className="mt-3 rounded-lg border border-red-500/25 bg-red-500/5 p-3 text-sm leading-6 text-red-300">
+          {flow.onboardingError}
+        </div>
       )}
     </SetupShell>
   );
@@ -849,7 +533,13 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 // 通过官方 `openclaw gateway install/uninstall` 注册或移除系统服务;切换后
 // 用现有 restart 流程把 Gateway 从"桌面托管"交接给系统服务(或反向),保证
 // 结束时只有一个明确的托管方持有端口。Docker 运行时由容器重启策略负责。
-function GatewayAutostartCard({ installMode }: { installMode: InstallMode }) {
+function GatewayAutostartCard({
+  installMode,
+  connectionMode,
+}: {
+  installMode: InstallMode;
+  connectionMode: GatewayConnectionMode;
+}) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<GatewayAutostartStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -865,7 +555,7 @@ function GatewayAutostartCard({ installMode }: { installMode: InstallMode }) {
     return () => { cancelled = true; };
   }, [installMode]);
 
-  if (installMode !== "native" || !status?.supported) return null;
+  if (installMode !== "native" || connectionMode !== "local" || !status?.supported) return null;
   const enabled = status.enabled;
 
   const toggleAutostart = async () => {
@@ -991,7 +681,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         <div className="text-xs text-aegis-text-dim">
           {settledCount}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}
         </div>
-        <GatewayAutostartCard installMode={flow.installMode} />
+        <GatewayAutostartCard installMode={flow.installMode} connectionMode={flow.connectionMode} />
         {flow.openclawStatus?.installed && (
           <div className="w-full text-left">
             <OpenClawUpdatePanel
@@ -1133,7 +823,7 @@ export function SetupPage() {
     case "install-openclaw":
     case "gateway-ready":
     case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
-    case "configure-openclaw": return <WizardScreen flow={flow} logs={sharedLogs} />;
+    case "configure-openclaw": return <OfficialOnboardingScreen flow={flow} logs={sharedLogs} />;
     case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
     case "node-missing": return <NodeMissingScreen flow={flow} logs={sharedLogs} />;
     default: return <DetectingScreen flow={flow} logs={sharedLogs} />;

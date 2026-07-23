@@ -1,8 +1,9 @@
 use crate::{
-    commands::{docker, system},
+    commands::{config, docker, system},
     paths::{self, OpenClawRuntimeMode},
     platform,
 };
+use portable_pty::CommandBuilder;
 use serde_json::Value;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -11,6 +12,164 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 
 const MAX_DIAGNOSTIC_CHARS: usize = 2_048;
+/// A small, typed representation of the official CLI contracts JunQi can
+/// launch. Keeping this separate from process construction prevents a remote
+/// configuration from silently becoming a local Gateway during onboarding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OfficialOnboardingPlan {
+    NativeLocal,
+    NativeRemote,
+    DockerLocal,
+}
+
+const NATIVE_LOCAL_ONBOARD_FLAGS: &[&str] = &[
+    "onboard",
+    "--classic",
+    "--mode",
+    "local",
+    "--no-install-daemon",
+    "--skip-health",
+];
+
+const NATIVE_REMOTE_ONBOARD_FLAGS: &[&str] = &[
+    "onboard",
+    "--classic",
+    "--mode",
+    "remote",
+    "--no-install-daemon",
+    "--skip-health",
+];
+
+const DOCKER_LOCAL_ONBOARD_FLAGS: &[&str] = &[
+    "onboard",
+    "--classic",
+    "--mode",
+    "local",
+    "--no-install-daemon",
+    "--skip-health",
+];
+
+pub(crate) fn official_onboarding_arguments(
+    plan: OfficialOnboardingPlan,
+) -> &'static [&'static str] {
+    match plan {
+        OfficialOnboardingPlan::NativeLocal => NATIVE_LOCAL_ONBOARD_FLAGS,
+        OfficialOnboardingPlan::NativeRemote => NATIVE_REMOTE_ONBOARD_FLAGS,
+        OfficialOnboardingPlan::DockerLocal => DOCKER_LOCAL_ONBOARD_FLAGS,
+    }
+}
+
+pub(crate) fn official_onboarding_plan(
+    runtime_mode: OpenClawRuntimeMode,
+    connection_mode: config::GatewayConnectionMode,
+) -> Result<OfficialOnboardingPlan, String> {
+    match (runtime_mode, connection_mode) {
+        (OpenClawRuntimeMode::Native, config::GatewayConnectionMode::Local) => {
+            Ok(OfficialOnboardingPlan::NativeLocal)
+        }
+        (OpenClawRuntimeMode::Native, config::GatewayConnectionMode::Remote) => {
+            Ok(OfficialOnboardingPlan::NativeRemote)
+        }
+        (OpenClawRuntimeMode::Docker, config::GatewayConnectionMode::Local) => {
+            Ok(OfficialOnboardingPlan::DockerLocal)
+        }
+        (OpenClawRuntimeMode::Docker, config::GatewayConnectionMode::Remote) => Err(
+            "The Docker runtime only supports OpenClaw's local onboarding. Select Native before configuring a remote Gateway."
+                .to_string(),
+        ),
+    }
+}
+
+pub(crate) fn resolve_official_onboarding_plan() -> Result<OfficialOnboardingPlan, String> {
+    let runtime_mode = paths::active_runtime_mode();
+    paths::validate_runtime_mode(runtime_mode)?;
+    let connection_mode = config::gateway_connection_mode_from_path(&paths::active_config_path());
+    official_onboarding_plan(runtime_mode, connection_mode)
+}
+
+/// Build the official interactive onboarding command without handing the
+/// renderer arbitrary process execution. The CLI owns all auth/model/channel
+/// prompts; JunQi only supplies its already-selected storage/runtime contract.
+pub(crate) async fn build_official_onboarding_command() -> Result<CommandBuilder, String> {
+    let plan = resolve_official_onboarding_plan()?;
+
+    match plan {
+        OfficialOnboardingPlan::NativeLocal | OfficialOnboardingPlan::NativeRemote => {
+            let runtime = system::resolve_compatible_native_openclaw_runtime().await?;
+            let context = system::OpenclawCommandContext::for_paths(
+                paths::desktop_dir(),
+                paths::active_config_path(),
+            );
+            let mut command = runtime.pty_command(&context);
+            for flag in official_onboarding_arguments(plan) {
+                command.arg(flag);
+            }
+            Ok(command)
+        }
+        OfficialOnboardingPlan::DockerLocal => build_docker_onboarding_command(plan).await,
+    }
+}
+
+async fn build_docker_onboarding_command(
+    plan: OfficialOnboardingPlan,
+) -> Result<CommandBuilder, String> {
+    if plan != OfficialOnboardingPlan::DockerLocal {
+        return Err("Docker onboarding must use the local OpenClaw plan".to_string());
+    }
+
+    let mapping = docker::RuntimePathMapping::from_active_layout()?;
+    let config_dir = mapping.host_config_dir()?.to_path_buf();
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|error| format!("Failed to create Docker config directory: {error}"))?;
+    std::fs::create_dir_all(&mapping.host_workspace)
+        .map_err(|error| format!("Failed to create Docker workspace directory: {error}"))?;
+
+    let config_mount = format!(
+        "{}:{}",
+        config_dir.to_string_lossy(),
+        mapping.runtime_state_dir,
+    );
+    let workspace_mount = format!(
+        "{}:{}",
+        mapping.host_workspace.to_string_lossy(),
+        mapping.runtime_workspace,
+    );
+    let config_path_env = format!("OPENCLAW_CONFIG_PATH={}", mapping.runtime_config_path);
+    let state_dir_env = format!("OPENCLAW_STATE_DIR={}", mapping.runtime_state_dir);
+    let locale_env = format!(
+        "OPENCLAW_LOCALE={}",
+        system::configured_openclaw_locale(&mapping.host_config_path),
+    );
+    let image = format!("{}:latest", docker::OPENCLAW_IMAGE);
+    let docker_bin = docker::resolve_docker_bin().await?;
+    let mut command = CommandBuilder::new(docker_bin);
+    for argument in [
+        "run",
+        "--rm",
+        "-i",
+        "-t",
+        "--entrypoint",
+        "node",
+        "-e",
+        state_dir_env.as_str(),
+        "-e",
+        config_path_env.as_str(),
+        "-e",
+        locale_env.as_str(),
+        "-v",
+        config_mount.as_str(),
+        "-v",
+        workspace_mount.as_str(),
+        image.as_str(),
+        "dist/index.js",
+    ]
+    .into_iter()
+    .chain(official_onboarding_arguments(plan).iter().copied())
+    {
+        command.arg(argument);
+    }
+    Ok(command)
+}
 
 pub(crate) struct CliOutput {
     pub(crate) success: bool,
@@ -549,6 +708,43 @@ mod tests {
         assert!(validate_cli_identifier("github-copilot:main", "profile ID").is_ok());
         assert!(validate_cli_identifier("--force", "provider ID").is_err());
         assert!(validate_cli_identifier("openai;whoami", "provider ID").is_err());
+    }
+
+    #[test]
+    fn official_onboarding_plan_preserves_remote_intent_and_rejects_docker_remote() {
+        assert_eq!(
+            official_onboarding_plan(
+                OpenClawRuntimeMode::Native,
+                config::GatewayConnectionMode::Remote,
+            )
+            .unwrap(),
+            OfficialOnboardingPlan::NativeRemote,
+        );
+        assert_eq!(
+            official_onboarding_arguments(OfficialOnboardingPlan::NativeRemote),
+            [
+                "onboard",
+                "--classic",
+                "--mode",
+                "remote",
+                "--no-install-daemon",
+                "--skip-health",
+            ],
+        );
+        assert_eq!(
+            official_onboarding_plan(
+                OpenClawRuntimeMode::Docker,
+                config::GatewayConnectionMode::Local,
+            )
+            .unwrap(),
+            OfficialOnboardingPlan::DockerLocal,
+        );
+        assert!(official_onboarding_plan(
+            OpenClawRuntimeMode::Docker,
+            config::GatewayConnectionMode::Remote,
+        )
+        .unwrap_err()
+        .contains("Select Native"));
     }
 
     #[test]

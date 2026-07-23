@@ -286,6 +286,25 @@ pub struct GatewayConfigInfo {
     pub http_url: String,
     pub config_path: Option<String>,
     pub runtime_mode: paths::OpenClawRuntimeMode,
+    pub connection_mode: GatewayConnectionMode,
+}
+
+/// The setup route asks this backend-owned contract whether the selected
+/// OpenClaw configuration still needs the official `openclaw onboard` flow.
+/// It deliberately does not attempt to create or repair configuration itself.
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenclawOnboardingReadiness {
+    pub required: bool,
+    pub reason: Option<String>,
+    pub runtime_mode: paths::OpenClawRuntimeMode,
+    pub connection_mode: GatewayConnectionMode,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GatewayConnectionMode {
+    Local,
+    Remote,
 }
 
 pub(crate) fn gateway_token_string_is_reference(value: &str) -> bool {
@@ -307,14 +326,153 @@ pub(crate) fn literal_gateway_token_from_config(config: &serde_json::Value) -> O
         .map(str::to_string)
 }
 
-fn extract_token_from_config(raw: &str) -> Option<String> {
-    let config = parse_openclaw_config(raw).ok()?;
-    literal_gateway_token_from_config(&config)
+pub(crate) fn literal_remote_gateway_token_from_config(
+    config: &serde_json::Value,
+) -> Option<String> {
+    config
+        .get("gateway")?
+        .get("remote")?
+        .get("token")?
+        .as_str()
+        .map(str::trim)
+        .filter(|token| !token.is_empty() && !gateway_token_string_is_reference(token))
+        .map(str::to_string)
+        .or_else(|| literal_gateway_token_from_config(config))
 }
 
-fn extract_port_from_config(raw: &str) -> Option<u16> {
-    let config = parse_openclaw_config(raw).ok()?;
-    gateway_port_from_config(&config)
+pub(crate) fn gateway_connection_mode_from_config(
+    config: &serde_json::Value,
+) -> GatewayConnectionMode {
+    explicit_gateway_connection_mode(config).unwrap_or(GatewayConnectionMode::Local)
+}
+
+fn explicit_gateway_connection_mode(config: &serde_json::Value) -> Option<GatewayConnectionMode> {
+    match config
+        .get("gateway")
+        .and_then(|gateway| gateway.get("mode"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+    {
+        Some("local") => Some(GatewayConnectionMode::Local),
+        Some("remote") => Some(GatewayConnectionMode::Remote),
+        _ => None,
+    }
+}
+
+/// Best-effort intent detection for the fixed official onboarding command.
+/// Invalid configuration is still handed back to OpenClaw for repair; this
+/// helper only preserves an explicit remote choice when the JSON5 shape is
+/// otherwise readable.
+pub(crate) fn gateway_connection_mode_from_path(path: &Path) -> GatewayConnectionMode {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| parse_openclaw_config(&raw).ok())
+        .map(|config| gateway_connection_mode_from_config(&config))
+        .unwrap_or(GatewayConnectionMode::Local)
+}
+
+fn has_default_model(config: &serde_json::Value) -> bool {
+    let Some(model) = config
+        .get("agents")
+        .and_then(|agents| agents.get("defaults"))
+        .and_then(|defaults| defaults.get("model"))
+    else {
+        return false;
+    };
+
+    match model {
+        serde_json::Value::String(value) => !value.trim().is_empty(),
+        serde_json::Value::Object(value) => value
+            .get("primary")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|primary| !primary.trim().is_empty()),
+        _ => false,
+    }
+}
+
+pub(crate) fn onboarding_readiness_from_config(
+    runtime_mode: paths::OpenClawRuntimeMode,
+    config: Option<&serde_json::Value>,
+) -> OpenclawOnboardingReadiness {
+    let Some(config) = config else {
+        return OpenclawOnboardingReadiness {
+            required: true,
+            reason: Some("OpenClaw configuration is missing".to_string()),
+            runtime_mode,
+            connection_mode: GatewayConnectionMode::Local,
+        };
+    };
+
+    let Some(connection_mode) = explicit_gateway_connection_mode(config) else {
+        return OpenclawOnboardingReadiness {
+            required: true,
+            reason: Some("gateway.mode must be explicitly set to local or remote".to_string()),
+            runtime_mode,
+            connection_mode: GatewayConnectionMode::Local,
+        };
+    };
+
+    match connection_mode {
+        GatewayConnectionMode::Remote => match remote_gateway_urls(config) {
+            Ok(_) => OpenclawOnboardingReadiness {
+                required: false,
+                reason: None,
+                runtime_mode,
+                connection_mode,
+            },
+            Err(error) => OpenclawOnboardingReadiness {
+                required: true,
+                reason: Some(error),
+                runtime_mode,
+                connection_mode,
+            },
+        },
+        GatewayConnectionMode::Local if has_default_model(config) => OpenclawOnboardingReadiness {
+            required: false,
+            reason: None,
+            runtime_mode,
+            connection_mode,
+        },
+        GatewayConnectionMode::Local => OpenclawOnboardingReadiness {
+            required: true,
+            reason: Some("agents.defaults.model is required for a local Gateway".to_string()),
+            runtime_mode,
+            connection_mode,
+        },
+    }
+}
+
+pub(crate) fn remote_gateway_urls(
+    config: &serde_json::Value,
+) -> Result<(String, String, u16), String> {
+    let raw = config
+        .get("gateway")
+        .and_then(|gateway| gateway.get("remote"))
+        .and_then(|remote| remote.get("url"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .ok_or("gateway.remote.url is required when gateway.mode is remote")?;
+    let mut url =
+        url::Url::parse(raw).map_err(|error| format!("gateway.remote.url is invalid: {error}"))?;
+    if !matches!(url.scheme(), "ws" | "wss") || url.host_str().is_none() {
+        return Err("gateway.remote.url must be an absolute ws:// or wss:// URL".to_string());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("gateway.remote.url must not contain credentials".to_string());
+    }
+    let port = url
+        .port_or_known_default()
+        .ok_or("gateway.remote.url must include a valid port")?;
+    let ws_url = url.to_string();
+    let http_scheme = if url.scheme() == "wss" {
+        "https"
+    } else {
+        "http"
+    };
+    url.set_scheme(http_scheme)
+        .map_err(|_| "gateway.remote.url uses an unsupported scheme".to_string())?;
+    Ok((ws_url, url.to_string(), port))
 }
 
 #[tauri::command]
@@ -325,13 +483,30 @@ pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
     let mut token: Option<String> = None;
     let mut port = default_gateway_port();
     let mut found_path: Option<String> = None;
+    let mut connection_mode = GatewayConnectionMode::Local;
+    let mut ws_url = format!("ws://{}:{}", default_gateway_host(), port);
+    let mut http_url = format!("http://{}:{}", default_gateway_host(), port);
 
     if path.exists() {
         found_path = Some(path.to_string_lossy().to_string());
         if let Ok(raw) = std::fs::read_to_string(&path) {
-            token = extract_token_from_config(&raw);
-            if let Some(p) = extract_port_from_config(&raw) {
-                port = p;
+            if let Ok(config) = parse_openclaw_config(&raw) {
+                connection_mode = gateway_connection_mode_from_config(&config);
+                if connection_mode == GatewayConnectionMode::Remote {
+                    let (configured_ws_url, configured_http_url, configured_port) =
+                        remote_gateway_urls(&config)?;
+                    token = literal_remote_gateway_token_from_config(&config);
+                    port = configured_port;
+                    ws_url = configured_ws_url;
+                    http_url = configured_http_url;
+                } else {
+                    token = literal_gateway_token_from_config(&config);
+                    if let Some(configured_port) = gateway_port_from_config(&config) {
+                        port = configured_port;
+                    }
+                    ws_url = format!("ws://{}:{}", default_gateway_host(), port);
+                    http_url = format!("http://{}:{}", default_gateway_host(), port);
+                }
             }
         }
     }
@@ -339,11 +514,53 @@ pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
     Ok(GatewayConfigInfo {
         token,
         port,
-        ws_url: format!("ws://{}:{}", default_gateway_host(), port),
-        http_url: format!("http://{}:{}", default_gateway_host(), port),
+        ws_url,
+        http_url,
         config_path: found_path,
         runtime_mode: mode,
+        connection_mode,
     })
+}
+
+/// Return the selected runtime's structural onboarding status. The frontend
+/// uses this as the single source of truth before it starts a Gateway or opens
+/// the official interactive CLI, so JSON5 parsing and remote URL validation
+/// cannot drift between Rust and the renderer.
+#[tauri::command]
+pub async fn get_openclaw_onboarding_readiness() -> Result<OpenclawOnboardingReadiness, String> {
+    let runtime_mode = paths::active_runtime_mode();
+    paths::validate_runtime_mode(runtime_mode)?;
+    let path = paths::active_config_path();
+    if !path.exists() {
+        return Ok(onboarding_readiness_from_config(runtime_mode, None));
+    }
+
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(error) => {
+            return Ok(OpenclawOnboardingReadiness {
+                required: true,
+                reason: Some(format!("OpenClaw configuration cannot be read: {error}")),
+                runtime_mode,
+                connection_mode: GatewayConnectionMode::Local,
+            });
+        }
+    };
+    let config = match parse_openclaw_config(&raw) {
+        Ok(config) => config,
+        Err(error) => {
+            return Ok(OpenclawOnboardingReadiness {
+                required: true,
+                reason: Some(format!("OpenClaw configuration is invalid: {error}")),
+                runtime_mode,
+                connection_mode: GatewayConnectionMode::Local,
+            });
+        }
+    };
+    Ok(onboarding_readiness_from_config(
+        runtime_mode,
+        Some(&config),
+    ))
 }
 
 /// Commit the user's explicit Native/Docker selection before any Gateway work
@@ -490,11 +707,97 @@ mod tests {
         }
         "#;
 
-        assert_eq!(extract_port_from_config(raw), Some(18790));
+        let config = parse_openclaw_config(raw).unwrap();
+        assert_eq!(gateway_port_from_config(&config), Some(18790));
         assert_eq!(
-            extract_token_from_config(raw),
+            literal_gateway_token_from_config(&config),
             Some("gateway-token".to_string())
         );
+    }
+
+    #[test]
+    fn remote_gateway_connection_uses_its_official_endpoint_and_credential() {
+        let config = json!({
+            "gateway": {
+                "mode": "remote",
+                "remote": {
+                    "url": "wss://gateway.example.test:24443/control",
+                    "token": "remote-token"
+                }
+            }
+        });
+
+        assert_eq!(
+            gateway_connection_mode_from_config(&config),
+            GatewayConnectionMode::Remote,
+        );
+        assert_eq!(
+            remote_gateway_urls(&config).unwrap(),
+            (
+                "wss://gateway.example.test:24443/control".to_string(),
+                "https://gateway.example.test:24443/control".to_string(),
+                24443,
+            ),
+        );
+        assert_eq!(
+            literal_remote_gateway_token_from_config(&config),
+            Some("remote-token".to_string()),
+        );
+    }
+
+    #[test]
+    fn onboarding_readiness_uses_the_same_remote_url_validation_as_gateway_detection() {
+        let missing = onboarding_readiness_from_config(paths::OpenClawRuntimeMode::Native, None);
+        assert!(missing.required);
+        assert_eq!(missing.connection_mode, GatewayConnectionMode::Local);
+
+        let local_without_model = json!({"gateway": {"mode": "local"}});
+        let local_without_model = onboarding_readiness_from_config(
+            paths::OpenClawRuntimeMode::Native,
+            Some(&local_without_model),
+        );
+        assert!(local_without_model.required);
+
+        let local_ready = json!({
+            "gateway": {"mode": "local"},
+            "agents": {"defaults": {"model": {"primary": "openai/gpt-5"}}}
+        });
+        let local_ready = onboarding_readiness_from_config(
+            paths::OpenClawRuntimeMode::Native,
+            Some(&local_ready),
+        );
+        assert!(!local_ready.required);
+        assert_eq!(local_ready.connection_mode, GatewayConnectionMode::Local);
+
+        let remote_ready = json!({
+            "gateway": {
+                "mode": "remote",
+                "remote": {"url": "wss://gateway.example.test:24443"}
+            }
+        });
+        let remote_ready = onboarding_readiness_from_config(
+            paths::OpenClawRuntimeMode::Native,
+            Some(&remote_ready),
+        );
+        assert!(!remote_ready.required);
+        assert_eq!(remote_ready.connection_mode, GatewayConnectionMode::Remote);
+
+        let remote_invalid = json!({
+            "gateway": {
+                "mode": "remote",
+                "remote": {"url": "https://gateway.example.test"}
+            }
+        });
+        let remote_invalid = onboarding_readiness_from_config(
+            paths::OpenClawRuntimeMode::Native,
+            Some(&remote_invalid),
+        );
+        assert!(remote_invalid.required);
+        assert_eq!(
+            remote_invalid.connection_mode,
+            GatewayConnectionMode::Remote
+        );
+        assert!(remote_invalid.reason.unwrap().contains("ws:// or wss://"));
     }
 
     #[test]

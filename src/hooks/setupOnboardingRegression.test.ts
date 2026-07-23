@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
+const officialTerminal = readFileSync(new URL('../components/setup/OfficialOnboardingTerminal.tsx', import.meta.url), 'utf8');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const adapter = readFileSync(new URL('../api/tauri-adapter.ts', import.meta.url), 'utf8');
 const settingsStore = readFileSync(new URL('../stores/settingsStore.ts', import.meta.url), 'utf8');
@@ -32,9 +33,11 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   );
 
   assert.match(detection, /let cancelled = false/);
-  assert.match(detection, /await detectGatewayConfig\(\);\s*if \(cancelled\) return/);
+  assert.match(detection, /const readiness = await getOpenclawOnboardingReadiness\(\);\s*if \(cancelled\) return/);
+  assert.match(detection, /await detectGatewayConfig\(\)\.catch\(\(error\) => \{/);
+  assert.match(detection, /if \(readiness\.required\) return null/);
   assert.match(detection, /selectedRuntime === "native" \? await checkOpenclaw\(\) : null/);
-  assert.match(setupFlow, /await window\.aegis\.config\.detect\(\);/);
+  assert.doesNotMatch(setupFlow, /window\.aegis\.config\.detect\(\)/);
   assert.match(detection, /return \(\) => \{\s*cancelled = true/);
 });
 
@@ -47,16 +50,18 @@ test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () =
   assert.match(stopped, /flow\.needsOnboarding \? "configure-openclaw" : "ready"/);
 });
 
-test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway readiness', () => {
+test('BUG-ONB-16 official CLI completion uses backend readiness before any Gateway lifecycle work', () => {
   const completion = setupFlow.slice(
-    setupFlow.indexOf('if (result.done || result.status === "done")'),
-    setupFlow.indexOf('const startOfficialOnboarding = useCallback'),
+    setupFlow.indexOf('const completeOfficialOnboarding = useCallback'),
+    setupFlow.indexOf('const continueAfterGatewayReady'),
   );
 
+  assert.match(completion, /const readiness = await getOpenclawOnboardingReadiness\(\)/);
+  assert.ok(completion.indexOf('getOpenclawOnboardingReadiness') < completion.indexOf('detectGatewayConfig'));
   assert.match(completion, /await invoke<boolean>\("handoff_gateway_to_official_service", \{\}\)/);
   assert.match(completion, /await invoke<boolean>\("probe_selected_gateway", \{\}\)/);
-  assert.match(completion, /replaceSetupStep\("error"\)/);
-  assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
+  assert.match(completion, /const modelProbe = await probeActiveRuntimeModel\(\)/);
+  assert.doesNotMatch(completion, /OpenClawWizardClient|wizard\.start|wizard\.next/);
 });
 
 test('BUG-ONB-17 setup endpoint cache removes legacy renderer Gateway credentials', () => {
@@ -106,15 +111,12 @@ test('BUG-ONB-06 every setup message is complete in all supported locales', () =
   }
 });
 
-test('BUG-ONB-07 wizard body messages are not duplicated as subtitles', () => {
-  const wizard = setupPage.slice(
-    setupPage.indexOf('function WizardScreen'),
-    setupPage.indexOf('function ReadyScreen'),
-  );
-
-  assert.match(wizard, /const messageRenderedInBody = presentedStep\.type === "confirm"/);
-  assert.match(wizard, /subtitle=\{wizardSubtitle\}/);
-  assert.match(wizard, /aria-label=\{presentedStep\.title \|\| t\("setup\.wizard\.textInput"/);
+test('BUG-ONB-07 setup renders the official terminal instead of reconstructing wizard prompts', () => {
+  assert.match(setupPage, /function OfficialOnboardingScreen/);
+  assert.match(setupPage, /<OfficialOnboardingTerminal/);
+  assert.doesNotMatch(setupPage, /function WizardScreen|OpenClawWizardStep|ChannelEnrollment/);
+  assert.match(officialTerminal, /<Terminal/);
+  assert.doesNotMatch(officialTerminal, /wizard\.start|wizard\.next|wizard\.back/);
 });
 
 test('BUG-ONB-08 the product summary is not constrained to an awkward narrow line length', () => {
@@ -169,7 +171,7 @@ test('BUG-ONB-15 setup navigation has one complete six-step translation contract
     identity: { title: '品牌与偏好', description: '语言 / 主题' },
     environment: { title: '环境检测', description: 'OpenClaw / Docker' },
     storage: { title: '数据位置', description: '配置与工作区' },
-    runtime: { title: '运行时', description: '安装并启动 Gateway' },
+    runtime: { title: '运行时', description: '安装 OpenClaw 运行时' },
     configuration: { title: 'OpenClaw 配置', description: '模型、凭据与渠道' },
     ready: { title: '完成', description: '进入工作台' },
   };
@@ -177,7 +179,7 @@ test('BUG-ONB-15 setup navigation has one complete six-step translation contract
     identity: { title: 'Preferences', description: 'Language / Theme' },
     environment: { title: 'Environment', description: 'OpenClaw / Docker' },
     storage: { title: 'Data location', description: 'Configuration / Workspace' },
-    runtime: { title: 'Runtime', description: 'Install and start Gateway' },
+    runtime: { title: 'Runtime', description: 'Install OpenClaw runtime' },
     configuration: { title: 'OpenClaw setup', description: 'Models / credentials / channels' },
     ready: { title: 'Ready', description: 'Enter workspace' },
   };
@@ -238,11 +240,11 @@ test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', 
   );
   const registration = readFileSync(new URL('../../src-tauri/src/lib.rs', import.meta.url), 'utf8');
 
-  // The option is only offered for the Native runtime; Docker containers rely
-  // on their restart policy instead of a host-level service.
+  // The option is only offered for a native, local Gateway. Docker containers
+  // rely on their restart policy, while a remote Gateway belongs to its host.
   assert.match(setupPage, /function GatewayAutostartCard/);
-  assert.match(setupPage, /installMode !== "native" \|\| !status\?\.supported/);
-  assert.match(setupPage, /<GatewayAutostartCard installMode=\{flow\.installMode\} \/>/);
+  assert.match(setupPage, /installMode !== "native" \|\| connectionMode !== "local" \|\| !status\?\.supported/);
+  assert.match(setupPage, /<GatewayAutostartCard installMode=\{flow\.installMode\} connectionMode=\{flow\.connectionMode\} \/>/);
 
   // Enable/disable goes through the official CLI service commands and then
   // hands the port over via the existing restart path, so exactly one owner
@@ -270,8 +272,8 @@ test('BUG-ONB-18 unused prepare_gateway bridge is no longer part of the command 
 
 test('BUG-ONB-21 Ready requires the official live model probe', () => {
   const completion = setupFlow.slice(
-    setupFlow.indexOf('if (result.done || result.status === "done")'),
-    setupFlow.indexOf('const recoverLostWizardSession'),
+    setupFlow.indexOf('const completeOfficialOnboarding = useCallback'),
+    setupFlow.indexOf('const continueAfterGatewayReady'),
   );
   const readyTransition = setupFlow.slice(
     setupFlow.indexOf('const continueAfterGatewayReady'),
@@ -280,28 +282,20 @@ test('BUG-ONB-21 Ready requires the official live model probe', () => {
 
   assert.match(completion, /const modelProbe = await probeActiveRuntimeModel\(\)/);
   assert.match(completion, /if \(!modelProbe\.ready\)/);
-  assert.ok(completion.indexOf('updateOnboardingRequirement(false)') > completion.indexOf('if (!modelProbe.ready)'));
+  assert.ok(completion.indexOf('updateOnboardingRequirement(false)') < completion.indexOf('if (!modelProbe.ready)'));
   assert.match(readyTransition, /onboardingRequired = !\(await probeActiveRuntimeModel\(\)\)\.ready/);
 });
 
-test('BUG-ONB-25 lost terminal sessions reconcile observable completion before restart', () => {
-  const recovery = setupFlow.slice(
-    setupFlow.indexOf('const recoverLostWizardSession'),
-    setupFlow.indexOf('const startOfficialOnboarding'),
-  );
-  assert.match(recovery, /resolveActiveRuntimeOnboardingRequirement\(\)/);
-  assert.match(recovery, /probeActiveRuntimeModel\(\)/);
-  assert.match(recovery, /return \{ done: true, status: "done" \}/);
-  assert.ok(recovery.indexOf('return await client.start()') > recovery.indexOf('if (modelProbe.ready)'));
+test('BUG-ONB-25 terminal cancellation waits for the owned official process to stop', () => {
+  assert.match(officialTerminal, /await invoke\("stop_official_onboarding", \{ sessionId \}\)/);
+  assert.match(officialTerminal, /if \(!disposed\) onCancelledRef\.current\(\)/);
+  assert.match(officialTerminal, /cancellationRequested/);
+  assert.match(officialTerminal, /state === "stopping"/);
 });
 
-test('BUG-ONB-26 official external URL and device code remain actionable', () => {
-  const wizard = setupPage.slice(
-    setupPage.indexOf('function WizardScreen'),
-    setupPage.indexOf('// ── 开机自启卡片'),
-  );
-  assert.match(wizard, /presentedStep\.externalUrl/);
-  assert.match(wizard, /deviceCode\.code/);
-  assert.match(wizard, /@tauri-apps\/plugin-shell/);
-  assert.match(wizard, /navigator\.clipboard\.writeText/);
+test('BUG-ONB-26 setup has no custom Gateway wizard or channel-enrollment bridge', () => {
+  assert.doesNotMatch(setupFlow, /OpenClawWizardClient|wizard\.start|wizard\.next/);
+  assert.doesNotMatch(setupPage, /ChannelEnrollment|FeishuQrWizard|WizardScreen/);
+  assert.match(officialTerminal, /start_official_onboarding/);
+  assert.match(officialTerminal, /write_official_onboarding/);
 });

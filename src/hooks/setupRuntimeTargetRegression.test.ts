@@ -25,8 +25,10 @@ test('BUG-RT-01 restores the persisted Docker target before setup detection', ()
   );
 
   assert.match(commands, /export const detectGatewayConfig = \(\) => invoke<GatewayConfigInfo>\("detect_gateway_config"\)/);
-  assert.match(detection, /const runtimeTarget = await detectGatewayConfig\(\);/);
-  assert.match(detection, /const selectedRuntime = runtimeTarget\.runtime_mode;/);
+  assert.match(commands, /getOpenclawOnboardingReadiness/);
+  assert.match(detection, /const readiness = await getOpenclawOnboardingReadiness\(\);/);
+  assert.match(detection, /const runtimeTarget = await detectGatewayConfig\(\)\.catch/);
+  assert.match(detection, /const selectedRuntime = readiness\.runtime_mode;/);
   assert.match(detection, /setInstallMode\(selectedRuntime\);/);
   assert.match(detection, /selectedRuntime === "native" \? await checkOpenclaw\(\) : null/);
   assert.match(
@@ -37,7 +39,8 @@ test('BUG-RT-01 restores the persisted Docker target before setup detection', ()
     setupFlow.indexOf('const refreshRuntime = useCallback'),
     setupFlow.indexOf('\n  return {', setupFlow.indexOf('const refreshRuntime = useCallback')),
   );
-  assert.match(refreshRuntime, /const runtimeTarget = await detectGatewayConfig\(\);/);
+  assert.match(refreshRuntime, /const readiness = await getOpenclawOnboardingReadiness\(\);/);
+  assert.match(refreshRuntime, /const runtimeTarget = await detectGatewayConfig\(\)\.catch/);
   assert.match(refreshRuntime, /selectedRuntime === "native" \? await checkOpenclaw\(\) : null/);
 });
 

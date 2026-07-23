@@ -272,8 +272,11 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
   assert.match(navigation, /\| "storage"/);
   assert.match(store, /postStorageStep/);
   assert.match(flow, /setPostStorageStep\("choosing-mode"\)[\s\S]*navigateSetup\("storage", "replace"\)/);
-  assert.match(flow, /setPostStorageStep\("gateway-stopped"\)[\s\S]*navigateSetup\("storage", "replace"\)/);
-  assert.match(flow, /setPostStorageStep\(onboardingRequired \? "configure-openclaw" : "ready"\)[\s\S]*navigateSetup\("storage", "replace"\)/);
+  assert.match(
+    flow,
+    /readiness\.connection_mode === "remote"[\s\S]*\? "configure-openclaw"[\s\S]*: "gateway-stopped"[\s\S]*navigateSetup\("storage", "replace"\)/,
+  );
+  assert.match(flow, /setPostStorageStep\("ready"\)[\s\S]*navigateSetup\("storage", "replace"\)/);
   assert.match(setup, /case "storage"[\s\S]*<StorageSetupStep/);
   assert.match(gate, /get_storage_setup_status/);
   assert.match(gate, /configure_storage/);
