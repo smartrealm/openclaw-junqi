@@ -25,7 +25,18 @@ pub fn run() {
     // GUI-launched processes on macOS can miss the user's login PATH. Resolve
     // it before Tauri starts worker threads so child tools inherit it reliably.
     commands::app_settings::prime_login_shell_path();
+    let file_preview_registry = commands::file_preview::FilePreviewRegistry::default();
+    let file_preview_protocol_registry = file_preview_registry.clone();
     let app = tauri::Builder::default()
+        .register_uri_scheme_protocol(
+            commands::file_preview::FILE_PREVIEW_SCHEME,
+            move |_context, request| {
+                commands::file_preview::handle_file_preview_request(
+                    &file_preview_protocol_registry,
+                    request,
+                )
+            },
+        )
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -45,6 +56,7 @@ pub fn run() {
         .manage(ChannelEnrollmentRegistry::default())
         .manage(RuntimeIdentityState::new())
         .manage(CollaborationControlState::new())
+        .manage(file_preview_registry)
         .invoke_handler(tauri::generate_handler![
             // Gateway
             commands::gateway::start_gateway,
@@ -154,6 +166,8 @@ pub fn run() {
             commands::managed_files::managed_file_exists,
             commands::managed_files::list_directory,
             commands::managed_files::read_file_text,
+            commands::file_preview::create_file_preview_url,
+            commands::openclaw_media_preview::create_openclaw_media_preview_url,
             commands::console::write_models_log,
             // Config
             commands::config::read_config,

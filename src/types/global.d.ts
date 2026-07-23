@@ -201,11 +201,33 @@ interface AegisAPI {
     delete: (payload?: { path?: string }) => Promise<{ success: boolean; path?: string; error?: string }>;
     removeRef?: (payload?: { path?: string; kind?: 'uploads' | 'outputs' | 'voice' }) => Promise<{ success: boolean; path?: string; error?: string }>;
     saveAs?: (payload?: { path?: string }) => Promise<{ success: boolean; canceled?: boolean; error?: string; path?: string; sourcePath?: string }>;
-    read?: (payload?: { path?: string }) => Promise<{ success: boolean; data?: string; mimeType?: string; error?: string; size?: number }>;
+    read?: (filePath: string) => Promise<{
+      success: boolean;
+      content?: string | null;
+      byteSize?: number;
+      truncated?: boolean;
+      error?: string | null;
+    }>;
+    createPreview?: (filePath: string) => Promise<{
+      success: boolean;
+      url?: string | null;
+      error?: string | null;
+    }>;
     cleanupSessionRefs?: (payload?: { sessionKey?: string; agentId?: string; kind?: 'uploads' | 'outputs' | 'voice' }) => Promise<
       | { success: true; removed: boolean; sessionKey: string }
       | { success: false; error?: string; removed: boolean; sessionKey: string }
     >;
+  };
+  /**
+   * Read-only previews for media paths persisted by the active OpenClaw
+   * runtime. The native side enforces the state-directory media boundary.
+   */
+  openclawMedia?: {
+    createPreview: (filePath: string) => Promise<{
+      success: boolean;
+      url?: string | null;
+      error?: string | null;
+    }>;
   };
   uploads?: {
     list: (payload?: {

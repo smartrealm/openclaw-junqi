@@ -1,6 +1,6 @@
 //! Managed file operations — open, reveal, check existence, list, read
 use serde::Serialize;
-use std::path::Path;
+use std::{io::Read, path::Path};
 
 #[derive(Debug, Serialize)]
 pub struct OpenResult {
@@ -113,6 +113,10 @@ pub async fn list_directory(path: String) -> Result<ListDirResult, String> {
 }
 
 /// Read file content as UTF-8 text (truncated at 512KB).
+///
+/// Binary files deliberately return an explicit failure rather than a fake
+/// placeholder string. Callers can then offer the appropriate native preview
+/// or external-open path without presenting unreadable data as content.
 #[tauri::command]
 pub async fn read_file_text(path: String) -> Result<ReadFileResult, String> {
     let p = Path::new(&path);
@@ -131,40 +135,55 @@ pub async fn read_file_text(path: String) -> Result<ReadFileResult, String> {
     let byte_size = meta.len();
     let max_bytes = 512 * 1024;
     let truncated = byte_size > max_bytes;
-    let read_size = if truncated {
-        max_bytes as usize
-    } else {
-        byte_size as usize
-    };
-    match std::fs::read_to_string(p) {
-        Ok(full) => {
-            let content = if truncated {
-                full.chars().take(read_size).collect()
-            } else {
-                full
-            };
-            Ok(ReadFileResult {
-                success: true,
-                content: Some(content),
+    let handle = match std::fs::File::open(p) {
+        Ok(file) => file,
+        Err(error) => {
+            return Ok(ReadFileResult {
+                success: false,
+                content: None,
                 byte_size,
                 truncated,
-                error: None,
+                error: Some(format!("Failed to read file: {error}")),
             })
+        }
+    };
+    let mut bytes = Vec::with_capacity((byte_size.min(max_bytes)) as usize);
+    if let Err(error) = handle.take(max_bytes).read_to_end(&mut bytes) {
+        return Ok(ReadFileResult {
+            success: false,
+            content: None,
+            byte_size,
+            truncated,
+            error: Some(format!("Failed to read file: {error}")),
+        });
+    }
+
+    let content = match std::str::from_utf8(&bytes) {
+        Ok(value) => value.to_owned(),
+        Err(error) if truncated && error.error_len().is_none() => {
+            // The 512KB cap may land inside a multi-byte UTF-8 character.
+            std::str::from_utf8(&bytes[..error.valid_up_to()])
+                .unwrap_or_default()
+                .to_owned()
         }
         Err(_) => {
-            let preview = format!(
-                "[Binary file — {} bytes, cannot preview as text]",
-                byte_size
-            );
-            Ok(ReadFileResult {
-                success: true,
-                content: Some(preview),
+            return Ok(ReadFileResult {
+                success: false,
+                content: None,
                 byte_size,
                 truncated,
-                error: None,
+                error: Some("The file is not valid UTF-8 text".to_string()),
             })
         }
-    }
+    };
+
+    Ok(ReadFileResult {
+        success: true,
+        content: Some(content),
+        byte_size,
+        truncated,
+        error: None,
+    })
 }
 
 /// Reveal a file in Finder (macOS) / File Explorer.

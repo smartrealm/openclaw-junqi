@@ -12,6 +12,12 @@ export type { InstallMode, SetupStep } from "./setup-navigation";
 
 export type PostStorageStep = "choosing-mode" | "gateway-stopped" | "configure-openclaw" | "ready";
 /**
+ * Runtime-only context for entering the workbench. It intentionally is not
+ * persisted: a new application launch is a cold start, while setup can hand
+ * off an already authenticated Gateway connection without replaying boot UI.
+ */
+export type WorkspaceStartupMode = "cold" | "verified-gateway-handoff";
+/**
  * Editable storage choices belong to the in-progress JunQi setup session.
  * They intentionally do not survive an app restart: a directory selection is
  * not configuration until the user confirms it through `configure_storage`.
@@ -61,6 +67,7 @@ interface AppState {
   setupLogs: SetupLog[];
   postStorageStep: PostStorageStep;
   storageDraft: StorageSetupDraft | null;
+  workspaceStartupMode: WorkspaceStartupMode;
 
   setSetupComplete: (v: boolean | null) => void;
   /** Replace an internal execution phase without adding browser-like history. */
@@ -74,6 +81,7 @@ interface AppState {
   appendSetupLog: (log: Omit<SetupLog, "ts"> & { ts?: number }) => void;
   setPostStorageStep: (step: PostStorageStep) => void;
   setStorageDraft: (draft: StorageSetupDraft | null) => void;
+  setWorkspaceStartupMode: (mode: WorkspaceStartupMode) => void;
 }
 
 const savedMode = normalizeInstallMode(localStorage.getItem("junqi-install-mode"));
@@ -94,6 +102,7 @@ export const useAppStore = create<AppState>((set) => ({
   setupLogs: [],
   postStorageStep: "choosing-mode",
   storageDraft: null,
+  workspaceStartupMode: "cold",
 
   setSetupComplete: (v) => {
     if (v === true) {
@@ -165,4 +174,5 @@ export const useAppStore = create<AppState>((set) => ({
   }),
   setPostStorageStep: (step) => set({ postStorageStep: step }),
   setStorageDraft: (draft) => set({ storageDraft: draft }),
+  setWorkspaceStartupMode: (mode) => set({ workspaceStartupMode: mode }),
 }));

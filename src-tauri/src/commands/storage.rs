@@ -409,6 +409,19 @@ fn selected_layout(
     Ok(layout)
 }
 
+fn preserve_migrated_media_roots(
+    layout: &mut StorageBootstrap,
+    existing_layout: &StorageBootstrap,
+    source: &Path,
+    migrate_existing: bool,
+) {
+    layout.historical_media_state_dirs = existing_layout.historical_media_state_dirs.clone();
+    layout.drop_current_media_state_dir_from_history();
+    if migrate_existing && !paths::paths_refer_to_same_location(source, &layout.state_dir) {
+        layout.remember_historical_media_state_dir(source.to_path_buf());
+    }
+}
+
 fn apply_process_runtime_overrides(
     layout: &mut StorageBootstrap,
     target: &Path,
@@ -2583,6 +2596,9 @@ pub async fn configure_storage(
         layout.config_path = old_native_config.clone();
         layout
     });
+    // OpenClaw keeps MediaPath values absolute in copied transcripts. Preserve
+    // only JunQi-recorded source roots for those historical attachments.
+    preserve_migrated_media_roots(&mut layout, &existing_layout, &source, migrate_existing);
     if paths::explicit_config_path_override()?.is_none() {
         layout.config_path =
             config_path_for_storage_change(&old_native_config, &source, &target, migrate_existing);
@@ -3423,6 +3439,22 @@ mod tests {
         assert!(validate_location_changes(&next, Some(&current)).is_ok());
         assert!(apply_runtime_location_transition(&current, &mut next));
         assert!(next.openclaw_relocation_required);
+    }
+
+    #[test]
+    fn migration_preserves_only_explicit_prior_media_state_roots() {
+        let root = storage_test_root("media-history");
+        let oldest = root.join("oldest");
+        let source = root.join("source");
+        let target = root.join("target");
+        let mut existing = StorageBootstrap::for_state_dir(source.clone(), None);
+        existing.remember_historical_media_state_dir(oldest.clone());
+        let mut next = StorageBootstrap::for_state_dir(target, None);
+
+        preserve_migrated_media_roots(&mut next, &existing, &source, true);
+
+        assert_eq!(next.historical_media_state_dirs, vec![oldest, source]);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

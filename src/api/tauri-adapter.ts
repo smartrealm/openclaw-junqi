@@ -703,7 +703,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
           throw new Error('Image download exceeds the 64 MB save limit');
         }
         bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      } else if (/^(https?:|blob:)/i.test(src)) {
+      } else if (/^(https?:|blob:|junqi-preview:)/i.test(src)) {
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), IMAGE_SAVE_DOWNLOAD_TIMEOUT_MS);
         try {
@@ -857,8 +857,12 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     reveal: async (path: string) => { try { const v: any = await invoke('managed_file_reveal', { path }); return { success: v?.success ?? false }; } catch { return { success: false }; } },
     exists: async (path: string) => { try { const v: any = await invoke('managed_file_exists', { path }); return { success: v?.success ?? false, exists: v?.exists ?? false }; } catch { return { success: false, exists: false }; } },
     list: async (path: string) => { try { const v: any = await invoke('list_directory', { path }); return { success: v?.success ?? false, entries: v?.entries ?? [], error: v?.error ?? null }; } catch { return { success: false, entries: [], error: 'invoke failed' }; } },
-	    read: async (path: string) => { try { const v: any = await invoke('read_file_text', { path }); return { success: v?.success ?? false, content: v?.content ?? null, byteSize: v?.byte_size ?? 0, truncated: v?.truncated ?? false, error: v?.error ?? null }; } catch { return { success: false, content: null, byteSize: 0, truncated: false, error: 'invoke failed' }; } },
+    read: async (path: string) => { try { const v: any = await invoke('read_file_text', { path }); return { success: v?.success ?? false, content: v?.content ?? null, byteSize: v?.byte_size ?? 0, truncated: v?.truncated ?? false, error: v?.error ?? null }; } catch { return { success: false, content: null, byteSize: 0, truncated: false, error: 'invoke failed' }; } },
+    createPreview: async (path: string) => { try { const v: any = await invoke('create_file_preview_url', { path }); return { success: v?.success ?? false, url: v?.url ?? null, error: v?.error ?? null }; } catch { return { success: false, url: null, error: 'invoke failed' }; } },
     delete: async () => ({ success: false }),
+  },
+  openclawMedia: {
+    createPreview: async (path: string) => { try { const v: any = await invoke('create_openclaw_media_preview_url', { path }); return { success: v?.success ?? false, url: v?.url ?? null, error: v?.error ?? null }; } catch { return { success: false, url: null, error: 'invoke failed' }; } },
   },
   uploads: { list: async () => ({ success: true, rows: [], total: 0, root: "" }), open: async () => ({ success: false }), reveal: async () => ({ success: false }), exists: async () => ({ success: false, exists: false }), read: async () => ({ success: false }), delete: async () => ({ success: false }), saveAs: async () => ({ success: false }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
   // JunQi-style system metrics event stream (background thread emits every 1s)

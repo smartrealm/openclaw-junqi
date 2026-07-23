@@ -31,8 +31,13 @@ import { useChatStore } from '@/stores/chatStore';
 import type { OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import clsx from 'clsx';
 import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
+import {
+  loadLocalBinaryPreview,
+  loadLocalFilePreview,
+  type LocalBinaryPreview,
+  type LocalFilePreview,
+} from '@/services/chat/filePreview';
 
-const PdfPreview = lazy(() => import('./PdfPreview').then((m) => ({ default: m.PdfPreview })));
 const FileMarkdownPreview = lazy(() => import('./FileMarkdownPreview').then((m) => ({ default: m.FileMarkdownPreview })));
 const FileExplorer = lazy(() => import('@/components/FileExplorer/FileExplorer').then((m) => ({ default: m.FileExplorer })));
 const FileViewer = lazy(() => import('@/components/FileExplorer/FileViewer').then((m) => ({ default: m.FileViewer })));
@@ -261,8 +266,10 @@ export function FileManagerPage() {
   const [query, setQuery] = useState('');
   const [hasAegis, setHasAegis] = useState<boolean | null>(null);
   const [cleanMessage, setCleanMessage] = useState('');
-  const [binaryPreview, setBinaryPreview] = useState<{ dataUrl: string; mimeType: string; rawBase64?: string } | null>(null);
+  const [binaryPreview, setBinaryPreview] = useState<LocalBinaryPreview | null>(null);
+  const [htmlPreview, setHtmlPreview] = useState<LocalFilePreview | null>(null);
   const [binaryLoading, setBinaryLoading] = useState(false);
+  const [htmlPreviewLoading, setHtmlPreviewLoading] = useState(false);
   const [textPreviewLoading, setTextPreviewLoading] = useState(false);
   const [activeView, setActiveView] = useState<FileManagerView>('outputs');
   const [sessionOnly, setSessionOnly] = useState(false);
@@ -445,27 +452,40 @@ export function FileManagerPage() {
 
   useEffect(() => {
     setBinaryPreview(null);
+    setBinaryLoading(false);
     if (!selected) return;
     const isBinary = IMAGE_EXTS.has(selected.ext) || AUDIO_EXTS.has(selected.ext) || VIDEO_EXTS.has(selected.ext) || PDF_EXTS.has(selected.ext);
     if (!isBinary || !selected.exists) return;
     let cancelled = false;
     setBinaryLoading(true);
-    const reader = (window as any).aegis?.managedFiles?.read
-      || (window as any).aegis?.managedFiles?.readBinary
-      || (window as any).aegis?.uploads?.read;
-    reader?.({ path: selected.path })
-      .then((res: any) => {
-        if (cancelled || !res?.success || !res.data) return;
-        const mimeType: string = res.mimeType;
-        if (mimeType === 'application/pdf') setBinaryPreview({ dataUrl: '', mimeType, rawBase64: res.data });
-        else setBinaryPreview({ dataUrl: `data:${mimeType};base64,${res.data}`, mimeType });
+    void loadLocalBinaryPreview(selected.path, selected.name)
+      .then((preview) => {
+        if (!cancelled) setBinaryPreview(preview);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setBinaryLoading(false); });
     return () => { cancelled = true; };
-  }, [selected, isOutputKind]);
+  }, [selected?.path, selected?.name, selected?.ext, selected?.exists]);
 
   useEffect(() => {
+    setHtmlPreview(null);
+    setHtmlPreviewLoading(false);
+    if (!selected || !selected.exists || !HTML_EXTS.has(selected.ext)) return;
+    let cancelled = false;
+    setHtmlPreviewLoading(true);
+    void loadLocalFilePreview(selected.path, selected.name)
+      .then((preview) => {
+        if (!cancelled && preview.kind === 'html') setHtmlPreview(preview);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setHtmlPreviewLoading(false); });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.path, selected?.name, selected?.ext, selected?.exists]);
+
+  useEffect(() => {
+    setTextPreviewLoading(false);
     if (!selected || !selected.exists) return;
     if (selected.content) return;
     const isBinary =
@@ -474,18 +494,33 @@ export function FileManagerPage() {
       VIDEO_EXTS.has(selected.ext) ||
       PDF_EXTS.has(selected.ext);
     if (isBinary) return;
+    // HTML owns its own native/static preview flow so a successful scoped URL
+    // is never blocked behind an unrelated text read.
+    if (HTML_EXTS.has(selected.ext)) return;
     if (!TEXT_PREVIEW_EXTS.has(selected.ext)) return;
 
     let cancelled = false;
     setTextPreviewLoading(true);
-    const reader = (window as any).aegis?.managedFiles?.read
-      || (window as any).aegis?.managedFiles?.readBinary
+    const managedReader = (window as any).aegis?.managedFiles?.read;
+    const fallbackReader = (window as any).aegis?.managedFiles?.readBinary
       || (window as any).aegis?.uploads?.read;
+    const readRequest = managedReader
+      ? managedReader(selected.path)
+      : fallbackReader?.({ path: selected.path });
+    if (!readRequest) {
+      setTextPreviewLoading(false);
+      return;
+    }
 
-    reader?.({ path: selected.path })
+    readRequest
       .then((res: any) => {
-        if (cancelled || !res?.success || !res?.data) return;
-        const decoded = decodeBase64Utf8(String(res.data));
+        if (cancelled || !res?.success) return;
+        const decoded = typeof res.content === 'string'
+          ? res.content
+          : typeof res.data === 'string'
+            ? decodeBase64Utf8(res.data)
+            : null;
+        if (decoded === null) return;
         setSelected((prev) => (prev && prev.path === selected.path ? { ...prev, content: decoded } : prev));
         setFiles((prev) => prev.map((file) => (
           file.path === selected.path ? { ...file, content: decoded } : file
@@ -499,7 +534,7 @@ export function FileManagerPage() {
     return () => {
       cancelled = true;
     };
-  }, [selected, isOutputKind, decodeBase64Utf8]);
+  }, [selected?.path, selected?.content, selected?.ext, selected?.exists, decodeBase64Utf8]);
 
   if (hasAegis === false) {
     return (
@@ -902,35 +937,32 @@ export function FileManagerPage() {
               </div>
 
               <div className="flex-1 overflow-auto">
-                {binaryLoading || textPreviewLoading ? (
+                {binaryLoading || htmlPreviewLoading || textPreviewLoading ? (
                   <div className="flex items-center justify-center h-full">
                     <Loader2 size={22} className="animate-spin text-aegis-primary" />
                   </div>
                 ) : IMAGE_EXTS.has(selected.ext) && binaryPreview ? (
                   <div className="flex items-center justify-center h-full p-6 bg-[rgb(var(--aegis-overlay)/0.02)]">
-                    <img src={binaryPreview.dataUrl} alt={selected.name} className="max-w-full max-h-full object-contain rounded-lg shadow-lg" draggable={false} />
+                    <img src={binaryPreview.url} alt={selected.name} className="max-w-full max-h-full object-contain rounded-lg shadow-lg" draggable={false} />
                   </div>
                 ) : AUDIO_EXTS.has(selected.ext) && binaryPreview ? (
                   <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
                     <FileAudio size={40} className="text-pink-400/60" />
                     <span className="text-[13px] font-medium text-aegis-text">{selected.name}</span>
-                    <audio controls src={binaryPreview.dataUrl} className="w-full max-w-md" />
+                    <audio controls src={binaryPreview.url} className="w-full max-w-md" />
                   </div>
                 ) : VIDEO_EXTS.has(selected.ext) && binaryPreview ? (
                   <div className="flex items-center justify-center h-full p-4 bg-black/40">
-                    <video controls src={binaryPreview.dataUrl} className="max-w-full max-h-full rounded-lg" />
+                    <video controls src={binaryPreview.url} className="max-w-full max-h-full rounded-lg" />
                   </div>
-                ) : PDF_EXTS.has(selected.ext) && binaryPreview?.rawBase64 ? (
-                  <Suspense
-                    fallback={
-                      <div className="flex items-center justify-center h-full">
-                        <Loader2 size={22} className="animate-spin text-aegis-primary" />
-                      </div>
-                    }
-                  >
-                    <PdfPreview base64={binaryPreview.rawBase64} onOpenExternal={() => openFile(selected)} />
-                  </Suspense>
-                ) : HTML_EXTS.has(selected.ext) && selected.content ? (
+                ) : PDF_EXTS.has(selected.ext) && binaryPreview ? (
+                  <iframe
+                    title={selected.name}
+                    src={binaryPreview.url}
+                    sandbox=""
+                    className="h-full w-full border-0 bg-white"
+                  />
+                ) : HTML_EXTS.has(selected.ext) && selected.exists && htmlPreview?.kind === 'html' ? (
                   <div className="h-full bg-[rgb(var(--aegis-overlay)/0.03)] p-3 flex flex-col gap-2">
                     <div className="flex items-center justify-end">
                       <button
@@ -942,7 +974,14 @@ export function FileManagerPage() {
                         {t('fileManager.openInBrowser')}
                       </button>
                     </div>
-                    <iframe title={selected.name} srcDoc={selected.content} sandbox="allow-scripts" className="w-full flex-1 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-white" />
+                    <iframe
+                      title={selected.name}
+                      src={htmlPreview.mode === 'interactive' ? htmlPreview.url : undefined}
+                      srcDoc={htmlPreview.mode === 'interactive' ? undefined : htmlPreview.content}
+                      sandbox={htmlPreview.mode === 'interactive' ? 'allow-scripts' : ''}
+                      referrerPolicy="no-referrer"
+                      className="w-full flex-1 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-white"
+                    />
                   </div>
                 ) : MARKDOWN_EXTS.has(selected.ext) && selected.content ? (
                   <Suspense

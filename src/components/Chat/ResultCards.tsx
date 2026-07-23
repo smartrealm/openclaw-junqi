@@ -1,11 +1,16 @@
 import { lazy, Suspense, useState } from 'react';
-import { Code2, Eye, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, Sparkles, ChevronDown, Loader2, Globe, Image, FileCode2, Layers, type LucideIcon } from 'lucide-react';
+import { AlertCircle, Code2, Copy, ExternalLink, Eye, EyeOff, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, MoreHorizontal, RefreshCw, Sparkles, ChevronDown, Globe, Image, FileCode2, Layers, type LucideIcon } from 'lucide-react';
 import { ArrowsClockwise } from '@phosphor-icons/react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Artifact, DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { IconButton } from '@/components/shared/button';
 import { Icon } from '@/components/shared/icons';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { getFileName, getFileParentFolder } from '@/services/chat/filePresentation';
+import { getFilePreviewKind, loadLocalFilePreview, type LocalFilePreview } from '@/services/chat/filePreview';
 import { debugError, debugWarn } from '@/utils/debugLog';
 
 const ResultMarkdownPreview = lazy(() => import('./ResultMarkdownPreview').then((m) => ({ default: m.ResultMarkdownPreview })));
@@ -27,11 +32,6 @@ function resolveWorkspacePath(rawPath: string): string {
     .trim();
   if (isLocalFilePath(cleaned)) return cleaned;
   return cleaned.replace(/\/+$/, '');
-}
-
-function fileNameFromPath(rawPath: string) {
-  const segments = rawPath.replace(/\/+$/, '').split(/[/\\]/);
-  return segments.pop() || rawPath;
 }
 
 function resolveFilePath(file: FileRef): string {
@@ -123,8 +123,6 @@ export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
   );
 }
 
-const PREVIEWABLE_EXTS = ['md', 'markdown', 'txt', 'text', 'log', 'json', 'html', 'htm', 'csv', 'xml', 'yml', 'yaml', 'js', 'ts', 'tsx', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'css', 'scss', 'sh', 'sql', 'ppt', 'pptx'];
-
 function getFileIconByExt(ext: string): LucideIcon {
   const e = ext.toLowerCase();
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(e)) return FileImage;
@@ -136,20 +134,19 @@ function getFileIconByExt(ext: string): LucideIcon {
 function FileRow({ file }: { file: FileRef }) {
   const { t } = useTranslation();
   const addToast = useNotificationStore((s) => s.addToast);
-  const [copied, setCopied] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [preview, setPreview] = useState<LocalFilePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
   const path = resolveFilePath(file);
-  const name = fileNameFromPath(file.path);
+  const name = getFileName(file.path);
   const detail = [file.meta, file.kind === 'voice' ? 'voice' : null, file.isCanonicalOutput === false ? 'noncanonical' : null]
     .filter(Boolean)
     .join(' · ');
+  const compactDetail = detail || getFileParentFolder(path);
 
   const ext = (name.split('.').pop() || '').toLowerCase();
-  const isPreviewable = PREVIEWABLE_EXTS.includes(ext);
-  const isMarkdown = ext === 'md' || ext === 'markdown';
-  const isHtml = ext === 'html' || ext === 'htm';
+  const isPreviewable = getFilePreviewKind(name) !== null;
 
   const handleOpen = async () => {
     try {
@@ -170,24 +167,32 @@ function FileRow({ file }: { file: FileRef }) {
     }
   };
 
-  // Inline preview — read file via gateway, render by extension (md/text/html).
-  const handlePreview = async () => {
-    if (previewOpen) { setPreviewOpen(false); return; }
-    setPreviewOpen(true);
+  const loadPreview = async () => {
     setPreviewLoading(true);
-    setPreviewContent(null);
+    setPreviewError(false);
     try {
-      const f = await window.aegis?.file?.read(path);
-      if (f?.base64) {
-        // base64 → UTF-8 text (handles CJK via decodeURIComponent(escape(...)))
-        const bin = atob(f.base64);
-        setPreviewContent(decodeURIComponent(escape(bin)));
-      }
+      setPreview(await loadLocalFilePreview(path, name));
     } catch (err) {
       debugError('media', '[FileResultCard] preview failed:', err);
-      setPreviewContent(null);
+      setPreview(null);
+      setPreviewError(true);
+    } finally {
+      setPreviewLoading(false);
     }
-    setPreviewLoading(false);
+  };
+
+  const handlePreview = () => {
+    if (previewOpen) {
+      setPreviewOpen(false);
+      return;
+    }
+    setPreviewOpen(true);
+    // Native HTML URLs expire by design. Reissue one when this preview is reopened.
+    const refreshInteractiveHtml = preview?.kind === 'html' && preview.mode === 'interactive';
+    if (!preview || refreshInteractiveHtml) {
+      if (refreshInteractiveHtml) setPreview(null);
+      void loadPreview();
+    }
   };
 
   const handleReveal = async () => {
@@ -209,8 +214,6 @@ function FileRow({ file }: { file: FileRef }) {
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(path);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
       addToast('info', t('fileManager.copyPathDone', 'Path copied'), path);
     } catch (err) {
       debugWarn('media', '[FileResultCard] copy path failed:', err);
@@ -221,73 +224,170 @@ function FileRow({ file }: { file: FileRef }) {
   const renderPreview = () => {
     if (previewLoading) {
       return (
-        <div className="flex items-center gap-2 p-3 text-[11px] text-aegis-text-muted">
-          <Loader2 size={12} className="animate-spin" />
-          {t('common.loading', 'Loading…')}
+        <div className="space-y-2 p-3" role="status" aria-label={t('common.loading', 'Loading…')}>
+          <div className="h-3 w-1/3 animate-pulse rounded-sm bg-[rgb(var(--aegis-overlay)/0.09)]" />
+          <div className="h-40 animate-pulse rounded-md bg-[rgb(var(--aegis-overlay)/0.05)]" />
         </div>
       );
     }
-    if (previewContent === null) {
-      return <div className="p-3 text-[11px] text-aegis-text-dim">{t('resultCards.previewUnavailable', 'Preview unavailable')}</div>;
-    }
-    if (isHtml) {
+    if (!preview || previewError) {
       return (
-        <iframe
-          srcDoc={previewContent}
-          sandbox=""
-          className="h-[320px] w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-white"
-          title={name}
-        />
+        <div className="flex items-center justify-between gap-3 px-1 py-2 text-[11px] text-aegis-text-muted" role="status">
+          <span className="flex min-w-0 items-center gap-2">
+            <AlertCircle size={14} className="shrink-0 text-aegis-warning" />
+            <span>{t('resultCards.previewReadFailed', 'Unable to read this file. Confirm it is still in its original location.')}</span>
+          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <IconButton
+                aria-label={t('resultCards.retryPreview', 'Retry preview')}
+                size="xs"
+                variant="ghost"
+                onClick={() => void loadPreview()}
+              >
+                <RefreshCw size={13} />
+              </IconButton>
+            </TooltipTrigger>
+            <TooltipContent>{t('resultCards.retryPreview', 'Retry preview')}</TooltipContent>
+          </Tooltip>
+        </div>
       );
     }
-    if (isMarkdown) {
+    if (preview.kind === 'html') {
+      const notice = preview.mode === 'static' && preview.truncated ? (
+        <div className="flex items-center gap-1.5 px-1 pb-2 text-[10px] text-aegis-warning">
+          <Info size={12} />
+          {t('resultCards.previewTruncated', 'This preview is truncated. Open the original file to view everything.')}
+        </div>
+      ) : null;
+      if (preview.mode === 'interactive') {
+        return (
+          <>
+            <iframe
+              src={preview.url}
+              // The native protocol only serves the clicked file's directory and its response CSP blocks external network and form access.
+              sandbox="allow-scripts"
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              className="block h-[min(560px,58vh)] min-h-[320px] w-full rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] bg-white"
+              title={name}
+            />
+            {notice}
+          </>
+        );
+      }
+      return (
+        <>
+          <div className="flex items-center gap-1.5 px-1 pb-2 text-[10px] text-aegis-text-dim">
+            <Info size={12} />
+            {t('resultCards.staticPreviewFallback', 'Interactive resources are unavailable; showing a safe static preview.')}
+          </div>
+          <iframe
+            srcDoc={preview.content}
+            sandbox=""
+            referrerPolicy="no-referrer"
+            className="block h-[min(560px,58vh)] min-h-[320px] w-full rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] bg-white"
+            title={name}
+          />
+          {notice}
+        </>
+      );
+    }
+    if (preview.kind === 'image') {
+      return (
+        <div className="flex max-h-[min(560px,58vh)] min-h-[220px] items-center justify-center overflow-auto rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.03)] p-3">
+          <img src={preview.url} alt={name} className="max-h-[520px] max-w-full object-contain" draggable={false} />
+        </div>
+      );
+    }
+    if (preview.kind === 'markdown') {
       return (
         <Suspense
           fallback={
-            <div className="flex items-center gap-2 p-3 text-[11px] text-aegis-text-muted">
-              <Loader2 size={12} className="animate-spin" />
-              {t('common.loading', 'Loading…')}
+            <div className="space-y-2 p-3" role="status" aria-label={t('common.loading', 'Loading…')}>
+              <div className="h-3 w-1/3 animate-pulse rounded-sm bg-[rgb(var(--aegis-overlay)/0.09)]" />
+              <div className="h-28 animate-pulse rounded-md bg-[rgb(var(--aegis-overlay)/0.05)]" />
             </div>
           }
         >
-          <ResultMarkdownPreview content={previewContent} />
+          <ResultMarkdownPreview content={preview.content} />
         </Suspense>
       );
     }
     return (
-      <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[rgb(var(--aegis-overlay)/0.05)] p-3 font-mono text-[11px] text-aegis-text-muted">
-        {previewContent}
-      </pre>
+      <>
+        {preview.truncated && (
+          <div className="flex items-center gap-1.5 px-1 pb-2 text-[10px] text-aegis-warning">
+            <Info size={12} />
+            {t('resultCards.previewTruncated', 'This preview is truncated. Open the original file to view everything.')}
+          </div>
+        )}
+        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-[rgb(var(--aegis-overlay)/0.05)] p-3 font-mono text-[11px] text-aegis-text-muted">
+          {preview.content}
+        </pre>
+      </>
     );
   };
 
   return (
-    <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)]">
-      <div className="flex items-center gap-3 px-3 py-2">
+    <div className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)]">
+      <div className="flex min-h-9 items-center gap-2 px-2.5 py-1.5">
         {(() => { const Ic = getFileIconByExt(ext); return <Ic size={16} className="shrink-0 text-aegis-primary/80" />; })()}
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[12px] font-medium text-aegis-text">{name}</div>
-          <div className="truncate text-[10px] text-aegis-text-dim">{detail || path}</div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {isPreviewable && (
-            <button onClick={handlePreview} className="rounded-md bg-aegis-primary/10 px-2 py-1 text-[10px] text-aegis-primary hover:bg-aegis-primary/20">
-              {previewOpen ? t('resultCards.hide', 'Hide') : t('resultCards.preview', 'Preview')}
-            </button>
+        <div className="flex min-w-0 flex-1 items-baseline gap-1.5" title={path}>
+          <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-aegis-text">{name}</span>
+          {compactDetail && (
+            <span className="hidden max-w-[42%] shrink-0 truncate text-[10px] text-aegis-text-dim sm:inline">
+              {compactDetail}
+            </span>
           )}
-          <button onClick={handleOpen} className="rounded-md bg-aegis-primary/10 px-2 py-1 text-[10px] text-aegis-primary hover:bg-aegis-primary/20">
-            {t('resultCards.open', 'Open')}
-          </button>
-          <button onClick={handleReveal} className="rounded-md px-2 py-1 text-[10px] text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text">
-            {t('resultCards.reveal', 'Reveal')}
-          </button>
-          <button onClick={handleCopy} className="rounded-md px-2 py-1 text-[10px] text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text">
-            {copied ? t('common.copied', 'Copied') : t('resultCards.path', 'Path')}
-          </button>
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {isPreviewable && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <IconButton
+                  aria-label={previewOpen ? t('resultCards.hidePreview', 'Hide preview') : t('resultCards.preview', 'Preview')}
+                  size="xs"
+                  variant={previewOpen ? 'soft' : 'ghost'}
+                  tone="primary"
+                  onClick={handlePreview}
+                >
+                  {previewOpen ? <EyeOff size={13} /> : <Eye size={13} />}
+                </IconButton>
+              </TooltipTrigger>
+              <TooltipContent>{previewOpen ? t('resultCards.hidePreview', 'Hide preview') : t('resultCards.preview', 'Preview')}</TooltipContent>
+            </Tooltip>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconButton
+                aria-label={t('resultCards.moreFileActions', 'More file actions')}
+                title={t('resultCards.moreFileActions', 'More file actions')}
+                size="xs"
+                variant="ghost"
+              >
+                <MoreHorizontal size={14} />
+              </IconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => void handleOpen()}>
+                <ExternalLink />
+                {t('resultCards.openExternal', 'Open with default app')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleReveal()}>
+                <FolderOpen />
+                {t('resultCards.revealInFolder', 'Show in folder')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleCopy()}>
+                <Copy />
+                {t('resultCards.copyPath', 'Copy path')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       {previewOpen && (
-        <div className="border-t border-[rgb(var(--aegis-overlay)/0.06)] px-3 py-2">
+        <div className="border-t border-[rgb(var(--aegis-overlay)/0.06)] px-2.5 py-2">
           {renderPreview()}
         </div>
       )}
@@ -299,17 +399,17 @@ export function FileResultCard({ files }: { files: FileRef[] }) {
   const { t } = useTranslation();
   if (files.length === 0) return null;
   return (
-    <div className="pl-[42px] py-[2px]">
-      <div className="rounded-xl border border-aegis-accent/15 bg-aegis-accent/[0.04] px-3 py-3">
-        <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-aegis-text">
+    <div className="pl-[42px] py-[3px]">
+      <section className="w-full max-w-[760px]" aria-label={t('resultCards.files', 'Files')}>
+        <div className="mb-1 flex h-5 items-center gap-1.5 text-[11px] font-medium text-aegis-text-muted">
           <FolderOpen size={14} className="text-aegis-accent/80" />
           <span>{t('resultCards.files', 'Files')}</span>
           <span className="text-[10px] text-aegis-text-dim">{files.length}</span>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-1">
           {files.map((file, index) => <FileRow key={`${file.path}-${index}`} file={file} />)}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

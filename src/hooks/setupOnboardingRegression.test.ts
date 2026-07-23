@@ -5,6 +5,9 @@ import test from 'node:test';
 const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
+const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+const appStore = readFileSync(new URL('../stores/app-store.ts', import.meta.url), 'utf8');
+const gatewayClient = readFileSync(new URL('../services/gateway/index.ts', import.meta.url), 'utf8');
 const adapter = readFileSync(new URL('../api/tauri-adapter.ts', import.meta.url), 'utf8');
 const settingsStore = readFileSync(new URL('../stores/settingsStore.ts', import.meta.url), 'utf8');
 const settingsPage = readFileSync(new URL('../pages/SettingsPage.tsx', import.meta.url), 'utf8');
@@ -190,17 +193,31 @@ test('BUG-ONB-15 setup navigation has one complete six-step translation contract
   }
 });
 
-test('BUG-ONB-09 native setup verifies optional terminal integration after OpenClaw', () => {
-  const openclawStep = setupFlow.indexOf('patchStep("openclaw", "done"');
-  const terminalStep = setupFlow.indexOf('await configureTerminalIntegration(runId)', openclawStep);
-  const gatewayStep = setupFlow.indexOf('patchStep("gateway", "running"', terminalStep);
+test('BUG-ONB-09 terminal integration is an optional storage preference, not an install step', () => {
+  const nativeSteps = setupFlow.slice(
+    setupFlow.indexOf('const INITIAL_NATIVE_STEPS'),
+    setupFlow.indexOf('const INITIAL_DOCKER_STEPS'),
+  );
+  const dockerSteps = setupFlow.slice(
+    setupFlow.indexOf('const INITIAL_DOCKER_STEPS'),
+    setupFlow.indexOf('function cacheGatewayTarget'),
+  );
 
-  assert.ok(openclawStep >= 0);
-  assert.ok(terminalStep > openclawStep);
-  assert.ok(gatewayStep > terminalStep);
-  assert.match(setupFlow, /const terminalStatus = await applyTerminalIntegration\(\)/);
-  assert.match(setupFlow, /!terminalStatus\.enabled \|\| !terminalStatus\.launcherReady/);
-  assert.match(setupFlow, /patchStep\("terminal", "skipped"/);
+  assert.doesNotMatch(nativeSteps, /id: "terminal"/);
+  assert.doesNotMatch(dockerSteps, /id: "terminal"/);
+  assert.doesNotMatch(setupFlow, /configureTerminalIntegration|applyTerminalIntegration/);
+  assert.match(storageGate, /checked=\{terminalIntegration\}/);
+  assert.match(storageGate, /storage\.terminalIntegrationHint/);
+});
+
+test('BUG-ONB-28 a verified setup Gateway hands off without replaying cold boot', () => {
+  assert.match(appStore, /WorkspaceStartupMode/);
+  assert.match(setupFlow, /setWorkspaceStartupMode\("verified-gateway-handoff"\)/);
+  assert.match(app, /VERIFIED_GATEWAY_HANDOFF_TIMEOUT_MS/);
+  assert.match(app, /workspaceStartupMode !== 'verified-gateway-handoff'/);
+  assert.match(app, /surfaceVerifiedGatewayHandoffFailure/);
+  assert.match(app, /gateway\.refreshConnectionStatus\(\)/);
+  assert.match(gatewayClient, /refreshConnectionStatus\(\) \{ connection\.emitStatus\(\); \}/);
 });
 
 test('BUG-ONB-10 setup leaves system tools and npm cache at their native defaults', () => {
@@ -231,7 +248,7 @@ test('BUG-CPI-06 workspace and Gateway progress paths are resolved from storage 
   assert.match(gatewayCommand, /let meta = ConfigMetadata::load\(&config_path\)/);
 });
 
-test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', () => {
+test('FEAT-AUTOSTART ready screen keeps autostart in a separate runtime-preferences section', () => {
   const gatewayService = readFileSync(
     new URL('../../src-tauri/src/commands/gateway_service.rs', import.meta.url),
     'utf8',
@@ -240,9 +257,15 @@ test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', 
 
   // The option is only offered for the Native runtime; Docker containers rely
   // on their restart policy instead of a host-level service.
-  assert.match(setupPage, /function GatewayAutostartCard/);
-  assert.match(setupPage, /installMode !== "native" \|\| !status\?\.supported/);
-  assert.match(setupPage, /<GatewayAutostartCard installMode=\{flow\.installMode\} \/>/);
+  const ready = setupPage.slice(
+    setupPage.indexOf('function ReadyScreen'),
+    setupPage.indexOf('function GitMissingScreen'),
+  );
+  assert.match(setupPage, /function GatewayAutostartPreference/);
+  assert.match(setupPage, /installMode !== "native" \|\| status === null \|\| status\?\.supported === false/);
+  assert.match(setupPage, /setup\.runtimePreferences/);
+  assert.match(ready, /<GatewayAutostartPreference installMode=\{flow\.installMode\} \/>/);
+  assert.doesNotMatch(ready, /OpenClawUpdatePanel/);
 
   // Enable/disable goes through the official CLI service commands and then
   // hands the port over via the existing restart path, so exactly one owner

@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { debugError, debugLog } from '@/utils/debugLog';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { resolveOpenClawMediaPreviewUrl } from '@/services/chat/openclawMediaPreview';
 
 // ═══════════════════════════════════════════════════════════
 // ChatImage — Image display with save, zoom, and lightbox
@@ -59,33 +60,50 @@ function resolveImageSrcSync(src: string): string | null {
   return src;
 }
 
-/** Hook to resolve aegis-media: local file paths to base64 data URLs via Electron IPC */
+/** Resolves persisted OpenClaw media through the native scoped preview bridge. */
 function useResolvedImageSrc(src: string): string {
   const syncResolved = useMemo(() => resolveImageSrcSync(src), [src]);
   const [asyncSrc, setAsyncSrc] = useState<string>('');
 
   useEffect(() => {
-    if (syncResolved !== null) return; // sync resolution worked — no IPC needed
+    if (syncResolved !== null) return;
     if (!src.startsWith('aegis-media:')) return;
 
     const filePath = src.replace('aegis-media:', '');
-    const ext = filePath.split('.').pop()?.toLowerCase() || 'png';
-    const mimeMap: Record<string, string> = {
-      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-      gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp',
-    };
-    const mime = mimeMap[ext] || 'image/png';
-
+    let disposed = false;
     setAsyncSrc('');
-    window.aegis?.file?.read(filePath)
-      .then((result: { base64: string } | null) => {
-        if (result?.base64) {
-          setAsyncSrc(`data:${mime};base64,${result.base64}`);
-        }
-      })
-      .catch((err: unknown) => {
-        debugError('media', '[ChatImage] IPC file read failed:', filePath, err);
-      });
+
+    void (async () => {
+      const previewUrl = await resolveOpenClawMediaPreviewUrl(src);
+      if (disposed) return;
+      if (previewUrl) {
+        setAsyncSrc(previewUrl);
+        return;
+      }
+
+      // New desktop builds always expose the scoped native command. Do not
+      // bypass it if that command rejects a transcript path.
+      if (window.aegis?.openclawMedia) {
+        debugError('media', '[ChatImage] OpenClaw media preview was unavailable');
+        return;
+      }
+
+      // Keep older preload bridges functional while the desktop app upgrades.
+      const ext = filePath.split('.').pop()?.toLowerCase() || 'png';
+      const mimeMap: Record<string, string> = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+        gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp',
+      };
+      const result = await window.aegis?.file?.read(filePath);
+      if (disposed || !result?.base64) return;
+      setAsyncSrc(`data:${mimeMap[ext] || 'image/png'};base64,${result.base64}`);
+    })().catch((error: unknown) => {
+      if (!disposed) debugError('media', '[ChatImage] OpenClaw media preview failed', error);
+    });
+
+    return () => {
+      disposed = true;
+    };
   }, [src, syncResolved]);
 
   return syncResolved !== null ? syncResolved : asyncSrc;

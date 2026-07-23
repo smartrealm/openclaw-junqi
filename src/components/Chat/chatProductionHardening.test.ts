@@ -7,15 +7,44 @@ function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
-test('CHAT-01 generated artifacts never receive iframe script permission', () => {
+test('CHAT-01 generated artifacts stay scriptless while local file previews use the scoped protocol', () => {
   const bubble = source('src/components/Chat/MessageBubble.tsx');
   const resultCards = source('src/components/Chat/ResultCards.tsx');
+  const previewProtocol = source('src-tauri/src/commands/file_preview.rs');
   assert.doesNotMatch(bubble, /sandbox=["']allow-scripts/);
-  assert.doesNotMatch(resultCards, /sandbox=["']allow-scripts/);
+  assert.match(resultCards, /srcDoc=\{artifact\.content\}[\s\S]*?sandbox=""/);
+  assert.match(resultCards, /src=\{preview\.url\}[\s\S]*?sandbox="allow-scripts"/);
+  assert.match(resultCards, /loadLocalFilePreview\(path, name\)/);
+  assert.match(previewProtocol, /PREVIEW_GRANT_TTL/);
+  assert.match(previewProtocol, /resolve_granted_path/);
+  assert.match(previewProtocol, /connect-src 'self'/);
   assert.match(bubble, /useState<'preview' \| 'source'>\('source'\)/);
   const config = JSON.parse(source('src-tauri/tauri.conf.json'));
   assert.equal(typeof config.app.security.csp, 'string');
   assert.match(config.app.security.csp, /script-src 'self'/);
+  assert.match(config.app.security.csp, /frame-src[^;]*junqi-preview/);
+});
+
+test('CHAT-12 file result rows keep full paths out of the default chat layout', () => {
+  const resultCards = source('src/components/Chat/ResultCards.tsx');
+  assert.match(resultCards, /getFileParentFolder\(path\)/);
+  assert.match(resultCards, /max-w-\[760px\]/);
+  assert.doesNotMatch(resultCards, /\{detail \|\| path\}/);
+});
+
+test('CHAT-14 persisted OpenClaw media uses a state-scoped preview bridge', () => {
+  const image = source('src/components/Chat/ChatImage.tsx');
+  const adapter = source('src/api/tauri-adapter.ts');
+  const previewCommand = source('src-tauri/src/commands/openclaw_media_preview.rs');
+  assert.match(image, /resolveOpenClawMediaPreviewUrl\(src\)/);
+  assert.match(image, /if \(window\.aegis\?\.openclawMedia\)/);
+  assert.match(adapter, /create_openclaw_media_preview_url/);
+  assert.match(adapter, /junqi-preview:/);
+  assert.match(previewCommand, /media_state_dirs_for_preview/);
+  assert.match(previewCommand, /create_exact_preview_url_for_file/);
+  assert.match(previewCommand, /outside the active OpenClaw media directory/);
+  const config = JSON.parse(source('src-tauri/tauri.conf.json'));
+  assert.match(config.app.security.csp, /connect-src[^;]*junqi-preview/);
 });
 
 test('CHAT-03 composer state and prepared attachments are keyed by session', () => {

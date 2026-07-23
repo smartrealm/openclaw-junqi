@@ -18,7 +18,6 @@ import {
   checkSetupNode, checkGit, checkOpenclaw,
   installNode, repairSetupNodeRuntime, installGit, cancelDependencyInstall,
   installOpenclaw, reinstallOpenclaw, relocateOpenclaw,
-  applyTerminalIntegration,
   checkDocker, pullOpenclawImage, detectGatewayConfig, setActiveGatewayRuntime,
   commitActiveGatewayRuntime, rollbackActiveGatewayRuntime,
   commitRuntimeReconfiguration, rollbackRuntimeReconfiguration,
@@ -197,14 +196,12 @@ const INITIAL_NATIVE_STEPS: StepState[] = [
   { id: "node",      label: "Node.js",    status: "pending" },
   { id: "npm",       label: "npm",        status: "pending" },
   { id: "openclaw",  label: "OpenClaw",   status: "pending" },
-  { id: "terminal",  label: "Terminal",   status: "pending" },
   { id: "gateway",   label: "Gateway",    status: "pending" },
 ];
 
 const INITIAL_DOCKER_STEPS: StepState[] = [
   { id: "pull",      label: "Docker Image",  status: "pending" },
   { id: "container", label: "Container",     status: "pending" },
-  { id: "terminal",  label: "Terminal",      status: "pending" },
   { id: "gateway",   label: "Gateway",       status: "pending" },
 ];
 
@@ -244,6 +241,7 @@ export function useSetupFlow(
     replaceSetupStep, navigateSetup, goBackSetup,
     setSetupError, setSetupComplete, setPostStorageStep,
     setGatewayRunning, setInstallMode, setSetupStatus, appendSetupLog,
+    setWorkspaceStartupMode,
   } = useAppStore();
   const { t } = useTranslation();
   const [installTarget, setInstallTarget] = useState<InstallTarget | null>(null);
@@ -667,26 +665,6 @@ export function useSetupFlow(
     });
   }
 
-  async function configureTerminalIntegration(runId: number): Promise<void> {
-    patchStep("terminal", "running", t("setup.configuringTerminal", "正在配置终端命令…"));
-    const terminalStatus = await applyTerminalIntegration();
-    if (!isRunActive(runId)) return;
-    if (!terminalStatus.requested) {
-      patchStep("terminal", "skipped", t("setup.terminalIntegrationDisabled", "未启用外部终端集成"));
-      return;
-    }
-    if (!terminalStatus.enabled || !terminalStatus.launcherReady) {
-      throw new Error(t("setup.terminalIntegrationFailed", "终端启动器未能完成配置"));
-    }
-    patchStep(
-      "terminal",
-      "done",
-      terminalStatus.terminalRestartRequired
-        ? t("setup.terminalRestartRequired", "已配置；打开新的终端窗口后生效")
-        : t("setup.terminalIntegrationReady", "终端命令已就绪"),
-    );
-  }
-
   const waitForGatewayConnection = useCallback(async (timeoutMs = 20_000) => {
     gatewayManager.reconnect();
     const deadline = Date.now() + timeoutMs;
@@ -996,8 +974,6 @@ export function useSetupFlow(
       if (!isRunActive(runId)) return false;
       if (isDockerRuntime) {
         patchStep("container", "done");
-        await configureTerminalIntegration(runId);
-        if (!isRunActive(runId)) return false;
       }
       setGatewayRunning(true);
       // Gateway 已真实就绪：此前的插件启动验证记录随之失效。
@@ -1028,7 +1004,7 @@ export function useSetupFlow(
       replaceSetupStep("error");
       return false;
     }
-  }, [beginRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, configureTerminalIntegration, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
+  }, [beginRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
 
   const continueAfterGatewayReady = useCallback(async () => {
     if (gatewayReadyContinuationInFlightRef.current) return;
@@ -1225,12 +1201,6 @@ export function useSetupFlow(
         }
         patchStep("openclaw", "done", oclawStatus.version ?? undefined);
       }
-
-      // The launcher is generated only after the selected runtime is ready.
-      // This is shared by Native and Docker so their terminal contracts stay
-      // aligned while keeping their launch mechanisms separate.
-      await configureTerminalIntegration(runId);
-      if (!isRunActive(runId)) return false;
 
       // Once the user has confirmed the selected runtime, setup owns the
       // complete installation transaction, including Gateway startup. It stops
@@ -1793,10 +1763,14 @@ export function useSetupFlow(
   const enterWorkspace = useCallback((origin?: Element | null) => {
     cancelActiveRun();
     enterWorkspaceWithTransition(() => {
+      // The official wizard and live model probe already authenticated this
+      // connection. Preserve that fact through the route transition so the
+      // workbench can hydrate in the background instead of replaying cold boot.
+      setWorkspaceStartupMode("verified-gateway-handoff");
       window.location.hash = '/ai-workspace';
       setSetupComplete(true);
     }, origin);
-  }, [cancelActiveRun, setSetupComplete]);
+  }, [cancelActiveRun, setSetupComplete, setWorkspaceStartupMode]);
 
   const detectDocker = useCallback(async () => {
     if (dockerDetectingRef.current) return;

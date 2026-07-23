@@ -125,6 +125,11 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
   const agentLabel = compactMeta(agentName, 20);
   const isWorking = activity.active;
   const hasPendingCompletion = session.hasPendingCompletion === true && !isWorking;
+  const sessionStatusLabel = isWorking
+    ? t('chat.sessionWorking', 'Working…')
+    : hasPendingCompletion
+      ? t('chat.sessionCompleted', 'Reply ready')
+      : '';
   const timeLabel = formatSidebarTime(sessionActivityTime(session));
   const canDelete = !isAgentMainSession(sessionKey);
 
@@ -233,51 +238,74 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
           }
         }}
         className={clsx(
-          'flex w-full cursor-pointer items-start gap-2 rounded-lg border px-2 py-2 text-left transition-colors',
+          'w-full cursor-pointer rounded-lg border px-2 py-1.5 text-left transition-colors',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/55',
           isActive
             ? 'border-aegis-primary/35 bg-aegis-primary/[0.14] text-aegis-text shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.14)]'
             : 'border-transparent text-aegis-text-secondary hover:bg-aegis-hover/35',
         )}
         >
-        <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-              {isWorking ? (
-                <LoaderCircle
-                  size={13}
-                  className={clsx(
-                    'animate-spin',
-                    isActive
-                      ? 'text-aegis-text'
-                      : 'text-aegis-primary group-hover/session:text-aegis-text group-focus-within/session:text-aegis-text',
-                  )}
-                  aria-label={t('chat.sessionWorking', 'Working…')}
-                />
-              ) : hasPendingCompletion ? (
-                <CheckCircle2
-                  size={13}
-                  className="text-aegis-success"
-                  aria-label={t('chat.sessionCompleted', 'Reply ready')}
-                />
-              ) : null}
-            </span>
-            <span className={clsx(
-              'min-w-0 flex-1 truncate text-[13px] font-semibold leading-[18px] tracking-normal',
-              isActive ? 'text-aegis-text' : 'text-aegis-text-secondary',
-            )}>
-              {currentTitle}
-            </span>
-          </span>
-          <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] leading-4 text-aegis-text-dim">
-            <Bot size={10.5} className="shrink-0 opacity-65" />
-            <span className="min-w-0 flex-1 truncate" title={agentName}>{agentLabel}</span>
-            {timeLabel && (
-              <span className="ml-auto shrink-0 pl-1 text-[10.5px] tabular-nums text-aegis-text-dim/70">
-                {timeLabel}
+        <span className="grid min-w-0 grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5">
+          <span
+            className={clsx(
+              'relative row-span-2 flex h-7 w-7 shrink-0 items-center justify-center self-center rounded-md border transition-colors',
+              isActive
+                ? 'border-aegis-primary/35 bg-aegis-primary/[0.12] text-aegis-text'
+                : 'border-aegis-border/70 bg-aegis-elevated/70 text-aegis-text-dim group-hover/session:border-aegis-border-hover group-hover/session:text-aegis-text-secondary',
+            )}
+            role="group"
+            aria-label={agentName}
+            title={agentName}
+          >
+            <Bot size={13} aria-hidden="true" />
+            {sessionStatusLabel && (
+              <span
+                className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-aegis-surface bg-aegis-elevated"
+                role="status"
+                aria-label={sessionStatusLabel}
+                title={sessionStatusLabel}
+              >
+                {isWorking ? (
+                  <LoaderCircle
+                    size={9}
+                    className={clsx(
+                      'animate-spin',
+                      isActive
+                        ? 'text-aegis-text'
+                        : 'text-aegis-primary group-hover/session:text-aegis-text group-focus-within/session:text-aegis-text',
+                    )}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <CheckCircle2
+                    size={10}
+                    className="text-aegis-success"
+                    aria-hidden="true"
+                  />
+                )}
               </span>
             )}
           </span>
+          <span className={clsx(
+            'col-start-2 row-start-1 min-w-0 truncate text-[13px] font-semibold leading-[18px] tracking-normal',
+            isActive ? 'text-aegis-text' : 'text-aegis-text-secondary',
+          )}>
+            {currentTitle}
+          </span>
+          <span
+            className="col-start-2 row-start-2 min-w-0 truncate text-[11px] leading-4 text-aegis-text-dim"
+            title={agentName}
+          >
+            {agentLabel}
+          </span>
+          {timeLabel && (
+            <time
+              className="col-start-3 row-start-2 self-center pl-1 text-[10.5px] leading-4 tabular-nums text-aegis-text-dim/70"
+              dateTime={new Date(sessionActivityTime(session)).toISOString()}
+            >
+              {timeLabel}
+            </time>
+          )}
         </span>
       </div>
       <span className="pointer-events-none absolute end-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-aegis-border/80 bg-aegis-elevated p-0.5 text-aegis-text-muted opacity-0 shadow-sm transition-[opacity,background-color] group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/session:pointer-events-auto group-focus-within/session:opacity-100">

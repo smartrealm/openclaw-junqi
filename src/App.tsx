@@ -83,6 +83,8 @@ async function addToastLazy(type: 'message' | 'task_complete' | 'info' | 'error'
   mod.useNotificationStore.getState().addToast(type, title, body);
 }
 
+const VERIFIED_GATEWAY_HANDOFF_TIMEOUT_MS = 12_000;
+
 // ═══════════════════════════════════════════════════════════
 // OpenClaw Desktop — Mission Control
 // ═══════════════════════════════════════════════════════════
@@ -125,6 +127,8 @@ export default function App() {
     (s) => s.sessions.find((session) => session.key === s.activeSessionKey)?.agentId,
   );
   const setupComplete = useAppStore((s) => s.setupComplete);
+  const workspaceStartupMode = useAppStore((s) => s.workspaceStartupMode);
+  const setWorkspaceStartupMode = useAppStore((s) => s.setWorkspaceStartupMode);
   const setupHealthCheckedRef = useRef(false);
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
   const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
@@ -136,6 +140,7 @@ export default function App() {
   const lastGatewayErrorToastRef = useRef<string | null>(null);
   const gatewayBootErrorRef = useRef<string | null>(null);
   const bootRecoveryStartedRef = useRef(false);
+  const verifiedGatewayHandoffRef = useRef(false);
   const manualGatewayRecoveryInFlightRef = useRef(false);
   const previousVoiceSessionRef = useRef(activeSessionKey);
 
@@ -395,6 +400,37 @@ export default function App() {
     void gateway.synchronizeSessionTranscript(target)
       .catch((error) => debugWarn('gateway', '[App] Unable to subscribe to selected session transcript:', error));
   }, [activeSessionAgentId, activeSessionKey, connected, setupComplete]);
+
+  const surfaceVerifiedGatewayHandoffFailure = useCallback(() => {
+    if (!verifiedGatewayHandoffRef.current) return;
+    verifiedGatewayHandoffRef.current = false;
+    bootOverlayDismissedRef.current = false;
+    bootOverlayStartedAtRef.current = Date.now();
+    setWorkspaceStartupMode('cold');
+    setBootOverlayVisible(true);
+  }, [setWorkspaceStartupMode]);
+
+  // Setup has already completed an authenticated Gateway and model probe. Keep
+  // that connection alive across the route transition and only surface recovery
+  // when the handoff truly fails instead of replaying the cold-start timeline.
+  useEffect(() => {
+    if (workspaceStartupMode !== 'verified-gateway-handoff') return;
+    verifiedGatewayHandoffRef.current = true;
+    bootOverlayDismissedRef.current = true;
+    setBootOverlayVisible(false);
+    const timeout = window.setTimeout(() => {
+      if (!useChatStore.getState().connected) {
+        surfaceVerifiedGatewayHandoffFailure();
+      }
+    }, VERIFIED_GATEWAY_HANDOFF_TIMEOUT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [surfaceVerifiedGatewayHandoffFailure, workspaceStartupMode]);
+
+  useEffect(() => {
+    if (workspaceStartupMode !== 'verified-gateway-handoff' || !connected) return;
+    verifiedGatewayHandoffRef.current = false;
+    setWorkspaceStartupMode('cold');
+  }, [connected, setWorkspaceStartupMode, workspaceStartupMode]);
 
   // ── Cold-start boot overlay: keep visible until WebSocket is really connected
   // and show it for a minimum duration to avoid a flash/jump effect.
@@ -807,6 +843,9 @@ export default function App() {
             'failed',
           );
         }
+        if (retry.phase === 'exhausted') {
+          surfaceVerifiedGatewayHandoffFailure();
+        }
         if (bootOverlayDismissedRef.current) return;
         if (retry.phase === 'attempting') {
           setBootRecoveryAttempt(retry.attempt);
@@ -830,6 +869,10 @@ export default function App() {
         // Feed WS lifecycle events into the state machine
         if (status.connected) {
           gatewayManager.notifyWsOpen();
+          if (verifiedGatewayHandoffRef.current) {
+            verifiedGatewayHandoffRef.current = false;
+            setWorkspaceStartupMode('cold');
+          }
         } else if (!status.connecting) {
           voiceRuntime.interruptAll();
           gatewayManager.notifyWsClose();
@@ -1009,6 +1052,10 @@ export default function App() {
       }
     });
     gatewayManager.init();
+    // Setup owns the socket before App mounts its callbacks. Replay the current
+    // state after the manager is ready so a verified handoff is not mistaken for
+    // an unconnected cold start.
+    gateway.refreshConnectionStatus();
 
     // Listen for model changes → refresh session metadata (contextTokens for new model)
     const handleModelChanged = () => void loadSessions();
@@ -1136,7 +1183,7 @@ export default function App() {
       gateway.forgetSessionTranscript();
       gatewayManager.destroy();
     };
-  }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, triggerGatewayReconnect, cancelGatewayMigrationRetry]);
+  }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, triggerGatewayReconnect, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure]);
 
 
   // ── Pairing Handlers ──
@@ -1211,7 +1258,7 @@ export default function App() {
         </Suspense>
       )}
 
-      {bootOverlayVisible && !gatewayOptionalRoute && !gatewayBootError && !needsPairing && (
+      {bootOverlayVisible && workspaceStartupMode !== 'verified-gateway-handoff' && !gatewayOptionalRoute && !gatewayBootError && !needsPairing && (
         <Suspense fallback={null}>
           <BootTimelineOverlay
             recovery={{

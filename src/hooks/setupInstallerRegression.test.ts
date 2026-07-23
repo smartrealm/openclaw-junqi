@@ -48,6 +48,13 @@ test('step transitions populate the shared activity log even when no installer p
   assert.match(appStore, /const isDuplicate = previous[\s\S]*?previous\.message === nextLog\.message/);
 });
 
+test('BUG-INSTALL-LOG-12 execution records follow live output without stealing manual history review', () => {
+  assert.match(setupFlowPanels, /useLayoutEffect\(\(\) => \{/);
+  assert.match(setupFlowPanels, /window\.requestAnimationFrame\(scrollToLatest\)/);
+  assert.match(setupFlowPanels, /if \(followRef\.current\) viewport\.scrollTop = viewport\.scrollHeight/);
+  assert.match(setupFlowPanels, /followRef\.current = node\.scrollHeight - node\.scrollTop - node\.clientHeight < 48/);
+});
+
 test('BUG-INSTALL-LOG-06 through 11 preserve retries, raw process output, and exportable sessions', () => {
   assert.match(setupDiagnostics, /const RETAINED_SETUP_RUNS: usize = 8/);
   assert.match(setupDiagnostics, /dependency install attempt \{\} started/);

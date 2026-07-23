@@ -901,13 +901,13 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   );
 }
 
-// ── 开机自启卡片(仅 Native 运行时) ──
+// ── 开机自启偏好(仅 Native 运行时) ──
 // 通过官方 `openclaw gateway install/uninstall` 注册或移除系统服务;切换后
 // 用现有 restart 流程把 Gateway 从"桌面托管"交接给系统服务(或反向),保证
 // 结束时只有一个明确的托管方持有端口。Docker 运行时由容器重启策略负责。
-function GatewayAutostartCard({ installMode }: { installMode: InstallMode }) {
+function GatewayAutostartPreference({ installMode }: { installMode: InstallMode }) {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<GatewayAutostartStatus | null>(null);
+  const [status, setStatus] = useState<GatewayAutostartStatus | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -921,7 +921,20 @@ function GatewayAutostartCard({ installMode }: { installMode: InstallMode }) {
     return () => { cancelled = true; };
   }, [installMode]);
 
-  if (installMode !== "native" || !status?.supported) return null;
+  if (installMode !== "native" || status === null || status?.supported === false) return null;
+  if (status === undefined) {
+    return (
+      <section className="w-full border-t border-aegis-border pt-5 text-left" aria-busy="true">
+        <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-aegis-text-dim">
+          {t("setup.runtimePreferences", "运行偏好")}
+        </div>
+        <div className="flex items-center gap-3 py-1">
+          <span className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-aegis-surface" />
+          <span className="h-3 w-36 animate-pulse rounded bg-aegis-surface" />
+        </div>
+      </section>
+    );
+  }
   const enabled = status.enabled;
 
   const toggleAutostart = async () => {
@@ -947,13 +960,16 @@ function GatewayAutostartCard({ installMode }: { installMode: InstallMode }) {
   };
 
   return (
-    <div className="w-full rounded-xl border-2 border-aegis-primary/40 bg-aegis-primary/5 p-5 text-left">
-      <div className="flex items-start gap-3">
+    <section className="w-full border-t border-aegis-border pt-5 text-left">
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-aegis-text-dim">
+        {t("setup.runtimePreferences", "运行偏好")}
+      </div>
+      <div className="flex items-start gap-3 py-1">
         <span className={clsx(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
           enabled ? "bg-aegis-success/15 text-aegis-success" : "bg-aegis-primary/15 text-aegis-primary",
         )}>
-          <Power size={20} />
+          <Power size={18} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -996,7 +1012,7 @@ function GatewayAutostartCard({ installMode }: { installMode: InstallMode }) {
             : t("setup.autostart.enable", "开机自动运行")}
         </button>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -1014,7 +1030,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       previousAction={{ onClick: flow.goBack }}
       nextAction={{ label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }}
     >
-      <div className="flex flex-col items-center gap-6 py-5 text-center">
+      <div className="flex flex-col items-center gap-5 py-5 text-center">
         <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-aegis-success/10 text-aegis-success ring-4 ring-aegis-success/10">
           <CheckCircle2 size={40} strokeWidth={2} />
         </div>
@@ -1047,15 +1063,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         <div className="text-xs text-aegis-text-dim">
           {settledCount}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}
         </div>
-        <GatewayAutostartCard installMode={flow.installMode} />
-        {flow.openclawStatus?.installed && (
-          <div className="w-full text-left">
-            <OpenClawUpdatePanel
-              currentVersion={flow.openclawStatus.version}
-              onUpdated={async () => { await flow.refreshRuntime(); }}
-            />
-          </div>
-        )}
+        <GatewayAutostartPreference installMode={flow.installMode} />
       </div>
     </SetupShell>
   );

@@ -298,6 +298,8 @@ connection.onEvent = (msg: any) => routeGatewayEvent(msg, (event) => chatHandler
 export const gateway = {
   // Setup
   setCallbacks(cb: GatewayCallbacks) { connection.setCallbacks(cb); },
+  /** Replays the current socket state after a new UI host takes ownership. */
+  refreshConnectionStatus() { connection.emitStatus(); },
 
   // Live chat projection
   invalidateChatSession(sessionKey: string) { chatHandler.invalidateSession(sessionKey); },

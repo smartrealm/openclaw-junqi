@@ -16,7 +16,7 @@ import {
   TerminalSquare,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MouseEventHandler, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -63,12 +63,6 @@ export const STEP_META: Record<string, { titleKey: string; titleFallback: string
     titleFallback: "OpenClaw",
     descriptionKey: "setup.installSteps.openclaw.description",
     descriptionFallback: "检查 CLI 包与 Gateway 能力，必要时执行安装",
-  },
-  terminal: {
-    titleKey: "setup.installSteps.terminal.title",
-    titleFallback: "终端命令",
-    descriptionKey: "setup.installSteps.terminal.description",
-    descriptionFallback: "按用户选择配置独立启动器与终端 PATH",
   },
   gateway: {
     titleKey: "setup.installSteps.gateway.title",
@@ -808,9 +802,19 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   const [directoryError, setDirectoryError] = useState(false);
   const [exportingBundle, setExportingBundle] = useState(false);
   const [bundleExportState, setBundleExportState] = useState<"idle" | "success" | "error">("idle");
-  useEffect(() => {
-    if (!followRef.current || !viewportRef.current) return;
-    viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
+  useLayoutEffect(() => {
+    if (!followRef.current) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const scrollToLatest = () => {
+      if (followRef.current) viewport.scrollTop = viewport.scrollHeight;
+    };
+    scrollToLatest();
+    // Wrapped process output can change height after the DOM commit. Follow it
+    // on the next frame while preserving a user's deliberate scroll position.
+    const frame = window.requestAnimationFrame(scrollToLatest);
+    return () => window.cancelAnimationFrame(frame);
   }, [logs]);
 
   const copyLogs = () => {
@@ -921,7 +925,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
         ref={viewportRef}
         onScroll={(event) => {
           const node = event.currentTarget;
-          followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 28;
+          followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
         }}
         className="h-[342px] overflow-auto px-4 py-3 font-mono text-[11px] leading-5"
       >

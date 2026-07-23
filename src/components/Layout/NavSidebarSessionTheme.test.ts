@@ -90,6 +90,15 @@ test('session state colors use theme semantic tokens without fixed palette color
   assert.doesNotMatch(source, /hover:bg-red-|hover:text-red-|ring-red-/);
 });
 
+test('session identity anchors title and metadata while status stays on the agent badge', () => {
+  assert.match(source, /grid-cols-\[28px_minmax\(0,1fr\)_auto\]/);
+  assert.match(source, /row-span-2 flex h-7 w-7/);
+  assert.match(source, /col-start-2 row-start-1 min-w-0 truncate text-\[13px\]/);
+  assert.match(source, /col-start-2 row-start-2 min-w-0 truncate text-\[11px\]/);
+  assert.match(source, /absolute -bottom-1 -right-1 flex h-3\.5 w-3\.5/);
+  assert.doesNotMatch(source, /flex h-4 w-4 shrink-0 items-center justify-center/);
+});
+
 test('session state colors retain contrast across every supported theme', () => {
   for (const file of themeFiles) {
     const css = readTheme(file);

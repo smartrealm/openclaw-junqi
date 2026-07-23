@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-const STORAGE_BOOTSTRAP_VERSION: u32 = 13;
+const STORAGE_BOOTSTRAP_VERSION: u32 = 14;
+const HISTORICAL_MEDIA_STATE_DIR_LIMIT: usize = 8;
 
 /// The OpenClaw runtime selected by the user during setup.
 ///
@@ -82,6 +83,8 @@ impl OpenclawRelocationContract {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct StorageLayoutSnapshot {
     state_dir: PathBuf,
+    #[serde(default)]
+    historical_media_state_dirs: Vec<PathBuf>,
     config_path: PathBuf,
     workspace_dir: PathBuf,
     runtime_dir: PathBuf,
@@ -102,6 +105,7 @@ impl StorageLayoutSnapshot {
     fn capture(layout: &StorageBootstrap) -> Self {
         Self {
             state_dir: layout.state_dir.clone(),
+            historical_media_state_dirs: layout.historical_media_state_dirs.clone(),
             config_path: layout.config_path.clone(),
             workspace_dir: layout.workspace_dir.clone(),
             runtime_dir: layout.runtime_dir.clone(),
@@ -123,6 +127,7 @@ impl StorageLayoutSnapshot {
         StorageBootstrap {
             version: STORAGE_BOOTSTRAP_VERSION,
             state_dir: self.state_dir.clone(),
+            historical_media_state_dirs: self.historical_media_state_dirs.clone(),
             config_path: self.config_path.clone(),
             workspace_dir: self.workspace_dir.clone(),
             runtime_dir: self.runtime_dir.clone(),
@@ -361,6 +366,10 @@ impl PendingRuntimeReconfiguration {
 pub struct StorageBootstrap {
     pub version: u32,
     pub state_dir: PathBuf,
+    /// Prior JunQi-managed state roots retained after a storage migration.
+    /// OpenClaw transcript media paths are absolute, so these roots authorize
+    /// historical attachments without rewriting OpenClaw-owned transcripts.
+    pub historical_media_state_dirs: Vec<PathBuf>,
     pub config_path: PathBuf,
     pub workspace_dir: PathBuf,
     pub runtime_dir: PathBuf,
@@ -428,6 +437,8 @@ pub(crate) struct RuntimeLocationOverrides {
 struct PersistedStorageBootstrap {
     version: u32,
     state_dir: PathBuf,
+    #[serde(default)]
+    historical_media_state_dirs: Vec<PathBuf>,
     config_path: PathBuf,
     workspace_dir: PathBuf,
     #[serde(default)]
@@ -466,6 +477,7 @@ impl StorageBootstrap {
             version: STORAGE_BOOTSTRAP_VERSION,
             runtime_dir: state_dir.clone(),
             state_dir,
+            historical_media_state_dirs: Vec::new(),
             config_path,
             workspace_dir,
             npm_cache_dir: None,
@@ -495,6 +507,7 @@ impl StorageBootstrap {
             version: STORAGE_BOOTSTRAP_VERSION,
             config_path: state_dir.join("openclaw.json"),
             state_dir,
+            historical_media_state_dirs: Vec::new(),
             workspace_dir,
             runtime_dir,
             npm_cache_dir,
@@ -519,6 +532,7 @@ impl StorageBootstrap {
         let persisted_version = value.version;
         let PersistedStorageBootstrap {
             state_dir,
+            historical_media_state_dirs,
             config_path,
             workspace_dir,
             runtime_dir,
@@ -541,6 +555,8 @@ impl StorageBootstrap {
         let git_runtime_dir = git_runtime_dir.map(normalize_git_runtime_root);
         let openclaw_relocation_contract =
             openclaw_relocation_contract.filter(OpenclawRelocationContract::is_valid);
+        let historical_media_state_dirs =
+            normalize_historical_media_state_dirs(historical_media_state_dirs, &state_dir)?;
         // Preserve explicit portable-runtime selections even when an older
         // bootstrap placed one inside the data tree. Storage validation will
         // surface the overlap and require a deliberate correction; silently
@@ -564,6 +580,7 @@ impl StorageBootstrap {
         let normalized = Self {
             version: STORAGE_BOOTSTRAP_VERSION,
             state_dir,
+            historical_media_state_dirs,
             config_path,
             workspace_dir,
             runtime_dir,
@@ -592,6 +609,7 @@ impl StorageBootstrap {
         PersistedStorageBootstrap {
             version: STORAGE_BOOTSTRAP_VERSION,
             state_dir: self.state_dir.clone(),
+            historical_media_state_dirs: self.historical_media_state_dirs.clone(),
             config_path: self.config_path.clone(),
             workspace_dir: self.workspace_dir.clone(),
             runtime_dir: Some(self.runtime_dir.clone()),
@@ -631,7 +649,72 @@ impl StorageBootstrap {
                 .git_runtime_dir
                 .as_ref()
                 .is_none_or(|path| absolute_non_root(path))
+            && self.historical_media_state_dirs.len() <= HISTORICAL_MEDIA_STATE_DIR_LIMIT
+            && self
+                .historical_media_state_dirs
+                .iter()
+                .all(|path| valid_historical_media_state_dir(path))
     }
+
+    /// Preserves the source of a completed state-directory migration for
+    /// OpenClaw transcript media references. The current state root never
+    /// appears in this list, and repeated migrations retain a bounded set of
+    /// the most recent roots.
+    pub fn remember_historical_media_state_dir(&mut self, state_dir: PathBuf) {
+        if !valid_historical_media_state_dir(&state_dir) {
+            return;
+        }
+        self.historical_media_state_dirs.retain(|candidate| {
+            !paths_refer_to_same_location(candidate, &self.state_dir)
+                && !paths_refer_to_same_location(candidate, &state_dir)
+        });
+        if paths_refer_to_same_location(&state_dir, &self.state_dir) {
+            return;
+        }
+        self.historical_media_state_dirs.push(state_dir);
+        let overflow = self
+            .historical_media_state_dirs
+            .len()
+            .saturating_sub(HISTORICAL_MEDIA_STATE_DIR_LIMIT);
+        if overflow > 0 {
+            self.historical_media_state_dirs.drain(0..overflow);
+        }
+    }
+
+    pub fn drop_current_media_state_dir_from_history(&mut self) {
+        self.historical_media_state_dirs
+            .retain(|candidate| !paths_refer_to_same_location(candidate, &self.state_dir));
+    }
+}
+
+fn valid_historical_media_state_dir(path: &Path) -> bool {
+    absolute_non_root(path) && !path_has_parent_traversal(path)
+}
+
+fn normalize_historical_media_state_dirs(
+    candidates: Vec<PathBuf>,
+    active_state_dir: &Path,
+) -> Option<Vec<PathBuf>> {
+    if candidates.len() > HISTORICAL_MEDIA_STATE_DIR_LIMIT
+        || candidates
+            .iter()
+            .any(|path| !valid_historical_media_state_dir(path))
+    {
+        return None;
+    }
+
+    let mut normalized: Vec<PathBuf> = Vec::new();
+    for candidate in candidates {
+        if paths_refer_to_same_location(&candidate, active_state_dir)
+            || normalized
+                .iter()
+                .any(|existing| paths_refer_to_same_location(existing, &candidate))
+        {
+            continue;
+        }
+        normalized.push(candidate);
+    }
+    Some(normalized)
 }
 
 fn absolute_non_root(path: &Path) -> bool {
@@ -918,6 +1001,34 @@ pub fn effective_runtime_locations() -> Result<EffectiveRuntimeLocations, String
         npm_cache_dir,
         openclaw_git_dir,
     })
+}
+
+/// State roots whose media can be rendered from an OpenClaw transcript.
+///
+/// The active runtime always wins. When JunQi owns the runtime selection, a
+/// bounded migration history is included so copied transcripts that still
+/// contain OpenClaw's absolute `MediaPath` values remain readable. Explicit
+/// process overrides deliberately exclude that history.
+pub(crate) fn media_state_dirs_for_preview() -> Result<Vec<PathBuf>, String> {
+    let overrides = runtime_location_overrides()?;
+    let active = effective_runtime_locations()?.state_dir;
+    let mut roots = vec![active.clone()];
+    if overrides.state_dir.is_some() {
+        return Ok(roots);
+    }
+
+    if let Some(bootstrap) = load_storage_bootstrap_checked()? {
+        for historical in bootstrap.historical_media_state_dirs {
+            if roots
+                .iter()
+                .any(|known| paths_refer_to_same_location(known, &historical))
+            {
+                continue;
+            }
+            roots.push(historical);
+        }
+    }
+    Ok(roots)
 }
 
 pub fn validate_runtime_overrides() -> Result<(), String> {
@@ -2352,6 +2463,20 @@ mod storage_bootstrap_tests {
         let layout = StorageBootstrap::from_persisted(persisted).unwrap();
 
         assert_eq!(layout.npm_cache_dir, Some(custom_cache));
+    }
+
+    #[test]
+    fn storage_bootstrap_round_trips_bounded_migration_media_roots() {
+        let root = std::env::temp_dir().join("junqi-media-history-bootstrap");
+        let current = root.join("current");
+        let previous = root.join("previous");
+        let mut layout = StorageBootstrap::for_state_dir(current.clone(), None);
+        layout.remember_historical_media_state_dir(previous.clone());
+        layout.remember_historical_media_state_dir(current);
+
+        let restored = StorageBootstrap::from_persisted(layout.to_persisted()).unwrap();
+        assert_eq!(restored.historical_media_state_dirs, vec![previous]);
+        assert_eq!(restored.version, STORAGE_BOOTSTRAP_VERSION);
     }
 
     #[test]
