@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const SERVICE_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
-const STARTUP_SERVICE_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 const SERVICE_COMMAND_STDOUT_LIMIT: usize = 512 * 1024;
 const SERVICE_COMMAND_STDERR_LIMIT: usize = 128 * 1024;
 
@@ -29,24 +28,6 @@ pub(crate) struct GatewayServiceInspection {
     pub ownership: GatewayServiceOwnership,
     pub installed: bool,
     pub running: bool,
-}
-
-#[derive(Debug)]
-pub(crate) struct GatewayServiceStartInspectionError {
-    message: String,
-    cleanup_confirmed: bool,
-}
-
-impl GatewayServiceStartInspectionError {
-    pub(crate) fn cleanup_confirmed(&self) -> bool {
-        self.cleanup_confirmed
-    }
-}
-
-impl std::fmt::Display for GatewayServiceStartInspectionError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.message)
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -519,36 +500,6 @@ fn parse_service_status_output(
     }
 }
 
-/// Inspect service ownership for the foreground start path. This probe is
-/// deliberately bounded and best-effort: service metadata is useful for a
-/// stale-service handoff, but an unavailable service must never prevent the
-/// managed `gateway run` child from being spawned.
-pub(crate) async fn inspect_gateway_service_state_for_start(
-    runtime: &system::NativeOpenclawRuntime,
-    identity: &GatewayServiceIdentity,
-    search_path: Option<&str>,
-) -> Result<GatewayServiceInspection, GatewayServiceStartInspectionError> {
-    let args = service_status_args();
-    let output = run_service_command_controlled(
-        runtime,
-        identity,
-        search_path,
-        &args,
-        STARTUP_SERVICE_STATUS_TIMEOUT,
-    )
-    .await
-    .map_err(|error| GatewayServiceStartInspectionError {
-        message: format_service_command_error(&args, &error),
-        cleanup_confirmed: error.cleanup_confirmed(),
-    })?;
-    parse_service_status_output(&output, &args)
-        .map(|document| inspect_document(document, identity))
-        .map_err(|message| GatewayServiceStartInspectionError {
-            message,
-            cleanup_confirmed: true,
-        })
-}
-
 pub(crate) async fn inspect_gateway_service_state(
     runtime: &system::NativeOpenclawRuntime,
     identity: &GatewayServiceIdentity,
@@ -579,6 +530,26 @@ pub(crate) async fn stop_selected_gateway_service_verified(
     Ok(true)
 }
 
+/// Stop an installed selected service even when the platform status parser
+/// cannot classify its localized runtime state. Ownership and installation are
+/// authoritative for mutation; the caller separately verifies port release.
+pub(crate) async fn stop_installed_selected_gateway_service_verified(
+    runtime: &system::NativeOpenclawRuntime,
+    state_dir: &Path,
+    config_path: &Path,
+    search_path: Option<&str>,
+    inspection: GatewayServiceInspection,
+) -> Result<bool, String> {
+    if !inspection.installed || !belongs_to_selected_state(inspection.ownership) {
+        return Ok(false);
+    }
+    let identity = GatewayServiceIdentity::for_runtime(state_dir, config_path, runtime);
+    let args = ["gateway", "stop"];
+    let output = run_service_command(runtime, &identity, search_path, &args).await?;
+    command_success(&output, &args)?;
+    Ok(true)
+}
+
 pub(crate) async fn stop_selected_gateway_service(
     runtime: &system::NativeOpenclawRuntime,
     state_dir: &Path,
@@ -587,8 +558,14 @@ pub(crate) async fn stop_selected_gateway_service(
 ) -> Result<bool, String> {
     let identity = GatewayServiceIdentity::for_runtime(state_dir, config_path, runtime);
     let inspection = inspect_gateway_service_state(runtime, &identity, search_path).await?;
-    stop_selected_gateway_service_verified(runtime, state_dir, config_path, search_path, inspection)
-        .await
+    stop_installed_selected_gateway_service_verified(
+        runtime,
+        state_dir,
+        config_path,
+        search_path,
+        inspection,
+    )
+    .await
 }
 
 /// Remove the official Gateway service only after its persisted state/config
@@ -607,10 +584,16 @@ pub(crate) async fn uninstall_selected_gateway_service(
         return Ok(false);
     }
 
-    if inspection.running {
-        let stop_args = ["gateway", "stop"];
-        let stop = run_service_command(runtime, &identity, search_path, &stop_args).await?;
-        command_success(&stop, &stop_args)?;
+    if !stop_installed_selected_gateway_service_verified(
+        runtime,
+        state_dir,
+        config_path,
+        search_path,
+        inspection,
+    )
+    .await?
+    {
+        return Err("The selected Gateway service changed before it could be uninstalled".into());
     }
 
     let uninstall_args = ["gateway", "uninstall", "--json"];

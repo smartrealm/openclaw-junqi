@@ -151,7 +151,7 @@ test('BUG-GW-02 lifecycle ownership decisions authenticate the selected state di
   assert.match(gateway, /if gateway_matches_config\(port, &config_path\)\.await/);
 });
 
-test('BUG-GW-03 managed service restart uses the official command and verifies selected state readiness', () => {
+test('BUG-GSO-04 service restart uses the official command and native readiness budget', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const restart = gateway.slice(
     gateway.indexOf('pub async fn restart_gateway'),
@@ -160,7 +160,10 @@ test('BUG-GW-03 managed service restart uses the official command and verifies s
 
   assert.match(restart, /cmd\.args\(\["gateway", "restart"\]\)/);
   assert.doesNotMatch(restart, /\["gateway", "--port", &port\.to_string\(\), "restart"\]/);
-  assert.match(restart, /wait_for_selected_gateway\(port, &config_path, 45\)\.await/);
+  assert.match(
+    restart,
+    /wait_for_selected_gateway\([\s\S]*native_gateway_readiness_timeout_secs\(\)[\s\S]*\)\s*\.await/,
+  );
 });
 
 // BUG-WIN-CWD-01: state_dir (data directory) and Gateway cwd must be decoupled.
@@ -175,16 +178,34 @@ test('BUG-WIN-CWD-01 managed Gateway uses stable non-root cwd', () => {
   assert.doesNotMatch(managed, /working_dir = state_dir[.\s]*Some/);
 });
 
-test('offline system service handoff reuses one bounded ownership snapshot', () => {
+test('BUG-GSO-01 offline service discovery is authoritative and fail-closed', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const service = source('src-tauri/src/commands/gateway_service.rs');
+  const start = gateway.slice(
+    gateway.indexOf('pub async fn start_gateway'),
+    gateway.indexOf('pub async fn stop_gateway'),
+  );
+
   assert.match(service, /OPENCLAW_STATE_DIR/);
   assert.match(service, /paths_refer_to_same_location/);
-  assert.match(service, /inspect_gateway_service_state_for_start/);
+  assert.doesNotMatch(service, /inspect_gateway_service_state_for_start/);
+  assert.doesNotMatch(service, /STARTUP_SERVICE_STATUS_TIMEOUT/);
   assert.match(service, /stop_selected_gateway_service_verified/);
   assert.match(service, /"--no-probe"/);
-  assert.match(gateway, /let service_inspection =/);
-  assert.match(gateway, /stop_offline_gateway_service\([\s\S]*inspection/);
+  assert.ok(start.indexOf('if is_gateway_healthy(port).await') < start.indexOf('let service_inspection ='));
+  assert.match(start, /inspect_gateway_service_state\([\s\S]*a competing Gateway was not started/);
+});
+
+test('BUG-GSO-02 an installed selected service remains the normal startup owner', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const start = gateway.slice(
+    gateway.indexOf('pub async fn start_gateway'),
+    gateway.indexOf('pub async fn stop_gateway'),
+  );
+
+  assert.match(start, /start_installed_gateway_service\([\s\S]*service_inspection/);
+  assert.ok(start.indexOf('let service_inspection =') < start.indexOf('is_port_available(port)'));
+  assert.match(start, /InstalledServiceStartPolicy::Reconcile[\s\S]*inspect_gateway_service_state/);
 });
 
 test('BUG-GW-04 storage migration preserves only a verified official service binding', () => {
@@ -332,11 +353,25 @@ test('BUG-ST04 storage progress is localized by stable keys in every locale', ()
   }
 });
 
-test('BUG-02 service restart failures use the managed gateway fallback', () => {
+test('BUG-GSO-03 selected service restart failures are fail-closed', () => {
   const rust = source('src-tauri/src/commands/gateway.rs');
-  assert.match(rust, /async fn start_managed_gateway_fallback/);
-  assert.match(rust, /if !status\.success\(\)[\s\S]*start_managed_gateway_fallback/);
-  assert.match(rust, /health check did not pass in time[\s\S]*start_managed_gateway_fallback/);
+  const restart = rust.slice(
+    rust.indexOf('pub async fn restart_gateway'),
+    rust.indexOf('pub async fn restart_local_gateway'),
+  );
+  const selectedServiceRestart = restart.slice(restart.indexOf('let context = service_identity.command_context'));
+
+  assert.match(rust, /async fn restart_managed_gateway_without_service/);
+  assert.match(
+    restart,
+    /GatewayRestartTarget::ManagedChild[\s\S]*restart_managed_gateway_without_service/,
+  );
+  assert.doesNotMatch(selectedServiceRestart, /restart_managed_gateway_without_service/);
+  assert.match(selectedServiceRestart, /if !status\.success\(\)[\s\S]*selected_service_restart_error/);
+  assert.match(
+    selectedServiceRestart,
+    /native_gateway_readiness_timeout_secs\(\)[\s\S]*selected_service_restart_error/,
+  );
 });
 
 test('BUG-03 gateway manager snapshots include collected logs', () => {
@@ -373,7 +408,7 @@ test('BUG-04 late restart progress cannot re-lock recovery controls', () => {
   assert.match(progressHandler, /retrying:\s*restartActive/);
 });
 
-test('BUG-GL07 restart CLI is terminated before managed fallback on abnormal wait', () => {
+test('BUG-GL07 restart CLI is terminated and fails closed on abnormal wait', () => {
   const rust = source('src-tauri/src/commands/gateway.rs');
   const waitBranches = rust.slice(
     rust.indexOf('let status = match tokio::time::timeout'),
@@ -383,7 +418,70 @@ test('BUG-GL07 restart CLI is terminated before managed fallback on abnormal wai
     (waitBranches.match(/terminate_owned_gateway\(&mut child\)\.await/g) ?? []).length,
     2,
   );
-  assert.match(waitBranches, /terminate_owned_gateway\(&mut child\)\.await;[\s\S]*start_managed_gateway_fallback/);
+  assert.equal((waitBranches.match(/selected_service_restart_error\(&state, reason\)/g) ?? []).length, 2);
+  assert.doesNotMatch(waitBranches, /restart_managed_gateway_without_service/);
+});
+
+test('BUG-GSO-07 successful pending service recovery disarms the start failure guard', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const pendingStart = gateway.indexOf('let pending_service_running');
+  const pending = gateway.slice(
+    pendingStart,
+    gateway.indexOf('let service_identity', pendingStart),
+  );
+
+  assert.match(pending, /state\.transition\([\s\S]*GatewayRuntimeMode::SystemService/);
+  assert.match(pending, /start_failure_guard\.disarm\(\);[\s\S]*return Ok\(GatewayStatus/);
+});
+
+test('BUG-GSO-08 authenticated managed child reuse preserves child ownership', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const start = gateway.slice(
+    gateway.indexOf('pub(crate) async fn start_gateway_locked'),
+    gateway.indexOf('pub async fn stop_gateway'),
+  );
+
+  assert.match(start, /inspect_gateway_owner\(&state\)/);
+  assert.match(start, /managed_pid\.is_some\(\)[\s\S]*GatewayRuntimeMode::ManagedChild/);
+  assert.match(start, /pid: managed_pid/);
+});
+
+test('BUG-GSO-09 managed restart terminates the old child before common startup', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const restartManaged = gateway.slice(
+    gateway.indexOf('async fn restart_managed_gateway_without_service'),
+    gateway.indexOf('fn spawn_log_reader'),
+  );
+
+  assert.match(restartManaged, /child\.take\(\)/);
+  assert.match(restartManaged, /terminate_owned_gateway\(&mut old_child\)\.await/);
+  assert.ok(
+    restartManaged.indexOf('terminate_owned_gateway') < restartManaged.indexOf('start_managed_gateway_locked'),
+  );
+});
+
+test('BUG-GSO-09 explicit managed-owner restoration cannot reselect a service', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const update = source('src-tauri/src/commands/gateway_update_handoff.rs');
+  const storage = source('src-tauri/src/commands/storage.rs');
+
+  assert.match(gateway, /InstalledServiceStartPolicy::ManagedChildOnly/);
+  assert.match(gateway, /recover_failed_official_gateway_handoff[\s\S]*start_managed_gateway_locked/);
+  assert.match(update, /restore_managed_child[\s\S]*start_managed_gateway_locked/);
+  assert.match(storage, /RuntimeRestoreStrategy::ManagedChild[\s\S]*start_managed_gateway_locked/);
+});
+
+test('BUG-GSO-10 Native to Docker handoff fails closed on service ownership', () => {
+  const docker = source('src-tauri/src/commands/docker.rs');
+  const release = docker.slice(
+    docker.indexOf('pub(crate) async fn release_managed_native_gateway_for_docker'),
+    docker.indexOf('pub(crate) async fn release_managed_docker_gateway_for_native'),
+  );
+
+  assert.match(release, /inspect_gateway_service_state[\s\S]*map_err/);
+  assert.match(release, /stop_installed_selected_gateway_service_verified/);
+  assert.match(release, /service is not owned by the selected configuration/);
+  assert.doesNotMatch(release, /inspection\.is_ok_and/);
 });
 
 test('BUG-GL12 restart fully terminates the managed child before restarting the service', () => {
@@ -561,7 +659,7 @@ test('Windows recovery terminates the owned process tree before a new Gateway st
   assert.match(processControl, /"\/T", "\/F"/);
 });
 
-test('BUG-WSR-08 explicit Gateway stop also terminates the owned tree before returning', () => {
+test('BUG-GSO-06 explicit Gateway stop handles both managed and selected-service owners', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const stop = gateway.slice(
     gateway.indexOf('pub async fn stop_gateway'),
@@ -569,6 +667,8 @@ test('BUG-WSR-08 explicit Gateway stop also terminates the owned tree before ret
   );
 
   assert.match(stop, /terminate_owned_gateway\(&mut child\)\.await/);
+  assert.match(stop, /stop_installed_selected_gateway_service_verified/);
+  assert.match(stop, /authenticated external Gateway is running/);
   assert.match(stop, /wait_for_port_free\(port, 30_000\)\s*\.await/);
   assert.doesNotMatch(stop, /child\s*\.kill\(\)/);
 });

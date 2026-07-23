@@ -101,6 +101,7 @@ export type OpenClawWizardFailureKind =
   | 'step_desynchronized'
   | 'already_running'
   | 'request_timeout'
+  | 'cancelled'
   | 'unknown';
 
 type GatewayCaller = (
@@ -156,10 +157,23 @@ function assertWizardResult(value: unknown): OpenClawWizardResult {
   if (typeof result.done !== 'boolean') {
     throw new Error('OpenClaw wizard response is missing `done`.');
   }
+  if (result.status !== undefined
+    && result.status !== 'running'
+    && result.status !== 'done'
+    && result.status !== 'cancelled'
+    && result.status !== 'error') {
+    throw new Error('OpenClaw wizard response has an invalid `status`.');
+  }
+  if (result.error !== undefined && typeof result.error !== 'string') {
+    throw new Error('OpenClaw wizard response has an invalid `error`.');
+  }
+  if (result.sessionId !== undefined && typeof result.sessionId !== 'string') {
+    throw new Error('OpenClaw wizard response has an invalid `sessionId`.');
+  }
   // Terminal error/cancel responses intentionally do not carry a next step.
   // They are valid official Wizard outcomes and must reach the recovery
   // state machine instead of being misclassified as malformed Gateway data.
-  if (!result.done && result.status !== 'error' && result.status !== 'cancelled') {
+  if (!isTerminalWizardResult(value as OpenClawWizardResult)) {
     const step = normalizeWizardStep(result.step);
     if (!step) {
       throw new Error('OpenClaw wizard response is missing the next step.');
@@ -169,8 +183,23 @@ function assertWizardResult(value: unknown): OpenClawWizardResult {
   return value as OpenClawWizardResult;
 }
 
+function isTerminalWizardResult(result: OpenClawWizardResult): boolean {
+  return result.done
+    || result.status === 'done'
+    || result.status === 'cancelled'
+    || result.status === 'error';
+}
+
+export class OpenClawWizardCancelledError extends Error {
+  constructor() {
+    super('OpenClaw wizard was cancelled.');
+    this.name = 'OpenClawWizardCancelledError';
+  }
+}
+
 export class OpenClawWizardClient {
   private sessionId: string | null = null;
+  private failedSessionId: string | null = null;
   private currentStep: OpenClawWizardStep | null = null;
   private failedStep: OpenClawWizardStep | null = null;
   private workspace: string | undefined;
@@ -203,6 +232,10 @@ export class OpenClawWizardClient {
     return this.sessionId;
   }
 
+  get diagnosticSessionId(): string | null {
+    return this.sessionId ?? this.failedSessionId;
+  }
+
   get canGoBack(): boolean {
     return this.history.length > 0 && (this.sessionId !== null || this.failedStep !== null);
   }
@@ -218,13 +251,20 @@ export class OpenClawWizardClient {
     this.history = [];
     this.currentStep = null;
     this.failedStep = null;
+    this.failedSessionId = null;
     const result = assertWizardResult(await this.callGateway('wizard.start', {
       mode: 'local',
       ...(this.workspace ? { workspace: this.workspace } : {}),
     }));
-    this.setSession(result.done ? null : String(result.sessionId ?? ''));
-    this.currentStep = result.step ?? null;
-    if (!result.done && !this.sessionId) {
+    const returnedSessionId = String(result.sessionId ?? '').trim() || null;
+    const terminal = isTerminalWizardResult(result);
+    const failed = result.status === 'error';
+    const rejected = Boolean(result.error) && !terminal;
+    this.setSession(terminal ? null : returnedSessionId);
+    this.currentStep = failed || rejected || !terminal ? result.step ?? null : null;
+    this.failedStep = failed || rejected ? result.step ?? null : null;
+    this.failedSessionId = failed || rejected ? returnedSessionId : null;
+    if (!terminal && !this.sessionId) {
       throw new Error('OpenClaw wizard did not return a session id.');
     }
     return result;
@@ -232,6 +272,7 @@ export class OpenClawWizardClient {
 
   async next(stepId: string, value?: unknown): Promise<OpenClawWizardResult> {
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
+    const submittedSessionId = this.sessionId;
     const submittedStep = this.currentStep;
     const result = assertWizardResult(await this.callGateway('wizard.next', {
       sessionId: this.sessionId,
@@ -240,15 +281,23 @@ export class OpenClawWizardClient {
         ...(value !== undefined ? { value } : {}),
       },
     }, { timeoutMs: null }));
-    if (result.done || result.status === 'done' || result.status === 'cancelled' || result.status === 'error') {
+    if (isTerminalWizardResult(result)) {
       this.setSession(null);
-      const failed = Boolean(result.error || result.status === 'error');
-      this.currentStep = failed ? submittedStep : null;
-      this.failedStep = failed ? submittedStep : null;
+      const failed = result.status === 'error';
+      const failedStep = result.step ?? submittedStep;
+      this.currentStep = failed ? failedStep : null;
+      this.failedStep = failed ? failedStep : null;
+      this.failedSessionId = failed ? submittedSessionId : null;
+    } else if (result.error) {
+      // Payload errors reject the answer but leave the official session active.
+      this.currentStep = result.step ?? submittedStep;
+      this.failedStep = submittedStep ?? result.step ?? null;
+      this.failedSessionId = submittedSessionId;
     } else {
       if (submittedStep && submittedStep.id === stepId) this.history.push({ step: submittedStep, value });
       this.currentStep = result.step ?? null;
       this.failedStep = null;
+      this.failedSessionId = null;
     }
     return result;
   }
@@ -260,15 +309,26 @@ export class OpenClawWizardClient {
    */
   async resume(): Promise<OpenClawWizardResult> {
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
+    const resumedSessionId = this.sessionId;
+    const resumedStep = this.currentStep;
     const result = assertWizardResult(await this.callGateway('wizard.next', {
       sessionId: this.sessionId,
     }, { timeoutMs: null }));
-    if (result.done || result.status === 'done' || result.status === 'cancelled' || result.status === 'error') {
+    if (isTerminalWizardResult(result)) {
       this.setSession(null);
-      this.currentStep = null;
-      this.failedStep = null;
+      const failed = result.status === 'error';
+      const failedStep = result.step ?? resumedStep;
+      this.currentStep = failed ? failedStep : null;
+      this.failedStep = failed ? failedStep : null;
+      this.failedSessionId = failed ? resumedSessionId : null;
+    } else if (result.error) {
+      this.currentStep = result.step ?? resumedStep;
+      this.failedStep = resumedStep ?? result.step ?? null;
+      this.failedSessionId = resumedSessionId;
     } else {
       this.currentStep = result.step ?? null;
+      this.failedStep = null;
+      this.failedSessionId = null;
     }
     return result;
   }
@@ -320,6 +380,7 @@ export class OpenClawWizardClient {
     this.setSession(null);
     this.currentStep = null;
     this.failedStep = null;
+    this.failedSessionId = null;
     this.history = [];
   }
 
@@ -345,15 +406,22 @@ export class OpenClawWizardClient {
 }
 
 export function classifyOpenClawWizardFailure(error: unknown): OpenClawWizardFailureKind {
+  if (error instanceof OpenClawWizardCancelledError) return 'cancelled';
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
+  const record = error && typeof error === 'object' ? error as Record<string, unknown> : null;
+  const details = record?.details && typeof record.details === 'object'
+    ? record.details as Record<string, unknown>
+    : null;
+  const code = String(details?.code ?? record?.code ?? '').toUpperCase();
   if (normalized.includes('wizard not found')
     || normalized.includes('wizard not running')
-    || normalized.includes('wizard session is not running')) {
+    || normalized.includes('wizard session is not running')
+    || code === 'WIZARD_NOT_FOUND') {
     return 'session_lost';
   }
-  if (normalized.includes('wizard: no pending step')) return 'step_desynchronized';
-  if (normalized.includes('wizard already running')) return 'already_running';
+  if (normalized.includes('wizard: no pending step') || code === 'WIZARD_NO_PENDING_STEP') return 'step_desynchronized';
+  if (normalized.includes('wizard already running') || code === 'WIZARD_ALREADY_RUNNING') return 'already_running';
   if (normalized.includes('request timeout')) return 'request_timeout';
   return 'unknown';
 }

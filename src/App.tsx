@@ -18,7 +18,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
-import { gateway } from '@/services/gateway';
+import { gateway, subscribePrivilegedAuthorizationIssues } from '@/services/gateway';
 import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
@@ -112,6 +112,13 @@ export default function App() {
   const [pairingIssue, setPairingIssue] = useState<GatewayAuthorizationIssue | null>(null);
   const pairingTriggeredRef = useRef(false);
   const deferredModelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => subscribePrivilegedAuthorizationIssues((issue) => {
+    debugWarn('app', '[App] Privileged Gateway authorization issue:', issue.code);
+    if (issue.kind !== 'pairing_required') return;
+    pairingTriggeredRef.current = true;
+    setPairingIssue(issue);
+  }), []);
 
   // ── Gateway process boot error state ──
   // Tracks whether the gateway *process* failed to start (distinct from WebSocket connection issues).
@@ -1164,6 +1171,15 @@ export default function App() {
         <Suspense fallback={<RouteLoadingFallback />}>
           <SetupPage />
         </Suspense>
+        {pairingIssue && (
+          <Suspense fallback={null}>
+            <PairingScreen
+              issue={pairingIssue}
+              onPaired={handlePairingComplete}
+              onCancel={handlePairingCancel}
+            />
+          </Suspense>
+        )}
       </>
     );
   }

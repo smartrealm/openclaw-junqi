@@ -37,7 +37,7 @@ import {
 import { normalizeSetupProgressPayload } from "./setupProgressEvents";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { debugWarn } from "@/utils/debugLog";
-import { gateway } from "@/services/gateway";
+import { gateway, GatewayPrivilegedAuthorizationError } from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
 import {
   diagnoseGatewayRecovery,
@@ -61,6 +61,7 @@ import { defaultGatewayWsUrl } from "@/config/runtimeDefaults";
 import {
   classifyOpenClawWizardFailure,
   createBrowserOpenClawWizardSessionStore,
+  OpenClawWizardCancelledError,
   OpenClawWizardClient,
   isOpenClawWizardSessionLost,
   isOpenClawWizardStepDesynchronized,
@@ -277,7 +278,7 @@ export function useSetupFlow(
   const wizardClientRef = useRef<OpenClawWizardClient | null>(null);
   if (!wizardClientRef.current) {
     wizardClientRef.current = new OpenClawWizardClient(
-      (method, params, options) => gateway.call(method, params, options),
+      (method, params, options) => gateway.callPrivileged(method, params, options),
       createBrowserOpenClawWizardSessionStore(),
     );
   }
@@ -359,6 +360,9 @@ export function useSetupFlow(
       message: diagnostic,
       level: "error",
     });
+    if (error instanceof GatewayPrivilegedAuthorizationError) {
+      return diagnostic;
+    }
     if (diagnostic === t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。")) {
       return diagnostic;
     }
@@ -371,22 +375,16 @@ export function useSetupFlow(
         return t("setup.wizard.alreadyRunning", "另一个 OpenClaw 配置会话仍在运行，请完成或关闭后重试。");
       case "request_timeout":
         return t("setup.wizard.requestTimeout", "OpenClaw 配置请求等待超时，请重新连接后继续。");
+      case "cancelled":
+        return t("setup.wizard.cancelled", "OpenClaw 配置向导已取消，请重试以开始新的配置会话。");
       case "unknown": {
-        // A 改动在 applyWizardResult 已附 step+session 上下文,但错误在
-        // submitWizardStep/startOfficialOnboarding/resumeOfficialOnboarding
-        // catch 这三条入口被这条 switch 收口、丢弃成一句通用文案。这里把
-        // 同等的诊断面附加回来,用户从 Toast 上能直接拿到 Gateway 真实
-        // 错误,而不是再看到一句无法定位的"执行失败"。
-        const sessionId = wizardClientRef.current?.activeSessionId ?? "(none)";
+        const sessionId = wizardClientRef.current?.diagnosticSessionId ?? "(none)";
         const lastStepId = wizardClientRef.current?.failedStepView?.id
           ?? wizardClientRef.current?.currentStepView?.id
           ?? "(unknown)";
         return diagnostic.startsWith("OpenClaw wizard failed at step ")
           ? diagnostic
-          : `OpenClaw wizard failed at step "${lastStepId}" (session=${sessionId}): ${t(
-              "setup.wizard.failed",
-              "OpenClaw 配置向导执行失败。",
-            )}`;
+          : `OpenClaw wizard failed at step "${lastStepId}" (session=${sessionId}): ${diagnostic}`;
       }
     }
   }, [appendSetupLog, t]);
@@ -694,7 +692,7 @@ export function useSetupFlow(
       const rawError = result.error
         ? result.error
         : t("setup.wizard.failed", "OpenClaw 配置向导执行失败。");
-      const sessionId = wizardClientRef.current?.activeSessionId ?? "(none)";
+      const sessionId = wizardClientRef.current?.diagnosticSessionId ?? "(none)";
       const lastStepId = wizardClientRef.current?.failedStepView?.id
         ?? wizardClientRef.current?.currentStepView?.id
         ?? "(unknown)";
@@ -705,7 +703,12 @@ export function useSetupFlow(
         message: debugMessage,
         level: "error",
       });
-      throw new Error(result.error ? debugMessage : rawError);
+      throw new Error(debugMessage);
+    }
+    if (result.status === "cancelled") {
+      setWizardStep(null);
+      setWizardCanGoBack(false);
+      throw new OpenClawWizardCancelledError();
     }
     if (result.done || result.status === "done") {
       // The official session is terminal even when the lifecycle handoff below

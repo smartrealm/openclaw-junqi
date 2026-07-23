@@ -448,19 +448,24 @@ pub struct DockerStatus {
 
 pub(crate) async fn resolve_docker_bin() -> Result<String, String> {
     let detected = platform::detect_path("docker");
-    if !detected.is_empty()
-        && tokio::process::Command::new(&detected)
+    if !detected.is_empty() {
+        let mut probe = tokio::process::Command::new(&detected);
+        platform::configure_background_command(&mut probe);
+        if probe
             .arg("--version")
             .output()
             .await
             .map(|o| o.status.success())
             .unwrap_or(false)
-    {
-        return Ok(detected);
+        {
+            return Ok(detected);
+        }
     }
 
     let configured = platform::bin_name("docker");
-    if tokio::process::Command::new(&configured)
+    let mut probe = tokio::process::Command::new(&configured);
+    platform::configure_background_command(&mut probe);
+    if probe
         .arg("--version")
         .output()
         .await
@@ -506,25 +511,26 @@ pub(crate) async fn resolve_docker_bin() -> Result<String, String> {
     }
 
     for candidate in candidates {
-        if candidate.exists()
-            && tokio::process::Command::new(&candidate)
+        if candidate.exists() {
+            let mut probe = tokio::process::Command::new(&candidate);
+            platform::configure_background_command(&mut probe);
+            if probe
                 .arg("--version")
                 .output()
                 .await
                 .map(|o| o.status.success())
                 .unwrap_or(false)
-        {
-            return Ok(candidate.to_string_lossy().to_string());
+            {
+                return Ok(candidate.to_string_lossy().to_string());
+            }
         }
     }
 
     if !cfg!(windows) {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-        if let Ok(output) = tokio::process::Command::new(shell)
-            .args(["-lc", "command -v docker"])
-            .output()
-            .await
-        {
+        let mut probe = tokio::process::Command::new(shell);
+        platform::configure_background_command(&mut probe);
+        if let Ok(output) = probe.args(["-lc", "command -v docker"]).output().await {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !path.is_empty() {
@@ -541,7 +547,9 @@ async fn inspect_named_container(
     docker_bin: &str,
     mapping: &RuntimePathMapping,
 ) -> Result<ContainerPresence, String> {
-    let output = tokio::process::Command::new(docker_bin)
+    let mut cmd = tokio::process::Command::new(docker_bin);
+    platform::configure_background_command(&mut cmd);
+    let output = cmd
         .args(["container", "inspect", OPENCLAW_CONTAINER_NAME])
         .output()
         .await
@@ -589,7 +597,9 @@ async fn assert_named_container_is_not_foreign(
 }
 
 async fn remove_named_container(docker_bin: &str) -> Result<(), String> {
-    let output = tokio::process::Command::new(docker_bin)
+    let mut cmd = tokio::process::Command::new(docker_bin);
+    platform::configure_background_command(&mut cmd);
+    let output = cmd
         .args(["rm", "-f", OPENCLAW_CONTAINER_NAME])
         .output()
         .await
@@ -626,7 +636,9 @@ async fn stop_managed_container_if_present(
         ContainerPresence::Foreign => Err(foreign_container_error()),
         ContainerPresence::Managed { running: false, .. } => Ok(false),
         ContainerPresence::Managed { running: true, .. } => {
-            let output = tokio::process::Command::new(docker_bin)
+            let mut cmd = tokio::process::Command::new(docker_bin);
+            platform::configure_background_command(&mut cmd);
+            let output = cmd
                 .args(["stop", OPENCLAW_CONTAINER_NAME])
                 .output()
                 .await
@@ -733,14 +745,6 @@ pub(crate) async fn release_managed_native_gateway_for_docker(
     port: u16,
 ) -> Result<bool, String> {
     let mut released = false;
-    let native_child = {
-        let mut child = state.child.lock().map_err(|error| error.to_string())?;
-        child.take()
-    };
-    if let Some(mut child) = native_child {
-        crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
-        released = true;
-    }
 
     // Runtime mode is persisted before this function runs, so resolve the
     // Native config explicitly instead of accidentally inspecting Docker's
@@ -749,36 +753,57 @@ pub(crate) async fn release_managed_native_gateway_for_docker(
     let native_state = paths::desktop_dir();
     let native_config = paths::config_path();
     if let Some(binary) = crate::commands::system::resolve_openclaw_binary_async().await {
-        if let Ok(runtime) =
-            crate::commands::system::compatible_native_openclaw_runtime(binary).await
+        let runtime = crate::commands::system::compatible_native_openclaw_runtime(binary)
+            .await
+            .map_err(|error| {
+                format!(
+                    "Could not verify the Native Gateway runtime before switching to Docker: {error}"
+                )
+            })?;
+        let identity = crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
+            &native_state,
+            &native_config,
+            &runtime,
+        );
+        let search_path = crate::commands::system::openclaw_search_path();
+        let inspection = crate::commands::gateway_service::inspect_gateway_service_state(
+            &runtime,
+            &identity,
+            Some(&search_path),
+        )
+        .await
+        .map_err(|error| {
+            format!(
+                "Could not verify the installed Native Gateway service before switching to Docker: {error}"
+            )
+        })?;
+        if inspection.installed
+            && crate::commands::gateway_service::belongs_to_selected_state(inspection.ownership)
         {
-            let identity = crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
+            crate::commands::gateway_service::stop_installed_selected_gateway_service_verified(
+                &runtime,
                 &native_state,
                 &native_config,
-                &runtime,
-            );
-            let search_path = crate::commands::system::openclaw_search_path();
-            let inspection = crate::commands::gateway_service::inspect_gateway_service_state(
-                &runtime,
-                &identity,
                 Some(&search_path),
+                inspection,
             )
-            .await;
-            if inspection.is_ok_and(|inspection| {
-                crate::commands::gateway_service::belongs_to_selected_state(inspection.ownership)
-                    && inspection.installed
-                    && inspection.running
-            }) {
-                crate::commands::gateway_service::stop_selected_gateway_service(
-                    &runtime,
-                    &native_state,
-                    &native_config,
-                    Some(&search_path),
-                )
-                .await?;
-                released = true;
-            }
+            .await?;
+            released = true;
+        } else if inspection.installed {
+            return Err(
+                "An installed Native Gateway service is not owned by the selected configuration; Docker was not started"
+                    .into(),
+            );
         }
+    }
+
+    let native_child = {
+        let mut child = state.child.lock().map_err(|error| error.to_string())?;
+        child.take()
+    };
+    if let Some(mut child) = native_child {
+        crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
+        released = true;
     }
     if released {
         crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
@@ -816,7 +841,9 @@ pub async fn check_docker() -> Result<DockerStatus, String> {
             });
         }
     };
-    let version_output = tokio::process::Command::new(&docker_bin)
+    let mut version_cmd = tokio::process::Command::new(&docker_bin);
+    platform::configure_background_command(&mut version_cmd);
+    let version_output = version_cmd
         .args(["version", "--format", "{{.Server.Version}}"])
         .output()
         .await;
@@ -837,10 +864,9 @@ pub async fn check_docker() -> Result<DockerStatus, String> {
         Ok(_output) => {
             // Docker CLI exists but daemon might not be running
             // Try just `docker --version` to confirm CLI is there
-            let cli_check = tokio::process::Command::new(&docker_bin)
-                .args(["--version"])
-                .output()
-                .await;
+            let mut cli_check_cmd = tokio::process::Command::new(&docker_bin);
+            platform::configure_background_command(&mut cli_check_cmd);
+            let cli_check = cli_check_cmd.args(["--version"]).output().await;
             match cli_check {
                 Ok(o) if o.status.success() => {
                     let raw = String::from_utf8_lossy(&o.stdout).trim().to_string();
@@ -1079,6 +1105,7 @@ pub(crate) async fn start_docker_gateway_with_image_locked(
         run_args.insert(4, "-e".to_string());
     }
     let mut command = tokio::process::Command::new(&docker_bin);
+    platform::configure_background_command(&mut command);
     command.args(&run_args);
     for (name, value) in &gateway_environment {
         command.env(name, value);
@@ -1120,7 +1147,9 @@ pub(crate) async fn start_docker_gateway_with_image_locked(
 
     if !healthy {
         // Check if container is still running
-        let inspect = tokio::process::Command::new(&docker_bin)
+        let mut inspect_cmd = tokio::process::Command::new(&docker_bin);
+        platform::configure_background_command(&mut inspect_cmd);
+        let inspect = inspect_cmd
             .args([
                 "inspect",
                 "--format",
@@ -1136,7 +1165,9 @@ pub(crate) async fn start_docker_gateway_with_image_locked(
 
         if !container_running {
             // Get container logs for debugging
-            let logs = tokio::process::Command::new(&docker_bin)
+            let mut logs_cmd = tokio::process::Command::new(&docker_bin);
+            platform::configure_background_command(&mut logs_cmd);
+            let logs = logs_cmd
                 .args(["logs", "--tail", "20", OPENCLAW_CONTAINER_NAME])
                 .output()
                 .await;
@@ -1192,6 +1223,7 @@ fn spawn_docker_log_tailer(app: AppHandle) {
             }
         };
         let mut cmd = Command::new(&docker_bin);
+        platform::configure_background_command(&mut cmd);
         cmd.args(["logs", "-f", "--tail", "50", OPENCLAW_CONTAINER_NAME])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

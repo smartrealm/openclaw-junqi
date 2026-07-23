@@ -8,6 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useAppStore } from '@/stores/app-store';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { NotificationType } from '@/stores/notificationStore';
@@ -339,13 +340,20 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
   }), [activeSessionKey, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const workingKeys = activityProjection.active.map((activity) => activity.sessionKey);
   const workingCount = workingKeys.length;
-  const status: AiStatus = !connected && !connecting
-    ? 'disconnected'
-    : connecting
-      ? 'connecting'
-      : workingCount > 0
-        ? 'working'
-        : 'idle';
+  // Setup already authenticated this Gateway — App.tsx trusts that handoff
+  // for up to 12s before falling back to normal cold-start recovery. Don't
+  // pulse "Connecting…"/"Disconnected" here for a connection nothing is
+  // actually wrong with; read as idle until the trust window itself ends.
+  const isVerifiedHandoff = useAppStore((s) => s.workspaceStartupMode) === 'verified-gateway-handoff';
+  const status: AiStatus = isVerifiedHandoff && !connected
+    ? 'idle'
+    : !connected && !connecting
+      ? 'disconnected'
+      : connecting
+        ? 'connecting'
+        : workingCount > 0
+          ? 'working'
+          : 'idle';
 
   const workingDisplayKey = activityProjection.workingDisplayKey;
   const displayActivity = workingDisplayKey

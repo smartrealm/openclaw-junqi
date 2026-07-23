@@ -2910,6 +2910,7 @@
       "alreadyRunning": "An OpenClaw setup session is still running. Take over setup to restart the selected Gateway and continue without changing the data directory or workspace.",
       "reclaim": "Take over setup",
       "requestTimeout": "The OpenClaw setup request timed out. Reconnect to continue.",
+      "cancelled": "The OpenClaw setup wizard was cancelled. Retry to start a new setup session.",
       "retry": "Retry",
       "run": "Run",
       "confirm": "Confirm and continue",

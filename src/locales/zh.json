@@ -2904,6 +2904,7 @@
       "alreadyRunning": "现有 OpenClaw 配置会话仍在运行。点击“重新接管向导”会重启当前 Gateway 并继续配置，不会修改数据目录或工作区。",
       "reclaim": "重新接管向导",
       "requestTimeout": "OpenClaw 配置请求等待超时，请重新连接后继续。",
+      "cancelled": "OpenClaw 配置向导已取消，请重试以开始新的配置会话。",
       "retry": "重试",
       "run": "执行",
       "confirm": "确认并继续",

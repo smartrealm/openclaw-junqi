@@ -14,7 +14,6 @@ use std::path::PathBuf;
 use tauri::{AppHandle, State};
 
 const GATEWAY_HANDOFF_PORT_RELEASE_TIMEOUT_MS: u64 = 30_000;
-const GATEWAY_HANDOFF_READY_TIMEOUT_SECS: u64 = 45;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GatewayUpdateOwner {
@@ -219,16 +218,16 @@ impl GatewayUpdateHandoff {
         app: AppHandle,
         state: State<'_, GatewayProcess>,
     ) -> Result<bool, String> {
-        // `start_gateway_locked` intentionally returns early while a restart
-        // flag is set. Clear the handoff marker before entering that common
-        // managed-child startup path.
+        // Managed restoration intentionally returns early while a restart
+        // flag is set. Clear the handoff marker before restoring the verified
+        // pre-update owner without re-selecting an installed service.
         state.transition(
             Some(GatewayLifecycle::Stopped),
             Some(GatewayRuntimeMode::None),
             Some(false),
             "openclaw_update: validated package; restoring desktop-managed Gateway",
         );
-        match gateway::start_gateway_locked(app, state.clone(), Some(self.port)).await {
+        match gateway::start_managed_gateway_locked(app, state.clone(), Some(self.port)).await {
             Ok(status) if status.running => Ok(true),
             Ok(status) => {
                 let error = format!(
@@ -289,7 +288,8 @@ impl GatewayUpdateHandoff {
         // A platform service can restart itself after a stop request. Verify
         // ownership again and stop only that selected service before rebind or
         // explicit start, so it never runs a mixed old/new module graph.
-        if inspection.running {
+        let endpoint_running = gateway::gateway_matches_config(self.port, &self.config_path).await;
+        if inspection.running || endpoint_running {
             let stopped = gateway_service::stop_selected_gateway_service(
                 runtime,
                 &self.state_dir,
@@ -349,7 +349,7 @@ impl GatewayUpdateHandoff {
         if !gateway::wait_for_selected_gateway(
             self.port,
             &self.config_path,
-            GATEWAY_HANDOFF_READY_TIMEOUT_SECS,
+            gateway::native_gateway_readiness_timeout_secs(),
         )
         .await
         {
@@ -395,21 +395,30 @@ fn plan_gateway_update_owner(
     endpoint_matches_config: bool,
     inspection: gateway_service::GatewayServiceInspection,
 ) -> Result<GatewayUpdateOwner, String> {
+    if inspection.installed && !gateway_service::belongs_to_selected_state(inspection.ownership) {
+        return Err(
+            "An installed OpenClaw Gateway service could not be verified as JunQi's selected state and configuration. The package was not changed."
+                .into(),
+        );
+    }
+
     if managed_child_running {
-        if inspection.running {
+        if inspection.installed {
             return Err(
-                "JunQi found both a desktop-managed Gateway process and a running OpenClaw system service. Stop or reconcile one owner before updating OpenClaw."
+                "JunQi found both a desktop-managed Gateway process and an installed OpenClaw system service. Reconcile one owner before updating OpenClaw."
                     .into(),
             );
         }
         return Ok(GatewayUpdateOwner::ManagedChild);
     }
 
+    if inspection.installed && gateway_service::belongs_to_selected_state(inspection.ownership) {
+        return Ok(GatewayUpdateOwner::SelectedService {
+            was_running: inspection.running || endpoint_matches_config,
+        });
+    }
+
     if inspection.running {
-        if inspection.installed && gateway_service::belongs_to_selected_state(inspection.ownership)
-        {
-            return Ok(GatewayUpdateOwner::SelectedService { was_running: true });
-        }
         return Err(
             "A running OpenClaw Gateway service could not be verified as JunQi's selected state and configuration. Stop it or explicitly take over its state before updating OpenClaw."
                 .into(),
@@ -421,10 +430,6 @@ fn plan_gateway_update_owner(
             "An authenticated OpenClaw Gateway is running, but JunQi does not own it as a desktop process or selected system service. Stop it or explicitly take over its state before updating OpenClaw."
                 .into(),
         );
-    }
-
-    if inspection.installed && gateway_service::belongs_to_selected_state(inspection.ownership) {
-        return Ok(GatewayUpdateOwner::SelectedService { was_running: false });
     }
 
     Ok(GatewayUpdateOwner::NoRunningGateway)
@@ -477,6 +482,14 @@ mod tests {
             ),
             Ok(GatewayUpdateOwner::SelectedService { was_running: false })
         );
+        assert_eq!(
+            plan_gateway_update_owner(
+                false,
+                true,
+                inspection(GatewayServiceOwnership::SelectedState, true, false),
+            ),
+            Ok(GatewayUpdateOwner::SelectedService { was_running: true })
+        );
     }
 
     #[test]
@@ -488,6 +501,14 @@ mod tests {
         )
         .unwrap_err();
         assert!(duplicate.contains("both a desktop-managed Gateway"));
+
+        let stopped_registration = plan_gateway_update_owner(
+            true,
+            true,
+            inspection(GatewayServiceOwnership::SelectedState, true, false),
+        )
+        .unwrap_err();
+        assert!(stopped_registration.contains("installed OpenClaw system service"));
 
         let foreign = plan_gateway_update_owner(
             false,
@@ -504,5 +525,18 @@ mod tests {
         )
         .unwrap_err();
         assert!(external.contains("authenticated OpenClaw Gateway"));
+    }
+
+    #[test]
+    fn bug_gso05_update_handoff_rejects_stopped_foreign_or_unverifiable_services() {
+        for ownership in [
+            GatewayServiceOwnership::Foreign,
+            GatewayServiceOwnership::Unverifiable,
+        ] {
+            let error = plan_gateway_update_owner(false, false, inspection(ownership, true, false))
+                .unwrap_err();
+            assert!(error.contains("installed OpenClaw Gateway service"));
+            assert!(error.contains("package was not changed"));
+        }
     }
 }

@@ -42,6 +42,7 @@ import {
   disableGatewayAutostart,
   enableGatewayAutostart,
   gatewayAutostartStatus,
+  handoffGatewayToOfficialService,
   type StateDirSplit,
 } from "@/api/tauri-commands";
 import type { ThemeSetting } from "@/theme/types";
@@ -940,7 +941,14 @@ function GatewayAutostartPreference({ installMode }: { installMode: InstallMode 
       setStatus(next);
       // 交接托管方:开启后交给系统服务,关闭后回落到桌面托管。
       setPhase(t("setup.autostart.switching", "正在切换 OpenClaw 的运行方式,请稍候…"));
-      await window.aegis.config.restart();
+      if (enabled) {
+        await window.aegis.config.restart();
+      } else if (!(await handoffGatewayToOfficialService())) {
+        throw new Error(t(
+          "setup.autostart.handoffFailed",
+          "Gateway 服务已安装，但未能接管当前运行实例。",
+        ));
+      }
       setStatus(await gatewayAutostartStatus().catch(() => next));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));

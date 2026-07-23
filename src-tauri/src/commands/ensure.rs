@@ -242,13 +242,13 @@ pub async fn ensure_gateway_running(
                  format!("ensure_gateway_running: managed native child alive but gateway port was not reachable on {}", port));
     }
 
-    // 3. 优先启动桌面托管的原生 Gateway。系统服务可能未安装或已经
-    // 指向旧的 OpenClaw 路径，托管进程使用当前运行时解析出的 CLI。
+    // 3. 启动选定的原生 Gateway owner。启动链会先核验已安装服务；
+    // 只有确认服务不存在时才会创建桌面托管子进程。
     push_log(
         &state.logs,
         LogSource::Lifecycle,
         LogLevel::Info,
-        "ensure_gateway_running: starting desktop-managed native gateway",
+        "ensure_gateway_running: reconciling selected native gateway owner",
     );
     let native_error = match crate::commands::gateway::start_gateway_locked(
         app.clone(),
@@ -267,7 +267,7 @@ pub async fn ensure_gateway_running(
                         &state.logs,
                         LogSource::Lifecycle,
                         LogLevel::Info,
-                        "ensure_gateway_running: desktop-managed native gateway healthy",
+                        "ensure_gateway_running: selected native gateway healthy",
                     );
                     return Ok(EnsureResult {
                         mode: GatewayMode::Native,

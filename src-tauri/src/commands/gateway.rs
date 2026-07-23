@@ -117,31 +117,6 @@ pub(crate) fn inspect_gateway_owner(
     }
 }
 
-async fn stop_offline_gateway_service(
-    app: &AppHandle,
-    runtime: &crate::commands::system::NativeOpenclawRuntime,
-    state_dir: &std::path::Path,
-    config_path: &std::path::Path,
-    search_path: &str,
-    inspection: crate::commands::gateway_service::GatewayServiceInspection,
-) -> Result<bool, String> {
-    let stopped = crate::commands::gateway_service::stop_selected_gateway_service_verified(
-        runtime,
-        state_dir,
-        config_path,
-        Some(search_path),
-        inspection,
-    )
-    .await?;
-    if stopped {
-        emit_gateway_log(
-            app,
-            "Stopped the selected OpenClaw system service before starting the desktop-managed Gateway.",
-        );
-    }
-    Ok(stopped)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GatewayObservation {
     ManagedChildReady,
@@ -201,6 +176,141 @@ fn official_gateway_handoff(
     Ok(handoff)
 }
 
+/// Start the already-installed selected service as the sole owner. The caller
+/// has already proved that no authenticated endpoint is ready, so a service
+/// reported as running is explicitly stopped and started instead of being
+/// mistaken for a healthy owner.
+async fn start_installed_gateway_service(
+    app: &AppHandle,
+    state: &GatewayProcess,
+    runtime: &crate::commands::system::NativeOpenclawRuntime,
+    state_dir: &std::path::Path,
+    config_path: &std::path::Path,
+    search_path: &str,
+    port: u16,
+    inspection: crate::commands::gateway_service::GatewayServiceInspection,
+) -> Result<Option<GatewayStatus>, String> {
+    let Some(handoff) = official_gateway_handoff(inspection)? else {
+        return Ok(None);
+    };
+
+    state.transition(
+        Some(GatewayLifecycle::Starting),
+        Some(GatewayRuntimeMode::SystemService),
+        None,
+        "start_gateway: starting installed selected Gateway service",
+    );
+    report_gateway_lifecycle(
+        app,
+        state,
+        crate::state::gateway_process::LogLevel::Info,
+        "An installed Gateway service belongs to the selected configuration; using it as the lifecycle owner...",
+    );
+
+    let result: Result<GatewayStatus, String> = async {
+        let stop_running_service = inspection.running;
+        let mut displaced_owner = false;
+        if stop_running_service {
+            displaced_owner =
+                crate::commands::gateway_service::stop_selected_gateway_service_verified(
+                    runtime,
+                    state_dir,
+                    config_path,
+                    Some(search_path),
+                    inspection,
+                )
+                .await?;
+            if !displaced_owner {
+                return Err(
+                    "The selected Gateway service changed before it could be restarted".into(),
+                );
+            }
+        }
+
+        let old_child = {
+            let mut lock = state.child.lock().map_err(|error| error.to_string())?;
+            lock.take()
+        };
+        if let Some(mut old_child) = old_child {
+            crate::commands::gateway_supervisor::terminate_owned_gateway(&mut old_child).await;
+            displaced_owner = true;
+        }
+        if displaced_owner {
+            crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
+        }
+
+        if matches!(handoff, OfficialGatewayHandoff::RebindStale { .. }) {
+            report_gateway_lifecycle(
+                app,
+                state,
+                crate::state::gateway_process::LogLevel::Info,
+                "The installed Gateway service uses a stale runtime or locale; rebuilding it...",
+            );
+            crate::commands::gateway_service::rebind_selected_gateway_service(
+                runtime,
+                state_dir,
+                config_path,
+                port,
+                false,
+                Some(search_path),
+            )
+            .await?;
+        }
+
+        crate::commands::gateway_service::start_selected_gateway_service_with_path(
+            runtime,
+            state_dir,
+            config_path,
+            Some(search_path),
+        )
+        .await?;
+        if !wait_for_selected_gateway(port, config_path, native_gateway_readiness_timeout_secs())
+            .await
+        {
+            return Err(format!(
+                "The selected Gateway service did not become ready on port {} within {} seconds",
+                port,
+                native_gateway_readiness_timeout_secs(),
+            ));
+        }
+
+        state.transition(
+            Some(GatewayLifecycle::Running),
+            Some(GatewayRuntimeMode::SystemService),
+            None,
+            "start_gateway: installed selected Gateway service is healthy",
+        );
+        Ok(GatewayStatus {
+            running: true,
+            port,
+            pid: None,
+            token: read_gateway_token(config_path),
+        })
+    }
+    .await;
+
+    match result {
+        Ok(status) => {
+            report_gateway_lifecycle(
+                app,
+                state,
+                crate::state::gateway_process::LogLevel::Info,
+                "Installed Gateway service is ready.",
+            );
+            Ok(Some(status))
+        }
+        Err(error) => {
+            state.transition(
+                Some(GatewayLifecycle::Error),
+                Some(GatewayRuntimeMode::SystemService),
+                None,
+                "start_gateway: installed selected Gateway service failed",
+            );
+            Err(error)
+        }
+    }
+}
+
 /// Immutable runtime contract for a single official Gateway handoff. Keeping
 /// all service operations on this snapshot prevents a concurrent path or
 /// storage selection from mixing an old service identity with a new config.
@@ -242,19 +352,23 @@ fn official_gateway_handoff_failure_recovery(
 }
 
 fn restart_target_for_service(
-    ownership: Option<crate::commands::gateway_service::GatewayServiceOwnership>,
-) -> GatewayRestartTarget {
-    if matches!(
-        ownership,
-        Some(
-            crate::commands::gateway_service::GatewayServiceOwnership::SelectedState
-                | crate::commands::gateway_service::GatewayServiceOwnership::StaleRuntime
-                | crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale,
-        )
-    ) {
-        GatewayRestartTarget::OfficialService
-    } else {
-        GatewayRestartTarget::ManagedChild
+    ownership: crate::commands::gateway_service::GatewayServiceOwnership,
+) -> Result<GatewayRestartTarget, String> {
+    use crate::commands::gateway_service::GatewayServiceOwnership;
+
+    match ownership {
+        GatewayServiceOwnership::SelectedState
+        | GatewayServiceOwnership::StaleRuntime
+        | GatewayServiceOwnership::StaleLocale => Ok(GatewayRestartTarget::OfficialService),
+        GatewayServiceOwnership::Absent => Ok(GatewayRestartTarget::ManagedChild),
+        GatewayServiceOwnership::Foreign => Err(
+            "The installed OpenClaw Gateway service belongs to another state or config; JunQi will not start a competing Gateway"
+                .into(),
+        ),
+        GatewayServiceOwnership::Unverifiable => Err(
+            "The installed OpenClaw Gateway service does not declare a complete state/config identity; JunQi will not start a competing Gateway"
+                .into(),
+        ),
     }
 }
 
@@ -367,32 +481,39 @@ mod runtime_observation_tests {
     }
 
     #[test]
-    fn official_service_restart_requires_a_matching_service_identity() {
+    fn bug_gso03_official_service_restart_requires_a_matching_service_identity() {
         use crate::commands::gateway_service::GatewayServiceOwnership;
 
         assert_eq!(
-            restart_target_for_service(Some(GatewayServiceOwnership::SelectedState)),
-            GatewayRestartTarget::OfficialService
+            restart_target_for_service(GatewayServiceOwnership::SelectedState),
+            Ok(GatewayRestartTarget::OfficialService)
         );
         assert_eq!(
-            restart_target_for_service(Some(GatewayServiceOwnership::StaleRuntime)),
-            GatewayRestartTarget::OfficialService
+            restart_target_for_service(GatewayServiceOwnership::StaleRuntime),
+            Ok(GatewayRestartTarget::OfficialService)
         );
         assert_eq!(
-            restart_target_for_service(Some(GatewayServiceOwnership::StaleLocale)),
-            GatewayRestartTarget::OfficialService
+            restart_target_for_service(GatewayServiceOwnership::StaleLocale),
+            Ok(GatewayRestartTarget::OfficialService)
+        );
+        assert_eq!(
+            restart_target_for_service(GatewayServiceOwnership::Absent),
+            Ok(GatewayRestartTarget::ManagedChild)
         );
         for ownership in [
-            Some(GatewayServiceOwnership::Absent),
-            Some(GatewayServiceOwnership::Foreign),
-            Some(GatewayServiceOwnership::Unverifiable),
-            None,
+            GatewayServiceOwnership::Foreign,
+            GatewayServiceOwnership::Unverifiable,
         ] {
-            assert_eq!(
-                restart_target_for_service(ownership),
-                GatewayRestartTarget::ManagedChild
-            );
+            assert!(restart_target_for_service(ownership).is_err());
         }
+    }
+
+    #[test]
+    fn bug_gso04_native_service_readiness_matches_the_managed_cold_start_maximum() {
+        assert_eq!(
+            native_gateway_readiness_timeout_secs(),
+            if cfg!(windows) { 210 } else { 180 }
+        );
     }
 
     #[test]
@@ -1434,6 +1555,17 @@ fn emit_restart_progress(app: &AppHandle, line: impl AsRef<str>) {
     emit_gateway_log(app, &line);
 }
 
+fn selected_service_restart_error(state: &GatewayProcess, message: impl Into<String>) -> String {
+    let message = message.into();
+    state.transition(
+        Some(GatewayLifecycle::Error),
+        Some(GatewayRuntimeMode::SystemService),
+        None,
+        "restart_gateway: selected Gateway service restart failed",
+    );
+    message
+}
+
 pub(crate) async fn wait_for_selected_gateway(
     port: u16,
     config_path: &std::path::Path,
@@ -1473,6 +1605,14 @@ impl GatewayStartupPolicy {
             heartbeat_interval: std::time::Duration::from_secs(15),
         }
     }
+}
+
+/// A service process does not expose its first-output boundary to JunQi. Give
+/// it the same maximum cold-start window as a managed child: time to first
+/// output plus time from first output to authenticated readiness.
+pub(crate) fn native_gateway_readiness_timeout_secs() -> u64 {
+    let policy = GatewayStartupPolicy::current();
+    policy.first_output_timeout.as_secs() + policy.readiness_after_output.as_secs()
 }
 
 fn managed_gateway_diagnostics(state: &GatewayProcess, started_at_ms: i64, limit: usize) -> String {
@@ -1517,39 +1657,58 @@ fn with_managed_gateway_diagnostics(
     }
 }
 
-async fn start_managed_gateway_fallback(
+async fn restart_managed_gateway_without_service(
     app: AppHandle,
     state: State<'_, GatewayProcess>,
     port: u16,
-    reason: impl AsRef<str>,
+    service_absence_reason: impl AsRef<str>,
 ) -> Result<GatewayStatus, String> {
-    let reason = reason.as_ref();
+    let service_absence_reason = service_absence_reason.as_ref();
     emit_restart_progress(
         &app,
         format!(
-            "Gateway service restart unavailable ({}); starting desktop-managed Gateway...",
-            reason
+            "No selected Gateway service is available ({}); restarting the desktop-managed Gateway...",
+            service_absence_reason
         ),
     );
     crate::state::gateway_process::push_log(
         &state.logs,
         crate::state::gateway_process::LogSource::Lifecycle,
-        crate::state::gateway_process::LogLevel::Warn,
-        format!("service restart fallback: {}", reason),
+        crate::state::gateway_process::LogLevel::Info,
+        format!(
+            "managed restart selected after authoritative service absence: {}",
+            service_absence_reason
+        ),
     );
 
-    let status = match start_gateway_locked(app.clone(), state, Some(port)).await {
+    let old_child = {
+        let mut child = state.child.lock().map_err(|error| error.to_string())?;
+        child.take()
+    };
+    if let Some(mut old_child) = old_child {
+        emit_restart_progress(&app, "Stopping desktop-managed Gateway process...");
+        crate::commands::gateway_supervisor::terminate_owned_gateway(&mut old_child).await;
+        crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
+        state.transition(
+            Some(GatewayLifecycle::Stopped),
+            Some(GatewayRuntimeMode::None),
+            None,
+            "managed restart: previous managed Gateway stopped",
+        );
+    }
+
+    let status = match start_managed_gateway_locked(app.clone(), state, Some(port)).await {
         Ok(status) => status,
         Err(error) => {
             app.state::<GatewayProcess>().transition(
                 Some(GatewayLifecycle::Error),
                 None,
                 None,
-                "restart fallback: managed Gateway failed",
+                "managed restart: replacement Gateway failed",
             );
             return Err(format!(
-                "{}; managed Gateway fallback failed: {}",
-                reason, error
+                "{}; desktop-managed Gateway restart failed: {}",
+                service_absence_reason, error
             ));
         }
     };
@@ -1558,7 +1717,8 @@ async fn start_managed_gateway_fallback(
         "Waiting for desktop-managed Gateway to become reachable...",
     );
     let config_path = paths::active_config_path();
-    if wait_for_selected_gateway(port, &config_path, 45).await {
+    if wait_for_selected_gateway(port, &config_path, native_gateway_readiness_timeout_secs()).await
+    {
         emit_restart_progress(&app, "Desktop-managed Gateway health check passed.");
         return Ok(status);
     }
@@ -1567,11 +1727,11 @@ async fn start_managed_gateway_fallback(
         Some(GatewayLifecycle::Error),
         None,
         None,
-        "restart fallback: health check timed out",
+        "managed restart: health check timed out",
     );
     Err(format!(
         "{}; desktop-managed Gateway did not become reachable on port {}",
-        reason, port
+        service_absence_reason, port
     ))
 }
 
@@ -1814,55 +1974,31 @@ pub async fn restart_gateway(
         &service_identity,
         Some(&gw_path),
     )
-    .await;
-    let (ownership, stale_service_running) = match inspection {
-        Ok(inspection)
-            if inspection.installed
-                && matches!(
-                    inspection.ownership,
-                    crate::commands::gateway_service::GatewayServiceOwnership::StaleRuntime
-                        | crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale
-                ) =>
-        {
-            (Ok(inspection.ownership), Some(inspection.running))
-        }
-        Ok(inspection) if inspection.installed => (Ok(inspection.ownership), None),
-        Ok(_) => (
-            Ok(crate::commands::gateway_service::GatewayServiceOwnership::Absent),
-            None,
-        ),
-        Err(error) => (Err(error), None),
+    .await
+    .map_err(|error| {
+        selected_service_restart_error(
+            &state,
+            format!("Could not verify the installed Gateway service: {error}"),
+        )
+    })?;
+    let ownership = if inspection.installed {
+        inspection.ownership
+    } else {
+        crate::commands::gateway_service::GatewayServiceOwnership::Absent
     };
-    let restart_target = restart_target_for_service(ownership.as_ref().ok().copied());
+    let stale_service_running = (inspection.installed
+        && matches!(
+            inspection.ownership,
+            crate::commands::gateway_service::GatewayServiceOwnership::StaleRuntime
+                | crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale
+        ))
+    .then_some(inspection.running);
+    let restart_target = restart_target_for_service(ownership)
+        .map_err(|error| selected_service_restart_error(&state, error))?;
     if restart_target == GatewayRestartTarget::ManagedChild {
-        let reason = match ownership {
-            Ok(crate::commands::gateway_service::GatewayServiceOwnership::Absent) => {
-                "No official OpenClaw Gateway service is installed for the selected state"
-                    .to_string()
-            }
-            Ok(crate::commands::gateway_service::GatewayServiceOwnership::Foreign) => {
-                "The installed OpenClaw Gateway service belongs to another state or config"
-                    .to_string()
-            }
-            Ok(crate::commands::gateway_service::GatewayServiceOwnership::Unverifiable) => {
-                "The installed OpenClaw Gateway service does not declare a complete state/config identity"
-                    .to_string()
-            }
-            Ok(crate::commands::gateway_service::GatewayServiceOwnership::StaleRuntime) => {
-                "The installed OpenClaw Gateway service still references an old Node.js or OpenClaw package path"
-                    .to_string()
-            }
-            Ok(crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale) => {
-                "The installed OpenClaw Gateway service uses a different locale than the selected Gateway configuration"
-                    .to_string()
-            }
-            Ok(crate::commands::gateway_service::GatewayServiceOwnership::SelectedState) => {
-                unreachable!("selected service must use the official restart path")
-            }
-            Err(error) => format!("Could not verify the installed Gateway service: {error}"),
-        };
+        let reason = "No official OpenClaw Gateway service is installed for the selected state";
         drop(_restart_guard);
-        return start_managed_gateway_fallback(app, state.clone(), port, reason).await;
+        return restart_managed_gateway_without_service(app, state.clone(), port, reason).await;
     }
 
     emit_restart_progress(
@@ -1877,11 +2013,13 @@ pub async fn restart_gateway(
             &config_path,
             Some(&gw_path),
         )
-        .await?;
+        .await
+        .map_err(|error| selected_service_restart_error(&state, error))?;
         if !stopped {
-            return Err(
-                "The stale selected Gateway service changed before it could be stopped".into(),
-            );
+            return Err(selected_service_restart_error(
+                &state,
+                "The stale selected Gateway service changed before it could be stopped",
+            ));
         }
     }
 
@@ -1926,7 +2064,12 @@ pub async fn restart_gateway(
             Some(&gw_path),
         )
         .await
-        .map_err(|error| format!("Failed to rebuild stale Gateway service: {error}"))?;
+        .map_err(|error| {
+            selected_service_restart_error(
+                &state,
+                format!("Failed to rebuild stale Gateway service: {error}"),
+            )
+        })?;
     }
 
     // Restart the installed Gateway service (launchd/systemd/schtasks). This is
@@ -1943,8 +2086,7 @@ pub async fn restart_gateway(
         Ok(child) => child,
         Err(error) => {
             let reason = format!("Failed to restart gateway service: {}", error);
-            drop(_restart_guard);
-            return start_managed_gateway_fallback(app, state.clone(), port, reason).await;
+            return Err(selected_service_restart_error(&state, reason));
         }
     };
     let restart_pid = child.id();
@@ -1983,14 +2125,12 @@ pub async fn restart_gateway(
         Ok(Err(error)) => {
             let reason = format!("Failed waiting for gateway restart: {}", error);
             crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
-            drop(_restart_guard);
-            return start_managed_gateway_fallback(app, state.clone(), port, reason).await;
+            return Err(selected_service_restart_error(&state, reason));
         }
         Err(_) => {
             let reason = "Timed out while restarting gateway service".to_string();
             crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
-            drop(_restart_guard);
-            return start_managed_gateway_fallback(app, state.clone(), port, reason).await;
+            return Err(selected_service_restart_error(&state, reason));
         }
     };
     crate::commands::setup_diagnostics::record_process_finished(
@@ -2004,8 +2144,7 @@ pub async fn restart_gateway(
     if !status.success() {
         let msg = format!("openclaw gateway restart exited with {}", status);
         emit_restart_progress(&app, &msg);
-        drop(_restart_guard);
-        return start_managed_gateway_fallback(app, state.clone(), port, msg).await;
+        return Err(selected_service_restart_error(&state, msg));
     }
 
     emit_restart_progress(
@@ -2014,7 +2153,8 @@ pub async fn restart_gateway(
     );
 
     emit_restart_progress(&app, "Waiting for Gateway to become reachable...");
-    if wait_for_selected_gateway(port, &config_path, 45).await {
+    if wait_for_selected_gateway(port, &config_path, native_gateway_readiness_timeout_secs()).await
+    {
         let token = read_gateway_token(&config_path);
         emit_restart_progress(&app, "Gateway health check passed.");
         state.transition(
@@ -2031,9 +2171,13 @@ pub async fn restart_gateway(
         });
     }
 
-    let reason = "Gateway service restart completed but health check did not pass in time for JunQi's selected state directory";
-    drop(_restart_guard);
-    start_managed_gateway_fallback(app, state.clone(), port, reason).await
+    Err(selected_service_restart_error(
+        &state,
+        format!(
+            "Gateway service restart completed but the selected endpoint did not become ready within {} seconds",
+            native_gateway_readiness_timeout_secs(),
+        ),
+    ))
 }
 
 /// Roll back a partially completed official-service handoff.  The caller
@@ -2115,7 +2259,7 @@ async fn recover_failed_official_gateway_handoff(
         return Err(reason);
     }
 
-    match start_gateway_locked(app.clone(), state.clone(), Some(context.port)).await {
+    match start_managed_gateway_locked(app.clone(), state.clone(), Some(context.port)).await {
         Ok(status) if status.running => {
             emit_gateway_log(
                 &app,
@@ -2194,7 +2338,13 @@ async fn restore_stale_gateway_after_failed_handoff(
     .map_err(|error| {
         format!("{handoff_error}; rollback could not restart the stale Gateway service: {error}")
     })?;
-    if !wait_for_selected_gateway(context.port, context.config_path, 45).await {
+    if !wait_for_selected_gateway(
+        context.port,
+        context.config_path,
+        native_gateway_readiness_timeout_secs(),
+    )
+    .await
+    {
         state.transition(
             Some(GatewayLifecycle::Error),
             Some(GatewayRuntimeMode::None),
@@ -2336,7 +2486,13 @@ pub async fn handoff_gateway_to_official_service(
             .await
             .map_err(|error| format!("Failed to start the official Gateway service: {error}"))?;
         }
-        if !wait_for_selected_gateway(context.port, context.config_path, 45).await {
+        if !wait_for_selected_gateway(
+            context.port,
+            context.config_path,
+            native_gateway_readiness_timeout_secs(),
+        )
+        .await
+        {
             return Err(format!(
                 "Official Gateway service did not become ready on port {} after wizard handoff",
                 context.port
@@ -2430,11 +2586,43 @@ pub async fn start_gateway(
     start_gateway_locked(app, state, port).await
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InstalledServiceStartPolicy {
+    Reconcile,
+    ManagedChildOnly,
+}
+
 /// Start implementation for callers that already own `operation_gate`.
 pub(crate) async fn start_gateway_locked(
     app: AppHandle,
     state: State<'_, GatewayProcess>,
     port: Option<u16>,
+) -> Result<GatewayStatus, String> {
+    start_gateway_locked_with_policy(app, state, port, InstalledServiceStartPolicy::Reconcile).await
+}
+
+/// Restore a previously verified managed-child owner without re-selecting an
+/// installed service. Callers must already own the lifecycle gate and must
+/// have stopped or ruled out every competing owner.
+pub(crate) async fn start_managed_gateway_locked(
+    app: AppHandle,
+    state: State<'_, GatewayProcess>,
+    port: Option<u16>,
+) -> Result<GatewayStatus, String> {
+    start_gateway_locked_with_policy(
+        app,
+        state,
+        port,
+        InstalledServiceStartPolicy::ManagedChildOnly,
+    )
+    .await
+}
+
+async fn start_gateway_locked_with_policy(
+    app: AppHandle,
+    state: State<'_, GatewayProcess>,
+    port: Option<u16>,
+    service_policy: InstalledServiceStartPolicy,
 ) -> Result<GatewayStatus, String> {
     crate::commands::setup_diagnostics::reset_timeline_log(&app, "gateway");
     report_gateway_lifecycle(
@@ -2538,114 +2726,6 @@ pub(crate) async fn start_gateway_locked(
     let runtime = crate::commands::system::native_openclaw_runtime(openclaw, &node)?;
     let gw_path = augmented_path();
 
-    // Take one bounded ownership snapshot. A missing/unreachable official
-    // service is a normal foreground-start condition; it must not be queried
-    // again or turned into a hard failure before `gateway run` is spawned.
-    report_gateway_lifecycle(
-        &app,
-        &state,
-        crate::state::gateway_process::LogLevel::Info,
-        format!("Checking Gateway service ownership on port {}...", port),
-    );
-    let service_identity = crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
-        &base_dir,
-        &config_path,
-        &runtime,
-    );
-    let service_inspection =
-        match crate::commands::gateway_service::inspect_gateway_service_state_for_start(
-            &runtime,
-            &service_identity,
-            Some(&gw_path),
-        )
-        .await
-        {
-            Ok(inspection) => Some(inspection),
-            Err(error) if error.cleanup_confirmed() => {
-                let message =
-                    format!("Gateway service inspection skipped before foreground start: {error}");
-                report_gateway_lifecycle(
-                    &app,
-                    &state,
-                    crate::state::gateway_process::LogLevel::Warn,
-                    message,
-                );
-                None
-            }
-            Err(error) => {
-                let message = format!(
-                    "Gateway service inspection could not safely hand off to a foreground process: {error}"
-                );
-                report_gateway_lifecycle(
-                    &app,
-                    &state,
-                    crate::state::gateway_process::LogLevel::Error,
-                    &message,
-                );
-                return Err(message);
-            }
-        };
-
-    // A service installed before Gateway locale was persisted can still be
-    // healthy while returning the wrong wizard language. Reconcile only a
-    // service proven to own JunQi's selected state/config; foreign and remote
-    // Gateways remain untouched and keep their own language.
-    if let Some(inspection) = service_inspection {
-        if inspection.installed
-            && inspection.ownership
-                == crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale
-        {
-            report_gateway_lifecycle(
-                &app,
-                &state,
-                crate::state::gateway_process::LogLevel::Info,
-                "Aligning the selected Gateway service with the current locale and runtime...",
-            );
-            if inspection.running {
-                crate::commands::gateway_service::stop_selected_gateway_service_verified(
-                    &runtime,
-                    &base_dir,
-                    &config_path,
-                    Some(&gw_path),
-                    inspection,
-                )
-                .await?;
-                crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
-            }
-            crate::commands::gateway_service::rebind_selected_gateway_service(
-                &runtime,
-                &base_dir,
-                &config_path,
-                port,
-                inspection.running,
-                Some(&gw_path),
-            )
-            .await
-            .map_err(|error| format!("Failed to align Gateway service locale: {error}"))?;
-            if inspection.running {
-                if !wait_for_selected_gateway(port, &config_path, 45).await {
-                    return Err(format!(
-                        "Gateway service locale was aligned, but the service did not become ready on port {}",
-                        port
-                    ));
-                }
-                *state.port.lock().map_err(|e| e.to_string())? = port;
-                state.transition(
-                    Some(GatewayLifecycle::Running),
-                    Some(GatewayRuntimeMode::SystemService),
-                    None,
-                    "start_gateway: aligned selected Gateway service locale",
-                );
-                return Ok(GatewayStatus {
-                    running: true,
-                    port,
-                    pid: None,
-                    token: token.clone(),
-                });
-            }
-        }
-    }
-
     // `/healthz` proves an OpenClaw process is alive, but does not prove it
     // belongs to JunQi's selected state/config pair. Confirm the configured
     // bearer token before attaching to an external process on the shared port.
@@ -2663,10 +2743,28 @@ pub(crate) async fn start_gateway_locked(
                 base_dir.display(),
             ));
         }
+        let (recorded_mode, managed_pid) = inspect_gateway_owner(&state)?;
+        if matches!(
+            service_policy,
+            InstalledServiceStartPolicy::ManagedChildOnly
+        ) && managed_pid.is_none()
+        {
+            return Err(
+                "Managed-child recovery found an authenticated endpoint that JunQi does not own"
+                    .into(),
+            );
+        }
+        let reused_mode = if managed_pid.is_some() {
+            GatewayRuntimeMode::ManagedChild
+        } else if matches!(recorded_mode, GatewayRuntimeMode::SystemService) {
+            GatewayRuntimeMode::SystemService
+        } else {
+            GatewayRuntimeMode::External
+        };
         *state.port.lock().map_err(|e| e.to_string())? = port;
         state.transition(
             Some(GatewayLifecycle::Running),
-            Some(GatewayRuntimeMode::External),
+            Some(reused_mode),
             None,
             "start_gateway: authenticated existing endpoint",
         );
@@ -2679,40 +2777,24 @@ pub(crate) async fn start_gateway_locked(
         return Ok(GatewayStatus {
             running: true,
             port,
-            pid: None,
+            pid: managed_pid,
             token: token.clone(),
         });
     }
 
-    // A non-Gateway process on the configured port cannot be recovered by
-    // spawning another child. Report the collision before replacing an owned
-    // child, so the user gets an actionable diagnosis instead of a timeout.
-    if !crate::commands::gateway_supervisor::is_port_available(port).await {
-        report_gateway_lifecycle(
-            &app,
-            &state,
-            crate::state::gateway_process::LogLevel::Error,
-            format!("Port {} is occupied by a non-Gateway process.", port),
-        );
-        return Err(format!(
-            "Port {} is occupied by a process that is not a healthy OpenClaw Gateway. Stop that process or choose another Gateway port, then retry.",
-            port
-        ));
-    }
-
-    // Nothing is serving — (re)start our own managed child. We only ever kill
-    // our OWN previously-spawned child here, never a foreign process.
+    // Nothing authenticated is serving. Reconcile any durable service owner
+    // before deciding whether a foreground child is allowed to bind the port.
     state.transition(
         Some(crate::state::gateway_process::GatewayLifecycle::Starting),
         None,
         None,
-        "start_gateway: beginning spawn sequence",
+        "start_gateway: reconciling offline Gateway ownership",
     );
     report_gateway_lifecycle(
         &app,
         &state,
         crate::state::gateway_process::LogLevel::Info,
-        "No reusable Gateway was found; starting the desktop-managed Gateway...",
+        "No authenticated Gateway is ready; reconciling installed Gateway ownership...",
     );
     #[derive(Clone, Copy)]
     enum GatewayStartStage {
@@ -2846,7 +2928,9 @@ pub(crate) async fn start_gateway_locked(
             crate::commands::state_dir_probe::ChmodProbeOutcome::Supported => {}
         }
     }
-    let pending_service_running = paths::pending_gateway_service_rebind();
+    let pending_service_running = matches!(service_policy, InstalledServiceStartPolicy::Reconcile)
+        .then(paths::pending_gateway_service_rebind)
+        .flatten();
     if let Some(was_running) = pending_service_running {
         start_failure_guard.stage(GatewayStartStage::ServiceRebind);
         // A mode switch or storage migration may have stopped an official
@@ -2869,7 +2953,13 @@ pub(crate) async fn start_gateway_locked(
                 crate::state::gateway_process::LogLevel::Info,
                 "Gateway service was rebound; waiting for it to become reachable...",
             );
-            if !wait_for_selected_gateway(port, &config_path, 45).await {
+            if !wait_for_selected_gateway(
+                port,
+                &config_path,
+                native_gateway_readiness_timeout_secs(),
+            )
+            .await
+            {
                 return Err(format!(
                     "Rebound OpenClaw Gateway service did not become ready on port {}",
                     port
@@ -2881,6 +2971,7 @@ pub(crate) async fn start_gateway_locked(
                 None,
                 "start_gateway: rebound official Gateway service is healthy",
             );
+            start_failure_guard.disarm();
             return Ok(GatewayStatus {
                 running: true,
                 port,
@@ -2888,31 +2979,78 @@ pub(crate) async fn start_gateway_locked(
                 token: token.clone(),
             });
         }
-    } else if let Some(inspection) = service_inspection {
+    }
+
+    if matches!(service_policy, InstalledServiceStartPolicy::Reconcile) {
+        start_failure_guard.stage(GatewayStartStage::ServiceRebind);
         report_gateway_lifecycle(
             &app,
             &state,
             crate::state::gateway_process::LogLevel::Info,
-            "Reconciling the selected Gateway service before foreground startup...",
+            format!("Checking Gateway service ownership on port {}...", port),
         );
-        if stop_offline_gateway_service(
+        let service_identity =
+            crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
+                &base_dir,
+                &config_path,
+                &runtime,
+            );
+        let service_inspection = crate::commands::gateway_service::inspect_gateway_service_state(
+            &runtime,
+            &service_identity,
+            Some(&gw_path),
+        )
+        .await
+        .map_err(|error| {
+            format!(
+                "Gateway service ownership could not be verified; a competing Gateway was not started: {error}"
+            )
+        })?;
+        if let Some(status) = start_installed_gateway_service(
             &app,
+            &state,
             &runtime,
             &base_dir,
             &config_path,
             &gw_path,
-            inspection,
+            port,
+            service_inspection,
         )
         .await?
         {
-            state.transition(
-                Some(GatewayLifecycle::Stopped),
-                Some(GatewayRuntimeMode::None),
-                None,
-                "start_gateway: stopped competing offline system service",
-            );
+            start_failure_guard.disarm();
+            return Ok(status);
         }
     }
+
+    // Normal startup reaches this branch only after authoritative service
+    // absence. Explicit managed-owner restoration reaches it only after its
+    // caller has stopped or ruled out competing owners.
+    if !crate::commands::gateway_supervisor::is_port_available(port).await {
+        report_gateway_lifecycle(
+            &app,
+            &state,
+            crate::state::gateway_process::LogLevel::Error,
+            format!("Port {} is occupied by a non-Gateway process.", port),
+        );
+        return Err(format!(
+            "Port {} is occupied by a process that is not a healthy OpenClaw Gateway. Stop that process or choose another Gateway port, then retry.",
+            port
+        ));
+    }
+    report_gateway_lifecycle(
+        &app,
+        &state,
+        crate::state::gateway_process::LogLevel::Info,
+        if matches!(
+            service_policy,
+            InstalledServiceStartPolicy::ManagedChildOnly
+        ) {
+            "Restoring the previously selected desktop-managed Gateway..."
+        } else {
+            "No installed Gateway service owns the selected configuration; starting the desktop-managed Gateway..."
+        },
+    );
 
     // Inject env.vars into the gateway process so providers that rely on
     // process-level environment variables (e.g. OPENAI_API_KEY) receive them
@@ -3214,7 +3352,22 @@ pub(crate) async fn start_gateway_locked(
 pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, String> {
     let operation_gate = state.operation_gate.clone();
     let _operation_guard = operation_gate.lock_owned().await;
-    let port = *state.port.lock().map_err(|e| e.to_string())?;
+    if matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Docker
+    ) {
+        let result = crate::commands::docker::stop_docker_gateway_locked().await?;
+        state.transition(
+            Some(GatewayLifecycle::Stopped),
+            Some(GatewayRuntimeMode::None),
+            None,
+            "stop_gateway: selected Docker Gateway stopped",
+        );
+        return Ok(result);
+    }
+
+    let config_path = paths::active_config_path();
+    let port = ConfigMetadata::load(&config_path).port;
     let child = {
         let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
         child_lock.take()
@@ -3244,13 +3397,78 @@ pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, St
         );
         Ok("Gateway stopped".into())
     } else {
+        let runtime = crate::commands::system::resolve_compatible_native_openclaw_runtime()
+            .await
+            .map_err(|error| {
+                format!("Cannot verify Gateway service ownership before stopping: {error}")
+            })?;
+        let state_dir = paths::desktop_dir();
+        let search_path = augmented_path();
+        let identity = crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
+            &state_dir,
+            &config_path,
+            &runtime,
+        );
+        let inspection = crate::commands::gateway_service::inspect_gateway_service_state(
+            &runtime,
+            &identity,
+            Some(&search_path),
+        )
+        .await
+        .map_err(|error| {
+            format!("Cannot verify Gateway service ownership before stopping: {error}")
+        })?;
+        let endpoint_ready = gateway_matches_config(port, &config_path).await;
+
+        if inspection.installed
+            && crate::commands::gateway_service::belongs_to_selected_state(inspection.ownership)
+        {
+            let stopped =
+                crate::commands::gateway_service::stop_installed_selected_gateway_service_verified(
+                    &runtime,
+                    &state_dir,
+                    &config_path,
+                    Some(&search_path),
+                    inspection,
+                )
+                .await?;
+            if !stopped {
+                return Err(
+                    "The selected Gateway service changed before it could be stopped".into(),
+                );
+            }
+            crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
+            state.transition(
+                Some(GatewayLifecycle::Stopped),
+                Some(GatewayRuntimeMode::None),
+                None,
+                "stop_gateway: selected system service stopped",
+            );
+            return Ok("Gateway service stopped".into());
+        }
+
+        if inspection.installed {
+            return Err(match inspection.ownership {
+                crate::commands::gateway_service::GatewayServiceOwnership::Foreign =>
+                    "The installed Gateway service belongs to another state or config and was left untouched".into(),
+                crate::commands::gateway_service::GatewayServiceOwnership::Unverifiable =>
+                    "The installed Gateway service ownership is unverifiable and was left untouched".into(),
+                _ => "The installed Gateway service is not owned by the selected configuration and was left untouched".into(),
+            });
+        }
+        if endpoint_ready {
+            return Err(
+                "An authenticated external Gateway is running; JunQi does not own it and did not stop it"
+                    .into(),
+            );
+        }
         state.transition(
             Some(GatewayLifecycle::Stopped),
             Some(GatewayRuntimeMode::None),
             None,
-            "stop_gateway: no managed child",
+            "stop_gateway: no owned Gateway",
         );
-        Ok("Gateway not running — nothing to stop".into())
+        Ok("Gateway not running - nothing to stop".into())
     }
 }
 

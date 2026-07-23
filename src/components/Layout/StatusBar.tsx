@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
+import { useAppStore } from '@/stores/app-store';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSequenceStore';
 import { usePetStore } from '@/stores/petStore';
@@ -94,8 +95,15 @@ export function StatusBar() {
   const gatewayProgressTerminal = gatewayProgress?.status === 'completed'
     || gatewayProgress?.status === 'failed';
   const gatewayOperationActive = reconnecting || gatewayProgressActive;
+  // Setup already authenticated this Gateway — App.tsx trusts that handoff
+  // for up to 12s before falling back to normal cold-start recovery. Don't
+  // let the leftover setup-phase progress message flash "reconnecting" here
+  // for a connection nothing is actually wrong with. An operation the user
+  // just triggered themselves (gatewayProgressActive/showGatewayResult)
+  // still shows, since that's a deliberate action, not passive boot state.
+  const isVerifiedHandoff = useAppStore((s) => s.workspaceStartupMode) === 'verified-gateway-handoff';
   const showGatewayProgress = Boolean(gatewayProgress)
-    && (gatewayProgressActive || showGatewayResult || (!connected && !gatewayProgressTerminal));
+    && (gatewayProgressActive || showGatewayResult || (!connected && !gatewayProgressTerminal && !isVerifiedHandoff));
   const gatewayMsg = showGatewayProgress ? gatewayProgress?.message ?? null : null;
   const gatewayProg = showGatewayProgress ? gatewayProgress?.progress ?? null : null;
 
@@ -168,7 +176,7 @@ export function StatusBar() {
           title={t('statusBar.gatewayPanelTitle', 'Gateway 控制')}
           aria-label={t('statusBar.gatewayPanelTitle', 'Gateway 控制')}
         >
-          <StatusDot tone={reconnectBusy ? 'warn' : connected ? 'ok' : 'err'} size="sm" live={connected || reconnectBusy} />
+          <StatusDot tone={reconnectBusy ? 'warn' : connected ? 'ok' : isVerifiedHandoff ? 'warn' : 'err'} size="sm" live={connected || reconnectBusy} />
           <span className="font-medium">{t('statusBar.gateway', '网关')}</span>
           <span className="font-mono text-aegis-text">:{port}</span>
           <ChevronUp size={10} className={clsx('transition-transform', !gatewayPanelOpen && 'rotate-180')} />

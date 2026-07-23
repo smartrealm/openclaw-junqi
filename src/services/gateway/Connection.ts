@@ -592,6 +592,7 @@ export class GatewayConnection {
         const authorizationIssue = classifyGatewayAuthorizationError(err);
         this.pairingRequired = authorizationIssue?.kind === 'pairing_required';
         this.lastError = errStr;
+        if (authorizationIssue) this.emitAuthorizationIssue(authorizationIssue);
         this.emitStatus({ error: errStr });
         if (handshakeSocket && this.ws === handshakeSocket) {
           handshakeSocket.close(

@@ -1736,9 +1736,20 @@ async fn selected_gateway_service(
             .await?;
     let selected =
         crate::commands::gateway_service::belongs_to_selected_state(inspection.ownership);
+    if inspection.installed && !selected {
+        return Err(
+            "An installed Gateway service belongs to another or unverifiable state/config; storage was not changed"
+                .into(),
+        );
+    }
+    let installed = selected && inspection.installed;
+    let port = crate::commands::gateway::gateway_port_for_config(native_config_path);
     Ok(SelectedGatewayService {
-        installed: selected && inspection.installed,
-        running: selected && inspection.running,
+        installed,
+        running: installed
+            && (inspection.running
+                || crate::commands::gateway::gateway_matches_config(port, native_config_path)
+                    .await),
     })
 }
 
@@ -1785,7 +1796,7 @@ async fn start_runtime_locked(
             );
         }
         RuntimeRestoreStrategy::ManagedChild => {
-            crate::commands::gateway::start_gateway_locked(
+            crate::commands::gateway::start_managed_gateway_locked(
                 app.clone(),
                 app.state::<GatewayProcess>(),
                 Some(port),
@@ -1815,7 +1826,12 @@ async fn start_runtime_locked(
         }
     }
 
-    wait_for_gateway(port, health_config_path, 30).await?;
+    wait_for_gateway(
+        port,
+        health_config_path,
+        crate::commands::gateway::native_gateway_readiness_timeout_secs() as usize,
+    )
+    .await?;
     let final_mode = strategy.restored_mode();
     state.transition(
         Some(GatewayLifecycle::Running),
@@ -1865,7 +1881,12 @@ async fn restore_previous_gateway(
                     Some(&search_path),
                 )
                 .await?;
-                wait_for_gateway(previous.port, paths.service_config_path, 30).await?;
+                wait_for_gateway(
+                    previous.port,
+                    paths.service_config_path,
+                    crate::commands::gateway::native_gateway_readiness_timeout_secs() as usize,
+                )
+                .await?;
             } else {
                 // `gateway install` may start the Windows task while
                 // registering it. Preserve an intentionally stopped service.

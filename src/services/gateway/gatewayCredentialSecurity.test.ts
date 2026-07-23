@@ -4,7 +4,12 @@ import { after, describe, it } from 'node:test';
 import { stopPolling, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
 import { GatewayConnection, type GatewayConnectionOptions } from './Connection';
-import { createPrivilegedRequester } from './index';
+import type { GatewayAuthorizationIssue } from './messageRouter';
+import {
+  createPrivilegedRequester,
+  GatewayPrivilegedAuthorizationError,
+  subscribePrivilegedAuthorizationIssues,
+} from './index';
 import {
   buildGatewayHelloObservation,
   getCurrentRuntimeIdentity,
@@ -239,6 +244,49 @@ describe('Gateway credential security regression gates', () => {
     await turn();
     assert.equal(MemoryWebSocket.instances.length, 1);
     assert.equal(useGatewayDataStore.getState().polling, false);
+  });
+
+  it('preserves a Windows scope-upgrade request through the privileged handshake', async () => {
+    resetSockets();
+    const surfacedIssues: GatewayAuthorizationIssue[] = [];
+    const unsubscribe = subscribePrivilegedAuthorizationIssues((issue) => {
+      surfacedIssues.push(issue);
+    });
+    const requestPrivileged = requesterWithRealTransientConnections();
+    const resultPromise = requestPrivileged('wizard.start', { mode: 'local' });
+    await waitForSocketCount(1);
+    const socket = MemoryWebSocket.instances[0];
+
+    socket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      socket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'pairing required',
+          details: {
+            code: 'PAIRING_REQUIRED',
+            reason: 'scope-upgrade',
+            requestId: 'windows-admin-request',
+            recommendedNextStep: 'approve_pairing',
+          },
+        },
+      });
+    };
+    challenge(socket);
+
+    await assert.rejects(resultPromise, (error: unknown) => {
+      assert.ok(error instanceof GatewayPrivilegedAuthorizationError);
+      assert.equal(error.issue.kind, 'pairing_required');
+      assert.equal(error.issue.requestId, 'windows-admin-request');
+      assert.match(error.message, /openclaw devices approve windows-admin-request/);
+      return true;
+    });
+    unsubscribe();
+    assert.equal(surfacedIssues.at(-1)?.requestId, 'windows-admin-request');
+    assert.equal(socket.readyState, MemoryWebSocket.CLOSED);
   });
 
   it('serializes admin requests without polling, reconnecting, or changing runtime identity', async () => {

@@ -2870,6 +2870,7 @@
       "alreadyRunning": "現有 OpenClaw 配置會話仍在運行。點擊「重新接管設定精靈」會重啟目前的 Gateway 並繼續配置，不會變更資料目錄或工作區。",
       "reclaim": "重新接管設定精靈",
       "requestTimeout": "OpenClaw 配置請求等待超時，請重新連接後繼續。",
+      "cancelled": "OpenClaw 配置精靈已取消，請重試以開始新的配置會話。",
       "retry": "重試",
       "run": "執行",
       "confirm": "確認並繼續",

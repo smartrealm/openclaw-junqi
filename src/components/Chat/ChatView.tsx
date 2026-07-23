@@ -10,6 +10,7 @@ import {
   useChatStore,
   type ChatMessage,
 } from '@/stores/chatStore';
+import { useAppStore } from '@/stores/app-store';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
@@ -1124,10 +1125,16 @@ function ChatViewContent() {
   }, [noProviderSignal]);
 
   const latestGroupHasDecision = responseGroups[responseGroups.length - 1]?.blocks.some((block) => block.type === 'decision') ?? false;
+  // Setup already authenticated this Gateway — App.tsx trusts that handoff
+  // for up to 12s before falling back to normal cold-start recovery. Don't
+  // pulse "Connecting…" here for a connection nothing is actually wrong
+  // with. A prior drop (hasConnectedOnce) or an observed error still shows,
+  // since those are real signals independent of the handoff trust window.
+  const isVerifiedHandoff = useAppStore((s) => s.workspaceStartupMode) === 'verified-gateway-handoff';
   const shouldShowConnectionBanner =
     !connected &&
     (
-      connecting ||
+      (connecting && !isVerifiedHandoff) ||
       hasConnectedOnce ||
       (hasSeenConnectionAttempt && Boolean(connectionError))
     );

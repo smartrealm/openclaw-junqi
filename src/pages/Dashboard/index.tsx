@@ -18,6 +18,7 @@ import { SceneTransition } from '@/components/shared/SceneTransition';
 import { DashboardIcon } from '@/components/shared/DashboardIcon';
 import { Sparkline } from '@/components/shared/Sparkline';
 import { useChatStore, type Session } from '@/stores/chatStore';
+import { useAppStore } from '@/stores/app-store';
 import { useGatewayDataStore, refreshAll, ensureGroupFresh } from '@/stores/gatewayDataStore';
 import { sessionActivityTime, sortSessionsByActivity } from '@/components/Layout/sidebarUtils';
 import clsx from 'clsx';
@@ -125,15 +126,23 @@ export function DashboardPage() {
     && gatewayProgress?.status !== 'completed'
     && gatewayProgress?.status !== 'failed';
   const gatewayConnecting = !connected && (connecting || gatewayProgressActive);
-  // A 600ms grace period keeps this banner from flashing on the brief
-  // reconnect right after a verified setup handoff, or any other momentary
+  // Setup already authenticated this Gateway and verified the model — App.tsx
+  // trusts that handoff for up to 12s (VERIFIED_GATEWAY_HANDOFF_TIMEOUT_MS)
+  // before it gives up and falls back to the normal cold-start recovery path.
+  // Never show the "connecting" banner while that trust window is active —
+  // a flat 600ms debounce alone would still flash it on ordinary connections
+  // that take a bit longer than that to finish their handshake, which
+  // contradicts the "you're good to go" promise setup just made.
+  const workspaceStartupMode = useAppStore((s) => s.workspaceStartupMode);
+  const isVerifiedHandoff = workspaceStartupMode === 'verified-gateway-handoff';
+  // A 600ms grace period keeps this banner from flashing on any other brief
   // disconnect/reconnect blip — same debounce the old OfflineOverlay used.
   const [showGatewayBanner, setShowGatewayBanner] = useState(false);
   useEffect(() => {
-    if (connected) { setShowGatewayBanner(false); return; }
+    if (connected || isVerifiedHandoff) { setShowGatewayBanner(false); return; }
     const timer = setTimeout(() => setShowGatewayBanner(true), 600);
     return () => clearTimeout(timer);
-  }, [connected]);
+  }, [connected, isVerifiedHandoff]);
   const sceneRecovery = useSceneRecovery(connected, () => {
     void refreshAll();
   });
@@ -530,46 +539,53 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {showGatewayBanner && (
-        <section
-          className="flex items-start justify-between gap-4 border-y border-aegis-border/70 py-3"
-          role="status"
-          aria-live="polite"
-        >
-          <div className="flex min-w-0 items-start gap-3">
-            <span className={clsx(
-              "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border",
-              gatewayConnecting
-                ? "border-aegis-primary/25 bg-aegis-primary/[0.07] text-aegis-primary"
-                : "border-aegis-warning/25 bg-aegis-warning/[0.07] text-aegis-warning",
-            )}>
-              {gatewayConnecting ? <Loader2 size={14} className="animate-spin" /> : <WifiOff size={14} />}
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-[13px] font-semibold text-aegis-text">
-                {gatewayConnecting
-                  ? t('dashboard.gatewayConnectingTitle', '正在连接 OpenClaw Gateway')
-                  : t('dashboard.gatewayOfflineTitle', 'OpenClaw Gateway 未连接')}
-              </h2>
-              <p className="mt-0.5 text-[12px] leading-5 text-aegis-text-muted">
-                {gatewayConnecting
-                  ? gatewayProgress?.message || t('dashboard.gatewayConnectingDescription', '连接在后台继续；仪表盘会在就绪后自动刷新。')
-                  : t('dashboard.gatewayOfflineDescription', '仪表盘仍可浏览，恢复连接后会自动同步实时数据。')}
-              </p>
+      <AnimatePresence initial={false}>
+        {showGatewayBanner && (
+          <motion.section
+            key="gateway-banner"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="flex items-start justify-between gap-4 overflow-hidden border-y border-aegis-border/70 py-3"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <span className={clsx(
+                "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border",
+                gatewayConnecting
+                  ? "border-aegis-primary/25 bg-aegis-primary/[0.07] text-aegis-primary"
+                  : "border-aegis-warning/25 bg-aegis-warning/[0.07] text-aegis-warning",
+              )}>
+                {gatewayConnecting ? <Loader2 size={14} className="animate-spin" /> : <WifiOff size={14} />}
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-[13px] font-semibold text-aegis-text">
+                  {gatewayConnecting
+                    ? t('dashboard.gatewayConnectingTitle', '正在连接 OpenClaw Gateway')
+                    : t('dashboard.gatewayOfflineTitle', 'OpenClaw Gateway 未连接')}
+                </h2>
+                <p className="mt-0.5 text-[12px] leading-5 text-aegis-text-muted">
+                  {gatewayConnecting
+                    ? gatewayProgress?.message || t('dashboard.gatewayConnectingDescription', '连接在后台继续；仪表盘会在就绪后自动刷新。')
+                    : t('dashboard.gatewayOfflineDescription', '仪表盘仍可浏览，恢复连接后会自动同步实时数据。')}
+                </p>
+              </div>
             </div>
-          </div>
-          {!gatewayConnecting && (
-            <button
-              type="button"
-              onClick={handleGatewayReconnect}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-aegis-border px-2.5 text-[12px] font-medium text-aegis-text-secondary transition-colors hover:border-aegis-primary/35 hover:text-aegis-primary"
-            >
-              <RefreshCw size={13} />
-              {t('dashboard.gatewayReconnect', '重新连接')}
-            </button>
-          )}
-        </section>
-      )}
+            {!gatewayConnecting && (
+              <button
+                type="button"
+                onClick={handleGatewayReconnect}
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-aegis-border px-2.5 text-[12px] font-medium text-aegis-text-secondary transition-colors hover:border-aegis-primary/35 hover:text-aegis-primary"
+              >
+                <RefreshCw size={13} />
+                {t('dashboard.gatewayReconnect', '重新连接')}
+              </button>
+            )}
+          </motion.section>
+        )}
+      </AnimatePresence>
 
       {/* ════ SETUP BANNER: shown when no AI provider is configured ════ */}
       {connected && !hasProviders && !modelsLoading && (

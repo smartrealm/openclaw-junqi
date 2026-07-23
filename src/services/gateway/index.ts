@@ -28,6 +28,7 @@ import {
 import { debugWarn } from '@/utils/debugLog';
 import type { GatewayAgentCreatePayload } from '@/utils/gatewayAgentFlow';
 import { routeGatewayEvent } from './collaborationEventBridge';
+import type { GatewayAuthorizationIssue } from './messageRouter';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
 import type { GatewayAttachment } from '@/services/chat/types';
 
@@ -153,8 +154,38 @@ type PrivilegedConnectionFactory = (
 export type PrivilegedRequester = <T>(
   method: string,
   params: Record<string, unknown>,
-  timeoutMs?: number,
+  timeoutMs?: number | null,
 ) => Promise<T>;
+
+type PrivilegedAuthorizationIssueListener = (issue: GatewayAuthorizationIssue) => void;
+const privilegedAuthorizationIssueListeners = new Set<PrivilegedAuthorizationIssueListener>();
+
+export function subscribePrivilegedAuthorizationIssues(
+  listener: PrivilegedAuthorizationIssueListener,
+): () => void {
+  privilegedAuthorizationIssueListeners.add(listener);
+  return () => privilegedAuthorizationIssueListeners.delete(listener);
+}
+
+function emitPrivilegedAuthorizationIssue(issue: GatewayAuthorizationIssue): void {
+  for (const listener of [...privilegedAuthorizationIssueListeners]) {
+    try {
+      listener(issue);
+    } catch (error) {
+      debugWarn('gateway', '[GW] Privileged authorization listener failed:', error);
+    }
+  }
+}
+
+export class GatewayPrivilegedAuthorizationError extends Error {
+  constructor(public readonly issue: GatewayAuthorizationIssue) {
+    const approval = issue.requestId
+      ? ` Run: openclaw devices approve ${issue.requestId}.`
+      : '';
+    super(`Gateway authorization failed (${issue.code}): ${issue.message}.${approval}`);
+    this.name = 'GatewayPrivilegedAuthorizationError';
+  }
+}
 
 export function assertVerifiedSessionMutationResult(
   result: unknown,
@@ -206,7 +237,7 @@ export function createPrivilegedRequester(
   const execute = async <T>(
     method: string,
     params: Record<string, unknown>,
-    timeoutMs = 30_000,
+    timeoutMs: number | null = 30_000,
   ): Promise<T> => {
     if (!source.isConnected() || !source.url || (!source.token && !source.deviceToken)) {
       throw new Error('A verified Gateway connection is required for this management action');
@@ -216,13 +247,15 @@ export function createPrivilegedRequester(
     return new Promise<T>((resolve, reject) => {
       let settled = false;
       let requestStarted = false;
-      const timer = window.setTimeout(() => {
-        finish(false, new Error(`Privileged Gateway request timed out (${timeoutMs}ms)`));
-      }, timeoutMs);
+      const timer = timeoutMs === null
+        ? null
+        : window.setTimeout(() => {
+          finish(false, new Error(`Privileged Gateway request timed out (${timeoutMs}ms)`));
+        }, timeoutMs);
       const finish = (ok: boolean, value: unknown) => {
         if (settled) return;
         settled = true;
-        window.clearTimeout(timer);
+        if (timer !== null) window.clearTimeout(timer);
         transient.disconnect();
         if (ok) resolve(value as T);
         else reject(errorValue(value));
@@ -243,6 +276,10 @@ export function createPrivilegedRequester(
             .then((result) => finish(true, result))
             .catch((error) => finish(false, error));
         },
+        onAuthorizationIssue(issue) {
+          emitPrivilegedAuthorizationIssue(issue);
+          finish(false, new GatewayPrivilegedAuthorizationError(issue));
+        },
         onScopeError(error) {
           finish(false, error);
         },
@@ -251,7 +288,7 @@ export function createPrivilegedRequester(
     });
   };
 
-  return <T>(method: string, params: Record<string, unknown>, timeoutMs?: number) => {
+  return <T>(method: string, params: Record<string, unknown>, timeoutMs?: number | null) => {
     const operation = lane.then(() => execute<T>(method, params, timeoutMs));
     lane = operation.then(() => undefined, () => undefined);
     return operation;
@@ -575,8 +612,12 @@ export const gateway = {
   async callFenced(method: string, params: any, expectedConnectionId: string) {
     return connection.requestFenced(method, params, expectedConnectionId);
   },
-  async callPrivileged(method: string, params: Record<string, unknown> = {}) {
-    return requestPrivileged(method, params);
+  async callPrivileged(
+    method: string,
+    params: Record<string, unknown> = {},
+    options?: GatewayRequestOptions,
+  ) {
+    return requestPrivileged(method, params, options?.timeoutMs);
   },
   // Skills — list installed skills with status (input for the @skill picker)
   async getSkills(agentId?: string) { return connection.request('skills.status', agentId ? { agentId } : {}); },

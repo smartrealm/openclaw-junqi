@@ -214,6 +214,9 @@ export interface GatewayAutostartStatus {
   serviceLabel: string | null;
 }
 export const gatewayAutostartStatus = () => invoke<GatewayAutostartStatus>("gateway_autostart_status");
+export const handoffGatewayToOfficialService = () => (
+  invoke<boolean>("handoff_gateway_to_official_service")
+);
 
 /**
  * 状态目录分裂检测 — see src-tauri/src/commands/state_dir_probe.rs

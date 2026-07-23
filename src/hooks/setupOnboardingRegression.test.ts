@@ -63,6 +63,35 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
   assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
 });
 
+test('BUG-ONB-32 official wizard RPCs use an admin connection and retain failure diagnostics', () => {
+  const clientSetup = setupFlow.slice(
+    setupFlow.indexOf('new OpenClawWizardClient'),
+    setupFlow.indexOf('const progressRef'),
+  );
+  const failure = setupFlow.slice(
+    setupFlow.indexOf('const wizardFailureMessage'),
+    setupFlow.indexOf('const presentSetupStep'),
+  );
+
+  assert.match(clientSetup, /gateway\.callPrivileged\(method, params, options\)/);
+  assert.doesNotMatch(clientSetup, /gateway\.call\(method, params, options\)/);
+  assert.match(failure, /diagnosticSessionId/);
+  assert.match(failure, /\$\{diagnostic\}/);
+  assert.match(failure, /GatewayPrivilegedAuthorizationError/);
+});
+
+test('BUG-ONB-33 setup renders the official pairing approval surface', () => {
+  const setupBranch = app.slice(
+    app.indexOf('if (!setupComplete)'),
+    app.indexOf('return (', app.indexOf('if (!setupComplete)') + 30),
+  );
+
+  assert.match(app, /subscribePrivilegedAuthorizationIssues/);
+  assert.match(setupBranch, /pairingIssue/);
+  assert.match(setupBranch, /<PairingScreen/);
+  assert.match(setupBranch, /onPaired=\{handlePairingComplete\}/);
+});
+
 test('BUG-ONB-17 setup endpoint cache removes legacy renderer Gateway credentials', () => {
   const cache = setupFlow.slice(
     setupFlow.indexOf('function cacheGatewayTarget'),
@@ -281,7 +310,7 @@ test('BUG-CPI-06 workspace and Gateway progress paths are resolved from storage 
   assert.match(gatewayCommand, /let meta = ConfigMetadata::load\(&config_path\)/);
 });
 
-test('FEAT-AUTOSTART ready screen keeps autostart in a separate runtime-preferences section', () => {
+test('BUG-GSO-02 autostart enable completes the official service handoff', () => {
   const gatewayService = readFileSync(
     new URL('../../src-tauri/src/commands/gateway_service.rs', import.meta.url),
     'utf8',
@@ -300,14 +329,14 @@ test('FEAT-AUTOSTART ready screen keeps autostart in a separate runtime-preferen
   assert.match(ready, /<GatewayAutostartPreference installMode=\{flow\.installMode\} \/>/);
   assert.doesNotMatch(ready, /OpenClawUpdatePanel/);
 
-  // Enable/disable goes through the official CLI service commands and then
-  // hands the port over via the existing restart path, so exactly one owner
-  // (system service or desktop app) serves the gateway afterwards.
+  // Enable uses the rollback-aware official handoff; disable removes the
+  // service before the existing restart path creates a managed child.
   assert.match(gatewayService, /"gateway", "install", "--force", "--port", port\.as_str\(\)/);
   assert.match(gatewayService, /"gateway", "uninstall", "--json"/);
   assert.match(gatewayService, /fn service_status_args\(\)[\s\S]*"gateway", "status", "--json", "--no-probe"/);
   assert.match(gatewayService, /OpenClawRuntimeMode::Native/);
-  assert.match(setupPage, /await window\.aegis\.config\.restart\(\)/);
+  assert.match(setupPage, /await handoffGatewayToOfficialService\(\)/);
+  assert.match(setupPage, /if \(enabled\)[\s\S]*await window\.aegis\.config\.restart\(\)/);
 
   // All three commands are reachable from the frontend.
   for (const command of [
