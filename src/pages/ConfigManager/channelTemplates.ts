@@ -80,35 +80,36 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     nameKey: 'config.channel.dingtalk-connector',
     icon: '',
     colorClass: 'from-sky-600 to-blue-700',
-    // appKey + appSecret + robotCode are handled as channel-specific fields.
+    // The installed OpenClaw plugin supplies the live credential schema.
     tokenField: '',
     tokenEnvKey: '',
     supportsStreaming: true,
-    streamingModes: ['stream', 'http', 'off'],
-    defaultStreaming: 'stream',
+    supportsDmPolicy: true,
+    dmPolicyOptions: ['pairing', 'allowlist', 'open', 'disabled'],
+    supportsGroupPolicy: true,
+    groupPolicyOptions: ['open', 'allowlist', 'disabled'],
+    supportsMultiAccount: true,
+    defaultMediaMaxMb: 20,
+    docsUrl: 'https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector',
+  },
+
+  // ── 2b. WeChat (personal, QR login only) ──
+  {
+    id: 'openclaw-weixin',
+    nameKey: 'config.channel.openclaw-weixin',
+    icon: '',
+    colorClass: 'from-emerald-500 to-green-600',
+    // QR login only — the plugin never accepts a pasted app token.
+    tokenField: '',
+    tokenEnvKey: '',
+    supportsStreaming: false,
     supportsDmPolicy: true,
     dmPolicyOptions: ['pairing', 'allowlist', 'open', 'disabled'],
     defaultDmPolicy: 'pairing',
-    supportsGroupPolicy: true,
-    groupPolicyOptions: ['open', 'allowlist', 'disabled'],
-    defaultGroupPolicy: 'open',
+    // Private chats only — the plugin does not advertise group chat capability.
+    supportsGroupPolicy: false,
     supportsMultiAccount: true,
-    defaultMediaMaxMb: 20,
-    extraFields: [
-      {
-        key: 'callbackUrl',
-        type: 'string',
-        labelKey: 'config.callbackUrl',
-        defaultValue: '',
-      },
-      {
-        key: 'useStream',
-        type: 'boolean',
-        labelKey: 'config.dingtalkStreamMode',
-        defaultValue: true,
-      },
-    ],
-    docsUrl: 'https://open.dingtalk.com/document/orgapp/the-creation-and-installation-of-enterprise-internal-robots',
+    docsUrl: 'https://docs.openclaw.ai/channels/wechat',
   },
 
   // ── 3. Telegram ──

@@ -6,6 +6,7 @@ mod tray;
 mod window_adaptation;
 mod window_sizing;
 
+use commands::channel_enrollment::ChannelEnrollmentRegistry;
 use state::{CollaborationControlState, GatewayProcess, RuntimeIdentityState};
 use tauri::{Emitter, Manager, RunEvent};
 
@@ -41,6 +42,7 @@ pub fn run() {
         // auto-saves on exit). First-launch sizing is handled in setup() below.
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(GatewayProcess::new())
+        .manage(ChannelEnrollmentRegistry::default())
         .manage(RuntimeIdentityState::new())
         .manage(CollaborationControlState::new())
         .invoke_handler(tauri::generate_handler![
@@ -159,7 +161,6 @@ pub fn run() {
             commands::config::write_config,
             commands::config::read_provider_api_key,
             commands::config::detect_gateway_config,
-            commands::config::get_openclaw_onboarding_readiness,
             commands::config::set_active_gateway_runtime,
             commands::config::commit_active_gateway_runtime,
             commands::config::rollback_active_gateway_runtime,
@@ -169,9 +170,16 @@ pub fn run() {
             commands::openclaw_provider::probe_openclaw_provider,
             commands::openclaw_provider::probe_active_openclaw_model,
             commands::openclaw_channel::get_openclaw_channel_catalog,
+            commands::openclaw_channel::install_openclaw_channel_plugin,
             commands::openclaw_channel::get_openclaw_channel_capabilities,
             commands::openclaw_channel::get_openclaw_channel_status,
             commands::openclaw_channel::get_openclaw_channel_logs,
+            commands::channel_enrollment::start_channel_enrollment,
+            commands::channel_enrollment::poll_channel_enrollment,
+            commands::channel_enrollment::read_channel_enrollment_credential,
+            commands::channel_enrollment::complete_channel_enrollment,
+            commands::channel_enrollment::cancel_channel_enrollment,
+            commands::channel_enrollment::render_local_qr_data_url,
             // Pairing
             commands::pairing::list_pairing_requests,
             commands::pairing::approve_pairing_request,
@@ -231,10 +239,6 @@ pub fn run() {
             commands::pty_neu::kill_shell,
             commands::pty_neu::send_input,
             commands::pty_neu::resize_pty,
-            commands::openclaw_onboarding::start_official_onboarding,
-            commands::openclaw_onboarding::write_official_onboarding,
-            commands::openclaw_onboarding::resize_official_onboarding,
-            commands::openclaw_onboarding::stop_official_onboarding,
             commands::terminal_window::open_terminal_window,
             commands::terminal_window::take_terminal_window_handoff,
             commands::terminal_clipboard::stage_terminal_paste_image,

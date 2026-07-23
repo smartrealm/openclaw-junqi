@@ -47,10 +47,11 @@ function LazyPetBreakOverlayHost() {
   );
 }
 
-function SidebarFallback() {
+function SidebarFallback({ presentation = 'default' }: { presentation?: 'default' | 'terminal-rail' }) {
   const sidebarMode = useSettingsStore((s) => s.sidebarMode);
-  if (sidebarMode === 'hidden') return null;
-  const width = sidebarMode === 'mini'
+  const effectiveMode = presentation === 'terminal-rail' ? 'mini' : sidebarMode;
+  if (effectiveMode === 'hidden') return null;
+  const width = effectiveMode === 'mini'
     ? 'var(--aegis-sidebar-mini)'
     : 'var(--aegis-sidebar-expanded)';
   return (
@@ -83,12 +84,12 @@ export function AppLayout() {
   const isWorkspacePage = matchPath('/welcome', location.pathname) !== null;
   const isTerminalPage = matchPath('/terminal/*', location.pathname) !== null;
   const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
-  const isSettingsPage = matchPath('/settings/*', location.pathname) !== null;
-  const usesGlobalSidebar = !isWorkspacePage && !isTerminalPage && !isAgentWorkspacePage;
-  // The terminal keeps JunQi's terminal-specific window chrome and receives a
-  // route-level back action without adding a second toolbar.
-  const showRouteBack = isTerminalPage || isAgentWorkspacePage || isSettingsPage;
-  const routeBackFallback = isTerminalPage || isAgentWorkspacePage ? '/tools' : '/';
+  const usesGlobalSidebar = !isWorkspacePage && !isAgentWorkspacePage;
+  // Settings already lives in the product shell, and terminal now retains a
+  // compact JunQi rail. Neither needs browser-like back chrome near the macOS
+  // traffic lights; only the dedicated agent workspace is a drill-in route.
+  const showRouteBack = isAgentWorkspacePage;
+  const routeBackFallback = '/tools';
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
@@ -130,8 +131,8 @@ export function AppLayout() {
 
       <div className="flex flex-1 min-h-0 relative z-[1]" dir={dir}>
         {usesGlobalSidebar && (
-          <Suspense fallback={<SidebarFallback />}>
-            <NavSidebar />
+          <Suspense fallback={<SidebarFallback presentation={isTerminalPage ? 'terminal-rail' : 'default'} />}>
+            <NavSidebar presentation={isTerminalPage ? 'terminal-rail' : 'default'} />
           </Suspense>
         )}
         <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">

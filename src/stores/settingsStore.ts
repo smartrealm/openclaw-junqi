@@ -68,6 +68,8 @@ interface SettingsState {
   memoryLocalPath: string;
   context1mEnabled: boolean;
   toolIntentEnabled: boolean;
+  /** Kill switch for the Feishu/Lark QR auto-enrollment heuristic bridge (protocol-drift risk). */
+  feishuQrEnrollmentEnabled: boolean;
   audioAutoPlay: boolean;
   voiceAutoSpeak: boolean;
   /** Picovoice AccessKey for Porcupine wake-word engine (phase 2). Free from Picovoice Console. */
@@ -106,6 +108,7 @@ interface SettingsState {
   setMemoryLocalPath: (path: string) => void;
   setContext1mEnabled: (enabled: boolean) => void;
   setToolIntentEnabled: (enabled: boolean) => void;
+  setFeishuQrEnrollmentEnabled: (enabled: boolean) => void;
   setAudioAutoPlay: (enabled: boolean) => void;
   setVoiceAutoSpeak: (enabled: boolean) => void;
   setPicovoiceAccessKey: (key: string) => void;
@@ -195,6 +198,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   memoryLocalPath: localStorage.getItem('aegis-memory-local-path') || '',
   context1mEnabled: localStorage.getItem('aegis-context1m') === 'true',
   toolIntentEnabled: localStorage.getItem('aegis-tool-intent') === 'true',
+  feishuQrEnrollmentEnabled: localStorage.getItem('junqi:feishu-qr-enrollment-enabled') !== 'false',
   audioAutoPlay: localStorage.getItem(AUDIO_AUTO_PLAY_STORAGE_KEY) === 'true',
   voiceAutoSpeak: localStorage.getItem(VOICE_AUTO_SPEAK_STORAGE_KEY) === 'true',
   picovoiceAccessKey: localStorage.getItem('aegis-picovoice-access-key') || '',
@@ -267,6 +271,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setMemoryLocalPath: (path) => { localStorage.setItem('aegis-memory-local-path', path); set({ memoryLocalPath: path }); },
   setContext1mEnabled: (enabled) => { localStorage.setItem('aegis-context1m', String(enabled)); set({ context1mEnabled: enabled }); },
   setToolIntentEnabled: (enabled) => { localStorage.setItem('aegis-tool-intent', String(enabled)); set({ toolIntentEnabled: enabled }); },
+  setFeishuQrEnrollmentEnabled: (enabled) => { localStorage.setItem('junqi:feishu-qr-enrollment-enabled', String(enabled)); set({ feishuQrEnrollmentEnabled: enabled }); },
   setAudioAutoPlay: (enabled) => { localStorage.setItem(AUDIO_AUTO_PLAY_STORAGE_KEY, String(enabled)); set({ audioAutoPlay: enabled }); },
   setVoiceAutoSpeak: (enabled) => { localStorage.setItem(VOICE_AUTO_SPEAK_STORAGE_KEY, String(enabled)); set({ voiceAutoSpeak: enabled }); },
   setPicovoiceAccessKey: (key) => { localStorage.setItem('aegis-picovoice-access-key', key); set({ picovoiceAccessKey: key }); },

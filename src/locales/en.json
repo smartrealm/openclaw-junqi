@@ -2122,7 +2122,8 @@
       "imessage": "iMessage",
       "feishu": "Feishu",
       "dingtalk": "DingTalk",
-      "dingtalk-connector": "DingTalk"
+      "dingtalk-connector": "DingTalk",
+      "openclaw-weixin": "WeChat (personal)"
     },
     "gatewaySettings": "Gateway Settings",
     "connectionSettings": "Connection",
@@ -2709,7 +2710,7 @@
       },
       "runtime": {
         "title": "Runtime",
-        "description": "Install OpenClaw runtime"
+        "description": "Install and start Gateway"
       },
       "configuration": {
         "title": "OpenClaw setup",
@@ -2883,17 +2884,9 @@
     "wizard": {
       "title": "Configure OpenClaw",
       "subtitle": "Complete model, credential, workspace, and Gateway setup through the official OpenClaw flow.",
-      "cliSubtitle": "Use the official OpenClaw wizard to complete model, workspace, and Gateway setup.",
-      "remoteSubtitle": "Use the official OpenClaw wizard to configure a remote Gateway connection.",
-      "running": "Waiting for the official OpenClaw wizard to finish",
-      "terminal": "Official OpenClaw configuration terminal",
-      "desktopOnly": "The official setup wizard is available only in the desktop app.",
       "connecting": "Connecting to the official OpenClaw setup wizard…",
       "connectingAction": "Connecting",
       "connectionTimeout": "Gateway started, but the setup wizard connection timed out.",
-      "cliExited": "The official OpenClaw setup wizard ended with exit code {{code}}.",
-      "incomplete": "The OpenClaw wizard has not completed the required configuration. Finish it in the terminal and retry.",
-      "remoteUnavailable": "The remote OpenClaw Gateway could not be reached. Check the address and credentials in the official wizard.",
       "handoffNotReady": "OpenClaw setup completed, but the selected Gateway could not be verified after the runtime handoff. Repair it and try again.",
       "failed": "The OpenClaw setup wizard failed.",
       "missingStep": "The OpenClaw setup wizard did not return its next step.",
@@ -2912,6 +2905,8 @@
       "checkingModel": "Verifying the selected model…",
       "modelNotReady": "The selected model has not passed a live check. Continue OpenClaw setup.",
       "qrAlt": "Scan authorization QR code",
+      "scanQrHint": "Can't read the ASCII QR code in the terminal? Scan this image instead, or copy the link and open it in a browser.",
+      "openInBrowser": "Open in browser",
       "channelEnrollment": {
         "title": "Connect Feishu by QR code",
         "subtitle": "Scan with your phone and JunQi will continue the official OpenClaw setup.",
@@ -3510,6 +3505,14 @@
   "channelsCenter.logoutAccount": "Log out account",
   "channelsCenter.installed": "Installed",
   "channelsCenter.installable": "Installable",
+  "channelsCenter.catalogUnavailable": "OpenClaw catalog unavailable",
+  "channelsCenter.officialExternalPlugin": "Official external plugin",
+  "channelsCenter.installOfficialPlugin": "Install official plugin",
+  "channelsCenter.installPluginFirst": "Install the official plugin first",
+  "channelsCenter.configureChannel": "Configure channel",
+  "channelsCenter.pluginInstalled": "Official plugin installed",
+  "channelsCenter.pluginInstalledHint": "OpenClaw installed {{channel}}. Configure its credentials, then restart Gateway to apply it.",
+  "channelsCenter.pluginInstallFailed": "Plugin installation failed",
   "channelsCenter.channelActionFailed": "Channel action failed",
   "channelsCenter.logsFailed": "Unable to load channel logs",
   "skills.disable": "Disable",

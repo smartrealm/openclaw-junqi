@@ -2118,7 +2118,8 @@
       "imessage": "iMessage",
       "feishu": "飞书",
       "dingtalk": "钉钉",
-      "dingtalk-connector": "钉钉"
+      "dingtalk-connector": "钉钉",
+      "openclaw-weixin": "微信（个人）"
     },
     "gatewaySettings": "Gateway 设置",
     "connectionSettings": "连接配置",
@@ -2703,7 +2704,7 @@
       },
       "runtime": {
         "title": "运行时",
-        "description": "安装 OpenClaw 运行时"
+        "description": "安装并启动 Gateway"
       },
       "configuration": {
         "title": "OpenClaw 配置",
@@ -2877,17 +2878,9 @@
     "wizard": {
       "title": "配置 OpenClaw",
       "subtitle": "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。",
-      "cliSubtitle": "使用 OpenClaw 官方向导完成模型、工作区与 Gateway 配置。",
-      "remoteSubtitle": "使用 OpenClaw 官方向导配置远程 Gateway 连接。",
-      "running": "正在等待 OpenClaw 官方向导完成",
-      "terminal": "OpenClaw 官方配置终端",
-      "desktopOnly": "官方配置向导仅可在桌面应用中运行。",
       "connecting": "正在连接 OpenClaw 官方配置向导…",
       "connectingAction": "正在连接",
       "connectionTimeout": "Gateway 已启动，但配置向导连接超时。",
-      "cliExited": "OpenClaw 官方配置向导以退出码 {{code}} 结束。",
-      "incomplete": "OpenClaw 官方向导尚未完成必要配置，请在终端中继续完成后重试。",
-      "remoteUnavailable": "远程 OpenClaw Gateway 无法连接，请在官方向导中检查地址和凭据。",
       "handoffNotReady": "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",
       "failed": "OpenClaw 配置向导执行失败。",
       "missingStep": "OpenClaw 配置向导没有返回下一步。",
@@ -2906,6 +2899,8 @@
       "checkingModel": "正在验证所选模型…",
       "modelNotReady": "所选模型尚未通过实时验证，请继续完成 OpenClaw 配置。",
       "qrAlt": "扫描授权二维码",
+      "scanQrHint": "看不清终端里的字符画二维码？扫这张图，或者复制链接在浏览器里打开。",
+      "openInBrowser": "在浏览器中打开",
       "channelEnrollment": {
         "title": "扫描二维码连接飞书",
         "subtitle": "使用手机扫码创建应用，JunQi 会继续完成 OpenClaw 官方配置。",
@@ -3534,6 +3529,14 @@
   "channelsCenter.logoutAccount": "退出账户",
   "channelsCenter.installed": "已安装",
   "channelsCenter.installable": "可安装",
+  "channelsCenter.catalogUnavailable": "OpenClaw 官方渠道目录不可用",
+  "channelsCenter.officialExternalPlugin": "官方外部插件",
+  "channelsCenter.installOfficialPlugin": "安装官方插件",
+  "channelsCenter.installPluginFirst": "请先安装官方插件",
+  "channelsCenter.configureChannel": "配置渠道",
+  "channelsCenter.pluginInstalled": "官方插件已安装",
+  "channelsCenter.pluginInstalledHint": "{{channel}} 已由 OpenClaw 安装。填写渠道凭据后重启 Gateway 使其生效。",
+  "channelsCenter.pluginInstallFailed": "插件安装失败",
   "channelsCenter.channelActionFailed": "渠道操作失败",
   "channelsCenter.logsFailed": "无法读取渠道日志",
   "skills.disable": "禁用",

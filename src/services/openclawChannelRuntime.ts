@@ -13,6 +13,18 @@ export interface OfficialChannelCatalog {
   entries: OfficialChannelCatalogEntry[];
 }
 
+export interface ManagedExternalChannelPlugin {
+  channelId: string;
+  npmSpec: string;
+}
+
+export interface OfficialChannelPluginInstallResult {
+  channel: string;
+  npmSpec: string;
+  alreadyInstalled: boolean;
+  installed: boolean;
+}
+
 export interface OfficialChannelCapability {
   channel: string;
   accountId?: string;
@@ -70,6 +82,13 @@ const OFFLINE_CHANNEL_IDS = [
   'synology-chat', 'tlon', 'qqbot', 'twitch',
 ];
 
+const MANAGED_EXTERNAL_CHANNEL_PLUGINS: readonly ManagedExternalChannelPlugin[] = [
+  {
+    channelId: 'dingtalk-connector',
+    npmSpec: '@dingtalk-real-ai/dingtalk-connector',
+  },
+];
+
 export const OFFLINE_CHANNEL_CATALOG: OfficialChannelCatalog = {
   source: 'offline-fallback',
   entries: OFFLINE_CHANNEL_IDS.map((id) => ({ id, accounts: [], installed: false, origin: 'offline-fallback' })),
@@ -79,6 +98,29 @@ export function assertChannelCliIdentifier(value: string, label: string): string
   const normalized = value.trim();
   if (!CLI_IDENTIFIER.test(normalized)) throw new Error(`${label} contains unsupported characters.`);
   return normalized;
+}
+
+/**
+ * The renderer can use this only for presentation. Native code repeats the
+ * whitelist before invoking OpenClaw, so an untrusted page cannot select an
+ * arbitrary npm package.
+ */
+export function managedExternalChannelPlugin(channelId: string): ManagedExternalChannelPlugin | null {
+  const channel = channelId.trim();
+  if (!CLI_IDENTIFIER.test(channel)) return null;
+  return MANAGED_EXTERNAL_CHANNEL_PLUGINS.find((plugin) => plugin.channelId === channel) ?? null;
+}
+
+export async function installManagedExternalChannelPlugin(
+  channelId: string,
+): Promise<OfficialChannelPluginInstallResult> {
+  const plugin = managedExternalChannelPlugin(channelId);
+  if (!plugin) throw new Error('This channel does not have a JunQi-managed external plugin.');
+  const result = await window.aegis.channelRuntime.install(plugin.channelId);
+  if (!result || result.channel !== plugin.channelId || result.installed !== true) {
+    throw new Error('OpenClaw did not confirm that the channel plugin was installed.');
+  }
+  return result;
 }
 
 export function normalizeOfficialChannelCatalog(payload: unknown): OfficialChannelCatalog {
