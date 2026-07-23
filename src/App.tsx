@@ -565,6 +565,10 @@ export default function App() {
   // The second case starts recovery immediately instead of waiting through
   // handshake retry timers.
   useEffect(() => {
+    // Setup owns this connection until the authenticated handoff either
+    // succeeds or times out. Starting a cold recovery here would restart a
+    // healthy Gateway and replay stale lifecycle diagnostics in the workspace.
+    if (workspaceStartupMode === 'verified-gateway-handoff') return;
     if (setupComplete !== true) return;
     if (openclawUpdateActive) return;
     if (connected) {
@@ -649,7 +653,7 @@ export default function App() {
       cancelled = true;
       cancelGatewayMigrationRetry();
     };
-  }, [connected, bootOverlayVisible, openclawUpdateActive, setupComplete, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot, cancelGatewayMigrationRetry]);
+  }, [connected, bootOverlayVisible, openclawUpdateActive, setupComplete, workspaceStartupMode, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot, cancelGatewayMigrationRetry]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform

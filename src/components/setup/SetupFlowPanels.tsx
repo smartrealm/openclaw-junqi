@@ -955,7 +955,21 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   );
 }
 
-export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs: SetupLog[]; setupStep: string }) {
+export type InstallationConsoleSummaryState = "installation" | "gateway-ready" | "hidden";
+
+type InstallationConsoleProps = {
+  flow: SetupFlow;
+  logs: SetupLog[];
+  setupStep: string;
+  summaryState?: InstallationConsoleSummaryState;
+};
+
+export function InstallationConsole({
+  flow,
+  logs,
+  setupStep,
+  summaryState = "installation",
+}: InstallationConsoleProps) {
   const { t } = useTranslation();
   const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
   const current = currentStepOf(flow.steps);
@@ -971,52 +985,59 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
     if (isError) setMobileView("logs");
   }, [isError]);
   const currentMeta = current ? STEP_META[current.id] : null;
-  const currentTitle = installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
-  const currentDescription = currentMeta
-    ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
-    : t("setup.subtitle");
+  const currentTitle = summaryState === "gateway-ready"
+    ? t("setup.gatewayConnected", "Gateway 已就绪")
+    : installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
+  const currentDescription = summaryState === "gateway-ready"
+    ? t("setup.gatewayReadySubtitle", "OpenClaw Gateway 已启动。请点击下一步继续。")
+    : currentMeta
+      ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
+      : t("setup.subtitle");
+  const showSummary = summaryState !== "hidden";
 
   return (
     <div className="space-y-4">
-      <div className={clsx(
-        "grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_168px]",
-        isError ? "border-red-500/35 bg-red-500/5" : isReady ? "border-aegis-success/35 bg-aegis-success/5" : "border-aegis-primary/30 bg-aegis-primary/5",
-      )}>
-        <div className="min-w-0">
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
-            {isReady ? <CheckCircle2 size={15} className="text-aegis-success" /> : isError ? <X size={15} className="text-red-300" /> : <CircleDot size={15} className="text-aegis-primary" />}
-            {isReady
-              ? t("setup.ready", "就绪")
-              : isError
-                  ? t("setup.error", "安装遇到问题")
-                  : t("setup.installPanel.current", "当前执行")}
+      {showSummary && (
+        <div className={clsx(
+          "grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_168px]",
+          isError ? "border-red-500/35 bg-red-500/5" : isReady ? "border-aegis-success/35 bg-aegis-success/5" : "border-aegis-primary/30 bg-aegis-primary/5",
+        )}>
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
+              {isReady ? <CheckCircle2 size={15} className="text-aegis-success" /> : isError ? <X size={15} className="text-red-300" /> : <CircleDot size={15} className="text-aegis-primary" />}
+              {isReady
+                ? t("setup.ready", "就绪")
+                : isError
+                    ? t("setup.error", "安装遇到问题")
+                    : t("setup.installPanel.current", "当前执行")}
+            </div>
+            <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
+            <p className="mt-1 max-w-[62ch] text-sm leading-6 text-aegis-text-muted">{currentDescription}</p>
+            {current?.id === "openclaw" && flow.installTarget && (
+              <InstallTargetCard target={flow.installTarget} />
+            )}
           </div>
-          <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
-          <p className="mt-1 max-w-[62ch] text-sm leading-6 text-aegis-text-muted">{currentDescription}</p>
-          {current?.id === "openclaw" && flow.installTarget && (
-            <InstallTargetCard target={flow.installTarget} />
-          )}
-        </div>
-        <div className="flex flex-col justify-center rounded-xl border border-aegis-border/70 bg-aegis-bg/55 px-4 py-3">
-          <div className="text-[11px] font-semibold text-aegis-text-dim">{t("setup.installPanel.progress", "总进度")}</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums text-aegis-text">{percent}%</div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-aegis-surface">
-            <div
-              className={clsx("h-full rounded-full transition-all duration-500", !isReady && !isError && "animate-pulse")}
-              style={{
-                width: `${percent}%`,
-                background: isError
-                  ? 'rgb(248 113 113)'
-                  : isReady
-                    ? 'rgb(var(--aegis-success))'
-                    : 'linear-gradient(90deg, rgb(var(--aegis-primary)), rgb(var(--aegis-success)))',
-                boxShadow: isError || isReady ? 'none' : '0 0 14px rgb(var(--aegis-primary) / 0.72)',
-              }}
-            />
+          <div className="flex flex-col justify-center rounded-xl border border-aegis-border/70 bg-aegis-bg/55 px-4 py-3">
+            <div className="text-[11px] font-semibold text-aegis-text-dim">{t("setup.installPanel.progress", "总进度")}</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums text-aegis-text">{percent}%</div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-aegis-surface">
+              <div
+                className={clsx("h-full rounded-full transition-all duration-500", !isReady && !isError && "animate-pulse")}
+                style={{
+                  width: `${percent}%`,
+                  background: isError
+                    ? 'rgb(248 113 113)'
+                    : isReady
+                      ? 'rgb(var(--aegis-success))'
+                      : 'linear-gradient(90deg, rgb(var(--aegis-primary)), rgb(var(--aegis-success)))',
+                  boxShadow: isError || isReady ? 'none' : '0 0 14px rgb(var(--aegis-primary) / 0.72)',
+                }}
+              />
+            </div>
+            <div className="mt-2 text-[11px] text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</div>
           </div>
-          <div className="mt-2 text-[11px] text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</div>
         </div>
-      </div>
+      )}
 
       <div className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
         <div className="flex gap-1 border-b border-aegis-border p-2 lg:hidden">

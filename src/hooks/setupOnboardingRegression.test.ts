@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
+const setupFlowPanels = readFileSync(new URL('../components/setup/SetupFlowPanels.tsx', import.meta.url), 'utf8');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
 const appStore = readFileSync(new URL('../stores/app-store.ts', import.meta.url), 'utf8');
@@ -218,6 +219,24 @@ test('BUG-ONB-28 a verified setup Gateway hands off without replaying cold boot'
   assert.match(app, /surfaceVerifiedGatewayHandoffFailure/);
   assert.match(app, /gateway\.refreshConnectionStatus\(\)/);
   assert.match(gatewayClient, /refreshConnectionStatus\(\) \{ connection\.emitStatus\(\); \}/);
+});
+
+test('BUG-ONB-29 model verification owns the active setup status after Gateway startup', () => {
+  assert.match(setupFlowPanels, /export type InstallationConsoleSummaryState = "installation" \| "gateway-ready" \| "hidden";/);
+  assert.match(setupFlowPanels, /const showSummary = summaryState !== "hidden";/);
+  assert.match(setupFlowPanels, /summaryState === "gateway-ready"/);
+  assert.match(setupPage, /const installationSummaryState: InstallationConsoleSummaryState = gatewayReadyChecking/);
+  assert.match(setupPage, /summaryState=\{installationSummaryState\}/);
+});
+
+test('BUG-ONB-30 verified Gateway handoff cannot start cold recovery', () => {
+  const coldRecovery = app.slice(
+    app.indexOf('// During boot, separate two different failures:'),
+    app.indexOf('// ── uiScale'),
+  );
+
+  assert.match(coldRecovery, /if \(workspaceStartupMode === 'verified-gateway-handoff'\) return;/);
+  assert.match(coldRecovery, /workspaceStartupMode,/);
 });
 
 test('BUG-ONB-10 setup leaves system tools and npm cache at their native defaults', () => {

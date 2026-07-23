@@ -50,6 +50,7 @@ import {
   InstallationConsole,
   currentStepOf,
   installStepTitle,
+  type InstallationConsoleSummaryState,
   OpenClawRuntimeDetails,
   SetupShell,
   StatusPanel,
@@ -398,6 +399,14 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const active = setupStep === "ready" ? 5 : 3;
   const isGatewayReady = setupStep === "gateway-ready";
   const gatewayReadyChecking = isGatewayReady && flow.gatewayReadyContinuation.status === "checking";
+  // The model probe is the active operation after Gateway startup. Keep the
+  // completed installation timeline below it as history, without echoing an
+  // old Gateway step as a second current-state banner.
+  const installationSummaryState: InstallationConsoleSummaryState = gatewayReadyChecking
+    ? "hidden"
+    : isGatewayReady
+      ? "gateway-ready"
+      : "installation";
   const gatewayReadyError = isGatewayReady && flow.gatewayReadyContinuation.status === "failed"
     ? flow.gatewayReadyContinuation.error
     : null;
@@ -514,7 +523,12 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
           </ul>
         </div>
       )}
-      <InstallationConsole flow={flow} logs={logs} setupStep={setupStep} />
+      <InstallationConsole
+        flow={flow}
+        logs={logs}
+        setupStep={setupStep}
+        summaryState={installationSummaryState}
+      />
     </SetupShell>
   );
 }
