@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-const OPENCLAW_IMAGE: &str = "ghcr.io/openclaw/openclaw";
+pub(crate) const OPENCLAW_IMAGE: &str = "ghcr.io/openclaw/openclaw";
 /// Stable container name owned exclusively by JunQi. Keep every Docker entry
 /// point on this constant so terminal integration and CLI helpers cannot drift
 /// from the lifecycle manager.

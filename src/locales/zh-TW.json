@@ -2669,7 +2669,7 @@
       },
       "runtime": {
         "title": "運行時",
-        "description": "安裝並啟動 Gateway"
+        "description": "安裝 OpenClaw 運行時"
       },
       "configuration": {
         "title": "OpenClaw 配置",
@@ -2843,9 +2843,17 @@
     "wizard": {
       "title": "配置 OpenClaw",
       "subtitle": "按照 OpenClaw 官方流程完成模型、憑據、工作區和 Gateway 配置。",
+      "cliSubtitle": "使用 OpenClaw 官方精靈完成模型、工作區與 Gateway 配置。",
+      "remoteSubtitle": "使用 OpenClaw 官方精靈配置遠端 Gateway 連線。",
+      "running": "正在等待 OpenClaw 官方精靈完成",
+      "terminal": "OpenClaw 官方配置終端機",
+      "desktopOnly": "官方配置精靈僅能在桌面應用程式中執行。",
       "connecting": "正在連接 OpenClaw 官方配置嚮導…",
       "connectingAction": "正在連接",
       "connectionTimeout": "Gateway 已啟動，但配置嚮導連接超時。",
+      "cliExited": "OpenClaw 官方配置精靈以結束代碼 {{code}} 結束。",
+      "incomplete": "OpenClaw 官方精靈尚未完成必要配置，請在終端機中繼續完成後重試。",
+      "remoteUnavailable": "無法連線至遠端 OpenClaw Gateway，請在官方精靈中檢查位址與憑據。",
       "handoffNotReady": "OpenClaw 配置已完成，但切換運行方式後無法驗證所選 Gateway。請修復並重試。",
       "failed": "OpenClaw 配置嚮導執行失敗。",
       "missingStep": "OpenClaw 配置嚮導沒有返回下一步。",

@@ -962,7 +962,14 @@ pub(crate) fn configured_gateway_port() -> u16 {
 fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {
     let raw = std::fs::read_to_string(config_path).ok()?;
     let v = crate::commands::config::parse_openclaw_config(&raw).ok()?;
-    crate::commands::config::literal_gateway_token_from_config(&v)
+    match crate::commands::config::gateway_connection_mode_from_config(&v) {
+        crate::commands::config::GatewayConnectionMode::Local => {
+            crate::commands::config::literal_gateway_token_from_config(&v)
+        }
+        crate::commands::config::GatewayConnectionMode::Remote => {
+            crate::commands::config::literal_remote_gateway_token_from_config(&v)
+        }
+    }
 }
 
 /// Generate a 256-bit token from the operating system CSPRNG.
@@ -1335,6 +1342,18 @@ async fn gateway_accepts_configured_token(port: u16, token: &str) -> bool {
 }
 
 pub(crate) async fn gateway_matches_config(port: u16, config_path: &std::path::Path) -> bool {
+    let config = match std::fs::read_to_string(config_path)
+        .ok()
+        .and_then(|raw| crate::commands::config::parse_openclaw_config(&raw).ok())
+    {
+        Some(config) => config,
+        None => return false,
+    };
+    if crate::commands::config::gateway_connection_mode_from_config(&config)
+        == crate::commands::config::GatewayConnectionMode::Remote
+    {
+        return remote_gateway_matches_config(config_path).await;
+    }
     if ConfigMetadata::load(config_path).port != port || !is_gateway_healthy(port).await {
         return false;
     }
@@ -1345,6 +1364,33 @@ pub(crate) async fn gateway_matches_config(port: u16, config_path: &std::path::P
         return false;
     }
     official_gateway_rpc_accepts_selected_config(config_path, port).await
+}
+
+/// A remote Gateway is never a child process owned by this desktop app. Ask
+/// the official CLI to verify the configured remote RPC endpoint instead of
+/// treating a local listener as a substitute for the user's remote target.
+async fn remote_gateway_matches_config(config_path: &std::path::Path) -> bool {
+    let output = match crate::commands::openclaw_cli::run_openclaw(
+        &[
+            "gateway",
+            "status",
+            "--json",
+            "--require-rpc",
+            "--timeout",
+            "5000",
+        ],
+        Some(config_path),
+        std::time::Duration::from_secs(12),
+    )
+    .await
+    {
+        Ok(output) if output.success => output,
+        _ => return false,
+    };
+    crate::commands::openclaw_cli::parse_cli_json(&output)
+        .ok()
+        .and_then(|payload| payload.get("rpc")?.get("ok")?.as_bool())
+        .unwrap_or(false)
 }
 
 fn gateway_uses_secret_reference(config_path: &std::path::Path) -> bool {

@@ -2703,7 +2703,7 @@
       },
       "runtime": {
         "title": "运行时",
-        "description": "安装并启动 Gateway"
+        "description": "安装 OpenClaw 运行时"
       },
       "configuration": {
         "title": "OpenClaw 配置",
@@ -2877,9 +2877,17 @@
     "wizard": {
       "title": "配置 OpenClaw",
       "subtitle": "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。",
+      "cliSubtitle": "使用 OpenClaw 官方向导完成模型、工作区与 Gateway 配置。",
+      "remoteSubtitle": "使用 OpenClaw 官方向导配置远程 Gateway 连接。",
+      "running": "正在等待 OpenClaw 官方向导完成",
+      "terminal": "OpenClaw 官方配置终端",
+      "desktopOnly": "官方配置向导仅可在桌面应用中运行。",
       "connecting": "正在连接 OpenClaw 官方配置向导…",
       "connectingAction": "正在连接",
       "connectionTimeout": "Gateway 已启动，但配置向导连接超时。",
+      "cliExited": "OpenClaw 官方配置向导以退出码 {{code}} 结束。",
+      "incomplete": "OpenClaw 官方向导尚未完成必要配置，请在终端中继续完成后重试。",
+      "remoteUnavailable": "远程 OpenClaw Gateway 无法连接，请在官方向导中检查地址和凭据。",
       "handoffNotReady": "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",
       "failed": "OpenClaw 配置向导执行失败。",
       "missingStep": "OpenClaw 配置向导没有返回下一步。",
