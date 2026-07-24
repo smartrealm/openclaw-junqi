@@ -107,15 +107,16 @@ test('BUG-ONB-33 setup renders the official pairing approval surface', () => {
   assert.match(setupBranch, /onPaired=\{handlePairingComplete\}/);
 });
 
-test('BUG-ONB-34 a failed cached Gateway probe invalidates the persisted setup marker', () => {
+test('BUG-ONB-34 a failed cached installation validation blocks Gateway recovery', () => {
   const healthGate = app.slice(
     app.indexOf('// The local marker is only a cache.'),
     app.indexOf("useEffect(() => {\n    const updateRoutePath"),
   );
 
-  assert.match(healthGate, /invoke<boolean>\('probe_selected_gateway'/);
-  assert.equal((healthGate.match(/setSetupComplete\(false\)/g) ?? []).length, 2);
-  assert.doesNotMatch(healthGate, /setSetupComplete\(null\)/);
+  assert.match(healthGate, /validateCachedSetupInstallation\(\)/);
+  assert.doesNotMatch(healthGate, /invoke<boolean>\(['"]probe_selected_gateway['"]/);
+  assert.match(healthGate, /setSetupComplete\(null\)/);
+  assert.match(healthGate, /navigateSetup\(['"]detecting['"], ['"]replace['"]\)/);
 });
 
 test('BUG-ONB-37 dashboard completion re-probes Gateway before committing the setup marker', () => {
