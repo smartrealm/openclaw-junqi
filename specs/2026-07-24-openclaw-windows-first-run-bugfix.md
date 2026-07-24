@@ -96,6 +96,20 @@
 **背景**：`ensure_node_runtime` 在 `runtime.node().available` 为 false 时会重装 Node，而 available 源自 `resolve_node_runtime` 的单次 `node -p` 探测；`check_npm_for_node` 的单次 `npm --version` 超时会直接报错中断安装。两者与 WFR-10 同源（冷启动探测无重试）。
 
 **Acceptance**：
-- [x] 已选定 Node 探测（`resolve_node_runtime_resiliently`）最多重试 3 次带退避；持续失败仍判不可用。
+- [x] 已选定 Node 探测最多重试 3 次带退避；持续失败仍判不可用。
 - [x] npm 探测同样重试；成功立即返回，空版本/非零退出不误判为瞬时失败。
 - [x] 仅对已选定/配置的运行时重试；多候选 PATH 扫描保持单次，避免拖慢多 Node 机器。
+
+## BUG-WFR-12 · Complete dynamic Node probe coverage
+
+**Current**：WFR-11 只对 `configured_node_path()` 返回的显式便携 Node 重试。默认 Windows 安装通过 PATH 动态发现，仍逐个串行执行最长 30 秒的单次探测；npm 还会重试非零退出和进程启动失败。便携 Node 解压及激活后的 `node --version` 校验则仍是单次 10 秒。
+
+**Target**：保留 JunQi 配置入口的独占语义，不写死任何系统或用户路径。系统 Node 候选继续由平台 PATH 动态发现，并发完成首轮探测；只有首轮超时且没有可用完整运行时的候选才执行剩余重试。Node/npm 仅将超时视为可重试，确定性失败立即返回。便携 Node 安装前、staging 和激活后统一使用相同的 Node 探测策略。
+
+**Acceptance**：
+- [x] 显式配置的 Node 只探测配置所映射的可执行文件，不回落 PATH。
+- [x] 多个 PATH 候选首轮并发执行，结果仍按 PATH 原始优先级选择。
+- [x] PATH Node 首次超时后可恢复，持续超时才进入安装；非超时失败不重试。
+- [x] npm 首次超时后可恢复，非零退出、空版本和启动失败立即返回。
+- [x] 便携 Node staging 与激活后验证可承受首次冷启动超时。
+- [x] 代码中不新增固定盘符、用户名、Program Files 或 AppData 路径。

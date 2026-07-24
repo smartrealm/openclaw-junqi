@@ -154,7 +154,7 @@ test('bug 04 Windows setup installs system defaults from domestic vendor install
   assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("git"\)/);
   assert.match(systemCommands, /struct NodeRuntimeContract/);
   assert.doesNotMatch(systemCommands, /pub async fn check_npm/);
-  assert.match(systemCommands, /resolve_node_runtime[\s\S]*?configure_background_command/);
+  assert.match(systemCommands, /probe_node_runtime_once[\s\S]*?configure_background_command/);
   assert.match(systemCommands, /get_git_version[\s\S]*?configure_background_command/);
 
   const nodeDefaultInstall = setupCommands.slice(
@@ -168,6 +168,26 @@ test('bug 04 Windows setup installs system defaults from domestic vendor install
     setupCommands.indexOf('async fn install_windows_system_git_from_mirrors('),
   );
   assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('ensure_winget_package'));
+});
+
+test('BUG-WFR-12 Node probes honor JunQi runtime configuration without hardcoded Windows paths', () => {
+  const productionSystem = systemCommands.slice(0, systemCommands.indexOf('#[cfg(test)]'));
+  const configuredBranch = productionSystem.slice(
+    productionSystem.indexOf('async fn node_requirement_candidates'),
+    productionSystem.indexOf('// System Node.js may have multiple installations on PATH'),
+  );
+  assert.match(configuredBranch, /paths::configured_node_path\(\)/);
+  assert.match(configuredBranch, /probe_selected_node_runtime\(&configured\)/);
+  assert.doesNotMatch(configuredBranch, /detect_paths\("node"\)/);
+
+  assert.match(productionSystem, /platform::detect_paths\("node"\)/);
+  assert.match(productionSystem, /tokio::task::JoinSet::new\(\)/);
+  assert.match(productionSystem, /probe_node_candidates\(candidates, 1, RUNTIME_PROBE_TIMEOUT\)/);
+  assert.match(productionSystem, /Err\(RuntimeProbeFailure::TimedOut\) if attempt < attempts/);
+  assert.match(setupCommands, /probe_selected_node_runtime\(node_path\)/);
+
+  assert.doesNotMatch(productionSystem, /[A-Za-z]:\\\\(?:Users|Program Files|ProgramData|Windows)/i);
+  assert.doesNotMatch(productionSystem, /AppData\\\\(?:Local|Roaming)/i);
 });
 
 test('dependency runtime locations are explicit onboarding choices instead of children of OpenClaw storage', () => {

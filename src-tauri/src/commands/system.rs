@@ -26,13 +26,10 @@ const OPENCLAW_SMOKE_PROBE_ATTEMPTS: usize = 3;
 const OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF: std::time::Duration =
     std::time::Duration::from_millis(750);
 
-// A configured/selected Node runtime is probed with `node -p`, and its bundled
-// npm with `npm --version`. Like the OpenClaw smoke probe, a single attempt can
-// time out while Defender scans a freshly written runtime. Retrying keeps that
-// transient scan from being misread as "Node/npm is gone" — which cascades into
-// an unnecessary Node reinstall or a hard setup failure. Only the selected
-// runtime retries; the multi-candidate PATH scan stays single-attempt so a
-// machine with several stale Node installs does not multiply probe latency.
+// Node and npm probes retry only timeouts. Spawn errors, non-zero exits, and
+// malformed output are deterministic contract failures and must fail fast.
+// PATH candidates are first probed concurrently with the short established-
+// runtime budget; only timed-out candidates receive the cold-start budget.
 const NODE_RUNTIME_PROBE_ATTEMPTS: usize = 3;
 
 #[derive(Debug, Serialize)]
@@ -520,6 +517,7 @@ pub(crate) struct NodeRuntimeContract {
 /// silently fall through to a system PATH entry.
 struct NodeRequirementCandidates {
     compatible: Vec<NodeStatus>,
+    deferred_system_timeouts: Vec<PathBuf>,
     fallback: NodeStatus,
 }
 
@@ -527,6 +525,7 @@ impl NodeRequirementCandidates {
     fn into_preferred_node(self) -> NodeStatus {
         let Self {
             compatible,
+            deferred_system_timeouts: _,
             fallback,
         } = self;
         compatible.into_iter().next().unwrap_or(fallback)
@@ -561,6 +560,7 @@ impl NodeRuntimeContract {
     pub(crate) async fn resolve(requirement: &NodeRuntimeRequirement) -> Result<Self, String> {
         let NodeRequirementCandidates {
             compatible,
+            deferred_system_timeouts,
             fallback,
         } = node_requirement_candidates(requirement).await?;
         let mut selection = NodeRuntimeCandidateSelection::default();
@@ -568,6 +568,22 @@ impl NodeRuntimeContract {
             let candidate = Self::from_node(node).await;
             if let Some(selected) = selection.consider(candidate) {
                 return Ok(selected);
+            }
+        }
+        if !deferred_system_timeouts.is_empty() {
+            tokio::time::sleep(OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF).await;
+            let retried = probe_node_candidates(
+                deferred_system_timeouts,
+                NODE_RUNTIME_PROBE_ATTEMPTS - 1,
+                FRESH_INSTALL_PROBE_TIMEOUT,
+            )
+            .await;
+            let retried = classify_system_node_probes(retried, requirement);
+            for node in retried.compatible {
+                let candidate = Self::from_node(node).await;
+                if let Some(selected) = selection.consider(candidate) {
+                    return Ok(selected);
+                }
             }
         }
         if let Some(incomplete) = selection.finish() {
@@ -644,10 +660,72 @@ fn parse_node_runtime_probe(output: &[u8]) -> Option<(String, String)> {
     (!exec_path.is_empty() && !version.is_empty()).then(|| (exec_path.into(), version.into()))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RuntimeProbeFailure {
+    TimedOut,
+    Permanent(String),
+}
+
+impl RuntimeProbeFailure {
+    fn message(self, operation: &str) -> String {
+        match self {
+            Self::TimedOut => format!("{operation} timed out"),
+            Self::Permanent(message) => message,
+        }
+    }
+}
+
+async fn retry_timed_out_probe<T, Probe, ProbeFuture>(
+    mut probe: Probe,
+    attempts: usize,
+    backoff: std::time::Duration,
+) -> Result<T, RuntimeProbeFailure>
+where
+    Probe: FnMut(usize) -> ProbeFuture,
+    ProbeFuture: std::future::Future<Output = Result<T, RuntimeProbeFailure>>,
+{
+    debug_assert!(attempts > 0);
+    for attempt in 1..=attempts.max(1) {
+        match probe(attempt).await {
+            Err(RuntimeProbeFailure::TimedOut) if attempt < attempts => {
+                tokio::time::sleep(backoff).await;
+            }
+            result => return result,
+        }
+    }
+    unreachable!("the final probe attempt always returns")
+}
+
+fn node_probe_timeout(attempt: usize) -> std::time::Duration {
+    if attempt == 1 {
+        RUNTIME_PROBE_TIMEOUT
+    } else {
+        FRESH_INSTALL_PROBE_TIMEOUT
+    }
+}
+
+fn parse_npm_version_probe(success: bool, stdout: &[u8]) -> Result<String, RuntimeProbeFailure> {
+    if !success {
+        return Err(RuntimeProbeFailure::Permanent(
+            "The selected Node.js runtime could not execute its bundled npm CLI".into(),
+        ));
+    }
+    let version = String::from_utf8_lossy(stdout).trim().to_string();
+    if version.is_empty() {
+        return Err(RuntimeProbeFailure::Permanent(
+            "The selected Node.js runtime returned an empty npm version".into(),
+        ));
+    }
+    Ok(version)
+}
+
 /// Resolve a PATH candidate through Node itself before locating bundled npm.
 /// Version managers commonly expose a shim as `node`; `process.execPath`
 /// points at the actual distribution whose `node_modules/npm` belongs to it.
-async fn resolve_node_runtime(node_path: &str) -> Option<(String, String)> {
+async fn probe_node_runtime_once(
+    node_path: &Path,
+    timeout: std::time::Duration,
+) -> Result<(String, String), RuntimeProbeFailure> {
     let mut command = tokio::process::Command::new(node_path);
     command
         .args([
@@ -656,29 +734,121 @@ async fn resolve_node_runtime(node_path: &str) -> Option<(String, String)> {
         ])
         .kill_on_drop(true);
     platform::configure_background_command(&mut command);
-    let output = tokio::time::timeout(FRESH_INSTALL_PROBE_TIMEOUT, command.output())
+    let output = tokio::time::timeout(timeout, command.output())
         .await
-        .ok()?
-        .ok()?;
-
-    output.status.success().then_some(())?;
-    parse_node_runtime_probe(&output.stdout)
+        .map_err(|_| RuntimeProbeFailure::TimedOut)?
+        .map_err(|error| {
+            RuntimeProbeFailure::Permanent(format!(
+                "Failed to start the selected Node.js runtime: {error}"
+            ))
+        })?;
+    if !output.status.success() {
+        return Err(RuntimeProbeFailure::Permanent(
+            "The selected Node.js runtime exited unsuccessfully during validation".into(),
+        ));
+    }
+    parse_node_runtime_probe(&output.stdout).ok_or_else(|| {
+        RuntimeProbeFailure::Permanent(
+            "The selected Node.js runtime returned an invalid identity payload".into(),
+        )
+    })
 }
 
-/// Probe a configured/selected Node runtime with bounded retries. Reserved for
-/// the runtime JunQi manages or the user explicitly selected — never for the
-/// multi-candidate PATH scan, where retrying every incompatible node would only
-/// add latency without preventing a reinstall cascade.
-async fn resolve_node_runtime_resiliently(node_path: &str) -> Option<(String, String)> {
-    for attempt in 1..=NODE_RUNTIME_PROBE_ATTEMPTS {
-        if let Some(resolved) = resolve_node_runtime(node_path).await {
-            return Some(resolved);
-        }
-        if attempt < NODE_RUNTIME_PROBE_ATTEMPTS {
-            tokio::time::sleep(OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF).await;
+/// Probe the exact Node executable selected by JunQi. The path is supplied by
+/// runtime configuration or platform discovery; this function never invents a
+/// machine-specific installation location.
+pub(crate) async fn probe_selected_node_runtime(
+    node_path: &Path,
+) -> Result<(String, String), String> {
+    retry_timed_out_probe(
+        |attempt| probe_node_runtime_once(node_path, node_probe_timeout(attempt)),
+        NODE_RUNTIME_PROBE_ATTEMPTS,
+        OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF,
+    )
+    .await
+    .map_err(|failure| failure.message("The selected Node.js runtime probe"))
+}
+
+#[derive(Debug)]
+struct NodeCandidateProbe {
+    index: usize,
+    requested_path: PathBuf,
+    outcome: Result<(String, String), RuntimeProbeFailure>,
+}
+
+#[derive(Default)]
+struct SystemNodeProbeBatch {
+    compatible: Vec<NodeStatus>,
+    first_incompatible: Option<NodeStatus>,
+    timed_out: Vec<PathBuf>,
+}
+
+async fn probe_node_candidates(
+    candidates: Vec<PathBuf>,
+    attempts: usize,
+    timeout: std::time::Duration,
+) -> Vec<NodeCandidateProbe> {
+    let mut jobs = tokio::task::JoinSet::new();
+    for (index, requested_path) in candidates.into_iter().enumerate() {
+        jobs.spawn(async move {
+            let probe_path = requested_path.clone();
+            let outcome = retry_timed_out_probe(
+                |_| {
+                    let path = probe_path.clone();
+                    async move { probe_node_runtime_once(&path, timeout).await }
+                },
+                attempts,
+                OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF,
+            )
+            .await;
+            NodeCandidateProbe {
+                index,
+                requested_path,
+                outcome,
+            }
+        });
+    }
+
+    let mut results = Vec::new();
+    while let Some(result) = jobs.join_next().await {
+        if let Ok(result) = result {
+            results.push(result);
         }
     }
-    None
+    restore_node_candidate_order(&mut results);
+    results
+}
+
+fn restore_node_candidate_order(results: &mut [NodeCandidateProbe]) {
+    // Concurrency controls latency, but PATH order still controls selection.
+    results.sort_by_key(|result| result.index);
+}
+
+fn classify_system_node_probes(
+    probes: Vec<NodeCandidateProbe>,
+    requirement: &NodeRuntimeRequirement,
+) -> SystemNodeProbeBatch {
+    let mut batch = SystemNodeProbeBatch::default();
+    for probe in probes {
+        match probe.outcome {
+            Ok((resolved_path, version)) => {
+                let node = NodeStatus {
+                    available: requirement.supports(&version),
+                    version: Some(version),
+                    path: Some(resolved_path),
+                    source: Some(RuntimeToolSource::System),
+                };
+                if node.available {
+                    batch.compatible.push(node);
+                } else if batch.first_incompatible.is_none() {
+                    batch.first_incompatible = Some(node);
+                }
+            }
+            Err(RuntimeProbeFailure::TimedOut) => batch.timed_out.push(probe.requested_path),
+            Err(RuntimeProbeFailure::Permanent(_)) => {}
+        }
+    }
+    batch
 }
 
 /// Verify the npm CLI that belongs to an already selected Node.js executable.
@@ -706,53 +876,33 @@ pub(crate) async fn check_npm_for_node(node: &NodeStatus) -> NpmStatus {
     };
     let npm_cli = context.npm_cli().to_path_buf();
 
-    // The selected Node's bundled npm is retried on the same cold-start rationale
-    // as the Node probe: a transient scan-induced timeout must not hard-fail
-    // setup for an npm that is actually present and working. A genuinely broken
-    // npm exits non-zero quickly, so the retries add latency only in the
-    // transient case they exist to survive; a successful run returns at once.
-    let mut last_status = NpmStatus::unavailable(
-        Some(npm_cli.clone()),
-        "The selected Node.js runtime timed out while checking its bundled npm CLI",
-    );
-    for attempt in 1..=NODE_RUNTIME_PROBE_ATTEMPTS {
-        let mut command = context.command();
-        command.arg("--version").kill_on_drop(true);
-        match tokio::time::timeout(FRESH_INSTALL_PROBE_TIMEOUT, command.output()).await {
-            Ok(Ok(output)) if output.status.success() => {
-                let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if version.is_empty() {
-                    return NpmStatus::unavailable(
-                        Some(npm_cli),
-                        "The selected Node.js runtime returned an empty npm version",
-                    );
-                }
-                return NpmStatus::available(version, npm_cli);
+    let result = retry_timed_out_probe(
+        |attempt| {
+            let mut command = context.command();
+            command.arg("--version").kill_on_drop(true);
+            async move {
+                let output = tokio::time::timeout(node_probe_timeout(attempt), command.output())
+                    .await
+                    .map_err(|_| RuntimeProbeFailure::TimedOut)?
+                    .map_err(|error| {
+                        RuntimeProbeFailure::Permanent(format!(
+                            "Failed to start npm from the selected Node.js runtime: {error}"
+                        ))
+                    })?;
+                parse_npm_version_probe(output.status.success(), &output.stdout)
             }
-            Ok(Ok(_)) => {
-                last_status = NpmStatus::unavailable(
-                    Some(npm_cli.clone()),
-                    "The selected Node.js runtime could not execute its bundled npm CLI",
-                );
-            }
-            Ok(Err(error)) => {
-                last_status = NpmStatus::unavailable(
-                    Some(npm_cli.clone()),
-                    format!("Failed to start npm from the selected Node.js runtime: {error}"),
-                );
-            }
-            Err(_) => {
-                last_status = NpmStatus::unavailable(
-                    Some(npm_cli.clone()),
-                    "The selected Node.js runtime timed out while checking its bundled npm CLI",
-                );
-            }
-        }
-        if attempt < NODE_RUNTIME_PROBE_ATTEMPTS {
-            tokio::time::sleep(OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF).await;
-        }
+        },
+        NODE_RUNTIME_PROBE_ATTEMPTS,
+        OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF,
+    )
+    .await;
+    match result {
+        Ok(version) => NpmStatus::available(version, npm_cli),
+        Err(failure) => NpmStatus::unavailable(
+            Some(npm_cli),
+            failure.message("The selected Node.js runtime timed out while checking npm"),
+        ),
     }
-    last_status
 }
 
 /// Apply the user's explicit npm cache choice to a child npm/OpenClaw process.
@@ -874,7 +1024,7 @@ async fn node_requirement_candidates(
     // location instead of silently changing environments.
     if let Some(configured) = paths::configured_node_path() {
         let path_str = configured.to_string_lossy().to_string();
-        let runtime = resolve_node_runtime_resiliently(&path_str).await;
+        let runtime = probe_selected_node_runtime(&configured).await.ok();
         let (path_str, version) = match runtime {
             Some((resolved_path, version)) => (resolved_path, Some(version)),
             None => (path_str, None),
@@ -889,52 +1039,56 @@ async fn node_requirement_candidates(
         };
         return Ok(NodeRequirementCandidates {
             compatible: node.available.then_some(node.clone()).into_iter().collect(),
+            deferred_system_timeouts: Vec::new(),
             fallback: node,
         });
     }
 
-    // System Node.js may have multiple installations on PATH. Evaluate every
-    // candidate so an obsolete version-manager shim cannot hide a compatible
-    // system Node.js that appears later in PATH.
+    // System Node.js may have multiple installations on PATH. Probe the
+    // platform-discovered candidates concurrently so one stale shim cannot add
+    // its full timeout to every later candidate. No installation path is
+    // inferred here; the configured runtime remains the exclusive branch above.
     let candidates = platform::detect_paths("node");
     let candidates = if candidates.is_empty() {
-        vec![platform::bin_name("node")]
+        vec![PathBuf::from(platform::bin_name("node"))]
     } else {
-        candidates
+        candidates.into_iter().map(PathBuf::from).collect()
     };
-    let mut compatible = Vec::new();
-    let mut detected_incompatible = None;
-    for system_node in candidates {
-        let runtime = resolve_node_runtime(&system_node).await;
-        let (system_path, system_version) = match runtime {
-            Some((resolved_path, version)) => (resolved_path, Some(version)),
-            None => (system_node, None),
-        };
-        let node = NodeStatus {
-            available: system_version
-                .as_ref()
-                .is_some_and(|version| requirement.supports(version)),
-            version: system_version,
-            path: Some(system_path),
-            source: Some(RuntimeToolSource::System),
-        };
-        if node.available {
-            compatible.push(node);
-            continue;
-        }
-        if node.version.is_some() && detected_incompatible.is_none() {
-            detected_incompatible = Some(node);
+    let mut batch = classify_system_node_probes(
+        probe_node_candidates(candidates, 1, RUNTIME_PROBE_TIMEOUT).await,
+        requirement,
+    );
+
+    // If the first pass found no usable Node, retry only candidates that truly
+    // timed out. When a compatible Node was found, defer these retries until
+    // its bundled npm is known to be incomplete.
+    let mut deferred_system_timeouts = std::mem::take(&mut batch.timed_out);
+    if batch.compatible.is_empty() && !deferred_system_timeouts.is_empty() {
+        tokio::time::sleep(OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF).await;
+        let retried = classify_system_node_probes(
+            probe_node_candidates(
+                std::mem::take(&mut deferred_system_timeouts),
+                NODE_RUNTIME_PROBE_ATTEMPTS - 1,
+                FRESH_INSTALL_PROBE_TIMEOUT,
+            )
+            .await,
+            requirement,
+        );
+        batch.compatible = retried.compatible;
+        if batch.first_incompatible.is_none() {
+            batch.first_incompatible = retried.first_incompatible;
         }
     }
 
-    let fallback = detected_incompatible.unwrap_or(NodeStatus {
+    let fallback = batch.first_incompatible.unwrap_or(NodeStatus {
         available: false,
         version: None,
         path: None,
         source: None,
     });
     Ok(NodeRequirementCandidates {
-        compatible,
+        compatible: batch.compatible,
+        deferred_system_timeouts,
         fallback,
     })
 }
@@ -2132,13 +2286,13 @@ mod tests {
         npm_openclaw_entry, npm_prefix_for_openclaw_binary,
         openclaw_locale_for_application_language, openclaw_package_dir,
         openclaw_package_version_for_binary, openclaw_runtime_signature, parse_node_runtime_probe,
-        parse_openclaw_version,
-        path_text_for_display, read_openclaw_package_metadata,
-        required_node_requirement_for_openclaw_binary,
-        resolve_openclaw_binary_from_effective_prefixes, search_path_with_executable_parent,
-        strip_windows_verbatim_prefix, validate_openclaw_package_payload,
-        NodeRuntimeCandidateSelection, NodeRuntimeContract, NodeStatus, NpmExecutionContext,
-        NpmStatus, OpenclawCommandContext, RuntimeToolSource,
+        parse_npm_version_probe, parse_openclaw_version, path_text_for_display,
+        read_openclaw_package_metadata, required_node_requirement_for_openclaw_binary,
+        resolve_openclaw_binary_from_effective_prefixes, restore_node_candidate_order,
+        retry_timed_out_probe, search_path_with_executable_parent, strip_windows_verbatim_prefix,
+        validate_openclaw_package_payload, NodeCandidateProbe, NodeRuntimeCandidateSelection,
+        NodeRuntimeContract, NodeStatus, NpmExecutionContext, NpmStatus, OpenclawCommandContext,
+        RuntimeProbeFailure, RuntimeToolSource,
     };
     use std::ffi::OsStr;
     use std::path::Path;
@@ -2284,6 +2438,84 @@ mod tests {
                 "v24.18.0".into(),
             ))
         );
+    }
+
+    #[tokio::test]
+    async fn bug_wfr_12_runtime_probe_retries_only_timeouts() {
+        let mut timeout_attempts = 0;
+        let recovered = retry_timed_out_probe(
+            |_| {
+                timeout_attempts += 1;
+                let attempt = timeout_attempts;
+                async move {
+                    if attempt == 1 {
+                        Err(RuntimeProbeFailure::TimedOut)
+                    } else {
+                        Ok("v24.18.0")
+                    }
+                }
+            },
+            3,
+            std::time::Duration::ZERO,
+        )
+        .await;
+        assert_eq!(recovered, Ok("v24.18.0"));
+        assert_eq!(timeout_attempts, 2);
+
+        let mut permanent_attempts = 0;
+        let failed = retry_timed_out_probe(
+            |_| {
+                permanent_attempts += 1;
+                async { Err::<(), _>(RuntimeProbeFailure::Permanent("non-zero exit".into())) }
+            },
+            3,
+            std::time::Duration::ZERO,
+        )
+        .await;
+        assert_eq!(
+            failed,
+            Err(RuntimeProbeFailure::Permanent("non-zero exit".into()))
+        );
+        assert_eq!(permanent_attempts, 1);
+    }
+
+    #[test]
+    fn bug_wfr_12_npm_deterministic_failures_fail_fast() {
+        assert_eq!(
+            parse_npm_version_probe(true, b"11.17.0\r\n"),
+            Ok("11.17.0".into())
+        );
+        assert!(matches!(
+            parse_npm_version_probe(false, b""),
+            Err(RuntimeProbeFailure::Permanent(_))
+        ));
+        assert!(matches!(
+            parse_npm_version_probe(true, b"  \r\n"),
+            Err(RuntimeProbeFailure::Permanent(_))
+        ));
+    }
+
+    #[test]
+    fn bug_wfr_12_concurrent_probes_restore_dynamic_path_order() {
+        let root =
+            std::env::temp_dir().join(format!("junqi-node-probe-order-{}", uuid::Uuid::new_v4()));
+        let first = root.join("first").join(crate::platform::bin_name("node"));
+        let second = root.join("second").join(crate::platform::bin_name("node"));
+        let mut probes = vec![
+            NodeCandidateProbe {
+                index: 1,
+                requested_path: second.clone(),
+                outcome: Err(RuntimeProbeFailure::TimedOut),
+            },
+            NodeCandidateProbe {
+                index: 0,
+                requested_path: first.clone(),
+                outcome: Err(RuntimeProbeFailure::Permanent("unavailable".into())),
+            },
+        ];
+        restore_node_candidate_order(&mut probes);
+        assert_eq!(probes[0].requested_path, first);
+        assert_eq!(probes[1].requested_path, second);
     }
 
     #[test]

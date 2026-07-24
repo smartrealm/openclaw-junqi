@@ -30,6 +30,7 @@
 |---|---|---|
 | BUG-WFR-10 | `system.rs`, `paths.rs` | 冒烟测试加重试；已验证 payload 缓存跳过重复冒烟，避免瞬时失败触发非预期重装。 |
 | BUG-WFR-11 | `system.rs` | 已选定 Node/npm 探测加重试，避免冷启动瞬时失败级联触发 Node 重装或阻断安装。 |
+| BUG-WFR-12 | `system.rs`, `setup.rs` | 修正 WFR-11 覆盖缺口：动态发现的系统 Node 并发首探、仅重试超时；便携 Node 安装验证复用同一策略。 |
 
 ## Phase D - 验证
 
@@ -42,3 +43,4 @@
 - [x] npm 热缓存优先且不进入严格离线模式的参数测试。
 - [x] 已验证 payload 签名稳定性/变更失效测试；全量 Rust 测试零回归。
 - [x] Node/npm 探测重试后全量 Rust 测试零回归（605 passed）。
+- [x] 系统 PATH Node、显式配置 Node、npm 及安装后验证均通过失败分类行为测试；Rust 608 passed，前端与脚本测试全量通过。

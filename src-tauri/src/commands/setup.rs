@@ -787,6 +787,7 @@ fn runtime_binary(root: &Path, tool: &str) -> PathBuf {
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 async fn read_runtime_version(path: &Path) -> Option<String> {
     let mut command = tokio::process::Command::new(path);
     command
@@ -817,12 +818,14 @@ async fn validate_node_runtime_pair(
     node_path: &Path,
     requirement: &NodeRuntimeRequirement,
 ) -> Result<(String, String), String> {
-    let version = read_runtime_version(node_path).await.ok_or_else(|| {
-        format!(
-            "Node.js executable could not be verified at {}",
-            node_path.display()
-        )
-    })?;
+    let (_, version) = crate::commands::system::probe_selected_node_runtime(node_path)
+        .await
+        .map_err(|error| {
+            format!(
+                "Node.js executable could not be verified at {}: {error}",
+                node_path.display()
+            )
+        })?;
     if !requirement.supports(&version) {
         return Err(format!(
             "Node.js {version} at {} does not satisfy OpenClaw requirement {}",
