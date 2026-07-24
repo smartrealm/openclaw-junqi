@@ -7,8 +7,8 @@ import { GatewayConnection, type GatewayConnectionOptions } from './Connection';
 import type { GatewayAuthorizationIssue } from './messageRouter';
 import {
   createPrivilegedRequester,
-  GatewayPrivilegedAuthorizationError,
   subscribePrivilegedAuthorizationIssues,
+  subscribePrivilegedAuthorizationResolved,
 } from './index';
 import {
   buildGatewayHelloObservation,
@@ -148,7 +148,7 @@ function requesterWithRealTransientConnections(options: GatewayConnectionOptions
   return createPrivilegedRequester(sourceConnection(), (connectionOptions) => {
     options.push(connectionOptions);
     return new GatewayConnection(connectionOptions);
-  });
+  }, { pairingRetryMs: 0, pairingTimeoutMs: 1_000 });
 }
 
 function resetSockets() {
@@ -252,6 +252,10 @@ describe('Gateway credential security regression gates', () => {
     const unsubscribe = subscribePrivilegedAuthorizationIssues((issue) => {
       surfacedIssues.push(issue);
     });
+    let resolved = 0;
+    const unsubscribeResolved = subscribePrivilegedAuthorizationResolved(() => {
+      resolved += 1;
+    });
     const requestPrivileged = requesterWithRealTransientConnections();
     const resultPromise = requestPrivileged('wizard.start', { mode: 'local' });
     await waitForSocketCount(1);
@@ -277,16 +281,58 @@ describe('Gateway credential security regression gates', () => {
     };
     challenge(socket);
 
-    await assert.rejects(resultPromise, (error: unknown) => {
-      assert.ok(error instanceof GatewayPrivilegedAuthorizationError);
-      assert.equal(error.issue.kind, 'pairing_required');
-      assert.equal(error.issue.requestId, 'windows-admin-request');
-      assert.match(error.message, /openclaw devices approve windows-admin-request/);
-      return true;
-    });
+    await waitForSocketCount(2);
+    const approvedSocket = MemoryWebSocket.instances[1];
+    approvedSocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(approvedSocket, message, 'privileged-approved', ['operator.admin']);
+        return;
+      }
+      assert.equal(message.method, 'wizard.start');
+      approvedSocket.receive({ type: 'res', id: message.id, ok: true, payload: { sessionId: 'wizard-1' } });
+    };
+    challenge(approvedSocket);
+
+    assert.deepEqual(await resultPromise, { sessionId: 'wizard-1' });
     unsubscribe();
+    unsubscribeResolved();
     assert.equal(surfacedIssues.at(-1)?.requestId, 'windows-admin-request');
     assert.equal(socket.readyState, MemoryWebSocket.CLOSED);
+    assert.equal(resolved, 1);
+    assert.deepEqual(socket.sent.map((message) => message.method), ['connect']);
+    assert.deepEqual(approvedSocket.sent.map((message) => message.method), ['connect', 'wizard.start']);
+  });
+
+  it('cancels an active privileged pairing retry without dispatching the RPC', async () => {
+    resetSockets();
+    const requestPrivileged = createPrivilegedRequester(
+      sourceConnection(),
+      (connectionOptions) => new GatewayConnection(connectionOptions),
+      { pairingRetryMs: 60_000, pairingTimeoutMs: 120_000 },
+    );
+    const resultPromise = requestPrivileged('wizard.next', { sessionId: 'wizard-1' });
+    await waitForSocketCount(1);
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      socket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'pairing required',
+          details: { code: 'PAIRING_REQUIRED', requestId: 'cancel-request' },
+        },
+      });
+    };
+    challenge(socket);
+    await turn();
+    requestPrivileged.cancelPairingRetry();
+
+    await assert.rejects(resultPromise, /authorization was cancelled/);
+    assert.deepEqual(socket.sent.map((message) => message.method), ['connect']);
+    assert.equal(MemoryWebSocket.instances.length, 1);
   });
 
   it('serializes admin requests without polling, reconnecting, or changing runtime identity', async () => {

@@ -5,6 +5,7 @@
 //! one contract so an unsupported filesystem is rejected before a long startup
 //! timeout or a partial configuration switch.
 
+use crate::platform;
 use std::path::Path;
 
 const NODE_STATE_DIRECTORY_PROBE: &str = r#"
@@ -105,6 +106,7 @@ pub(crate) async fn verify_node_state_directory(
     verify_state_directory_basics(state_dir)?;
 
     let mut probe = tokio::process::Command::new(node_executable);
+    platform::configure_background_command(&mut probe);
     probe
         .args(["-e", NODE_STATE_DIRECTORY_PROBE])
         .arg(state_dir)

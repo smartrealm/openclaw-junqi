@@ -1376,7 +1376,13 @@ const NPM_INACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_se
 const NPM_SLOW_FETCH_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(90);
 const NPM_DIAGNOSTIC_LINE_LIMIT: usize = 24;
 
-const NPM_NOISY_LOG_PREFIXES: &[&str] = &["npm verbose", "npm sill", "npm timing", "npm notice"];
+const NPM_NOISY_LOG_PREFIXES: &[&str] = &[
+    "npm verbose",
+    "npm sill",
+    "npm timing",
+    "npm notice",
+    "npm http fetch",
+];
 
 const NPM_SECRET_MARKERS: &[&str] = &[
     "_authtoken",
@@ -1394,6 +1400,65 @@ fn npm_log_line_is_noisy(line: &str) -> bool {
         .any(|prefix| lowercase.starts_with(prefix))
 }
 
+fn npm_log_line_is_http_fetch(line: &str) -> bool {
+    line.trim()
+        .to_ascii_lowercase()
+        .starts_with("npm http fetch")
+}
+
+#[derive(Default)]
+struct NpmStreamProgress {
+    milestone: AtomicUsize,
+    http_requests: AtomicUsize,
+}
+
+impl NpmStreamProgress {
+    fn observe(&self, line: &str) -> f64 {
+        let lower = line.trim().to_ascii_lowercase();
+        let candidate = if lower.contains("npm http fetch") {
+            let requests = self.http_requests.fetch_add(1, Ordering::Relaxed) + 1;
+            300 + requests.min(250)
+        } else if lower.contains("preinstall")
+            || lower.contains("postinstall")
+            || lower.contains("node-gyp-build")
+            || lower.contains("install script")
+            || lower.contains("foreground script")
+        {
+            720
+        } else if lower.starts_with("added ")
+            || lower.starts_with("changed ")
+            || lower.starts_with("removed ")
+            || lower.contains("packages in")
+        {
+            880
+        } else if lower.contains("reify")
+            || lower.contains("extract")
+            || lower.contains("unpack")
+            || lower.contains("package tree")
+            || lower.contains("staging")
+        {
+            620
+        } else if lower.contains("resolv")
+            || lower.contains("ideal tree")
+            || lower.contains("idealtree")
+            || lower.contains("fetch manifest")
+        {
+            220
+        } else {
+            self.milestone.load(Ordering::Relaxed)
+        };
+        let milestone = self
+            .milestone
+            .fetch_max(candidate, Ordering::Relaxed)
+            .max(candidate);
+        milestone as f64 / 1_000.0
+    }
+
+    fn overall(&self, start: f64, end: f64) -> f64 {
+        start + (end - start) * (self.milestone.load(Ordering::Relaxed) as f64 / 1_000.0)
+    }
+}
+
 /// Keep npm's verbose stream available for inactivity detection without
 /// forwarding internal chatter or credentials into the primary setup console.
 fn npm_log_line_for_display(line: &str) -> Option<String> {
@@ -1403,10 +1468,9 @@ fn npm_log_line_for_display(line: &str) -> Option<String> {
     npm_log_line_redacted(line)
 }
 
-/// Redact credentials/registry URLs from an npm log line without dropping it
-/// for noise. Used for the raw diagnostic console, which intentionally shows
-/// everything (including `npm verbose`/`sill`/`timing`) so a slow-but-alive
-/// install is visibly still doing something, never just silently.
+/// Redact credentials/registry URLs from a retained npm diagnostic line.
+/// Per-request HTTP lines stay only in the raw process artifact; the UI uses
+/// a coalesced network summary instead.
 fn npm_log_line_redacted(line: &str) -> Option<String> {
     let line = line.trim();
     if line.is_empty() {
@@ -1480,11 +1544,11 @@ fn observe_npm_fetch(
     slow_fetch_tx: &tokio::sync::watch::Sender<Option<String>>,
     slow_fetch_triggered: &AtomicBool,
     metrics: &SharedNpmFetchMetrics,
-) {
+) -> Option<u64> {
     let Some(duration_ms) = npm_fetch_duration_ms(line) else {
-        return;
+        return None;
     };
-    {
+    let request_count = {
         let lowercase = line.to_ascii_lowercase();
         let mut metrics = metrics
             .lock()
@@ -1500,11 +1564,12 @@ fn observe_npm_fetch(
         if duration_ms >= NPM_SLOW_FETCH_THRESHOLD.as_millis() as u64 {
             metrics.slow_requests += 1;
         }
-    }
+        metrics.requests
+    };
     if duration_ms < NPM_SLOW_FETCH_THRESHOLD.as_millis() as u64
         || slow_fetch_triggered.swap(true, Ordering::AcqRel)
     {
-        return;
+        return Some(request_count);
     }
     let reason = format!(
         "{} npm tarball request took {}ms (slow-source threshold: {}s)",
@@ -1513,6 +1578,7 @@ fn observe_npm_fetch(
         NPM_SLOW_FETCH_THRESHOLD.as_secs()
     );
     let _ = slow_fetch_tx.send(Some(reason));
+    Some(request_count)
 }
 
 fn npm_fetch_summary(source_label: &str, metrics: &SharedNpmFetchMetrics) -> Option<String> {
@@ -1880,9 +1946,10 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         let slow_fetch_triggered = Arc::new(AtomicBool::new(false));
         let fetch_metrics = Arc::new(Mutex::new(NpmFetchMetrics::default()));
         let diagnostics = Arc::new(Mutex::new(Vec::new()));
+        let npm_progress = Arc::new(NpmStreamProgress::default());
+        let npm_network_log_slot = format!("npm-network-attempt-{}", reg_idx + 1);
 
         // Stream stdout to progress events so the user sees live npm output
-        let prog_live = prog_start + (prog_end - prog_start) * 0.4;
         let stdout_task = child.stdout.take().map(|stdout| {
             let app_c = app.clone();
             let step_c = step.to_string();
@@ -1893,6 +1960,8 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let source_label = reg_label.clone();
             let diagnostics = Arc::clone(&diagnostics);
             let process_label = process_label.clone();
+            let npm_progress = Arc::clone(&npm_progress);
+            let npm_network_log_slot = npm_network_log_slot.clone();
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stdout).lines();
@@ -1903,13 +1972,30 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 {
                     record_process_output(&app_c, &step_c, &process_label, "stdout", &line);
                     activity_tx.send_modify(|sequence| *sequence += 1);
-                    observe_npm_fetch(
+                    let progress =
+                        prog_start + (prog_end - prog_start) * npm_progress.observe(&line);
+                    let fetch_request_count = observe_npm_fetch(
                         &line,
                         &source_label,
                         &slow_fetch_tx,
                         &slow_fetch_triggered,
                         &fetch_metrics,
                     );
+                    if npm_log_line_is_http_fetch(&line) {
+                        if fetch_request_count.is_some_and(|count| count == 1 || count % 25 == 0) {
+                            if let Some(summary) = npm_fetch_summary(&source_label, &fetch_metrics)
+                            {
+                                emit_coalesced(
+                                    &app_c,
+                                    &step_c,
+                                    &summary,
+                                    &npm_network_log_slot,
+                                    progress,
+                                );
+                            }
+                        }
+                        continue;
+                    }
                     match npm_log_line_for_display(&line) {
                         Some(display_line) => {
                             record_npm_diagnostic(&diagnostics, &display_line);
@@ -1917,7 +2003,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                                 &app_c,
                                 &step_c,
                                 &format!("npm › {}", display_line),
-                                prog_live,
+                                progress,
                             );
                         }
                         // Noisy lines (npm verbose/sill/timing/notice) are dropped from
@@ -1930,7 +2016,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                                     &app_c,
                                     &step_c,
                                     &format!("npm » {}", raw_line),
-                                    prog_live,
+                                    progress,
                                 );
                             }
                         }
@@ -1951,6 +2037,8 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let source_label = reg_label.clone();
             let diagnostics = Arc::clone(&diagnostics);
             let process_label = process_label.clone();
+            let npm_progress = Arc::clone(&npm_progress);
+            let npm_network_log_slot = npm_network_log_slot.clone();
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stderr).lines();
@@ -1961,13 +2049,30 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 {
                     record_process_output(&app_e, &step_e, &process_label, "stderr", &line);
                     activity_tx.send_modify(|sequence| *sequence += 1);
-                    observe_npm_fetch(
+                    let progress =
+                        prog_start + (prog_end - prog_start) * npm_progress.observe(&line);
+                    let fetch_request_count = observe_npm_fetch(
                         &line,
                         &source_label,
                         &slow_fetch_tx,
                         &slow_fetch_triggered,
                         &fetch_metrics,
                     );
+                    if npm_log_line_is_http_fetch(&line) {
+                        if fetch_request_count.is_some_and(|count| count == 1 || count % 25 == 0) {
+                            if let Some(summary) = npm_fetch_summary(&source_label, &fetch_metrics)
+                            {
+                                emit_coalesced(
+                                    &app_e,
+                                    &step_e,
+                                    &summary,
+                                    &npm_network_log_slot,
+                                    progress,
+                                );
+                            }
+                        }
+                        continue;
+                    }
                     match npm_log_line_for_display(&line) {
                         Some(display_line) => {
                             if display_line.contains("TAR_ENTRY_ERROR")
@@ -1985,7 +2090,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                                 &app_e,
                                 &step_e,
                                 &format!("npm › {}", display_line),
-                                prog_live,
+                                progress,
                             );
                         }
                         None => {
@@ -1994,7 +2099,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                                     &app_e,
                                     &step_e,
                                     &format!("npm » {}", raw_line),
-                                    prog_live,
+                                    progress,
                                 );
                             }
                         }
@@ -2007,6 +2112,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         let heartbeat_app = app.clone();
         let heartbeat_step = step.to_string();
         let heartbeat_label = reg_label.to_string();
+        let heartbeat_progress = Arc::clone(&npm_progress);
         let heartbeat_task = tokio::spawn(async move {
             let started = std::time::Instant::now();
             loop {
@@ -2025,7 +2131,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                                 heartbeat_label,
                                 started.elapsed().as_secs(),
                             ),
-                            prog_live,
+                            heartbeat_progress.overall(prog_start, prog_end),
                         );
                     }
                 }
@@ -2045,6 +2151,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             stdout: stdout_task,
             stderr: stderr_task,
         };
+        let prog_live = npm_progress.overall(prog_start, prog_end);
         let status = match wait_result {
             NpmWaitResult::Exited(Ok(status)) => {
                 if let Err(error) = output.finish().await {
@@ -6042,14 +6149,14 @@ mod tests {
     }
 
     #[test]
-    fn npm_log_filter_hides_internal_noise_but_keeps_download_progress() {
+    fn npm_log_filter_hides_internal_and_per_request_network_noise() {
         assert_eq!(
             npm_log_line_for_display("npm verbose cli /usr/bin/node /usr/bin/npm"),
             None
         );
         assert_eq!(
             npm_log_line_for_display("npm http fetch GET 200 https://registry.npmjs.org/openclaw"),
-            Some("npm http fetch GET 200 https://registry.npmjs.org/openclaw".into())
+            None
         );
         assert_eq!(
             npm_log_line_for_display("npm warn deprecated package@1.0.0"),
@@ -6079,7 +6186,8 @@ mod tests {
             Some("[authentication details redacted]".into())
         );
         assert!(npm_log_line_is_noisy("npm verbose cli ..."));
-        assert!(!npm_log_line_is_noisy("npm http fetch GET 200 ..."));
+        assert!(npm_log_line_is_noisy("npm http fetch GET 200 ..."));
+        assert!(npm_log_line_is_http_fetch("npm http fetch GET 200 ..."));
     }
 
     #[test]
@@ -6094,6 +6202,25 @@ mod tests {
             npm_fetch_duration_ms("npm warn deprecated package@1.0.0"),
             None
         );
+    }
+
+    #[test]
+    fn npm_stream_progress_uses_monotonic_observed_milestones() {
+        let progress = NpmStreamProgress::default();
+        let resolving = progress.observe("npm sill idealTree buildDeps");
+        let first_fetch = progress.observe("npm http fetch GET 200 https://example.test/a 20ms");
+        let later_fetch = (0..30)
+            .map(|index| progress.observe(&format!("npm http fetch GET 200 package-{index} 20ms")))
+            .last()
+            .unwrap();
+        let lifecycle = progress.observe("> openclaw@2026.7.1-2 postinstall");
+        let summary = progress.observe("added 309 packages in 5m");
+
+        assert!(resolving < first_fetch);
+        assert!(first_fetch < later_fetch);
+        assert!(later_fetch < lifecycle);
+        assert!(lifecycle < summary);
+        assert_eq!(progress.observe("unrelated output"), summary);
     }
 
     #[test]

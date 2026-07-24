@@ -757,12 +757,18 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         disabled: flow.wizardSubmitting || Boolean(enrollmentDomain) || enrollmentFinalizing,
       }}
       nextAction={{
-        label: pendingEnrollment
+        label: flow.wizardError
+          ? t("setup.wizard.retry", "重试")
+          : pendingEnrollment
           ? t("setup.wizard.channelEnrollment.resume", "继续配置")
           : feishuQrSetupMethod
           ? t("setup.wizard.channelEnrollment.start", "显示二维码")
           : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
         onClick: () => {
+          if (flow.wizardError) {
+            void flow.retryWizard();
+            return;
+          }
           if (pendingEnrollment) {
             void resumeEnrollment();
             return;
@@ -774,12 +780,13 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
           }
           void flow.submitWizardStep(step.id, value);
         },
-        disabled: flow.wizardSubmitting || blocked || enrollmentFinalizing,
+        disabled: flow.wizardSubmitting || (!flow.wizardError && blocked) || enrollmentFinalizing,
         loading: flow.wizardSubmitting || enrollmentFinalizing,
-        icon: "next",
+        icon: flow.wizardError ? "none" : "next",
       }}
     >
       <div className="space-y-4" dir="auto">
+        {flow.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{flow.wizardError}</div>}
         {feishuQrSetupMethod && (
           <div className="space-y-4 rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
             <p>{t("setup.wizard.channelEnrollment.description", "扫码会创建并验证飞书应用；凭据只会临时交给 OpenClaw 官方向导，不会显示在 JunQi 页面中。")}</p>
@@ -878,7 +885,6 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
           </div>
         )}
         {enrollmentError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{enrollmentError}</div>}
-        {flow.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{flow.wizardError}</div>}
       </div>
       {enrollmentDomain && (
         <ChannelEnrollmentDialog

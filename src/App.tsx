@@ -18,7 +18,11 @@ import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
-import { gateway, subscribePrivilegedAuthorizationIssues } from '@/services/gateway';
+import {
+  gateway,
+  subscribePrivilegedAuthorizationIssues,
+  subscribePrivilegedAuthorizationResolved,
+} from '@/services/gateway';
 import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
@@ -113,12 +117,23 @@ export default function App() {
   const pairingTriggeredRef = useRef(false);
   const deferredModelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => subscribePrivilegedAuthorizationIssues((issue) => {
-    debugWarn('app', '[App] Privileged Gateway authorization issue:', issue.code);
-    if (issue.kind !== 'pairing_required') return;
-    pairingTriggeredRef.current = true;
-    setPairingIssue(issue);
-  }), []);
+  useEffect(() => {
+    const unsubscribeIssue = subscribePrivilegedAuthorizationIssues((issue) => {
+      debugWarn('app', '[App] Privileged Gateway authorization issue:', issue.code);
+      if (issue.kind !== 'pairing_required') return;
+      pairingTriggeredRef.current = true;
+      setPairingIssue(issue);
+    });
+    const unsubscribeResolved = subscribePrivilegedAuthorizationResolved(() => {
+      debugLog('gateway', '[App] Privileged Gateway authorization approved');
+      pairingTriggeredRef.current = false;
+      setPairingIssue(null);
+    });
+    return () => {
+      unsubscribeIssue();
+      unsubscribeResolved();
+    };
+  }, []);
 
   // ── Gateway process boot error state ──
   // Tracks whether the gateway *process* failed to start (distinct from WebSocket connection issues).
@@ -1146,6 +1161,7 @@ export default function App() {
     pairingTriggeredRef.current = false;
     // Stop gateway pairing retry loop — user chose to dismiss
     gateway.stopPairingRetry();
+    gateway.cancelPrivilegedAuthorizationRetry();
   }, []);
 
   const handleGatewayRetry = useCallback(() => {

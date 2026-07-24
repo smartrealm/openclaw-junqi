@@ -1880,6 +1880,7 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
     let node_program = platform::resolve_spawn_program("node");
     let node_fut = async move {
         let mut command = tokio::process::Command::new(node_program);
+        platform::configure_background_command(&mut command);
         command.arg("--version").current_dir(&pp).kill_on_drop(true);
         tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output())
             .await
@@ -1897,7 +1898,9 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 
     let pp2 = project_path.clone();
     let go_fut = async {
-        tokio::process::Command::new("go")
+        let mut command = tokio::process::Command::new("go");
+        platform::configure_background_command(&mut command);
+        command
             .arg("version")
             .current_dir(&pp2)
             .output()
@@ -1933,7 +1936,9 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
                 None
             };
             if let Some(py_path) = py {
-                let ver = tokio::process::Command::new(&py_path)
+                let mut command = tokio::process::Command::new(&py_path);
+                platform::configure_background_command(&mut command);
+                let ver = command
                     .arg("--version")
                     .output()
                     .await

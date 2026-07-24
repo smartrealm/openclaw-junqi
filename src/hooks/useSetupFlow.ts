@@ -856,6 +856,7 @@ export function useSetupFlow(
     setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
     try {
+      await waitForGatewayConnection();
       const result = await wizardClientRef.current!.next(stepId, value);
       return await applyWizardResult(result);
     } catch (error) {
@@ -874,7 +875,7 @@ export function useSetupFlow(
       wizardSubmitInFlightRef.current = false;
       setWizardSubmitting(false);
     }
-  }, [applyWizardResult, recoverLostWizardSession, resumeOfficialOnboarding, setSetupError, wizardFailureMessage]);
+  }, [applyWizardResult, recoverLostWizardSession, resumeOfficialOnboarding, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
   const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);
@@ -901,6 +902,7 @@ export function useSetupFlow(
     setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
     try {
+      await waitForGatewayConnection();
       const result = await wizardClientRef.current.back();
       if (!result) return null;
       return await applyWizardResult(result);
@@ -912,7 +914,7 @@ export function useSetupFlow(
     } finally {
       setWizardSubmitting(false);
     }
-  }, [applyWizardResult, setSetupError, wizardFailureMessage, wizardSubmitting]);
+  }, [applyWizardResult, setSetupError, waitForGatewayConnection, wizardFailureMessage, wizardSubmitting]);
 
   const reclaimOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);

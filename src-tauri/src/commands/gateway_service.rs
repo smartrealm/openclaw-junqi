@@ -9,7 +9,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const SERVICE_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+const fn service_command_timeout_for_platform(is_windows: bool) -> Duration {
+    Duration::from_secs(if is_windows { 60 } else { 30 })
+}
+
+const SERVICE_COMMAND_TIMEOUT: Duration = service_command_timeout_for_platform(cfg!(windows));
 const SERVICE_COMMAND_STDOUT_LIMIT: usize = 512 * 1024;
 const SERVICE_COMMAND_STDERR_LIMIT: usize = 128 * 1024;
 
@@ -707,6 +711,18 @@ pub(crate) async fn reconcile_pending_gateway_service(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_service_commands_allow_for_cold_cli_startup() {
+        assert_eq!(
+            service_command_timeout_for_platform(true),
+            Duration::from_secs(60)
+        );
+        assert_eq!(
+            service_command_timeout_for_platform(false),
+            Duration::from_secs(30)
+        );
+    }
 
     fn status_output(success: bool, stdout: &[u8], stderr: &[u8]) -> std::process::Output {
         #[cfg(unix)]

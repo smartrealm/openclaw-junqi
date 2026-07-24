@@ -29,6 +29,7 @@ const STATE_DIRECTORY_PATTERNS: &[&str] = &[
 ];
 
 const TRANSIENT_START_ERROR_PATTERNS: &[&str] = &[
+    "openclaw service command timed out and its process tree was cleaned before continuing",
     "startup migrations are already running",
     "WebSocket closed before handshake",
     "ECONNREFUSED",
@@ -148,6 +149,26 @@ mod tests {
         assert_eq!(
             diagnose_startup_failure(&[error.into()], false),
             RecoveryAction::Retry
+        );
+    }
+
+    #[test]
+    fn cleaned_service_status_timeout_retries_without_running_repair() {
+        let error = "Gateway service inspection skipped before foreground start: OpenClaw service command timed out and its process tree was cleaned before continuing: gateway status --json --no-probe (process timed out after 31 seconds)";
+        assert!(is_transient_start_failure(&[error.into()]));
+        assert_eq!(
+            diagnose_startup_failure(&[error.into()], false),
+            RecoveryAction::Retry
+        );
+    }
+
+    #[test]
+    fn unconfirmed_service_cleanup_does_not_get_downgraded_to_retry() {
+        let error = "OpenClaw service command failed and process-tree cleanup could not be confirmed: gateway status --json --no-probe";
+        assert!(!is_transient_start_failure(&[error.into()]));
+        assert_eq!(
+            diagnose_startup_failure(&[error.into()], false),
+            RecoveryAction::Repair
         );
     }
 

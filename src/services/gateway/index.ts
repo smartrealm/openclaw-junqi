@@ -151,14 +151,24 @@ type TransientGatewayConnection = Pick<
 type PrivilegedConnectionFactory = (
   options: GatewayConnectionOptions,
 ) => TransientGatewayConnection;
-export type PrivilegedRequester = <T>(
-  method: string,
-  params: Record<string, unknown>,
-  timeoutMs?: number | null,
-) => Promise<T>;
+export interface PrivilegedRequester {
+  <T>(
+    method: string,
+    params: Record<string, unknown>,
+    timeoutMs?: number | null,
+  ): Promise<T>;
+  cancelPairingRetry(): void;
+}
+
+interface PrivilegedRequesterOptions {
+  pairingRetryMs?: number;
+  pairingTimeoutMs?: number;
+}
 
 type PrivilegedAuthorizationIssueListener = (issue: GatewayAuthorizationIssue) => void;
 const privilegedAuthorizationIssueListeners = new Set<PrivilegedAuthorizationIssueListener>();
+type PrivilegedAuthorizationResolvedListener = () => void;
+const privilegedAuthorizationResolvedListeners = new Set<PrivilegedAuthorizationResolvedListener>();
 
 export function subscribePrivilegedAuthorizationIssues(
   listener: PrivilegedAuthorizationIssueListener,
@@ -173,6 +183,23 @@ function emitPrivilegedAuthorizationIssue(issue: GatewayAuthorizationIssue): voi
       listener(issue);
     } catch (error) {
       debugWarn('gateway', '[GW] Privileged authorization listener failed:', error);
+    }
+  }
+}
+
+export function subscribePrivilegedAuthorizationResolved(
+  listener: PrivilegedAuthorizationResolvedListener,
+): () => void {
+  privilegedAuthorizationResolvedListeners.add(listener);
+  return () => privilegedAuthorizationResolvedListeners.delete(listener);
+}
+
+function emitPrivilegedAuthorizationResolved(): void {
+  for (const listener of [...privilegedAuthorizationResolvedListeners]) {
+    try {
+      listener();
+    } catch (error) {
+      debugWarn('gateway', '[GW] Privileged authorization resolved listener failed:', error);
     }
   }
 }
@@ -231,8 +258,77 @@ function errorValue(value: unknown): Error {
 export function createPrivilegedRequester(
   source: PrivilegedSourceConnection,
   createConnection: PrivilegedConnectionFactory = (options) => new GatewayConnection(options),
+  options: PrivilegedRequesterOptions = {},
 ): PrivilegedRequester {
   let lane: Promise<void> = Promise.resolve();
+  let cancelActivePairingRetry: (() => void) | null = null;
+  const pairingRetryMs = options.pairingRetryMs ?? 5_000;
+  const pairingTimeoutMs = options.pairingTimeoutMs ?? 5 * 60_000;
+
+  type AttemptResult<T> =
+    | { kind: 'success'; value: T }
+    | { kind: 'pairing'; issue: GatewayAuthorizationIssue }
+    | { kind: 'failure'; error: Error };
+
+  const attempt = <T>(
+    target: { url: string; token: string; deviceToken: string },
+    method: string,
+    params: Record<string, unknown>,
+    timeoutMs: number | null,
+    registerCancel: (cancel: () => void) => void,
+    onConnected: () => void,
+  ): Promise<AttemptResult<T>> => {
+    const transient = createConnection({ scopes: ['operator.admin'], transient: true });
+    return new Promise<AttemptResult<T>>((resolve) => {
+      let settled = false;
+      let requestStarted = false;
+      const timer = timeoutMs === null
+        ? null
+        : window.setTimeout(() => {
+          finish({ kind: 'failure', error: new Error(`Privileged Gateway request timed out (${timeoutMs}ms)`) });
+        }, timeoutMs);
+      const finish = (result: AttemptResult<T>) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== null) window.clearTimeout(timer);
+        transient.disconnect();
+        resolve(result);
+      };
+      registerCancel(() => finish({
+        kind: 'failure',
+        error: new Error('Privileged Gateway authorization was cancelled'),
+      }));
+      transient.setCallbacks({
+        onMessage() {},
+        onStreamChunk() {},
+        onStreamEnd() {},
+        onStatusChange(status) {
+          if (settled || requestStarted) return;
+          if (status.error) {
+            finish({ kind: 'failure', error: new Error(status.error) });
+            return;
+          }
+          if (!status.connected) return;
+          requestStarted = true;
+          onConnected();
+          void transient.request(method, params, { timeoutMs })
+            .then((value) => finish({ kind: 'success', value: value as T }))
+            .catch((error) => finish({ kind: 'failure', error: errorValue(error) }));
+        },
+        onAuthorizationIssue(issue) {
+          if (issue.kind === 'pairing_required') {
+            finish({ kind: 'pairing', issue });
+            return;
+          }
+          finish({ kind: 'failure', error: new GatewayPrivilegedAuthorizationError(issue) });
+        },
+        onScopeError(error) {
+          finish({ kind: 'failure', error: errorValue(error) });
+        },
+      });
+      transient.connect(target.url, target.token, target.deviceToken);
+    });
+  };
 
   const execute = async <T>(
     method: string,
@@ -243,56 +339,60 @@ export function createPrivilegedRequester(
       throw new Error('A verified Gateway connection is required for this management action');
     }
     const target = { url: source.url, token: source.token, deviceToken: source.deviceToken };
-    const transient = createConnection({ scopes: ['operator.admin'], transient: true });
-    return new Promise<T>((resolve, reject) => {
-      let settled = false;
-      let requestStarted = false;
-      const timer = timeoutMs === null
-        ? null
-        : window.setTimeout(() => {
-          finish(false, new Error(`Privileged Gateway request timed out (${timeoutMs}ms)`));
-        }, timeoutMs);
-      const finish = (ok: boolean, value: unknown) => {
-        if (settled) return;
-        settled = true;
-        if (timer !== null) window.clearTimeout(timer);
-        transient.disconnect();
-        if (ok) resolve(value as T);
-        else reject(errorValue(value));
-      };
-      transient.setCallbacks({
-        onMessage() {},
-        onStreamChunk() {},
-        onStreamEnd() {},
-        onStatusChange(status) {
-          if (settled || requestStarted) return;
-          if (status.error) {
-            finish(false, status.error);
-            return;
-          }
-          if (!status.connected) return;
-          requestStarted = true;
-          void transient.request(method, params, { timeoutMs })
-            .then((result) => finish(true, result))
-            .catch((error) => finish(false, error));
-        },
-        onAuthorizationIssue(issue) {
-          emitPrivilegedAuthorizationIssue(issue);
-          finish(false, new GatewayPrivilegedAuthorizationError(issue));
-        },
-        onScopeError(error) {
-          finish(false, error);
-        },
-      });
-      transient.connect(target.url, target.token, target.deviceToken);
-    });
+    const pairingDeadline = Date.now() + pairingTimeoutMs;
+    let pairingObserved = false;
+    let pairingResolvedEmitted = false;
+
+    try {
+      for (;;) {
+        const result = await attempt<T>(
+          target,
+          method,
+          params,
+          timeoutMs,
+          (cancel) => { cancelActivePairingRetry = cancel; },
+          () => {
+            if (!pairingObserved || pairingResolvedEmitted) return;
+            pairingResolvedEmitted = true;
+            emitPrivilegedAuthorizationResolved();
+          },
+        );
+        cancelActivePairingRetry = null;
+        if (result.kind === 'success') {
+          return result.value;
+        }
+        if (result.kind === 'failure') throw result.error;
+
+        pairingObserved = true;
+        emitPrivilegedAuthorizationIssue(result.issue);
+        if (Date.now() + pairingRetryMs > pairingDeadline) {
+          throw new GatewayPrivilegedAuthorizationError(result.issue);
+        }
+        if (pairingRetryMs === 0) {
+          await Promise.resolve();
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            const timer = window.setTimeout(resolve, pairingRetryMs);
+            cancelActivePairingRetry = () => {
+              window.clearTimeout(timer);
+              reject(new Error('Privileged Gateway authorization was cancelled'));
+            };
+          });
+        }
+        cancelActivePairingRetry = null;
+      }
+    } finally {
+      cancelActivePairingRetry = null;
+    }
   };
 
-  return <T>(method: string, params: Record<string, unknown>, timeoutMs?: number | null) => {
+  const request = (<T>(method: string, params: Record<string, unknown>, timeoutMs?: number | null) => {
     const operation = lane.then(() => execute<T>(method, params, timeoutMs));
     lane = operation.then(() => undefined, () => undefined);
     return operation;
-  };
+  }) as PrivilegedRequester;
+  request.cancelPairingRetry = () => cancelActivePairingRetry?.();
+  return request;
 }
 
 const requestPrivileged = createPrivilegedRequester(connection);
@@ -634,5 +734,6 @@ export const gateway = {
   getToken() { return connection.token; },
   getDeviceToken() { return connection.deviceToken; },
   stopPairingRetry() { connection.stopPairingRetry(); },
+  cancelPrivilegedAuthorizationRetry() { requestPrivileged.cancelPairingRetry(); },
   reconnectWithToken(newToken: string) { connection.reconnectWithToken(newToken); },
 };

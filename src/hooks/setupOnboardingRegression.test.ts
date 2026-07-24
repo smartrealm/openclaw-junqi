@@ -92,6 +92,42 @@ test('BUG-ONB-33 setup renders the official pairing approval surface', () => {
   assert.match(setupBranch, /onPaired=\{handlePairingComplete\}/);
 });
 
+test('BUG-WFR-01 privileged pairing retries can resolve or be cancelled by the host', () => {
+  assert.match(gatewayClient, /subscribePrivilegedAuthorizationResolved/);
+  assert.match(gatewayClient, /pairingRetryMs\s*\?\?\s*5_000/);
+  assert.match(gatewayClient, /cancelPrivilegedAuthorizationRetry\(\)/);
+  assert.match(app, /subscribePrivilegedAuthorizationResolved/);
+  assert.match(app, /gateway\.cancelPrivilegedAuthorizationRetry\(\)/);
+});
+
+test('BUG-WFR-02 every interactive wizard RPC waits for a verified Gateway connection', () => {
+  const submit = setupFlow.slice(
+    setupFlow.indexOf('const submitWizardStep'),
+    setupFlow.indexOf('const retryOfficialOnboarding'),
+  );
+  const back = setupFlow.slice(
+    setupFlow.indexOf('const backOfficialOnboarding'),
+    setupFlow.indexOf('const reclaimOfficialOnboarding'),
+  );
+
+  assert.match(submit, /await waitForGatewayConnection\(\);[\s\S]*?\.next\(stepId, value\)/);
+  assert.match(back, /await waitForGatewayConnection\(\);[\s\S]*?\.back\(\)/);
+});
+
+test('BUG-WFR-03 wizard failures are visible first and change the primary action to Retry', () => {
+  const wizard = setupPage.slice(
+    setupPage.indexOf('function WizardScreen'),
+    setupPage.indexOf('// ── 开机自启偏好'),
+  );
+  const errorPosition = wizard.indexOf('{flow.wizardError && <div');
+  const firstStepControl = wizard.indexOf('{feishuQrSetupMethod && (');
+
+  assert.ok(errorPosition >= 0 && errorPosition < firstStepControl);
+  assert.match(wizard, /label: flow\.wizardError[\s\S]*?setup\.wizard\.retry/);
+  assert.match(wizard, /if \(flow\.wizardError\) \{[\s\S]*?flow\.retryWizard\(\)/);
+  assert.match(wizard, /icon: flow\.wizardError \? "none" : "next"/);
+});
+
 test('BUG-ONB-17 setup endpoint cache removes legacy renderer Gateway credentials', () => {
   const cache = setupFlow.slice(
     setupFlow.indexOf('function cacheGatewayTarget'),
