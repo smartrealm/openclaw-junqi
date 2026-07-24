@@ -1,5 +1,4 @@
 import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { useTheme } from '@/theme/useTheme';
@@ -50,6 +49,7 @@ import { hasTauriEventBridge } from '@/utils/tauriEvents';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
+import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
 
 function RouteLoadingFallback() {
   return (
@@ -149,7 +149,9 @@ export default function App() {
   const setupComplete = useAppStore((s) => s.setupComplete);
   const workspaceStartupMode = useAppStore((s) => s.workspaceStartupMode);
   const setWorkspaceStartupMode = useAppStore((s) => s.setWorkspaceStartupMode);
-  const setupHealthCheckedRef = useRef(false);
+  const [cachedSetupValidationPending, setCachedSetupValidationPending] = useState(
+    () => setupComplete === true && hasTauriEventBridge(),
+  );
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
   const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
   const [coldStartRecoveryActive, setColdStartRecoveryActive] = useState(true);
@@ -177,25 +179,37 @@ export default function App() {
   }
   const openControlUiAfterRecoveryRef = useRef(false);
 
-  // The local marker is only a cache. Validate the selected Gateway identity
-  // before bypassing SetupPage; a moved/removed npm prefix or a stale service
-  // must re-enter the recovery flow instead of booting the workbench blind.
+  // The local marker is only a cache. Validate the durable installation before
+  // entering the workspace, but leave process readiness to cold-start recovery.
   useEffect(() => {
-    if (setupComplete !== true || !hasTauriEventBridge() || setupHealthCheckedRef.current) return;
-    setupHealthCheckedRef.current = true;
-    void invoke<boolean>('probe_selected_gateway', {})
-      .then((ready) => {
-        if (ready) return;
-        const store = useAppStore.getState();
-        store.setSetupComplete(null);
-        store.navigateSetup('detecting', 'replace');
+    if (!cachedSetupValidationPending || setupComplete !== true) return;
+    let cancelled = false;
+
+    const returnToSetup = () => {
+      if (cancelled) return;
+      setCachedSetupValidationPending(false);
+      const store = useAppStore.getState();
+      store.setSetupComplete(null);
+      store.navigateSetup('detecting', 'replace');
+    };
+
+    void validateCachedSetupInstallation()
+      .then((valid) => {
+        if (cancelled) return;
+        if (!valid) {
+          returnToSetup();
+          return;
+        }
+        setCachedSetupValidationPending(false);
       })
       .catch(() => {
-        const store = useAppStore.getState();
-        store.setSetupComplete(null);
-        store.navigateSetup('detecting', 'replace');
+        returnToSetup();
       });
-  }, [setupComplete]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cachedSetupValidationPending, setupComplete]);
 
   useEffect(() => {
     const updateRoutePath = () => setRoutePath(routePathFromLocation(window.location));
@@ -544,6 +558,7 @@ export default function App() {
     // healthy Gateway and replay stale lifecycle diagnostics in the workspace.
     if (workspaceStartupMode === 'verified-gateway-handoff') return;
     if (setupComplete !== true) return;
+    if (cachedSetupValidationPending) return;
     if (openclawUpdateActive) return;
     if (connected) {
       cancelGatewayMigrationRetry();
@@ -618,7 +633,7 @@ export default function App() {
       cancelled = true;
       cancelGatewayMigrationRetry();
     };
-  }, [connected, coldStartRecoveryActive, openclawUpdateActive, setupComplete, workspaceStartupMode, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot, cancelGatewayMigrationRetry]);
+  }, [connected, coldStartRecoveryActive, cachedSetupValidationPending, openclawUpdateActive, setupComplete, workspaceStartupMode, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot, cancelGatewayMigrationRetry]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
@@ -657,6 +672,7 @@ export default function App() {
   // ── Gateway Setup ──
   useEffect(() => {
     if (setupComplete !== true) return;
+    if (cachedSetupValidationPending) return;
 
     const refreshDurableTranscript = (sessionKey: string) => {
       if (isSessionDeleted(sessionKey)) return;
@@ -1139,7 +1155,7 @@ export default function App() {
       gateway.forgetSessionTranscript();
       gatewayManager.destroy();
     };
-  }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure]);
+  }, [loadAvailableModels, setupComplete, cachedSetupValidationPending, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure]);
 
 
   // ── Pairing Handlers ──
@@ -1178,6 +1194,15 @@ export default function App() {
     // Probe immediately instead of waiting for the periodic poller
     gatewayManager.reconnect();
   }, []);
+
+  if (setupComplete === true && cachedSetupValidationPending) {
+    return (
+      <>
+        <ThemeRuntime />
+        <RouteLoadingFallback />
+      </>
+    );
+  }
 
   if (!setupComplete) {
     return (

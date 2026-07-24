@@ -63,6 +63,21 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
   assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
 });
 
+test('BUG-ONB-34 cached setup validates installation before Gateway recovery', () => {
+  const validation = app.slice(
+    app.indexOf('// The local marker is only a cache.'),
+    app.indexOf('useEffect(() => {', app.indexOf('}, [cachedSetupValidationPending, setupComplete]);') + 1),
+  );
+
+  assert.match(validation, /validateCachedSetupInstallation\(\)/);
+  assert.doesNotMatch(validation, /probe_selected_gateway/);
+  assert.ok(
+    (app.match(/if \(cachedSetupValidationPending\) return;/g) ?? []).length >= 2,
+    'cold recovery and Gateway callback registration must wait for cached setup validation',
+  );
+  assert.match(app, /setupComplete === true && cachedSetupValidationPending/);
+});
+
 test('BUG-ONB-32 official wizard RPCs use an admin connection and retain failure diagnostics', () => {
   const clientSetup = setupFlow.slice(
     setupFlow.indexOf('new OpenClawWizardClient'),

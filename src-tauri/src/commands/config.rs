@@ -261,9 +261,24 @@ fn prune_config_backups(dir: &Path, keep: usize) {
     };
     let mut files: Vec<_> = entries
         .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with("openclaw."))
+        .filter(|entry| {
+            entry
+                .file_type()
+                .map(|file_type| file_type.is_file())
+                .unwrap_or(false)
+                && entry.file_name().to_string_lossy().starts_with("openclaw.")
+        })
         .collect();
-    files.sort_by_key(|entry| entry.file_name());
+    files.sort_by_key(|entry| {
+        let file_name = entry.file_name();
+        let timestamp = file_name
+            .to_string_lossy()
+            .strip_suffix(".json")
+            .and_then(|stem| stem.rsplit('.').next())
+            .and_then(|value| value.parse::<u128>().ok())
+            .unwrap_or(0);
+        (timestamp, file_name)
+    });
     let remove_count = files.len().saturating_sub(keep);
     for entry in files.into_iter().take(remove_count) {
         let _ = std::fs::remove_file(entry.path());
@@ -673,6 +688,38 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap(),
             json!({"auth":{"profiles":{}}})
         );
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn backup_pruning_keeps_the_newest_timestamps_across_processes() {
+        let path = isolated_config_path("backup-pruning");
+        let backup_dir = backup_dir_for(&path);
+        fs::create_dir_all(&backup_dir).unwrap();
+
+        for timestamp in 1..=12 {
+            let process_id = if timestamp <= 2 { 9999 } else { 1 };
+            fs::write(
+                backup_dir.join(format!("openclaw.{process_id}.{timestamp}.json")),
+                timestamp.to_string(),
+            )
+            .unwrap();
+        }
+
+        prune_config_backups(&backup_dir, 10);
+
+        let retained: Vec<_> = fs::read_dir(&backup_dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(retained.len(), 10);
+        assert!(!retained.contains(&"openclaw.9999.1.json".to_string()));
+        assert!(!retained.contains(&"openclaw.9999.2.json".to_string()));
+        for timestamp in 3..=12 {
+            assert!(retained.contains(&format!("openclaw.1.{timestamp}.json")));
+        }
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

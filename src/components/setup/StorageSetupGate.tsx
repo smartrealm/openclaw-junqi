@@ -5,6 +5,7 @@ import { Check, ChevronDown, Cpu, Database, FolderOpen, GitBranch, HardDrive, Lo
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
+import { initialStorageCompletion, type StorageCompletion } from '@/components/setup/storageSetupModel';
 import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
 import { useAppStore, type SetupLog, type StorageSetupDraft } from '@/stores/app-store';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
@@ -36,9 +37,6 @@ interface StorageConfigureResult {
   runtimeReconfigurationRequired: boolean;
   openclawRelocationRequired: boolean;
 }
-
-type StorageCompletion = Pick<StorageConfigureResult, 'createdFresh'>
-  & Partial<Pick<StorageConfigureResult, 'runtimeReconfigurationRequired' | 'openclawRelocationRequired'>>;
 
 interface MigrationProgress {
   key?: string;
@@ -351,13 +349,12 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   }, [customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, targetDir, terminalIntegration, workspaceDir]);
 
   useEffect(() => {
-    if (initialCompletionHandledRef.current || !status?.configured || storageDraft) return;
+    if (initialCompletionHandledRef.current) return;
+    const initialCompletion = initialStorageCompletion(status, Boolean(storageDraft), forceConfigure);
+    if (!initialCompletion) return;
     initialCompletionHandledRef.current = true;
-    setCompletion({
-      createdFresh: false,
-      openclawRelocationRequired: status.openclawRelocationRequired,
-    });
-  }, [status, storageDraft]);
+    setCompletion(initialCompletion);
+  }, [forceConfigure, status, storageDraft]);
 
   const advanceAfterStorage = useCallback(() => {
     if (completion) onReadyRef.current(completion);
