@@ -1008,7 +1008,7 @@ fn assert_target_port_owned_or_available(
         return Ok(());
     }
     Err(format!(
-        "Port {port} is occupied by an endpoint that cannot be verified as the managed {source} Gateway; the healthy {source} runtime was left running and {target} was not started"
+        "Port {port} is occupied by an endpoint that cannot be verified for the selected runtime transition ({source} -> {target}); no existing Gateway was stopped and {target} was not started"
     ))
 }
 
@@ -1125,6 +1125,14 @@ pub(crate) async fn release_managed_native_gateway_for_docker(
     Ok(released)
 }
 
+fn should_preserve_selected_native_endpoint(
+    target_available: bool,
+    endpoint_matches_selected_config: bool,
+    managed_docker_owns_target: bool,
+) -> bool {
+    !target_available && endpoint_matches_selected_config && !managed_docker_owns_target
+}
+
 /// Stop JunQi's named Docker container before the selected Native runtime
 /// reclaims its port. The container name is owned by JunQi, so this never
 /// targets arbitrary user containers.
@@ -1135,7 +1143,7 @@ pub(crate) async fn release_managed_docker_gateway_for_native(port: u16) -> Resu
     };
     let mapping = RuntimePathMapping::from_active_layout()?;
     let target_available = crate::commands::gateway_supervisor::is_port_available(port).await;
-    let target_matches_docker = if target_available {
+    let target_matches_selected_config = if target_available {
         false
     } else {
         crate::commands::gateway::gateway_matches_config(port, &mapping.host_config_path).await
@@ -1152,10 +1160,25 @@ pub(crate) async fn release_managed_docker_gateway_for_native(port: u16) -> Resu
         }
         _ => false,
     };
+
+    // The shared port can already belong to an official Native service for
+    // the selected state/config pair (for example a launchd service restored
+    // before JunQi starts). It is not a Docker owner and must not be rejected
+    // merely because no managed container claims the port. Leave it running;
+    // the Native startup path performs the final token/config attestation and
+    // reconciles the installed service before accepting it.
+    if should_preserve_selected_native_endpoint(
+        target_available,
+        target_matches_selected_config,
+        managed_docker_owns_target,
+    ) {
+        return Ok(false);
+    }
+
     assert_target_port_owned_or_available(
         port,
         target_available,
-        target_matches_docker,
+        target_matches_selected_config,
         managed_docker_owns_target,
         "Docker",
         "Native",
@@ -1736,12 +1759,12 @@ mod tests {
         assert_target_port_owned_or_available, classify_container_inspection,
         container_publishes_host_port, legacy_container_matches_layout,
         managed_container_matches_runtime_contract, normalize_docker_config_runtime_paths,
-        parse_docker_layer_phase, parse_transfer_size, state_identity, transfer_ratio,
-        ContainerPresence, DockerLayerPhase, DockerPullProgress, ManagedContainerContract,
-        RuntimePathMapping, CONTAINER_CONTRACT_LABEL, CONTAINER_OWNER, CONTAINER_OWNER_LABEL,
-        CONTAINER_ROLE, CONTAINER_ROLE_LABEL, CONTAINER_SCHEMA, CONTAINER_SCHEMA_LABEL,
-        CONTAINER_STATE_LABEL, OPENCLAW_CONTAINER_CONFIG_PATH, OPENCLAW_CONTAINER_STATE_DIR,
-        OPENCLAW_CONTAINER_WORKSPACE_DIR,
+        parse_docker_layer_phase, parse_transfer_size, should_preserve_selected_native_endpoint,
+        state_identity, transfer_ratio, ContainerPresence, DockerLayerPhase, DockerPullProgress,
+        ManagedContainerContract, RuntimePathMapping, CONTAINER_CONTRACT_LABEL, CONTAINER_OWNER,
+        CONTAINER_OWNER_LABEL, CONTAINER_ROLE, CONTAINER_ROLE_LABEL, CONTAINER_SCHEMA,
+        CONTAINER_SCHEMA_LABEL, CONTAINER_STATE_LABEL, OPENCLAW_CONTAINER_CONFIG_PATH,
+        OPENCLAW_CONTAINER_STATE_DIR, OPENCLAW_CONTAINER_WORKSPACE_DIR,
     };
     use std::path::PathBuf;
 
@@ -1899,6 +1922,18 @@ mod tests {
             18_789, true, false, false, "Docker", "Native"
         )
         .is_ok());
+    }
+
+    #[test]
+    fn native_transition_preserves_an_attested_selected_endpoint_without_a_docker_owner() {
+        assert!(should_preserve_selected_native_endpoint(false, true, false));
+        assert!(!should_preserve_selected_native_endpoint(
+            false, false, false
+        ));
+        assert!(!should_preserve_selected_native_endpoint(false, true, true));
+        assert!(!should_preserve_selected_native_endpoint(
+            true, false, false
+        ));
     }
 
     #[test]

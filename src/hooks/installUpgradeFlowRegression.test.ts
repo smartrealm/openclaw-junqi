@@ -109,9 +109,10 @@ test('BUG-IU-10 runtime switching preserves the source Gateway when the target p
   assert.match(dockerCommand, /release_managed_native_gateway_for_docker/);
   assert.match(dockerCommand, /target_matches_native/);
   assert.match(dockerCommand, /release_managed_docker_gateway_for_native/);
-  assert.match(dockerCommand, /target_matches_docker/);
+  assert.match(dockerCommand, /target_matches_selected_config/);
   assert.match(dockerCommand, /container_publishes_host_port/);
-  assert.match(dockerCommand, /healthy \{source\} runtime was left running and \{target\} was not started/);
+  assert.match(dockerCommand, /should_preserve_selected_native_endpoint/);
+  assert.match(dockerCommand, /no existing Gateway was stopped and \{target\} was not started/);
 });
 
 test('BUG-IU-06 relocating configured storage migrates the selected state, not only the legacy default', () => {

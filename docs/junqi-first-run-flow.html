@@ -165,7 +165,7 @@
         <rect x="330" y="430" width="116" height="16" rx="4" class="status-fixed"/><text x="388" y="441" class="status-text-fixed" text-anchor="middle">已修复 · 复用优先</text>
         <rect x="520" y="376" width="128" height="48" rx="6" class="box-security"/><text x="584" y="397" class="name" text-anchor="middle">Windows UAC</text><text x="584" y="413" class="sub" text-anchor="middle">仅安装时出现</text>
         <rect x="288" y="448" width="200" height="40" rx="6" class="box-soft"/><text x="388" y="464" class="name" text-anchor="middle">架构对应依赖按需补齐</text><text x="388" y="478" class="sub" text-anchor="middle">x86: Node 22 + npm + 32-bit MinGit</text>
-        <rect x="160" y="504" width="192" height="40" rx="6" class="box-accent"/><text x="256" y="522" class="name" text-anchor="middle">启动 Native Gateway</text><text x="256" y="536" class="sub" text-anchor="middle">startForSetup</text>
+        <rect x="160" y="504" width="192" height="40" rx="6" class="box-accent"/><text x="256" y="520" class="name" text-anchor="middle">验证 / 启动 Native Gateway</text><text x="256" y="534" class="sub" text-anchor="middle">同配置服务先认证复用</text><text x="256" y="548" class="sub" text-anchor="middle">否则按所有权启动</text>
         <path d="M256 228 L256 260" class="edge"/><path d="M208 304 L148 304 L148 376" class="edge-link"/><path d="M304 304 L388 304 L388 376" class="edge"/>
         <text x="164" y="292" class="edge-label">是</text><text x="340" y="292" class="edge-label">否</text>
         <path d="M488 400 L520 400" class="edge-link"/><path d="M388 424 L388 448" class="edge"/><path d="M148 424 L148 480 L256 480 L256 504" class="edge-accent"/><path d="M388 488 L388 496 L256 496 L256 504" class="edge-accent"/>
@@ -178,7 +178,7 @@
         <rect x="752" y="430" width="112" height="16" rx="4" class="status-fixed"/><text x="808" y="441" class="status-text-fixed" text-anchor="middle">已修复 · 不再强拉</text>
         <rect x="920" y="376" width="160" height="48" rx="6" class="box"/><text x="1000" y="398" class="name" text-anchor="middle">拉取 OpenClaw 镜像</text><text x="1000" y="413" class="sub" text-anchor="middle">仅镜像缺失时</text>
         <rect x="808" y="504" width="192" height="40" rx="6" class="box-accent"/><text x="904" y="520" class="name" text-anchor="middle">单一契约判定复用或重建</text><text x="904" y="534" class="sub" text-anchor="middle">contract digest + image ID</text>
-        <rect x="826" y="550" width="156" height="16" rx="4" class="status-fixed"/><text x="904" y="561" class="status-text-fixed" text-anchor="middle">已修复 · 端口互斥与补偿</text>
+        <rect x="826" y="550" width="156" height="16" rx="4" class="status-fixed"/><text x="904" y="561" class="status-text-fixed" text-anchor="middle">已修复 · 端口身份与补偿</text>
         <path d="M904 228 L904 260" class="edge"/><path d="M856 304 L808 304 L808 376" class="edge-link"/><path d="M952 304 L1000 304 L1000 376" class="edge"/>
         <text x="816" y="292" class="edge-label">有</text><text x="980" y="292" class="edge-label">无</text>
         <path d="M808 424 L808 480 L904 480 L904 504" class="edge-accent"/><path d="M1000 424 L1000 480 L904 480" class="edge-accent"/>
@@ -190,6 +190,7 @@
       </svg>
     </div>
     <div class="cards">
+      <div class="card"><p class="card-kicker">代码已修复 · NATIVE SERVICE REUSE</p><h3>同配置 Native 服务不再被误判为 Docker 冲突</h3><ul><li>Native 切换前若共享端口已响应 selected config/token，且没有 JunQi managed Docker 容器拥有该端口，则保留现有 endpoint</li><li>随后仍由 Native 启动链执行健康、token/config 与官方 service ownership 验证；验证失败继续 fail-closed</li><li>未知 listener、foreign config 或真实 managed Docker owner 仍不得绕过端口门禁</li><li>Rust 全量测试 613 项、Docker 聚焦测试、TypeScript/lint 与本地 ARM64 production build 已通过；真实首次设置重试仍待人工验证</li></ul></div>
       <div class="card"><p class="card-kicker">WINDOWS x86 · 32-BIT</p><h3>自动走 Native-only</h3><ul><li><code>ARCH=x86</code>，不需要用户选择</li><li>Node release catalog 自动选择 <code>win-x86</code> 兼容版本，npm 随 Node 提供</li><li>使用稳定 JunQi-owned 目录复用已固定 SHA-256 的 32-bit MinGit</li><li>Docker 被能力门禁禁用，并显示“32 位仅支持 Native”而非误报“未安装”</li></ul></div>
       <div class="card"><p class="card-kicker">WINDOWS x64</p><h3>Native 或 Docker</h3><ul><li><code>ARCH=x86_64</code></li><li>Native 使用 win-x64 Node 与 64-bit Git</li><li>Docker 仍需 CLI、Daemon、镜像与容器契约全部通过</li></ul></div>
       <div class="card"><p class="card-kicker">WINDOWS ARM64</p><h3>架构对应运行时</h3><ul><li><code>ARCH=aarch64</code></li><li>Native 使用 win-arm64 Node 与 ARM64 Git</li><li>Docker 可用性以真实 ARM64 Docker 环境探测为准</li></ul></div>
@@ -281,6 +282,7 @@
   <section id="risks">
     <div class="section-head"><span class="number">AUDIT</span><h2>关键风险处置状态</h2><p class="section-note">“已修复”表示源代码与自动化回归已经通过；不等于真实环境验收。FIG. 03 本轮变更仍需在 Windows、真实 OpenClaw Gateway、设备配对及 operator.admin scope 升级环境中验证。</p></div>
     <div class="risk-grid">
+      <article class="risk resolved"><p class="level">代码已修复 · NATIVE ENDPOINT REUSE</p><h3>已认证 selected Native 服务不会在 Docker 释放检查中被提前拒绝</h3><p>Native 启动前的共享端口门禁现在区分“managed Docker owner”与“已接受 selected config/token 的非 Docker endpoint”。后者保持运行并交给 Native 启动链继续执行 token/config、健康与 service ownership 验证；未知端口占用、foreign config 和真正的 Docker owner 仍按原契约 fail-closed。自动化与本地 ARM64 构建通过，待用首次设置界面重试验证完整日志和页面推进。</p></article>
       <article class="risk resolved"><p class="level">已修复 · CONCURRENCY</p><h3>开机自启交接期间锁定 Ready 导航</h3><p>自启动组件会将 busy 状态提升到 Ready 页；系统服务交接期间“上一步”和“进入仪表盘”均禁用，避免设置页与工作台同时操作 Gateway 生命周期。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · WIZARD HANDOFF FENCING</p><h3>过期 Wizard 完成任务不得提交交接结果</h3><p>official-service handoff、交接后 Gateway probe、模型 live probe 与连接目标刷新之后均重新验证同一 Wizard operation identity。页面返回或新操作接管后，旧任务即使完成 Rust 交接，也不得修改设置 UI、进入 Ready 或继续后续探测。待 Windows 官方服务交接真机实测。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · RUNTIME CREDENTIAL / PROBE FENCING</p><h3>同端口 Native/Docker 不再共享设备凭据或完成条件</h3><p>后端为 selected runtime/config 输出非敏感 credential scope；设备 token 的预认证存储键绑定 scope + endpoint，Native 与 Docker 即使共用 127.0.0.1:18789 也不会读取对方 token，且 selected runtime 不再回退到无 scope 的旧 endpoint 凭据。模型 live probe 固定使用启动时的 selected config，并在 CLI 返回后复核 runtime mode 与 config path。待真实配对、模型调用和切换竞态实测。</p></article>
