@@ -19,6 +19,7 @@ import {
   migrateLegacyGatewayCredential,
   resetGatewayCredentialProviderForTests,
   resolveGatewayCredentialRuntimeKey,
+  selectedGatewayRuntimeKey,
   storeGatewayDeviceCredential,
   type GatewayCredentialBackend,
 } from './credentialProvider';
@@ -213,6 +214,16 @@ describe('Gateway credential provider', () => {
   });
 });
 
+it('keeps selected Native and Docker credentials isolated on one loopback endpoint', () => {
+  const endpoint = 'ws://127.0.0.1:18789';
+  const native = selectedGatewayRuntimeKey(endpoint, 'native:/state/openclaw.json');
+  const docker = selectedGatewayRuntimeKey(endpoint, 'docker:/state/docker/openclaw.json');
+
+  assert.notEqual(native, docker);
+  assert.match(native, /^selected:native:/);
+  assert.match(docker, /^selected:docker:/);
+});
+
 describe('Gateway runtime credential binding', () => {
   const gatewayUrl = 'ws://localhost:18789';
 
@@ -317,6 +328,47 @@ describe('Gateway runtime credential binding', () => {
     assert.equal(state.credentials.get(instanceKey)?.token, 'paired-token');
     assert.equal(state.credentials.get(endpointKey)?.token, 'paired-token');
     assert.doesNotMatch(events.join(','), /delete:/);
+  });
+
+  it('migrates a selected-runtime token to the attested instance', async () => {
+    const selectedKey = selectedGatewayRuntimeKey(gatewayUrl, 'docker:/state/docker/openclaw.json');
+    const instanceKey = collaborationInstanceRuntimeKey('instance-1');
+    const state = credentialBackend([
+      [selectedKey, { token: 'selected-token', persistence: 'system' }],
+    ]);
+
+    const result = await bindGatewayCredentialToInstance(gatewayUrl, 'instance-1', {
+      backend: state.backend,
+      resolveDeviceId: deviceId,
+      sourceRuntimeKeys: [selectedKey],
+      isCurrent: () => true,
+    });
+
+    assert.equal(result.credential.token, 'selected-token');
+    assert.equal(state.credentials.get(instanceKey)?.token, 'selected-token');
+    assert.equal(state.credentials.has(selectedKey), false);
+  });
+
+  it('keeps source credentials when Gateway identity drifts during binding', async () => {
+    const selectedKey = selectedGatewayRuntimeKey(gatewayUrl, 'native:/state/openclaw.json');
+    const instanceKey = collaborationInstanceRuntimeKey('instance-1');
+    const events: string[] = [];
+    const state = credentialBackend([
+      [selectedKey, { token: 'selected-token', persistence: 'system' }],
+    ], events);
+    let checks = 0;
+
+    await assert.rejects(bindGatewayCredentialToInstance(gatewayUrl, 'instance-1', {
+      backend: state.backend,
+      resolveDeviceId: deviceId,
+      sourceRuntimeKeys: [selectedKey],
+      isCurrent: () => ++checks < 2,
+    }), /identity changed during credential binding/);
+
+    assert.equal(state.credentials.get(instanceKey)?.token, 'selected-token');
+    assert.equal(state.credentials.get(selectedKey)?.token, 'selected-token');
+    assert.doesNotMatch(events.join(','), /delete:/);
+    assert.equal(localStorage.getItem(GATEWAY_RUNTIME_ALIAS_KEY), null);
   });
 
   it('falls back to the endpoint token after an interrupted alias migration', async () => {

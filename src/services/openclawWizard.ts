@@ -102,6 +102,7 @@ export type OpenClawWizardFailureKind =
   | 'already_running'
   | 'request_timeout'
   | 'cancelled'
+  | 'cancellation_locked'
   | 'unknown';
 
 type GatewayCaller = (
@@ -197,7 +198,38 @@ export class OpenClawWizardCancelledError extends Error {
   }
 }
 
+export class OpenClawWizardOperationSupersededError extends Error {
+  constructor() {
+    super('OpenClaw wizard operation was superseded.');
+    this.name = 'OpenClawWizardOperationSupersededError';
+  }
+}
+
+/**
+ * OpenClaw may lock cancellation while a durable configuration write is in
+ * progress. In that case `wizard.cancel` succeeds as an RPC but reports the
+ * session as still running; callers must retain and resume that session.
+ */
+export class OpenClawWizardCancellationLockedError extends Error {
+  constructor() {
+    super('OpenClaw wizard is still running because cancellation is currently locked.');
+    this.name = 'OpenClawWizardCancellationLockedError';
+  }
+}
+
+function assertWizardCancelStatus(value: unknown): 'running' | 'done' | 'cancelled' | 'error' {
+  if (!value || typeof value !== 'object') {
+    throw new Error('OpenClaw returned an invalid wizard cancellation response.');
+  }
+  const status = (value as Record<string, unknown>).status;
+  if (status !== 'running' && status !== 'done' && status !== 'cancelled' && status !== 'error') {
+    throw new Error('OpenClaw wizard cancellation response has an invalid `status`.');
+  }
+  return status;
+}
+
 export class OpenClawWizardClient {
+  private operationEpoch = 0;
   private sessionId: string | null = null;
   private failedSessionId: string | null = null;
   private currentStep: OpenClawWizardStep | null = null;
@@ -240,7 +272,21 @@ export class OpenClawWizardClient {
     return this.history.length > 0 && (this.sessionId !== null || this.failedStep !== null);
   }
 
+  /** Fence responses belonging to a setup screen or Gateway lifecycle that is no longer active. */
+  invalidatePendingOperations(): void {
+    this.operationEpoch += 1;
+  }
+
+  private captureOperation(): number {
+    return this.operationEpoch;
+  }
+
+  private assertOperationCurrent(operation: number): void {
+    if (operation !== this.operationEpoch) throw new OpenClawWizardOperationSupersededError();
+  }
+
   async start(workspace?: string): Promise<OpenClawWizardResult> {
+    const operation = this.captureOperation();
     // A refresh/back navigation can leave the official server-side session
     // alive. Reconcile it before starting a new session so OpenClaw's
     // single-session guard cannot strand onboarding on "already running".
@@ -256,6 +302,7 @@ export class OpenClawWizardClient {
       mode: 'local',
       ...(this.workspace ? { workspace: this.workspace } : {}),
     }));
+    this.assertOperationCurrent(operation);
     const returnedSessionId = String(result.sessionId ?? '').trim() || null;
     const terminal = isTerminalWizardResult(result);
     const failed = result.status === 'error';
@@ -271,6 +318,7 @@ export class OpenClawWizardClient {
   }
 
   async next(stepId: string, value?: unknown): Promise<OpenClawWizardResult> {
+    const operation = this.captureOperation();
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
     const submittedSessionId = this.sessionId;
     const submittedStep = this.currentStep;
@@ -281,6 +329,7 @@ export class OpenClawWizardClient {
         ...(value !== undefined ? { value } : {}),
       },
     }, { timeoutMs: null }));
+    this.assertOperationCurrent(operation);
     if (isTerminalWizardResult(result)) {
       this.setSession(null);
       const failed = result.status === 'error';
@@ -308,12 +357,14 @@ export class OpenClawWizardClient {
    * still be performing an external operation.
    */
   async resume(): Promise<OpenClawWizardResult> {
+    const operation = this.captureOperation();
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
     const resumedSessionId = this.sessionId;
     const resumedStep = this.currentStep;
     const result = assertWizardResult(await this.callGateway('wizard.next', {
       sessionId: this.sessionId,
     }, { timeoutMs: null }));
+    this.assertOperationCurrent(operation);
     if (isTerminalWizardResult(result)) {
       this.setSession(null);
       const failed = result.status === 'error';
@@ -385,15 +436,26 @@ export class OpenClawWizardClient {
   }
 
   async cancel(): Promise<void> {
+    const operation = this.captureOperation();
     if (!this.sessionId) return;
     const sessionId = this.sessionId;
     try {
-      await this.callGateway('wizard.cancel', { sessionId });
+      const status = assertWizardCancelStatus(await this.callGateway('wizard.cancel', { sessionId }));
+      this.assertOperationCurrent(operation);
+      // The official Gateway can reject cancellation once a durable write has
+      // started. Its RPC still succeeds but reports `running`; retain the
+      // opaque id so callers resume instead of creating a conflicting session.
+      if (status === 'running') throw new OpenClawWizardCancellationLockedError();
       this.setSession(null);
     } catch (error) {
       // A server-side expiry means the session is already gone. For transport
       // failures retain the id so a later start/back action can retry cleanup.
-      if (isOpenClawWizardSessionLost(error)) this.setSession(null);
+      // Re-check the epoch before mutating: a stale cancel must never clear a
+      // newer setup operation's session, even when the old RPC says not-found.
+      if (isOpenClawWizardSessionLost(error)) {
+        this.assertOperationCurrent(operation);
+        if (this.sessionId === sessionId) this.setSession(null);
+      }
       throw error;
     }
   }
@@ -407,6 +469,7 @@ export class OpenClawWizardClient {
 
 export function classifyOpenClawWizardFailure(error: unknown): OpenClawWizardFailureKind {
   if (error instanceof OpenClawWizardCancelledError) return 'cancelled';
+  if (error instanceof OpenClawWizardCancellationLockedError) return 'cancellation_locked';
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
   const record = error && typeof error === 'object' ? error as Record<string, unknown> : null;

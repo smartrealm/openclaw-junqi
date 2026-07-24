@@ -130,6 +130,7 @@ pub(crate) fn verified_system_git_installer_artifact(
 
 fn validate_artifact(architecture: &str, artifact: &ManagedGitArtifact) -> Result<(), String> {
     let suffix = match architecture {
+        "x86" => "-32-bit.zip",
         "x86_64" => "-64-bit.zip",
         "aarch64" => "-arm64.zip",
         other => {
@@ -201,7 +202,7 @@ mod tests {
     fn runtime_version_metadata_is_loaded_from_the_reviewed_manifest() {
         let source = include_str!("../../resources/runtime-artifacts.json");
         let manifest: RuntimeManifest = serde_json::from_str(source).unwrap();
-        assert_eq!(manifest.git_for_windows.len(), 2);
+        assert_eq!(manifest.git_for_windows.len(), 3);
         for (architecture, artifact) in manifest.git_for_windows {
             validate_artifact(&architecture, &artifact).unwrap();
         }

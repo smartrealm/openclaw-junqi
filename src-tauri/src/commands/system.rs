@@ -2137,6 +2137,25 @@ pub async fn check_git() -> Result<GitStatus, String> {
         });
     }
 
+    // Windows x86 has no current full Git for Windows installer. Reuse the
+    // JunQi-owned portable fallback before consulting PATH so a prior setup is
+    // a real warm-start fast path rather than a repeated download.
+    #[cfg(windows)]
+    if std::env::consts::ARCH == "x86" {
+        let managed = paths::managed_git_fallback_path();
+        if managed.is_file() {
+            let path = managed.to_string_lossy().into_owned();
+            if let Some(version) = get_git_version(&path).await {
+                return Ok(GitStatus {
+                    available: true,
+                    version: Some(version),
+                    path: Some(path),
+                    source: Some(RuntimeToolSource::Custom),
+                });
+            }
+        }
+    }
+
     // System Git can have multiple PATH candidates on Windows (a stale
     // version-manager shim followed by the regular installer is common).
     // Probe every executable candidate before declaring Git unavailable so a

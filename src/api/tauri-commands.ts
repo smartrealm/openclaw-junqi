@@ -36,7 +36,7 @@ export interface OpenclawStatus {
   relocation_required: boolean;
   error: string | null;
 }
-export interface DockerStatus { available: boolean; version: string | null; daemon_running: boolean; }
+export interface DockerStatus { available: boolean; version: string | null; daemon_running: boolean; unsupported_reason: string | null; image_available: boolean; }
 export interface GatewayStatus { running: boolean; port: number; pid: number | null; token: string | null; }
 export interface SetupNodeStatus {
   node: NodeStatus;
@@ -56,6 +56,7 @@ export interface GatewayConfigInfo {
   http_url: string;
   config_path: string | null;
   runtime_mode: GatewayRuntimeMode;
+  credential_scope: string;
 }
 export interface TerminalIntegrationStatus {
   requested: boolean;
@@ -174,14 +175,11 @@ export const detectGatewayConfig = () => invoke<GatewayConfigInfo>("detect_gatew
 export const setActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
   invoke<void>("set_active_gateway_runtime", { mode })
 );
-export const commitActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
-  invoke<void>("commit_active_gateway_runtime", { mode })
-);
 export const rollbackActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
   invoke<void>("rollback_active_gateway_runtime", { mode })
 );
-export const commitRuntimeReconfiguration = () => (
-  invoke<boolean>("commit_runtime_reconfiguration")
+export const commitSetupGatewayRuntime = (mode: GatewayRuntimeMode) => (
+  invoke<boolean>("commit_setup_gateway_runtime", { mode })
 );
 export const rollbackRuntimeReconfiguration = () => (
   invoke<boolean>("rollback_runtime_reconfiguration")

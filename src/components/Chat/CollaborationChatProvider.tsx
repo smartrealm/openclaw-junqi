@@ -490,10 +490,34 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
       }
       if (boundIdentity?.endpoint) {
         try {
-          await bindGatewayCredentialToInstance(
-            boundIdentity.endpoint,
-            currentCapabilities.collaborationInstanceId,
-          );
+          const adapterBinding = window.aegis?.pairing?.bindTokenToInstance;
+          if (adapterBinding) {
+            const result = await adapterBinding(
+              boundIdentity.endpoint,
+              currentCapabilities.collaborationInstanceId,
+              expectedConnectionId,
+            );
+            if (!result.success) {
+              throw new Error('Gateway identity changed before credential binding completed');
+            }
+          } else {
+            // Compatibility for non-Tauri/test adapters. The desktop adapter
+            // supplies the selected-runtime source slot and identity fence.
+            await bindGatewayCredentialToInstance(
+              boundIdentity.endpoint,
+              currentCapabilities.collaborationInstanceId,
+              {
+                isCurrent: () => {
+                  const identity = getCurrentRuntimeIdentity();
+                  return Boolean(
+                    identity?.verified
+                    && identity.connectionId === expectedConnectionId
+                    && identity.runtimeId === currentCapabilities.collaborationInstanceId,
+                  );
+                },
+              },
+            );
+          }
         } catch (error) {
           if (generation === capabilityCheckGeneration.current) {
             setLocalError(collaborationErrorMessage(error));

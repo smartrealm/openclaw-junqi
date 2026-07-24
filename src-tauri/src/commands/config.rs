@@ -301,6 +301,10 @@ pub struct GatewayConfigInfo {
     pub http_url: String,
     pub config_path: Option<String>,
     pub runtime_mode: paths::OpenClawRuntimeMode,
+    /// Non-secret identity of the selected state/config snapshot. Renderer
+    /// credential caches must not treat two runtimes sharing one port as the
+    /// same pre-attestation endpoint.
+    pub credential_scope: String,
 }
 
 pub(crate) fn gateway_token_string_is_reference(value: &str) -> bool {
@@ -351,6 +355,11 @@ pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
         }
     }
 
+    let runtime_label = match mode {
+        paths::OpenClawRuntimeMode::Native => "native",
+        paths::OpenClawRuntimeMode::Docker => "docker",
+    };
+    let credential_scope = format!("{runtime_label}:{}", path.to_string_lossy());
     Ok(GatewayConfigInfo {
         token,
         port,
@@ -358,6 +367,7 @@ pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
         http_url: format!("http://{}:{}", default_gateway_host(), port),
         config_path: found_path,
         runtime_mode: mode,
+        credential_scope,
     })
 }
 
@@ -379,19 +389,6 @@ pub async fn set_active_gateway_runtime(
 }
 
 #[tauri::command]
-pub async fn commit_active_gateway_runtime(
-    state: State<'_, GatewayProcess>,
-    mode: paths::OpenClawRuntimeMode,
-) -> Result<(), String> {
-    let operation_gate = state.operation_gate.clone();
-    let _operation_guard = operation_gate.try_lock_owned().map_err(|_| {
-        "Gateway or storage maintenance is running; commit the runtime after it completes"
-            .to_string()
-    })?;
-    paths::commit_active_runtime_mode_switch(mode)
-}
-
-#[tauri::command]
 pub async fn rollback_active_gateway_runtime(
     state: State<'_, GatewayProcess>,
     mode: paths::OpenClawRuntimeMode,
@@ -402,6 +399,29 @@ pub async fn rollback_active_gateway_runtime(
             .to_string()
     })?;
     paths::rollback_active_runtime_mode_switch(mode)
+}
+
+/// Finalize setup's runtime selection and optional Native location migration
+/// as one bootstrap transaction, after the candidate Gateway has passed the
+/// same authenticated config probe used by storage recovery.
+#[tauri::command]
+pub async fn commit_setup_gateway_runtime(
+    state: State<'_, GatewayProcess>,
+    mode: paths::OpenClawRuntimeMode,
+) -> Result<bool, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
+    let active_config = paths::active_config_path();
+    let active_port = std::fs::read_to_string(&active_config)
+        .ok()
+        .and_then(|raw| extract_port_from_config(&raw))
+        .unwrap_or_else(default_gateway_port);
+    if !crate::commands::gateway::gateway_matches_config(active_port, &active_config).await {
+        return Err(format!(
+            "Selected Gateway is not healthy on port {active_port}; setup runtime remains recoverable"
+        ));
+    }
+    paths::commit_setup_runtime_transaction(mode)
 }
 
 /// 直接从配置文件读取供应商 API Key（未脱敏）。

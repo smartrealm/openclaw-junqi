@@ -40,15 +40,20 @@ import {
   type GwConfig,
 } from "../services/gateway/configResolvers";
 import { formatGatewayLogs } from '../services/gateway/gatewayLogFormatting';
+import { getCurrentRuntimeIdentity } from '../services/gateway/runtimeIdentity';
 import { gatewayRestartSingleFlight } from '../services/gateway/SingleFlight';
 import { gatewayRestartProgressFromLog, type GatewayRecoveryStatus } from '../services/gateway/recoveryProgress';
 import { APP_VERSION } from '../version';
 import { inferMimeType } from '@/services/chat/attachments';
 import {
+  bindGatewayCredentialToInstance,
   clearLegacyGatewayCredentialStorage,
+  getGatewayDeviceCredential,
   getGatewayDeviceCredentialForUrl,
+  gatewayRuntimeKeyFromUrl,
   migrateLegacyGatewayCredential,
   resolveGatewayCredentialRuntimeKey,
+  selectedGatewayRuntimeKey,
   storeGatewayDeviceCredential,
   type GatewayCredential,
 } from '../services/gateway/credentialProvider';
@@ -211,11 +216,31 @@ function gatewayEndpointsMatch(left: string, right: string): boolean {
   return normalizedLeft !== null && normalizedLeft === normalizedGatewayEndpoint(right);
 }
 
+function gatewayDeviceCredentialRuntimeKey(
+  gatewayUrl: string,
+  activeConfig: GwConfig | null,
+): string {
+  const endpointKey = gatewayRuntimeKeyFromUrl(gatewayUrl);
+  const boundRuntimeKey = resolveGatewayCredentialRuntimeKey(gatewayUrl);
+  // Once this endpoint has been attested and aliased to an instance, token
+  // rotation must update that durable instance slot. Otherwise a rotated
+  // selected-scope copy can be deleted by the next promotion while the old
+  // instance token remains authoritative.
+  if (boundRuntimeKey !== endpointKey) return boundRuntimeKey;
+  return activeConfig
+    && gatewayEndpointsMatch(gatewayUrl, activeConfig.ws_url)
+    && activeConfig.credential_scope
+    ? selectedGatewayRuntimeKey(gatewayUrl, activeConfig.credential_scope)
+    : endpointKey;
+}
+
 async function persistGatewayToken(token: string, explicitUrl?: string): Promise<void> {
   const normalized = token.trim();
   if (!normalized) return;
+  const gatewayUrl = currentGatewayWsUrl(explicitUrl);
+  const activeConfig = await resolveGwConfig();
   await storeGatewayDeviceCredential(
-    resolveGatewayCredentialRuntimeKey(currentGatewayWsUrl(explicitUrl)),
+    gatewayDeviceCredentialRuntimeKey(gatewayUrl, activeConfig),
     normalized,
   );
 }
@@ -376,11 +401,18 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       try { saved = JSON.parse(localStorage.getItem("aegis-config") || "{}"); } catch {}
       const legacyUrl = saved.gatewayUrl || saved.gatewayWsUrl;
       const wsUrl = legacyUrl || gw?.ws_url || currentGatewayWsUrl();
-      let credential = await migrateLegacyGatewayCredential(resolveGatewayCredentialRuntimeKey(wsUrl));
+      const credentialRuntimeKey = gatewayDeviceCredentialRuntimeKey(wsUrl, gw);
+      let credential = await migrateLegacyGatewayCredential(credentialRuntimeKey);
       if (!credential.token) {
         credential = await migrateNativeLegacyGatewayCredential(wsUrl, gw) || credential;
       }
-      if (!credential.token) credential = await getGatewayDeviceCredentialForUrl(wsUrl);
+      if (!credential.token) credential = await getGatewayDeviceCredential(credentialRuntimeKey);
+      if (
+        !credential.token
+        && (!gw || !gatewayEndpointsMatch(wsUrl, gw.ws_url) || !gw.credential_scope)
+      ) {
+        credential = await getGatewayDeviceCredentialForUrl(wsUrl);
+      }
       const bootstrapToken = gw?.token && gatewayEndpointsMatch(wsUrl, gw.ws_url)
         ? gw.token
         : '';
@@ -756,7 +788,16 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       try {
         const target = currentGatewayWsUrl(gatewayUrl);
         const activeConfig = await resolveGwConfig();
-        let credential = await getGatewayDeviceCredentialForUrl(target);
+        const credentialRuntimeKey = gatewayDeviceCredentialRuntimeKey(target, activeConfig);
+        let credential = await getGatewayDeviceCredential(credentialRuntimeKey);
+        if (
+          !credential.token
+          && (!activeConfig
+            || !gatewayEndpointsMatch(target, activeConfig.ws_url)
+            || !activeConfig.credential_scope)
+        ) {
+          credential = await getGatewayDeviceCredentialForUrl(target);
+        }
         if (!credential.token) {
           credential = await migrateNativeLegacyGatewayCredential(target, activeConfig) || credential;
         }
@@ -773,6 +814,34 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       } catch {
         // The provider itself retains a session-only token when the native
         // credential store is unsupported; only invalid input reaches here.
+        return { success: false };
+      }
+    },
+    bindTokenToInstance: async (
+      gatewayUrl: string,
+      collaborationInstanceId: string,
+      expectedConnectionId: string,
+    ) => {
+      try {
+        const activeConfig = await resolveGwConfig();
+        const selectedKey = gatewayDeviceCredentialRuntimeKey(gatewayUrl, activeConfig);
+        const isCurrent = () => {
+          const identity = getCurrentRuntimeIdentity();
+          return Boolean(
+            identity?.verified
+            && identity.connectionId === expectedConnectionId
+            && identity.endpoint === gatewayUrl
+            && identity.runtimeId === collaborationInstanceId,
+          );
+        };
+        if (!isCurrent()) return { success: false };
+        const result = await bindGatewayCredentialToInstance(
+          gatewayUrl,
+          collaborationInstanceId,
+          { sourceRuntimeKeys: [selectedKey], isCurrent },
+        );
+        return { success: true, cleanupComplete: result.cleanupComplete };
+      } catch {
         return { success: false };
       }
     },

@@ -162,6 +162,14 @@ jobs:
             asset_paths: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
+          - name: Windows x86
+            artifact_name: windows-i686
+            platform: windows-latest
+            target: 'i686-pc-windows-msvc'
+            bundle_args: '--bundles nsis'
+            asset_paths: |
+              src-tauri/target/i686-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/i686-pc-windows-msvc/release/bundle/nsis/*.exe.sig
           - name: Windows ARM64
             artifact_name: windows-arm64
             platform: windows-11-arm
@@ -319,7 +327,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "JunQi Desktop $VERSION" \
-            --notes "JunQi Desktop $VERSION。安装包包含 macOS ARM64/x64 与 Windows x64/ARM64；附件 .sig 用于应用更新完整性验证。"
+            --notes "JunQi Desktop $VERSION。安装包包含 macOS ARM64/x64 与 Windows x86/x64/ARM64；附件 .sig 用于应用更新完整性验证。"
 
   summary:
     name: Release Summary

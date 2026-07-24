@@ -134,7 +134,7 @@ test('BUG-WIN-STATE-01 validates selected storage with Node before Gateway boots
 test('BUG-GW-01 forced storage recovery migrates the configured state, not only the legacy default', () => {
   const gate = source('src/components/setup/StorageSetupGate.tsx');
 
-  assert.match(gate, /const shouldMigrateSelectedState = !usingLegacy[\s\S]*forceConfigure \|\| status\.legacyExists/);
+  assert.match(gate, /const shouldMigrateSelectedState = !usingSourceLocation[\s\S]*hasMigratableSource\(status, forceConfigure\)/);
   assert.match(gate, /migrateExisting: shouldMigrateSelectedState/);
 });
 

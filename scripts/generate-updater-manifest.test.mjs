@@ -7,6 +7,7 @@ import { generateUpdaterManifest } from './generate-updater-manifest.mjs';
 
 const releaseFixtures = [
   { filename: 'JunQi Desktop_2.0.0_x64-setup.exe', signed: true },
+  { filename: 'JunQi Desktop_2.0.0_x86-setup.exe', signed: true },
   { filename: 'JunQi Desktop_2.0.0_arm64-setup.exe', signed: true },
   { filename: 'JunQi Desktop_2.0.0_aarch64.dmg', signed: false },
   { filename: 'JunQi Desktop_2.0.0_x64.dmg', signed: false },
@@ -37,10 +38,11 @@ test('generates an NSIS-only updater manifest from final signed artifacts', asyn
     });
 
     assert.equal(manifest.platforms['windows-x86_64'].signature, 'signature-0');
-    assert.equal(manifest.platforms['windows-aarch64'].signature, 'signature-1');
+    assert.equal(manifest.platforms['windows-i686'].signature, 'signature-1');
+    assert.equal(manifest.platforms['windows-aarch64'].signature, 'signature-2');
     assert.equal(manifest.platforms['windows-x86_64-msi'], undefined);
-    assert.equal(manifest.platforms['darwin-aarch64'].signature, 'signature-4');
-    assert.equal(manifest.platforms['darwin-x86_64'].signature, 'signature-5');
+    assert.equal(manifest.platforms['darwin-aarch64'].signature, 'signature-5');
+    assert.equal(manifest.platforms['darwin-x86_64'].signature, 'signature-6');
     assert.notEqual(
       manifest.platforms['darwin-aarch64'].url,
       manifest.platforms['darwin-x86_64'].url,

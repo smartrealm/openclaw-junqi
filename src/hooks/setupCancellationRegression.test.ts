@@ -6,6 +6,10 @@ const setup = readFileSync(new URL("../../src-tauri/src/commands/setup.rs", impo
 const app = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
 const api = readFileSync(new URL("../api/tauri-commands.ts", import.meta.url), "utf8");
 const flow = readFileSync(new URL("./useSetupFlow.ts", import.meta.url), "utf8");
+const runtimeTransaction = readFileSync(
+  new URL("../services/setup/runtimeSelectionTransaction.ts", import.meta.url),
+  "utf8",
+);
 
 test("BUG-WIN-CANCEL-01 dependency cancellation is scoped to the initiating setup run", () => {
   assert.match(setup, /struct DependencyInstallOperationCoordinator/);
@@ -38,10 +42,36 @@ test("BUG-WIN-CANCEL-03 stale runtime selection cannot commit or compensate a ne
   );
 
   assert.match(selectMode, /const runId = beginRun\(\)/);
-  assert.match(selectMode, /await setActiveGatewayRuntime\(mode\);\s*if \(!isRunActive\(runId\)\) return/);
-  assert.match(selectMode, /completed = await runNativeSetup\(runId\)/);
-  assert.match(selectMode, /completed = await runDockerSetup\(runId\)/);
-  assert.match(selectMode, /await commitActiveGatewayRuntime\(mode\);\s*if \(!isRunActive\(runId\)\) return;\s*await commitRuntimeReconfiguration\(\)/);
-  assert.match(selectMode, /const restoredRuntimeLocations = await rollbackRuntimeReconfiguration\(\);\s*if \(!isRunActive\(runId\)\) return/);
-  assert.match(selectMode, /await rollbackActiveGatewayRuntime\(mode\);\s*if \(!isRunActive\(runId\)\) return/);
+  assert.match(selectMode, /executeRuntimeSelectionTransaction\(mode, previousMode/);
+  assert.match(selectMode, /isActive: \(\) => isRunActive\(runId\)/);
+  assert.match(selectMode, /stageMode: setActiveGatewayRuntime/);
+  assert.match(selectMode, /runNativeSetup\(runId\)[\s\S]*?runDockerSetup\(runId\)/);
+  assert.match(selectMode, /commit: commitSetupGatewayRuntime/);
+  assert.match(selectMode, /rollbackPendingLocations: rollbackRuntimeReconfiguration/);
+  assert.match(selectMode, /rollbackMode: rollbackActiveGatewayRuntime/);
+  assert.match(runtimeTransaction, /if \(!ports\.isActive\(\)\) return \{ status: "superseded" \}/);
+  assert.match(runtimeTransaction, /await ports\.commit\(targetMode\)/);
+  assert.match(runtimeTransaction, /await ports\.rollbackMode\(targetMode\)/);
+});
+
+test("BUG-WIN-CANCEL-04 Back compensates a staged mode before navigating", () => {
+  const goBack = flow.slice(
+    flow.indexOf("const goBack = useCallback"),
+    flow.indexOf("const retryGit = useCallback"),
+  );
+  assert.match(goBack, /const restoredRuntimeLocations = await rollbackRuntimeReconfiguration\(\)/);
+  assert.match(goBack, /if \(!restoredRuntimeLocations\) \{\s*await rollbackActiveGatewayRuntime\(installMode\)/);
+  assert.ok(goBack.indexOf("rollbackActiveGatewayRuntime") < goBack.indexOf("goBackSetup"));
+});
+
+test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff UI", () => {
+  const applyResult = flow.slice(
+    flow.indexOf("const applyWizardResult = useCallback"),
+    flow.indexOf("const recoverLostWizardSession = useCallback"),
+  );
+  assert.match(applyResult, /result: OpenClawWizardResult,\s*operationId: number/);
+  assert.match(applyResult, /await invoke<boolean>\("handoff_gateway_to_official_service", \{\}\);\s*assertWizardOperationCurrent\(operationId\)/);
+  assert.match(applyResult, /await invoke<boolean>\("probe_selected_gateway", \{\}\);\s*assertWizardOperationCurrent\(operationId\)/);
+  assert.match(applyResult, /const modelProbe = await probeActiveRuntimeModel\(\);\s*assertWizardOperationCurrent\(operationId\)/);
+  assert.match(applyResult, /await refreshGatewayConnectionTarget\(\);\s*assertWizardOperationCurrent\(operationId\)/);
 });

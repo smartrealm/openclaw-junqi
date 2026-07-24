@@ -5,7 +5,9 @@ import {
   isOpenClawWizardSessionLost,
   isOpenClawWizardStepDesynchronized,
   OpenClawWizardCancelledError,
+  OpenClawWizardCancellationLockedError,
   OpenClawWizardClient,
+  OpenClawWizardOperationSupersededError,
   requiresOpenClawOnboarding,
 } from './openclawWizard';
 
@@ -47,6 +49,26 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
     },
   ]);
   await assert.rejects(() => client.next('provider', 'again'), /not running/);
+});
+
+test('wizard client rejects a late response after its owning setup operation is invalidated', async () => {
+  let resolveRequest!: (value: unknown) => void;
+  const client = new OpenClawWizardClient(() => new Promise((resolve) => {
+    resolveRequest = resolve;
+  }));
+
+  const pending = client.start();
+  client.invalidatePendingOperations();
+  resolveRequest({
+    sessionId: 'stale-session',
+    done: false,
+    status: 'running',
+    step: { id: 'stale-step', type: 'note' },
+  });
+
+  await assert.rejects(pending, OpenClawWizardOperationSupersededError);
+  assert.equal(client.activeSessionId, null);
+  assert.equal(client.currentStepView, null);
 });
 
 test('wizard client restores an unfinished official session after a renderer restart', async () => {
@@ -220,6 +242,59 @@ test('wizard client never records or replays an answer rejected by a running ses
   ]);
 });
 
+test('wizard client retains the official session when cancellation is locked by a durable write', async () => {
+  let starts = 0;
+  const calls: string[] = [];
+  const client = new OpenClawWizardClient(async (method, params) => {
+    calls.push(`${method}:${String(params.sessionId ?? '')}`);
+    if (method === 'wizard.start') {
+      starts += 1;
+      return {
+        sessionId: `session-${starts}`,
+        done: false,
+        status: 'running',
+        step: { id: 'persistent-effect', type: 'progress' },
+      };
+    }
+    if (method === 'wizard.cancel') return { status: 'running' };
+    if (method === 'wizard.next') {
+      return { done: false, status: 'running', step: { id: 'persistent-effect', type: 'progress' } };
+    }
+    throw new Error(`unexpected ${method}`);
+  });
+
+  await client.start();
+  await assert.rejects(() => client.cancel(), OpenClawWizardCancellationLockedError);
+  assert.equal(client.activeSessionId, 'session-1');
+
+  // start/back must not forget the locked session or create a competing one.
+  await assert.rejects(() => client.start(), OpenClawWizardCancellationLockedError);
+  assert.equal(starts, 1);
+  assert.equal(client.activeSessionId, 'session-1');
+
+  const resumed = await client.resume();
+  assert.equal(resumed.step?.id, 'persistent-effect');
+  assert.deepEqual(calls, [
+    'wizard.start:',
+    'wizard.cancel:session-1',
+    'wizard.cancel:session-1',
+    'wizard.next:session-1',
+  ]);
+});
+
+test('wizard client rejects malformed cancellation status without forgetting the session', async () => {
+  const client = new OpenClawWizardClient(async (method) => {
+    if (method === 'wizard.start') {
+      return { sessionId: 'session-malformed', done: false, status: 'running', step: { id: 'confirm', type: 'confirm' } };
+    }
+    return { done: true };
+  });
+
+  await client.start();
+  await assert.rejects(() => client.cancel(), /cancellation response has an invalid `status`/);
+  assert.equal(client.activeSessionId, 'session-malformed');
+});
+
 test('wizard client treats cancelled as a terminal session that can restart cleanly', async () => {
   let starts = 0;
   const client = new OpenClawWizardClient(async (method) => {
@@ -237,6 +312,7 @@ test('wizard client treats cancelled as a terminal session that can restart clea
   assert.equal(client.activeSessionId, null);
   assert.equal(client.diagnosticSessionId, null);
   assert.equal(classifyOpenClawWizardFailure(new OpenClawWizardCancelledError()), 'cancelled');
+  assert.equal(classifyOpenClawWizardFailure(new OpenClawWizardCancellationLockedError()), 'cancellation_locked');
   const restarted = await client.retry();
   assert.equal(restarted.sessionId, 'session-2');
 });

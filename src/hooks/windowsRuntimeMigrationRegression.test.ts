@@ -15,6 +15,7 @@ const storage = readFileSync(
 );
 const setup = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
 const lib = readFileSync(new URL('../../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+const config = readFileSync(new URL('../../src-tauri/src/commands/config.rs', import.meta.url), 'utf8');
 const gateway = readFileSync(new URL('../../src-tauri/src/commands/gateway.rs', import.meta.url), 'utf8');
 const update = readFileSync(new URL('../../src-tauri/src/commands/openclaw_update.rs', import.meta.url), 'utf8');
 const repair = readFileSync(new URL('../../src-tauri/src/commands/openclaw_repair.rs', import.meta.url), 'utf8');
@@ -161,31 +162,31 @@ test('BUG-WRM-08 path policy and relocation commit each have one owner', () => {
 test('BUG-WRM-09 runtime location changes persist a compensating transaction until Gateway health commits it', () => {
   assert.match(paths, /struct PendingRuntimeReconfiguration/);
   assert.match(paths, /fn begin_runtime_reconfiguration/);
-  assert.match(paths, /fn commit_runtime_reconfiguration/);
+  assert.match(paths, /fn commit_setup_runtime_transaction/);
   assert.match(paths, /fn stage_runtime_reconfiguration_previous_layout/);
   assert.match(paths, /fn complete_runtime_reconfiguration_recovery/);
   assert.doesNotMatch(paths, /fn rollback_runtime_reconfiguration/);
-  assert.match(storage, /pub async fn commit_runtime_reconfiguration/);
+  assert.doesNotMatch(storage, /pub async fn commit_runtime_reconfiguration/);
   assert.match(storage, /pub async fn rollback_runtime_reconfiguration/);
   assert.match(storage, /recover_interrupted_runtime_reconfiguration/);
   assert.match(storage, /recover_runtime_reconfiguration_after_failure/);
   assert.match(storage, /StorageReconfigurationFailurePolicy/);
   assert.match(lib, /commands::storage::recover_interrupted_runtime_reconfiguration/);
-  assert.match(lib, /commands::storage::commit_runtime_reconfiguration/);
+  assert.match(lib, /commands::config::commit_setup_gateway_runtime/);
   assert.match(lib, /commands::storage::rollback_runtime_reconfiguration/);
-  assert.match(api, /invoke<boolean>\("commit_runtime_reconfiguration"\)/);
+  assert.match(api, /invoke<boolean>\("commit_setup_gateway_runtime"/);
   assert.match(api, /invoke<boolean>\("rollback_runtime_reconfiguration"\)/);
+  assert.doesNotMatch(api, /commit_active_gateway_runtime|commit_runtime_reconfiguration/);
 
   const selection = setupFlow.slice(
     setupFlow.indexOf('const selectMode = useCallback'),
     setupFlow.indexOf('const requestReinstall = useCallback'),
   );
-  assert.match(selection, /await commitRuntimeReconfiguration\(\)/);
-  assert.match(selection, /const restoredRuntimeLocations = await rollbackRuntimeReconfiguration\(\)/);
-  assert.ok(
-    selection.indexOf('rollbackRuntimeReconfiguration')
-      < selection.indexOf('rollbackActiveGatewayRuntime'),
-  );
+  assert.match(selection, /commit: commitSetupGatewayRuntime/);
+  assert.match(selection, /rollbackPendingLocations: rollbackRuntimeReconfiguration/);
+  assert.match(selection, /rollbackMode: rollbackActiveGatewayRuntime/);
+  assert.match(paths, /fn commit_setup_runtime_transaction/);
+  assert.match(config, /pub async fn commit_setup_gateway_runtime/);
 });
 
 test('BUG-WRM-10 incomplete runtime recovery blocks storage edits and offers a retryable restoration action', () => {

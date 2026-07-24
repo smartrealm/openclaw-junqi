@@ -138,6 +138,7 @@ function acceptHandshake(
 function sourceConnection() {
   return {
     isConnected: () => true,
+    getAttestedConnectionId: () => 'daily-connection',
     url: 'ws://127.0.0.1:18789',
     token: 'gateway-token',
     deviceToken: '',
@@ -190,6 +191,12 @@ describe('Gateway credential security regression gates', () => {
     connection.disconnect();
     stopPolling();
     await turn();
+  });
+
+  it('saves a rotated device token into the attested instance slot after alias binding', () => {
+    const adapter = readFileSync(new URL('../../api/tauri-adapter.ts', import.meta.url), 'utf8');
+    assert.match(adapter, /await storeGatewayDeviceCredential\(\s*gatewayDeviceCredentialRuntimeKey\(gatewayUrl, activeConfig\)/);
+    assert.match(adapter, /if \(boundRuntimeKey !== endpointKey\) return boundRuntimeKey/);
   });
 
   it('sends a stored device credential through the official deviceToken field', async () => {
@@ -301,6 +308,42 @@ describe('Gateway credential security regression gates', () => {
     assert.equal(resolved, 1);
     assert.deepEqual(socket.sent.map((message) => message.method), ['connect']);
     assert.deepEqual(approvedSocket.sent.map((message) => message.method), ['connect', 'wizard.start']);
+  });
+
+  it('fails closed when the daily Gateway identity changes during privileged pairing', async () => {
+    resetSockets();
+    let connectionId = 'daily-connection';
+    const source = {
+      ...sourceConnection(),
+      getAttestedConnectionId: () => connectionId,
+    };
+    const requestPrivileged = createPrivilegedRequester(
+      source,
+      (connectionOptions) => new GatewayConnection(connectionOptions),
+      { pairingRetryMs: 0, pairingTimeoutMs: 1_000 },
+    );
+    const resultPromise = requestPrivileged('wizard.start', { mode: 'local' });
+    await waitForSocketCount(1);
+    const pairingSocket = MemoryWebSocket.instances[0];
+    pairingSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      connectionId = 'replacement-connection';
+      pairingSocket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'pairing required',
+          details: { code: 'PAIRING_REQUIRED', requestId: 'stale-request' },
+        },
+      });
+    };
+    challenge(pairingSocket);
+
+    await assert.rejects(resultPromise, /verified Gateway connection changed/);
+    assert.equal(MemoryWebSocket.instances.length, 1, 'a stale source must not open a retry socket');
+    assert.deepEqual(pairingSocket.sent.map((message) => message.method), ['connect']);
   });
 
   it('cancels an active privileged pairing retry without dispatching the RPC', async () => {

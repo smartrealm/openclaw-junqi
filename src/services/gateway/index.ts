@@ -143,7 +143,10 @@ async function cleanupSessionArtifacts(sessionKey: string): Promise<void> {
   }));
 }
 
-type PrivilegedSourceConnection = Pick<GatewayConnection, 'isConnected' | 'url' | 'token' | 'deviceToken'>;
+type PrivilegedSourceConnection = Pick<
+  GatewayConnection,
+  'isConnected' | 'getAttestedConnectionId' | 'url' | 'token' | 'deviceToken'
+>;
 type TransientGatewayConnection = Pick<
   GatewayConnection,
   'connect' | 'disconnect' | 'request' | 'setCallbacks'
@@ -205,12 +208,30 @@ function emitPrivilegedAuthorizationResolved(): void {
 }
 
 export class GatewayPrivilegedAuthorizationError extends Error {
-  constructor(public readonly issue: GatewayAuthorizationIssue) {
+  readonly code = 'GATEWAY_PRIVILEGED_AUTHORIZATION_FAILED';
+  readonly issue: GatewayAuthorizationIssue;
+
+  constructor(issue: GatewayAuthorizationIssue) {
     const approval = issue.requestId
       ? ` Run: openclaw devices approve ${issue.requestId}.`
       : '';
-    super(`Gateway authorization failed (${issue.code}): ${issue.message}.${approval}`);
+    const scope = issue.missingScope
+      ? ` Missing scope: ${issue.missingScope}.`
+      : issue.requiredScopes?.length
+        ? ` Required scopes: ${issue.requiredScopes.join(', ')}.`
+        : '';
+    super(`Gateway authorization failed (${issue.code}): ${issue.message}.${scope}${approval}`);
     this.name = 'GatewayPrivilegedAuthorizationError';
+    this.issue = issue;
+  }
+}
+
+export class GatewayPrivilegedSourceChangedError extends Error {
+  readonly code = 'GATEWAY_PRIVILEGED_SOURCE_CHANGED';
+
+  constructor() {
+    super('The verified Gateway connection changed while privileged authorization was pending');
+    this.name = 'GatewayPrivilegedSourceChangedError';
   }
 }
 
@@ -335,16 +356,31 @@ export function createPrivilegedRequester(
     params: Record<string, unknown>,
     timeoutMs: number | null = 30_000,
   ): Promise<T> => {
-    if (!source.isConnected() || !source.url || (!source.token && !source.deviceToken)) {
+    const sourceConnectionId = source.getAttestedConnectionId();
+    if (!source.isConnected()
+      || !sourceConnectionId
+      || !source.url
+      || (!source.token && !source.deviceToken)) {
       throw new Error('A verified Gateway connection is required for this management action');
     }
     const target = { url: source.url, token: source.token, deviceToken: source.deviceToken };
+    const sourceIsCurrent = () => (
+      source.isConnected()
+      && source.getAttestedConnectionId() === sourceConnectionId
+      && source.url === target.url
+      && source.token === target.token
+      && source.deviceToken === target.deviceToken
+    );
+    const assertSourceCurrent = () => {
+      if (!sourceIsCurrent()) throw new GatewayPrivilegedSourceChangedError();
+    };
     const pairingDeadline = Date.now() + pairingTimeoutMs;
     let pairingObserved = false;
     let pairingResolvedEmitted = false;
 
     try {
       for (;;) {
+        assertSourceCurrent();
         const result = await attempt<T>(
           target,
           method,
@@ -352,12 +388,14 @@ export function createPrivilegedRequester(
           timeoutMs,
           (cancel) => { cancelActivePairingRetry = cancel; },
           () => {
+            if (!sourceIsCurrent()) return;
             if (!pairingObserved || pairingResolvedEmitted) return;
             pairingResolvedEmitted = true;
             emitPrivilegedAuthorizationResolved();
           },
         );
         cancelActivePairingRetry = null;
+        assertSourceCurrent();
         if (result.kind === 'success') {
           return result.value;
         }
@@ -380,6 +418,7 @@ export function createPrivilegedRequester(
           });
         }
         cancelActivePairingRetry = null;
+        assertSourceCurrent();
       }
     } finally {
       cancelActivePairingRetry = null;

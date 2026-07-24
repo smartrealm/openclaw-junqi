@@ -16,12 +16,14 @@ pub(crate) struct ManagedRuntimeCapabilities {
 
 impl ManagedRuntimeCapabilities {
     pub(crate) fn for_target(os: &str, architecture: &str) -> Self {
-        let supported_architecture = matches!(architecture, "x86_64" | "aarch64");
+        let supported_architecture = matches!(architecture, "x86" | "x86_64" | "aarch64");
         Self {
             node: ManagedNodePlatform::for_target(os, architecture).is_ok(),
             git: os == "windows" && supported_architecture,
             system_node_update: os == "windows" && supported_architecture,
-            system_git_update: os == "windows" && supported_architecture,
+            // Git for Windows 2.55 still publishes x86 MinGit, but no x86
+            // full installer; keep x86 on the managed portable path.
+            system_git_update: os == "windows" && matches!(architecture, "x86_64" | "aarch64"),
         }
     }
 
@@ -43,6 +45,17 @@ mod tests {
                 git: true,
                 system_node_update: true,
                 system_git_update: true,
+            }
+        );
+        assert_eq!(
+            ManagedRuntimeCapabilities::for_target("windows", "x86"),
+            ManagedRuntimeCapabilities {
+                node: true,
+                git: true,
+                system_node_update: true,
+                // Current Git for Windows publishes x86 MinGit but no x86
+                // full installer. Portable Git remains the safe path.
+                system_git_update: false,
             }
         );
         assert_eq!(

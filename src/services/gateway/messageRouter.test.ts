@@ -42,6 +42,25 @@ test('token mismatch and scope mismatch are not mislabeled as pairing', () => {
   );
 });
 
+test('structured OpenClaw missing-scope details are preserved for actionable diagnostics', () => {
+  const issue = classifyGatewayAuthorizationError({
+    code: 'FORBIDDEN',
+    message: 'forbidden',
+    details: {
+      code: 'MISSING_SCOPE',
+      missingScope: 'operator.admin',
+      requiredScopes: ['operator.read', 'operator.write', 'operator.admin'],
+    },
+  });
+  assert.deepEqual(issue, {
+    kind: 'scope_denied',
+    code: 'MISSING_SCOPE',
+    message: 'forbidden',
+    missingScope: 'operator.admin',
+    requiredScopes: ['operator.read', 'operator.write', 'operator.admin'],
+  });
+});
+
 test('generic policy errors do not enter the authorization flow', () => {
   assert.equal(isAuthError({ code: 'INVALID_REQUEST', message: 'policy rejected request' }), false);
   assert.equal(classifyGatewayAuthorizationError('Gateway connection closed'), null);

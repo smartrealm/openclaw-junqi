@@ -46,6 +46,10 @@ interface LegacyMigrationOptions extends ProviderOptions {
 interface RuntimeBindingOptions extends ProviderOptions {
   storage?: Pick<Storage, 'getItem' | 'setItem'>;
   now?: () => number;
+  /** Additional pre-attestation slots, such as selected runtime/config scope. */
+  sourceRuntimeKeys?: string[];
+  /** Connection identity fence checked before every irreversible transition. */
+  isCurrent?: () => boolean;
 }
 
 interface RuntimeAliasRecord {
@@ -141,6 +145,15 @@ export function gatewayRuntimeKeyFromUrl(rawUrl: string): string {
 
 export function collaborationInstanceRuntimeKey(collaborationInstanceId: string): string {
   return `instance:${normalizeCollaborationInstanceId(collaborationInstanceId)}`;
+}
+
+/**
+ * Pre-attestation key for JunQi's selected runtime. Native and Docker commonly
+ * publish the same loopback URL, so URL alone is not a credential boundary.
+ */
+export function selectedGatewayRuntimeKey(gatewayUrl: string, credentialScope: string): string {
+  const scope = normalizeRuntimeKey(credentialScope);
+  return `selected:${scope}\0${gatewayRuntimeKeyFromUrl(gatewayUrl)}`;
 }
 
 function isRuntimeAliasRecord(value: unknown): value is RuntimeAliasRecord {
@@ -239,8 +252,14 @@ export async function bindGatewayCredentialToInstance(
   // An existing durable target credential is authoritative. This makes retries
   // and a stale endpoint copy unable to overwrite a newer instance token.
   let credential = await getGatewayDeviceCredential(instanceRuntimeKey, options);
-  const sourceKeys = [...new Set([previousRuntimeKey, endpointRuntimeKey])]
-    .filter((runtimeKey) => runtimeKey !== instanceRuntimeKey);
+  const sourceKeys = [...new Set([
+    previousRuntimeKey,
+    endpointRuntimeKey,
+    ...(options.sourceRuntimeKeys ?? []).map(normalizeRuntimeKey),
+  ])].filter((runtimeKey) => runtimeKey !== instanceRuntimeKey);
+  if (options.isCurrent && !options.isCurrent()) {
+    throw new Error('Gateway identity changed before credential binding');
+  }
   const sourceLookups: Array<{ runtimeKey: string; credential: GatewayCredential }> = [];
   for (const sourceRuntimeKey of sourceKeys) {
     const source = await getGatewayDeviceCredential(sourceRuntimeKey, options);
@@ -275,6 +294,12 @@ export async function bindGatewayCredentialToInstance(
     credential = promoted;
   }
 
+  // A drift after the target write intentionally leaves a harmless duplicate:
+  // it must not publish an alias or delete any source credential.
+  if (options.isCurrent && !options.isCurrent()) {
+    throw new Error('Gateway identity changed during credential binding');
+  }
+
   // Never move this before the target write above. A storage exception leaves
   // both the old credential and the newly written instance copy intact.
   persistRuntimeAlias(
@@ -283,6 +308,10 @@ export async function bindGatewayCredentialToInstance(
     storage,
     options.now ?? Date.now,
   );
+
+  if (options.isCurrent && !options.isCurrent()) {
+    throw new Error('Gateway identity changed before credential cleanup');
+  }
 
   const cleanedRuntimeKeys: string[] = [];
   let cleanupComplete = !sourceLookups.some(

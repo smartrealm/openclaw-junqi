@@ -82,10 +82,15 @@ function remapChildPath(path: string, source: string, target: string): string {
 }
 
 function migrationSource(status: StorageSetupStatus, forceConfigure: boolean): string {
-  // Forced recovery is a relocation of the currently selected layout, not a
-  // migration from the legacy default. Using legacyDir here silently detached
-  // the workspace/runtime fields when the user's active state lived elsewhere.
-  return forceConfigure ? status.stateDir : status.legacyDir;
+  // Once storage has been configured, every later relocation starts from the
+  // selected state directory. Falling back to legacyDir here can create a
+  // fresh target while leaving the user's active configuration, sessions, and
+  // credentials behind when the legacy default no longer exists.
+  return forceConfigure || status.configured ? status.stateDir : status.legacyDir;
+}
+
+function hasMigratableSource(status: StorageSetupStatus, forceConfigure: boolean): boolean {
+  return forceConfigure || status.configured || status.legacyExists;
 }
 
 function errorMessage(cause: unknown, fallback: string): string {
@@ -235,9 +240,13 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     };
   }, [appendSetupLog, t]);
 
-  const usingLegacy = useMemo(
-    () => Boolean(status && targetDir === status.legacyDir),
-    [status, targetDir],
+  const sourceDir = useMemo(
+    () => status ? migrationSource(status, forceConfigure) : '',
+    [forceConfigure, status],
+  );
+  const usingSourceLocation = useMemo(
+    () => Boolean(status && targetDir === sourceDir),
+    [sourceDir, status, targetDir],
   );
 
   const chooseDirectory = useCallback(async () => {
@@ -249,7 +258,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     if (!mountedRef.current) return;
     if (typeof selected !== 'string') return;
     const target = childStoragePath(selected);
-    const shouldMigrate = Boolean(forceConfigure || status?.legacyExists);
+    const shouldMigrate = Boolean(status && hasMigratableSource(status, forceConfigure));
     const source = status ? migrationSource(status, forceConfigure) : '';
     setTargetDir(target);
     setMigrateExisting(shouldMigrate);
@@ -281,15 +290,15 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     setApplying(true);
     setError(null);
     setProgress({
-      message: usingLegacy
+      message: usingSourceLocation
         ? t('storage.activating', '正在确认存储位置…')
         : t('storage.preparing', '正在准备新存储位置…'),
       progress: 0.02,
     });
     try {
-      const shouldMigrateSelectedState = !usingLegacy
+      const shouldMigrateSelectedState = !usingSourceLocation
         && migrateExisting
-        && (forceConfigure || status.legacyExists);
+        && hasMigratableSource(status, forceConfigure);
       appendSetupLog({
         source: 'setup',
         step: 'storage',
@@ -342,7 +351,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     } finally {
       if (mountedRef.current) setApplying(false);
     }
-  }, [appendSetupLog, applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, forceConfigure, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+  }, [appendSetupLog, applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, forceConfigure, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingSourceLocation, workspaceDir]);
 
   useEffect(() => {
     setCompletion(null);
@@ -475,7 +484,9 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   // Selecting a location is a setup transition: persistence happens as part
   // of advancing to the next stage, rather than as a separate save action.
   const actionLabel = t('setup.nextStep', '下一步');
-  const dataLayoutLocked = !usingLegacy && status.legacyExists && migrateExisting;
+  const dataLayoutLocked = !usingSourceLocation
+    && hasMigratableSource(status, forceConfigure)
+    && migrateExisting;
   const layoutComplete = Boolean(
     targetDir.trim()
       && workspaceDir.trim()
@@ -511,7 +522,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
           <button
             type="button"
             onClick={() => {
-              setTargetDir(status.legacyDir);
+              setTargetDir(sourceDir);
               setWorkspaceDir(status.workspaceDir);
               setRuntimeDir(status.runtimeDir);
               setNpmCacheDir(status.npmCacheDir ?? '');
@@ -520,17 +531,17 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
             }}
             className={clsx(
               'min-h-[116px] rounded-lg border p-4 text-left transition-colors',
-              usingLegacy
+              usingSourceLocation
                 ? 'border-aegis-primary bg-aegis-primary/8'
                 : 'border-aegis-border hover:border-aegis-primary/50',
             )}
           >
             <span className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-sm font-semibold"><HardDrive size={16} />{t('storage.defaultLocation', '使用当前位置')}</span>
-              {usingLegacy && <Check size={16} className="text-aegis-primary" />}
+              {usingSourceLocation && <Check size={16} className="text-aegis-primary" />}
             </span>
-            <span className="mt-3 block break-all font-mono text-[11px] leading-5 text-aegis-text-dim">{status.legacyDir}</span>
-            {status.legacyExists && (
+            <span className="mt-3 block break-all font-mono text-[11px] leading-5 text-aegis-text-dim">{sourceDir}</span>
+            {sourceDir === status.legacyDir && status.legacyExists && (
               <span className="mt-1 block text-xs text-aegis-text-muted">{formatBytes(status.legacySizeBytes)}</span>
             )}
           </button>
@@ -540,22 +551,22 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
             onClick={() => void chooseDirectory()}
             className={clsx(
               'min-h-[116px] rounded-lg border p-4 text-left transition-colors',
-              !usingLegacy
+              !usingSourceLocation
                 ? 'border-aegis-primary bg-aegis-primary/8'
                 : 'border-aegis-border hover:border-aegis-primary/50',
             )}
           >
             <span className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-sm font-semibold"><FolderOpen size={16} />{t('storage.customLocation', '选择其他位置')}</span>
-              {!usingLegacy && <Check size={16} className="text-aegis-primary" />}
+              {!usingSourceLocation && <Check size={16} className="text-aegis-primary" />}
             </span>
             <span className="mt-3 block break-all font-mono text-[11px] leading-5 text-aegis-text-dim">
-              {!usingLegacy ? targetDir : t('storage.customLocationHint', '其他磁盘或文件夹')}
+              {!usingSourceLocation ? targetDir : t('storage.customLocationHint', '其他磁盘或文件夹')}
             </span>
           </button>
         </div>
 
-        {!usingLegacy && status.legacyExists && (
+        {!usingSourceLocation && hasMigratableSource(status, forceConfigure) && (
           <div className="mt-5 border-l-2 border-aegis-primary/40 pl-4">
             <div className="text-sm font-semibold">{t('storage.existingData', '检测到现有 OpenClaw 数据')}</div>
             <label className="mt-3 flex cursor-pointer items-start gap-3 text-sm">

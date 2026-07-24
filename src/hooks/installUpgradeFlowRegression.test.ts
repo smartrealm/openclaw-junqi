@@ -8,6 +8,7 @@ const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url
 const storagePanel = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const storageCommand = readFileSync(new URL('../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
 const setupCommand = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const dockerCommand = readFileSync(new URL('../../src-tauri/src/commands/docker.rs', import.meta.url), 'utf8');
 const updater = readFileSync(new URL('../../src-tauri/src/commands/openclaw_update.rs', import.meta.url), 'utf8');
 
 test('BUG-IU-01 fresh storage requires onboarding before Gateway start', () => {
@@ -37,6 +38,101 @@ test('BUG-IU-03 backend owns the fresh-storage result contract', () => {
   assert.match(storagePanel, /invoke<StorageConfigureResult>\('configure_storage'/);
   assert.match(storagePanel, /createdFresh: result\.createdFresh/);
   assert.doesNotMatch(storagePanel, /createdFresh: !usingLegacy/);
+});
+
+test('BUG-IU-11 runtime downloads reuse only digest-verified persistent cache entries', () => {
+  assert.match(setupCommand, /runtime_download_cache_path/);
+  assert.match(setupCommand, /restore_verified_download_cache/);
+  assert.match(setupCommand, /actual\.eq_ignore_ascii_case\(expected_sha256\)/);
+  assert.match(setupCommand, /persist_verified_download_cache\(cache, destination\)/);
+});
+
+test('BUG-IU-12 Windows x86 installs and reuses a stable portable MinGit fallback', () => {
+  const systemCommand = readFileSync(new URL('../../src-tauri/src/commands/system.rs', import.meta.url), 'utf8');
+  const paths = readFileSync(new URL('../../src-tauri/src/paths.rs', import.meta.url), 'utf8');
+  assert.match(paths, /managed_git_fallback_dir/);
+  assert.match(systemCommand, /std::env::consts::ARCH == "x86"[\s\S]*?managed_git_fallback_path/);
+  assert.match(setupCommand, /std::env::consts::ARCH == "x86"[\s\S]*?managed_git_fallback_dir/);
+});
+
+test('BUG-IU-13 Windows x86 exposes a capability reason instead of pretending Docker is missing', () => {
+  assert.match(dockerCommand, /unsupported_reason: Option<String>/);
+  assert.match(dockerCommand, /Docker Desktop is not supported on 32-bit Windows/);
+  assert.match(setupPage, /dockerUnsupportedX86/);
+});
+
+test('BUG-IU-07 Docker readiness distinguishes an installed daemon from an available OpenClaw image', () => {
+  const detection = setupFlow.slice(
+    setupFlow.indexOf('// ── Docker detect after the welcome step'),
+    setupFlow.indexOf('// ── setup-progress event listener'),
+  );
+
+  assert.match(dockerCommand, /pub struct DockerStatus[\s\S]*?image_available: bool/);
+  assert.match(dockerCommand, /args\(\["image", "inspect", &image\]\)/);
+  assert.match(detection, /image_available: false/);
+  assert.match(setupFlow, /if \(dockerStatus\?\.image_available\)[\s\S]*?reusingDockerImage[\s\S]*?else \{[\s\S]*?pullOpenclawImage\("latest"\)/);
+});
+
+test('BUG-IU-08 an exact managed Docker container is reused while contract drift recreates it', () => {
+  const dockerStart = dockerCommand.slice(
+    dockerCommand.indexOf('pub(crate) async fn start_docker_gateway_with_image_locked'),
+    dockerCommand.indexOf('/// Spawn `docker logs'),
+  );
+
+  assert.match(dockerCommand, /fn managed_container_matches_runtime_contract/);
+  assert.match(dockerCommand, /HostConfig\/RestartPolicy\/Name/);
+  assert.match(dockerCommand, /HostConfig\/PortBindings/);
+  assert.match(dockerStart, /managed_container_matches_runtime_contract/);
+  assert.match(dockerStart, /args\(\["start", OPENCLAW_CONTAINER_NAME\]\)/);
+  assert.match(dockerStart, /Reusing existing Docker container/);
+  assert.ok(
+    dockerStart.indexOf('managed_container_matches_runtime_contract')
+      < dockerStart.indexOf('remove_managed_container_for_recreate'),
+  );
+});
+
+test('BUG-IU-09 a failed Docker candidate is cleaned before runtime compensation', () => {
+  const dockerStart = dockerCommand.slice(
+    dockerCommand.indexOf('pub(crate) async fn start_docker_gateway_with_image_locked'),
+    dockerCommand.indexOf('/// Spawn `docker logs'),
+  );
+
+  assert.match(dockerCommand, /async fn cleanup_failed_managed_container/);
+  assert.match(dockerCommand, /failed Docker candidate could not be cleaned up/);
+  assert.match(dockerStart, /docker start failed:[\s\S]*cleanup_failed_managed_container/);
+  assert.match(dockerStart, /Container exited unexpectedly[\s\S]*cleanup_failed_managed_container/);
+  assert.match(dockerStart, /cleanup_failed_managed_container\([\s\S]*Gateway health check timed out/);
+});
+
+test('BUG-IU-10 runtime switching preserves the source Gateway when the target port owner is unknown', () => {
+  assert.match(dockerCommand, /assert_target_port_owned_or_available/);
+  assert.match(dockerCommand, /release_managed_native_gateway_for_docker/);
+  assert.match(dockerCommand, /target_matches_native/);
+  assert.match(dockerCommand, /release_managed_docker_gateway_for_native/);
+  assert.match(dockerCommand, /target_matches_docker/);
+  assert.match(dockerCommand, /container_publishes_host_port/);
+  assert.match(dockerCommand, /healthy \{source\} runtime was left running and \{target\} was not started/);
+});
+
+test('BUG-IU-06 relocating configured storage migrates the selected state, not only the legacy default', () => {
+  const migrationSource = storagePanel.slice(
+    storagePanel.indexOf('function migrationSource'),
+    storagePanel.indexOf('function errorMessage'),
+  );
+  const chooseDirectory = storagePanel.slice(
+    storagePanel.indexOf('const chooseDirectory'),
+    storagePanel.indexOf('const chooseExactDirectory'),
+  );
+  const applyStorage = storagePanel.slice(
+    storagePanel.indexOf('const applyStorage'),
+    storagePanel.indexOf('useEffect(() => {\n    setCompletion(null)'),
+  );
+
+  assert.match(migrationSource, /forceConfigure \|\| status\.configured \? status\.stateDir : status\.legacyDir/);
+  assert.match(migrationSource, /forceConfigure \|\| status\.configured \|\| status\.legacyExists/);
+  assert.match(chooseDirectory, /hasMigratableSource\(status, forceConfigure\)/);
+  assert.match(applyStorage, /hasMigratableSource\(status, forceConfigure\)/);
+  assert.match(storageCommand, /let source = paths::desktop_dir\(\)/);
 });
 
 test('BUG-IU-04 external Gateway restoration stays JunQi-managed', () => {

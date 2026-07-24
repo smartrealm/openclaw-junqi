@@ -1447,6 +1447,15 @@ pub fn begin_active_runtime_mode_switch(mode: OpenClawRuntimeMode) -> Result<(),
         if layout.runtime_mode == mode {
             return Ok(());
         }
+        // There are only two runtime modes. Selecting the previous mode while
+        // a switch is pending is a safe cancellation, not a nested switch.
+        // Persist it in one write so a superseded renderer run cannot strand a
+        // mode marker that blocks the user's newer selection.
+        if previous == mode {
+            layout.runtime_mode = previous;
+            layout.runtime_switch_rollback_mode = None;
+            return save_storage_bootstrap(&layout);
+        }
         return Err(format!(
             "A runtime switch from {previous:?} to {:?} is already pending",
             layout.runtime_mode
@@ -1457,16 +1466,6 @@ pub fn begin_active_runtime_mode_switch(mode: OpenClawRuntimeMode) -> Result<(),
     }
     layout.runtime_switch_rollback_mode = Some(layout.runtime_mode);
     layout.runtime_mode = mode;
-    save_storage_bootstrap(&layout)
-}
-
-pub fn commit_active_runtime_mode_switch(expected: OpenClawRuntimeMode) -> Result<(), String> {
-    let mut layout = load_storage_bootstrap()
-        .ok_or("Storage setup must be completed before committing an OpenClaw runtime")?;
-    if layout.runtime_mode != expected {
-        return Err("The active runtime changed before setup could commit it".into());
-    }
-    layout.runtime_switch_rollback_mode = None;
     save_storage_bootstrap(&layout)
 }
 
@@ -1481,6 +1480,35 @@ pub fn rollback_active_runtime_mode_switch(expected: OpenClawRuntimeMode) -> Res
         save_storage_bootstrap(&layout)?;
     }
     Ok(())
+}
+
+/// Atomically finalize setup's mode switch and optional Native location
+/// reconfiguration. Both markers live in the same bootstrap document, so they
+/// must be cleared by one durable write; sequential commands can otherwise
+/// commit the mode and then fail while committing the locations.
+pub(crate) fn commit_setup_runtime_transaction(
+    expected: OpenClawRuntimeMode,
+) -> Result<bool, String> {
+    let mut layout = load_storage_bootstrap_checked()?
+        .ok_or("Storage setup must be completed before committing an OpenClaw runtime")?;
+    if layout.runtime_mode != expected {
+        return Err("The active runtime changed before setup could commit it".into());
+    }
+    let committed_reconfiguration = if let Some(pending) =
+        layout.pending_runtime_reconfiguration.as_ref()
+    {
+        pending.validate_candidate(&layout).map_err(|_| {
+            "The active runtime locations changed while setup was running; refusing to commit an unrelated reconfiguration"
+                .to_string()
+        })?;
+        true
+    } else {
+        false
+    };
+    layout.pending_runtime_reconfiguration = None;
+    layout.runtime_switch_rollback_mode = None;
+    save_storage_bootstrap(&layout)?;
+    Ok(committed_reconfiguration)
 }
 
 /// Recover a mode selection interrupted by process exit. Runtime resources are
@@ -1638,28 +1666,6 @@ pub(crate) fn runtime_reconfiguration_recovery_error() -> Result<Option<String>,
             )
             .to_string()
         }))
-}
-
-/// Commit the candidate layout only when it still identifies the exact
-/// runtime that was originally staged. Mutable completion markers (service
-/// rebind / package relocation) deliberately do not participate in this
-/// identity check because they are expected to change during setup. Runtime
-/// mode does participate: a Native dependency transaction must never commit
-/// through Docker's derived configuration contract.
-pub(crate) fn commit_runtime_reconfiguration(
-) -> Result<Option<PendingRuntimeReconfiguration>, String> {
-    let Some(mut layout) = load_storage_bootstrap_checked()? else {
-        return Ok(None);
-    };
-    let Some(pending) = layout.pending_runtime_reconfiguration.take() else {
-        return Ok(None);
-    };
-    pending.validate_candidate(&layout).map_err(|_| {
-        "The active runtime locations changed while setup was running; refusing to commit an unrelated reconfiguration"
-            .to_string()
-    })?;
-    save_storage_bootstrap(&layout)?;
-    Ok(Some(pending))
 }
 
 // ── Node.js ────────────────────────────────────────────────────
@@ -1927,6 +1933,21 @@ fn git_binary_in(root: &Path) -> PathBuf {
 
 pub fn configured_git_path() -> Option<PathBuf> {
     configured_git_runtime_dir().map(|root| git_binary_in(&root))
+}
+
+/// Stable JunQi-owned fallback for architectures where the publisher does not
+/// provide a system Git installer. It is deliberately outside the movable
+/// OpenClaw state tree so storage migration cannot orphan the executable.
+#[cfg(windows)]
+pub(crate) fn managed_git_fallback_dir() -> PathBuf {
+    app_config_dir()
+        .join("managed-runtimes")
+        .join(format!("git-{}", std::env::consts::ARCH))
+}
+
+#[cfg(windows)]
+pub(crate) fn managed_git_fallback_path() -> PathBuf {
+    git_binary_in(&managed_git_fallback_dir())
 }
 
 // ── 工作区 ─────────────────────────────────────────────────────

@@ -120,8 +120,9 @@ test('Windows reads the selected OpenClaw token and stores device credentials in
   assert.match(cargo, /\[target\.'cfg\(windows\)'\.dependencies\][\s\S]*keyring\s*=\s*\{[^}]*"windows-native"/);
 });
 
-test('Windows release matrix builds and stages NSIS installers for x64 and ARM64', () => {
+test('Windows release matrix builds and stages NSIS installers for x86, x64 and ARM64', () => {
   assert.match(release, /name: Windows x64[\s\S]*target: 'x86_64-pc-windows-msvc'[\s\S]*--bundles nsis/);
+  assert.match(release, /name: Windows x86[\s\S]*target: 'i686-pc-windows-msvc'[\s\S]*--bundles nsis/);
   assert.match(release, /name: Windows ARM64[\s\S]*target: 'aarch64-pc-windows-msvc'[\s\S]*--bundles nsis/);
   assert.match(release, /bundle\/nsis\|\.exe/);
   assert.doesNotMatch(release, /--bundles nsis,msi|bundle\/msi\|\.msi/);
@@ -130,6 +131,13 @@ test('Windows release matrix builds and stages NSIS installers for x64 and ARM64
   assert.match(taggedRelease, /Validate signed release assets and generate updater manifest/);
   assert.doesNotMatch(taggedRelease, /asset_count|Expected 19 release assets/);
   assert.match(release, /if-no-files-found: error/);
+});
+
+test('Windows CI compiles and tests both x64 and x86 targets', () => {
+  assert.match(ci, /target: x86_64-pc-windows-msvc/);
+  assert.match(ci, /target: i686-pc-windows-msvc/);
+  assert.match(ci, /cargo check --all-targets --target \$\{\{ matrix\.target \}\}/);
+  assert.match(ci, /cargo test --lib --target \$\{\{ matrix\.target \}\}/);
 });
 
 test('Cargo dependencies are prefetched before native Windows validation and release packaging', () => {

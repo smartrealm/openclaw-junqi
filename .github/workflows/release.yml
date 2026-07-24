@@ -5,7 +5,7 @@
 # uploads installers as workflow artifacts. A future trusted promotion may
 # create a public GitHub Release with those installers attached. Candidate
 # builds are manual, unsigned diagnostics. Tagged releases own the only
-# automatic four-platform build so the same source is not packaged twice.
+# automatic per-architecture build so the same source is not packaged twice.
 #
 # Why all desktop platforms in one workflow rather than separate files:
 #   - one place to read the matrix, cache strategy, artifact naming
@@ -469,6 +469,15 @@ jobs:
             stage_prefix: windows-x86_64
             asset_specs: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis|.exe
+          - name: Windows x86
+            artifact_name: windows-i686
+            platform: windows-latest
+            target: 'i686-pc-windows-msvc'
+            rust_targets: 'i686-pc-windows-msvc'
+            bundle_args: '--bundles nsis'
+            stage_prefix: windows-i686
+            asset_specs: |
+              src-tauri/target/i686-pc-windows-msvc/release/bundle/nsis|.exe
           - name: Windows ARM64
             artifact_name: windows-arm64
             platform: windows-11-arm
@@ -1386,7 +1395,7 @@ jobs:
             echo ""
             echo "| Build matrix | Targets | Status |"
             echo "|--------------|---------|--------|"
-            echo "| Desktop installers | macOS ARM64/x64, Windows x64/ARM64 | ${{ needs.build.result }} |"
+            echo "| Desktop installers | macOS ARM64/x64, Windows x86/x64/ARM64 | ${{ needs.build.result }} |"
             echo "| Release asset manifest | source/bundle/digest binding | ${{ needs.release-asset-manifest.result }} |"
             echo "| Quality evidence attestation | immutable subject attestation | ${{ needs.quality-evidence-attest.result }} |"
             echo "| Structural smoke attestation | immutable subject attestation | ${{ needs.gateway-structural-smoke-attest.result }} |"

@@ -37,7 +37,7 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
 
   assert.match(detection, /let cancelled = false/);
   assert.match(detection, /await detectGatewayConfig\(\);\s*if \(cancelled\) return/);
-  assert.match(detection, /selectedRuntime === "native" \? await checkOpenclaw\(\) : null/);
+  assert.match(detection, /const oclaw = await checkOpenclaw\(\);\s*if \(cancelled\) return/);
   assert.match(setupFlow, /await window\.aegis\.config\.detect\(\);/);
   assert.match(detection, /return \(\) => \{\s*cancelled = true/);
 });
@@ -107,6 +107,56 @@ test('BUG-ONB-33 setup renders the official pairing approval surface', () => {
   assert.match(setupBranch, /onPaired=\{handlePairingComplete\}/);
 });
 
+test('BUG-ONB-34 a failed cached Gateway probe invalidates the persisted setup marker', () => {
+  const healthGate = app.slice(
+    app.indexOf('// The local marker is only a cache.'),
+    app.indexOf("useEffect(() => {\n    const updateRoutePath"),
+  );
+
+  assert.match(healthGate, /invoke<boolean>\('probe_selected_gateway'/);
+  assert.equal((healthGate.match(/setSetupComplete\(false\)/g) ?? []).length, 2);
+  assert.doesNotMatch(healthGate, /setSetupComplete\(null\)/);
+});
+
+test('BUG-ONB-37 dashboard completion re-probes Gateway before committing the setup marker', () => {
+  const entry = setupFlow.slice(
+    setupFlow.indexOf('const enterDashboard = useCallback'),
+    setupFlow.indexOf('const detectDocker = useCallback'),
+  );
+
+  assert.match(entry, /await invoke<boolean>\("probe_selected_gateway", \{\}\)/);
+  assert.ok(entry.indexOf('probe_selected_gateway') < entry.indexOf('setSetupComplete(true)'));
+  assert.match(entry, /replaceSetupStep\("gateway-stopped"\)/);
+  assert.match(entry, /dashboardEntryInFlightRef\.current/);
+});
+
+test('BUG-ONB-38 Ready navigation is locked during autostart handoff and final Gateway verification', () => {
+  const ready = setupPage.slice(
+    setupPage.indexOf('function ReadyScreen'),
+    setupPage.indexOf('function ErrorScreen'),
+  );
+  const autostart = setupPage.slice(
+    setupPage.indexOf('function GatewayAutostartPreference'),
+    setupPage.indexOf('function ReadyScreen'),
+  );
+
+  assert.match(autostart, /onOperationStateChange\(busy\)/);
+  assert.match(ready, /blockNavigation = autostartBusy \|\| flow\.enteringDashboard/);
+  assert.match(ready, /previousAction=\{\{ onClick: flow\.goBack, disabled: blockNavigation \}\}/);
+  assert.match(ready, /disabled: blockNavigation/);
+});
+
+test('BUG-ONB-35 notification permission waits until onboarding is complete', () => {
+  const notificationPermission = app.slice(
+    app.indexOf('// ── Request notification permission'),
+    app.indexOf('// OpenClaw exposes durable transcript updates'),
+  );
+
+  assert.match(notificationPermission, /if \(setupComplete !== true\) return/);
+  assert.match(notificationPermission, /notifications\.requestPermission\(\)/);
+  assert.match(notificationPermission, /\}, \[setupComplete\]\)/);
+});
+
 test('BUG-WFR-01 privileged pairing retries can resolve or be cancelled by the host', () => {
   assert.match(gatewayClient, /subscribePrivilegedAuthorizationResolved/);
   assert.match(gatewayClient, /pairingRetryMs\s*\?\?\s*5_000/);
@@ -125,8 +175,24 @@ test('BUG-WFR-02 every interactive wizard RPC waits for a verified Gateway conne
     setupFlow.indexOf('const reclaimOfficialOnboarding'),
   );
 
-  assert.match(submit, /await waitForGatewayConnection\(\);[\s\S]*?\.next\(stepId, value\)/);
-  assert.match(back, /await waitForGatewayConnection\(\);[\s\S]*?\.back\(\)/);
+  assert.match(submit, /await waitForGatewayConnection\(operationId\);[\s\S]*?\.next\(stepId, value\)/);
+  assert.match(back, /await waitForGatewayConnection\(operationId\);[\s\S]*?\.back\(\)/);
+});
+
+test('BUG-WFR-04 stale wizard operations cannot commit after setup navigation or Gateway replacement', () => {
+  const wizardOperations = setupFlow.slice(
+    setupFlow.indexOf('const invalidateWizardOperations'),
+    setupFlow.indexOf('// ── Actions ──'),
+  );
+  const back = setupFlow.slice(
+    setupFlow.indexOf('const goBack = useCallback'),
+    setupFlow.indexOf('const retryGit = useCallback'),
+  );
+
+  assert.match(wizardOperations, /wizardClientRef\.current\?\.invalidatePendingOperations\(\)/);
+  assert.match(wizardOperations, /gateway\.cancelPrivilegedAuthorizationRetry\(\)/);
+  assert.match(wizardOperations, /assertWizardOperationCurrent\(operationId\)/);
+  assert.match(back, /invalidateWizardOperations\(\)/);
 });
 
 test('BUG-WFR-03 wizard failures are visible first and change the primary action to Retry', () => {
@@ -163,7 +229,7 @@ test('BUG-ONB-24 URL-only settings changes preserve endpoint-scoped credentials'
   assert.match(adapter, /if \(token\) await persistGatewayToken\(token,/);
 });
 
-test('BUG-ONB-05 install mode selection is explicit and confirmed by Next', () => {
+test('BUG-ONB-05 runtime selection is explicit and confirmed by one contextual action', () => {
   const mode = setupPage.slice(
     setupPage.indexOf('function ModeSelectScreen'),
     setupPage.indexOf('function ProgressScreen'),
@@ -171,8 +237,34 @@ test('BUG-ONB-05 install mode selection is explicit and confirmed by Next', () =
 
   assert.match(mode, /aria-pressed=\{selectedMode === "native"\}[\s\S]*?setSelectedMode\("native"\)/);
   assert.match(mode, /disabled=\{!dockerAvailable\}[\s\S]*?aria-pressed=\{selectedMode === "docker"\}[\s\S]*?setSelectedMode\("docker"\)/);
-  assert.match(mode, /label: t\("setup\.nextStep"[\s\S]*?flow\.selectMode\(selectedMode\)/);
+  assert.match(mode, /const dockerImageAvailable = flow\.dockerStatus\?\.image_available === true/);
+  assert.match(mode, /const selectedModeReady = selectedMode === "native" \? nativeInstalled : dockerImageAvailable/);
+  assert.match(mode, /setup\.useRuntimeAndContinue[\s\S]*?setup\.prepareRuntimeAndContinue/);
+  assert.match(mode, /label: primaryLabel[\s\S]*?flow\.selectMode\(selectedMode\)/);
   assert.doesNotMatch(mode, /flow\.selectMode\("(?:native|docker)"\)/);
+});
+
+test('BUG-ONB-36 the runtime choice presents reuse first instead of claiming every path is an install', () => {
+  const mode = setupPage.slice(
+    setupPage.indexOf('function ModeSelectScreen'),
+    setupPage.indexOf('function ProgressScreen'),
+  );
+  const zh = JSON.parse(readFileSync(new URL('../locales/zh.json', import.meta.url), 'utf8'));
+
+  const detection = setupFlow.slice(
+    setupFlow.indexOf('// ── 挂载后自动检测'),
+    setupFlow.indexOf('// ── Docker detect after the welcome step'),
+  );
+
+  assert.match(mode, /flow\.openclawStatus\?\.installed === true/);
+  assert.match(detection, /const oclaw = await checkOpenclaw\(\)/);
+  assert.doesNotMatch(detection, /selectedRuntime === "native" \? await checkOpenclaw\(\) : null/);
+  assert.match(mode, /setup\.nativeDetected/);
+  assert.match(mode, /setup\.dockerReady/);
+  assert.match(mode, /setup\.dockerImageWillPrepare/);
+  assert.equal(zh.setup.modeSelectionTitle, '确认 OpenClaw 运行方式');
+  assert.match(zh.setup.chooseMode, /直接复用/);
+  assert.doesNotMatch(zh.setup.modeNativeDesc, /直接在您的电脑上安装/);
 });
 
 test('BUG-ONB-06 every setup message is complete in all supported locales', () => {
@@ -377,7 +469,7 @@ test('BUG-GSO-02 autostart enable completes the official service handoff', () =>
   assert.match(setupPage, /function GatewayAutostartPreference/);
   assert.match(setupPage, /installMode !== "native" \|\| status === null \|\| status\?\.supported === false/);
   assert.match(setupPage, /setup\.runtimePreferences/);
-  assert.match(ready, /<GatewayAutostartPreference installMode=\{flow\.installMode\} \/>/);
+  assert.match(ready, /<GatewayAutostartPreference[\s\S]*installMode=\{flow\.installMode\}[\s\S]*onOperationStateChange=\{setAutostartBusy\}[\s\S]*\/>/);
   assert.doesNotMatch(ready, /OpenClawUpdatePanel/);
 
   // Enable uses the rollback-aware official handoff; disable removes the

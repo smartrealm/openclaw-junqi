@@ -918,6 +918,90 @@ fn transfer_rate_mib_per_second(bytes: u64, elapsed: std::time::Duration) -> f64
     bytes as f64 / 1024.0 / 1024.0 / seconds
 }
 
+async fn sha256_file(path: &Path) -> Result<(String, u64), String> {
+    use tokio::io::AsyncReadExt;
+
+    let mut file = tokio::fs::File::open(path).await.map_err(|error| {
+        format!(
+            "Failed to open cached runtime artifact {}: {error}",
+            path.display()
+        )
+    })?;
+    let mut hasher = Sha256::new();
+    let mut size = 0_u64;
+    let mut buffer = vec![0_u8; 128 * 1024];
+    loop {
+        let read = file.read(&mut buffer).await.map_err(|error| {
+            format!(
+                "Failed to read cached runtime artifact {}: {error}",
+                path.display()
+            )
+        })?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+        size = size.saturating_add(read as u64);
+    }
+    Ok((format!("{:x}", hasher.finalize()), size))
+}
+
+fn runtime_download_cache_path(destination: &Path, expected_sha256: &str) -> Option<PathBuf> {
+    let filename = destination.file_name()?.to_str()?;
+    if filename.is_empty()
+        || filename.contains(['/', '\\'])
+        || expected_sha256.len() != 64
+        || !expected_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    Some(
+        paths::app_config_dir()
+            .join("runtime-download-cache")
+            .join(format!(
+                "{}-{filename}",
+                expected_sha256.to_ascii_lowercase()
+            )),
+    )
+}
+
+async fn restore_verified_download_cache(
+    cache: &Path,
+    destination: &Path,
+    expected_sha256: &str,
+) -> Result<Option<u64>, String> {
+    if !cache.is_file() {
+        return Ok(None);
+    }
+    let (actual, size) = sha256_file(cache).await?;
+    if size == 0 || !actual.eq_ignore_ascii_case(expected_sha256) {
+        let _ = tokio::fs::remove_file(cache).await;
+        return Ok(None);
+    }
+    tokio::fs::copy(cache, destination).await.map_err(|error| {
+        format!(
+            "Failed to restore verified runtime artifact cache {}: {error}",
+            cache.display()
+        )
+    })?;
+    Ok(Some(size))
+}
+
+async fn persist_verified_download_cache(cache: &Path, source: &Path) {
+    let Some(parent) = cache.parent() else {
+        return;
+    };
+    if tokio::fs::create_dir_all(parent).await.is_err() || cache.is_file() {
+        return;
+    }
+    let temporary = parent.join(format!(".cache-{}", uuid::Uuid::new_v4()));
+    if tokio::fs::copy(source, &temporary).await.is_ok() {
+        if tokio::fs::rename(&temporary, cache).await.is_err() {
+            let _ = tokio::fs::remove_file(&temporary).await;
+        }
+    }
+}
+
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
 async fn download_with_fallback(
     request: DownloadRequest<'_>,
@@ -943,6 +1027,43 @@ async fn download_with_fallback_with_budget(
     } = request;
     let prog_start = progress.start;
     let prog_end = progress.end;
+    let cache = runtime_download_cache_path(destination, expected_sha256);
+    if let Some(cache) = cache.as_deref() {
+        operation.ensure_active()?;
+        match restore_verified_download_cache(cache, destination, expected_sha256).await {
+            Ok(Some(bytes)) => {
+                operation.ensure_active()?;
+                record_timeline_note(
+                    app,
+                    step,
+                    &format!(
+                        "verified runtime download cache hit: {:.1} MB",
+                        bytes as f64 / 1024.0 / 1024.0
+                    ),
+                );
+                emit_coalesced(
+                    app,
+                    step,
+                    &format!(
+                        "已复用校验通过的下载缓存（{:.1} MB）",
+                        bytes as f64 / 1024.0 / 1024.0
+                    ),
+                    "download-cache-hit",
+                    prog_end,
+                );
+                return Ok(bytes);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                record_timeline_note(
+                    app,
+                    step,
+                    &format!("runtime download cache ignored: {error}"),
+                );
+                let _ = tokio::fs::remove_file(destination).await;
+            }
+        }
+    }
     let client = reqwest::Client::builder()
         .connect_timeout(RUNTIME_NETWORK_TIMEOUT)
         .timeout(DOWNLOAD_SOURCE_TIMEOUT)
@@ -1232,6 +1353,9 @@ async fn download_with_fallback_with_budget(
             &log_slot,
             prog_end,
         );
+        if let Some(cache) = cache.as_deref() {
+            persist_verified_download_cache(cache, destination).await;
+        }
         return Ok(downloaded);
     }
     Err(format!("所有下载源均失败。最后错误：{last_error}"))
@@ -4672,6 +4796,18 @@ async fn install_git_impl_inner(
 
     #[cfg(windows)]
     {
+        // Git for Windows no longer publishes a full x86 installer. Use a
+        // stable JunQi-owned MinGit target so the first install succeeds and
+        // every later setup can reuse the verified executable without UAC.
+        if std::env::consts::ARCH == "x86" {
+            return install_windows_portable_git(
+                app,
+                force,
+                paths::managed_git_fallback_dir(),
+                operation,
+            )
+            .await;
+        }
         return install_windows_system_git(app, operation).await;
     }
 

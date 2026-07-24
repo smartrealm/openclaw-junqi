@@ -94,7 +94,7 @@ test('GitHub releases remain anchored to their pushed tag', () => {
   assert.doesNotMatch(publish, /--target\b/);
 });
 
-test('version tags retain a CI-gated four-platform desktop release path', () => {
+test('version tags retain a CI-gated desktop release path for every supported architecture', () => {
   assert.match(taggedRelease, /tags: \['v\*'\]/);
   assert.match(taggedRelease, /git merge-base --is-ancestor "\$source_sha" origin\/main/);
   assert.match(taggedRelease, /actions\/workflows\/ci\.yml\/runs\?event=push&head_sha=\$\{SOURCE_SHA\}/);
@@ -103,6 +103,7 @@ test('version tags retain a CI-gated four-platform desktop release path', () => 
     'aarch64-apple-darwin',
     'x86_64-apple-darwin',
     'x86_64-pc-windows-msvc',
+    'i686-pc-windows-msvc',
     'aarch64-pc-windows-msvc',
   ]) {
     assert.match(taggedRelease, new RegExp(`target: '${target}'`));

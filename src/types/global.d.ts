@@ -316,6 +316,11 @@ interface AegisAPI {
   pairing: {
     getToken: (gatewayUrl?: string) => Promise<string | null>;
     saveToken: (token: string, gatewayUrl?: string) => Promise<{ success: boolean }>;
+    bindTokenToInstance?: (
+      gatewayUrl: string,
+      collaborationInstanceId: string,
+      expectedConnectionId: string,
+    ) => Promise<{ success: boolean; cleanupComplete?: boolean }>;
   };
   terminal: {
     create: (opts?: { cols?: number; rows?: number; cwd?: string }) => Promise<{ id: string; pid: number; error?: string }>;

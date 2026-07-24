@@ -272,6 +272,12 @@ fn active_model_probe_from_status(payload: &Value) -> ActiveModelProbe {
 
 #[tauri::command]
 pub async fn probe_active_openclaw_model() -> Result<ActiveModelProbe, String> {
+    // Pin the selected config for the CLI invocation, then fence the result
+    // against a concurrent Native/Docker or storage switch. A successful probe
+    // from the old runtime must never authorize the new runtime's Ready state.
+    let selected_mode = crate::paths::active_runtime_mode();
+    crate::paths::validate_runtime_mode(selected_mode)?;
+    let selected_config = crate::paths::active_config_path();
     let args = [
         "models",
         "status",
@@ -284,7 +290,15 @@ pub async fn probe_active_openclaw_model() -> Result<ActiveModelProbe, String> {
         "--probe-max-tokens",
         "1",
     ];
-    let output = run_openclaw(&args, None, PROBE_COMMAND_TIMEOUT).await?;
+    let output = run_openclaw(&args, Some(&selected_config), PROBE_COMMAND_TIMEOUT).await?;
+    if crate::paths::active_runtime_mode() != selected_mode
+        || crate::paths::active_config_path() != selected_config
+    {
+        return Err(
+            "The selected OpenClaw runtime changed while the live model probe was running"
+                .to_string(),
+        );
+    }
     let payload =
         parse_cli_json(&output).map_err(|_| output_error("models status --probe", &output))?;
     Ok(active_model_probe_from_status(&payload))

@@ -299,23 +299,45 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
     }
   }, [dockerAvailable, flow.checkingDocker, flow.dockerStatus, selectedMode]);
 
+  const nativeInstalled = flow.openclawStatus?.installed === true;
+  const dockerImageAvailable = flow.dockerStatus?.image_available === true;
+  const selectedModeReady = selectedMode === "native" ? nativeInstalled : dockerImageAvailable;
   const dockerStatusText = flow.checkingDocker
     ? t("setup.checkingDocker")
     : dockerAvailable
-      ? t("setup.dockerDetected", { version: flow.dockerStatus?.version ?? "" })
-      : flow.dockerStatus?.available
-        ? t("setup.dockerDaemonStopped")
-        : t("setup.dockerNotDetected");
+      ? dockerImageAvailable
+        ? t("setup.dockerReady", {
+            version: flow.dockerStatus?.version ?? "",
+            defaultValue: "Docker {{version}} 和 OpenClaw 镜像已就绪",
+          })
+        : t("setup.dockerImageWillPrepare", {
+            version: flow.dockerStatus?.version ?? "",
+            defaultValue: "Docker {{version}} 已运行；继续后将准备 OpenClaw 镜像",
+          })
+      : flow.dockerStatus?.unsupported_reason
+        ? t("setup.dockerUnsupportedX86", "Windows 32 位仅支持 Native；不会检测或安装 Docker")
+        : flow.dockerStatus?.available
+          ? t("setup.dockerDaemonStopped")
+          : t("setup.dockerNotDetected");
+  const primaryLabel = selectedModeReady
+    ? t("setup.useRuntimeAndContinue", {
+        runtime: selectedMode === "native" ? t("setup.modeNative") : t("setup.modeDocker"),
+        defaultValue: "使用 {{runtime}} 并继续",
+      })
+    : t("setup.prepareRuntimeAndContinue", {
+        runtime: selectedMode === "native" ? t("setup.modeNative") : t("setup.modeDocker"),
+        defaultValue: "准备 {{runtime}} 并继续",
+      });
 
   return (
     <SetupShell
       active={3}
-      title={t("setup.runtimeTitle")}
+      title={t("setup.modeSelectionTitle", "确认 OpenClaw 运行方式")}
       subtitle={t("setup.chooseMode")}
       logs={logs}
       previousAction={{ onClick: flow.goBack }}
       nextAction={{
-        label: t("setup.nextStep", "下一步"),
+        label: primaryLabel,
         onClick: () => { void flow.selectMode(selectedMode); },
         disabled: selectedMode === "docker" && !dockerAvailable,
         icon: "next",
@@ -343,6 +365,17 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
               : <Circle size={19} className="shrink-0 text-aegis-text-dim" />}
           </div>
           <p className="text-sm leading-6 text-aegis-text-muted">{t("setup.modeNativeDesc")}</p>
+          <div className={clsx("mt-auto flex items-center gap-2 pt-4 text-xs", nativeInstalled ? "text-aegis-success" : "text-aegis-text-dim")}>
+            {nativeInstalled ? <Check size={13} /> : <Package size={13} />}
+            <span>
+              {nativeInstalled
+                ? t("setup.nativeDetected", {
+                    version: flow.openclawStatus?.version ?? "",
+                    defaultValue: "OpenClaw {{version}} 已安装，可直接使用",
+                  })
+                : t("setup.nativeWillPrepare", "继续后将检查并按需安装缺失组件")}
+            </span>
+          </div>
         </button>
 
         <div
@@ -373,7 +406,7 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
                 : <Circle size={19} className="shrink-0 text-aegis-text-dim" />}
             </div>
             <p className="text-sm leading-6 text-aegis-text-muted">{t("setup.modeDockerDesc")}</p>
-            <div className={clsx("mt-auto flex items-center gap-2 pt-4 text-xs", dockerAvailable ? "text-aegis-success" : "text-aegis-danger")}>
+            <div className={clsx("mt-auto flex items-center gap-2 pt-4 text-xs", dockerImageAvailable ? "text-aegis-success" : dockerAvailable ? "text-aegis-text-dim" : "text-aegis-danger")}>
               {flow.checkingDocker ? <RefreshCw size={13} className="animate-spin" /> : dockerAvailable ? <Check size={13} /> : <X size={13} />}
               <span>{dockerStatusText}</span>
             </div>
@@ -903,7 +936,13 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 // 通过官方 `openclaw gateway install/uninstall` 注册或移除系统服务;切换后
 // 用现有 restart 流程把 Gateway 从"桌面托管"交接给系统服务(或反向),保证
 // 结束时只有一个明确的托管方持有端口。Docker 运行时由容器重启策略负责。
-function GatewayAutostartPreference({ installMode }: { installMode: InstallMode }) {
+function GatewayAutostartPreference({
+  installMode,
+  onOperationStateChange,
+}: {
+  installMode: InstallMode;
+  onOperationStateChange: (busy: boolean) => void;
+}) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<GatewayAutostartStatus | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -918,6 +957,11 @@ function GatewayAutostartPreference({ installMode }: { installMode: InstallMode 
       .catch(() => { if (!cancelled) setStatus(null); });
     return () => { cancelled = true; };
   }, [installMode]);
+
+  useEffect(() => {
+    onOperationStateChange(busy);
+    return () => onOperationStateChange(false);
+  }, [busy, onOperationStateChange]);
 
   if (installMode !== "native" || status === null || status?.supported === false) return null;
   if (status === undefined) {
@@ -1023,6 +1067,8 @@ function GatewayAutostartPreference({ installMode }: { installMode: InstallMode 
 
 function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
+  const [autostartBusy, setAutostartBusy] = useState(false);
+  const blockNavigation = autostartBusy || flow.enteringDashboard;
   const settledCount = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || settledCount || 1;
 
@@ -1032,8 +1078,16 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       title={t("setup.ready")}
       subtitle={t("setup.readySubtitle")}
       logs={logs}
-      previousAction={{ onClick: flow.goBack }}
-      nextAction={{ label: t("setup.enterDashboard"), onClick: (event) => flow.enterDashboard(event.currentTarget) }}
+      previousAction={{ onClick: flow.goBack, disabled: blockNavigation }}
+      nextAction={{
+        label: flow.enteringDashboard
+          ? t("setup.verifyingDashboardEntry", "正在验证 Gateway…")
+          : t("setup.enterDashboard"),
+        onClick: (event) => { void flow.enterDashboard(event.currentTarget); },
+        disabled: blockNavigation,
+        loading: flow.enteringDashboard,
+        icon: flow.enteringDashboard ? "none" : "next",
+      }}
     >
       <div className="flex flex-col items-center gap-5 py-5 text-center">
         <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-aegis-success/10 text-aegis-success ring-4 ring-aegis-success/10">
@@ -1068,7 +1122,15 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         <div className="text-xs text-aegis-text-dim">
           {settledCount}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}
         </div>
-        <GatewayAutostartPreference installMode={flow.installMode} />
+        {flow.dashboardEntryError && (
+          <p className="w-full rounded-lg border border-aegis-danger/30 bg-aegis-danger/10 px-3 py-2 text-left text-xs text-aegis-danger">
+            {flow.dashboardEntryError}
+          </p>
+        )}
+        <GatewayAutostartPreference
+          installMode={flow.installMode}
+          onOperationStateChange={setAutostartBusy}
+        />
       </div>
     </SetupShell>
   );

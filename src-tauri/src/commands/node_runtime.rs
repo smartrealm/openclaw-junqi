@@ -22,6 +22,7 @@ impl ManagedNodePlatform {
         let architecture = match architecture {
             "aarch64" => "arm64",
             "x86_64" => "x64",
+            "x86" => "x86",
             other => return Err(format!("Unsupported Node.js architecture: {other}")),
         };
         match os {
@@ -459,6 +460,21 @@ mod tests {
             Some("node-v24.18.1-x64.msi")
         );
         assert_eq!(windows.extracted_root("24.18.1"), None);
+
+        let windows_x86 = ManagedNodePlatform::for_target("windows", "x86").unwrap();
+        assert_eq!(windows_x86.distribution_artifact(), "win-x86-zip");
+        assert_eq!(
+            windows_x86.installer_distribution_artifact().as_deref(),
+            Some("win-x86-msi")
+        );
+        assert_eq!(
+            windows_x86.archive_filename("22.22.3"),
+            "node-v22.22.3-win-x86.zip"
+        );
+        assert_eq!(
+            windows_x86.installer_filename("22.22.3").as_deref(),
+            Some("node-v22.22.3-x86.msi")
+        );
 
         let macos = ManagedNodePlatform::for_target("macos", "aarch64").unwrap();
         assert_eq!(macos.distribution_artifact(), "osx-arm64-tar");

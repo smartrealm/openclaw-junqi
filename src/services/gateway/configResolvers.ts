@@ -40,10 +40,26 @@ export class FileReadResolver implements ConfigResolver {
       if (typeof gw?.ws_url !== 'string' || !gw.ws_url.trim()) return null;
       const runtimeMode = typeof gw.runtime_mode === 'string' ? gw.runtime_mode : 'unknown';
       const configPath = typeof gw.config_path === 'string' ? gw.config_path : '';
+      const credentialScope = typeof gw.credential_scope === 'string' && gw.credential_scope.trim()
+        ? gw.credential_scope.trim()
+        : `${runtimeMode}:${configPath}`;
+      let token = typeof gw.token === 'string' ? gw.token.trim() : '';
+      if (!token && configPath) {
+        try {
+          // `detect_gateway_config` deliberately returns literal tokens only.
+          // Resolve a selected SecretRef through OpenClaw's official resolver;
+          // never pass its config representation to the WebSocket handshake.
+          const resolved = await this.invoke('get_gateway_token');
+          token = typeof resolved === 'string' ? resolved.trim() : '';
+        } catch {
+          // Token-less configurations remain valid resolver results so the
+          // connection layer can surface the Gateway's structured auth error.
+        }
+      }
       return {
-        token: typeof gw.token === 'string' ? gw.token : '',
+        token,
         ws_url: gw.ws_url,
-        credential_scope: `${runtimeMode}:${configPath}`,
+        credential_scope: credentialScope,
       };
     } catch { return null; }
   }

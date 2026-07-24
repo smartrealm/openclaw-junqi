@@ -1,5 +1,11 @@
 {
   "gitForWindows": {
+    "x86": {
+      "version": "2.55.0.windows.3",
+      "tag": "v2.55.0.windows.3",
+      "filename": "MinGit-2.55.0.3-32-bit.zip",
+      "sha256": "352380d06caa45e569a3b3967b6d1d6c605d564c29f37ef059b59e657a522ef4"
+    },
     "x86_64": {
       "version": "2.55.0.windows.3",
       "tag": "v2.55.0.windows.3",

@@ -18,6 +18,8 @@ export interface GatewayAuthorizationIssue {
   requestId?: string;
   reason?: string;
   recommendedNextStep?: string;
+  missingScope?: string;
+  requiredScopes?: string[];
 }
 
 type ErrorRecord = Record<string, unknown>;
@@ -107,6 +109,12 @@ export function classifyGatewayAuthorizationError(
     ...(nonEmptyString(details?.reason) ? { reason: nonEmptyString(details?.reason) } : {}),
     ...(nonEmptyString(details?.recommendedNextStep)
       ? { recommendedNextStep: nonEmptyString(details?.recommendedNextStep) }
+      : {}),
+    ...(nonEmptyString(details?.missingScope)
+      ? { missingScope: nonEmptyString(details?.missingScope) }
+      : {}),
+    ...(Array.isArray(details?.requiredScopes)
+      ? { requiredScopes: details.requiredScopes.filter((scope): scope is string => typeof scope === 'string' && Boolean(scope.trim())) }
       : {}),
   };
 }

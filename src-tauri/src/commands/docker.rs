@@ -25,6 +25,7 @@ const CONTAINER_ROLE: &str = "gateway";
 const CONTAINER_SCHEMA_LABEL: &str = "com.junqi.openclaw.schema";
 const CONTAINER_SCHEMA: &str = "1";
 const CONTAINER_STATE_LABEL: &str = "com.junqi.openclaw.state-id";
+const CONTAINER_CONTRACT_LABEL: &str = "com.junqi.openclaw.contract";
 
 fn validate_managed_image_reference(image: &str) -> Result<(), String> {
     if image.len() > 512
@@ -180,16 +181,75 @@ fn state_identity(path: &Path) -> String {
     format!("{:x}", digest.finalize())
 }
 
+/// Immutable desired state for JunQi's Docker Gateway container.
+///
+/// This is the single definition used by both reuse validation and container
+/// creation. The contract digest makes removals as well as additions visible:
+/// checking only that expected values exist would incorrectly reuse a container
+/// carrying stale environment or an older mutable image tag.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ManagedContainerContract {
     state_id: String,
+    digest: String,
+    image: String,
+    image_id: String,
+    host_port: u16,
+    container_port: u16,
+    gateway_environment: Vec<(String, String)>,
+    locale: String,
 }
 
 impl ManagedContainerContract {
-    fn for_mapping(mapping: &RuntimePathMapping) -> Self {
-        Self {
-            state_id: state_identity(&mapping.host_state_dir),
+    fn new(
+        mapping: &RuntimePathMapping,
+        image: &str,
+        image_id: &str,
+        host_port: u16,
+        container_port: u16,
+        gateway_environment: &[(String, String)],
+        locale: &str,
+    ) -> Result<Self, String> {
+        let config_dir = mapping.host_config_dir()?;
+        let state_id = state_identity(&mapping.host_state_dir);
+        let mut gateway_environment = gateway_environment.to_vec();
+        gateway_environment.sort();
+
+        let mut digest = Sha256::new();
+        // Length framing prevents ambiguous concatenation. Keep this list in
+        // lockstep with every field consumed by `matches_inspection` and run.
+        for value in [
+            CONTAINER_SCHEMA.to_string(),
+            state_id.clone(),
+            image.to_string(),
+            image_id.to_string(),
+            host_port.to_string(),
+            container_port.to_string(),
+            normalized_state_identity_path(config_dir),
+            normalized_state_identity_path(&mapping.host_workspace),
+            mapping.runtime_state_dir.to_string(),
+            mapping.runtime_config_path.to_string(),
+            mapping.runtime_workspace.to_string(),
+            "unless-stopped".to_string(),
+            crate::commands::config::default_gateway_host().to_string(),
+            locale.to_string(),
+        ]
+        .into_iter()
+        .chain(gateway_environment.iter().map(|(name, _)| name.clone()))
+        {
+            digest.update(value.len().to_le_bytes());
+            digest.update(value.as_bytes());
         }
+
+        Ok(Self {
+            state_id,
+            digest: format!("{:x}", digest.finalize()),
+            image: image.to_string(),
+            image_id: image_id.to_string(),
+            host_port,
+            container_port,
+            gateway_environment,
+            locale: locale.to_string(),
+        })
     }
 
     fn run_label_args(&self) -> Vec<String> {
@@ -198,6 +258,7 @@ impl ManagedContainerContract {
             (CONTAINER_ROLE_LABEL, CONTAINER_ROLE),
             (CONTAINER_SCHEMA_LABEL, CONTAINER_SCHEMA),
             (CONTAINER_STATE_LABEL, self.state_id.as_str()),
+            (CONTAINER_CONTRACT_LABEL, self.digest.as_str()),
         ]
         .into_iter()
         .flat_map(|(key, value)| ["--label".to_string(), format!("{}={}", key, value)])
@@ -241,6 +302,157 @@ fn classify_container_inspection(value: &serde_json::Value) -> Result<ContainerP
     })
 }
 
+fn container_record(value: &serde_json::Value) -> Option<&serde_json::Value> {
+    value.as_array().and_then(|items| items.first())
+}
+
+fn container_bind_mount_matches(
+    container: &serde_json::Value,
+    destination: &str,
+    source: &Path,
+) -> bool {
+    container
+        .get("Mounts")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|mounts| {
+            mounts.iter().any(|mount| {
+                mount.get("Type").and_then(serde_json::Value::as_str) == Some("bind")
+                    && mount.get("Destination").and_then(serde_json::Value::as_str)
+                        == Some(destination)
+                    && mount
+                        .get("Source")
+                        .and_then(serde_json::Value::as_str)
+                        .map(Path::new)
+                        .is_some_and(|candidate| {
+                            paths::paths_refer_to_same_location(candidate, source)
+                        })
+            })
+        })
+}
+
+fn container_environment_matches(
+    container: &serde_json::Value,
+    expected: &[(String, String)],
+) -> bool {
+    let Some(environment) = container
+        .pointer("/Config/Env")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return expected.is_empty();
+    };
+    expected.iter().all(|(name, value)| {
+        let entry = format!("{}={}", name, value);
+        environment
+            .iter()
+            .any(|candidate| candidate.as_str() == Some(&entry))
+    })
+}
+
+fn container_publishes_host_port(value: &serde_json::Value, host_port: u16) -> bool {
+    let Some(container) = container_record(value) else {
+        return false;
+    };
+    let expected = host_port.to_string();
+    container
+        .pointer("/HostConfig/PortBindings")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|bindings| {
+            bindings.values().any(|binding| {
+                binding.as_array().is_some_and(|entries| {
+                    entries.iter().any(|entry| {
+                        entry.get("HostIp").and_then(serde_json::Value::as_str)
+                            == Some(crate::commands::config::default_gateway_host())
+                            && entry.get("HostPort").and_then(serde_json::Value::as_str)
+                                == Some(expected.as_str())
+                    })
+                })
+            })
+        })
+}
+
+fn managed_container_matches_runtime_contract(
+    value: &serde_json::Value,
+    mapping: &RuntimePathMapping,
+    contract: &ManagedContainerContract,
+) -> bool {
+    let Some(container) = container_record(value) else {
+        return false;
+    };
+    if classify_container_inspection(value).ok()
+        != Some(ContainerPresence::Managed {
+            running: container
+                .pointer("/State/Running")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            state_id: contract.state_id.clone(),
+        })
+    {
+        return false;
+    }
+    // Config.Image is only the mutable tag/reference. The top-level Image is
+    // the immutable image ID used to create the container. Both must match so
+    // pulling a newer `latest` image forces recreation instead of silently
+    // reusing a container backed by the old image.
+    if container
+        .pointer("/Config/Image")
+        .and_then(serde_json::Value::as_str)
+        != Some(contract.image.as_str())
+        || container.get("Image").and_then(serde_json::Value::as_str)
+            != Some(contract.image_id.as_str())
+        || container
+            .pointer("/Config/Labels")
+            .and_then(|labels| labels.get(CONTAINER_CONTRACT_LABEL))
+            .and_then(serde_json::Value::as_str)
+            != Some(contract.digest.as_str())
+        || container
+            .pointer("/HostConfig/RestartPolicy/Name")
+            .and_then(serde_json::Value::as_str)
+            != Some("unless-stopped")
+    {
+        return false;
+    }
+    let port_key = format!("{}/tcp", contract.container_port);
+    let host_port = contract.host_port.to_string();
+    let port_matches = container
+        .pointer(&format!(
+            "/HostConfig/PortBindings/{}",
+            port_key.replace('/', "~1")
+        ))
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|bindings| {
+            bindings.iter().any(|binding| {
+                binding.get("HostIp").and_then(serde_json::Value::as_str)
+                    == Some(crate::commands::config::default_gateway_host())
+                    && binding.get("HostPort").and_then(serde_json::Value::as_str)
+                        == Some(host_port.as_str())
+            })
+        });
+    let Ok(config_dir) = mapping.host_config_dir() else {
+        return false;
+    };
+    let required_environment = [
+        ("OPENCLAW_GATEWAY_BIND".to_string(), "lan".to_string()),
+        ("OPENCLAW_LOCALE".to_string(), contract.locale.clone()),
+        (
+            "OPENCLAW_STATE_DIR".to_string(),
+            mapping.runtime_state_dir.to_string(),
+        ),
+        (
+            "OPENCLAW_CONFIG_PATH".to_string(),
+            mapping.runtime_config_path.to_string(),
+        ),
+    ];
+    port_matches
+        && container_bind_mount_matches(container, mapping.runtime_state_dir, config_dir)
+        && container_bind_mount_matches(
+            container,
+            mapping.runtime_workspace,
+            &mapping.host_workspace,
+        )
+        && container_environment_matches(container, &required_environment)
+        && container_environment_matches(container, &contract.gateway_environment)
+}
+
 fn legacy_container_matches_layout(
     value: &serde_json::Value,
     mapping: &RuntimePathMapping,
@@ -275,30 +487,15 @@ fn legacy_container_matches_layout(
     {
         return false;
     }
-    let mounts = container
-        .get("Mounts")
-        .and_then(serde_json::Value::as_array);
-    let mount_matches = |destination: &str, source: &Path| {
-        mounts.is_some_and(|values| {
-            values.iter().any(|mount| {
-                mount.get("Type").and_then(serde_json::Value::as_str) == Some("bind")
-                    && mount.get("Destination").and_then(serde_json::Value::as_str)
-                        == Some(destination)
-                    && mount
-                        .get("Source")
-                        .and_then(serde_json::Value::as_str)
-                        .map(Path::new)
-                        .is_some_and(|candidate| {
-                            paths::paths_refer_to_same_location(candidate, source)
-                        })
-            })
-        })
-    };
     let Ok(config_dir) = mapping.host_config_dir() else {
         return false;
     };
-    mount_matches(mapping.runtime_state_dir, config_dir)
-        && mount_matches(mapping.runtime_workspace, &mapping.host_workspace)
+    container_bind_mount_matches(container, mapping.runtime_state_dir, config_dir)
+        && container_bind_mount_matches(
+            container,
+            mapping.runtime_workspace,
+            &mapping.host_workspace,
+        )
 }
 
 #[derive(Default)]
@@ -444,6 +641,13 @@ pub struct DockerStatus {
     pub available: bool,
     pub version: Option<String>,
     pub daemon_running: bool,
+    /// A capability-level reason, distinct from an ordinary missing CLI or
+    /// stopped daemon. Windows x86 uses this to explain Native-only behavior.
+    pub unsupported_reason: Option<String>,
+    /// Whether the exact managed image used by first-run setup is already
+    /// present locally. Docker Desktop being available is not equivalent to
+    /// OpenClaw being ready for an offline start.
+    pub image_available: bool,
 }
 
 pub(crate) async fn resolve_docker_bin() -> Result<String, String> {
@@ -543,10 +747,9 @@ pub(crate) async fn resolve_docker_bin() -> Result<String, String> {
     Err("Docker CLI not found".to_string())
 }
 
-async fn inspect_named_container(
+async fn inspect_named_container_value(
     docker_bin: &str,
-    mapping: &RuntimePathMapping,
-) -> Result<ContainerPresence, String> {
+) -> Result<Option<serde_json::Value>, String> {
     let mut cmd = tokio::process::Command::new(docker_bin);
     platform::configure_background_command(&mut cmd);
     let output = cmd
@@ -558,12 +761,22 @@ async fn inspect_named_container(
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let normalized = stderr.to_ascii_lowercase();
         if normalized.contains("no such container") || normalized.contains("no such object") {
-            return Ok(ContainerPresence::Absent);
+            return Ok(None);
         }
         return Err(format!("docker inspect failed: {}", stderr));
     }
-    let value = serde_json::from_slice::<serde_json::Value>(&output.stdout)
-        .map_err(|error| format!("Failed to parse docker inspect output: {}", error))?;
+    serde_json::from_slice::<serde_json::Value>(&output.stdout)
+        .map(Some)
+        .map_err(|error| format!("Failed to parse docker inspect output: {}", error))
+}
+
+async fn inspect_named_container(
+    docker_bin: &str,
+    mapping: &RuntimePathMapping,
+) -> Result<ContainerPresence, String> {
+    let Some(value) = inspect_named_container_value(docker_bin).await? else {
+        return Ok(ContainerPresence::Absent);
+    };
     let presence = classify_container_inspection(&value)?;
     if presence == ContainerPresence::Foreign && legacy_container_matches_layout(&value, mapping) {
         let running = value
@@ -582,6 +795,30 @@ fn foreign_container_error() -> String {
         "Docker container '{}' already exists without JunQi ownership labels; remove or rename it manually",
         OPENCLAW_CONTAINER_NAME
     )
+}
+
+async fn inspect_managed_image_id(docker_bin: &str, image: &str) -> Result<String, String> {
+    let mut command = tokio::process::Command::new(docker_bin);
+    platform::configure_background_command(&mut command);
+    let output = command
+        .args(["image", "inspect", "--format", "{{.Id}}", image])
+        .output()
+        .await
+        .map_err(|error| format!("Failed to inspect Docker image identity: {}", error))?;
+    if !output.status.success() {
+        return Err(format!(
+            "docker image inspect failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let image_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !image_id.starts_with("sha256:")
+        || image_id.len() != 71
+        || !image_id[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err("Docker image inspect returned an invalid image identity".into());
+    }
+    Ok(image_id)
 }
 
 async fn assert_named_container_is_not_foreign(
@@ -627,6 +864,22 @@ async fn remove_managed_container_for_recreate(
     }
 }
 
+/// A failed candidate must not remain restartable after the outer runtime
+/// transaction restores Native mode. Preserve the primary startup diagnostic
+/// while surfacing cleanup failure as a separate compensation error.
+async fn cleanup_failed_managed_container(
+    docker_bin: &str,
+    mapping: &RuntimePathMapping,
+    cause: String,
+) -> String {
+    match remove_managed_container_for_recreate(docker_bin, mapping).await {
+        Ok(_) => cause,
+        Err(cleanup_error) => format!(
+            "{cause}\nAdditionally, the failed Docker candidate could not be cleaned up: {cleanup_error}"
+        ),
+    }
+}
+
 async fn stop_managed_container_if_present(
     docker_bin: &str,
     mapping: &RuntimePathMapping,
@@ -634,6 +887,11 @@ async fn stop_managed_container_if_present(
     match inspect_named_container(docker_bin, mapping).await? {
         ContainerPresence::Absent => Ok(false),
         ContainerPresence::Foreign => Err(foreign_container_error()),
+        ContainerPresence::Managed { state_id, .. }
+            if state_id != state_identity(&mapping.host_state_dir) =>
+        {
+            Err("The managed Docker container belongs to a different OpenClaw state directory and was left untouched".into())
+        }
         ContainerPresence::Managed { running: false, .. } => Ok(false),
         ContainerPresence::Managed { running: true, .. } => {
             let mut cmd = tokio::process::Command::new(docker_bin);
@@ -738,13 +996,46 @@ fn docker_gateway_environment(
     values.into_iter().collect()
 }
 
-/// Release only the foreground Gateway child owned by this desktop process
-/// before Docker binds the same local port. External services stay untouched.
+fn assert_target_port_owned_or_available(
+    port: u16,
+    available: bool,
+    endpoint_matches_source: bool,
+    managed_source_owns_port: bool,
+    source: &str,
+    target: &str,
+) -> Result<(), String> {
+    if available || (endpoint_matches_source && managed_source_owns_port) {
+        return Ok(());
+    }
+    Err(format!(
+        "Port {port} is occupied by an endpoint that cannot be verified as the managed {source} Gateway; the healthy {source} runtime was left running and {target} was not started"
+    ))
+}
+
+/// Release only Native Gateway owners verified by JunQi before Docker binds
+/// its selected port. An unrelated target-port listener is rejected before any
+/// healthy Native owner is stopped, preserving the previous runtime.
 pub(crate) async fn release_managed_native_gateway_for_docker(
     state: &crate::state::GatewayProcess,
     port: u16,
 ) -> Result<bool, String> {
     let mut released = false;
+    let native_child_owns_target = {
+        let child_running = state
+            .child
+            .lock()
+            .map_err(|error| error.to_string())?
+            .is_some();
+        let child_port = *state.port.lock().map_err(|error| error.to_string())?;
+        child_running && child_port == port
+    };
+    let target_available = crate::commands::gateway_supervisor::is_port_available(port).await;
+    let target_matches_native = if target_available {
+        false
+    } else {
+        crate::commands::gateway::gateway_matches_config(port, &paths::config_path()).await
+    };
+    let mut selected_service_owns_target = false;
 
     // Runtime mode is persisted before this function runs, so resolve the
     // Native config explicitly instead of accidentally inspecting Docker's
@@ -780,6 +1071,20 @@ pub(crate) async fn release_managed_native_gateway_for_docker(
         if inspection.installed
             && crate::commands::gateway_service::belongs_to_selected_state(inspection.ownership)
         {
+            selected_service_owns_target = std::fs::read_to_string(&native_config)
+                .ok()
+                .and_then(|raw| crate::commands::config::parse_openclaw_config(&raw).ok())
+                .and_then(|config| crate::commands::config::gateway_port_from_config(&config))
+                .unwrap_or_else(crate::commands::config::default_gateway_port)
+                == port;
+            assert_target_port_owned_or_available(
+                port,
+                target_available,
+                target_matches_native,
+                native_child_owns_target || selected_service_owns_target,
+                "Native",
+                "Docker",
+            )?;
             crate::commands::gateway_service::stop_installed_selected_gateway_service_verified(
                 &runtime,
                 &native_state,
@@ -796,6 +1101,15 @@ pub(crate) async fn release_managed_native_gateway_for_docker(
             );
         }
     }
+
+    assert_target_port_owned_or_available(
+        port,
+        target_available,
+        target_matches_native,
+        native_child_owns_target || selected_service_owns_target,
+        "Native",
+        "Docker",
+    )?;
 
     let native_child = {
         let mut child = state.child.lock().map_err(|error| error.to_string())?;
@@ -820,6 +1134,32 @@ pub(crate) async fn release_managed_docker_gateway_for_native(port: u16) -> Resu
         Err(_) => return Ok(false),
     };
     let mapping = RuntimePathMapping::from_active_layout()?;
+    let target_available = crate::commands::gateway_supervisor::is_port_available(port).await;
+    let target_matches_docker = if target_available {
+        false
+    } else {
+        crate::commands::gateway::gateway_matches_config(port, &mapping.host_config_path).await
+    };
+    let managed_docker_owns_target = match inspect_named_container_value(&docker_bin).await? {
+        Some(inspection)
+            if matches!(
+                classify_container_inspection(&inspection)?,
+                ContainerPresence::Managed { running: true, state_id }
+                    if state_id == state_identity(&mapping.host_state_dir)
+            ) =>
+        {
+            container_publishes_host_port(&inspection, port)
+        }
+        _ => false,
+    };
+    assert_target_port_owned_or_available(
+        port,
+        target_available,
+        target_matches_docker,
+        managed_docker_owns_target,
+        "Docker",
+        "Native",
+    )?;
     let stopped = stop_managed_container_if_present(&docker_bin, &mapping).await?;
     if stopped {
         crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
@@ -830,6 +1170,19 @@ pub(crate) async fn release_managed_docker_gateway_for_native(port: u16) -> Resu
 /// Check if Docker CLI is installed and the daemon is running.
 #[tauri::command]
 pub async fn check_docker() -> Result<DockerStatus, String> {
+    // Docker Desktop and the managed OpenClaw image require a 64-bit Windows
+    // host. The x86 desktop build is intentionally Native-only.
+    if cfg!(all(windows, target_arch = "x86")) {
+        return Ok(DockerStatus {
+            available: false,
+            version: None,
+            daemon_running: false,
+            unsupported_reason: Some(
+                "Docker Desktop is not supported on 32-bit Windows; use Native mode".into(),
+            ),
+            image_available: false,
+        });
+    }
     // Check if docker CLI exists
     let docker_bin = match resolve_docker_bin().await {
         Ok(bin) => bin,
@@ -838,6 +1191,8 @@ pub async fn check_docker() -> Result<DockerStatus, String> {
                 available: false,
                 version: None,
                 daemon_running: false,
+                unsupported_reason: None,
+                image_available: false,
             });
         }
     };
@@ -851,6 +1206,15 @@ pub async fn check_docker() -> Result<DockerStatus, String> {
     match version_output {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let image = format!("{}:latest", OPENCLAW_IMAGE);
+            let mut image_cmd = tokio::process::Command::new(&docker_bin);
+            platform::configure_background_command(&mut image_cmd);
+            let image_available = image_cmd
+                .args(["image", "inspect", &image])
+                .output()
+                .await
+                .map(|result| result.status.success())
+                .unwrap_or(false);
             Ok(DockerStatus {
                 available: true,
                 version: if version.is_empty() {
@@ -859,6 +1223,8 @@ pub async fn check_docker() -> Result<DockerStatus, String> {
                     Some(version)
                 },
                 daemon_running: true,
+                unsupported_reason: None,
+                image_available,
             })
         }
         Ok(_output) => {
@@ -879,12 +1245,16 @@ pub async fn check_docker() -> Result<DockerStatus, String> {
                         available: true,
                         version,
                         daemon_running: false,
+                        unsupported_reason: None,
+                        image_available: false,
                     })
                 }
                 _ => Ok(DockerStatus {
                     available: false,
                     version: None,
                     daemon_running: false,
+                    unsupported_reason: None,
+                    image_available: false,
                 }),
             }
         }
@@ -892,6 +1262,8 @@ pub async fn check_docker() -> Result<DockerStatus, String> {
             available: false,
             version: None,
             daemon_running: false,
+            unsupported_reason: None,
+            image_available: false,
         }),
     }
 }
@@ -1041,9 +1413,94 @@ pub(crate) async fn start_docker_gateway_with_image_locked(
 
     let token = ensure_config_with_token(&config_path, container_port, "lan")?;
     mapping.normalize_config()?;
-    let contract = ManagedContainerContract::for_mapping(&mapping);
-    remove_managed_container_for_recreate(&docker_bin, &mapping).await?;
+    let gateway_environment = docker_gateway_environment(&config_path, token.as_deref());
+    let locale = crate::commands::system::configured_openclaw_locale(&config_path);
+    let image_id = inspect_managed_image_id(&docker_bin, image).await?;
+    let contract = ManagedContainerContract::new(
+        &mapping,
+        image,
+        &image_id,
+        port,
+        container_port,
+        &gateway_environment,
+        &locale,
+    )?;
 
+    // Reuse an exact managed container instead of deleting it on every setup
+    // pass. The contract includes ownership, state identity, image, bind
+    // mounts, loopback port, restart policy and runtime environment. Any drift
+    // falls through to the existing safe recreate path.
+    if let Some(inspection) = inspect_named_container_value(&docker_bin).await? {
+        if managed_container_matches_runtime_contract(&inspection, &mapping, &contract) {
+            let running = container_record(&inspection)
+                .and_then(|container| container.pointer("/State/Running"))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            if !running {
+                emit(
+                    &app,
+                    "container",
+                    "Starting existing Docker container...",
+                    0.2,
+                );
+                let mut start = tokio::process::Command::new(&docker_bin);
+                platform::configure_background_command(&mut start);
+                let output = start
+                    .args(["start", OPENCLAW_CONTAINER_NAME])
+                    .output()
+                    .await
+                    .map_err(|error| {
+                        format!("Failed to start existing Docker container: {}", error)
+                    })?;
+                if !output.status.success() {
+                    let cause = format!(
+                        "docker start failed: {}",
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    );
+                    return Err(
+                        cleanup_failed_managed_container(&docker_bin, &mapping, cause).await,
+                    );
+                }
+            } else {
+                emit(
+                    &app,
+                    "container",
+                    "Reusing existing Docker container...",
+                    0.3,
+                );
+            }
+            for attempt in 0..30 {
+                if crate::commands::gateway::gateway_matches_config(port, &config_path).await {
+                    emit(&app, "container", "Existing Docker Gateway is ready", 1.0);
+                    spawn_docker_log_tailer(app.clone());
+                    return Ok(GatewayStatus {
+                        running: true,
+                        port,
+                        pid: None,
+                        token,
+                    });
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                emit(
+                    &app,
+                    "container",
+                    &format!(
+                        "Waiting for existing Docker Gateway ({}/30)...",
+                        attempt + 1
+                    ),
+                    0.4 + (attempt as f64 / 30.0) * 0.5,
+                );
+            }
+            emit(
+                &app,
+                "container",
+                "Existing container did not become healthy; recreating it...",
+                0.1,
+            );
+        }
+    }
+
+    remove_managed_container_for_recreate(&docker_bin, &mapping).await?;
     emit(&app, "container", "Starting Docker container...", 0.15);
 
     let config_mount = format!(
@@ -1063,16 +1520,12 @@ pub(crate) async fn start_docker_gateway_with_image_locked(
     let port_mapping = format!(
         "{}:{}:{}",
         crate::commands::config::default_gateway_host(),
-        port,
-        container_port
+        contract.host_port,
+        contract.container_port
     );
-    let gateway_environment = docker_gateway_environment(&config_path, token.as_deref());
     let state_dir_env = format!("OPENCLAW_STATE_DIR={}", mapping.runtime_state_dir);
     let config_path_env = format!("OPENCLAW_CONFIG_PATH={}", mapping.runtime_config_path);
-    let locale_env = format!(
-        "OPENCLAW_LOCALE={}",
-        crate::commands::system::configured_openclaw_locale(&config_path)
-    );
+    let locale_env = format!("OPENCLAW_LOCALE={}", contract.locale);
 
     let mut run_args = vec![
         "run".to_string(),
@@ -1098,16 +1551,16 @@ pub(crate) async fn start_docker_gateway_with_image_locked(
         workspace_mount,
         "--restart".to_string(),
         "unless-stopped".to_string(),
-        image.to_string(),
+        contract.image.clone(),
     ]);
-    for (name, _) in &gateway_environment {
+    for (name, _) in &contract.gateway_environment {
         run_args.insert(4, name.clone());
         run_args.insert(4, "-e".to_string());
     }
     let mut command = tokio::process::Command::new(&docker_bin);
     platform::configure_background_command(&mut command);
     command.args(&run_args);
-    for (name, value) in &gateway_environment {
+    for (name, value) in &contract.gateway_environment {
         command.env(name, value);
     }
     let output = command
@@ -1117,7 +1570,8 @@ pub(crate) async fn start_docker_gateway_with_image_locked(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let message = format!("docker run failed: {}", stderr);
+        let cause = format!("docker run failed: {}", stderr);
+        let message = cleanup_failed_managed_container(&docker_bin, &mapping, cause).await;
         emit_error(&app, "container", &message, Some(0.2));
         return Err(message);
     }
@@ -1179,14 +1633,20 @@ pub(crate) async fn start_docker_gateway_with_image_locked(
                 })
                 .unwrap_or_default();
 
-            let message = format!("Container exited unexpectedly. Logs:\n{}", log_text);
+            let cause = format!("Container exited unexpectedly. Logs:\n{}", log_text);
+            let message = cleanup_failed_managed_container(&docker_bin, &mapping, cause).await;
             emit_error(&app, "container", &message, Some(0.95));
             return Err(message);
         }
 
-        let message = "Gateway health check timed out after 30s";
-        emit_error(&app, "container", message, Some(0.95));
-        return Err(message.into());
+        let message = cleanup_failed_managed_container(
+            &docker_bin,
+            &mapping,
+            "Gateway health check timed out after 30s".into(),
+        )
+        .await;
+        emit_error(&app, "container", &message, Some(0.95));
+        return Err(message);
     }
 
     emit(&app, "container", "Gateway is ready", 1.0);
@@ -1273,10 +1733,12 @@ fn spawn_docker_log_tailer(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_container_inspection, legacy_container_matches_layout,
-        normalize_docker_config_runtime_paths, parse_docker_layer_phase, parse_transfer_size,
-        state_identity, transfer_ratio, ContainerPresence, DockerLayerPhase, DockerPullProgress,
-        ManagedContainerContract, RuntimePathMapping, CONTAINER_OWNER, CONTAINER_OWNER_LABEL,
+        assert_target_port_owned_or_available, classify_container_inspection,
+        container_publishes_host_port, legacy_container_matches_layout,
+        managed_container_matches_runtime_contract, normalize_docker_config_runtime_paths,
+        parse_docker_layer_phase, parse_transfer_size, state_identity, transfer_ratio,
+        ContainerPresence, DockerLayerPhase, DockerPullProgress, ManagedContainerContract,
+        RuntimePathMapping, CONTAINER_CONTRACT_LABEL, CONTAINER_OWNER, CONTAINER_OWNER_LABEL,
         CONTAINER_ROLE, CONTAINER_ROLE_LABEL, CONTAINER_SCHEMA, CONTAINER_SCHEMA_LABEL,
         CONTAINER_STATE_LABEL, OPENCLAW_CONTAINER_CONFIG_PATH, OPENCLAW_CONTAINER_STATE_DIR,
         OPENCLAW_CONTAINER_WORKSPACE_DIR,
@@ -1424,6 +1886,109 @@ mod tests {
     }
 
     #[test]
+    fn runtime_switch_port_guard_rejects_unknown_listener_before_stopping_source() {
+        assert!(assert_target_port_owned_or_available(
+            18_789, false, false, true, "Native", "Docker"
+        )
+        .is_err());
+        assert!(assert_target_port_owned_or_available(
+            18_789, false, true, true, "Native", "Docker"
+        )
+        .is_ok());
+        assert!(assert_target_port_owned_or_available(
+            18_789, true, false, false, "Docker", "Native"
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn managed_container_port_ownership_requires_loopback_binding() {
+        let matching = serde_json::json!([{
+            "HostConfig": { "PortBindings": { "18789/tcp": [{
+                "HostIp": crate::commands::config::default_gateway_host(),
+                "HostPort": "18789"
+            }]}}
+        }]);
+        let exposed = serde_json::json!([{
+            "HostConfig": { "PortBindings": { "18789/tcp": [{
+                "HostIp": "0.0.0.0",
+                "HostPort": "18789"
+            }]}}
+        }]);
+        assert!(container_publishes_host_port(&matching, 18_789));
+        assert!(!container_publishes_host_port(&matching, 18_790));
+        assert!(!container_publishes_host_port(&exposed, 18_789));
+    }
+
+    #[test]
+    fn exact_managed_container_contract_is_reusable_and_drift_is_not() {
+        let state = std::env::temp_dir().join("junqi-reusable-state");
+        let workspace = std::env::temp_dir().join("junqi-reusable-workspace");
+        let mapping = RuntimePathMapping::for_layout(state.clone(), workspace.clone()).unwrap();
+        let image = "ghcr.io/openclaw/openclaw:latest";
+        let image_id = format!("sha256:{}", "a".repeat(64));
+        let gateway_environment = vec![("OPENCLAW_GATEWAY_TOKEN".into(), "token".into())];
+        let contract = ManagedContainerContract::new(
+            &mapping,
+            image,
+            &image_id,
+            18_789,
+            18_789,
+            &gateway_environment,
+            "zh-CN",
+        )
+        .unwrap();
+        let inspection = serde_json::json!([{
+            "Image": image_id,
+            "Config": {
+                "Image": image,
+                "Env": [
+                    "OPENCLAW_GATEWAY_BIND=lan",
+                    "OPENCLAW_GATEWAY_TOKEN=token",
+                    "OPENCLAW_LOCALE=zh-CN",
+                    "OPENCLAW_STATE_DIR=/home/node/.openclaw",
+                    "OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json"
+                ],
+                "Labels": {
+                    CONTAINER_OWNER_LABEL: CONTAINER_OWNER,
+                    CONTAINER_ROLE_LABEL: CONTAINER_ROLE,
+                    CONTAINER_SCHEMA_LABEL: CONTAINER_SCHEMA,
+                    CONTAINER_STATE_LABEL: contract.state_id,
+                    CONTAINER_CONTRACT_LABEL: contract.digest,
+                }
+            },
+            "HostConfig": {
+                "RestartPolicy": { "Name": "unless-stopped" },
+                "PortBindings": { "18789/tcp": [{ "HostIp": "127.0.0.1", "HostPort": "18789" }] }
+            },
+            "Mounts": [
+                { "Type": "bind", "Source": state.join("docker"), "Destination": OPENCLAW_CONTAINER_STATE_DIR },
+                { "Type": "bind", "Source": workspace, "Destination": OPENCLAW_CONTAINER_WORKSPACE_DIR }
+            ],
+            "State": { "Running": true }
+        }]);
+
+        assert!(managed_container_matches_runtime_contract(
+            &inspection,
+            &mapping,
+            &contract,
+        ));
+
+        let mut old_image = inspection.clone();
+        old_image[0]["Image"] = serde_json::Value::String(format!("sha256:{}", "b".repeat(64)));
+        assert!(!managed_container_matches_runtime_contract(
+            &old_image, &mapping, &contract,
+        ));
+
+        let mut drifted = inspection.clone();
+        drifted[0]["HostConfig"]["PortBindings"]["18789/tcp"][0]["HostPort"] =
+            serde_json::Value::String("28789".into());
+        assert!(!managed_container_matches_runtime_contract(
+            &drifted, &mapping, &contract,
+        ));
+    }
+
+    #[test]
     fn legacy_container_upgrade_requires_matching_image_environment_and_mounts() {
         let state = std::env::temp_dir().join("junqi-legacy-state");
         let workspace = std::env::temp_dir().join("junqi-legacy-workspace");
@@ -1478,14 +2043,26 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            ManagedContainerContract::for_mapping(&first),
-            ManagedContainerContract::for_mapping(&second)
-        );
-        assert_ne!(
-            ManagedContainerContract::for_mapping(&first),
-            ManagedContainerContract::for_mapping(&moved)
-        );
+        let image_id = format!("sha256:{}", "a".repeat(64));
+        let build = |mapping: &RuntimePathMapping| {
+            ManagedContainerContract::new(
+                mapping,
+                "ghcr.io/openclaw/openclaw:latest",
+                &image_id,
+                18_789,
+                18_789,
+                &[],
+                "en",
+            )
+            .unwrap()
+        };
+        let first_contract = build(&first);
+        let second_contract = build(&second);
+        let moved_contract = build(&moved);
+
+        assert_eq!(first_contract.state_id, second_contract.state_id);
+        assert_ne!(first_contract.digest, second_contract.digest);
+        assert_ne!(first_contract.state_id, moved_contract.state_id);
     }
 }
 
@@ -1532,7 +2109,7 @@ pub async fn docker_gateway_status(port: Option<u16>) -> Result<GatewayStatus, S
     };
 
     let mapping = RuntimePathMapping::from_active_layout()?;
-    let contract = ManagedContainerContract::for_mapping(&mapping);
+    let selected_state_id = state_identity(&mapping.host_state_dir);
     match inspect_named_container(&docker_bin, &mapping).await? {
         ContainerPresence::Absent => Ok(GatewayStatus {
             running: false,
@@ -1550,7 +2127,7 @@ pub async fn docker_gateway_status(port: Option<u16>) -> Result<GatewayStatus, S
         ContainerPresence::Managed { running, state_id } => Ok(GatewayStatus {
             // A JunQi container from a migrated state root is safe to replace,
             // but it is not the Gateway selected by the current bootstrap.
-            running: running && state_id == contract.state_id,
+            running: running && state_id == selected_state_id,
             port,
             pid: None,
             token: None,

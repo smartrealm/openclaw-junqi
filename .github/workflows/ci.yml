@@ -192,9 +192,17 @@ jobs:
         run: pnpm build
 
   windows:
-    name: Windows (compile + test)
+    name: Windows ${{ matrix.arch }} (compile + test)
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+          - arch: x86
+            target: i686-pc-windows-msvc
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -215,7 +223,7 @@ jobs:
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # pinned 1.96.0
         with:
           toolchain: 1.96.0
-          targets: x86_64-pc-windows-msvc
+          targets: ${{ matrix.target }}
 
       - name: Cache cargo registry & build
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -226,19 +234,19 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Fetch locked Rust dependencies
-        run: node scripts/fetch-cargo-dependencies.mjs --target x86_64-pc-windows-msvc
+        run: node scripts/fetch-cargo-dependencies.mjs --target ${{ matrix.target }}
 
       - name: Compile all native targets
         working-directory: src-tauri
         env:
           CARGO_NET_OFFLINE: "true"
-        run: cargo check --all-targets --target x86_64-pc-windows-msvc
+        run: cargo check --all-targets --target ${{ matrix.target }}
 
       - name: Run native Windows Rust tests
         working-directory: src-tauri
         env:
           CARGO_NET_OFFLINE: "true"
-        run: cargo test --lib --target x86_64-pc-windows-msvc --no-fail-fast
+        run: cargo test --lib --target ${{ matrix.target }} --no-fail-fast
 
   ci:
     name: ✅ CI Summary

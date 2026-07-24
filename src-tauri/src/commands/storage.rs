@@ -2363,36 +2363,6 @@ pub(crate) async fn recover_interrupted_runtime_reconfiguration(
     result
 }
 
-/// Commit a durable runtime relocation only after the candidate Gateway is
-/// authenticated with its selected config. Dependency installation alone is
-/// not enough: a broken Gateway must still be able to roll back to the prior
-/// Node/Git/npm/OpenClaw contract.
-#[tauri::command]
-pub async fn commit_runtime_reconfiguration(
-    state: State<'_, GatewayProcess>,
-) -> Result<bool, String> {
-    let operation_gate = state.operation_gate.clone();
-    let _operation_guard = operation_gate.lock_owned().await;
-    let Some((candidate, pending)) = paths::preflight_runtime_reconfiguration_rollback()? else {
-        return Ok(false);
-    };
-    if !crate::commands::gateway::gateway_matches_config(
-        pending.gateway_recovery().port,
-        &candidate.config_path,
-    )
-    .await
-    {
-        return Err(format!(
-            "Candidate Gateway is not healthy on port {}; runtime locations remain recoverable",
-            pending.gateway_recovery().port
-        ));
-    }
-    paths::commit_runtime_reconfiguration()?.ok_or_else(|| {
-        "The pending runtime reconfiguration disappeared before it could be committed".to_string()
-    })?;
-    Ok(true)
-}
-
 /// Abort a pending runtime relocation after dependency installation or Gateway
 /// startup fails. The candidate is stopped before bootstrap is restored so an
 /// old identity can never accidentally terminate a process using new paths.
