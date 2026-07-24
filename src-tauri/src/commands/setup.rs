@@ -37,7 +37,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     Arc, Mutex, OnceLock,
 };
 
@@ -1372,7 +1372,6 @@ async fn extract_node_archive(
 
 // ─── npm install with registry fallback ───────────────────────────────────────
 
-const NPM_INACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
 const NPM_SLOW_FETCH_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(90);
 const NPM_DIAGNOSTIC_LINE_LIMIT: usize = 24;
 
@@ -1538,6 +1537,43 @@ struct NpmFetchMetrics {
 
 type SharedNpmFetchMetrics = Arc<Mutex<NpmFetchMetrics>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NpmFetchSnapshot {
+    requests: u64,
+    slowest_duration_ms: u64,
+}
+
+fn npm_fetch_snapshot(metrics: &SharedNpmFetchMetrics) -> NpmFetchSnapshot {
+    let metrics = metrics
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    NpmFetchSnapshot {
+        requests: metrics.requests,
+        slowest_duration_ms: metrics.slowest_duration_ms,
+    }
+}
+
+fn npm_install_activity_message(
+    source_label: &str,
+    elapsed: std::time::Duration,
+    last_output_age: std::time::Duration,
+    snapshot: NpmFetchSnapshot,
+) -> String {
+    let network = if snapshot.requests == 0 {
+        "no network requests observed yet".to_string()
+    } else {
+        format!(
+            "{} network requests completed, slowest {}ms",
+            snapshot.requests, snapshot.slowest_duration_ms
+        )
+    };
+    format!(
+        "npm is still running via {source_label} (elapsed {}); {network}; last npm output {} ago; resolving dependencies, extracting packages, or running lifecycle scripts...",
+        compact_elapsed(elapsed),
+        compact_elapsed(last_output_age),
+    )
+}
+
 fn observe_npm_fetch(
     line: &str,
     source_label: &str,
@@ -1606,10 +1642,11 @@ fn emit_npm_fetch_summary(
     step: &str,
     source_label: &str,
     metrics: &SharedNpmFetchMetrics,
+    log_slot: &str,
     progress: f64,
 ) {
     if let Some(summary) = npm_fetch_summary(source_label, metrics) {
-        emit_diagnostic(app, step, &summary, progress);
+        emit_coalesced(app, step, &summary, log_slot, progress);
     }
 }
 
@@ -1637,7 +1674,6 @@ fn npm_diagnostic_text(diagnostics: &NpmDiagnostics) -> String {
 
 enum NpmWaitResult {
     Exited(std::io::Result<std::process::ExitStatus>),
-    Inactive,
     DeadlineExceeded,
     SlowSource(String),
 }
@@ -1698,56 +1734,38 @@ async fn stop_npm_process(
 }
 
 #[cfg(test)]
-async fn wait_for_process_activity(
+async fn wait_for_npm_process(
     child: &mut tokio::process::Child,
-    activity: &mut tokio::sync::watch::Receiver<u64>,
-    inactivity_timeout: std::time::Duration,
     deadline: std::time::Instant,
 ) -> NpmWaitResult {
     let (_slow_fetch_tx, mut slow_fetch_rx) = tokio::sync::watch::channel(None);
-    wait_for_process_activity_with_slow_signal(
-        child,
-        activity,
-        &mut slow_fetch_rx,
-        inactivity_timeout,
-        deadline,
-    )
-    .await
+    wait_for_npm_process_with_slow_signal(child, &mut slow_fetch_rx, deadline).await
 }
 
-async fn wait_for_process_activity_with_slow_signal(
+async fn wait_for_npm_process_with_slow_signal(
     child: &mut tokio::process::Child,
-    activity: &mut tokio::sync::watch::Receiver<u64>,
     slow_fetch: &mut tokio::sync::watch::Receiver<Option<String>>,
-    inactivity_timeout: std::time::Duration,
     deadline: std::time::Instant,
 ) -> NpmWaitResult {
     let wait = child.wait();
     tokio::pin!(wait);
     let deadline_wait = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline));
     tokio::pin!(deadline_wait);
+    let mut slow_fetch_open = true;
     loop {
-        // This timer is intentionally recreated after activity. The deadline
-        // timer above is not: output can reset the inactivity watchdog, but it
-        // must never extend the installation transaction's absolute budget.
-        let inactivity_wait = tokio::time::sleep(inactivity_timeout);
-        tokio::pin!(inactivity_wait);
         tokio::select! {
+            biased;
             status = &mut wait => return NpmWaitResult::Exited(status),
             _ = &mut deadline_wait => return NpmWaitResult::DeadlineExceeded,
-            changed = slow_fetch.changed() => {
+            changed = slow_fetch.changed(), if slow_fetch_open => {
                 if changed.is_ok() {
                     if let Some(reason) = slow_fetch.borrow().clone() {
                         return NpmWaitResult::SlowSource(reason);
                     }
+                } else {
+                    slow_fetch_open = false;
                 }
             }
-            changed = activity.changed() => {
-                if changed.is_err() {
-                    return NpmWaitResult::Exited(wait.await);
-                }
-            }
-            _ = &mut inactivity_wait => return NpmWaitResult::Inactive,
         }
     }
 }
@@ -1822,9 +1840,8 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         app,
         step,
         &format!(
-            "npm network policy: fetch-retries=2, fetch-timeout=120000ms, slow-source-threshold={}s, inactivity-timeout={}s, transaction-deadline={}s",
+            "npm network policy: fetch-retries=2, fetch-timeout=120000ms, slow-source-threshold={}s, output-silence-is-nonfatal=true, transaction-deadline={}s",
             NPM_SLOW_FETCH_THRESHOLD.as_secs(),
-            NPM_INACTIVITY_TIMEOUT.as_secs(),
             DEPENDENCY_INSTALL_DEADLINE.as_secs(),
         ),
         prog_start,
@@ -1883,7 +1900,8 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         })?;
         let reg_label = source.install_log_label();
         let attempt_started = std::time::Instant::now();
-        emit(
+        let npm_activity_log_slot = format!("npm-install-{install_nonce}-{}", reg_idx + 1);
+        emit_coalesced(
             app,
             step,
             &format!(
@@ -1893,6 +1911,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 reg_label,
                 package_spec
             ),
+            &npm_activity_log_slot,
             prog_start,
         );
 
@@ -1901,7 +1920,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         cmd.args([
             "install",
             "-g",
-            "--prefer-online",
+            "--prefer-offline",
             "--loglevel=http",
             "--foreground-scripts",
             "--fetch-retries=2",
@@ -1941,19 +1960,17 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             child_pid,
             &format!("npm install via {reg_label}"),
         );
-        let (activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
         let (slow_fetch_tx, mut slow_fetch_rx) = tokio::sync::watch::channel(None::<String>);
         let slow_fetch_triggered = Arc::new(AtomicBool::new(false));
         let fetch_metrics = Arc::new(Mutex::new(NpmFetchMetrics::default()));
         let diagnostics = Arc::new(Mutex::new(Vec::new()));
         let npm_progress = Arc::new(NpmStreamProgress::default());
-        let npm_network_log_slot = format!("npm-network-attempt-{}", reg_idx + 1);
+        let last_output_seconds = Arc::new(AtomicU64::new(0));
 
         // Stream stdout to progress events so the user sees live npm output
         let stdout_task = child.stdout.take().map(|stdout| {
             let app_c = app.clone();
             let step_c = step.to_string();
-            let activity_tx = activity_tx.clone();
             let slow_fetch_tx = slow_fetch_tx.clone();
             let slow_fetch_triggered = Arc::clone(&slow_fetch_triggered);
             let fetch_metrics = Arc::clone(&fetch_metrics);
@@ -1961,7 +1978,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let diagnostics = Arc::clone(&diagnostics);
             let process_label = process_label.clone();
             let npm_progress = Arc::clone(&npm_progress);
-            let npm_network_log_slot = npm_network_log_slot.clone();
+            let last_output_seconds = Arc::clone(&last_output_seconds);
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stdout).lines();
@@ -1971,10 +1988,11 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     .map_err(|error| format!("Failed to read npm stdout: {error}"))?
                 {
                     record_process_output(&app_c, &step_c, &process_label, "stdout", &line);
-                    activity_tx.send_modify(|sequence| *sequence += 1);
+                    last_output_seconds
+                        .store(attempt_started.elapsed().as_secs(), Ordering::Release);
                     let progress =
                         prog_start + (prog_end - prog_start) * npm_progress.observe(&line);
-                    let fetch_request_count = observe_npm_fetch(
+                    observe_npm_fetch(
                         &line,
                         &source_label,
                         &slow_fetch_tx,
@@ -1982,18 +2000,6 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                         &fetch_metrics,
                     );
                     if npm_log_line_is_http_fetch(&line) {
-                        if fetch_request_count.is_some_and(|count| count == 1 || count % 25 == 0) {
-                            if let Some(summary) = npm_fetch_summary(&source_label, &fetch_metrics)
-                            {
-                                emit_coalesced(
-                                    &app_c,
-                                    &step_c,
-                                    &summary,
-                                    &npm_network_log_slot,
-                                    progress,
-                                );
-                            }
-                        }
                         continue;
                     }
                     match npm_log_line_for_display(&line) {
@@ -2030,7 +2036,6 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let app_e = app.clone();
             let step_e = step.to_string();
             let tar_warning_count_e = Arc::clone(&tar_warning_count);
-            let activity_tx = activity_tx.clone();
             let slow_fetch_tx = slow_fetch_tx.clone();
             let slow_fetch_triggered = Arc::clone(&slow_fetch_triggered);
             let fetch_metrics = Arc::clone(&fetch_metrics);
@@ -2038,7 +2043,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let diagnostics = Arc::clone(&diagnostics);
             let process_label = process_label.clone();
             let npm_progress = Arc::clone(&npm_progress);
-            let npm_network_log_slot = npm_network_log_slot.clone();
+            let last_output_seconds = Arc::clone(&last_output_seconds);
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stderr).lines();
@@ -2048,10 +2053,11 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     .map_err(|error| format!("Failed to read npm stderr: {error}"))?
                 {
                     record_process_output(&app_e, &step_e, &process_label, "stderr", &line);
-                    activity_tx.send_modify(|sequence| *sequence += 1);
+                    last_output_seconds
+                        .store(attempt_started.elapsed().as_secs(), Ordering::Release);
                     let progress =
                         prog_start + (prog_end - prog_start) * npm_progress.observe(&line);
-                    let fetch_request_count = observe_npm_fetch(
+                    observe_npm_fetch(
                         &line,
                         &source_label,
                         &slow_fetch_tx,
@@ -2059,18 +2065,6 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                         &fetch_metrics,
                     );
                     if npm_log_line_is_http_fetch(&line) {
-                        if fetch_request_count.is_some_and(|count| count == 1 || count % 25 == 0) {
-                            if let Some(summary) = npm_fetch_summary(&source_label, &fetch_metrics)
-                            {
-                                emit_coalesced(
-                                    &app_e,
-                                    &step_e,
-                                    &summary,
-                                    &npm_network_log_slot,
-                                    progress,
-                                );
-                            }
-                        }
                         continue;
                     }
                     match npm_log_line_for_display(&line) {
@@ -2113,8 +2107,10 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         let heartbeat_step = step.to_string();
         let heartbeat_label = reg_label.to_string();
         let heartbeat_progress = Arc::clone(&npm_progress);
+        let heartbeat_fetch_metrics = Arc::clone(&fetch_metrics);
+        let heartbeat_last_output_seconds = Arc::clone(&last_output_seconds);
+        let heartbeat_log_slot = npm_activity_log_slot.clone();
         let heartbeat_task = tokio::spawn(async move {
-            let started = std::time::Instant::now();
             loop {
                 tokio::select! {
                     changed = heartbeat_rx.changed() => {
@@ -2123,28 +2119,30 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                         }
                     }
                     _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
-                        emit(
+                        let elapsed = attempt_started.elapsed();
+                        let last_output_age = std::time::Duration::from_secs(
+                            elapsed.as_secs().saturating_sub(
+                                heartbeat_last_output_seconds.load(Ordering::Acquire),
+                            ),
+                        );
+                        emit_coalesced(
                             &heartbeat_app,
                             &heartbeat_step,
-                            &format!(
-                                "npm is still installing via {} (elapsed {}s); waiting for network, extraction, or lifecycle scripts...",
-                                heartbeat_label,
-                                started.elapsed().as_secs(),
+                            &npm_install_activity_message(
+                                &heartbeat_label,
+                                elapsed,
+                                last_output_age,
+                                npm_fetch_snapshot(&heartbeat_fetch_metrics),
                             ),
+                            &heartbeat_log_slot,
                             heartbeat_progress.overall(prog_start, prog_end),
                         );
                     }
                 }
             }
         });
-        let wait_result = wait_for_process_activity_with_slow_signal(
-            &mut child,
-            &mut activity_rx,
-            &mut slow_fetch_rx,
-            NPM_INACTIVITY_TIMEOUT,
-            deadline,
-        )
-        .await;
+        let wait_result =
+            wait_for_npm_process_with_slow_signal(&mut child, &mut slow_fetch_rx, deadline).await;
         let _ = heartbeat_tx.send(true);
         let _ = heartbeat_task.await;
         let output = NpmOutputTasks {
@@ -2175,7 +2173,14 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     status.code().map(i64::from),
                     attempt_started.elapsed(),
                 );
-                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
+                emit_npm_fetch_summary(
+                    app,
+                    step,
+                    &reg_label,
+                    &fetch_metrics,
+                    &npm_activity_log_slot,
+                    prog_live,
+                );
                 if std::time::Instant::now() >= deadline {
                     return Err("npm install exceeded the 30-minute dependency deadline".into());
                 }
@@ -2197,7 +2202,14 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     None,
                     attempt_started.elapsed(),
                 );
-                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
+                emit_npm_fetch_summary(
+                    app,
+                    step,
+                    &reg_label,
+                    &fetch_metrics,
+                    &npm_activity_log_slot,
+                    prog_live,
+                );
                 if let Err(cleanup_error) = cleanup {
                     return Err(format!(
                         "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
@@ -2232,7 +2244,14 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     None,
                     attempt_started.elapsed(),
                 );
-                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
+                emit_npm_fetch_summary(
+                    app,
+                    step,
+                    &reg_label,
+                    &fetch_metrics,
+                    &npm_activity_log_slot,
+                    prog_live,
+                );
                 if let Err(cleanup_error) = cleanup {
                     return Err(format!(
                         "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
@@ -2251,15 +2270,9 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 }
                 continue;
             }
-            timeout @ (NpmWaitResult::Inactive | NpmWaitResult::DeadlineExceeded) => {
-                let deadline_expired = matches!(timeout, NpmWaitResult::DeadlineExceeded)
-                    || std::time::Instant::now() >= deadline;
+            NpmWaitResult::DeadlineExceeded => {
                 let diagnostic = npm_diagnostic_text(&diagnostics);
-                let base_error = if deadline_expired {
-                    "npm install exceeded the 30-minute dependency deadline"
-                } else {
-                    "npm install produced no child-process output for 10 minutes"
-                };
+                let base_error = "npm install exceeded the 30-minute dependency deadline";
                 last_err = if diagnostic.is_empty() {
                     base_error.into()
                 } else {
@@ -2274,27 +2287,20 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     None,
                     attempt_started.elapsed(),
                 );
-                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
+                emit_npm_fetch_summary(
+                    app,
+                    step,
+                    &reg_label,
+                    &fetch_metrics,
+                    &npm_activity_log_slot,
+                    prog_live,
+                );
                 if let Err(cleanup_error) = cleanup {
                     return Err(format!(
                         "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
                     ));
                 }
-                if deadline_expired {
-                    return Err(last_err);
-                }
-                if reg_idx + 1 < total_regs {
-                    emit(
-                            app,
-                            step,
-                            &format!(
-                                "{} install stopped after 10 minutes without child-process output; retrying with fallback source...",
-                                reg_label
-                            ),
-                            prog_start,
-                        );
-                }
-                continue;
+                return Err(last_err);
             }
         };
 
@@ -6535,22 +6541,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn process_activity_wait_returns_exit_status() {
+    async fn npm_process_wait_returns_exit_status() {
         let mut child = tokio::process::Command::new(platform::bin_name("node"))
             .args(["-e", "process.exit(0)"])
             .spawn()
             .expect("Node.js is required by the desktop build");
-        let (_activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
 
-        // Hosted CI runners can take more than a second to schedule a freshly
-        // spawned Node process. Keep the inactivity budget representative of
-        // process startup while retaining a separate hard test deadline.
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(15),
-            wait_for_process_activity(
+            wait_for_npm_process(
                 &mut child,
-                &mut activity_rx,
-                std::time::Duration::from_secs(10),
                 std::time::Instant::now() + std::time::Duration::from_secs(10),
             ),
         )
@@ -6561,53 +6561,55 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn process_activity_wait_detects_inactivity() {
+    async fn quiet_npm_process_can_finish_without_being_killed_for_output_silence() {
         let mut child = tokio::process::Command::new(platform::bin_name("node"))
-            .args(["-e", "setTimeout(() => {}, 10000)"])
+            .args(["-e", "setTimeout(() => process.exit(0), 75)"])
             .spawn()
             .expect("Node.js is required by the desktop build");
-        let (_activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
 
-        let result = wait_for_process_activity(
+        let result = wait_for_npm_process(
             &mut child,
-            &mut activity_rx,
-            std::time::Duration::from_millis(25),
-            std::time::Instant::now() + std::time::Duration::from_secs(10),
+            std::time::Instant::now() + std::time::Duration::from_secs(5),
         )
         .await;
 
-        assert!(matches!(result, NpmWaitResult::Inactive));
-        let pid = child.id();
-        terminate_process_tree(&mut child, pid).await;
+        assert!(matches!(result, NpmWaitResult::Exited(Ok(status)) if status.success()));
     }
 
     #[tokio::test]
-    async fn process_activity_wait_enforces_its_absolute_deadline_despite_activity() {
+    async fn npm_process_wait_enforces_its_absolute_deadline() {
         let mut child = tokio::process::Command::new(platform::bin_name("node"))
             .args(["-e", "setTimeout(() => {}, 10000)"])
             .spawn()
             .expect("Node.js is required by the desktop build");
-        let (activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
-        let notifier = tokio::spawn(async move {
-            loop {
-                activity_tx.send_modify(|sequence| *sequence += 1);
-                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
-            }
-        });
 
-        let result = wait_for_process_activity(
+        let result = wait_for_npm_process(
             &mut child,
-            &mut activity_rx,
-            std::time::Duration::from_secs(1),
             std::time::Instant::now() + std::time::Duration::from_millis(30),
         )
         .await;
 
-        notifier.abort();
-        let _ = notifier.await;
         assert!(matches!(result, NpmWaitResult::DeadlineExceeded));
         let pid = child.id();
         terminate_process_tree(&mut child, pid).await;
+    }
+
+    #[test]
+    fn npm_activity_message_aggregates_network_and_quiet_status() {
+        let message = npm_install_activity_message(
+            "npmmirror.com",
+            std::time::Duration::from_secs(525),
+            std::time::Duration::from_secs(405),
+            NpmFetchSnapshot {
+                requests: 59,
+                slowest_duration_ms: 17_596,
+            },
+        );
+
+        assert!(message.contains("elapsed 08:45"));
+        assert!(message.contains("59 network requests completed"));
+        assert!(message.contains("slowest 17596ms"));
+        assert!(message.contains("last npm output 06:45 ago"));
     }
 
     #[test]

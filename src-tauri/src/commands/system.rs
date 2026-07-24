@@ -16,6 +16,16 @@ const RUNTIME_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_sec
 // headroom instead of misreading "still being scanned" as "broken".
 const FRESH_INSTALL_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
+// A single Node smoke run can time out on a perfectly valid install while
+// Windows Defender is still scanning freshly written files. Retrying a few
+// times keeps that transient scan from being misread as a corrupt package,
+// which upstream would otherwise "repair" with a full reinstall. A genuinely
+// broken entry fails fast (non-zero exit), so the retries only add latency in
+// the transient case they exist to survive.
+const OPENCLAW_SMOKE_PROBE_ATTEMPTS: usize = 3;
+const OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF: std::time::Duration =
+    std::time::Duration::from_millis(750);
+
 #[derive(Debug, Serialize)]
 pub struct PlatformInfo {
     pub os: String,
@@ -594,6 +604,23 @@ struct OpenclawBinarySelection {
     path: String,
 }
 
+/// Identity of an OpenClaw payload that already passed the Node smoke probe.
+///
+/// The fields are all cheap, filesystem-only reads. A match means the exact
+/// same package that verified before is still on disk, so the expensive Node
+/// probe can be skipped. Any real install/upgrade changes the version or the
+/// entry file's size/mtime, which invalidates the cache and forces a fresh
+/// probe. Node selection is deliberately excluded: OpenClaw being installed is
+/// a property of the package, not of whichever Node happens to be selected —
+/// Node compatibility is enforced separately on the runtime-start path.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+struct OpenclawVerifiedRuntime {
+    path: String,
+    version: String,
+    entry_len: u64,
+    entry_mtime_ms: u64,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NodeRuntimeProbe {
@@ -1041,6 +1068,53 @@ pub(crate) fn persist_selected_openclaw_binary(path: &Path) -> Result<(), String
         .map_err(|e| format!("Failed to write OpenClaw binary selection: {}", e))
 }
 
+/// Build the cache identity for an installed OpenClaw payload. Returns `None`
+/// for installs without a resolvable `openclaw.mjs` entry (e.g. an executable
+/// package), which fall back to the live smoke probe unconditionally.
+fn openclaw_runtime_signature(binary: &Path) -> Option<OpenclawVerifiedRuntime> {
+    let canonical = std::fs::canonicalize(binary).unwrap_or_else(|_| binary.to_path_buf());
+    let metadata = read_openclaw_package_metadata(binary)?;
+    let entry = npm_openclaw_entry(binary)?;
+    let entry_meta = std::fs::metadata(&entry).ok()?;
+    let entry_mtime_ms = entry_meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_millis() as u64)?;
+    Some(OpenclawVerifiedRuntime {
+        path: canonical.to_string_lossy().to_string(),
+        version: metadata.version,
+        entry_len: entry_meta.len(),
+        entry_mtime_ms,
+    })
+}
+
+fn read_verified_openclaw_runtime() -> Option<OpenclawVerifiedRuntime> {
+    let raw = std::fs::read_to_string(paths::openclaw_verified_runtime_path()).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+/// Record that a payload passed the Node smoke probe. Best-effort: a failure to
+/// write the cache only costs an extra probe on the next launch, so errors are
+/// swallowed rather than surfaced to the caller.
+fn persist_verified_openclaw_runtime(signature: &OpenclawVerifiedRuntime) {
+    let path = paths::openclaw_verified_runtime_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(payload) = serde_json::to_string_pretty(signature) {
+        let _ = std::fs::write(&path, payload);
+    }
+}
+
+/// Cheaply confirm the payload at `binary` still matches the last verified one.
+fn openclaw_runtime_matches_verified_cache(binary: &Path) -> bool {
+    match openclaw_runtime_signature(binary) {
+        Some(current) => read_verified_openclaw_runtime().is_some_and(|saved| saved == current),
+        None => false,
+    }
+}
+
 /// A storage migration that changes npm's global prefix is incomplete until
 /// OpenClaw has been installed and validated at the new target. Returning an
 /// old saved binary during that window would silently undo the user's choice.
@@ -1354,7 +1428,20 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
     let version = package_version;
     let version_ok = version.is_some();
     let entry_smoke_ok = if package_valid {
-        validate_openclaw_entry_with_selected_node(path).await
+        // An unchanged payload that already passed the smoke probe stays
+        // verified without re-running Node. This is the load-bearing guard
+        // against a transient Windows Defender scan flipping a healthy install
+        // to "corrupt" and triggering an unwanted reinstall.
+        if openclaw_runtime_matches_verified_cache(path) {
+            true
+        } else if validate_openclaw_entry_with_selected_node(path).await {
+            if let Some(signature) = openclaw_runtime_signature(path) {
+                persist_verified_openclaw_runtime(&signature);
+            }
+            true
+        } else {
+            false
+        }
     } else {
         false
     };
@@ -1540,6 +1627,12 @@ pub(crate) async fn validate_openclaw_runtime_payload(
             binary.display()
         ));
     }
+    // Install/update just proved this exact payload runs. Seed the cache so the
+    // first post-install detection — the moment most likely to hit a Defender
+    // scan — skips the smoke probe instead of risking a false-negative reinstall.
+    if let Some(signature) = openclaw_runtime_signature(binary) {
+        persist_verified_openclaw_runtime(&signature);
+    }
     Ok(())
 }
 
@@ -1548,14 +1641,32 @@ async fn validate_openclaw_entry_with_selected_node(binary: &Path) -> bool {
         Ok(requirement) => requirement,
         Err(_) => return false,
     };
-    let node = match check_node_for_requirement(&requirement).await {
-        Ok(node) if node.available => node,
-        _ => return false,
-    };
-    let Some(node_path) = node.path.map(PathBuf::from) else {
-        return false;
-    };
-    validate_openclaw_entry_with_node(binary, &node_path).await
+    for attempt in 1..=OPENCLAW_SMOKE_PROBE_ATTEMPTS {
+        let last_attempt = attempt == OPENCLAW_SMOKE_PROBE_ATTEMPTS;
+        // Node resolution itself can transiently fail while a just-installed
+        // runtime is still being scanned, so it retries alongside the probe.
+        let node = match check_node_for_requirement(&requirement).await {
+            Ok(node) if node.available => node,
+            _ => {
+                if last_attempt {
+                    return false;
+                }
+                tokio::time::sleep(OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF).await;
+                continue;
+            }
+        };
+        let Some(node_path) = node.path.map(PathBuf::from) else {
+            return false;
+        };
+        if validate_openclaw_entry_with_node(binary, &node_path).await {
+            return true;
+        }
+        if last_attempt {
+            return false;
+        }
+        tokio::time::sleep(OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF).await;
+    }
+    false
 }
 
 fn path_text_for_display(raw: &str, windows: bool) -> String {
@@ -1975,7 +2086,8 @@ mod tests {
         node_requirement_for_openclaw_binary, normalize_npm_prefix, npm_cli_for_node,
         npm_openclaw_entry, npm_prefix_for_openclaw_binary,
         openclaw_locale_for_application_language, openclaw_package_dir,
-        openclaw_package_version_for_binary, parse_node_runtime_probe, parse_openclaw_version,
+        openclaw_package_version_for_binary, openclaw_runtime_signature, parse_node_runtime_probe,
+        parse_openclaw_version,
         path_text_for_display, read_openclaw_package_metadata,
         required_node_requirement_for_openclaw_binary,
         resolve_openclaw_binary_from_effective_prefixes, search_path_with_executable_parent,
@@ -2008,6 +2120,46 @@ mod tests {
         .unwrap();
         binary
     }
+
+    #[test]
+    fn verified_runtime_signature_is_stable_for_unchanged_payload() {
+        let prefix = std::env::temp_dir().join(format!("junqi-oclaw-sig-{}", uuid::Uuid::new_v4()));
+        let binary = write_global_npm_openclaw(&prefix);
+
+        let first = openclaw_runtime_signature(&binary).expect("signature for valid payload");
+        let again = openclaw_runtime_signature(&binary).expect("signature is repeatable");
+        assert_eq!(
+            first, again,
+            "an unchanged payload must produce an identical signature so the cache hits"
+        );
+        assert_eq!(first.version, "2026.7.1");
+
+        let _ = std::fs::remove_dir_all(&prefix);
+    }
+
+    #[test]
+    fn verified_runtime_signature_changes_when_entry_payload_changes() {
+        let prefix = std::env::temp_dir().join(format!("junqi-oclaw-sig-{}", uuid::Uuid::new_v4()));
+        let binary = write_global_npm_openclaw(&prefix);
+        let before = openclaw_runtime_signature(&binary).expect("signature before update");
+
+        // Simulate an install/upgrade rewriting the JS entry with new content.
+        let package = openclaw_package_dir(&binary).expect("package dir");
+        std::fs::write(
+            package.join("openclaw.mjs"),
+            "// upgraded entry with different bytes\n",
+        )
+        .unwrap();
+        let after = openclaw_runtime_signature(&binary).expect("signature after update");
+
+        assert_ne!(
+            before, after,
+            "a rewritten entry must invalidate the cache so a fresh smoke probe runs"
+        );
+
+        let _ = std::fs::remove_dir_all(&prefix);
+    }
+
     #[test]
     fn bug_rp_04_runtime_tool_sources_have_distinct_wire_values() {
         assert_eq!(

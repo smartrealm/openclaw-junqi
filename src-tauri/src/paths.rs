@@ -1874,6 +1874,19 @@ fn legacy_openclaw_binary_selection_path() -> PathBuf {
     desktop_dir().join("runtime").join("openclaw-binary.json")
 }
 
+/// Record of the last OpenClaw payload that passed the Node smoke probe.
+///
+/// Detection re-validates the launcher on every launch. Re-running the Node
+/// smoke probe each time turns a transient Windows Defender cold-start scan
+/// into a false "corrupt install" verdict, which upstream treats as a reason
+/// to wipe setup state and reinstall from scratch. Caching the last verified
+/// payload lets an unchanged install skip that probe entirely.
+pub fn openclaw_verified_runtime_path() -> PathBuf {
+    load_storage_bootstrap()
+        .map(|layout| layout.runtime_dir.join("openclaw-verified.json"))
+        .unwrap_or_else(|| desktop_dir().join("runtime").join("openclaw-verified.json"))
+}
+
 // ── Git ────────────────────────────────────────────────────────
 
 /// Returns a user-selected portable Git root. This selection is supported on

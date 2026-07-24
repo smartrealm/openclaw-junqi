@@ -49,3 +49,42 @@
 - [x] npm 活动不再全程固定在 42%。
 - [x] 每条 HTTP fetch 仍在原始进程日志中，但不逐条进入 UI。
 - [x] 聚合摘要不包含 registry 凭据或完整 URL。
+
+## BUG-WFR-07 · Silent but active npm process
+
+**Target**：stdout/stderr 静默只更新可观测状态，不终止 npm；30 分钟绝对期限和明确慢源仍可终止。
+
+**Acceptance**：
+- [x] 静默超过原 10 分钟阈值的 npm 进程可继续运行并正常退出。
+- [x] 绝对事务期限仍不会被输出或心跳延长。
+- [x] 不再出现“无输出 10 分钟”后自动切换 registry 的路径。
+
+## BUG-WFR-08 · Coalesced npm activity row
+
+**Target**：每次 npm 尝试的连接、网络统计和静默心跳共享一个固定 `logSlot`；逐请求 HTTP 只写原始进程日志。
+
+**Acceptance**：
+- [x] 15 秒心跳替换已有 npm 活动行，不追加重复行。
+- [x] 聚合行包含累计耗时、请求数、最慢请求及距最后 npm 输出时间。
+- [x] setup UI 不接收逐请求 HTTP fetch 事件。
+
+## BUG-WFR-09 · Warm npm cache preference
+
+**Target**：实际安装使用 `--prefer-offline`；已选 registry 和 fallback 顺序保持不变。
+
+**Acceptance**：
+- [x] 热缓存元数据不再因安装器参数被强制重新校验。
+- [x] 缓存缺失仍允许从 npmmirror 获取包。
+- [x] 不使用严格 `--offline`，不改变用户全局 npm 配置。
+
+## BUG-WFR-10 · Transient smoke probe forcing reinstall
+
+**Target**：已安装且结构完好的 OpenClaw，不因一次瞬时 Node 冒烟失败（Windows Defender 冷启动扫描等）被判为损坏而触发全量重装；冒烟测试加重试，且未变更的已验证 payload 跳过重复冒烟。
+
+**背景**：`installed = version_ok && package_valid && gateway_command_ok`，其中 `gateway_command_ok` 依赖每次启动都实跑的 Node 冒烟（`node --check` + 隔离目录 `--version`，各 30s 超时、无重试）。冒烟瞬时失败会令 `installed=false`，前端随即抹掉 `junqi-setup-done` 并把用户打回向导，`repairInvalidInstall` 触发完整 npm 重装。
+
+**Acceptance**：
+- [x] 冒烟失败最多重试 3 次带退避，扛过冷启动扫描；持续失败仍判 false，安全性不变。
+- [x] path+version+entry(len,mtime) 未变化的已验证 payload 直接复用验证结果，跳过冒烟。
+- [x] 安装/更新 payload 校验成功后写入验证缓存，首次安装后 detect 直接命中。
+- [x] 缓存仅在 `package_valid` 成立时参与；成为运行时前仍有完整 payload 校验兜底。

@@ -84,3 +84,24 @@ test("BUG-INSTALL-09 Windows installers request elevation and retain exit status
   assert.match(setup, /matches!\(exit_code, 0 \| 1641 \| 3010\)/);
   assert.match(setup, /reconcile_windows_installer_runtime/);
 });
+
+test("BUG-WFR-07 quiet npm output never overrides the absolute transaction deadline", () => {
+  assert.match(setup, /wait_for_npm_process_with_slow_signal/);
+  assert.match(setup, /NpmWaitResult::DeadlineExceeded/);
+  assert.doesNotMatch(setup, /NPM_INACTIVITY_TIMEOUT/);
+  assert.doesNotMatch(setup, /NpmWaitResult::Inactive/);
+  assert.doesNotMatch(setup, /no child-process output for 10 minutes/);
+});
+
+test("BUG-WFR-08 npm activity is coalesced while HTTP details stay in the process artifact", () => {
+  assert.match(setup, /let npm_activity_log_slot = format!/);
+  assert.match(setup, /emit_coalesced\([\s\S]*?&heartbeat_log_slot/);
+  assert.match(setup, /record_process_output\([\s\S]*?if npm_log_line_is_http_fetch\(&line\) \{\s*continue;/);
+  assert.match(setup, /fn emit_npm_fetch_summary[\s\S]*?emit_coalesced/);
+});
+
+test("BUG-WFR-09 npm prefers its warm cache without requiring offline completeness", () => {
+  assert.match(setup, /"--prefer-offline"/);
+  assert.doesNotMatch(setup, /"--prefer-online"/);
+  assert.doesNotMatch(setup, /"--offline"/);
+});
