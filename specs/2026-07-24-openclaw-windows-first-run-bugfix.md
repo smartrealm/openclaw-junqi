@@ -88,3 +88,14 @@
 - [x] path+version+entry(len,mtime) 未变化的已验证 payload 直接复用验证结果，跳过冒烟。
 - [x] 安装/更新 payload 校验成功后写入验证缓存，首次安装后 detect 直接命中。
 - [x] 缓存仅在 `package_valid` 成立时参与；成为运行时前仍有完整 payload 校验兜底。
+
+## BUG-WFR-11 · Transient node/npm probe forcing reinstall
+
+**Target**：已选定的 Node 运行时及其 npm，不因一次瞬时探测失败（Windows Defender 冷启动扫描等）被判为缺失，从而级联触发 Node 重装或硬阻断安装。
+
+**背景**：`ensure_node_runtime` 在 `runtime.node().available` 为 false 时会重装 Node，而 available 源自 `resolve_node_runtime` 的单次 `node -p` 探测；`check_npm_for_node` 的单次 `npm --version` 超时会直接报错中断安装。两者与 WFR-10 同源（冷启动探测无重试）。
+
+**Acceptance**：
+- [x] 已选定 Node 探测（`resolve_node_runtime_resiliently`）最多重试 3 次带退避；持续失败仍判不可用。
+- [x] npm 探测同样重试；成功立即返回，空版本/非零退出不误判为瞬时失败。
+- [x] 仅对已选定/配置的运行时重试；多候选 PATH 扫描保持单次，避免拖慢多 Node 机器。

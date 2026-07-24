@@ -26,6 +26,15 @@ const OPENCLAW_SMOKE_PROBE_ATTEMPTS: usize = 3;
 const OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF: std::time::Duration =
     std::time::Duration::from_millis(750);
 
+// A configured/selected Node runtime is probed with `node -p`, and its bundled
+// npm with `npm --version`. Like the OpenClaw smoke probe, a single attempt can
+// time out while Defender scans a freshly written runtime. Retrying keeps that
+// transient scan from being misread as "Node/npm is gone" — which cascades into
+// an unnecessary Node reinstall or a hard setup failure. Only the selected
+// runtime retries; the multi-candidate PATH scan stays single-attempt so a
+// machine with several stale Node installs does not multiply probe latency.
+const NODE_RUNTIME_PROBE_ATTEMPTS: usize = 3;
+
 #[derive(Debug, Serialize)]
 pub struct PlatformInfo {
     pub os: String,
@@ -656,6 +665,22 @@ async fn resolve_node_runtime(node_path: &str) -> Option<(String, String)> {
     parse_node_runtime_probe(&output.stdout)
 }
 
+/// Probe a configured/selected Node runtime with bounded retries. Reserved for
+/// the runtime JunQi manages or the user explicitly selected — never for the
+/// multi-candidate PATH scan, where retrying every incompatible node would only
+/// add latency without preventing a reinstall cascade.
+async fn resolve_node_runtime_resiliently(node_path: &str) -> Option<(String, String)> {
+    for attempt in 1..=NODE_RUNTIME_PROBE_ATTEMPTS {
+        if let Some(resolved) = resolve_node_runtime(node_path).await {
+            return Some(resolved);
+        }
+        if attempt < NODE_RUNTIME_PROBE_ATTEMPTS {
+            tokio::time::sleep(OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF).await;
+        }
+    }
+    None
+}
+
 /// Verify the npm CLI that belongs to an already selected Node.js executable.
 ///
 /// This is deliberately separate from PATH discovery. A machine may expose an
@@ -681,33 +706,53 @@ pub(crate) async fn check_npm_for_node(node: &NodeStatus) -> NpmStatus {
     };
     let npm_cli = context.npm_cli().to_path_buf();
 
-    let mut command = context.command();
-    command.arg("--version").kill_on_drop(true);
-    match tokio::time::timeout(FRESH_INSTALL_PROBE_TIMEOUT, command.output()).await {
-        Ok(Ok(output)) if output.status.success() => {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if version.is_empty() {
-                NpmStatus::unavailable(
-                    Some(npm_cli),
-                    "The selected Node.js runtime returned an empty npm version",
-                )
-            } else {
-                NpmStatus::available(version, npm_cli)
+    // The selected Node's bundled npm is retried on the same cold-start rationale
+    // as the Node probe: a transient scan-induced timeout must not hard-fail
+    // setup for an npm that is actually present and working. A genuinely broken
+    // npm exits non-zero quickly, so the retries add latency only in the
+    // transient case they exist to survive; a successful run returns at once.
+    let mut last_status = NpmStatus::unavailable(
+        Some(npm_cli.clone()),
+        "The selected Node.js runtime timed out while checking its bundled npm CLI",
+    );
+    for attempt in 1..=NODE_RUNTIME_PROBE_ATTEMPTS {
+        let mut command = context.command();
+        command.arg("--version").kill_on_drop(true);
+        match tokio::time::timeout(FRESH_INSTALL_PROBE_TIMEOUT, command.output()).await {
+            Ok(Ok(output)) if output.status.success() => {
+                let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if version.is_empty() {
+                    return NpmStatus::unavailable(
+                        Some(npm_cli),
+                        "The selected Node.js runtime returned an empty npm version",
+                    );
+                }
+                return NpmStatus::available(version, npm_cli);
+            }
+            Ok(Ok(_)) => {
+                last_status = NpmStatus::unavailable(
+                    Some(npm_cli.clone()),
+                    "The selected Node.js runtime could not execute its bundled npm CLI",
+                );
+            }
+            Ok(Err(error)) => {
+                last_status = NpmStatus::unavailable(
+                    Some(npm_cli.clone()),
+                    format!("Failed to start npm from the selected Node.js runtime: {error}"),
+                );
+            }
+            Err(_) => {
+                last_status = NpmStatus::unavailable(
+                    Some(npm_cli.clone()),
+                    "The selected Node.js runtime timed out while checking its bundled npm CLI",
+                );
             }
         }
-        Ok(Ok(_)) => NpmStatus::unavailable(
-            Some(npm_cli),
-            "The selected Node.js runtime could not execute its bundled npm CLI",
-        ),
-        Ok(Err(error)) => NpmStatus::unavailable(
-            Some(npm_cli),
-            format!("Failed to start npm from the selected Node.js runtime: {error}"),
-        ),
-        Err(_) => NpmStatus::unavailable(
-            Some(npm_cli),
-            "The selected Node.js runtime timed out while checking its bundled npm CLI",
-        ),
+        if attempt < NODE_RUNTIME_PROBE_ATTEMPTS {
+            tokio::time::sleep(OPENCLAW_SMOKE_PROBE_RETRY_BACKOFF).await;
+        }
     }
+    last_status
 }
 
 /// Apply the user's explicit npm cache choice to a child npm/OpenClaw process.
@@ -829,7 +874,7 @@ async fn node_requirement_candidates(
     // location instead of silently changing environments.
     if let Some(configured) = paths::configured_node_path() {
         let path_str = configured.to_string_lossy().to_string();
-        let runtime = resolve_node_runtime(&path_str).await;
+        let runtime = resolve_node_runtime_resiliently(&path_str).await;
         let (path_str, version) = match runtime {
             Some((resolved_path, version)) => (resolved_path, Some(version)),
             None => (path_str, None),
