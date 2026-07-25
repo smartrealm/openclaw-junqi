@@ -110,6 +110,14 @@ test('BUG-IU-10 runtime switching preserves the source Gateway when the target p
   assert.match(dockerCommand, /target_matches_native/);
   assert.match(dockerCommand, /release_managed_docker_gateway_for_native/);
   assert.match(dockerCommand, /target_matches_selected_config/);
+  assert.match(dockerCommand, /let native_config_path = paths::config_path\(\)/);
+  assert.match(dockerCommand, /gateway_matches_config\(port, &native_config_path\)/);
+  assert.match(dockerCommand, /active_docker_endpoint/);
+  assert.match(dockerCommand, /docker_daemon_proven_unavailable/);
+  assert.match(dockerCommand, /UnixStream::connect/);
+  assert.match(dockerCommand, /ErrorKind::NotFound \| ErrorKind::ConnectionRefused/);
+  assert.doesNotMatch(dockerCommand, /cannot connect to the docker daemon|is the docker daemon running/i);
+  assert.match(dockerCommand, /A stopped\/unreachable Docker engine cannot currently own the/);
   assert.match(dockerCommand, /container_publishes_host_port/);
   assert.match(dockerCommand, /should_preserve_selected_native_endpoint/);
   assert.match(dockerCommand, /no existing Gateway was stopped and \{target\} was not started/);

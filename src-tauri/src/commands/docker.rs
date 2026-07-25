@@ -1172,6 +1172,77 @@ fn should_preserve_selected_native_endpoint(
     !target_available && endpoint_matches_selected_config && !managed_docker_owns_target
 }
 
+async fn active_docker_endpoint(docker_bin: &str) -> Result<String, String> {
+    if let Some(host) = std::env::var_os("DOCKER_HOST") {
+        return host
+            .into_string()
+            .map_err(|_| "DOCKER_HOST could not be decoded safely".to_string())
+            .map(|host| host.trim().to_string())
+            .and_then(|host| {
+                (!host.is_empty())
+                    .then_some(host)
+                    .ok_or_else(|| "DOCKER_HOST is empty".to_string())
+            });
+    }
+
+    let mut command = tokio::process::Command::new(docker_bin);
+    platform::configure_background_command(&mut command);
+    let output = command
+        .args([
+            "context",
+            "inspect",
+            "--format",
+            "{{json .Endpoints.docker.Host}}",
+        ])
+        .output()
+        .await
+        .map_err(|error| format!("Failed to inspect the active Docker context: {error}"))?;
+    if !output.status.success() {
+        return Err("The active Docker context could not be inspected".to_string());
+    }
+    let endpoint: String = serde_json::from_slice(&output.stdout)
+        .map_err(|_| "Docker context returned an invalid endpoint".to_string())?;
+    let endpoint = endpoint.trim().to_string();
+    if endpoint.is_empty() {
+        return Err("Docker context returned an empty endpoint".to_string());
+    }
+    Ok(endpoint)
+}
+
+#[cfg(unix)]
+async fn docker_daemon_proven_unavailable(docker_bin: &str) -> Result<bool, String> {
+    use std::io::ErrorKind;
+
+    let endpoint = active_docker_endpoint(docker_bin).await?;
+    let Some(socket_path) = endpoint.strip_prefix("unix://") else {
+        // Remote and non-Unix transports need transport-specific identity and
+        // TLS/authorization handling. Do not infer absence from CLI text.
+        return Ok(false);
+    };
+    if socket_path.is_empty() {
+        return Err("Docker context returned an empty Unix socket path".to_string());
+    }
+    match std::os::unix::net::UnixStream::connect(socket_path) {
+        Ok(_) => Ok(false),
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::NotFound | ErrorKind::ConnectionRefused
+            ) =>
+        {
+            Ok(true)
+        }
+        Err(_) => Ok(false),
+    }
+}
+
+#[cfg(not(unix))]
+async fn docker_daemon_proven_unavailable(_docker_bin: &str) -> Result<bool, String> {
+    // Windows named-pipe absence must eventually use a structured Win32 error
+    // classification. Until then, localized Docker stderr is not trusted.
+    Ok(false)
+}
+
 /// Stop JunQi's named Docker container before the selected Native runtime
 /// reclaims its port. The container name is owned by JunQi, so this never
 /// targets arbitrary user containers.
@@ -1182,13 +1253,17 @@ pub(crate) async fn release_managed_docker_gateway_for_native(port: u16) -> Resu
     };
     let mapping = RuntimePathMapping::from_active_layout()?;
     let target_available = crate::commands::gateway_supervisor::is_port_available(port).await;
+    // `mapping.host_config_path` is intentionally the container-visible Docker
+    // config contract. This transition targets Native, so attest the live
+    // endpoint against the selected host Native config instead.
+    let native_config_path = paths::config_path();
     let target_matches_selected_config = if target_available {
         false
     } else {
-        crate::commands::gateway::gateway_matches_config(port, &mapping.host_config_path).await
+        crate::commands::gateway::gateway_matches_config(port, &native_config_path).await
     };
-    let managed_docker_owns_target = match inspect_named_container_value(&docker_bin).await? {
-        Some(inspection)
+    let managed_docker_owns_target = match inspect_named_container_value(&docker_bin).await {
+        Ok(Some(inspection))
             if matches!(
                 classify_container_inspection(&inspection)?,
                 ContainerPresence::Managed { running: true, state_id }
@@ -1197,7 +1272,36 @@ pub(crate) async fn release_managed_docker_gateway_for_native(port: u16) -> Resu
         {
             container_publishes_host_port(&inspection, port)
         }
-        _ => false,
+        Ok(_) => false,
+        Err(_error) if docker_daemon_proven_unavailable(&docker_bin).await? => {
+            // A stopped/unreachable Docker engine cannot currently own the
+            // selected port. Preserve all Docker state. Continue only when the
+            // port is free or the live endpoint already matches the selected
+            // Native config; an unknown listener still fails closed below.
+            if target_available
+                || should_preserve_selected_native_endpoint(
+                    target_available,
+                    target_matches_selected_config,
+                    false,
+                )
+            {
+                return Ok(false);
+            }
+            assert_target_port_owned_or_available(
+                port,
+                target_available,
+                target_matches_selected_config,
+                false,
+                "Docker",
+                "Native",
+            )?;
+            unreachable!("the Native transition port gate returned without accepting the port")
+        }
+        Err(error) => {
+            return Err(format!(
+                "Could not verify JunQi's Docker container before starting Native OpenClaw: {error}; no container or Gateway was changed"
+            ))
+        }
     };
 
     // The shared port can already belong to an official Native service for
