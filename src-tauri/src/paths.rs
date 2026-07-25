@@ -1148,26 +1148,48 @@ pub fn storage_bootstrap_path() -> PathBuf {
 }
 
 /// Directory for Node.js/Git/OpenClaw install-and-download diagnostic logs.
-/// Prefers sitting next to the installed executable so a user does not have
-/// to go digging through AppData; falls back to the per-user app config
-/// directory when that turns out to not be writable (a macOS `.app` bundle,
-/// or a Windows perMachine install under `Program Files` without admin
-/// rights). Resolved once per process: the install location and its
-/// writability do not change during a run.
+/// Prefers sitting next to an unpackaged executable so a user does not have
+/// to go digging through AppData. A macOS application bundle is immutable
+/// regardless of its current filesystem permissions: writing below `Contents`
+/// invalidates its resource seal and makes later replacement verification
+/// ambiguous. Other protected install locations fall back when the sibling is
+/// not writable. Resolved once per process because the executable location does
+/// not change during a run.
 pub fn diagnostics_log_dir() -> PathBuf {
     static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     DIR.get_or_init(|| {
-        installed_exe_sibling_dir("installer-logs")
+        installed_exe_sibling_dir(std::env::current_exe().ok().as_deref(), "installer-logs")
             .filter(|dir| directory_accepts_writes(dir))
             .unwrap_or_else(|| app_config_dir().join("installer-logs"))
     })
     .clone()
 }
 
-fn installed_exe_sibling_dir(name: &str) -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let parent = exe.parent()?;
-    Some(parent.join(name))
+fn installed_exe_sibling_dir(executable: Option<&Path>, name: &str) -> Option<PathBuf> {
+    let executable = executable?;
+    if executable_is_inside_macos_bundle(executable) {
+        return None;
+    }
+    Some(executable.parent()?.join(name))
+}
+
+fn executable_is_inside_macos_bundle(executable: &Path) -> bool {
+    let Some(macos_dir) = executable.parent() else {
+        return false;
+    };
+    let Some(contents_dir) = macos_dir.parent() else {
+        return false;
+    };
+    let Some(bundle_dir) = contents_dir.parent() else {
+        return false;
+    };
+    macos_dir.file_name().is_some_and(|name| name == "MacOS")
+        && contents_dir
+            .file_name()
+            .is_some_and(|name| name == "Contents")
+        && bundle_dir
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("app"))
 }
 
 /// Probe-write into `path` (creating it if needed) rather than trusting
@@ -2693,6 +2715,23 @@ mod storage_bootstrap_tests {
             .collect::<Vec<_>>();
         assert_eq!(entries, vec![std::ffi::OsString::from("bootstrap.json")]);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn diagnostics_never_write_inside_a_macos_application_bundle() {
+        let bundle_executable = Path::new("/opt/Any Product.app/Contents/MacOS/product");
+        assert!(executable_is_inside_macos_bundle(bundle_executable));
+        assert_eq!(
+            installed_exe_sibling_dir(Some(bundle_executable), "installer-logs"),
+            None
+        );
+
+        let unpackaged_executable = Path::new("/opt/build/product");
+        assert!(!executable_is_inside_macos_bundle(unpackaged_executable));
+        assert_eq!(
+            installed_exe_sibling_dir(Some(unpackaged_executable), "installer-logs"),
+            Some(PathBuf::from("/opt/build/installer-logs"))
+        );
     }
 
     #[test]
