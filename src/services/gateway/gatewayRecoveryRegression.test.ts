@@ -192,7 +192,7 @@ test('BUG-GSO-01 offline service discovery is authoritative and fail-closed', ()
   assert.doesNotMatch(service, /STARTUP_SERVICE_STATUS_TIMEOUT/);
   assert.match(service, /stop_selected_gateway_service_verified/);
   assert.match(service, /"--no-probe"/);
-  assert.ok(start.indexOf('if is_gateway_healthy(port).await') < start.indexOf('let service_inspection ='));
+  assert.ok(start.indexOf('if is_gateway_healthy(port).await') < start.indexOf('service_inspection ='));
   assert.match(start, /inspect_gateway_service_state\([\s\S]*a competing Gateway was not started/);
 });
 
@@ -204,8 +204,10 @@ test('BUG-GSO-02 an installed selected service remains the normal startup owner'
   );
 
   assert.match(start, /start_installed_gateway_service\([\s\S]*service_inspection/);
-  assert.ok(start.indexOf('let service_inspection =') < start.indexOf('is_port_available(port)'));
+  assert.ok(start.indexOf('service_inspection =') < start.indexOf('is_port_available(port)'));
   assert.match(start, /InstalledServiceStartPolicy::Reconcile[\s\S]*inspect_gateway_service_state/);
+  assert.match(start, /should_restore_preferred_official_service\([\s\S]*install_selected_gateway_service_with_path/);
+  assert.match(gateway, /GatewayLifecyclePreference::SystemService[\s\S]*GatewayServiceOwnership::Absent/);
 });
 
 test('BUG-GW-04 storage migration preserves only a verified official service binding', () => {

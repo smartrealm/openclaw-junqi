@@ -66,7 +66,11 @@ async fn run_async() -> Result<(), String> {
     )
     .await
     {
-        Ok(true) | Ok(false) => {}
+        Ok(true) => {}
+        Ok(false) => errors.push(
+            "remove JunQi Gateway service: the installed service could not be proven to belong to the selected OpenClaw state/config; it was left untouched"
+                .to_string(),
+        ),
         Err(error) => errors.push(format!("remove JunQi Gateway service: {error}")),
     }
 

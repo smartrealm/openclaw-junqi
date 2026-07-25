@@ -8,10 +8,19 @@ import {
   Circle,
   Clock3,
   Loader2,
+  Power,
   RefreshCw,
   ServerCog,
 } from 'lucide-react';
-import { getGatewayLogs, type LogEntry } from '@/api/tauri-commands';
+import {
+  disableGatewayAutostart,
+  enableGatewayAutostart,
+  gatewayAutostartStatus,
+  getGatewayLogs,
+  handoffGatewayToOfficialService,
+  type GatewayAutostartStatus,
+  type LogEntry,
+} from '@/api/tauri-commands';
 import clsx from 'clsx';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
@@ -120,13 +129,17 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
   const [latestProgress, setLatestProgress] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [autostart, setAutostart] = useState<GatewayAutostartStatus | null>(null);
+  const [autostartBusy, setAutostartBusy] = useState(false);
+  const [autostartError, setAutostartError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [snapshot, nextLogs] = await Promise.all([
+      const [snapshot, nextLogs, nextAutostart] = await Promise.all([
         invoke<GatewayRuntimeSnapshot>('get_gateway_runtime_snapshot').catch(() => null),
         getGatewayLogs(variant === 'full' ? 12 : 4).catch(() => []),
+        variant === 'full' ? gatewayAutostartStatus().catch(() => null) : Promise.resolve(null),
       ]);
       if (snapshot) {
         setLifecycle(snapshot.lifecycle);
@@ -134,6 +147,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
         setRuntimePort(snapshot.port);
       }
       setLogs(nextLogs);
+      if (variant === 'full') setAutostart(nextAutostart);
     } finally {
       setLoading(false);
     }
@@ -179,6 +193,33 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
       window.removeEventListener('aegis:gateway-progress', onLocalProgress);
     };
   }, [refresh, t]);
+
+  const toggleAutostart = useCallback(async () => {
+    if (!autostart || !autostart.supported || autostartBusy) return;
+    setAutostartBusy(true);
+    setAutostartError(null);
+    try {
+      if (autostart.enabled) {
+        const next = await disableGatewayAutostart();
+        setAutostart(next);
+        await invoke('restart_local_gateway');
+      } else {
+        const next = await enableGatewayAutostart();
+        setAutostart(next);
+        if (!(await handoffGatewayToOfficialService())) {
+          throw new Error(t(
+            'setup.autostart.handoffFailed',
+            'Gateway 服务已安装，但未能接管当前运行实例。',
+          ));
+        }
+      }
+      await refresh();
+    } catch (cause) {
+      setAutostartError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAutostartBusy(false);
+    }
+  }, [autostart, autostartBusy, refresh, t]);
 
   const recentEvents = useMemo(() => {
     const lifecycleEvents = logs
@@ -248,6 +289,35 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
           <span className="break-words">
             {latestProgress ?? t('gateway.lifecyclePanel.waiting', '等待 Gateway 状态更新')}
           </span>
+        </div>
+      )}
+
+      {isFull && autostart?.supported && (
+        <div className="mt-4 flex items-start gap-3 rounded-lg border border-aegis-border/35 bg-aegis-bg/35 p-3">
+          <Power size={15} className="mt-0.5 shrink-0 text-aegis-primary" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] font-semibold text-aegis-text">
+              {t('setup.autostart.title', '要不要让 OpenClaw 开机自动运行?')}
+            </div>
+            <p className="mt-1 text-[11px] leading-5 text-aegis-text-dim">
+              {autostart.enabled
+                ? t('setup.autostart.enabledHint', '已设置为开机自动运行:以后电脑一开机,OpenClaw 就会自动在后台工作,不需要打开本应用。随时可以在这里关闭。')
+                : t('setup.autostart.hint', '开启后,电脑一开机 OpenClaw 就会自动在后台运行——不用打开本应用,你的消息渠道和定时任务也能照常工作。不开启也没关系:每次打开本应用时会自动启动它。')}
+            </p>
+            {autostartError && <p className="mt-1 break-words text-[11px] text-aegis-danger">{autostartError}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={() => void toggleAutostart()}
+            disabled={autostartBusy}
+            className="shrink-0 rounded-lg border border-aegis-border/45 px-3 py-1.5 text-[11px] font-semibold text-aegis-text-secondary transition hover:bg-aegis-surface disabled:opacity-50"
+          >
+            {autostartBusy
+              ? t('setup.autostart.switching', '正在切换 OpenClaw 的运行方式,请稍候…')
+              : autostart.enabled
+                ? t('setup.autostart.disable', '关闭')
+                : t('setup.autostart.enable', '开机自动运行')}
+          </button>
         </div>
       )}
 

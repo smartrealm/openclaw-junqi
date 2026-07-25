@@ -144,6 +144,18 @@ enum OfficialGatewayHandoff {
     RebindStale { stop_running_service: bool },
 }
 
+fn should_restore_preferred_official_service(
+    preference: paths::GatewayLifecyclePreference,
+    inspection: crate::commands::gateway_service::GatewayServiceInspection,
+) -> bool {
+    matches!(preference, paths::GatewayLifecyclePreference::SystemService)
+        && !inspection.installed
+        && matches!(
+            inspection.ownership,
+            crate::commands::gateway_service::GatewayServiceOwnership::Absent
+        )
+}
+
 fn official_gateway_handoff(
     inspection: crate::commands::gateway_service::GatewayServiceInspection,
 ) -> Result<Option<OfficialGatewayHandoff>, String> {
@@ -514,6 +526,52 @@ mod runtime_observation_tests {
             native_gateway_readiness_timeout_secs(),
             if cfg!(windows) { 210 } else { 180 }
         );
+    }
+
+    #[test]
+    fn missing_official_service_is_restored_only_for_explicit_system_service_intent() {
+        use crate::{
+            commands::gateway_service::{GatewayServiceInspection, GatewayServiceOwnership},
+            paths::GatewayLifecyclePreference,
+        };
+
+        let absent = GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::Absent,
+            installed: false,
+            running: false,
+        };
+        assert!(should_restore_preferred_official_service(
+            GatewayLifecyclePreference::SystemService,
+            absent,
+        ));
+        for preference in [
+            GatewayLifecyclePreference::Unknown,
+            GatewayLifecyclePreference::DesktopManaged,
+        ] {
+            assert!(!should_restore_preferred_official_service(
+                preference, absent,
+            ));
+        }
+        for ownership in [
+            GatewayServiceOwnership::Foreign,
+            GatewayServiceOwnership::Unverifiable,
+        ] {
+            assert!(!should_restore_preferred_official_service(
+                GatewayLifecyclePreference::SystemService,
+                GatewayServiceInspection {
+                    ownership,
+                    ..absent
+                },
+            ));
+        }
+        assert!(!should_restore_preferred_official_service(
+            GatewayLifecyclePreference::SystemService,
+            GatewayServiceInspection {
+                ownership: GatewayServiceOwnership::SelectedState,
+                installed: true,
+                running: false,
+            },
+        ));
     }
 
     #[test]
@@ -2995,17 +3053,43 @@ async fn start_gateway_locked_with_policy(
                 &config_path,
                 &runtime,
             );
-        let service_inspection = crate::commands::gateway_service::inspect_gateway_service_state(
-            &runtime,
-            &service_identity,
-            Some(&gw_path),
-        )
-        .await
-        .map_err(|error| {
-            format!(
-                "Gateway service ownership could not be verified; a competing Gateway was not started: {error}"
+        let mut service_inspection =
+            crate::commands::gateway_service::inspect_gateway_service_state(
+                &runtime,
+                &service_identity,
+                Some(&gw_path),
             )
-        })?;
+            .await
+            .map_err(|error| {
+                format!(
+                    "Gateway service ownership could not be verified; a competing Gateway was not started: {error}"
+                )
+            })?;
+        if should_restore_preferred_official_service(
+            paths::gateway_lifecycle_preference(),
+            service_inspection,
+        ) {
+            report_gateway_lifecycle(
+                &app,
+                &state,
+                crate::state::gateway_process::LogLevel::Info,
+                "Restoring the user-selected official Gateway service lifecycle...",
+            );
+            crate::commands::gateway_service::install_selected_gateway_service_with_path(
+                &runtime,
+                &base_dir,
+                &config_path,
+                port,
+                Some(&gw_path),
+            )
+            .await?;
+            service_inspection = crate::commands::gateway_service::inspect_gateway_service_state(
+                &runtime,
+                &service_identity,
+                Some(&gw_path),
+            )
+            .await?;
+        }
         if let Some(status) = start_installed_gateway_service(
             &app,
             &state,

@@ -230,7 +230,6 @@ pub(crate) struct GatewayServiceInspection {
 pub struct GatewayAutostartStatus {
     pub supported: bool,
     pub enabled: bool,
-    pub service_label: Option<String>,
 }
 
 fn selected_service_autostart_status(
@@ -239,7 +238,6 @@ fn selected_service_autostart_status(
     GatewayAutostartStatus {
         supported: true,
         enabled: belongs_to_selected_state(inspection.ownership) && inspection.installed,
-        service_label: Some("OpenClaw Gateway".to_string()),
     }
 }
 
@@ -264,7 +262,6 @@ pub async fn gateway_autostart_status() -> Result<GatewayAutostartStatus, String
         return Ok(GatewayAutostartStatus {
             supported: false,
             enabled: false,
-            service_label: None,
         });
     }
     let (runtime, state_dir, config_path) = selected_native_service_context().await?;
@@ -284,6 +281,10 @@ pub async fn enable_gateway_autostart() -> Result<GatewayAutostartStatus, String
     if !status.enabled {
         return Err("Gateway service was installed but could not be verified for the selected OpenClaw state directory".to_string());
     }
+    // Persist intent only after the official service has been installed and
+    // re-attested for this selected runtime/config. A failed install must not
+    // cause a later launch to recreate an unverified service.
+    paths::save_gateway_lifecycle_preference(paths::GatewayLifecyclePreference::SystemService)?;
     Ok(status)
 }
 
@@ -296,15 +297,16 @@ pub async fn disable_gateway_autostart() -> Result<GatewayAutostartStatus, Strin
         return Ok(GatewayAutostartStatus {
             supported: false,
             enabled: false,
-            service_label: None,
         });
     }
     let (runtime, state_dir, config_path) = selected_native_service_context().await?;
     uninstall_selected_gateway_service(&runtime, &state_dir, &config_path, None).await?;
+    // Commit DesktopManaged only after official uninstall postconditions pass.
+    // This preserves SystemService intent if uninstall fails midway.
+    paths::save_gateway_lifecycle_preference(paths::GatewayLifecyclePreference::DesktopManaged)?;
     Ok(GatewayAutostartStatus {
         supported: true,
         enabled: false,
-        service_label: Some("OpenClaw Gateway".to_string()),
     })
 }
 
@@ -396,6 +398,7 @@ struct GatewayRuntimeDocument {
 struct GatewayServiceCommand {
     environment: Option<HashMap<String, String>>,
     program_arguments: Option<Vec<String>>,
+    working_directory: Option<String>,
     source_path: Option<String>,
 }
 
@@ -486,21 +489,14 @@ fn command_matches_runtime(
     None
 }
 
-fn service_config_path<'a>(
-    document: &'a GatewayStatusDocument,
-    environment: Option<&'a HashMap<String, String>>,
-) -> Option<&'a str> {
-    environment
-        .and_then(|values| declared_environment(values, "OPENCLAW_CONFIG_PATH"))
-        .or_else(|| {
-            document
-                .config
-                .as_ref()
-                .and_then(|config| config.daemon.as_ref().or(config.cli.as_ref()))
-                .and_then(|path| path.path.as_deref())
-                .map(str::trim)
-                .filter(|path| !path.is_empty())
-        })
+fn status_config_path(document: &GatewayStatusDocument) -> Option<&str> {
+    document
+        .config
+        .as_ref()
+        .and_then(|config| config.daemon.as_ref().or(config.cli.as_ref()))
+        .and_then(|path| path.path.as_deref())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
 }
 
 fn classify_service_ownership(
@@ -510,17 +506,41 @@ fn classify_service_ownership(
     let Some(service) = document.service.as_ref() else {
         return GatewayServiceOwnership::Absent;
     };
-    let environment = service
-        .command
-        .as_ref()
-        .and_then(|command| command.environment.as_ref());
-    let Some(environment) = environment else {
+    let command = service.command.as_ref();
+    let environment = command.and_then(|command| command.environment.as_ref());
+    let environment_state_dir =
+        environment.and_then(|environment| declared_environment(environment, "OPENCLAW_STATE_DIR"));
+    let working_directory = command
+        .and_then(|command| command.working_directory.as_deref())
+        .map(str::trim)
+        .filter(|path| !path.is_empty());
+    // OpenClaw's official cross-platform service command contract includes both
+    // environment and workingDirectory. Prefer the explicit state selector,
+    // but reject contradictory metadata rather than choosing one. Older or
+    // wrapper-backed services may expose only workingDirectory; it is accepted
+    // only together with the independently checked config and runtime below.
+    if environment_state_dir.is_some()
+        && working_directory.is_some()
+        && !path_matches_identity(working_directory.unwrap(), &identity.state_dir)
+    {
+        return GatewayServiceOwnership::Foreign;
+    }
+    let Some(service_state_dir) = environment_state_dir.or(working_directory) else {
         return GatewayServiceOwnership::Unverifiable;
     };
-    let Some(service_state_dir) = declared_environment(environment, "OPENCLAW_STATE_DIR") else {
-        return GatewayServiceOwnership::Unverifiable;
-    };
-    let Some(service_config_path) = service_config_path(document, Some(environment)) else {
+    let environment_config_path =
+        environment.and_then(|values| declared_environment(values, "OPENCLAW_CONFIG_PATH"));
+    let reported_config_path = status_config_path(document);
+    // The explicit service selector and OpenClaw's daemon config summary are
+    // independent official evidence. Contradiction is identity drift, not a
+    // reason to prefer whichever field happens to be parsed first.
+    if environment_config_path.is_some()
+        && reported_config_path.is_some()
+        && !path_matches_identity(reported_config_path.unwrap(), &identity.config_path)
+    {
+        return GatewayServiceOwnership::Foreign;
+    }
+    let Some(service_config_path) = environment_config_path.or(reported_config_path) else {
         return GatewayServiceOwnership::Unverifiable;
     };
 
@@ -537,7 +557,9 @@ fn classify_service_ownership(
             .and_then(|command| command_matches_runtime(command, runtime))
         {
             Some(true) => match identity.locale.as_deref() {
-                Some(expected) => match declared_environment(environment, "OPENCLAW_LOCALE") {
+                Some(expected) => match environment
+                    .and_then(|environment| declared_environment(environment, "OPENCLAW_LOCALE"))
+                {
                     Some(actual) if actual.eq_ignore_ascii_case(expected) => {
                         GatewayServiceOwnership::SelectedState
                     }
@@ -779,6 +801,18 @@ pub(crate) async fn uninstall_selected_gateway_service(
         return Ok(false);
     }
 
+    // Legacy bootstraps predate lifecycle intent. Once an installed official
+    // service has been positively attested to the selected identity, preserve
+    // that observed lifecycle before removing the app-owned artifact. This is
+    // not inferred from a platform label or port, and an explicit
+    // DesktopManaged choice is never overwritten.
+    if matches!(
+        paths::gateway_lifecycle_preference(),
+        paths::GatewayLifecyclePreference::Unknown
+    ) {
+        paths::save_gateway_lifecycle_preference(paths::GatewayLifecyclePreference::SystemService)?;
+    }
+
     if !stop_installed_selected_gateway_service_verified(
         runtime,
         state_dir,
@@ -791,9 +825,33 @@ pub(crate) async fn uninstall_selected_gateway_service(
         return Err("The selected Gateway service changed before it could be uninstalled".into());
     }
 
+    let port = crate::commands::gateway::gateway_port_for_config(config_path);
     let uninstall_args = ["gateway", "uninstall", "--json"];
     let uninstall = run_service_command(runtime, &identity, search_path, &uninstall_args).await?;
     command_success(&uninstall, &uninstall_args)?;
+
+    // A zero CLI exit is not sufficient proof: lifecycle behavior and JSON
+    // output have evolved across OpenClaw versions. Re-read the official status
+    // contract under the same selected state/config context and require both
+    // service artifact absence and listener release before reporting success.
+    let after = inspect_gateway_service_state(runtime, &identity, search_path).await?;
+    // Official versions represent a missing service either as `service: null`
+    // or as an unloaded `service` object with no installed artifact. The
+    // normalized installed/running bits are the stable absence contract; the
+    // ownership enum is intentionally not used after the artifact is gone.
+    if after.installed || after.running {
+        return Err(
+            "OpenClaw reported Gateway uninstall success, but the selected service artifact is still present; user data and the remaining service were left untouched"
+                .into(),
+        );
+    }
+    crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000)
+        .await
+        .map_err(|error| {
+            format!(
+                "The selected Gateway service was removed, but its configured port {port} was not released: {error}"
+            )
+        })?;
     Ok(true)
 }
 
@@ -984,6 +1042,10 @@ mod tests {
         let selected_default_config_json = br#"{"service":{"command":{"environment":{"OPENCLAW_STATE_DIR":"/tmp/junqi-selected-state"}}},"config":{"daemon":{"path":"/tmp/junqi-selected-state/config/openclaw.json"}}}"#;
         let foreign_state_json = br#"{"service":{"command":{"environment":{"OPENCLAW_STATE_DIR":"/tmp/other-state","OPENCLAW_CONFIG_PATH":"/tmp/junqi-selected-state/config/openclaw.json"}}}}"#;
         let foreign_config_json = br#"{"service":{"command":{"environment":{"OPENCLAW_STATE_DIR":"/tmp/junqi-selected-state","OPENCLAW_CONFIG_PATH":"/tmp/other-config.json"}}}}"#;
+        let selected_working_directory_json = br#"{"service":{"command":{"workingDirectory":"/tmp/junqi-selected-state","environment":{}}},"config":{"daemon":{"path":"/tmp/junqi-selected-state/config/openclaw.json"}}}"#;
+        let contradictory_working_directory_json = br#"{"service":{"command":{"workingDirectory":"/tmp/other-state","environment":{"OPENCLAW_STATE_DIR":"/tmp/junqi-selected-state","OPENCLAW_CONFIG_PATH":"/tmp/junqi-selected-state/config/openclaw.json"}}}}"#;
+        let contradictory_reported_config_json = br#"{"service":{"command":{"environment":{"OPENCLAW_STATE_DIR":"/tmp/junqi-selected-state","OPENCLAW_CONFIG_PATH":"/tmp/junqi-selected-state/config/openclaw.json"}}},"config":{"daemon":{"path":"/tmp/other-config.json"}}}"#;
+        let foreign_working_directory_json = br#"{"service":{"command":{"workingDirectory":"/tmp/other-state","environment":{}}},"config":{"daemon":{"path":"/tmp/junqi-selected-state/config/openclaw.json"}}}"#;
         let missing_json = br#"{"service":null}"#;
         let missing_state_json = br#"{"service":{"command":{"environment":{"OPENCLAW_CONFIG_PATH":"/tmp/junqi-selected-state/config/openclaw.json"}}}}"#;
         let missing_config_json = br#"{"service":{"command":{"environment":{"OPENCLAW_STATE_DIR":"/tmp/junqi-selected-state"}}}}"#;
@@ -1002,6 +1064,22 @@ mod tests {
         );
         assert_eq!(
             classify(foreign_config_json, &identity),
+            GatewayServiceOwnership::Foreign
+        );
+        assert_eq!(
+            classify(selected_working_directory_json, &identity),
+            GatewayServiceOwnership::SelectedState
+        );
+        assert_eq!(
+            classify(contradictory_working_directory_json, &identity),
+            GatewayServiceOwnership::Foreign
+        );
+        assert_eq!(
+            classify(contradictory_reported_config_json, &identity),
+            GatewayServiceOwnership::Foreign
+        );
+        assert_eq!(
+            classify(foreign_working_directory_json, &identity),
             GatewayServiceOwnership::Foreign
         );
         assert_eq!(
@@ -1054,6 +1132,7 @@ mod tests {
                         ),
                     ])),
                     program_arguments: None,
+                    working_directory: None,
                     source_path: None,
                 }),
                 installed: Some(true),
@@ -1074,6 +1153,47 @@ mod tests {
     }
 
     #[test]
+    fn macos_status_uses_working_directory_when_service_env_omits_state_dir() {
+        let identity = GatewayServiceIdentity::new(
+            Path::new("/tmp/junqi-selected-state"),
+            Path::new("/tmp/junqi-selected-state/openclaw.json"),
+        );
+        let document = GatewayStatusDocument {
+            service: Some(GatewayServiceDocument {
+                command: Some(GatewayServiceCommand {
+                    environment: Some(HashMap::from([(
+                        "OPENCLAW_GATEWAY_PORT".to_string(),
+                        "18789".to_string(),
+                    )])),
+                    program_arguments: Some(vec![
+                        "/tmp/node".into(),
+                        "/tmp/openclaw/dist/index.js".into(),
+                        "gateway".into(),
+                    ]),
+                    working_directory: Some("/tmp/junqi-selected-state".into()),
+                    source_path: Some("/tmp/ai.openclaw.gateway.plist".into()),
+                }),
+                installed: Some(true),
+                loaded: Some(true),
+                runtime: Some(GatewayRuntimeDocument {
+                    status: Some("running".into()),
+                }),
+                source_path: Some("/tmp/ai.openclaw.gateway.plist".into()),
+            }),
+            config: Some(GatewayConfigDocument {
+                cli: None,
+                daemon: Some(GatewayConfigPath {
+                    path: Some("/tmp/junqi-selected-state/openclaw.json".into()),
+                }),
+            }),
+        };
+        assert_eq!(
+            classify_service_ownership(&document, &identity),
+            GatewayServiceOwnership::SelectedState
+        );
+    }
+
+    #[test]
     fn stopped_service_is_still_installed_when_not_loaded() {
         let identity = GatewayServiceIdentity::new(
             Path::new("/tmp/junqi-selected-state"),
@@ -1087,6 +1207,7 @@ mod tests {
                         "/tmp/junqi-selected-state".to_string(),
                     )])),
                     program_arguments: None,
+                    working_directory: None,
                     source_path: Some("/tmp/junqi-selected-state/gateway.cmd".into()),
                 }),
                 installed: None,
@@ -1149,6 +1270,7 @@ mod tests {
                         ("OPENCLAW_LOCALE".into(), "en-US".into()),
                     ])),
                     program_arguments,
+                    working_directory: None,
                     source_path: Some(root.join("gateway-service").display().to_string()),
                 }),
                 installed: Some(true),

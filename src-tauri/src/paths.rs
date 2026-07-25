@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-const STORAGE_BOOTSTRAP_VERSION: u32 = 14;
+const STORAGE_BOOTSTRAP_VERSION: u32 = 15;
 const HISTORICAL_MEDIA_STATE_DIR_LIMIT: usize = 8;
 
 /// The OpenClaw runtime selected by the user during setup.
@@ -77,6 +77,19 @@ impl OpenclawRelocationContract {
     }
 }
 
+/// User-selected lifecycle owner for a Native Gateway. This is intent, not an
+/// observation: a missing service after app uninstall must not erase a prior
+/// SystemService choice, while legacy bootstraps must not be guessed from the
+/// current machine state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GatewayLifecyclePreference {
+    #[default]
+    Unknown,
+    DesktopManaged,
+    SystemService,
+}
+
 /// A durable memento of the complete storage/runtime layout. Runtime mode
 /// switches only need the prior mode; changing Node, Git, or npm locations
 /// needs every related path to be restored as one unit.
@@ -99,6 +112,8 @@ struct StorageLayoutSnapshot {
     runtime_switch_rollback_mode: Option<OpenClawRuntimeMode>,
     gateway_service_rebind_required: bool,
     gateway_service_was_running: bool,
+    #[serde(default)]
+    gateway_lifecycle_preference: GatewayLifecyclePreference,
 }
 
 impl StorageLayoutSnapshot {
@@ -120,6 +135,7 @@ impl StorageLayoutSnapshot {
             runtime_switch_rollback_mode: layout.runtime_switch_rollback_mode,
             gateway_service_rebind_required: layout.gateway_service_rebind_required,
             gateway_service_was_running: layout.gateway_service_was_running,
+            gateway_lifecycle_preference: layout.gateway_lifecycle_preference,
         }
     }
 
@@ -142,6 +158,7 @@ impl StorageLayoutSnapshot {
             runtime_switch_rollback_mode: self.runtime_switch_rollback_mode,
             gateway_service_rebind_required: self.gateway_service_rebind_required,
             gateway_service_was_running: self.gateway_service_was_running,
+            gateway_lifecycle_preference: self.gateway_lifecycle_preference,
             pending_runtime_reconfiguration: None,
         }
     }
@@ -394,6 +411,7 @@ pub struct StorageBootstrap {
     pub runtime_switch_rollback_mode: Option<OpenClawRuntimeMode>,
     pub gateway_service_rebind_required: bool,
     pub gateway_service_was_running: bool,
+    pub gateway_lifecycle_preference: GatewayLifecyclePreference,
     /// A pending Node/Git/npm location change is a distinct durable
     /// transaction from a Native/Docker mode switch. It contains the previous
     /// layout and Gateway ownership until the candidate runtime is healthy.
@@ -466,6 +484,8 @@ struct PersistedStorageBootstrap {
     #[serde(default)]
     gateway_service_was_running: bool,
     #[serde(default)]
+    gateway_lifecycle_preference: GatewayLifecyclePreference,
+    #[serde(default)]
     pending_runtime_reconfiguration: Option<PendingRuntimeReconfiguration>,
 }
 
@@ -491,6 +511,7 @@ impl StorageBootstrap {
             runtime_switch_rollback_mode: None,
             gateway_service_rebind_required: false,
             gateway_service_was_running: false,
+            gateway_lifecycle_preference: GatewayLifecyclePreference::Unknown,
             pending_runtime_reconfiguration: None,
         }
     }
@@ -521,6 +542,7 @@ impl StorageBootstrap {
             runtime_switch_rollback_mode: None,
             gateway_service_rebind_required: false,
             gateway_service_was_running: false,
+            gateway_lifecycle_preference: GatewayLifecyclePreference::Unknown,
             pending_runtime_reconfiguration: None,
         }
     }
@@ -547,6 +569,7 @@ impl StorageBootstrap {
             runtime_switch_rollback_mode,
             gateway_service_rebind_required,
             gateway_service_was_running,
+            gateway_lifecycle_preference,
             pending_runtime_reconfiguration,
             ..
         } = value;
@@ -595,6 +618,7 @@ impl StorageBootstrap {
             runtime_switch_rollback_mode,
             gateway_service_rebind_required,
             gateway_service_was_running,
+            gateway_lifecycle_preference,
             pending_runtime_reconfiguration,
         };
         (normalized.paths_are_absolute()
@@ -624,6 +648,7 @@ impl StorageBootstrap {
             runtime_switch_rollback_mode: self.runtime_switch_rollback_mode,
             gateway_service_rebind_required: self.gateway_service_rebind_required,
             gateway_service_was_running: self.gateway_service_was_running,
+            gateway_lifecycle_preference: self.gateway_lifecycle_preference,
             pending_runtime_reconfiguration: self.pending_runtime_reconfiguration.clone(),
         }
     }
@@ -1173,10 +1198,26 @@ pub fn legacy_default_state_dir() -> PathBuf {
     home_dir_or_fallback().join(".openclaw")
 }
 
+fn bootstrap_write_lock() -> &'static std::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
+
 pub fn load_storage_bootstrap() -> Option<StorageBootstrap> {
     let raw = std::fs::read_to_string(storage_bootstrap_path()).ok()?;
     let persisted: PersistedStorageBootstrap = serde_json::from_str(&raw).ok()?;
     StorageBootstrap::from_persisted(persisted)
+}
+
+fn merge_lifecycle_preference(
+    candidate: &StorageBootstrap,
+    current: Option<&StorageBootstrap>,
+) -> StorageBootstrap {
+    let mut merged = candidate.clone();
+    if let Some(current) = current {
+        merged.gateway_lifecycle_preference = current.gateway_lifecycle_preference;
+    }
+    merged
 }
 
 pub fn save_storage_bootstrap(bootstrap: &StorageBootstrap) -> Result<(), String> {
@@ -1184,8 +1225,39 @@ pub fn save_storage_bootstrap(bootstrap: &StorageBootstrap) -> Result<(), String
         return Err("Storage paths must be absolute".to_string());
     }
     validate_persisted_runtime_locations(bootstrap)?;
+    let _guard = bootstrap_write_lock()
+        .lock()
+        .map_err(|_| "Storage bootstrap write lock is unavailable".to_string())?;
+    // Lifecycle intent has a dedicated writer. A storage/runtime transaction
+    // may have captured its layout before the user changed that intent, so an
+    // otherwise atomic whole-file save must merge the latest owned field to
+    // avoid a lost update.
+    let current = load_storage_bootstrap();
+    let merged = merge_lifecycle_preference(bootstrap, current.as_ref());
     let path = storage_bootstrap_path();
-    write_storage_bootstrap(&path, bootstrap)
+    write_storage_bootstrap(&path, &merged)
+}
+
+pub fn gateway_lifecycle_preference() -> GatewayLifecyclePreference {
+    load_storage_bootstrap()
+        .map(|layout| layout.gateway_lifecycle_preference)
+        .unwrap_or_default()
+}
+
+pub fn save_gateway_lifecycle_preference(
+    preference: GatewayLifecyclePreference,
+) -> Result<(), String> {
+    let _guard = bootstrap_write_lock()
+        .lock()
+        .map_err(|_| "Storage bootstrap write lock is unavailable".to_string())?;
+    let mut layout =
+        load_storage_bootstrap().ok_or_else(|| "OpenClaw storage is not configured".to_string())?;
+    layout.gateway_lifecycle_preference = preference;
+    if !layout.paths_are_absolute() {
+        return Err("Storage paths must be absolute".to_string());
+    }
+    validate_persisted_runtime_locations(&layout)?;
+    write_storage_bootstrap(&storage_bootstrap_path(), &layout)
 }
 
 fn write_storage_bootstrap(path: &Path, bootstrap: &StorageBootstrap) -> Result<(), String> {
@@ -2453,6 +2525,56 @@ mod storage_bootstrap_tests {
         assert_eq!(layout.npm_prefix, None);
         assert!(!layout.terminal_integration);
         assert_eq!(layout.runtime_mode, OpenClawRuntimeMode::Native);
+    }
+
+    #[test]
+    fn legacy_bootstrap_keeps_gateway_lifecycle_intent_unknown() {
+        let state = std::env::temp_dir().join("junqi-legacy-lifecycle-preference");
+        let raw = serde_json::json!({
+            "version": 14,
+            "state_dir": state,
+            "config_path": state.join("openclaw.json"),
+            "workspace_dir": state.join("workspace")
+        });
+        let persisted: PersistedStorageBootstrap = serde_json::from_value(raw).unwrap();
+        let layout = StorageBootstrap::from_persisted(persisted).unwrap();
+        assert_eq!(
+            layout.gateway_lifecycle_preference,
+            GatewayLifecyclePreference::Unknown
+        );
+    }
+
+    #[test]
+    fn explicit_gateway_lifecycle_intent_survives_bootstrap_round_trip() {
+        let state = std::env::temp_dir().join("junqi-lifecycle-preference-roundtrip");
+        let mut layout = StorageBootstrap::for_state_dir(state, None);
+        layout.gateway_lifecycle_preference = GatewayLifecyclePreference::SystemService;
+
+        let restored = StorageBootstrap::from_persisted(layout.to_persisted()).unwrap();
+        assert_eq!(
+            restored.gateway_lifecycle_preference,
+            GatewayLifecyclePreference::SystemService
+        );
+    }
+
+    #[test]
+    fn storage_transactions_preserve_the_latest_lifecycle_preference() {
+        let root = std::env::temp_dir().join("junqi-lifecycle-preference-merge");
+        let mut stale_candidate = StorageBootstrap::for_state_dir(root.join("candidate"), None);
+        stale_candidate.gateway_lifecycle_preference = GatewayLifecyclePreference::Unknown;
+        let mut current = StorageBootstrap::for_state_dir(root.join("current"), None);
+        current.gateway_lifecycle_preference = GatewayLifecyclePreference::SystemService;
+
+        let merged = merge_lifecycle_preference(&stale_candidate, Some(&current));
+        assert_eq!(merged.state_dir, stale_candidate.state_dir);
+        assert_eq!(
+            merged.gateway_lifecycle_preference,
+            GatewayLifecyclePreference::SystemService
+        );
+        assert_eq!(
+            merge_lifecycle_preference(&stale_candidate, None).gateway_lifecycle_preference,
+            GatewayLifecyclePreference::Unknown
+        );
     }
 
     #[test]

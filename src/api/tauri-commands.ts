@@ -209,7 +209,6 @@ export const ensureGatewayRunning = () => invoke<EnsureResult>("ensure_gateway_r
 export interface GatewayAutostartStatus {
   supported: boolean;
   enabled: boolean;
-  serviceLabel: string | null;
 }
 export const gatewayAutostartStatus = () => invoke<GatewayAutostartStatus>("gateway_autostart_status");
 export const handoffGatewayToOfficialService = () => (
