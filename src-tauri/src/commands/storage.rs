@@ -1705,11 +1705,66 @@ async fn wait_for_gateway(port: u16, config_path: &Path, attempts: usize) -> Res
     Err(format!("Gateway did not become reachable on port {}", port))
 }
 
+fn missing_native_runtime_preflight_error(
+    artifacts: crate::commands::gateway_service::GatewayServiceArtifactPresence,
+    port_available: bool,
+    managed_child_present: bool,
+    docker_artifacts: crate::commands::docker::ManagedDockerArtifactPresence,
+    pending_recovery: bool,
+) -> Result<SelectedGatewayService, String> {
+    if pending_recovery {
+        return Err(
+            "An OpenClaw runtime relocation or Gateway service recovery is still pending; continue or roll back that recovery before changing storage"
+                .to_string(),
+        );
+    }
+    if managed_child_present {
+        return Err(
+            "A JunQi-managed Gateway runtime is still present while OpenClaw is unavailable; storage changes were not started"
+                .to_string(),
+        );
+    }
+    match docker_artifacts {
+        crate::commands::docker::ManagedDockerArtifactPresence::Present => {
+            return Err(
+                "A JunQi Docker container remains while the selected Native OpenClaw runtime is unavailable; reconcile the runtime before changing storage"
+                    .to_string(),
+            )
+        }
+        crate::commands::docker::ManagedDockerArtifactPresence::Unverifiable => {
+            return Err(
+                "Docker container residue could not be verified while OpenClaw is unavailable; storage changes were not started"
+                    .to_string(),
+            )
+        }
+        crate::commands::docker::ManagedDockerArtifactPresence::Absent => {}
+    }
+    match artifacts {
+        crate::commands::gateway_service::GatewayServiceArtifactPresence::Absent
+            if port_available => Ok(SelectedGatewayService::default()),
+        crate::commands::gateway_service::GatewayServiceArtifactPresence::Absent => Err(
+            "The selected Gateway port is occupied by an unknown process while OpenClaw is unavailable; no process was stopped and storage changes were not started"
+                .to_string(),
+        ),
+        crate::commands::gateway_service::GatewayServiceArtifactPresence::Present => Err(
+            "A Windows OpenClaw Gateway service or login item remains, but its OpenClaw runtime is unavailable; restore OpenClaw so JunQi can verify ownership before changing storage"
+                .to_string(),
+        ),
+        crate::commands::gateway_service::GatewayServiceArtifactPresence::Unverifiable => Err(
+            "Windows Gateway service presence could not be verified while OpenClaw is unavailable; no service was changed and storage changes were not started"
+                .to_string(),
+        ),
+    }
+}
+
 async fn selected_gateway_service(
     binary: Option<&Path>,
     state_dir: &Path,
     native_config_path: &Path,
     runtime_mode: OpenClawRuntimeMode,
+    state: &GatewayProcess,
+    layout: &StorageBootstrap,
+    allow_pending_openclaw_relocation: bool,
 ) -> Result<SelectedGatewayService, String> {
     let Some(binary) = binary else {
         if matches!(runtime_mode, OpenClawRuntimeMode::Docker) {
@@ -1719,9 +1774,32 @@ async fn selected_gateway_service(
             // an unknown process owns the configured port.
             return Ok(SelectedGatewayService::default());
         }
-        return Err(
-            "OpenClaw is not available to verify the selected official Gateway service; storage changes were not started"
-                .to_string(),
+        if !cfg!(windows) {
+            return Err(
+                "OpenClaw is not available to verify the selected official Gateway service; storage changes were not started"
+                    .to_string(),
+            );
+        }
+        let (observed_mode, managed_pid) = crate::commands::gateway::inspect_gateway_owner(state)?;
+        let managed_child_present =
+            managed_pid.is_some() || !matches!(observed_mode, GatewayRuntimeMode::None);
+        let pending_recovery = (layout.openclaw_relocation_required
+            && !allow_pending_openclaw_relocation)
+            || layout.gateway_service_rebind_required
+            || layout.runtime_switch_rollback_mode.is_some()
+            || layout.pending_runtime_reconfiguration.is_some();
+        let artifacts =
+            crate::commands::gateway_service::inspect_gateway_service_artifacts_without_runtime()
+                .await;
+        let docker_artifacts =
+            crate::commands::docker::inspect_managed_docker_artifact_without_runtime().await;
+        let port = crate::commands::gateway::gateway_port_for_config(native_config_path);
+        return missing_native_runtime_preflight_error(
+            artifacts,
+            crate::commands::gateway_supervisor::is_port_available(port).await,
+            managed_child_present,
+            docker_artifacts,
+            pending_recovery,
         );
     };
     let runtime =
@@ -2231,6 +2309,9 @@ async fn recover_pending_runtime_reconfiguration(
                             &candidate.state_dir,
                             &candidate.config_path,
                             candidate.runtime_mode,
+                            state,
+                            &candidate,
+                            false,
                         )
                         .await?
                     }
@@ -2654,6 +2735,9 @@ pub async fn configure_storage(
                     &source,
                     &old_native_config,
                     existing_layout.runtime_mode,
+                    &state,
+                    &existing_layout,
+                    !runtime_location_changes.requires_setup(),
                 )
                 .await?
             } else {
@@ -2792,7 +2876,7 @@ pub async fn configure_storage(
                 .unwrap_or_else(|| existing_layout.workspace_dir.clone());
         let expected_runtime =
             map_workspace_to_target(&existing_layout.runtime_dir, &source, &target)
-                .unwrap_or(existing_layout.runtime_dir);
+                .unwrap_or_else(|| existing_layout.runtime_dir.clone());
         let expected_cache = existing_layout.npm_cache_dir.as_ref().map(|cache| {
             map_workspace_to_target(cache, &source, &target).unwrap_or_else(|| cache.clone())
         });
@@ -2807,11 +2891,11 @@ pub async fn configure_storage(
             expected_workspace,
             expected_runtime,
             expected_cache.clone(),
-            existing_layout.npm_prefix,
+            existing_layout.npm_prefix.clone(),
             existing_layout.terminal_integration,
         );
-        expected_layout.node_runtime_dir = existing_layout.node_runtime_dir;
-        expected_layout.git_runtime_dir = existing_layout.git_runtime_dir;
+        expected_layout.node_runtime_dir = existing_layout.node_runtime_dir.clone();
+        expected_layout.git_runtime_dir = existing_layout.git_runtime_dir.clone();
         expected_layout.runtime_mode = existing_layout.runtime_mode;
         validate_location_changes(&layout, Some(&expected_layout))?;
     } else {
@@ -2847,6 +2931,9 @@ pub async fn configure_storage(
                 &source,
                 &old_native_config,
                 existing_layout.runtime_mode,
+                &state,
+                &existing_layout,
+                false,
             )
             .await?
         } else {
@@ -3127,6 +3214,119 @@ pub async fn configure_storage(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_native_runtime_resumes_only_a_proven_quiescent_half_install() {
+        use crate::commands::docker::ManagedDockerArtifactPresence as DockerPresence;
+        use crate::commands::gateway_service::GatewayServiceArtifactPresence as Presence;
+
+        let resumed = missing_native_runtime_preflight_error(
+            Presence::Absent,
+            true,
+            false,
+            DockerPresence::Absent,
+            false,
+        )
+        .unwrap();
+        assert!(!resumed.installed);
+        assert!(!resumed.running);
+        for result in [
+            missing_native_runtime_preflight_error(
+                Presence::Present,
+                true,
+                false,
+                DockerPresence::Absent,
+                false,
+            ),
+            missing_native_runtime_preflight_error(
+                Presence::Unverifiable,
+                true,
+                false,
+                DockerPresence::Absent,
+                false,
+            ),
+            missing_native_runtime_preflight_error(
+                Presence::Absent,
+                false,
+                false,
+                DockerPresence::Absent,
+                false,
+            ),
+            missing_native_runtime_preflight_error(
+                Presence::Absent,
+                true,
+                true,
+                DockerPresence::Absent,
+                false,
+            ),
+            missing_native_runtime_preflight_error(
+                Presence::Absent,
+                true,
+                false,
+                DockerPresence::Absent,
+                true,
+            ),
+            missing_native_runtime_preflight_error(
+                Presence::Absent,
+                true,
+                false,
+                DockerPresence::Present,
+                false,
+            ),
+            missing_native_runtime_preflight_error(
+                Presence::Absent,
+                true,
+                false,
+                DockerPresence::Unverifiable,
+                false,
+            ),
+        ] {
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn missing_native_runtime_errors_identify_the_protected_residue() {
+        use crate::commands::docker::ManagedDockerArtifactPresence as DockerPresence;
+        use crate::commands::gateway_service::GatewayServiceArtifactPresence as Presence;
+
+        assert!(missing_native_runtime_preflight_error(
+            Presence::Present,
+            true,
+            false,
+            DockerPresence::Absent,
+            false
+        )
+        .unwrap_err()
+        .contains("service or login item remains"));
+        assert!(missing_native_runtime_preflight_error(
+            Presence::Absent,
+            false,
+            false,
+            DockerPresence::Absent,
+            false
+        )
+        .unwrap_err()
+        .contains("occupied by an unknown process"));
+        assert!(missing_native_runtime_preflight_error(
+            Presence::Absent,
+            true,
+            false,
+            DockerPresence::Absent,
+            true
+        )
+        .unwrap_err()
+        .contains("recovery is still pending"));
+        assert!(missing_native_runtime_preflight_error(
+            Presence::Absent,
+            true,
+            false,
+            DockerPresence::Present,
+            false
+        )
+        .unwrap_err()
+        .contains("Docker container remains"));
+    }
 
     #[test]
     fn bug_iu_04_external_and_unknown_runtimes_restore_as_managed_children() {

@@ -747,6 +747,45 @@ pub(crate) async fn resolve_docker_bin() -> Result<String, String> {
     Err("Docker CLI not found".to_string())
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ManagedDockerArtifactPresence {
+    Absent,
+    Present,
+    Unverifiable,
+}
+
+fn managed_docker_artifact_probe_required(os: &str, architecture: &str) -> bool {
+    // The Windows x86 product contract is Native-only, so that build cannot
+    // have created JunQi's managed Docker container.
+    !(os == "windows" && architecture == "x86")
+}
+
+/// Read-only residue probe for an interrupted Native setup. A named container
+/// is treated as present regardless of labels because this path has no
+/// authority to reuse, stop, or remove it.
+pub(crate) async fn inspect_managed_docker_artifact_without_runtime(
+) -> ManagedDockerArtifactPresence {
+    // This exception prevents an interrupted x86 Native install from requiring
+    // an unsupported Docker CLI.
+    if !managed_docker_artifact_probe_required(std::env::consts::OS, std::env::consts::ARCH) {
+        return ManagedDockerArtifactPresence::Absent;
+    }
+    let docker_bin = match resolve_docker_bin().await {
+        Ok(binary) => binary,
+        // With no usable Docker CLI there is no operable managed Docker owner
+        // in this Native recovery path. Any future Docker setup still performs
+        // full ownership/contract attestation before reusing or removing a
+        // same-named container. The port probe separately protects listeners.
+        Err(_) => return ManagedDockerArtifactPresence::Absent,
+    };
+    match inspect_named_container_value(&docker_bin).await {
+        Ok(Some(_)) => ManagedDockerArtifactPresence::Present,
+        Ok(None) => ManagedDockerArtifactPresence::Absent,
+        Err(_) => ManagedDockerArtifactPresence::Unverifiable,
+    }
+}
+
 async fn inspect_named_container_value(
     docker_bin: &str,
 ) -> Result<Option<serde_json::Value>, String> {
@@ -1758,15 +1797,24 @@ mod tests {
     use super::{
         assert_target_port_owned_or_available, classify_container_inspection,
         container_publishes_host_port, legacy_container_matches_layout,
-        managed_container_matches_runtime_contract, normalize_docker_config_runtime_paths,
-        parse_docker_layer_phase, parse_transfer_size, should_preserve_selected_native_endpoint,
-        state_identity, transfer_ratio, ContainerPresence, DockerLayerPhase, DockerPullProgress,
-        ManagedContainerContract, RuntimePathMapping, CONTAINER_CONTRACT_LABEL, CONTAINER_OWNER,
-        CONTAINER_OWNER_LABEL, CONTAINER_ROLE, CONTAINER_ROLE_LABEL, CONTAINER_SCHEMA,
-        CONTAINER_SCHEMA_LABEL, CONTAINER_STATE_LABEL, OPENCLAW_CONTAINER_CONFIG_PATH,
-        OPENCLAW_CONTAINER_STATE_DIR, OPENCLAW_CONTAINER_WORKSPACE_DIR,
+        managed_container_matches_runtime_contract, managed_docker_artifact_probe_required,
+        normalize_docker_config_runtime_paths, parse_docker_layer_phase, parse_transfer_size,
+        should_preserve_selected_native_endpoint, state_identity, transfer_ratio,
+        ContainerPresence, DockerLayerPhase, DockerPullProgress, ManagedContainerContract,
+        RuntimePathMapping, CONTAINER_CONTRACT_LABEL, CONTAINER_OWNER, CONTAINER_OWNER_LABEL,
+        CONTAINER_ROLE, CONTAINER_ROLE_LABEL, CONTAINER_SCHEMA, CONTAINER_SCHEMA_LABEL,
+        CONTAINER_STATE_LABEL, OPENCLAW_CONTAINER_CONFIG_PATH, OPENCLAW_CONTAINER_STATE_DIR,
+        OPENCLAW_CONTAINER_WORKSPACE_DIR,
     };
     use std::path::PathBuf;
+
+    #[test]
+    fn windows_x86_skips_docker_residue_for_its_native_only_contract() {
+        assert!(!managed_docker_artifact_probe_required("windows", "x86"));
+        assert!(managed_docker_artifact_probe_required("windows", "x86_64"));
+        assert!(managed_docker_artifact_probe_required("windows", "aarch64"));
+        assert!(managed_docker_artifact_probe_required("macos", "aarch64"));
+    }
 
     #[test]
     fn parses_docker_transfer_sizes_and_ratios() {

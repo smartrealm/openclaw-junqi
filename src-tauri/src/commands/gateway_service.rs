@@ -16,6 +16,197 @@ const fn service_command_timeout_for_platform(is_windows: bool) -> Duration {
 const SERVICE_COMMAND_TIMEOUT: Duration = service_command_timeout_for_platform(cfg!(windows));
 const SERVICE_COMMAND_STDOUT_LIMIT: usize = 512 * 1024;
 const SERVICE_COMMAND_STDERR_LIMIT: usize = 128 * 1024;
+#[cfg(any(windows, test))]
+const WINDOWS_GATEWAY_TASK_NAME: &str = "OpenClaw Gateway";
+
+/// Read-only evidence available without an OpenClaw executable. It is used
+/// only to decide whether an interrupted Native setup is safe to resume; a
+/// present or uninspectable artifact is never mutated through this path.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GatewayServiceArtifactPresence {
+    Absent,
+    Present,
+    Unverifiable,
+}
+
+#[cfg(any(windows, test))]
+fn windows_task_name_matches(raw: &str) -> bool {
+    let name = raw.trim().trim_matches('"').trim_start_matches(['\\', '/']);
+    name.eq_ignore_ascii_case(WINDOWS_GATEWAY_TASK_NAME)
+        || name
+            .get(..WINDOWS_GATEWAY_TASK_NAME.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(WINDOWS_GATEWAY_TASK_NAME))
+            && name
+                .get(WINDOWS_GATEWAY_TASK_NAME.len()..)
+                .is_some_and(|suffix| suffix.starts_with(" (") && suffix.ends_with(')'))
+}
+
+#[cfg(any(windows, test))]
+fn first_windows_csv_field(line: &str) -> Option<String> {
+    let mut chars = line.trim_start().chars().peekable();
+    let mut value = String::new();
+    if chars.peek() == Some(&'"') {
+        chars.next();
+        while let Some(character) = chars.next() {
+            if character == '"' {
+                if chars.peek() == Some(&'"') {
+                    chars.next();
+                    value.push('"');
+                } else {
+                    return Some(value);
+                }
+            } else {
+                value.push(character);
+            }
+        }
+        return None;
+    }
+    for character in chars {
+        if character == ',' {
+            break;
+        }
+        value.push(character);
+    }
+    (!value.trim().is_empty()).then(|| value.trim().to_string())
+}
+
+#[cfg(any(windows, test))]
+fn windows_task_list_contains_gateway(stdout: &[u8]) -> Result<bool, String> {
+    // `schtasks` uses the active Windows console code page, not guaranteed
+    // UTF-8. Decode only the first CSV field (the ASCII task name) so localized
+    // status columns cannot turn a successful absence probe into mojibake.
+    for raw_line in stdout.split(|byte| *byte == b'\n') {
+        let raw_line = raw_line.strip_suffix(b"\r").unwrap_or(raw_line);
+        if raw_line.is_empty() {
+            continue;
+        }
+        let field_end = if raw_line.first() == Some(&b'"') {
+            raw_line[1..]
+                .iter()
+                .position(|byte| *byte == b'"')
+                .map(|index| index + 2)
+                .ok_or_else(|| {
+                    "Windows Scheduled Task CSV contained an unterminated task name".to_string()
+                })?
+        } else {
+            raw_line
+                .iter()
+                .position(|byte| *byte == b',')
+                .unwrap_or(raw_line.len())
+        };
+        let field = std::str::from_utf8(&raw_line[..field_end]).map_err(|error| {
+            format!("Windows Scheduled Task name was not valid UTF-8/ASCII: {error}")
+        })?;
+        let task_name = first_windows_csv_field(field)
+            .ok_or_else(|| "Windows Scheduled Task CSV did not contain a task name".to_string())?;
+        if windows_task_name_matches(&task_name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+#[cfg(windows)]
+fn windows_gateway_startup_entry_presence() -> Result<bool, String> {
+    let app_data = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .or_else(dirs::data_dir)
+        .ok_or_else(|| "Windows APPDATA is unavailable".to_string())?;
+    let startup = app_data.join("Microsoft/Windows/Start Menu/Programs/Startup");
+    let entries = match std::fs::read_dir(&startup) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(format!(
+                "Could not inspect Windows Gateway login-item directory {}: {error}",
+                startup.display()
+            ))
+        }
+    };
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            format!(
+                "Could not inspect a Windows Gateway login item in {}: {error}",
+                startup.display()
+            )
+        })?;
+        let path = entry.path();
+        let Some(extension) = path.extension() else {
+            continue;
+        };
+        let Some(extension) = extension.to_str() else {
+            return Err(format!(
+                "A Windows login-item extension in {} could not be decoded safely",
+                startup.display()
+            ));
+        };
+        if !extension.eq_ignore_ascii_case("cmd") && !extension.eq_ignore_ascii_case("vbs") {
+            continue;
+        }
+        let name = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| {
+                format!(
+                    "A Windows command-script login-item name in {} could not be decoded safely",
+                    startup.display()
+                )
+            })?;
+        if windows_task_name_matches(name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Probe the shared official Windows task and OpenClaw's login-item fallback
+/// without requiring the OpenClaw package. A failed exact query is followed by
+/// a successful full task enumeration before absence is accepted, avoiding
+/// locale-dependent parsing of `schtasks` error text.
+#[cfg(windows)]
+pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
+) -> GatewayServiceArtifactPresence {
+    use crate::commands::process_control::{run_command_output_confirmed, ControlledOutputLimits};
+
+    let limits = ControlledOutputLimits {
+        timeout: Duration::from_secs(15),
+        stdout_bytes: 2 * 1024 * 1024,
+        stderr_bytes: 128 * 1024,
+    };
+    let mut exact = tokio::process::Command::new("schtasks.exe");
+    exact.args(["/Query", "/TN", WINDOWS_GATEWAY_TASK_NAME, "/XML"]);
+    match run_command_output_confirmed(exact, limits).await {
+        Ok(output) if output.status.success() => return GatewayServiceArtifactPresence::Present,
+        Ok(_) => {}
+        Err(_) => return GatewayServiceArtifactPresence::Unverifiable,
+    }
+
+    let mut list = tokio::process::Command::new("schtasks.exe");
+    list.args(["/Query", "/FO", "CSV", "/NH"]);
+    let task_absent = match run_command_output_confirmed(list, limits).await {
+        Ok(output) if output.status.success() => {
+            match windows_task_list_contains_gateway(&output.stdout) {
+                Ok(true) => return GatewayServiceArtifactPresence::Present,
+                Ok(false) => true,
+                Err(_) => return GatewayServiceArtifactPresence::Unverifiable,
+            }
+        }
+        _ => return GatewayServiceArtifactPresence::Unverifiable,
+    };
+    debug_assert!(task_absent);
+    match windows_gateway_startup_entry_presence() {
+        Ok(true) => GatewayServiceArtifactPresence::Present,
+        Ok(false) => GatewayServiceArtifactPresence::Absent,
+        Err(_) => GatewayServiceArtifactPresence::Unverifiable,
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
+) -> GatewayServiceArtifactPresence {
+    GatewayServiceArtifactPresence::Unverifiable
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GatewayServiceOwnership {
@@ -711,6 +902,34 @@ pub(crate) async fn reconcile_pending_gateway_service(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_service_artifact_parser_matches_only_the_shared_gateway_task() {
+        let tasks = br#""OpenClaw Gateway","N/A","Ready"
+"OpenClaw Gateway (work)","N/A","Ready"
+"Other Task","N/A","Ready""#;
+        assert!(windows_task_list_contains_gateway(tasks).unwrap());
+        assert!(
+            windows_task_list_contains_gateway(br#""OpenClaw Gateway (work)","N/A","Ready""#)
+                .unwrap()
+        );
+        assert!(windows_task_name_matches("\\OpenClaw Gateway"));
+        assert!(windows_task_name_matches("OpenClaw Gateway (work)"));
+        assert!(!windows_task_name_matches("OpenClaw Gateway helper"));
+    }
+
+    #[test]
+    fn malformed_windows_task_output_is_not_accepted_as_absence() {
+        assert!(windows_task_list_contains_gateway(&[0xff]).is_err());
+        assert!(windows_task_list_contains_gateway(b"\"unterminated").is_err());
+        assert_eq!(first_windows_csv_field("\"unterminated"), None);
+    }
+
+    #[test]
+    fn localized_windows_task_columns_do_not_break_ascii_name_detection() {
+        let tasks = b"\"Other Task\",\xff\xfe\r\n\"OpenClaw Gateway\",\x80\x81\r\n";
+        assert!(windows_task_list_contains_gateway(tasks).unwrap());
+    }
 
     #[test]
     fn windows_service_commands_allow_for_cold_cli_startup() {

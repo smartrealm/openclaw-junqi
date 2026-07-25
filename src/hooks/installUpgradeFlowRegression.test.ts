@@ -115,6 +115,24 @@ test('BUG-IU-10 runtime switching preserves the source Gateway when the target p
   assert.match(dockerCommand, /no existing Gateway was stopped and \{target\} was not started/);
 });
 
+test('BUG-IU-14 interrupted Windows installs resume only after residue is proven absent', () => {
+  const gatewayService = readFileSync(new URL('../../src-tauri/src/commands/gateway_service.rs', import.meta.url), 'utf8');
+  assert.match(storageCommand, /missing_native_runtime_preflight_error/);
+  assert.match(storageCommand, /GatewayServiceArtifactPresence::Absent\s*if port_available/);
+  assert.match(storageCommand, /layout\.openclaw_relocation_required/);
+  assert.match(storageCommand, /allow_pending_openclaw_relocation/);
+  assert.match(storageCommand, /layout\.pending_runtime_reconfiguration\.is_some\(\)/);
+  assert.match(storageCommand, /inspect_gateway_owner\(state\)/);
+  assert.match(storageCommand, /is_port_available\(port\)/);
+  assert.match(storageCommand, /inspect_managed_docker_artifact_without_runtime/);
+  assert.match(storageCommand, /ManagedDockerArtifactPresence::Unverifiable/);
+  assert.match(dockerCommand, /Err\(_\) => return ManagedDockerArtifactPresence::Absent/);
+  assert.match(dockerCommand, /managed_docker_artifact_probe_required\(std::env::consts::OS, std::env::consts::ARCH\)/);
+  assert.match(gatewayService, /schtasks\.exe/);
+  assert.match(gatewayService, /windows_gateway_startup_entry_presence/);
+  assert.match(gatewayService, /GatewayServiceArtifactPresence::Unverifiable/);
+});
+
 test('BUG-IU-06 relocating configured storage migrates the selected state, not only the legacy default', () => {
   const migrationSource = storagePanel.slice(
     storagePanel.indexOf('function migrationSource'),
