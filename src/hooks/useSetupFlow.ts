@@ -685,6 +685,12 @@ export function useSetupFlow(
   const beginWizardOperation = useCallback(() => {
     const operationId = wizardOperationRef.current + 1;
     wizardOperationRef.current = operationId;
+    // A superseded submit never reaches the branch that releases its re-entry
+    // guard, because that branch is gated on still being the current operation.
+    // The guard belongs to whichever operation is current, so taking over also
+    // takes it over. `submitWizardStep` reads the guard before calling this, so
+    // its own protection against double submits is unaffected.
+    wizardSubmitInFlightRef.current = false;
     return operationId;
   }, []);
 

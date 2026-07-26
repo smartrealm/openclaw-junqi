@@ -552,3 +552,28 @@ test('BUG-ONB-27 terminal QR notes render a bounded local image and use the syst
   assert.doesNotMatch(wizard, /target="_blank"/);
   assert.match(setupPage, /extractOpenClawWizardQrUrl\(presentedStep\.message\)/);
 });
+
+test('a superseded wizard submit releases its re-entry guard', () => {
+  // The wizard screen deliberately keeps its action clickable while a submit is
+  // still in flight once an error is showing (`wizardSubmitting && !wizardError`),
+  // and applyWizardResult reaches exactly that state: it sets the model-not-ready
+  // error and then awaits refreshGatewayConnectionTarget before submitWizardStep
+  // can reach its finally. Retrying there supersedes the submit, whose finally is
+  // gated on still being current and therefore never clears the guard. Ownership
+  // of the guard has to pass to the operation taking over, otherwise every later
+  // submit returns null and the wizard silently stops responding.
+  assert.match(setupPage, /disabled: flow\.wizardSubmitting && !flow\.wizardError/);
+  assert.match(
+    setupFlow,
+    /setWizardError\(message\);[\s\S]*?await refreshGatewayConnectionTarget\(\)/,
+  );
+  assert.match(
+    setupFlow,
+    /const beginWizardOperation = useCallback\(\(\) => \{[\s\S]*?wizardSubmitInFlightRef\.current = false;[\s\S]*?return operationId;/,
+  );
+  // The guard is read before the takeover, so double-submit protection survives.
+  assert.match(
+    setupFlow,
+    /if \(wizardSubmitInFlightRef\.current\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardSubmitInFlightRef\.current = true;/,
+  );
+});
