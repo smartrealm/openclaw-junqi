@@ -528,7 +528,7 @@ mod tests {
     #[test]
     fn classifies_duplicate_plugin_id_from_structured_config_warning() {
         let value = serde_json::json!({
-            "path": "plugins.entries.openclaw-lark",
+            "path": "plugins.entries.example-plugin",
             "message": "duplicate plugin id detected"
         });
         let finding = finding_from_value("config", &value, "warning").unwrap();

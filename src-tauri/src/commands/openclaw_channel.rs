@@ -248,7 +248,7 @@ mod tests {
     fn managed_external_plugins_are_explicitly_whitelisted() {
         let dingtalk = managed_external_channel_plugin("dingtalk-connector").unwrap();
         assert_eq!(dingtalk.npm_spec, "@dingtalk-real-ai/dingtalk-connector");
-        assert!(managed_external_channel_plugin("telegram").is_none());
+        assert!(managed_external_channel_plugin("future-channel").is_none());
         assert!(managed_external_channel_plugin("dingtalk-connector;whoami").is_none());
     }
 

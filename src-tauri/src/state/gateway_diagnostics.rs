@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn diagnosis_recommends_repair_for_missing_plugin_entry() {
-        let action = diagnose_startup_failure(&["openclaw-lark missing-main-entry".into()], false);
+        let action = diagnose_startup_failure(&["example-plugin missing-main-entry".into()], false);
         assert_eq!(action, RecoveryAction::Repair);
     }
 

@@ -7,6 +7,7 @@ import {
   normalizeOfficialChannelCapability,
   normalizeOfficialChannelCatalog,
   redactChannelSecrets,
+  runtimeChannelIds,
 } from './openclawChannelRuntime';
 
 describe('openclawChannelRuntime', () => {
@@ -36,9 +37,21 @@ describe('openclawChannelRuntime', () => {
     assert.equal(capability?.qrLogin, true);
   });
 
-  test('routes official link flows by supported interaction', () => {
+  test('discovers delivery channel ids from arbitrary current runtime status shapes', () => {
+    assert.deepEqual(runtimeChannelIds({
+      channelOrder: ['runtime-a'],
+      configuredChannels: ['runtime-b'],
+      channelAccounts: { 'runtime-c': [] },
+      channels: { 'runtime-d': {} },
+    }).sort(), ['runtime-a', 'runtime-b', 'runtime-c', 'runtime-d']);
+    assert.deepEqual(runtimeChannelIds(undefined), []);
+  });
+
+  test('routes official link flows only from current runtime capabilities', () => {
     const qrCapability = normalizeOfficialChannelCapability({ channels: [{ channel: 'provider', qrLogin: true }] });
+    const capabilityWithoutQr = normalizeOfficialChannelCapability({ channels: [{ channel: 'openclaw-weixin' }] });
     assert.equal(channelLinkMode(qrCapability, true), 'embedded_qr');
+    assert.equal(channelLinkMode(capabilityWithoutQr, true), 'none');
     assert.equal(channelLinkMode(null, true), 'none');
     assert.equal(channelLinkMode(null, false), 'terminal_setup');
   });

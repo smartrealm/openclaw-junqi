@@ -18,9 +18,8 @@
 //! Recovery is a ladder with a decidable re-check after every rung:
 //! `plugins update <id>` → `plugins install <spec> --force` → report
 //! not-healable so the UI can offer a temporary `plugins disable <id>`.
-//! An upstream package that ships without its declared entry (observed with
-//! `@larksuite/openclaw-lark@2026.7.9`) fails both heal rungs and must be
-//! disabled until its author publishes a fixed release.
+//! An upstream package that ships without its declared entry fails both heal
+//! rungs and must be disabled until its author publishes a fixed release.
 //!
 //! A second damage class exists (2026-07-16 drill): when a plugin's
 //! *registered extension entry* itself is missing, OpenClaw marks the whole
@@ -503,9 +502,9 @@ mod tests {
 
     #[test]
     fn hints_extract_quoted_plugin_ids_without_matching_prose() {
-        let error = "Plugin \"openclaw-lark\" failed post-core payload smoke check \
+        let error = "Plugin \"example-plugin\" failed post-core payload smoke check \
                      (missing-main-entry): Plugin main entry \"./dist/index.js\" not found";
-        assert_eq!(plugin_id_hints(error), vec!["openclaw-lark".to_string()]);
+        assert_eq!(plugin_id_hints(error), vec!["example-plugin".to_string()]);
         assert!(plugin_id_hints("Gateway process exited before becoming ready").is_empty());
         assert_eq!(
             plugin_id_hints("plugin \"a\" broke; Plugin \"a\" broke again; plugin \"b\" too"),
@@ -635,8 +634,8 @@ mod tests {
 
     #[test]
     fn npm_specs_are_validated_before_reaching_argv() {
-        assert!(is_valid_npm_spec("@larksuite/openclaw-lark@2026.7.9"));
-        assert!(is_valid_npm_spec("openclaw-lark"));
+        assert!(is_valid_npm_spec("@example/plugin@2026.7.9"));
+        assert!(is_valid_npm_spec("example-plugin"));
         assert!(!is_valid_npm_spec("--force"));
         assert!(!is_valid_npm_spec("../../etc/passwd"));
         assert!(!is_valid_npm_spec("pkg; rm -rf /"));

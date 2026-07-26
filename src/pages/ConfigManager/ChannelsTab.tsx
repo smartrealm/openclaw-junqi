@@ -5,7 +5,6 @@ import { ChevronRight, MessageCircle, Plus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { ChannelConfig, GatewayRuntimeConfig } from './types';
 import { ConfirmDialog, ToggleSwitch } from './components';
-import { getChannelTemplate } from './channelTemplates';
 import { ChannelOfficialSchemaEditor } from './ChannelOfficialSchemaEditor';
 
 interface ChannelsTabProps {
@@ -38,7 +37,6 @@ function ChannelConfigPanel({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const template = getChannelTemplate(channelId);
   const accounts = value.accounts && typeof value.accounts === 'object' && !Array.isArray(value.accounts)
     ? value.accounts as Record<string, Record<string, any>>
     : {};
@@ -54,7 +52,7 @@ function ChannelConfigPanel({
     <div className="overflow-hidden rounded-md border border-aegis-border bg-aegis-elevated">
       <button type="button" onClick={() => setOpen((current) => !current)} className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-white/[0.02]">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-aegis-border bg-aegis-surface text-[10px] font-bold text-aegis-text-muted">
-          {template?.icon || channelId.slice(0, 2).toUpperCase()}
+          {channelId.slice(0, 2).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-aegis-text">{t(`config.channel.${channelId}`, channelId)}</div>

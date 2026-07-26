@@ -6,7 +6,6 @@ mod tray;
 mod window_adaptation;
 mod window_sizing;
 
-use commands::channel_enrollment::ChannelEnrollmentRegistry;
 use state::{CollaborationControlState, GatewayProcess, RuntimeIdentityState};
 use tauri::{Emitter, Manager, RunEvent};
 
@@ -53,7 +52,6 @@ pub fn run() {
         // auto-saves on exit). First-launch sizing is handled in setup() below.
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(GatewayProcess::new())
-        .manage(ChannelEnrollmentRegistry::default())
         .manage(RuntimeIdentityState::new())
         .manage(CollaborationControlState::new())
         .manage(file_preview_registry)
@@ -187,16 +185,7 @@ pub fn run() {
             commands::openclaw_channel::get_openclaw_channel_capabilities,
             commands::openclaw_channel::get_openclaw_channel_status,
             commands::openclaw_channel::get_openclaw_channel_logs,
-            commands::channel_enrollment::start_channel_enrollment,
-            commands::channel_enrollment::poll_channel_enrollment,
-            commands::channel_enrollment::read_channel_enrollment_credential,
-            commands::channel_enrollment::complete_channel_enrollment,
-            commands::channel_enrollment::cancel_channel_enrollment,
-            commands::channel_enrollment::render_local_qr_data_url,
-            // Pairing
-            commands::pairing::list_pairing_requests,
-            commands::pairing::approve_pairing_request,
-            commands::pairing::reject_pairing_request,
+            commands::qr::render_local_qr_data_url,
             // Docker
             commands::docker::check_docker,
             commands::docker::pull_openclaw_image,

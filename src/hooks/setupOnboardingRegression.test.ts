@@ -202,7 +202,7 @@ test('BUG-WFR-03 wizard failures are visible first and change the primary action
     setupPage.indexOf('// ── 开机自启偏好'),
   );
   const errorPosition = wizard.indexOf('{flow.wizardError && <div');
-  const firstStepControl = wizard.indexOf('{feishuQrSetupMethod && (');
+  const firstStepControl = wizard.indexOf('{presentedStep.type === "text" && (');
 
   assert.ok(errorPosition >= 0 && errorPosition < firstStepControl);
   assert.match(wizard, /label: flow\.wizardError[\s\S]*?setup\.wizard\.retry/);

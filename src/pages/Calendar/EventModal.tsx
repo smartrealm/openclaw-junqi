@@ -8,8 +8,9 @@ import { useTranslation } from 'react-i18next';
 import { X, Trash2, ArrowRight, AlertCircle, CalendarDays, Briefcase, GraduationCap, HeartPulse, House, Tag, Users, type LucideIcon } from 'lucide-react';
 import { useCalendarStore } from '@/stores/calendarStore';
 import { toDateStr } from './calendarUtils';
-import { ALL_CATEGORIES, ALL_CHANNELS, REMINDER_PRESETS } from './calendarTypes';
+import { ALL_CATEGORIES, REMINDER_PRESETS } from './calendarTypes';
 import type { CalendarEvent, EventCategory, RecurrenceFreq, DeliveryChannel } from './calendarTypes';
+import { runtimeChannelIds, type ChannelsRuntimeSnapshot } from '@/services/openclawChannelRuntime';
 
 interface EventModalProps {
   onClose: () => void;
@@ -69,6 +70,23 @@ export function EventModal({ onClose, initialDate, editEvent }: EventModalProps)
   const [reminder, setReminder] = useState(editEvent?.reminderMinutes ?? settings.defaultReminder);
   const [recurrence, setRecurrence] = useState<RecurrenceFreq | ''>(editEvent?.recurrence?.freq || '');
   const [deliveryChannel, setDeliveryChannel] = useState<DeliveryChannel>(editEvent?.deliveryChannel || settings.defaultDeliveryChannel);
+  const [runtimeChannels, setRuntimeChannels] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.aegis.channelRuntime.status(undefined, false)
+      .then((snapshot) => {
+        if (!cancelled) setRuntimeChannels(runtimeChannelIds(snapshot as ChannelsRuntimeSnapshot));
+      })
+      .catch(() => { if (!cancelled) setRuntimeChannels([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const deliveryChannels = Array.from(new Set([
+    'last',
+    ...(deliveryChannel && deliveryChannel !== 'last' ? [deliveryChannel] : []),
+    ...runtimeChannels,
+  ]));
 
   // Keyboard: Escape to close, Enter to save
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -249,8 +267,10 @@ export function EventModal({ onClose, initialDate, editEvent }: EventModalProps)
           <Field label={t('calendar.delivery.label')}>
             <select value={deliveryChannel} onChange={(e) => setDeliveryChannel(e.target.value as DeliveryChannel)}
               className="field-input" disabled={allDay || reminder === 0}>
-              {ALL_CHANNELS.map((ch) => (
-                <option key={ch} value={ch}>{t(`calendar.delivery.${ch}`)}</option>
+              {deliveryChannels.map((ch) => (
+                <option key={ch} value={ch}>
+                  {ch === 'last' ? t('calendar.delivery.last') : ch}
+                </option>
               ))}
             </select>
           </Field>

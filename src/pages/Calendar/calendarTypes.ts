@@ -6,7 +6,7 @@ export type EventCategory = 'work' | 'personal' | 'health' | 'social' | 'educati
 export type EventSource = 'local' | 'memory' | 'ics';
 export type ReminderStatus = 'pending' | 'scheduled' | 'fired' | 'failed' | 'none';
 export type RecurrenceFreq = 'daily' | 'weekly' | 'monthly' | 'yearly';
-export type DeliveryChannel = 'last' | 'telegram' | 'discord' | 'whatsapp' | 'signal' | 'slack';
+export type DeliveryChannel = string;
 
 export interface CalendarEvent {
   id: string;
@@ -77,9 +77,6 @@ export const CAT_COLORS: Record<EventCategory, string> = {
 // All available categories for iteration
 export const ALL_CATEGORIES: EventCategory[] = ['work', 'personal', 'health', 'social', 'education', 'other'];
 
-// Delivery channels
-export const ALL_CHANNELS: DeliveryChannel[] = ['last', 'telegram', 'discord', 'whatsapp', 'signal', 'slack'];
-
 // Reminder presets (minutes)
 export const REMINDER_PRESETS = [0, 5, 15, 30, 60, 120, 1440, 10080] as const;
 
@@ -90,7 +87,7 @@ export const DEFAULT_SETTINGS: CalendarSettings = {
   defaultReminder: 30,
   timelineStart: 0,
   timelineEnd: 23,
-  defaultDeliveryChannel: 'telegram',
+  defaultDeliveryChannel: 'last',
 };
 
 // Default filter (show everything)

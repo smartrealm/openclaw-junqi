@@ -41,7 +41,7 @@ const BROWSE_SEEDS: Record<string, string[]> = {
   // Each mode uses different seed terms so the result set feels distinct
   downloads: ['weather', 'github', 'search', 'browser', 'image', 'calendar', 'notion', 'file', 'email', 'code'],
   stars:     ['agent', 'memory', 'security', 'automation', 'data', 'workflow', 'chinese', 'cn', 'ai', 'web'],
-  trending:  ['mcp', 'claude', 'cursor', 'openai', 'llm', 'api', 'slack', 'discord', 'git', 'terminal'],
+  trending:  ['mcp', 'claude', 'cursor', 'openai', 'llm', 'api', 'collaboration', 'chat', 'git', 'terminal'],
 };
 
 class ClawHubRateLimitError extends Error {
@@ -357,7 +357,7 @@ function guessCategory(slug: string, summary: string): string {
   if (s.includes('agent') || s.includes('memory') || s.includes('llm') || s.includes('openai') || s.includes('claude') || s.includes('image') || s.includes('whisper')) return 'ai-intelligence';
   if (s.includes('write') || s.includes('blog') || s.includes('human') || s.includes('content') || s.includes('draft')) return 'content-creation';
   if (s.includes('data') || s.includes('sql') || s.includes('analytics') || s.includes('chart') || s.includes('csv')) return 'data-analysis';
-  if (s.includes('slack') || s.includes('discord') || s.includes('email') || s.includes('gmail') || s.includes('telegram') || s.includes('meet')) return 'communication-collaboration';
+  if (s.includes('communication') || s.includes('collaboration') || s.includes('messaging') || s.includes('email') || s.includes('gmail') || s.includes('meet')) return 'communication-collaboration';
   if (s.includes('security') || s.includes('auth') || s.includes('encrypt') || s.includes('compliance') || s.includes('vuln')) return 'security-compliance';
   return 'developer-tools';
 }

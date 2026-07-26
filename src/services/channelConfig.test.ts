@@ -93,6 +93,20 @@ describe('channelConfig', () => {
     });
   });
 
+  test('non-DingTalk channels never use JunQi credential definitions or defaults', () => {
+    assert.deepEqual(getRequiredCredentialFields('future-runtime-channel'), []);
+    assert.deepEqual(
+      addChannel(cfg({ channels: {} }), 'future-runtime-channel').channels?.['future-runtime-channel'],
+      { enabled: true },
+    );
+
+    const account = buildChannelGroups(cfg({
+      channels: { 'future-runtime-channel': { enabled: true, agentId: 'main' } },
+    }))[0]?.accounts[0];
+    assert.ok(account);
+    assert.equal(assessChannelAccountReadiness('future-runtime-channel', account).state, 'unknown');
+  });
+
   test('official dingtalk-connector accounts require the current plugin credentials', () => {
     assert.deepEqual(getRequiredCredentialFields('dingtalk-connector'), ['clientId', 'clientSecret']);
 
@@ -255,6 +269,21 @@ describe('channelConfig', () => {
     assert.deepEqual(merged.bindings, [{ type: 'route', agentId: 'main', match: { channel: 'feishu' } }]);
     assert.deepEqual((merged as unknown as Record<string, unknown>).providers, { openai: { apiKey: 'disk-value' } });
     assert.deepEqual(written, merged);
+  });
+
+  test('runtime linked=false applies to any dynamically discovered channel', () => {
+    const account = {
+      id: 'default',
+      label: 'Default',
+      enabled: true,
+      agentId: 'main',
+      source: 'channel' as const,
+      config: {},
+    };
+    assert.equal(
+      assessChannelAccountReadiness('future-qr-channel', account, { configured: true, enabled: true, linked: false }).state,
+      'missing_credentials',
+    );
   });
 
   test('official runtime readiness still requires an agent binding', () => {

@@ -21,7 +21,6 @@ import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayD
 import { useSkillsStore } from '@/stores/skillsStore';
 import { gateway, GatewayAgentDisplayNameUpdateError } from '@/services/gateway';
 import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
-import { getChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
 import {
   buildGatewayAgentCreatePayload,
   GATEWAY_AGENT_ID_RE,
@@ -295,8 +294,7 @@ function extractPrimaryModel(raw: unknown): string {
 function formatChannelBinding(t: ReturnType<typeof useTranslation>['t'], binding: string): string {
   const [channelId, ...accountParts] = binding.split(':');
   const accountId = accountParts.join(':');
-  const template = getChannelTemplate(channelId);
-  const channelLabel = t(template?.nameKey ?? `config.channel.${channelId}`, channelId);
+  const channelLabel = t(`config.channel.${channelId}`, { defaultValue: channelId });
   return accountId ? `${channelLabel} / ${accountId}` : channelLabel;
 }
 

@@ -116,7 +116,7 @@
       "gatewayStability": "讀取最近持久化的穩定性記錄；即使 Gateway 崩潰或啟動失敗，也能檢查最後一個 bundle。",
       "gatewayDiagnosticsExport": "生成脫敏的支持 ZIP，彙集配置、狀態、健康、日誌和穩定性記錄；會在指定路徑寫入文件。",
       "statusAll": "執行完整隻讀狀態彙總，包括安全審計、插件兼容性以及內存和向量能力狀態。",
-      "statusDeep": "對 WhatsApp、Telegram、Discord、Slack、Signal 等渠道做實時探測，並運行安全審計。",
+      "statusDeep": "对当前 OpenClaw Runtime 返回的渠道执行实时探测和安全审计。",
       "healthVerbose": "通過 WebSocket RPC 獲取健康快照，並對所有賬號和智能體強制執行實時健康探測。",
       "logsFollow": "通過 RPC 持續讀取 Gateway 日誌，顯示本地時間，並在斷線後按指數退避自動重連。",
       "doctorLint": "以 JSON 輸出結構化診斷結果；不會提示交互、應用修復或寫入文件，適合 CI 和只讀排查。",
@@ -1739,18 +1739,15 @@
     "boundToAgent": "已綁定到",
     "channelSaveFailed": "保存渠道綁定失敗",
     "quickBindIm": "綁定 IM 渠道",
-    "quickBindImHint": "為當前智能體創建飛書或釘釘賬號，再到渠道中心補齊憑證。",
-    "createImAccount": "創建 {{channel}}",
-    "imAccountAlreadyBound": "{{channel}} 已綁定",
-    "imAccountCreatedTitle": "IM 賬號已創建",
-    "imAccountCreatedMessage": "賬號已綁定到當前智能體。請到渠道中心補齊憑證後啟用。",
+    "quickBindImHint": "从当前 OpenClaw Runtime 选择任意渠道，然后将账号绑定到此 Agent。",
     "saving": "正在保存…",
     "saved": "已保存！",
-    "saveFailed": "保存失敗"
+    "saveFailed": "保存失敗",
+    "selectRuntimeChannel": "从当前 OpenClaw Runtime 选择渠道"
   },
   "channelsCenter": {
     "title": "通道",
-    "subtitle": "把智能體連接到飛書、釘釘、Telegram、Discord 等消息入口。",
+    "subtitle": "连接当前所选 OpenClaw Runtime 提供的渠道。",
     "advancedConfig": "高級配置",
     "configMissing": "未找到 OpenClaw 配置文件。",
     "savedWithRestartWarning": "已保存，但 Gateway 重啟失敗",
@@ -1814,7 +1811,8 @@
       "ready": "可用",
       "disabled": "已停用",
       "missing_credentials": "缺憑證",
-      "unbound": "未綁定"
+      "unbound": "未綁定",
+      "unknown": "Runtime 状态不可用"
     },
     "readinessHint": {
       "ready": "配置完整，已綁定智能體。",
@@ -1836,7 +1834,8 @@
     "qrVerifying": "掃碼已成功，正在透過 OpenClaw 驗證渠道帳號狀態…",
     "qrNotReady": "掃碼已完成，但 OpenClaw 尚未確認渠道帳號正在執行。請檢查渠道狀態後重試。",
     "qrStatusFailed": "掃碼已完成，但無法驗證渠道狀態。請檢查 Gateway 連線後重新整理。",
-    "qrLoginFailed": "OpenClaw 已結束掃碼登入，但渠道未連線成功。請重新產生 QR Code 後再試。"
+    "qrLoginFailed": "OpenClaw 已結束掃碼登入，但渠道未連線成功。請重新產生 QR Code 後再試。",
+    "runtimeStatusUnavailable": "Runtime 状态不可用；JunQi 不会猜测渠道要求。"
   },
   "workshopExtra": {
     "queue": "隊列",
@@ -2064,9 +2063,6 @@
     "appSecret": "App Secret",
     "appKey": "App Key",
     "robotCode": "Robot Code",
-    "feishuDomain": "域名（feishu / lark）",
-    "typingIndicator": "輸入狀態提示",
-    "resolveSenderNames": "解析發送者名稱",
     "callbackUrl": "HTTPS 回調地址",
     "dingtalkStreamMode": "釘釘 Stream 模式",
     "integrationMode": "接入方式",
@@ -2074,23 +2070,11 @@
     "modeHttpsCallback": "HTTPS 回調",
     "modeStream": "Stream",
     "modeQrAuth": "掃碼授權",
-    "feishuHttpsHint": "使用飛書事件訂閱回調，並填寫應用憑證。",
     "dingtalkStreamHint": "使用釘釘 Stream 模式，並填寫 appKey、appSecret 和 robotCode。",
     "dingtalkHttpsHint": "關閉 Stream 時，使用公網 HTTPS 回調地址接收事件。",
     "qrAuthGatewayRequired": "需要 Gateway 提供真實登錄會話接口後才能啟用。",
     "channel": {
-      "telegram": "Telegram",
-      "discord": "Discord",
-      "whatsapp": "WhatsApp",
-      "slack": "Slack",
-      "googlechat": "Google Chat",
-      "mattermost": "Mattermost",
-      "signal": "Signal",
-      "imessage": "iMessage",
-      "feishu": "飛書",
-      "dingtalk": "釘釘",
-      "dingtalk-connector": "釘釘",
-      "openclaw-weixin": "微信（個人）"
+      "dingtalk-connector": "釘釘"
     },
     "gatewaySettings": "Gateway 設置",
     "connectionSettings": "連接配置",
@@ -2419,12 +2403,7 @@
     },
     "delivery": {
       "label": "發送到",
-      "last": "最近活躍渠道",
-      "telegram": "Telegram",
-      "discord": "Discord",
-      "whatsapp": "WhatsApp",
-      "signal": "Signal",
-      "slack": "Slack"
+      "last": "最近活躍渠道"
     },
     "recurrence": {
       "none": "不重複",
@@ -2894,29 +2873,7 @@
       "modelNotReady": "所選模型尚未通過即時驗證，請繼續完成 OpenClaw 配置。",
       "qrAlt": "掃描授權二維碼",
       "scanQrHint": "看不清終端裡的字元畫二維碼？掃這張圖，或者複製連結在瀏覽器裡打開。",
-      "openInBrowser": "在瀏覽器中打開",
-      "channelEnrollment": {
-        "title": "掃描二維碼連接飛書",
-        "subtitle": "使用手機掃碼創建應用，JunQi 會繼續完成 OpenClaw 官方配置。",
-        "description": "掃碼會創建並驗證飛書應用；憑據只會臨時交給 OpenClaw 官方向導，不會顯示在 JunQi 頁面中。",
-        "domain": "服務區域",
-        "feishu": "飛書",
-        "lark": "Lark",
-        "start": "顯示二維碼",
-        "waiting": "請使用飛書或 Lark 手機端掃描二維碼。",
-        "connected": "已驗證，正在繼續 OpenClaw 配置。",
-        "finalizing": "正在將已驗證的憑據交給 OpenClaw 官方向導…",
-        "denied": "手機端拒絕了此次授權。請重新生成二維碼。",
-        "expired": "二維碼已過期。請重新生成後掃碼。",
-        "networkFailed": "無法連接飛書服務。請檢查網路後重試。",
-        "rateLimited": "飛書服務忙碌中，請稍後重新產生二維碼。",
-        "providerRejected": "飛書拒絕了本次二維碼註冊請求。請稍後重試。",
-        "protocolChanged": "飛書掃碼入口已更新，目前的 JunQi 版本尚不支援。請更新 JunQi 後重試。",
-        "error": "二維碼服務暫時不可用。請重新生成後重試。",
-        "handoffFailed": "掃碼已驗證，但 OpenClaw 配置未能繼續。請重新生成二維碼後重試。",
-        "handoffRecoverable": "掃碼已驗證，但 OpenClaw 配置會話需要恢復。點擊“繼續配置”即可，無需重新掃碼。",
-        "resume": "繼續配置"
-      }
+      "openInBrowser": "在瀏覽器中打開"
     }
   },
   "perf": {

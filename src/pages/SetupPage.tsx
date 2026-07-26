@@ -60,22 +60,12 @@ import {
 import clsx from "clsx";
 import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
 import { OpenClawUpdatePanel } from "@/components/shared/OpenClawUpdatePanel";
-import { ChannelEnrollmentDialog } from "@/components/channels/ChannelEnrollmentDialog";
-import { type OpenClawWizardStep } from "@/services/openclawWizard";
-import {
-  FeishuQrWizardBridge,
-  FeishuQrWizardSessionChangedError,
-  isFeishuQrSetupMethodStep,
-} from "@/services/feishuQrWizardBridge";
+import type { OpenClawWizardStep } from "@/services/openclawWizard";
 import { renderLocalQrDataUrl } from "@/services/qrPresentation";
 import {
   extractOpenClawWizardQrUrl,
   normalizeOpenClawWizardHttpUrl,
 } from "@/services/openclawWizardQr";
-import {
-  cancelChannelEnrollment,
-  type ChannelEnrollmentCompletion,
-} from "@/services/channelEnrollment";
 import {
   setupStepMessageKey,
   setupStepProgress,
@@ -625,39 +615,13 @@ function WizardStepQrHint({ url }: { url: string }) {
 
 function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const feishuQrEnrollmentEnabled = useSettingsStore((s) => s.feishuQrEnrollmentEnabled);
   const step = flow.wizardStep;
   const [value, setValue] = useState<unknown>(() => step ? wizardInitialValue(step) : undefined);
-  const [feishuDomain, setFeishuDomain] = useState<"feishu" | "lark">("feishu");
-  const [enrollmentDomain, setEnrollmentDomain] = useState<"feishu" | "lark" | null>(null);
-  const [enrollmentFinalizing, setEnrollmentFinalizing] = useState(false);
-  const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
-  const [pendingEnrollment, setPendingEnrollment] = useState<ChannelEnrollmentCompletion | null>(null);
   const [deviceCodeCopied, setDeviceCodeCopied] = useState(false);
-  const enrollmentFinalizingRef = useRef(enrollmentFinalizing);
-  const pendingEnrollmentRef = useRef<ChannelEnrollmentCompletion | null>(null);
-
-  useEffect(() => {
-    enrollmentFinalizingRef.current = enrollmentFinalizing;
-  }, [enrollmentFinalizing]);
-
-  useEffect(() => {
-    pendingEnrollmentRef.current = pendingEnrollment;
-  }, [pendingEnrollment]);
-
-  useEffect(() => () => {
-    const completion = pendingEnrollmentRef.current;
-    if (completion) void cancelChannelEnrollment(completion.sessionId);
-  }, []);
 
   useEffect(() => {
     setValue(step ? wizardInitialValue(step) : undefined);
     setDeviceCodeCopied(false);
-    if (!enrollmentFinalizingRef.current) {
-      setEnrollmentDomain(null);
-      setEnrollmentError(null);
-      setPendingEnrollment(null);
-    }
   }, [step?.id]);
 
   if (!step) {
@@ -689,12 +653,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   // intact so local, remote, and externally managed Gateways behave alike.
   const presentedStep = step;
   const deviceCode = presentedStep.deviceCode;
-  // The kill switch degrades to the Gateway's own generic step rendering —
-  // same fallback path already used when the official CLI's step shape drifts.
-  const feishuQrSetupMethod = feishuQrEnrollmentEnabled && isFeishuQrSetupMethodStep(presentedStep);
-  // The Feishu bridge already renders a dedicated QR UI for its own step —
-  // don't double up with the generic message-text detector below.
-  const wizardScanQrUrl = feishuQrSetupMethod ? null : extractOpenClawWizardQrUrl(presentedStep.message);
+  const wizardScanQrUrl = extractOpenClawWizardQrUrl(presentedStep.message);
   const options = Array.isArray(presentedStep.options) ? presentedStep.options : [];
   const selectedValues = Array.isArray(value) ? value : [];
   const toggleMulti = (optionValue: unknown) => {
@@ -705,69 +664,16 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         : [...values, optionValue];
     });
   };
-  const blocked = !feishuQrSetupMethod
-    && (step.type === "select" || step.type === "multiselect")
+  const blocked = (step.type === "select" || step.type === "multiselect")
     && options.length === 0;
   const messageRenderedInBody = presentedStep.type === "confirm"
     || presentedStep.type === "note"
     || presentedStep.type === "progress"
     || presentedStep.type === "action";
-  const wizardTitle = feishuQrSetupMethod
-    ? t("setup.wizard.channelEnrollment.title", "扫描二维码连接飞书")
-    : presentedStep.title || t("setup.wizard.title", "配置 OpenClaw");
-  const wizardSubtitle = feishuQrSetupMethod
-    ? t("setup.wizard.channelEnrollment.subtitle", "使用手机扫码创建应用，JunQi 会继续完成 OpenClaw 官方配置。")
-    : messageRenderedInBody
-      ? t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。")
-      : presentedStep.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。");
-  const handleEnrollmentFailure = async (completion: ChannelEnrollmentCompletion, error: unknown) => {
-    if (error instanceof FeishuQrWizardSessionChangedError) {
-      await cancelChannelEnrollment(completion.sessionId);
-      setPendingEnrollment(null);
-      setEnrollmentError(t("setup.wizard.channelEnrollment.handoffFailed", "扫码已验证，但 OpenClaw 配置未能继续。请重新生成二维码后重试。"));
-      return;
-    }
-    setPendingEnrollment(completion);
-    setEnrollmentError(t("setup.wizard.channelEnrollment.handoffRecoverable", "扫码已验证，但 OpenClaw 配置会话需要恢复。点击“继续配置”即可，无需重新扫码。"));
-  };
-  const completeEnrollment = async (completion: ChannelEnrollmentCompletion, initialStep: OpenClawWizardStep) => {
-    enrollmentFinalizingRef.current = true;
-    setEnrollmentFinalizing(true);
-    try {
-      await new FeishuQrWizardBridge(completion).complete(initialStep, flow.submitWizardStep);
-      setEnrollmentDomain(null);
-      setPendingEnrollment(null);
-    } catch (error) {
-      setEnrollmentDomain(null);
-      await handleEnrollmentFailure(completion, error);
-    } finally {
-      enrollmentFinalizingRef.current = false;
-      setEnrollmentFinalizing(false);
-    }
-  };
-  const handleEnrollmentConnected = async (completion: ChannelEnrollmentCompletion) => {
-    await completeEnrollment(completion, step);
-  };
-  const resumeEnrollment = async () => {
-    const completion = pendingEnrollment;
-    if (!completion) return;
-    enrollmentFinalizingRef.current = true;
-    setEnrollmentFinalizing(true);
-    try {
-      const result = await flow.retryWizard();
-      if (!result || result.done || !result.step) {
-        throw new Error('OpenClaw did not return a resumable Feishu step.');
-      }
-      await new FeishuQrWizardBridge(completion).complete(result.step, flow.submitWizardStep);
-      setPendingEnrollment(null);
-      setEnrollmentError(null);
-    } catch (error) {
-      await handleEnrollmentFailure(completion, error);
-    } finally {
-      enrollmentFinalizingRef.current = false;
-      setEnrollmentFinalizing(false);
-    }
-  };
+  const wizardTitle = presentedStep.title || t("setup.wizard.title", "配置 OpenClaw");
+  const wizardSubtitle = messageRenderedInBody
+    ? t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。")
+    : presentedStep.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。");
   const copyWizardDeviceCode = async () => {
     if (!deviceCode?.code) return;
     try {
@@ -787,57 +693,26 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       previousAction={{
         label: t("setup.previousStep", "上一步"),
         onClick: flow.wizardCanGoBack ? flow.backWizard : flow.goBack,
-        disabled: flow.wizardSubmitting || Boolean(enrollmentDomain) || enrollmentFinalizing,
+        disabled: flow.wizardSubmitting,
       }}
       nextAction={{
         label: flow.wizardError
           ? t("setup.wizard.retry", "重试")
-          : pendingEnrollment
-          ? t("setup.wizard.channelEnrollment.resume", "继续配置")
-          : feishuQrSetupMethod
-          ? t("setup.wizard.channelEnrollment.start", "显示二维码")
           : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
         onClick: () => {
           if (flow.wizardError) {
             void flow.retryWizard();
             return;
           }
-          if (pendingEnrollment) {
-            void resumeEnrollment();
-            return;
-          }
-          if (feishuQrSetupMethod) {
-            setEnrollmentError(null);
-            setEnrollmentDomain(feishuDomain);
-            return;
-          }
           void flow.submitWizardStep(step.id, value);
         },
-        disabled: flow.wizardSubmitting || (!flow.wizardError && blocked) || enrollmentFinalizing,
-        loading: flow.wizardSubmitting || enrollmentFinalizing,
+        disabled: flow.wizardSubmitting || (!flow.wizardError && blocked),
+        loading: flow.wizardSubmitting,
         icon: flow.wizardError ? "none" : "next",
       }}
     >
       <div className="space-y-4" dir="auto">
         {flow.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{flow.wizardError}</div>}
-        {feishuQrSetupMethod && (
-          <div className="space-y-4 rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
-            <p>{t("setup.wizard.channelEnrollment.description", "扫码会创建并验证飞书应用；凭据只会临时交给 OpenClaw 官方向导，不会显示在 JunQi 页面中。")}</p>
-            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t("setup.wizard.channelEnrollment.domain", "服务区域")}>
-              {([
-                ["feishu", t("setup.wizard.channelEnrollment.feishu", "飞书")],
-                ["lark", t("setup.wizard.channelEnrollment.lark", "Lark")],
-              ] as const).map(([domain, label]) => {
-                const selected = feishuDomain === domain;
-                return (
-                  <button key={domain} type="button" role="radio" aria-checked={selected} onClick={() => setFeishuDomain(domain)} className={clsx("rounded-md border px-3 py-2 text-sm font-semibold transition", selected ? "border-aegis-primary bg-aegis-primary/10 text-aegis-text" : "border-aegis-border bg-aegis-surface text-aegis-text-secondary hover:border-aegis-primary/40")}>
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
         {presentedStep.type === "text" && (
           <input
             type={presentedStep.sensitive ? "password" : "text"}
@@ -855,7 +730,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
             <span>{presentedStep.message || t("setup.wizard.confirm", "确认并继续")}</span>
           </label>
         )}
-        {presentedStep.type === "select" && !feishuQrSetupMethod && (
+        {presentedStep.type === "select" && (
           <div className="grid gap-2 sm:grid-cols-2">
             {options.map((option, index) => {
               const selected = wizardValuesEqual(value, option.value);
@@ -917,17 +792,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
             )}
           </div>
         )}
-        {enrollmentError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{enrollmentError}</div>}
       </div>
-      {enrollmentDomain && (
-        <ChannelEnrollmentDialog
-          channel="feishu"
-          domain={enrollmentDomain}
-          finalizing={enrollmentFinalizing}
-          onClose={() => setEnrollmentDomain(null)}
-          onConnected={(completion) => { void handleEnrollmentConnected(completion); }}
-        />
-      )}
     </SetupShell>
   );
 }

@@ -9,7 +9,7 @@ export interface OfficialChannelCatalogEntry {
 
 export interface OfficialChannelCatalog {
   version?: string;
-  source: 'openclaw-cli' | 'offline-fallback';
+  source: 'openclaw-cli' | 'unavailable';
   entries: OfficialChannelCatalogEntry[];
 }
 
@@ -73,26 +73,12 @@ export interface ChannelsRuntimeSnapshot {
 export type ChannelLinkMode = 'embedded_qr' | 'terminal_setup' | 'none';
 const CLI_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
-let catalogPromise: Promise<OfficialChannelCatalog> | undefined;
-const capabilityPromises = new Map<string, Promise<OfficialChannelCapability | null>>();
-const OFFLINE_CHANNEL_IDS = [
-  'telegram', 'whatsapp', 'discord', 'irc', 'googlechat', 'slack', 'signal', 'imessage',
-  'feishu', 'dingtalk-connector', 'openclaw-weixin', 'wecom', 'nostr', 'msteams', 'mattermost',
-  'nextcloud-talk', 'matrix', 'raft', 'line', 'zalo', 'clickclack', 'zalouser', 'sms',
-  'synology-chat', 'tlon', 'qqbot', 'twitch',
-];
-
 const MANAGED_EXTERNAL_CHANNEL_PLUGINS: readonly ManagedExternalChannelPlugin[] = [
   {
     channelId: 'dingtalk-connector',
     npmSpec: '@dingtalk-real-ai/dingtalk-connector',
   },
 ];
-
-export const OFFLINE_CHANNEL_CATALOG: OfficialChannelCatalog = {
-  source: 'offline-fallback',
-  entries: OFFLINE_CHANNEL_IDS.map((id) => ({ id, accounts: [], installed: false, origin: 'offline-fallback' })),
-};
 
 export function assertChannelCliIdentifier(value: string, label: string): string {
   const normalized = value.trim();
@@ -145,13 +131,15 @@ export function normalizeOfficialChannelCatalog(payload: unknown): OfficialChann
   };
 }
 
-export function loadOfficialChannelCatalog(force = false): Promise<OfficialChannelCatalog> {
-  if (force || !catalogPromise) {
-    catalogPromise = window.aegis.channelRuntime.catalog()
-      .then(normalizeOfficialChannelCatalog)
-      .catch(() => OFFLINE_CHANNEL_CATALOG);
+export async function loadOfficialChannelCatalog(_force = false): Promise<OfficialChannelCatalog> {
+  // Never substitute a JunQi-maintained channel list. The selected OpenClaw
+  // runtime is the sole catalog authority, and every load re-reads it so an
+  // OpenClaw upgrade/plugin change is reflected without restarting JunQi.
+  try {
+    return normalizeOfficialChannelCatalog(await window.aegis.channelRuntime.catalog());
+  } catch {
+    return { source: 'unavailable', entries: [] };
   }
-  return catalogPromise;
 }
 
 function firstCapabilityRow(payload: unknown): Record<string, any> | undefined {
@@ -192,21 +180,14 @@ export function normalizeOfficialChannelCapability(payload: unknown): OfficialCh
 
 export function loadOfficialChannelCapability(
   channelId: string,
-  force = false,
+  _force = false,
 ): Promise<OfficialChannelCapability | null> {
   const channel = assertChannelCliIdentifier(channelId, 'Channel ID');
-  if (force) capabilityPromises.delete(channel);
-  let pending = capabilityPromises.get(channel);
-  if (!pending) {
-    pending = window.aegis.channelRuntime.capabilities(channel)
-      .then(normalizeOfficialChannelCapability)
-      .catch((error) => {
-        capabilityPromises.delete(channel);
-        throw error;
-      });
-    capabilityPromises.set(channel, pending);
-  }
-  return pending;
+  // Capabilities belong to the selected OpenClaw runtime and can change after
+  // an upgrade or plugin operation. Re-read them instead of retaining a
+  // renderer-lifetime JunQi cache.
+  return window.aegis.channelRuntime.capabilities(channel)
+    .then(normalizeOfficialChannelCapability);
 }
 
 export function channelLinkMode(
@@ -235,6 +216,19 @@ export function redactChannelSecrets(value: unknown): unknown {
     key,
     SENSITIVE_KEY.test(key) ? '[REDACTED]' : redactChannelSecrets(nested),
   ]));
+}
+
+export function runtimeChannelIds(snapshot: ChannelsRuntimeSnapshot | null | undefined): string[] {
+  if (!snapshot) return [];
+  const ids = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === 'string' && CLI_IDENTIFIER.test(value.trim())) ids.add(value.trim());
+  };
+  snapshot.channelOrder?.forEach(add);
+  snapshot.configuredChannels?.forEach(add);
+  Object.keys(snapshot.channelAccounts ?? {}).forEach(add);
+  Object.keys(snapshot.channels ?? {}).forEach(add);
+  return Array.from(ids);
 }
 
 export function channelAccountStatus(

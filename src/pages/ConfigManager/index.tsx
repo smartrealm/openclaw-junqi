@@ -759,68 +759,6 @@ export function ConfigManagerPage() {
     };
   };
 
-  const normalizeChannelStreaming = (channels: GatewayRuntimeConfig['channels']) => {
-    if (!channels || typeof channels !== 'object') return channels;
-
-    const normalizedChannels = { ...channels };
-    let mutated = false;
-
-    for (const [channelId, channelConfig] of Object.entries(channels)) {
-      if (!channelConfig || typeof channelConfig !== 'object') continue;
-      if (!('streaming' in channelConfig)) continue;
-
-      const raw = (channelConfig as any).streaming;
-      if (raw === undefined || raw === null) continue;
-
-      if (channelId === 'feishu') {
-        let nextValue: boolean | undefined;
-        if (typeof raw === 'boolean') {
-          nextValue = raw;
-        } else if (typeof raw === 'string') {
-          const v = raw.trim().toLowerCase();
-          nextValue = !(v === '' || v === 'off' || v === 'false' || v === '0' || v === 'no');
-        } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-          const mode = String((raw as any).mode ?? '').trim().toLowerCase();
-          if (mode) {
-            nextValue = !(mode === 'off' || mode === 'false' || mode === '0' || mode === 'no');
-          }
-        }
-        if (typeof nextValue === 'boolean' && raw !== nextValue) {
-          mutated = true;
-          normalizedChannels[channelId] = { ...(channelConfig as any), streaming: nextValue };
-        }
-        continue;
-      }
-
-      if (channelId === 'telegram' || channelId === 'discord' || channelId === 'slack') {
-        let nextStreaming = raw;
-        if (typeof raw === 'string') {
-          const mode = raw.trim().toLowerCase();
-          if (mode) nextStreaming = { mode };
-        } else if (typeof raw === 'boolean') {
-          nextStreaming = { mode: raw ? 'partial' : 'off' };
-        } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-          const mode = String((raw as any).mode ?? '').trim();
-          if (mode) {
-            nextStreaming = { ...(raw as any), mode: mode.toLowerCase() };
-          }
-        }
-        if (JSON.stringify(nextStreaming) !== JSON.stringify(raw)) {
-          mutated = true;
-          normalizedChannels[channelId] = { ...(channelConfig as any), streaming: nextStreaming };
-        }
-        continue;
-      }
-
-      // Channels that don't expose streaming in the current Desktop UI templates should not persist it.
-      const { streaming: _streaming, ...rest } = channelConfig as Record<string, any>;
-      mutated = true;
-      normalizedChannels[channelId] = rest;
-    }
-
-    return mutated ? normalizedChannels : channels;
-  };
-
   // Bring existing configs in line with latest schema:
   // - For any auth.profiles[*] whose provider has an envKey template,
   //   move token/apiKey into env.vars[envKey] and clear them from profile.
@@ -870,11 +808,7 @@ export function ConfigManagerPage() {
         },
       };
     }
-    const withNormalizedChannelStreaming = {
-      ...next,
-      channels: normalizeChannelStreaming(next.channels),
-    };
-    const stripped = stripProviderSecrets(withNormalizedChannelStreaming);
+    const stripped = stripProviderSecrets(next);
     return hydrateAgentModelCapabilitiesForUi(stripped);
   };
 
@@ -939,10 +873,8 @@ export function ConfigManagerPage() {
     const migrated = migrateCustomProviderSecretsToModels(data);
     const withPrivateProviderAccess = ensurePrivateProviderNetworkAccess(migrated);
     const auth = withPrivateProviderAccess.auth;
-    const channels = normalizeChannelStreaming(withPrivateProviderAccess.channels);
     const normalized = {
       ...withPrivateProviderAccess,
-      channels,
       agents: normalizeAgentsForRuntime({
         agents: withPrivateProviderAccess.agents,
         providers: withPrivateProviderAccess.models?.providers,

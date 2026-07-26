@@ -1,5 +1,4 @@
 import type { ChannelConfig, GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
-import { getChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
 
 export type ChannelBindingSource = 'account' | 'channel';
 
@@ -20,7 +19,7 @@ export interface ChannelGroupView {
   accounts: ChannelAccountBinding[];
 }
 
-export type ChannelAccountReadinessState = 'ready' | 'disabled' | 'missing_credentials' | 'unbound';
+export type ChannelAccountReadinessState = 'ready' | 'disabled' | 'missing_credentials' | 'unbound' | 'unknown';
 
 export interface ChannelAccountReadiness {
   state: ChannelAccountReadinessState;
@@ -41,7 +40,6 @@ export interface ChannelConfigRepository {
   restart(): Promise<{ success: boolean; error?: string } | null>;
 }
 
-const CHANNEL_ORDER = ['feishu', 'dingtalk-connector', 'wecom', 'openclaw-weixin', 'telegram', 'discord', 'slack', 'whatsapp', 'qqbot'];
 type ChannelRouteBinding = NonNullable<GatewayRuntimeConfig['bindings']>[number];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -105,16 +103,13 @@ export function buildChannelGroups(config: GatewayRuntimeConfig | null): Channel
     .map(([id, cfg]) => ({
       id,
       enabled: cfg?.enabled !== false,
-      known: Boolean(getChannelTemplate(id)),
+      // Recognition belongs to the selected Runtime catalog. Config parsing
+      // alone cannot declare a channel known.
+      known: false,
       config: cfg,
       accounts: getChannelAccounts(id, cfg, config?.bindings),
     }))
-    .sort((a, b) => {
-      const ia = CHANNEL_ORDER.indexOf(a.id);
-      const ib = CHANNEL_ORDER.indexOf(b.id);
-      if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-      return a.id.localeCompare(b.id);
-    });
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 function hasUsableValue(value: unknown): boolean {
@@ -122,19 +117,10 @@ function hasUsableValue(value: unknown): boolean {
 }
 
 export function getRequiredCredentialFields(channelId: string): string[] {
-  const tmpl = getChannelTemplate(channelId);
-  if (!tmpl) return [];
-  const fields: string[] = [];
-  if (tmpl.id === 'feishu') {
-    fields.push('appId', 'appSecret');
-  }
-  if (tmpl.id === 'dingtalk-connector') {
-    fields.push('clientId', 'clientSecret');
-  }
-  if (tmpl.tokenField) {
-    fields.push(tmpl.tokenField);
-  }
-  return fields;
+  // DingTalk is the only JunQi-managed external plugin and therefore the only
+  // reviewed channel-specific exception. All other requirements come from the
+  // selected Runtime's capability schema/status, never from Desktop metadata.
+  return channelId === 'dingtalk-connector' ? ['clientId', 'clientSecret'] : [];
 }
 
 export function assessChannelAccountReadiness(
@@ -148,12 +134,15 @@ export function assessChannelAccountReadiness(
     return { state: 'disabled', missingFields: [], messages };
   }
 
+  const reviewedLocalRequirements = getRequiredCredentialFields(channelId);
   const missingFields = runtime
     ? []
-    : getRequiredCredentialFields(channelId)
-      .filter((field) => !hasUsableValue(account.config[field]));
-  const runtimeMissing = runtime?.configured === false
-    || (channelId === 'whatsapp' && runtime?.linked === false);
+    : reviewedLocalRequirements.filter((field) => !hasUsableValue(account.config[field]));
+  if (!runtime && reviewedLocalRequirements.length === 0) {
+    messages.push('unknown');
+    return { state: 'unknown', missingFields: [], messages };
+  }
+  const runtimeMissing = runtime?.configured === false || runtime?.linked === false;
   if (runtimeMissing || missingFields.length > 0) {
     messages.push('missing_credentials');
     return { state: 'missing_credentials', missingFields, messages };
@@ -170,7 +159,6 @@ export function assessChannelAccountReadiness(
 
 export function channelAccountEditorValues(
   account: ChannelAccountBinding | undefined,
-  defaultMediaMaxMb = 10,
 ): Record<string, unknown> {
   const config = account?.config ?? {};
   return {
@@ -181,7 +169,6 @@ export function channelAccountEditorValues(
       : accountLabel(account?.id ?? 'default', config),
     agentId: account?.agentId
       ?? (typeof config.agentId === 'string' ? config.agentId : ''),
-    mediaMaxMb: typeof config.mediaMaxMb === 'number' ? config.mediaMaxMb : defaultMediaMaxMb,
   };
 }
 
@@ -191,6 +178,7 @@ export function summarizeChannelReadiness(groups: ChannelGroupView[]) {
     disabled: 0,
     missing_credentials: 0,
     unbound: 0,
+    unknown: 0,
   };
 
   for (const group of groups) {
@@ -255,14 +243,9 @@ export function removeChannel(config: GatewayRuntimeConfig, channelId: string): 
 }
 
 export function addChannel(config: GatewayRuntimeConfig, channelId: string): GatewayRuntimeConfig {
-  const tmpl = getChannelTemplate(channelId);
   const channels = { ...(config.channels ?? {}) };
-  channels[channelId] = {
-    enabled: true,
-    ...(tmpl?.defaultDmPolicy ? { dmPolicy: tmpl.defaultDmPolicy } : {}),
-    ...(tmpl?.defaultGroupPolicy ? { groupPolicy: tmpl.defaultGroupPolicy } : {}),
-    ...(tmpl?.defaultStreaming ? { streaming: tmpl.id === 'feishu' ? tmpl.defaultStreaming !== 'off' : { mode: tmpl.defaultStreaming } } : {}),
-  };
+  // The Runtime/plugin owns every channel-specific default.
+  channels[channelId] = { enabled: true };
   return { ...config, channels };
 }
 

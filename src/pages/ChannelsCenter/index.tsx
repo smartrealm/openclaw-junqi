@@ -9,7 +9,6 @@ import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { gateway } from '@/services/gateway';
 import type { LogEntry } from '@/api/tauri-commands';
 import type { AgentConfig, GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
-import { getChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
 import { ChannelOfficialSchemaEditor } from '@/pages/ConfigManager/ChannelOfficialSchemaEditor';
 import {
   assessChannelAccountReadiness,
@@ -45,13 +44,16 @@ import {
 } from '@/services/openclawChannelRuntime';
 import { ChannelQrLoginDialog } from './ChannelQrLoginDialog';
 
-function channelName(t: ReturnType<typeof useTranslation>['t'], id: string) {
-  return t(`config.channel.${id}`, { defaultValue: getChannelTemplate(id)?.id ?? id });
+function channelName(
+  t: ReturnType<typeof useTranslation>['t'],
+  id: string,
+  runtimeLabel?: string,
+) {
+  return runtimeLabel?.trim() || t(`config.channel.${id}`, { defaultValue: id });
 }
 
 function channelIcon(id: string) {
-  const label = getChannelTemplate(id)?.icon || id.slice(0, 2).toUpperCase();
-  return label;
+  return id.slice(0, 2).toUpperCase();
 }
 
 function catalogEntryStateLabel(
@@ -59,7 +61,7 @@ function catalogEntryStateLabel(
   catalog: OfficialChannelCatalog,
   entry: OfficialChannelCatalogEntry,
 ) {
-  if (catalog.source === 'offline-fallback') {
+  if (catalog.source === 'unavailable') {
     return t('channelsCenter.catalogUnavailable', 'OpenClaw catalog unavailable');
   }
   return `${entry.installed ? t('channelsCenter.installed', 'Installed') : t('channelsCenter.installable', 'Installable')} · ${entry.origin}`;
@@ -110,7 +112,7 @@ function readinessTone(readiness: ChannelAccountReadiness, gatewayHealthy: boole
   if (readiness.state === 'ready' && gatewayHealthy) return 'success';
   if (readiness.state === 'ready' && !gatewayHealthy) return 'warning';
   if (readiness.state === 'missing_credentials') return 'danger';
-  if (readiness.state === 'unbound') return 'warning';
+  if (readiness.state === 'unbound' || readiness.state === 'unknown') return 'warning';
   return 'muted';
 }
 
@@ -152,10 +154,9 @@ interface ChannelAccountModalProps {
 }
 
 function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDelete }: ChannelAccountModalProps) {
-  const tmpl = getChannelTemplate(state.group.id);
   const [accountId, setAccountId] = useState(state.account?.id ?? nextAccountId(state.group.id, [state.group]));
   const [values, setValues] = useState<Record<string, unknown>>(() => (
-    channelAccountEditorValues(state.account, tmpl?.defaultMediaMaxMb ?? 10)
+    channelAccountEditorValues(state.account)
   ));
 
   const trimmedAccountId = accountId.trim();
@@ -425,10 +426,10 @@ export function ChannelsCenterPage() {
   const groups = useMemo(() =>
     buildChannelGroups(config).map((group) => ({
       ...group,
-      known: group.known || officialChannelIds.has(group.id),
-      name: channelName(t, group.id),
+      known: officialChannelIds.has(group.id),
+      name: channelName(t, group.id, runtimeSnapshot?.channelLabels?.[group.id]),
     })),
-    [config, officialChannelIds, t]
+    [config, officialChannelIds, runtimeSnapshot?.channelLabels, t]
   );
   const agents = useMemo(() => (config?.agents?.list ?? []) as AgentConfig[], [config]);
   const accountCount = groups.reduce((sum, group) => sum + group.accounts.length, 0);
@@ -465,7 +466,10 @@ export function ChannelsCenterPage() {
   }, [focusedAgentId, filteredGroups]);
 
   const filteredAccountCount = filteredGroups.reduce((sum, group) => sum + group.accounts.length, 0);
-  const addableEntries = catalog.entries.filter((entry) => !groups.some((group) => group.id === entry.id));
+  // The catalog is also the channel discovery surface. Keep configured channels
+  // visible here so users can find them and add/link another account instead of
+  // making a channel disappear as soon as its first account is configured.
+  const availableEntries = catalog.entries;
   const gatewayHealthy = Boolean(gatewayStatus?.running && gatewayStatus?.ready);
   const gatewayStateLabel = gatewayLoading
     ? t('channelsCenter.gatewayChecking', 'Checking Gateway')
@@ -695,7 +699,14 @@ export function ChannelsCenterPage() {
       };
       const draftGroup = buildChannelGroups(draftConfig).find((group) => group.id === entry.id);
       if (draftGroup) {
-        setEditingAccount({ mode: 'new', group: { ...draftGroup, name: channelName(t, entry.id) }, baseConfig: draftConfig });
+        setEditingAccount({
+          mode: 'new',
+          group: {
+            ...draftGroup,
+            name: channelName(t, entry.id, runtimeSnapshot?.channelLabels?.[entry.id]),
+          },
+          baseConfig: draftConfig,
+        });
         return;
       }
     }
@@ -713,8 +724,8 @@ export function ChannelsCenterPage() {
       showAlert(
         t('channelsCenter.pluginInstalled', 'Official plugin installed'),
         t('channelsCenter.pluginInstalledHint', {
-          channel: channelName(t, result.channel),
-          defaultValue: `${channelName(t, result.channel)} is installed by OpenClaw. Configure its credentials next.`,
+          channel: channelName(t, result.channel, runtimeSnapshot?.channelLabels?.[result.channel]),
+          defaultValue: `${channelName(t, result.channel, runtimeSnapshot?.channelLabels?.[result.channel])} is installed by OpenClaw. Configure its credentials next.`,
         }),
         'success',
       );
@@ -746,7 +757,7 @@ export function ChannelsCenterPage() {
             {t('sidebar.nav.channels', 'Channels')}
           </h1>
           <p className="text-[12px] text-aegis-text-dim mt-0.5">
-            {t('channelsCenter.subtitle', 'Connect agents to Feishu, DingTalk, Telegram, Discord and other message channels.')}
+            {t('channelsCenter.subtitle', 'Connect agents to channels provided by the selected OpenClaw Runtime.')}
             <span className="ml-2 font-mono text-[10px] text-aegis-text-muted">{catalog.version || catalog.source}</span>
           </p>
         </div>
@@ -927,6 +938,7 @@ export function ChannelsCenterPage() {
                       ['missing_credentials', t('channelsCenter.readiness.missing_credentials', 'Missing credentials'), readinessSummary.missing_credentials],
                       ['unbound', t('channelsCenter.readiness.unbound', 'Unbound'), readinessSummary.unbound],
                       ['disabled', t('channelsCenter.readiness.disabled', 'Disabled'), readinessSummary.disabled],
+                      ['unknown', t('channelsCenter.readiness.unknown', 'Runtime status unavailable'), readinessSummary.unknown],
                     ] as const).map(([key, label, count]) => (
                       <button
                         key={key}
@@ -1054,6 +1066,8 @@ export function ChannelsCenterPage() {
                                 : t(`channelsCenter.readiness.${readiness.state}`, readiness.state);
                               const readinessHint = readiness.state === 'missing_credentials'
                                 ? t('channelsCenter.missingFields', { fields: readiness.missingFields.join(', '), defaultValue: `Missing ${readiness.missingFields.join(', ')}` })
+                                : readiness.state === 'unknown'
+                                  ? t('channelsCenter.runtimeStatusUnavailable', 'Runtime status unavailable; JunQi will not guess channel requirements.')
                                 : readiness.state === 'ready' && !gatewayHealthy
                                   ? t('channelsCenter.gatewayOfflineHint', 'Gateway is offline. Restart or refresh Gateway to activate this account.')
                                   : t(`channelsCenter.readinessHint.${readiness.state}`, '');
@@ -1155,8 +1169,13 @@ export function ChannelsCenterPage() {
             <h2 className="text-[13px] font-semibold text-aegis-text-secondary">
               {t('channelsCenter.addChannels', 'Add channels')}
             </h2>
+            {catalog.source === 'unavailable' ? (
+              <div className="rounded-md border border-aegis-warning/25 bg-aegis-warning/10 px-4 py-3 text-[12px] text-aegis-warning">
+                {t('channelsCenter.catalogUnavailable', 'OpenClaw catalog unavailable')}
+              </div>
+            ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {addableEntries.map((entry) => {
+              {availableEntries.map((entry) => {
                 const managedPlugin = managedExternalChannelPlugin(entry.id);
                 const pluginMissing = Boolean(
                   managedPlugin
@@ -1177,7 +1196,9 @@ export function ChannelsCenterPage() {
                         {channelIcon(entry.id)}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-bold text-aegis-text">{channelName(t, entry.id)}</div>
+                        <div className="text-[13px] font-bold text-aegis-text">
+                          {channelName(t, entry.id, runtimeSnapshot?.channelLabels?.[entry.id])}
+                        </div>
                         <div className="truncate text-[10px] text-aegis-text-dim">
                           {pluginMissing
                             ? `${t('channelsCenter.officialExternalPlugin', 'Official external plugin')} · ${t('channelsCenter.installable', 'Installable')}`
@@ -1203,6 +1224,7 @@ export function ChannelsCenterPage() {
                 );
               })}
             </div>
+            )}
           </section>
 
         </>
