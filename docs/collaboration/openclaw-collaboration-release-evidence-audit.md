@@ -8,7 +8,7 @@
 
 ## 1. 链路基线
 
-发布门禁在 [`scripts/validate-external-release-evidence.mjs`](../scripts/validate-external-release-evidence.mjs) 中声明三条受信任生产者路径：
+发布门禁在 [`scripts/validate-external-release-evidence.mjs`](../../scripts/validate-external-release-evidence.mjs) 中声明三条受信任生产者路径：
 
 | Evidence | Trusted workflow | Artifact | Required scope |
 | --- | --- | --- | --- |
@@ -16,7 +16,7 @@
 | Visual | `.github/workflows/collaboration-visual-release-evidence.yml` | `collaboration-visual-release-evidence/collaboration-visual-release-evidence.json` | 6 scenarios x 2 viewports, installer-bound |
 | Soak | `.github/workflows/collaboration-soak-release-evidence.yml` | `collaboration-soak-release-evidence/collaboration-soak-release-evidence.json` | 24h, 6 fault classes, 10 final invariants |
 
-[`release.yml`](../.github/workflows/release.yml) 的可信路径（仅在 `signing-enabled=true` 的受保护 promotion 上）会按这三条路径调用 `gh attestation verify --signer-workflow`，并要求三次成功、不同 run、同一 source/ref。当前候选路径不会生成一方 attestation；现有 shell 只检查 `--format json` 非空，尚未解析证明中的 run id/attempt 与所选 run 做密码学级绑定，这仍是开放 residual。
+[`release.yml`](../../.github/workflows/release.yml) 的可信路径（仅在 `signing-enabled=true` 的受保护 promotion 上）会按这三条路径调用 `gh attestation verify --signer-workflow`，并要求三次成功、不同 run、同一 source/ref。当前候选路径不会生成一方 attestation；现有 shell 只检查 `--format json` 非空，尚未解析证明中的 run id/attempt 与所选 run 做密码学级绑定，这仍是开放 residual。
 
 ## 2. Findings（修复前快照）
 
@@ -141,7 +141,7 @@
 | BUG-RE-10 | 开放 | 主线 updater manifest 生成器已合入，但 updater endpoint 与 release asset contract 仍不一致；必须把最终签名资产和 `latest.json` 接入同一 manifest 与验证链 |
 | BUG-RE-11 | 已关闭 | 已三方合入 `origin/main@1956f23` / `1.2.27`，合并提交 `5aa8901`；合并后全量自动化、静态检查和 production build 通过 |
 
-当前源码快照的隔离 Gateway 记录已补齐，但仍是 partial scope：structural evidence 为 [`evidence.json`](../.artifacts/collaboration-real-gateway-owner-ttl-20260719/20260718213349-264598dc20/evidence.json)，payload-free behavioral evidence 为 [`evidence.json`](../.artifacts/collaboration-behavioral-gateway-owner-ttl-20260719/20260718213129-521c5279a4/evidence.json)。两者均绑定 bundle `bea9b0ac...`、固定 OpenClaw `2026.7.1` image digest，cleanup errors 为空；behavioral 只验证 P0-02/03/05/06/07/08，且 Gateway/provider/failure/evidence artifact 不保留 prompt/plan 原文，不能升级为 `FULL_BEHAVIORAL`。
+当前源码快照的隔离 Gateway 记录已补齐，但仍是 partial scope：structural evidence 为 [`evidence.json`](../../.artifacts/collaboration-real-gateway-owner-ttl-20260719/20260718213349-264598dc20/evidence.json)，payload-free behavioral evidence 为 [`evidence.json`](../../.artifacts/collaboration-behavioral-gateway-owner-ttl-20260719/20260718213129-521c5279a4/evidence.json)。两者均绑定 bundle `bea9b0ac...`、固定 OpenClaw `2026.7.1` image digest，cleanup errors 为空；behavioral 只验证 P0-02/03/05/06/07/08，且 Gateway/provider/failure/evidence artifact 不保留 prompt/plan 原文，不能升级为 `FULL_BEHAVIORAL`。
 
 供应链边界（同日追加）：所有 GitHub Actions 已固定到完整 commit SHA，并由 `scripts/workflow-action-pins.mjs` 集中 allowlist；pnpm 固定为 `9.15.9`，Rust 固定为 `1.96.0`。producer 执行 job 不再持有 OIDC/attestation 权限，且在 promotion controller 缺失时于依赖安装前返回 `TRUSTED_PROMOTION_REQUIRED`；当前 Desktop candidate 的一方 attestation jobs 也全部 skipped。Gateway/visual/soak 的正式 publish 根在 producer 上传前、release validator 下载后执行共享 secret scanner；quality JSON、structural smoke 和二进制截图/安装包不经过同一文本扫描，仍只受 schema、路径、大小、digest 和 attestation 约束。release candidate 的来源 workflow 固定到事件 SHA，不读取发布签名密钥，候选构建显式关闭 Tauri updater artifacts。`release.yml` 不监听 tag push；所有手动 tag producer 路径仍需 promotion/runner gate。soak/Linux runner preflight 仅由受保护 repo boolean 声明外部 controller 已 provision runner，workflow 不证明实际 online、JIT 或一次性属性。Windows/macOS 签名、notarization 和 updater 资产整合均保持 fail closed；publish 采用空 draft -> 远端资产 reconciler -> digest 校验 -> publish，拒绝 `--clobber`。
 

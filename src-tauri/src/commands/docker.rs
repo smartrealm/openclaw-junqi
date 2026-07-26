@@ -274,6 +274,34 @@ enum ContainerPresence {
     Foreign,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UninstallContainerAction {
+    NothingOwned,
+    Remove,
+}
+
+fn uninstall_container_action(
+    presence: &ContainerPresence,
+    selected_state_id: &str,
+) -> Result<UninstallContainerAction, String> {
+    match presence {
+        ContainerPresence::Absent | ContainerPresence::Foreign => {
+            Ok(UninstallContainerAction::NothingOwned)
+        }
+        ContainerPresence::Managed { state_id, .. } if state_id == selected_state_id => {
+            Ok(UninstallContainerAction::Remove)
+        }
+        ContainerPresence::Managed { .. } => Err(
+            "The JunQi-managed Docker container belongs to a different OpenClaw state directory and was left untouched"
+                .into(),
+        ),
+        ContainerPresence::LegacyManaged { .. } => Err(
+            "The legacy Docker container has no complete JunQi ownership labels and was left untouched"
+                .into(),
+        ),
+    }
+}
+
 fn classify_container_inspection(value: &serde_json::Value) -> Result<ContainerPresence, String> {
     let container = value
         .as_array()
@@ -1737,10 +1765,11 @@ mod tests {
         container_publishes_host_port, legacy_container_matches_layout,
         managed_container_matches_runtime_contract, normalize_docker_config_runtime_paths,
         parse_docker_layer_phase, parse_transfer_size, state_identity, transfer_ratio,
-        ContainerPresence, DockerLayerPhase, DockerPullProgress, ManagedContainerContract,
-        RuntimePathMapping, CONTAINER_CONTRACT_LABEL, CONTAINER_OWNER, CONTAINER_OWNER_LABEL,
-        CONTAINER_ROLE, CONTAINER_ROLE_LABEL, CONTAINER_SCHEMA, CONTAINER_SCHEMA_LABEL,
-        CONTAINER_STATE_LABEL, OPENCLAW_CONTAINER_CONFIG_PATH, OPENCLAW_CONTAINER_STATE_DIR,
+        uninstall_container_action, ContainerPresence, DockerLayerPhase, DockerPullProgress,
+        ManagedContainerContract, RuntimePathMapping, UninstallContainerAction,
+        CONTAINER_CONTRACT_LABEL, CONTAINER_OWNER, CONTAINER_OWNER_LABEL, CONTAINER_ROLE,
+        CONTAINER_ROLE_LABEL, CONTAINER_SCHEMA, CONTAINER_SCHEMA_LABEL, CONTAINER_STATE_LABEL,
+        OPENCLAW_CONTAINER_CONFIG_PATH, OPENCLAW_CONTAINER_STATE_DIR,
         OPENCLAW_CONTAINER_WORKSPACE_DIR,
     };
     use std::path::PathBuf;
@@ -1883,6 +1912,44 @@ mod tests {
             classify_container_inspection(&unlabelled).unwrap(),
             ContainerPresence::Foreign
         );
+    }
+
+    #[test]
+    fn uninstall_removes_only_the_selected_fully_owned_container() {
+        let selected = "a".repeat(64);
+        let other = "b".repeat(64);
+        assert_eq!(
+            uninstall_container_action(&ContainerPresence::Absent, &selected).unwrap(),
+            UninstallContainerAction::NothingOwned
+        );
+        assert_eq!(
+            uninstall_container_action(&ContainerPresence::Foreign, &selected).unwrap(),
+            UninstallContainerAction::NothingOwned
+        );
+        assert_eq!(
+            uninstall_container_action(
+                &ContainerPresence::Managed {
+                    running: true,
+                    state_id: selected.clone(),
+                },
+                &selected,
+            )
+            .unwrap(),
+            UninstallContainerAction::Remove
+        );
+        assert!(uninstall_container_action(
+            &ContainerPresence::Managed {
+                running: false,
+                state_id: other,
+            },
+            &selected,
+        )
+        .is_err());
+        assert!(uninstall_container_action(
+            &ContainerPresence::LegacyManaged { running: true },
+            &selected,
+        )
+        .is_err());
     }
 
     #[test]
@@ -2090,6 +2157,24 @@ pub(crate) async fn stop_docker_gateway_locked() -> Result<String, String> {
     let mapping = RuntimePathMapping::from_active_layout()?;
     stop_managed_container_if_present(&docker_bin, &mapping).await?;
     Ok("Docker gateway stopped".into())
+}
+
+/// Remove only the Docker container whose complete JunQi ownership labels and
+/// state identity match the persisted Docker layout. This is intentionally
+/// stricter than the normal legacy-container migration path: an uninstaller
+/// must never infer ownership from image/mount similarity alone.
+pub(crate) async fn remove_selected_container_for_uninstall() -> Result<bool, String> {
+    let docker_bin = resolve_docker_bin().await?;
+    let mapping = RuntimePathMapping::from_active_layout()?;
+    let selected_state_id = state_identity(&mapping.host_state_dir);
+    let presence = inspect_named_container(&docker_bin, &mapping).await?;
+    match uninstall_container_action(&presence, &selected_state_id)? {
+        UninstallContainerAction::NothingOwned => Ok(false),
+        UninstallContainerAction::Remove => {
+            remove_named_container(&docker_bin).await?;
+            Ok(true)
+        }
+    }
 }
 
 /// Check if the Docker container is running.

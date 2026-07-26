@@ -1,9 +1,9 @@
 //! Non-GUI cleanup invoked by the Windows NSIS uninstaller.
 //!
 //! This module deliberately has a narrow ownership boundary. It removes only
-//! JunQi-created terminal integration and an official Gateway service whose
-//! state/config identity matches the persisted JunQi layout. User data and
-//! dependency installations remain untouched.
+//! JunQi-created terminal integration plus the selected Gateway owner whose
+//! state/config identity matches the persisted JunQi layout. User data, Docker
+//! images, and dependency installations remain untouched.
 
 use crate::{commands::gateway_service, paths};
 
@@ -38,6 +38,14 @@ async fn run_async() -> Result<(), String> {
     let Some(layout) = paths::load_storage_bootstrap() else {
         return finish(errors);
     };
+
+    if layout.runtime_mode == paths::OpenClawRuntimeMode::Docker {
+        if let Err(error) = crate::commands::docker::remove_selected_container_for_uninstall().await
+        {
+            errors.push(format!("remove JunQi Docker Gateway container: {error}"));
+        }
+        return finish(errors);
+    }
 
     let binary = crate::commands::system::resolve_openclaw_binary_async().await;
     let Some(binary) = binary else {
