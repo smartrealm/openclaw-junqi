@@ -668,6 +668,46 @@ mod runtime_observation_tests {
     }
 
     #[test]
+    fn gateway_process_activity_detects_resource_progress_without_treating_flat_metrics_as_work() {
+        let idle = GatewayProcessActivity {
+            available: true,
+            cpu_milli_percent: 0,
+            memory_bytes: 4_096,
+            read_bytes: 100,
+            written_bytes: 50,
+        };
+        assert!(!idle.changed_since(&idle));
+
+        let active = GatewayProcessActivity {
+            cpu_milli_percent: 1,
+            read_bytes: 101,
+            ..idle.clone()
+        };
+        assert!(active.changed_since(&idle));
+        assert!(active.diagnostic().contains("read-bytes=101"));
+        assert_eq!(
+            GatewayProcessActivity::unavailable().diagnostic(),
+            "process-metrics=unavailable"
+        );
+    }
+
+    #[test]
+    fn gateway_diagnostic_path_metadata_reports_shape_without_reading_contents() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-gateway-metadata-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).expect("create metadata test directory");
+        let file = root.join("openclaw.json");
+        std::fs::write(&file, b"secret-config-content").expect("write metadata test file");
+        let diagnostic = diagnostic_path_metadata("config", Some(&file));
+        assert!(diagnostic.contains("kind=file"));
+        assert!(diagnostic.contains("bytes=21"));
+        assert!(!diagnostic.contains("secret-config-content"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn gateway_health_requires_the_documented_openclaw_identity_payload() {
         assert!(gateway_health_payload_is_healthy(
             &serde_json::json!({ "ok": true, "status": "live" })
@@ -1700,6 +1740,122 @@ fn managed_gateway_diagnostics(state: &GatewayProcess, started_at_ms: i64, limit
 
 fn managed_gateway_has_child_output(state: &GatewayProcess, started_at_ms: i64) -> bool {
     !managed_gateway_diagnostics(state, started_at_ms, 1).is_empty()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GatewayProcessActivity {
+    available: bool,
+    cpu_milli_percent: u64,
+    memory_bytes: u64,
+    read_bytes: u64,
+    written_bytes: u64,
+}
+
+impl GatewayProcessActivity {
+    fn unavailable() -> Self {
+        Self {
+            available: false,
+            cpu_milli_percent: 0,
+            memory_bytes: 0,
+            read_bytes: 0,
+            written_bytes: 0,
+        }
+    }
+
+    fn changed_since(&self, previous: &Self) -> bool {
+        self.available != previous.available
+            || self.cpu_milli_percent > 0
+            || self.memory_bytes != previous.memory_bytes
+            || self.read_bytes > previous.read_bytes
+            || self.written_bytes > previous.written_bytes
+    }
+
+    fn diagnostic(&self) -> String {
+        if !self.available {
+            return "process-metrics=unavailable".into();
+        }
+        format!(
+            "cpu-milli-percent={} memory-bytes={} read-bytes={} written-bytes={}",
+            self.cpu_milli_percent, self.memory_bytes, self.read_bytes, self.written_bytes
+        )
+    }
+}
+
+struct GatewayProcessActivitySampler {
+    pid: Option<u32>,
+    #[cfg(windows)]
+    system: sysinfo::System,
+}
+
+impl GatewayProcessActivitySampler {
+    fn new(pid: Option<u32>) -> Self {
+        Self {
+            pid,
+            #[cfg(windows)]
+            system: sysinfo::System::new(),
+        }
+    }
+
+    #[cfg(windows)]
+    fn sample(&mut self) -> GatewayProcessActivity {
+        use sysinfo::{Pid, ProcessesToUpdate};
+
+        let Some(pid) = self.pid else {
+            return GatewayProcessActivity::unavailable();
+        };
+        let pid = Pid::from_u32(pid);
+        // Keep one System instance across samples. sysinfo computes CPU usage
+        // from two observations; rebuilding it on every heartbeat would report
+        // a misleading zero even while Node is actively loading modules.
+        self.system
+            .refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
+        let Some(process) = self.system.process(pid) else {
+            return GatewayProcessActivity::unavailable();
+        };
+        let disk = process.disk_usage();
+        GatewayProcessActivity {
+            available: true,
+            cpu_milli_percent: (process.cpu_usage().max(0.0) * 1_000.0) as u64,
+            memory_bytes: process.memory(),
+            read_bytes: disk.total_read_bytes,
+            written_bytes: disk.total_written_bytes,
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn sample(&mut self) -> GatewayProcessActivity {
+        let _ = self.pid;
+        GatewayProcessActivity::unavailable()
+    }
+}
+
+fn diagnostic_path_metadata(label: &str, path: Option<&std::path::Path>) -> String {
+    let Some(path) = path else {
+        return format!("{label}=none");
+    };
+    match std::fs::metadata(path) {
+        Ok(metadata) => {
+            let modified_ms = metadata
+                .modified()
+                .ok()
+                .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|value| value.as_millis().to_string())
+                .unwrap_or_else(|| "unknown".into());
+            format!(
+                "{label}={} kind={} bytes={} modified-ms={modified_ms}",
+                path.display(),
+                if metadata.is_file() {
+                    "file"
+                } else if metadata.is_dir() {
+                    "dir"
+                } else {
+                    "other"
+                },
+                metadata.len(),
+            )
+        }
+        Err(error) => format!("{label}={} metadata-error={error}", path.display()),
+    }
 }
 
 fn with_managed_gateway_diagnostics(
@@ -3170,9 +3326,14 @@ async fn start_gateway_locked_with_policy(
         &app,
         "gateway",
         &format!(
-            "launch.contract node={} package={} executable={} state={} config={} cwd={}",
+            "launch.contract node={} entry={} package={} executable={} state={} config={} cwd={} argv=gateway,run,--bind,<bind>,--port,<port>",
             runtime_identity
                 .node
+                .as_deref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "none".into()),
+            runtime_identity
+                .entry
                 .as_deref()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|| "none".into()),
@@ -3194,6 +3355,21 @@ async fn start_gateway_locked_with_policy(
                 .unwrap_or_else(|| "none".into()),
         ),
     );
+    for metadata in [
+        diagnostic_path_metadata("node", runtime_identity.node.as_deref()),
+        diagnostic_path_metadata("entry", runtime_identity.entry.as_deref()),
+        diagnostic_path_metadata("package", runtime_identity.package_dir.as_deref()),
+        diagnostic_path_metadata("executable", runtime_identity.executable.as_deref()),
+        diagnostic_path_metadata("state", Some(&base_dir)),
+        diagnostic_path_metadata("config", Some(&config_path)),
+        diagnostic_path_metadata("cwd", paths::stable_openclaw_working_dir().as_deref()),
+    ] {
+        crate::commands::setup_diagnostics::record_timeline_note(
+            &app,
+            "gateway",
+            &format!("launch.metadata {metadata}"),
+        );
+    }
 
     report_gateway_lifecycle(
         &app,
@@ -3231,6 +3407,18 @@ async fn start_gateway_locked_with_policy(
         }
     })?;
     let gateway_pid = child.id();
+    crate::commands::setup_diagnostics::record_timeline_note(
+        &app,
+        "gateway",
+        &format!(
+            "launch.spawned pid={} platform={} arch={}",
+            gateway_pid
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".into()),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+        ),
+    );
     crate::commands::setup_diagnostics::record_process_started(
         &app,
         "gateway",
@@ -3282,6 +3470,16 @@ async fn start_gateway_locked_with_policy(
     let mut observed_bound_port = false;
     let mut startup_deadline = startup_started_at + startup_policy.first_output_timeout;
     let mut next_heartbeat_at = startup_started_at + startup_policy.heartbeat_interval;
+    let mut activity_sampler = GatewayProcessActivitySampler::new(gateway_pid);
+    let mut previous_activity = activity_sampler.sample();
+    crate::commands::setup_diagnostics::record_timeline_note(
+        &app,
+        "gateway",
+        &format!(
+            "startup.activity initial {}",
+            previous_activity.diagnostic()
+        ),
+    );
     start_failure_guard.stage(GatewayStartStage::Readiness);
     loop {
         let now = std::time::Instant::now();
@@ -3292,6 +3490,22 @@ async fn start_gateway_locked_with_policy(
         }
         if now >= next_heartbeat_at {
             let elapsed = now.duration_since(startup_started_at).as_secs();
+            let port_available = crate::commands::gateway_supervisor::is_port_available(port).await;
+            let activity = activity_sampler.sample();
+            let activity_changed = activity.changed_since(&previous_activity);
+            crate::commands::setup_diagnostics::record_timeline_note(
+                &app,
+                "gateway",
+                &format!(
+                    "startup.heartbeat elapsed-s={elapsed} output={} bound-observed={} port-available={} activity-changed={} {}",
+                    observed_child_output,
+                    observed_bound_port,
+                    port_available,
+                    activity_changed,
+                    activity.diagnostic(),
+                ),
+            );
+            previous_activity = activity;
             emit_gateway_log(
                 &app,
                 format!(
@@ -3346,9 +3560,31 @@ async fn start_gateway_locked_with_policy(
         }
 
         if std::time::Instant::now() >= startup_deadline {
+            let before_cleanup = activity_sampler.sample();
+            crate::commands::setup_diagnostics::record_timeline_note(
+                &app,
+                "gateway",
+                &format!(
+                    "startup.timeout before-cleanup output={} bound-observed={} {}",
+                    observed_child_output,
+                    observed_bound_port,
+                    before_cleanup.diagnostic(),
+                ),
+            );
             crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
             finish_gateway_log_readers(&mut log_readers).await;
-            let _ = crate::commands::gateway_supervisor::wait_for_port_free(port, 5_000).await;
+            let port_released =
+                crate::commands::gateway_supervisor::wait_for_port_free(port, 5_000).await;
+            let after_cleanup = activity_sampler.sample();
+            crate::commands::setup_diagnostics::record_timeline_note(
+                &app,
+                "gateway",
+                &format!(
+                    "startup.timeout after-cleanup port-release={:?} {}",
+                    port_released,
+                    after_cleanup.diagnostic(),
+                ),
+            );
             let elapsed = startup_started_at.elapsed().as_secs();
             let timeout_reason = match (observed_child_output, observed_bound_port) {
                 (false, false) => format!(

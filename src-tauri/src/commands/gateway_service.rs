@@ -1258,6 +1258,7 @@ mod tests {
             config_path: config.clone(),
             runtime: Some(system::NativeOpenclawRuntimeIdentity {
                 node: Some(node.clone()),
+                entry: Some(entry.clone()),
                 package_dir: Some(package.clone()),
                 executable: None,
                 npm_prefix: Some(root.join("npm")),

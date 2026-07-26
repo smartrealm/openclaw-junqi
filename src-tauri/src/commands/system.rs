@@ -139,6 +139,7 @@ pub(crate) struct NativeOpenclawRuntime {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NativeOpenclawRuntimeIdentity {
     pub node: Option<PathBuf>,
+    pub entry: Option<PathBuf>,
     pub package_dir: Option<PathBuf>,
     pub executable: Option<PathBuf>,
     pub npm_prefix: Option<PathBuf>,
@@ -342,12 +343,15 @@ impl NativeOpenclawRuntime {
     }
 
     pub(crate) fn identity(&self) -> NativeOpenclawRuntimeIdentity {
-        let (node, executable) = match &self.launch {
-            NativeOpenclawLaunchSpec::NodeScript { node, .. } => (Some(node.clone()), None),
-            NativeOpenclawLaunchSpec::Executable { program } => (None, Some(program.clone())),
+        let (node, entry, executable) = match &self.launch {
+            NativeOpenclawLaunchSpec::NodeScript { node, entry } => {
+                (Some(node.clone()), Some(entry.clone()), None)
+            }
+            NativeOpenclawLaunchSpec::Executable { program } => (None, None, Some(program.clone())),
         };
         NativeOpenclawRuntimeIdentity {
             node,
+            entry,
             package_dir: self.package_dir.clone(),
             executable,
             npm_prefix: self.npm_prefix.clone(),

@@ -89,6 +89,13 @@ test('BUG-INSTALL-LOG-05 Gateway startup uses the shared persistent diagnostic t
   assert.match(gatewayCommands, /Preparing OpenClaw Gateway/);
   assert.match(gatewayCommands, /Checking Gateway service ownership/);
   assert.match(gatewayCommands, /Launching the OpenClaw Gateway process/);
+  assert.match(gatewayCommands, /launch\.contract node=\{\} entry=\{\}/);
+  assert.match(gatewayCommands, /launch\.metadata \{metadata\}/);
+  assert.match(gatewayCommands, /startup\.heartbeat elapsed-s=/);
+  assert.match(gatewayCommands, /activity-changed=\{\}/);
+  assert.match(gatewayCommands, /startup\.timeout before-cleanup/);
+  assert.match(gatewayCommands, /startup\.timeout after-cleanup/);
+  assert.doesNotMatch(gatewayCommands, /launch\.contract[\s\S]{0,300}(token|env value)=/i);
   assert.equal((gatewayCommands.match(/app\.emit\("gateway-log"/g) ?? []).length, 1);
 });
 
