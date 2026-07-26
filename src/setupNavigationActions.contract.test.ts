@@ -45,6 +45,22 @@ test("global Back is single-flight and cannot race active forward transitions", 
   );
 });
 
+test("Back fences auto-start effects while durable rollback remains authoritative", () => {
+  assert.match(setupFlow, /const setupNavigationLeavingRef = useRef\(false\)/);
+  assert.match(
+    setupFlow,
+    /wizardAutoStartRef[\s\S]*?if \(setupNavigationLeavingRef\.current\) return;[\s\S]*?startOfficialOnboarding/,
+  );
+  assert.match(
+    setupFlow,
+    /AUTO_ADVANCE_GATEWAY_STEP[\s\S]*?if \(setupNavigationLeavingRef\.current \|\| autoStartedGatewayRef\.current\) return;/,
+  );
+  assert.match(
+    setupFlow,
+    /const performGoBack[\s\S]*?setupNavigationLeavingRef\.current = true;[\s\S]*?const restoredRuntimeLocations = await rollbackRuntimeReconfiguration\(\)/,
+  );
+});
+
 test("error and dependency recovery actions are single-flight", () => {
   assert.match(setupFlow, /const retrySetupInFlightRef = useRef\(false\)/);
   assert.match(setupFlow, /const repairInFlightRef = useRef<"repair" \| "disable" \| null>\(null\)/);

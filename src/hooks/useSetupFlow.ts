@@ -267,6 +267,9 @@ export function useSetupFlow(
   const dashboardEntryInFlightRef = useRef(false);
   const runtimeSelectionInFlightRef = useRef(false);
   const setupBackInFlightRef = useRef(false);
+  // Read synchronously by effects that can auto-start work. React state does
+  // not commit quickly enough to stop those effects during an async Back.
+  const setupNavigationLeavingRef = useRef(false);
   const [gatewayReadyContinuation, setGatewayReadyContinuation] = useState<GatewayReadyContinuation>({
     status: "idle",
     error: null,
@@ -1057,6 +1060,7 @@ export function useSetupFlow(
 
   const wizardAutoStartRef = useRef(false);
   useEffect(() => {
+    if (setupNavigationLeavingRef.current) return;
     if (setupStep !== "configure-openclaw" || wizardStep || wizardSubmitting || wizardError) return;
     if (wizardAutoStartRef.current) return;
     wizardAutoStartRef.current = true;
@@ -1176,7 +1180,7 @@ export function useSetupFlow(
       autoStartedGatewayRef.current = false;
       return;
     }
-    if (autoStartedGatewayRef.current) return;
+    if (setupNavigationLeavingRef.current || autoStartedGatewayRef.current) return;
     autoStartedGatewayRef.current = true;
     void startGatewayAction();
   }, [setupStep, startGatewayAction]);
@@ -1776,6 +1780,7 @@ export function useSetupFlow(
   }, [brokenPlugins, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep]);
 
   const performGoBack = useCallback(async () => {
+    setupNavigationLeavingRef.current = true;
     invalidateWizardOperations();
     setWizardSubmitting(false);
     // Backing out of the official wizard means "pause and review", not
@@ -1800,6 +1805,7 @@ export function useSetupFlow(
       setSetupError(message);
       report(message);
       replaceSetupStep("error");
+      setupNavigationLeavingRef.current = false;
       return;
     }
     setSetupError(null);
@@ -1821,6 +1827,7 @@ export function useSetupFlow(
     // Navigation and retries retain the same diagnostic timeline so the user
     // can inspect each completed stage and compare a later attempt with it.
     presentSetupStep(destination);
+    setupNavigationLeavingRef.current = false;
   }, [cancelActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, rollbackActiveGatewayRuntime, installMode, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
 
   const goBack = useCallback(async () => {
@@ -1843,6 +1850,7 @@ export function useSetupFlow(
     try {
       await performGoBack();
     } finally {
+      setupNavigationLeavingRef.current = false;
       setupBackInFlightRef.current = false;
     }
   }, [performGoBack]);

@@ -122,6 +122,10 @@ export function backSetupNavigation(
 /// current, because the run that owns them drives the next transition.
 const TRANSIENT_SETUP_STEPS = new Set<SetupStep>([
   "detecting",
+  // This screen immediately starts the selected Gateway and owns no stable
+  // user decision. Returning to it would auto-forward again, making Back look
+  // ineffective and potentially replaying Gateway startup.
+  "gateway-stopped",
   "checking",
   "install-git",
   "install-node",
