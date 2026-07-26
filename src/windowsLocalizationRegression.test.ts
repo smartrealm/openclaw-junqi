@@ -37,9 +37,22 @@ test('WIN-I18N-02 Windows NSIS installer builds Chinese and English variants', (
   const hooks = read('../src-tauri/installer-hooks.nsh');
   assert.match(hooks, /!macro NSIS_HOOK_PREUNINSTALL/);
   assert.match(hooks, /--junqi-uninstall-cleanup/);
+  assert.match(hooks, /\$0 != 0[\s\S]*?MessageBox MB_OK\|MB_ICONSTOP[\s\S]*?Abort/);
+  assert.match(hooks, /junqi_cleanup_missing:[\s\S]*?MessageBox MB_OK\|MB_ICONSTOP[\s\S]*?Abort/);
 });
 
-test('WIN-I18N-03 native tray syncs at startup and after an in-app language change', () => {
+test('WIN-I18N-03 uninstall cleanup removes only the selected owned Docker container', () => {
+  const uninstall = read('../src-tauri/src/commands/uninstall.rs');
+  const docker = read('../src-tauri/src/commands/docker.rs');
+  assert.match(uninstall, /runtime_mode == paths::OpenClawRuntimeMode::Docker/);
+  assert.match(uninstall, /remove_selected_container_for_uninstall\(\)\.await/);
+  assert.match(docker, /ContainerPresence::Managed \{ state_id, \.\. \} if state_id == selected_state_id/);
+  assert.match(docker, /ContainerPresence::Foreign[\s\S]*?UninstallContainerAction::NothingOwned/);
+  assert.match(docker, /remove_selected_container_for_uninstall[\s\S]*?remove_named_container/);
+  assert.doesNotMatch(docker, /remove_selected_container_for_uninstall[\s\S]*?legacy_container_matches_layout/);
+});
+
+test('WIN-I18N-04 native tray syncs at startup and after an in-app language change', () => {
   const i18n = read('./i18n.ts');
   const tray = read('../src-tauri/src/tray/menu.rs');
   assert.match(i18n, /syncNativeLocale\(savedLang\)/);

@@ -1,0 +1,116 @@
+# JunQi Desktop 文档索引
+
+本目录按领域保存架构设计、问题审计、实现说明和验证记录。
+
+```text
+docs/
+├── README.md          文档总索引
+├── installation/     安装、首次启动、Windows 与网络策略
+├── gateway/          Gateway 生命周期、服务归属与验证
+├── collaboration/    多智能体协作设计、审计与发布证据
+├── quality/          产品模块审计与运行质量
+├── design/           尚未完全落地的产品设计稿
+├── previews/         独立 HTML 流程与视觉预览
+└── adr/              架构决策记录
+```
+
+## 文档约定
+
+- `*-design.md`：目标架构和产品/技术设计。
+- `*-audit.md`：特定时间点的代码或流程审计，可能包含已修复的历史问题。
+- `*-validation.md`：修复后的自动化证据和仍需真机验证的边界。
+- `../specs/`：问题目标、约束和验收条件。
+- `../plans/`：实施顺序和文件级变更计划。
+
+审计文档描述的是审计时事实，不自动代表当前代码状态。阅读时应同时查看对应 spec、plan、validation 和最新代码。
+
+## 安装、首次启动与 Windows
+
+目录：[`installation/`](installation/)
+
+- [Windows 安装阶段全量复审](installation/windows-installation-full-audit-2026-07-24.md)
+- [Windows Native 安装审计](installation/windows-native-install-audit.md)
+- [首次安装二次复审](installation/openclaw-setup-second-pass-audit.md)
+- [Windows 首次安装观测复审](installation/openclaw-windows-first-run-observation-audit.md)
+- [Windows Node 探测补充审计](installation/openclaw-windows-node-probe-audit.md)
+- [Windows Wizard 链路审计](installation/openclaw-windows-wizard-audit.md)
+- [Windows 卸载流程复审](installation/windows-uninstall-flow-audit-2026-07-26.md)
+- [安装诊断链路审计](installation/install-diagnostics-audit.md)
+- [中国大陆网络与安装源策略](installation/mainland-china-network-policy.md)
+
+对应规格与计划：
+
+- [`../specs/installation/2026-07-24-openclaw-windows-first-run-bugfix.md`](../specs/installation/2026-07-24-openclaw-windows-first-run-bugfix.md)
+- [`../plans/installation/2026-07-24-openclaw-windows-first-run.md`](../plans/installation/2026-07-24-openclaw-windows-first-run.md)
+- [`../specs/installation/2026-07-26-windows-uninstall-flow-bugfix.md`](../specs/installation/2026-07-26-windows-uninstall-flow-bugfix.md)
+- [`../plans/installation/2026-07-26-windows-uninstall-flow.md`](../plans/installation/2026-07-26-windows-uninstall-flow.md)
+
+## Gateway 生命周期与服务归属
+
+目录：[`gateway/`](gateway/)
+
+建议按以下顺序阅读：
+
+1. [Gateway 生命周期审计](gateway/openclaw-gateway-lifecycle-audit.md)
+2. [Gateway 服务归属审计](gateway/openclaw-gateway-service-ownership-audit.md)
+3. [Gateway 服务归属验证](gateway/openclaw-gateway-service-ownership-validation.md)
+
+对应规格与计划：
+
+- [`../specs/gateway/2026-07-18-openclaw-gateway-lifecycle-bugfix.md`](../specs/gateway/2026-07-18-openclaw-gateway-lifecycle-bugfix.md)
+- [`../specs/gateway/2026-07-24-openclaw-gateway-service-ownership-bugfix.md`](../specs/gateway/2026-07-24-openclaw-gateway-service-ownership-bugfix.md)
+- [`../plans/gateway/2026-07-24-openclaw-gateway-service-ownership.md`](../plans/gateway/2026-07-24-openclaw-gateway-service-ownership.md)
+
+## 多智能体协作
+
+目录：[`collaboration/`](collaboration/)
+
+- [协作系统设计](collaboration/openclaw-agent-collaboration-design.md)
+- [协作系统审计](collaboration/openclaw-agent-collaboration-audit.md)
+- [协作实施计划](collaboration/openclaw-agent-collaboration-implementation-plan.md)
+- [发布证据审计](collaboration/openclaw-collaboration-release-evidence-audit.md)
+- [Workflow Template 与 Run 边界 ADR](adr/0001-workflow-template-and-run-boundary.md)
+
+根目录 [`CONTEXT.md`](../CONTEXT.md) 定义协作领域的规范术语。
+
+## 产品模块与运行质量
+
+目录：[`quality/`](quality/)
+
+- [维护中心审计](quality/maintenance-center-audit.md)
+- [Dashboard 运行审计](quality/dashboard-operations-audit.md)
+- [Chat 生产加固审计](quality/chat-production-hardening-audit.md)
+- [会话来源聚合审计](quality/session-origin-aggregation-audit.md)
+- [Tauri Listener 生命周期审计](quality/tauri-listener-lifecycle-audit.md)
+- [Voice Runtime 审计](quality/voice-runtime-audit.md)
+- [Voice Runtime 审计计划](quality/voice-runtime-audit-plan.md)
+- [JunQi Namespace 审计](quality/junqi-namespace-audit.md)
+- [JunQi Namespace 计划](quality/junqi-namespace-plan.md)
+
+## 产品设计草案
+
+目录：[`design/`](design/)
+
+- [ComfyUI Creative Studio 设计](design/comfyui-creative-studio-design.md)
+
+该文档是大型设计稿，不代表所有功能已经实现。
+
+## HTML 预览
+
+目录：[`previews/`](previews/)
+
+- [`junqi-first-run-flow.html`](previews/junqi-first-run-flow.html)
+- [`monthly-icon-alternatives.html`](previews/monthly-icon-alternatives.html)
+- [`usage-icons-preview.html`](previews/usage-icons-preview.html)
+
+这些文件是可独立打开的流程或视觉参考，不参与应用运行时构建。
+
+## 验收边界
+
+自动化测试不能替代以下真实平台验证：
+
+- Windows NSIS 安装、升级、卸载和重装；
+- Windows Scheduled Task、Credential Manager、UAC 和 ARM64/x64/x86 差异；
+- Docker Desktop 冷启动、容器 restart policy 与卸载残留；
+- macOS 签名、公证、Keychain 和系统服务；
+- 最终发布制品的签名、updater manifest 与受保护 promotion。

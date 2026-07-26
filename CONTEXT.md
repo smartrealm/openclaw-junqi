@@ -1,4 +1,8 @@
-# OpenClaw Collaboration
+# OpenClaw Collaboration Context
+
+> Scope: normative terminology for the durable multi-agent collaboration domain.
+> For repository setup, development commands, and general documentation, see
+> [README.md](README.md) and [docs/README.md](docs/README.md).
 
 This context governs durable multi-agent collaboration that begins from a
 verified OpenClaw chat message and is executed through OpenClaw Agents, Tasks,

@@ -903,7 +903,7 @@ risk fact remains.
 - [ ] At least 24 hours of restart, network/disk fault injection, Task/Flow retention, runtime-hang, and security soak passes.
 - [ ] Browser visual QA passes; DOM/SSR coverage alone is not visual evidence.
 
-These product gates are necessary but not sufficient for production. The release-chain controls in [`specs/2026-07-18-openclaw-collaboration-release-evidence-bugfix.md`](2026-07-18-openclaw-collaboration-release-evidence-bugfix.md) are also mandatory: current-source promotion and mainline integration, protected environments and signing scope, formal text-scanner coverage, actual soak/Linux runner provenance, attestation run/attempt and controller/target identity binding, and a unique immutable release writer.
+These product gates are necessary but not sufficient for production. The release-chain controls in [`specs/collaboration/2026-07-18-openclaw-collaboration-release-evidence-bugfix.md`](2026-07-18-openclaw-collaboration-release-evidence-bugfix.md) are also mandatory: current-source promotion and mainline integration, protected environments and signing scope, formal text-scanner coverage, actual soak/Linux runner provenance, attestation run/attempt and controller/target identity binding, and a unique immutable release writer.
 
 The early 2026-07-17 `gateway run --dev` probe accessed default
 `~/.openclaw` and remains rejected. The current pinned-container run installed
