@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
-const setup = readFileSync(new URL('../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const setup = readdirSync(new URL('../src-tauri/src/commands/setup/', import.meta.url))
+  .filter((entry) => entry.endsWith('.rs'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../src-tauri/src/commands/setup/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const gitRuntime = readFileSync(new URL('../src-tauri/src/commands/git_runtime.rs', import.meta.url), 'utf8');
 const nodeRuntime = readFileSync(new URL('../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
 const platform = readFileSync(new URL('../src-tauri/src/platform.rs', import.meta.url), 'utf8');

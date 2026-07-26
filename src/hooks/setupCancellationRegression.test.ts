@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 
-const setup = readFileSync(new URL("../../src-tauri/src/commands/setup.rs", import.meta.url), "utf8");
+const setup = readdirSync(new URL("../../src-tauri/src/commands/setup/", import.meta.url))
+  .filter((entry) => entry.endsWith(".rs"))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../../src-tauri/src/commands/setup/${entry}`, import.meta.url), "utf8"))
+  .join("\n");
 const app = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
 const api = readFileSync(new URL("../api/tauri-commands.ts", import.meta.url), "utf8");
 const flow = readFileSync(new URL("./useSetupFlow.ts", import.meta.url), "utf8");

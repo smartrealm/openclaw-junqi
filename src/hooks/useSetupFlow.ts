@@ -1747,8 +1747,12 @@ export function useSetupFlow(
     setNodeRequirement(null);
     setBrokenPlugins([]);
     pluginHealAttemptedRef.current.clear();
+    // A run that pushed a transient step has already ended by the time Back is
+    // reachable, so skip past every one of them to the last screen the user
+    // actually acted on. `goBackSetup` returns the fallback once history is
+    // exhausted, and the fallback is never transient, so this terminates.
     let destination = goBackSetup("welcome");
-    while (isStaleSetupBackDestination(destination, gatewayRunning)) {
+    while (isStaleSetupBackDestination(destination)) {
       destination = goBackSetup("welcome");
     }
     if (destination === "storage") {
@@ -1757,7 +1761,7 @@ export function useSetupFlow(
     // Navigation and retries retain the same diagnostic timeline so the user
     // can inspect each completed stage and compare a later attempt with it.
     presentSetupStep(destination);
-  }, [cancelActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, gatewayRunning, commitSteps, presentSetupStep, rollbackRuntimeReconfiguration, rollbackActiveGatewayRuntime, installMode, appendSetupLog, report, replaceSetupStep, setForceStorageSelection, setupStep]);
+  }, [cancelActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, rollbackActiveGatewayRuntime, installMode, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
 
   const retryGit = useCallback(() => {
     setNeedsGit(false);

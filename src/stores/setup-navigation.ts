@@ -117,12 +117,22 @@ export function backSetupNavigation(
   return { setupStep, setupHistory };
 }
 
-export function isStaleSetupBackDestination(
-  _step: SetupStep,
-  _gatewayRunning: boolean,
-): boolean {
-  // Setup history represents explicit user-visible decisions. A running
-  // Gateway must not erase a prior configuration, install, or confirmation
-  // stage from Back navigation.
-  return false;
+/// Steps that report work already in flight. They own no control of their own:
+/// the progress screen renders neither a Back nor a primary action while one is
+/// current, because the run that owns them drives the next transition.
+const TRANSIENT_SETUP_STEPS = new Set<SetupStep>([
+  "detecting",
+  "checking",
+  "install-git",
+  "install-node",
+  "install-openclaw",
+]);
+
+export function isStaleSetupBackDestination(step: SetupStep): boolean {
+  // Setup history represents explicit user-visible decisions, and Back must
+  // never erase a prior configuration, install, or confirmation stage. A
+  // transient step is not such a decision: the run that pushed it has already
+  // finished or failed, so returning to it would strand the user on a screen
+  // with no way forward and no way back.
+  return TRANSIENT_SETUP_STEPS.has(step);
 }
