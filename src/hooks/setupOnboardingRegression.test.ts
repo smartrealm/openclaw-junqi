@@ -571,10 +571,27 @@ test('a superseded wizard submit releases its re-entry guard', () => {
     setupFlow,
     /const beginWizardOperation = useCallback\(\(\) => \{[\s\S]*?wizardSubmitInFlightRef\.current = false;[\s\S]*?return operationId;/,
   );
-  // The guard is read before the takeover, so double-submit protection survives.
+  // The shared navigation guard is read before takeover, so Next and Back
+  // cannot supersede one another before React commits the loading state.
   assert.match(
     setupFlow,
-    /if \(wizardSubmitInFlightRef\.current\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardSubmitInFlightRef\.current = true;/,
+    /if \(wizardNavigationInFlightRef\.current\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardSubmitInFlightRef\.current = true;\s*\n\s*wizardNavigationInFlightRef\.current = "next";/,
+  );
+});
+
+test('wizard Back and Next share a synchronous navigation gate', () => {
+  assert.match(setupFlow, /const wizardNavigationInFlightRef = useRef<"next" \| "back" \| null>\(null\)/);
+  assert.match(
+    setupFlow,
+    /const backOfficialOnboarding[\s\S]*?if \(!wizardClientRef\.current\?\.canGoBack \|\| wizardNavigationInFlightRef\.current\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardNavigationInFlightRef\.current = "back";/,
+  );
+  assert.match(
+    setupFlow,
+    /const submitWizardStep[\s\S]*?if \(wizardNavigationInFlightRef\.current\) return null;[\s\S]*?wizardNavigationInFlightRef\.current = "next";/,
+  );
+  assert.match(
+    setupFlow,
+    /const invalidateWizardOperations[\s\S]*?wizardNavigationInFlightRef\.current = null;[\s\S]*?invalidatePendingOperations/,
   );
 });
 

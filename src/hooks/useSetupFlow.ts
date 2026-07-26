@@ -258,6 +258,7 @@ export function useSetupFlow(
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [wizardRecoveryRequired, setWizardRecoveryRequired] = useState(false);
   const wizardSubmitInFlightRef = useRef(false);
+  const wizardNavigationInFlightRef = useRef<"next" | "back" | null>(null);
   const wizardRecoveryInFlightRef = useRef<"retry" | "reclaim" | null>(null);
   const wizardOperationRef = useRef(0);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
@@ -679,6 +680,7 @@ export function useSetupFlow(
   const invalidateWizardOperations = useCallback(() => {
     wizardOperationRef.current += 1;
     wizardSubmitInFlightRef.current = false;
+    wizardNavigationInFlightRef.current = null;
     wizardRecoveryInFlightRef.current = null;
     wizardClientRef.current?.invalidatePendingOperations();
     gateway.cancelPrivilegedAuthorizationRetry();
@@ -693,6 +695,7 @@ export function useSetupFlow(
     // takes it over. `submitWizardStep` reads the guard before calling this, so
     // its own protection against double submits is unaffected.
     wizardSubmitInFlightRef.current = false;
+    wizardNavigationInFlightRef.current = null;
     wizardRecoveryInFlightRef.current = null;
     return operationId;
   }, []);
@@ -914,9 +917,10 @@ export function useSetupFlow(
     // events before `wizardSubmitting` reaches the button, causing the second
     // request to race the official terminal response and report "wizard not
     // found" after onboarding already completed.
-    if (wizardSubmitInFlightRef.current) return null;
+    if (wizardNavigationInFlightRef.current) return null;
     const operationId = beginWizardOperation();
     wizardSubmitInFlightRef.current = true;
+    wizardNavigationInFlightRef.current = "next";
     setWizardError(null);
     setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
@@ -943,6 +947,7 @@ export function useSetupFlow(
     } finally {
       if (wizardOperationRef.current === operationId) {
         wizardSubmitInFlightRef.current = false;
+        wizardNavigationInFlightRef.current = null;
         setWizardSubmitting(false);
       }
     }
@@ -980,8 +985,12 @@ export function useSetupFlow(
   }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
   const backOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
-    if (!wizardClientRef.current?.canGoBack || wizardSubmitting) return null;
+    // `wizardSubmitting` only changes after React commits. Use the same
+    // synchronous navigation gate as Next so rapid Next/Back, Back/Next, or
+    // double-Back clicks cannot supersede each other and issue concurrent RPCs.
+    if (!wizardClientRef.current?.canGoBack || wizardNavigationInFlightRef.current) return null;
     const operationId = beginWizardOperation();
+    wizardNavigationInFlightRef.current = "back";
     setWizardError(null);
     setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
@@ -998,9 +1007,12 @@ export function useSetupFlow(
       setSetupError(message);
       return null;
     } finally {
-      if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
+      if (wizardOperationRef.current === operationId) {
+        wizardNavigationInFlightRef.current = null;
+        setWizardSubmitting(false);
+      }
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, setSetupError, waitForGatewayConnection, wizardFailureMessage, wizardSubmitting]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
   const reclaimOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (wizardRecoveryInFlightRef.current === "reclaim") return null;
