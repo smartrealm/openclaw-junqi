@@ -23,11 +23,22 @@ test('BUG-GL01 all lifecycle writers share the operation gate', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const ensure = source('src-tauri/src/commands/ensure.rs');
   const docker = source('src-tauri/src/commands/docker.rs');
+  const gatewayService = source('src-tauri/src/commands/gateway_service.rs');
+  const enableAutostart = gatewayService.slice(
+    gatewayService.indexOf('pub async fn enable_gateway_autostart'),
+    gatewayService.indexOf('pub async fn disable_gateway_autostart'),
+  );
+  const disableAutostart = gatewayService.slice(
+    gatewayService.indexOf('pub async fn disable_gateway_autostart'),
+    gatewayService.indexOf('/// The complete identity'),
+  );
   assert.match(gateway, /pub async fn start_gateway[\s\S]*operation_gate\.lock_owned\(\)\.await/);
   assert.match(gateway, /pub async fn restart_gateway[\s\S]*operation_gate/);
   assert.match(gateway, /pub async fn stop_gateway[\s\S]*operation_gate\.lock_owned\(\)\.await/);
   assert.match(ensure, /ensure_gateway_running[\s\S]*operation_gate\.lock_owned\(\)\.await/);
   assert.match(docker, /start_docker_gateway[\s\S]*operation_gate\.lock_owned\(\)\.await/);
+  assert.match(enableAutostart, /operation_gate\.lock_owned\(\)\.await/);
+  assert.match(disableAutostart, /operation_gate\.lock_owned\(\)\.await/);
 });
 
 test('BUG-GL02 ensure waits on the supervisor instead of returning an in-flight failure', () => {

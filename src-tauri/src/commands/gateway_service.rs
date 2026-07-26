@@ -3,11 +3,12 @@
 //! Service mutations are permitted only after the official status document
 //! identifies the same state directory JunQi currently selected.
 
-use crate::{commands::system, paths, platform};
+use crate::{commands::system, paths, platform, state::GatewayProcess};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use tauri::State;
 
 const fn service_command_timeout_for_platform(is_windows: bool) -> Duration {
     Duration::from_secs(if is_windows { 60 } else { 30 })
@@ -271,7 +272,11 @@ pub async fn gateway_autostart_status() -> Result<GatewayAutostartStatus, String
 }
 
 #[tauri::command]
-pub async fn enable_gateway_autostart() -> Result<GatewayAutostartStatus, String> {
+pub async fn enable_gateway_autostart(
+    state: State<'_, GatewayProcess>,
+) -> Result<GatewayAutostartStatus, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
     let (runtime, state_dir, config_path) = selected_native_service_context().await?;
     let port = crate::commands::gateway::gateway_port_for_config(&config_path);
     install_selected_gateway_service(&runtime, &state_dir, &config_path, port).await?;
@@ -289,7 +294,11 @@ pub async fn enable_gateway_autostart() -> Result<GatewayAutostartStatus, String
 }
 
 #[tauri::command]
-pub async fn disable_gateway_autostart() -> Result<GatewayAutostartStatus, String> {
+pub async fn disable_gateway_autostart(
+    state: State<'_, GatewayProcess>,
+) -> Result<GatewayAutostartStatus, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
     if !matches!(
         paths::active_runtime_mode(),
         paths::OpenClawRuntimeMode::Native

@@ -190,7 +190,7 @@
       </svg>
     </div>
     <div class="cards">
-      <div class="card"><p class="card-kicker">代码已修复 · NATIVE SERVICE REUSE</p><h3>同配置 Native 服务不再被误判为 Docker 冲突</h3><ul><li>Native 切换前若共享端口已响应 selected config/token，且没有 JunQi managed Docker 容器拥有该端口，则保留现有 endpoint</li><li>随后仍由 Native 启动链执行健康、token/config 与官方 service ownership 验证；验证失败继续 fail-closed</li><li>未知 listener、foreign config 或真实 managed Docker owner 仍不得绕过端口门禁</li><li>Rust 全量测试 613 项、Docker 聚焦测试、TypeScript/lint 与本地 ARM64 production build 已通过；真实首次设置重试仍待人工验证</li></ul></div>
+      <div class="card"><p class="card-kicker">代码已修复 · NATIVE SERVICE REUSE</p><h3>同配置 Native 服务不再被误判为 Docker 冲突</h3><ul><li>Native 切换前若共享端口已响应 selected config/token，且没有 JunQi managed Docker 容器拥有该端口，则保留现有 endpoint</li><li>随后仍由 Native 启动链执行健康、token/config 与官方 service ownership 验证；验证失败继续 fail-closed</li><li>未知 listener、foreign config 或真实 managed Docker owner 仍不得绕过端口门禁</li><li>Rust 全量测试、Docker 聚焦测试、TypeScript/lint 与本地 ARM64 production build 已通过；真实首次设置重试仍待人工验证</li></ul></div>
       <div class="card"><p class="card-kicker">WINDOWS x86 · 32-BIT</p><h3>自动走 Native-only</h3><ul><li><code>ARCH=x86</code>，不需要用户选择</li><li>Node release catalog 自动选择 <code>win-x86</code> 兼容版本，npm 随 Node 提供</li><li>使用稳定 JunQi-owned 目录复用已固定 SHA-256 的 32-bit MinGit</li><li>Docker 被能力门禁禁用，并显示“32 位仅支持 Native”而非误报“未安装”</li></ul></div>
       <div class="card"><p class="card-kicker">WINDOWS x64</p><h3>Native 或 Docker</h3><ul><li><code>ARCH=x86_64</code></li><li>Native 使用 win-x64 Node 与 64-bit Git</li><li>Docker 仍需 CLI、Daemon、镜像与容器契约全部通过</li></ul></div>
       <div class="card"><p class="card-kicker">WINDOWS ARM64</p><h3>架构对应运行时</h3><ul><li><code>ARCH=aarch64</code></li><li>Native 使用 win-arm64 Node 与 ARM64 Git</li><li>Docker 可用性以真实 ARM64 Docker 环境探测为准</li></ul></div>
@@ -296,7 +296,7 @@
     <div class="cards">
       <div class="card"><p class="card-kicker">SYSTEM PERMISSION</p><h3>Windows UAC</h3><ul><li>系统 Node.js 安装</li><li>按需 Git 安装</li><li>拒绝后回到安装错误恢复</li></ul></div>
       <div class="card"><p class="card-kicker">GATEWAY PERMISSION</p><h3>设备配对与管理 Scope</h3><ul><li>Endpoint-scoped 设备凭据</li><li>operator.admin 仅用于单次临时 Wizard RPC</li><li>批准后恢复原调用；日常连接身份漂移则 fail-closed</li></ul></div>
-      <div class="card"><p class="card-kicker">VALIDATION BOUNDARY</p><h3>自动化通过 ≠ Windows 真机验收</h3><ul><li>代码契约、TypeScript 与 Rust 编译已通过；完整前端/脚本测试 216 项通过</li><li>Windows x86 已加入 i686 CI、NSIS、updater、Node/MinGit 架构选择与 Native-only 门禁；本机缺少 i686 Rust target，实际 i686 CI 构建尚未取得运行结果</li><li>32 位真机仍需验证 NSIS、WebView2、Node 22 x86、npm/OpenClaw 原生依赖、Gateway、Wizard、模型调用、Credential Manager、更新与卸载</li><li>真实 UAC、Docker Desktop、Native/Docker 同端口设备凭据隔离、instance credential promotion、token rotation、scope upgrade、SecretRef 后端、持久化阶段取消与安装包仍待相应架构实机验收</li></ul></div>
+      <div class="card"><p class="card-kicker">VALIDATION BOUNDARY</p><h3>自动化通过 ≠ Windows 真机验收</h3><ul><li>代码契约、TypeScript 与 Rust 编译已通过；完整前端与脚本测试已通过</li><li>Windows x86 已加入 i686 CI、NSIS、updater、Node/MinGit 架构选择与 Native-only 门禁；本机缺少 i686 Rust target，实际 i686 CI 构建尚未取得运行结果</li><li>32 位真机仍需验证 NSIS、WebView2、Node 22 x86、npm/OpenClaw 原生依赖、Gateway、Wizard、模型调用、Credential Manager、更新与卸载</li><li>真实 UAC、Docker Desktop、Native/Docker 同端口设备凭据隔离、instance credential promotion、token rotation、scope upgrade、SecretRef 后端、持久化阶段取消与安装包仍待相应架构实机验收</li></ul></div>
     </div>
   </section>
 
