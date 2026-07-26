@@ -577,3 +577,28 @@ test('a superseded wizard submit releases its re-entry guard', () => {
     /if \(wizardSubmitInFlightRef\.current\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardSubmitInFlightRef\.current = true;/,
   );
 });
+
+test('wizard recovery actions are synchronous single-flight before React commits loading state', () => {
+  // The no-step error screen intentionally permits one recovery action to take
+  // over a still-running submit. React state cannot guard two clicks delivered
+  // before its next render, so retry/reclaim need a synchronous ref guard of
+  // their own. beginWizardOperation clears a previous operation's guard, then
+  // the new owner claims it before the first await.
+  assert.match(setupFlow, /const wizardRecoveryInFlightRef = useRef<"retry" \| "reclaim" \| null>\(null\)/);
+  assert.match(
+    setupFlow,
+    /const beginWizardOperation = useCallback\(\(\) => \{[\s\S]*?wizardRecoveryInFlightRef\.current = null;[\s\S]*?return operationId;/,
+  );
+  assert.match(
+    setupFlow,
+    /const retryOfficialOnboarding[\s\S]*?if \(wizardRecoveryInFlightRef\.current === "retry"\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardRecoveryInFlightRef\.current = "retry";[\s\S]*?finally \{\s*\n\s*if \(wizardOperationRef\.current === operationId\) \{\s*\n\s*wizardRecoveryInFlightRef\.current = null;/,
+  );
+  assert.match(
+    setupFlow,
+    /const reclaimOfficialOnboarding[\s\S]*?if \(wizardRecoveryInFlightRef\.current === "reclaim"\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardRecoveryInFlightRef\.current = "reclaim";[\s\S]*?finally \{\s*\n\s*if \(wizardOperationRef\.current === operationId\) \{\s*\n\s*wizardRecoveryInFlightRef\.current = null;/,
+  );
+  assert.match(
+    setupFlow,
+    /const invalidateWizardOperations[\s\S]*?wizardRecoveryInFlightRef\.current = null;[\s\S]*?invalidatePendingOperations/,
+  );
+});

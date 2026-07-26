@@ -258,6 +258,7 @@ export function useSetupFlow(
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [wizardRecoveryRequired, setWizardRecoveryRequired] = useState(false);
   const wizardSubmitInFlightRef = useRef(false);
+  const wizardRecoveryInFlightRef = useRef<"retry" | "reclaim" | null>(null);
   const wizardOperationRef = useRef(0);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [enteringDashboard, setEnteringDashboard] = useState(false);
@@ -678,6 +679,7 @@ export function useSetupFlow(
   const invalidateWizardOperations = useCallback(() => {
     wizardOperationRef.current += 1;
     wizardSubmitInFlightRef.current = false;
+    wizardRecoveryInFlightRef.current = null;
     wizardClientRef.current?.invalidatePendingOperations();
     gateway.cancelPrivilegedAuthorizationRetry();
   }, []);
@@ -691,6 +693,7 @@ export function useSetupFlow(
     // takes it over. `submitWizardStep` reads the guard before calling this, so
     // its own protection against double submits is unaffected.
     wizardSubmitInFlightRef.current = false;
+    wizardRecoveryInFlightRef.current = null;
     return operationId;
   }, []);
 
@@ -946,7 +949,12 @@ export function useSetupFlow(
   }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, resumeOfficialOnboarding, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
   const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
+    // React has not necessarily committed `wizardSubmitting` before a second
+    // click arrives. Permit retry to take over a failed submit, but never let
+    // two retries concurrently replay one official wizard session.
+    if (wizardRecoveryInFlightRef.current === "retry") return null;
     const operationId = beginWizardOperation();
+    wizardRecoveryInFlightRef.current = "retry";
     setWizardError(null);
     setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
@@ -964,7 +972,10 @@ export function useSetupFlow(
       replaceSetupStep("configure-openclaw");
       return null;
     } finally {
-      if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
+      if (wizardOperationRef.current === operationId) {
+        wizardRecoveryInFlightRef.current = null;
+        setWizardSubmitting(false);
+      }
     }
   }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
@@ -992,7 +1003,9 @@ export function useSetupFlow(
   }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, setSetupError, waitForGatewayConnection, wizardFailureMessage, wizardSubmitting]);
 
   const reclaimOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
+    if (wizardRecoveryInFlightRef.current === "reclaim") return null;
     const operationId = beginWizardOperation();
+    wizardRecoveryInFlightRef.current = "reclaim";
     setWizardError(null);
     setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
@@ -1018,7 +1031,10 @@ export function useSetupFlow(
       replaceSetupStep("configure-openclaw");
       return null;
     } finally {
-      if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
+      if (wizardOperationRef.current === operationId) {
+        wizardRecoveryInFlightRef.current = null;
+        setWizardSubmitting(false);
+      }
     }
   }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
