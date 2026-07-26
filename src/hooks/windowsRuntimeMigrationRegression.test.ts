@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 const storagePanel = readFileSync(
@@ -13,7 +13,11 @@ const storage = readFileSync(
   new URL('../../src-tauri/src/commands/storage.rs', import.meta.url),
   'utf8',
 );
-const setup = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const setup = readdirSync(new URL('../../src-tauri/src/commands/setup/', import.meta.url))
+  .filter((entry) => entry.endsWith('.rs'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../../src-tauri/src/commands/setup/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const lib = readFileSync(new URL('../../src-tauri/src/lib.rs', import.meta.url), 'utf8');
 const config = readFileSync(new URL('../../src-tauri/src/commands/config.rs', import.meta.url), 'utf8');
 const gateway = readFileSync(new URL('../../src-tauri/src/commands/gateway.rs', import.meta.url), 'utf8');

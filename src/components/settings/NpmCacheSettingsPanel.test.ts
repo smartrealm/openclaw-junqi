@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 const panel = readFileSync(new URL('./NpmCacheSettingsPanel.tsx', import.meta.url), 'utf8');
 const settings = readFileSync(new URL('../../pages/SettingsPage.tsx', import.meta.url), 'utf8');
 const storage = readFileSync(new URL('../../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
 const lib = readFileSync(new URL('../../../src-tauri/src/lib.rs', import.meta.url), 'utf8');
-const setup = readFileSync(new URL('../../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const setup = readdirSync(new URL('../../../src-tauri/src/commands/setup/', import.meta.url))
+  .filter((entry) => entry.endsWith('.rs'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../../../src-tauri/src/commands/setup/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const updater = readFileSync(new URL('../../../src-tauri/src/commands/openclaw_update.rs', import.meta.url), 'utf8');
 const repair = readFileSync(new URL('../../../src-tauri/src/commands/openclaw_repair.rs', import.meta.url), 'utf8');
 

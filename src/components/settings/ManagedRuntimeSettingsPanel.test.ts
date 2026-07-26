@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 const panel = readFileSync(new URL('./ManagedRuntimeSettingsPanel.tsx', import.meta.url), 'utf8');
 const settings = readFileSync(new URL('../../pages/SettingsPage.tsx', import.meta.url), 'utf8');
-const setup = readFileSync(new URL('../../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const setup = readdirSync(new URL('../../../src-tauri/src/commands/setup/', import.meta.url))
+  .filter((entry) => entry.endsWith('.rs'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../../../src-tauri/src/commands/setup/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const managedRuntime = readFileSync(new URL('../../../src-tauri/src/commands/managed_runtime.rs', import.meta.url), 'utf8');
 const nodeRuntime = readFileSync(new URL('../../../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
 const gitRuntime = readFileSync(new URL('../../../src-tauri/src/commands/git_runtime.rs', import.meta.url), 'utf8');

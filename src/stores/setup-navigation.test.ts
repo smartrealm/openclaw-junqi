@@ -64,6 +64,55 @@ test("internal retries replace the current step without growing history", () => 
   assert.deepEqual(failedAgain.setupHistory, state.setupHistory);
 });
 
+test("a step that reports work in flight is never a Back destination", () => {
+  // The progress screen renders no Back and no primary action for these, so
+  // landing on one leaves the user with nothing to click.
+  for (const step of ["detecting", "checking", "install-git", "install-node", "install-openclaw"] as const) {
+    assert.equal(isStaleSetupBackDestination(step), true, step);
+  }
+  for (const step of ["welcome", "storage", "choosing-mode", "gateway-stopped", "gateway-ready", "configure-openclaw", "ready", "error", "git-missing", "node-missing"] as const) {
+    assert.equal(isStaleSetupBackDestination(step), false, step);
+  }
+});
+
+test("Gateway startup does not leave the install step as a Back destination", () => {
+  // runNativeSetup replaces its way to install-openclaw, then startGatewayAction
+  // pushes `checking` on top of it — which is what put a transient step into
+  // history in the first place.
+  let state = transitionSetupNavigation(start(), "detecting", "push");
+  state = transitionSetupNavigation(state, "storage", "replace");
+  state = transitionSetupNavigation(state, "choosing-mode", "push");
+  state = transitionSetupNavigation(state, "checking", "push");
+  state = transitionSetupNavigation(state, "install-openclaw", "replace");
+  state = transitionSetupNavigation(state, "checking", "push");
+  state = transitionSetupNavigation(state, "gateway-ready", "replace");
+
+  assert.ok(state.setupHistory.includes("install-openclaw"));
+
+  let destination = backSetupNavigation(state);
+  while (isStaleSetupBackDestination(destination.setupStep)) {
+    destination = backSetupNavigation(destination);
+  }
+
+  assert.equal(destination.setupStep, "choosing-mode");
+});
+
+test("skipping transient history terminates at the fallback", () => {
+  const state: SetupNavigationState = {
+    setupStep: "gateway-ready",
+    setupHistory: ["checking", "install-node", "install-openclaw"],
+  };
+
+  let destination = backSetupNavigation(state);
+  let guard = 0;
+  while (isStaleSetupBackDestination(destination.setupStep)) {
+    destination = backSetupNavigation(destination);
+    assert.ok((guard += 1) < 10, "Back navigation must not loop");
+  }
+
+  assert.equal(destination.setupStep, "welcome");
+});
+
 test("persisted install mode fails closed to native setup", () => {
   assert.equal(normalizeInstallMode("docker"), "docker");
   assert.equal(normalizeInstallMode("native"), "native");

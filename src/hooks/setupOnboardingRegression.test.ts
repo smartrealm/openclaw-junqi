@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
@@ -13,7 +13,11 @@ const adapter = readFileSync(new URL('../api/tauri-adapter.ts', import.meta.url)
 const settingsStore = readFileSync(new URL('../stores/settingsStore.ts', import.meta.url), 'utf8');
 const settingsPage = readFileSync(new URL('../pages/SettingsPage.tsx', import.meta.url), 'utf8');
 const settingsDialog = readFileSync(new URL('../components/shared/AppSettingsDialog.tsx', import.meta.url), 'utf8');
-const setupCommand = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const setupCommand = readdirSync(new URL('../../src-tauri/src/commands/setup/', import.meta.url))
+  .filter((entry) => entry.endsWith('.rs'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../../src-tauri/src/commands/setup/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const gatewayCommand = readFileSync(new URL('../../src-tauri/src/commands/gateway.rs', import.meta.url), 'utf8');
 
 function flattenMessages(value: unknown, prefix = '', result: Record<string, unknown> = {}): Record<string, unknown> {
@@ -547,4 +551,29 @@ test('BUG-ONB-27 terminal QR notes render a bounded local image and use the syst
   assert.match(wizard, /openWizardExternalUrl\(url\)/);
   assert.doesNotMatch(wizard, /target="_blank"/);
   assert.match(setupPage, /extractOpenClawWizardQrUrl\(presentedStep\.message\)/);
+});
+
+test('a superseded wizard submit releases its re-entry guard', () => {
+  // The wizard screen deliberately keeps its action clickable while a submit is
+  // still in flight once an error is showing (`wizardSubmitting && !wizardError`),
+  // and applyWizardResult reaches exactly that state: it sets the model-not-ready
+  // error and then awaits refreshGatewayConnectionTarget before submitWizardStep
+  // can reach its finally. Retrying there supersedes the submit, whose finally is
+  // gated on still being current and therefore never clears the guard. Ownership
+  // of the guard has to pass to the operation taking over, otherwise every later
+  // submit returns null and the wizard silently stops responding.
+  assert.match(setupPage, /disabled: flow\.wizardSubmitting && !flow\.wizardError/);
+  assert.match(
+    setupFlow,
+    /setWizardError\(message\);[\s\S]*?await refreshGatewayConnectionTarget\(\)/,
+  );
+  assert.match(
+    setupFlow,
+    /const beginWizardOperation = useCallback\(\(\) => \{[\s\S]*?wizardSubmitInFlightRef\.current = false;[\s\S]*?return operationId;/,
+  );
+  // The guard is read before the takeover, so double-submit protection survives.
+  assert.match(
+    setupFlow,
+    /if \(wizardSubmitInFlightRef\.current\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardSubmitInFlightRef\.current = true;/,
+  );
 });

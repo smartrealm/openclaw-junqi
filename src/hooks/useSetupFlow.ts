@@ -109,9 +109,10 @@ const INSTALL_TARGET_KEYS = {
   existing: "setup.openclaw.useExisting",
 } as const;
 
-const AUTO_ADVANCE_GATEWAY_STEPS = new Set<SetupStep>([
-  "gateway-stopped",
-]);
+/// The one step that means "the runtime is ready and nobody has started the
+/// local Gateway yet". Starting it is an installation transition rather than a
+/// user decision, so reaching this step starts it automatically.
+const AUTO_ADVANCE_GATEWAY_STEP: SetupStep = "gateway-stopped";
 
 export type GatewayReadyContinuation =
   | { status: "idle"; error: null }
@@ -475,6 +476,14 @@ export function useSetupFlow(
   useEffect(() => {
     if (setupStep !== "detecting") return;
     let cancelled = false;
+    // Detection never decides more than what the user is asked next: every
+    // outcome hands over to the storage step, carrying the stage to resume once
+    // the location is confirmed.
+    const enterStorage = (next: Parameters<typeof setPostStorageStep>[0]) => {
+      setPostStorageStep(next);
+      report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
+      navigateSetup("storage", "replace");
+    };
     void (async () => {
       report(t("setup.detecting"), 0);
       setGatewayRunning(false);
@@ -495,9 +504,7 @@ export function useSetupFlow(
           relocationRequestedRef.current = Boolean(oclaw?.relocation_required);
           // 从未安装过，先确定存储位置，再进入安装方式选择。
           localStorage.removeItem("junqi-setup-done");
-          setPostStorageStep("choosing-mode");
-          report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
-          navigateSetup("storage", "replace");
+          enterStorage("choosing-mode");
           return;
         }
         const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
@@ -515,9 +522,7 @@ export function useSetupFlow(
           if (reachable) {
             setGatewayRunning(true);
             commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
-            setPostStorageStep(onboardingRequired ? "configure-openclaw" : "ready");
-            report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
-            navigateSetup("storage", "replace");
+            enterStorage(onboardingRequired ? "configure-openclaw" : "ready");
             return;
           }
         } catch {
@@ -525,15 +530,11 @@ export function useSetupFlow(
         }
 
         // Installed but gateway not responding → ask the user to start it.
-        setPostStorageStep("gateway-stopped");
-        report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
-        navigateSetup("storage", "replace");
+        enterStorage("gateway-stopped");
       } catch {
         if (cancelled) return;
         setOpenclawStatus(null);
-        setPostStorageStep("choosing-mode");
-        report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
-        navigateSetup("storage", "replace");
+        enterStorage("choosing-mode");
       }
     })();
     return () => {
@@ -684,6 +685,12 @@ export function useSetupFlow(
   const beginWizardOperation = useCallback(() => {
     const operationId = wizardOperationRef.current + 1;
     wizardOperationRef.current = operationId;
+    // A superseded submit never reaches the branch that releases its re-entry
+    // guard, because that branch is gated on still being the current operation.
+    // The guard belongs to whichever operation is current, so taking over also
+    // takes it over. `submitWizardStep` reads the guard before calling this, so
+    // its own protection against double submits is unaffected.
+    wizardSubmitInFlightRef.current = false;
     return operationId;
   }, []);
 
@@ -1128,18 +1135,16 @@ export function useSetupFlow(
     }
   }, [appendSetupLog, gatewayRunning, navigateSetup, probeActiveRuntimeModel, report, setSetupError, startGatewayAction, t, updateOnboardingRequirement]);
 
-  // Gateway startup is an installation transition, not a user decision. Keep
-  // storage, runtime selection, and the official OpenClaw wizard interactive,
-  // but automatically continue from every state that only means "runtime is
-  // ready and the local Gateway has not been started yet".
-  const autoStartedGatewayStepRef = useRef<SetupStep | null>(null);
+  // Storage, runtime selection, and the official OpenClaw wizard stay
+  // interactive; only the Gateway start above continues on its own.
+  const autoStartedGatewayRef = useRef(false);
   useEffect(() => {
-    if (!AUTO_ADVANCE_GATEWAY_STEPS.has(setupStep)) {
-      autoStartedGatewayStepRef.current = null;
+    if (setupStep !== AUTO_ADVANCE_GATEWAY_STEP) {
+      autoStartedGatewayRef.current = false;
       return;
     }
-    if (autoStartedGatewayStepRef.current === setupStep) return;
-    autoStartedGatewayStepRef.current = setupStep;
+    if (autoStartedGatewayRef.current) return;
+    autoStartedGatewayRef.current = true;
     void startGatewayAction();
   }, [setupStep, startGatewayAction]);
 
@@ -1149,12 +1154,6 @@ export function useSetupFlow(
     commitSteps(s);
     try {
       replaceSetupStep("checking");
-
-      const runtimePlatform = window.aegis?.platform?.toLowerCase() ?? "";
-      const userAgent = navigator.userAgent.toLowerCase();
-      const isWindows = runtimePlatform === "win32"
-        || runtimePlatform === "windows"
-        || userAgent.includes("windows");
 
       // Node
       patchStep("node", "running", t("setup.checkingNode"));
@@ -1241,7 +1240,12 @@ export function useSetupFlow(
         try {
           await installSelectedOpenclaw();
         } catch (error) {
-          if (!isWindows || !isMissingGitDependencyError(error)) throw error;
+          // Every platform has a Git recovery path, they just differ in how far
+          // they get on their own: Windows installs it, macOS opens the Apple
+          // Command Line Tools installer, and Linux answers with the package
+          // manager instruction. Routing all three through here replaces npm's
+          // raw `spawn git ENOENT` with the platform's own guidance.
+          if (!isMissingGitDependencyError(error)) throw error;
 
           patchStep("openclaw", "pending");
           ensureStepBefore(
@@ -1747,8 +1751,12 @@ export function useSetupFlow(
     setNodeRequirement(null);
     setBrokenPlugins([]);
     pluginHealAttemptedRef.current.clear();
+    // A run that pushed a transient step has already ended by the time Back is
+    // reachable, so skip past every one of them to the last screen the user
+    // actually acted on. `goBackSetup` returns the fallback once history is
+    // exhausted, and the fallback is never transient, so this terminates.
     let destination = goBackSetup("welcome");
-    while (isStaleSetupBackDestination(destination, gatewayRunning)) {
+    while (isStaleSetupBackDestination(destination)) {
       destination = goBackSetup("welcome");
     }
     if (destination === "storage") {
@@ -1757,7 +1765,7 @@ export function useSetupFlow(
     // Navigation and retries retain the same diagnostic timeline so the user
     // can inspect each completed stage and compare a later attempt with it.
     presentSetupStep(destination);
-  }, [cancelActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, gatewayRunning, commitSteps, presentSetupStep, rollbackRuntimeReconfiguration, rollbackActiveGatewayRuntime, installMode, appendSetupLog, report, replaceSetupStep, setForceStorageSelection, setupStep]);
+  }, [cancelActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, rollbackActiveGatewayRuntime, installMode, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
 
   const retryGit = useCallback(() => {
     setNeedsGit(false);
