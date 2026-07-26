@@ -180,6 +180,12 @@ function LanguageThemeControls() {
 function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
   const { t } = useTranslation();
   const navigateSetup = useSetupNavigation();
+  const navigationInFlightRef = useRef(false);
+  const continueSetup = () => {
+    if (navigationInFlightRef.current) return;
+    navigationInFlightRef.current = true;
+    navigateSetup("detecting");
+  };
 
   return (
     <SetupShell
@@ -187,7 +193,7 @@ function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
       title={t("setup.title")}
       subtitle={t("setup.welcomeSubtitle")}
       logs={logs}
-      nextAction={{ label: t("setup.nextStep", "下一步"), onClick: () => navigateSetup("detecting") }}
+      nextAction={{ label: t("setup.nextStep", "下一步"), onClick: continueSetup }}
     >
       <div className="mb-6 grid gap-4 border-b border-aegis-border pb-5 md:grid-cols-[1fr_auto] md:items-end">
         <div className="min-w-0">
@@ -277,6 +283,16 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
 function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const [selectedMode, setSelectedMode] = useState<InstallMode>(flow.installMode);
+  const [submitting, setSubmitting] = useState(false);
+  const submitSelection = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await flow.selectMode(selectedMode);
+    } finally {
+      setSubmitting(false);
+    }
+  };
   const dockerAvailable = flow.dockerStatus?.available && flow.dockerStatus?.daemon_running;
   useEffect(() => {
     if (
@@ -325,11 +341,12 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
       title={t("setup.modeSelectionTitle", "确认 OpenClaw 运行方式")}
       subtitle={t("setup.chooseMode")}
       logs={logs}
-      previousAction={{ onClick: flow.goBack }}
+      previousAction={{ onClick: flow.goBack, disabled: submitting }}
       nextAction={{
         label: primaryLabel,
-        onClick: () => { void flow.selectMode(selectedMode); },
-        disabled: selectedMode === "docker" && !dockerAvailable,
+        onClick: () => { void submitSelection(); },
+        disabled: submitting || (selectedMode === "docker" && !dockerAvailable),
+        loading: submitting,
         icon: "next",
       }}
     >

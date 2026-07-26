@@ -190,7 +190,7 @@ test('BUG-WFR-04 stale wizard operations cannot commit after setup navigation or
     setupFlow.indexOf('// ── Actions ──'),
   );
   const back = setupFlow.slice(
-    setupFlow.indexOf('const goBack = useCallback'),
+    setupFlow.indexOf('const performGoBack = useCallback'),
     setupFlow.indexOf('const retryGit = useCallback'),
   );
 
@@ -245,7 +245,7 @@ test('BUG-ONB-05 runtime selection is explicit and confirmed by one contextual a
   assert.match(mode, /const dockerImageAvailable = flow\.dockerStatus\?\.image_available === true/);
   assert.match(mode, /const selectedModeReady = selectedMode === "native" \? nativeInstalled : dockerImageAvailable/);
   assert.match(mode, /setup\.useRuntimeAndContinue[\s\S]*?setup\.prepareRuntimeAndContinue/);
-  assert.match(mode, /label: primaryLabel[\s\S]*?flow\.selectMode\(selectedMode\)/);
+  assert.match(mode, /const submitSelection[\s\S]*?flow\.selectMode\(selectedMode\)[\s\S]*?label: primaryLabel[\s\S]*?submitSelection\(\)/);
   assert.doesNotMatch(mode, /flow\.selectMode\("(?:native|docker)"\)/);
 });
 
@@ -309,7 +309,7 @@ test('BUG-ONB-08 the product summary is not constrained to an awkward narrow lin
 
 test('BUG-ONB-11 Back navigation returns to history instead of a hard-coded screen', () => {
   const goBack = setupFlow.slice(
-    setupFlow.indexOf('const goBack = useCallback'),
+    setupFlow.indexOf('const performGoBack = useCallback'),
     setupFlow.indexOf('const retryGit = useCallback'),
   );
 

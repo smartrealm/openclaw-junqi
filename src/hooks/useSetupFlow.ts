@@ -265,12 +265,17 @@ export function useSetupFlow(
   const [enteringDashboard, setEnteringDashboard] = useState(false);
   const [dashboardEntryError, setDashboardEntryError] = useState<string | null>(null);
   const dashboardEntryInFlightRef = useRef(false);
+  const runtimeSelectionInFlightRef = useRef(false);
+  const setupBackInFlightRef = useRef(false);
   const [gatewayReadyContinuation, setGatewayReadyContinuation] = useState<GatewayReadyContinuation>({
     status: "idle",
     error: null,
   });
   const gatewayReadyContinuationInFlightRef = useRef(false);
   const [repairing, setRepairing] = useState(false);
+  const repairInFlightRef = useRef<"repair" | "disable" | null>(null);
+  const retrySetupInFlightRef = useRef(false);
+  const dependencyRetryInFlightRef = useRef<"git" | "node" | null>(null);
   const [brokenPlugins, setBrokenPlugins] = useState<BrokenGatewayPlugin[]>([]);
   const [forceStorageSelection, setForceStorageSelection] = useState(false);
   // gateway-smoke-check 类发现无法离线验证修复效果：自愈梯子跑完后先用一次
@@ -1358,7 +1363,7 @@ export function useSetupFlow(
   }, [beginRun, isRunActive, replaceSetupStep, t, report, commitSteps, dockerStatus,
       setGatewayRunning, setSetupError, appendSetupLog, startGatewayAction]);
 
-  const selectMode = useCallback(async (mode: InstallMode) => {
+  const performRuntimeSelection = useCallback(async (mode: InstallMode) => {
     const runId = beginRun();
     const previousMode = installMode;
     setSetupError(null);
@@ -1435,6 +1440,20 @@ export function useSetupFlow(
     }
   }, [beginRun, isRunActive, installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, updateOnboardingRequirement, resolveActiveRuntimeOnboardingRequirement, setActiveGatewayRuntime, commitSetupGatewayRuntime, rollbackActiveGatewayRuntime, rollbackRuntimeReconfiguration, gatewayManager, t]);
 
+  const selectMode = useCallback(async (mode: InstallMode) => {
+    // A state-driven disabled button cannot stop two click events delivered in
+    // one render. Runtime selection mutates durable bootstrap state, so it must
+    // be single-flight before the first await rather than merely idempotent in
+    // the renderer.
+    if (runtimeSelectionInFlightRef.current || setupBackInFlightRef.current) return;
+    runtimeSelectionInFlightRef.current = true;
+    try {
+      await performRuntimeSelection(mode);
+    } finally {
+      runtimeSelectionInFlightRef.current = false;
+    }
+  }, [performRuntimeSelection]);
+
   const requestReinstall = useCallback(() => {
     reinstallRequestedRef.current = true;
     setSetupError(null);
@@ -1442,12 +1461,17 @@ export function useSetupFlow(
   }, [setSetupError, navigateSetup]);
 
   const retrySetup = useCallback(async (): Promise<boolean> => {
+    if (retrySetupInFlightRef.current || setupBackInFlightRef.current) return false;
+    retrySetupInFlightRef.current = true;
     setSetupError(null);
     setNeedsGit(false);
-    if (installMode === "docker") {
-      return await runDockerSetup();
-    } else {
+    try {
+      if (installMode === "docker") {
+        return await runDockerSetup();
+      }
       return await runNativeSetup();
+    } finally {
+      retrySetupInFlightRef.current = false;
     }
   }, [installMode, setSetupError, setNeedsGit, runDockerSetup, runNativeSetup]);
 
@@ -1510,7 +1534,8 @@ export function useSetupFlow(
   ]);
 
   const repairAndRetry = useCallback(async () => {
-    if (repairing) return;
+    if (repairInFlightRef.current || setupBackInFlightRef.current) return;
+    repairInFlightRef.current = "repair";
     const failure = setupError;
     const runId = beginRun();
     setRepairing(true);
@@ -1698,16 +1723,18 @@ export function useSetupFlow(
       report(message);
       replaceSetupStep("error");
     } finally {
+      repairInFlightRef.current = null;
       setRepairing(false);
     }
-  }, [repairing, setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode, setGatewayRunning, setPostStorageStep]);
+  }, [setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode, setGatewayRunning, setPostStorageStep]);
 
   // BUG-CPI-07 最后一级降级：临时禁用不可自愈的插件后继续启动。插件保持
   // 已安装状态，待其修复版本发布后可在设置中重新启用并重走自愈梯子。
   const disablePluginsAndRetry = useCallback(async () => {
-    if (repairing) return;
+    if (repairInFlightRef.current || setupBackInFlightRef.current) return;
     const plugins = brokenPlugins;
     if (plugins.length === 0) return;
+    repairInFlightRef.current = "disable";
     const runId = beginRun();
     setRepairing(true);
     setSetupError(null);
@@ -1743,11 +1770,12 @@ export function useSetupFlow(
       report(message);
       replaceSetupStep("error");
     } finally {
+      repairInFlightRef.current = null;
       setRepairing(false);
     }
-  }, [repairing, brokenPlugins, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep]);
+  }, [brokenPlugins, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep]);
 
-  const goBack = useCallback(async () => {
+  const performGoBack = useCallback(async () => {
     invalidateWizardOperations();
     setWizardSubmitting(false);
     // Backing out of the official wizard means "pause and review", not
@@ -1795,16 +1823,48 @@ export function useSetupFlow(
     presentSetupStep(destination);
   }, [cancelActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, rollbackActiveGatewayRuntime, installMode, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
 
+  const goBack = useCallback(async () => {
+    // Back performs durable rollback before popping history. Double Back would
+    // otherwise run that compensation twice and consume two visible pages.
+    // It also must not race a forward action that has already started but whose
+    // React loading state has not committed yet.
+    if (
+      setupBackInFlightRef.current
+      || runtimeSelectionInFlightRef.current
+      || retrySetupInFlightRef.current
+      || dependencyRetryInFlightRef.current
+      || repairInFlightRef.current
+      || gatewayReadyContinuationInFlightRef.current
+      || dashboardEntryInFlightRef.current
+      || wizardNavigationInFlightRef.current
+      || wizardRecoveryInFlightRef.current
+    ) return;
+    setupBackInFlightRef.current = true;
+    try {
+      await performGoBack();
+    } finally {
+      setupBackInFlightRef.current = false;
+    }
+  }, [performGoBack]);
+
   const retryGit = useCallback(() => {
+    if (dependencyRetryInFlightRef.current || setupBackInFlightRef.current) return;
+    dependencyRetryInFlightRef.current = "git";
     setNeedsGit(false);
     setSetupError(null);
-    runNativeSetup();
+    void runNativeSetup().finally(() => {
+      if (dependencyRetryInFlightRef.current === "git") dependencyRetryInFlightRef.current = null;
+    });
   }, [setNeedsGit, setSetupError, runNativeSetup]);
 
   const retryNode = useCallback(() => {
+    if (dependencyRetryInFlightRef.current || setupBackInFlightRef.current) return;
+    dependencyRetryInFlightRef.current = "node";
     setNodeRequirement(null);
     setSetupError(null);
-    runNativeSetup();
+    void runNativeSetup().finally(() => {
+      if (dependencyRetryInFlightRef.current === "node") dependencyRetryInFlightRef.current = null;
+    });
   }, [setSetupError, runNativeSetup]);
 
   const enterDashboard = useCallback(async (origin?: Element | null) => {

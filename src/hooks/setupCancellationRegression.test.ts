@@ -41,7 +41,7 @@ test("BUG-WIN-CANCEL-02 Windows cancellation keeps process-tree cleanup authorit
 
 test("BUG-WIN-CANCEL-03 stale runtime selection cannot commit or compensate a newer run", () => {
   const selectMode = flow.slice(
-    flow.indexOf("const selectMode = useCallback"),
+    flow.indexOf("const performRuntimeSelection = useCallback"),
     flow.indexOf("const requestReinstall = useCallback"),
   );
 
@@ -60,7 +60,7 @@ test("BUG-WIN-CANCEL-03 stale runtime selection cannot commit or compensate a ne
 
 test("BUG-WIN-CANCEL-04 Back compensates a staged mode before navigating", () => {
   const goBack = flow.slice(
-    flow.indexOf("const goBack = useCallback"),
+    flow.indexOf("const performGoBack = useCallback"),
     flow.indexOf("const retryGit = useCallback"),
   );
   assert.match(goBack, /const restoredRuntimeLocations = await rollbackRuntimeReconfiguration\(\)/);

@@ -183,7 +183,7 @@ test('BUG-WRM-09 runtime location changes persist a compensating transaction unt
   assert.doesNotMatch(api, /commit_active_gateway_runtime|commit_runtime_reconfiguration/);
 
   const selection = setupFlow.slice(
-    setupFlow.indexOf('const selectMode = useCallback'),
+    setupFlow.indexOf('const performRuntimeSelection = useCallback'),
     setupFlow.indexOf('const requestReinstall = useCallback'),
   );
   assert.match(selection, /commit: commitSetupGatewayRuntime/);

@@ -46,7 +46,7 @@ interface MigrationProgress {
 
 interface StorageSetupStepProps {
   onReady: (result?: StorageCompletion) => void;
-  onBack: () => void;
+  onBack: () => void | Promise<void>;
   logs: SetupLog[];
   forceConfigure?: boolean;
 }
@@ -138,6 +138,9 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   const checkedRef = useRef(false);
   const mountedRef = useRef(false);
   const initialCompletionHandledRef = useRef(false);
+  const applyInFlightRef = useRef(false);
+  const advanceInFlightRef = useRef(false);
+  const backInFlightRef = useRef(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const [status, setStatus] = useState<StorageSetupStatus | null>(null);
@@ -286,7 +289,11 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   }, []);
 
   const applyStorage = useCallback(async () => {
-    if (!status || !targetDir || applying) return;
+    // React does not commit `applying` synchronously. Guard the native storage
+    // transaction before its first await so a double click cannot configure or
+    // migrate the same directory twice.
+    if (!status || !targetDir || applyInFlightRef.current || advanceInFlightRef.current || backInFlightRef.current) return;
+    applyInFlightRef.current = true;
     setApplying(true);
     setError(null);
     setProgress({
@@ -349,9 +356,10 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       });
       if (mountedRef.current) setError(message);
     } finally {
+      applyInFlightRef.current = false;
       if (mountedRef.current) setApplying(false);
     }
-  }, [appendSetupLog, applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, forceConfigure, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingSourceLocation, workspaceDir]);
+  }, [appendSetupLog, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, forceConfigure, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingSourceLocation, workspaceDir]);
 
   useEffect(() => {
     setCompletion(null);
@@ -366,7 +374,9 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   }, [forceConfigure, status, storageDraft]);
 
   const advanceAfterStorage = useCallback(() => {
-    if (completion) onReadyRef.current(completion);
+    if (!completion || advanceInFlightRef.current || applyInFlightRef.current || backInFlightRef.current) return;
+    advanceInFlightRef.current = true;
+    onReadyRef.current(completion);
   }, [completion]);
 
   const rememberDraft = useCallback(() => {
@@ -389,10 +399,16 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     setStorageDraft(draft);
   }, [customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, showLocations, targetDir, terminalIntegration, workspaceDir]);
 
-  const handleBack = useCallback(() => {
-    if (status && !applying && !recoveringRuntime) rememberDraft();
-    onBack();
-  }, [applying, onBack, recoveringRuntime, rememberDraft, status]);
+  const handleBack = useCallback(async () => {
+    if (backInFlightRef.current || applyInFlightRef.current || advanceInFlightRef.current || recoveringRuntime) return;
+    backInFlightRef.current = true;
+    try {
+      if (status) rememberDraft();
+      await onBack();
+    } finally {
+      backInFlightRef.current = false;
+    }
+  }, [onBack, recoveringRuntime, rememberDraft, status]);
 
   const recoverRuntimeReconfiguration = useCallback(async () => {
     if (recoveringRuntime) return;
