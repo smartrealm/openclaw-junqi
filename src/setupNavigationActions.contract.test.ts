@@ -25,6 +25,13 @@ test("storage Back, configure, and advance actions exclude one another synchrono
   assert.match(storageGate, /applyInFlightRef\.current \|\| advanceInFlightRef\.current \|\| backInFlightRef\.current/);
 });
 
+test("environment detection Back invalidates the probe before it can auto-advance", () => {
+  assert.match(setupFlow, /if \(setupStep !== "detecting"\) return;[\s\S]*?const runId = beginRun\(\)/);
+  assert.match(setupFlow, /const detectionWasCancelled = \(\) => \([\s\S]*?!isRunActive\(runId\)[\s\S]*?setupNavigationLeavingRef\.current/);
+  assert.match(setupFlow, /const enterStorage[\s\S]*?if \(detectionWasCancelled\(\)\) return;[\s\S]*?navigateSetup\("storage", "replace"\)/);
+  assert.match(setupFlow, /const performGoBack[\s\S]*?cancelActiveRun\(\);[\s\S]*?if \(setupStep === "detecting" \|\| setupStep === "gateway-stopped"\)[\s\S]*?goBackSetup\("welcome"\)[\s\S]*?return;/);
+});
+
 test("global Back is single-flight and fences automatic forward effects", () => {
   assert.match(setupFlow, /const setupBackInFlightRef = useRef\(false\)/);
   assert.match(setupFlow, /const setupNavigationLeavingRef = useRef\(false\)/);
@@ -41,6 +48,8 @@ test("wizard Back and Next share one synchronous gate", () => {
 });
 
 test("recovery and dependency actions are single-flight", () => {
+  assert.match(wizardSession, /const retryOfficialOnboarding[\s\S]*?if \(wizardRecoveryInFlightRef\.current \|\| wizardNavigationInFlightRef\.current\) return null/);
+  assert.match(wizardSession, /const reclaimOfficialOnboarding[\s\S]*?if \(wizardRecoveryInFlightRef\.current \|\| wizardNavigationInFlightRef\.current\) return null/);
   assert.match(pluginRecovery, /repairInFlightRef = useRef<"repair" \| "disable" \| null>/);
   assert.match(pluginRecovery, /repairInFlightRef\.current = "repair"/);
   assert.match(pluginRecovery, /repairInFlightRef\.current = "disable"/);

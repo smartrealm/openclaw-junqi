@@ -292,11 +292,16 @@ export function useSetupFlow(
   // “已完成”标记；该标记必须由用户点击“进入仪表盘”后写入。
   useEffect(() => {
     if (setupStep !== "detecting") return;
+    const runId = beginRun();
     let cancelled = false;
+    const detectionWasCancelled = () => (
+      cancelled || !isRunActive(runId) || setupNavigationLeavingRef.current
+    );
     // Detection never decides more than what the user is asked next: every
     // outcome hands over to the storage step, carrying the stage to resume once
     // the location is confirmed.
     const enterStorage = (next: Parameters<typeof setPostStorageStep>[0]) => {
+      if (detectionWasCancelled()) return;
       setPostStorageStep(next);
       report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
       navigateSetup("storage", "replace");
@@ -306,7 +311,7 @@ export function useSetupFlow(
       setGatewayRunning(false);
       try {
         const runtimeTarget = await detectGatewayConfig();
-        if (cancelled) return;
+        if (detectionWasCancelled()) return;
         const selectedRuntime = runtimeTarget.runtime_mode;
         setInstallMode(selectedRuntime);
         cacheGatewayTarget(runtimeTarget.port);
@@ -315,7 +320,7 @@ export function useSetupFlow(
         // Detect Native even when Docker is currently selected so the choice
         // screen can truthfully present both reusable environments.
         const oclaw = await checkOpenclaw();
-        if (cancelled) return;
+        if (detectionWasCancelled()) return;
         setOpenclawStatus(oclaw);
         if (selectedRuntime === "native" && (!oclaw?.installed || oclaw.relocation_required)) {
           relocationRequestedRef.current = Boolean(oclaw?.relocation_required);
@@ -325,7 +330,7 @@ export function useSetupFlow(
           return;
         }
         const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
-        if (cancelled) return;
+        if (detectionWasCancelled()) return;
         updateOnboardingRequirement(onboardingRequired);
         if (oclaw?.path) {
           setInstallTarget({ tier: "existing", path: oclaw.path, version: oclaw.version ?? undefined });
@@ -335,7 +340,7 @@ export function useSetupFlow(
         try {
           // 不传端口时由 Rust 读取配置；读取失败时使用共享运行时默认值。
           const reachable: boolean = await invoke("probe_selected_gateway", {});
-          if (cancelled) return;
+          if (detectionWasCancelled()) return;
           if (reachable) {
             setGatewayRunning(true);
             commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
@@ -343,13 +348,13 @@ export function useSetupFlow(
             return;
           }
         } catch {
-          if (cancelled) return;
+          if (detectionWasCancelled()) return;
         }
 
         // Installed but gateway not responding → ask the user to start it.
         enterStorage("gateway-stopped");
       } catch {
-        if (cancelled) return;
+        if (detectionWasCancelled()) return;
         setOpenclawStatus(null);
         enterStorage("choosing-mode");
       }
@@ -357,7 +362,7 @@ export function useSetupFlow(
     return () => {
       cancelled = true;
     };
-  }, [setupStep, report, t, setGatewayRunning, setPostStorageStep, navigateSetup, commitSteps, resolveActiveRuntimeOnboardingRequirement, updateOnboardingRequirement, setInstallMode]);
+  }, [setupStep, beginRun, isRunActive, report, t, setGatewayRunning, setPostStorageStep, navigateSetup, commitSteps, resolveActiveRuntimeOnboardingRequirement, updateOnboardingRequirement, setInstallMode]);
 
   // ── Docker detect after the welcome step ──
   useEffect(() => {
@@ -1021,14 +1026,28 @@ export function useSetupFlow(
     setWizardCanGoBack(false);
     setWizardError(null);
     cancelActiveRun();
+
+    // Detection and Gateway startup are cancellable renderer runs, not durable
+    // configuration transactions. Consume their history immediately: late RPC
+    // completions observe the invalid run id and cannot navigate forward again.
+    if (setupStep === "detecting" || setupStep === "gateway-stopped") {
+      setSetupError(null);
+      setNeedsGit(false);
+      let destination = goBackSetup("welcome");
+      while (isStaleSetupBackDestination(destination)) {
+        destination = goBackSetup("welcome");
+      }
+      presentSetupStep(destination);
+      return;
+    }
+
     try {
-      const restoredRuntimeLocations = await rollbackRuntimeReconfiguration();
-      // A location memento restores the complete previous bootstrap, including
-      // runtime mode. Without one, Back must explicitly compensate a staged
-      // mode selection so the current session does not rely on next-launch
-      // crash recovery to become consistent again.
-      if (!restoredRuntimeLocations) {
-        await rollbackActiveGatewayRuntime(installMode);
+      // Only storage and the untouched runtime-choice screen can own a pending
+      // location memento. Runtime selection itself is synchronously guarded
+      // from Back and commits or compensates its staged mode transaction before
+      // releasing that guard; later pages must never roll back committed state.
+      if (setupStep === "storage" || setupStep === "choosing-mode") {
+        await rollbackRuntimeReconfiguration();
       }
     } catch (rollbackError) {
       const message = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
@@ -1059,7 +1078,7 @@ export function useSetupFlow(
     // can inspect each completed stage and compare a later attempt with it.
     presentSetupStep(destination);
     setupNavigationLeavingRef.current = false;
-  }, [cancelActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, rollbackActiveGatewayRuntime, installMode, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
+  }, [setupStep, cancelActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
 
   const goBack = useCallback(async () => {
     if (

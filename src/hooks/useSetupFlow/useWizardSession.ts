@@ -383,7 +383,7 @@ export function useWizardSession({
   }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, resumeOfficialOnboarding, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
   const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
-    if (wizardRecoveryInFlightRef.current === "retry") return null;
+    if (wizardRecoveryInFlightRef.current || wizardNavigationInFlightRef.current) return null;
     const operationId = beginWizardOperation();
     wizardRecoveryInFlightRef.current = "retry";
     setWizardError(null);
@@ -438,7 +438,7 @@ export function useWizardSession({
   }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
   const reclaimOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
-    if (wizardRecoveryInFlightRef.current === "reclaim") return null;
+    if (wizardRecoveryInFlightRef.current || wizardNavigationInFlightRef.current) return null;
     const operationId = beginWizardOperation();
     wizardRecoveryInFlightRef.current = "reclaim";
     setWizardError(null);

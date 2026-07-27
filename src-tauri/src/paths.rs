@@ -1564,8 +1564,12 @@ pub fn begin_active_runtime_mode_switch(mode: OpenClawRuntimeMode) -> Result<(),
 }
 
 pub fn rollback_active_runtime_mode_switch(expected: OpenClawRuntimeMode) -> Result<(), String> {
-    let mut layout = load_storage_bootstrap()
-        .ok_or("Storage setup must be completed before rolling back an OpenClaw runtime")?;
+    // Back from pre-storage setup has no durable mode transaction to undo.
+    // Treat that state as an idempotent no-op instead of turning navigation
+    // into an installation error.
+    let Some(mut layout) = load_storage_bootstrap() else {
+        return Ok(());
+    };
     if layout.runtime_mode != expected {
         return Err("The active runtime changed before setup could roll it back".into());
     }

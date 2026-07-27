@@ -62,14 +62,15 @@ test("BUG-WIN-CANCEL-03 stale runtime selection cannot commit or compensate a ne
   assert.match(runtimeTransaction, /await ports\.rollbackMode\(targetMode\)/);
 });
 
-test("BUG-WIN-CANCEL-04 Back compensates a staged mode before navigating", () => {
+test("BUG-WIN-CANCEL-04 Back compensates only a page-owned durable transaction", () => {
   const goBack = flow.slice(
     flow.indexOf("const performGoBack = useCallback"),
     flow.indexOf("const retryGit = useCallback"),
   );
-  assert.match(goBack, /const restoredRuntimeLocations = await rollbackRuntimeReconfiguration\(\)/);
-  assert.match(goBack, /if \(!restoredRuntimeLocations\) \{\s*await rollbackActiveGatewayRuntime\(installMode\)/);
-  assert.ok(goBack.indexOf("rollbackActiveGatewayRuntime") < goBack.indexOf("goBackSetup"));
+  assert.match(goBack, /setupStep === "storage" \|\| setupStep === "choosing-mode"/);
+  assert.match(goBack, /await rollbackRuntimeReconfiguration\(\)/);
+  assert.doesNotMatch(goBack, /rollbackActiveGatewayRuntime/);
+  assert.ok(goBack.indexOf("rollbackRuntimeReconfiguration") < goBack.lastIndexOf("goBackSetup"));
 });
 
 test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff UI", () => {

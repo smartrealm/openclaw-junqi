@@ -55,9 +55,10 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
     setupFlow.indexOf('// ── Docker detect'),
   );
 
-  assert.match(detection, /let cancelled = false/);
-  assert.match(detection, /await detectGatewayConfig\(\);\s*if \(cancelled\) return/);
-  assert.match(detection, /const oclaw = await checkOpenclaw\(\);\s*if \(cancelled\) return/);
+  assert.match(detection, /const runId = beginRun\(\)/);
+  assert.match(detection, /const detectionWasCancelled = \(\) => \([\s\S]*?cancelled \|\| !isRunActive\(runId\) \|\| setupNavigationLeavingRef\.current/);
+  assert.match(detection, /await detectGatewayConfig\(\);\s*if \(detectionWasCancelled\(\)\) return/);
+  assert.match(detection, /const oclaw = await checkOpenclaw\(\);\s*if \(detectionWasCancelled\(\)\) return/);
   assert.match(setupFlow, /await window\.aegis\.config\.detect\(\);/);
   assert.match(detection, /return \(\) => \{\s*cancelled = true/);
 });
@@ -580,11 +581,9 @@ test('wizard Back and Next share a synchronous navigation gate', () => {
 });
 
 test('wizard recovery actions are synchronous single-flight before React commits loading state', () => {
-  // The no-step error screen intentionally permits one recovery action to take
-  // over a still-running submit. React state cannot guard two clicks delivered
-  // before its next render, so retry/reclaim need a synchronous ref guard of
-  // their own. beginWizardOperation clears a previous operation's guard, then
-  // the new owner claims it before the first await.
+  // React state cannot guard two clicks delivered before its next render.
+  // Retry and reclaim therefore share one synchronous recovery guard and also
+  // refuse to race an active wizard navigation operation.
   assert.match(setupFlow, /const wizardRecoveryInFlightRef = useRef<"retry" \| "reclaim" \| null>\(null\)/);
   assert.match(
     setupFlow,
@@ -592,11 +591,11 @@ test('wizard recovery actions are synchronous single-flight before React commits
   );
   assert.match(
     setupFlow,
-    /const retryOfficialOnboarding[\s\S]*?if \(wizardRecoveryInFlightRef\.current === "retry"\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardRecoveryInFlightRef\.current = "retry";[\s\S]*?finally \{\s*\n\s*if \(wizardOperationRef\.current === operationId\) \{\s*\n\s*wizardRecoveryInFlightRef\.current = null;/,
+    /const retryOfficialOnboarding[\s\S]*?if \(wizardRecoveryInFlightRef\.current \|\| wizardNavigationInFlightRef\.current\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardRecoveryInFlightRef\.current = "retry";[\s\S]*?finally \{\s*\n\s*if \(wizardOperationRef\.current === operationId\) \{\s*\n\s*wizardRecoveryInFlightRef\.current = null;/,
   );
   assert.match(
     setupFlow,
-    /const reclaimOfficialOnboarding[\s\S]*?if \(wizardRecoveryInFlightRef\.current === "reclaim"\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardRecoveryInFlightRef\.current = "reclaim";[\s\S]*?finally \{\s*\n\s*if \(wizardOperationRef\.current === operationId\) \{\s*\n\s*wizardRecoveryInFlightRef\.current = null;/,
+    /const reclaimOfficialOnboarding[\s\S]*?if \(wizardRecoveryInFlightRef\.current \|\| wizardNavigationInFlightRef\.current\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardRecoveryInFlightRef\.current = "reclaim";[\s\S]*?finally \{\s*\n\s*if \(wizardOperationRef\.current === operationId\) \{\s*\n\s*wizardRecoveryInFlightRef\.current = null;/,
   );
   assert.match(
     setupFlow,
