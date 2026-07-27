@@ -82,6 +82,7 @@ import {
   cacheGatewayTarget,
   isMissingGitDependencyError,
   pickInstallTargetFromProgress,
+  setupBackPolicy,
 } from "./helpers";
 import type {
   GatewayReadyContinuation,
@@ -915,10 +916,14 @@ export function useSetupFlow(
   }, [performRuntimeSelection]);
 
   const requestReinstall = useCallback(() => {
+    // This action is rendered on the auto-starting Gateway screen. Supersede
+    // that owned run before changing screens so its late success cannot replace
+    // the runtime chooser with gateway-ready.
+    cancelActiveRun();
     reinstallRequestedRef.current = true;
     setSetupError(null);
     navigateSetup("choosing-mode", "push");
-  }, [setSetupError, navigateSetup]);
+  }, [cancelActiveRun, setSetupError, navigateSetup]);
 
   const retrySetup = useCallback(async (): Promise<boolean> => {
     if (retrySetupInFlightRef.current || setupBackInFlightRef.current) return false;
@@ -1030,11 +1035,12 @@ export function useSetupFlow(
     // Detection and Gateway startup are cancellable renderer runs, not durable
     // configuration transactions. Consume their history immediately: late RPC
     // completions observe the invalid run id and cannot navigate forward again.
-    if (setupStep === "detecting" || setupStep === "gateway-stopped") {
+    const backPolicy = setupBackPolicy(setupStep);
+    if (backPolicy === "cancel-run") {
       setSetupError(null);
       setNeedsGit(false);
       let destination = goBackSetup("welcome");
-      while (isStaleSetupBackDestination(destination)) {
+      while (isStaleSetupBackDestination(destination) || destination === setupStep) {
         destination = goBackSetup("welcome");
       }
       presentSetupStep(destination);
@@ -1046,15 +1052,19 @@ export function useSetupFlow(
       // location memento. Runtime selection itself is synchronously guarded
       // from Back and commits or compensates its staged mode transaction before
       // releasing that guard; later pages must never roll back committed state.
-      if (setupStep === "storage" || setupStep === "choosing-mode") {
+      if (backPolicy === "rollback-storage") {
         await rollbackRuntimeReconfiguration();
       }
     } catch (rollbackError) {
       const message = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
-      appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+      appendSetupLog({ source: "setup", step: "storage", message, level: "error" });
       setSetupError(message);
       report(message);
-      replaceSetupStep("error");
+      // A failed durable rollback must remain at the storage recovery gate.
+      // Sending it to the generic error screen would let a second Back skip
+      // that screen and leave the pending location transaction unresolved.
+      setForceStorageSelection(true);
+      replaceSetupStep("storage");
       setupNavigationLeavingRef.current = false;
       return;
     }
@@ -1068,7 +1078,7 @@ export function useSetupFlow(
     // actually acted on. `goBackSetup` returns the fallback once history is
     // exhausted, and the fallback is never transient, so this terminates.
     let destination = goBackSetup("welcome");
-    while (isStaleSetupBackDestination(destination)) {
+    while (isStaleSetupBackDestination(destination) || destination === setupStep) {
       destination = goBackSetup("welcome");
     }
     if (destination === "storage") {
@@ -1172,11 +1182,14 @@ export function useSetupFlow(
   }, [setCheckingDocker, setDockerStatus]);
 
   const refreshRuntime = useCallback(async () => {
+    const runId = beginRun();
     const runtimeTarget = await detectGatewayConfig();
+    if (!isRunActive(runId)) return { status: null, gatewayRunning: false };
     const selectedRuntime = runtimeTarget.runtime_mode;
     setInstallMode(selectedRuntime);
     cacheGatewayTarget(runtimeTarget.port);
     const status = selectedRuntime === "native" ? await checkOpenclaw() : null;
+    if (!isRunActive(runId)) return { status: null, gatewayRunning: false };
     setOpenclawStatus(status);
     if (status?.path) {
       setInstallTarget((current) => current
@@ -1185,6 +1198,7 @@ export function useSetupFlow(
     }
 
     const gatewayRunning = await invoke<boolean>("probe_selected_gateway", {}).catch(() => false);
+    if (!isRunActive(runId)) return { status: null, gatewayRunning: false };
     setGatewayRunning(gatewayRunning);
     if (gatewayRunning) {
       setPostStorageStep(needsOnboardingRef.current ? "configure-openclaw" : "ready");
@@ -1198,7 +1212,7 @@ export function useSetupFlow(
       commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
     }
     return { status, gatewayRunning };
-  }, [setGatewayRunning, setPostStorageStep, commitSteps, setInstallMode]);
+  }, [beginRun, isRunActive, setGatewayRunning, setPostStorageStep, commitSteps, setInstallMode]);
 
   return {
     progress, statusMessage, installMode, dockerStatus, openclawStatus, checkingDocker, needsGit, nodeRequirement, steps,

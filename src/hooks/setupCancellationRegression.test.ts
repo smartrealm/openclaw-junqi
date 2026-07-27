@@ -67,10 +67,12 @@ test("BUG-WIN-CANCEL-04 Back compensates only a page-owned durable transaction",
     flow.indexOf("const performGoBack = useCallback"),
     flow.indexOf("const retryGit = useCallback"),
   );
-  assert.match(goBack, /setupStep === "storage" \|\| setupStep === "choosing-mode"/);
+  assert.match(goBack, /const backPolicy = setupBackPolicy\(setupStep\)/);
+  assert.match(goBack, /if \(backPolicy === "rollback-storage"\)/);
   assert.match(goBack, /await rollbackRuntimeReconfiguration\(\)/);
   assert.doesNotMatch(goBack, /rollbackActiveGatewayRuntime/);
   assert.ok(goBack.indexOf("rollbackRuntimeReconfiguration") < goBack.lastIndexOf("goBackSetup"));
+  assert.match(goBack, /catch \(rollbackError\)[\s\S]*?setForceStorageSelection\(true\);\s*\n\s*replaceSetupStep\("storage"\)/);
 });
 
 test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff UI", () => {

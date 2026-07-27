@@ -16,6 +16,37 @@ export const INSTALL_TARGET_KEYS = {
 /// user decision, so reaching this step starts it automatically.
 export const AUTO_ADVANCE_GATEWAY_STEP: SetupStep = "gateway-stopped";
 
+export type SetupBackPolicy = "cancel-run" | "rollback-storage" | "navigate";
+
+/**
+ * Declares which durable side effect, if any, a page owns when leaving via Back.
+ * Keeping this exhaustive and pure prevents a generic Back handler from
+ * rolling back committed runtime state merely because every screen shares the
+ * same button component.
+ */
+export function setupBackPolicy(step: SetupStep): SetupBackPolicy {
+  switch (step) {
+    case "detecting":
+    case "gateway-stopped":
+      return "cancel-run";
+    case "storage":
+    case "choosing-mode":
+      return "rollback-storage";
+    case "welcome":
+    case "checking":
+    case "install-git":
+    case "git-missing":
+    case "node-missing":
+    case "install-node":
+    case "install-openclaw":
+    case "gateway-ready":
+    case "configure-openclaw":
+    case "ready":
+    case "error":
+      return "navigate";
+  }
+}
+
 export function pickInstallTargetFromProgress(
   key: string,
   message: string,
