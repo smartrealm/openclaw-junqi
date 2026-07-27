@@ -3,7 +3,15 @@ import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
-const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
+// Each setup step now owns a file; read the one under assertion directly.
+const screen = (name: string) =>
+  readFileSync(new URL(`../pages/SetupPage/${name}.tsx`, import.meta.url), 'utf8');
+
+const setupPage = readdirSync(new URL('../pages/SetupPage/', import.meta.url))
+  .filter((entry) => entry.endsWith('.tsx'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../pages/SetupPage/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const setupFlowPanels = readFileSync(new URL('../components/setup/SetupFlowPanels.tsx', import.meta.url), 'utf8');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
@@ -47,10 +55,7 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
 });
 
 test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () => {
-  const stopped = setupPage.slice(
-    setupPage.indexOf('function GatewayStoppedScreen'),
-    setupPage.indexOf('function ModeSelectScreen'),
-  );
+  const stopped = screen('GatewayStoppedScreen');
 
   assert.match(stopped, /flow\.needsOnboarding \? "configure-openclaw" : "ready"/);
 });
@@ -136,13 +141,11 @@ test('BUG-ONB-37 dashboard completion re-probes Gateway before committing the se
 });
 
 test('BUG-ONB-38 Ready navigation is locked during autostart handoff and final Gateway verification', () => {
-  const ready = setupPage.slice(
-    setupPage.indexOf('function ReadyScreen'),
-    setupPage.indexOf('function ErrorScreen'),
-  );
-  const autostart = setupPage.slice(
-    setupPage.indexOf('function GatewayAutostartPreference'),
-    setupPage.indexOf('function ReadyScreen'),
+  const readyFile = screen('ReadyScreen');
+  const ready = readyFile.slice(readyFile.indexOf('function ReadyScreen'));
+  const autostart = readyFile.slice(
+    readyFile.indexOf('function GatewayAutostartPreference'),
+    readyFile.indexOf('function ReadyScreen'),
   );
 
   assert.match(autostart, /onOperationStateChange\(busy\)/);
@@ -201,10 +204,7 @@ test('BUG-WFR-04 stale wizard operations cannot commit after setup navigation or
 });
 
 test('BUG-WFR-03 wizard failures are visible first and change the primary action to Retry', () => {
-  const wizard = setupPage.slice(
-    setupPage.indexOf('function WizardScreen'),
-    setupPage.indexOf('// ── 开机自启偏好'),
-  );
+  const wizard = screen('WizardScreen');
   const errorPosition = wizard.indexOf('{flow.wizardError && <div');
   const firstStepControl = wizard.indexOf('{presentedStep.type === "text" && (');
 
@@ -235,10 +235,7 @@ test('BUG-ONB-24 URL-only settings changes preserve endpoint-scoped credentials'
 });
 
 test('BUG-ONB-05 runtime selection is explicit and confirmed by one contextual action', () => {
-  const mode = setupPage.slice(
-    setupPage.indexOf('function ModeSelectScreen'),
-    setupPage.indexOf('function ProgressScreen'),
-  );
+  const mode = screen('ModeSelectScreen');
 
   assert.match(mode, /aria-pressed=\{selectedMode === "native"\}[\s\S]*?setSelectedMode\("native"\)/);
   assert.match(mode, /disabled=\{!dockerAvailable\}[\s\S]*?aria-pressed=\{selectedMode === "docker"\}[\s\S]*?setSelectedMode\("docker"\)/);
@@ -250,10 +247,7 @@ test('BUG-ONB-05 runtime selection is explicit and confirmed by one contextual a
 });
 
 test('BUG-ONB-36 the runtime choice presents reuse first instead of claiming every path is an install', () => {
-  const mode = setupPage.slice(
-    setupPage.indexOf('function ModeSelectScreen'),
-    setupPage.indexOf('function ProgressScreen'),
-  );
+  const mode = screen('ModeSelectScreen');
   const zh = JSON.parse(readFileSync(new URL('../locales/zh.json', import.meta.url), 'utf8'));
 
   const detection = setupFlow.slice(
@@ -288,10 +282,7 @@ test('BUG-ONB-06 every setup message is complete in all supported locales', () =
 });
 
 test('BUG-ONB-07 wizard body messages are not duplicated as subtitles', () => {
-  const wizard = setupPage.slice(
-    setupPage.indexOf('function WizardScreen'),
-    setupPage.indexOf('function ReadyScreen'),
-  );
+  const wizard = screen('WizardScreen');
 
   assert.match(wizard, /const messageRenderedInBody = presentedStep\.type === "confirm"/);
   assert.match(wizard, /subtitle=\{wizardSubtitle\}/);
@@ -299,10 +290,7 @@ test('BUG-ONB-07 wizard body messages are not duplicated as subtitles', () => {
 });
 
 test('BUG-ONB-08 the product summary is not constrained to an awkward narrow line length', () => {
-  const welcome = setupPage.slice(
-    setupPage.indexOf('function WelcomeScreen'),
-    setupPage.indexOf('function DetectingScreen'),
-  );
+  const welcome = screen('WelcomeScreen');
   assert.doesNotMatch(welcome, /max-w-\[42ch\]/);
   assert.match(welcome, /min-\[520px\]:whitespace-nowrap/);
 });
@@ -319,10 +307,7 @@ test('BUG-ONB-11 Back navigation returns to history instead of a hard-coded scre
 });
 
 test('BUG-ONB-12 stopped Gateway screen uses a completed detection title', () => {
-  const stopped = setupPage.slice(
-    setupPage.indexOf('function GatewayStoppedScreen'),
-    setupPage.indexOf('function ModeSelectScreen'),
-  );
+  const stopped = screen('GatewayStoppedScreen');
 
   assert.match(stopped, /setup\.openclawDetectedTitle/);
   assert.doesNotMatch(stopped, /setup\.foundOclaw/);
@@ -467,10 +452,8 @@ test('BUG-GSO-02 autostart enable completes the official service handoff', () =>
 
   // The option is only offered for the Native runtime; Docker containers rely
   // on their restart policy instead of a host-level service.
-  const ready = setupPage.slice(
-    setupPage.indexOf('function ReadyScreen'),
-    setupPage.indexOf('function GitMissingScreen'),
-  );
+  const readyFile = screen('ReadyScreen');
+  const ready = readyFile.slice(readyFile.indexOf('function ReadyScreen'));
   assert.match(setupPage, /function GatewayAutostartPreference/);
   assert.match(setupPage, /installMode !== "native" \|\| status === null \|\| status\?\.supported === false/);
   assert.match(setupPage, /setup\.runtimePreferences/);
@@ -529,10 +512,7 @@ test('BUG-ONB-25 lost terminal sessions reconcile observable completion before r
 });
 
 test('BUG-ONB-26 official external URL and device code remain actionable', () => {
-  const wizard = setupPage.slice(
-    setupPage.indexOf('function WizardScreen'),
-    setupPage.indexOf('// ── 开机自启卡片'),
-  );
+  const wizard = screen('WizardScreen');
   assert.match(wizard, /presentedStep\.externalUrl/);
   assert.match(wizard, /deviceCode\.code/);
   assert.match(wizard, /openWizardExternalUrl\(presentedStep\.externalUrl\)/);
@@ -542,9 +522,10 @@ test('BUG-ONB-26 official external URL and device code remain actionable', () =>
 });
 
 test('BUG-ONB-27 terminal QR notes render a bounded local image and use the system browser action', () => {
-  const wizard = setupPage.slice(
-    setupPage.indexOf('function WizardStepQrHint'),
-    setupPage.indexOf('function WizardScreen'),
+  const wizardFile = screen('WizardScreen');
+  const wizard = wizardFile.slice(
+    wizardFile.indexOf('function WizardStepQrHint'),
+    wizardFile.indexOf('function WizardScreen'),
   );
 
   assert.match(wizard, /renderLocalQrDataUrl\(url\)/);

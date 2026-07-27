@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   isAwaitingGatewayVerification,
@@ -14,6 +14,16 @@ import {
 
 function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
+}
+
+// SetupPage is a directory of per-step screens; assert against all of them.
+function sourceDir(dir: string): string {
+  const base = resolve(process.cwd(), dir);
+  return readdirSync(base)
+    .filter((entry) => entry.endsWith('.tsx'))
+    .sort()
+    .map((entry) => readFileSync(resolve(base, entry), 'utf8'))
+    .join('\n');
 }
 
 const broken = (id: string): BrokenGatewayPlugin => ({
@@ -131,7 +141,7 @@ test('BUG-CPI-07 disable is the last rung and the UI offers it only for verified
   assert.match(hook, /pluginsNeedingHeal\(/);
   assert.match(hook, /planPluginRecovery\(/);
   assert.match(hook, /disableOpenclawPlugin\(/);
-  const page = source('src/pages/SetupPage.tsx');
+  const page = sourceDir('src/pages/SetupPage');
   assert.match(page, /flow\.brokenPlugins\.length > 0/);
   assert.match(page, /disablePluginsAndRetry/);
 });

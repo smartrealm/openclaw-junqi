@@ -1,10 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
+}
+
+// SetupPage is a directory of per-step screens; assert against all of them.
+function sourceDir(dir: string): string {
+  const base = resolve(process.cwd(), dir);
+  return readdirSync(base)
+    .filter((entry) => entry.endsWith('.tsx'))
+    .sort()
+    .map((entry) => readFileSync(resolve(base, entry), 'utf8'))
+    .join('\n');
 }
 
 test('BUG-01 ensure flow keeps Native and Docker recovery contracts separate', () => {
@@ -300,7 +310,7 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
   const store = source('src/stores/app-store.ts');
   const navigation = source('src/stores/setup-navigation.ts');
   const flow = source('src/hooks/useSetupFlow.ts');
-  const setup = source('src/pages/SetupPage.tsx');
+  const setup = sourceDir('src/pages/SetupPage');
   const gate = source('src/components/setup/StorageSetupGate.tsx');
   const main = source('src/main.tsx');
   assert.match(navigation, /\| "storage"/);

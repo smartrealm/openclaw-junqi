@@ -11,7 +11,11 @@ const nodeRuntime = readFileSync(new URL("../../src-tauri/src/commands/node_runt
 const setupProgress = readFileSync(new URL("../../src-tauri/src/commands/setup_progress.rs", import.meta.url), "utf8");
 const api = readFileSync(new URL("../api/tauri-commands.ts", import.meta.url), "utf8");
 const flow = readFileSync(new URL("./useSetupFlow.ts", import.meta.url), "utf8");
-const page = readFileSync(new URL("../pages/SetupPage.tsx", import.meta.url), "utf8");
+const page = readdirSync(new URL("../pages/SetupPage/", import.meta.url))
+  .filter((entry) => entry.endsWith(".tsx"))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../pages/SetupPage/${entry}`, import.meta.url), "utf8"))
+  .join("\n");
 const panels = readFileSync(new URL("../components/setup/SetupFlowPanels.tsx", import.meta.url), "utf8");
 const progressEvents = readFileSync(new URL("./setupProgressEvents.ts", import.meta.url), "utf8");
 

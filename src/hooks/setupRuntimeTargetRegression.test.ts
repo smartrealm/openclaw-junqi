@@ -1,13 +1,22 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8');
 }
 
+// SetupPage is a directory of per-step screens; assert against all of them.
+function sourceDir(path: string): string {
+  return readdirSync(new URL(path, import.meta.url))
+    .filter((entry) => entry.endsWith('.tsx'))
+    .sort()
+    .map((entry) => readFileSync(new URL(`${path}${entry}`, import.meta.url), 'utf8'))
+    .join('\n');
+}
+
 const setupFlow = source('./useSetupFlow.ts');
-const setupPage = source('../pages/SetupPage.tsx');
+const setupPage = sourceDir('../pages/SetupPage/');
 const commands = source('../api/tauri-commands.ts');
 const ensure = source('../../src-tauri/src/commands/ensure.rs');
 const gateway = source('../../src-tauri/src/commands/gateway.rs');
