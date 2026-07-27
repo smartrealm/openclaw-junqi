@@ -10,8 +10,16 @@ const setup = readdirSync(new URL("../../src-tauri/src/commands/setup/", import.
 const nodeRuntime = readFileSync(new URL("../../src-tauri/src/commands/node_runtime.rs", import.meta.url), "utf8");
 const setupProgress = readFileSync(new URL("../../src-tauri/src/commands/setup_progress.rs", import.meta.url), "utf8");
 const api = readFileSync(new URL("../api/tauri-commands.ts", import.meta.url), "utf8");
-const flow = readFileSync(new URL("./useSetupFlow.ts", import.meta.url), "utf8");
-const page = readFileSync(new URL("../pages/SetupPage.tsx", import.meta.url), "utf8");
+const flow = readdirSync(new URL("./useSetupFlow/", import.meta.url))
+  .filter((entry) => entry.endsWith(".ts"))
+  .sort()
+  .map((entry) => readFileSync(new URL(`./useSetupFlow/${entry}`, import.meta.url), "utf8"))
+  .join("\n");
+const page = readdirSync(new URL("../pages/SetupPage/", import.meta.url))
+  .filter((entry) => entry.endsWith(".ts") || entry.endsWith(".tsx"))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../pages/SetupPage/${entry}`, import.meta.url), "utf8"))
+  .join("\n");
 const panels = readFileSync(new URL("../components/setup/SetupFlowPanels.tsx", import.meta.url), "utf8");
 const progressEvents = readFileSync(new URL("./setupProgressEvents.ts", import.meta.url), "utf8");
 

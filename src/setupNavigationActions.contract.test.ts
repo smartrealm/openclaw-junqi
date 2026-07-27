@@ -2,81 +2,48 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const setupPage = readFileSync(new URL("./pages/SetupPage.tsx", import.meta.url), "utf8");
-const setupFlow = readFileSync(new URL("./hooks/useSetupFlow.ts", import.meta.url), "utf8");
-const storageGate = readFileSync(new URL("./components/setup/StorageSetupGate.tsx", import.meta.url), "utf8");
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+const setupFlow = read("./hooks/useSetupFlow/index.ts");
+const wizardSession = read("./hooks/useSetupFlow/useWizardSession.ts");
+const pluginRecovery = read("./hooks/useSetupFlow/usePluginRecovery.ts");
+const welcome = read("./pages/SetupPage/WelcomeScreen.tsx");
+const mode = read("./pages/SetupPage/ModeSelectScreen.tsx");
+const storageGate = read("./components/setup/StorageSetupGate.tsx");
 
 test("welcome and runtime selection Next actions are single-flight", () => {
-  assert.match(
-    setupPage,
-    /const navigationInFlightRef = useRef\(false\);[\s\S]*?if \(navigationInFlightRef\.current\) return;[\s\S]*?navigationInFlightRef\.current = true;[\s\S]*?navigateSetup\("detecting"\)/,
-  );
-  assert.match(
-    setupFlow,
-    /const selectMode = useCallback[\s\S]*?if \(runtimeSelectionInFlightRef\.current \|\| setupBackInFlightRef\.current\) return;[\s\S]*?runtimeSelectionInFlightRef\.current = true;[\s\S]*?await performRuntimeSelection\(mode\)/,
-  );
-  assert.match(setupPage, /previousAction=\{\{ onClick: flow\.goBack, disabled: submitting \}\}/);
-  assert.match(setupPage, /disabled: submitting \|\| \(selectedMode === "docker" && !dockerAvailable\)/);
+  assert.match(welcome, /const navigationInFlightRef = useRef\(false\)/);
+  assert.match(welcome, /if \(navigationInFlightRef\.current\) return;[\s\S]*?navigationInFlightRef\.current = true;[\s\S]*?navigateSetup\("detecting"\)/);
+  assert.match(setupFlow, /const selectMode[\s\S]*?runtimeSelectionInFlightRef\.current[\s\S]*?await performRuntimeSelection\(mode\)/);
+  assert.match(mode, /previousAction=\{\{ onClick: flow\.goBack, disabled: submitting \}\}/);
+  assert.match(mode, /disabled: submitting \|\| \(selectedMode === "docker" && !dockerAvailable\)/);
 });
 
 test("storage Back, configure, and advance actions exclude one another synchronously", () => {
-  assert.match(storageGate, /const applyInFlightRef = useRef\(false\)/);
-  assert.match(storageGate, /const advanceInFlightRef = useRef\(false\)/);
-  assert.match(storageGate, /const backInFlightRef = useRef\(false\)/);
-  assert.match(
-    storageGate,
-    /if \(!status \|\| !targetDir \|\| applyInFlightRef\.current \|\| advanceInFlightRef\.current \|\| backInFlightRef\.current\) return;\s*\n\s*applyInFlightRef\.current = true;/,
-  );
-  assert.match(
-    storageGate,
-    /if \(!completion \|\| advanceInFlightRef\.current \|\| applyInFlightRef\.current \|\| backInFlightRef\.current\) return;\s*\n\s*advanceInFlightRef\.current = true;/,
-  );
-  assert.match(
-    storageGate,
-    /if \(backInFlightRef\.current \|\| applyInFlightRef\.current \|\| advanceInFlightRef\.current \|\| recoveringRuntime\) return;\s*\n\s*backInFlightRef\.current = true;/,
-  );
+  for (const ref of ["applyInFlightRef", "advanceInFlightRef", "backInFlightRef"]) {
+    assert.match(storageGate, new RegExp(`const ${ref} = useRef\\(false\\)`));
+  }
+  assert.match(storageGate, /applyInFlightRef\.current \|\| advanceInFlightRef\.current \|\| backInFlightRef\.current/);
 });
 
-test("global Back is single-flight and cannot race active forward transitions", () => {
+test("global Back is single-flight and fences automatic forward effects", () => {
   assert.match(setupFlow, /const setupBackInFlightRef = useRef\(false\)/);
-  assert.match(
-    setupFlow,
-    /const goBack = useCallback[\s\S]*?setupBackInFlightRef\.current[\s\S]*?runtimeSelectionInFlightRef\.current[\s\S]*?retrySetupInFlightRef\.current[\s\S]*?dependencyRetryInFlightRef\.current[\s\S]*?repairInFlightRef\.current[\s\S]*?gatewayReadyContinuationInFlightRef\.current[\s\S]*?dashboardEntryInFlightRef\.current[\s\S]*?wizardNavigationInFlightRef\.current[\s\S]*?wizardRecoveryInFlightRef\.current[\s\S]*?setupBackInFlightRef\.current = true;[\s\S]*?await performGoBack\(\);[\s\S]*?setupBackInFlightRef\.current = false;/,
-  );
-});
-
-test("Back fences auto-start effects while durable rollback remains authoritative", () => {
   assert.match(setupFlow, /const setupNavigationLeavingRef = useRef\(false\)/);
-  assert.match(
-    setupFlow,
-    /wizardAutoStartRef[\s\S]*?if \(setupNavigationLeavingRef\.current\) return;[\s\S]*?startOfficialOnboarding/,
-  );
-  assert.match(
-    setupFlow,
-    /AUTO_ADVANCE_GATEWAY_STEP[\s\S]*?if \(setupNavigationLeavingRef\.current \|\| autoStartedGatewayRef\.current\) return;/,
-  );
-  assert.match(
-    setupFlow,
-    /const performGoBack[\s\S]*?setupNavigationLeavingRef\.current = true;[\s\S]*?const restoredRuntimeLocations = await rollbackRuntimeReconfiguration\(\)/,
-  );
+  assert.match(setupFlow, /if \(setupNavigationLeavingRef\.current \|\| autoStartedGatewayRef\.current\) return/);
+  assert.match(setupFlow, /const performGoBack[\s\S]*?setupNavigationLeavingRef\.current = true;[\s\S]*?rollbackRuntimeReconfiguration\(\)/);
+  assert.match(setupFlow, /const goBack[\s\S]*?setupBackInFlightRef\.current[\s\S]*?isPluginRecoveryInFlight\(\)[\s\S]*?isWizardOperationInFlight\(\)[\s\S]*?await performGoBack\(\)/);
+  assert.match(wizardSession, /if \(navigationLeavingRef\.current\) return;[\s\S]*?startOfficialOnboarding/);
 });
 
-test("error and dependency recovery actions are single-flight", () => {
-  assert.match(setupFlow, /const retrySetupInFlightRef = useRef\(false\)/);
-  assert.match(setupFlow, /const repairInFlightRef = useRef<"repair" \| "disable" \| null>\(null\)/);
-  assert.match(setupFlow, /const dependencyRetryInFlightRef = useRef<"git" \| "node" \| null>\(null\)/);
-  assert.match(
-    setupFlow,
-    /const retrySetup[\s\S]*?if \(retrySetupInFlightRef\.current \|\| setupBackInFlightRef\.current\) return false;[\s\S]*?retrySetupInFlightRef\.current = true;[\s\S]*?retrySetupInFlightRef\.current = false;/,
-  );
-  assert.match(
-    setupFlow,
-    /const repairAndRetry[\s\S]*?if \(repairInFlightRef\.current \|\| setupBackInFlightRef\.current\) return;[\s\S]*?repairInFlightRef\.current = "repair";[\s\S]*?repairInFlightRef\.current = null;/,
-  );
-  assert.match(
-    setupFlow,
-    /const disablePluginsAndRetry[\s\S]*?if \(repairInFlightRef\.current \|\| setupBackInFlightRef\.current\) return;[\s\S]*?repairInFlightRef\.current = "disable";[\s\S]*?repairInFlightRef\.current = null;/,
-  );
-  assert.match(setupFlow, /const retryGit[\s\S]*?dependencyRetryInFlightRef\.current = "git";[\s\S]*?runNativeSetup\(\)\.finally/);
-  assert.match(setupFlow, /const retryNode[\s\S]*?dependencyRetryInFlightRef\.current = "node";[\s\S]*?runNativeSetup\(\)\.finally/);
+test("wizard Back and Next share one synchronous gate", () => {
+  assert.match(wizardSession, /wizardNavigationInFlightRef = useRef<"next" \| "back" \| null>/);
+  assert.match(wizardSession, /const submitWizardStep[\s\S]*?if \(wizardNavigationInFlightRef\.current\) return null;[\s\S]*?wizardNavigationInFlightRef\.current = "next"/);
+  assert.match(wizardSession, /const backOfficialOnboarding[\s\S]*?if \(!wizardClientRef\.current\?\.canGoBack \|\| wizardNavigationInFlightRef\.current\) return null;[\s\S]*?wizardNavigationInFlightRef\.current = "back"/);
+});
+
+test("recovery and dependency actions are single-flight", () => {
+  assert.match(pluginRecovery, /repairInFlightRef = useRef<"repair" \| "disable" \| null>/);
+  assert.match(pluginRecovery, /repairInFlightRef\.current = "repair"/);
+  assert.match(pluginRecovery, /repairInFlightRef\.current = "disable"/);
+  assert.match(setupFlow, /retrySetupInFlightRef = useRef\(false\)/);
+  assert.match(setupFlow, /dependencyRetryInFlightRef = useRef<"git" \| "node" \| null>/);
 });

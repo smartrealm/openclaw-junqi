@@ -6,7 +6,11 @@ const storagePanel = readFileSync(
   new URL('../components/setup/StorageSetupGate.tsx', import.meta.url),
   'utf8',
 );
-const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
+const setupFlow = readdirSync(new URL('./useSetupFlow/', import.meta.url))
+  .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`./useSetupFlow/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const api = readFileSync(new URL('../api/tauri-commands.ts', import.meta.url), 'utf8');
 const paths = readFileSync(new URL('../../src-tauri/src/paths.rs', import.meta.url), 'utf8');
 const storage = readFileSync(

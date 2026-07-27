@@ -1,13 +1,27 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8');
 }
 
-const setupFlow = source('./useSetupFlow.ts');
-const setupPage = source('../pages/SetupPage.tsx');
+// SetupPage is a directory of per-step screens; assert against all of them.
+// Plugin recovery now owns its module; read it directly.
+function hookFile(name: string): string {
+  return readFileSync(new URL(`./useSetupFlow/${name}.ts`, import.meta.url), 'utf8');
+}
+
+function sourceDir(path: string): string {
+  return readdirSync(new URL(path, import.meta.url))
+    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+    .sort()
+    .map((entry) => readFileSync(new URL(`${path}${entry}`, import.meta.url), 'utf8'))
+    .join('\n');
+}
+
+const setupFlow = sourceDir('./useSetupFlow/');
+const setupPage = sourceDir('../pages/SetupPage/');
 const commands = source('../api/tauri-commands.ts');
 const ensure = source('../../src-tauri/src/commands/ensure.rs');
 const gateway = source('../../src-tauri/src/commands/gateway.rs');
@@ -42,9 +56,10 @@ test('BUG-RT-01 restores the persisted Docker target before setup detection', ()
 });
 
 test('BUG-RT-02 selected Docker recovery never invokes native repair', () => {
-  const dockerRepair = setupFlow.slice(
-    setupFlow.indexOf('if (installMode === "docker")'),
-    setupFlow.indexOf('const repairingMessage = t("setup.repairingGateway"'),
+  const recovery = hookFile('usePluginRecovery');
+  const dockerRepair = recovery.slice(
+    recovery.indexOf('if (installMode === "docker")'),
+    recovery.indexOf('const repairingMessage = t("setup.repairingGateway"'),
   );
 
   assert.match(dockerRepair, /await pullOpenclawImage\("latest"\)/);

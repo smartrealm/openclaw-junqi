@@ -2,9 +2,17 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
-const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
+const setupFlow = readdirSync(new URL('./useSetupFlow/', import.meta.url))
+  .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`./useSetupFlow/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const setupFlowPanels = readFileSync(new URL('../components/setup/SetupFlowPanels.tsx', import.meta.url), 'utf8');
-const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
+const setupPage = readdirSync(new URL('../pages/SetupPage/', import.meta.url))
+  .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../pages/SetupPage/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const setupCommands = readdirSync(new URL('../../src-tauri/src/commands/setup/', import.meta.url))
   .filter((entry) => entry.endsWith('.rs'))

@@ -3,8 +3,16 @@ import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import { progressForPhase, progressForSetupEvent } from './setupProgressModel';
 
-const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
-const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
+const setupFlow = readdirSync(new URL('./useSetupFlow/', import.meta.url))
+  .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`./useSetupFlow/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
+const setupPage = readdirSync(new URL('../pages/SetupPage/', import.meta.url))
+  .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`../pages/SetupPage/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const storagePanel = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const storageCommand = readFileSync(new URL('../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
 const setupCommand = readdirSync(new URL('../../src-tauri/src/commands/setup/', import.meta.url))

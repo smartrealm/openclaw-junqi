@@ -28,13 +28,13 @@ import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import {
   setupProgressI18nParams,
   translateSetupProgressMessage,
-} from "./setupProgressParams";
+} from "../setupProgressParams";
 import {
   advanceSetupProgress,
   progressForSetupEvent,
   type SetupProgressPhase,
-} from "./setupProgressModel";
-import { normalizeSetupProgressPayload } from "./setupProgressEvents";
+} from "../setupProgressModel";
+import { normalizeSetupProgressPayload } from "../setupProgressEvents";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { debugWarn } from "@/utils/debugLog";
 import { gateway, GatewayPrivilegedAuthorizationError } from "@/services/gateway";
@@ -72,167 +72,33 @@ import {
   type OpenClawWizardStep,
 } from "@/services/openclawWizard";
 
-export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
 
-export interface StepState {
-  id: string;
-  label: string;
-  status: StepStatus;
-  detail?: string;
-  progress?: number;
-}
+import { usePluginRecovery } from "./usePluginRecovery";
+import { useWizardSession } from "./useWizardSession";
+import {
+  AUTO_ADVANCE_GATEWAY_STEP,
+  INITIAL_DOCKER_STEPS,
+  INITIAL_NATIVE_STEPS,
+  cacheGatewayTarget,
+  isMissingGitDependencyError,
+  pickInstallTargetFromProgress,
+} from "./helpers";
+import type {
+  GatewayReadyContinuation,
+  InstallTarget,
+  SetupFlow,
+  StepState,
+  StepStatus,
+} from "./types";
 
-export type InstallTargetTier = "user" | "userMissingPath" | "custom" | "existing";
-
-export interface InstallTarget {
-  /**
-   * Where the installer decided to put `openclaw`.
-   *  - "user": same dir as the user's terminal `npm i -g` (their
-   *    actual `npm config get prefix`) and its bin directory is on PATH.
-   *  - "userMissingPath": same npm prefix as the user's terminal, but
-   *    its bin directory is not currently on the login-shell PATH.
-   *  - "custom": explicit global prefix selected during setup.
-   *  - "existing": an `openclaw` install was already on disk before
-   *    setup ran, so we skipped the install. The card surfaces the
-   *    detected path and version.
-   */
-  tier: InstallTargetTier;
-  path: string;
-  /** Only set for the `existing` tier, when a version string was returned. */
-  version?: string;
-}
-
-const INSTALL_TARGET_KEYS = {
-  user: "setup.openclaw.userNpmPrefix",
-  userMissingPath: "setup.openclaw.userNpmPrefixMissingPath",
-  custom: "setup.openclaw.customNpmPrefix",
-  existing: "setup.openclaw.useExisting",
-} as const;
-
-/// The one step that means "the runtime is ready and nobody has started the
-/// local Gateway yet". Starting it is an installation transition rather than a
-/// user decision, so reaching this step starts it automatically.
-const AUTO_ADVANCE_GATEWAY_STEP: SetupStep = "gateway-stopped";
-
-export type GatewayReadyContinuation =
-  | { status: "idle"; error: null }
-  | { status: "checking"; error: null }
-  | { status: "failed"; error: string };
-
-function pickInstallTargetFromProgress(
-  key: string,
-  message: string,
-  explicitParams: Partial<Record<string, string>> = {},
-): InstallTarget | null {
-  if (
-    key !== INSTALL_TARGET_KEYS.user &&
-    key !== INSTALL_TARGET_KEYS.userMissingPath &&
-    key !== INSTALL_TARGET_KEYS.custom &&
-    key !== INSTALL_TARGET_KEYS.existing
-  ) {
-    return null;
-  }
-  // Reuse the same rule table that drives i18next substitution so
-  // the UI path stays in lockstep with the message formatting.
-  const params = { ...setupProgressI18nParams(key, message), ...explicitParams };
-  if (!params.path) return null;
-  if (key === INSTALL_TARGET_KEYS.userMissingPath) {
-    return { tier: "userMissingPath", path: params.path };
-  }
-  if (key === INSTALL_TARGET_KEYS.custom) {
-    return { tier: "custom", path: params.path };
-  }
-  if (key === INSTALL_TARGET_KEYS.existing) {
-    return { tier: "existing", path: params.path, version: params.version };
-  }
-  return { tier: "user", path: params.path };
-}
-
-export interface SetupFlow {
-  progress: number;
-  statusMessage: string;
-  installMode: InstallMode;
-  dockerStatus: DockerStatus | null;
-  openclawStatus: OpenclawStatus | null;
-  checkingDocker: boolean;
-  needsGit: boolean;
-  nodeRequirement: string | null;
-  steps: StepState[];
-  installTarget: InstallTarget | null;
-  wizardStep: OpenClawWizardStep | null;
-  wizardSubmitting: boolean;
-  wizardCanGoBack: boolean;
-  wizardError: string | null;
-  wizardRecoveryRequired: boolean;
-  needsOnboarding: boolean;
-  gatewayReadyContinuation: GatewayReadyContinuation;
-  repairing: boolean;
-  brokenPlugins: BrokenGatewayPlugin[];
-  forceStorageSelection: boolean;
-  startGateway: () => Promise<boolean>;
-  retryGateway: () => Promise<boolean>;
-  continueAfterGatewayReady: () => Promise<void>;
-  repairAndRetry: () => Promise<void>;
-  disablePluginsAndRetry: () => Promise<void>;
-  submitWizardStep: (stepId: string, value?: unknown) => Promise<OpenClawWizardResult | null>;
-  retryWizard: () => Promise<OpenClawWizardResult | null>;
-  reclaimWizard: () => Promise<OpenClawWizardResult | null>;
-  backWizard: () => Promise<OpenClawWizardResult | null>;
-  runNativeSetup: () => Promise<boolean>;
-  runDockerSetup: () => Promise<boolean>;
-  retrySetup: () => Promise<boolean>;
-  requestReinstall: () => void;
-  completeStorageSetup: (result?: {
-    createdFresh: boolean;
-    runtimeReconfigurationRequired?: boolean;
-    openclawRelocationRequired?: boolean;
-  }) => void;
-  selectMode: (mode: InstallMode) => Promise<void>;
-  detectDocker: () => Promise<void>;
-  refreshRuntime: () => Promise<{ status: OpenclawStatus | null; gatewayRunning: boolean }>;
-  goBack: () => Promise<void>;
-  retryGit: () => void;
-  retryNode: () => void;
-  enteringDashboard: boolean;
-  dashboardEntryError: string | null;
-  enterDashboard: (origin?: Element | null) => Promise<void>;
-}
-
-const INITIAL_NATIVE_STEPS: StepState[] = [
-  { id: "node",      label: "Node.js",    status: "pending" },
-  { id: "npm",       label: "npm",        status: "pending" },
-  { id: "openclaw",  label: "OpenClaw",   status: "pending" },
-  { id: "gateway",   label: "Gateway",    status: "pending" },
-];
-
-const INITIAL_DOCKER_STEPS: StepState[] = [
-  { id: "pull",      label: "Docker Image",  status: "pending" },
-  { id: "container", label: "Container",     status: "pending" },
-  { id: "gateway",   label: "Gateway",       status: "pending" },
-];
-
-function cacheGatewayTarget(port?: number | null, _token?: string | null): void {
-  if (!port) return;
-  try {
-    const current = JSON.parse(localStorage.getItem("aegis-config") || "{}");
-    const next = {
-      ...current,
-      ...(port ? { gatewayUrl: defaultGatewayWsUrl(port) } : {}),
-    };
-    // Gateway credentials belong to the native OpenClaw config boundary, not
-    // renderer localStorage. Remove legacy cached values while refreshing the
-    // selected endpoint so old installs do not keep a second credential copy.
-    delete next.gatewayToken;
-    localStorage.setItem("aegis-config", JSON.stringify(next));
-  } catch {
-    // Best effort: connection resolution can still fall back to config files.
-  }
-}
-
-function isMissingGitDependencyError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /(?:spawn\s+git(?:\.exe)?\s+enoent|git(?:\.exe)?.*(?:enoent|not found|not recognized)|(?:cannot|could not|failed to)\s+(?:find|spawn)\s+git)/i.test(message);
-}
+export type {
+  GatewayReadyContinuation,
+  InstallTarget,
+  InstallTargetTier,
+  SetupFlow,
+  StepState,
+  StepStatus,
+} from "./types";
 
 export function useSetupFlow(
   progress: number, setProgress: (v: number) => void,
@@ -252,34 +118,20 @@ export function useSetupFlow(
   const { t } = useTranslation();
   const [installTarget, setInstallTarget] = useState<InstallTarget | null>(null);
   const [openclawStatus, setOpenclawStatus] = useState<OpenclawStatus | null>(null);
-  const [wizardStep, setWizardStep] = useState<OpenClawWizardStep | null>(null);
-  const [wizardSubmitting, setWizardSubmitting] = useState(false);
-  const [wizardCanGoBack, setWizardCanGoBack] = useState(false);
-  const [wizardError, setWizardError] = useState<string | null>(null);
-  const [wizardRecoveryRequired, setWizardRecoveryRequired] = useState(false);
-  const wizardSubmitInFlightRef = useRef(false);
-  const wizardNavigationInFlightRef = useRef<"next" | "back" | null>(null);
-  const wizardRecoveryInFlightRef = useRef<"retry" | "reclaim" | null>(null);
-  const wizardOperationRef = useRef(0);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [enteringDashboard, setEnteringDashboard] = useState(false);
   const [dashboardEntryError, setDashboardEntryError] = useState<string | null>(null);
   const dashboardEntryInFlightRef = useRef(false);
   const runtimeSelectionInFlightRef = useRef(false);
   const setupBackInFlightRef = useRef(false);
-  // Read synchronously by effects that can auto-start work. React state does
-  // not commit quickly enough to stop those effects during an async Back.
   const setupNavigationLeavingRef = useRef(false);
+  const retrySetupInFlightRef = useRef(false);
+  const dependencyRetryInFlightRef = useRef<"git" | "node" | null>(null);
   const [gatewayReadyContinuation, setGatewayReadyContinuation] = useState<GatewayReadyContinuation>({
     status: "idle",
     error: null,
   });
   const gatewayReadyContinuationInFlightRef = useRef(false);
-  const [repairing, setRepairing] = useState(false);
-  const repairInFlightRef = useRef<"repair" | "disable" | null>(null);
-  const retrySetupInFlightRef = useRef(false);
-  const dependencyRetryInFlightRef = useRef<"git" | "node" | null>(null);
-  const [brokenPlugins, setBrokenPlugins] = useState<BrokenGatewayPlugin[]>([]);
   const [forceStorageSelection, setForceStorageSelection] = useState(false);
   // gateway-smoke-check 类发现无法离线验证修复效果：自愈梯子跑完后先用一次
   // 真实 Gateway 启动做验证；此处记录已验证过的插件，二次失败直达禁用降级，
@@ -294,13 +146,6 @@ export function useSetupFlow(
     needsOnboardingRef.current = required;
     setNeedsOnboarding(required);
   }, []);
-  const wizardClientRef = useRef<OpenClawWizardClient | null>(null);
-  if (!wizardClientRef.current) {
-    wizardClientRef.current = new OpenClawWizardClient(
-      (method, params, options) => gateway.callPrivileged(method, params, options),
-      createBrowserOpenClawWizardSessionStore(),
-    );
-  }
   const progressRef = useRef(progress);
   progressRef.current = progress;
   const stepsRef = useRef(steps);
@@ -371,44 +216,6 @@ export function useSetupFlow(
     report(message, nextProgress);
   }, [report]);
 
-  const wizardFailureMessage = useCallback((error: unknown): string => {
-    const diagnostic = error instanceof Error ? error.message : String(error);
-    appendSetupLog({
-      source: "setup",
-      step: "gateway",
-      message: diagnostic,
-      level: "error",
-    });
-    if (error instanceof GatewayPrivilegedAuthorizationError) {
-      return diagnostic;
-    }
-    if (diagnostic === t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。")) {
-      return diagnostic;
-    }
-    switch (classifyOpenClawWizardFailure(error)) {
-      case "session_lost":
-        return t("setup.wizard.sessionExpired", "OpenClaw 配置会话已失效，请重新连接。");
-      case "step_desynchronized":
-        return t("setup.wizard.stepSynchronizing", "正在恢复 OpenClaw 配置会话，请稍候。");
-      case "already_running":
-        return t("setup.wizard.alreadyRunning", "另一个 OpenClaw 配置会话仍在运行，请完成或关闭后重试。");
-      case "request_timeout":
-        return t("setup.wizard.requestTimeout", "OpenClaw 配置请求等待超时，请重新连接后继续。");
-      case "cancelled":
-        return t("setup.wizard.cancelled", "OpenClaw 配置向导已取消，请重试以开始新的配置会话。");
-      case "cancellation_locked":
-        return t("setup.wizard.cancellationLocked", "OpenClaw 正在提交持久化配置，当前无法取消。请等待后继续当前会话。");
-      case "unknown": {
-        const sessionId = wizardClientRef.current?.diagnosticSessionId ?? "(none)";
-        const lastStepId = wizardClientRef.current?.failedStepView?.id
-          ?? wizardClientRef.current?.currentStepView?.id
-          ?? "(unknown)";
-        return diagnostic.startsWith("OpenClaw wizard failed at step ")
-          ? diagnostic
-          : `OpenClaw wizard failed at step "${lastStepId}" (session=${sessionId}): ${diagnostic}`;
-      }
-    }
-  }, [appendSetupLog, t]);
 
   const presentSetupStep = useCallback((step: SetupStep) => {
     const message = t(setupStepMessageKey(step));
@@ -685,389 +492,37 @@ export function useSetupFlow(
     });
   }
 
-  const invalidateWizardOperations = useCallback(() => {
-    wizardOperationRef.current += 1;
-    wizardSubmitInFlightRef.current = false;
-    wizardNavigationInFlightRef.current = null;
-    wizardRecoveryInFlightRef.current = null;
-    wizardClientRef.current?.invalidatePendingOperations();
-    gateway.cancelPrivilegedAuthorizationRetry();
-  }, []);
 
-  const beginWizardOperation = useCallback(() => {
-    const operationId = wizardOperationRef.current + 1;
-    wizardOperationRef.current = operationId;
-    // A superseded submit never reaches the branch that releases its re-entry
-    // guard, because that branch is gated on still being the current operation.
-    // The guard belongs to whichever operation is current, so taking over also
-    // takes it over. `submitWizardStep` reads the guard before calling this, so
-    // its own protection against double submits is unaffected.
-    wizardSubmitInFlightRef.current = false;
-    wizardNavigationInFlightRef.current = null;
-    wizardRecoveryInFlightRef.current = null;
-    return operationId;
-  }, []);
-
-  const assertWizardOperationCurrent = useCallback((operationId: number) => {
-    if (wizardOperationRef.current !== operationId) {
-      throw new OpenClawWizardOperationSupersededError();
-    }
-  }, []);
-
-  const waitForGatewayConnection = useCallback(async (operationId: number, timeoutMs = 20_000) => {
-    gatewayManager.reconnect();
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      assertWizardOperationCurrent(operationId);
-      if (gateway.getStatus().connected) return;
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    assertWizardOperationCurrent(operationId);
-    throw new Error(t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。"));
-  }, [assertWizardOperationCurrent, t]);
-
-  const refreshGatewayConnectionTarget = useCallback(async () => {
-    try {
-      const target = await detectGatewayConfig();
-      cacheGatewayTarget(target.port);
-      gatewayManager.reconnect();
-    } catch {
-      // The normal connection resolver can still read settings/config later.
-    }
-  }, []);
-
-  const applyWizardResult = useCallback(async (
-    result: OpenClawWizardResult,
-    operationId: number,
-  ): Promise<OpenClawWizardResult> => {
-    assertWizardOperationCurrent(operationId);
-    if (result.error || result.status === "error") {
-      // 终端错误往往包含 Gateway 的真实诊断(`wizard: ...` / JSON 校验失败
-      // / 单会话冲突等),但此前统一替换成一句通用文案,导致同一症状
-      // 会反复复现而拿不到根因。透传原文并附上当前会话上下文,异常发生时
-      // 用户能直接看到错误并复贴给我们定位。
-      const rawError = result.error
-        ? result.error
-        : t("setup.wizard.failed", "OpenClaw 配置向导执行失败。");
-      const sessionId = wizardClientRef.current?.diagnosticSessionId ?? "(none)";
-      const lastStepId = wizardClientRef.current?.failedStepView?.id
-        ?? wizardClientRef.current?.currentStepView?.id
-        ?? "(unknown)";
-      const debugMessage = `OpenClaw wizard failed at step "${lastStepId}" (session=${sessionId}): ${rawError}`;
-      appendSetupLog({
-        source: "setup",
-        step: "wizard",
-        message: debugMessage,
-        level: "error",
-      });
-      throw new Error(debugMessage);
-    }
-    if (result.status === "cancelled") {
-      setWizardStep(null);
-      setWizardCanGoBack(false);
-      throw new OpenClawWizardCancelledError();
-    }
-    if (result.done || result.status === "done") {
-      // The official session is terminal even when the lifecycle handoff below
-      // fails. Do not replay accepted model credentials on recovery; recover
-      // only the Gateway owner and verify the selected config identity.
-      // OpenClaw's official wizard may install its platform service by
-      // default. Reconcile ownership before declaring setup complete so the
-      // foreground bootstrap child and Scheduled Task never race on one port.
-      try {
-        await invoke<boolean>("handoff_gateway_to_official_service", {});
-        assertWizardOperationCurrent(operationId);
-        const selectedGatewayReady = await invoke<boolean>("probe_selected_gateway", {});
-        assertWizardOperationCurrent(operationId);
-        if (!selectedGatewayReady) {
-          throw new Error(t(
-            "setup.wizard.handoffNotReady",
-            "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",
-          ));
-        }
-      } catch (handoffError) {
-        // A completed Rust handoff may outlive renderer navigation. It is safe
-        // to observe on the next connection, but this obsolete operation must
-        // not mutate setup UI or launch subsequent probes.
-        assertWizardOperationCurrent(operationId);
-        const message = handoffError instanceof Error ? handoffError.message : String(handoffError);
-        setWizardStep(null);
-        setWizardCanGoBack(false);
-        setWizardRecoveryRequired(false);
-        setGatewayRunning(false);
-        patchStep("gateway", "error", message);
-        appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
-        setSetupError(message);
-        report(message);
-        replaceSetupStep("error");
-        return result;
-      }
-      const modelProbe = await probeActiveRuntimeModel();
-      assertWizardOperationCurrent(operationId);
-      if (!modelProbe.ready) {
-        const message = t(
-          "setup.wizard.modelNotReady",
-          "所选模型尚未通过实时验证，请继续完成 OpenClaw 配置。",
-        );
-        updateOnboardingRequirement(true);
-        setWizardStep(null);
-        setWizardCanGoBack(false);
-        setWizardRecoveryRequired(false);
-        setWizardError(message);
-        setSetupError(message);
-        await refreshGatewayConnectionTarget();
-        assertWizardOperationCurrent(operationId);
-        replaceSetupStep("configure-openclaw");
-        return result;
-      }
-      updateOnboardingRequirement(false);
-      setWizardStep(null);
-      setWizardCanGoBack(false);
-      setWizardError(null);
-      setWizardRecoveryRequired(false);
-      setSetupError(null);
-      setPostStorageStep("ready");
-      await refreshGatewayConnectionTarget();
-      assertWizardOperationCurrent(operationId);
-      report(t("setup.ready"), 100);
-      replaceSetupStep("ready");
-      return result;
-    }
-    if (!result.step) {
-      throw new Error(t("setup.wizard.missingStep", "OpenClaw 配置向导没有返回下一步。"));
-    }
-    setWizardStep(result.step);
-    setWizardCanGoBack(wizardClientRef.current?.canGoBack ?? false);
-    report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
-    replaceSetupStep("configure-openclaw");
-    return result;
-  }, [appendSetupLog, assertWizardOperationCurrent, probeActiveRuntimeModel, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement]);
-
-  const recoverLostWizardSession = useCallback(async (
-    client: OpenClawWizardClient,
-  ): Promise<OpenClawWizardResult> => {
-    client.forgetSession();
-    const structurallyIncomplete = await resolveActiveRuntimeOnboardingRequirement();
-    if (!structurallyIncomplete) {
-      const modelProbe = await probeActiveRuntimeModel();
-      if (modelProbe.ready) {
-        return { done: true, status: "done" };
-      }
-    }
-    return await client.start();
-  }, [probeActiveRuntimeModel, resolveActiveRuntimeOnboardingRequirement]);
-
-  const startOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
-    const operationId = beginWizardOperation();
-    setWizardError(null);
-    setWizardRecoveryRequired(false);
-    setWizardSubmitting(true);
-    try {
-      await waitForGatewayConnection(operationId);
-      assertWizardOperationCurrent(operationId);
-      const client = wizardClientRef.current!;
-      let result: OpenClawWizardResult;
-      if (client.hasActiveSession) {
-        try {
-          result = await client.resume();
-        } catch (error) {
-          if (!isOpenClawWizardSessionLost(error)) throw error;
-          result = await recoverLostWizardSession(client);
-        }
-      } else {
-        result = await client.start();
-      }
-      assertWizardOperationCurrent(operationId);
-      return await applyWizardResult(result, operationId);
-    } catch (error) {
-      if (error instanceof OpenClawWizardOperationSupersededError) return null;
-      const message = wizardFailureMessage(error);
-      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
-      setWizardError(message);
-      setSetupError(message);
-      replaceSetupStep("configure-openclaw");
-      return null;
-    } finally {
-      if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
-    }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
-
-  const resumeOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
-    const operationId = beginWizardOperation();
-    setWizardError(null);
-    setWizardRecoveryRequired(false);
-    setWizardSubmitting(true);
-    try {
-      await waitForGatewayConnection(operationId);
-      const result = await wizardClientRef.current!.resume();
-      assertWizardOperationCurrent(operationId);
-      return await applyWizardResult(result, operationId);
-    } catch (error) {
-      if (error instanceof OpenClawWizardOperationSupersededError) return null;
-      if (isOpenClawWizardSessionLost(error)) {
-        const result = await recoverLostWizardSession(wizardClientRef.current!);
-        assertWizardOperationCurrent(operationId);
-        return await applyWizardResult(result, operationId);
-      }
-      const message = wizardFailureMessage(error);
-      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
-      setWizardError(message);
-      setSetupError(message);
-      replaceSetupStep("configure-openclaw");
-      return null;
-    } finally {
-      if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
-    }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
-
-  const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
-    // React state updates are asynchronous. A final note can receive two click
-    // events before `wizardSubmitting` reaches the button, causing the second
-    // request to race the official terminal response and report "wizard not
-    // found" after onboarding already completed.
-    if (wizardNavigationInFlightRef.current) return null;
-    const operationId = beginWizardOperation();
-    wizardSubmitInFlightRef.current = true;
-    wizardNavigationInFlightRef.current = "next";
-    setWizardError(null);
-    setWizardRecoveryRequired(false);
-    setWizardSubmitting(true);
-    try {
-      await waitForGatewayConnection(operationId);
-      const result = await wizardClientRef.current!.next(stepId, value);
-      assertWizardOperationCurrent(operationId);
-      return await applyWizardResult(result, operationId);
-    } catch (error) {
-      if (error instanceof OpenClawWizardOperationSupersededError) return null;
-      if (isOpenClawWizardStepDesynchronized(error)) {
-        return await resumeOfficialOnboarding();
-      }
-      if (isOpenClawWizardSessionLost(error)) {
-        const result = await recoverLostWizardSession(wizardClientRef.current!);
-        assertWizardOperationCurrent(operationId);
-        return await applyWizardResult(result, operationId);
-      }
-      const message = wizardFailureMessage(error);
-      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
-      setWizardError(message);
-      setSetupError(message);
-      return null;
-    } finally {
-      if (wizardOperationRef.current === operationId) {
-        wizardSubmitInFlightRef.current = false;
-        wizardNavigationInFlightRef.current = null;
-        setWizardSubmitting(false);
-      }
-    }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, resumeOfficialOnboarding, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
-
-  const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
-    // React has not necessarily committed `wizardSubmitting` before a second
-    // click arrives. Permit retry to take over a failed submit, but never let
-    // two retries concurrently replay one official wizard session.
-    if (wizardRecoveryInFlightRef.current === "retry") return null;
-    const operationId = beginWizardOperation();
-    wizardRecoveryInFlightRef.current = "retry";
-    setWizardError(null);
-    setWizardRecoveryRequired(false);
-    setWizardSubmitting(true);
-    try {
-      await waitForGatewayConnection(operationId);
-      const result = await wizardClientRef.current!.retry();
-      assertWizardOperationCurrent(operationId);
-      return await applyWizardResult(result, operationId);
-    } catch (error) {
-      if (error instanceof OpenClawWizardOperationSupersededError) return null;
-      const message = wizardFailureMessage(error);
-      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
-      setWizardError(message);
-      setSetupError(message);
-      replaceSetupStep("configure-openclaw");
-      return null;
-    } finally {
-      if (wizardOperationRef.current === operationId) {
-        wizardRecoveryInFlightRef.current = null;
-        setWizardSubmitting(false);
-      }
-    }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
-
-  const backOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
-    // `wizardSubmitting` only changes after React commits. Use the same
-    // synchronous navigation gate as Next so rapid Next/Back, Back/Next, or
-    // double-Back clicks cannot supersede each other and issue concurrent RPCs.
-    if (!wizardClientRef.current?.canGoBack || wizardNavigationInFlightRef.current) return null;
-    const operationId = beginWizardOperation();
-    wizardNavigationInFlightRef.current = "back";
-    setWizardError(null);
-    setWizardRecoveryRequired(false);
-    setWizardSubmitting(true);
-    try {
-      await waitForGatewayConnection(operationId);
-      const result = await wizardClientRef.current.back();
-      assertWizardOperationCurrent(operationId);
-      if (!result) return null;
-      return await applyWizardResult(result, operationId);
-    } catch (error) {
-      if (error instanceof OpenClawWizardOperationSupersededError) return null;
-      const message = wizardFailureMessage(error);
-      setWizardError(message);
-      setSetupError(message);
-      return null;
-    } finally {
-      if (wizardOperationRef.current === operationId) {
-        wizardNavigationInFlightRef.current = null;
-        setWizardSubmitting(false);
-      }
-    }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
-
-  const reclaimOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
-    if (wizardRecoveryInFlightRef.current === "reclaim") return null;
-    const operationId = beginWizardOperation();
-    wizardRecoveryInFlightRef.current = "reclaim";
-    setWizardError(null);
-    setWizardRecoveryRequired(false);
-    setWizardSubmitting(true);
-    try {
-      // OpenClaw exposes no API for enumerating another client's wizard. A
-      // selected-runtime restart safely clears that in-memory lock without
-      // changing the selected data directory, workspace, or configuration.
-      wizardClientRef.current!.forgetSession();
-      const restarted = await gatewayManager.restart();
-      if (restarted?.success === false) {
-        throw new Error(restarted.error || "OpenClaw Gateway restart failed.");
-      }
-      await waitForGatewayConnection(operationId);
-      const result = await wizardClientRef.current!.start();
-      assertWizardOperationCurrent(operationId);
-      return await applyWizardResult(result, operationId);
-    } catch (error) {
-      if (error instanceof OpenClawWizardOperationSupersededError) return null;
-      const message = wizardFailureMessage(error);
-      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
-      setWizardError(message);
-      setSetupError(message);
-      replaceSetupStep("configure-openclaw");
-      return null;
-    } finally {
-      if (wizardOperationRef.current === operationId) {
-        wizardRecoveryInFlightRef.current = null;
-        setWizardSubmitting(false);
-      }
-    }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
-
-  const wizardAutoStartRef = useRef(false);
-  useEffect(() => {
-    if (setupNavigationLeavingRef.current) return;
-    if (setupStep !== "configure-openclaw" || wizardStep || wizardSubmitting || wizardError) return;
-    if (wizardAutoStartRef.current) return;
-    wizardAutoStartRef.current = true;
-    void startOfficialOnboarding().finally(() => {
-      wizardAutoStartRef.current = false;
-    });
-  }, [setupStep, startOfficialOnboarding, wizardError, wizardStep, wizardSubmitting]);
+  const {
+    wizardStep,
+    wizardSubmitting,
+    wizardCanGoBack,
+    wizardError,
+    wizardRecoveryRequired,
+    submitWizardStep,
+    retryWizard,
+    reclaimWizard,
+    backWizard,
+    invalidateWizardOperations,
+    setWizardStep,
+    setWizardCanGoBack,
+    setWizardError,
+    setWizardSubmitting,
+    isWizardOperationInFlight,
+  } = useWizardSession({
+    setupStep,
+    report,
+    patchStep,
+    probeActiveRuntimeModel,
+    resolveActiveRuntimeOnboardingRequirement,
+    updateOnboardingRequirement,
+    appendSetupLog,
+    replaceSetupStep,
+    setPostStorageStep,
+    setSetupError,
+    setGatewayRunning,
+    navigationLeavingRef: setupNavigationLeavingRef,
+  });
 
   // ── Actions ──
   const startGatewayAction = useCallback(async (
@@ -1445,10 +900,6 @@ export function useSetupFlow(
   }, [beginRun, isRunActive, installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, updateOnboardingRequirement, resolveActiveRuntimeOnboardingRequirement, setActiveGatewayRuntime, commitSetupGatewayRuntime, rollbackActiveGatewayRuntime, rollbackRuntimeReconfiguration, gatewayManager, t]);
 
   const selectMode = useCallback(async (mode: InstallMode) => {
-    // A state-driven disabled button cannot stop two click events delivered in
-    // one render. Runtime selection mutates durable bootstrap state, so it must
-    // be single-flight before the first await rather than merely idempotent in
-    // the renderer.
     if (runtimeSelectionInFlightRef.current || setupBackInFlightRef.current) return;
     runtimeSelectionInFlightRef.current = true;
     try {
@@ -1470,10 +921,7 @@ export function useSetupFlow(
     setSetupError(null);
     setNeedsGit(false);
     try {
-      if (installMode === "docker") {
-        return await runDockerSetup();
-      }
-      return await runNativeSetup();
+      return installMode === "docker" ? await runDockerSetup() : await runNativeSetup();
     } finally {
       retrySetupInFlightRef.current = false;
     }
@@ -1537,247 +985,30 @@ export function useSetupFlow(
     setForceStorageSelection,
   ]);
 
-  const repairAndRetry = useCallback(async () => {
-    if (repairInFlightRef.current || setupBackInFlightRef.current) return;
-    repairInFlightRef.current = "repair";
-    const failure = setupError;
-    const runId = beginRun();
-    setRepairing(true);
-    setSetupError(null);
-    setBrokenPlugins([]);
-    const analyzingMessage = t("setup.analyzingGatewayFailure", "正在分析 Gateway 启动失败并选择恢复方式…");
-    patchStep("gateway", "running", analyzingMessage);
-    report(analyzingMessage);
-    appendSetupLog({ source: "setup", step: "gateway", message: analyzingMessage, level: "info" });
-    try {
-      const recommendation = failure
-        ? await diagnoseGatewayRecovery(failure).catch(() => "repair" as const)
-        : "repair";
-      if (recommendation === "select_storage") {
-        const message = t(
-          "setup.stateDirectoryIncompatible",
-          "当前 OpenClaw 数据目录不支持所需权限操作。请选择本机支持权限操作的数据目录后重试。",
-        );
-        setForceStorageSelection(true);
-        setGatewayRunning(false);
-        setPostStorageStep("choosing-mode");
-        appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
-        report(message);
-        replaceSetupStep("storage");
-        return;
-      }
-      if (recommendation === "retry") {
-        const retryDelay = gatewayMigrationRetryDelayMs(failure || "");
-        if (retryDelay > 0) {
-          const waitSeconds = Math.ceil(retryDelay / 1000);
-          const message = t(
-            "setup.waitingForGatewayLock",
-            "检测到另一个 Gateway 的迁移锁，{{seconds}} 秒后自动重试…",
-            { seconds: waitSeconds },
-          );
-          patchStep("gateway", "running", message);
-          report(message);
-          appendSetupLog({ source: "setup", step: "gateway", message, level: "info" });
-          await new Promise((resolve) => window.setTimeout(resolve, retryDelay));
-          if (!isRunActive(runId)) return;
-        }
-        await startGatewayAction();
-        return;
-      }
-      // BUG-CPI-07: Gateway 拒绝启动常由单个损坏插件引起（payload 烟测失败）。
-      // 先做结构化插件巡检并尝试自愈梯子（定向更新 → 强制重装，每级复检）；
-      // 不可自愈时给用户"临时禁用并启动"的降级出口，避免陷入修复→失败死循环。
-      // Docker 运行时的插件载荷在容器内，由镜像刷新修复路径覆盖，巡检返回空。
-      const broken = await listBrokenGatewayPlugins(failure ?? undefined)
-        .catch(() => [] as BrokenGatewayPlugin[]);
-      if (!isRunActive(runId)) return;
-      if (broken.length > 0) {
-        const showDisableFallback = (plugins: BrokenGatewayPlugin[]) => {
-          setBrokenPlugins(plugins);
-          const blockedMessage = t("setup.pluginNotHealable", {
-            plugins: plugins.map((plugin) => plugin.id).join(", "),
-            defaultValue: "插件 {{plugins}} 无法自动修复，可能是其安装包缺少必需文件。可临时禁用后继续启动。",
-          });
-          patchStep("gateway", "error", blockedMessage);
-          appendSetupLog({ source: "setup", step: "gateway", message: blockedMessage, level: "error" });
-          setSetupError(blockedMessage);
-          report(blockedMessage);
-          replaceSetupStep("error");
-        };
-        const candidates = pluginsNeedingHeal(broken, pluginHealAttemptedRef.current);
-        if (candidates.length === 0) {
-          showDisableFallback(broken);
-          return;
-        }
-        const healingMessage = t("setup.pluginHealing", {
-          plugins: candidates.map((plugin) => plugin.id).join(", "),
-          defaultValue: "检测到损坏的插件（{{plugins}}），正在尝试自动修复…",
-        });
-        patchStep("gateway", "running", healingMessage);
-        report(healingMessage);
-        appendSetupLog({ source: "setup", step: "gateway", message: healingMessage, level: "info" });
-        const outcomes: PluginHealOutcome[] = [];
-        for (const plugin of candidates) {
-          const outcome = await healOpenclawPlugin(plugin.id, plugin.reason).catch((error): PluginHealOutcome => ({
-            id: plugin.id,
-            healed: false,
-            attempted: [],
-            error: error instanceof Error ? error.message : String(error),
-          }));
-          if (!isRunActive(runId)) return;
-          appendSetupLog({
-            source: "setup",
-            step: "gateway",
-            message: outcome.healed
-              ? t("setup.pluginHealed", { plugin: outcome.id, defaultValue: "插件 {{plugin}} 已修复" })
-              : isAwaitingGatewayVerification(plugin, outcome)
-                ? t("setup.pluginHealAwaitingStartCheck", {
-                    plugin: outcome.id,
-                    defaultValue: "插件 {{plugin}} 已完成修复尝试，等待 Gateway 启动验证",
-                  })
-                : t("setup.pluginHealFailed", {
-                    plugin: outcome.id,
-                    error: outcome.error ?? "",
-                    defaultValue: "插件 {{plugin}} 无法自动修复 {{error}}",
-                  }),
-            level: outcome.healed || isAwaitingGatewayVerification(plugin, outcome) ? "info" : "warn",
-          });
-          outcomes.push(outcome);
-        }
-        const alreadyStartVerified = broken.filter(
-          (plugin) => plugin.reason === UNVERIFIABLE_PLUGIN_REASON
-            && pluginHealAttemptedRef.current.has(plugin.id),
-        );
-        const remaining = mergeBrokenPlugins(
-          alreadyStartVerified,
-          unhealedPlugins(candidates, outcomes),
-        );
-        // healed 的语义是"已验证修复"。gateway-smoke-check 类发现只有 Gateway
-        // 自己的烟测能观测，自愈梯子永远不会为其报告 healed；此处用一次真实
-        // 启动做验证（结果由下一轮 repairAndRetry 的 attempted 记录判定）。
-        const recoveryPlan = planPluginRecovery(remaining, pluginHealAttemptedRef.current);
-        if (recoveryPlan.action === "start-gateway") {
-          if (recoveryPlan.startVerification.length > 0) {
-            recoveryPlan.startVerification.forEach((plugin) => pluginHealAttemptedRef.current.add(plugin.id));
-            appendSetupLog({
-              source: "setup",
-              step: "gateway",
-              message: t("setup.pluginUnverifiedStartCheck", {
-                plugins: recoveryPlan.startVerification.map((plugin) => plugin.id).join(", "),
-                defaultValue: "插件 {{plugins}} 的修复效果无法离线验证，正在启动 Gateway 进行验证…",
-              }),
-              level: "info",
-            });
-          }
-          await startGatewayAction();
-          return;
-        }
-        // 已验证不可自愈（上游安装包缺文件等）：交给用户决定是否临时禁用。
-        showDisableFallback(remaining);
-        return;
-      }
-      if (installMode === "docker") {
-        const repairingMessage = t(
-          "setup.repairingDocker",
-          "正在刷新 Docker 镜像并重建 Gateway…",
-        );
-        patchStep("gateway", "running", repairingMessage);
-        report(repairingMessage);
-        appendSetupLog({
-          source: "setup",
-          step: "gateway",
-          message: t("setup.dockerRepairStarting", "正在刷新选定的 Docker 镜像…"),
-          level: "info",
-        });
-        await pullOpenclawImage("latest");
-        if (!isRunActive(runId)) return;
-        appendSetupLog({
-          source: "setup",
-          step: "gateway",
-          message: t("setup.dockerRepairComplete", "镜像已刷新，正在重新创建 Docker Gateway…"),
-          level: "info",
-        });
-        await startGatewayAction();
-        return;
-      }
-      const repairingMessage = t("setup.repairingGateway", "正在修复 OpenClaw 和插件状态…");
-      patchStep("gateway", "running", repairingMessage);
-      report(repairingMessage);
-      appendSetupLog({
-        source: "setup",
-        step: "gateway",
-        message: t("setup.repairStarting", "开始运行 OpenClaw 官方修复流程…"),
-        level: "info",
-      });
-      await runOpenClawRepair();
-      if (!isRunActive(runId)) return;
-      appendSetupLog({
-        source: "setup",
-        step: "gateway",
-        message: t("setup.repairComplete", "修复完成，正在重新启动 Gateway…"),
-        level: "info",
-      });
-      await startGatewayAction("native");
-    } catch (error) {
-      if (!isRunActive(runId)) return;
-      const message = error instanceof Error ? error.message : String(error);
-      patchStep("gateway", "error", message);
-      appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
-      setSetupError(message);
-      report(message);
-      replaceSetupStep("error");
-    } finally {
-      repairInFlightRef.current = null;
-      setRepairing(false);
-    }
-  }, [setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode, setGatewayRunning, setPostStorageStep]);
 
-  // BUG-CPI-07 最后一级降级：临时禁用不可自愈的插件后继续启动。插件保持
-  // 已安装状态，待其修复版本发布后可在设置中重新启用并重走自愈梯子。
-  const disablePluginsAndRetry = useCallback(async () => {
-    if (repairInFlightRef.current || setupBackInFlightRef.current) return;
-    const plugins = brokenPlugins;
-    if (plugins.length === 0) return;
-    repairInFlightRef.current = "disable";
-    const runId = beginRun();
-    setRepairing(true);
-    setSetupError(null);
-    try {
-      for (const plugin of plugins) {
-        const disablingMessage = t("setup.pluginDisabling", {
-          plugin: plugin.id,
-          defaultValue: "正在临时禁用插件 {{plugin}}…",
-        });
-        patchStep("gateway", "running", disablingMessage);
-        report(disablingMessage);
-        await disableOpenclawPlugin(plugin.id);
-        if (!isRunActive(runId)) return;
-        appendSetupLog({
-          source: "setup",
-          step: "gateway",
-          message: t("setup.pluginDisabled", {
-            plugin: plugin.id,
-            defaultValue: "插件 {{plugin}} 已临时禁用；其修复版本发布后可在设置中重新启用",
-          }),
-          level: "warn",
-        });
-      }
-      setBrokenPlugins([]);
-      pluginHealAttemptedRef.current.clear();
-      await startGatewayAction();
-    } catch (error) {
-      if (!isRunActive(runId)) return;
-      const message = error instanceof Error ? error.message : String(error);
-      patchStep("gateway", "error", message);
-      appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
-      setSetupError(message);
-      report(message);
-      replaceSetupStep("error");
-    } finally {
-      repairInFlightRef.current = null;
-      setRepairing(false);
-    }
-  }, [brokenPlugins, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep]);
+  const {
+    repairing,
+    brokenPlugins,
+    setBrokenPlugins,
+    repairAndRetry,
+    disablePluginsAndRetry,
+    isPluginRecoveryInFlight,
+  } = usePluginRecovery({
+    setupError,
+    installMode,
+    pluginHealAttemptedRef,
+    beginRun,
+    isRunActive,
+    patchStep,
+    report,
+    appendSetupLog,
+    replaceSetupStep,
+    setSetupError,
+    setGatewayRunning,
+    setPostStorageStep,
+    setForceStorageSelection,
+    startGatewayAction,
+  });
 
   const performGoBack = useCallback(async () => {
     setupNavigationLeavingRef.current = true;
@@ -1831,20 +1062,15 @@ export function useSetupFlow(
   }, [cancelActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, rollbackActiveGatewayRuntime, installMode, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
 
   const goBack = useCallback(async () => {
-    // Back performs durable rollback before popping history. Double Back would
-    // otherwise run that compensation twice and consume two visible pages.
-    // It also must not race a forward action that has already started but whose
-    // React loading state has not committed yet.
     if (
       setupBackInFlightRef.current
       || runtimeSelectionInFlightRef.current
       || retrySetupInFlightRef.current
       || dependencyRetryInFlightRef.current
-      || repairInFlightRef.current
       || gatewayReadyContinuationInFlightRef.current
       || dashboardEntryInFlightRef.current
-      || wizardNavigationInFlightRef.current
-      || wizardRecoveryInFlightRef.current
+      || isPluginRecoveryInFlight()
+      || isWizardOperationInFlight()
     ) return;
     setupBackInFlightRef.current = true;
     try {
@@ -1853,7 +1079,7 @@ export function useSetupFlow(
       setupNavigationLeavingRef.current = false;
       setupBackInFlightRef.current = false;
     }
-  }, [performGoBack]);
+  }, [isPluginRecoveryInFlight, isWizardOperationInFlight, performGoBack]);
 
   const retryGit = useCallback(() => {
     if (dependencyRetryInFlightRef.current || setupBackInFlightRef.current) return;
@@ -1976,9 +1202,9 @@ export function useSetupFlow(
     repairAndRetry,
     disablePluginsAndRetry,
     submitWizardStep,
-    retryWizard: retryOfficialOnboarding,
-    reclaimWizard: reclaimOfficialOnboarding,
-    backWizard: backOfficialOnboarding,
+    retryWizard,
+    reclaimWizard,
+    backWizard,
     runNativeSetup,
     runDockerSetup,
     retrySetup,

@@ -1,12 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), 'utf8');
 
+// SetupPage is a directory of per-step screens; assert against all of them.
+const readDir = async (path: string) => {
+  const entries = await readdir(new URL(path, import.meta.url));
+  const files = await Promise.all(
+    entries.filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx')).sort()
+      .map((entry) => readFile(new URL(`${path}${entry}`, import.meta.url), 'utf8')),
+  );
+  return files.join('\n');
+};
+
 test('all visible theme selectors use the shared transition service', async () => {
   const files = await Promise.all([
-    read('../pages/SetupPage.tsx'),
+    readDir('../pages/SetupPage/'),
     read('../components/shared/AppSettingsDialog.tsx'),
     read('../components/Layout/StatusBar.tsx'),
   ]);
@@ -18,8 +28,8 @@ test('all visible theme selectors use the shared transition service', async () =
 
 test('enter-dashboard actions forward their button origin to the transition coordinator', async () => {
   const [page, flow, transition] = await Promise.all([
-    read('../pages/SetupPage.tsx'),
-    read('../hooks/useSetupFlow.ts'),
+    readDir('../pages/SetupPage/'),
+    readDir('../hooks/useSetupFlow/'),
     read('./workspaceEntryTransition.ts'),
   ]);
   assert.match(page, /flow\.enterDashboard\(event\.currentTarget\)/);

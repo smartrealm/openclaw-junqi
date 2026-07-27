@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { after, describe, it } from 'node:test';
 import { stopPolling, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
@@ -18,6 +18,14 @@ import {
 } from './runtimeIdentity';
 
 const source = (path: string) => readFileSync(path, 'utf8');
+
+// useSetupFlow is a directory of hook modules; assert against all of them.
+const sourceDirTs = (dir: string) =>
+  readdirSync(dir)
+    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+    .sort()
+    .map((entry) => readFileSync(`${dir}/${entry}`, 'utf8'))
+    .join('\n');
 
 interface WireRequest {
   type: 'req';
@@ -466,7 +474,7 @@ describe('Gateway credential security regression gates', () => {
 
   it('does not persist a Gateway token from settings or setup', () => {
     const settings = source('src/stores/settingsStore.ts');
-    const setup = source('src/hooks/useSetupFlow.ts');
+    const setup = sourceDirTs('src/hooks/useSetupFlow');
     assert.doesNotMatch(settings, /localStorage\.setItem\(['"]aegis-gateway-token/);
     assert.doesNotMatch(setup, /gatewayToken:\s*token/);
   });
