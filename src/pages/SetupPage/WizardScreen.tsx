@@ -1,17 +1,29 @@
 // Step `configure-openclaw` — the official OpenClaw wizard.
 import { CheckCircle2, Copy, Circle, ExternalLink } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
 import { SetupShell } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
-import type { OpenClawWizardStep } from "@/services/openclawWizard";
+import {
+  isOpenClawWizardCompletionStep,
+  isOpenClawWizardNonBlockingProbeFailure,
+  type OpenClawWizardStep,
+} from "@/services/openclawWizard";
+import { getGatewayLogs } from "@/api/tauri-commands";
 import { renderLocalQrDataUrl } from "@/services/qrPresentation";
 import {
-  extractOpenClawWizardQrUrl,
+  continueOpenClawWizardQrAuthorization,
+  isOpenClawWizardQrMessage,
   normalizeOpenClawWizardHttpUrl,
+  resolveOpenClawWizardQrUrl,
+  shouldAutoAdvanceOpenClawWizardQr,
 } from "@/services/openclawWizardQr";
+import {
+  extractOpenClawTerminalQr,
+  type OpenClawTerminalQrMatrix,
+} from "@/services/openclawTerminalQr";
 
 export function wizardInitialValue(step: OpenClawWizardStep): unknown {
   if (step.type === "confirm") return Boolean(step.initialValue);
@@ -71,6 +83,9 @@ export function WizardStepQrHint({ url }: { url: string }) {
         <p className="text-xs leading-5 text-aegis-text-muted">
           {t('setup.wizard.scanQrHint', '看不清终端里的字符画二维码？扫这张图，或者复制链接在浏览器里打开。')}
         </p>
+        <p className="text-xs leading-5 text-aegis-text-secondary">
+          {t('setup.wizard.authorizationContinueHint', '在浏览器中完成授权后，返回这里点击“我已完成授权，继续”。')}
+        </p>
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
@@ -92,16 +107,136 @@ export function WizardStepQrHint({ url }: { url: string }) {
   );
 }
 
+function WizardTerminalQr({ matrix }: { matrix: OpenClawTerminalQrMatrix }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const columns = matrix[0]?.length ?? 0;
+    if (!canvas || columns === 0 || matrix.length === 0) return;
+    const quietZone = 3;
+    const moduleSize = 6;
+    canvas.width = (columns + quietZone * 2) * moduleSize;
+    canvas.height = (matrix.length + quietZone * 2) * moduleSize;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.imageSmoothingEnabled = false;
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#000000';
+    matrix.forEach((row, y) => {
+      row.forEach((dark, x) => {
+        if (dark) {
+          context.fillRect(
+            (x + quietZone) * moduleSize,
+            (y + quietZone) * moduleSize,
+            moduleSize,
+            moduleSize,
+          );
+        }
+      });
+    });
+  }, [matrix]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      role="img"
+      aria-label="OpenClaw channel authorization QR code"
+      className="h-auto w-full max-w-[240px] rounded-md border border-black/10 bg-white"
+    />
+  );
+}
+
 export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const step = flow.wizardStep;
   const [value, setValue] = useState<unknown>(() => step ? wizardInitialValue(step) : undefined);
   const [deviceCodeCopied, setDeviceCodeCopied] = useState(false);
+  const [terminalQr, setTerminalQr] = useState<OpenClawTerminalQrMatrix | null>(null);
+  const [terminalQrCaptureActive, setTerminalQrCaptureActive] = useState(false);
+  const autoSubmittedQrStepRef = useRef<string | null>(null);
+  const autoPolledProgressStepRef = useRef<string | null>(null);
+  const terminalQrStartedAtRef = useRef(0);
+  const wizardScanQrUrl = resolveOpenClawWizardQrUrl(
+    step?.message,
+    typeof step?.externalUrl === "string" ? step.externalUrl : undefined,
+  );
+  const autoAdvanceQr = shouldAutoAdvanceOpenClawWizardQr(step?.message, wizardScanQrUrl ?? undefined);
+  const terminalQrFallback = isOpenClawWizardQrMessage(step?.message) && !wizardScanQrUrl;
+  const autoPollProgress = step?.type === "progress" && step.executor === "gateway";
 
   useEffect(() => {
     setValue(step ? wizardInitialValue(step) : undefined);
     setDeviceCodeCopied(false);
   }, [step?.id]);
+
+  useEffect(() => {
+    if (!terminalQrCaptureActive) {
+      setTerminalQr(null);
+      terminalQrStartedAtRef.current = 0;
+      return;
+    }
+    if (terminalQrFallback || autoPollProgress) return;
+    setTerminalQrCaptureActive(false);
+  }, [autoPollProgress, terminalQrCaptureActive, terminalQrFallback]);
+
+  useEffect(() => {
+    if (
+      !step
+      || !autoAdvanceQr
+      || flow.wizardSubmitting
+      || flow.wizardError
+      || autoSubmittedQrStepRef.current === step.id
+    ) return;
+    autoSubmittedQrStepRef.current = step.id;
+    void flow.submitWizardStep(step.id);
+  }, [autoAdvanceQr, flow, step]);
+
+  useEffect(() => {
+    if (
+      !step
+      || !autoPollProgress
+      || flow.wizardSubmitting
+      || flow.wizardError
+      || autoPolledProgressStepRef.current === step.id
+    ) return;
+    autoPolledProgressStepRef.current = step.id;
+    void flow.pollWizard();
+  }, [autoPollProgress, flow, step]);
+
+  useEffect(() => {
+    if (!terminalQrCaptureActive || terminalQrStartedAtRef.current === 0 || terminalQr) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const readTerminalQr = async () => {
+      try {
+        const entries = await getGatewayLogs(200);
+        if (cancelled) return;
+        const lines = entries
+          .filter((entry) => (
+            entry.timestamp_ms >= terminalQrStartedAtRef.current
+            && (entry.source === 'child_stdout' || entry.source === 'docker_stdout')
+          ))
+          .map((entry) => entry.message);
+        const matrix = extractOpenClawTerminalQr(lines);
+        if (matrix) {
+          setTerminalQr(matrix);
+          return;
+        }
+      } catch {
+        // Remote/external Gateways may not expose process stdout to the desktop.
+      }
+      if (!cancelled) timer = setTimeout(readTerminalQr, 250);
+    };
+
+    void readTerminalQr();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [terminalQr, terminalQrCaptureActive]);
 
   if (!step) {
     return (
@@ -132,7 +267,6 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
   // intact so local, remote, and externally managed Gateways behave alike.
   const presentedStep = step;
   const deviceCode = presentedStep.deviceCode;
-  const wizardScanQrUrl = extractOpenClawWizardQrUrl(presentedStep.message);
   const options = Array.isArray(presentedStep.options) ? presentedStep.options : [];
   const selectedValues = Array.isArray(value) ? value : [];
   const toggleMulti = (optionValue: unknown) => {
@@ -145,14 +279,16 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
   };
   const blocked = (step.type === "select" || step.type === "multiselect")
     && options.length === 0;
-  const messageRenderedInBody = presentedStep.type === "confirm"
-    || presentedStep.type === "note"
-    || presentedStep.type === "progress"
-    || presentedStep.type === "action";
+  const messageRenderedInBody = presentedStep.type !== "text"
+    && presentedStep.type !== "select"
+    && presentedStep.type !== "multiselect"
+    && presentedStep.type !== "confirm";
   const wizardTitle = presentedStep.title || t("setup.wizard.title", "配置 OpenClaw");
   const wizardSubtitle = messageRenderedInBody
     ? t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。")
     : presentedStep.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。");
+  const completionStep = isOpenClawWizardCompletionStep(presentedStep);
+  const nonBlockingProbeFailure = isOpenClawWizardNonBlockingProbeFailure(presentedStep);
   const copyWizardDeviceCode = async () => {
     if (!deviceCode?.code) return;
     try {
@@ -160,6 +296,22 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
       setDeviceCodeCopied(true);
     } catch {
       setDeviceCodeCopied(false);
+    }
+  };
+  const submitCurrentStep = async () => {
+    if (terminalQrFallback) {
+      terminalQrStartedAtRef.current = Date.now() - 2_000;
+      setTerminalQr(null);
+      setTerminalQrCaptureActive(true);
+    }
+    const startedQrUrlAuthorization = Boolean(wizardScanQrUrl);
+    const result = await flow.submitWizardStep(step.id, value);
+    const continuation = result?.step;
+    if (startedQrUrlAuthorization) {
+      await continueOpenClawWizardQrAuthorization(
+        continuation,
+        (stepId, nextValue) => flow.submitWizardStep(stepId, nextValue),
+      );
     }
   };
 
@@ -177,16 +329,26 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
       nextAction={{
         label: flow.wizardError
           ? t("setup.wizard.retry", "重试")
-          : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
+          : autoAdvanceQr && flow.wizardSubmitting
+            ? t("setup.wizard.waitingForAuthorization", "正在等待授权…")
+          : wizardScanQrUrl
+            ? t("setup.wizard.authorizationComplete", "我已完成授权，继续")
+          : terminalQrFallback
+            ? t("setup.wizard.startQrAuthorization", "开始扫码授权")
+          : completionStep
+            ? t("setup.wizard.finish", "完成")
+          : autoPollProgress
+            ? t("setup.wizard.processing", "正在处理…")
+            : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
         onClick: () => {
           if (flow.wizardError) {
             void flow.retryWizard();
             return;
           }
-          void flow.submitWizardStep(step.id, value);
+          void submitCurrentStep();
         },
-        disabled: flow.wizardSubmitting || (!flow.wizardError && blocked),
-        loading: flow.wizardSubmitting,
+        disabled: flow.wizardSubmitting || autoPollProgress || (!flow.wizardError && blocked),
+        loading: flow.wizardSubmitting || autoPollProgress,
         icon: flow.wizardError ? "none" : "next",
       }}
     >
@@ -238,10 +400,40 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
             })}
           </div>
         )}
-        {(presentedStep.type === "note" || presentedStep.type === "progress" || presentedStep.type === "action") && (
+        {messageRenderedInBody && (
           <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
             <pre className="whitespace-pre-wrap break-words font-[inherit]">{presentedStep.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</pre>
+            {nonBlockingProbeFailure && (
+              <p className="mt-3 border-t border-aegis-border pt-3 text-xs leading-5 text-aegis-text-muted">
+                {t(
+                  "setup.wizard.nonBlockingProbeFailure",
+                  "这是渠道插件返回的非阻断检查结果，不代表 OpenClaw 或 Gateway 安装失败。可以继续完成向导，启动后再以渠道实际运行状态为准。",
+                )}
+              </p>
+            )}
             {wizardScanQrUrl && <WizardStepQrHint url={wizardScanQrUrl} />}
+            {terminalQrFallback && (
+              <div className="mt-4 space-y-3 border-t border-aegis-border pt-4">
+                {terminalQr && <WizardTerminalQr matrix={terminalQr} />}
+                <p className="text-xs leading-5 text-aegis-text-muted">
+                  {terminalQr
+                    ? t('setup.wizard.terminalQrReady', '已从 Gateway 输出中识别二维码，请使用对应应用扫描。')
+                    : flow.wizardSubmitting
+                      ? t('setup.wizard.terminalQrWaiting', '正在等待插件输出二维码…')
+                      : t('setup.wizard.terminalQrFallback', '点击“开始扫码授权”后，JunQi 会尝试读取本机 Gateway 输出。远程 Gateway 若未传回二维码，请在服务器终端查看或返回选择手动配置。')}
+                </p>
+              </div>
+            )}
+            {terminalQrCaptureActive && !terminalQrFallback && (
+              <div className="mt-4 space-y-3 border-t border-aegis-border pt-4">
+                {terminalQr && <WizardTerminalQr matrix={terminalQr} />}
+                <p className="text-xs leading-5 text-aegis-text-muted">
+                  {terminalQr
+                    ? t('setup.wizard.terminalQrReady', '已从 Gateway 输出中识别二维码，请使用对应应用扫描。')
+                    : t('setup.wizard.terminalQrWaiting', '正在等待插件输出二维码…')}
+                </p>
+              </div>
+            )}
           </div>
         )}
         {(presentedStep.externalUrl || deviceCode) && (

@@ -68,6 +68,7 @@ export interface SetupFlow {
   repairAndRetry: () => Promise<void>;
   disablePluginsAndRetry: () => Promise<void>;
   submitWizardStep: (stepId: string, value?: unknown) => Promise<OpenClawWizardResult | null>;
+  pollWizard: () => Promise<OpenClawWizardResult | null>;
   retryWizard: () => Promise<OpenClawWizardResult | null>;
   reclaimWizard: () => Promise<OpenClawWizardResult | null>;
   backWizard: () => Promise<OpenClawWizardResult | null>;
@@ -84,6 +85,8 @@ export interface SetupFlow {
   detectDocker: () => Promise<void>;
   refreshRuntime: () => Promise<{ status: OpenclawStatus | null; gatewayRunning: boolean }>;
   goBack: () => Promise<void>;
+  /** Abort a running install and return to the last user-selected screen. */
+  cancelSetupRun: () => Promise<void>;
   retryGit: () => void;
   retryNode: () => void;
   enteringDashboard: boolean;

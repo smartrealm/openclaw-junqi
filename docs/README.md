@@ -36,6 +36,7 @@ docs/
 - [Windows Wizard 链路审计](installation/openclaw-windows-wizard-audit.md)
 - [Windows 卸载流程复审](installation/windows-uninstall-flow-audit-2026-07-26.md)
 - [安装诊断链路审计](installation/install-diagnostics-audit.md)
+- [Setup runtime 与渠道兼容审计](installation/openclaw-setup-runtime-and-channel-audit-2026-07-27.md)
 - [中国大陆网络与安装源策略](installation/mainland-china-network-policy.md)
 
 对应规格与计划：
@@ -82,6 +83,7 @@ docs/
 - [Chat 生产加固审计](quality/chat-production-hardening-audit.md)
 - [会话来源聚合审计](quality/session-origin-aggregation-audit.md)
 - [Tauri Listener 生命周期审计](quality/tauri-listener-lifecycle-audit.md)
+- [Tauri Command 边界审计](quality/tauri-command-boundary-audit-2026-07-27.md)
 - [Voice Runtime 审计](quality/voice-runtime-audit.md)
 - [Voice Runtime 审计计划](quality/voice-runtime-audit-plan.md)
 - [JunQi Namespace 审计](quality/junqi-namespace-audit.md)

@@ -26,10 +26,16 @@ test("storage Back, configure, and advance actions exclude one another synchrono
 });
 
 test("environment detection Back invalidates the probe before it can auto-advance", () => {
+  const redetect = setupFlow.slice(
+    setupFlow.indexOf("const redetectEnvironment"),
+    setupFlow.indexOf("// ── Docker detect"),
+  );
   assert.match(setupFlow, /if \(setupStep !== "detecting"\) return;[\s\S]*?const runId = beginRun\(\)/);
   assert.match(setupFlow, /const detectionWasCancelled = \(\) => \([\s\S]*?!isRunActive\(runId\)[\s\S]*?setupNavigationLeavingRef\.current/);
-  assert.match(setupFlow, /const enterEnvironmentReview[\s\S]*?if \(detectionWasCancelled\(\)\) return;[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
+  assert.match(setupFlow, /const next = await detectEnvironmentForReview\(runId\);[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
   assert.match(setupFlow, /const continueAfterEnvironmentReview[\s\S]*?navigateSetup\("storage", "push"\)/);
+  assert.match(redetect, /setCheckingDocker\(true\);[\s\S]*?detectEnvironmentForReview\(runId\)/);
+  assert.doesNotMatch(redetect, /navigateSetup\("detecting", "replace"\)/);
   assert.match(setupFlow, /const performGoBack[\s\S]*?cancelActiveRun\(\);[\s\S]*?const backPolicy = setupBackPolicy\(setupStep\);[\s\S]*?if \(backPolicy === "cancel-run"\)[\s\S]*?goBackSetup\("welcome"\)[\s\S]*?return;/);
 });
 

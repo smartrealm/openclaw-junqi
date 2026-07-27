@@ -1,4 +1,4 @@
-export type OpenClawWizardStepType =
+export type OpenClawKnownWizardStepType =
   | 'note'
   | 'select'
   | 'text'
@@ -6,6 +6,11 @@ export type OpenClawWizardStepType =
   | 'multiselect'
   | 'progress'
   | 'action';
+
+// Keep literal autocomplete for today's protocol while allowing a newer
+// Gateway or third-party wizard to introduce a presentation type without the
+// desktop rejecting the complete response.
+export type OpenClawWizardStepType = OpenClawKnownWizardStepType | (string & {});
 
 export interface OpenClawWizardOption {
   value: unknown;
@@ -24,7 +29,7 @@ export interface OpenClawWizardStep {
   type: OpenClawWizardStepType;
   title?: string;
   message?: string;
-  format?: 'plain';
+  format?: string;
   options?: OpenClawWizardOption[];
   initialValue?: unknown;
   placeholder?: string;
@@ -43,15 +48,23 @@ export interface OpenClawWizardResult {
   error?: string;
 }
 
-const WIZARD_STEP_TYPES = new Set<OpenClawWizardStepType>([
-  'note',
-  'select',
-  'text',
-  'confirm',
-  'multiselect',
-  'progress',
-  'action',
-]);
+const WIZARD_PROBE_TITLE = /(?:connection|connectivity|channel).{0,20}(?:test|check|probe|verification)|(?:连接|連線|渠道|通道).{0,20}(?:测试|測試|检查|檢查|验证|驗證)/i;
+const WIZARD_PROBE_FAILURE = /(?:connection|probe|verification|check).{0,20}(?:failed|error)|(?:failed|error).{0,20}(?:connection|probe|verification|check)|(?:连接|連線|探测|探測|验证|驗證|检查|檢查).{0,20}(?:失败|失敗|错误|錯誤)|(?:失败|失敗|错误|錯誤).{0,20}(?:连接|連線|探测|探測|验证|驗證|检查|檢查)|status code\s+[45]\d\d|http\s+[45]\d\d/i;
+
+/**
+ * OpenClaw's WizardSessionPrompter.outro() emits exactly a client note titled
+ * "Done". Provider notes use note(), so checking this protocol-owned title
+ * avoids interpreting channel success prose as terminal state.
+ */
+export function isOpenClawWizardCompletionStep(step?: OpenClawWizardStep | null): boolean {
+  return Boolean(step?.type === 'note' && step.title === 'Done');
+}
+
+/** A channel-owned probe failure is informative and does not terminate the wizard protocol. */
+export function isOpenClawWizardNonBlockingProbeFailure(step?: OpenClawWizardStep | null): boolean {
+  if (!step || step.type !== 'note') return false;
+  return WIZARD_PROBE_TITLE.test(step.title ?? '') && WIZARD_PROBE_FAILURE.test(step.message ?? '');
+}
 
 function isWizardOption(value: unknown): value is OpenClawWizardOption {
   if (!value || typeof value !== 'object') return false;
@@ -76,10 +89,11 @@ function isWizardDeviceCode(value: unknown): value is OpenClawWizardDeviceCode {
 function normalizeWizardStep(value: unknown): OpenClawWizardStep | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
-  if (typeof raw.id !== 'string' || !WIZARD_STEP_TYPES.has(raw.type as OpenClawWizardStepType)) return null;
+  if (typeof raw.id !== 'string' || !raw.id.trim()) return null;
+  if (typeof raw.type !== 'string' || !raw.type.trim()) return null;
   if (raw.title !== undefined && typeof raw.title !== 'string') return null;
   if (raw.message !== undefined && typeof raw.message !== 'string') return null;
-  if (raw.format !== undefined && raw.format !== 'plain') return null;
+  if (raw.format !== undefined && typeof raw.format !== 'string') return null;
   if (raw.options !== undefined && (!Array.isArray(raw.options) || !raw.options.every(isWizardOption))) return null;
   if (raw.placeholder !== undefined && typeof raw.placeholder !== 'string') return null;
   if (raw.sensitive !== undefined && typeof raw.sensitive !== 'boolean') return null;

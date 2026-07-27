@@ -51,16 +51,16 @@ function flattenMessages(value: unknown, prefix = '', result: Record<string, unk
 
 test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   const detection = setupFlow.slice(
-    setupFlow.indexOf('// ── 挂载后自动检测'),
-    setupFlow.indexOf('// ── Docker detect'),
+    setupFlow.indexOf('const detectEnvironmentForReview'),
+    setupFlow.indexOf('const continueAfterEnvironmentReview'),
   );
 
   assert.match(detection, /const runId = beginRun\(\)/);
-  assert.match(detection, /const detectionWasCancelled = \(\) => \([\s\S]*?cancelled \|\| !isRunActive\(runId\) \|\| setupNavigationLeavingRef\.current/);
-  assert.match(detection, /await detectGatewayConfig\(\);\s*if \(detectionWasCancelled\(\)\) return/);
-  assert.match(detection, /const oclaw = await checkOpenclaw\(\);\s*if \(detectionWasCancelled\(\)\) return/);
+  assert.match(detection, /const detectionWasCancelled = \(\) => \([\s\S]*?!isRunActive\(runId\) \|\| setupNavigationLeavingRef\.current/);
+  assert.match(detection, /await detectGatewayConfig\(\);\s*if \(detectionWasCancelled\(\)\) return null/);
+  assert.match(detection, /const oclaw = await checkOpenclaw\(\);\s*if \(detectionWasCancelled\(\)\) return null/);
   assert.match(setupFlow, /await window\.aegis\.config\.detect\(\);/);
-  assert.match(detection, /return \(\) => \{\s*cancelled = true/);
+  assert.match(detection, /const next = await detectEnvironmentForReview\(runId\);[\s\S]*?!isRunActive\(runId\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
 });
 
 test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () => {
@@ -75,7 +75,7 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
     setupFlow.indexOf('const startOfficialOnboarding = useCallback'),
   );
 
-  assert.match(completion, /await invoke<boolean>\("handoff_gateway_to_official_service", \{\}\)/);
+  assert.match(completion, /await handoffGatewayToOfficialService\(\)/);
   assert.match(completion, /await invoke<boolean>\("probe_selected_gateway", \{\}\)/);
   assert.match(completion, /replaceSetupStep\("error"\)/);
   assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
@@ -255,8 +255,8 @@ test('BUG-ONB-36 the runtime choice presents reuse first instead of claiming eve
   const zh = JSON.parse(readFileSync(new URL('../locales/zh.json', import.meta.url), 'utf8'));
 
   const detection = setupFlow.slice(
-    setupFlow.indexOf('// ── 挂载后自动检测'),
-    setupFlow.indexOf('// ── Docker detect after the welcome step'),
+    setupFlow.indexOf('const detectEnvironmentForReview'),
+    setupFlow.indexOf('const continueAfterEnvironmentReview'),
   );
 
   assert.match(mode, /flow\.openclawStatus\?\.installed === true/);
@@ -288,7 +288,8 @@ test('BUG-ONB-06 every setup message is complete in all supported locales', () =
 test('BUG-ONB-07 wizard body messages are not duplicated as subtitles', () => {
   const wizard = screen('WizardScreen');
 
-  assert.match(wizard, /const messageRenderedInBody = presentedStep\.type === "confirm"/);
+  assert.match(wizard, /const messageRenderedInBody = presentedStep\.type !== "text"/);
+  assert.match(wizard, /&& presentedStep\.type !== "confirm"/);
   assert.match(wizard, /subtitle=\{wizardSubtitle\}/);
   assert.match(wizard, /aria-label=\{presentedStep\.title \|\| t\("setup\.wizard\.textInput"/);
 });
@@ -537,7 +538,76 @@ test('BUG-ONB-27 terminal QR notes render a bounded local image and use the syst
   assert.match(wizard, /renderLocalQrDataUrl\(url\)/);
   assert.match(wizard, /openWizardExternalUrl\(url\)/);
   assert.doesNotMatch(wizard, /target="_blank"/);
-  assert.match(setupPage, /extractOpenClawWizardQrUrl\(presentedStep\.message\)/);
+  assert.match(setupPage, /resolveOpenClawWizardQrUrl/);
+  assert.match(setupPage, /authorizationComplete/);
+  assert.match(setupPage, /authorizationContinueHint/);
+  assert.match(setupPage, /shouldAutoAdvanceOpenClawWizardQr/);
+  assert.match(setupPage, /flow\.submitWizardStep\(step\.id\)/);
+});
+
+test('BUG-ONB-41 channel authorization remains vendor-neutral and future wizard steps stay visible', () => {
+  const qr = readFileSync(new URL('../services/openclawWizardQr.ts', import.meta.url), 'utf8');
+  const wizardService = readFileSync(new URL('../services/openclawWizard.ts', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(qr, /dingtalk|feishu|lark/i);
+  assert.match(qr, /normalizeOpenClawWizardHttpUrl\(externalUrl\)/);
+  assert.match(wizardService, /typeof raw\.type !== 'string'/);
+  assert.doesNotMatch(wizardService, /WIZARD_STEP_TYPES\.has/);
+  assert.match(setupPage, /\{messageRenderedInBody && \(/);
+  assert.match(setupPage, /presentedStep\.message/);
+});
+
+test('BUG-ONB-42 a user-started QR flow crosses only its protocol continuation', () => {
+  const qr = readFileSync(new URL('../services/openclawWizardQr.ts', import.meta.url), 'utf8');
+  const wizard = screen('WizardScreen');
+  const submit = wizard.slice(
+    wizard.indexOf('const submitCurrentStep = async'),
+    wizard.indexOf('return (', wizard.indexOf('const submitCurrentStep = async')),
+  );
+
+  assert.doesNotMatch(qr, /dingtalk|feishu|lark/i);
+  assert.match(qr, /step\?\.type === 'confirm'/);
+  assert.match(qr, /step\.initialValue === true/);
+  assert.match(submit, /startedQrUrlAuthorization = Boolean\(wizardScanQrUrl\)/);
+  assert.match(submit, /continueOpenClawWizardQrAuthorization/);
+  assert.match(submit, /flow\.submitWizardStep\(stepId, nextValue\)/);
+});
+
+test('BUG-ONB-40 official Gateway finalizer refreshes credentials and reconciles its lost wizard session', () => {
+  assert.match(setupFlow, /resolved\?\.gatewayBootstrapToken[\s\S]*?target\.token[\s\S]*?resolved\?\.gatewayToken/);
+  assert.match(setupFlow, /gatewayManager\.connect\(target\.ws_url, token, deviceToken\)/);
+  assert.match(setupFlow, /const recoverAfterGatewayHandoff/);
+  assert.match(setupFlow, /return await recoverLostWizardSession\(client\)/);
+  assert.match(setupFlow, /error instanceof GatewayPrivilegedSourceChangedError/);
+});
+
+test('BUG-ONB-45 a terminal note survives the final Gateway restart without a false timeout', () => {
+  const wizardHook = hookFile('useWizardSession');
+  const submit = wizardHook.slice(
+    wizardHook.indexOf('const submitWizardStep'),
+    wizardHook.indexOf('const retryOfficialOnboarding'),
+  );
+  const wizard = screen('WizardScreen');
+
+  assert.match(submit, /connectionTimedOut/);
+  assert.match(submit, /isOpenClawWizardCompletionStep\(wizardClientRef\.current\?\.currentStepView\)/);
+  assert.match(submit, /resolveActiveRuntimeOnboardingRequirement\(\)/);
+  assert.match(submit, /applyWizardResult\(\{ done: true, status: "done" \}, operationId\)/);
+  assert.match(wizard, /isOpenClawWizardNonBlockingProbeFailure\(presentedStep\)/);
+  assert.match(wizard, /setup\.wizard\.nonBlockingProbeFailure/);
+});
+
+test('BUG-ONB-46 Gateway-owned progress is polled and local QR capture survives it', () => {
+  const wizard = screen('WizardScreen');
+  const wizardHook = hookFile('useWizardSession');
+
+  assert.match(wizard, /step\?\.type === "progress" && step\.executor === "gateway"/);
+  assert.match(wizard, /autoPolledProgressStepRef\.current === step\.id/);
+  assert.match(wizard, /void flow\.pollWizard\(\)/);
+  assert.match(wizardHook, /pollWizard: pollOfficialOnboarding/);
+  assert.match(wizard, /terminalQrCaptureActive/);
+  assert.match(wizard, /if \(terminalQrFallback \|\| autoPollProgress\) return/);
+  assert.match(wizard, /terminalQrCaptureActive && !terminalQrFallback/);
 });
 
 test('a superseded wizard submit releases its re-entry guard', () => {
@@ -626,6 +696,7 @@ test('each setup screen highlights the stage it actually belongs to', () => {
 
   assert.equal(activeOf('WelcomeScreen'), stageOf('identity'));
   assert.equal(activeOf('DetectingScreen'), stageOf('environment'));
+  assert.equal(activeOf('EnvironmentReviewScreen'), stageOf('environment'));
   assert.equal(activeOf('ModeSelectScreen'), stageOf('runtimeChoice'));
   assert.equal(activeOf('GatewayStoppedScreen'), stageOf('runtime'));
   assert.equal(activeOf('GitMissingScreen'), stageOf('runtime'));
@@ -640,4 +711,29 @@ test('each setup screen highlights the stage it actually belongs to', () => {
   // ProgressScreen covers the install run and reuses the runtime stage.
   const progress = screen('ProgressScreen');
   assert.match(progress, new RegExp(`setupStep === "ready" \\? ${stageOf('ready')} : ${stageOf('runtime')}`));
+});
+
+test('environment review distinguishes Docker installation from daemon readiness', () => {
+  const review = screen('EnvironmentReviewScreen');
+  const redetect = setupFlow.slice(
+    setupFlow.indexOf('const redetectEnvironment'),
+    setupFlow.indexOf('// ── Docker detect'),
+  );
+
+  assert.match(review, /const dockerInstalled = flow\.dockerStatus\?\.available === true/);
+  assert.match(review, /const dockerReady = dockerInstalled && flow\.dockerStatus\?\.daemon_running === true/);
+  assert.match(review, /setup\.dockerRunning/);
+  assert.match(review, /setup\.dockerInstalledStopped/);
+  assert.match(review, /setup\.dockerNotDetected/);
+  assert.match(review, /loading: flow\.checkingDocker/);
+  assert.match(review, /disabled: flow\.checkingDocker/);
+  assert.match(review, /setup\.recheckingEnvironmentHint/);
+  assert.match(redetect, /detectEnvironmentForReview\(runId\)/);
+  assert.doesNotMatch(redetect, /navigateSetup\("detecting", "replace"\)/);
+});
+
+test('BUG-ONB-44 shared setup logs are visible only when diagnostics exist', () => {
+  assert.match(setupFlowPanels, /isRuntime && showLogToggle && logs\.length > 0/);
+  assert.match(setupFlowPanels, /disabled=\{!logText\}/);
+  assert.match(screen('ProgressScreen'), /<InstallationConsole/);
 });

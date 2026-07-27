@@ -166,7 +166,7 @@ export const exportSetupDiagnosticsBundle = (destination: string) => (
 );
 export const applyTerminalIntegration = () => invoke<TerminalIntegrationStatus>("apply_terminal_integration");
 export const startGateway = (port?: number) => (
-  port == null ? invoke<any>("start_gateway") : invoke<any>("start_gateway", { port })
+  port == null ? invoke<GatewayStatus>("start_gateway") : invoke<GatewayStatus>("start_gateway", { port })
 );
 export const checkDocker = () => invoke<DockerStatus>("check_docker");
 export const pullOpenclawImage = (tag?: string) => invoke<string>("pull_openclaw_image", { tag });
@@ -192,13 +192,14 @@ export interface EnsureResult {
   healthy: boolean;
   port: number;
   token: string | null;
+  /** Compatibility field retained by Rust; selected-runtime-only startup keeps it false. */
   attempted_fallback: boolean;
   error: string | null;
 }
 
 /**
- * Boot-time / on-demand orchestrator. Tries native → docker → unavailable.
- * Debounced to one call per 60s on the Rust side.
+ * Starts and probes only the persisted runtime selected by the user.
+ * It never silently switches between Native and Docker.
  */
 export const ensureGatewayRunning = () => invoke<EnsureResult>("ensure_gateway_running");
 
@@ -231,7 +232,7 @@ export const enableGatewayAutostart = () => invoke<GatewayAutostartStatus>("enab
 export const disableGatewayAutostart = () => invoke<GatewayAutostartStatus>("disable_gateway_autostart");
 
 /** Gateway log buffer access (200-entry circular, see gateway_process.rs). */
-export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
+export type LogLevel = 'info' | 'warn' | 'error';
 export type LogSource = 'child_stdout' | 'child_stderr' | 'docker_stdout' | 'docker_stderr' | 'lifecycle';
 export interface LogEntry {
   timestamp_ms: number;

@@ -16,7 +16,11 @@ export const INSTALL_TARGET_KEYS = {
 /// user decision, so reaching this step starts it automatically.
 export const AUTO_ADVANCE_GATEWAY_STEP: SetupStep = "gateway-stopped";
 
-export type SetupBackPolicy = "cancel-run" | "rollback-storage" | "navigate";
+export type SetupBackPolicy =
+  | "cancel-run"
+  | "cancel-install"
+  | "rollback-storage"
+  | "navigate";
 
 /**
  * Declares which durable side effect, if any, a page owns when leaving via Back.
@@ -29,22 +33,31 @@ export function setupBackPolicy(step: SetupStep): SetupBackPolicy {
     case "detecting":
     case "gateway-stopped":
       return "cancel-run";
+    case "checking":
+    case "install-git":
+    case "install-node":
+    case "install-openclaw":
+    case "git-missing":
+    case "node-missing":
+      return "cancel-install";
     case "storage":
     case "choosing-mode":
       return "rollback-storage";
     case "welcome":
     case "environment-review":
-    case "checking":
-    case "install-git":
-    case "git-missing":
-    case "node-missing":
-    case "install-node":
-    case "install-openclaw":
     case "gateway-ready":
     case "configure-openclaw":
     case "ready":
     case "error":
       return "navigate";
+  }
+}
+
+/** A prerequisite the user must resolve before setup can be retried. */
+export class SetupPrerequisiteError extends Error {
+  constructor(readonly step: Extract<SetupStep, "git-missing" | "node-missing">, message: string) {
+    super(message);
+    this.name = "SetupPrerequisiteError";
   }
 }
 

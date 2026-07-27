@@ -63,9 +63,11 @@ test("BUG-WIN-CANCEL-03 stale runtime selection cannot commit or compensate a ne
 });
 
 test("BUG-WIN-CANCEL-04 Back compensates only a page-owned durable transaction", () => {
+  // `cancelSetupRun`, which follows this callback, deliberately compensates
+  // the staged install mode after invalidating the active run.
   const goBack = flow.slice(
     flow.indexOf("const performGoBack = useCallback"),
-    flow.indexOf("const retryGit = useCallback"),
+    flow.indexOf("const goBack = useCallback"),
   );
   assert.match(goBack, /const backPolicy = setupBackPolicy\(setupStep\)/);
   assert.match(goBack, /if \(backPolicy === "rollback-storage"\)/);
@@ -75,13 +77,36 @@ test("BUG-WIN-CANCEL-04 Back compensates only a page-owned durable transaction",
   assert.match(goBack, /catch \(rollbackError\)[\s\S]*?setForceStorageSelection\(true\);\s*\n\s*replaceSetupStep\("storage"\)/);
 });
 
+test("BUG-WIN-CANCEL-05 a running install always offers a cancellation path", () => {
+  const progress = readFileSync(
+    new URL("../pages/SetupPage/ProgressScreen.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(progress, /setupBackPolicy\(setupStep\) === "cancel-install"/);
+  assert.match(progress, /isInstalling \? \{[\s\S]*?flow\.cancelSetupRun\(\)/);
+
+  const cancel = flow.slice(
+    flow.indexOf("const cancelSetupRun = useCallback"),
+    flow.indexOf("const retryGit = useCallback"),
+  );
+  assert.match(cancel, /cancelActiveRun\(\)/);
+  assert.match(cancel, /rollbackRuntimeReconfiguration\(\)/);
+  assert.match(cancel, /rollbackActiveGatewayRuntime\(installMode\)/);
+  assert.match(cancel, /await performGoBack\(\)/);
+  assert.doesNotMatch(
+    cancel.slice(0, cancel.indexOf("setupBackInFlightRef.current = true")),
+    /runtimeSelectionInFlightRef\.current$/m,
+  );
+  assert.match(flow, /const cancelActiveRun = useCallback[\s\S]*?requestDependencyCancellation\(operationId\)/);
+});
+
 test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff UI", () => {
   const applyResult = flow.slice(
     flow.indexOf("const applyWizardResult = useCallback"),
     flow.indexOf("const recoverLostWizardSession = useCallback"),
   );
   assert.match(applyResult, /result: OpenClawWizardResult,\s*operationId: number/);
-  assert.match(applyResult, /await invoke<boolean>\("handoff_gateway_to_official_service", \{\}\);\s*assertWizardOperationCurrent\(operationId\)/);
+  assert.match(applyResult, /await handoffGatewayToOfficialService\(\);\s*assertWizardOperationCurrent\(operationId\)/);
   assert.match(applyResult, /await invoke<boolean>\("probe_selected_gateway", \{\}\);\s*assertWizardOperationCurrent\(operationId\)/);
   assert.match(applyResult, /const modelProbe = await probeActiveRuntimeModel\(\);\s*assertWizardOperationCurrent\(operationId\)/);
   assert.match(applyResult, /await refreshGatewayConnectionTarget\(\);\s*assertWizardOperationCurrent\(operationId\)/);

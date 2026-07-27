@@ -19,6 +19,7 @@ specs/
 - [Windows OpenClaw Wizard](installation/2026-07-23-openclaw-windows-wizard-bugfix.md)
 - [Windows 首次安装](installation/2026-07-24-openclaw-windows-first-run-bugfix.md)
 - [Windows 卸载流程](installation/2026-07-26-windows-uninstall-flow-bugfix.md)
+- [Setup runtime 与渠道兼容](installation/2026-07-27-setup-runtime-and-channel-compatibility.md)
 
 ## Gateway
 
@@ -39,3 +40,4 @@ specs/
 - [JunQi namespace](quality/2026-07-21-junqi-namespace-bugfix.md)
 - [Voice runtime](quality/2026-07-21-voice-runtime-bugfix.md)
 - [Tauri listener lifecycle](quality/2026-07-22-tauri-listener-lifecycle-bugfix.md)
+- [Tauri command boundary](quality/2026-07-27-tauri-command-boundary-bugfix.md)

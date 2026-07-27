@@ -2,6 +2,7 @@
 import { Package } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/stores/app-store";
+import { setupBackPolicy } from "@/hooks/useSetupFlow/helpers";
 import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
 import { InstallationConsole, currentStepOf, installStepTitle, type InstallationConsoleSummary, SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
@@ -22,6 +23,7 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
       : isGatewayReady
         ? { kind: "gateway-ready" }
         : { kind: "installation" };
+  const isInstalling = setupBackPolicy(setupStep) === "cancel-install";
   const currentInstallStep = currentStepOf(flow.steps);
   const canRepairGateway = setupStep === "error" && currentInstallStep?.id === "gateway";
   // BUG-CPI-07：自愈梯子（更新→重装）已确认这些插件不可自动修复，
@@ -44,6 +46,9 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
       previousAction={setupStep === "error" || isGatewayReady ? {
         onClick: () => flow.goBack(),
         disabled: flow.repairing || gatewayReadyChecking,
+      } : isInstalling ? {
+        label: t("setup.cancelInstall", "取消安装"),
+        onClick: () => { void flow.cancelSetupRun(); },
       } : undefined}
       secondaryAction={canRepairGateway ? {
         label: t("setup.retryDirectly", "直接重试"),
@@ -122,4 +127,3 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
     </SetupShell>
   );
 }
-

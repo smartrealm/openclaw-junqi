@@ -374,3 +374,25 @@ test('setup failures are retained in the copyable activity log without a duplica
   assert.doesNotMatch(setupPage, /setup\.copyError/);
   assert.doesNotMatch(progressScreen, /navigator\.clipboard/);
 });
+
+test('a missing prerequisite reaches its own recovery screen', () => {
+  const helpers = readFileSync(new URL('./useSetupFlow/helpers.ts', import.meta.url), 'utf8');
+  assert.match(helpers, /class SetupPrerequisiteError extends Error/);
+  assert.match(helpers, /"git-missing" \| "node-missing"/);
+
+  const hook = readFileSync(new URL('./useSetupFlow/index.ts', import.meta.url), 'utf8');
+  assert.match(hook, /throw new SetupPrerequisiteError\(\s*"node-missing"/);
+  assert.match(hook, /throw new SetupPrerequisiteError\("git-missing"/);
+  assert.match(
+    hook,
+    /if \(err instanceof SetupPrerequisiteError\) \{[\s\S]*?setNeedsGit\(true\)[\s\S]*?replaceSetupStep\(err\.step\)/,
+  );
+
+  const router = readFileSync(new URL('../pages/SetupPage/index.tsx', import.meta.url), 'utf8');
+  assert.match(router, /case "git-missing": return <GitMissingScreen/);
+  assert.match(router, /case "node-missing": return <NodeMissingScreen/);
+  const gitScreen = readFileSync(new URL('../pages/SetupPage/GitMissingScreen.tsx', import.meta.url), 'utf8');
+  const nodeScreen = readFileSync(new URL('../pages/SetupPage/NodeMissingScreen.tsx', import.meta.url), 'utf8');
+  assert.match(gitScreen, /flow\.retryGit\(\)/);
+  assert.match(nodeScreen, /flow\.retryNode\(\)/);
+});

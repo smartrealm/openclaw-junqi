@@ -14,32 +14,24 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
-import { RefreshCw, Trash2, ScrollText, Info, AlertTriangle, AlertCircle, Bug } from 'lucide-react';
+import { RefreshCw, Trash2, ScrollText, Info, AlertTriangle, AlertCircle } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
+import {
+  clearGatewayLogs,
+  getGatewayLogs,
+  type LogEntry,
+  type LogLevel,
+  type LogSource,
+} from '@/api/tauri-commands';
 import clsx from 'clsx';
 
-type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
-type LogSource = 'child_stdout' | 'child_stderr' | 'docker_stdout' | 'docker_stderr' | 'lifecycle';
-
-interface LogEntry {
-  timestamp_ms: number;
-  level: LogLevel;
-  source: LogSource;
-  message: string;
-}
-
 const LEVEL_ICON: Record<LogLevel, typeof Info> = {
-  trace: Bug,
-  debug: Bug,
   info: Info,
   warn: AlertTriangle,
   error: AlertCircle,
 };
 
 const LEVEL_COLOR: Record<LogLevel, string> = {
-  trace: 'text-aegis-text-dim',
-  debug: 'text-aegis-text-dim',
   info: 'text-aegis-text',
   warn: 'text-aegis-warning',
   error: 'text-aegis-danger',
@@ -72,7 +64,7 @@ export function GatewayLogPanel() {
     setLoading(true);
     setError(null);
     try {
-      const data = await invoke<LogEntry[]>('get_gateway_logs', { limit: 200 });
+      const data = await getGatewayLogs(200);
       setEntries(data);
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -85,7 +77,7 @@ export function GatewayLogPanel() {
     setLoading(true);
     setError(null);
     try {
-      await invoke('clear_gateway_logs');
+      await clearGatewayLogs();
       await refresh();
     } catch (e: any) {
       setError(e?.message || String(e));

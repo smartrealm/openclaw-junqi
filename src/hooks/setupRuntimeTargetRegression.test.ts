@@ -34,8 +34,8 @@ const runtimePanel = source('../components/settings/ManagedRuntimeSettingsPanel.
 
 test('BUG-RT-01 restores the persisted Docker target before setup detection', () => {
   const detection = setupFlow.slice(
-    setupFlow.indexOf('// ── 挂载后自动检测'),
-    setupFlow.indexOf('// ── Docker detect'),
+    setupFlow.indexOf('const detectEnvironmentForReview'),
+    setupFlow.indexOf('const continueAfterEnvironmentReview'),
   );
 
   assert.match(commands, /export const detectGatewayConfig = \(\) => invoke<GatewayConfigInfo>\("detect_gateway_config"\)/);

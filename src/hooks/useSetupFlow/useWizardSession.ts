@@ -5,12 +5,17 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import type { SetupStep } from "@/stores/setup-navigation";
 import type { SetupLog } from "@/stores/app-store";
-import { gateway, GatewayPrivilegedAuthorizationError } from "@/services/gateway";
+import {
+  gateway,
+  GatewayPrivilegedAuthorizationError,
+  GatewayPrivilegedSourceChangedError,
+} from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
-import { detectGatewayConfig } from "@/api/tauri-commands";
+import { detectGatewayConfig, handoffGatewayToOfficialService } from "@/api/tauri-commands";
 import {
   classifyOpenClawWizardFailure,
   createBrowserOpenClawWizardSessionStore,
+  isOpenClawWizardCompletionStep,
   OpenClawWizardCancelledError,
   OpenClawWizardClient,
   OpenClawWizardOperationSupersededError,
@@ -135,8 +140,36 @@ export function useWizardSession({
     }
   }, []);
 
+  const refreshGatewayConnectionTarget = useCallback(async () => {
+    try {
+      const target = await detectGatewayConfig();
+      cacheGatewayTarget(target.port);
+      // The official wizard writes the final Gateway token before installing or
+      // restarting its service. Re-read it instead of retaining the bootstrap
+      // process' stale in-memory credential.
+      const resolved = await window.aegis.config.get();
+      const token = String(
+        resolved?.gatewayBootstrapToken
+          || target.token
+          || resolved?.gatewayToken
+          || "",
+      ).trim();
+      const deviceToken = String(resolved?.gatewayDeviceToken || "").trim();
+      gatewayManager.connect(target.ws_url, token, deviceToken);
+      return true;
+    } catch {
+      // The normal connection resolver can still read settings/config later.
+      gatewayManager.reconnect();
+      return false;
+    }
+  }, []);
+
   const waitForGatewayConnection = useCallback(async (operationId: number, timeoutMs = 20_000) => {
-    gatewayManager.reconnect();
+    if (!gateway.getStatus().connected) {
+      await refreshGatewayConnectionTarget();
+    } else {
+      gatewayManager.reconnect();
+    }
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       assertWizardOperationCurrent(operationId);
@@ -145,17 +178,7 @@ export function useWizardSession({
     }
     assertWizardOperationCurrent(operationId);
     throw new Error(t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。"));
-  }, [assertWizardOperationCurrent, t]);
-
-  const refreshGatewayConnectionTarget = useCallback(async () => {
-    try {
-      const target = await detectGatewayConfig();
-      cacheGatewayTarget(target.port);
-      gatewayManager.reconnect();
-    } catch {
-      // The normal connection resolver can still read settings/config later.
-    }
-  }, []);
+  }, [assertWizardOperationCurrent, refreshGatewayConnectionTarget, t]);
 
   const applyWizardResult = useCallback(async (
     result: OpenClawWizardResult,
@@ -196,7 +219,7 @@ export function useWizardSession({
       // default. Reconcile ownership before declaring setup complete so the
       // foreground bootstrap child and Scheduled Task never race on one port.
       try {
-        await invoke<boolean>("handoff_gateway_to_official_service", {});
+        await handoffGatewayToOfficialService();
         assertWizardOperationCurrent(operationId);
         const selectedGatewayReady = await invoke<boolean>("probe_selected_gateway", {});
         assertWizardOperationCurrent(operationId);
@@ -277,6 +300,23 @@ export function useWizardSession({
     }
     return await client.start();
   }, [probeActiveRuntimeModel, resolveActiveRuntimeOnboardingRequirement]);
+
+  const recoverAfterGatewayHandoff = useCallback(async (
+    operationId: number,
+  ): Promise<OpenClawWizardResult> => {
+    await refreshGatewayConnectionTarget();
+    await waitForGatewayConnection(operationId);
+    assertWizardOperationCurrent(operationId);
+    const client = wizardClientRef.current!;
+    try {
+      return await client.resume();
+    } catch (error) {
+      if (!isOpenClawWizardSessionLost(error)) throw error;
+      // Wizard sessions are process-local. The official finalizer can replace
+      // that process after durable model/config metadata has already landed.
+      return await recoverLostWizardSession(client);
+    }
+  }, [assertWizardOperationCurrent, recoverLostWizardSession, refreshGatewayConnectionTarget, waitForGatewayConnection]);
 
   const startOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     const operationId = beginWizardOperation();
@@ -360,6 +400,39 @@ export function useWizardSession({
       return await applyWizardResult(result, operationId);
     } catch (error) {
       if (error instanceof OpenClawWizardOperationSupersededError) return null;
+      const connectionTimedOut = (
+        error instanceof Error
+        && error.message === t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。")
+      );
+      if (
+        connectionTimedOut
+        && isOpenClawWizardCompletionStep(wizardClientRef.current?.currentStepView)
+      ) {
+        // The official final note can be visible before its service handoff
+        // replaces the Gateway process. If the acknowledgement loses that
+        // connection, recover only from provider-neutral terminal semantics;
+        // applyWizardResult still verifies the selected Gateway identity and
+        // performs a live model probe before Ready is committed.
+        const structurallyIncomplete = await resolveActiveRuntimeOnboardingRequirement();
+        assertWizardOperationCurrent(operationId);
+        if (!structurallyIncomplete) {
+          return await applyWizardResult({ done: true, status: "done" }, operationId);
+        }
+      }
+      if (
+        error instanceof GatewayPrivilegedSourceChangedError
+        || /gateway (?:connection|credentials) (?:changed|closed)|verified gateway connection changed/i.test(
+          error instanceof Error ? error.message : String(error),
+        )
+      ) {
+        try {
+          const result = await recoverAfterGatewayHandoff(operationId);
+          assertWizardOperationCurrent(operationId);
+          return await applyWizardResult(result, operationId);
+        } catch (recoveryError) {
+          error = recoveryError;
+        }
+      }
       if (isOpenClawWizardStepDesynchronized(error)) {
         return await resumeOfficialOnboarding();
       }
@@ -380,7 +453,7 @@ export function useWizardSession({
         setWizardSubmitting(false);
       }
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, resumeOfficialOnboarding, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverAfterGatewayHandoff, recoverLostWizardSession, resolveActiveRuntimeOnboardingRequirement, resumeOfficialOnboarding, setSetupError, t, waitForGatewayConnection, wizardFailureMessage]);
 
   const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (wizardRecoveryInFlightRef.current || wizardNavigationInFlightRef.current) return null;
@@ -409,6 +482,11 @@ export function useWizardSession({
       }
     }
   }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
+
+  const pollOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
+    if (wizardNavigationInFlightRef.current || wizardRecoveryInFlightRef.current) return null;
+    return await resumeOfficialOnboarding();
+  }, [resumeOfficialOnboarding]);
 
   const backOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (!wizardClientRef.current?.canGoBack || wizardNavigationInFlightRef.current) return null;
@@ -492,6 +570,7 @@ export function useWizardSession({
     wizardError,
     wizardRecoveryRequired,
     submitWizardStep,
+    pollWizard: pollOfficialOnboarding,
     retryWizard: retryOfficialOnboarding,
     reclaimWizard: reclaimOfficialOnboarding,
     backWizard: backOfficialOnboarding,

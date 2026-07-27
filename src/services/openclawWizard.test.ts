@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   classifyOpenClawWizardFailure,
+  isOpenClawWizardCompletionStep,
+  isOpenClawWizardNonBlockingProbeFailure,
   isOpenClawWizardSessionLost,
   isOpenClawWizardStepDesynchronized,
   OpenClawWizardCancelledError,
@@ -10,6 +12,19 @@ import {
   OpenClawWizardOperationSupersededError,
   requiresOpenClawOnboarding,
 } from './openclawWizard';
+
+test('recognizes only provider-neutral final wizard notes', () => {
+  assert.equal(isOpenClawWizardCompletionStep({ id: 'done', type: 'note', title: 'Done', message: 'Onboarding complete. Open the dashboard.' }), true);
+  assert.equal(isOpenClawWizardCompletionStep({ id: 'done-lookalike', type: 'note', title: 'Completed', message: 'Setup complete.' }), false);
+  assert.equal(isOpenClawWizardCompletionStep({ id: 'channel', type: 'note', title: 'DingTalk authorization', message: 'Success! Bot configured.' }), false);
+  assert.equal(isOpenClawWizardCompletionStep({ id: 'model', type: 'select', title: 'Done' }), false);
+});
+
+test('recognizes channel probe failures without coupling to one provider', () => {
+  assert.equal(isOpenClawWizardNonBlockingProbeFailure({ id: 'probe', type: 'note', title: 'DingTalk connection test', message: 'Connection failed: Request failed with status code 403' }), true);
+  assert.equal(isOpenClawWizardNonBlockingProbeFailure({ id: 'probe-2', type: 'note', title: 'Channel verification', message: 'HTTP 401' }), true);
+  assert.equal(isOpenClawWizardNonBlockingProbeFailure({ id: 'auth', type: 'note', title: 'Authorization', message: 'Connection failed' }), false);
+});
 
 test('requires onboarding for a missing or model-less config', () => {
   assert.equal(requiresOpenClawOnboarding(false, {}), true);
@@ -349,6 +364,29 @@ test('wizard client preserves Gateway option identity and extra metadata', async
     message: 'Enter this code',
   });
   assert.deepEqual(result.step?.futureMetadata, { source: 'gateway' });
+});
+
+test('wizard client preserves a future plugin step type as a readable fallback', async () => {
+  const client = new OpenClawWizardClient(async () => ({
+    sessionId: 'session-future-channel',
+    done: false,
+    status: 'running',
+    step: {
+      id: 'third-party-auth',
+      type: 'browser-approval',
+      format: 'markdown',
+      title: 'Third-party authorization',
+      message: 'Complete authorization in the provider application.',
+      futureMetadata: { providerOwnsPolling: true },
+    },
+  }));
+
+  const result = await client.start();
+
+  assert.equal(result.step?.type, 'browser-approval');
+  assert.equal(result.step?.format, 'markdown');
+  assert.equal(result.step?.message, 'Complete authorization in the provider application.');
+  assert.deepEqual(result.step?.futureMetadata, { providerOwnsPolling: true });
 });
 
 test('wizard client rejects malformed gateway responses', async () => {

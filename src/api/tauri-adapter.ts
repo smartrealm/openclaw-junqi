@@ -23,7 +23,14 @@ export interface SystemMetricsPayload {
 }
 
 import { invoke } from "@tauri-apps/api/core";
-import type { EnsureResult, LogEntry } from './tauri-commands';
+import {
+  checkOpenclaw,
+  clearGatewayLogs,
+  ensureGatewayRunning,
+  getGatewayLogs,
+  startGateway,
+  type EnsureResult,
+} from './tauri-commands';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { DEFAULT_GATEWAY_PORT, defaultGatewayWsUrl } from '@/config/runtimeDefaults';
@@ -315,7 +322,7 @@ function invalidateGatewayPortCache(): void {
 
 async function readRecentGatewayLogs(): Promise<{ stdout: string; stderr: string }> {
   try {
-    const entries = await invoke<LogEntry[]>('get_gateway_logs', { limit: 80 });
+    const entries = await getGatewayLogs(80);
     return formatGatewayLogs(entries);
   } catch {
     return { stdout: '', stderr: '' };
@@ -371,7 +378,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       // ("OpenClaw 2026.6.5 (hash)" → "2026.6.5").
       let openclaw: string | null = null;
       try {
-        const st: any = await invoke("check_openclaw");
+        const st = await checkOpenclaw();
         if (st?.version) {
           const m = String(st.version).match(/(\d[\w.\-]*)/);
           openclaw = m ? m[1] : String(st.version);
@@ -496,7 +503,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     },
     start: async () => {
       try {
-        const result: any = await invoke("start_gateway", {});
+        const result = await startGateway();
         cacheGatewayLifecycleResult(result);
         return { ...result, success: true };
       } catch (e: any) {
@@ -504,13 +511,11 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       }
     },
     /**
-     * Boot-time / on-demand orchestrator. Native → Docker fallback chain.
-     * Returns mode + healthy + attempted_fallback so the UI can decide
-     * whether to show a "switched to Docker" toast.
+     * Starts and probes only the runtime explicitly selected by the user.
      */
     ensureRunning: async () => {
       try {
-        const r: EnsureResult = await invoke("ensure_gateway_running");
+        const r = await ensureGatewayRunning();
         cacheGatewayLifecycleResult(r);
         return r;
       } catch (e: any) {
@@ -519,11 +524,11 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     },
     /** Fetch up to `limit` most-recent entries from the 200-entry circular log buffer. */
     getLogs: async (limit = 200) => {
-      try { return await invoke<LogEntry[]>("get_gateway_logs", { limit }); }
-      catch { return [] as LogEntry[]; }
+      try { return await getGatewayLogs(limit); }
+      catch { return []; }
     },
     clearLogs: async () => {
-      try { await invoke("clear_gateway_logs"); return true; }
+      try { await clearGatewayLogs(); return true; }
       catch { return false; }
     },
     retry: restartLocalGateway,

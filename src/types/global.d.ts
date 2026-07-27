@@ -84,11 +84,7 @@ interface AegisAPI {
     }>;
     start: () => Promise<{ success: boolean; error?: string; port?: number; token?: string | null }>;
     retry: () => Promise<{ success: boolean; error?: string }>;
-    /**
-     * Boot-time orchestrator: try native → Docker fallback. Returns the
-     * deployment mode so the UI can show a "switched to Docker" toast.
-     * See src-tauri/src/commands/ensure.rs.
-     */
+    /** Starts and probes only the persisted runtime selected by the user. */
     ensureRunning?: () => Promise<{
       mode: 'native' | 'docker' | 'unavailable';
       healthy: boolean;
@@ -100,7 +96,7 @@ interface AegisAPI {
     /** Last-N entries from the Rust-side 200-entry circular log buffer. */
     getLogs?: (limit?: number) => Promise<Array<{
       timestamp_ms: number;
-      level: 'trace' | 'debug' | 'info' | 'warn' | 'error';
+      level: 'info' | 'warn' | 'error';
       source: 'child_stdout' | 'child_stderr' | 'docker_stdout' | 'docker_stderr' | 'lifecycle';
       message: string;
     }>>;

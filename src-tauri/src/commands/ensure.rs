@@ -37,7 +37,7 @@ pub struct EnsureResult {
     pub healthy: bool,
     pub port: u16,
     pub token: Option<String>,
-    /// 本次是否尝试过兜底路径。UI 用它决定是否提示“已切换/尝试恢复”。
+    /// Wire-compatible legacy field. Selected-runtime-only startup keeps this false.
     pub attempted_fallback: bool,
     pub error: Option<String>,
 }
@@ -50,7 +50,7 @@ async fn selected_native_gateway_ready(port: u16) -> bool {
 }
 
 /// Confirms that a Docker Gateway is live. Docker owns a separate config path
-/// and is selected before this fallback runs, so native state matching cannot
+/// and is selected before this recovery path runs, so native state matching cannot
 /// be applied to its container endpoint.
 async fn probe_docker_gateway_port(port: u16) -> bool {
     crate::commands::gateway::is_gateway_healthy(port).await

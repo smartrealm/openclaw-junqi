@@ -6,7 +6,7 @@
 import { useEffect, useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "@/stores/app-store";
+import { useAppStore, type PostStorageStep } from "@/stores/app-store";
 import {
   isStaleSetupBackDestination,
   setupStepMessageKey,
@@ -81,6 +81,7 @@ import {
   INITIAL_NATIVE_STEPS,
   cacheGatewayTarget,
   isMissingGitDependencyError,
+  SetupPrerequisiteError,
   pickInstallTargetFromProgress,
   setupBackPolicy,
 } from "./helpers";
@@ -286,86 +287,77 @@ export function useSetupFlow(
     }
   }, [appendSetupLog, report, t]);
 
-  // ── 挂载后自动检测 ──
-  // 先读取后端持久化的运行时选择，并独立检测宿主机 Native OpenClaw，
-  // 这样即使当前选择 Docker，也能在运行方式页准确展示两种可复用环境。
-  // 然后 probe_gateway_port（Rust 侧从选定配置读取实际端口）。检测只能推进向导步骤，不能写入
-  // “已完成”标记；该标记必须由用户点击“进入仪表盘”后写入。
+  const detectEnvironmentForReview = useCallback(async (
+    runId: number,
+  ): Promise<PostStorageStep | null> => {
+    const detectionWasCancelled = () => (
+      !isRunActive(runId) || setupNavigationLeavingRef.current
+    );
+    setGatewayRunning(false);
+    try {
+      const runtimeTarget = await detectGatewayConfig();
+      if (detectionWasCancelled()) return null;
+      const selectedRuntime = runtimeTarget.runtime_mode;
+      setInstallMode(selectedRuntime);
+      cacheGatewayTarget(runtimeTarget.port);
+
+      // Runtime selection and host installation availability are separate.
+      const oclaw = await checkOpenclaw();
+      if (detectionWasCancelled()) return null;
+      setOpenclawStatus(oclaw);
+      if (selectedRuntime === "native" && (!oclaw?.installed || oclaw.relocation_required)) {
+        relocationRequestedRef.current = Boolean(oclaw?.relocation_required);
+        localStorage.removeItem("junqi-setup-done");
+        return "choosing-mode";
+      }
+
+      const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
+      if (detectionWasCancelled()) return null;
+      updateOnboardingRequirement(onboardingRequired);
+      if (oclaw?.path) {
+        setInstallTarget({ tier: "existing", path: oclaw.path, version: oclaw.version ?? undefined });
+      }
+
+      try {
+        const reachable: boolean = await invoke("probe_selected_gateway", {});
+        if (detectionWasCancelled()) return null;
+        if (reachable) {
+          setGatewayRunning(true);
+          commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
+          return onboardingRequired ? "configure-openclaw" : "ready";
+        }
+      } catch {
+        if (detectionWasCancelled()) return null;
+      }
+
+      const currentSteps = stepsRef.current;
+      if (currentSteps.some((step) => step.id === "gateway")) {
+        commitSteps(currentSteps.map((step) => step.id === "gateway"
+          ? { ...step, status: "pending", progress: undefined }
+          : step));
+      }
+      return "gateway-stopped";
+    } catch {
+      if (detectionWasCancelled()) return null;
+      setOpenclawStatus(null);
+      return "choosing-mode";
+    }
+  }, [commitSteps, isRunActive, resolveActiveRuntimeOnboardingRequirement, setGatewayRunning, setInstallMode, updateOnboardingRequirement]);
+
+  // The first visit owns a full-page detecting state. Later rechecks remain on
+  // the stable review page and reuse the exact same environment probe.
   useEffect(() => {
     if (setupStep !== "detecting") return;
     const runId = beginRun();
-    let cancelled = false;
-    const detectionWasCancelled = () => (
-      cancelled || !isRunActive(runId) || setupNavigationLeavingRef.current
-    );
-    // Detection records the stage that should resume after storage, then stops
-    // on a stable review page. This keeps the visible Environment step in the
-    // Back stack: Storage → Back returns to the detected result instead of
-    // jumping from step 3 to step 1 or replaying probes automatically.
-    const enterEnvironmentReview = (next: Parameters<typeof setPostStorageStep>[0]) => {
-      if (detectionWasCancelled()) return;
+    void (async () => {
+      report(t("setup.detecting"), 0);
+      const next = await detectEnvironmentForReview(runId);
+      if (!next || !isRunActive(runId) || setupNavigationLeavingRef.current) return;
       setPostStorageStep(next);
       report(t("setup.runtimeTitle"), 18);
       navigateSetup("environment-review", "replace");
-    };
-    void (async () => {
-      report(t("setup.detecting"), 0);
-      setGatewayRunning(false);
-      try {
-        const runtimeTarget = await detectGatewayConfig();
-        if (detectionWasCancelled()) return;
-        const selectedRuntime = runtimeTarget.runtime_mode;
-        setInstallMode(selectedRuntime);
-        cacheGatewayTarget(runtimeTarget.port);
-
-        // Runtime selection and host installation availability are separate.
-        // Detect Native even when Docker is currently selected so the choice
-        // screen can truthfully present both reusable environments.
-        const oclaw = await checkOpenclaw();
-        if (detectionWasCancelled()) return;
-        setOpenclawStatus(oclaw);
-        if (selectedRuntime === "native" && (!oclaw?.installed || oclaw.relocation_required)) {
-          relocationRequestedRef.current = Boolean(oclaw?.relocation_required);
-          // 从未安装过，先确认检测结果，再确定存储位置和安装方式。
-          localStorage.removeItem("junqi-setup-done");
-          enterEnvironmentReview("choosing-mode");
-          return;
-        }
-        const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
-        if (detectionWasCancelled()) return;
-        updateOnboardingRequirement(onboardingRequired);
-        if (oclaw?.path) {
-          setInstallTarget({ tier: "existing", path: oclaw.path, version: oclaw.version ?? undefined });
-        }
-        // 选定运行时已满足探测条件，继续检查 Gateway 是否已监听。这里不直接
-        // 进入仪表盘，避免用户在向导中前后切换时被跳过确认步骤。
-        try {
-          // 不传端口时由 Rust 读取配置；读取失败时使用共享运行时默认值。
-          const reachable: boolean = await invoke("probe_selected_gateway", {});
-          if (detectionWasCancelled()) return;
-          if (reachable) {
-            setGatewayRunning(true);
-            commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
-            enterEnvironmentReview(onboardingRequired ? "configure-openclaw" : "ready");
-            return;
-          }
-        } catch {
-          if (detectionWasCancelled()) return;
-        }
-
-        // Installed but gateway not responding → record Gateway recovery as
-        // the post-storage destination after the user reviews this result.
-        enterEnvironmentReview("gateway-stopped");
-      } catch {
-        if (detectionWasCancelled()) return;
-        setOpenclawStatus(null);
-        enterEnvironmentReview("choosing-mode");
-      }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [setupStep, beginRun, isRunActive, report, t, setGatewayRunning, setPostStorageStep, navigateSetup, commitSteps, resolveActiveRuntimeOnboardingRequirement, updateOnboardingRequirement, setInstallMode]);
+  }, [setupStep, beginRun, detectEnvironmentForReview, isRunActive, navigateSetup, report, setPostStorageStep, t]);
 
   const continueAfterEnvironmentReview = useCallback(() => {
     if (setupStep !== "environment-review" || setupNavigationLeavingRef.current) return;
@@ -373,11 +365,36 @@ export function useSetupFlow(
     navigateSetup("storage", "push");
   }, [navigateSetup, report, setupStep, t]);
 
-  const redetectEnvironment = useCallback(() => {
-    if (setupStep !== "environment-review" || setupNavigationLeavingRef.current) return;
-    cancelActiveRun();
-    navigateSetup("detecting", "replace");
-  }, [cancelActiveRun, navigateSetup, setupStep]);
+  const redetectEnvironment = useCallback(async () => {
+    if (
+      setupStep !== "environment-review"
+      || setupNavigationLeavingRef.current
+      || dockerDetectingRef.current
+    ) return;
+    const runId = beginRun();
+    dockerDetectingRef.current = true;
+    setCheckingDocker(true);
+    report(t("setup.recheckingEnvironment", "正在重新检测…"), 0);
+    try {
+      const [next, refreshedDocker] = await Promise.all([
+        detectEnvironmentForReview(runId),
+        checkDocker().catch(() => ({
+          available: false,
+          version: null,
+          daemon_running: false,
+          unsupported_reason: null,
+          image_available: false,
+        } satisfies DockerStatus)),
+      ]);
+      if (!next || !isRunActive(runId)) return;
+      setDockerStatus(refreshedDocker);
+      setPostStorageStep(next);
+      report(t("setup.runtimeTitle"), 18);
+    } finally {
+      dockerDetectingRef.current = false;
+      setCheckingDocker(false);
+    }
+  }, [beginRun, detectEnvironmentForReview, isRunActive, report, setCheckingDocker, setDockerStatus, setPostStorageStep, setupStep, t]);
 
   // ── Docker detect after the welcome step ──
   useEffect(() => {
@@ -520,6 +537,7 @@ export function useSetupFlow(
     wizardError,
     wizardRecoveryRequired,
     submitWizardStep,
+    pollWizard,
     retryWizard,
     reclaimWizard,
     backWizard,
@@ -687,7 +705,12 @@ export function useSetupFlow(
         const installedNode = setupNode.node;
         nodeStatus = installedNode;
         setNodeRequirement(setupNode.requirement);
-        if (!installedNode.available) throw new Error(t("setup.nodeInstallFailed", "Node.js 安装后校验失败"));
+        if (!installedNode.available) {
+          throw new SetupPrerequisiteError(
+            "node-missing",
+            t("setup.nodeInstallFailed", "Node.js 安装后校验失败"),
+          );
+        }
         patchStep("node", "done", installedNode.version ?? undefined);
       } else {
         patchStep("node", "done", nodeStatus.version ?? undefined);
@@ -772,7 +795,7 @@ export function useSetupFlow(
           const installedGit = await checkGit();
           if (!isRunActive(runId)) return false;
           if (!installedGit.available) {
-            throw new Error(t("setup.gitRequiredDesc"));
+            throw new SetupPrerequisiteError("git-missing", t("setup.gitRequiredDesc"));
           }
           patchStep("git", "done", installedGit.version ?? undefined);
           patchStep("openclaw", "running", t("setup.installingOpenclaw"));
@@ -805,6 +828,11 @@ export function useSetupFlow(
       failRunningStep(msg);
       setSetupError(msg);
       report(msg);
+      if (err instanceof SetupPrerequisiteError) {
+        if (err.step === "git-missing") setNeedsGit(true);
+        replaceSetupStep(err.step);
+        return false;
+      }
       replaceSetupStep("error");
       return false;
     }
@@ -1142,6 +1170,37 @@ export function useSetupFlow(
     }
   }, [isPluginRecoveryInFlight, isWizardOperationInFlight, performGoBack]);
 
+  const cancelSetupRun = useCallback(async () => {
+    if (
+      setupBackInFlightRef.current
+      || gatewayReadyContinuationInFlightRef.current
+      || dashboardEntryInFlightRef.current
+      || isPluginRecoveryInFlight()
+    ) return;
+    setupBackInFlightRef.current = true;
+    try {
+      cancelActiveRun();
+      const restoredLocations = await rollbackRuntimeReconfiguration().catch(() => false);
+      if (!restoredLocations) {
+        await rollbackActiveGatewayRuntime(installMode).catch((error) => {
+          appendSetupLog({
+            source: "setup",
+            step: "gateway",
+            message: error instanceof Error ? error.message : String(error),
+            level: "warn",
+          });
+        });
+      }
+      await performGoBack();
+    } finally {
+      setupNavigationLeavingRef.current = false;
+      setupBackInFlightRef.current = false;
+      runtimeSelectionInFlightRef.current = false;
+      retrySetupInFlightRef.current = false;
+      dependencyRetryInFlightRef.current = null;
+    }
+  }, [appendSetupLog, cancelActiveRun, installMode, isPluginRecoveryInFlight, performGoBack]);
+
   const retryGit = useCallback(() => {
     if (
       dependencyRetryInFlightRef.current
@@ -1287,6 +1346,7 @@ export function useSetupFlow(
     repairAndRetry,
     disablePluginsAndRetry,
     submitWizardStep,
+    pollWizard,
     retryWizard,
     reclaimWizard,
     backWizard,
@@ -1299,6 +1359,7 @@ export function useSetupFlow(
     detectDocker,
     refreshRuntime,
     goBack,
+    cancelSetupRun,
     retryGit,
     retryNode,
     enterDashboard,

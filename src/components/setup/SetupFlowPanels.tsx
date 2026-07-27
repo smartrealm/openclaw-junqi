@@ -92,6 +92,7 @@ type SetupAction = {
   label?: string;
   onClick?: MouseEventHandler<HTMLButtonElement>;
   disabled?: boolean;
+  loading?: boolean;
 };
 
 type SetupNextAction = SetupAction & {
@@ -248,7 +249,7 @@ export function SetupShell({
           </div>
           <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6")}>
             {children}
-            {isRuntime && showLogToggle && (
+            {isRuntime && showLogToggle && logs.length > 0 && (
               <div className="mt-5 border-t border-aegis-border pt-4">
                 <button
                   type="button"
@@ -291,9 +292,10 @@ export function SetupShell({
                 <button
                   type="button"
                   onClick={secondaryAction.onClick}
-                  disabled={secondaryAction.disabled}
-                  className="inline-flex min-w-[112px] items-center justify-center rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[14px] font-bold text-aegis-text-secondary transition hover:bg-aegis-surface disabled:cursor-not-allowed disabled:opacity-45"
+                  disabled={secondaryAction.disabled || secondaryAction.loading}
+                  className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[14px] font-bold text-aegis-text-secondary transition hover:bg-aegis-surface disabled:cursor-not-allowed disabled:opacity-45"
                 >
+                  {secondaryAction.loading && <RefreshCw size={14} className="animate-spin" />}
                   {secondaryAction.label}
                 </button>
               )}
