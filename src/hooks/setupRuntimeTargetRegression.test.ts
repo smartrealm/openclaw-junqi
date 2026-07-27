@@ -7,6 +7,11 @@ function source(path: string): string {
 }
 
 // SetupPage is a directory of per-step screens; assert against all of them.
+// Plugin recovery now owns its module; read it directly.
+function hookFile(name: string): string {
+  return readFileSync(new URL(`./useSetupFlow/${name}.ts`, import.meta.url), 'utf8');
+}
+
 function sourceDir(path: string): string {
   return readdirSync(new URL(path, import.meta.url))
     .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
@@ -51,9 +56,10 @@ test('BUG-RT-01 restores the persisted Docker target before setup detection', ()
 });
 
 test('BUG-RT-02 selected Docker recovery never invokes native repair', () => {
-  const dockerRepair = setupFlow.slice(
-    setupFlow.indexOf('if (installMode === "docker")'),
-    setupFlow.indexOf('const repairingMessage = t("setup.repairingGateway"'),
+  const recovery = hookFile('usePluginRecovery');
+  const dockerRepair = recovery.slice(
+    recovery.indexOf('if (installMode === "docker")'),
+    recovery.indexOf('const repairingMessage = t("setup.repairingGateway"'),
   );
 
   assert.match(dockerRepair, /await pullOpenclawImage\("latest"\)/);
