@@ -1628,7 +1628,7 @@ export function AgentHubPage() {
                               <div className="space-y-3">
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="text-[10px] font-bold text-aegis-text-muted">{t('nav.agentSkills', 'Agent Skills')}</div>
-                                  <button type="button" onClick={() => navigate('/skill-hub')} className="text-[10px] font-bold text-aegis-primary hover:underline">
+                                  <button type="button" onClick={() => navigate('/skills')} className="text-[10px] font-bold text-aegis-primary hover:underline">
                                     {t('common.manage', 'Manage')}
                                   </button>
                                 </div>
@@ -1892,7 +1892,7 @@ export function AgentHubPage() {
                                   {t('nav.agentSkills', 'Agent Skills')}
                                 </div>
                                 <button
-                                  onClick={() => navigate('/skill-hub')}
+                                  onClick={() => navigate('/skills')}
                                   className="shrink-0 px-2.5 py-1 rounded-md border border-aegis-primary/25 bg-aegis-primary/10 text-[10px] font-bold text-aegis-primary"
                                 >
                                   {t('common.manage', 'Manage')}

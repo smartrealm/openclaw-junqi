@@ -88,6 +88,7 @@ docs/
 - [Voice Runtime 审计计划](quality/voice-runtime-audit-plan.md)
 - [JunQi Namespace 审计](quality/junqi-namespace-audit.md)
 - [JunQi Namespace 计划](quality/junqi-namespace-plan.md)
+- [技能管理入口与双路由审计](quality/skill-management-route-audit-2026-07-27.md)
 
 ## 产品设计草案
 

@@ -180,7 +180,7 @@ export function AgentsPanel() {
           <div className="px-2 py-2">
             <button
               type="button"
-              onClick={() => navigate('/skill-hub')}
+              onClick={() => navigate('/skills')}
               title={t('sidebar.sharedSkillsHint', '当前技能由所有智能体共享，在技能管理中统一启停。')}
               className="group w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-aegis-hover/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
             >
