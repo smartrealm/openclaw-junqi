@@ -42,6 +42,7 @@ export interface PluginRecoveryPorts {
   setPostStorageStep: (step: any) => void;
   setForceStorageSelection: (force: boolean) => void;
   startGatewayAction: (requestedMode?: InstallMode, existingRunId?: number) => Promise<boolean>;
+  isConflictingRecoveryInFlight: () => boolean;
 }
 
 export function usePluginRecovery({
@@ -59,13 +60,14 @@ export function usePluginRecovery({
   setPostStorageStep,
   setForceStorageSelection,
   startGatewayAction,
+  isConflictingRecoveryInFlight,
 }: PluginRecoveryPorts) {
   const { t } = useTranslation();
   const [repairing, setRepairing] = useState(false);
   const repairInFlightRef = useRef<"repair" | "disable" | null>(null);
   const [brokenPlugins, setBrokenPlugins] = useState<BrokenGatewayPlugin[]>([]);
   const repairAndRetry = useCallback(async () => {
-    if (repairInFlightRef.current) return;
+    if (repairInFlightRef.current || isConflictingRecoveryInFlight()) return;
     repairInFlightRef.current = "repair";
     const failure = setupError;
     const runId = beginRun();
@@ -257,12 +259,12 @@ export function usePluginRecovery({
       repairInFlightRef.current = null;
       setRepairing(false);
     }
-  }, [setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode, setGatewayRunning, setPostStorageStep]);
+  }, [setupError, beginRun, isRunActive, isConflictingRecoveryInFlight, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode, setGatewayRunning, setPostStorageStep]);
 
   // BUG-CPI-07 最后一级降级：临时禁用不可自愈的插件后继续启动。插件保持
   // 已安装状态，待其修复版本发布后可在设置中重新启用并重走自愈梯子。
   const disablePluginsAndRetry = useCallback(async () => {
-    if (repairInFlightRef.current) return;
+    if (repairInFlightRef.current || isConflictingRecoveryInFlight()) return;
     const plugins = brokenPlugins;
     if (plugins.length === 0) return;
     repairInFlightRef.current = "disable";
@@ -304,7 +306,7 @@ export function usePluginRecovery({
       repairInFlightRef.current = null;
       setRepairing(false);
     }
-  }, [brokenPlugins, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep]);
+  }, [brokenPlugins, beginRun, isRunActive, isConflictingRecoveryInFlight, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep]);
 
   return {
     repairing,

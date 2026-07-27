@@ -47,7 +47,13 @@ test("global Back is single-flight and fences automatic forward effects", () => 
   assert.match(setupFlow, /if \(setupNavigationLeavingRef\.current \|\| autoStartedGatewayRef\.current\) return/);
   assert.match(setupFlow, /const performGoBack[\s\S]*?setupNavigationLeavingRef\.current = true;[\s\S]*?rollbackRuntimeReconfiguration\(\)/);
   assert.match(setupFlow, /const goBack[\s\S]*?setupBackInFlightRef\.current[\s\S]*?isPluginRecoveryInFlight\(\)[\s\S]*?isWizardOperationInFlight\(\)[\s\S]*?await performGoBack\(\)/);
-  assert.match(wizardSession, /if \(navigationLeavingRef\.current\) return;[\s\S]*?startOfficialOnboarding/);
+  assert.match(wizardSession, /if \(navigationLeavingRef\.current \|\| wizardStep \|\| wizardSubmitting \|\| wizardError\) return;[\s\S]*?startOfficialOnboarding/);
+});
+
+test("wizard auto-start runs at most once per configure-page visit", () => {
+  assert.match(wizardSession, /if \(setupStep !== "configure-openclaw"\) \{\s*wizardAutoStartRef\.current = false;\s*return;\s*\}/);
+  assert.match(wizardSession, /wizardAutoStartRef\.current = true;\s*void startOfficialOnboarding\(\);/);
+  assert.doesNotMatch(wizardSession, /startOfficialOnboarding\(\)\.finally\([\s\S]*?wizardAutoStartRef\.current = false/);
 });
 
 test("wizard Back and Next share one synchronous gate", () => {
@@ -62,6 +68,11 @@ test("recovery and dependency actions are single-flight", () => {
   assert.match(pluginRecovery, /repairInFlightRef = useRef<"repair" \| "disable" \| null>/);
   assert.match(pluginRecovery, /repairInFlightRef\.current = "repair"/);
   assert.match(pluginRecovery, /repairInFlightRef\.current = "disable"/);
+  assert.match(pluginRecovery, /const repairAndRetry[\s\S]*?repairInFlightRef\.current \|\| isConflictingRecoveryInFlight\(\)/);
+  assert.match(pluginRecovery, /const disablePluginsAndRetry[\s\S]*?repairInFlightRef\.current \|\| isConflictingRecoveryInFlight\(\)/);
   assert.match(setupFlow, /retrySetupInFlightRef = useRef\(false\)/);
+  assert.match(setupFlow, /const retrySetup[\s\S]*?retrySetupInFlightRef\.current[\s\S]*?isPluginRecoveryInFlight\(\)[\s\S]*?isWizardOperationInFlight\(\)[\s\S]*?return false/);
   assert.match(setupFlow, /dependencyRetryInFlightRef = useRef<"git" \| "node" \| null>/);
+  assert.match(setupFlow, /const retryGit[\s\S]*?retrySetupInFlightRef\.current[\s\S]*?isPluginRecoveryInFlight\(\)[\s\S]*?dependencyRetryInFlightRef\.current = "git"/);
+  assert.match(setupFlow, /const retryNode[\s\S]*?retrySetupInFlightRef\.current[\s\S]*?isPluginRecoveryInFlight\(\)[\s\S]*?dependencyRetryInFlightRef\.current = "node"/);
 });

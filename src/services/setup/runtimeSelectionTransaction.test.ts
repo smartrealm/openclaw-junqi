@@ -30,6 +30,27 @@ test("runtime selection has one successful commit boundary", async () => {
   ]);
 });
 
+test("a failed same-mode setup clears its durable staged marker", async () => {
+  const fixture = ports({
+    setup: async () => {
+      fixture.calls.push("setup:native");
+      return false;
+    },
+  });
+
+  const outcome = await executeRuntimeSelectionTransaction("native", "native", fixture.value);
+
+  assert.equal(outcome.status, "rolled-back");
+  assert.deepEqual(fixture.calls, [
+    "stage:native",
+    "prepare:native",
+    "setup:native",
+    "rollback-locations",
+    "rollback-mode:native",
+    "restore:native",
+  ]);
+});
+
 test("a prepare failure after staging is compensated", async () => {
   const fixture = ports({ prepare: async () => { fixture.calls.push("prepare:docker"); throw new Error("probe failed"); } });
   const outcome = await executeRuntimeSelectionTransaction("docker", "native", fixture.value);

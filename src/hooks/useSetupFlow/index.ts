@@ -925,18 +925,6 @@ export function useSetupFlow(
     navigateSetup("choosing-mode", "push");
   }, [cancelActiveRun, setSetupError, navigateSetup]);
 
-  const retrySetup = useCallback(async (): Promise<boolean> => {
-    if (retrySetupInFlightRef.current || setupBackInFlightRef.current) return false;
-    retrySetupInFlightRef.current = true;
-    setSetupError(null);
-    setNeedsGit(false);
-    try {
-      return installMode === "docker" ? await runDockerSetup() : await runNativeSetup();
-    } finally {
-      retrySetupInFlightRef.current = false;
-    }
-  }, [installMode, setSetupError, setNeedsGit, runDockerSetup, runNativeSetup]);
-
   const completeStorageSetup = useCallback((result?: {
     createdFresh: boolean;
     runtimeReconfigurationRequired?: boolean;
@@ -1018,7 +1006,37 @@ export function useSetupFlow(
     setPostStorageStep,
     setForceStorageSelection,
     startGatewayAction,
+    isConflictingRecoveryInFlight: () => (
+      setupBackInFlightRef.current
+      || retrySetupInFlightRef.current
+      || dependencyRetryInFlightRef.current !== null
+      || runtimeSelectionInFlightRef.current
+      || gatewayReadyContinuationInFlightRef.current
+      || dashboardEntryInFlightRef.current
+      || isWizardOperationInFlight()
+    ),
   });
+
+  const retrySetup = useCallback(async (): Promise<boolean> => {
+    if (
+      retrySetupInFlightRef.current
+      || setupBackInFlightRef.current
+      || runtimeSelectionInFlightRef.current
+      || dependencyRetryInFlightRef.current
+      || gatewayReadyContinuationInFlightRef.current
+      || dashboardEntryInFlightRef.current
+      || isPluginRecoveryInFlight()
+      || isWizardOperationInFlight()
+    ) return false;
+    retrySetupInFlightRef.current = true;
+    setSetupError(null);
+    setNeedsGit(false);
+    try {
+      return installMode === "docker" ? await runDockerSetup() : await runNativeSetup();
+    } finally {
+      retrySetupInFlightRef.current = false;
+    }
+  }, [installMode, isPluginRecoveryInFlight, isWizardOperationInFlight, setSetupError, setNeedsGit, runDockerSetup, runNativeSetup]);
 
   const performGoBack = useCallback(async () => {
     setupNavigationLeavingRef.current = true;
@@ -1111,24 +1129,42 @@ export function useSetupFlow(
   }, [isPluginRecoveryInFlight, isWizardOperationInFlight, performGoBack]);
 
   const retryGit = useCallback(() => {
-    if (dependencyRetryInFlightRef.current || setupBackInFlightRef.current) return;
+    if (
+      dependencyRetryInFlightRef.current
+      || setupBackInFlightRef.current
+      || retrySetupInFlightRef.current
+      || runtimeSelectionInFlightRef.current
+      || gatewayReadyContinuationInFlightRef.current
+      || dashboardEntryInFlightRef.current
+      || isPluginRecoveryInFlight()
+      || isWizardOperationInFlight()
+    ) return;
     dependencyRetryInFlightRef.current = "git";
     setNeedsGit(false);
     setSetupError(null);
     void runNativeSetup().finally(() => {
       if (dependencyRetryInFlightRef.current === "git") dependencyRetryInFlightRef.current = null;
     });
-  }, [setNeedsGit, setSetupError, runNativeSetup]);
+  }, [isPluginRecoveryInFlight, isWizardOperationInFlight, setNeedsGit, setSetupError, runNativeSetup]);
 
   const retryNode = useCallback(() => {
-    if (dependencyRetryInFlightRef.current || setupBackInFlightRef.current) return;
+    if (
+      dependencyRetryInFlightRef.current
+      || setupBackInFlightRef.current
+      || retrySetupInFlightRef.current
+      || runtimeSelectionInFlightRef.current
+      || gatewayReadyContinuationInFlightRef.current
+      || dashboardEntryInFlightRef.current
+      || isPluginRecoveryInFlight()
+      || isWizardOperationInFlight()
+    ) return;
     dependencyRetryInFlightRef.current = "node";
     setNodeRequirement(null);
     setSetupError(null);
     void runNativeSetup().finally(() => {
       if (dependencyRetryInFlightRef.current === "node") dependencyRetryInFlightRef.current = null;
     });
-  }, [setSetupError, runNativeSetup]);
+  }, [isPluginRecoveryInFlight, isWizardOperationInFlight, setSetupError, runNativeSetup]);
 
   const enterDashboard = useCallback(async (origin?: Element | null) => {
     if (dashboardEntryInFlightRef.current) return;

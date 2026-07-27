@@ -475,13 +475,14 @@ export function useWizardSession({
 
   const wizardAutoStartRef = useRef(false);
   useEffect(() => {
-    if (navigationLeavingRef.current) return;
-    if (setupStep !== "configure-openclaw" || wizardStep || wizardSubmitting || wizardError) return;
+    if (setupStep !== "configure-openclaw") {
+      wizardAutoStartRef.current = false;
+      return;
+    }
+    if (navigationLeavingRef.current || wizardStep || wizardSubmitting || wizardError) return;
     if (wizardAutoStartRef.current) return;
     wizardAutoStartRef.current = true;
-    void startOfficialOnboarding().finally(() => {
-      wizardAutoStartRef.current = false;
-    });
+    void startOfficialOnboarding();
   }, [setupStep, startOfficialOnboarding, wizardError, wizardStep, wizardSubmitting]);
 
   return {

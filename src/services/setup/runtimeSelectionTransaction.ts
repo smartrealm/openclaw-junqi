@@ -84,8 +84,11 @@ export async function executeRuntimeSelectionTransaction(
   }
   if (!ports.isActive()) return { status: "superseded" };
 
-  let modeRestored = !modeStaged || !switchedMode || restoredLocations;
-  if (modeStaged && switchedMode && !restoredLocations) {
+  // Staging creates a durable mode-switch marker even when the user selected
+  // the mode that was already active. A failed same-mode repair must clear that
+  // marker too; otherwise startup sees an interrupted transaction forever.
+  let modeRestored = !modeStaged || restoredLocations;
+  if (modeStaged && !restoredLocations) {
     try {
       await ports.rollbackMode(targetMode);
       modeRestored = true;
@@ -97,7 +100,7 @@ export async function executeRuntimeSelectionTransaction(
 
   let restoredPreviousGateway = true;
   let previousGatewayRestoreError: unknown;
-  if (modeStaged && switchedMode && !restoredLocations) {
+  if (modeStaged && !restoredLocations) {
     if (!modeRestored) {
       // Starting the previous Gateway while persistence still selects the
       // candidate could relaunch the failed candidate. Fail closed instead.
