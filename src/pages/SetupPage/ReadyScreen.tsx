@@ -148,7 +148,7 @@ export function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] 
 
   return (
     <SetupShell
-      active={5}
+      active={6}
       title={t("setup.ready")}
       subtitle={t("setup.readySubtitle")}
       logs={logs}

@@ -9,7 +9,7 @@ import { InstallationConsole, currentStepOf, installStepTitle, type Installation
 export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const { setupStep } = useAppStore();
-  const active = setupStep === "ready" ? 5 : 3;
+  const active = setupStep === "ready" ? 6 : 4;
   const isGatewayReady = setupStep === "gateway-ready";
   const gatewayReadyChecking = isGatewayReady && flow.gatewayReadyContinuation.status === "checking";
   const gatewayReadyError = isGatewayReady && flow.gatewayReadyContinuation.status === "failed"

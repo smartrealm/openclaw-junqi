@@ -13,7 +13,7 @@ export function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupL
     : t("setup.gitRequiredDesc");
   return (
     <SetupShell
-      active={3}
+      active={4}
       title={t("setup.gitRequired")}
       subtitle={description}
       logs={logs}

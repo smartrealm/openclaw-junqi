@@ -2700,6 +2700,10 @@
         "title": "Data location",
         "description": "Configuration / Workspace"
       },
+      "runtimeChoice": {
+        "title": "Runtime mode",
+        "description": "Native / Docker"
+      },
       "runtime": {
         "title": "Runtime",
         "description": "Install and start Gateway"

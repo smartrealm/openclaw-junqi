@@ -2137,6 +2137,8 @@
   "setup.steps.environment.description": "OpenClaw / Docker",
   "setup.steps.storage.title": "موقع البيانات",
   "setup.steps.storage.description": "الإعدادات / مساحة العمل",
+  "setup.steps.runtimeChoice.title": "وضع التشغيل",
+  "setup.steps.runtimeChoice.description": "محلي / Docker",
   "setup.steps.runtime.title": "بيئة التشغيل",
   "setup.steps.runtime.description": "تثبيت وتشغيل Gateway",
   "setup.steps.configuration.title": "إعداد OpenClaw",
