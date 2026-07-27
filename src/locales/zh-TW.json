@@ -2661,6 +2661,10 @@
         "title": "數據位置",
         "description": "配置與工作區"
       },
+      "runtimeChoice": {
+        "title": "執行方式",
+        "description": "本機 / Docker"
+      },
       "runtime": {
         "title": "運行時",
         "description": "安裝並啟動 Gateway"

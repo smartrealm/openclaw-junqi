@@ -330,7 +330,7 @@ test('BUG-ONB-14 selected runtimes resume their full startup closure after stora
   assert.match(completeStorage, /installMode === "docker"[\s\S]*?void runDockerSetup\(\)[\s\S]*?void runNativeSetup\(\)/);
 });
 
-test('BUG-ONB-15 setup navigation has one complete six-step translation contract per locale', () => {
+test('BUG-ONB-15 setup navigation has one complete seven-step translation contract per locale', () => {
   const zh = JSON.parse(readFileSync(new URL('../locales/zh.json', import.meta.url), 'utf8'));
   const en = JSON.parse(readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'));
   const ar = JSON.parse(readFileSync(new URL('../locales/ar.json', import.meta.url), 'utf8'));
@@ -339,6 +339,7 @@ test('BUG-ONB-15 setup navigation has one complete six-step translation contract
     identity: { title: '品牌与偏好', description: '语言 / 主题' },
     environment: { title: '环境检测', description: 'OpenClaw / Docker' },
     storage: { title: '数据位置', description: '配置与工作区' },
+    runtimeChoice: { title: '运行方式', description: '本机 / Docker' },
     runtime: { title: '运行时', description: '安装并启动 Gateway' },
     configuration: { title: 'OpenClaw 配置', description: '模型、凭据与渠道' },
     ready: { title: '完成', description: '进入仪表盘' },
@@ -347,6 +348,7 @@ test('BUG-ONB-15 setup navigation has one complete six-step translation contract
     identity: { title: 'Preferences', description: 'Language / Theme' },
     environment: { title: 'Environment', description: 'OpenClaw / Docker' },
     storage: { title: 'Data location', description: 'Configuration / Workspace' },
+    runtimeChoice: { title: 'Runtime mode', description: 'Native / Docker' },
     runtime: { title: 'Runtime', description: 'Install and start Gateway' },
     configuration: { title: 'OpenClaw setup', description: 'Models / credentials / channels' },
     ready: { title: 'Ready', description: 'Enter dashboard' },
@@ -601,4 +603,41 @@ test('wizard recovery actions are synchronous single-flight before React commits
     setupFlow,
     /const invalidateWizardOperations[\s\S]*?wizardRecoveryInFlightRef\.current = null;[\s\S]*?invalidatePendingOperations/,
   );
+});
+
+test('each setup screen highlights the stage it actually belongs to', () => {
+  // The stage strip and the screens are two separate lists that must stay
+  // aligned by index. They drifted before: the stage advertising
+  // "OpenClaw / Docker" was the read-only detection screen, while the screen
+  // that actually asks for Native or Docker highlighted "Install and start
+  // Gateway" — so confirming storage looked like it had skipped a stage.
+  const panels = readFileSync(new URL('../components/setup/SetupFlowPanels.tsx', import.meta.url), 'utf8');
+  const stages = [...panels.matchAll(/\{ id: "(\w+)", titleKey: "setup\.steps\./g)].map((m) => m[1]);
+  assert.deepEqual(stages, [
+    'identity', 'environment', 'storage', 'runtimeChoice', 'runtime', 'configuration', 'ready',
+  ]);
+
+  const stageOf = (name: string) => stages.indexOf(name);
+  const activeOf = (file: string) => {
+    const match = screen(file).match(/active=\{(\d+)\}/);
+    assert.ok(match, `${file} must declare a stage`);
+    return Number(match![1]);
+  };
+
+  assert.equal(activeOf('WelcomeScreen'), stageOf('identity'));
+  assert.equal(activeOf('DetectingScreen'), stageOf('environment'));
+  assert.equal(activeOf('ModeSelectScreen'), stageOf('runtimeChoice'));
+  assert.equal(activeOf('GatewayStoppedScreen'), stageOf('runtime'));
+  assert.equal(activeOf('GitMissingScreen'), stageOf('runtime'));
+  assert.equal(activeOf('NodeMissingScreen'), stageOf('runtime'));
+  assert.equal(activeOf('WizardScreen'), stageOf('configuration'));
+  assert.equal(activeOf('ReadyScreen'), stageOf('ready'));
+
+  // The storage screen lives in its own component outside the step folder.
+  const gate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
+  assert.match(gate, new RegExp(`active=\\{${stageOf('storage')}\\}`));
+
+  // ProgressScreen covers the install run and reuses the runtime stage.
+  const progress = screen('ProgressScreen');
+  assert.match(progress, new RegExp(`setupStep === "ready" \\? ${stageOf('ready')} : ${stageOf('runtime')}`));
 });

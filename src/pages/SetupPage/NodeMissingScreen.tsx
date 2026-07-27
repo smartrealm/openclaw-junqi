@@ -11,7 +11,7 @@ export function NodeMissingScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
   const message = t("setup.nodeRequiredDesc", { requirement });
   return (
     <SetupShell
-      active={3}
+      active={4}
       title={t("setup.nodeRequired")}
       subtitle={message}
       logs={logs}

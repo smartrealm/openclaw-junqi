@@ -12,7 +12,7 @@ export function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: Se
   const navigateSetup = useSetupNavigation();
   return (
     <SetupShell
-      active={3}
+      active={4}
       title={t("setup.openclawDetectedTitle")}
       subtitle={t("setup.gatewayNotRunning")}
       logs={logs}
