@@ -117,22 +117,26 @@ export function backSetupNavigation(
   return { setupStep, setupHistory };
 }
 
-/// Steps that report work already in flight. They own no control of their own:
-/// the progress screen renders neither a Back nor a primary action while one is
-/// current, because the run that owns them drives the next transition.
-const TRANSIENT_SETUP_STEPS = new Set<SetupStep>([
+/// Steps whose screens describe a run rather than a choice, so returning to one
+/// shows the user a report that the run itself has already superseded.
+///
+/// The progress steps render neither a Back nor a primary action while current,
+/// because the run that owns them drives the next transition — landing on one
+/// leaves nothing to click. `error` does render actions, which is worse: reached
+/// from a later success it offers to repair a failure that is already fixed.
+const STALE_BACK_DESTINATIONS = new Set<SetupStep>([
   "detecting",
   "checking",
   "install-git",
   "install-node",
   "install-openclaw",
+  "error",
 ]);
 
 export function isStaleSetupBackDestination(step: SetupStep): boolean {
   // Setup history represents explicit user-visible decisions, and Back must
-  // never erase a prior configuration, install, or confirmation stage. A
-  // transient step is not such a decision: the run that pushed it has already
-  // finished or failed, so returning to it would strand the user on a screen
-  // with no way forward and no way back.
-  return TRANSIENT_SETUP_STEPS.has(step);
+  // never erase a prior configuration, install, or confirmation stage. None of
+  // the steps above is such a decision, and the diagnostics they carried remain
+  // in the activity log, so skipping them loses nothing.
+  return STALE_BACK_DESTINATIONS.has(step);
 }
