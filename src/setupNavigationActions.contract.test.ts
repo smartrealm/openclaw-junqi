@@ -34,7 +34,9 @@ test("environment detection Back invalidates the probe before it can auto-advanc
   assert.match(setupFlow, /const detectionWasCancelled = \(\) => \([\s\S]*?!isRunActive\(runId\)[\s\S]*?setupNavigationLeavingRef\.current/);
   assert.match(setupFlow, /const next = await detectEnvironmentForReview\(runId\);[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
   assert.match(setupFlow, /const continueAfterEnvironmentReview[\s\S]*?navigateSetup\("storage", "push"\)/);
-  assert.match(redetect, /setCheckingDocker\(true\);[\s\S]*?detectEnvironmentForReview\(runId\)/);
+  assert.match(redetect, /environmentActionInFlightRef\.current = true;[\s\S]*?setCheckingDocker\(true\);[\s\S]*?detectEnvironmentForReview\(runId\)/);
+  assert.match(redetect, /finally \{[\s\S]*?environmentActionInFlightRef\.current = false/);
+  assert.match(setupFlow, /const continueAfterEnvironmentReview[\s\S]*?environmentActionInFlightRef\.current[\s\S]*?dockerDetectingRef\.current[\s\S]*?environmentActionInFlightRef\.current = true/);
   assert.doesNotMatch(redetect, /navigateSetup\("detecting", "replace"\)/);
   assert.match(setupFlow, /const performGoBack[\s\S]*?cancelActiveRun\(\);[\s\S]*?const backPolicy = setupBackPolicy\(setupStep\);[\s\S]*?if \(backPolicy === "cancel-run"\)[\s\S]*?goBackSetup\("welcome"\)[\s\S]*?return;/);
 });
@@ -53,7 +55,7 @@ test("global Back is single-flight and fences automatic forward effects", () => 
   assert.match(setupFlow, /const setupNavigationLeavingRef = useRef\(false\)/);
   assert.match(setupFlow, /if \(setupNavigationLeavingRef\.current \|\| autoStartedGatewayRef\.current\) return/);
   assert.match(setupFlow, /const performGoBack[\s\S]*?setupNavigationLeavingRef\.current = true;[\s\S]*?rollbackRuntimeReconfiguration\(\)/);
-  assert.match(setupFlow, /const goBack[\s\S]*?setupBackInFlightRef\.current[\s\S]*?isPluginRecoveryInFlight\(\)[\s\S]*?isWizardOperationInFlight\(\)[\s\S]*?await performGoBack\(\)/);
+  assert.match(setupFlow, /const goBack[\s\S]*?environmentActionInFlightRef\.current[\s\S]*?dockerDetectingRef\.current[\s\S]*?setupBackInFlightRef\.current[\s\S]*?isPluginRecoveryInFlight\(\)[\s\S]*?isWizardOperationInFlight\(\)[\s\S]*?await performGoBack\(\)/);
   assert.match(wizardSession, /if \(navigationLeavingRef\.current \|\| wizardStep \|\| wizardSubmitting \|\| wizardError\) return;[\s\S]*?startOfficialOnboarding/);
 });
 

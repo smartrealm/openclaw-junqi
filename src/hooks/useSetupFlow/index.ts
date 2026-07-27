@@ -127,6 +127,7 @@ export function useSetupFlow(
   const runtimeSelectionInFlightRef = useRef(false);
   const setupBackInFlightRef = useRef(false);
   const setupNavigationLeavingRef = useRef(false);
+  const environmentActionInFlightRef = useRef(false);
   const retrySetupInFlightRef = useRef(false);
   const dependencyRetryInFlightRef = useRef<"git" | "node" | null>(null);
   const [gatewayReadyContinuation, setGatewayReadyContinuation] = useState<GatewayReadyContinuation>({
@@ -161,6 +162,25 @@ export function useSetupFlow(
     `setup-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
   );
   const activeDependencyOperationRef = useRef<string | null>(null);
+  const activeSetupOperationRef = useRef<{
+    runId: number;
+    completion: Promise<void>;
+    finish: () => void;
+  } | null>(null);
+  const beginSetupOperation = useCallback((runId: number) => {
+    const current = activeSetupOperationRef.current;
+    if (current?.runId === runId) return;
+    if (current) throw new Error("another setup operation is still stopping");
+    let finish!: () => void;
+    const completion = new Promise<void>((resolve) => { finish = resolve; });
+    activeSetupOperationRef.current = { runId, completion, finish };
+  }, []);
+  const finishSetupOperation = useCallback((runId: number) => {
+    const current = activeSetupOperationRef.current;
+    if (current?.runId !== runId) return;
+    activeSetupOperationRef.current = null;
+    current.finish();
+  }, []);
   const requestDependencyCancellation = useCallback((operationId: string) => {
     void cancelDependencyInstall(operationId).catch((error) => {
       debugWarn("app", "[setup] dependency installer cancellation request failed:", error);
@@ -359,8 +379,23 @@ export function useSetupFlow(
     })();
   }, [setupStep, beginRun, detectEnvironmentForReview, isRunActive, navigateSetup, report, setPostStorageStep, t]);
 
+  useEffect(() => {
+    if (setupStep !== "environment-review") {
+      environmentActionInFlightRef.current = false;
+    }
+  }, [setupStep]);
+
   const continueAfterEnvironmentReview = useCallback(() => {
-    if (setupStep !== "environment-review" || setupNavigationLeavingRef.current) return;
+    if (
+      setupStep !== "environment-review"
+      || setupNavigationLeavingRef.current
+      || environmentActionInFlightRef.current
+      || dockerDetectingRef.current
+    ) return;
+    // Keep ownership until React observes the destination step. Releasing at
+    // the end of this synchronous handler would allow a second click before
+    // the navigation render commits.
+    environmentActionInFlightRef.current = true;
     report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
     navigateSetup("storage", "push");
   }, [navigateSetup, report, setupStep, t]);
@@ -369,8 +404,10 @@ export function useSetupFlow(
     if (
       setupStep !== "environment-review"
       || setupNavigationLeavingRef.current
+      || environmentActionInFlightRef.current
       || dockerDetectingRef.current
     ) return;
+    environmentActionInFlightRef.current = true;
     const runId = beginRun();
     dockerDetectingRef.current = true;
     setCheckingDocker(true);
@@ -392,6 +429,7 @@ export function useSetupFlow(
       report(t("setup.runtimeTitle"), 18);
     } finally {
       dockerDetectingRef.current = false;
+      environmentActionInFlightRef.current = false;
       setCheckingDocker(false);
     }
   }, [beginRun, detectEnvironmentForReview, isRunActive, report, setCheckingDocker, setDockerStatus, setPostStorageStep, setupStep, t]);
@@ -680,6 +718,7 @@ export function useSetupFlow(
 
   const runNativeSetup = useCallback(async (existingRunId?: number): Promise<boolean> => {
     const runId = existingRunId ?? beginRun();
+    beginSetupOperation(runId);
     const s = [...INITIAL_NATIVE_STEPS];
     commitSteps(s);
     try {
@@ -835,12 +874,15 @@ export function useSetupFlow(
       }
       replaceSetupStep("error");
       return false;
+    } finally {
+      finishSetupOperation(runId);
     }
-  }, [beginRun, isRunActive, replaceSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
+  }, [beginRun, beginSetupOperation, finishSetupOperation, isRunActive, replaceSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
       setSetupError, appendSetupLog, updateOnboardingRequirement, startGatewayAction, runDependencyInstall]);
 
   const runDockerSetup = useCallback(async (existingRunId?: number): Promise<boolean> => {
     const runId = existingRunId ?? beginRun();
+    beginSetupOperation(runId);
     commitSteps([...INITIAL_DOCKER_STEPS]);
     try {
       replaceSetupStep("checking");
@@ -866,8 +908,10 @@ export function useSetupFlow(
       report(message);
       replaceSetupStep("error");
       return false;
+    } finally {
+      finishSetupOperation(runId);
     }
-  }, [beginRun, isRunActive, replaceSetupStep, t, report, commitSteps, dockerStatus,
+  }, [beginRun, beginSetupOperation, finishSetupOperation, isRunActive, replaceSetupStep, t, report, commitSteps, dockerStatus,
       setGatewayRunning, setSetupError, appendSetupLog, startGatewayAction]);
 
   const performRuntimeSelection = useCallback(async (mode: InstallMode) => {
@@ -1152,7 +1196,10 @@ export function useSetupFlow(
 
   const goBack = useCallback(async () => {
     if (
-      setupBackInFlightRef.current
+      (setupStep === "environment-review" && (
+        environmentActionInFlightRef.current || dockerDetectingRef.current
+      ))
+      || setupBackInFlightRef.current
       || runtimeSelectionInFlightRef.current
       || retrySetupInFlightRef.current
       || dependencyRetryInFlightRef.current
@@ -1162,13 +1209,15 @@ export function useSetupFlow(
       || isWizardOperationInFlight()
     ) return;
     setupBackInFlightRef.current = true;
+    if (setupStep === "environment-review") environmentActionInFlightRef.current = true;
     try {
       await performGoBack();
     } finally {
       setupNavigationLeavingRef.current = false;
+      environmentActionInFlightRef.current = false;
       setupBackInFlightRef.current = false;
     }
-  }, [isPluginRecoveryInFlight, isWizardOperationInFlight, performGoBack]);
+  }, [isPluginRecoveryInFlight, isWizardOperationInFlight, performGoBack, setupStep]);
 
   const cancelSetupRun = useCallback(async () => {
     if (
@@ -1179,8 +1228,26 @@ export function useSetupFlow(
     ) return;
     setupBackInFlightRef.current = true;
     try {
+      const runningOperation = activeSetupOperationRef.current;
       cancelActiveRun();
-      const restoredLocations = await rollbackRuntimeReconfiguration().catch(() => false);
+      // Invalidating the renderer run fences late UI writes, but package
+      // installation and image pulls may already be inside a native atomic
+      // phase. Do not release navigation/install ownership until that phase has
+      // actually returned.
+      await runningOperation?.completion;
+
+      let restoredLocations: boolean;
+      try {
+        restoredLocations = await rollbackRuntimeReconfiguration();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendSetupLog({ source: "setup", step: "storage", message, level: "error" });
+        setSetupError(message);
+        report(message);
+        setForceStorageSelection(true);
+        replaceSetupStep("storage");
+        return;
+      }
       if (!restoredLocations) {
         await rollbackActiveGatewayRuntime(installMode).catch((error) => {
           appendSetupLog({
@@ -1195,11 +1262,8 @@ export function useSetupFlow(
     } finally {
       setupNavigationLeavingRef.current = false;
       setupBackInFlightRef.current = false;
-      runtimeSelectionInFlightRef.current = false;
-      retrySetupInFlightRef.current = false;
-      dependencyRetryInFlightRef.current = null;
     }
-  }, [appendSetupLog, cancelActiveRun, installMode, isPluginRecoveryInFlight, performGoBack]);
+  }, [appendSetupLog, cancelActiveRun, installMode, isPluginRecoveryInFlight, performGoBack, replaceSetupStep, report, setForceStorageSelection, setSetupError]);
 
   const retryGit = useCallback(() => {
     if (

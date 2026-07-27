@@ -89,15 +89,18 @@ test("BUG-WIN-CANCEL-05 a running install always offers a cancellation path", ()
     flow.indexOf("const cancelSetupRun = useCallback"),
     flow.indexOf("const retryGit = useCallback"),
   );
-  assert.match(cancel, /cancelActiveRun\(\)/);
-  assert.match(cancel, /rollbackRuntimeReconfiguration\(\)/);
+  assert.match(cancel, /const runningOperation = activeSetupOperationRef\.current;\s*\n\s*cancelActiveRun\(\);/);
+  assert.match(cancel, /await runningOperation\?\.completion/);
+  assert.match(cancel, /try \{\s*\n\s*restoredLocations = await rollbackRuntimeReconfiguration\(\);\s*\n\s*\} catch \(error\)/);
+  assert.match(cancel, /catch \(error\)[\s\S]*?setForceStorageSelection\(true\);\s*\n\s*replaceSetupStep\("storage"\);\s*\n\s*return;/);
   assert.match(cancel, /rollbackActiveGatewayRuntime\(installMode\)/);
   assert.match(cancel, /await performGoBack\(\)/);
-  assert.doesNotMatch(
-    cancel.slice(0, cancel.indexOf("setupBackInFlightRef.current = true")),
-    /runtimeSelectionInFlightRef\.current$/m,
-  );
+  assert.doesNotMatch(cancel, /runtimeSelectionInFlightRef\.current = false/);
+  assert.doesNotMatch(cancel, /retrySetupInFlightRef\.current = false/);
   assert.match(flow, /const cancelActiveRun = useCallback[\s\S]*?requestDependencyCancellation\(operationId\)/);
+  assert.match(flow, /const beginSetupOperation[\s\S]*?another setup operation is still stopping/);
+  assert.match(flow, /const runNativeSetup[\s\S]*?beginSetupOperation\(runId\)[\s\S]*?finally \{\s*\n\s*finishSetupOperation\(runId\)/);
+  assert.match(flow, /const runDockerSetup[\s\S]*?beginSetupOperation\(runId\)[\s\S]*?finally \{\s*\n\s*finishSetupOperation\(runId\)/);
 });
 
 test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff UI", () => {
