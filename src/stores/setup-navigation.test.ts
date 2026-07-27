@@ -12,9 +12,18 @@ function start(): SetupNavigationState {
   return { setupStep: "welcome", setupHistory: [] };
 }
 
-test("transient detection is replaced so storage returns to welcome", () => {
+test("storage returns to the stable environment result instead of skipping to welcome", () => {
   let state = transitionSetupNavigation(start(), "detecting", "push");
-  state = transitionSetupNavigation(state, "storage", "replace");
+  state = transitionSetupNavigation(state, "environment-review", "replace");
+  state = transitionSetupNavigation(state, "storage", "push");
+  state = backSetupNavigation(state);
+
+  assert.deepEqual(state, { setupStep: "environment-review", setupHistory: ["welcome"] });
+});
+
+test("environment review returns to preferences without replaying detection", () => {
+  let state = transitionSetupNavigation(start(), "detecting", "push");
+  state = transitionSetupNavigation(state, "environment-review", "replace");
   state = backSetupNavigation(state);
 
   assert.deepEqual(state, { setupStep: "welcome", setupHistory: [] });

@@ -298,14 +298,15 @@ export function useSetupFlow(
     const detectionWasCancelled = () => (
       cancelled || !isRunActive(runId) || setupNavigationLeavingRef.current
     );
-    // Detection never decides more than what the user is asked next: every
-    // outcome hands over to the storage step, carrying the stage to resume once
-    // the location is confirmed.
-    const enterStorage = (next: Parameters<typeof setPostStorageStep>[0]) => {
+    // Detection records the stage that should resume after storage, then stops
+    // on a stable review page. This keeps the visible Environment step in the
+    // Back stack: Storage → Back returns to the detected result instead of
+    // jumping from step 3 to step 1 or replaying probes automatically.
+    const enterEnvironmentReview = (next: Parameters<typeof setPostStorageStep>[0]) => {
       if (detectionWasCancelled()) return;
       setPostStorageStep(next);
-      report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
-      navigateSetup("storage", "replace");
+      report(t("setup.runtimeTitle"), 18);
+      navigateSetup("environment-review", "replace");
     };
     void (async () => {
       report(t("setup.detecting"), 0);
@@ -325,9 +326,9 @@ export function useSetupFlow(
         setOpenclawStatus(oclaw);
         if (selectedRuntime === "native" && (!oclaw?.installed || oclaw.relocation_required)) {
           relocationRequestedRef.current = Boolean(oclaw?.relocation_required);
-          // 从未安装过，先确定存储位置，再进入安装方式选择。
+          // 从未安装过，先确认检测结果，再确定存储位置和安装方式。
           localStorage.removeItem("junqi-setup-done");
-          enterStorage("choosing-mode");
+          enterEnvironmentReview("choosing-mode");
           return;
         }
         const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
@@ -345,25 +346,38 @@ export function useSetupFlow(
           if (reachable) {
             setGatewayRunning(true);
             commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
-            enterStorage(onboardingRequired ? "configure-openclaw" : "ready");
+            enterEnvironmentReview(onboardingRequired ? "configure-openclaw" : "ready");
             return;
           }
         } catch {
           if (detectionWasCancelled()) return;
         }
 
-        // Installed but gateway not responding → ask the user to start it.
-        enterStorage("gateway-stopped");
+        // Installed but gateway not responding → record Gateway recovery as
+        // the post-storage destination after the user reviews this result.
+        enterEnvironmentReview("gateway-stopped");
       } catch {
         if (detectionWasCancelled()) return;
         setOpenclawStatus(null);
-        enterStorage("choosing-mode");
+        enterEnvironmentReview("choosing-mode");
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [setupStep, beginRun, isRunActive, report, t, setGatewayRunning, setPostStorageStep, navigateSetup, commitSteps, resolveActiveRuntimeOnboardingRequirement, updateOnboardingRequirement, setInstallMode]);
+
+  const continueAfterEnvironmentReview = useCallback(() => {
+    if (setupStep !== "environment-review" || setupNavigationLeavingRef.current) return;
+    report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
+    navigateSetup("storage", "push");
+  }, [navigateSetup, report, setupStep, t]);
+
+  const redetectEnvironment = useCallback(() => {
+    if (setupStep !== "environment-review" || setupNavigationLeavingRef.current) return;
+    cancelActiveRun();
+    navigateSetup("detecting", "replace");
+  }, [cancelActiveRun, navigateSetup, setupStep]);
 
   // ── Docker detect after the welcome step ──
   useEffect(() => {
@@ -1263,6 +1277,8 @@ export function useSetupFlow(
     repairing,
     brokenPlugins,
     forceStorageSelection,
+    continueAfterEnvironmentReview,
+    redetectEnvironment,
     enteringDashboard,
     dashboardEntryError,
     startGateway: startGatewayAction,

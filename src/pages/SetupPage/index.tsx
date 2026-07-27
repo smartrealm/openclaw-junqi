@@ -11,6 +11,7 @@ import type { DockerStatus } from "@/api/tauri-commands";
 import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
 import { WelcomeScreen } from "./WelcomeScreen";
 import { DetectingScreen } from "./DetectingScreen";
+import { EnvironmentReviewScreen } from "./EnvironmentReviewScreen";
 import { GatewayStoppedScreen } from "./GatewayStoppedScreen";
 import { ModeSelectScreen } from "./ModeSelectScreen";
 import { ProgressScreen } from "./ProgressScreen";
@@ -74,6 +75,7 @@ export function SetupPage() {
   switch (setupStep) {
     case "welcome": return <WelcomeScreen logs={sharedLogs} />;
     case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
+    case "environment-review": return <EnvironmentReviewScreen flow={flow} logs={sharedLogs} />;
     case "storage": return <StorageSetupStep logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} forceConfigure={flow.forceStorageSelection} />;
     case "gateway-stopped": return <GatewayStoppedScreen flow={flow} logs={sharedLogs} />;
     case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;

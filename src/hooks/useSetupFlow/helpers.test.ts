@@ -6,6 +6,7 @@ import { setupBackPolicy } from "./helpers";
 const ALL_SETUP_STEPS: SetupStep[] = [
   "welcome",
   "detecting",
+  "environment-review",
   "storage",
   "gateway-stopped",
   "choosing-mode",
@@ -27,6 +28,7 @@ test("every setup page has an explicit Back side-effect policy", () => {
     [
       ["welcome", "navigate"],
       ["detecting", "cancel-run"],
+      ["environment-review", "navigate"],
       ["storage", "rollback-storage"],
       ["gateway-stopped", "cancel-run"],
       ["choosing-mode", "rollback-storage"],

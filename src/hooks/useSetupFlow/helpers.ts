@@ -33,6 +33,7 @@ export function setupBackPolicy(step: SetupStep): SetupBackPolicy {
     case "choosing-mode":
       return "rollback-storage";
     case "welcome":
+    case "environment-review":
     case "checking":
     case "install-git":
     case "git-missing":

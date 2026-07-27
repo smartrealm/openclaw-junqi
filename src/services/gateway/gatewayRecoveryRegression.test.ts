@@ -325,13 +325,14 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
   const main = source('src/main.tsx');
   assert.match(navigation, /\| "storage"/);
   assert.match(store, /postStorageStep/);
-  // Recording the stage to resume and handing over to the storage step are one
-  // indivisible action, so the pairing is asserted on the helper itself and
-  // every detection outcome is then required to go through it.
-  assert.match(flow, /const enterStorage = [\s\S]*?setPostStorageStep\(next\)[\s\S]*?navigateSetup\("storage", "replace"\)/);
-  assert.match(flow, /enterStorage\("choosing-mode"\)/);
-  assert.match(flow, /enterStorage\("gateway-stopped"\)/);
-  assert.match(flow, /enterStorage\(onboardingRequired \? "configure-openclaw" : "ready"\)/);
+  // Detection records the post-storage destination on a stable Environment
+  // result page. Storage is pushed only after explicit confirmation so Back
+  // returns to step 2 without replaying probes.
+  assert.match(flow, /const enterEnvironmentReview = [\s\S]*?setPostStorageStep\(next\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
+  assert.match(flow, /enterEnvironmentReview\("choosing-mode"\)/);
+  assert.match(flow, /enterEnvironmentReview\("gateway-stopped"\)/);
+  assert.match(flow, /enterEnvironmentReview\(onboardingRequired \? "configure-openclaw" : "ready"\)/);
+  assert.match(flow, /const continueAfterEnvironmentReview[\s\S]*?navigateSetup\("storage", "push"\)/);
   assert.match(setup, /case "storage"[\s\S]*<StorageSetupStep/);
   assert.match(gate, /get_storage_setup_status/);
   assert.match(gate, /configure_storage/);

@@ -28,7 +28,8 @@ test("storage Back, configure, and advance actions exclude one another synchrono
 test("environment detection Back invalidates the probe before it can auto-advance", () => {
   assert.match(setupFlow, /if \(setupStep !== "detecting"\) return;[\s\S]*?const runId = beginRun\(\)/);
   assert.match(setupFlow, /const detectionWasCancelled = \(\) => \([\s\S]*?!isRunActive\(runId\)[\s\S]*?setupNavigationLeavingRef\.current/);
-  assert.match(setupFlow, /const enterStorage[\s\S]*?if \(detectionWasCancelled\(\)\) return;[\s\S]*?navigateSetup\("storage", "replace"\)/);
+  assert.match(setupFlow, /const enterEnvironmentReview[\s\S]*?if \(detectionWasCancelled\(\)\) return;[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
+  assert.match(setupFlow, /const continueAfterEnvironmentReview[\s\S]*?navigateSetup\("storage", "push"\)/);
   assert.match(setupFlow, /const performGoBack[\s\S]*?cancelActiveRun\(\);[\s\S]*?const backPolicy = setupBackPolicy\(setupStep\);[\s\S]*?if \(backPolicy === "cancel-run"\)[\s\S]*?goBackSetup\("welcome"\)[\s\S]*?return;/);
 });
 

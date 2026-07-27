@@ -60,6 +60,8 @@ export interface SetupFlow {
   repairing: boolean;
   brokenPlugins: BrokenGatewayPlugin[];
   forceStorageSelection: boolean;
+  continueAfterEnvironmentReview: () => void;
+  redetectEnvironment: () => void;
   startGateway: () => Promise<boolean>;
   retryGateway: () => Promise<boolean>;
   continueAfterGatewayReady: () => Promise<void>;

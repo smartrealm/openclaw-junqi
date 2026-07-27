@@ -1,6 +1,7 @@
 export type SetupStep =
   | "welcome"
   | "detecting"
+  | "environment-review"
   | "storage"
   | "gateway-stopped"
   | "choosing-mode"
@@ -35,6 +36,8 @@ export function setupStepMessageKey(step: SetupStep): string {
       return "setup.petWelcome";
     case "detecting":
       return "setup.detecting";
+    case "environment-review":
+      return "setup.runtimeTitle";
     case "storage":
       return "storage.title";
     case "gateway-stopped":
@@ -65,6 +68,7 @@ export function setupStepProgress(step: SetupStep): number {
     case "welcome":
       return 0;
     case "detecting":
+    case "environment-review":
     case "gateway-stopped":
     case "choosing-mode":
       return 18;
