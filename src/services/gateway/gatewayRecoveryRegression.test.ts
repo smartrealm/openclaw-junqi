@@ -7,11 +7,21 @@ function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
+// useSetupFlow is a directory of hook modules; assert against all of them.
+function sourceDirTs(dir: string): string {
+  const base = resolve(process.cwd(), dir);
+  return readdirSync(base)
+    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+    .sort()
+    .map((entry) => readFileSync(resolve(base, entry), 'utf8'))
+    .join('\n');
+}
+
 // SetupPage is a directory of per-step screens; assert against all of them.
 function sourceDir(dir: string): string {
   const base = resolve(process.cwd(), dir);
   return readdirSync(base)
-    .filter((entry) => entry.endsWith('.tsx'))
+    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
     .sort()
     .map((entry) => readFileSync(resolve(base, entry), 'utf8'))
     .join('\n');
@@ -88,7 +98,7 @@ test('BUG-GSC01 application lifecycle requests use the manager core', () => {
   const channels = source('src/pages/ChannelsCenter/index.tsx');
   const settings = source('src/pages/SettingsPage.tsx');
   const palette = source('src/components/CommandPalette.tsx');
-  const setup = source('src/hooks/useSetupFlow.ts');
+  const setup = sourceDirTs('src/hooks/useSetupFlow');
   assert.doesNotMatch(app, /gateway\.disconnect\(\)/);
   assert.doesNotMatch(app, /window\.aegis\??\.gateway\??\.(?:retry|ensureRunning)\??\.\(/);
   assert.doesNotMatch(app, /gateway\.reconnectWithToken\(/);
@@ -107,7 +117,7 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const gatewayService = source('src-tauri/src/commands/gateway_service.rs');
   const processControl = source('src-tauri/src/commands/process_control.rs');
-  const setup = source('src/hooks/useSetupFlow.ts');
+  const setup = sourceDirTs('src/hooks/useSetupFlow');
   assert.match(gateway, /struct GatewayStartupPolicy/);
   assert.match(gateway, /first_output_timeout:[\s\S]*cfg!\(windows\)[\s\S]*120/);
   assert.match(gateway, /readiness_after_output:[\s\S]*from_secs\(90\)/);
@@ -132,7 +142,7 @@ test('BUG-WIN-STATE-01 validates selected storage with Node before Gateway boots
   const storage = source('src-tauri/src/commands/storage.rs');
   const probe = source('src-tauri/src/commands/openclaw_state_dir.rs');
   const diagnostics = source('src-tauri/src/state/gateway_diagnostics.rs');
-  const setup = source('src/hooks/useSetupFlow.ts');
+  const setup = sourceDirTs('src/hooks/useSetupFlow');
   const gate = source('src/components/setup/StorageSetupGate.tsx');
 
   assert.match(probe, /fs\.chmodSync\(probeDir, 0o700\)/);
@@ -309,7 +319,7 @@ test('BUG-ST01 storage bootstrap is stable and environment overrides remain supp
 test('BUG-ST02 storage decision is an explicit post-detection setup step', () => {
   const store = source('src/stores/app-store.ts');
   const navigation = source('src/stores/setup-navigation.ts');
-  const flow = source('src/hooks/useSetupFlow.ts');
+  const flow = sourceDirTs('src/hooks/useSetupFlow');
   const setup = sourceDir('src/pages/SetupPage');
   const gate = source('src/components/setup/StorageSetupGate.tsx');
   const main = source('src/main.tsx');

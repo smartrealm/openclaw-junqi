@@ -16,11 +16,21 @@ function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
+// useSetupFlow is a directory of hook modules; assert against all of them.
+function sourceDirTs(dir: string): string {
+  const base = resolve(process.cwd(), dir);
+  return readdirSync(base)
+    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+    .sort()
+    .map((entry) => readFileSync(resolve(base, entry), 'utf8'))
+    .join('\n');
+}
+
 // SetupPage is a directory of per-step screens; assert against all of them.
 function sourceDir(dir: string): string {
   const base = resolve(process.cwd(), dir);
   return readdirSync(base)
-    .filter((entry) => entry.endsWith('.tsx'))
+    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
     .sort()
     .map((entry) => readFileSync(resolve(base, entry), 'utf8'))
     .join('\n');
@@ -135,7 +145,7 @@ test('BUG-CPI-07 invalid-config damage class falls back to structured config val
 });
 
 test('BUG-CPI-07 disable is the last rung and the UI offers it only for verified findings', () => {
-  const hook = source('src/hooks/useSetupFlow.ts');
+  const hook = sourceDirTs('src/hooks/useSetupFlow');
   assert.match(hook, /listBrokenGatewayPlugins\(/);
   assert.match(hook, /unhealedPlugins\(/);
   assert.match(hook, /pluginsNeedingHeal\(/);

@@ -3,9 +3,13 @@ import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import { progressForPhase, progressForSetupEvent } from './setupProgressModel';
 
-const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
+const setupFlow = readdirSync(new URL('./useSetupFlow/', import.meta.url))
+  .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`./useSetupFlow/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 const setupPage = readdirSync(new URL('../pages/SetupPage/', import.meta.url))
-  .filter((entry) => entry.endsWith('.tsx'))
+  .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
   .sort()
   .map((entry) => readFileSync(new URL(`../pages/SetupPage/${entry}`, import.meta.url), 'utf8'))
   .join('\n');

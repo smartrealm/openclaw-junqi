@@ -8,7 +8,7 @@ const read = (path: string) => readFile(new URL(path, import.meta.url), 'utf8');
 const readDir = async (path: string) => {
   const entries = await readdir(new URL(path, import.meta.url));
   const files = await Promise.all(
-    entries.filter((entry) => entry.endsWith('.tsx')).sort()
+    entries.filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx')).sort()
       .map((entry) => readFile(new URL(`${path}${entry}`, import.meta.url), 'utf8')),
   );
   return files.join('\n');
@@ -29,7 +29,7 @@ test('all visible theme selectors use the shared transition service', async () =
 test('enter-dashboard actions forward their button origin to the transition coordinator', async () => {
   const [page, flow, transition] = await Promise.all([
     readDir('../pages/SetupPage/'),
-    read('../hooks/useSetupFlow.ts'),
+    readDir('../hooks/useSetupFlow/'),
     read('./workspaceEntryTransition.ts'),
   ]);
   assert.match(page, /flow\.enterDashboard\(event\.currentTarget\)/);

@@ -2,13 +2,21 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
-const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
+const setupFlow = readdirSync(new URL('./useSetupFlow/', import.meta.url))
+  .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+  .sort()
+  .map((entry) => readFileSync(new URL(`./useSetupFlow/${entry}`, import.meta.url), 'utf8'))
+  .join('\n');
 // Each setup step now owns a file; read the one under assertion directly.
+// The wizard session now lives in its own hook module; read it directly.
+const hookFile = (name: string) =>
+  readFileSync(new URL(`./useSetupFlow/${name}.ts`, import.meta.url), 'utf8');
+
 const screen = (name: string) =>
   readFileSync(new URL(`../pages/SetupPage/${name}.tsx`, import.meta.url), 'utf8');
 
 const setupPage = readdirSync(new URL('../pages/SetupPage/', import.meta.url))
-  .filter((entry) => entry.endsWith('.tsx'))
+  .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
   .sort()
   .map((entry) => readFileSync(new URL(`../pages/SetupPage/${entry}`, import.meta.url), 'utf8'))
   .join('\n');
@@ -88,13 +96,11 @@ test('BUG-ONB-34 cached setup validates installation before Gateway recovery', (
 });
 
 test('BUG-ONB-32 official wizard RPCs use an admin connection and retain failure diagnostics', () => {
-  const clientSetup = setupFlow.slice(
-    setupFlow.indexOf('new OpenClawWizardClient'),
-    setupFlow.indexOf('const progressRef'),
-  );
-  const failure = setupFlow.slice(
-    setupFlow.indexOf('const wizardFailureMessage'),
-    setupFlow.indexOf('const presentSetupStep'),
+  const wizardHook = hookFile('useWizardSession');
+  const clientSetup = wizardHook.slice(wizardHook.indexOf('new OpenClawWizardClient'));
+  const failure = wizardHook.slice(
+    wizardHook.indexOf('const wizardFailureMessage'),
+    wizardHook.indexOf('const invalidateWizardOperations'),
   );
 
   assert.match(clientSetup, /gateway\.callPrivileged\(method, params, options\)/);
@@ -188,10 +194,7 @@ test('BUG-WFR-02 every interactive wizard RPC waits for a verified Gateway conne
 });
 
 test('BUG-WFR-04 stale wizard operations cannot commit after setup navigation or Gateway replacement', () => {
-  const wizardOperations = setupFlow.slice(
-    setupFlow.indexOf('const invalidateWizardOperations'),
-    setupFlow.indexOf('// ── Actions ──'),
-  );
+  const wizardOperations = hookFile('useWizardSession');
   const back = setupFlow.slice(
     setupFlow.indexOf('const goBack = useCallback'),
     setupFlow.indexOf('const retryGit = useCallback'),

@@ -9,13 +9,13 @@ function source(path: string): string {
 // SetupPage is a directory of per-step screens; assert against all of them.
 function sourceDir(path: string): string {
   return readdirSync(new URL(path, import.meta.url))
-    .filter((entry) => entry.endsWith('.tsx'))
+    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
     .sort()
     .map((entry) => readFileSync(new URL(`${path}${entry}`, import.meta.url), 'utf8'))
     .join('\n');
 }
 
-const setupFlow = source('./useSetupFlow.ts');
+const setupFlow = sourceDir('./useSetupFlow/');
 const setupPage = sourceDir('../pages/SetupPage/');
 const commands = source('../api/tauri-commands.ts');
 const ensure = source('../../src-tauri/src/commands/ensure.rs');

@@ -9,7 +9,11 @@ const setup = readdirSync(new URL("../../src-tauri/src/commands/setup/", import.
   .join("\n");
 const app = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
 const api = readFileSync(new URL("../api/tauri-commands.ts", import.meta.url), "utf8");
-const flow = readFileSync(new URL("./useSetupFlow.ts", import.meta.url), "utf8");
+const flow = readdirSync(new URL("./useSetupFlow/", import.meta.url))
+  .filter((entry) => entry.endsWith(".ts"))
+  .sort()
+  .map((entry) => readFileSync(new URL(`./useSetupFlow/${entry}`, import.meta.url), "utf8"))
+  .join("\n");
 const runtimeTransaction = readFileSync(
   new URL("../services/setup/runtimeSelectionTransaction.ts", import.meta.url),
   "utf8",
