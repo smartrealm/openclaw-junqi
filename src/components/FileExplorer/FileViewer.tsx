@@ -803,10 +803,27 @@ function FilePreviewPane({
             ))}
           </div>
         )}
+        {documentSnapshot?.status === 'error' && document ? (
+          <button
+            type="button"
+            onClick={() => { void document.save(); }}
+            style={{
+              marginLeft: "auto",
+              border: "1px solid var(--aegis-danger)",
+              borderRadius: 4,
+              padding: "2px 7px",
+              color: "var(--aegis-danger)",
+              background: "transparent",
+              fontSize: 10.5,
+            }}
+          >
+            {t("file.retrySave", "Retry save")}
+          </button>
+        ) : null}
         {statusLabel && (
           <span
             style={{
-              marginLeft: "auto",
+              marginLeft: documentSnapshot?.status === 'error' ? 6 : "auto",
               fontSize: 11,
               color:
                 documentSnapshot?.status === 'error'

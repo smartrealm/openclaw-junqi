@@ -20,6 +20,7 @@ test("BUG-FILE-STALE-01 an open file follows the file on disk", () => {
   assert.match(viewer, /document\.edit\(value\)/);
   assert.match(viewer, /document\.save\(\)/);
   assert.match(viewer, /documentSnapshot\?\.status === 'conflicted'/);
+  assert.match(viewer, /onClick=\{\(\) => \{ void document\.save\(\); \}\}/);
   assert.match(viewer, /file\.changedOnDisk/);
 });
 
