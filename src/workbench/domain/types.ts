@@ -51,6 +51,7 @@ export interface WorkbenchTab {
   pinned: boolean;
   dirty: boolean;
   filePath?: string;
+  diffStaged?: boolean;
 }
 
 export interface TabGroup {

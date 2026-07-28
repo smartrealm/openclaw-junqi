@@ -37,6 +37,7 @@ import { TabGroupLayout } from '@/workbench/components/TabGroupLayout';
 import type { WorkbenchTab as DomainWorkbenchTab } from '@/workbench/domain/types';
 import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
+import { GitChanges, GitDiffViewer } from '@/components/Git';
 import './workbench.css';
 
 type WorktreeState = 'running' | 'attention' | 'idle' | 'done';
@@ -300,8 +301,22 @@ function EditorPreview() {
   return <div className="junqi-wb-empty-panel">编辑器标签不可用：文件路径缺失</div>;
 }
 
+function WorkbenchDiff({ tab, projectPath }: { tab: DomainWorkbenchTab; projectPath: string }) {
+  if (!tab.filePath) return <div className="junqi-wb-empty-panel">Diff 标签缺少文件路径</div>;
+  return (
+    <GitDiffViewer
+      projectPath={projectPath}
+      mode="file"
+      filePath={tab.filePath}
+      staged={tab.diffStaged === true}
+      title={tab.title}
+      onClose={() => undefined}
+    />
+  );
+}
+
 function DiffPreview() {
-  return <div className="junqi-wb-empty-panel">Diff Adapter 尚未连接，当前不会猜测变更内容</div>;
+  return <div className="junqi-wb-empty-panel">Diff 标签不可用：文件路径缺失</div>;
 }
 
 function BrowserPreview() {
@@ -317,7 +332,7 @@ function BrowserPreview() {
   );
 }
 
-function RightSidebar({ activePanel, onPanelChange, collapsed, onToggle, projectPath, projectName, onFileSelect }: {
+function RightSidebar({ activePanel, onPanelChange, collapsed, onToggle, projectPath, projectName, onFileSelect, onDiffSelect }: {
   activePanel: RightPanel;
   onPanelChange: (panel: RightPanel) => void;
   collapsed: boolean;
@@ -325,6 +340,7 @@ function RightSidebar({ activePanel, onPanelChange, collapsed, onToggle, project
   projectPath: string | null;
   projectName: string;
   onFileSelect: (path: string, name: string) => void;
+  onDiffSelect: (path: string, staged: boolean, label: string) => void;
 }) {
   if (collapsed) {
     return (
@@ -357,18 +373,19 @@ function RightSidebar({ activePanel, onPanelChange, collapsed, onToggle, project
         </nav>
         <IconButton label="收起右侧栏" onClick={onToggle}><SidebarSimple size={16} /></IconButton>
       </header>
-      <RightPanelContent panel={activePanel} projectPath={projectPath} projectName={projectName} onFileSelect={onFileSelect} />
+      <RightPanelContent panel={activePanel} projectPath={projectPath} projectName={projectName} onFileSelect={onFileSelect} onDiffSelect={onDiffSelect} />
     </aside>
   );
 }
 
-function RightPanelContent({ panel, projectPath, projectName, onFileSelect }: {
+function RightPanelContent({ panel, projectPath, projectName, onFileSelect, onDiffSelect }: {
   panel: RightPanel;
   projectPath: string | null;
   projectName: string;
   onFileSelect: (path: string, name: string) => void;
+  onDiffSelect: (path: string, staged: boolean, label: string) => void;
 }) {
-  if (panel === 'source') return <SourceControlPanel />;
+  if (panel === 'source') return <SourceControlPanel projectPath={projectPath} onFileSelect={onDiffSelect} />;
   if (panel === 'checks') return <ChecksPanel />;
   if (panel === 'vault') return <VaultPanel />;
   if (panel === 'search') return <SearchPanel />;
@@ -398,8 +415,19 @@ function FilesPanel({ projectPath, projectName, onFileSelect }: {
   );
 }
 
-function SourceControlPanel() {
-  return <div className="junqi-wb-empty-panel">Git Adapter 尚未连接，当前不会展示或提交猜测的变更</div>;
+function SourceControlPanel({ projectPath, onFileSelect }: {
+  projectPath: string | null;
+  onFileSelect: (path: string, staged: boolean, label: string) => void;
+}) {
+  if (!projectPath) return <div className="junqi-wb-empty-panel">选择本机 Worktree 后查看源代码管理</div>;
+  return (
+    <GitChanges
+      projectPath={projectPath}
+      currentTaskCreatedAt={null}
+      onFileSelect={onFileSelect}
+      width={350}
+    />
+  );
 }
 
 function ChecksPanel() {
@@ -430,6 +458,7 @@ function WorkbenchContent({ activeTab, domainTab, projectPath, onMissing }: {
   if (!activeTab) return <div className="junqi-wb-empty-panel">选择项目后新建 Agent、文件或 Diff 标签</div>;
   if (activeTab.kind === 'editor' && domainTab && projectPath) return <WorkbenchEditor tab={domainTab} projectPath={projectPath} onMissing={onMissing} />;
   if (activeTab.kind === 'editor') return <EditorPreview />;
+  if (activeTab.kind === 'diff' && domainTab && projectPath) return <WorkbenchDiff tab={domainTab} projectPath={projectPath} />;
   if (activeTab.kind === 'diff') return <DiffPreview />;
   if (activeTab.kind === 'browser') return <BrowserPreview />;
   return <AgentTerminal />;
@@ -522,6 +551,22 @@ export function AgentWorkspacePage() {
       pinned: false,
       dirty: false,
       filePath: path,
+    });
+  };
+
+  const openDiff = (path: string, staged: boolean, label: string) => {
+    if (!group) return;
+    const id = `workbench:diff:${staged ? 'staged' : 'working'}:${path}`;
+    openTab(group.id, {
+      id,
+      paneId: `workbench:pane:${id}`,
+      kind: 'diff',
+      title: label,
+      preview: true,
+      pinned: false,
+      dirty: false,
+      filePath: path,
+      diffStaged: staged,
     });
   };
 
@@ -618,6 +663,7 @@ export function AgentWorkspacePage() {
         projectPath={selectedWorktree?.path ?? null}
         projectName={selectedWorktree ? pathLabel(selectedWorktree.path) : 'Workspace'}
         onFileSelect={openFile}
+        onDiffSelect={openDiff}
       />
     </div>
   );
