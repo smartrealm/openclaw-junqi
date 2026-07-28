@@ -4,12 +4,18 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 const SCHEMA_VERSION: u32 = 1;
 const MAX_SESSION_BYTES: usize = 8 * 1024 * 1024;
 const BACKUP_SLOTS: u64 = 5;
+
+fn session_operation_gate() -> &'static Mutex<()> {
+    static GATE: OnceLock<Mutex<()>> = OnceLock::new();
+    GATE.get_or_init(|| Mutex::new(()))
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -269,6 +275,66 @@ fn load_at(path: &Path) -> Result<WorkbenchSessionLoadResult, String> {
     }
 }
 
+fn reset_at(path: &Path) -> Result<bool, String> {
+    let mut sources = Vec::new();
+    if path.exists() {
+        sources.push(path.to_path_buf());
+    }
+    for slot in 0..BACKUP_SLOTS {
+        let backup = backup_path(path, slot);
+        if backup.exists() {
+            sources.push(backup);
+        }
+    }
+    if sources.is_empty() {
+        return Ok(false);
+    }
+    for source in &sources {
+        let metadata = fs::symlink_metadata(source)
+            .map_err(|error| format!("inspect workbench recovery source: {error}"))?;
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            return Err("workbench recovery source must be a regular file".into());
+        }
+    }
+    let parent = path.parent().ok_or("invalid workbench session path")?;
+    let recovery = parent.join(format!("recovery-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&recovery)
+        .map_err(|error| format!("create workbench recovery directory: {error}"))?;
+    let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for source in sources {
+        let name = source
+            .file_name()
+            .ok_or("invalid workbench recovery source")?;
+        let destination = recovery.join(name);
+        let move_result = if destination.exists() {
+            Err("workbench recovery destination already exists".to_string())
+        } else {
+            fs::rename(&source, &destination)
+                .map_err(|error| format!("archive workbench session {}: {error}", source.display()))
+        };
+        if let Err(error) = move_result {
+            let mut rollback_errors = Vec::new();
+            for (original, archived) in moved.into_iter().rev() {
+                if let Err(rollback) = fs::rename(&archived, &original) {
+                    rollback_errors.push(format!("{}: {rollback}", original.display()));
+                }
+            }
+            if rollback_errors.is_empty() {
+                let _ = fs::remove_dir(&recovery);
+                return Err(error);
+            }
+            return Err(format!(
+                "{error}; recovery rollback incomplete at {}: {}",
+                recovery.display(),
+                rollback_errors.join("; ")
+            ));
+        }
+        moved.push((source, destination));
+    }
+    sync_parent(path)?;
+    Ok(true)
+}
+
 fn save_at(
     path: &Path,
     expected_generation: u64,
@@ -319,6 +385,9 @@ pub fn load_workbench_session(
     app: AppHandle,
     partition_id: String,
 ) -> Result<WorkbenchSessionLoadResult, String> {
+    let _operation = session_operation_gate()
+        .lock()
+        .map_err(|_| "workbench session operation lock poisoned".to_string())?;
     load_at(&session_path(&app, &partition_id)?)
 }
 
@@ -329,6 +398,9 @@ pub fn save_workbench_session(
     expected_generation: u64,
     payload: Value,
 ) -> Result<WorkbenchSessionSaveResult, String> {
+    let _operation = session_operation_gate()
+        .lock()
+        .map_err(|_| "workbench session operation lock poisoned".to_string())?;
     save_at(
         &session_path(&app, &partition_id)?,
         expected_generation,
@@ -336,9 +408,17 @@ pub fn save_workbench_session(
     )
 }
 
+#[tauri::command]
+pub fn reset_workbench_session(app: AppHandle, partition_id: String) -> Result<bool, String> {
+    let _operation = session_operation_gate()
+        .lock()
+        .map_err(|_| "workbench session operation lock poisoned".to_string())?;
+    reset_at(&session_path(&app, &partition_id)?)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{backup_path, load_at, save_at};
+    use super::{backup_path, load_at, reset_at, save_at};
     use serde_json::json;
 
     fn root(name: &str) -> std::path::PathBuf {
@@ -379,6 +459,32 @@ mod tests {
         assert!(loaded.recovered);
         assert_eq!(loaded.generation, 1);
         assert_eq!(loaded.payload.unwrap(), json!({"value":1}));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reset_archives_primary_and_backups_without_deleting_evidence() {
+        let root = root("reset");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("session.json");
+        save_at(&path, 0, json!({"value":1})).unwrap();
+        save_at(&path, 1, json!({"value":2})).unwrap();
+        assert!(reset_at(&path).unwrap());
+        assert!(!path.exists());
+        assert!(!backup_path(&path, 2).exists());
+        let recovery = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("recovery-")
+            })
+            .unwrap();
+        assert!(recovery.join("session.json").exists());
+        assert!(recovery.join("session.backup-2.json").exists());
+        assert!(!reset_at(&path).unwrap());
         std::fs::remove_dir_all(root).unwrap();
     }
 

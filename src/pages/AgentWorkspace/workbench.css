@@ -55,6 +55,15 @@
   color: var(--wb-danger);
 }
 
+.junqi-wb-storage-gate > button {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid rgb(var(--aegis-status-failed, 232 102 102) / 0.35);
+  border-radius: 4px;
+  color: var(--wb-text);
+  background: transparent;
+}
+
 .junqi-workbench button,
 .junqi-workbench textarea {
   font: inherit;

@@ -372,6 +372,7 @@ pub fn run() {
             commands::workbench_pty::stop_workbench_pty,
             commands::workbench_pty::stop_workbench_ptys,
             commands::workbench_session::load_workbench_session,
+            commands::workbench_session::reset_workbench_session,
             commands::workbench_session::save_workbench_session,
         ])
         .setup(|app| {

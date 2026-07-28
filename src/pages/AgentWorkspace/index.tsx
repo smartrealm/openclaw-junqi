@@ -30,6 +30,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
 import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
+import { resetWorkbenchSession } from '@/workbench/session/storage';
 import { TabGroupLayout } from '@/workbench/components/TabGroupLayout';
 import { WorkbenchTerminalPane } from '@/workbench/components/WorkbenchTerminalPane';
 import { closeWorkbenchPtyTab, closeWorkbenchPtyTabs } from '@/workbench/pty/workbenchPtyClient';
@@ -560,6 +561,7 @@ export function AgentWorkspacePage() {
   const selectedWorktree = activeWorktree ? worktreeRecords[activeWorktree] : undefined;
   const selectedLocalPath = localWorktreePath(selectedWorktree);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [resettingSession, setResettingSession] = useState(false);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -686,12 +688,27 @@ export function AgentWorkspacePage() {
     });
   };
 
+  const resetSession = async () => {
+    if (resettingSession) return;
+    setResettingSession(true);
+    try {
+      await resetWorkbenchSession('local');
+      window.location.reload();
+    } catch (reason) {
+      setLifecycleError(reason instanceof Error ? reason.message : String(reason));
+      setResettingSession(false);
+    }
+  };
+
   return (
     <div className={`junqi-workbench is-sidebar-${sidebarMode}`} data-testid="junqi-ai-workbench">
       {hydrated && !writerReady ? (
         <div className="junqi-wb-storage-gate" role="alert">
           <WarningCircle size={16} />
           <span><strong>工作台会话存储不可用</strong>{hydrationError ?? '请重新启动后重试'}</span>
+          <button type="button" disabled={resettingSession} onClick={() => { void resetSession(); }}>
+            {resettingSession ? '正在归档…' : '归档并重置会话'}
+          </button>
         </div>
       ) : lifecycleError ? (
         <div className="junqi-wb-storage-gate" role="alert">

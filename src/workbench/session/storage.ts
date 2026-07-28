@@ -30,6 +30,10 @@ export async function loadWorkbenchSession(partitionId: string): Promise<LoadedW
   return { ...result, snapshot: result.payload };
 }
 
+export function resetWorkbenchSession(partitionId: string): Promise<boolean> {
+  return invoke<boolean>('reset_workbench_session', { partitionId });
+}
+
 export async function saveWorkbenchSession(
   partitionId: string,
   expectedGeneration: number,
