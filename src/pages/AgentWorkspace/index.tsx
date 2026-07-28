@@ -540,6 +540,9 @@ function pathLabel(path: string): string {
 
 export function AgentWorkspacePage() {
   const legacyTasks = useAgentWorkspaceStore((state) => state.tasks);
+  const hydrated = useWorkbenchStore((state) => state.hydrated);
+  const writerReady = useWorkbenchStore((state) => state.writerReady);
+  const hydrationError = useWorkbenchStore((state) => state.hydrationError);
   const worktreeRecords = useWorkbenchStore((state) => state.worktrees);
   const activeWorktree = useWorkbenchStore((state) => state.activeWorktreeId);
   const setWorktrees = useWorkbenchStore((state) => state.setWorktrees);
@@ -574,11 +577,12 @@ export function AgentWorkspacePage() {
   const selectedWorktree = activeWorktree ? worktreeRecords[activeWorktree] : undefined;
 
   useEffect(() => {
+    if (!hydrated) return;
     const migration = projectLegacyTasksToWorkbench(legacyTasks);
     const current = useWorkbenchStore.getState().worktrees;
     const additions = migration.worktrees.filter((worktree) => !current[worktree.id]);
     if (additions.length > 0) setWorktrees([...Object.values(current), ...additions]);
-  }, [legacyTasks, setWorktrees]);
+  }, [hydrated, legacyTasks, setWorktrees]);
 
   useEffect(() => {
     const persisted = readAgentWorkspaceSidebarMode();
@@ -664,6 +668,12 @@ export function AgentWorkspacePage() {
 
   return (
     <div className={`junqi-workbench is-sidebar-${sidebarMode}`} data-testid="junqi-ai-workbench">
+      {hydrated && !writerReady ? (
+        <div className="junqi-wb-storage-gate" role="alert">
+          <WarningCircle size={16} />
+          <span><strong>工作台会话存储不可用</strong>{hydrationError ?? '请重新启动后重试'}</span>
+        </div>
+      ) : null}
       <WorktreeSidebar
         worktrees={worktrees}
         activeId={activeWorktree}

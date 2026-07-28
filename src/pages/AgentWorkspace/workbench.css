@@ -26,6 +26,35 @@
   font-size: 12px;
 }
 
+.junqi-wb-storage-gate {
+  position: absolute;
+  z-index: 20;
+  top: 8px;
+  left: 50%;
+  display: flex;
+  max-width: min(520px, 80%);
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgb(var(--aegis-status-failed, 232 102 102) / 0.38);
+  border-radius: 6px;
+  color: var(--wb-text-2);
+  background: var(--wb-elevated);
+  box-shadow: 0 10px 32px rgb(0 0 0 / 0.3);
+}
+
+.junqi-wb-storage-gate span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.junqi-wb-storage-gate svg,
+.junqi-wb-storage-gate strong {
+  color: var(--wb-danger);
+}
+
 .junqi-workbench button,
 .junqi-workbench textarea {
   font: inherit;
