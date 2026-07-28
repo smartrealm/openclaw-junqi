@@ -19,7 +19,7 @@ import { readDir, readFileText, readImagePreview } from "@/services/workspaceFs"
 import { subscribeLocalWorkspacePath } from "@/workspace-files/services/localWatchCoordinator";
 import { resolveWorkspacePreview } from "@/workspace-files/services/previewResolver";
 import type { EditorDocumentSnapshot } from "@/workspace-files/services/editorDocumentManager";
-import { acquireLocalEditorDocument, releaseLocalEditorDocument } from "@/workspace-files/services/localEditorDocuments";
+import { acquireLocalEditorDocument, releaseLocalEditorDocuments } from "@/workspace-files/services/localEditorDocuments";
 import { showAlert } from "@/components/shared/alertStore";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -978,9 +978,11 @@ export function FileViewer({
     if (closeInFlightRef.current) return;
     closeInFlightRef.current = true;
     try {
-      for (const path of paths) {
-        await releaseLocalEditorDocument(projectPath, path, `${documentOwnerPrefix}:${path}`);
-      }
+      await releaseLocalEditorDocuments(paths.map((path) => ({
+        rootPath: projectPath,
+        path,
+        ownerId: `${documentOwnerPrefix}:${path}`,
+      })));
       commit();
     } catch (reason) {
       showAlert(

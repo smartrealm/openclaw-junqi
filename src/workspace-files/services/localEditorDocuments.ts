@@ -34,27 +34,49 @@ export function acquireLocalEditorDocument(rootPath: string, path: string, owner
   return manager.open(localEditorScope(rootPath), path);
 }
 
-export async function releaseLocalEditorDocument(rootPath: string, path: string, ownerId: string): Promise<void> {
-  const documentKey = key(rootPath, path);
-  const documentOwners = owners.get(documentKey);
-  if (!documentOwners?.has(ownerId)) return;
-  if (documentOwners.size > 1) {
-    documentOwners.delete(ownerId);
-    return;
-  }
-  const scope = localEditorScope(rootPath);
-  const document = manager.open(scope, path);
-  const status = document.snapshot().status;
-  if (status === 'conflicted') {
-    throw new Error('Document has an unresolved external-change conflict');
-  }
-  if (status === 'dirty' || status === 'saving' || status === 'error') {
-    await document.save();
-    if (document.snapshot().status === 'error') {
-      throw new Error(document.snapshot().error ?? 'Document checkpoint failed');
+export interface LocalEditorDocumentLease {
+  rootPath: string;
+  path: string;
+  ownerId: string;
+}
+
+export async function releaseLocalEditorDocuments(leases: LocalEditorDocumentLease[]): Promise<void> {
+  const unique = [...new Map(leases.map((lease) => [
+    `${key(lease.rootPath, lease.path)}\u0000${lease.ownerId}`,
+    lease,
+  ])).values()];
+  const owned = unique.flatMap((lease) => {
+    const documentKey = key(lease.rootPath, lease.path);
+    const documentOwners = owners.get(documentKey);
+    if (!documentOwners?.has(lease.ownerId)) return [];
+    const scope = localEditorScope(lease.rootPath);
+    return [{ lease, documentKey, documentOwners, scope, document: manager.open(scope, lease.path) }];
+  });
+  // Validate every lease before checkpointing or releasing any owner.
+  for (const item of owned) {
+    if (item.documentOwners.size === 1 && item.document.snapshot().status === 'conflicted') {
+      throw new Error('Document has an unresolved external-change conflict');
     }
   }
-  documentOwners.delete(ownerId);
-  owners.delete(documentKey);
-  manager.close(scope, path);
+  for (const item of owned) {
+    if (item.documentOwners.size > 1) continue;
+    const status = item.document.snapshot().status;
+    if (status === 'dirty' || status === 'saving' || status === 'error') {
+      await item.document.save();
+      if (item.document.snapshot().status === 'error') {
+        throw new Error(item.document.snapshot().error ?? 'Document checkpoint failed');
+      }
+    }
+  }
+  // Lease mutation is the commit phase and runs only after every checkpoint.
+  for (const item of owned) {
+    item.documentOwners.delete(item.lease.ownerId);
+    if (item.documentOwners.size > 0) continue;
+    owners.delete(item.documentKey);
+    manager.close(item.scope, item.lease.path);
+  }
+}
+
+export function releaseLocalEditorDocument(rootPath: string, path: string, ownerId: string): Promise<void> {
+  return releaseLocalEditorDocuments([{ rootPath, path, ownerId }]);
 }

@@ -9,13 +9,15 @@ const workspace = readFileSync(new URL('../../pages/AgentWorkspace/index.tsx', i
 test('FileViewer detach retains the shared document while explicit tab close releases it', () => {
   assert.match(viewer, /acquireLocalEditorDocument\(projectPath, filePath, ownerId\)/);
   assert.doesNotMatch(viewer, /document\.dispose\(\)/);
-  assert.match(viewer, /await releaseLocalEditorDocument\(projectPath, path/);
+  assert.match(viewer, /await releaseLocalEditorDocuments\(paths\.map/);
   assert.match(workspace, /await releaseLocalEditorDocument\(localPath, tab\.filePath/);
 });
 
 test('document release checkpoints drafts and refuses unresolved conflicts', () => {
   assert.match(service, /status === 'conflicted'/);
   assert.match(service, /status === 'dirty' \|\| status === 'saving' \|\| status === 'error'/);
-  assert.ok(service.indexOf('await document.save()') < service.indexOf('manager.close(scope, path)'));
-  assert.match(service, /if \(documentOwners\.size > 1\)/);
+  assert.match(service, /Validate every lease before checkpointing or releasing any owner/);
+  assert.match(service, /Lease mutation is the commit phase/);
+  assert.ok(service.indexOf('await item.document.save()') < service.indexOf('item.documentOwners.delete'));
+  assert.match(service, /item\.documentOwners\.size > 1/);
 });
