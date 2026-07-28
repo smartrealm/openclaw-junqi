@@ -17,6 +17,7 @@ import { loadCodeMirrorLanguage } from "@/utils/codeMirrorLanguages";
 import { parentPathOf } from "./treeUtils";
 import { readDir, readFileText, readImagePreview, writeFileText } from "@/services/workspaceFs";
 import { subscribeLocalWorkspacePath } from "@/workspace-files/services/localWatchCoordinator";
+import { resolveWorkspacePreview } from "@/workspace-files/services/previewResolver";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,11 +39,6 @@ type ImagePreviewData = {
 };
 
 // ── File helpers ─────────────────────────────────────────────────────────────
-
-function isMarkdownFile(fileName: string): boolean {
-  const ext = fileName.split(".").pop()?.toLowerCase();
-  return ext === "md" || ext === "mdx" || ext === "markdown";
-}
 
 function isMakefile(fileName: string): boolean {
   const lower = fileName.toLowerCase();
@@ -94,17 +90,14 @@ function parseMakeTargets(content: string): string[] {
   return out;
 }
 
-function isPreviewableImageFile(fileName: string): boolean {
-  const ext = fileName.split(".").pop()?.toLowerCase();
-  return (
-    ext === "png" ||
-    ext === "jpg" ||
-    ext === "jpeg" ||
-    ext === "gif" ||
-    ext === "webp" ||
-    ext === "bmp" ||
-    ext === "svg"
-  );
+const WORKSPACE_PREVIEW_CAPABILITIES = { read: true, write: true, nativePreview: true } as const;
+
+function filePreviewMode(fileName: string) {
+  return resolveWorkspacePreview({
+    path: fileName,
+    policy: 'workspace',
+    capabilities: WORKSPACE_PREVIEW_CAPABILITIES,
+  });
 }
 
 // ── Markdown rendering ───────────────────────────────────────────────────────
@@ -379,8 +372,9 @@ function FilePreviewPane({
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [languageExtension, setLanguageExtension] = useState<Extension>([]);
-  const isMarkdown = isMarkdownFile(fileName);
-  const isPreviewableImage = isPreviewableImageFile(fileName);
+  const resolvedPreview = useMemo(() => filePreviewMode(fileName), [fileName]);
+  const isMarkdown = resolvedPreview.mode === 'markdown';
+  const isPreviewableImage = resolvedPreview.mode === 'scoped-media' && resolvedPreview.kind === 'image';
   const isMake = isMakefile(fileName);
   const makeTargets = useMemo(
     () => (isMake && content ? parseMakeTargets(content) : []),
@@ -966,7 +960,7 @@ export function FileViewer({
   if (!activeTab) return null;
 
   const activePreviewMode = !!previewModes[activeTab.path];
-  const activeIsMarkdown = isMarkdownFile(activeTab.name);
+  const activeIsMarkdown = filePreviewMode(activeTab.name).mode === 'markdown';
   const canCloseOtherTabs = tabs.length > 1;
   const activeTabIndex = tabs.findIndex((tab) => tab.path === activeTab.path);
   const canCloseTabsToRight =
