@@ -56,6 +56,7 @@ pub struct ProviderClaim {
     provider_id: String,
     provider_session_id: Option<String>,
     transcript_path: Option<String>,
+    binary_path: String,
 }
 
 fn claims() -> &'static Mutex<HashMap<String, ProviderClaim>> {
@@ -108,6 +109,22 @@ fn claim_fingerprint(claim: &ProviderClaim) -> Option<String> {
     ))
 }
 
+fn resolve_reviewed_provider(provider_id: &str) -> Result<String, String> {
+    let spec = super::agent_task_pty::workbench_agent_specs()
+        .iter()
+        .find(|spec| spec.bin == provider_id)
+        .ok_or_else(|| "unsupported workbench provider".to_string())?;
+    let path = crate::platform::detect_path(spec.bin);
+    if path.is_empty() {
+        return Err("workbench provider is unavailable".into());
+    }
+    let candidate = std::path::PathBuf::from(path);
+    if !candidate.is_absolute() || !candidate.is_file() {
+        return Err("workbench provider binary is not a verified absolute file".into());
+    }
+    Ok(candidate.to_string_lossy().into_owned())
+}
+
 fn same_claim(current: &ProviderClaim, request: &ProviderClaimRequest) -> bool {
     current.claim_id == request.claim_id
         && current.worktree_id == request.worktree_id
@@ -137,6 +154,7 @@ pub fn claim_workbench_provider(request: ProviderClaimRequest) -> Result<Provide
     if let Some(value) = request.transcript_path.as_deref() {
         validate_component("transcript path", value, MAX_PATH_BYTES)?;
     }
+    let binary_path = resolve_reviewed_provider(&request.provider_id)?;
 
     let _operation = super::workbench_pty::lifecycle_gate()
         .lock()
@@ -183,6 +201,7 @@ pub fn claim_workbench_provider(request: ProviderClaimRequest) -> Result<Provide
         provider_id: request.provider_id,
         provider_session_id: request.provider_session_id,
         transcript_path: request.transcript_path,
+        binary_path,
     };
     entries.insert(claim.pane_id.clone(), claim.clone());
     Ok(claim)

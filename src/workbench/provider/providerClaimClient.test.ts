@@ -9,12 +9,14 @@ const client = readFileSync(new URL('./providerClaimClient.ts', import.meta.url)
 test('native provider claim validates the exact live PTY under the shared lifecycle gate', () => {
   const claim = backend.slice(backend.indexOf('pub fn claim_workbench_provider'), backend.indexOf('pub fn release_workbench_provider'));
   assert.ok(claim.indexOf('lifecycle_gate()') < claim.indexOf('assert_current_run_locked'));
+  assert.match(claim, /resolve_reviewed_provider\(&request\.provider_id\)/);
   assert.match(claim, /provider PTY is already claimed/);
   assert.match(claim, /provider resume identity is already claimed/);
 });
 
 test('provider claim release is fenced by pane claim and generation', () => {
   assert.match(backend, /claim\.claim_id == claim_id && claim\.generation == generation/);
+  assert.match(client, /binaryPath: string/);
   assert.match(client, /release_workbench_provider/);
 });
 

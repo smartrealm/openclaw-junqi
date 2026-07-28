@@ -1,7 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ProviderClaimRequest, ProviderSessionClaim } from '../domain/providerSession';
 
-interface NativeProviderClaim extends Omit<ProviderSessionClaim, 'status'> {}
+interface NativeProviderClaim extends Omit<ProviderSessionClaim, 'status'> {
+  binaryPath: string;
+}
 
 export function claimWorkbenchProvider(request: ProviderClaimRequest): Promise<NativeProviderClaim> {
   return invoke<NativeProviderClaim>('claim_workbench_provider', { request });

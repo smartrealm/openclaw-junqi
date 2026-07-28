@@ -11,6 +11,7 @@ test('provider probe only discovers reviewed catalog binaries without executing 
   assert.match(probe, /workbench_agent_specs\(\)/);
   assert.match(probe, /crate::platform::detect_path\(spec\.bin\)/);
   assert.doesNotMatch(probe, /Command::new|--version|spawn|output\(/);
+  assert.match(backend, /!candidate\.is_absolute\(\) \|\| !candidate\.is_file\(\)/);
 });
 
 test('renderer exposes probe metadata but no provider launch action yet', () => {
