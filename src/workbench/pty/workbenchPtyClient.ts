@@ -23,6 +23,7 @@ export interface WorkbenchPtyCreateResult extends WorkbenchPtyIdentity {
 }
 
 export interface WorkbenchPtySubscription {
+  synchronize(sequence: number): void;
   dispose(): void;
 }
 
@@ -73,6 +74,9 @@ export async function subscribeWorkbenchPty(
     onExit();
   });
   return {
+    synchronize(nextSequence) {
+      if (!disposed && nextSequence > sequence) sequence = nextSequence;
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

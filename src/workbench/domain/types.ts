@@ -40,7 +40,7 @@ export interface WorkbenchWorktree {
   lifecycle: 'active' | 'sleeping' | 'waking' | 'deleting' | 'unavailable';
 }
 
-export type WorkbenchTabKind = 'agent-terminal' | 'editor' | 'diff' | 'browser' | 'conflict-review' | 'check-details';
+export type WorkbenchTabKind = 'terminal' | 'agent-terminal' | 'editor' | 'diff' | 'browser' | 'conflict-review' | 'check-details';
 
 export interface WorkbenchTab {
   id: TabId;
@@ -52,6 +52,8 @@ export interface WorkbenchTab {
   dirty: boolean;
   filePath?: string;
   diffStaged?: boolean;
+  ptyId?: PtyId;
+  ptyRunId?: PtyRunId;
 }
 
 export interface TabGroup {

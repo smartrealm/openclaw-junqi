@@ -682,9 +682,34 @@
 }
 
 .junqi-wb-terminal-pane {
+  position: relative;
   background:
     linear-gradient(180deg, rgb(var(--aegis-primary, 127 154 255) / 0.025), transparent 110px),
     var(--wb-editor);
+}
+
+.junqi-wb-xterm {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  padding: 8px 8px 4px;
+}
+
+.junqi-wb-xterm .xterm {
+  height: 100%;
+}
+
+.junqi-wb-terminal-error {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  right: 8px;
+  left: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgb(var(--aegis-status-failed, 232 102 102) / 0.35);
+  border-radius: 5px;
+  color: var(--wb-danger);
+  background: var(--wb-elevated);
 }
 
 .junqi-wb-muted {

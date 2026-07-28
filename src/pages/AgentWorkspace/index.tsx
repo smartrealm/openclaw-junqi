@@ -34,6 +34,7 @@ import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
 import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
 import { TabGroupLayout } from '@/workbench/components/TabGroupLayout';
+import { WorkbenchTerminalPane } from '@/workbench/components/WorkbenchTerminalPane';
 import type { WorkbenchTab as DomainWorkbenchTab } from '@/workbench/domain/types';
 import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
@@ -518,11 +519,12 @@ function WorkbenchContent({ activeTab, domainTab, projectPath, onMissing }: {
   if (activeTab.kind === 'diff' && domainTab && projectPath) return <WorkbenchDiff tab={domainTab} projectPath={projectPath} />;
   if (activeTab.kind === 'diff') return <DiffPreview />;
   if (activeTab.kind === 'browser') return <BrowserPreview />;
+  if (domainTab?.kind === 'terminal' && projectPath) return <WorkbenchTerminalPane tab={domainTab} cwd={projectPath} />;
   return <AgentTerminal />;
 }
 
 function presentationTab(tab: DomainWorkbenchTab): WorkbenchTab {
-  const kind: WorkbenchTabKind = tab.kind === 'agent-terminal'
+  const kind: WorkbenchTabKind = tab.kind === 'agent-terminal' || tab.kind === 'terminal'
     ? 'terminal'
     : tab.kind === 'editor'
       ? 'editor'
@@ -658,11 +660,13 @@ export function AgentWorkspacePage() {
     openTab(groupId, {
       id: `workbench:tab:${id}`,
       paneId: `workbench:pane:${id}`,
-      kind: 'agent-terminal',
-      title: `新 Agent · ${pathLabel(selectedWorktree.path)}`,
+      kind: 'terminal',
+      title: `Shell · ${pathLabel(selectedWorktree.path)}`,
       preview: false,
       pinned: false,
       dirty: false,
+      ptyId: `workbench:pty:${id}`,
+      ptyRunId: `workbench:run:${crypto.randomUUID()}`,
     });
   };
 

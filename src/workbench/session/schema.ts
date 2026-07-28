@@ -17,7 +17,7 @@ export interface WorkbenchSessionSnapshot {
 }
 
 const TAB_KINDS: ReadonlySet<WorkbenchTabKind> = new Set([
-  'agent-terminal', 'editor', 'diff', 'browser', 'conflict-review', 'check-details',
+  'terminal', 'agent-terminal', 'editor', 'diff', 'browser', 'conflict-review', 'check-details',
 ]);
 const RIGHT_PANELS = new Set(['files', 'search', 'source', 'checks', 'ports', 'vault']);
 
@@ -53,7 +53,9 @@ function validTab(id: string, value: unknown): value is WorkbenchTab {
     && typeof tab.pinned === 'boolean'
     && typeof tab.dirty === 'boolean'
     && (tab.filePath === undefined || typeof tab.filePath === 'string')
-    && (tab.diffStaged === undefined || typeof tab.diffStaged === 'boolean');
+    && (tab.diffStaged === undefined || typeof tab.diffStaged === 'boolean')
+    && (tab.ptyId === undefined || typeof tab.ptyId === 'string')
+    && (tab.ptyRunId === undefined || typeof tab.ptyRunId === 'string');
 }
 
 export function isWorkbenchSessionSnapshot(value: unknown): value is WorkbenchSessionSnapshot {
