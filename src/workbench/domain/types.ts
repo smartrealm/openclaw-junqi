@@ -50,6 +50,7 @@ export interface WorkbenchTab {
   preview: boolean;
   pinned: boolean;
   dirty: boolean;
+  filePath?: string;
 }
 
 export interface TabGroup {

@@ -15,8 +15,6 @@ import {
   DotsThree,
   File,
   FileCode,
-  FileCss,
-  FileJs,
   FileText,
   Files,
   GitBranch,
@@ -47,6 +45,8 @@ import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
 import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
 import type { WorkbenchTab as DomainWorkbenchTab } from '@/workbench/domain/types';
+import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
+import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import './workbench.css';
 
 type WorktreeState = 'running' | 'attention' | 'idle' | 'done';
@@ -368,6 +368,30 @@ function AgentTerminal() {
   );
 }
 
+function WorkbenchEditor({ tab, projectPath, onMissing }: {
+  tab: DomainWorkbenchTab;
+  projectPath: string;
+  onMissing: () => void;
+}) {
+  if (!tab.filePath) return <div className="junqi-wb-empty-panel">编辑器标签缺少文件路径</div>;
+  const file: OpenFileTab = { path: tab.filePath, name: pathLabel(tab.filePath) };
+  return (
+    <FileViewer
+      tabs={[file]}
+      activeFilePath={file.path}
+      projectPath={projectPath}
+      onSelectTab={() => undefined}
+      onCloseTab={onMissing}
+      onCloseOtherTabs={() => undefined}
+      onCloseTabsToRight={() => undefined}
+      onCloseTabsToLeft={() => undefined}
+      onCloseAllTabs={onMissing}
+      onFileMissing={onMissing}
+      hideTabBar
+    />
+  );
+}
+
 function EditorPreview() {
   return (
     <section className="junqi-wb-pane junqi-wb-editor-pane">
@@ -423,11 +447,14 @@ function BrowserPreview() {
   );
 }
 
-function RightSidebar({ activePanel, onPanelChange, collapsed, onToggle }: {
+function RightSidebar({ activePanel, onPanelChange, collapsed, onToggle, projectPath, projectName, onFileSelect }: {
   activePanel: RightPanel;
   onPanelChange: (panel: RightPanel) => void;
   collapsed: boolean;
   onToggle: () => void;
+  projectPath: string | null;
+  projectName: string;
+  onFileSelect: (path: string, name: string) => void;
 }) {
   if (collapsed) {
     return (
@@ -460,41 +487,43 @@ function RightSidebar({ activePanel, onPanelChange, collapsed, onToggle }: {
         </nav>
         <IconButton label="收起右侧栏" onClick={onToggle}><SidebarSimple size={16} /></IconButton>
       </header>
-      <RightPanelContent panel={activePanel} />
+      <RightPanelContent panel={activePanel} projectPath={projectPath} projectName={projectName} onFileSelect={onFileSelect} />
     </aside>
   );
 }
 
-function RightPanelContent({ panel }: { panel: RightPanel }) {
+function RightPanelContent({ panel, projectPath, projectName, onFileSelect }: {
+  panel: RightPanel;
+  projectPath: string | null;
+  projectName: string;
+  onFileSelect: (path: string, name: string) => void;
+}) {
   if (panel === 'source') return <SourceControlPanel />;
   if (panel === 'checks') return <ChecksPanel />;
   if (panel === 'vault') return <VaultPanel />;
   if (panel === 'search') return <SearchPanel />;
-  return <FilesPanel />;
+  return <FilesPanel projectPath={projectPath} projectName={projectName} onFileSelect={onFileSelect} />;
 }
 
 function PanelTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return <div className="junqi-wb-panel-title"><strong>{children}</strong><span>{action}</span></div>;
 }
 
-function FilesPanel() {
+function FilesPanel({ projectPath, projectName, onFileSelect }: {
+  projectPath: string | null;
+  projectName: string;
+  onFileSelect: (path: string, name: string) => void;
+}) {
+  if (!projectPath) return <div className="junqi-wb-empty-panel">选择一个本机 Worktree 后浏览文件</div>;
   return (
     <div className="junqi-wb-panel-content">
-      <PanelTitle action={<><IconButton label="新建文件"><File size={14} /></IconButton><IconButton label="刷新"><Pulse size={14} /></IconButton><IconButton label="更多"><DotsThree size={16} /></IconButton></>}>资源管理器</PanelTitle>
-      <button type="button" className="junqi-wb-tree-root"><CaretDown size={11} /><strong>SHRIMP</strong><span className="junqi-wb-muted">Blues-Code/shrimp</span></button>
-      <div className="junqi-wb-file-tree">
-        <div><CaretDown size={11} /><Files size={14} /><strong>src</strong></div>
-        <div className="depth-1"><CaretDown size={11} /><Files size={14} /><strong>pages</strong></div>
-        <div className="depth-2"><CaretDown size={11} /><Files size={14} /><strong>AgentWorkspace</strong></div>
-        <div className="depth-3 is-selected"><span /><FileJs size={14} /><span>index.tsx</span><span className="junqi-wb-file-modified">M</span></div>
-        <div className="depth-3"><span /><FileCss size={14} /><span>workbench.css</span><span className="junqi-wb-file-added">U</span></div>
-        <div className="depth-1"><CaretRight size={11} /><Files size={14} /><span>components</span></div>
-        <div className="depth-1"><CaretRight size={11} /><Files size={14} /><span>stores</span></div>
-        <div><span /><FileText size={14} /><span>package.json</span></div>
-        <div><span /><FileText size={14} /><span>README.md</span></div>
-      </div>
-      <div className="junqi-wb-panel-section"><CaretRight size={11} /><strong>大纲</strong></div>
-      <div className="junqi-wb-panel-section"><CaretRight size={11} /><strong>时间线</strong></div>
+      <PanelTitle>资源管理器</PanelTitle>
+      <FileExplorer
+        projectPath={projectPath}
+        projectName={projectName}
+        onFileSelect={onFileSelect}
+        width={350}
+      />
     </div>
   );
 }
@@ -563,8 +592,14 @@ function SearchPanel() {
   );
 }
 
-function WorkbenchContent({ activeTab }: { activeTab: WorkbenchTab | undefined }) {
+function WorkbenchContent({ activeTab, domainTab, projectPath, onMissing }: {
+  activeTab: WorkbenchTab | undefined;
+  domainTab: DomainWorkbenchTab | undefined;
+  projectPath: string | null;
+  onMissing: () => void;
+}) {
   if (!activeTab) return <div className="junqi-wb-empty-panel">选择项目后新建 Agent、文件或 Diff 标签</div>;
+  if (activeTab.kind === 'editor' && domainTab && projectPath) return <WorkbenchEditor tab={domainTab} projectPath={projectPath} onMissing={onMissing} />;
   if (activeTab.kind === 'editor') return <EditorPreview />;
   if (activeTab.kind === 'diff') return <DiffPreview />;
   if (activeTab.kind === 'browser') return <BrowserPreview />;
@@ -633,6 +668,21 @@ export function AgentWorkspacePage() {
     if (group) closeStoreTab(group.id, id);
   };
 
+  const openFile = (path: string, name: string) => {
+    if (!group) return;
+    const id = `workbench:file:${path}`;
+    openTab(group.id, {
+      id,
+      paneId: `workbench:pane:file:${path}`,
+      kind: 'editor',
+      title: name,
+      preview: true,
+      pinned: false,
+      dirty: false,
+      filePath: path,
+    });
+  };
+
   const addTab = () => {
     if (!group || !selectedWorktree) return;
     const id = crypto.randomUUID();
@@ -680,7 +730,12 @@ export function AgentWorkspacePage() {
         />
 
         <div className="junqi-wb-content">
-          <WorkbenchContent activeTab={activeTab} />
+          <WorkbenchContent
+            activeTab={activeTab}
+            domainTab={activeTabId ? tabRecords[activeTabId] : undefined}
+            projectPath={selectedWorktree?.path ?? null}
+            onMissing={() => { if (activeTabId) closeTab(activeTabId); }}
+          />
         </div>
 
         <footer className="junqi-wb-local-status">
@@ -700,6 +755,9 @@ export function AgentWorkspacePage() {
         onPanelChange={setRightPanel}
         collapsed={rightCollapsed}
         onToggle={() => setRightCollapsed((value) => !value)}
+        projectPath={selectedWorktree?.path ?? null}
+        projectName={selectedWorktree ? pathLabel(selectedWorktree.path) : 'Workspace'}
+        onFileSelect={openFile}
       />
     </div>
   );

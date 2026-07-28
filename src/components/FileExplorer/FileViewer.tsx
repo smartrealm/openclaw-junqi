@@ -874,6 +874,7 @@ export function FileViewer({
   themeVariant = "dark",
   onRunMakeTarget,
   onFileMissing,
+  hideTabBar = false,
 }: {
   tabs: OpenFileTab[];
   activeFilePath: string | null;
@@ -896,6 +897,8 @@ export function FileViewer({
    * so it decides what to do — normally closing that tab.
    */
   onFileMissing?: (path: string) => void;
+  /** Unified workbench supplies its own group tab strip. */
+  hideTabBar?: boolean;
 }) {
   const { t } = useTranslation();
   const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
@@ -1005,7 +1008,7 @@ export function FileViewer({
       }}
     >
       {/* Tab strip */}
-      <div
+      {!hideTabBar && <div
         style={{
           height: 40,
           display: "flex",
@@ -1260,7 +1263,7 @@ export function FileViewer({
             )}
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Content panes */}
       <div
