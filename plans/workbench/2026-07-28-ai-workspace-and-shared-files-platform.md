@@ -792,6 +792,47 @@ Delete 必须校验：主 checkout、根目录、home、repo ancestor、嵌套�
 
 **完成条件**：冷启动、强制退出、损坏恢复和旧 generation race 测试通过。
 
+## 10.1 2026-07-28 实施检查点
+
+已完成并通过全量验证：
+
+- Phase 0–7：`/terminal` 冻结契约、共享文件分类、Local Adapter、Preview Resolver、Document lifecycle、Watch Coordinator、Workbench Store、Unified Tabs、递归 Split、Durable Session、Local Worktree/Host 路由、真实 Files/Search/Editor/Git/Diff；
+- Phase 8（部分）：独立 Workbench Shell PTY registry/protocol、`ptyId + runId` ownership、create reconciliation、bounded snapshot、sequence gap resync、增量 UTF-8、physical stop、跨重启显式 unavailable/restart、退出 drain；
+- 共享文件迁移：FileManager/FileViewer、Chat preview/file cards 已使用共享 file kind、Preview Resolver、Adapter facade、Document Controller 和 Watch Coordinator；
+- 清理：已删除硬编码 Worktree、Diff、Checks、Vault、Agent 输出、假 badge、空按钮、重复文件类型集合、直接 watcher IPC 和无引用 Workbench CSS；
+- Durable Session：schema v2、Worktree/Tab owner、generation CAS、原子备份、损坏归档重置、shutdown document/session/PTY checkpoint；
+- 生命周期：Editor lease、批量两阶段 close、删除 tombstone、Group 跨 Document/PTY 关闭顺序和 Tab 单一 Group ownership。
+
+本检查点验证：
+
+```text
+npm test
+✓ frontend 1712/1712
+✓ scripts 217/217
+
+cargo test --lib
+✓ 636 passed
+✓ 3 ignored
+
+npm run build
+✓ 8888 modules transformed
+✓ production build completed
+
+/terminal protected paths
+✓ zero diff
+```
+
+仍未完成，必须保持 unavailable/fail closed：
+
+- Provider launch claim、Agent session resume/sleep/wake/attention；
+- SSH/Runtime Files/Git/PTY Adapter；
+- Checks、Hosted Review、Fix with AI；
+- Tauri 隔离 Browser backend；
+- AI Vault host-local scanner；
+- Plugin Host、共享命令/快捷键、Ports/Resource Status；
+- Worktree 安全创建/休眠/删除完整生命周期；
+- Windows/Linux/macOS 真实跨平台行为矩阵。
+
 ### Phase 7 — Worktree/Host 路由与真实文件工作流
 
 1. 接入 Workspace Store 的 Project/Worktree 数据；
