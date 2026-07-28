@@ -27,6 +27,7 @@ beforeEach(() => {
     }, activeWorktreeId: 'local-project', tabs: {},
     groups: { [mainGroup]: { id: mainGroup, tabIds: [], activeTabId: null } },
     layout: { type: 'group', groupId: mainGroup }, activeGroupId: mainGroup,
+    providerClaims: { byPane: {} },
   });
 });
 
@@ -124,6 +125,18 @@ test('PTY create authorization is one-shot and never durable', () => {
   assert.equal(useWorkbenchStore.getState().tabs.terminal?.ptyId, 'pty-next');
   assert.equal(useWorkbenchStore.getState().tabs.terminal?.ptyRunId, 'run-next');
   assert.equal(useWorkbenchStore.getState().tabs.terminal?.ptyCreatePending, true);
+});
+
+test('provider claims are runtime-only fenced state and hydration clears them', () => {
+  const claim = useWorkbenchStore.getState().claimProvider({
+    claimId: 'claim', worktreeId: 'local-project', paneId: 'pane',
+    ptyId: 'pty', ptyRunId: 'run', providerId: 'claude',
+    providerSessionId: null, transcriptPath: null,
+  });
+  assert.equal(claim.ok, true);
+  assert.equal('providerClaims' in useWorkbenchStore.getState().sessionSnapshot(), false);
+  useWorkbenchStore.getState().hydrateSession(useWorkbenchStore.getState().sessionSnapshot());
+  assert.deepEqual(useWorkbenchStore.getState().providerClaims.byPane, {});
 });
 
 test('session snapshots always emit the current schema version', () => {

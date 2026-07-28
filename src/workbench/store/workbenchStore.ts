@@ -6,6 +6,14 @@ import {
   splitTabGroup as splitLayoutGroup,
 } from '../domain/tabGroupLayout';
 import { WORKBENCH_SESSION_SCHEMA_VERSION, type WorkbenchSessionSnapshot } from '../session/schema';
+import {
+  claimProviderSession,
+  releaseProviderClaim,
+  updateProviderClaimStatus,
+  type ProviderClaimRequest,
+  type ProviderClaimState,
+  type ProviderSessionClaim,
+} from '../domain/providerSession';
 import type {
   TabGroup,
   TabGroupId,
@@ -29,6 +37,10 @@ interface WorkbenchState {
   groups: Record<TabGroupId, TabGroup>;
   layout: TabGroupLayoutNode;
   activeGroupId: TabGroupId;
+  providerClaims: ProviderClaimState;
+  claimProvider: (request: ProviderClaimRequest) => ReturnType<typeof claimProviderSession>;
+  updateProviderStatus: (paneId: string, claimId: string, generation: number, status: ProviderSessionClaim['status']) => void;
+  releaseProvider: (paneId: string, claimId: string, generation: number) => void;
   setWorktrees: (worktrees: WorkbenchWorktree[]) => void;
   addWorktree: (worktree: WorkbenchWorktree) => void;
   activateWorktree: (id: WorktreeId) => void;
@@ -72,6 +84,22 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   groups: { [MAIN_GROUP_ID]: { id: MAIN_GROUP_ID, tabIds: [], activeTabId: null } },
   layout: { type: 'group', groupId: MAIN_GROUP_ID },
   activeGroupId: MAIN_GROUP_ID,
+  providerClaims: { byPane: {} },
+
+  claimProvider: (request) => {
+    let result!: ReturnType<typeof claimProviderSession>;
+    set((state) => {
+      result = claimProviderSession(state.providerClaims, request);
+      return result.ok ? { providerClaims: result.state } : {};
+    });
+    return result;
+  },
+  updateProviderStatus: (paneId, claimId, generation, status) => set((state) => ({
+    providerClaims: updateProviderClaimStatus(state.providerClaims, paneId, claimId, generation, status),
+  })),
+  releaseProvider: (paneId, claimId, generation) => set((state) => ({
+    providerClaims: releaseProviderClaim(state.providerClaims, paneId, claimId, generation),
+  })),
 
   setWorktrees: (worktrees) => set((state) => {
     const next = Object.fromEntries(worktrees.map((worktree) => [worktree.id, worktree]));
@@ -234,10 +262,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     sidebarMode: snapshot.sidebarMode,
     rightSidebarPanel: snapshot.rightSidebarPanel,
     rightSidebarCollapsed: snapshot.rightSidebarCollapsed,
+    providerClaims: { byPane: {} },
   } : {
     hydrated: true,
     writerReady: true,
     hydrationError: null,
+    providerClaims: { byPane: {} },
   }),
 
   failHydration: (error) => set({ hydrated: true, writerReady: false, hydrationError: error }),
