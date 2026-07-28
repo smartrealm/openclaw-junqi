@@ -18,6 +18,8 @@ import { parentPathOf } from "./treeUtils";
 import { readDir, readFileText, readImagePreview, writeFileText } from "@/services/workspaceFs";
 import { subscribeLocalWorkspacePath } from "@/workspace-files/services/localWatchCoordinator";
 import { resolveWorkspacePreview } from "@/workspace-files/services/previewResolver";
+import { EditorDocumentController, type EditorDocumentSnapshot } from "@/workspace-files/services/editorDocumentManager";
+import type { WorkspaceFileScope } from "@/workspace-files/domain/types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,8 +29,6 @@ export interface OpenFileTab {
 }
 
 type ThemeVariant = "dark" | "midnight" | "light" | "eyecare";
-
-type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 type TocEntry = { depth: number; text: string; id: string };
 
@@ -370,7 +370,7 @@ function FilePreviewPane({
   const [imagePreview, setImagePreview] = useState<ImagePreviewData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [documentSnapshot, setDocumentSnapshot] = useState<EditorDocumentSnapshot | null>(null);
   const [languageExtension, setLanguageExtension] = useState<Extension>([]);
   const resolvedPreview = useMemo(() => filePreviewMode(fileName), [fileName]);
   const isMarkdown = resolvedPreview.mode === 'markdown';
@@ -381,18 +381,21 @@ function FilePreviewPane({
     [isMake, content],
   );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  // What this pane last wrote to disk, so its own save does not read back as an
-  // external edit. `dirty` marks input the user has typed but that has not been
-  // written yet — a reload must never discard it.
-  const lastWrittenRef = useRef<string | null>(null);
-  const dirtyRef = useRef(false);
-  const contentRef = useRef<string | null>(null);
-  const [externallyChanged, setExternallyChanged] = useState(false);
-  useEffect(() => {
-    contentRef.current = content;
-  }, [content]);
+  const document = useMemo(() => {
+    if (isPreviewableImage) return null;
+    const scope: WorkspaceFileScope = {
+      hostId: 'local', hostRevision: 0, workspaceId: projectPath,
+      rootPath: projectPath, rootRevision: 0, policy: 'workspace',
+    };
+    return new EditorDocumentController({
+      read: async (_scope, path) => ({ content: await readFileText(path, projectPath), revision: null }),
+      write: async (_scope, path, nextContent) => {
+        await writeFileText(path, nextContent, projectPath);
+        return { revision: null };
+      },
+    }, scope, filePath);
+  }, [filePath, isPreviewableImage, projectPath]);
   // Held in a ref so an unstable callback identity cannot re-run the load or
   // re-register the directory watch.
   const onFileMissingRef = useRef(onFileMissing);
@@ -445,10 +448,7 @@ function FilePreviewPane({
     setContent(null);
     setImagePreview(null);
     setError(null);
-    setSaveStatus("idle");
-    setExternallyChanged(false);
-    lastWrittenRef.current = null;
-    dirtyRef.current = false;
+    setDocumentSnapshot(null);
 
     const loadFile = isPreviewableImage
       ? readImagePreview(filePath, projectPath).then((preview) => {
@@ -456,11 +456,22 @@ function FilePreviewPane({
           setImagePreview(preview);
           setLoading(false);
         })
-      : readFileText(filePath, projectPath).then((nextContent) => {
-          if (cancelled) return;
-          setContent(nextContent);
-          setLoading(false);
-        });
+      : document
+        ? (async () => {
+            const unsubscribe = document.subscribe((snapshot) => {
+              if (cancelled) return;
+              setDocumentSnapshot(snapshot);
+              setContent(snapshot.draftContent);
+              setError(snapshot.error);
+              setLoading(snapshot.status === 'loading');
+            });
+            await document.load();
+            if (document.snapshot().status === 'error' && await fileIsGone(filePath, fileName, projectPath)) {
+              if (!cancelled) onFileMissingRef.current?.(filePath);
+            }
+            if (cancelled) unsubscribe();
+          })()
+        : Promise.reject(new Error('Document controller unavailable'));
 
     loadFile.catch(async (err) => {
       if (cancelled) return;
@@ -476,8 +487,9 @@ function FilePreviewPane({
 
     return () => {
       cancelled = true;
+      document?.dispose();
     };
-  }, [filePath, fileName, projectPath, isPreviewableImage]);
+  }, [document, filePath, fileName, projectPath, isPreviewableImage]);
 
   // A tab outlives the state of the file behind it. An agent writing to the
   // workspace, a git checkout, or a delete in the tree all change that file
@@ -509,16 +521,7 @@ function FilePreviewPane({
         return;
       }
       if (!alive) return;
-      // Our own save echoes back as a change event.
-      if (next === lastWrittenRef.current || next === contentRef.current) return;
-      if (dirtyRef.current) {
-        // Unsaved input must win over an automatic reload; surface the conflict
-        // instead of silently dropping either side.
-        setExternallyChanged(true);
-        return;
-      }
-      setContent(next);
-      setError(null);
+      document?.applyExternalChange(next, null);
     };
 
     let release: (() => void) | null = null;
@@ -533,13 +536,12 @@ function FilePreviewPane({
       alive = false;
       release?.();
     };
-  }, [filePath, projectPath, isPreviewableImage]);
+  }, [document, filePath, projectPath, isPreviewableImage]);
 
   // Cleanup timers
   useEffect(
     () => () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (savedResetRef.current) clearTimeout(savedResetRef.current);
     },
     [],
   );
@@ -562,35 +564,19 @@ function FilePreviewPane({
 
   const handleChange = useCallback(
     (value: string) => {
-      setContent(value);
-      dirtyRef.current = true;
-
+      if (!document) return;
+      document.edit(value);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (savedResetRef.current) clearTimeout(savedResetRef.current);
-
-      setSaveStatus("saving");
-      saveTimerRef.current = setTimeout(async () => {
-        try {
-          await writeFileText(filePath, value, projectPath);
-          lastWrittenRef.current = value;
-          dirtyRef.current = false;
-          setSaveStatus("saved");
-          setExternallyChanged(false);
-          savedResetRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
-        } catch {
-          // The write path refuses a file that no longer exists, so a failure
-          // here is how a deleted file reaches this pane when no change event
-          // arrived. Confirm before taking the tab down.
-          setSaveStatus("error");
-          try {
-            await readFileText(filePath, projectPath);
-          } catch {
-            onFileMissingRef.current?.(filePath);
-          }
-        }
+      saveTimerRef.current = setTimeout(() => {
+        void document.save().then(() => {
+          if (document.snapshot().status !== 'error') return;
+          void fileIsGone(filePath, fileName, projectPath).then((gone) => {
+            if (gone) onFileMissingRef.current?.(filePath);
+          });
+        });
       }, 1500);
     },
-    [filePath, projectPath],
+    [document, fileName, filePath, projectPath],
   );
 
   const extensions = useMemo(
@@ -599,11 +585,11 @@ function FilePreviewPane({
   );
 
   const saveLabel =
-    saveStatus === "saving"
+    documentSnapshot?.status === 'saving'
       ? t("file.saving", "Saving...")
-      : saveStatus === "saved"
+      : documentSnapshot?.status === 'saved'
         ? t("file.saved", "Saved")
-        : saveStatus === "error"
+        : documentSnapshot?.status === 'error'
           ? t("file.saveFailed", "Save failed")
           : null;
 
@@ -613,7 +599,7 @@ function FilePreviewPane({
       : t("file.imagePreview", "Image preview")
     // An external write that could not be applied because of unsaved input is
     // the one state the user has to resolve, so it outranks the save status.
-    : externallyChanged
+    : documentSnapshot?.status === 'conflicted'
       ? t("file.changedOnDisk", "Changed on disk — your unsaved edits are kept")
       : saveLabel;
 
@@ -823,9 +809,9 @@ function FilePreviewPane({
               marginLeft: "auto",
               fontSize: 11,
               color:
-                saveStatus === "error"
+                documentSnapshot?.status === 'error'
                   ? "var(--aegis-danger)"
-                  : externallyChanged
+                  : documentSnapshot?.status === 'conflicted'
                     ? "var(--aegis-warning)"
                     : "var(--aegis-text-muted)",
               fontFamily: "var(--aegis-body)",

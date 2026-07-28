@@ -14,10 +14,12 @@ test("BUG-FILE-STALE-01 an open file follows the file on disk", () => {
   assert.match(viewer, /if \(alive\) void reload\(\)/);
   assert.match(viewer, /release\?\.\(\)/);
 
-  // Its own save echoes back as a change event and must not count as external.
-  assert.match(viewer, /if \(next === lastWrittenRef\.current \|\| next === contentRef\.current\) return;/);
-  // Unsaved input outranks an automatic reload.
-  assert.match(viewer, /if \(dirtyRef\.current\) \{[\s\S]*?setExternallyChanged\(true\);[\s\S]*?return;/);
+  // Shared Document Controller owns self-write echo, dirty conflict and serialized saves.
+  assert.match(viewer, /new EditorDocumentController\(/);
+  assert.match(viewer, /document\?\.applyExternalChange\(next, null\)/);
+  assert.match(viewer, /document\.edit\(value\)/);
+  assert.match(viewer, /document\.save\(\)/);
+  assert.match(viewer, /documentSnapshot\?\.status === 'conflicted'/);
   assert.match(viewer, /file\.changedOnDisk/);
 });
 
