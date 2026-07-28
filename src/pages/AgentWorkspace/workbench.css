@@ -175,30 +175,11 @@
   transform: translateY(1px);
 }
 
-.junqi-wb-sidebar-filter,
 .junqi-wb-search-input {
   display: flex;
   align-items: center;
   color: var(--wb-dim);
   background: rgb(var(--aegis-overlay, 255 255 255) / 0.035);
-}
-
-.junqi-wb-sidebar-filter {
-  height: 29px;
-  margin: 9px 10px 7px;
-  gap: 7px;
-  padding: 0 8px;
-  border: 1px solid var(--wb-line);
-  border-radius: 5px;
-}
-
-.junqi-wb-sidebar-filter span {
-  flex: 1;
-}
-
-.junqi-wb-sidebar-filter kbd {
-  color: var(--wb-dim);
-  font: 9px var(--font-mono), monospace;
 }
 
 .junqi-wb-worktree-scroll,
@@ -322,8 +303,7 @@
 }
 
 .junqi-wb-worktree-line,
-.junqi-wb-worktree-branch,
-.junqi-wb-agent-line {
+.junqi-wb-worktree-branch {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -352,22 +332,15 @@
   background: var(--wb-dim);
 }
 
-.junqi-wb-state-dot.is-running {
-  background: var(--wb-primary);
-  box-shadow: 0 0 0 3px rgb(var(--aegis-primary, 127 154 255) / 0.12), 0 0 10px rgb(var(--aegis-primary, 127 154 255) / 0.35);
-}
-
-.junqi-wb-state-dot.is-attention {
-  background: var(--wb-warning);
-  box-shadow: 0 0 0 3px rgb(var(--aegis-status-attention, 232 176 102) / 0.1);
-}
-
-.junqi-wb-state-dot.is-done {
+.junqi-wb-state-dot.is-active {
   background: var(--wb-success);
 }
 
+.junqi-wb-state-dot.is-unavailable {
+  background: var(--wb-danger);
+}
+
 .junqi-wb-worktree-branch,
-.junqi-wb-agent-line,
 .junqi-wb-worktree-detail {
   overflow: hidden;
   color: var(--wb-dim);
@@ -379,42 +352,6 @@
 .junqi-wb-worktree-branch {
   gap: 4px;
   font-family: var(--font-mono), monospace;
-}
-
-.junqi-wb-agent-line {
-  gap: 5px;
-  color: var(--wb-muted);
-}
-
-.junqi-wb-agent-line > span:nth-child(2) {
-  overflow: hidden;
-  flex: 1;
-  text-overflow: ellipsis;
-}
-
-.junqi-wb-agent-status {
-  color: var(--wb-dim);
-}
-
-.junqi-wb-agent-status.is-running {
-  color: var(--wb-primary);
-}
-
-.junqi-wb-agent-status.is-attention {
-  color: var(--wb-warning);
-}
-
-.junqi-wb-unread {
-  display: inline-flex;
-  min-width: 17px;
-  height: 17px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  color: var(--wb-bg);
-  background: var(--wb-warning);
-  font-size: 9px;
-  font-weight: 700;
 }
 
 .junqi-wb-sidebar-footer {

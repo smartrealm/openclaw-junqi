@@ -2,11 +2,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Bell,
   Browser,
-  CaretDown,
   CheckCircle,
   ClockCounterClockwise,
   Code,
-  DotsThree,
   FileCode,
   Files,
   GitBranch,
@@ -43,7 +41,7 @@ import { localWorkspaceFiles } from '@/workspace-files/adapters/localWorkspaceFi
 import type { WorkspaceFileScope } from '@/workspace-files/domain/types';
 import './workbench.css';
 
-type WorktreeState = 'running' | 'attention' | 'idle' | 'done';
+type WorktreeState = 'idle' | 'active' | 'unavailable';
 type WorkbenchTabKind = 'terminal' | 'editor' | 'diff' | 'browser';
 type RightPanel = 'files' | 'search' | 'source' | 'checks' | 'vault';
 
@@ -53,8 +51,6 @@ interface WorktreeItem {
   branch: string;
   detail: string;
   state: WorktreeState;
-  agent?: string;
-  unread?: number;
 }
 
 interface WorkbenchTab {
@@ -64,10 +60,10 @@ interface WorkbenchTab {
   dirty?: boolean;
 }
 
-const rightPanels: Array<{ id: RightPanel; label: string; icon: ReactNode; badge?: number }> = [
+const rightPanels: Array<{ id: RightPanel; label: string; icon: ReactNode }> = [
   { id: 'files', label: '文件', icon: <Files size={16} weight="regular" /> },
   { id: 'search', label: '搜索', icon: <MagnifyingGlass size={16} /> },
-  { id: 'source', label: '源代码管理', icon: <GitBranch size={16} />, badge: 7 },
+  { id: 'source', label: '源代码管理', icon: <GitBranch size={16} /> },
   { id: 'checks', label: '检查', icon: <CheckCircle size={16} /> },
   { id: 'vault', label: 'AI Vault', icon: <ClockCounterClockwise size={16} /> },
 ];
@@ -153,21 +149,13 @@ function WorktreeSidebar({
         </div>
       </header>
 
-      <div className="junqi-wb-sidebar-filter">
-        <MagnifyingGlass size={13} />
-        <span>筛选工作区</span>
-        <kbd>⌘K</kbd>
-      </div>
-
       <div className="junqi-wb-worktree-scroll">
         <section className="junqi-wb-repo-group">
-          <button type="button" className="junqi-wb-repo-heading">
-            <CaretDown size={12} />
+          <div className="junqi-wb-repo-heading">
             <span className="junqi-wb-repo-mark"><TreeStructure size={13} /></span>
-            <span className="junqi-wb-repo-title">本机工作区</span>
+            <span className="junqi-wb-repo-title">工作区</span>
             <span className="junqi-wb-count">{worktrees.length}</span>
-            <DotsThree size={15} />
-          </button>
+          </div>
 
           <div className="junqi-wb-worktree-list">
             {worktrees.length === 0 ? <div className="junqi-wb-empty-panel">尚无可迁移的项目或 Worktree</div> : null}
@@ -183,20 +171,9 @@ function WorktreeSidebar({
                   <span className="junqi-wb-worktree-line">
                     <StateDot state={worktree.state} />
                     <strong>{worktree.label}</strong>
-                    {worktree.unread ? <span className="junqi-wb-unread">{worktree.unread}</span> : null}
                   </span>
                   <span className="junqi-wb-worktree-branch"><GitBranch size={11} />{worktree.branch}</span>
-                  {worktree.agent ? (
-                    <span className="junqi-wb-agent-line">
-                      <Robot size={12} weight="fill" />
-                      <span>{worktree.agent}</span>
-                      <span className={`junqi-wb-agent-status is-${worktree.state}`}>
-                        {worktree.state === 'running' ? '执行中' : worktree.state === 'attention' ? '需要输入' : '空闲'}
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="junqi-wb-worktree-detail">{worktree.detail}</span>
-                  )}
+                  <span className="junqi-wb-worktree-detail">{worktree.detail}</span>
                 </span>
               </button>
             ))}
@@ -368,7 +345,7 @@ function RightSidebar({ activePanel, onPanelChange, collapsed, onToggle, project
               onClick={() => onPanelChange(panel.id)}
             >
               {panel.icon}
-              {panel.badge ? <span>{panel.badge}</span> : null}
+
             </button>
           ))}
         </nav>
@@ -571,7 +548,11 @@ export function AgentWorkspacePage() {
     label: pathLabel(worktree.path),
     branch: worktree.branch ?? '分支未知',
     detail: worktree.path,
-    state: worktree.lifecycle === 'sleeping' ? 'idle' : 'done',
+    state: worktree.lifecycle === 'sleeping'
+      ? 'idle'
+      : worktree.lifecycle === 'active'
+        ? 'active'
+        : 'unavailable',
   })), [worktreeRecords]);
   const tabs = useMemo(() => (group?.tabIds ?? []).flatMap((id) => tabRecords[id] ? [presentationTab(tabRecords[id])] : []), [group, tabRecords]);
   const activeTabId = group?.activeTabId ?? null;
@@ -730,7 +711,7 @@ export function AgentWorkspacePage() {
       <main className="junqi-wb-main">
         <header className="junqi-wb-workspace-header">
           <div className="junqi-wb-workspace-identity">
-            <StateDot state={selectedWorktree ? 'done' : 'idle'} />
+            <StateDot state={selectedWorktree?.lifecycle === 'active' ? 'active' : selectedWorktree ? 'unavailable' : 'idle'} />
             <strong>{selectedWorktree ? pathLabel(selectedWorktree.path) : 'AI 工作台'}</strong>
             <span><GitBranch size={12} />{selectedWorktree?.branch ?? '选择项目或迁移旧任务'}</span>
           </div>
