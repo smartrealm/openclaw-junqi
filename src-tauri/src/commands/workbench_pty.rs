@@ -333,7 +333,9 @@ pub fn create_workbench_pty(
                 Err(_) => break,
             }
         }
-        remove_if_current(&output_id, &output_handle);
+        // Reader EOF does not own process completion. The child monitor removes
+        // the registry entry and records the completed-run tombstone atomically
+        // under the lifecycle gate.
     });
 
     let exit_id = pty_id.clone();
@@ -341,6 +343,7 @@ pub fn create_workbench_pty(
     let exit_handle = handle;
     std::thread::spawn(move || {
         let exit_code = child.wait().ok().map(|status| status.exit_code());
+        let _operation = lifecycle_gate().lock().ok();
         let _ = app.emit(
             "workbench-pty-exit",
             WorkbenchPtyExit {

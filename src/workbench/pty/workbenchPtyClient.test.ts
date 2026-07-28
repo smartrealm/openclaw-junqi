@@ -27,6 +27,14 @@ test('create and stop lifecycle operations share one backend gate', () => {
   assert.match(stop, /lifecycle_gate\(\)/);
 });
 
+test('reader EOF cannot remove ownership before the child exit tombstone exists', () => {
+  const reader = backend.slice(backend.indexOf('let output_app'), backend.indexOf('let exit_id'));
+  const monitor = backend.slice(backend.indexOf('let exit_id'), backend.indexOf('#[tauri::command]\npub fn input_workbench_pty'));
+  assert.doesNotMatch(reader, /remove_if_current/);
+  assert.ok(monitor.indexOf('lifecycle_gate().lock()') < monitor.indexOf('remove_if_current'));
+  assert.ok(monitor.indexOf('remove_if_current') < monitor.indexOf('remember_completed_run'));
+});
+
 test('completed runs remain exactly closable through a bounded tombstone', () => {
   assert.match(backend, /MAX_COMPLETED_RUNS: usize = 512/);
   assert.match(backend, /remember_completed_run\(&exit_id, &exit_run\)/);
