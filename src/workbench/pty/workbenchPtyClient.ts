@@ -52,6 +52,10 @@ export function stopWorkbenchPty(identity: WorkbenchPtyIdentity): Promise<void> 
   return invoke('stop_workbench_pty', { ptyId: identity.ptyId, runId: identity.runId });
 }
 
+export function stopWorkbenchPtys(identities: WorkbenchPtyIdentity[]): Promise<void> {
+  return invoke('stop_workbench_ptys', { identities });
+}
+
 export async function subscribeWorkbenchPty(
   identity: WorkbenchPtyIdentity,
   onOutput: (output: WorkbenchPtyOutput) => void,

@@ -35,6 +35,7 @@ import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMig
 import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
 import { TabGroupLayout } from '@/workbench/components/TabGroupLayout';
 import { WorkbenchTerminalPane } from '@/workbench/components/WorkbenchTerminalPane';
+import { stopWorkbenchPty, stopWorkbenchPtys } from '@/workbench/pty/workbenchPtyClient';
 import type { WorkbenchTab as DomainWorkbenchTab } from '@/workbench/domain/types';
 import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
@@ -577,6 +578,7 @@ export function AgentWorkspacePage() {
   const activeTabId = group?.activeTabId ?? null;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const selectedWorktree = activeWorktree ? worktreeRecords[activeWorktree] : undefined;
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -619,8 +621,33 @@ export function AgentWorkspacePage() {
     });
   };
 
-  const closeTab = (id: string) => {
-    if (group) closeStoreTab(group.id, id);
+  const closeTab = async (groupId: string, id: string) => {
+    const tab = tabRecords[id];
+    try {
+      if (tab?.kind === 'terminal') {
+        if (!tab.ptyId || !tab.ptyRunId) throw new Error('Terminal 标签缺少 PTY identity');
+        await stopWorkbenchPty({ ptyId: tab.ptyId, runId: tab.ptyRunId });
+      }
+      closeStoreTab(groupId, id);
+      setLifecycleError(null);
+    } catch (reason) {
+      setLifecycleError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const closeGroup = async (groupId: string) => {
+    const ownedTabs = groups[groupId]?.tabIds.map((id) => tabRecords[id]).filter(Boolean) ?? [];
+    try {
+      const identities = ownedTabs.filter((tab) => tab.kind === 'terminal').map((tab) => {
+        if (!tab.ptyId || !tab.ptyRunId) throw new Error('Terminal 标签缺少 PTY identity');
+        return { ptyId: tab.ptyId, runId: tab.ptyRunId };
+      });
+      if (identities.length > 0) await stopWorkbenchPtys(identities);
+      removeStoreGroup(groupId);
+      setLifecycleError(null);
+    } catch (reason) {
+      setLifecycleError(reason instanceof Error ? reason.message : String(reason));
+    }
   };
 
   const openFile = (path: string, name: string) => {
@@ -677,6 +704,11 @@ export function AgentWorkspacePage() {
           <WarningCircle size={16} />
           <span><strong>工作台会话存储不可用</strong>{hydrationError ?? '请重新启动后重试'}</span>
         </div>
+      ) : lifecycleError ? (
+        <div className="junqi-wb-storage-gate" role="alert">
+          <WarningCircle size={16} />
+          <span><strong>无法关闭工作台资源</strong>{lifecycleError}</span>
+        </div>
       ) : null}
       <WorktreeSidebar
         worktrees={worktrees}
@@ -716,13 +748,13 @@ export function AgentWorkspacePage() {
                     tabs={targetTabs}
                     activeTab={targetActiveId ?? ''}
                     onSelect={(id) => activateTab(groupId, id)}
-                    onClose={(id) => closeStoreTab(groupId, id)}
+                    onClose={(id) => { void closeTab(groupId, id); }}
                     onAdd={() => addTab(groupId)}
                     onSplit={() => {
                       const id = crypto.randomUUID();
                       splitStoreGroup(groupId, `workbench:group:${id}`, `workbench:split:${id}`, 'horizontal');
                     }}
-                    onCloseGroup={Object.keys(groups).length > 1 ? () => removeStoreGroup(groupId) : undefined}
+                    onCloseGroup={Object.keys(groups).length > 1 ? () => { void closeGroup(groupId); } : undefined}
                   />
                   <div className="junqi-wb-group-content">
                     <WorkbenchContent

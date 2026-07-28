@@ -28,6 +28,13 @@ struct WorkbenchPtyExit {
     exit_code: Option<u32>,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkbenchPtyIdentity {
+    pty_id: String,
+    run_id: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkbenchPtyCreateResult {
@@ -355,6 +362,25 @@ pub fn stop_workbench_pty(pty_id: String, run_id: String) -> Result<(), String> 
     let handle = current_handle(&pty_id, &run_id)?;
     stop_handle(&handle);
     remove_if_current(&pty_id, &handle);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_workbench_ptys(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), String> {
+    let mut handles = Vec::with_capacity(identities.len());
+    // Validate the complete ownership set before physically stopping anything.
+    for identity in &identities {
+        validate_id("PTY id", &identity.pty_id)?;
+        validate_id("run id", &identity.run_id)?;
+        handles.push((
+            identity.pty_id.clone(),
+            current_handle(&identity.pty_id, &identity.run_id)?,
+        ));
+    }
+    for (pty_id, handle) in handles {
+        stop_handle(&handle);
+        remove_if_current(&pty_id, &handle);
+    }
     Ok(())
 }
 
