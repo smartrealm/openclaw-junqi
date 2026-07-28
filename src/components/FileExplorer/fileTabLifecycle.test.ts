@@ -4,10 +4,6 @@ import test from "node:test";
 
 const viewer = readFileSync(new URL("./FileViewer.tsx", import.meta.url), "utf8");
 const explorer = readFileSync(new URL("./FileExplorer.tsx", import.meta.url), "utf8");
-const agentWorkspace = readFileSync(
-  new URL("../../pages/AgentWorkspace/index.tsx", import.meta.url),
-  "utf8",
-);
 const fileManager = readFileSync(new URL("../../pages/FileManager.tsx", import.meta.url), "utf8");
 
 test("BUG-FILE-STALE-01 an open file follows the file on disk", () => {
@@ -39,9 +35,15 @@ test("BUG-FILE-STALE-02 a tab whose file disappeared is taken down", () => {
   assert.match(viewer, /async function fileIsGone\(/);
   assert.match(viewer, /return !entries\.some\(\(entry\) => !entry\.is_dir && entry\.name === fileName\)/);
 
-  // Both hosts of the viewer close the tab.
-  assert.match(agentWorkspace, /onFileMissing=\{closeFile\}/);
+  // FileManager remains the legacy FileViewer host and closes missing tabs.
+  // The new AI workspace owns documents through EditorDocumentManager instead.
   assert.match(fileManager, /onFileMissing=\{closeTreeTab\}/);
+  const documentManager = readFileSync(
+    new URL("../../workspace-files/services/editorDocumentManager.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(documentManager, /markDeleted\(\)/);
+  assert.match(documentManager, /status: 'deleted'/);
 });
 
 test("BUG-FILE-FEEDBACK-03 create and delete failures reach the user", () => {

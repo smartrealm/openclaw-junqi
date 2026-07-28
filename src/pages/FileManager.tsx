@@ -37,6 +37,7 @@ import {
   type LocalBinaryPreview,
   type LocalFilePreview,
 } from '@/services/chat/filePreview';
+import { fileExtension, workspaceFileKind, type WorkspaceFileKind } from '@/workspace-files/domain/fileKinds';
 
 const FileMarkdownPreview = lazy(() => import('./FileMarkdownPreview').then((m) => ({ default: m.FileMarkdownPreview })));
 const FileExplorer = lazy(() => import('@/components/FileExplorer/FileExplorer').then((m) => ({ default: m.FileExplorer })));
@@ -59,22 +60,12 @@ interface FileEntry {
   visibility?: 'user-output' | 'noncanonical-output' | 'internal';
 }
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'tiff', 'tif', 'avif', 'svg']);
-const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'webm']);
-const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v']);
-const PDF_EXTS = new Set(['pdf']);
-const HTML_EXTS = new Set(['html', 'htm']);
-const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdown']);
-const TEXT_PREVIEW_EXTS = new Set([
-  'md', 'markdown', 'mdown', 'txt', 'log',
-  'json', 'jsonc', 'yaml', 'yml', 'toml',
-  'ts', 'tsx', 'js', 'jsx', 'py', 'sh', 'bash',
-  'html', 'htm', 'css', 'csv', 'xml',
-]);
-
 function getExt(name: string): string {
-  const dot = name.lastIndexOf('.');
-  return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
+  return fileExtension(name);
+}
+
+function hasFileKind(ext: string, ...kinds: WorkspaceFileKind[]): boolean {
+  return kinds.includes(workspaceFileKind(`file.${ext}`));
 }
 
 import { formatBytes } from '@/utils/format';
@@ -94,10 +85,10 @@ function getFileIcon(ext: string) {
   if (['json', 'jsonc'].includes(ext)) return <FileJson size={size} className="text-yellow-400/80" />;
   if (['ts', 'tsx', 'js', 'jsx', 'py', 'sh', 'bash'].includes(ext)) return <FileCode size={size} className="text-blue-400/80" />;
   if (['md', 'txt', 'log'].includes(ext)) return <FileText size={size} className="text-green-400/80" />;
-  if (IMAGE_EXTS.has(ext)) return <FileImage size={size} className="text-purple-400/80" />;
-  if (AUDIO_EXTS.has(ext)) return <FileAudio size={size} className="text-pink-400/80" />;
-  if (VIDEO_EXTS.has(ext)) return <FileVideo size={size} className="text-orange-400/80" />;
-  if (PDF_EXTS.has(ext)) return <FileText size={size} className="text-red-400/80" />;
+  if (hasFileKind(ext, 'image')) return <FileImage size={size} className="text-purple-400/80" />;
+  if (hasFileKind(ext, 'audio')) return <FileAudio size={size} className="text-pink-400/80" />;
+  if (hasFileKind(ext, 'video')) return <FileVideo size={size} className="text-orange-400/80" />;
+  if (hasFileKind(ext, 'pdf')) return <FileText size={size} className="text-red-400/80" />;
   return <File size={size} className="text-aegis-text-dim" />;
 }
 
@@ -464,7 +455,7 @@ export function FileManagerPage() {
     setBinaryPreview(null);
     setBinaryLoading(false);
     if (!selected) return;
-    const isBinary = IMAGE_EXTS.has(selected.ext) || AUDIO_EXTS.has(selected.ext) || VIDEO_EXTS.has(selected.ext) || PDF_EXTS.has(selected.ext);
+    const isBinary = hasFileKind(selected.ext, 'image', 'audio', 'video', 'pdf');
     if (!isBinary || !selected.exists) return;
     let cancelled = false;
     setBinaryLoading(true);
@@ -480,7 +471,7 @@ export function FileManagerPage() {
   useEffect(() => {
     setHtmlPreview(null);
     setHtmlPreviewLoading(false);
-    if (!selected || !selected.exists || !HTML_EXTS.has(selected.ext)) return;
+    if (!selected || !selected.exists || !hasFileKind(selected.ext, 'html')) return;
     let cancelled = false;
     setHtmlPreviewLoading(true);
     void loadLocalFilePreview(selected.path, selected.name)
@@ -498,16 +489,12 @@ export function FileManagerPage() {
     setTextPreviewLoading(false);
     if (!selected || !selected.exists) return;
     if (selected.content) return;
-    const isBinary =
-      IMAGE_EXTS.has(selected.ext) ||
-      AUDIO_EXTS.has(selected.ext) ||
-      VIDEO_EXTS.has(selected.ext) ||
-      PDF_EXTS.has(selected.ext);
+    const isBinary = hasFileKind(selected.ext, 'image', 'audio', 'video', 'pdf');
     if (isBinary) return;
     // HTML owns its own native/static preview flow so a successful scoped URL
     // is never blocked behind an unrelated text read.
-    if (HTML_EXTS.has(selected.ext)) return;
-    if (!TEXT_PREVIEW_EXTS.has(selected.ext)) return;
+    if (hasFileKind(selected.ext, 'html')) return;
+    if (!hasFileKind(selected.ext, 'code', 'text', 'markdown')) return;
 
     let cancelled = false;
     setTextPreviewLoading(true);
@@ -944,28 +931,28 @@ export function FileManagerPage() {
                   <div className="flex items-center justify-center h-full">
                     <Loader2 size={22} className="animate-spin text-aegis-primary" />
                   </div>
-                ) : IMAGE_EXTS.has(selected.ext) && binaryPreview ? (
+                ) : hasFileKind(selected.ext, 'image') && binaryPreview ? (
                   <div className="flex items-center justify-center h-full p-6 bg-[rgb(var(--aegis-overlay)/0.02)]">
                     <img src={binaryPreview.url} alt={selected.name} className="max-w-full max-h-full object-contain rounded-lg shadow-lg" draggable={false} />
                   </div>
-                ) : AUDIO_EXTS.has(selected.ext) && binaryPreview ? (
+                ) : hasFileKind(selected.ext, 'audio') && binaryPreview ? (
                   <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
                     <FileAudio size={40} className="text-pink-400/60" />
                     <span className="text-[13px] font-medium text-aegis-text">{selected.name}</span>
                     <audio controls src={binaryPreview.url} className="w-full max-w-md" />
                   </div>
-                ) : VIDEO_EXTS.has(selected.ext) && binaryPreview ? (
+                ) : hasFileKind(selected.ext, 'video') && binaryPreview ? (
                   <div className="flex items-center justify-center h-full p-4 bg-black/40">
                     <video controls src={binaryPreview.url} className="max-w-full max-h-full rounded-lg" />
                   </div>
-                ) : PDF_EXTS.has(selected.ext) && binaryPreview ? (
+                ) : hasFileKind(selected.ext, 'pdf') && binaryPreview ? (
                   <iframe
                     title={selected.name}
                     src={binaryPreview.url}
                     sandbox=""
                     className="h-full w-full border-0 bg-white"
                   />
-                ) : HTML_EXTS.has(selected.ext) && selected.exists && htmlPreview?.kind === 'html' ? (
+                ) : hasFileKind(selected.ext, 'html') && selected.exists && htmlPreview?.kind === 'html' ? (
                   <div className="h-full bg-[rgb(var(--aegis-overlay)/0.03)] p-3 flex flex-col gap-2">
                     <div className="flex items-center justify-end">
                       <button
@@ -986,7 +973,7 @@ export function FileManagerPage() {
                       className="w-full flex-1 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-white"
                     />
                   </div>
-                ) : MARKDOWN_EXTS.has(selected.ext) && selected.content ? (
+                ) : hasFileKind(selected.ext, 'markdown') && selected.content ? (
                   <Suspense
                     fallback={
                       <div className="flex items-center justify-center h-full">

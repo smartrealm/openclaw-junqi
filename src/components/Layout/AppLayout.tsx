@@ -80,12 +80,11 @@ export function AppLayout() {
   const isWorkspacePage = matchPath('/welcome', location.pathname) !== null;
   const isTerminalPage = matchPath('/terminal/*', location.pathname) !== null;
   const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
-  const usesGlobalSidebar = !isWorkspacePage && !isAgentWorkspacePage;
-  // Settings already lives in the product shell, and terminal now retains a
-  // compact JunQi rail. Neither needs browser-like back chrome near the macOS
-  // traffic lights; only the dedicated agent workspace is a drill-in route.
-  const showRouteBack = isAgentWorkspacePage;
-  const routeBackFallback = '/tools';
+  const usesGlobalSidebar = !isWorkspacePage;
+  // Terminal and AI Workspace keep JunQi's compact product rail while their
+  // own contextual sidebars manage terminals or worktrees. This preserves a
+  // continuous product shell instead of turning either route into another app.
+  const globalSidebarPresentation = isTerminalPage || isAgentWorkspacePage ? 'terminal-rail' : 'default';
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
@@ -106,8 +105,6 @@ export function AppLayout() {
       <TopBar
         hideSidebarToggle={isWorkspacePage}
         sidebarTarget={isTerminalPage ? 'terminal' : isAgentWorkspacePage ? 'agent-workspace' : 'app'}
-        showBack={showRouteBack}
-        backFallback={routeBackFallback}
       />
 
       {/* ── Navigation tabs ── */}
@@ -115,8 +112,8 @@ export function AppLayout() {
 
       <div className="flex flex-1 min-h-0 relative z-[1]" dir={dir}>
         {usesGlobalSidebar && (
-          <Suspense fallback={<SidebarFallback presentation={isTerminalPage ? 'terminal-rail' : 'default'} />}>
-            <NavSidebar presentation={isTerminalPage ? 'terminal-rail' : 'default'} />
+          <Suspense fallback={<SidebarFallback presentation={globalSidebarPresentation} />}>
+            <NavSidebar presentation={globalSidebarPresentation} />
           </Suspense>
         )}
         <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">

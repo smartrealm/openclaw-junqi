@@ -6,7 +6,8 @@
 plans/
 ├── installation/   安装、首次启动、Wizard 与卸载
 ├── gateway/        Gateway 服务归属
-└── quality/        产品模块与运行质量
+├── quality/        产品模块与运行质量
+└── workbench/      AI 工作台、文件平台与开发工具基础设施
 ```
 
 ## Installation
@@ -23,6 +24,10 @@ plans/
 ## Gateway
 
 - [Gateway 服务归属](gateway/2026-07-24-openclaw-gateway-service-ownership.md)
+
+## Workbench
+
+- [AI 工作台与共享文件平台](workbench/2026-07-28-ai-workspace-and-shared-files-platform.md)
 
 ## Quality
 

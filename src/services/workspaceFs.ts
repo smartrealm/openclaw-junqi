@@ -6,6 +6,9 @@
  * Field names mirror the Rust structs (serde default = snake_case).
  */
 import { invoke } from '@tauri-apps/api/core';
+import { isImageFile } from '@/workspace-files/domain/fileKinds';
+import { localWorkspaceFiles } from '@/workspace-files/adapters/localWorkspaceFiles';
+import type { WorkspaceFileScope } from '@/workspace-files/domain/types';
 
 export interface FsEntry {
   name: string;
@@ -79,19 +82,31 @@ export function clearTerminalWorkspaceWatches(watchId: string, generation: numbe
   return invoke('clear_terminal_workspace_watches', { watchId, generation });
 }
 
-/** Read a text file's content. Throws for binary/oversized files (Rust guards). */
-export function readFileText(path: string, root: string): Promise<string> {
-  return invoke('read_file_content', { path, projectPath: root });
+function legacyLocalScope(root: string): WorkspaceFileScope {
+  return {
+    hostId: 'local',
+    hostRevision: 0,
+    workspaceId: root,
+    rootPath: root,
+    rootRevision: 0,
+    policy: 'workspace',
+  };
 }
 
-/** Overwrite a text file. */
+/** Compatibility facade; new consumers should use WorkspaceFilesAdapter directly. */
+export async function readFileText(path: string, root: string): Promise<string> {
+  return (await localWorkspaceFiles.readText(legacyLocalScope(root), path)).content;
+}
+
+/** Compatibility facade; new consumers should use WorkspaceFilesAdapter directly. */
 export function writeFileText(path: string, content: string, root: string): Promise<void> {
-  return invoke('write_file_content', { path, content, projectPath: root });
+  return localWorkspaceFiles.writeText(legacyLocalScope(root), path, content);
 }
 
-/** Read an image as a data URL for inline preview. */
-export function readImagePreview(path: string, root: string): Promise<ImagePreview> {
-  return invoke('read_image_preview', { path, projectPath: root });
+/** Compatibility facade; new consumers should use WorkspaceFilesAdapter directly. */
+export async function readImagePreview(path: string, root: string): Promise<ImagePreview> {
+  const preview = await localWorkspaceFiles.readImagePreview(legacyLocalScope(root), path);
+  return { data_url: preview.dataUrl, mime_type: preview.mimeType, byte_length: preview.byteLength };
 }
 
 /** Resolve the current runtime workspace natively, including the active
@@ -100,8 +115,6 @@ export function getWorkspacePath(): Promise<string> {
   return invoke('get_workspace_path');
 }
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif', 'tiff']);
-
 export function isImageExt(ext?: string | null): boolean {
-  return !!ext && IMAGE_EXTS.has(ext.toLowerCase());
+  return !!ext && isImageFile(`preview.${ext}`);
 }

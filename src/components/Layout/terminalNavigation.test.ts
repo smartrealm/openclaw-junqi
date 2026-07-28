@@ -10,22 +10,19 @@ test('Tools opens its catalog before the dedicated terminal route', () => {
   assert.match(tabBar, /id: 'tools'.*path: '\/tools'/);
 });
 
-test('terminal keeps JunQi navigation and its real workspace sidebar controls', () => {
-  assert.match(appLayout, /usesGlobalSidebar = !isWorkspacePage && !isAgentWorkspacePage/);
+test('terminal and AI workspace keep JunQi navigation plus contextual sidebar controls', () => {
+  assert.match(appLayout, /usesGlobalSidebar = !isWorkspacePage/);
   assert.match(appLayout, /terminal-kooky-app/);
-  assert.match(appLayout, /<NavSidebar presentation=\{isTerminalPage \? 'terminal-rail' : 'default'\} \/>/);
+  assert.match(appLayout, /globalSidebarPresentation = isTerminalPage \|\| isAgentWorkspacePage \? 'terminal-rail' : 'default'/);
+  assert.match(appLayout, /<NavSidebar presentation=\{globalSidebarPresentation\} \/>/);
   assert.match(appLayout, /sidebarTarget=\{isTerminalPage \? 'terminal' : isAgentWorkspacePage \? 'agent-workspace' : 'app'\}/);
   assert.match(topBar, /requestTerminalSidebarToggle/);
   assert.match(topBar, /requestAgentWorkspaceSidebarToggle/);
 });
 
-test('only the drill-in AI workspace exposes a route-level back action', () => {
-  assert.match(appLayout, /showBack=\{showRouteBack\}/);
-  assert.match(appLayout, /showRouteBack = isAgentWorkspacePage/);
-  assert.match(appLayout, /routeBackFallback = '\/tools'/);
-  assert.doesNotMatch(appLayout, /isSettingsPage/);
+test('AI workspace remains inside the product shell instead of drill-in back chrome', () => {
+  assert.doesNotMatch(appLayout, /showBack=\{showRouteBack\}/);
+  assert.doesNotMatch(appLayout, /showRouteBack = isAgentWorkspacePage/);
+  assert.doesNotMatch(appLayout, /routeBackFallback = '\/tools'/);
   assert.match(appLayout, /!isWorkspacePage && !isTerminalPage && <TabBar \/>/);
-  assert.match(topBar, /window\.history\.state/);
-  assert.match(topBar, /navigate\(-1\)/);
-  assert.match(topBar, /navigate\(backFallback\)/);
 });

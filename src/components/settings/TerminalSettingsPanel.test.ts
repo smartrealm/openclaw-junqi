@@ -6,7 +6,7 @@ function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8');
 }
 
-test('terminal preferences reach every shell terminal entry point', () => {
+test('terminal preferences reach every independent shell terminal entry point', () => {
   const terminalPage = source('../../pages/TerminalPage/index.tsx');
   const agentWorkspace = source('../../pages/AgentWorkspace/index.tsx');
   const workspaceView = source('../Workspace/WorkspaceView.tsx');
@@ -15,8 +15,8 @@ test('terminal preferences reach every shell terminal entry point', () => {
   assert.match(terminalPage, /useTerminalPreferences\(\)/);
   assert.match(terminalPage, /terminalScrollback=\{terminalScrollback\}/);
   assert.match(terminalPage, /terminalShiftEnterNewline=\{terminalShiftEnterNewline\}/);
-  assert.match(agentWorkspace, /terminalScrollback=\{terminalScrollback\}/);
-  assert.match(agentWorkspace, /terminalShiftEnterNewline=\{terminalShiftEnterNewline\}/);
+  assert.doesNotMatch(agentWorkspace, /ShellTerminalPanel/);
+  assert.doesNotMatch(agentWorkspace, /terminalPtyHandoff/);
   assert.match(workspaceView, /terminalScrollback=\{terminalScrollback\}/);
   assert.match(workspaceView, /terminalShiftEnterNewline=\{terminalShiftEnterNewline\}/);
   assert.match(shellPanel, /options\.scrollback = terminalScrollback/);

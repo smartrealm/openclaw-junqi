@@ -1,3 +1,5 @@
+import { workspaceFileKind } from '@/workspace-files/domain/fileKinds';
+
 export type FilePreviewKind = 'html' | 'image' | 'markdown' | 'text';
 export type LocalBinaryPreviewKind = 'image' | 'audio' | 'video' | 'pdf';
 
@@ -54,18 +56,6 @@ export interface LocalFilePreviewBridge {
   };
 }
 
-const HTML_EXTENSIONS = new Set(['html', 'htm']);
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif', 'tif', 'tiff']);
-const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'webm']);
-const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v']);
-const PDF_EXTENSIONS = new Set(['pdf']);
-const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdown']);
-const TEXT_EXTENSIONS = new Set([
-  'txt', 'text', 'log', 'json', 'jsonc', 'csv', 'xml', 'yml', 'yaml', 'toml',
-  'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp',
-  'h', 'hpp', 'css', 'scss', 'sh', 'bash', 'zsh', 'sql',
-]);
-
 export class FilePreviewError extends Error {
   constructor(readonly code: 'unsupported' | 'unavailable') {
     super(code === 'unsupported' ? 'This file type cannot be previewed inline' : 'The file could not be read for preview');
@@ -74,21 +64,14 @@ export class FilePreviewError extends Error {
 }
 
 export function getFilePreviewKind(fileName: string): FilePreviewKind | null {
-  const extension = fileName.split('.').pop()?.trim().toLowerCase() ?? '';
-  if (HTML_EXTENSIONS.has(extension)) return 'html';
-  if (IMAGE_EXTENSIONS.has(extension)) return 'image';
-  if (MARKDOWN_EXTENSIONS.has(extension)) return 'markdown';
-  if (TEXT_EXTENSIONS.has(extension)) return 'text';
-  return null;
+  const kind = workspaceFileKind(fileName);
+  if (kind === 'code') return 'text';
+  return kind === 'html' || kind === 'image' || kind === 'markdown' || kind === 'text' ? kind : null;
 }
 
 export function getLocalBinaryPreviewKind(fileName: string): LocalBinaryPreviewKind | null {
-  const extension = fileName.split('.').pop()?.trim().toLowerCase() ?? '';
-  if (IMAGE_EXTENSIONS.has(extension)) return 'image';
-  if (AUDIO_EXTENSIONS.has(extension)) return 'audio';
-  if (VIDEO_EXTENSIONS.has(extension)) return 'video';
-  if (PDF_EXTENSIONS.has(extension)) return 'pdf';
-  return null;
+  const kind = workspaceFileKind(fileName);
+  return kind === 'image' || kind === 'audio' || kind === 'video' || kind === 'pdf' ? kind : null;
 }
 
 export function decodeBase64Utf8(base64: string): string {
