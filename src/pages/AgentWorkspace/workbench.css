@@ -615,6 +615,34 @@
   overflow: hidden;
 }
 
+.junqi-wb-split-handle {
+  position: absolute;
+  z-index: 4;
+  background: transparent;
+  touch-action: none;
+}
+
+.junqi-wb-split-handle:hover,
+.junqi-wb-split-handle:active {
+  background: rgb(var(--aegis-primary, 127 154 255) / 0.55);
+}
+
+.junqi-wb-split-handle.is-horizontal {
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  margin-left: -2px;
+  cursor: col-resize;
+}
+
+.junqi-wb-split-handle.is-vertical {
+  right: 0;
+  left: 0;
+  height: 5px;
+  margin-top: -2px;
+  cursor: row-resize;
+}
+
 .junqi-wb-pane {
   display: flex;
   width: 100%;

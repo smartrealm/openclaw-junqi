@@ -554,6 +554,7 @@ export function AgentWorkspacePage() {
   const activateTab = useWorkbenchStore((state) => state.activateTab);
   const closeStoreTab = useWorkbenchStore((state) => state.closeTab);
   const splitStoreGroup = useWorkbenchStore((state) => state.splitGroup);
+  const resizeStoreSplit = useWorkbenchStore((state) => state.resizeSplit);
   const rightPanel = useWorkbenchStore((state) => state.rightSidebarPanel as RightPanel);
   const setRightPanel = useWorkbenchStore((state) => state.setRightSidebarPanel);
   const sidebarMode = useWorkbenchStore((state) => state.sidebarMode);
@@ -689,6 +690,7 @@ export function AgentWorkspacePage() {
         <div className="junqi-wb-content">
           <TabGroupLayout
             node={layout}
+            onResize={resizeStoreSplit}
             renderGroup={(groupId) => {
               const targetGroup = groups[groupId];
               const targetTabs = (targetGroup?.tabIds ?? []).flatMap((id) => tabRecords[id] ? [presentationTab(tabRecords[id])] : []);
