@@ -15,7 +15,7 @@ test("BUG-FILE-STALE-01 an open file follows the file on disk", () => {
   assert.match(viewer, /release\?\.\(\)/);
 
   // Shared Document Controller owns self-write echo, dirty conflict and serialized saves.
-  assert.match(viewer, /openLocalEditorDocument\(projectPath, filePath\)/);
+  assert.match(viewer, /acquireLocalEditorDocument\(projectPath, filePath, ownerId\)/);
   assert.match(viewer, /document\?\.applyExternalChange\(next, null\)/);
   assert.match(viewer, /document\.edit\(value\)/);
   assert.match(viewer, /document\.save\(\)/);

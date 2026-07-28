@@ -19,7 +19,8 @@ import { readDir, readFileText, readImagePreview } from "@/services/workspaceFs"
 import { subscribeLocalWorkspacePath } from "@/workspace-files/services/localWatchCoordinator";
 import { resolveWorkspacePreview } from "@/workspace-files/services/previewResolver";
 import type { EditorDocumentSnapshot } from "@/workspace-files/services/editorDocumentManager";
-import { openLocalEditorDocument } from "@/workspace-files/services/localEditorDocuments";
+import { acquireLocalEditorDocument, releaseLocalEditorDocument } from "@/workspace-files/services/localEditorDocuments";
+import { showAlert } from "@/components/shared/alertStore";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -349,6 +350,7 @@ function FilePreviewPane({
   previewMode,
   onRunMakeTarget,
   onFileMissing,
+  ownerId,
 }: {
   filePath: string;
   fileName: string;
@@ -358,6 +360,7 @@ function FilePreviewPane({
   onRunMakeTarget?: (target: string) => void;
   /** The file backing this tab is gone from disk. */
   onFileMissing?: (path: string) => void;
+  ownerId: string;
 }) {
   const editorTheme =
     themeVariant === "dark" || themeVariant === "midnight"
@@ -383,8 +386,8 @@ function FilePreviewPane({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const document = useMemo(() => (
-    isPreviewableImage ? null : openLocalEditorDocument(projectPath, filePath)
-  ), [filePath, isPreviewableImage, projectPath]);
+    isPreviewableImage ? null : acquireLocalEditorDocument(projectPath, filePath, ownerId)
+  ), [filePath, isPreviewableImage, ownerId, projectPath]);
   // Held in a ref so an unstable callback identity cannot re-run the load or
   // re-register the directory watch.
   const onFileMissingRef = useRef(onFileMissing);
@@ -848,6 +851,7 @@ export function FileViewer({
   onRunMakeTarget,
   onFileMissing,
   hideTabBar = false,
+  documentOwnerPrefix = 'file-viewer',
 }: {
   tabs: OpenFileTab[];
   activeFilePath: string | null;
@@ -872,9 +876,11 @@ export function FileViewer({
   onFileMissing?: (path: string) => void;
   /** Unified workbench supplies its own group tab strip. */
   hideTabBar?: boolean;
+  documentOwnerPrefix?: string;
 }) {
   const { t } = useTranslation();
   const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
+  const closeInFlightRef = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [tabMenu, setTabMenu] = useState<{
     x: number;
@@ -967,6 +973,29 @@ export function FileViewer({
   const tabMenuCanCloseRight =
     tabMenuIndex !== -1 && tabMenuIndex < tabs.length - 1;
   const tabMenuCanCloseLeft = tabMenuIndex > 0;
+
+  const closePaths = async (paths: string[], commit: () => void) => {
+    if (closeInFlightRef.current) return;
+    closeInFlightRef.current = true;
+    try {
+      for (const path of paths) {
+        await releaseLocalEditorDocument(projectPath, path, `${documentOwnerPrefix}:${path}`);
+      }
+      commit();
+    } catch (reason) {
+      showAlert(
+        t("file.closeFailed", "Could not close file"),
+        reason instanceof Error ? reason.message : String(reason),
+        "error",
+      );
+    } finally {
+      closeInFlightRef.current = false;
+    }
+  };
+
+  const pathsExcept = (path: string) => tabs.filter((tab) => tab.path !== path).map((tab) => tab.path);
+  const pathsRightOf = (path: string) => tabs.slice(tabs.findIndex((tab) => tab.path === path) + 1).map((tab) => tab.path);
+  const pathsLeftOf = (path: string) => tabs.slice(0, Math.max(0, tabs.findIndex((tab) => tab.path === path))).map((tab) => tab.path);
 
   return (
     <div
@@ -1070,7 +1099,7 @@ export function FileViewer({
                 <span
                   onClick={(event) => {
                     event.stopPropagation();
-                    onCloseTab(tab.path);
+                    void closePaths([tab.path], () => onCloseTab(tab.path));
                   }}
                   style={{
                     background: "none",
@@ -1203,7 +1232,7 @@ export function FileViewer({
                     label={t("file.closeOtherTabs", "Close Other Tabs")}
                     disabled={!canCloseOtherTabs}
                     onClick={() => {
-                      onCloseOtherTabs(activeTab.path);
+                      void closePaths(pathsExcept(activeTab.path), () => onCloseOtherTabs(activeTab.path));
                       setMenuOpen(false);
                     }}
                   />
@@ -1211,7 +1240,7 @@ export function FileViewer({
                     label={t("file.closeTabsToRight", "Close Tabs to the Right")}
                     disabled={!canCloseTabsToRight}
                     onClick={() => {
-                      onCloseTabsToRight(activeTab.path);
+                      void closePaths(pathsRightOf(activeTab.path), () => onCloseTabsToRight(activeTab.path));
                       setMenuOpen(false);
                     }}
                   />
@@ -1219,7 +1248,7 @@ export function FileViewer({
                     label={t("file.closeTabsToLeft", "Close Tabs to the Left")}
                     disabled={!canCloseTabsToLeft}
                     onClick={() => {
-                      onCloseTabsToLeft(activeTab.path);
+                      void closePaths(pathsLeftOf(activeTab.path), () => onCloseTabsToLeft(activeTab.path));
                       setMenuOpen(false);
                     }}
                   />
@@ -1227,7 +1256,7 @@ export function FileViewer({
                     label={t("file.closeAllTabs", "Close All Tabs")}
                     disabled={tabs.length === 0}
                     onClick={() => {
-                      onCloseAllTabs();
+                      void closePaths(tabs.map((tab) => tab.path), onCloseAllTabs);
                       setMenuOpen(false);
                     }}
                   />
@@ -1269,6 +1298,7 @@ export function FileViewer({
                 previewMode={!!previewModes[tab.path]}
                 onRunMakeTarget={onRunMakeTarget}
                 onFileMissing={onFileMissing}
+                ownerId={`${documentOwnerPrefix}:${tab.path}`}
               />
             </div>
           );
@@ -1298,7 +1328,7 @@ export function FileViewer({
           <TabMenuItem
             label={t("file.closeThisTab", "Close")}
             onClick={() => {
-              onCloseTab(tabMenu.path);
+              void closePaths([tabMenu.path], () => onCloseTab(tabMenu.path));
               setTabMenu(null);
             }}
           />
@@ -1306,7 +1336,7 @@ export function FileViewer({
             label={t("file.closeOtherTabs", "Close Other Tabs")}
             disabled={!tabMenuCanCloseOthers}
             onClick={() => {
-              onCloseOtherTabs(tabMenu.path);
+              void closePaths(pathsExcept(tabMenu.path), () => onCloseOtherTabs(tabMenu.path));
               setTabMenu(null);
             }}
           />
@@ -1314,7 +1344,7 @@ export function FileViewer({
             label={t("file.closeTabsToRight", "Close Tabs to the Right")}
             disabled={!tabMenuCanCloseRight}
             onClick={() => {
-              onCloseTabsToRight(tabMenu.path);
+              void closePaths(pathsRightOf(tabMenu.path), () => onCloseTabsToRight(tabMenu.path));
               setTabMenu(null);
             }}
           />
@@ -1322,7 +1352,7 @@ export function FileViewer({
             label={t("file.closeTabsToLeft", "Close Tabs to the Left")}
             disabled={!tabMenuCanCloseLeft}
             onClick={() => {
-              onCloseTabsToLeft(tabMenu.path);
+              void closePaths(pathsLeftOf(tabMenu.path), () => onCloseTabsToLeft(tabMenu.path));
               setTabMenu(null);
             }}
           />
@@ -1330,7 +1360,7 @@ export function FileViewer({
             label={t("file.closeAllTabs", "Close All Tabs")}
             disabled={tabs.length === 0}
             onClick={() => {
-              onCloseAllTabs();
+              void closePaths(tabs.map((tab) => tab.path), onCloseAllTabs);
               setTabMenu(null);
             }}
           />

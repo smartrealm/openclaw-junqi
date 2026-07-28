@@ -12,6 +12,7 @@ const manager = new EditorDocumentManager({
     return { revision: null };
   },
 });
+const owners = new Map<string, Set<string>>();
 
 export function localEditorScope(rootPath: string): WorkspaceFileScope {
   return {
@@ -20,11 +21,27 @@ export function localEditorScope(rootPath: string): WorkspaceFileScope {
   };
 }
 
-export function openLocalEditorDocument(rootPath: string, path: string) {
+function key(rootPath: string, path: string): string {
+  return `${rootPath}\u0000${path}`;
+}
+
+export function acquireLocalEditorDocument(rootPath: string, path: string, ownerId: string) {
+  if (!ownerId) throw new Error('Editor document owner is required');
+  const documentKey = key(rootPath, path);
+  const documentOwners = owners.get(documentKey) ?? new Set<string>();
+  documentOwners.add(ownerId);
+  owners.set(documentKey, documentOwners);
   return manager.open(localEditorScope(rootPath), path);
 }
 
-export async function closeLocalEditorDocument(rootPath: string, path: string): Promise<void> {
+export async function releaseLocalEditorDocument(rootPath: string, path: string, ownerId: string): Promise<void> {
+  const documentKey = key(rootPath, path);
+  const documentOwners = owners.get(documentKey);
+  if (!documentOwners?.has(ownerId)) return;
+  if (documentOwners.size > 1) {
+    documentOwners.delete(ownerId);
+    return;
+  }
   const scope = localEditorScope(rootPath);
   const document = manager.open(scope, path);
   const status = document.snapshot().status;
@@ -37,5 +54,7 @@ export async function closeLocalEditorDocument(rootPath: string, path: string): 
       throw new Error(document.snapshot().error ?? 'Document checkpoint failed');
     }
   }
+  documentOwners.delete(ownerId);
+  owners.delete(documentKey);
   manager.close(scope, path);
 }

@@ -31,7 +31,7 @@ import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
 import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
 import { resetWorkbenchSession } from '@/workbench/session/storage';
-import { closeLocalEditorDocument } from '@/workspace-files/services/localEditorDocuments';
+import { releaseLocalEditorDocument } from '@/workspace-files/services/localEditorDocuments';
 import { TabGroupLayout } from '@/workbench/components/TabGroupLayout';
 import { WorkbenchTerminalPane } from '@/workbench/components/WorkbenchTerminalPane';
 import { closeWorkbenchPtyTab, closeWorkbenchPtyTabs } from '@/workbench/pty/workbenchPtyClient';
@@ -276,6 +276,7 @@ function WorkbenchEditor({ tab, projectPath, onMissing }: {
       onCloseAllTabs={onMissing}
       onFileMissing={onMissing}
       hideTabBar
+      documentOwnerPrefix={tab.id}
     />
   );
 }
@@ -611,7 +612,7 @@ export function AgentWorkspacePage() {
       if (tab?.kind === 'editor' && tab.filePath) {
         const owner = worktreeRecords[tab.worktreeId];
         const localPath = localWorktreePath(owner);
-        if (localPath) await closeLocalEditorDocument(localPath, tab.filePath);
+        if (localPath) await releaseLocalEditorDocument(localPath, tab.filePath, `${tab.id}:${tab.filePath}`);
       }
       if (tab?.kind === 'terminal') {
         if (!tab.ptyId || !tab.ptyRunId) throw new Error('Terminal 标签缺少 PTY identity');
@@ -636,7 +637,7 @@ export function AgentWorkspacePage() {
         if (tab.kind !== 'editor' || !tab.filePath) continue;
         const owner = worktreeRecords[tab.worktreeId];
         const localPath = localWorktreePath(owner);
-        if (localPath) await closeLocalEditorDocument(localPath, tab.filePath);
+        if (localPath) await releaseLocalEditorDocument(localPath, tab.filePath, `${tab.id}:${tab.filePath}`);
       }
       removeStoreGroup(groupId);
       setLifecycleError(null);

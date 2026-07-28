@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const viewer = readFileSync(new URL('./FileViewer.tsx', import.meta.url), 'utf8');
 
 test('FileViewer text and image IO uses the shared workspace files facade', () => {
-  for (const helper of ['readDir', 'readFileText', 'readImagePreview', 'openLocalEditorDocument']) {
+  for (const helper of ['readDir', 'readFileText', 'readImagePreview', 'acquireLocalEditorDocument']) {
     assert.match(viewer, new RegExp(`\\b${helper}\\b`));
   }
   assert.doesNotMatch(viewer, /invoke(?:<[^>]+>)?\("(?:read_dir_entries|read_file_content|read_image_preview|write_file_content)"/);
