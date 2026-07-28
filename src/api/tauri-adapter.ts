@@ -33,6 +33,8 @@ import {
 } from './tauri-commands';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
+import i18n from '@/i18n';
+import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
 import { DEFAULT_GATEWAY_PORT, defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import {
   loadOrCreateDeviceIdentity,
@@ -615,8 +617,11 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       };
 
       const handleGatewayLog = (event: any) => {
-        const line = String(event.payload ?? '');
-        appendLogLine(line);
+        const line = translateGatewayLogPayload(
+          event.payload,
+          (key, options) => i18n.t(key, options),
+        );
+        if (line) appendLogLine(line);
       };
 
       const handleRestartProgress = (event: any) => {

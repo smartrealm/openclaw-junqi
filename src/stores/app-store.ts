@@ -152,7 +152,10 @@ export const useAppStore = create<AppState>((set) => ({
       }
       if (matchIndex >= 0) {
         const setupLogs = [...s.setupLogs];
-        setupLogs[matchIndex] = nextLog;
+        // A coalesced row keeps its place in the stream, so it must keep the
+        // timestamp that place stands for. Stamping it with the update time
+        // makes the console read as if time ran backwards from the rows below.
+        setupLogs[matchIndex] = { ...nextLog, ts: setupLogs[matchIndex]!.ts };
         return { setupLogs };
       }
     }

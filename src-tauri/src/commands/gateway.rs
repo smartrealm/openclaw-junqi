@@ -5,14 +5,44 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+/// A Gateway log line as the renderer receives it. `key` names the translation
+/// for lines this app authors; child process output carries none and is shown
+/// verbatim. The renderer falls back to `message` whenever the key is absent or
+/// untranslated, so the English text stays authoritative.
+#[derive(Clone, Serialize)]
+struct GatewayLogEvent<'a> {
+    message: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<&'a str>,
+}
+
 fn emit_gateway_log(app: &AppHandle, message: impl AsRef<str>) {
-    for line in message.as_ref().lines() {
+    emit_gateway_log_keyed(app, message, None);
+}
+
+fn emit_gateway_log_keyed(app: &AppHandle, message: impl AsRef<str>, key: Option<&str>) {
+    let message = message.as_ref();
+    // A key describes one whole message. Wrapped or multi-line output would
+    // repeat that translation per line, so only a single-line message keeps it.
+    let single_line = message
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count()
+        == 1;
+    let key = if single_line { key } else { None };
+    for line in message.lines() {
         let line = crate::commands::diagnostic_output::sanitize_diagnostic_line(line);
         if line.is_empty() {
             continue;
         }
         crate::commands::setup_diagnostics::record_timeline_note(app, "gateway", &line);
-        let _ = app.emit("gateway-log", &line);
+        let _ = app.emit(
+            "gateway-log",
+            GatewayLogEvent {
+                message: &line,
+                key,
+            },
+        );
     }
 }
 
@@ -26,13 +56,27 @@ fn report_gateway_lifecycle(
     level: crate::state::gateway_process::LogLevel,
     message: impl AsRef<str>,
 ) {
+    report_gateway_lifecycle_keyed(app, state, level, message, None);
+}
+
+/// Same boundary report, carrying the translation key for its message. Use this
+/// for every lifecycle line this app authors; the unkeyed variant is for text
+/// assembled at runtime (error details, child output) that has no translation.
+fn report_gateway_lifecycle_keyed(
+    app: &AppHandle,
+    state: &GatewayProcess,
+    level: crate::state::gateway_process::LogLevel,
+    message: impl AsRef<str>,
+    key: Option<&str>,
+) {
     let message = message.as_ref().to_string();
-    emit_gateway_log(app, &message);
-    crate::state::gateway_process::push_log(
+    emit_gateway_log_keyed(app, &message, key);
+    crate::state::gateway_process::push_keyed_log(
         &state.logs,
         crate::state::gateway_process::LogSource::Lifecycle,
         level,
         message,
+        key.map(str::to_owned),
     );
 }
 
@@ -61,6 +105,31 @@ pub struct GatewayStatus {
     /// Literal gateway auth token when one exists. SecretRef-managed values are
     /// deliberately not materialized across the native/renderer boundary.
     pub token: Option<String>,
+}
+
+/// Decide whether an authenticated endpoint must be displaced rather than
+/// adopted.
+///
+/// A package replacement leaves the endpoint stale even though it still
+/// authenticates: it keeps serving the code it was started with. An owner JunQi
+/// controls is stopped and restarted on the freshly installed package. An
+/// external Gateway belongs to whoever started it, so it is reported rather than
+/// terminated — this app does not own that process.
+fn should_take_over_stale_gateway(
+    openclaw_package_replaced: bool,
+    reused_mode: GatewayRuntimeMode,
+) -> bool {
+    openclaw_package_replaced && !matches!(reused_mode, GatewayRuntimeMode::External)
+}
+
+/// Record that the Gateway now serving was started from the package currently
+/// on disk. Only a start that JunQi drove to readiness may clear the flag: an
+/// endpoint it merely adopted, or a start that failed, leaves the takeover
+/// pending for the next attempt.
+pub(crate) fn mark_running_gateway_current(state: &GatewayProcess) {
+    state
+        .openclaw_package_replaced
+        .store(false, std::sync::atomic::Ordering::Release);
 }
 
 /// Validate the in-memory owner/child pair without probing the network.
@@ -212,11 +281,12 @@ async fn start_installed_gateway_service(
         None,
         "start_gateway: starting installed selected Gateway service",
     );
-    report_gateway_lifecycle(
+    report_gateway_lifecycle_keyed(
         app,
         state,
         crate::state::gateway_process::LogLevel::Info,
         "An installed Gateway service belongs to the selected configuration; using it as the lifecycle owner...",
+        Some("setup.gateway.serviceOwner"),
     );
 
     let result: Result<GatewayStatus, String> = async {
@@ -252,11 +322,12 @@ async fn start_installed_gateway_service(
         }
 
         if matches!(handoff, OfficialGatewayHandoff::RebindStale { .. }) {
-            report_gateway_lifecycle(
+            report_gateway_lifecycle_keyed(
                 app,
                 state,
                 crate::state::gateway_process::LogLevel::Info,
                 "The installed Gateway service uses a stale runtime or locale; rebuilding it...",
+                Some("setup.gateway.serviceStaleRebuild"),
             );
             crate::commands::gateway_service::rebind_selected_gateway_service(
                 runtime,
@@ -303,11 +374,12 @@ async fn start_installed_gateway_service(
 
     match result {
         Ok(status) => {
-            report_gateway_lifecycle(
+            report_gateway_lifecycle_keyed(
                 app,
                 state,
                 crate::state::gateway_process::LogLevel::Info,
                 "Installed Gateway service is ready.",
+                Some("setup.gateway.serviceReady"),
             );
             Ok(Some(status))
         }
@@ -493,6 +565,38 @@ mod runtime_observation_tests {
     }
 
     #[test]
+    fn a_gateway_started_before_an_install_is_not_adopted_as_is() {
+        // The endpoint still authenticates after a package replacement, but it
+        // serves the code it was started with. Adopting it reported a repair or
+        // an upgrade as done while the previous OpenClaw kept answering.
+        for owner in [
+            GatewayRuntimeMode::ManagedChild,
+            GatewayRuntimeMode::SystemService,
+        ] {
+            assert!(
+                should_take_over_stale_gateway(true, owner),
+                "{owner:?} is JunQi's to restart"
+            );
+        }
+        // Someone else's process is reported, never terminated.
+        assert!(!should_take_over_stale_gateway(
+            true,
+            GatewayRuntimeMode::External
+        ));
+    }
+
+    #[test]
+    fn an_unchanged_package_leaves_every_running_owner_alone() {
+        for owner in [
+            GatewayRuntimeMode::ManagedChild,
+            GatewayRuntimeMode::SystemService,
+            GatewayRuntimeMode::External,
+        ] {
+            assert!(!should_take_over_stale_gateway(false, owner), "{owner:?}");
+        }
+    }
+
+    #[test]
     fn bug_gso03_official_service_restart_requires_a_matching_service_identity() {
         use crate::commands::gateway_service::GatewayServiceOwnership;
 
@@ -646,18 +750,21 @@ mod runtime_observation_tests {
                 level: LogLevel::Error,
                 source: LogSource::ChildStderr,
                 message: "old failure".into(),
+                key: None,
             },
             LogEntry {
                 timestamp_ms: 20,
                 level: LogLevel::Warn,
                 source: LogSource::Lifecycle,
                 message: "lifecycle noise".into(),
+                key: None,
             },
             LogEntry {
                 timestamp_ms: 30,
                 level: LogLevel::Error,
                 source: LogSource::ChildStderr,
                 message: "missing plugin entry".into(),
+                key: None,
             },
         ]);
 
@@ -2377,6 +2484,7 @@ pub async fn restart_gateway(
             None,
             "restart_gateway: service health check passed",
         );
+        mark_running_gateway_current(&state);
         return Ok(GatewayStatus {
             running: true,
             port,
@@ -2839,11 +2947,12 @@ async fn start_gateway_locked_with_policy(
     service_policy: InstalledServiceStartPolicy,
 ) -> Result<GatewayStatus, String> {
     crate::commands::setup_diagnostics::reset_timeline_log(&app, "gateway");
-    report_gateway_lifecycle(
+    report_gateway_lifecycle_keyed(
         &app,
         &state,
         crate::state::gateway_process::LogLevel::Info,
         "Preparing OpenClaw Gateway...",
+        Some("setup.gateway.preparing"),
     );
     if !matches!(
         paths::active_runtime_mode(),
@@ -2856,11 +2965,12 @@ async fn start_gateway_locked_with_policy(
     crate::commands::system::ensure_openclaw_relocation_complete()?;
     // Load config metadata once. This single read serves both port resolution
     // and env_vars injection, avoiding duplicate IO later in the function.
-    report_gateway_lifecycle(
+    report_gateway_lifecycle_keyed(
         &app,
         &state,
         crate::state::gateway_process::LogLevel::Info,
         "Reading the selected Gateway configuration...",
+        Some("setup.gateway.readConfig"),
     );
     let config_path = paths::config_path();
     let meta = ConfigMetadata::load(&config_path);
@@ -2881,11 +2991,12 @@ async fn start_gateway_locked_with_policy(
     // OpenClaw enforces a non-contiguous Node.js support matrix. Repair the
     // desktop-managed runtime before spawning so an incompatible system Node
     // cannot produce a crash/retry loop (notably Node 24.14.x on Windows).
-    report_gateway_lifecycle(
+    report_gateway_lifecycle_keyed(
         &app,
         &state,
         crate::state::gateway_process::LogLevel::Info,
         "Detecting the selected Node.js and OpenClaw runtime...",
+        Some("setup.gateway.detectRuntime"),
     );
     let openclaw = crate::commands::system::resolve_openclaw_binary_async()
         .await
@@ -2903,11 +3014,12 @@ async fn start_gateway_locked_with_policy(
         .as_deref()
         .map(std::path::Path::new)
         .ok_or("The compatible Node.js runtime did not report an executable path")?;
-    report_gateway_lifecycle(
+    report_gateway_lifecycle_keyed(
         &app,
         &state,
         crate::state::gateway_process::LogLevel::Info,
         "Compatible runtime is ready; validating the selected OpenClaw data directory...",
+        Some("setup.gateway.validateStateDir"),
     );
     crate::commands::openclaw_state_dir::verify_node_state_directory(node_path, &base_dir).await?;
     if let Some(config_parent) = config_path.parent() {
@@ -2943,11 +3055,12 @@ async fn start_gateway_locked_with_policy(
     // `/healthz` proves an OpenClaw process is alive, but does not prove it
     // belongs to JunQi's selected state/config pair. Confirm the configured
     // bearer token before attaching to an external process on the shared port.
-    report_gateway_lifecycle(
+    report_gateway_lifecycle_keyed(
         &app,
         &state,
         crate::state::gateway_process::LogLevel::Info,
         format!("Probing 127.0.0.1:{} for an existing Gateway...", port),
+        Some("setup.gateway.probe"),
     );
     if is_gateway_healthy(port).await {
         if !gateway_matches_config(port, &config_path).await {
@@ -2975,25 +3088,51 @@ async fn start_gateway_locked_with_policy(
         } else {
             GatewayRuntimeMode::External
         };
-        *state.port.lock().map_err(|e| e.to_string())? = port;
-        state.transition(
-            Some(GatewayLifecycle::Running),
-            Some(reused_mode),
-            None,
-            "start_gateway: authenticated existing endpoint",
-        );
-        report_gateway_lifecycle(
+        let package_replaced = state
+            .openclaw_package_replaced
+            .load(std::sync::atomic::Ordering::Acquire);
+        let stale_owner_takeover = should_take_over_stale_gateway(package_replaced, reused_mode);
+        if !stale_owner_takeover {
+            if package_replaced {
+                report_gateway_lifecycle_keyed(
+                    &app,
+                    &state,
+                    crate::state::gateway_process::LogLevel::Warn,
+                    format!(
+                        "A Gateway that JunQi does not manage is serving port {}. It still runs the OpenClaw package from before this installation; restart it to pick up the newly installed version.",
+                        port
+                    ),
+                    Some("setup.gateway.externalStalePackage"),
+                );
+            }
+            *state.port.lock().map_err(|e| e.to_string())? = port;
+            state.transition(
+                Some(GatewayLifecycle::Running),
+                Some(reused_mode),
+                None,
+                "start_gateway: authenticated existing endpoint",
+            );
+            report_gateway_lifecycle_keyed(
+                &app,
+                &state,
+                crate::state::gateway_process::LogLevel::Info,
+                "Authenticated existing Gateway is ready; reusing it.",
+                Some("setup.gateway.reuseExisting"),
+            );
+            return Ok(GatewayStatus {
+                running: true,
+                port,
+                pid: managed_pid,
+                token: token.clone(),
+            });
+        }
+        report_gateway_lifecycle_keyed(
             &app,
             &state,
             crate::state::gateway_process::LogLevel::Info,
-            "Authenticated existing Gateway is ready; reusing it.",
+            "The running Gateway predates the OpenClaw package that was just installed; restarting it so the new version takes effect...",
+            Some("setup.gateway.staleOwnerTakeover"),
         );
-        return Ok(GatewayStatus {
-            running: true,
-            port,
-            pid: managed_pid,
-            token: token.clone(),
-        });
     }
 
     // Nothing authenticated is serving. Reconcile any durable service owner
@@ -3004,11 +3143,12 @@ async fn start_gateway_locked_with_policy(
         None,
         "start_gateway: reconciling offline Gateway ownership",
     );
-    report_gateway_lifecycle(
+    report_gateway_lifecycle_keyed(
         &app,
         &state,
         crate::state::gateway_process::LogLevel::Info,
         "No authenticated Gateway is ready; reconciling installed Gateway ownership...",
+        Some("setup.gateway.reconcileOwnership"),
     );
     #[derive(Clone, Copy)]
     enum GatewayStartStage {
@@ -3068,11 +3208,12 @@ async fn start_gateway_locked_with_policy(
     };
     if let Some(mut old) = old_child {
         crate::commands::gateway_supervisor::terminate_owned_gateway(&mut old).await;
-        report_gateway_lifecycle(
+        report_gateway_lifecycle_keyed(
             &app,
             &state,
             crate::state::gateway_process::LogLevel::Info,
             "Waiting for the previous Gateway process to release its port...",
+            Some("setup.gateway.awaitPortRelease"),
         );
         // Handles TCP TIME_WAIT on Windows and delayed process teardown.
         if let Err(error) =
@@ -3104,11 +3245,12 @@ async fn start_gateway_locked_with_policy(
     std::fs::create_dir_all(&base_dir)
         .map_err(|error| format!("Failed to create OpenClaw state directory: {error}"))?;
     if let Some(probe_node) = crate::commands::state_dir_probe::probe_node_path(&node) {
-        report_gateway_lifecycle(
+        report_gateway_lifecycle_keyed(
             &app,
             &state,
             crate::state::gateway_process::LogLevel::Info,
             "Checking state directory write capability...",
+            Some("setup.gateway.probeStateDir"),
         );
         match crate::commands::state_dir_probe::probe_chmod_capability(&probe_node, &base_dir).await
         {
@@ -3161,11 +3303,12 @@ async fn start_gateway_locked_with_policy(
         )
         .await?;
         if was_running {
-            report_gateway_lifecycle(
+            report_gateway_lifecycle_keyed(
                 &app,
                 &state,
                 crate::state::gateway_process::LogLevel::Info,
                 "Gateway service was rebound; waiting for it to become reachable...",
+                Some("setup.gateway.serviceRebound"),
             );
             if !wait_for_selected_gateway(
                 port,
@@ -3185,6 +3328,7 @@ async fn start_gateway_locked_with_policy(
                 None,
                 "start_gateway: rebound official Gateway service is healthy",
             );
+            mark_running_gateway_current(&state);
             start_failure_guard.disarm();
             return Ok(GatewayStatus {
                 running: true,
@@ -3197,11 +3341,12 @@ async fn start_gateway_locked_with_policy(
 
     if matches!(service_policy, InstalledServiceStartPolicy::Reconcile) {
         start_failure_guard.stage(GatewayStartStage::ServiceRebind);
-        report_gateway_lifecycle(
+        report_gateway_lifecycle_keyed(
             &app,
             &state,
             crate::state::gateway_process::LogLevel::Info,
             format!("Checking Gateway service ownership on port {}...", port),
+            Some("setup.gateway.checkServiceOwnership"),
         );
         let service_identity =
             crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
@@ -3225,11 +3370,12 @@ async fn start_gateway_locked_with_policy(
             paths::gateway_lifecycle_preference(),
             service_inspection,
         ) {
-            report_gateway_lifecycle(
+            report_gateway_lifecycle_keyed(
                 &app,
                 &state,
                 crate::state::gateway_process::LogLevel::Info,
                 "Restoring the user-selected official Gateway service lifecycle...",
+                Some("setup.gateway.restoreServiceLifecycle"),
             );
             crate::commands::gateway_service::install_selected_gateway_service_with_path(
                 &runtime,
@@ -3258,6 +3404,7 @@ async fn start_gateway_locked_with_policy(
         )
         .await?
         {
+            mark_running_gateway_current(&state);
             start_failure_guard.disarm();
             return Ok(status);
         }
@@ -3267,29 +3414,38 @@ async fn start_gateway_locked_with_policy(
     // absence. Explicit managed-owner restoration reaches it only after its
     // caller has stopped or ruled out competing owners.
     if !crate::commands::gateway_supervisor::is_port_available(port).await {
-        report_gateway_lifecycle(
+        report_gateway_lifecycle_keyed(
             &app,
             &state,
             crate::state::gateway_process::LogLevel::Error,
             format!("Port {} is occupied by a non-Gateway process.", port),
+            Some("setup.gateway.portOccupied"),
         );
         return Err(format!(
             "Port {} is occupied by a process that is not a healthy OpenClaw Gateway. Stop that process or choose another Gateway port, then retry.",
             port
         ));
     }
-    report_gateway_lifecycle(
+    let (managed_child_reason, managed_child_reason_key) = if matches!(
+        service_policy,
+        InstalledServiceStartPolicy::ManagedChildOnly
+    ) {
+        (
+            "Restoring the previously selected desktop-managed Gateway...",
+            "setup.gateway.restoringManagedChild",
+        )
+    } else {
+        (
+            "No installed Gateway service owns the selected configuration; starting the desktop-managed Gateway...",
+            "setup.gateway.startingManagedChild",
+        )
+    };
+    report_gateway_lifecycle_keyed(
         &app,
         &state,
         crate::state::gateway_process::LogLevel::Info,
-        if matches!(
-            service_policy,
-            InstalledServiceStartPolicy::ManagedChildOnly
-        ) {
-            "Restoring the previously selected desktop-managed Gateway..."
-        } else {
-            "No installed Gateway service owns the selected configuration; starting the desktop-managed Gateway..."
-        },
+        managed_child_reason,
+        Some(managed_child_reason_key),
     );
 
     // Inject env.vars into the gateway process so providers that rely on
@@ -3371,11 +3527,12 @@ async fn start_gateway_locked_with_policy(
         );
     }
 
-    report_gateway_lifecycle(
+    report_gateway_lifecycle_keyed(
         &app,
         &state,
         crate::state::gateway_process::LogLevel::Info,
         "Launching the OpenClaw Gateway process...",
+        Some("setup.gateway.launching"),
     );
 
     #[cfg(windows)]
@@ -3450,7 +3607,7 @@ async fn start_gateway_locked_with_policy(
     }
 
     // Emit initial status
-    report_gateway_lifecycle(
+    report_gateway_lifecycle_keyed(
         &app,
         &state,
         crate::state::gateway_process::LogLevel::Info,
@@ -3458,6 +3615,7 @@ async fn start_gateway_locked_with_policy(
             "Gateway process started on port {}; waiting for readiness...",
             port
         ),
+        Some("setup.gateway.awaitReadiness"),
     );
 
     // A spawned process is not yet a running Gateway. Keep ownership local
@@ -3655,6 +3813,7 @@ async fn start_gateway_locked_with_policy(
         None,
         "start_gateway: managed child health check passed",
     );
+    mark_running_gateway_current(&state);
     start_failure_guard.disarm();
 
     // Re-read the token that ensure_config_with_token just wrote/read

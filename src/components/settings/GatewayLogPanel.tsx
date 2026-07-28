@@ -23,6 +23,7 @@ import {
   type LogLevel,
   type LogSource,
 } from '@/api/tauri-commands';
+import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
 import clsx from 'clsx';
 
 const LEVEL_ICON: Record<LogLevel, typeof Info> = {
@@ -156,7 +157,9 @@ export function GatewayLogPanel() {
                   <span className="shrink-0 text-aegis-text-muted" style={{ minWidth: 56 }}>
                     [{SOURCE_LABEL[e.source]}]
                   </span>
-                  <span className="text-aegis-text break-all whitespace-pre-wrap">{e.message}</span>
+                  <span className="text-aegis-text break-all whitespace-pre-wrap">
+                    {translateGatewayLogPayload(e, (key, options) => t(key, options)) ?? e.message}
+                  </span>
                 </div>
               );
             })

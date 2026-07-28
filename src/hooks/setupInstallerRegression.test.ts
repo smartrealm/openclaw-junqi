@@ -108,7 +108,7 @@ test('BUG-INSTALL-LOG-05 Gateway startup uses the shared persistent diagnostic t
   assert.match(gatewayCommands, /startup\.timeout before-cleanup/);
   assert.match(gatewayCommands, /startup\.timeout after-cleanup/);
   assert.doesNotMatch(gatewayCommands, /launch\.contract[\s\S]{0,300}(token|env value)=/i);
-  assert.equal((gatewayCommands.match(/app\.emit\("gateway-log"/g) ?? []).length, 1);
+  assert.equal((gatewayCommands.match(/app\.emit\(\s*"gateway-log"/g) ?? []).length, 1);
 });
 
 test('bug 03 dependency versions remain visible after installation', () => {
@@ -395,4 +395,48 @@ test('a missing prerequisite reaches its own recovery screen', () => {
   const nodeScreen = readFileSync(new URL('../pages/SetupPage/NodeMissingScreen.tsx', import.meta.url), 'utf8');
   assert.match(gitScreen, /flow\.retryGit\(\)/);
   assert.match(nodeScreen, /flow\.retryNode\(\)/);
+});
+
+test('BUG-GW-STALE-01 a Gateway started before an OpenClaw install is not adopted as-is', () => {
+  // The reuse branch only proved the endpoint was healthy and accepted the
+  // configured token — both of which a Gateway started before the install still
+  // satisfies while serving the previous package. A repair or upgrade then
+  // reported success with the old code still answering.
+  const state = readFileSync(new URL('../../src-tauri/src/state/gateway_process.rs', import.meta.url), 'utf8');
+  assert.match(state, /pub openclaw_package_replaced: AtomicBool/);
+  assert.match(setupCommands, /openclaw_package_replaced\s*\.store\(true, Ordering::Release\)/);
+
+  // Owners JunQi controls are displaced; an external process is only reported,
+  // never terminated.
+  assert.match(
+    gatewayCommands,
+    /fn should_take_over_stale_gateway\([\s\S]*?openclaw_package_replaced && !matches!\(reused_mode, GatewayRuntimeMode::External\)/,
+  );
+  assert.match(gatewayCommands, /let stale_owner_takeover = should_take_over_stale_gateway\(/);
+  assert.match(gatewayCommands, /if !stale_owner_takeover \{/);
+
+  // Only a start JunQi drove to readiness clears the flag.
+  assert.equal((gatewayCommands.match(/mark_running_gateway_current\(&state\)/g) ?? []).length, 4);
+});
+
+test('BUG-GW-I18N-02 Gateway lifecycle lines carry translation keys', () => {
+  // `gateway-log` shipped bare English while the setup console around it was
+  // translated, because the payload had no key channel at all.
+  assert.match(gatewayCommands, /struct GatewayLogEvent<'a> \{[\s\S]*?key: Option<&'a str>/);
+  assert.match(gatewayCommands, /fn report_gateway_lifecycle_keyed\(/);
+  assert.match(gatewayCommands, /Some\("setup\.gateway\.reuseExisting"\)/);
+  assert.match(gatewayCommands, /Some\("setup\.gateway\.launching"\)/);
+
+  // Every locale resolves the keys the Gateway start path emits.
+  const keys = [...gatewayCommands.matchAll(/Some\("(setup\.gateway\.[A-Za-z]+)"\)/g)]
+    .map((match) => match[1]!);
+  assert.ok(keys.length >= 20, `expected the start path to be keyed, found ${keys.length}`);
+  for (const locale of ['en', 'zh', 'zh-TW', 'ar']) {
+    const messages = JSON.parse(
+      readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'),
+    ) as Record<string, unknown>;
+    for (const key of new Set(keys)) {
+      assert.equal(typeof messages[key], 'string', `${locale} is missing ${key}`);
+    }
+  }
 });

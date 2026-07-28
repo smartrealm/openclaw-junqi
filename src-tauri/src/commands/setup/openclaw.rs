@@ -1177,6 +1177,14 @@ pub(super) async fn install_openclaw_impl_inner(
         }
     }
 
+    // The package that answers on the Gateway port is now stale: a Gateway that
+    // was already serving when this transaction started still runs the previous
+    // code. Record that so the next start takes the lifecycle over rather than
+    // adopting that endpoint and reporting a repair that never took effect.
+    state
+        .openclaw_package_replaced
+        .store(true, Ordering::Release);
+
     let installed_version = verified.version.unwrap_or_else(|| "unknown version".into());
     emit(
         &app,
@@ -1421,7 +1429,7 @@ pub(super) async fn npm_install_with_fallback(
                         &slow_fetch_triggered,
                         &fetch_metrics,
                     );
-                    if npm_log_line_is_http_fetch(&line) {
+                    if npm_log_line_is_http_telemetry(&line) {
                         continue;
                     }
                     match npm_log_line_for_display(&line) {
@@ -1486,7 +1494,7 @@ pub(super) async fn npm_install_with_fallback(
                         &slow_fetch_triggered,
                         &fetch_metrics,
                     );
-                    if npm_log_line_is_http_fetch(&line) {
+                    if npm_log_line_is_http_telemetry(&line) {
                         continue;
                     }
                     match npm_log_line_for_display(&line) {

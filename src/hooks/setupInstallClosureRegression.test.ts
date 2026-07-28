@@ -108,7 +108,10 @@ test("BUG-WFR-07 quiet npm output never overrides the absolute transaction deadl
 test("BUG-WFR-08 npm activity is coalesced while HTTP details stay in the process artifact", () => {
   assert.match(setup, /let npm_activity_log_slot = format!/);
   assert.match(setup, /emit_coalesced\([\s\S]*?&heartbeat_log_slot/);
-  assert.match(setup, /record_process_output\([\s\S]*?if npm_log_line_is_http_fetch\(&line\) \{\s*continue;/);
+  assert.match(setup, /record_process_output\([\s\S]*?if npm_log_line_is_http_telemetry\(&line\) \{\s*continue;/);
+  // `npm http cache` rows are per-request telemetry too: a fully cached install
+  // must not flood the console with one row per package.
+  assert.match(setup, /NPM_HTTP_LOG_PREFIX: &str = "npm http ";/);
   assert.match(setup, /fn emit_npm_fetch_summary[\s\S]*?emit_coalesced/);
 });
 

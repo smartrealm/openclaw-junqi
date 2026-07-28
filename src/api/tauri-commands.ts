@@ -239,6 +239,8 @@ export interface LogEntry {
   level: LogLevel;
   source: LogSource;
   message: string;
+  /** Translation key for lifecycle lines the app authors; absent for process output. */
+  key?: string | null;
 }
 export const getGatewayLogs = (limit: number) => invoke<LogEntry[]>("get_gateway_logs", { limit });
 export const clearGatewayLogs = () => invoke<void>("clear_gateway_logs");

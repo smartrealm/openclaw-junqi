@@ -23,6 +23,7 @@ import {
 } from '@/api/tauri-commands';
 import clsx from 'clsx';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
+import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
 import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
 
 type GatewayLifecycle = 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
@@ -170,9 +171,14 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
       void refresh();
     });
 
-    const gatewayUnlisten = subscribeTauriEvent<string>('gateway-log', (event) => {
-      if (cancelled || !event.payload) return;
-      setLatestProgress(event.payload);
+    const gatewayUnlisten = subscribeTauriEvent('gateway-log', (event) => {
+      if (cancelled) return;
+      const message = translateGatewayLogPayload(
+        event.payload,
+        (key, options) => t(key, options),
+      );
+      if (!message) return;
+      setLatestProgress(message);
       void refresh();
     });
 

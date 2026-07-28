@@ -13,8 +13,14 @@ pub(super) const NPM_NOISY_LOG_PREFIXES: &[&str] = &[
     "npm sill",
     "npm timing",
     "npm notice",
-    "npm http fetch",
+    NPM_HTTP_LOG_PREFIX,
 ];
+
+/// npm reports every per-request HTTP outcome under this prefix, using a
+/// separate verb per outcome (`fetch` for a transfer, `cache` for a cache
+/// hit). Matching the family rather than one verb keeps a fully cached
+/// install from flooding the console with hundreds of per-package rows.
+pub(super) const NPM_HTTP_LOG_PREFIX: &str = "npm http ";
 
 pub(super) const NPM_SECRET_MARKERS: &[&str] = &[
     "_authtoken",
@@ -32,10 +38,10 @@ pub(super) fn npm_log_line_is_noisy(line: &str) -> bool {
         .any(|prefix| lowercase.starts_with(prefix))
 }
 
-pub(super) fn npm_log_line_is_http_fetch(line: &str) -> bool {
+pub(super) fn npm_log_line_is_http_telemetry(line: &str) -> bool {
     line.trim()
         .to_ascii_lowercase()
-        .starts_with("npm http fetch")
+        .starts_with(NPM_HTTP_LOG_PREFIX)
 }
 
 #[derive(Default)]
@@ -47,7 +53,7 @@ pub(super) struct NpmStreamProgress {
 impl NpmStreamProgress {
     pub(super) fn observe(&self, line: &str) -> f64 {
         let lower = line.trim().to_ascii_lowercase();
-        let candidate = if lower.contains("npm http fetch") {
+        let candidate = if npm_log_line_is_http_telemetry(&lower) {
             let requests = self.http_requests.fetch_add(1, Ordering::Relaxed) + 1;
             300 + requests.min(250)
         } else if lower.contains("preinstall")
@@ -148,7 +154,7 @@ pub(super) fn npm_log_line_redacted(line: &str) -> Option<String> {
 }
 
 pub(super) fn npm_fetch_duration_ms(line: &str) -> Option<u64> {
-    if !line.to_ascii_lowercase().contains("npm http fetch") {
+    if !npm_log_line_is_http_telemetry(line) {
         return None;
     }
     line.split_whitespace().rev().find_map(|token| {
@@ -449,11 +455,27 @@ mod tests {
         );
         assert!(npm_log_line_is_noisy("npm verbose cli ..."));
         assert!(npm_log_line_is_noisy("npm http fetch GET 200 ..."));
-        assert!(npm_log_line_is_http_fetch("npm http fetch GET 200 ..."));
+        assert!(npm_log_line_is_http_telemetry("npm http fetch GET 200 ..."));
     }
 
     #[test]
-    fn npm_fetch_duration_parser_reads_only_http_fetch_timings() {
+    fn npm_http_telemetry_covers_every_per_request_verb() {
+        // A fully cached install reports `npm http cache`, never
+        // `npm http fetch`. Both are per-request rows the console must drop in
+        // favour of the coalesced network summary.
+        assert!(npm_log_line_is_http_telemetry(
+            "npm http cache openclaw@https://registry.example.test/openclaw.tgz 0ms (cache hit)"
+        ));
+        assert!(npm_log_line_is_noisy(
+            "npm http cache openclaw@https://registry.example.test/openclaw.tgz 0ms (cache hit)"
+        ));
+        assert!(!npm_log_line_is_http_telemetry(
+            "npm warn deprecated package@1.0.0"
+        ));
+    }
+
+    #[test]
+    fn npm_fetch_duration_parser_reads_only_http_timings() {
         assert_eq!(
             npm_fetch_duration_ms(
                 "npm http fetch GET 200 https://cdn.example.test/package.tgz 156841ms (cache miss)"
@@ -461,9 +483,37 @@ mod tests {
             Some(156_841)
         );
         assert_eq!(
+            npm_fetch_duration_ms(
+                "npm http cache openclaw@https://registry.example.test/openclaw.tgz 0ms (cache hit)"
+            ),
+            Some(0)
+        );
+        assert_eq!(
             npm_fetch_duration_ms("npm warn deprecated package@1.0.0"),
             None
         );
+    }
+
+    #[test]
+    fn npm_fetch_metrics_count_cache_hits_from_cached_installs() {
+        // A cache-hit-only install used to report requests=0: its rows never
+        // matched the fetch-only parser, so the summary claimed no network
+        // activity at all.
+        let (tx, _rx) = tokio::sync::watch::channel(None::<String>);
+        let triggered = AtomicBool::new(false);
+        let metrics = Arc::new(Mutex::new(NpmFetchMetrics::default()));
+
+        observe_npm_fetch(
+            "npm http cache openclaw@https://registry.example.test/openclaw.tgz 0ms (cache hit)",
+            "npmmirror.com (China mirror)",
+            &tx,
+            &triggered,
+            &metrics,
+        );
+
+        let summary = npm_fetch_summary("npmmirror.com (China mirror)", &metrics).unwrap();
+        assert!(summary.contains("requests=1"), "{summary}");
+        assert!(summary.contains("cache hits=1"), "{summary}");
     }
 
     #[test]

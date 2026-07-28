@@ -30,7 +30,7 @@ export interface ParamRule {
   readonly extract: ParamExtractor;
 }
 
-type ProgressTranslator = (
+export type ProgressTranslator = (
   key: string,
   options: Record<string, unknown>,
 ) => unknown;
@@ -165,7 +165,14 @@ export const SETUP_PROGRESS_PARAM_RULES: readonly ParamRule[] = [
     },
   },
   {
-    suffix: [".portResolved", ".alreadyUp"],
+    suffix: [
+      ".portResolved",
+      ".alreadyUp",
+      ".portOccupied",
+      ".checkServiceOwnership",
+      ".awaitReadiness",
+      ".externalStalePackage",
+    ],
     extract: capture(/(?:Target port =|[Pp]ort)\s+(\d+)/, "port"),
   },
   {

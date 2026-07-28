@@ -5,6 +5,7 @@ import { useAppStore } from "@/stores/app-store";
 import { combineUnlisteners, subscribeTauriEvent } from "@/utils/tauriEvents";
 import { classifySetupMessage, normalizeSetupProgressPayload } from "@/hooks/setupProgressEvents";
 import { translateSetupProgressMessage } from "@/hooks/setupProgressParams";
+import { translateGatewayLogPayload } from "@/hooks/gatewayLogEvents";
 import { useSetupFlow } from "@/hooks/useSetupFlow";
 import type { StepState } from "@/hooks/useSetupFlow";
 import type { DockerStatus } from "@/api/tauri-commands";
@@ -60,11 +61,15 @@ export function SetupPage() {
       });
     });
 
-    const unlistenGateway = subscribeTauriEvent<string>("gateway-log", (event) => {
-      if (event.payload) appendSetupLog({
+    const unlistenGateway = subscribeTauriEvent("gateway-log", (event) => {
+      const message = translateGatewayLogPayload(
+        event.payload,
+        (key, options) => t(key, options),
+      );
+      if (message) appendSetupLog({
         source: "gateway",
-        message: event.payload,
-        level: classifySetupMessage(event.payload),
+        message,
+        level: classifySetupMessage(message),
       });
     });
 

@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::collections::VecDeque;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 use tokio::process::Child;
 
@@ -68,6 +68,11 @@ pub struct LogEntry {
     pub level: LogLevel,
     pub source: LogSource,
     pub message: String,
+    /// Translation key for lifecycle lines this app authors, so a log replayed
+    /// from this buffer reads in the same language as the live event that
+    /// produced it. Child process output has none and stays verbatim.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 pub struct GatewayProcess {
@@ -80,6 +85,12 @@ pub struct GatewayProcess {
     /// fallback. Contending restart callers use this to distinguish another
     /// restart from an unrelated lifecycle operation holding `operation_gate`.
     pub restart_completed_generation: AtomicU64,
+    /// Set when the OpenClaw package on disk is replaced (install, reinstall,
+    /// relocation). Any Gateway already serving at that moment keeps running
+    /// the previous package, so the next start must take the lifecycle over
+    /// instead of silently adopting that endpoint — otherwise a repair or an
+    /// upgrade reports success while the old code keeps answering.
+    pub openclaw_package_replaced: AtomicBool,
     /// Circular buffer of recent log entries (SPEC §2.4, M6).
     /// Push path evicts the oldest entry once length exceeds LOG_BUFFER_CAP.
     pub logs: Mutex<VecDeque<LogEntry>>,
@@ -95,6 +106,7 @@ impl GatewayProcess {
             port: Mutex::new(crate::commands::config::default_gateway_port()),
             operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             restart_completed_generation: AtomicU64::new(0),
+            openclaw_package_replaced: AtomicBool::new(false),
             logs: Mutex::new(VecDeque::with_capacity(LOG_BUFFER_CAP)),
             runtime: Mutex::new(GatewayRuntimeState {
                 lifecycle: GatewayLifecycle::Stopped,
@@ -195,6 +207,19 @@ pub fn push_log(
     level: LogLevel,
     message: impl Into<String>,
 ) {
+    push_keyed_log(logs, source, level, message, None);
+}
+
+/// Same buffer append, retaining the message's translation key for the UI. The
+/// persisted file still records the English text: a diagnostic artifact must
+/// stay searchable regardless of the language the app was running in.
+pub fn push_keyed_log(
+    logs: &Mutex<VecDeque<LogEntry>>,
+    source: LogSource,
+    level: LogLevel,
+    message: impl Into<String>,
+    key: Option<String>,
+) {
     let message = message.into();
     persist_gateway_log_line(level, source, &message);
     let entry = LogEntry {
@@ -205,6 +230,7 @@ pub fn push_log(
         level,
         source,
         message,
+        key,
     };
     match logs.lock() {
         Ok(mut buf) => {
@@ -350,6 +376,7 @@ mod tests {
             level: LogLevel::Warn,
             source: LogSource::DockerStdout,
             message: "container log line".to_string(),
+            key: None,
         };
         let json = serde_json::to_string(&entry).expect("serialize");
         assert!(
@@ -365,6 +392,36 @@ mod tests {
         assert!(
             json.contains("\"timestamp_ms\":1700000000000"),
             "timestamp numeric: {}",
+            json
+        );
+        assert!(
+            !json.contains("\"key\""),
+            "process output carries no translation key: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn a_keyed_lifecycle_entry_replays_in_the_reader_s_language() {
+        // A log read back from this buffer must resolve to the same text the
+        // live event produced; without the key it fell back to English while
+        // the console beside it was translated.
+        let logs = Mutex::new(VecDeque::new());
+        push_keyed_log(
+            &logs,
+            LogSource::Lifecycle,
+            LogLevel::Info,
+            "Authenticated existing Gateway is ready; reusing it.",
+            Some("setup.gateway.reuseExisting".to_string()),
+        );
+
+        let buffer = logs.lock().unwrap();
+        let entry = buffer.back().expect("entry");
+        assert_eq!(entry.key.as_deref(), Some("setup.gateway.reuseExisting"));
+        let json = serde_json::to_string(entry).expect("serialize");
+        assert!(
+            json.contains("\"key\":\"setup.gateway.reuseExisting\""),
+            "key reaches the renderer: {}",
             json
         );
     }

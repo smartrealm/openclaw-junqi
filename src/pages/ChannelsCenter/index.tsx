@@ -8,6 +8,7 @@ import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { gateway } from '@/services/gateway';
 import type { LogEntry } from '@/api/tauri-commands';
+import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
 import type { AgentConfig, GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
 import { ChannelOfficialSchemaEditor } from '@/pages/ConfigManager/ChannelOfficialSchemaEditor';
 import {
@@ -878,7 +879,9 @@ export function ChannelsCenterPage() {
                   <pre className="max-h-[240px] overflow-auto px-3 py-2 text-[10px] leading-relaxed text-aegis-text-dim whitespace-pre-wrap break-all">
                     {gatewayLogs.map((entry) => {
                       const time = new Date(entry.timestamp_ms).toLocaleTimeString();
-                      return `[${time}] ${entry.level.toUpperCase()} ${entry.source}: ${entry.message}`;
+                      const message = translateGatewayLogPayload(entry, (key, options) => t(key, options))
+                        ?? entry.message;
+                      return `[${time}] ${entry.level.toUpperCase()} ${entry.source}: ${message}`;
                     }).join('\n')}
                   </pre>
                 )}
