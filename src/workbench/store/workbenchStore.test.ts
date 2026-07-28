@@ -40,6 +40,19 @@ test('workbench store replaces only clean preview tabs', () => {
   assert.deepEqual(useWorkbenchStore.getState().groups[mainGroup]?.tabIds, ['dirty-preview', 'preview-c']);
 });
 
+test('tab activation synchronizes its worktree owner', () => {
+  useWorkbenchStore.getState().addWorktree({
+    id: 'other', projectId: 'other', repositoryId: 'other', hostId: 'local',
+    hostRevision: 0, path: '/other', branch: null, lifecycle: 'active',
+  });
+  useWorkbenchStore.getState().openTab(mainGroup, { ...tab('owned'), worktreeId: 'local-project' });
+  assert.equal(useWorkbenchStore.getState().activeWorktreeId, 'local-project');
+  useWorkbenchStore.getState().activateWorktree('other');
+  assert.equal(useWorkbenchStore.getState().groups[mainGroup]?.activeTabId, null);
+  useWorkbenchStore.getState().activateTab(mainGroup, 'owned');
+  assert.equal(useWorkbenchStore.getState().activeWorktreeId, 'local-project');
+});
+
 test('closing an active tab selects the adjacent right tab before the left fallback', () => {
   for (const id of ['a', 'b', 'c']) useWorkbenchStore.getState().openTab(mainGroup, tab(id));
   useWorkbenchStore.getState().activateTab(mainGroup, 'b');
@@ -78,4 +91,8 @@ test('group removal deletes owned tabs and collapses layout', () => {
   assert.equal(state.groups.right, undefined);
   assert.equal(state.tabs['right-tab'], undefined);
   assert.equal(state.activeGroupId, mainGroup);
+});
+
+test('session snapshots always emit the current schema version', () => {
+  assert.equal(useWorkbenchStore.getState().sessionSnapshot().schemaVersion, 2);
 });

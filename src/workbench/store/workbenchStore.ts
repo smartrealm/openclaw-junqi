@@ -5,7 +5,7 @@ import {
   resizeTabGroupSplit,
   splitTabGroup as splitLayoutGroup,
 } from '../domain/tabGroupLayout';
-import type { WorkbenchSessionSnapshot } from '../session/schema';
+import { WORKBENCH_SESSION_SCHEMA_VERSION, type WorkbenchSessionSnapshot } from '../session/schema';
 import type {
   TabGroup,
   TabGroupId,
@@ -53,6 +53,10 @@ function adjacentTabId(tabIds: TabId[], closedIndex: number): TabId | null {
   return tabIds[Math.min(closedIndex, tabIds.length - 1)] ?? tabIds[tabIds.length - 1] ?? null;
 }
 
+function lastOwnedTab(group: TabGroup, tabs: Record<TabId, WorkbenchTab>, worktreeId: WorktreeId): TabId | null {
+  return [...group.tabIds].reverse().find((tabId) => tabs[tabId]?.worktreeId === worktreeId) ?? null;
+}
+
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   hydrated: false,
   writerReady: false,
@@ -82,9 +86,18 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     activeWorktreeId: worktree.id,
   })),
 
-  activateWorktree: (id) => set((state) => (
-    state.worktrees[id] ? { activeWorktreeId: id } : {}
-  )),
+  activateWorktree: (id) => set((state) => {
+    if (!state.worktrees[id]) return {};
+    const groups = Object.fromEntries(Object.entries(state.groups).map(([groupId, group]) => [
+      groupId,
+      { ...group, activeTabId: lastOwnedTab(group, state.tabs, id) },
+    ]));
+    const currentHasOwnedTab = groups[state.activeGroupId]?.activeTabId !== null;
+    const activeGroupId = currentHasOwnedTab
+      ? state.activeGroupId
+      : Object.values(groups).find((group) => group.activeTabId !== null)?.id ?? state.activeGroupId;
+    return { activeWorktreeId: id, groups, activeGroupId };
+  }),
 
   openTab: (groupId, tab) => set((state) => {
     const group = state.groups[groupId];
@@ -100,13 +113,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       tabs,
       groups: { ...state.groups, [groupId]: { ...group, tabIds, activeTabId: tab.id } },
       activeGroupId: groupId,
+      activeWorktreeId: tab.worktreeId,
     };
   }),
 
   activateTab: (groupId, tabId) => set((state) => {
     const group = state.groups[groupId];
-    return group?.tabIds.includes(tabId)
-      ? { groups: { ...state.groups, [groupId]: { ...group, activeTabId: tabId } }, activeGroupId: groupId }
+    const tab = state.tabs[tabId];
+    return group?.tabIds.includes(tabId) && tab
+      ? {
+          groups: { ...state.groups, [groupId]: { ...group, activeTabId: tabId } },
+          activeGroupId: groupId,
+          activeWorktreeId: tab.worktreeId,
+        }
       : {};
   }),
 
@@ -117,16 +136,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const tabIds = group.tabIds.filter((id) => id !== tabId);
     const tabs = { ...state.tabs };
     delete tabs[tabId];
+    const activeTabId = group.activeTabId === tabId ? adjacentTabId(tabIds, closedIndex) : group.activeTabId;
     return {
       tabs,
       groups: {
         ...state.groups,
-        [groupId]: {
-          ...group,
-          tabIds,
-          activeTabId: group.activeTabId === tabId ? adjacentTabId(tabIds, closedIndex) : group.activeTabId,
-        },
+        [groupId]: { ...group, tabIds, activeTabId },
       },
+      ...(groupId === state.activeGroupId && activeTabId && tabs[activeTabId]
+        ? { activeWorktreeId: tabs[activeTabId].worktreeId }
+        : {}),
     };
   }),
 
@@ -184,7 +203,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   sessionSnapshot: () => {
     const state = get();
     return {
-      schemaVersion: 1,
+      schemaVersion: WORKBENCH_SESSION_SCHEMA_VERSION,
       activeWorktreeId: state.activeWorktreeId,
       worktrees: state.worktrees,
       activeGroupId: state.activeGroupId,
