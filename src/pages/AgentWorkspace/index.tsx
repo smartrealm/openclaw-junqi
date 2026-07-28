@@ -31,6 +31,7 @@ import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
 import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
 import { resetWorkbenchSession } from '@/workbench/session/storage';
+import { closeLocalEditorDocument } from '@/workspace-files/services/localEditorDocuments';
 import { TabGroupLayout } from '@/workbench/components/TabGroupLayout';
 import { WorkbenchTerminalPane } from '@/workbench/components/WorkbenchTerminalPane';
 import { closeWorkbenchPtyTab, closeWorkbenchPtyTabs } from '@/workbench/pty/workbenchPtyClient';
@@ -607,6 +608,11 @@ export function AgentWorkspacePage() {
   const closeTab = async (groupId: string, id: string) => {
     const tab = tabRecords[id];
     try {
+      if (tab?.kind === 'editor' && tab.filePath) {
+        const owner = worktreeRecords[tab.worktreeId];
+        const localPath = localWorktreePath(owner);
+        if (localPath) await closeLocalEditorDocument(localPath, tab.filePath);
+      }
       if (tab?.kind === 'terminal') {
         if (!tab.ptyId || !tab.ptyRunId) throw new Error('Terminal 标签缺少 PTY identity');
         await closeWorkbenchPtyTab({ ptyId: tab.ptyId, runId: tab.ptyRunId });
@@ -626,6 +632,12 @@ export function AgentWorkspacePage() {
         return { ptyId: tab.ptyId, runId: tab.ptyRunId };
       });
       if (identities.length > 0) await closeWorkbenchPtyTabs(identities);
+      for (const tab of ownedTabs) {
+        if (tab.kind !== 'editor' || !tab.filePath) continue;
+        const owner = worktreeRecords[tab.worktreeId];
+        const localPath = localWorktreePath(owner);
+        if (localPath) await closeLocalEditorDocument(localPath, tab.filePath);
+      }
       removeStoreGroup(groupId);
       setLifecycleError(null);
     } catch (reason) {

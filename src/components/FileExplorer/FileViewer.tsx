@@ -15,11 +15,11 @@ import { solarizedLight } from "@uiw/codemirror-theme-solarized";
 import type { Extension } from "@codemirror/state";
 import { loadCodeMirrorLanguage } from "@/utils/codeMirrorLanguages";
 import { parentPathOf } from "./treeUtils";
-import { readDir, readFileText, readImagePreview, writeFileText } from "@/services/workspaceFs";
+import { readDir, readFileText, readImagePreview } from "@/services/workspaceFs";
 import { subscribeLocalWorkspacePath } from "@/workspace-files/services/localWatchCoordinator";
 import { resolveWorkspacePreview } from "@/workspace-files/services/previewResolver";
-import { EditorDocumentController, type EditorDocumentSnapshot } from "@/workspace-files/services/editorDocumentManager";
-import type { WorkspaceFileScope } from "@/workspace-files/domain/types";
+import type { EditorDocumentSnapshot } from "@/workspace-files/services/editorDocumentManager";
+import { openLocalEditorDocument } from "@/workspace-files/services/localEditorDocuments";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -382,20 +382,9 @@ function FilePreviewPane({
   );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const document = useMemo(() => {
-    if (isPreviewableImage) return null;
-    const scope: WorkspaceFileScope = {
-      hostId: 'local', hostRevision: 0, workspaceId: projectPath,
-      rootPath: projectPath, rootRevision: 0, policy: 'workspace',
-    };
-    return new EditorDocumentController({
-      read: async (_scope, path) => ({ content: await readFileText(path, projectPath), revision: null }),
-      write: async (_scope, path, nextContent) => {
-        await writeFileText(path, nextContent, projectPath);
-        return { revision: null };
-      },
-    }, scope, filePath);
-  }, [filePath, isPreviewableImage, projectPath]);
+  const document = useMemo(() => (
+    isPreviewableImage ? null : openLocalEditorDocument(projectPath, filePath)
+  ), [filePath, isPreviewableImage, projectPath]);
   // Held in a ref so an unstable callback identity cannot re-run the load or
   // re-register the directory watch.
   const onFileMissingRef = useRef(onFileMissing);
@@ -487,7 +476,8 @@ function FilePreviewPane({
 
     return () => {
       cancelled = true;
-      document?.dispose();
+      // Unified-tab switches detach only. The shared manager retains drafts,
+      // conflicts and queued writes until the owning tab is explicitly closed.
     };
   }, [document, filePath, fileName, projectPath, isPreviewableImage]);
 
