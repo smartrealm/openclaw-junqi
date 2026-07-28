@@ -113,6 +113,7 @@ function WorktreeSidebar({
   mode,
   onToggle,
   onAdd,
+  onForget,
 }: {
   worktrees: WorktreeItem[];
   activeId: string | null;
@@ -120,6 +121,7 @@ function WorktreeSidebar({
   mode: WorkspaceSidebarMode;
   onToggle: () => void;
   onAdd: () => void;
+  onForget: (id: string) => void;
 }) {
   if (mode === 'hidden') return null;
   if (mode === 'compact') {
@@ -179,6 +181,19 @@ function WorktreeSidebar({
                   <span className="junqi-wb-worktree-line">
                     <StateDot state={worktree.state} />
                     <strong>{worktree.label}</strong>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="junqi-wb-worktree-forget"
+                      title="从工作台移除（不删除目录）"
+                      onClick={(event) => { event.stopPropagation(); onForget(worktree.id); }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.stopPropagation();
+                          onForget(worktree.id);
+                        }
+                      }}
+                    ><X size={12} /></span>
                   </span>
                   <span className="junqi-wb-worktree-branch"><GitBranch size={11} />{worktree.branch}</span>
                   <span className="junqi-wb-worktree-detail">{worktree.detail}</span>
@@ -534,6 +549,7 @@ export function AgentWorkspacePage() {
   const activeWorktree = useWorkbenchStore((state) => state.activeWorktreeId);
   const setWorktrees = useWorkbenchStore((state) => state.setWorktrees);
   const addWorktree = useWorkbenchStore((state) => state.addWorktree);
+  const forgetStoreWorktree = useWorkbenchStore((state) => state.forgetWorktree);
   const setActiveWorktree = useWorkbenchStore((state) => state.activateWorktree);
   const groups = useWorkbenchStore((state) => state.groups);
   const layout = useWorkbenchStore((state) => state.layout);
@@ -605,6 +621,28 @@ export function AgentWorkspacePage() {
     window.addEventListener(AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT, toggle);
     return () => window.removeEventListener(AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT, toggle);
   }, []);
+  const forgetWorktree = async (worktreeId: string) => {
+    const ownedTabs = Object.values(tabRecords).filter((tab) => tab.worktreeId === worktreeId);
+    try {
+      const documentLeases = ownedTabs.flatMap<LocalEditorDocumentLease>((tab) => {
+        if (tab.kind !== 'editor' || !tab.filePath) return [];
+        const localPath = localWorktreePath(worktreeRecords[tab.worktreeId]);
+        return localPath ? [{ rootPath: localPath, path: tab.filePath, ownerId: `${tab.id}:${tab.filePath}` }] : [];
+      });
+      await checkpointLocalEditorDocuments(documentLeases);
+      const identities = ownedTabs.filter((tab) => tab.kind === 'terminal').map((tab) => {
+        if (!tab.ptyId || !tab.ptyRunId) throw new Error('Terminal 标签缺少 PTY identity');
+        return { ptyId: tab.ptyId, runId: tab.ptyRunId };
+      });
+      if (identities.length > 0) await closeWorkbenchPtyTabs(identities);
+      commitLocalEditorDocumentRelease(documentLeases);
+      forgetStoreWorktree(worktreeId);
+      setLifecycleError(null);
+    } catch (reason) {
+      setLifecycleError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
   const addLocalProject = async () => {
     const selected = await openDialog({ directory: true, multiple: false, title: '打开本机项目' });
     if (typeof selected !== 'string' || !selected) return;
@@ -752,6 +790,7 @@ export function AgentWorkspacePage() {
         mode={sidebarMode}
         onToggle={() => setSidebarMode(sidebarMode === 'full' ? 'compact' : 'full')}
         onAdd={() => { void addLocalProject(); }}
+        onForget={(id) => { void forgetWorktree(id); }}
       />
 
       <main className="junqi-wb-main">

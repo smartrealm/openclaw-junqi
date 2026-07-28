@@ -43,6 +43,7 @@ interface WorkbenchState {
   releaseProvider: (paneId: string, claimId: string, generation: number) => void;
   setWorktrees: (worktrees: WorkbenchWorktree[]) => void;
   addWorktree: (worktree: WorkbenchWorktree) => void;
+  forgetWorktree: (id: WorktreeId) => void;
   activateWorktree: (id: WorktreeId) => void;
   openTab: (groupId: TabGroupId, tab: WorkbenchTab) => void;
   activateTab: (groupId: TabGroupId, tabId: TabId) => void;
@@ -115,6 +116,32 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     worktrees: { ...state.worktrees, [worktree.id]: worktree },
     activeWorktreeId: worktree.id,
   })),
+
+  forgetWorktree: (id) => set((state) => {
+    if (!state.worktrees[id]) return {};
+    const forgottenTabs = new Set(Object.values(state.tabs)
+      .filter((tab) => tab.worktreeId === id)
+      .map((tab) => tab.id));
+    const tabs = Object.fromEntries(Object.entries(state.tabs)
+      .filter(([tabId]) => !forgottenTabs.has(tabId)));
+    const groups = Object.fromEntries(Object.entries(state.groups).map(([groupId, group]) => {
+      const previousIndex = group.activeTabId ? group.tabIds.indexOf(group.activeTabId) : 0;
+      const tabIds = group.tabIds.filter((tabId) => !forgottenTabs.has(tabId));
+      return [groupId, {
+        ...group,
+        tabIds,
+        activeTabId: group.activeTabId && !forgottenTabs.has(group.activeTabId)
+          ? group.activeTabId
+          : adjacentTabId(tabIds, Math.max(0, previousIndex)),
+      }];
+    }));
+    const worktrees = { ...state.worktrees };
+    delete worktrees[id];
+    const activeWorktreeId = state.activeWorktreeId === id
+      ? Object.keys(worktrees)[0] ?? null
+      : state.activeWorktreeId;
+    return { worktrees, tabs, groups, activeWorktreeId };
+  }),
 
   activateWorktree: (id) => set((state) => {
     if (!state.worktrees[id]) return {};

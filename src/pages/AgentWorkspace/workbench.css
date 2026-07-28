@@ -332,6 +332,24 @@
   white-space: nowrap;
 }
 
+.junqi-wb-worktree-forget {
+  display: none;
+  padding: 2px;
+  border-radius: 3px;
+  color: var(--wb-dim);
+}
+
+.junqi-wb-worktree:hover .junqi-wb-worktree-forget,
+.junqi-wb-worktree.is-active .junqi-wb-worktree-forget,
+.junqi-wb-worktree-forget:focus-visible {
+  display: inline-flex;
+}
+
+.junqi-wb-worktree-forget:hover {
+  color: var(--wb-danger);
+  background: rgb(var(--aegis-status-failed, 232 102 102) / 0.1);
+}
+
 .junqi-wb-state-dot {
   display: inline-block;
   width: 7px;

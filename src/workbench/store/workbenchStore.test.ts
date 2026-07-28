@@ -73,6 +73,21 @@ test('closing an active tab selects the adjacent right tab before the left fallb
   assert.equal(useWorkbenchStore.getState().groups[mainGroup]?.activeTabId, 'a');
 });
 
+test('forgetting a worktree removes only its owned tabs and record', () => {
+  useWorkbenchStore.getState().addWorktree({
+    id: 'other', projectId: 'other', repositoryId: 'other', hostId: 'local',
+    hostRevision: 0, path: '/other', branch: null, lifecycle: 'active',
+  });
+  useWorkbenchStore.getState().openTab(mainGroup, { ...tab('local-tab'), worktreeId: 'local-project' });
+  useWorkbenchStore.getState().openTab(mainGroup, { ...tab('other-tab'), worktreeId: 'other' });
+  useWorkbenchStore.getState().forgetWorktree('other');
+  const state = useWorkbenchStore.getState();
+  assert.equal(state.worktrees.other, undefined);
+  assert.equal(state.tabs['other-tab'], undefined);
+  assert.ok(state.tabs['local-tab']);
+  assert.deepEqual(state.groups[mainGroup]?.tabIds, ['local-tab']);
+});
+
 test('workbench-owned projects survive session snapshots independently of legacy tasks', () => {
   const worktree = {
     id: 'local-project', projectId: 'project', repositoryId: 'repo', hostId: 'local',
