@@ -12,7 +12,9 @@ test('terminal tabs physically stop their exact run before UI removal', () => {
 
 test('group close uses atomic ownership validation and preserves UI on failure', () => {
   const close = source.slice(source.indexOf('const closeGroup = async'), source.indexOf('const openFile'));
-  assert.ok(close.indexOf('await closeWorkbenchPtyTabs') < close.indexOf('removeStoreGroup'));
+  assert.ok(close.indexOf('await checkpointLocalEditorDocuments') < close.indexOf('await closeWorkbenchPtyTabs'));
+  assert.ok(close.indexOf('await closeWorkbenchPtyTabs') < close.indexOf('commitLocalEditorDocumentRelease'));
+  assert.ok(close.indexOf('commitLocalEditorDocumentRelease') < close.indexOf('removeStoreGroup'));
   assert.match(close, /catch \(reason\)/);
   assert.doesNotMatch(close.slice(close.indexOf('catch')), /removeStoreGroup/);
 });

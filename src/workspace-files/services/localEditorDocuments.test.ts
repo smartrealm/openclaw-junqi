@@ -23,8 +23,9 @@ test('deleted files tombstone the shared controller before releasing the final o
 test('document release checkpoints drafts and refuses unresolved conflicts', () => {
   assert.match(service, /status === 'conflicted'/);
   assert.match(service, /status === 'dirty' \|\| status === 'saving' \|\| status === 'error'/);
-  assert.match(service, /Validate every lease before checkpointing or releasing any owner/);
+  assert.match(service, /Validate every lease before checkpointing any document/);
   assert.match(service, /Lease mutation is the commit phase/);
-  assert.ok(service.indexOf('await item.document.save()') < service.indexOf('item.documentOwners.delete'));
+  assert.ok(service.indexOf('await item.document.save()') < service.indexOf('export function commitLocalEditorDocumentRelease'));
+  assert.ok(service.indexOf('export function commitLocalEditorDocumentRelease') < service.indexOf('item.documentOwners.delete'));
   assert.match(service, /item\.documentOwners\.size > 1/);
 });

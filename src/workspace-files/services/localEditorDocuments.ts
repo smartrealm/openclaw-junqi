@@ -40,19 +40,23 @@ export interface LocalEditorDocumentLease {
   ownerId: string;
 }
 
-export async function releaseLocalEditorDocuments(leases: LocalEditorDocumentLease[]): Promise<void> {
+function ownedLeases(leases: LocalEditorDocumentLease[]) {
   const unique = [...new Map(leases.map((lease) => [
     `${key(lease.rootPath, lease.path)}\u0000${lease.ownerId}`,
     lease,
   ])).values()];
-  const owned = unique.flatMap((lease) => {
+  return unique.flatMap((lease) => {
     const documentKey = key(lease.rootPath, lease.path);
     const documentOwners = owners.get(documentKey);
     if (!documentOwners?.has(lease.ownerId)) return [];
     const scope = localEditorScope(lease.rootPath);
     return [{ lease, documentKey, documentOwners, scope, document: manager.open(scope, lease.path) }];
   });
-  // Validate every lease before checkpointing or releasing any owner.
+}
+
+export async function checkpointLocalEditorDocuments(leases: LocalEditorDocumentLease[]): Promise<void> {
+  const owned = ownedLeases(leases);
+  // Validate every lease before checkpointing any document.
   for (const item of owned) {
     if (item.documentOwners.size === 1 && item.document.snapshot().status === 'conflicted') {
       throw new Error('Document has an unresolved external-change conflict');
@@ -68,6 +72,10 @@ export async function releaseLocalEditorDocuments(leases: LocalEditorDocumentLea
       }
     }
   }
+}
+
+export function commitLocalEditorDocumentRelease(leases: LocalEditorDocumentLease[]): void {
+  const owned = ownedLeases(leases);
   // Lease mutation is the commit phase and runs only after every checkpoint.
   for (const item of owned) {
     item.documentOwners.delete(item.lease.ownerId);
@@ -75,6 +83,11 @@ export async function releaseLocalEditorDocuments(leases: LocalEditorDocumentLea
     owners.delete(item.documentKey);
     manager.close(item.scope, item.lease.path);
   }
+}
+
+export async function releaseLocalEditorDocuments(leases: LocalEditorDocumentLease[]): Promise<void> {
+  await checkpointLocalEditorDocuments(leases);
+  commitLocalEditorDocumentRelease(leases);
 }
 
 export function releaseLocalEditorDocument(rootPath: string, path: string, ownerId: string): Promise<void> {
