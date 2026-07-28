@@ -17,7 +17,6 @@ const readDir = async (path: string) => {
 test('all visible theme selectors use the shared transition service', async () => {
   const files = await Promise.all([
     readDir('../pages/SetupPage/'),
-    read('../components/shared/AppSettingsDialog.tsx'),
     read('../components/Layout/StatusBar.tsx'),
   ]);
   for (const source of files) {

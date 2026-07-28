@@ -1,33 +1,14 @@
 // ── GitDiffViewer — diff display for commits and working-tree files ───────────
-// Ported from junqi's GitDiffViewer with --aegis-* CSS var rewrites.
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import { Columns2, FileCode, Rows3, X } from "lucide-react";
 import { DiffFileBlock } from "./DiffFileBlock";
 import { parseDiff } from "./parseDiff";
 import type { DiffViewMode } from "./types";
 
 const VIEW_MODE_KEY = "junqi.diffViewMode";
-
-// ── i18n fallback ──
-
-const EN: Record<string, string> = {
-  "git.diffViewMode": "Diff view mode",
-  "git.singleColumnDiff": "Single column diff",
-  "git.twoColumnDiff": "Two column diff",
-  "git.closeDiff": "Close diff",
-  "git.loadingDiff": "Loading diff...",
-  "git.noChanges": "No changes",
-  "common.fileChanged": "{count} file changed",
-  "common.filesChanged": "{count} files changed",
-};
-
-function t(key: string, params?: Record<string, string | number>): string {
-  const template = EN[key] ?? key;
-  if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? `{${k}}`));
-}
 
 // ── Props ──
 
@@ -86,6 +67,7 @@ export function GitDiffViewer({
   title,
   onClose,
 }: Props) {
+  const { t } = useTranslation();
   const [diff, setDiff] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,8 +86,10 @@ export function GitDiffViewer({
   }, [viewMode]);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
+    setDiff("");
 
     const loadDiff = async () => {
       try {
@@ -123,15 +107,18 @@ export function GitDiffViewer({
         } else {
           result = "";
         }
-        setDiff(result);
+        if (!cancelled) setDiff(result);
       } catch (e) {
-        setError(String(e));
+        if (!cancelled) setError(String(e));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-    loadDiff();
+    void loadDiff();
+    return () => {
+      cancelled = true;
+    };
   }, [projectPath, mode, commitHash, filePath, staged]);
 
   const { parsedFiles, totalAdditions, totalDeletions } = useMemo(() => {
@@ -175,7 +162,7 @@ export function GitDiffViewer({
             marginTop: 2, fontSize: 12, color: "var(--aegis-text-dim)",
           }}>
             <span>
-              {t(parsedFiles.length === 1 ? "common.fileChanged" : "common.filesChanged", {
+              {t(parsedFiles.length === 1 ? "gitDiff.fileChanged" : "gitDiff.filesChanged", {
                 count: parsedFiles.length,
               })}
             </span>
@@ -187,7 +174,7 @@ export function GitDiffViewer({
         {/* View toggle */}
         <div
           role="group"
-          aria-label={t("git.diffViewMode")}
+          aria-label={t("gitDiff.viewMode")}
           style={{
             display: "inline-flex", alignItems: "center", gap: 2,
             padding: 2, border: "1px solid var(--aegis-border)",
@@ -196,14 +183,14 @@ export function GitDiffViewer({
         >
           <ViewToggleButton
             active={viewMode === "unified"}
-            title={t("git.singleColumnDiff")}
+            title={t("gitDiff.singleColumn")}
             onClick={() => setViewMode("unified")}
           >
             <Rows3 size={15} />
           </ViewToggleButton>
           <ViewToggleButton
             active={viewMode === "split"}
-            title={t("git.twoColumnDiff")}
+            title={t("gitDiff.twoColumn")}
             onClick={() => setViewMode("split")}
           >
             <Columns2 size={15} />
@@ -214,8 +201,8 @@ export function GitDiffViewer({
         <button
           type="button"
           onClick={onClose}
-          title={t("git.closeDiff")}
-          aria-label={t("git.closeDiff")}
+          title={t("gitDiff.close")}
+          aria-label={t("gitDiff.close")}
           style={{
             width: 28, height: 28, background: "transparent",
             border: "none", cursor: "pointer", borderRadius: 6,
@@ -236,7 +223,7 @@ export function GitDiffViewer({
               fontSize: 13, textAlign: "center",
             }}
           >
-            {t("git.loadingDiff")}
+            {t("gitDiff.loading")}
           </div>
         ) : error ? (
           <div style={{ padding: 24, color: "rgb(var(--aegis-danger))", fontSize: 13 }}>
@@ -249,7 +236,7 @@ export function GitDiffViewer({
               fontSize: 13, textAlign: "center",
             }}
           >
-            {t("git.noChanges")}
+            {t("gitDiff.noChanges")}
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: "100%" }}>

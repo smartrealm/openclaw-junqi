@@ -89,6 +89,9 @@ docs/
 - [JunQi Namespace 审计](quality/junqi-namespace-audit.md)
 - [JunQi Namespace 计划](quality/junqi-namespace-plan.md)
 - [技能管理入口与双路由审计](quality/skill-management-route-audit-2026-07-27.md)
+- [字体设置与 Orca 对齐审计](quality/font-settings-orca-parity-audit-2026-07-28.md)
+- [设置与运行时一致性审计](quality/settings-runtime-consistency-audit-2026-07-28.md)
+- [Vite 生产分包审计](quality/vite-chunking-audit-2026-07-28.md)
 
 ## 产品设计草案
 

@@ -7,10 +7,9 @@ export { NotificationBell, type NotificationBellHandle } from './NotificationBel
 export { UsagePopover } from './UsagePopover';
 export { TimelineView, type TimelineTask } from './TimelineView';
 export { WelcomePage } from './WelcomePage';
-export { AppSettingsDialog } from './AppSettingsDialog';
 export { PromptEditor, type PromptEditorProps, type ImageAttach } from './PromptEditor';
 export { ToolCallActivityPill, type ToolCallEvent, type ToolStats } from './ToolCallHistoryPopover';
-export { GlassCard } from './GlassCard';
+export { GlassCard, GlassCardEnterMotionScope } from './GlassCard';
 export { PageTransition } from './PageTransition';
 export { OpenClawUpdatePanel, type OpenClawUpdatePanelProps } from './OpenClawUpdatePanel';
 export { AegisIcon } from './AegisIcon';

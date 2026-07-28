@@ -533,6 +533,7 @@ export function useSetupFlow(
   const {
     wizardStep,
     wizardSubmitting,
+    wizardActivity,
     wizardCanGoBack,
     wizardError,
     wizardRecoveryRequired,
@@ -1328,6 +1329,7 @@ export function useSetupFlow(
     installTarget,
     wizardStep,
     wizardSubmitting,
+    wizardActivity,
     wizardCanGoBack,
     wizardError,
     wizardRecoveryRequired,

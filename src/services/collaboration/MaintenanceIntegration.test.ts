@@ -31,7 +31,7 @@ test('storage switching uses the native Gateway transaction while official repai
   assert.doesNotMatch(storage, /setError\(String\(cause\)\)/);
   assert.match(storageCommand, /pub async fn configure_storage[\s\S]*operation_gate\.lock_owned\(\)/);
   assert.match(storageCommand, /stop_all_locked_with_compensation/);
-  for (const locale of ['zh', 'zh-TW', 'en', 'ar']) {
+  for (const locale of ['zh', 'zh-TW', 'en']) {
     const messages = source(`src/locales/${locale}.json`);
     for (const key of [
       'storage.logSaving',

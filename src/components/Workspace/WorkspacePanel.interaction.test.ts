@@ -19,7 +19,19 @@ test('workspace keeps the explorer visible beside the editor and preview', async
   assert.match(source, /<WorkspaceFileTree[\s\S]*activePath=\{open\?\.entry\.path \?\? null\}/);
   assert.match(source, /<section className="flex min-w-0 flex-1 flex-col/);
   assert.match(source, /<CodeMirror/);
-  assert.match(source, /open\.image\.data_url/);
+  assert.match(source, /<FileReadOnlyPreview/);
+  assert.match(source, /open\.preview && open\.preview\.kind !== 'text'/);
+});
+
+test('workspace mutations flush and synchronize the active preview path', async () => {
+  const source = await read('./WorkspacePanel.tsx');
+  const treeSource = await read('./WorkspaceFileTree.tsx');
+
+  assert.match(treeSource, /<FileExplorerContextMenu/);
+  assert.match(treeSource, /useFileExplorerContextActions/);
+  assert.match(source, /onBeforePathMutation=\{handleBeforePathMutation\}/);
+  assert.match(source, /onPathRenamed=\{handlePathRenamed\}/);
+  assert.match(source, /onPathDeleted=\{handlePathDeleted\}/);
 });
 
 test('agent polling with an unchanged workspace cannot reset the editor', async () => {
@@ -44,6 +56,6 @@ test('only the latest asynchronous file read may update the editor', async () =>
   const source = await read('./WorkspacePanel.tsx');
 
   assert.match(source, /const requestId = \+\+loadRequestRef\.current/);
-  assert.ok((source.match(/requestId !== loadRequestRef\.current/g) ?? []).length >= 3);
+  assert.ok((source.match(/requestId !== loadRequestRef\.current/g) ?? []).length >= 2);
   assert.match(source, /requestId === loadRequestRef\.current\) setLoadingFile\(false\)/);
 });

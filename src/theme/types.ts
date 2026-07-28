@@ -36,4 +36,5 @@ export function isThemeSetting(value: unknown): value is ThemeSetting {
 export const AEGIS_FONTS_STORAGE_KEYS = {
   uiFont: 'aegis-font-ui',
   monoFont: 'aegis-font-mono',
+  editorFont: 'aegis-font-editor',
 } as const;

@@ -1,6 +1,6 @@
 // ── DiffFileBlock — renders a single file's diff in unified or split view ─────
-// Ported from junqi's git-diff/DiffFileBlock with --aegis-* CSS var rewrites.
 import { useState, useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { DiffFile, DiffViewMode } from "./types";
 import { getGitStatusColor, getGitStatusLabel, fileName } from "./types";
@@ -11,6 +11,7 @@ interface Props {
 }
 
 export function DiffFileBlock({ file, viewMode }: Props) {
+  const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
 
   const statusLabel = getGitStatusLabel(file.status);
@@ -32,7 +33,10 @@ export function DiffFileBlock({ file, viewMode }: Props) {
     >
       {/* File header */}
       <button
+        type="button"
         onClick={() => setCollapsed((v) => !v)}
+        title={collapsed ? t("gitDiff.expandFile") : t("gitDiff.collapseFile")}
+        aria-label={collapsed ? t("gitDiff.expandFile") : t("gitDiff.collapseFile")}
         style={{
           height: 38,
           display: "flex",
@@ -92,10 +96,10 @@ export function DiffFileBlock({ file, viewMode }: Props) {
                 padding: "12px 14px",
                 color: "var(--aegis-text-dim)",
                 fontSize: 12.5,
-                fontFamily: "var(--font-mono)",
+                fontFamily: "var(--font-editor, var(--font-mono))",
               }}
             >
-              Binary file not shown
+              {t("gitDiff.binaryNotShown")}
             </div>
           ) : file.hunks.length === 0 ? (
             <div
@@ -103,10 +107,10 @@ export function DiffFileBlock({ file, viewMode }: Props) {
                 padding: "12px 14px",
                 color: "var(--aegis-text-dim)",
                 fontSize: 12.5,
-                fontFamily: "var(--font-mono)",
+                fontFamily: "var(--font-editor, var(--font-mono))",
               }}
             >
-              No textual changes
+              {t("gitDiff.noTextualChanges")}
             </div>
           ) : viewMode === "unified" ? (
             <UnifiedView file={file} />
@@ -123,7 +127,7 @@ export function DiffFileBlock({ file, viewMode }: Props) {
 
 function UnifiedView({ file }: { file: DiffFile }) {
   return (
-    <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: "22px" }}>
+    <div style={{ fontFamily: "var(--font-editor, var(--font-mono))", fontSize: 12, lineHeight: "22px" }}>
       {file.hunks.map((hunk, hi) => (
         <div key={hi}>
           {/* Hunk header */}
@@ -133,7 +137,7 @@ function UnifiedView({ file }: { file: DiffFile }) {
               lineHeight: "24px",
               background: "var(--aegis-hover)",
               color: "var(--aegis-text-dim)",
-              fontFamily: "var(--font-mono)",
+              fontFamily: "var(--font-editor, var(--font-mono))",
               fontSize: 12,
               borderTop: hi > 0 ? "1px solid var(--aegis-border)" : "none",
               borderBottom: "1px solid var(--aegis-border)",
@@ -219,7 +223,7 @@ function UnifiedView({ file }: { file: DiffFile }) {
 
 function SplitView({ file }: { file: DiffFile }) {
   return (
-    <div style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+    <div style={{ fontFamily: "var(--font-editor, var(--font-mono))", fontSize: 12 }}>
       {file.hunks.map((hunk, hi) => (
         <div key={hi}>
           {/* Hunk header spans both columns */}
@@ -229,7 +233,7 @@ function SplitView({ file }: { file: DiffFile }) {
               lineHeight: "22px",
               padding: "0 12px",
               color: "var(--aegis-text-dim)",
-              fontFamily: "var(--font-mono)",
+              fontFamily: "var(--font-editor, var(--font-mono))",
               fontSize: 12.5,
               background: "var(--aegis-hover)",
               borderTop: hi > 0 ? "1px solid var(--aegis-border)" : "none",

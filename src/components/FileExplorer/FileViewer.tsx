@@ -1,19 +1,33 @@
-// ═══════════════════════════════════════════════════════════
 // FileViewer — Code editor + markdown preview + media viewer
-// Ported from junqi with --aegis-* CSS var rewrites.
-// ═══════════════════════════════════════════════════════════
 
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal, Play, X } from "lucide-react";
-import ReactCodeMirror, { EditorView } from "@uiw/react-codemirror";
-import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
-import { solarizedLight } from "@uiw/codemirror-theme-solarized";
+import { Eye, MoreHorizontal, Pencil, Play, Save, X } from "lucide-react";
+import ReactCodeMirror from "@uiw/react-codemirror";
 import type { Extension } from "@codemirror/state";
 import { loadCodeMirrorLanguage } from "@/utils/codeMirrorLanguages";
+import { aegisCodeMirrorBaseTheme, getCodeMirrorColorTheme } from "@/utils/codeMirrorTheme";
+import { pathIsTargetOrDescendant } from "./openFilePaths";
+import { isMarkdownFile } from "@/utils/filePreviewCapabilities";
+import { ExternalFileChangeBanner } from "./ExternalFileChangeBanner";
+import { FileUnavailableBanner } from "./FileUnavailableBanner";
+import { FileReadOnlyPreview } from "./FileReadOnlyPreview";
+import {
+  useFilePreviewDocument,
+  type RegisterSaveHandler,
+} from "./useFilePreviewDocument";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,24 +36,15 @@ export interface OpenFileTab {
   name: string;
 }
 
-type ThemeVariant = "dark" | "midnight" | "light" | "eyecare";
+export interface FileViewerHandle {
+  flushPath: (path: string, isDirectory: boolean) => Promise<void>;
+}
 
-type SaveStatus = "idle" | "saving" | "saved" | "error";
+export type ThemeVariant = "dark" | "midnight" | "light" | "eyecare";
 
 type TocEntry = { depth: number; text: string; id: string };
 
-type ImagePreviewData = {
-  dataUrl: string;
-  mimeType: string;
-  byteLength: number;
-};
-
 // ── File helpers ─────────────────────────────────────────────────────────────
-
-function isMarkdownFile(fileName: string): boolean {
-  const ext = fileName.split(".").pop()?.toLowerCase();
-  return ext === "md" || ext === "mdx" || ext === "markdown";
-}
 
 function isMakefile(fileName: string): boolean {
   const lower = fileName.toLowerCase();
@@ -91,19 +96,6 @@ function parseMakeTargets(content: string): string[] {
   return out;
 }
 
-function isPreviewableImageFile(fileName: string): boolean {
-  const ext = fileName.split(".").pop()?.toLowerCase();
-  return (
-    ext === "png" ||
-    ext === "jpg" ||
-    ext === "jpeg" ||
-    ext === "gif" ||
-    ext === "webp" ||
-    ext === "bmp" ||
-    ext === "svg"
-  );
-}
-
 // ── Markdown rendering ───────────────────────────────────────────────────────
 
 function renderMarkdownWithToc(content: string): { html: string; toc: TocEntry[] } {
@@ -133,46 +125,6 @@ function renderMarkdownWithToc(content: string): { html: string; toc: TocEntry[]
   const html = instance.parse(content, { async: false }) as string;
   return { html: DOMPurify.sanitize(html), toc };
 }
-
-// ── Editor base theme (rewritten to --aegis-* vars) ──────────────────────────
-
-const editorBaseTheme = EditorView.theme({
-  "&": {
-    height: "100%",
-    fontFamily: "var(--aegis-body)",
-    fontSize: "13px",
-    background: "var(--aegis-elevated)",
-  },
-  ".cm-editor": {
-    background: "var(--aegis-elevated)",
-  },
-  ".cm-scroller": {
-    overflow: "auto",
-    lineHeight: "1.6",
-    background: "var(--aegis-elevated)",
-  },
-  ".cm-content": {
-    padding: "12px 0",
-    caretColor: "var(--aegis-text)",
-    color: "var(--aegis-text)",
-  },
-  ".cm-gutters": {
-    borderRight: "1px solid var(--aegis-border)",
-    background: "var(--aegis-surface)",
-    fontSize: "12px",
-    minWidth: "44px",
-  },
-  ".cm-lineNumbers .cm-gutterElement": {
-    padding: "0 8px 0 4px",
-    color: "var(--aegis-text-dim)",
-  },
-  ".cm-activeLineGutter": {
-    background: "rgb(var(--aegis-overlay) / 0.06)",
-  },
-  ".cm-focused .cm-activeLine, .cm-activeLine": {
-    background: "rgb(var(--aegis-overlay) / 0.06)",
-  },
-});
 
 // ── Tab color helper ─────────────────────────────────────────────────────────
 
@@ -222,7 +174,7 @@ function getFileColor(name: string): string {
     case "bash":
       return "#89e051";
     default:
-      return "var(--aegis-text-dim)";
+      return "rgb(var(--aegis-text-dim))";
   }
 }
 
@@ -238,7 +190,7 @@ function MarkdownToc({
   onJump: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const minDepth = useMemo(() => Math.min(...toc.map((e) => e.depth)), [toc]);
 
   return (
@@ -247,7 +199,7 @@ function MarkdownToc({
         position: "absolute",
         right: 8,
         top: 8,
-        maxWidth: 220,
+        maxWidth: "min(220px, calc(100% - 16px))",
         maxHeight: "calc(100% - 16px)",
         overflowY: "auto",
         background: "var(--aegis-elevated)",
@@ -270,11 +222,11 @@ function MarkdownToc({
           border: "none",
           borderBottom: open ? "1px solid var(--aegis-border)" : "none",
           background: "transparent",
-          color: "var(--aegis-text-dim)",
+          color: "rgb(var(--aegis-text-dim))",
           fontSize: 11,
           fontWeight: 600,
           cursor: "pointer",
-          fontFamily: "var(--aegis-body)",
+          fontFamily: "var(--font-ui, var(--font-sans))",
           textAlign: "left",
         }}
       >
@@ -301,15 +253,15 @@ function MarkdownToc({
                     : "transparent",
                 color:
                   activeId === entry.id
-                    ? "var(--aegis-primary)"
-                    : "var(--aegis-text-muted)",
+                    ? "rgb(var(--aegis-primary))"
+                    : "rgb(var(--aegis-text-muted))",
                 fontSize: 11.5,
                 textAlign: "left",
                 cursor: "pointer",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
-                fontFamily: "var(--aegis-body)",
+                fontFamily: "var(--font-ui, var(--font-sans))",
               }}
             >
               {entry.text}
@@ -329,6 +281,8 @@ function FilePreviewPane({
   projectPath,
   themeVariant,
   previewMode,
+  active,
+  registerSaveHandler,
   onRunMakeTarget,
 }: {
   filePath: string;
@@ -336,30 +290,41 @@ function FilePreviewPane({
   projectPath: string;
   themeVariant: ThemeVariant;
   previewMode: boolean;
+  active: boolean;
+  registerSaveHandler: RegisterSaveHandler;
   onRunMakeTarget?: (target: string) => void;
 }) {
-  const editorTheme =
-    themeVariant === "dark" || themeVariant === "midnight"
-      ? githubDark
-      : themeVariant === "eyecare"
-        ? solarizedLight
-        : githubLight;
+  const editorTheme = getCodeMirrorColorTheme(themeVariant);
   const { t } = useTranslation();
-  const [content, setContent] = useState<string | null>(null);
-  const [imagePreview, setImagePreview] = useState<ImagePreviewData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const [languageExtension, setLanguageExtension] = useState<Extension>([]);
   const isMarkdown = isMarkdownFile(fileName);
-  const isPreviewableImage = isPreviewableImageFile(fileName);
+  const {
+    content,
+    preview,
+    error,
+    diskReadError,
+    loading,
+    saveStatus,
+    isDirty,
+    externallyChanged,
+    handleChange,
+    saveNow: handleSaveNow,
+    reloadFromDisk,
+    keepLocalEdits,
+  } = useFilePreviewDocument({
+    filePath,
+    projectPath,
+    active,
+    registerSaveHandler,
+    changedOnDiskError: t("file.changedOnDisk", "File changed on disk"),
+  });
+  const isTextPreview = preview?.kind === "text";
+  const readOnlyPreview = preview && preview.kind !== "text" ? preview : null;
+  const [languageExtension, setLanguageExtension] = useState<Extension>([]);
   const isMake = isMakefile(fileName);
   const makeTargets = useMemo(
     () => (isMake && content ? parseMakeTargets(content) : []),
     [isMake, content],
   );
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const showMarkdownPreview = isMarkdown && previewMode && content !== null;
@@ -399,58 +364,10 @@ function FilePreviewPane({
     return () => observer.disconnect();
   }, [showMarkdownPreview, toc]);
 
-  // Load file content
-  useEffect(() => {
-    let cancelled = false;
-
-    setLoading(true);
-    setContent(null);
-    setImagePreview(null);
-    setError(null);
-    setSaveStatus("idle");
-
-    const loadFile = isPreviewableImage
-      ? invoke<ImagePreviewData>("read_image_preview", {
-          path: filePath,
-          projectPath,
-        }).then((preview) => {
-          if (cancelled) return;
-          setImagePreview(preview);
-          setLoading(false);
-        })
-      : invoke<string>("read_file_content", {
-          path: filePath,
-          projectPath,
-        }).then((nextContent) => {
-          if (cancelled) return;
-          setContent(nextContent);
-          setLoading(false);
-        });
-
-    loadFile.catch((err) => {
-      if (cancelled) return;
-      setError(String(err));
-      setLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [filePath, projectPath, isPreviewableImage]);
-
-  // Cleanup timers
-  useEffect(
-    () => () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (savedResetRef.current) clearTimeout(savedResetRef.current);
-    },
-    [],
-  );
-
   useEffect(() => {
     let alive = true;
     setLanguageExtension([]);
-    if (isPreviewableImage || (isMarkdown && previewMode)) return;
+    if (!isTextPreview || (isMarkdown && previewMode)) return;
     loadCodeMirrorLanguage(fileName)
       .then((extension) => {
         if (alive) setLanguageExtension(extension);
@@ -461,35 +378,22 @@ function FilePreviewPane({
     return () => {
       alive = false;
     };
-  }, [fileName, isMarkdown, isPreviewableImage, previewMode]);
+  }, [fileName, isMarkdown, isTextPreview, previewMode]);
 
-  const handleChange = useCallback(
-    (value: string) => {
-      setContent(value);
-
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (savedResetRef.current) clearTimeout(savedResetRef.current);
-
-      setSaveStatus("saving");
-      saveTimerRef.current = setTimeout(async () => {
-        try {
-          await invoke("write_file_content", {
-            path: filePath,
-            content: value,
-            projectPath,
-          });
-          setSaveStatus("saved");
-          savedResetRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
-        } catch {
-          setSaveStatus("error");
-        }
-      }, 1500);
-    },
-    [filePath, projectPath],
-  );
+  useEffect(() => {
+    if (!active || !isTextPreview || content === null || previewMode) return;
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        handleSaveNow();
+      }
+    };
+    window.addEventListener("keydown", handleSaveShortcut);
+    return () => window.removeEventListener("keydown", handleSaveShortcut);
+  }, [active, content, handleSaveNow, isTextPreview, previewMode]);
 
   const extensions = useMemo(
-    () => [languageExtension, editorBaseTheme],
+    () => [languageExtension, aegisCodeMirrorBaseTheme],
     [languageExtension],
   );
 
@@ -502,11 +406,13 @@ function FilePreviewPane({
           ? t("file.saveFailed", "Save failed")
           : null;
 
-  const statusLabel = isPreviewableImage
-    ? imagePreview
-      ? `${imagePreview.mimeType} - ${t("file.readOnly", "Read-only")}`
-      : t("file.imagePreview", "Image preview")
-    : saveLabel;
+  const statusLabel = diskReadError
+    ? t("file.unavailableOnDisk", "Unavailable on disk")
+    : readOnlyPreview
+      ? `${readOnlyPreview.mimeType ?? t("file.binaryFile", "Binary file")} - ${t("file.readOnly", "Read-only")}`
+      : externallyChanged
+        ? t("file.changedOnDisk", "Changed on disk")
+        : saveLabel ?? (previewMode ? t("file.previewing", "Preview") : t("file.editing", "Editing"));
 
   return (
     <div
@@ -520,6 +426,15 @@ function FilePreviewPane({
         background: "var(--aegis-elevated)",
       }}
     >
+      {diskReadError ? (
+        <FileUnavailableBanner onRetry={() => void reloadFromDisk()} />
+      ) : externallyChanged ? (
+        <ExternalFileChangeBanner
+          onReload={() => void reloadFromDisk({ discardLocalEdits: true })}
+          onKeepEdits={keepLocalEdits}
+        />
+      ) : null}
+
       {/* Content area */}
       <div
         style={{
@@ -538,7 +453,7 @@ function FilePreviewPane({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "var(--aegis-text-dim)",
+              color: "rgb(var(--aegis-text-dim))",
               fontSize: 12,
             }}
           >
@@ -554,7 +469,7 @@ function FilePreviewPane({
               justifyContent: "center",
               height: "100%",
               gap: 10,
-              color: "var(--aegis-text-muted)",
+              color: "rgb(var(--aegis-text-muted))",
             }}
           >
             <span style={{ fontSize: 12.5 }}>{error}</span>
@@ -562,29 +477,13 @@ function FilePreviewPane({
         )}
         {!loading &&
           !error &&
-          (isPreviewableImage && imagePreview ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                padding: 16,
-                background: "rgb(var(--aegis-overlay) / 0.03)",
-              }}
-            >
-              <img
-                src={imagePreview.dataUrl}
-                alt={fileName}
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: "100%",
-                  objectFit: "contain",
-                  borderRadius: 8,
-                }}
-                draggable={false}
-              />
-            </div>
+          (readOnlyPreview ? (
+            <FileReadOnlyPreview
+              preview={readOnlyPreview}
+              fileName={fileName}
+              filePath={filePath}
+              projectPath={projectPath}
+            />
           ) : content !== null ? (
             isMarkdown && previewMode ? (
               <>
@@ -639,8 +538,8 @@ function FilePreviewPane({
         <span
           style={{
             fontSize: 11,
-            color: "var(--aegis-text-muted)",
-            fontFamily: "var(--aegis-body)",
+            color: "rgb(var(--aegis-text-muted))",
+            fontFamily: "var(--font-ui, var(--font-sans))",
           }}
         >
           {filePath}
@@ -663,7 +562,7 @@ function FilePreviewPane({
               style={{
                 fontSize: 10,
                 fontWeight: 600,
-                color: "var(--aegis-text-dim)",
+                color: "rgb(var(--aegis-text-dim))",
                 textTransform: "uppercase",
                 letterSpacing: 0.5,
                 alignSelf: "center",
@@ -680,12 +579,12 @@ function FilePreviewPane({
                 title={`Run \`make ${target}\` in the project terminal`}
                 style={{
                   fontSize: 10.5,
-                  fontFamily: "var(--aegis-mono, monospace)",
+                  fontFamily: "var(--font-editor, var(--font-mono))",
                   padding: "2px 8px",
                   borderRadius: 4,
                   border: "1px solid var(--aegis-border)",
                   background: "var(--aegis-surface)",
-                  color: "var(--aegis-text-secondary)",
+                  color: "rgb(var(--aegis-text-secondary))",
                   cursor: "pointer",
                   lineHeight: 1.4,
                   display: "inline-flex",
@@ -695,11 +594,11 @@ function FilePreviewPane({
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = "var(--aegis-accent)";
-                  e.currentTarget.style.color = "var(--aegis-text)";
+                  e.currentTarget.style.color = "rgb(var(--aegis-text))";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = "var(--aegis-surface)";
-                  e.currentTarget.style.color = "var(--aegis-text-secondary)";
+                  e.currentTarget.style.color = "rgb(var(--aegis-text-secondary))";
                 }}
               >
                 <Play size={10} aria-hidden="true" />
@@ -716,12 +615,28 @@ function FilePreviewPane({
               color:
                 saveStatus === "error"
                   ? "var(--aegis-danger)"
-                  : "var(--aegis-text-muted)",
-              fontFamily: "var(--aegis-body)",
+                  : "rgb(var(--aegis-text-muted))",
+              fontFamily: "var(--font-ui, var(--font-sans))",
             }}
           >
             {statusLabel}
           </span>
+        )}
+        {isTextPreview && content !== null && !previewMode && (
+          <button
+            type="button"
+            onClick={handleSaveNow}
+            disabled={
+              Boolean(diskReadError)
+              || externallyChanged
+              || (!isDirty && saveStatus !== "error")
+            }
+            title={t("file.saveNow", "Save (Ctrl/Cmd+S)")}
+            aria-label={t("file.saveNow", "Save (Ctrl/Cmd+S)")}
+            className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-default disabled:opacity-35"
+          >
+            <Save size={11} />
+          </button>
         )}
       </div>
     </div>
@@ -730,7 +645,19 @@ function FilePreviewPane({
 
 // ── FileViewer ───────────────────────────────────────────────────────────────
 
-export function FileViewer({
+export const FileViewer = forwardRef<FileViewerHandle, {
+  tabs: OpenFileTab[];
+  activeFilePath: string | null;
+  projectPath: string;
+  onSelectTab: (path: string) => void;
+  onCloseTab: (path: string) => void;
+  onCloseOtherTabs: (path: string) => void;
+  onCloseTabsToRight: (path: string) => void;
+  onCloseTabsToLeft: (path: string) => void;
+  onCloseAllTabs: () => void;
+  themeVariant?: ThemeVariant;
+  onRunMakeTarget?: (target: string) => void;
+}>(function FileViewer({
   tabs,
   activeFilePath,
   projectPath,
@@ -742,24 +669,7 @@ export function FileViewer({
   onCloseAllTabs,
   themeVariant = "dark",
   onRunMakeTarget,
-}: {
-  tabs: OpenFileTab[];
-  activeFilePath: string | null;
-  projectPath: string;
-  onSelectTab: (path: string) => void;
-  onCloseTab: (path: string) => void;
-  onCloseOtherTabs: (path: string) => void;
-  onCloseTabsToRight: (path: string) => void;
-  onCloseTabsToLeft: (path: string) => void;
-  onCloseAllTabs: () => void;
-  themeVariant?: ThemeVariant;
-  /**
-   * Called when the user clicks a target button on a parsed Makefile.
-   * Receives the target name (e.g. "build", "test", "clean") — caller is
-   * responsible for routing it to the right terminal session.
-   */
-  onRunMakeTarget?: (target: string) => void;
-}) {
+}, ref) {
   const { t } = useTranslation();
   const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
   const [menuOpen, setMenuOpen] = useState(false);
@@ -769,10 +679,27 @@ export function FileViewer({
     path: string;
   } | null>(null);
   const tabMenuRef = useRef<HTMLDivElement | null>(null);
+  const saveHandlersRef = useRef(new Map<string, () => Promise<void>>());
   const [tabMenuPos, setTabMenuPos] = useState<{
     left: number;
     top: number;
   } | null>(null);
+
+  const registerSaveHandler = useCallback<RegisterSaveHandler>((path, handler) => {
+    saveHandlersRef.current.set(path, handler);
+    return () => {
+      if (saveHandlersRef.current.get(path) === handler) saveHandlersRef.current.delete(path);
+    };
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    flushPath: async (path, isDirectory) => {
+      const handlers = [...saveHandlersRef.current.entries()]
+        .filter(([openPath]) => pathIsTargetOrDescendant(openPath, path, isDirectory))
+        .map(([, handler]) => handler());
+      await Promise.all(handlers);
+    },
+  }), []);
 
   // Clamp menu to viewport
   useLayoutEffect(() => {
@@ -821,7 +748,7 @@ export function FileViewer({
     setPreviewModes((prev) => {
       const next: Record<string, boolean> = {};
       for (const tab of tabs) {
-        if (prev[tab.path]) next[tab.path] = true;
+        if (Object.prototype.hasOwnProperty.call(prev, tab.path)) next[tab.path] = prev[tab.path];
       }
       return Object.keys(next).length === Object.keys(prev).length
         ? prev
@@ -839,8 +766,8 @@ export function FileViewer({
 
   if (!activeTab) return null;
 
-  const activePreviewMode = !!previewModes[activeTab.path];
   const activeIsMarkdown = isMarkdownFile(activeTab.name);
+  const activePreviewMode = activeIsMarkdown && (previewModes[activeTab.path] ?? true);
   const canCloseOtherTabs = tabs.length > 1;
   const activeTabIndex = tabs.findIndex((tab) => tab.path === activeTab.path);
   const canCloseTabsToRight =
@@ -921,7 +848,7 @@ export function FileViewer({
                   border: "none",
                   borderRight: "1px solid var(--aegis-border)",
                   borderTop: isActive
-                    ? "2px solid var(--aegis-primary)"
+                    ? "2px solid rgb(var(--aegis-primary))"
                     : "2px solid transparent",
                   background: isActive
                     ? "var(--aegis-elevated)"
@@ -929,8 +856,8 @@ export function FileViewer({
                   fontSize: 12.5,
                   fontWeight: isActive ? 500 : 400,
                   color: isActive
-                    ? "var(--aegis-text)"
-                    : "var(--aegis-text-secondary)",
+                    ? "rgb(var(--aegis-text))"
+                    : "rgb(var(--aegis-text-secondary))",
                   cursor: "pointer",
                   flexShrink: 0,
                 }}
@@ -967,7 +894,7 @@ export function FileViewer({
                     borderRadius: 3,
                     display: "flex",
                     alignItems: "center",
-                    color: "var(--aegis-text-dim)",
+                    color: "rgb(var(--aegis-text-dim))",
                     marginLeft: 2,
                   }}
                   role="button"
@@ -996,7 +923,7 @@ export function FileViewer({
               onClick={() =>
                 setPreviewModes((prev) => ({
                   ...prev,
-                  [activeTab.path]: !prev[activeTab.path],
+                  [activeTab.path]: !(prev[activeTab.path] ?? true),
                 }))
               }
               title={
@@ -1014,10 +941,10 @@ export function FileViewer({
                 alignItems: "center",
                 gap: 4,
                 color: activePreviewMode
-                  ? "var(--aegis-primary)"
-                  : "var(--aegis-text-dim)",
+                  ? "rgb(var(--aegis-primary))"
+                  : "rgb(var(--aegis-text-dim))",
                 fontSize: 11.5,
-                fontFamily: "var(--aegis-body)",
+                fontFamily: "var(--font-ui, var(--font-sans))",
                 flexShrink: 0,
               }}
               onMouseEnter={(e) =>
@@ -1027,9 +954,8 @@ export function FileViewer({
                 (e.currentTarget.style.background = "none")
               }
             >
-              {activePreviewMode
-                ? t("common.edit", "Edit")
-                : t("common.preview", "Preview")}
+              {activePreviewMode ? <Pencil size={13} /> : <Eye size={13} />}
+              {activePreviewMode ? t("common.edit", "Edit") : t("common.preview", "Preview")}
             </button>
           )}
 
@@ -1047,7 +973,7 @@ export function FileViewer({
                 borderRadius: 4,
                 display: "flex",
                 alignItems: "center",
-                color: "var(--aegis-text-dim)",
+                color: "rgb(var(--aegis-text-dim))",
               }}
               onMouseEnter={(e) =>
                 (e.currentTarget.style.background = "var(--aegis-hover)")
@@ -1083,7 +1009,7 @@ export function FileViewer({
                     minWidth: 160,
                     padding: "4px 0",
                     fontSize: 12,
-                    color: "var(--aegis-menu-text)",
+                    color: "rgb(var(--aegis-menu-text))",
                   }}
                 >
                   <TabMenuItem
@@ -1153,7 +1079,9 @@ export function FileViewer({
                 fileName={tab.name}
                 projectPath={projectPath}
                 themeVariant={themeVariant}
-                previewMode={!!previewModes[tab.path]}
+                previewMode={isMarkdownFile(tab.name) && (previewModes[tab.path] ?? true)}
+                active={isActive}
+                registerSaveHandler={registerSaveHandler}
                 onRunMakeTarget={onRunMakeTarget}
               />
             </div>
@@ -1162,7 +1090,7 @@ export function FileViewer({
       </div>
 
       {/* Right-click tab context menu */}
-      {tabMenu && tabMenuIndex !== -1 && (
+      {tabMenu && tabMenuIndex !== -1 && createPortal(
         <div
           ref={tabMenuRef}
           style={{
@@ -1170,7 +1098,7 @@ export function FileViewer({
             left: tabMenuPos?.left ?? tabMenu.x,
             top: tabMenuPos?.top ?? tabMenu.y,
             visibility: tabMenuPos ? "visible" : "hidden",
-            zIndex: 300,
+            zIndex: 2147483001,
             background: "var(--aegis-menu-bg)",
             border: "1px solid var(--aegis-menu-border)",
             borderRadius: 8,
@@ -1178,7 +1106,7 @@ export function FileViewer({
             minWidth: 160,
             padding: "4px 0",
             fontSize: 12,
-            color: "var(--aegis-menu-text)",
+            color: "rgb(var(--aegis-menu-text))",
           }}
         >
           <TabMenuItem
@@ -1220,11 +1148,12 @@ export function FileViewer({
               setTabMenu(null);
             }}
           />
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
-}
+});
 
 // ── TabMenuItem ──────────────────────────────────────────────────────────────
 
@@ -1254,10 +1183,10 @@ function TabMenuItem({
         border: "none",
         textAlign: "left",
         fontSize: 12,
-        fontFamily: "var(--aegis-body)",
+        fontFamily: "var(--font-ui, var(--font-sans))",
         color: disabled
           ? "var(--aegis-text-dim)"
-          : "var(--aegis-menu-text)",
+          : "rgb(var(--aegis-menu-text))",
         background: "transparent",
         opacity: disabled ? 0.4 : 1,
       }}

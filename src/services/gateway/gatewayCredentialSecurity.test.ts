@@ -361,7 +361,7 @@ describe('Gateway credential security regression gates', () => {
       (connectionOptions) => new GatewayConnection(connectionOptions),
       { pairingRetryMs: 60_000, pairingTimeoutMs: 120_000 },
     );
-    const resultPromise = requestPrivileged('wizard.next', { sessionId: 'wizard-1' });
+    const resultPromise = requestPrivileged('wizard.next', { sessionId: 'wizard-1' }, null);
     await waitForSocketCount(1);
     const socket = MemoryWebSocket.instances[0];
     socket.onSend = (message) => {
@@ -441,6 +441,33 @@ describe('Gateway credential security regression gates', () => {
     await turn();
     assert.equal(MemoryWebSocket.instances.length, 2, 'transient close must not reconnect');
     await invalidateGatewayRuntimeIdentity(preservedIdentity.connectionId, async () => true);
+  });
+
+  it('expires a queued admin request from enqueue time and never dispatches it later', async () => {
+    resetSockets();
+    const requestPrivileged = requesterWithRealTransientConnections();
+    const firstResult = requestPrivileged('wizard.next', { sessionId: 'stale' }, null);
+    await waitForSocketCount(1);
+
+    const firstSocket = MemoryWebSocket.instances[0];
+    firstSocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(firstSocket, message, 'privileged-stale');
+      }
+      // Keep the Wizard RPC pending to reproduce a stale serialized lane.
+    };
+    challenge(firstSocket);
+    await turn();
+    assert.deepEqual(firstSocket.sent.map((message) => message.method), ['connect', 'wizard.next']);
+
+    const queuedResult = requestPrivileged('wizard.status', { sessionId: 'replacement' }, 1_000);
+    await assert.rejects(queuedResult, /Request timeout \(1000ms\)/);
+    assert.equal(MemoryWebSocket.instances.length, 1, 'expired queued request must not dispatch');
+
+    requestPrivileged.cancelActiveRequest();
+    await assert.rejects(firstResult, /authorization was cancelled/);
+    await turn();
+    assert.equal(MemoryWebSocket.instances.length, 1, 'expired queued request must not dispatch after lane release');
   });
 
   it('disconnects the transient socket when the privileged RPC fails', async () => {

@@ -1,5 +1,5 @@
 // PDF preview component powered by pdfjs-dist (canvas rendering, no native plugin).
-// Accepts raw base64 PDF data so it works inside Electron's strict CSP.
+// Accepts raw base64 PDF data so it works inside the desktop webview CSP.
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.min.mjs';
@@ -181,7 +181,7 @@ export function PdfPreview({ base64, onOpenExternal }: PdfPreviewProps) {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-[11px] text-aegis-text-muted hover:text-aegis-text transition-colors"
           >
             <ExternalLink size={12} />
-            {t('fileManager.openExternal', 'Open in system viewer')}
+            {t('file.openExternal', 'Open with system app')}
           </button>
         )}
       </div>
@@ -192,7 +192,7 @@ export function PdfPreview({ base64, onOpenExternal }: PdfPreviewProps) {
     return (
       <div className="h-full bg-[rgb(var(--aegis-overlay)/0.03)] p-2 flex flex-col gap-2">
         <div className="text-[11px] text-aegis-text-dim px-1">
-          {t('fileManager.openExternal', 'Open')} PDF (native fallback)
+          {t('file.openExternal', 'Open with system app')} PDF
         </div>
         <iframe
           title="pdf-native-preview"
@@ -238,7 +238,7 @@ export function PdfPreview({ base64, onOpenExternal }: PdfPreviewProps) {
             className="flex items-center gap-1 px-2 py-1 rounded hover:bg-[rgb(var(--aegis-overlay)/0.06)] text-[11px] text-aegis-text-dim hover:text-aegis-text transition-colors"
           >
             <ExternalLink size={11} />
-            {t('fileManager.openExternal', 'Open')}
+            {t('file.openExternal', 'Open with system app')}
           </button>
         )}
       </div>

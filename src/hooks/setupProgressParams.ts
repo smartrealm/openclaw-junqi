@@ -76,7 +76,7 @@ function capture2(versionPattern: RegExp, pathPattern: RegExp): ParamExtractor {
 /**
  * Full table of setup progress param rules. Order matters: first match
  * wins. Keep this in sync with `setup.*` keys in
- * `src/locales/{zh,en,ar}.json` that have placeholders.
+ * `src/locales/{zh,zh-TW,en}.json` that have placeholders.
  */
 export const SETUP_PROGRESS_PARAM_RULES: readonly ParamRule[] = [
   // Generic version rule — covers a family of `.skip` / `.upgrade` /

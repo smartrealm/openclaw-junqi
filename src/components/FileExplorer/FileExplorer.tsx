@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
-import { RotateCcw, FolderOpen, ChevronsUpDown } from "lucide-react";
+import { AlertCircle, ChevronsUpDown, FilePlus, FolderOpen, FolderPlus, RotateCcw, X } from "lucide-react";
 import { FileExplorerContextMenu } from "./ContextMenu";
 import { CreateInputRow } from "./CreateInputRow";
 import { TreeItem } from "./TreeItem";
@@ -38,12 +38,18 @@ export function FileExplorer({
   projectPath,
   projectName,
   onFileSelect,
+  onPathRenamed,
+  onPathDeleted,
+  onBeforePathMutation,
   active = true,
   width = 260,
 }: {
   projectPath: string;
   projectName: string;
   onFileSelect: (path: string, name: string) => void;
+  onPathRenamed?: (oldPath: string, newPath: string, isDirectory: boolean) => void;
+  onPathDeleted?: (path: string, isDirectory: boolean) => void;
+  onBeforePathMutation?: (path: string, isDirectory: boolean) => Promise<void>;
   active?: boolean;
   width?: number;
 }) {
@@ -59,12 +65,19 @@ export function FileExplorer({
   const [viewportHeight, setViewportHeight] = useState(500);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [creating, setCreating] = useState<{
     parentPath: string;
     kind: CreateKind;
   } | null>(null);
   const [creatingValue, setCreatingValue] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const [renaming, setRenaming] = useState<{ path: string; isDir: boolean } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renamingRef = useRef<{ path: string; isDir: boolean } | null>(null);
+  const skipRenameBlurRef = useRef(false);
+  const renameInFlightRef = useRef(false);
   const commitInFlightRef = useRef(false);
   const deleteInFlightRef = useRef(false);
   const [dragPreview, setDragPreview] = useState<{ x: number; y: number; node: TreeNode } | null>(null);
@@ -123,14 +136,21 @@ export function FileExplorer({
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
+  const openContextFile = useCallback(() => {
+    if (!ctxMenu || ctxMenu.isRoot || ctxMenu.isDir) return;
+    const name = ctxMenu.path.slice(Math.max(ctxMenu.path.lastIndexOf("/"), ctxMenu.path.lastIndexOf("\\")) + 1);
+    setCtxMenu(null);
+    setSelectedPath(ctxMenu.path);
+    onFileSelect(ctxMenu.path, name);
+  }, [ctxMenu, onFileSelect]);
+
   const openInSystemFolder = useCallback(
-    async (event: React.MouseEvent, path: string) => {
-      event.preventDefault();
-      event.stopPropagation();
+    async (path: string) => {
       setCtxMenu(null);
       try {
         await invoke("open_in_system_file_manager", { path, projectPath });
       } catch (error) {
+        setActionError(String(error));
         debugError("app", "Failed to open file in system folder", error);
         // Uses i18n key "file.failedOpenSystemFolder"
       }
@@ -139,9 +159,7 @@ export function FileExplorer({
   );
 
   const copyPath = useCallback(
-    async (event: React.MouseEvent, path: string, withAt: boolean) => {
-      event.preventDefault();
-      event.stopPropagation();
+    async (path: string, withAt: boolean) => {
       try {
         await writeClipboardText(withAt ? `@${path}` : path);
       } catch (error) {
@@ -408,23 +426,29 @@ export function FileExplorer({
 
   // ── Create file/folder ──
   const startCreate = useCallback(
-    (kind: CreateKind) => {
-      if (!ctxMenu) return;
+    (kind: CreateKind, target?: ContextMenuState) => {
+      const context = target ?? ctxMenu;
+      if (!context) return;
       let parentPath: string;
-      if (ctxMenu.isRoot) {
+      if (context.isRoot) {
         parentPath = projectPath;
-      } else if (ctxMenu.isDir) {
-        parentPath = ctxMenu.path;
+      } else if (context.isDir) {
+        parentPath = context.path;
         ensureExpanded(parentPath);
       } else {
-        parentPath = parentPathOf(ctxMenu.path);
+        parentPath = parentPathOf(context.path);
       }
       setCtxMenu(null);
+      setActionError(null);
       setCreatingValue("");
       setCreating({ parentPath, kind });
     },
     [ctxMenu, ensureExpanded, projectPath],
   );
+
+  const startCreateAtRoot = useCallback((kind: CreateKind) => {
+    startCreate(kind, { x: 0, y: 0, path: projectPath, isDir: true, isRoot: true });
+  }, [projectPath, startCreate]);
 
   const cancelCreate = useCallback(() => {
     setCreating(null);
@@ -453,6 +477,7 @@ export function FileExplorer({
         await safeInvoke("create_directory", { path: fullPath, projectPath });
       }
       if (isCancelled()) return;
+      setActionError(null);
       setCreating(null);
       setCreatingValue("");
       if (parentPath !== projectPath) {
@@ -466,6 +491,7 @@ export function FileExplorer({
       }
     } catch (error) {
       if (!isCancelled()) {
+        setActionError(String(error));
         debugError("app", "Failed to create:", error);
       }
     } finally {
@@ -482,6 +508,81 @@ export function FileExplorer({
     refresh,
     safeInvoke,
   ]);
+
+  const startRename = useCallback(() => {
+    if (!ctxMenu || ctxMenu.isRoot) return;
+    const path = ctxMenu.path;
+    const name = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+    const next = { path, isDir: ctxMenu.isDir };
+    renamingRef.current = next;
+    skipRenameBlurRef.current = false;
+    setCtxMenu(null);
+    setSelectedPath(path);
+    setRenameValue(name);
+    setRenaming(next);
+    setActionError(null);
+  }, [ctxMenu]);
+
+  const cancelRename = useCallback(() => {
+    skipRenameBlurRef.current = true;
+    renamingRef.current = null;
+    setRenaming(null);
+    setRenameValue("");
+  }, []);
+
+  const commitRename = useCallback(async () => {
+    const current = renamingRef.current;
+    if (!current || renameInFlightRef.current) return;
+    if (skipRenameBlurRef.current) {
+      skipRenameBlurRef.current = false;
+      return;
+    }
+    const newName = renameValue.trim();
+    const oldName = current.path.slice(Math.max(current.path.lastIndexOf("/"), current.path.lastIndexOf("\\")) + 1);
+    if (!newName || newName === oldName) {
+      renamingRef.current = null;
+      setRenaming(null);
+      setRenameValue("");
+      return;
+    }
+    if (newName.includes("/") || newName.includes("\\")) {
+      setActionError(t("file.invalidName", "A name cannot contain path separators."));
+      renameInputRef.current?.focus();
+      return;
+    }
+
+    renameInFlightRef.current = true;
+    try {
+      await onBeforePathMutation?.(current.path, current.isDir);
+      const newPath = await safeInvoke<string>("rename_path", {
+        path: current.path,
+        newName,
+        projectPath,
+      });
+      if (!newPath || isCancelled()) return;
+      renamingRef.current = null;
+      setRenaming(null);
+      setRenameValue("");
+      setSelectedPath(newPath);
+      setActionError(null);
+      onPathRenamed?.(current.path, newPath, current.isDir);
+      await refresh();
+    } catch (error) {
+      if (!isCancelled()) {
+        setActionError(String(error));
+        renameInputRef.current?.focus();
+        debugError("app", "Failed to rename:", error);
+      }
+    } finally {
+      renameInFlightRef.current = false;
+    }
+  }, [isCancelled, onBeforePathMutation, onPathRenamed, projectPath, refresh, renameValue, safeInvoke, t]);
+
+  useEffect(() => {
+    if (!renaming) return;
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [renaming]);
 
   // Scroll to create input when it appears
   useEffect(() => {
@@ -528,8 +629,11 @@ export function FileExplorer({
 
     deleteInFlightRef.current = true;
     try {
+      await onBeforePathMutation?.(targetPath, isDir);
       await safeInvoke("delete_path", { path: targetPath, projectPath });
       if (isCancelled()) return;
+      onPathDeleted?.(targetPath, isDir);
+      setActionError(null);
       const sep = pathSeparator(targetPath);
       const descendantPrefix = targetPath + sep;
       setSelectedPath((prev) => {
@@ -541,12 +645,13 @@ export function FileExplorer({
       await refresh();
     } catch (error) {
       if (!isCancelled()) {
+        setActionError(String(error));
         debugError("app", "Failed to delete:", error);
       }
     } finally {
       deleteInFlightRef.current = false;
     }
-  }, [ctxMenu, isCancelled, projectPath, refresh, safeInvoke, t]);
+  }, [ctxMenu, isCancelled, onBeforePathMutation, onPathDeleted, projectPath, refresh, safeInvoke, t]);
 
   // ── Render ──
   return (
@@ -576,9 +681,11 @@ export function FileExplorer({
           onClose={closeCtxMenu}
           onNewFile={() => startCreate("file")}
           onNewFolder={() => startCreate("folder")}
+          onOpen={openContextFile}
+          onRename={startRename}
           onDelete={() => void handleDelete()}
-          onOpenInSystem={(event, path) => void openInSystemFolder(event, path)}
-          onCopyPath={(event, path, withAt) => void copyPath(event, path, withAt)}
+          onOpenInSystem={(path) => void openInSystemFolder(path)}
+          onCopyPath={(path, withAt) => void copyPath(path, withAt)}
         />
       )}
 
@@ -605,6 +712,24 @@ export function FileExplorer({
         >
           {t("file.files", "Files")}
         </span>
+        <button
+          type="button"
+          onClick={() => startCreateAtRoot("file")}
+          title={t("file.newFile", "New File")}
+          aria-label={t("file.newFile", "New File")}
+          className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+        >
+          <FilePlus size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={() => startCreateAtRoot("folder")}
+          title={t("file.newFolder", "New Folder")}
+          aria-label={t("file.newFolder", "New Folder")}
+          className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+        >
+          <FolderPlus size={13} />
+        </button>
         <button
           type="button"
           onClick={() => setCompactEmptyFolders((value) => !value)}
@@ -648,6 +773,16 @@ export function FileExplorer({
           <RotateCcw size={13} />
         </button>
       </div>
+
+      {actionError && (
+        <div className="flex items-start gap-1.5 border-b border-red-500/20 bg-red-500/5 px-2 py-1.5 text-[10.5px] leading-4 text-red-400" role="status">
+          <AlertCircle size={12} className="mt-0.5 shrink-0" />
+          <span className="min-w-0 flex-1 break-words">{actionError}</span>
+          <button type="button" onClick={() => setActionError(null)} aria-label={t("common.close", "Close")} className="shrink-0 rounded p-0.5 hover:bg-red-500/10">
+            <X size={11} />
+          </button>
+        </div>
+      )}
 
       {/* Project root label */}
       <div
@@ -732,6 +867,12 @@ export function FileExplorer({
                     onContextMenu={handleContextMenu}
                     onPointerDown={handlePointerDown}
                     draggingPath={dragPreview?.node.path ?? null}
+                    renamingPath={renaming?.path ?? null}
+                    renameValue={renameValue}
+                    onRenameValueChange={setRenameValue}
+                    onRenameCommit={() => void commitRename()}
+                    onRenameCancel={cancelRename}
+                    renameInputRef={renameInputRef}
                   />
                 </div>
               );

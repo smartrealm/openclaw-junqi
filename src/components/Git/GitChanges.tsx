@@ -1,8 +1,7 @@
-// ── GitChanges — working-tree file status panel ────────────────────────────────
-// Ported from junqi's GitChanges with --aegis-* CSS var rewrites.
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
+import { useTranslation } from "react-i18next";
 import {
   RefreshCw,
   Filter,
@@ -11,7 +10,13 @@ import {
   ChevronRight,
   ChevronDown,
   Undo2,
+  X,
 } from "lucide-react";
+import { useVisibleInterval } from "@/hooks/useVisibleInterval";
+import {
+  createCoalescedAsyncRunner,
+  type CoalescedAsyncRunner,
+} from "@/utils/coalescedAsyncRunner";
 import {
   GitFileBrowser,
   GitFileViewToggle,
@@ -19,79 +24,20 @@ import {
 } from "./GitFileBrowser";
 import {
   type GitFileChange,
-  type GitFileBrowserScrollContext,
   type GitDirectoryActionTarget,
   fileName,
 } from "./types";
+import { filterGitChanges } from "./gitChangesModel";
+import { useCancellableInvoke } from "./useCancellableInvoke";
 
-// ── Cancellable invoke hook (inlined to avoid external dependency) ────────────
-
-function useCancellableInvoke() {
-  const cancelledRef = useRef(false);
-
-  useEffect(() => {
-    cancelledRef.current = false;
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, []);
-
-  const safeInvoke = useCallback(
-    async <T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T | null> => {
-      const result = await invoke<T>(cmd, args);
-      if (cancelledRef.current) return null;
-      return result;
-    },
-    [],
-  );
-
-  const isCancelled = useCallback(() => cancelledRef.current, []);
-
-  return { safeInvoke, isCancelled };
-}
+const GIT_STATUS_REFRESH_MS = 3000;
 
 // ── Props ──
 
 interface Props {
   projectPath: string;
-  currentTaskCreatedAt: number | null;
   onFileSelect: (filePath: string, staged: boolean, label: string) => void;
   width?: number;
-}
-
-// ── i18n fallback (self-contained translations) ──
-
-const EN: Record<string, string> = {
-  "git.changes": "Changes",
-  "git.currentTask": "Current Task",
-  "git.all": "All",
-  "git.noChanges": "No changes",
-  "git.filter": "Filter",
-  "git.staged": "Staged",
-  "git.modified": "Modified",
-  "git.untrackedFiles": "Untracked Files",
-  "git.stageAll": "Stage All",
-  "git.unstageAll": "Unstage All",
-  "git.discard": "Discard Changes",
-  "git.discardAll": "Discard All Changes",
-  "git.confirmDiscardTitle": "Discard changes in {name}?",
-  "git.confirmDiscardTracked": "Are you sure you want to discard changes in '{name}'? This is irreversible.",
-  "git.confirmDiscardUntracked": "Are you sure you want to delete the untracked file '{name}'? This will move it to the Trash.",
-  "git.confirmDiscardAll": "Are you sure you want to discard ALL changes? Modifications will be lost and untracked files will be moved to the Trash.",
-  "git.confirmDiscardAllTitle": "Discard all changes?",
-  "git.discardFailed": "Failed to discard: {error}",
-  "git.commitMessage": "Commit message...",
-  "git.generateCommitMessage": "Generate commit message with AI",
-  "git.enterCommitMessage": "Please enter a commit message",
-  "git.commit": "Commit",
-  "git.committing": "Committing...",
-  "common.refresh": "Refresh",
-};
-
-function t(key: string, params?: Record<string, string | number>): string {
-  const template = EN[key] ?? key;
-  if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? `{${k}}`));
 }
 
 // ── Sub-components ──
@@ -197,75 +143,94 @@ function SectionHeader({
 
 export function GitChanges({
   projectPath,
-  currentTaskCreatedAt,
   onFileSelect,
   width = 280,
 }: Props) {
+  const { t } = useTranslation();
   const [changes, setChanges] = useState<GitFileChange[]>([]);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"task" | "all">("all");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
   const [commitMsg, setCommitMsg] = useState("");
   const [committing, setCommitting] = useState(false);
   const [generatingMsg, setGeneratingMsg] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [commitMsgError, setCommitMsgError] = useState(false);
   const [textareaFocused, setTextareaFocused] = useState(false);
   const [trackedCollapsed, setTrackedCollapsed] = useState(false);
   const [untrackedCollapsed, setUntrackedCollapsed] = useState(false);
   const [fileViewMode, setFileViewMode] = useGitFileViewMode();
-  const fileListScrollRef = useRef<HTMLDivElement>(null);
-  const [fileListScrollTop, setFileListScrollTop] = useState(0);
-  const [fileListViewportHeight, setFileListViewportHeight] = useState(0);
+  const filterInputRef = useRef<HTMLInputElement>(null);
+  const projectPathRef = useRef(projectPath);
+  const refreshTaskRef = useRef<() => Promise<void>>(async () => undefined);
+  const refreshRunnerRef = useRef<CoalescedAsyncRunner | null>(null);
 
   const { safeInvoke, isCancelled } = useCancellableInvoke();
+  projectPathRef.current = projectPath;
+  const isCurrentProject = (requestPath: string) => (
+    !isCancelled() && projectPathRef.current === requestPath
+  );
 
-  useEffect(() => {
-    const el = fileListScrollRef.current;
-    if (!el) return;
-
-    const updateViewport = () => {
-      setFileListScrollTop(el.scrollTop);
-      setFileListViewportHeight(el.clientHeight);
-    };
-
-    updateViewport();
-    if (typeof ResizeObserver === "undefined") return;
-
-    const observer = new ResizeObserver(updateViewport);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  const refresh = useCallback(
-    async (options?: { clearError?: boolean }) => {
-      setLoading(true);
-      if (options?.clearError !== false) setError(null);
-      try {
-        const result = await safeInvoke<{ changes?: GitFileChange[] } | GitFileChange[]>("git_status", { projectPath });
-        if (result === null) return;
-        setChanges(result as GitFileChange[]);
-      } catch (e) {
-        if (!isCancelled()) setError(String(e));
-      } finally {
-        if (!isCancelled()) setLoading(false);
+  refreshTaskRef.current = async () => {
+    const requestPath = projectPathRef.current;
+    try {
+      const result = await safeInvoke<GitFileChange[]>("git_status", {
+        projectPath: requestPath,
+      });
+      if (result === null || projectPathRef.current !== requestPath) return;
+      setChanges(result);
+      setRefreshError(null);
+    } catch (refreshError) {
+      if (!isCancelled() && projectPathRef.current === requestPath) {
+        setRefreshError(String(refreshError));
       }
-    },
-    [projectPath, safeInvoke, isCancelled],
+    }
+  };
+  if (!refreshRunnerRef.current) {
+    refreshRunnerRef.current = createCoalescedAsyncRunner(
+      () => refreshTaskRef.current(),
+    );
+  }
+
+  const refresh = useCallback((options?: { clearError?: boolean }) => {
+    if (options?.clearError !== false) {
+      setError(null);
+      setRefreshError(null);
+    }
+    const runner = refreshRunnerRef.current;
+    if (!runner) return Promise.resolve();
+    if (!runner.isRunning()) setLoading(true);
+    return runner.run().finally(() => {
+      if (!isCancelled() && !runner.isRunning()) setLoading(false);
+    });
+  }, [isCancelled]);
+
+  useEffect(() => {
+    setChanges([]);
+    setError(null);
+    setRefreshError(null);
+    setFilterQuery("");
+    setFilterOpen(false);
+    setCommitMsg("");
+    setCommitMsgError(false);
+    setCommitting(false);
+    setGeneratingMsg(false);
+  }, [projectPath]);
+  useVisibleInterval(
+    () => void refresh({ clearError: false }),
+    GIT_STATUS_REFRESH_MS,
+    true,
+    projectPath,
   );
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (filterOpen) filterInputRef.current?.focus();
+  }, [filterOpen]);
 
-  // "Current Task" tab: files modified after task start
-  const taskChanges = useMemo(
-    () => (currentTaskCreatedAt ? changes.filter((c) => c.staged) : []),
-    [changes, currentTaskCreatedAt],
-  );
-  const allChanges = changes;
   const displayed = useMemo(
-    () => (tab === "task" ? taskChanges : allChanges),
-    [allChanges, tab, taskChanges],
+    () => filterGitChanges(changes, filterQuery),
+    [changes, filterQuery],
   );
 
   const trackedFiles = useMemo(() => displayed.filter((c) => c.status !== "?"), [displayed]);
@@ -273,48 +238,20 @@ export function GitChanges({
   const stagedFiles = useMemo(() => trackedFiles.filter((c) => c.staged), [trackedFiles]);
   const unstagedFiles = useMemo(() => trackedFiles.filter((c) => !c.staged), [trackedFiles]);
 
-  const handleFileListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    setFileListScrollTop(e.currentTarget.scrollTop);
-  }, []);
-
-  const fileListScrollContext = useMemo<GitFileBrowserScrollContext>(
-    () => ({
-      containerRef: fileListScrollRef,
-      scrollTop: fileListScrollTop,
-      viewportHeight: fileListViewportHeight,
-      layoutKey: [
-        fileViewMode,
-        trackedCollapsed,
-        untrackedCollapsed,
-        stagedFiles.length,
-        unstagedFiles.length,
-        untrackedFiles.length,
-      ].join(":"),
-    }),
-    [
-      fileListScrollTop,
-      fileListViewportHeight,
-      fileViewMode,
-      trackedCollapsed,
-      untrackedCollapsed,
-      stagedFiles.length,
-      unstagedFiles.length,
-      untrackedFiles.length,
-    ],
-  );
-
   const handleStageToggle = async (c: GitFileChange, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const requestPath = projectPath;
     try {
       if (c.staged) {
-        await invoke("git_unstage", { projectPath, filePath: c.path });
+        await invoke("git_unstage", { projectPath: requestPath, filePath: c.path });
       } else {
-        await invoke("git_stage", { projectPath, filePath: c.path });
+        await invoke("git_stage", { projectPath: requestPath, filePath: c.path });
       }
-      refresh();
+      if (!isCurrentProject(requestPath)) return;
+      await refresh();
     } catch (err) {
-      setError(String(err));
+      if (isCurrentProject(requestPath)) setError(String(err));
     }
   };
 
@@ -324,60 +261,69 @@ export function GitChanges({
   ) => {
     e.preventDefault();
     e.stopPropagation();
+    const requestPath = projectPath;
     try {
       setError(null);
       if (directory.staged) {
-        await invoke("git_unstage_files", { projectPath, filePaths: directory.filePaths });
+        await invoke("git_unstage_files", { projectPath: requestPath, filePaths: directory.filePaths });
       } else {
-        await invoke("git_stage_files", { projectPath, filePaths: directory.filePaths });
+        await invoke("git_stage_files", { projectPath: requestPath, filePaths: directory.filePaths });
       }
-      refresh();
+      if (!isCurrentProject(requestPath)) return;
+      await refresh();
     } catch (err) {
-      setError(String(err));
+      if (isCurrentProject(requestPath)) setError(String(err));
     }
   };
 
   const handleStageAll = async () => {
+    const requestPath = projectPath;
     try {
       setError(null);
-      await invoke("git_stage_all", { projectPath });
-      refresh();
+      await invoke("git_stage_all", { projectPath: requestPath });
+      if (!isCurrentProject(requestPath)) return;
+      await refresh();
     } catch (err) {
-      setError(String(err));
+      if (isCurrentProject(requestPath)) setError(String(err));
     }
   };
 
   const handleUnstageAll = async () => {
+    const requestPath = projectPath;
     try {
       setError(null);
-      await invoke("git_unstage_all", { projectPath });
-      refresh();
+      await invoke("git_unstage_all", { projectPath: requestPath });
+      if (!isCurrentProject(requestPath)) return;
+      await refresh();
     } catch (err) {
-      setError(String(err));
+      if (isCurrentProject(requestPath)) setError(String(err));
     }
   };
 
   const handleDiscardFile = async (c: GitFileChange, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const requestPath = projectPath;
     const untracked = c.status === "?";
     const name = fileName(c.path);
     const ok = await confirm(
-      t(untracked ? "git.confirmDiscardUntracked" : "git.confirmDiscardTracked", { name }),
+      t(untracked ? "gitChanges.confirmDiscardUntracked" : "gitChanges.confirmDiscardTracked", { name }),
       {
-        title: t("git.confirmDiscardTitle", { name }),
+        title: t("gitChanges.confirmDiscardTitle", { name }),
         kind: "warning",
-        okLabel: t("git.discard"),
+        okLabel: t("gitChanges.discard"),
       },
     );
-    if (!ok) return;
+    if (!ok || !isCurrentProject(requestPath)) return;
     try {
       setError(null);
-      await invoke("git_discard_file", { projectPath, filePath: c.path, untracked });
+      await invoke("git_discard_file", { projectPath: requestPath, filePath: c.path, untracked });
     } catch (err) {
-      setError(t("git.discardFailed", { error: String(err) }));
+      if (isCurrentProject(requestPath)) {
+        setError(t("gitChanges.discardFailed", { error: String(err) }));
+      }
     } finally {
-      await refresh({ clearError: false });
+      if (isCurrentProject(requestPath)) await refresh({ clearError: false });
     }
   };
 
@@ -387,60 +333,67 @@ export function GitChanges({
   ) => {
     e.preventDefault();
     e.stopPropagation();
+    const requestPath = projectPath;
     const ok = await confirm(
-      t(directory.untracked ? "git.confirmDiscardUntracked" : "git.confirmDiscardTracked", {
+      t(directory.untracked ? "gitChanges.confirmDiscardUntracked" : "gitChanges.confirmDiscardTracked", {
         name: directory.name,
       }),
       {
-        title: t("git.confirmDiscardTitle", { name: directory.name }),
+        title: t("gitChanges.confirmDiscardTitle", { name: directory.name }),
         kind: "warning",
-        okLabel: t("git.discard"),
+        okLabel: t("gitChanges.discard"),
       },
     );
-    if (!ok) return;
+    if (!ok || !isCurrentProject(requestPath)) return;
     try {
       setError(null);
       await invoke("git_discard_files", {
-        projectPath,
+        projectPath: requestPath,
         filePaths: directory.filePaths,
         untracked: directory.untracked,
       });
     } catch (err) {
-      setError(t("git.discardFailed", { error: String(err) }));
+      if (isCurrentProject(requestPath)) {
+        setError(t("gitChanges.discardFailed", { error: String(err) }));
+      }
     } finally {
-      await refresh({ clearError: false });
+      if (isCurrentProject(requestPath)) await refresh({ clearError: false });
     }
   };
 
   const handleDiscardAll = async () => {
-    const ok = await confirm(t("git.confirmDiscardAll"), {
-      title: t("git.confirmDiscardAllTitle"),
+    const requestPath = projectPath;
+    const ok = await confirm(t("gitChanges.confirmDiscardAll"), {
+      title: t("gitChanges.confirmDiscardAllTitle"),
       kind: "warning",
-      okLabel: t("git.discardAll"),
+      okLabel: t("gitChanges.discardAll"),
     });
-    if (!ok) return;
+    if (!ok || !isCurrentProject(requestPath)) return;
     try {
       setError(null);
-      await invoke("git_discard_all", { projectPath });
+      await invoke("git_discard_all", { projectPath: requestPath });
     } catch (err) {
-      setError(t("git.discardFailed", { error: String(err) }));
+      if (isCurrentProject(requestPath)) {
+        setError(t("gitChanges.discardFailed", { error: String(err) }));
+      }
     } finally {
-      await refresh({ clearError: false });
+      if (isCurrentProject(requestPath)) await refresh({ clearError: false });
     }
   };
 
   const handleGenerateMsg = async () => {
+    const requestPath = projectPath;
     setGeneratingMsg(true);
     setError(null);
     try {
-      const msg = await safeInvoke<string>("generate_commit_message", { projectPath });
-      if (msg === null) return;
-      setCommitMsg(msg as string);
+      const msg = await safeInvoke<string>("generate_commit_message", { projectPath: requestPath });
+      if (msg === null || !isCurrentProject(requestPath)) return;
+      setCommitMsg(msg);
       if (commitMsgError) setCommitMsgError(false);
     } catch (err) {
-      if (!isCancelled()) setError(String(err));
+      if (isCurrentProject(requestPath)) setError(String(err));
     } finally {
-      if (!isCancelled()) setGeneratingMsg(false);
+      if (isCurrentProject(requestPath)) setGeneratingMsg(false);
     }
   };
 
@@ -452,19 +405,18 @@ export function GitChanges({
     setCommitMsgError(false);
     setCommitting(true);
     setError(null);
+    const requestPath = projectPath;
     try {
-      await invoke("git_commit", { projectPath, message: commitMsg.trim() });
+      await invoke("git_commit", { projectPath: requestPath, message: commitMsg.trim() });
+      if (!isCurrentProject(requestPath)) return;
       setCommitMsg("");
-      refresh();
+      await refresh();
     } catch (err) {
-      setError(String(err));
+      if (isCurrentProject(requestPath)) setError(String(err));
     } finally {
-      setCommitting(false);
+      if (isCurrentProject(requestPath)) setCommitting(false);
     }
   };
-
-  const taskCount = taskChanges.length;
-  const allCount = allChanges.length;
 
   return (
     <div
@@ -491,11 +443,27 @@ export function GitChanges({
         }}
       >
         <span style={{ flex: 1, fontSize: 13, fontWeight: 650, color: "var(--aegis-text)" }}>
-          {t("git.changes")}
+          {t("gitChanges.title")}
+        </span>
+        <span
+          style={{
+            minWidth: 20,
+            padding: "0 6px",
+            borderRadius: 10,
+            background: "var(--aegis-card)",
+            border: "1px solid var(--aegis-border)",
+            color: "var(--aegis-text-dim)",
+            fontSize: 10.5,
+            textAlign: "center",
+          }}
+        >
+          {changes.length}
         </span>
         <button
-          onClick={() => refresh()}
+          type="button"
+          onClick={() => void refresh()}
           title={t("common.refresh")}
+          aria-label={t("common.refresh")}
           style={{
             background: "none", border: "none", cursor: "pointer",
             padding: 4, borderRadius: 4, color: "var(--aegis-text-dim)",
@@ -505,23 +473,34 @@ export function GitChanges({
           <RefreshCw size={13} className={loading ? "spin" : ""} />
         </button>
         <button
-          onClick={handleDiscardAll}
-          disabled={allChanges.length === 0}
-          title={t("git.discardAll")}
+          type="button"
+          onClick={() => void handleDiscardAll()}
+          disabled={changes.length === 0}
+          title={t("gitChanges.discardAll")}
+          aria-label={t("gitChanges.discardAll")}
           style={{
-            background: "none", border: "none", cursor: allChanges.length === 0 ? "default" : "pointer",
+            background: "none", border: "none", cursor: changes.length === 0 ? "default" : "pointer",
             padding: 4, borderRadius: 4, color: "var(--aegis-text-dim)",
             display: "flex", alignItems: "center",
-            opacity: allChanges.length === 0 ? 0.4 : 1,
+            opacity: changes.length === 0 ? 0.4 : 1,
           }}
         >
           <Undo2 size={13} />
         </button>
         <button
-          title={t("git.filter")}
+          type="button"
+          onClick={() => {
+            if (filterOpen) setFilterQuery("");
+            setFilterOpen((open) => !open);
+          }}
+          title={t("gitChanges.filter")}
+          aria-label={t("gitChanges.filter")}
+          aria-pressed={filterOpen}
           style={{
-            background: "none", border: "none", cursor: "pointer",
-            padding: 4, borderRadius: 4, color: "var(--aegis-text-dim)",
+            background: filterOpen ? "var(--aegis-border-hover)" : "none",
+            border: "none", cursor: "pointer",
+            padding: 4, borderRadius: 4,
+            color: filterOpen ? "var(--aegis-text)" : "var(--aegis-text-dim)",
             display: "flex", alignItems: "center",
           }}
         >
@@ -529,37 +508,76 @@ export function GitChanges({
         </button>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px 4px", flexShrink: 0 }}>
-        <button
-          onClick={() => setTab("task")}
-          style={{
-            padding: "3px 10px", borderRadius: 5, fontSize: 12,
-            fontWeight: tab === "task" ? 600 : 500, border: "none", cursor: "pointer",
-            background: tab === "task" ? "var(--aegis-border-hover)" : "none",
-            color: tab === "task" ? "var(--aegis-text)" : "var(--aegis-text-muted)",
-          }}
-        >
-          {t("git.currentTask")} {taskCount}
-        </button>
-        <button
-          onClick={() => setTab("all")}
-          style={{
-            padding: "3px 10px", borderRadius: 5, fontSize: 12,
-            fontWeight: tab === "all" ? 600 : 500, border: "none", cursor: "pointer",
-            background: tab === "all" ? "var(--aegis-border-hover)" : "none",
-            color: tab === "all" ? "var(--aegis-text)" : "var(--aegis-text-muted)",
-          }}
-        >
-          {t("git.all")} {allCount}
-        </button>
-        <div style={{ marginLeft: "auto" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", flexShrink: 0 }}>
+        {filterOpen ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              minWidth: 0,
+              flex: 1,
+              height: 28,
+              padding: "0 7px",
+              border: "1px solid var(--aegis-border)",
+              borderRadius: 5,
+              background: "var(--aegis-bg)",
+            }}
+          >
+            <Filter size={12} style={{ flexShrink: 0, color: "var(--aegis-text-dim)" }} />
+            <input
+              ref={filterInputRef}
+              value={filterQuery}
+              onChange={(event) => setFilterQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setFilterQuery("");
+                  setFilterOpen(false);
+                }
+              }}
+              placeholder={t("gitChanges.filterPlaceholder")}
+              aria-label={t("gitChanges.filterPlaceholder")}
+              style={{
+                minWidth: 0,
+                flex: 1,
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                padding: "0 6px",
+                color: "var(--aegis-text)",
+                fontSize: 11.5,
+              }}
+            />
+            {filterQuery && (
+              <button
+                type="button"
+                onClick={() => setFilterQuery("")}
+                title={t("gitChanges.clearFilter")}
+                aria-label={t("gitChanges.clearFilter")}
+                style={{
+                  display: "flex",
+                  padding: 2,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--aegis-text-dim)",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        ) : (
+          <span style={{ flex: 1, fontSize: 10.5, color: "var(--aegis-text-dim)" }}>
+            {t("gitChanges.workspaceScope")}
+          </span>
+        )}
+        <div style={{ marginLeft: "auto", flexShrink: 0 }}>
           <GitFileViewToggle mode={fileViewMode} onChange={setFileViewMode} />
         </div>
       </div>
 
       {/* Error */}
-      {error && (
+      {(error || refreshError) && (
         <div
           style={{
             margin: "0 12px 4px", padding: "6px 10px",
@@ -569,19 +587,19 @@ export function GitChanges({
             color: "rgb(var(--aegis-danger))",
           }}
         >
-          {error}
+          {error || refreshError}
         </div>
       )}
 
       {/* File list */}
       <div
-        ref={fileListScrollRef}
-        onScroll={handleFileListScroll}
         style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}
       >
         {displayed.length === 0 && !loading && (
           <div style={{ padding: "24px 16px", fontSize: 12, color: "var(--aegis-text-dim)", textAlign: "center" }}>
-            {t("git.noChanges")}
+            {filterQuery.trim()
+              ? t("gitChanges.noMatchingChanges")
+              : t("gitChanges.noChanges")}
           </div>
         )}
 
@@ -589,7 +607,7 @@ export function GitChanges({
         {trackedFiles.length > 0 && (
           <>
             <TopSectionHeader
-              label={t("git.changes")}
+              label={t("gitChanges.title")}
               count={trackedFiles.length}
               collapsed={trackedCollapsed}
               onToggleCollapse={() => setTrackedCollapsed((v) => !v)}
@@ -599,46 +617,42 @@ export function GitChanges({
                 {stagedFiles.length > 0 && (
                   <>
                     <SectionHeader
-                      label={t("git.staged")}
+                      label={t("gitChanges.staged")}
                       count={stagedFiles.length}
                       actionIcon="-"
-                      actionTitle={t("git.unstageAll")}
+                      actionTitle={t("gitChanges.unstageAll")}
                       onAction={handleUnstageAll}
                     />
                     <GitFileBrowser
                       entries={stagedFiles}
                       mode={fileViewMode}
-                      scrollContext={fileListScrollContext}
                       onFileClick={(c) =>
-                        onFileSelect(c.path, true, `${fileName(c.path)} (staged)`)
+                        onFileSelect(c.path, true, `${fileName(c.path)} (${t("gitChanges.staged")})`)
                       }
                       onStageToggle={handleStageToggle}
                       onDirectoryStageToggle={handleDirectoryStageToggle}
-                      autoCollapseLargeDirectories
                     />
                   </>
                 )}
                 {unstagedFiles.length > 0 && (
                   <>
                     <SectionHeader
-                      label={t("git.modified")}
+                      label={t("gitChanges.modified")}
                       count={unstagedFiles.length}
                       actionIcon="+"
-                      actionTitle={t("git.stageAll")}
+                      actionTitle={t("gitChanges.stageAll")}
                       onAction={handleStageAll}
                     />
                     <GitFileBrowser
                       entries={unstagedFiles}
                       mode={fileViewMode}
-                      scrollContext={fileListScrollContext}
                       onFileClick={(c) =>
-                        onFileSelect(c.path, false, `${fileName(c.path)} (unstaged)`)
+                        onFileSelect(c.path, false, `${fileName(c.path)} (${t("gitChanges.unstaged")})`)
                       }
                       onStageToggle={handleStageToggle}
                       onDirectoryStageToggle={handleDirectoryStageToggle}
                       onDiscard={handleDiscardFile}
                       onDirectoryDiscard={handleDiscardDirectory}
-                      autoCollapseLargeDirectories
                     />
                   </>
                 )}
@@ -651,7 +665,7 @@ export function GitChanges({
         {untrackedFiles.length > 0 && (
           <>
             <TopSectionHeader
-              label={t("git.untrackedFiles")}
+              label={t("gitChanges.untrackedFiles")}
               count={untrackedFiles.length}
               collapsed={untrackedCollapsed}
               onToggleCollapse={() => setUntrackedCollapsed((v) => !v)}
@@ -660,13 +674,11 @@ export function GitChanges({
               <GitFileBrowser
                 entries={untrackedFiles}
                 mode={fileViewMode}
-                scrollContext={fileListScrollContext}
-                onFileClick={(c) => onFileSelect(c.path, false, `${fileName(c.path)} (untracked)`)}
+                onFileClick={(c) => onFileSelect(c.path, false, `${fileName(c.path)} (${t("gitChanges.untracked")})`)}
                 onStageToggle={handleStageToggle}
                 onDirectoryStageToggle={handleDirectoryStageToggle}
                 onDiscard={handleDiscardFile}
                 onDirectoryDiscard={handleDiscardDirectory}
-                autoCollapseLargeDirectories
               />
             )}
           </>
@@ -684,7 +696,7 @@ export function GitChanges({
             }}
             onFocus={() => setTextareaFocused(true)}
             onBlur={() => setTextareaFocused(false)}
-            placeholder={t("git.commitMessage")}
+            placeholder={t("gitChanges.commitMessage")}
             rows={3}
             style={{
               width: "100%",
@@ -708,7 +720,7 @@ export function GitChanges({
           <button
             onClick={handleGenerateMsg}
             disabled={generatingMsg}
-            title={t("git.generateCommitMessage")}
+            title={t("gitChanges.generateCommitMessage")}
             style={{
               position: "absolute", top: 6, right: 6,
               background: "none", border: "none",
@@ -724,7 +736,7 @@ export function GitChanges({
         </div>
         {commitMsgError && (
           <div style={{ fontSize: 11.5, color: "rgb(var(--aegis-danger))", marginTop: 3, paddingLeft: 2 }}>
-            {t("git.enterCommitMessage")}
+            {t("gitChanges.enterCommitMessage")}
           </div>
         )}
         <div style={{ marginTop: 3, display: "flex" }}>
@@ -743,7 +755,7 @@ export function GitChanges({
             }}
           >
             <GitCommit size={13} />
-            {committing ? t("git.committing") : t("git.commit")}
+            {committing ? t("gitChanges.committing") : t("gitChanges.commit")}
           </button>
         </div>
       </div>

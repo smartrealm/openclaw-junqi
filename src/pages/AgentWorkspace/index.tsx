@@ -36,8 +36,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'framer-motion';
 import { GitChanges, GitDiffViewer, GitHistory } from '@/components/Git';
-import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
+import { FileViewer, type FileViewerHandle, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import { FileExplorer } from '@/components/FileExplorer';
+import {
+  pathIsTargetOrDescendant,
+  rebaseOpenFilePath,
+  rebaseOpenFileTabs,
+  removeOpenFileTabs,
+} from '@/components/FileExplorer/openFilePaths';
 import { ShellTerminalPanel } from '@/components/Terminal';
 import { getDefaultMonoFont, type FontFamily, type TerminalFontSize, type ThemeVariant } from '@/junqi/types';
 import { AgentRunView } from '@/pages/AgentRunView';
@@ -283,6 +289,7 @@ export function AgentWorkspacePage() {
   const [openDiff, setOpenDiff] = useState<DiffTarget | null>(null);
   const [openFiles, setOpenFiles] = useState<OpenFileTab[]>([]);
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
+  const fileViewerRef = useRef<FileViewerHandle>(null);
   const [resizingRightPanel, setResizingRightPanel] = useState(false);
   const [showShellTerminal, setShowShellTerminal] = useState(false);
   const [showFileSearch, setShowFileSearch] = useState(false);
@@ -695,6 +702,24 @@ export function AgentWorkspacePage() {
       return next;
     });
   }, [activeFilePath]);
+
+  const handleFilePathRenamed = useCallback((oldPath: string, newPath: string, isDirectory: boolean) => {
+    setOpenFiles((current) => rebaseOpenFileTabs(current, oldPath, newPath, isDirectory));
+    setActiveFilePath((current) => current
+      ? rebaseOpenFilePath(current, oldPath, newPath, isDirectory)
+      : null);
+  }, []);
+
+  const handleFilePathDeleted = useCallback((path: string, isDirectory: boolean) => {
+    setOpenFiles((current) => {
+      const next = removeOpenFileTabs(current, path, isDirectory);
+      setActiveFilePath((active) => {
+        if (!active || !pathIsTargetOrDescendant(active, path, isDirectory)) return active;
+        return next[next.length - 1]?.path ?? null;
+      });
+      return next;
+    });
+  }, []);
 
   const currentGitPath = selected?.worktreePath && !selected.worktreeDiscarded
     ? selected.worktreePath
@@ -1211,6 +1236,7 @@ export function AgentWorkspacePage() {
           ) : activeFilePath && openFiles.length > 0 ? (
             <WorkspaceContentScene key={`file:${activeFilePath}`}>
               <FileViewer
+                ref={fileViewerRef}
                 tabs={openFiles}
                 activeFilePath={activeFilePath}
                 projectPath={projectPath}
@@ -1377,6 +1403,9 @@ export function AgentWorkspacePage() {
                 projectPath={projectPath}
                 projectName={workspace?.name || 'Project'}
                 onFileSelect={openFile}
+                onPathRenamed={handleFilePathRenamed}
+                onPathDeleted={handleFilePathDeleted}
+                onBeforePathMutation={(path, isDirectory) => fileViewerRef.current?.flushPath(path, isDirectory) ?? Promise.resolve()}
                 active
                 width={rightPanelWidth}
               />
@@ -1386,7 +1415,6 @@ export function AgentWorkspacePage() {
             <ErrorBoundary fallbackMessage="Git 变更面板加载失败。">
               <GitChanges
                 projectPath={currentGitPath}
-                currentTaskCreatedAt={selected?.createdAt ?? null}
                 onFileSelect={(filePath, staged, title) => showDiff({ mode: 'file', filePath, staged, title })}
                 width={rightPanelWidth}
               />

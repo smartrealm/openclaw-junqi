@@ -2,7 +2,7 @@
 // FileManager — Managed Files (uploads + outputs) + Tree Explorer
 // ═══════════════════════════════════════════════════════════
 
-import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { showConfirm } from '@/components/shared/AlertDialog';
@@ -28,9 +28,16 @@ import {
 } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useChatStore } from '@/stores/chatStore';
-import type { OpenFileTab } from '@/components/FileExplorer/FileViewer';
+import type { FileViewerHandle, OpenFileTab, ThemeVariant } from '@/components/FileExplorer/FileViewer';
+import {
+  pathIsTargetOrDescendant,
+  rebaseOpenFilePath,
+  rebaseOpenFileTabs,
+  removeOpenFileTabs,
+} from '@/components/FileExplorer/openFilePaths';
 import clsx from 'clsx';
 import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
+import { useTheme } from '@/theme/useTheme';
 import {
   loadLocalBinaryPreview,
   loadLocalFilePreview,
@@ -257,6 +264,8 @@ type FileManagerView = 'outputs' | 'uploads' | 'tree';
 
 export function FileManagerPage() {
   const { t } = useTranslation();
+  const resolvedTheme = useTheme();
+  const themeVariant = resolvedTheme.replace('aegis-', '') as ThemeVariant;
   const navigate = useNavigate();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -291,6 +300,25 @@ export function FileManagerPage() {
   });
   const [treeTabs, setTreeTabs] = useState<OpenFileTab[]>([]);
   const [treeActiveFilePath, setTreeActiveFilePath] = useState<string | null>(null);
+  const treeFileViewerRef = useRef<FileViewerHandle>(null);
+
+  const handleTreePathRenamed = useCallback((oldPath: string, newPath: string, isDirectory: boolean) => {
+    setTreeTabs((current) => rebaseOpenFileTabs(current, oldPath, newPath, isDirectory));
+    setTreeActiveFilePath((current) => current
+      ? rebaseOpenFilePath(current, oldPath, newPath, isDirectory)
+      : null);
+  }, []);
+
+  const handleTreePathDeleted = useCallback((path: string, isDirectory: boolean) => {
+    setTreeTabs((current) => {
+      const next = removeOpenFileTabs(current, path, isDirectory);
+      setTreeActiveFilePath((active) => {
+        if (!active || !pathIsTargetOrDescendant(active, path, isDirectory)) return active;
+        return next[next.length - 1]?.path ?? null;
+      });
+      return next;
+    });
+  }, []);
 
   const isOutputKind = useCallback((kind?: string) => kind === 'outputs' || kind === 'output', []);
 
@@ -657,6 +685,9 @@ export function FileManagerPage() {
                   return [...prev, tab];
                 });
               }}
+              onPathRenamed={handleTreePathRenamed}
+              onPathDeleted={handleTreePathDeleted}
+              onBeforePathMutation={(path, isDirectory) => treeFileViewerRef.current?.flushPath(path, isDirectory) ?? Promise.resolve()}
               width={260}
             />
           </Suspense>
@@ -669,9 +700,11 @@ export function FileManagerPage() {
               }
             >
               <FileViewer
+                ref={treeFileViewerRef}
                 tabs={treeTabs}
                 activeFilePath={treeActiveFilePath}
                 projectPath={treeProjectPath}
+                themeVariant={themeVariant}
                 onSelectTab={setTreeActiveFilePath}
                 onCloseTab={(path) => {
                   setTreeTabs((prev) => {

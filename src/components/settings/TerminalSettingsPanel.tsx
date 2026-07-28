@@ -70,38 +70,11 @@ import {
   subscribeTerminalAppearancePreferences,
 } from '@/components/Terminal/terminalAppearancePreferences';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { FontSelector } from '@/components/settings/FontSelector';
+import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
 
 const SCROLLBACK_OPTIONS = [500, 1000, 2000, 3000, 5000] as const;
-const MONO_FONT_OPTIONS = ['', 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', 'IBM Plex Mono'] as const;
-
 type SaveState = 'idle' | 'saving' | 'saved';
-
-function PreferenceSwitch({ checked, disabled, label, onChange }: {
-  checked: boolean;
-  disabled?: boolean;
-  label: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={clsx(
-        'relative h-6 w-11 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45 disabled:cursor-not-allowed disabled:opacity-50',
-        checked ? 'border-aegis-primary/55 bg-aegis-primary/35' : 'border-aegis-border bg-aegis-input',
-      )}
-    >
-      <span className={clsx(
-        'absolute start-0.5 top-0.5 h-[18px] w-[18px] rounded-full transition-transform',
-        checked ? 'translate-x-[21px] bg-aegis-primary rtl:-translate-x-[21px]' : 'translate-x-0 bg-aegis-text-dim',
-      )} />
-    </button>
-  );
-}
 
 function TerminalAgentLaunchPreferences() {
   const { t } = useTranslation();
@@ -460,13 +433,6 @@ export function TerminalSettingsPanel() {
 
   useEffect(() => setShiftEnterNewline(preferences.shiftEnterNewline), [preferences.shiftEnterNewline]);
 
-  const fontOptions = useMemo(() => {
-    const current = monoFont.replace(/^['"]|['"],\s*(?:monospace|sans-serif)$/g, '');
-    return current && !MONO_FONT_OPTIONS.includes(current as typeof MONO_FONT_OPTIONS[number])
-      ? [...MONO_FONT_OPTIONS, current]
-      : [...MONO_FONT_OPTIONS];
-  }, [monoFont]);
-
   const showSaved = () => {
     setSaveState('saved');
     window.setTimeout(() => setSaveState('idle'), 1400);
@@ -558,12 +524,14 @@ export function TerminalSettingsPanel() {
             </div>
           </div>
 
-          <div className="grid gap-4 py-4 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
-            <div><div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.fontFamily', '等宽字体')}</div><p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.fontFamilyHint', '同时用于终端、代码块和文件预览。')}</p></div>
-            <select value={monoFont.replace(/^['"]|['"],\s*(?:monospace|sans-serif)$/g, '')} onChange={(event) => setMonoFont(event.target.value ? `'${event.target.value}', monospace` : '')} className="h-9 rounded-md border border-aegis-border bg-aegis-input px-3 text-[12px] text-aegis-text outline-none focus:border-aegis-primary/55">
-              {fontOptions.map((font) => <option key={font || 'default'} value={font}>{font || t('terminalSettings.systemDefault', '系统默认')}</option>)}
-            </select>
-          </div>
+          <FontSelector
+            value={monoFont}
+            onChange={setMonoFont}
+            label={t('terminalSettings.fontFamily', '等宽字体')}
+            description={t('terminalSettings.fontFamilyHint', '用于所有终端；编辑器字体留空时也跟随此设置。')}
+            defaultLabel={t('font.junqiDefault', 'JunQi 默认')}
+            role="mono"
+          />
 
           <div className="grid gap-4 py-4 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
             <div><div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.cursorStyle', '光标样式')}</div><p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.cursorStyleHint', '立即应用到已打开的终端。')}</p></div>
@@ -576,7 +544,7 @@ export function TerminalSettingsPanel() {
 
           <div className="py-4">
             <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.scrollback', '回滚行数')}</div>
-            <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.scrollbackHint', '应用于新打开的终端；数值越大，长时会话占用的内存越多。')}</p>
+            <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.scrollbackHint', '立即应用到已打开和新打开的终端；数值越大，长时会话占用的内存越多。')}</p>
             <div className="mt-3 inline-flex max-w-full overflow-x-auto rounded-md border border-aegis-border bg-aegis-input p-0.5" role="radiogroup" aria-label={t('terminalSettings.scrollback', '回滚行数')}>
               {SCROLLBACK_OPTIONS.map((option) => <button key={option} type="button" role="radio" aria-checked={preferences.scrollback === option} disabled={preferences.loading || saveState === 'saving'} onClick={() => void saveScrollback(option)} className={clsx('h-8 min-w-14 rounded px-2.5 font-mono text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45', preferences.scrollback === option ? 'bg-aegis-primary/15 font-semibold text-aegis-primary' : 'text-aegis-text-muted hover:bg-aegis-hover hover:text-aegis-text')}>{option}</button>)}
             </div>
@@ -587,7 +555,7 @@ export function TerminalSettingsPanel() {
       <GlassCard delay={0.08}>
         <div className="flex items-center justify-between gap-5">
           <div><div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.shiftEnter', 'Shift+Enter 换行')}</div><p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.shiftEnterHint', '在交互式终端中插入换行，不立即执行当前输入。')}</p></div>
-          <PreferenceSwitch checked={shiftEnterNewline} disabled={preferences.loading || saveState === 'saving'} label={t('terminalSettings.shiftEnter', 'Shift+Enter 换行')} onChange={(next) => void saveShiftEnter(next)} />
+          <SettingsSwitch checked={shiftEnterNewline} disabled={preferences.loading || saveState === 'saving'} label={t('terminalSettings.shiftEnter', 'Shift+Enter 换行')} onCheckedChange={(next) => void saveShiftEnter(next)} />
         </div>
       </GlassCard>
 

@@ -20,5 +20,4 @@ export type {
   DiffHunk,
   DiffFile,
   FileViewMode,
-  GitFileBrowserScrollContext,
 } from "./types";

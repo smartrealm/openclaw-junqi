@@ -19,3 +19,9 @@ test('workspace file watching uses the lifecycle-safe Tauri event subscriber', (
   assert.match(workspaceFilesSource, /subscribeTauriEvent<\{ watchId\?: unknown \}>/);
   assert.doesNotMatch(workspaceFilesSource, /import \{ listen \} from '@tauri-apps\/api\/event'/);
 });
+
+test('terminal workspace files use the shared file explorer context menu', () => {
+  assert.match(workspaceFilesSource, /<FileExplorerContextMenu/);
+  assert.match(workspaceFilesSource, /useFileExplorerContextActions/);
+  assert.doesNotMatch(workspaceFilesSource, /<TerminalKookyMenuItem/);
+});

@@ -41,3 +41,6 @@ specs/
 - [Voice runtime](quality/2026-07-21-voice-runtime-bugfix.md)
 - [Tauri listener lifecycle](quality/2026-07-22-tauri-listener-lifecycle-bugfix.md)
 - [Tauri command boundary](quality/2026-07-27-tauri-command-boundary-bugfix.md)
+- [字体设置与 Orca 对齐](quality/2026-07-28-font-settings-orca-parity.md)
+- [设置与运行时一致性](quality/2026-07-28-settings-runtime-consistency.md)
+- [Vite 生产分包](quality/2026-07-28-vite-chunking.md)

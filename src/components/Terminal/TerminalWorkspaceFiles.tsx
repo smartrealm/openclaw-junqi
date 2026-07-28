@@ -4,13 +4,18 @@ import { useTranslation } from 'react-i18next';
 import {
   ChevronDown,
   ChevronRight,
+  AlertCircle,
   File,
   Folder,
   FolderOpen,
   FolderX,
   Link,
   Loader2,
+  TextCursorInput,
 } from 'lucide-react';
+import { FileExplorerContextMenu } from '@/components/FileExplorer/ContextMenu';
+import { pathIsTargetOrDescendant, rebaseOpenFilePath } from '@/components/FileExplorer/openFilePaths';
+import { useFileExplorerContextActions } from '@/components/FileExplorer/useFileExplorerContextActions';
 import { useNotificationStore } from '@/stores/notificationStore';
 import {
   openWithSystemDefault,
@@ -24,8 +29,6 @@ import {
 } from '@/services/workspaceFs';
 import { debugError } from '@/utils/debugLog';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
-import { TERMINAL_CONTEXT_MENU_STYLE } from './terminalMenuStyles';
-import { TerminalKookyMenuDivider, TerminalKookyMenuItem } from './KookyMenu';
 import { requestTerminalInput } from './terminalChromeEvents';
 import {
   serializeTerminalWorkspacePathDrop,
@@ -38,11 +41,6 @@ import {
   type TerminalGitDiffIndex,
 } from './terminalWorkspaceTree';
 
-interface ContextMenuState {
-  x: number;
-  y: number;
-}
-
 interface TreeNodeProps {
   entry: FsEntry;
   root: string;
@@ -52,15 +50,23 @@ interface TreeNodeProps {
   selectedPath: string | null;
   onSelect: (entry: FsEntry) => void;
   onOpen: (entry: FsEntry) => void;
-  onReveal: (entry: FsEntry) => void;
-  onCopyPath: (entry: FsEntry) => void;
-  onInsertPath: (entry: FsEntry) => void;
+  onEntryContextMenu: (event: React.MouseEvent, entry: FsEntry) => void;
   onExpandedDirectoryChange: (path: string, expanded: boolean) => void;
 }
 
 function terminalWorkspaceEntryKey(entry: FsEntry): string {
   const kind = entry.is_dir ? 'directory' : 'file';
   return `${entry.path}:${kind}:${entry.is_symlink ? 'link' : 'regular'}`;
+}
+
+function terminalEntryFromPath(path: string, name: string, isDirectory = false): FsEntry {
+  const dot = name.lastIndexOf('.');
+  return {
+    name,
+    path,
+    is_dir: isDirectory,
+    extension: !isDirectory && dot > 0 && dot < name.length - 1 ? name.slice(dot + 1) : null,
+  };
 }
 
 function TerminalWorkspaceFileNode({
@@ -72,9 +78,7 @@ function TerminalWorkspaceFileNode({
   selectedPath,
   onSelect,
   onOpen,
-  onReveal,
-  onCopyPath,
-  onInsertPath,
+  onEntryContextMenu,
   onExpandedDirectoryChange,
 }: TreeNodeProps) {
   const { t } = useTranslation();
@@ -82,7 +86,6 @@ function TerminalWorkspaceFileNode({
   const [children, setChildren] = useState<FsEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [hovered, setHovered] = useState(false);
   const requestIdRef = useRef(0);
   const lastDirectoryToggleAtRef = useRef(0);
@@ -97,13 +100,6 @@ function TerminalWorkspaceFileNode({
     onExpandedDirectoryChange(entry.path, true);
     return () => onExpandedDirectoryChange(entry.path, false);
   }, [canExpand, entry.path, expanded, onExpandedDirectoryChange]);
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    const dismiss = () => setContextMenu(null);
-    document.addEventListener('mousedown', dismiss);
-    return () => document.removeEventListener('mousedown', dismiss);
-  }, [contextMenu]);
 
   useEffect(() => () => {
     requestIdRef.current += 1;
@@ -163,12 +159,6 @@ function TerminalWorkspaceFileNode({
     ? (expanded ? undefined : diffIndex.directories.get(pathKey))
     : diffIndex.files.get(pathKey);
   const pathIndent = 8 + depth * 14;
-  const menuLeft = contextMenu
-    ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 228))
-    : 0;
-  const menuTop = contextMenu
-    ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - (isDirectory ? 146 : 180)))
-    : 0;
   const rowBackground = selected
     ? 'rgb(var(--aegis-overlay) / 0.15)'
     : hovered ? 'rgb(var(--aegis-overlay) / 0.07)' : 'transparent';
@@ -185,13 +175,14 @@ function TerminalWorkspaceFileNode({
     <div className="terminal-kooky-file-tree-node">
       <button
         type="button"
+        data-file-tree-entry="true"
         draggable
         onClick={() => { void handleClick(); }}
         onDoubleClick={() => { if (!canExpand) onOpen(entry); }}
         onContextMenu={(event) => {
           event.preventDefault();
           onSelect(entry);
-          setContextMenu({ x: event.clientX, y: event.clientY });
+          onEntryContextMenu(event, entry);
         }}
         onDragStart={handleDragStart}
         title={entry.path}
@@ -249,45 +240,10 @@ function TerminalWorkspaceFileNode({
           selectedPath={selectedPath}
           onSelect={onSelect}
           onOpen={onOpen}
-          onReveal={onReveal}
-          onCopyPath={onCopyPath}
-          onInsertPath={onInsertPath}
+          onEntryContextMenu={onEntryContextMenu}
           onExpandedDirectoryChange={onExpandedDirectoryChange}
         />
       ))}
-
-      {contextMenu && (
-        <div
-          role="menu"
-          onMouseDown={(event) => event.stopPropagation()}
-          className="terminal-kooky-menu"
-          style={{
-            position: 'fixed', left: menuLeft, top: menuTop, zIndex: 700,
-            minWidth: 220, padding: 4, borderRadius: 0,
-            ...TERMINAL_CONTEXT_MENU_STYLE,
-          }}
-        >
-          {!isDirectory && (
-            <TerminalKookyMenuItem
-              label={t('terminal.openWithSystem')}
-              onClick={() => { setContextMenu(null); onOpen(entry); }}
-            />
-          )}
-          <TerminalKookyMenuItem
-            label={t('terminal.revealInFileManager')}
-            onClick={() => { setContextMenu(null); onReveal(entry); }}
-          />
-          <TerminalKookyMenuDivider />
-          <TerminalKookyMenuItem
-            label={t('terminal.copyPath')}
-            onClick={() => { setContextMenu(null); onCopyPath(entry); }}
-          />
-          <TerminalKookyMenuItem
-            label={t('terminal.insertPath')}
-            onClick={() => { setContextMenu(null); onInsertPath(entry); }}
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -339,6 +295,7 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
   const maxWatchedDirectories = 64;
   const [nativeRefreshVersion, setNativeRefreshVersion] = useState(0);
+  const [mutationRefreshVersion, setMutationRefreshVersion] = useState(0);
   const watchedPaths = useMemo(() => {
     const normalizedRoot = terminalWorkspacePathKey(root);
     const rootPrefix = normalizedRoot === '/' ? '/' : `${normalizedRoot}/`;
@@ -428,7 +385,7 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
     () => buildTerminalGitDiffIndex(gitDiffs.root, gitDiffs.files),
     [gitDiffs],
   );
-  const treeRefreshVersion = refreshVersion + nativeRefreshVersion;
+  const treeRefreshVersion = refreshVersion + nativeRefreshVersion + mutationRefreshVersion;
 
   useEffect(() => {
     setEntries(null);
@@ -473,23 +430,6 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
     }
   }, [onFileOpen, reportFailure, root]);
 
-  const handleReveal = useCallback(async (entry: FsEntry) => {
-    try {
-      await revealTerminalWorkspacePath(entry.path, root);
-    } catch (error) {
-      reportFailure('terminal.fileRevealFailedTitle', 'terminal.fileRevealFailed', error);
-    }
-  }, [reportFailure, root]);
-
-  const handleCopyPath = useCallback(async (entry: FsEntry) => {
-    try {
-      await navigator.clipboard.writeText(entry.path);
-      addToast('info', t('terminal.copyPathDoneTitle'), t('terminal.copyPathDone'));
-    } catch (error) {
-      reportFailure('terminal.copyPathFailedTitle', 'terminal.copyPathFailed', error);
-    }
-  }, [addToast, reportFailure, t]);
-
   const handleInsertPath = useCallback(async (entry: FsEntry) => {
     try {
       const input = await terminalPathInput(entry.path, root);
@@ -499,45 +439,117 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
     }
   }, [reportFailure, root]);
 
-  if (loading && entries === null) {
-    return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgb(var(--aegis-text-dim))' }}><Loader2 size={16} className="animate-spin" /></div>;
-  }
+  const refreshAfterMutation = useCallback(async () => {
+    setMutationRefreshVersion((version) => version + 1);
+    await Promise.all([refresh(false), refreshGitDiff()]);
+  }, [refresh, refreshGitDiff]);
 
-  if (rootUnavailable) {
-    return (
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 18, color: 'rgb(var(--aegis-text-dim))', textAlign: 'center' }}>
-        <FolderX size={20} strokeWidth={1.6} />
-        <span style={{ fontSize: 11 }}>{t('terminal.filesUnavailable')}</span>
-        <button type="button" onClick={() => { void refresh(); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgb(var(--aegis-primary))', fontSize: 11 }}>
-          {t('terminal.refreshFiles')}
-        </button>
-      </div>
+  const actions = useFileExplorerContextActions({
+    projectPath: root,
+    onOpenFile: (path, name) => void handleOpen(terminalEntryFromPath(path, name)),
+    onRefresh: refreshAfterMutation,
+    onPathRenamed: (oldPath, newPath, isDirectory) => {
+      setSelectedPath((current) => {
+        if (!current) return current;
+        return rebaseOpenFilePath(current, oldPath, newPath, isDirectory);
+      });
+    },
+    onPathDeleted: (path, isDirectory) => {
+      setSelectedPath((current) => current && pathIsTargetOrDescendant(current, path, isDirectory) ? null : current);
+    },
+    onRevealPath: (path) => revealTerminalWorkspacePath(path, root),
+    onError: (error) => reportFailure('terminal.fileActionFailedTitle', 'terminal.fileActionFailed', error),
+  });
+
+  const openEntryContextMenu = useCallback((event: React.MouseEvent, entry: FsEntry) => {
+    event.preventDefault();
+    event.stopPropagation();
+    actions.openContextMenu(
+      { path: entry.path, isDir: entry.is_dir, isRoot: false },
+      event.clientX,
+      event.clientY,
     );
-  }
+  }, [actions]);
 
-  if (!entries || entries.length === 0) {
-    return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, color: 'rgb(var(--aegis-text-dim))', fontSize: 11, textAlign: 'center' }}>{t('terminal.filesEmpty')}</div>;
-  }
+  const insertPathAction = useMemo(() => {
+    const target = actions.contextMenu;
+    if (!target) return [];
+    const name = target.path.slice(Math.max(target.path.lastIndexOf('/'), target.path.lastIndexOf('\\')) + 1);
+    return [{
+      id: 'insert-terminal-path',
+      label: t('terminal.insertPath'),
+      icon: <TextCursorInput size={14} />,
+      onSelect: () => {
+        actions.closeContextMenu();
+        void handleInsertPath(terminalEntryFromPath(target.path, name || target.path, target.isDir));
+      },
+    }];
+  }, [actions, handleInsertPath, t]);
+
+  const content = loading && entries === null ? (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgb(var(--aegis-text-dim))' }}>
+      <Loader2 size={16} className="animate-spin" />
+    </div>
+  ) : rootUnavailable ? (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 18, color: 'rgb(var(--aegis-text-dim))', textAlign: 'center' }}>
+      <FolderX size={20} strokeWidth={1.6} />
+      <span style={{ fontSize: 11 }}>{t('terminal.filesUnavailable')}</span>
+      <button type="button" onClick={() => { void refresh(); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgb(var(--aegis-primary))', fontSize: 11 }}>
+        {t('terminal.refreshFiles')}
+      </button>
+    </div>
+  ) : !entries || entries.length === 0 ? (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, color: 'rgb(var(--aegis-text-dim))', fontSize: 11, textAlign: 'center' }}>
+      {t('terminal.filesEmpty')}
+    </div>
+  ) : entries.map((entry) => (
+    <TerminalWorkspaceFileNode
+      key={terminalWorkspaceEntryKey(entry)}
+      entry={entry}
+      root={root}
+      depth={0}
+      refreshVersion={treeRefreshVersion}
+      diffIndex={gitDiffIndex}
+      selectedPath={selectedPath}
+      onSelect={(selected) => setSelectedPath(selected.path)}
+      onOpen={(selected) => { void handleOpen(selected); }}
+      onEntryContextMenu={openEntryContextMenu}
+      onExpandedDirectoryChange={setDirectoryExpanded}
+    />
+  ));
 
   return (
-    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '4px 4px 8px' }}>
-      {entries.map((entry) => (
-        <TerminalWorkspaceFileNode
-          key={terminalWorkspaceEntryKey(entry)}
-          entry={entry}
-          root={root}
-          depth={0}
-          refreshVersion={treeRefreshVersion}
-          diffIndex={gitDiffIndex}
-          selectedPath={selectedPath}
-          onSelect={(selected) => setSelectedPath(selected.path)}
-          onOpen={(selected) => { void handleOpen(selected); }}
-          onReveal={(selected) => { void handleReveal(selected); }}
-          onCopyPath={(selected) => { void handleCopyPath(selected); }}
-          onInsertPath={(selected) => { void handleInsertPath(selected); }}
-          onExpandedDirectoryChange={setDirectoryExpanded}
+    <div
+      style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '4px 4px 8px' }}
+      onContextMenuCapture={(event) => {
+        if ((event.target as HTMLElement).closest('[data-file-tree-entry="true"]')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        actions.openContextMenu({ path: root, isDir: true, isRoot: true }, event.clientX, event.clientY);
+      }}
+    >
+      {actions.actionError && (
+        <div className="mb-1 flex items-start gap-1.5 rounded border border-aegis-danger/25 bg-aegis-danger/10 px-2 py-1.5 text-[10px] text-aegis-danger">
+          <AlertCircle size={11} className="mt-px shrink-0" />
+          <span className="min-w-0 break-words">{actions.actionError}</span>
+        </div>
+      )}
+      {content}
+      {actions.contextMenu && (
+        <FileExplorerContextMenu
+          ctxMenu={actions.contextMenu}
+          onClose={actions.closeContextMenu}
+          onNewFile={() => actions.startCreate('file')}
+          onNewFolder={() => actions.startCreate('folder')}
+          onOpen={actions.openSelectedFile}
+          onRename={actions.startRename}
+          onDelete={() => void actions.deleteSelectedPath()}
+          onOpenInSystem={(path) => void actions.revealSelectedPath(path)}
+          onCopyPath={(path, withAt) => void actions.copySelectedPath(path, withAt)}
+          extraActions={insertPathAction}
         />
-      ))}
+      )}
+      {actions.nameDialog}
     </div>
   );
 }

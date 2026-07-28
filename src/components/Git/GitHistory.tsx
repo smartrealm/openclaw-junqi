@@ -1,7 +1,6 @@
-// ── GitHistory — commit log browser ───────────────────────────────────────────
-// Ported from junqi's GitHistory with --aegis-* CSS var rewrites.
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import {
   Search,
   RefreshCw,
@@ -20,60 +19,11 @@ import {
 } from "./GitFileBrowser";
 import type {
   GitCommit,
-  GitCommitFile,
   GitCommitDetail,
   GitRemoteCounts,
   GitBranchInfo,
 } from "./types";
-
-// ── i18n fallback ──
-
-const EN: Record<string, string> = {
-  "git.history": "History",
-  "git.pull": "Pull",
-  "git.push": "Push",
-  "git.pushing": "Pushing...",
-  "git.searchCommits": "Search commits",
-  "git.noCommitsFound": "No commits found",
-  "git.loadingDiff": "Loading diff...",
-  "git.closeDiff": "Close diff",
-  "common.refresh": "Refresh",
-  "common.loadingEllipsis": "Loading...",
-  "common.reset": "Reset",
-  "common.fileChanged": "{count} file changed",
-  "common.filesChanged": "{count} files changed",
-  "branch.searchBranches": "Search branches...",
-  "branch.noBranchesFound": "No branches found",
-};
-
-function t(key: string, params?: Record<string, string | number>): string {
-  const template = EN[key] ?? key;
-  if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? `{${k}}`));
-}
-
-// ── Cancellable invoke hook ──
-
-function useCancellableInvoke() {
-  const cancelledRef = useRef(false);
-
-  useEffect(() => {
-    cancelledRef.current = false;
-    return () => { cancelledRef.current = true; };
-  }, []);
-
-  const safeInvoke = useCallback(
-    async <T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T | null> => {
-      const result = await invoke<T>(cmd, args);
-      if (cancelledRef.current) return null;
-      return result;
-    },
-    [],
-  );
-
-  const isCancelled = useCallback(() => cancelledRef.current, []);
-  return { safeInvoke, isCancelled };
-}
+import { useCancellableInvoke } from "./useCancellableInvoke";
 
 // ── Props ──
 
@@ -158,7 +108,7 @@ function CommitRow({
           ))}
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-          <span style={{ fontSize: 10.5, color: "var(--aegis-text-dim)", fontFamily: "var(--font-mono)" }}>
+          <span style={{ fontSize: 10.5, color: "var(--aegis-text-dim)", fontFamily: "var(--font-editor, var(--font-mono))" }}>
             {commit.short_hash}
           </span>
           <span style={{ fontSize: 10.5, color: "var(--aegis-text-dim)" }}>{commit.author}</span>
@@ -223,12 +173,13 @@ function CommitDetailPanel({
   loading: boolean;
   onFileClick?: (path: string) => void;
 }) {
+  const { t } = useTranslation();
   const [fileViewMode, setFileViewMode] = useGitFileViewMode();
 
   if (loading) {
     return (
       <div style={{ padding: 16, fontSize: 12, color: "var(--aegis-text-dim)" }}>
-        {t("common.loadingEllipsis")}
+        {t("common.loading")}
       </div>
     );
   }
@@ -239,7 +190,7 @@ function CommitDetailPanel({
       <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid var(--aegis-border)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
           <GitCommitIcon size={12} color="var(--aegis-text-dim)" />
-          <span style={{ fontSize: 11, color: "var(--aegis-text-dim)", fontFamily: "var(--font-mono)" }}>
+          <span style={{ fontSize: 11, color: "var(--aegis-text-dim)", fontFamily: "var(--font-editor, var(--font-mono))" }}>
             {detail.short_hash}
           </span>
           <span style={{ fontSize: 11, color: "var(--aegis-text-dim)" }}>{detail.author}</span>
@@ -255,7 +206,7 @@ function CommitDetailPanel({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ flex: 1, fontSize: 11, color: "var(--aegis-text-dim)" }}>
-            {t(detail.files.length === 1 ? "common.fileChanged" : "common.filesChanged", {
+            {t(detail.files.length === 1 ? "gitHistory.fileChanged" : "gitHistory.filesChanged", {
               count: detail.files.length,
             })}{" "}
             <span style={{ color: "#3fb950" }}>+{detail.total_additions}</span>{" "}
@@ -279,6 +230,7 @@ function CommitDetailPanel({
 // ── Main component ──
 
 export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 280 }: Props) {
+  const { t } = useTranslation();
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [remoteCounts, setRemoteCounts] = useState<GitRemoteCounts>({
     ahead: 0, behind: 0, branch: "",
@@ -296,8 +248,13 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
   const [branchOpen, setBranchOpen] = useState(false);
   const [branchSearch, setBranchSearch] = useState("");
   const branchDropRef = useRef<HTMLDivElement>(null);
+  const projectPathRef = useRef(projectPath);
+  const branchesRequestRef = useRef(0);
+  const refreshRequestRef = useRef(0);
+  const detailRequestRef = useRef(0);
 
   const { safeInvoke, isCancelled } = useCancellableInvoke();
+  projectPathRef.current = projectPath;
 
   const filteredBranches = useMemo(() => {
     const query = branchSearch.trim().toLowerCase();
@@ -317,9 +274,15 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
   }, [branchOpen]);
 
   const loadBranches = useCallback(async () => {
+    const requestId = ++branchesRequestRef.current;
+    const requestPath = projectPath;
     try {
-      const list = await safeInvoke<GitBranchInfo[]>("git_list_branches", { projectPath });
-      if (list === null) return;
+      const list = await safeInvoke<GitBranchInfo[]>("git_list_branches", { projectPath: requestPath });
+      if (
+        list === null
+        || requestId !== branchesRequestRef.current
+        || requestPath !== projectPathRef.current
+      ) return;
       setBranches(list);
       setSelectedBranch((prev) => {
         if (prev) return prev;
@@ -332,35 +295,50 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
 
   const refresh = useCallback(
     async (query?: string, branch?: string) => {
+      const requestId = ++refreshRequestRef.current;
+      const requestPath = projectPath;
       setLoading(true);
       setError(null);
       const activeBranch = branch ?? selectedBranch;
       try {
-        const [log, remote] = (await Promise.all([
+        const [log, remote] = await Promise.all([
           safeInvoke<GitCommit[]>("git_log", {
-            projectPath,
+            projectPath: requestPath,
             limit: 50,
             search: query ?? searchQuery,
             branch: activeBranch || null,
           }),
           safeInvoke<GitRemoteCounts>("git_remote_counts", {
-            projectPath,
+            projectPath: requestPath,
             branch: activeBranch || null,
           }).catch(() => ({ ahead: 0, behind: 0, branch: "" })),
-        ])) as [GitCommit[] | null, GitRemoteCounts | { ahead: number; behind: number; branch: string }];
-        if (log === null) return;
+        ]);
+        if (
+          log === null
+          || requestId !== refreshRequestRef.current
+          || requestPath !== projectPathRef.current
+        ) return;
         setCommits(log);
-        setRemoteCounts((remote as GitRemoteCounts) ?? { ahead: 0, behind: 0, branch: "" });
+        setRemoteCounts(remote ?? { ahead: 0, behind: 0, branch: "" });
       } catch (e) {
-        if (!isCancelled()) setError(String(e));
+        if (
+          !isCancelled()
+          && requestId === refreshRequestRef.current
+          && requestPath === projectPathRef.current
+        ) setError(String(e));
       } finally {
-        if (!isCancelled()) setLoading(false);
+        if (!isCancelled() && requestId === refreshRequestRef.current) setLoading(false);
       }
     },
     [projectPath, searchQuery, selectedBranch, safeInvoke, isCancelled],
   );
 
   useEffect(() => {
+    branchesRequestRef.current += 1;
+    refreshRequestRef.current += 1;
+    detailRequestRef.current += 1;
+    setBranches([]);
+    setCommits([]);
     setSelectedBranch("");
     setBranchSearch("");
     loadBranches();
@@ -384,20 +362,27 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
 
   const handleSelectCommit = useCallback(
     async (commit: GitCommit) => {
+      const requestId = ++detailRequestRef.current;
+      const requestPath = projectPath;
       setSelectedHash(commit.hash);
+      setSelectedDetail(null);
       onCommitSelect(commit.hash, commit.message);
       setLoadingDetail(true);
       try {
         const detail = await safeInvoke<GitCommitDetail>("git_commit_detail", {
-          projectPath,
+          projectPath: requestPath,
           commitHash: commit.hash,
-        }) as GitCommitDetail | null;
-        if (detail === null) return;
+        });
+        if (
+          detail === null
+          || requestId !== detailRequestRef.current
+          || requestPath !== projectPathRef.current
+        ) return;
         setSelectedDetail(detail);
       } catch {
-        if (!isCancelled()) setSelectedDetail(null);
+        if (!isCancelled() && requestId === detailRequestRef.current) setSelectedDetail(null);
       } finally {
-        if (!isCancelled()) setLoadingDetail(false);
+        if (!isCancelled() && requestId === detailRequestRef.current) setLoadingDetail(false);
       }
     },
     [projectPath, onCommitSelect, safeInvoke, isCancelled],
@@ -408,7 +393,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
     setError(null);
     try {
       await safeInvoke("git_pull", { projectPath });
-      if (!isCancelled()) refresh();
+      if (!isCancelled()) await refresh();
     } catch (e) {
       if (!isCancelled()) setError(String(e));
     } finally {
@@ -422,7 +407,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
     try {
       await safeInvoke("git_push", { projectPath, branch: selectedBranch || null });
       if (!isCancelled()) {
-        refresh();
+        await refresh();
         await loadBranches();
       }
     } catch (e) {
@@ -451,13 +436,14 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
       }}>
         <div style={{ height: 48, display: "flex", alignItems: "center", padding: "0 10px", gap: 4 }}>
           <span style={{ fontSize: 13, fontWeight: 650, color: "var(--aegis-text)", flex: 1 }}>
-            {t("git.history")}
+            {t("gitHistory.title")}
           </span>
 
           <button
             onClick={handlePull}
             disabled={pulling}
-            title={t("git.pull")}
+            title={t("gitHistory.pull")}
+            aria-label={t("gitHistory.pull")}
             style={{
               display: "flex", alignItems: "center", gap: 3,
               padding: "3px 7px", background: "none",
@@ -467,12 +453,13 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               opacity: pulling ? 0.6 : 1,
             }}
           >
-            {t("git.pull")} {String.fromCharCode(8595)}{remoteCounts.behind}
+            {t("gitHistory.pull")} {String.fromCharCode(8595)}{remoteCounts.behind}
           </button>
           <button
             onClick={handlePush}
             disabled={pushing}
-            title={t("git.push")}
+            title={t("gitHistory.push")}
+            aria-label={t("gitHistory.push")}
             style={{
               display: "flex", alignItems: "center", gap: 3,
               padding: "3px 7px",
@@ -487,15 +474,16 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
             {pushing ? (
               <>
                 <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
-                {t("git.pushing")}
+                {t("gitHistory.pushing")}
               </>
             ) : (
-              <>{t("git.push")} {String.fromCharCode(8593)}{remoteCounts.ahead}</>
+              <>{t("gitHistory.push")} {String.fromCharCode(8593)}{remoteCounts.ahead}</>
             )}
           </button>
           <button
             onClick={() => refresh()}
             title={t("common.refresh")}
+            aria-label={t("common.refresh")}
             style={{
               background: "none", border: "none", cursor: "pointer",
               padding: 4, borderRadius: 4, color: "var(--aegis-text-dim)",
@@ -553,7 +541,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
                 <Search size={13} color="var(--aegis-text-dim)" />
                 <input
                   autoFocus
-                  placeholder={t("branch.searchBranches")}
+                  placeholder={t("gitHistory.searchBranches")}
                   value={branchSearch}
                   onChange={(e) => setBranchSearch(e.target.value)}
                   style={{
@@ -565,7 +553,8 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
                 {branchSearch && (
                   <button
                     onClick={() => setBranchSearch("")}
-                    title={t("common.reset")}
+                    title={t("gitHistory.reset")}
+                    aria-label={t("gitHistory.reset")}
                     style={{
                       background: "none", border: "none", cursor: "pointer",
                       padding: 0, color: "var(--aegis-text-dim)",
@@ -597,7 +586,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
                     padding: "16px 12px", fontSize: 12,
                     color: "var(--aegis-text-dim)", textAlign: "center",
                   }}>
-                    {t("branch.noBranchesFound")}
+                    {t("gitHistory.noBranchesFound")}
                   </div>
                 )}
               </div>
@@ -617,7 +606,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
           <input
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
-            placeholder={t("git.searchCommits")}
+            placeholder={t("gitHistory.searchCommits")}
             style={{
               flex: 1, border: "none", outline: "none",
               background: "transparent", color: "var(--aegis-text)",
@@ -649,7 +638,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
       }}>
         {loading && commits.length === 0 && (
           <div style={{ padding: "20px 16px", fontSize: 12, color: "var(--aegis-text-dim)", textAlign: "center" }}>
-            {t("common.loadingEllipsis")}
+            {t("common.loading")}
           </div>
         )}
         {commits.map((commit) => {
@@ -665,7 +654,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
         })}
         {!loading && commits.length === 0 && (
           <div style={{ padding: "20px 16px", fontSize: 12, color: "var(--aegis-text-dim)", textAlign: "center" }}>
-            {t("git.noCommitsFound")}
+            {t("gitHistory.noCommitsFound")}
           </div>
         )}
       </div>
