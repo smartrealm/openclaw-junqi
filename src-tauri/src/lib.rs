@@ -363,6 +363,11 @@ pub fn run() {
             commands::agent_task_pty::get_active_task_ids,
             commands::agent_workspace_storage::load_agent_workspace_tasks,
             commands::agent_workspace_storage::save_agent_workspace_tasks,
+            commands::workbench_pty::create_workbench_pty,
+            commands::workbench_pty::input_workbench_pty,
+            commands::workbench_pty::resize_workbench_pty,
+            commands::workbench_pty::snapshot_workbench_pty,
+            commands::workbench_pty::stop_workbench_pty,
             commands::workbench_session::load_workbench_session,
             commands::workbench_session::save_workbench_session,
         ])
