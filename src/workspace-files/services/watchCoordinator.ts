@@ -40,7 +40,7 @@ function registrationKey(scope: WorkspaceFileScope, path: string): string {
   return `${scopeId(scope)}:${path}`;
 }
 
-function makeWatchId(key: string): string {
+function watchIdBase(key: string): string {
   let hash = 2166136261;
   for (let index = 0; index < key.length; index += 1) {
     hash ^= key.charCodeAt(index);
@@ -63,7 +63,13 @@ export class WorkspaceFileWatchCoordinator {
     const key = registrationKey(scope, path);
     let registration = this.registrations.get(key);
     if (!registration) {
-      const watchId = makeWatchId(key);
+      const base = watchIdBase(key);
+      let watchId = base;
+      let collision = 1;
+      while (this.byWatchId.has(watchId)) {
+        watchId = `${base}:${collision}`;
+        collision += 1;
+      }
       registration = {
         watchId, scope, path, references: 0, lastSequence: 0,
         listeners: new Set(),

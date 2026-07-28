@@ -53,6 +53,12 @@ test('coordinator fences stale owners and converts sequence gaps to overflow', a
   unsubscribe();
 });
 
+test('watch id collisions receive distinct routed identities', async () => {
+  const source = await import('node:fs').then(({ readFileSync }) => readFileSync(new URL('./watchCoordinator.ts', import.meta.url), 'utf8'));
+  assert.match(source, /while \(this\.byWatchId\.has\(watchId\)\)/);
+  assert.match(source, /watchId = `\$\{base\}:\$\{collision\}`/);
+});
+
 test('different owner revisions never share native watches', async () => {
   const started: string[] = [];
   const coordinator = new WorkspaceFileWatchCoordinator({

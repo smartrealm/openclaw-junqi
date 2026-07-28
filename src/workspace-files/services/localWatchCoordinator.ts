@@ -25,9 +25,16 @@ const source = {
   async start(watchId: string, scope: WorkspaceFileScope, path: string): Promise<void> {
     if (scope.hostId !== 'local') throw new Error(`Local watcher cannot serve host ${scope.hostId}`);
     if (scope.policy !== 'workspace') throw new Error(`File policy ${scope.policy} cannot watch`);
-    const available = await invoke<boolean>('watch_dir', { path, projectPath: scope.rootPath });
-    if (!available) throw new Error(`Native file watcher unavailable for ${path}`);
-    registrations.set(watchId, { watchId, scope, path, sequence: 0 });
+    const registration = { watchId, scope, path, sequence: 0 };
+    // Route first so a native event emitted during command completion is not lost.
+    registrations.set(watchId, registration);
+    try {
+      const available = await invoke<boolean>('watch_dir', { path, projectPath: scope.rootPath });
+      if (!available) throw new Error(`Native file watcher unavailable for ${path}`);
+    } catch (error) {
+      if (registrations.get(watchId) === registration) registrations.delete(watchId);
+      throw error;
+    }
   },
   async stop(watchId: string): Promise<void> {
     const registration = registrations.get(watchId);
