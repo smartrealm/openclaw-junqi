@@ -110,8 +110,7 @@
 
 .junqi-wb-sidebar-header,
 .junqi-wb-workspace-header,
-.junqi-wb-right-header,
-.junqi-wb-browser-bar {
+.junqi-wb-right-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -723,36 +722,6 @@
 
 .junqi-wb-muted {
   color: var(--wb-dim);
-}
-
-.junqi-wb-browser-bar {
-  min-height: 36px;
-  gap: 5px;
-  padding: 0 7px;
-  border-bottom: 1px solid var(--wb-line);
-  background: var(--wb-panel);
-}
-
-.junqi-wb-browser-bar > button {
-  width: 24px;
-  height: 24px;
-  border: 0;
-  color: var(--wb-dim);
-  background: transparent;
-}
-
-.junqi-wb-browser-bar > div {
-  display: flex;
-  height: 25px;
-  flex: 1;
-  align-items: center;
-  gap: 7px;
-  padding: 0 9px;
-  border: 1px solid var(--wb-line);
-  border-radius: 5px;
-  color: var(--wb-muted);
-  background: var(--wb-editor);
-  font: 10px var(--font-mono), monospace;
 }
 
 .junqi-wb-browser-empty,
