@@ -2825,7 +2825,6 @@
     "dockerReady": "Docker {{version}} and the OpenClaw image are ready to use",
     "dockerImageWillPrepare": "Docker {{version}} is running; the OpenClaw image will be prepared next",
     "reusingDockerImage": "Reusing the local OpenClaw image",
-    "dockerNotDetected": "Docker not detected",
     "dockerUnsupportedX86": "32-bit Windows supports Native mode only; Docker will not be detected or installed",
     "dockerNotRunning": "Docker daemon not running",
     "dockerDaemonStopped": "Docker is installed, but Docker Desktop is not running",
@@ -4077,5 +4076,13 @@
       "confirmDelete": "Delete",
       "confirmReset": "Reset"
     }
-  }
+  },
+  "file.confirmDeleteTitle": "Delete {{name}}?",
+  "file.confirmDeleteFile": "Delete the file \"{{name}}\"? This cannot be undone.",
+  "file.confirmDeleteFolder": "Delete the folder \"{{name}}\" and everything in it? This cannot be undone.",
+  "file.delete": "Delete",
+  "file.createFailed": "Could not create",
+  "file.deleteFailed": "Could not delete",
+  "file.nameHasSeparator": "A name cannot contain \"/\" or \"\\\".",
+  "file.changedOnDisk": "Changed on disk — your unsaved edits are kept"
 }

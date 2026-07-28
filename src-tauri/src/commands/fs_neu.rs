@@ -528,10 +528,36 @@ fn compact_directory_entry(mut entry: FsEntry, project_path: &str) -> Result<FsE
 mod tests {
     use super::{
         compact_directory_entry, git_check_ignore_key, parse_git_check_ignore_z,
-        read_directory_entries,
+        read_directory_entries, validate_path_within,
     };
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
+
+    /// An editor tab can outlive the file it shows. The strict mode used by the
+    /// write path must refuse a path that no longer exists, so a save cannot
+    /// recreate a file the user deleted.
+    #[test]
+    fn strict_validation_refuses_a_path_that_no_longer_exists() {
+        let root = std::env::temp_dir().join(format!("junqi-missing-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let root_str = root.to_string_lossy().to_string();
+        let file = root.join("deleted.txt");
+        let file_str = file.to_string_lossy().to_string();
+
+        std::fs::write(&file, "before").unwrap();
+        assert!(validate_path_within(&file_str, &root_str, false).is_ok());
+
+        std::fs::remove_file(&file).unwrap();
+        assert!(
+            validate_path_within(&file_str, &root_str, false).is_err(),
+            "a deleted file must not validate for writing"
+        );
+        // The lenient mode used by readers still resolves it, so the reader
+        // reports a real read error rather than a path-permission one.
+        assert!(validate_path_within(&file_str, &root_str, true).is_ok());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn git_check_ignore_z_preserves_unicode_and_backslashes() {

@@ -2820,7 +2820,6 @@
     "dockerReady": "Docker {{version}} 和 OpenClaw 镜像已就绪，可直接使用",
     "dockerImageWillPrepare": "Docker {{version}} 已运行；继续后将准备 OpenClaw 镜像",
     "reusingDockerImage": "已复用本地 OpenClaw 镜像",
-    "dockerNotDetected": "未检测到 Docker",
     "dockerUnsupportedX86": "Windows 32 位仅支持 Native；不会检测或安装 Docker",
     "dockerNotRunning": "Docker 守护进程未运行",
     "dockerDaemonStopped": "已安装 Docker，但 Docker Desktop 未运行",
@@ -4102,5 +4101,13 @@
       "confirmDelete": "删除",
       "confirmReset": "重置"
     }
-  }
+  },
+  "file.confirmDeleteTitle": "删除 {{name}}？",
+  "file.confirmDeleteFile": "确定删除文件“{{name}}”？此操作无法撤销。",
+  "file.confirmDeleteFolder": "确定删除文件夹“{{name}}”及其全部内容？此操作无法撤销。",
+  "file.delete": "删除",
+  "file.createFailed": "无法创建",
+  "file.deleteFailed": "无法删除",
+  "file.nameHasSeparator": "名称不能包含“/”或“\\”。",
+  "file.changedOnDisk": "磁盘上的文件已更改——你未保存的编辑已保留"
 }

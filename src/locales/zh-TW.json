@@ -2786,7 +2786,6 @@
     "dockerReady": "Docker {{version}} 和 OpenClaw 鏡像已就緒，可直接使用",
     "dockerImageWillPrepare": "Docker {{version}} 已運行；繼續後將準備 OpenClaw 鏡像",
     "reusingDockerImage": "已複用本地 OpenClaw 鏡像",
-    "dockerNotDetected": "未檢測到 Docker",
     "dockerUnsupportedX86": "Windows 32 位僅支援 Native；不會檢測或安裝 Docker",
     "dockerNotRunning": "Docker 守護進程未運行",
     "dockerDaemonStopped": "已安裝 Docker，但 Docker Desktop 未運行",
@@ -3642,5 +3641,13 @@
   "setup.openclawUpdate.channel.dev": "開發版",
   "setup.openclawUpdate.registryLabel": "更新源：{{registry}}",
   "setup.openclawUpdate.registry.official": "npm 官方源",
-  "setup.openclawUpdate.registry.chinaMirror": "國內鏡像"
+  "setup.openclawUpdate.registry.chinaMirror": "國內鏡像",
+  "file.confirmDeleteTitle": "刪除 {{name}}？",
+  "file.confirmDeleteFile": "確定刪除檔案「{{name}}」？此操作無法復原。",
+  "file.confirmDeleteFolder": "確定刪除資料夾「{{name}}」及其全部內容？此操作無法復原。",
+  "file.delete": "刪除",
+  "file.createFailed": "無法建立",
+  "file.deleteFailed": "無法刪除",
+  "file.nameHasSeparator": "名稱不能包含「/」或「\\」。",
+  "file.changedOnDisk": "磁碟上的檔案已變更——你未儲存的編輯已保留"
 }

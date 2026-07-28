@@ -2231,7 +2231,6 @@
   "setup.dockerImageWillPrepare": "Docker {{version}} يعمل؛ سيتم تجهيز صورة OpenClaw في الخطوة التالية",
   "setup.reusingDockerImage": "إعادة استخدام صورة OpenClaw المحلية",
   "setup.dockerDaemonStopped": "Docker مثبت، لكن الخدمة غير مشغلة",
-  "setup.dockerNotDetected": "لم يتم اكتشاف Docker",
   "setup.dockerUnsupportedX86": "يدعم Windows ‏32 بت وضع Native فقط؛ لن يتم فحص Docker أو تثبيته",
   "setup.dockerNotRunning": "خدمة Docker غير مشغلة",
   "setup.recheckDocker": "إعادة فحص Docker",
@@ -3000,5 +2999,13 @@
       "confirmDelete": "حذف",
       "confirmReset": "إعادة ضبط"
     }
-  }
+  },
+  "file.confirmDeleteTitle": "حذف {{name}}؟",
+  "file.confirmDeleteFile": "هل تريد حذف الملف \"{{name}}\"؟ لا يمكن التراجع عن هذا الإجراء.",
+  "file.confirmDeleteFolder": "هل تريد حذف المجلد \"{{name}}\" وكل ما بداخله؟ لا يمكن التراجع عن هذا الإجراء.",
+  "file.delete": "حذف",
+  "file.createFailed": "تعذّر الإنشاء",
+  "file.deleteFailed": "تعذّر الحذف",
+  "file.nameHasSeparator": "لا يمكن أن يحتوي الاسم على \"/\" أو \"\\\".",
+  "file.changedOnDisk": "تغيّر الملف على القرص — تم الاحتفاظ بتعديلاتك غير المحفوظة"
 }

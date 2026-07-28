@@ -292,6 +292,16 @@ export function FileManagerPage() {
   const [treeTabs, setTreeTabs] = useState<OpenFileTab[]>([]);
   const [treeActiveFilePath, setTreeActiveFilePath] = useState<string | null>(null);
 
+  const closeTreeTab = useCallback((path: string) => {
+    setTreeTabs((prev) => {
+      const next = prev.filter((tab) => tab.path !== path);
+      setTreeActiveFilePath((active) => (
+        active === path ? (next.length > 0 ? next[next.length - 1]!.path : null) : active
+      ));
+      return next;
+    });
+  }, []);
+
   const isOutputKind = useCallback((kind?: string) => kind === 'outputs' || kind === 'output', []);
 
   const hasManagedBridge = useCallback(() => {
@@ -673,15 +683,8 @@ export function FileManagerPage() {
                 activeFilePath={treeActiveFilePath}
                 projectPath={treeProjectPath}
                 onSelectTab={setTreeActiveFilePath}
-                onCloseTab={(path) => {
-                  setTreeTabs((prev) => {
-                    const next = prev.filter((t) => t.path !== path);
-                    if (treeActiveFilePath === path) {
-                      setTreeActiveFilePath(next.length > 0 ? next[next.length - 1].path : null);
-                    }
-                    return next;
-                  });
-                }}
+                onCloseTab={closeTreeTab}
+                onFileMissing={closeTreeTab}
                 onCloseOtherTabs={(path) => {
                   setTreeTabs((prev) => prev.filter((t) => t.path === path));
                 }}

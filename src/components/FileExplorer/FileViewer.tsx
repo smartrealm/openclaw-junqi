@@ -14,6 +14,8 @@ import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
 import { solarizedLight } from "@uiw/codemirror-theme-solarized";
 import type { Extension } from "@codemirror/state";
 import { loadCodeMirrorLanguage } from "@/utils/codeMirrorLanguages";
+import { subscribeTauriEvent } from "@/utils/tauriEvents";
+import { parentPathOf } from "./treeUtils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -321,6 +323,31 @@ function MarkdownToc({
   );
 }
 
+/**
+ * Decide whether a failed read means the file left the disk, rather than a file
+ * that is still there but cannot be shown (too large, not valid UTF-8). Its own
+ * directory is the authority, and it is only consulted after a failure.
+ */
+async function fileIsGone(
+  filePath: string,
+  fileName: string,
+  projectPath: string,
+): Promise<boolean> {
+  const directory = parentPathOf(filePath);
+  if (!directory) return false;
+  try {
+    const entries = await invoke<{ name: string; is_dir: boolean }[]>("read_dir_entries", {
+      path: directory,
+      projectPath,
+    });
+    return !entries.some((entry) => !entry.is_dir && entry.name === fileName);
+  } catch {
+    // The directory itself is unreadable or gone; either way the file cannot be
+    // reached from here.
+    return true;
+  }
+}
+
 // ── FilePreviewPane ──────────────────────────────────────────────────────────
 
 function FilePreviewPane({
@@ -330,6 +357,7 @@ function FilePreviewPane({
   themeVariant,
   previewMode,
   onRunMakeTarget,
+  onFileMissing,
 }: {
   filePath: string;
   fileName: string;
@@ -337,6 +365,8 @@ function FilePreviewPane({
   themeVariant: ThemeVariant;
   previewMode: boolean;
   onRunMakeTarget?: (target: string) => void;
+  /** The file backing this tab is gone from disk. */
+  onFileMissing?: (path: string) => void;
 }) {
   const editorTheme =
     themeVariant === "dark" || themeVariant === "midnight"
@@ -361,6 +391,22 @@ function FilePreviewPane({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // What this pane last wrote to disk, so its own save does not read back as an
+  // external edit. `dirty` marks input the user has typed but that has not been
+  // written yet — a reload must never discard it.
+  const lastWrittenRef = useRef<string | null>(null);
+  const dirtyRef = useRef(false);
+  const contentRef = useRef<string | null>(null);
+  const [externallyChanged, setExternallyChanged] = useState(false);
+  useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
+  // Held in a ref so an unstable callback identity cannot re-run the load or
+  // re-register the directory watch.
+  const onFileMissingRef = useRef(onFileMissing);
+  useEffect(() => {
+    onFileMissingRef.current = onFileMissing;
+  }, [onFileMissing]);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const showMarkdownPreview = isMarkdown && previewMode && content !== null;
   const { html: markdownHtml, toc } = useMemo(
@@ -408,6 +454,9 @@ function FilePreviewPane({
     setImagePreview(null);
     setError(null);
     setSaveStatus("idle");
+    setExternallyChanged(false);
+    lastWrittenRef.current = null;
+    dirtyRef.current = false;
 
     const loadFile = isPreviewableImage
       ? invoke<ImagePreviewData>("read_image_preview", {
@@ -427,14 +476,78 @@ function FilePreviewPane({
           setLoading(false);
         });
 
-    loadFile.catch((err) => {
+    loadFile.catch(async (err) => {
       if (cancelled) return;
       setError(String(err));
       setLoading(false);
+      // A read can fail for reasons the file surviving explains — too large,
+      // not valid UTF-8. Only a file that is actually gone should cost its tab,
+      // which is how a tab restored for a since-deleted file gets cleaned up.
+      if (await fileIsGone(filePath, fileName, projectPath)) {
+        if (!cancelled) onFileMissingRef.current?.(filePath);
+      }
     });
 
     return () => {
       cancelled = true;
+    };
+  }, [filePath, fileName, projectPath, isPreviewableImage]);
+
+  // A tab outlives the state of the file behind it. An agent writing to the
+  // workspace, a git checkout, or a delete in the tree all change that file
+  // while this pane keeps showing the snapshot it opened with — and the next
+  // keystroke would write that stale snapshot back over the newer content.
+  useEffect(() => {
+    if (!projectPath || !filePath) return;
+    const directory = parentPathOf(filePath);
+    if (!directory) return;
+    let alive = true;
+
+    const reload = async () => {
+      if (isPreviewableImage) {
+        try {
+          const preview = await invoke<ImagePreviewData>("read_image_preview", {
+            path: filePath,
+            projectPath,
+          });
+          if (alive) setImagePreview(preview);
+        } catch {
+          if (alive) onFileMissingRef.current?.(filePath);
+        }
+        return;
+      }
+      let next: string;
+      try {
+        next = await invoke<string>("read_file_content", { path: filePath, projectPath });
+      } catch {
+        // The file is gone: its tab has nothing left to show, and any further
+        // save would fail against a path that no longer exists.
+        if (alive) onFileMissingRef.current?.(filePath);
+        return;
+      }
+      if (!alive) return;
+      // Our own save echoes back as a change event.
+      if (next === lastWrittenRef.current || next === contentRef.current) return;
+      if (dirtyRef.current) {
+        // Unsaved input must win over an automatic reload; surface the conflict
+        // instead of silently dropping either side.
+        setExternallyChanged(true);
+        return;
+      }
+      setContent(next);
+      setError(null);
+    };
+
+    void invoke<boolean>("watch_dir", { path: directory, projectPath }).catch(() => false);
+    const unlisten = subscribeTauriEvent<{ dir: string }>("fs-changed", (event) => {
+      if (!alive || event.payload?.dir !== directory) return;
+      void reload();
+    });
+
+    return () => {
+      alive = false;
+      unlisten();
+      void invoke("unwatch_dir", { path: directory }).catch(() => undefined);
     };
   }, [filePath, projectPath, isPreviewableImage]);
 
@@ -466,6 +579,7 @@ function FilePreviewPane({
   const handleChange = useCallback(
     (value: string) => {
       setContent(value);
+      dirtyRef.current = true;
 
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (savedResetRef.current) clearTimeout(savedResetRef.current);
@@ -478,10 +592,21 @@ function FilePreviewPane({
             content: value,
             projectPath,
           });
+          lastWrittenRef.current = value;
+          dirtyRef.current = false;
           setSaveStatus("saved");
+          setExternallyChanged(false);
           savedResetRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
         } catch {
+          // The write path refuses a file that no longer exists, so a failure
+          // here is how a deleted file reaches this pane when no change event
+          // arrived. Confirm before taking the tab down.
           setSaveStatus("error");
+          try {
+            await invoke<string>("read_file_content", { path: filePath, projectPath });
+          } catch {
+            onFileMissingRef.current?.(filePath);
+          }
         }
       }, 1500);
     },
@@ -506,7 +631,11 @@ function FilePreviewPane({
     ? imagePreview
       ? `${imagePreview.mimeType} - ${t("file.readOnly", "Read-only")}`
       : t("file.imagePreview", "Image preview")
-    : saveLabel;
+    // An external write that could not be applied because of unsaved input is
+    // the one state the user has to resolve, so it outranks the save status.
+    : externallyChanged
+      ? t("file.changedOnDisk", "Changed on disk — your unsaved edits are kept")
+      : saveLabel;
 
   return (
     <div
@@ -716,7 +845,9 @@ function FilePreviewPane({
               color:
                 saveStatus === "error"
                   ? "var(--aegis-danger)"
-                  : "var(--aegis-text-muted)",
+                  : externallyChanged
+                    ? "var(--aegis-warning)"
+                    : "var(--aegis-text-muted)",
               fontFamily: "var(--aegis-body)",
             }}
           >
@@ -742,6 +873,7 @@ export function FileViewer({
   onCloseAllTabs,
   themeVariant = "dark",
   onRunMakeTarget,
+  onFileMissing,
 }: {
   tabs: OpenFileTab[];
   activeFilePath: string | null;
@@ -759,6 +891,11 @@ export function FileViewer({
    * responsible for routing it to the right terminal session.
    */
   onRunMakeTarget?: (target: string) => void;
+  /**
+   * The file behind a tab disappeared from disk. The caller owns the tab list,
+   * so it decides what to do — normally closing that tab.
+   */
+  onFileMissing?: (path: string) => void;
 }) {
   const { t } = useTranslation();
   const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
@@ -1155,6 +1292,7 @@ export function FileViewer({
                 themeVariant={themeVariant}
                 previewMode={!!previewModes[tab.path]}
                 onRunMakeTarget={onRunMakeTarget}
+                onFileMissing={onFileMissing}
               />
             </div>
           );

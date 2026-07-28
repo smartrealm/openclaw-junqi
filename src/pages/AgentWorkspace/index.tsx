@@ -1241,6 +1241,7 @@ export function AgentWorkspacePage() {
                   setOpenFiles([]);
                   setActiveFilePath(null);
                 }}
+                onFileMissing={closeFile}
               />
             </WorkspaceContentScene>
           ) : !projectPath ? (

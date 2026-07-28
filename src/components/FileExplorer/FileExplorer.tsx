@@ -13,6 +13,7 @@ import { CreateInputRow } from "./CreateInputRow";
 import { TreeItem } from "./TreeItem";
 import { writeClipboardText } from "./clipboard";
 import { debugError } from "@/utils/debugLog";
+import { showAlert } from "@/components/shared/alertStore";
 import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import { dispatchFileTreePointerDrag } from "./pathDrag";
 import {
@@ -440,6 +441,13 @@ export function FileExplorer({
       return;
     }
     if (name.includes("/") || name.includes("\\")) {
+      // Silently ignoring this looks like the Enter key did nothing, and the
+      // input row stays open with no hint about what is wrong.
+      showAlert(
+        t("file.createFailed", "Could not create"),
+        t("file.nameHasSeparator", "A name cannot contain \"/\" or \"\\\"."),
+        "warning",
+      );
       return;
     }
     commitInFlightRef.current = true;
@@ -467,6 +475,13 @@ export function FileExplorer({
     } catch (error) {
       if (!isCancelled()) {
         debugError("app", "Failed to create:", error);
+        // The backend rejects duplicates by name; without this the row just
+        // disappears and nothing tells the user why no file appeared.
+        showAlert(
+          t("file.createFailed", "Could not create"),
+          String((error as Error)?.message ?? error),
+          "warning",
+        );
       }
     } finally {
       commitInFlightRef.current = false;
@@ -542,6 +557,13 @@ export function FileExplorer({
     } catch (error) {
       if (!isCancelled()) {
         debugError("app", "Failed to delete:", error);
+        // A failed delete leaves the entry in the tree, which reads as if the
+        // confirmation never took effect.
+        showAlert(
+          t("file.deleteFailed", "Could not delete"),
+          String((error as Error)?.message ?? error),
+          "warning",
+        );
       }
     } finally {
       deleteInFlightRef.current = false;
