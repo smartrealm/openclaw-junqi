@@ -19,6 +19,14 @@ test('workbench PTY detects output gaps and requests snapshot-capable recovery',
   assert.match(backend, /MAX_SNAPSHOT_BYTES: usize = 2 \* 1024 \* 1024/);
 });
 
+test('create and stop lifecycle operations share one backend gate', () => {
+  assert.match(backend, /fn lifecycle_gate\(\)/);
+  const create = backend.slice(backend.indexOf('pub fn create_workbench_pty'), backend.indexOf('pub fn input_workbench_pty'));
+  const stop = backend.slice(backend.indexOf('pub fn stop_workbench_pty'), backend.indexOf('#\[cfg\(test\)\]'));
+  assert.match(create, /lifecycle_gate\(\)/);
+  assert.match(stop, /lifecycle_gate\(\)/);
+});
+
 test('batch stop validates every PTY owner before physical termination', () => {
   const batch = backend.slice(backend.indexOf('pub fn stop_workbench_ptys'));
   assert.ok(batch.indexOf('current_handle') < batch.indexOf('stop_handle'));

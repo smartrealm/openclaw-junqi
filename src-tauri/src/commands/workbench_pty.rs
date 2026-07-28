@@ -68,10 +68,17 @@ impl SnapshotBuffer {
         self.chunks.push_back(data.to_vec());
         self.bytes += data.len();
         while self.bytes > MAX_SNAPSHOT_BYTES {
-            let Some(front) = self.chunks.pop_front() else {
+            let overflow = self.bytes - MAX_SNAPSHOT_BYTES;
+            let Some(mut front) = self.chunks.pop_front() else {
                 break;
             };
-            self.bytes -= front.len();
+            if front.len() > overflow {
+                front.drain(..overflow);
+                self.bytes -= overflow;
+                self.chunks.push_front(front);
+            } else {
+                self.bytes -= front.len();
+            }
             self.truncated = true;
         }
     }
@@ -97,6 +104,11 @@ type Handle = Arc<WorkbenchPtyHandle>;
 fn registry() -> &'static Mutex<HashMap<String, Handle>> {
     static REGISTRY: OnceLock<Mutex<HashMap<String, Handle>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn lifecycle_gate() -> &'static Mutex<()> {
+    static GATE: OnceLock<Mutex<()>> = OnceLock::new();
+    GATE.get_or_init(|| Mutex::new(()))
 }
 
 fn validate_id(label: &str, value: &str) -> Result<(), String> {
@@ -183,6 +195,9 @@ pub fn create_workbench_pty(
         return Err("invalid workbench PTY dimensions".into());
     }
     let cwd = resolve_cwd(&cwd)?;
+    let _operation = lifecycle_gate()
+        .lock()
+        .map_err(|_| "workbench PTY lifecycle lock poisoned".to_string())?;
     {
         let entries = registry()
             .lock()
@@ -359,6 +374,9 @@ pub fn snapshot_workbench_pty(
 
 #[tauri::command]
 pub fn stop_workbench_pty(pty_id: String, run_id: String) -> Result<(), String> {
+    let _operation = lifecycle_gate()
+        .lock()
+        .map_err(|_| "workbench PTY lifecycle lock poisoned".to_string())?;
     let handle = current_handle(&pty_id, &run_id)?;
     stop_handle(&handle);
     remove_if_current(&pty_id, &handle);
@@ -367,6 +385,9 @@ pub fn stop_workbench_pty(pty_id: String, run_id: String) -> Result<(), String> 
 
 #[tauri::command]
 pub fn stop_workbench_ptys(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), String> {
+    let _operation = lifecycle_gate()
+        .lock()
+        .map_err(|_| "workbench PTY lifecycle lock poisoned".to_string())?;
     let mut handles = Vec::with_capacity(identities.len());
     // Validate the complete ownership set before physically stopping anything.
     for identity in &identities {
@@ -406,8 +427,8 @@ mod tests {
         };
         snapshot.push(&vec![b'a'; MAX_SNAPSHOT_BYTES]);
         snapshot.push(b"tail");
-        assert!(snapshot.bytes <= MAX_SNAPSHOT_BYTES);
+        assert_eq!(snapshot.bytes, MAX_SNAPSHOT_BYTES);
         assert!(snapshot.truncated);
-        assert_eq!(snapshot.text(), "tail");
+        assert!(snapshot.text().ends_with("tail"));
     }
 }
