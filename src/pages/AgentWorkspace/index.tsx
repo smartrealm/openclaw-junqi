@@ -1,33 +1,22 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Pulse,
   ArrowsOutSimple,
   Bell,
   Browser,
   CaretDown,
-  CaretRight,
-  Check,
   CheckCircle,
   ClockCounterClockwise,
   Code,
-  Command,
-  Copy,
   DotsThree,
-  File,
   FileCode,
-  FileText,
   Files,
   GitBranch,
-  GitCommit,
   GitDiff,
-  GitPullRequest,
   HardDrives,
   MagnifyingGlass,
-  Monitor,
   Plus,
   Robot,
   SidebarSimple,
-  Sparkle,
   SplitHorizontal,
   TerminalWindow,
   TreeStructure,
@@ -272,99 +261,12 @@ function WorkbenchTabBar({ tabs, activeTab, onSelect, onClose, onAdd, onSplit }:
 }
 
 function AgentTerminal() {
-  const [message, setMessage] = useState('');
-  const [sentMessages, setSentMessages] = useState<string[]>([]);
-  const send = () => {
-    const value = message.trim();
-    if (!value) return;
-    setSentMessages((items) => [...items, value]);
-    setMessage('');
-  };
-
   return (
     <section className="junqi-wb-pane junqi-wb-terminal-pane">
-      <header className="junqi-wb-pane-toolbar">
-        <div className="junqi-wb-terminal-title">
-          <span className="junqi-wb-state-dot is-running" />
-          <strong>Claude Code</strong>
-          <span className="junqi-wb-pill">Opus 4.1</span>
-          <span className="junqi-wb-muted">Blues-Code/shrimp</span>
-        </div>
-        <div className="junqi-wb-inline-actions">
-          <button type="button" className="junqi-wb-toolbar-action"><Monitor size={13} />Native Chat</button>
-          <IconButton label="复制输出"><Copy size={14} /></IconButton>
-          <IconButton label="终端操作"><DotsThree size={16} /></IconButton>
-        </div>
-      </header>
-
-      <div className="junqi-wb-terminal-output">
-        <div className="junqi-wb-command-line">
-          <span className="junqi-wb-prompt">❯</span>
-          <span>请审计新的 AI Workspace 前端边界，独立 Terminal 保持不变。</span>
-        </div>
-        <div className="junqi-wb-agent-block">
-          <div className="junqi-wb-agent-block-header">
-            <Sparkle size={14} weight="fill" />
-            <strong>Claude</strong>
-            <span>正在分析工作区结构</span>
-          </div>
-          <p>我会先核对路由、应用外壳和持久化 ownership，再只处理 <code>/ai-workspace</code> 的表现层。</p>
-          <div className="junqi-wb-tool-call">
-            <Check size={12} weight="bold" />
-            <span>Read</span>
-            <code>src/pages/AgentWorkspace/index.tsx</code>
-            <span className="junqi-wb-muted">1,497 lines</span>
-          </div>
-          <div className="junqi-wb-tool-call">
-            <Check size={12} weight="bold" />
-            <span>Read</span>
-            <code>src/components/Layout/AppLayout.tsx</code>
-          </div>
-          <p>现有页面是 Task-centric。新的前端骨架将改成 Worktree → Tab Group → Pane，并让 Terminal、Editor、Diff 和 Browser 成为平级标签。</p>
-          <div className="junqi-wb-plan-list">
-            <span><CheckCircle size={13} weight="fill" />构建 Worktree Sidebar</span>
-            <span><CheckCircle size={13} weight="fill" />构建 Unified Tabs</span>
-            <span className="is-running"><Pulse size={13} />绘制 Right Sidebar 与状态区域</span>
-          </div>
-        </div>
-        {sentMessages.map((item, index) => (
-          <div className="junqi-wb-command-line is-new" key={`${item}-${index}`}>
-            <span className="junqi-wb-prompt">❯</span>
-            <span>{item}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="junqi-wb-composer-shell">
-        <div className="junqi-wb-composer">
-          <textarea
-            value={message}
-            rows={2}
-            placeholder="继续指示 Claude…"
-            onChange={(event) => setMessage(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                send();
-              }
-            }}
-          />
-          <div className="junqi-wb-composer-footer">
-            <div>
-              <button type="button" className="junqi-wb-composer-chip"><Plus size={13} />上下文</button>
-              <button type="button" className="junqi-wb-composer-chip"><Robot size={13} />Claude Code</button>
-              <button type="button" className="junqi-wb-composer-chip"><Command size={13} />Plan</button>
-            </div>
-            <button type="button" className="junqi-wb-send" onClick={send} disabled={!message.trim()}>
-              <span>发送</span><span>↵</span>
-            </button>
-          </div>
-        </div>
-        <div className="junqi-wb-terminal-meta">
-          <span>上下文 18%</span>
-          <span>权限：自动编辑</span>
-          <span>会话已保存</span>
-        </div>
+      <div className="junqi-wb-browser-empty">
+        <TerminalWindow size={44} weight="thin" />
+        <strong>Agent PTY 尚未连接</strong>
+        <span>Workbench 专属 attach、sequence、snapshot 和 resync 后端完成后才能启动 Agent。</span>
       </div>
     </section>
   );
@@ -395,45 +297,11 @@ function WorkbenchEditor({ tab, projectPath, onMissing }: {
 }
 
 function EditorPreview() {
-  return (
-    <section className="junqi-wb-pane junqi-wb-editor-pane">
-      <header className="junqi-wb-breadcrumbs">
-        <span>src</span><CaretRight size={10} /><span>pages</span><CaretRight size={10} /><span>AgentWorkspace</span><CaretRight size={10} /><strong>index.tsx</strong>
-      </header>
-      <div className="junqi-wb-code-editor" aria-label="代码编辑器预览">
-        <ol>
-          <li><span className="tok-keyword">import</span> {'{'} useState {'}'} <span className="tok-keyword">from</span> <span className="tok-string">'react'</span>;</li>
-          <li><span className="tok-keyword">import</span> {'{'} WorktreeSidebar {'}'} <span className="tok-keyword">from</span> <span className="tok-string">'./WorktreeSidebar'</span>;</li>
-          <li> </li>
-          <li><span className="tok-keyword">export function</span> <span className="tok-fn">AgentWorkspacePage</span>() {'{'}</li>
-          <li>  <span className="tok-keyword">const</span> [activeWorktree, setActiveWorktree] = <span className="tok-fn">useState</span>(<span className="tok-string">'shrimp'</span>);</li>
-          <li> </li>
-          <li>  <span className="tok-keyword">return</span> (</li>
-          <li>    <span className="tok-tag">&lt;WorkbenchShell</span></li>
-          <li>      <span className="tok-attr">worktree</span>=<span className="tok-string">{'{activeWorktree}'}</span></li>
-          <li>      <span className="tok-attr">onActivate</span>=<span className="tok-string">{'{setActiveWorktree}'}</span></li>
-          <li>    <span className="tok-tag">/&gt;</span></li>
-          <li>  );</li>
-          <li>{'}'}</li>
-        </ol>
-      </div>
-    </section>
-  );
+  return <div className="junqi-wb-empty-panel">编辑器标签不可用：文件路径缺失</div>;
 }
 
 function DiffPreview() {
-  return (
-    <section className="junqi-wb-pane">
-      <header className="junqi-wb-pane-toolbar">
-        <div className="junqi-wb-terminal-title"><GitDiff size={14} /><strong>Working Changes</strong><span className="junqi-wb-pill">7 files</span></div>
-        <span className="junqi-wb-muted">+428 −1,126</span>
-      </header>
-      <div className="junqi-wb-diff-summary">
-        <div className="junqi-wb-diff-file"><FileCode size={14} /><strong>src/pages/AgentWorkspace/index.tsx</strong><span className="junqi-wb-added">+286</span><span className="junqi-wb-removed">−1126</span></div>
-        <pre><span className="diff-minus">- type RightPanel = 'files' | 'changes' | 'history';</span>{'\n'}<span className="diff-plus">+ type WorkbenchTabKind = 'terminal' | 'editor' | 'diff' | 'browser';</span>{'\n'}<span className="diff-plus">+ type RightPanel = 'files' | 'search' | 'source' | 'checks' | 'vault';</span></pre>
-      </div>
-    </section>
-  );
+  return <div className="junqi-wb-empty-panel">Diff Adapter 尚未连接，当前不会猜测变更内容</div>;
 }
 
 function BrowserPreview() {
@@ -531,63 +399,22 @@ function FilesPanel({ projectPath, projectName, onFileSelect }: {
 }
 
 function SourceControlPanel() {
-  return (
-    <div className="junqi-wb-panel-content">
-      <PanelTitle action={<><IconButton label="提交"><Check size={14} /></IconButton><IconButton label="更多"><DotsThree size={16} /></IconButton></>}>源代码管理</PanelTitle>
-      <div className="junqi-wb-commit-input">描述本次变更… <span>⌘↵</span></div>
-      <button type="button" className="junqi-wb-primary-row"><GitCommit size={14} />提交 7 个文件</button>
-      <div className="junqi-wb-change-heading"><CaretDown size={11} /><strong>更改</strong><span>7</span></div>
-      {['src/pages/AgentWorkspace/index.tsx', 'src/pages/AgentWorkspace/workbench.css', 'src/AppRouteTree.tsx', 'package.json'].map((file, index) => (
-        <div className="junqi-wb-change-row" key={file}><FileCode size={13} /><span title={file}>{file}</span><b className={index === 1 ? 'is-added' : ''}>{index === 1 ? 'U' : 'M'}</b></div>
-      ))}
-    </div>
-  );
+  return <div className="junqi-wb-empty-panel">Git Adapter 尚未连接，当前不会展示或提交猜测的变更</div>;
 }
 
 function ChecksPanel() {
-  return (
-    <div className="junqi-wb-panel-content">
-      <PanelTitle action={<IconButton label="刷新检查"><Pulse size={14} /></IconButton>}>检查</PanelTitle>
-      <div className="junqi-wb-review-card">
-        <div><GitPullRequest size={16} /><strong>没有关联的 Pull Request</strong></div>
-        <p>当前分支比 main 领先 2 个提交，可以发布并创建审阅。</p>
-        <button type="button"><GitPullRequest size={13} />创建 Pull Request</button>
-      </div>
-      <div className="junqi-wb-check-list">
-        <div><CheckCircle size={15} weight="fill" /><span><strong>Frontend tests</strong><small>1643 passed</small></span></div>
-        <div><CheckCircle size={15} weight="fill" /><span><strong>Rust tests</strong><small>622 passed · 3 ignored</small></span></div>
-        <div><Pulse size={15} /><span><strong>Boundary check</strong><small>正在检查模块边界</small></span></div>
-      </div>
-    </div>
-  );
+  return <div className="junqi-wb-empty-panel">Checks 与 Hosted Review Adapter 尚未连接</div>;
 }
 
 function VaultPanel() {
-  return (
-    <div className="junqi-wb-panel-content">
-      <PanelTitle action={<IconButton label="刷新会话"><Pulse size={14} /></IconButton>}>AI Vault</PanelTitle>
-      <div className="junqi-wb-panel-search"><MagnifyingGlass size={13} />搜索 Agent 会话</div>
-      <div className="junqi-wb-vault-group">今天 <span>3</span></div>
-      {[
-        ['Claude', '迁移 Orca 工作台到 JunQi', '12 分钟前'],
-        ['Codex', '修复 CodeMirror 午夜主题', '48 分钟前'],
-        ['Pi', '审计 Gateway 静默启动', '2 小时前'],
-      ].map(([agent, title, time]) => (
-        <button type="button" className="junqi-wb-vault-row" key={title}>
-          <span className="junqi-wb-vault-icon"><Robot size={14} /></span>
-          <span><strong>{title}</strong><small>{agent} · {time}</small></span>
-          <CaretRight size={12} />
-        </button>
-      ))}
-    </div>
-  );
+  return <div className="junqi-wb-empty-panel">AI Vault Host-local scanner 尚未连接</div>;
 }
 
 function SearchPanel() {
   return (
     <div className="junqi-wb-panel-content">
       <PanelTitle>搜索</PanelTitle>
-      <div className="junqi-wb-search-input"><MagnifyingGlass size={14} /><span>在 shrimp 中搜索</span></div>
+      <div className="junqi-wb-search-input"><MagnifyingGlass size={14} /><span>在当前 Worktree 中搜索</span></div>
       <div className="junqi-wb-search-options"><button type="button">Aa</button><button type="button">ab</button><button type="button">.*</button></div>
       <div className="junqi-wb-empty-panel"><MagnifyingGlass size={28} weight="thin" /><span>输入关键词搜索当前工作区</span></div>
     </div>
@@ -730,8 +557,8 @@ export function AgentWorkspacePage() {
             <span><GitBranch size={12} />{selectedWorktree?.branch ?? '选择项目或迁移旧任务'}</span>
           </div>
           <div className="junqi-wb-inline-actions">
-            <span className="junqi-wb-header-status"><Robot size={13} weight="fill" />1 个 Agent 运行中</span>
-            <span className="junqi-wb-header-status"><Bell size={13} />需要关注 2</span>
+            <span className="junqi-wb-header-status"><Robot size={13} weight="fill" />Agent 状态未知</span>
+            <span className="junqi-wb-header-status"><Bell size={13} />等待 PTY Adapter</span>
             <IconButton label="工作区菜单"><DotsThree size={17} /></IconButton>
           </div>
         </header>
