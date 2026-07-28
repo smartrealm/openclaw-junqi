@@ -82,6 +82,16 @@ test('hydration is the only action that opens the session writer gate', () => {
   assert.equal(useWorkbenchStore.getState().hydrationError, 'corrupt');
 });
 
+test('splitting can atomically move the active tab without duplicate ownership', () => {
+  for (const id of ['left', 'active']) useWorkbenchStore.getState().openTab(mainGroup, tab(id));
+  useWorkbenchStore.getState().splitGroup(mainGroup, 'right', 'split-move', 'horizontal', true);
+  const state = useWorkbenchStore.getState();
+  assert.deepEqual(state.groups[mainGroup]?.tabIds, ['left']);
+  assert.equal(state.groups[mainGroup]?.activeTabId, 'left');
+  assert.deepEqual(state.groups.right?.tabIds, ['active']);
+  assert.equal(state.groups.right?.activeTabId, 'active');
+});
+
 test('group removal deletes owned tabs and collapses layout', () => {
   useWorkbenchStore.getState().splitGroup(mainGroup, 'right', 'split-1', 'horizontal');
   useWorkbenchStore.getState().openTab('right', tab('right-tab'));

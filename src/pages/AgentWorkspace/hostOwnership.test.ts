@@ -10,4 +10,6 @@ test('local-only Files Git and PTY consumers reject remote host paths at the UI 
   assert.match(source, /const targetLocalPath = localWorktreePath\(targetWorktree\)/);
   assert.match(source, /projectPath=\{selectedLocalPath\}/);
   assert.match(source, /projectPath=\{targetLocalPath\}/);
+  assert.match(source, /if \(!selectedLocalPath\)/);
+  assert.match(source, /尚未提供 Workbench PTY Adapter/);
 });

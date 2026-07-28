@@ -37,7 +37,7 @@ interface WorkbenchState {
   closeTab: (groupId: TabGroupId, tabId: TabId) => void;
   acknowledgePtyCreate: (tabId: TabId) => void;
   replacePtyIdentity: (tabId: TabId, ptyId: string, runId: string) => void;
-  splitGroup: (targetGroupId: TabGroupId, newGroupId: TabGroupId, splitId: string, direction: 'horizontal' | 'vertical') => void;
+  splitGroup: (targetGroupId: TabGroupId, newGroupId: TabGroupId, splitId: string, direction: 'horizontal' | 'vertical', moveActiveTab?: boolean) => void;
   removeGroup: (groupId: TabGroupId) => void;
   resizeSplit: (splitId: string, ratio: number) => void;
   setSidebarMode: (mode: WorkbenchState['sidebarMode']) => void;
@@ -168,10 +168,20 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     };
   }),
 
-  splitGroup: (targetGroupId, newGroupId, splitId, direction) => set((state) => {
-    if (!state.groups[targetGroupId] || state.groups[newGroupId]) return {};
+  splitGroup: (targetGroupId, newGroupId, splitId, direction, moveActiveTab = false) => set((state) => {
+    const target = state.groups[targetGroupId];
+    if (!target || state.groups[newGroupId]) return {};
+    const movedTabId = moveActiveTab ? target.activeTabId : null;
+    const targetTabIds = movedTabId ? target.tabIds.filter((id) => id !== movedTabId) : target.tabIds;
+    const targetActiveTabId = movedTabId
+      ? adjacentTabId(targetTabIds, target.tabIds.indexOf(movedTabId))
+      : target.activeTabId;
     return {
-      groups: { ...state.groups, [newGroupId]: { id: newGroupId, tabIds: [], activeTabId: null } },
+      groups: {
+        ...state.groups,
+        [targetGroupId]: { ...target, tabIds: targetTabIds, activeTabId: targetActiveTabId },
+        [newGroupId]: { id: newGroupId, tabIds: movedTabId ? [movedTabId] : [], activeTabId: movedTabId },
+      },
       layout: splitLayoutGroup(state.layout, targetGroupId, splitId, newGroupId, direction),
       activeGroupId: newGroupId,
     };

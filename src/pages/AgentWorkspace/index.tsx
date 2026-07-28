@@ -685,6 +685,10 @@ export function AgentWorkspacePage() {
 
   const addTab = (groupId: string) => {
     if (!groups[groupId] || !selectedWorktree) return;
+    if (!selectedLocalPath) {
+      setLifecycleError(`主机 ${selectedWorktree.hostId} 尚未提供 Workbench PTY Adapter`);
+      return;
+    }
     const id = crypto.randomUUID();
     openTab(groupId, {
       id: `workbench:tab:${id}`,
@@ -758,7 +762,7 @@ export function AgentWorkspacePage() {
                     onAdd={() => addTab(groupId)}
                     onSplit={() => {
                       const id = crypto.randomUUID();
-                      splitStoreGroup(groupId, `workbench:group:${id}`, `workbench:split:${id}`, 'horizontal');
+                      splitStoreGroup(groupId, `workbench:group:${id}`, `workbench:split:${id}`, 'horizontal', true);
                     }}
                     onCloseGroup={Object.keys(groups).length > 1 ? () => { void closeGroup(groupId); } : undefined}
                   />
