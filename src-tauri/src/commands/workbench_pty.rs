@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter};
 const MAX_ID_BYTES: usize = 160;
 const MAX_INPUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SNAPSHOT_BYTES: usize = 2 * 1024 * 1024;
+const MAX_COMPLETED_RUNS: usize = 512;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -111,6 +112,42 @@ fn lifecycle_gate() -> &'static Mutex<()> {
     GATE.get_or_init(|| Mutex::new(()))
 }
 
+fn completed_runs() -> &'static Mutex<VecDeque<(String, String)>> {
+    static RUNS: OnceLock<Mutex<VecDeque<(String, String)>>> = OnceLock::new();
+    RUNS.get_or_init(|| Mutex::new(VecDeque::new()))
+}
+
+fn remember_completed_run(pty_id: &str, run_id: &str) {
+    let Ok(mut runs) = completed_runs().lock() else {
+        return;
+    };
+    runs.retain(|(id, _)| id != pty_id);
+    runs.push_back((pty_id.to_string(), run_id.to_string()));
+    while runs.len() > MAX_COMPLETED_RUNS {
+        runs.pop_front();
+    }
+}
+
+fn is_completed_run(pty_id: &str, run_id: &str) -> bool {
+    completed_runs()
+        .lock()
+        .is_ok_and(|runs| runs.iter().any(|(id, run)| id == pty_id && run == run_id))
+}
+
+fn consume_completed_run(pty_id: &str, run_id: &str) -> bool {
+    let Ok(mut runs) = completed_runs().lock() else {
+        return false;
+    };
+    let Some(index) = runs
+        .iter()
+        .position(|(id, run)| id == pty_id && run == run_id)
+    else {
+        return false;
+    };
+    runs.remove(index);
+    true
+}
+
 fn validate_id(label: &str, value: &str) -> Result<(), String> {
     if value.is_empty()
         || value.len() > MAX_ID_BYTES
@@ -198,6 +235,9 @@ pub fn create_workbench_pty(
     let _operation = lifecycle_gate()
         .lock()
         .map_err(|_| "workbench PTY lifecycle lock poisoned".to_string())?;
+    if let Ok(mut runs) = completed_runs().lock() {
+        runs.retain(|(id, _)| id != &pty_id);
+    }
     {
         let entries = registry()
             .lock()
@@ -294,12 +334,13 @@ pub fn create_workbench_pty(
             "workbench-pty-exit",
             WorkbenchPtyExit {
                 pty_id: exit_id.clone(),
-                run_id: exit_run,
+                run_id: exit_run.clone(),
                 exit_code,
             },
         );
         exit_handle.stopping.store(true, Ordering::Release);
         remove_if_current(&exit_id, &exit_handle);
+        remember_completed_run(&exit_id, &exit_run);
     });
 
     Ok(WorkbenchPtyCreateResult {
@@ -377,10 +418,15 @@ pub fn stop_workbench_pty(pty_id: String, run_id: String) -> Result<(), String> 
     let _operation = lifecycle_gate()
         .lock()
         .map_err(|_| "workbench PTY lifecycle lock poisoned".to_string())?;
-    let handle = current_handle(&pty_id, &run_id)?;
-    stop_handle(&handle);
-    remove_if_current(&pty_id, &handle);
-    Ok(())
+    match current_handle(&pty_id, &run_id) {
+        Ok(handle) => {
+            stop_handle(&handle);
+            remove_if_current(&pty_id, &handle);
+            Ok(())
+        }
+        Err(_) if consume_completed_run(&pty_id, &run_id) => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 #[tauri::command]
@@ -393,21 +439,31 @@ pub fn stop_workbench_ptys(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), 
     for identity in &identities {
         validate_id("PTY id", &identity.pty_id)?;
         validate_id("run id", &identity.run_id)?;
-        handles.push((
-            identity.pty_id.clone(),
-            current_handle(&identity.pty_id, &identity.run_id)?,
-        ));
+        match current_handle(&identity.pty_id, &identity.run_id) {
+            Ok(handle) => handles.push((identity.pty_id.clone(), Some(handle))),
+            Err(_) if is_completed_run(&identity.pty_id, &identity.run_id) => {
+                handles.push((identity.pty_id.clone(), None));
+            }
+            Err(error) => return Err(error),
+        }
     }
-    for (pty_id, handle) in handles {
-        stop_handle(&handle);
-        remove_if_current(&pty_id, &handle);
+    for (identity, (pty_id, handle)) in identities.iter().zip(handles) {
+        if let Some(handle) = handle {
+            stop_handle(&handle);
+            remove_if_current(&pty_id, &handle);
+        } else {
+            consume_completed_run(&identity.pty_id, &identity.run_id);
+        }
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_id, SnapshotBuffer, MAX_SNAPSHOT_BYTES};
+    use super::{
+        consume_completed_run, is_completed_run, remember_completed_run, validate_id,
+        SnapshotBuffer, MAX_COMPLETED_RUNS, MAX_SNAPSHOT_BYTES,
+    };
     use std::collections::VecDeque;
 
     #[test]
@@ -416,6 +472,18 @@ mod tests {
         assert!(validate_id("id", "bad\nrun").is_err());
         assert!(validate_id("id", &"x".repeat(161)).is_err());
         assert!(validate_id("id", "workbench:pty:one").is_ok());
+    }
+
+    #[test]
+    fn completed_runs_are_exact_idempotent_and_bounded() {
+        for index in 0..MAX_COMPLETED_RUNS + 1 {
+            remember_completed_run(&format!("pty-{index}"), &format!("run-{index}"));
+        }
+        assert!(!is_completed_run("pty-0", "run-0"));
+        assert!(is_completed_run("pty-1", "run-1"));
+        assert!(!consume_completed_run("pty-1", "wrong-run"));
+        assert!(consume_completed_run("pty-1", "run-1"));
+        assert!(!is_completed_run("pty-1", "run-1"));
     }
 
     #[test]

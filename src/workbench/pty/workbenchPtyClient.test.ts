@@ -27,11 +27,17 @@ test('create and stop lifecycle operations share one backend gate', () => {
   assert.match(stop, /lifecycle_gate\(\)/);
 });
 
+test('completed runs remain exactly closable through a bounded tombstone', () => {
+  assert.match(backend, /MAX_COMPLETED_RUNS: usize = 512/);
+  assert.match(backend, /remember_completed_run\(&exit_id, &exit_run\)/);
+  assert.match(backend, /consume_completed_run\(&pty_id, &run_id\)/);
+});
+
 test('batch stop validates every PTY owner before physical termination', () => {
   const batch = backend.slice(backend.indexOf('pub fn stop_workbench_ptys'));
   assert.ok(batch.indexOf('current_handle') < batch.indexOf('stop_handle'));
   assert.match(batch, /for identity in &identities/);
-  assert.match(batch, /for \(pty_id, handle\) in handles/);
+  assert.match(batch, /for \(identity, \(pty_id, handle\)\) in identities\.iter\(\)\.zip\(handles\)/);
 });
 
 test('workbench PTY is isolated from legacy task and independent terminal registries', () => {
