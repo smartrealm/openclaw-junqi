@@ -35,6 +35,7 @@ test("BUG-FILE-STALE-02 a tab whose file disappeared is taken down", () => {
   // A read can fail while the file is still there (too large, not UTF-8), so
   // only a genuinely missing file costs its tab.
   assert.match(viewer, /async function fileIsGone\(/);
+  assert.match(viewer, /document\.snapshot\(\)\.status === 'error' && await fileIsGone/);
   assert.match(viewer, /return !entries\.some\(\(entry\) => !entry\.is_dir && entry\.name === fileName\)/);
 
   // FileManager remains the legacy FileViewer host and closes missing tabs.

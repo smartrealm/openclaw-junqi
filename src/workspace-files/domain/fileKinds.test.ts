@@ -5,6 +5,7 @@ import { describeWorkspaceFile, fileExtension, isImageFile, workspaceFileKind } 
 test('workspace file kinds are classified by one case-insensitive authority', () => {
   assert.equal(workspaceFileKind('training/index.HTML'), 'html');
   assert.equal(workspaceFileKind('notes.MD'), 'markdown');
+  assert.equal(workspaceFileKind('guide.mdx'), 'markdown');
   assert.equal(workspaceFileKind('diagram.webp'), 'image');
   assert.equal(workspaceFileKind('recording.m4a'), 'audio');
   assert.equal(workspaceFileKind('movie.MOV'), 'video');

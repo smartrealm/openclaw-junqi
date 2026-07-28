@@ -22,7 +22,7 @@ export interface FileKindDescriptor {
 
 const EXTENSION_KIND: Readonly<Record<string, WorkspaceFileKind>> = {
   html: 'html', htm: 'html',
-  md: 'markdown', markdown: 'markdown', mdown: 'markdown',
+  md: 'markdown', mdx: 'markdown', markdown: 'markdown', mdown: 'markdown',
   png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image',
   bmp: 'image', ico: 'image', avif: 'image', tif: 'image', tiff: 'image',
   mp3: 'audio', wav: 'audio', ogg: 'audio', m4a: 'audio', aac: 'audio', flac: 'audio',
