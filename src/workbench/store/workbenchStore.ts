@@ -5,6 +5,7 @@ import {
   resizeTabGroupSplit,
   splitTabGroup as splitLayoutGroup,
 } from '../domain/tabGroupLayout';
+import type { WorkbenchSessionSnapshot } from '../session/schema';
 import type {
   TabGroup,
   TabGroupId,
@@ -16,6 +17,9 @@ import type {
 } from '../domain/types';
 
 interface WorkbenchState {
+  hydrated: boolean;
+  writerReady: boolean;
+  hydrationError: string | null;
   worktrees: Record<WorktreeId, WorkbenchWorktree>;
   activeWorktreeId: WorktreeId | null;
   tabs: Record<TabId, WorkbenchTab>;
@@ -30,6 +34,9 @@ interface WorkbenchState {
   splitGroup: (targetGroupId: TabGroupId, newGroupId: TabGroupId, splitId: string, direction: 'horizontal' | 'vertical') => void;
   removeGroup: (groupId: TabGroupId) => void;
   resizeSplit: (splitId: string, ratio: number) => void;
+  hydrateSession: (snapshot: WorkbenchSessionSnapshot | null) => void;
+  failHydration: (error: string) => void;
+  sessionSnapshot: () => WorkbenchSessionSnapshot;
 }
 
 const MAIN_GROUP_ID = 'workbench:group:main';
@@ -39,7 +46,10 @@ function adjacentTabId(tabIds: TabId[], closedIndex: number): TabId | null {
   return tabIds[Math.min(closedIndex, tabIds.length - 1)] ?? tabIds[tabIds.length - 1] ?? null;
 }
 
-export const useWorkbenchStore = create<WorkbenchState>((set) => ({
+export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
+  hydrated: false,
+  writerReady: false,
+  hydrationError: null,
   worktrees: {},
   activeWorktreeId: null,
   tabs: {},
@@ -131,4 +141,36 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   resizeSplit: (splitId, ratio) => set((state) => ({
     layout: resizeTabGroupSplit(state.layout, splitId, ratio),
   })),
+
+  hydrateSession: (snapshot) => set((state) => snapshot ? {
+    hydrated: true,
+    writerReady: true,
+    hydrationError: null,
+    activeWorktreeId: snapshot.activeWorktreeId,
+    activeGroupId: snapshot.activeGroupId,
+    layout: snapshot.layout,
+    groups: snapshot.groups,
+    tabs: snapshot.tabs,
+  } : {
+    hydrated: true,
+    writerReady: true,
+    hydrationError: null,
+  }),
+
+  failHydration: (error) => set({ hydrated: true, writerReady: false, hydrationError: error }),
+
+  sessionSnapshot: () => {
+    const state = get();
+    return {
+      schemaVersion: 1,
+      activeWorktreeId: state.activeWorktreeId,
+      activeGroupId: state.activeGroupId,
+      layout: state.layout,
+      groups: state.groups,
+      tabs: state.tabs,
+      sidebarMode: 'full',
+      rightSidebarPanel: 'files',
+      rightSidebarCollapsed: false,
+    };
+  },
 }));

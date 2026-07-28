@@ -16,6 +16,7 @@ const tab = (id: string, preview = false, dirty = false): WorkbenchTab => ({
 
 beforeEach(() => {
   useWorkbenchStore.setState({
+    hydrated: false, writerReady: false, hydrationError: null,
     worktrees: {}, activeWorktreeId: null, tabs: {},
     groups: { [mainGroup]: { id: mainGroup, tabIds: [], activeTabId: null } },
     layout: { type: 'group', groupId: mainGroup }, activeGroupId: mainGroup,
@@ -39,6 +40,16 @@ test('closing an active tab selects the adjacent right tab before the left fallb
   assert.equal(useWorkbenchStore.getState().groups[mainGroup]?.activeTabId, 'c');
   useWorkbenchStore.getState().closeTab(mainGroup, 'c');
   assert.equal(useWorkbenchStore.getState().groups[mainGroup]?.activeTabId, 'a');
+});
+
+test('hydration is the only action that opens the session writer gate', () => {
+  assert.equal(useWorkbenchStore.getState().writerReady, false);
+  useWorkbenchStore.getState().hydrateSession(null);
+  assert.equal(useWorkbenchStore.getState().hydrated, true);
+  assert.equal(useWorkbenchStore.getState().writerReady, true);
+  useWorkbenchStore.getState().failHydration('corrupt');
+  assert.equal(useWorkbenchStore.getState().writerReady, false);
+  assert.equal(useWorkbenchStore.getState().hydrationError, 'corrupt');
 });
 
 test('group removal deletes owned tabs and collapses layout', () => {

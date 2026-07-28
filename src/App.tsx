@@ -5,6 +5,7 @@ import { useTheme } from '@/theme/useTheme';
 import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersistence';
 import { useAgentWorkspaceTaskEvents } from '@/hooks/useAgentWorkspaceTaskEvents';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useWorkbenchSessionPersistence } from '@/workbench/session/useWorkbenchSessionPersistence';
 
 const AppRoutes = lazy(() => import('@/AppRoutes'));
 const PetRuntime = lazy(() => import('@/pet/PetRuntime'));
@@ -97,6 +98,7 @@ export default function App() {
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   useAgentWorkspacePersistence(workspaces);
   useAgentWorkspaceTaskEvents();
+  useWorkbenchSessionPersistence();
 
   const {
     addMessage,
