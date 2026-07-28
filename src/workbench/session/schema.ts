@@ -1,7 +1,7 @@
 import { listTabGroupIds } from '../domain/tabGroupLayout';
 import type { TabGroup, TabGroupId, TabGroupLayoutNode, TabId, WorkbenchTab, WorkbenchTabKind, WorkbenchWorktree, WorktreeId } from '../domain/types';
 
-export const WORKBENCH_SESSION_SCHEMA_VERSION = 1;
+export const WORKBENCH_SESSION_SCHEMA_VERSION = 2;
 
 export interface WorkbenchSessionSnapshot {
   schemaVersion: typeof WORKBENCH_SESSION_SCHEMA_VERSION;
@@ -46,6 +46,7 @@ function validTab(id: string, value: unknown): value is WorkbenchTab {
   const tab = record(value);
   return !!tab
     && tab.id === id
+    && typeof tab.worktreeId === 'string' && tab.worktreeId.length > 0
     && typeof tab.paneId === 'string' && tab.paneId.length > 0
     && typeof tab.kind === 'string' && TAB_KINDS.has(tab.kind as WorkbenchTabKind)
     && typeof tab.title === 'string'
@@ -93,6 +94,7 @@ export function isWorkbenchSessionSnapshot(value: unknown): value is WorkbenchSe
     if (group.activeTabId !== null && !tabIds.includes(group.activeTabId)) return false;
     for (const tabId of tabIds) {
       if (referencedTabs.has(tabId) || !validTab(tabId, tabs[tabId])) return false;
+      if (!worktrees[(tabs[tabId] as WorkbenchTab).worktreeId]) return false;
       referencedTabs.add(tabId);
     }
   }

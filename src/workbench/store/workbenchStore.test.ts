@@ -6,6 +6,7 @@ import type { WorkbenchTab } from '../domain/types';
 const mainGroup = 'workbench:group:main';
 const tab = (id: string, preview = false, dirty = false): WorkbenchTab => ({
   id,
+  worktreeId: 'local-project',
   paneId: `pane:${id}`,
   kind: 'editor',
   title: id,
@@ -18,7 +19,12 @@ beforeEach(() => {
   useWorkbenchStore.setState({
     hydrated: false, writerReady: false, hydrationError: null,
     sidebarMode: 'full', rightSidebarPanel: 'files', rightSidebarCollapsed: false,
-    worktrees: {}, activeWorktreeId: null, tabs: {},
+    worktrees: {
+      'local-project': {
+        id: 'local-project', projectId: 'project', repositoryId: 'repo', hostId: 'local',
+        hostRevision: 0, path: '/repo', branch: null, lifecycle: 'active',
+      },
+    }, activeWorktreeId: 'local-project', tabs: {},
     groups: { [mainGroup]: { id: mainGroup, tabIds: [], activeTabId: null } },
     layout: { type: 'group', groupId: mainGroup }, activeGroupId: mainGroup,
   });

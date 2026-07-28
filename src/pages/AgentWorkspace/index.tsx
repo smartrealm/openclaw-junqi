@@ -651,10 +651,11 @@ export function AgentWorkspacePage() {
   };
 
   const openFile = (path: string, name: string) => {
-    if (!group) return;
+    if (!group || !selectedWorktree) return;
     const id = `workbench:file:${path}`;
     openTab(group.id, {
       id,
+      worktreeId: selectedWorktree.id,
       paneId: `workbench:pane:file:${path}`,
       kind: 'editor',
       title: name,
@@ -666,10 +667,11 @@ export function AgentWorkspacePage() {
   };
 
   const openDiff = (path: string, staged: boolean, label: string) => {
-    if (!group) return;
+    if (!group || !selectedWorktree) return;
     const id = `workbench:diff:${staged ? 'staged' : 'working'}:${path}`;
     openTab(group.id, {
       id,
+      worktreeId: selectedWorktree.id,
       paneId: `workbench:pane:${id}`,
       kind: 'diff',
       title: label,
@@ -686,6 +688,7 @@ export function AgentWorkspacePage() {
     const id = crypto.randomUUID();
     openTab(groupId, {
       id: `workbench:tab:${id}`,
+      worktreeId: selectedWorktree.id,
       paneId: `workbench:pane:${id}`,
       kind: 'terminal',
       title: `Shell · ${pathLabel(selectedWorktree.path)}`,
@@ -742,6 +745,8 @@ export function AgentWorkspacePage() {
               const targetTabs = (targetGroup?.tabIds ?? []).flatMap((id) => tabRecords[id] ? [presentationTab(tabRecords[id])] : []);
               const targetActiveId = targetGroup?.activeTabId ?? null;
               const targetActive = targetTabs.find((tab) => tab.id === targetActiveId);
+              const targetDomainTab = targetActiveId ? tabRecords[targetActiveId] : undefined;
+              const targetWorktree = targetDomainTab ? worktreeRecords[targetDomainTab.worktreeId] : undefined;
               return (
                 <section className={`junqi-wb-tab-group${groupId === activeGroupId ? ' is-active' : ''}`}>
                   <WorkbenchTabBar
@@ -759,8 +764,8 @@ export function AgentWorkspacePage() {
                   <div className="junqi-wb-group-content">
                     <WorkbenchContent
                       activeTab={targetActive}
-                      domainTab={targetActiveId ? tabRecords[targetActiveId] : undefined}
-                      projectPath={selectedWorktree?.path ?? null}
+                      domainTab={targetDomainTab}
+                      projectPath={targetWorktree?.path ?? null}
                       onMissing={() => { if (targetActiveId) closeStoreTab(groupId, targetActiveId); }}
                     />
                   </div>

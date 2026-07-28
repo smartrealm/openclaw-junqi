@@ -5,13 +5,18 @@ import { isWorkbenchSessionSnapshot, WORKBENCH_SESSION_SCHEMA_VERSION, type Work
 function snapshot(): WorkbenchSessionSnapshot {
   return {
     schemaVersion: WORKBENCH_SESSION_SCHEMA_VERSION,
-    activeWorktreeId: null,
-    worktrees: {},
+    activeWorktreeId: 'worktree',
+    worktrees: {
+      worktree: {
+        id: 'worktree', projectId: 'project', repositoryId: 'repo', hostId: 'local',
+        hostRevision: 0, path: '/repo', branch: null, lifecycle: 'active',
+      },
+    },
     activeGroupId: 'main',
     layout: { type: 'group', groupId: 'main' },
     groups: { main: { id: 'main', tabIds: ['tab'], activeTabId: 'tab' } },
     tabs: {
-      tab: { id: 'tab', paneId: 'pane', kind: 'editor', title: 'a.ts', preview: true, pinned: false, dirty: false, filePath: '/repo/a.ts' },
+      tab: { id: 'tab', worktreeId: 'worktree', paneId: 'pane', kind: 'editor', title: 'a.ts', preview: true, pinned: false, dirty: false, filePath: '/repo/a.ts' },
     },
     sidebarMode: 'full', rightSidebarPanel: 'files', rightSidebarCollapsed: false,
   };
@@ -19,6 +24,12 @@ function snapshot(): WorkbenchSessionSnapshot {
 
 test('session schema accepts a complete referentially consistent snapshot', () => {
   assert.equal(isWorkbenchSessionSnapshot(snapshot()), true);
+});
+
+test('session schema rejects tabs whose worktree owner is missing', () => {
+  const missingOwner = snapshot();
+  missingOwner.tabs.tab.worktreeId = 'missing';
+  assert.equal(isWorkbenchSessionSnapshot(missingOwner), false);
 });
 
 test('session schema rejects dangling, duplicate and orphan tab identities', () => {

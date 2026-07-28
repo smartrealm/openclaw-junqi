@@ -44,6 +44,7 @@ export type WorkbenchTabKind = 'terminal' | 'agent-terminal' | 'editor' | 'diff'
 
 export interface WorkbenchTab {
   id: TabId;
+  worktreeId: WorktreeId;
   paneId: PaneId;
   kind: WorkbenchTabKind;
   title: string;
