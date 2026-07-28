@@ -10,9 +10,9 @@ test("BUG-FILE-STALE-01 an open file follows the file on disk", () => {
   // The pane loaded once and never looked again: an agent writing to the
   // workspace left the tab showing a stale snapshot, and the next keystroke
   // wrote that snapshot back over the newer content.
-  assert.match(viewer, /invoke<boolean>\("watch_dir", \{ path: directory, projectPath \}\)/);
-  assert.match(viewer, /subscribeTauriEvent<\{ dir: string \}>\("fs-changed"/);
-  assert.match(viewer, /void invoke\("unwatch_dir", \{ path: directory \}\)/);
+  assert.match(viewer, /subscribeLocalWorkspacePath\(projectPath, directory/);
+  assert.match(viewer, /if \(alive\) void reload\(\)/);
+  assert.match(viewer, /release\?\.\(\)/);
 
   // Its own save echoes back as a change event and must not count as external.
   assert.match(viewer, /if \(next === lastWrittenRef\.current \|\| next === contentRef\.current\) return;/);

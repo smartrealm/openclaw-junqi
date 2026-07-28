@@ -14,8 +14,8 @@ import { TreeItem } from "./TreeItem";
 import { writeClipboardText } from "./clipboard";
 import { debugError } from "@/utils/debugLog";
 import { showAlert } from "@/components/shared/alertStore";
-import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import { dispatchFileTreePointerDrag } from "./pathDrag";
+import { subscribeLocalWorkspacePath } from "@/workspace-files/services/localWatchCoordinator";
 import {
   AUTO_REFRESH_MS,
   ROW_HEIGHT,
@@ -225,29 +225,23 @@ export function FileExplorer({
   useEffect(() => {
     if (!active) return;
     let disposed = false;
-    const registrations = watchedDirectories.map((path) =>
-      invoke<boolean>("watch_dir", { path, projectPath }).then((available) => {
-        if (!disposed && !available) setWatcherFailed(true);
-      }).catch(() => {
+    const releases: Array<() => void> = [];
+    void Promise.all(watchedDirectories.map(async (path) => {
+      try {
+        const release = await subscribeLocalWorkspacePath(projectPath, path, () => {
+          void refreshDir(path);
+        });
+        if (disposed) release();
+        else releases.push(release);
+      } catch {
         if (!disposed) setWatcherFailed(true);
-      }),
-    );
+      }
+    }));
     return () => {
       disposed = true;
-      for (let index = 0; index < watchedDirectories.length; index += 1) {
-        const path = watchedDirectories[index];
-        void registrations[index].then(() => invoke("unwatch_dir", { path })).catch(() => undefined);
-      }
+      releases.forEach((release) => release());
     };
-  }, [active, projectPath, watchedDirectories]);
-
-  useEffect(() => {
-    if (!active) return;
-    const unlisten = subscribeTauriEvent<{ dir: string }>("fs-changed", (event) => {
-      void refreshDir(event.payload.dir);
-    });
-    return unlisten;
-  }, [active, refreshDir]);
+  }, [active, projectPath, refreshDir, watchedDirectories]);
 
   // Auto-refresh timer
   useEffect(() => {

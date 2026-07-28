@@ -14,9 +14,9 @@ import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
 import { solarizedLight } from "@uiw/codemirror-theme-solarized";
 import type { Extension } from "@codemirror/state";
 import { loadCodeMirrorLanguage } from "@/utils/codeMirrorLanguages";
-import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import { parentPathOf } from "./treeUtils";
 import { readDir, readFileText, readImagePreview, writeFileText } from "@/services/workspaceFs";
+import { subscribeLocalWorkspacePath } from "@/workspace-files/services/localWatchCoordinator";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -527,16 +527,17 @@ function FilePreviewPane({
       setError(null);
     };
 
-    void invoke<boolean>("watch_dir", { path: directory, projectPath }).catch(() => false);
-    const unlisten = subscribeTauriEvent<{ dir: string }>("fs-changed", (event) => {
-      if (!alive || event.payload?.dir !== directory) return;
-      void reload();
-    });
+    let release: (() => void) | null = null;
+    void subscribeLocalWorkspacePath(projectPath, directory, () => {
+      if (alive) void reload();
+    }).then((nextRelease) => {
+      if (alive) release = nextRelease;
+      else nextRelease();
+    }).catch(() => undefined);
 
     return () => {
       alive = false;
-      unlisten();
-      void invoke("unwatch_dir", { path: directory }).catch(() => undefined);
+      release?.();
     };
   }, [filePath, projectPath, isPreviewableImage]);
 
