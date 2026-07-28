@@ -15,6 +15,13 @@ test('workbench terminal subscribes before create and restores an existing run s
   assert.match(source, /subscription\?\.synchronize\(sequence\)/);
 });
 
+test('snapshot resync buffers concurrent output and replays only newer sequences', () => {
+  assert.match(source, /if \(resyncing\) bufferedOutput\.push/);
+  assert.match(source, /if \(output\.sequence <= sequence\) continue/);
+  assert.match(source, /sequence = output\.sequence/);
+  assert.match(source, /subscription\?\.synchronize\(nextSequence\)/);
+});
+
 test('explicit restart retires the exact old run before replacing identity', () => {
   const start = source.indexOf('const restart = async');
   const restart = source.slice(start, source.indexOf('\n\n  if (!identity) return <', start));

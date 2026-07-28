@@ -27,6 +27,8 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
     if (!identity || !containerRef.current || !cwd) return;
     let alive = true;
     let subscription: Awaited<ReturnType<typeof subscribeWorkbenchPty>> | null = null;
+    let resyncing = false;
+    let bufferedOutput: Array<{ sequence: number; data: string }> = [];
     const terminal = new Terminal({
       convertEol: true,
       cursorBlink: true,
@@ -49,11 +51,25 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
     });
 
     const resync = async () => {
-      const snapshot = await snapshotWorkbenchPty(identity);
-      if (!alive) return snapshot.sequence;
-      terminal.reset();
-      terminal.write(snapshot.data);
-      return snapshot.sequence;
+      if (resyncing) return null;
+      resyncing = true;
+      bufferedOutput = [];
+      try {
+        const snapshot = await snapshotWorkbenchPty(identity);
+        if (!alive) return snapshot.sequence;
+        terminal.reset();
+        terminal.write(snapshot.data);
+        let sequence = snapshot.sequence;
+        for (const output of bufferedOutput) {
+          if (output.sequence <= sequence) continue;
+          terminal.write(output.data);
+          sequence = output.sequence;
+        }
+        return sequence;
+      } finally {
+        bufferedOutput = [];
+        resyncing = false;
+      }
     };
 
     void (async () => {
@@ -62,10 +78,13 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
         // Subscribe before create so first output cannot race the renderer.
         subscription = await subscribeWorkbenchPty(
           identity,
-          (output) => terminal.write(output.data),
+          (output) => {
+            if (resyncing) bufferedOutput.push({ sequence: output.sequence, data: output.data });
+            else terminal.write(output.data);
+          },
           () => {
             void resync()
-              .then((nextSequence) => subscription?.synchronize(nextSequence))
+              .then((nextSequence) => { if (nextSequence !== null) subscription?.synchronize(nextSequence); })
               .catch(() => undefined);
           },
           () => { if (alive) terminal.write('\r\n[process exited]\r\n'); },
@@ -83,7 +102,7 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
         if (created.completed) {
           terminal.write('\r\n[process already exited]\r\n');
         } else if (!created.created) {
-          sequence = await resync();
+          sequence = (await resync()) ?? sequence;
           subscription?.synchronize(sequence);
         }
         setError(null);
