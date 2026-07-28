@@ -43,6 +43,10 @@ import {
   readAgentWorkspaceSidebarMode,
 } from '@/components/Layout/agentWorkspaceSidebarEvents';
 import type { WorkspaceSidebarMode } from '@/components/Layout/workspaceSidebarChannel';
+import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
+import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
+import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
+import type { WorkbenchTab as DomainWorkbenchTab } from '@/workbench/domain/types';
 import './workbench.css';
 
 type WorktreeState = 'running' | 'attention' | 'idle' | 'done';
@@ -65,47 +69,6 @@ interface WorkbenchTab {
   kind: WorkbenchTabKind;
   dirty?: boolean;
 }
-
-const worktrees: WorktreeItem[] = [
-  {
-    id: 'shrimp',
-    label: 'shrimp',
-    branch: 'Blues-Code/shrimp',
-    detail: 'JunQi Desktop',
-    state: 'running',
-    agent: 'Claude Code',
-  },
-  {
-    id: 'capricorn',
-    label: 'capricorn',
-    branch: 'main',
-    detail: 'File preview theme',
-    state: 'attention',
-    agent: 'Codex',
-    unread: 2,
-  },
-  {
-    id: 'daxia',
-    label: 'daxia',
-    branch: 'feature/collaboration',
-    detail: 'Collaboration runtime',
-    state: 'idle',
-  },
-  {
-    id: 'release',
-    label: 'v1.4.15',
-    branch: 'release/v1.4.15',
-    detail: 'Release verification',
-    state: 'done',
-  },
-];
-
-const initialTabs: WorkbenchTab[] = [
-  { id: 'agent', label: 'Claude · shrimp', kind: 'terminal' },
-  { id: 'app', label: 'App.tsx', kind: 'editor', dirty: true },
-  { id: 'diff', label: 'Working Changes', kind: 'diff' },
-  { id: 'browser', label: 'Preview', kind: 'browser' },
-];
 
 const rightPanels: Array<{ id: RightPanel; label: string; icon: ReactNode; badge?: number }> = [
   { id: 'files', label: '文件', icon: <Files size={16} weight="regular" /> },
@@ -146,12 +109,14 @@ function IconButton({ label, children, active, onClick }: {
 }
 
 function WorktreeSidebar({
+  worktrees,
   activeId,
   onSelect,
   mode,
   onToggle,
 }: {
-  activeId: string;
+  worktrees: WorktreeItem[];
+  activeId: string | null;
   onSelect: (id: string) => void;
   mode: WorkspaceSidebarMode;
   onToggle: () => void;
@@ -203,12 +168,13 @@ function WorktreeSidebar({
           <button type="button" className="junqi-wb-repo-heading">
             <CaretDown size={12} />
             <span className="junqi-wb-repo-mark"><TreeStructure size={13} /></span>
-            <span className="junqi-wb-repo-title">openclaw-junqi</span>
-            <span className="junqi-wb-count">4</span>
+            <span className="junqi-wb-repo-title">本机工作区</span>
+            <span className="junqi-wb-count">{worktrees.length}</span>
             <DotsThree size={15} />
           </button>
 
           <div className="junqi-wb-worktree-list">
+            {worktrees.length === 0 ? <div className="junqi-wb-empty-panel">尚无可迁移的项目或 Worktree</div> : null}
             {worktrees.map((worktree) => (
               <button
                 key={worktree.id}
@@ -241,20 +207,12 @@ function WorktreeSidebar({
           </div>
         </section>
 
-        <section className="junqi-wb-repo-group is-secondary">
-          <button type="button" className="junqi-wb-repo-heading">
-            <CaretRight size={12} />
-            <span className="junqi-wb-repo-mark"><TreeStructure size={13} /></span>
-            <span className="junqi-wb-repo-title">orca</span>
-            <span className="junqi-wb-count">1</span>
-          </button>
-        </section>
       </div>
 
       <footer className="junqi-wb-sidebar-footer">
         <span className="junqi-wb-host-dot" />
         <span>本机</span>
-        <span className="junqi-wb-muted">2 个仓库 · 5 个工作区</span>
+        <span className="junqi-wb-muted">{worktrees.length} 个工作区</span>
         <IconButton label="主机与运行时"><HardDrives size={15} /></IconButton>
       </footer>
     </aside>
@@ -606,21 +564,59 @@ function SearchPanel() {
 }
 
 function WorkbenchContent({ activeTab }: { activeTab: WorkbenchTab | undefined }) {
-  if (activeTab?.kind === 'editor') return <EditorPreview />;
-  if (activeTab?.kind === 'diff') return <DiffPreview />;
-  if (activeTab?.kind === 'browser') return <BrowserPreview />;
+  if (!activeTab) return <div className="junqi-wb-empty-panel">选择项目后新建 Agent、文件或 Diff 标签</div>;
+  if (activeTab.kind === 'editor') return <EditorPreview />;
+  if (activeTab.kind === 'diff') return <DiffPreview />;
+  if (activeTab.kind === 'browser') return <BrowserPreview />;
   return <AgentTerminal />;
 }
 
+function presentationTab(tab: DomainWorkbenchTab): WorkbenchTab {
+  const kind: WorkbenchTabKind = tab.kind === 'agent-terminal'
+    ? 'terminal'
+    : tab.kind === 'editor'
+      ? 'editor'
+      : tab.kind === 'browser'
+        ? 'browser'
+        : 'diff';
+  return { id: tab.id, label: tab.title, kind, dirty: tab.dirty };
+}
+
+function pathLabel(path: string): string {
+  const normalized = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+  return normalized || path;
+}
+
 export function AgentWorkspacePage() {
-  const [activeWorktree, setActiveWorktree] = useState('shrimp');
-  const [tabs, setTabs] = useState<WorkbenchTab[]>(initialTabs);
-  const [activeTabId, setActiveTabId] = useState('agent');
+  const legacyTasks = useAgentWorkspaceStore((state) => state.tasks);
+  const worktreeRecords = useWorkbenchStore((state) => state.worktrees);
+  const activeWorktree = useWorkbenchStore((state) => state.activeWorktreeId);
+  const setWorktrees = useWorkbenchStore((state) => state.setWorktrees);
+  const setActiveWorktree = useWorkbenchStore((state) => state.activateWorktree);
+  const group = useWorkbenchStore((state) => state.groups[state.activeGroupId]);
+  const tabRecords = useWorkbenchStore((state) => state.tabs);
+  const openTab = useWorkbenchStore((state) => state.openTab);
+  const activateTab = useWorkbenchStore((state) => state.activateTab);
+  const closeStoreTab = useWorkbenchStore((state) => state.closeTab);
   const [rightPanel, setRightPanel] = useState<RightPanel>('files');
   const [sidebarMode, setSidebarMode] = useState<WorkspaceSidebarMode>(readAgentWorkspaceSidebarMode);
   const [rightCollapsed, setRightCollapsed] = useState(false);
-  const activeTab = useMemo(() => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0], [activeTabId, tabs]);
-  const selectedWorktree = worktrees.find((worktree) => worktree.id === activeWorktree) ?? worktrees[0];
+  const worktrees = useMemo<WorktreeItem[]>(() => Object.values(worktreeRecords).map((worktree) => ({
+    id: worktree.id,
+    label: pathLabel(worktree.path),
+    branch: worktree.branch ?? '分支未知',
+    detail: worktree.path,
+    state: worktree.lifecycle === 'sleeping' ? 'idle' : 'done',
+  })), [worktreeRecords]);
+  const tabs = useMemo(() => (group?.tabIds ?? []).flatMap((id) => tabRecords[id] ? [presentationTab(tabRecords[id])] : []), [group, tabRecords]);
+  const activeTabId = group?.activeTabId ?? null;
+  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  const selectedWorktree = activeWorktree ? worktreeRecords[activeWorktree] : undefined;
+
+  useEffect(() => {
+    const migration = projectLegacyTasksToWorkbench(legacyTasks);
+    setWorktrees(migration.worktrees);
+  }, [legacyTasks, setWorktrees]);
 
   useEffect(() => {
     publishAgentWorkspaceSidebarMode(sidebarMode);
@@ -634,24 +630,27 @@ export function AgentWorkspacePage() {
     return () => window.removeEventListener(AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT, toggle);
   }, []);
   const closeTab = (id: string) => {
-    setTabs((current) => {
-      if (current.length === 1) return current;
-      const index = current.findIndex((tab) => tab.id === id);
-      const next = current.filter((tab) => tab.id !== id);
-      if (id === activeTabId) setActiveTabId(next[Math.max(0, index - 1)]?.id ?? next[0].id);
-      return next;
-    });
+    if (group) closeStoreTab(group.id, id);
   };
 
   const addTab = () => {
-    const id = `terminal-${Date.now()}`;
-    setTabs((current) => [...current, { id, label: '新终端', kind: 'terminal' }]);
-    setActiveTabId(id);
+    if (!group || !selectedWorktree) return;
+    const id = crypto.randomUUID();
+    openTab(group.id, {
+      id: `workbench:tab:${id}`,
+      paneId: `workbench:pane:${id}`,
+      kind: 'agent-terminal',
+      title: `新 Agent · ${pathLabel(selectedWorktree.path)}`,
+      preview: false,
+      pinned: false,
+      dirty: false,
+    });
   };
 
   return (
     <div className={`junqi-workbench is-sidebar-${sidebarMode}`} data-testid="junqi-ai-workbench">
       <WorktreeSidebar
+        worktrees={worktrees}
         activeId={activeWorktree}
         onSelect={setActiveWorktree}
         mode={sidebarMode}
@@ -661,9 +660,9 @@ export function AgentWorkspacePage() {
       <main className="junqi-wb-main">
         <header className="junqi-wb-workspace-header">
           <div className="junqi-wb-workspace-identity">
-            <StateDot state={selectedWorktree.state} />
-            <strong>{selectedWorktree.label}</strong>
-            <span><GitBranch size={12} />{selectedWorktree.branch}</span>
+            <StateDot state={selectedWorktree ? 'done' : 'idle'} />
+            <strong>{selectedWorktree ? pathLabel(selectedWorktree.path) : 'AI 工作台'}</strong>
+            <span><GitBranch size={12} />{selectedWorktree?.branch ?? '选择项目或迁移旧任务'}</span>
           </div>
           <div className="junqi-wb-inline-actions">
             <span className="junqi-wb-header-status"><Robot size={13} weight="fill" />1 个 Agent 运行中</span>
@@ -675,7 +674,7 @@ export function AgentWorkspacePage() {
         <WorkbenchTabBar
           tabs={tabs}
           activeTab={activeTab?.id ?? ''}
-          onSelect={setActiveTabId}
+          onSelect={(id) => { if (group) activateTab(group.id, id); }}
           onClose={closeTab}
           onAdd={addTab}
         />
@@ -685,8 +684,8 @@ export function AgentWorkspacePage() {
         </div>
 
         <footer className="junqi-wb-local-status">
-          <span><GitBranch size={12} />Blues-Code/shrimp</span>
-          <span><GitDiff size={12} />7 个更改</span>
+          <span><GitBranch size={12} />{selectedWorktree?.branch ?? '无活动分支'}</span>
+          <span><GitDiff size={12} />状态待 Git Adapter 刷新</span>
           <span><WarningCircle size={12} />0</span>
           <span className="junqi-wb-status-spacer" />
           <span><User size={12} />本机</span>
