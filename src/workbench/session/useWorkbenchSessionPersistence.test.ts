@@ -13,6 +13,14 @@ test('workbench persistence is globally mounted and load precedes writer enablem
   assert.ok(loadIndex >= 0 && enableIndex > loadIndex && hydrateIndex > enableIndex);
 });
 
+test('main-window close is fenced by one durable checkpoint before destroy', () => {
+  assert.match(hook, /onCloseRequested/);
+  assert.match(hook, /event\.preventDefault\(\)/);
+  assert.match(hook, /closeCheckpointRef\.current/);
+  assert.match(hook, /writer\.checkpoint\(useWorkbenchStore\.getState\(\)\.sessionSnapshot\(\)\)/);
+  assert.match(hook, /\.then\(\(\) => window\.destroy\(\)\)/);
+});
+
 test('failed hydration leaves the durable writer fail closed', () => {
   assert.match(hook, /failHydration/);
   assert.match(hook, /!state\.writerReady \|\| !writerRef\.current\?\.isReady\(\)/);

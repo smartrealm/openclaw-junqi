@@ -9,6 +9,7 @@ const WRITE_DEBOUNCE_MS = 180;
 export function useWorkbenchSessionPersistence(): void {
   const writerRef = useRef<WorkbenchSessionWriter | null>(null);
   const hydrationRunRef = useRef(0);
+  const closeCheckpointRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     const run = ++hydrationRunRef.current;
@@ -31,6 +32,40 @@ export function useWorkbenchSessionPersistence(): void {
       alive = false;
       hydrationRunRef.current += 1;
       if (writerRef.current === writer) writerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+      if (disposed) return;
+      const window = getCurrentWindow();
+      return window.onCloseRequested((event) => {
+        const writer = writerRef.current;
+        if (!writer?.isReady() || !useWorkbenchStore.getState().writerReady) return;
+        event.preventDefault();
+        if (closeCheckpointRef.current) return;
+        const checkpoint = writer.checkpoint(useWorkbenchStore.getState().sessionSnapshot())
+          .then(() => window.destroy())
+          .catch(() => {
+            useWorkbenchStore.getState().failHydration('Workbench shutdown checkpoint failed; close again to retry');
+          })
+          .finally(() => {
+            if (closeCheckpointRef.current === checkpoint) closeCheckpointRef.current = null;
+          });
+        closeCheckpointRef.current = checkpoint;
+      });
+    }).then((dispose) => {
+      if (!dispose) return;
+      if (disposed) dispose();
+      else unlisten = dispose;
+    }).catch(() => {
+      // Plain browser tests and non-Tauri renderers do not own native shutdown.
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
     };
   }, []);
 
