@@ -134,14 +134,23 @@ export function useFilePreviewDocument({
           expectedContent: snapshot.diskBaseline,
           projectPath,
         });
-        const diskPreview = decodeWorkspaceFilePreview(await invoke<unknown>("read_file_preview", {
-          path: filePath,
-          projectPath,
-        }));
-        if (diskPreview.kind !== "text") {
-          throw new Error("The file is no longer editable text");
+        // A successful compare-and-swap already tells us what the file holds:
+        // exactly what was just written. Only a rejected write needs the disk
+        // read, which keeps an autosave tick off the cost of re-reading the
+        // whole file every 1.5 seconds.
+        let diskContent: string;
+        if (written) {
+          diskContent = snapshot.content;
+        } else {
+          const diskPreview = decodeWorkspaceFilePreview(await invoke<unknown>("read_file_preview", {
+            path: filePath,
+            projectPath,
+          }));
+          if (diskPreview.kind !== "text") {
+            throw new Error("The file is no longer editable text");
+          }
+          diskContent = diskPreview.text;
         }
-        const diskContent = diskPreview.text;
         pendingWriteContentRef.current = null;
 
         const current = written
@@ -324,21 +333,35 @@ export function useFilePreviewDocument({
     onCheckDisk: checkDisk,
   });
 
+  // Read through refs so this stays a true unmount handler. Depending on the
+  // values directly re-runs the cleanup whenever they change — and it runs with
+  // the *previous* closure, so a file that stopped being text (replaced on disk
+  // by an image, say) would still take the "flush the text" branch and write the
+  // old buffer back over it.
+  const previewKindRef = useRef(preview?.kind);
+  const persistLatestContentRef = useRef(persistLatestContent);
+  useEffect(() => {
+    previewKindRef.current = preview?.kind;
+  }, [preview?.kind]);
+  useEffect(() => {
+    persistLatestContentRef.current = persistLatestContent;
+  }, [persistLatestContent]);
+
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     if (savedResetRef.current) clearTimeout(savedResetRef.current);
     const current = textDocumentRef.current;
     if (
-      preview?.kind === "text"
+      previewKindRef.current === "text"
       && !diskUnavailableRef.current
       && current.content !== null
       && current.diskBaseline !== null
       && current.conflictDiskContent === null
       && textDocumentIsDirty(current)
     ) {
-      void persistLatestContent().catch(() => undefined);
+      void persistLatestContentRef.current().catch(() => undefined);
     }
-  }, [persistLatestContent, preview?.kind]);
+  }, []);
 
   return {
     content: textDocument.content,

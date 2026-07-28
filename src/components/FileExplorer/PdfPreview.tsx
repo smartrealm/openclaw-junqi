@@ -149,6 +149,13 @@ export function PdfPreview({ base64, onOpenExternal }: PdfPreviewProps) {
     renderPage(doc, page, scale);
   }, [doc, page, scale, renderPage]);
 
+  // A loaded document holds resources on the pdf.js worker side. The loading
+  // task is disposed above, but the document it produced outlives it — without
+  // this, every PDF opened leaks its own worker-side document.
+  useEffect(() => () => {
+    void doc?.destroy().catch(() => {});
+  }, [doc]);
+
   useEffect(() => {
     return () => {
       try {
