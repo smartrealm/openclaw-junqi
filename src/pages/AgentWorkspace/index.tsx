@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  ArrowsOutSimple,
   Bell,
   Browser,
   CaretDown,
@@ -215,13 +214,14 @@ function WorktreeSidebar({
   );
 }
 
-function WorkbenchTabBar({ tabs, activeTab, onSelect, onClose, onAdd, onSplit }: {
+function WorkbenchTabBar({ tabs, activeTab, onSelect, onClose, onAdd, onSplit, onCloseGroup }: {
   tabs: WorkbenchTab[];
   activeTab: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onAdd: () => void;
   onSplit: () => void;
+  onCloseGroup?: () => void;
 }) {
   return (
     <div className="junqi-wb-tab-strip">
@@ -259,8 +259,7 @@ function WorkbenchTabBar({ tabs, activeTab, onSelect, onClose, onAdd, onSplit }:
       </div>
       <div className="junqi-wb-inline-actions junqi-wb-tab-actions">
         <IconButton label="拆分编辑器" onClick={onSplit}><SplitHorizontal size={15} /></IconButton>
-        <IconButton label="最大化组"><ArrowsOutSimple size={15} /></IconButton>
-        <IconButton label="更多操作"><DotsThree size={17} /></IconButton>
+        {onCloseGroup ? <IconButton label="关闭分组" onClick={onCloseGroup}><X size={14} /></IconButton> : null}
       </div>
     </div>
   );
@@ -558,6 +557,7 @@ export function AgentWorkspacePage() {
   const closeStoreTab = useWorkbenchStore((state) => state.closeTab);
   const splitStoreGroup = useWorkbenchStore((state) => state.splitGroup);
   const resizeStoreSplit = useWorkbenchStore((state) => state.resizeSplit);
+  const removeStoreGroup = useWorkbenchStore((state) => state.removeGroup);
   const rightPanel = useWorkbenchStore((state) => state.rightSidebarPanel as RightPanel);
   const setRightPanel = useWorkbenchStore((state) => state.setRightSidebarPanel);
   const sidebarMode = useWorkbenchStore((state) => state.sidebarMode);
@@ -718,6 +718,7 @@ export function AgentWorkspacePage() {
                       const id = crypto.randomUUID();
                       splitStoreGroup(groupId, `workbench:group:${id}`, `workbench:split:${id}`, 'horizontal');
                     }}
+                    onCloseGroup={Object.keys(groups).length > 1 ? () => removeStoreGroup(groupId) : undefined}
                   />
                   <div className="junqi-wb-group-content">
                     <WorkbenchContent
