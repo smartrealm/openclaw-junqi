@@ -14,6 +14,8 @@ const layout = readFileSync(new URL('../../components/Layout/AppLayout.tsx', imp
 test('AI workspace exposes worktree, unified tab and right-sidebar regions', () => {
   assert.match(source, /data-testid="junqi-ai-workbench"/);
   assert.match(source, /<WorktreeSidebar/);
+  assert.match(source, /<TabGroupLayout/);
+  assert.match(source, /splitStoreGroup/);
   assert.match(source, /<WorkbenchTabBar/);
   assert.match(source, /<WorkbenchContent/);
   assert.match(source, /<RightSidebar/);

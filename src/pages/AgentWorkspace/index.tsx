@@ -44,6 +44,7 @@ import type { WorkspaceSidebarMode } from '@/components/Layout/workspaceSidebarC
 import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
 import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
+import { TabGroupLayout } from '@/workbench/components/TabGroupLayout';
 import type { WorkbenchTab as DomainWorkbenchTab } from '@/workbench/domain/types';
 import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
@@ -219,12 +220,13 @@ function WorktreeSidebar({
   );
 }
 
-function WorkbenchTabBar({ tabs, activeTab, onSelect, onClose, onAdd }: {
+function WorkbenchTabBar({ tabs, activeTab, onSelect, onClose, onAdd, onSplit }: {
   tabs: WorkbenchTab[];
   activeTab: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onAdd: () => void;
+  onSplit: () => void;
 }) {
   return (
     <div className="junqi-wb-tab-strip">
@@ -261,7 +263,7 @@ function WorkbenchTabBar({ tabs, activeTab, onSelect, onClose, onAdd }: {
         <IconButton label="新建标签" onClick={onAdd}><Plus size={14} /></IconButton>
       </div>
       <div className="junqi-wb-inline-actions junqi-wb-tab-actions">
-        <IconButton label="拆分编辑器"><SplitHorizontal size={15} /></IconButton>
+        <IconButton label="拆分编辑器" onClick={onSplit}><SplitHorizontal size={15} /></IconButton>
         <IconButton label="最大化组"><ArrowsOutSimple size={15} /></IconButton>
         <IconButton label="更多操作"><DotsThree size={17} /></IconButton>
       </div>
@@ -628,11 +630,15 @@ export function AgentWorkspacePage() {
   const activeWorktree = useWorkbenchStore((state) => state.activeWorktreeId);
   const setWorktrees = useWorkbenchStore((state) => state.setWorktrees);
   const setActiveWorktree = useWorkbenchStore((state) => state.activateWorktree);
-  const group = useWorkbenchStore((state) => state.groups[state.activeGroupId]);
+  const groups = useWorkbenchStore((state) => state.groups);
+  const layout = useWorkbenchStore((state) => state.layout);
+  const activeGroupId = useWorkbenchStore((state) => state.activeGroupId);
+  const group = groups[activeGroupId];
   const tabRecords = useWorkbenchStore((state) => state.tabs);
   const openTab = useWorkbenchStore((state) => state.openTab);
   const activateTab = useWorkbenchStore((state) => state.activateTab);
   const closeStoreTab = useWorkbenchStore((state) => state.closeTab);
+  const splitStoreGroup = useWorkbenchStore((state) => state.splitGroup);
   const rightPanel = useWorkbenchStore((state) => state.rightSidebarPanel as RightPanel);
   const setRightPanel = useWorkbenchStore((state) => state.setRightSidebarPanel);
   const sidebarMode = useWorkbenchStore((state) => state.sidebarMode);
@@ -692,10 +698,10 @@ export function AgentWorkspacePage() {
     });
   };
 
-  const addTab = () => {
-    if (!group || !selectedWorktree) return;
+  const addTab = (groupId: string) => {
+    if (!groups[groupId] || !selectedWorktree) return;
     const id = crypto.randomUUID();
-    openTab(group.id, {
+    openTab(groupId, {
       id: `workbench:tab:${id}`,
       paneId: `workbench:pane:${id}`,
       kind: 'agent-terminal',
@@ -730,20 +736,38 @@ export function AgentWorkspacePage() {
           </div>
         </header>
 
-        <WorkbenchTabBar
-          tabs={tabs}
-          activeTab={activeTab?.id ?? ''}
-          onSelect={(id) => { if (group) activateTab(group.id, id); }}
-          onClose={closeTab}
-          onAdd={addTab}
-        />
-
         <div className="junqi-wb-content">
-          <WorkbenchContent
-            activeTab={activeTab}
-            domainTab={activeTabId ? tabRecords[activeTabId] : undefined}
-            projectPath={selectedWorktree?.path ?? null}
-            onMissing={() => { if (activeTabId) closeTab(activeTabId); }}
+          <TabGroupLayout
+            node={layout}
+            renderGroup={(groupId) => {
+              const targetGroup = groups[groupId];
+              const targetTabs = (targetGroup?.tabIds ?? []).flatMap((id) => tabRecords[id] ? [presentationTab(tabRecords[id])] : []);
+              const targetActiveId = targetGroup?.activeTabId ?? null;
+              const targetActive = targetTabs.find((tab) => tab.id === targetActiveId);
+              return (
+                <section className={`junqi-wb-tab-group${groupId === activeGroupId ? ' is-active' : ''}`}>
+                  <WorkbenchTabBar
+                    tabs={targetTabs}
+                    activeTab={targetActiveId ?? ''}
+                    onSelect={(id) => activateTab(groupId, id)}
+                    onClose={(id) => closeStoreTab(groupId, id)}
+                    onAdd={() => addTab(groupId)}
+                    onSplit={() => {
+                      const id = crypto.randomUUID();
+                      splitStoreGroup(groupId, `workbench:group:${id}`, `workbench:split:${id}`, 'horizontal');
+                    }}
+                  />
+                  <div className="junqi-wb-group-content">
+                    <WorkbenchContent
+                      activeTab={targetActive}
+                      domainTab={targetActiveId ? tabRecords[targetActiveId] : undefined}
+                      projectPath={selectedWorktree?.path ?? null}
+                      onMissing={() => { if (targetActiveId) closeStoreTab(groupId, targetActiveId); }}
+                    />
+                  </div>
+                </section>
+              );
+            }}
           />
         </div>
 
