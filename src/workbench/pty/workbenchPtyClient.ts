@@ -54,6 +54,14 @@ export function stopWorkbenchPty(identity: WorkbenchPtyIdentity): Promise<void> 
   return invoke('stop_workbench_pty', { ptyId: identity.ptyId, runId: identity.runId });
 }
 
+export function closeWorkbenchPtyTab(identity: WorkbenchPtyIdentity): Promise<void> {
+  return invoke('close_workbench_pty_tab', { ptyId: identity.ptyId, runId: identity.runId });
+}
+
+export function closeWorkbenchPtyTabs(identities: WorkbenchPtyIdentity[]): Promise<void> {
+  return invoke('close_workbench_pty_tabs', { identities });
+}
+
 export function stopWorkbenchPtys(identities: WorkbenchPtyIdentity[]): Promise<void> {
   return invoke('stop_workbench_ptys', { identities });
 }

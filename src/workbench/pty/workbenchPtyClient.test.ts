@@ -6,7 +6,7 @@ const client = readFileSync(new URL('./workbenchPtyClient.ts', import.meta.url),
 const backend = readFileSync(new URL('../../../src-tauri/src/commands/workbench_pty.rs', import.meta.url), 'utf8');
 
 test('workbench PTY protocol carries explicit PTY and run identities', () => {
-  for (const command of ['create_workbench_pty', 'input_workbench_pty', 'resize_workbench_pty', 'snapshot_workbench_pty', 'stop_workbench_pty', 'stop_workbench_ptys']) {
+  for (const command of ['create_workbench_pty', 'input_workbench_pty', 'resize_workbench_pty', 'snapshot_workbench_pty', 'stop_workbench_pty', 'stop_workbench_ptys', 'close_workbench_pty_tab', 'close_workbench_pty_tabs']) {
     assert.match(client, new RegExp(command));
   }
   assert.match(client, /output\.ptyId !== identity\.ptyId \|\| output\.runId !== identity\.runId/);
@@ -47,6 +47,13 @@ test('completed runs remain exactly closable through a bounded tombstone', () =>
   assert.match(backend, /if is_completed_run\(&pty_id, &run_id\)/);
   assert.match(backend, /completed: true/);
   assert.match(backend, /consume_completed_run\(&pty_id, &run_id\)/);
+});
+
+test('tab close tolerates a missing prior-process registry but rejects replacement ownership', () => {
+  const close = backend.slice(backend.indexOf('pub fn close_workbench_pty_tab'), backend.indexOf('pub fn close_workbench_pty_tabs'));
+  assert.match(close, /Some\(_\) => Err\(format!\("stale workbench PTY run/);
+  assert.match(close, /None =>/);
+  assert.match(close, /consume_completed_run/);
 });
 
 test('batch stop validates every PTY owner before physical termination', () => {

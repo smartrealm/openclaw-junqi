@@ -449,6 +449,66 @@ pub fn stop_workbench_pty(pty_id: String, run_id: String) -> Result<(), String> 
 }
 
 #[tauri::command]
+pub fn close_workbench_pty_tab(pty_id: String, run_id: String) -> Result<(), String> {
+    validate_id("PTY id", &pty_id)?;
+    validate_id("run id", &run_id)?;
+    let _operation = lifecycle_gate()
+        .lock()
+        .map_err(|_| "workbench PTY lifecycle lock poisoned".to_string())?;
+    let current = registry()
+        .lock()
+        .map_err(|_| "workbench PTY registry lock poisoned".to_string())?
+        .get(&pty_id)
+        .cloned();
+    match current {
+        Some(handle) if handle.run_id == run_id && !handle.stopping.load(Ordering::Acquire) => {
+            stop_handle(&handle);
+            remove_if_current(&pty_id, &handle);
+            Ok(())
+        }
+        Some(_) => Err(format!("stale workbench PTY run: {pty_id}")),
+        None => {
+            consume_completed_run(&pty_id, &run_id);
+            Ok(())
+        }
+    }
+}
+
+#[tauri::command]
+pub fn close_workbench_pty_tabs(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), String> {
+    let _operation = lifecycle_gate()
+        .lock()
+        .map_err(|_| "workbench PTY lifecycle lock poisoned".to_string())?;
+    let entries = registry()
+        .lock()
+        .map_err(|_| "workbench PTY registry lock poisoned".to_string())?;
+    let mut handles = Vec::with_capacity(identities.len());
+    for identity in &identities {
+        validate_id("PTY id", &identity.pty_id)?;
+        validate_id("run id", &identity.run_id)?;
+        match entries.get(&identity.pty_id) {
+            Some(handle)
+                if handle.run_id == identity.run_id && !handle.stopping.load(Ordering::Acquire) =>
+            {
+                handles.push(Some(handle.clone()));
+            }
+            Some(_) => return Err(format!("stale workbench PTY run: {}", identity.pty_id)),
+            None => handles.push(None),
+        }
+    }
+    drop(entries);
+    for (identity, handle) in identities.iter().zip(handles) {
+        if let Some(handle) = handle {
+            stop_handle(&handle);
+            remove_if_current(&identity.pty_id, &handle);
+        } else {
+            consume_completed_run(&identity.pty_id, &identity.run_id);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn stop_workbench_ptys(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), String> {
     let _operation = lifecycle_gate()
         .lock()

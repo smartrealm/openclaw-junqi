@@ -34,7 +34,7 @@ import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMig
 import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
 import { TabGroupLayout } from '@/workbench/components/TabGroupLayout';
 import { WorkbenchTerminalPane } from '@/workbench/components/WorkbenchTerminalPane';
-import { stopWorkbenchPty, stopWorkbenchPtys } from '@/workbench/pty/workbenchPtyClient';
+import { closeWorkbenchPtyTab, closeWorkbenchPtyTabs } from '@/workbench/pty/workbenchPtyClient';
 import type { WorkbenchTab as DomainWorkbenchTab } from '@/workbench/domain/types';
 import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
@@ -621,7 +621,7 @@ export function AgentWorkspacePage() {
     try {
       if (tab?.kind === 'terminal') {
         if (!tab.ptyId || !tab.ptyRunId) throw new Error('Terminal 标签缺少 PTY identity');
-        await stopWorkbenchPty({ ptyId: tab.ptyId, runId: tab.ptyRunId });
+        await closeWorkbenchPtyTab({ ptyId: tab.ptyId, runId: tab.ptyRunId });
       }
       closeStoreTab(groupId, id);
       setLifecycleError(null);
@@ -637,7 +637,7 @@ export function AgentWorkspacePage() {
         if (!tab.ptyId || !tab.ptyRunId) throw new Error('Terminal 标签缺少 PTY identity');
         return { ptyId: tab.ptyId, runId: tab.ptyRunId };
       });
-      if (identities.length > 0) await stopWorkbenchPtys(identities);
+      if (identities.length > 0) await closeWorkbenchPtyTabs(identities);
       removeStoreGroup(groupId);
       setLifecycleError(null);
     } catch (reason) {
