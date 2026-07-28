@@ -44,6 +44,9 @@ export function useWorkbenchSessionPersistence(): void {
         && state.layout === previous.layout
         && state.groups === previous.groups
         && state.tabs === previous.tabs
+        && state.sidebarMode === previous.sidebarMode
+        && state.rightSidebarPanel === previous.rightSidebarPanel
+        && state.rightSidebarCollapsed === previous.rightSidebarCollapsed
       ) return;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {

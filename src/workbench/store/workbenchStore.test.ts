@@ -17,6 +17,7 @@ const tab = (id: string, preview = false, dirty = false): WorkbenchTab => ({
 beforeEach(() => {
   useWorkbenchStore.setState({
     hydrated: false, writerReady: false, hydrationError: null,
+    sidebarMode: 'full', rightSidebarPanel: 'files', rightSidebarCollapsed: false,
     worktrees: {}, activeWorktreeId: null, tabs: {},
     groups: { [mainGroup]: { id: mainGroup, tabIds: [], activeTabId: null } },
     layout: { type: 'group', groupId: mainGroup }, activeGroupId: mainGroup,

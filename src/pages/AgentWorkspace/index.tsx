@@ -633,9 +633,12 @@ export function AgentWorkspacePage() {
   const openTab = useWorkbenchStore((state) => state.openTab);
   const activateTab = useWorkbenchStore((state) => state.activateTab);
   const closeStoreTab = useWorkbenchStore((state) => state.closeTab);
-  const [rightPanel, setRightPanel] = useState<RightPanel>('files');
-  const [sidebarMode, setSidebarMode] = useState<WorkspaceSidebarMode>(readAgentWorkspaceSidebarMode);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const rightPanel = useWorkbenchStore((state) => state.rightSidebarPanel as RightPanel);
+  const setRightPanel = useWorkbenchStore((state) => state.setRightSidebarPanel);
+  const sidebarMode = useWorkbenchStore((state) => state.sidebarMode);
+  const setSidebarMode = useWorkbenchStore((state) => state.setSidebarMode);
+  const rightCollapsed = useWorkbenchStore((state) => state.rightSidebarCollapsed);
+  const setRightCollapsed = useWorkbenchStore((state) => state.setRightSidebarCollapsed);
   const worktrees = useMemo<WorktreeItem[]>(() => Object.values(worktreeRecords).map((worktree) => ({
     id: worktree.id,
     label: pathLabel(worktree.path),
@@ -654,13 +657,19 @@ export function AgentWorkspacePage() {
   }, [legacyTasks, setWorktrees]);
 
   useEffect(() => {
+    const persisted = readAgentWorkspaceSidebarMode();
+    if (!useWorkbenchStore.getState().hydrated) setSidebarMode(persisted);
+  }, [setSidebarMode]);
+
+  useEffect(() => {
     publishAgentWorkspaceSidebarMode(sidebarMode);
   }, [sidebarMode]);
 
   useEffect(() => {
-    const toggle = () => setSidebarMode((mode) => (
-      mode === 'full' ? 'compact' : mode === 'compact' ? 'hidden' : 'full'
-    ));
+    const toggle = () => {
+      const mode = useWorkbenchStore.getState().sidebarMode;
+      setSidebarMode(mode === 'full' ? 'compact' : mode === 'compact' ? 'hidden' : 'full');
+    };
     window.addEventListener(AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT, toggle);
     return () => window.removeEventListener(AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT, toggle);
   }, []);
@@ -704,7 +713,7 @@ export function AgentWorkspacePage() {
         activeId={activeWorktree}
         onSelect={setActiveWorktree}
         mode={sidebarMode}
-        onToggle={() => setSidebarMode((mode) => mode === 'full' ? 'compact' : 'full')}
+        onToggle={() => setSidebarMode(sidebarMode === 'full' ? 'compact' : 'full')}
       />
 
       <main className="junqi-wb-main">
@@ -752,9 +761,9 @@ export function AgentWorkspacePage() {
 
       <RightSidebar
         activePanel={rightPanel}
-        onPanelChange={setRightPanel}
+        onPanelChange={(panel) => setRightPanel(panel)}
         collapsed={rightCollapsed}
-        onToggle={() => setRightCollapsed((value) => !value)}
+        onToggle={() => setRightCollapsed(!rightCollapsed)}
         projectPath={selectedWorktree?.path ?? null}
         projectName={selectedWorktree ? pathLabel(selectedWorktree.path) : 'Workspace'}
         onFileSelect={openFile}

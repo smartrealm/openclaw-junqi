@@ -20,6 +20,9 @@ interface WorkbenchState {
   hydrated: boolean;
   writerReady: boolean;
   hydrationError: string | null;
+  sidebarMode: 'full' | 'compact' | 'hidden';
+  rightSidebarPanel: 'files' | 'search' | 'source' | 'checks' | 'ports' | 'vault';
+  rightSidebarCollapsed: boolean;
   worktrees: Record<WorktreeId, WorkbenchWorktree>;
   activeWorktreeId: WorktreeId | null;
   tabs: Record<TabId, WorkbenchTab>;
@@ -34,6 +37,9 @@ interface WorkbenchState {
   splitGroup: (targetGroupId: TabGroupId, newGroupId: TabGroupId, splitId: string, direction: 'horizontal' | 'vertical') => void;
   removeGroup: (groupId: TabGroupId) => void;
   resizeSplit: (splitId: string, ratio: number) => void;
+  setSidebarMode: (mode: WorkbenchState['sidebarMode']) => void;
+  setRightSidebarPanel: (panel: WorkbenchState['rightSidebarPanel']) => void;
+  setRightSidebarCollapsed: (collapsed: boolean) => void;
   hydrateSession: (snapshot: WorkbenchSessionSnapshot | null) => void;
   failHydration: (error: string) => void;
   sessionSnapshot: () => WorkbenchSessionSnapshot;
@@ -50,6 +56,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   hydrated: false,
   writerReady: false,
   hydrationError: null,
+  sidebarMode: 'full',
+  rightSidebarPanel: 'files',
+  rightSidebarCollapsed: false,
   worktrees: {},
   activeWorktreeId: null,
   tabs: {},
@@ -141,6 +150,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   resizeSplit: (splitId, ratio) => set((state) => ({
     layout: resizeTabGroupSplit(state.layout, splitId, ratio),
   })),
+  setSidebarMode: (sidebarMode) => set({ sidebarMode }),
+  setRightSidebarPanel: (rightSidebarPanel) => set({ rightSidebarPanel }),
+  setRightSidebarCollapsed: (rightSidebarCollapsed) => set({ rightSidebarCollapsed }),
 
   hydrateSession: (snapshot) => set((state) => snapshot ? {
     hydrated: true,
@@ -151,6 +163,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     layout: snapshot.layout,
     groups: snapshot.groups,
     tabs: snapshot.tabs,
+    sidebarMode: snapshot.sidebarMode,
+    rightSidebarPanel: snapshot.rightSidebarPanel,
+    rightSidebarCollapsed: snapshot.rightSidebarCollapsed,
   } : {
     hydrated: true,
     writerReady: true,
@@ -168,9 +183,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       layout: state.layout,
       groups: state.groups,
       tabs: state.tabs,
-      sidebarMode: 'full',
-      rightSidebarPanel: 'files',
-      rightSidebarCollapsed: false,
+      sidebarMode: state.sidebarMode,
+      rightSidebarPanel: state.rightSidebarPanel,
+      rightSidebarCollapsed: state.rightSidebarCollapsed,
     };
   },
 }));
