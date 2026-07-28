@@ -226,6 +226,7 @@ pub fn create_workbench_pty(
     cwd: String,
     cols: u16,
     rows: u16,
+    allow_create: bool,
 ) -> Result<WorkbenchPtyCreateResult, String> {
     validate_id("PTY id", &pty_id)?;
     validate_id("run id", &run_id)?;
@@ -244,6 +245,9 @@ pub fn create_workbench_pty(
             created: false,
             completed: true,
         });
+    }
+    if !allow_create {
+        return Err("workbench PTY is not running; explicit restart required".into());
     }
     if let Ok(mut runs) = completed_runs().lock() {
         runs.retain(|(id, _)| id != &pty_id);

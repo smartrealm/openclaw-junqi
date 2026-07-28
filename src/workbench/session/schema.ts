@@ -56,7 +56,8 @@ function validTab(id: string, value: unknown): value is WorkbenchTab {
     && (tab.filePath === undefined || typeof tab.filePath === 'string')
     && (tab.diffStaged === undefined || typeof tab.diffStaged === 'boolean')
     && (tab.ptyId === undefined || typeof tab.ptyId === 'string')
-    && (tab.ptyRunId === undefined || typeof tab.ptyRunId === 'string');
+    && (tab.ptyRunId === undefined || typeof tab.ptyRunId === 'string')
+    && (tab.ptyCreatePending === undefined || tab.ptyCreatePending === false);
 }
 
 export function isWorkbenchSessionSnapshot(value: unknown): value is WorkbenchSessionSnapshot {

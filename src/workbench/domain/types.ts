@@ -55,6 +55,7 @@ export interface WorkbenchTab {
   diffStaged?: boolean;
   ptyId?: PtyId;
   ptyRunId?: PtyRunId;
+  ptyCreatePending?: boolean;
 }
 
 export interface TabGroup {

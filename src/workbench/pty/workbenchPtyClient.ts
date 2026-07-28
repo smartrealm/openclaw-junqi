@@ -33,8 +33,9 @@ export async function createWorkbenchPty(
   cwd: string,
   cols = 120,
   rows = 24,
+  allowCreate = false,
 ): Promise<WorkbenchPtyCreateResult> {
-  return invoke('create_workbench_pty', { ...identity, cwd, cols, rows });
+  return invoke('create_workbench_pty', { ...identity, cwd, cols, rows, allowCreate });
 }
 
 export function inputWorkbenchPty(identity: WorkbenchPtyIdentity, data: string): Promise<void> {

@@ -93,6 +93,15 @@ test('group removal deletes owned tabs and collapses layout', () => {
   assert.equal(state.activeGroupId, mainGroup);
 });
 
+test('PTY create authorization is one-shot and never durable', () => {
+  useWorkbenchStore.getState().openTab(mainGroup, {
+    ...tab('terminal'), kind: 'terminal', ptyId: 'pty', ptyRunId: 'run', ptyCreatePending: true,
+  });
+  assert.equal(useWorkbenchStore.getState().sessionSnapshot().tabs.terminal?.ptyCreatePending, false);
+  useWorkbenchStore.getState().acknowledgePtyCreate('terminal');
+  assert.equal(useWorkbenchStore.getState().tabs.terminal?.ptyCreatePending, false);
+});
+
 test('session snapshots always emit the current schema version', () => {
   assert.equal(useWorkbenchStore.getState().sessionSnapshot().schemaVersion, 2);
 });

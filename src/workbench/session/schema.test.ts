@@ -26,6 +26,12 @@ test('session schema accepts a complete referentially consistent snapshot', () =
   assert.equal(isWorkbenchSessionSnapshot(snapshot()), true);
 });
 
+test('session schema rejects durable PTY process-create authorization', () => {
+  const authorized = snapshot();
+  authorized.tabs.tab.ptyCreatePending = true;
+  assert.equal(isWorkbenchSessionSnapshot(authorized), false);
+});
+
 test('session schema rejects tabs whose worktree owner is missing', () => {
   const missingOwner = snapshot();
   missingOwner.tabs.tab.worktreeId = 'missing';

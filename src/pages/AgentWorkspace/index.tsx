@@ -692,6 +692,7 @@ export function AgentWorkspacePage() {
       dirty: false,
       ptyId: `workbench:pty:${id}`,
       ptyRunId: `workbench:run:${crypto.randomUUID()}`,
+      ptyCreatePending: true,
     });
   };
 

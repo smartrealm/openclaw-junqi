@@ -10,6 +10,8 @@ test('workbench terminal subscribes before create and restores an existing run s
   assert.ok(subscribe >= 0 && create > subscribe);
   assert.match(source, /if \(created\.completed\)/);
   assert.match(source, /else if \(!created\.created\)/);
+  assert.match(source, /tab\.ptyCreatePending === true/);
+  assert.match(source, /acknowledgePtyCreate\(tab\.id\)/);
   assert.match(source, /subscription\?\.synchronize\(sequence\)/);
 });
 

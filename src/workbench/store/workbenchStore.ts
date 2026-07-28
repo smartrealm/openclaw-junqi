@@ -35,6 +35,7 @@ interface WorkbenchState {
   openTab: (groupId: TabGroupId, tab: WorkbenchTab) => void;
   activateTab: (groupId: TabGroupId, tabId: TabId) => void;
   closeTab: (groupId: TabGroupId, tabId: TabId) => void;
+  acknowledgePtyCreate: (tabId: TabId) => void;
   splitGroup: (targetGroupId: TabGroupId, newGroupId: TabGroupId, splitId: string, direction: 'horizontal' | 'vertical') => void;
   removeGroup: (groupId: TabGroupId) => void;
   resizeSplit: (splitId: string, ratio: number) => void;
@@ -149,6 +150,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     };
   }),
 
+  acknowledgePtyCreate: (tabId) => set((state) => {
+    const tab = state.tabs[tabId];
+    if (!tab?.ptyCreatePending) return {};
+    return { tabs: { ...state.tabs, [tabId]: { ...tab, ptyCreatePending: false } } };
+  }),
+
   splitGroup: (targetGroupId, newGroupId, splitId, direction) => set((state) => {
     if (!state.groups[targetGroupId] || state.groups[newGroupId]) return {};
     return {
@@ -209,7 +216,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       activeGroupId: state.activeGroupId,
       layout: state.layout,
       groups: state.groups,
-      tabs: state.tabs,
+      tabs: Object.fromEntries(Object.entries(state.tabs).map(([id, tab]) => [
+        id,
+        tab.ptyCreatePending ? { ...tab, ptyCreatePending: false } : tab,
+      ])),
       sidebarMode: state.sidebarMode,
       rightSidebarPanel: state.rightSidebarPanel,
       rightSidebarCollapsed: state.rightSidebarCollapsed,

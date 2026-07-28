@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import type { WorkbenchTab } from '../domain/types';
+import { useWorkbenchStore } from '../store/workbenchStore';
 import {
   createWorkbenchPty,
   inputWorkbenchPty,
@@ -13,6 +14,7 @@ import {
 } from '../pty/workbenchPtyClient';
 
 export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: string }) {
+  const acknowledgePtyCreate = useWorkbenchStore((state) => state.acknowledgePtyCreate);
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const identity = useMemo<WorkbenchPtyIdentity | null>(() => (
@@ -67,7 +69,14 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
           () => { if (alive) terminal.write('\r\n[process exited]\r\n'); },
           sequence,
         );
-        const created = await createWorkbenchPty(identity, cwd, terminal.cols, terminal.rows);
+        const created = await createWorkbenchPty(
+          identity,
+          cwd,
+          terminal.cols,
+          terminal.rows,
+          tab.ptyCreatePending === true,
+        );
+        acknowledgePtyCreate(tab.id);
         if (!alive) return;
         if (created.completed) {
           terminal.write('\r\n[process already exited]\r\n');
@@ -95,7 +104,7 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
       terminal.dispose();
       // Deliberately do not stop the PTY: hidden/unmounted panes detach only.
     };
-  }, [cwd, identity]);
+  }, [acknowledgePtyCreate, cwd, identity, tab.id, tab.ptyCreatePending]);
 
   if (!identity) return <div className="junqi-wb-empty-panel">Terminal 标签缺少 PTY identity</div>;
   return (

@@ -19,6 +19,12 @@ test('workbench PTY detects output gaps and requests snapshot-capable recovery',
   assert.match(backend, /MAX_SNAPSHOT_BYTES: usize = 2 \* 1024 \* 1024/);
 });
 
+test('missing PTYs require one explicit renderer create authorization', () => {
+  assert.match(client, /allowCreate = false/);
+  assert.match(backend, /if !allow_create/);
+  assert.match(backend, /explicit restart required/);
+});
+
 test('create and stop lifecycle operations share one backend gate', () => {
   assert.match(backend, /fn lifecycle_gate\(\)/);
   const create = backend.slice(backend.indexOf('pub fn create_workbench_pty'), backend.indexOf('pub fn input_workbench_pty'));
