@@ -530,6 +530,10 @@ function presentationTab(tab: DomainWorkbenchTab): WorkbenchTab {
   return { id: tab.id, label: tab.title, kind, dirty: tab.dirty };
 }
 
+function localWorktreePath(worktree: { hostId: string; hostRevision: number; path: string } | undefined): string | null {
+  return worktree?.hostId === 'local' && worktree.hostRevision === 0 ? worktree.path : null;
+}
+
 function pathLabel(path: string): string {
   const normalized = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
   return normalized || path;
@@ -573,6 +577,7 @@ export function AgentWorkspacePage() {
   const activeTabId = group?.activeTabId ?? null;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const selectedWorktree = activeWorktree ? worktreeRecords[activeWorktree] : undefined;
+  const selectedLocalPath = localWorktreePath(selectedWorktree);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -742,6 +747,7 @@ export function AgentWorkspacePage() {
               const targetActive = targetTabs.find((tab) => tab.id === targetActiveId);
               const targetDomainTab = targetActiveId ? tabRecords[targetActiveId] : undefined;
               const targetWorktree = targetDomainTab ? worktreeRecords[targetDomainTab.worktreeId] : undefined;
+              const targetLocalPath = localWorktreePath(targetWorktree);
               return (
                 <section className={`junqi-wb-tab-group${groupId === activeGroupId ? ' is-active' : ''}`}>
                   <WorkbenchTabBar
@@ -760,7 +766,7 @@ export function AgentWorkspacePage() {
                     <WorkbenchContent
                       activeTab={targetActive}
                       domainTab={targetDomainTab}
-                      projectPath={targetWorktree?.path ?? null}
+                      projectPath={targetLocalPath}
                       onClose={() => { if (targetActiveId) void closeTab(groupId, targetActiveId); }}
                     />
                   </div>
@@ -787,7 +793,7 @@ export function AgentWorkspacePage() {
         onPanelChange={(panel) => setRightPanel(panel)}
         collapsed={rightCollapsed}
         onToggle={() => setRightCollapsed(!rightCollapsed)}
-        projectPath={selectedWorktree?.path ?? null}
+        projectPath={selectedLocalPath}
         projectName={selectedWorktree ? pathLabel(selectedWorktree.path) : 'Workspace'}
         onFileSelect={openFile}
         onDiffSelect={openDiff}
