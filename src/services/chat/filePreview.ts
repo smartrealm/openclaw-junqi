@@ -1,4 +1,4 @@
-import { workspaceFileKind } from '@/workspace-files/domain/fileKinds';
+import { resolveWorkspacePreview } from '@/workspace-files/services/previewResolver';
 
 export type FilePreviewKind = 'html' | 'image' | 'markdown' | 'text';
 export type LocalBinaryPreviewKind = 'image' | 'audio' | 'video' | 'pdf';
@@ -63,15 +63,31 @@ export class FilePreviewError extends Error {
   }
 }
 
+const MANAGED_PREVIEW_CAPABILITIES = { read: true, write: false, nativePreview: true } as const;
+
 export function getFilePreviewKind(fileName: string): FilePreviewKind | null {
-  const kind = workspaceFileKind(fileName);
-  if (kind === 'code') return 'text';
-  return kind === 'html' || kind === 'image' || kind === 'markdown' || kind === 'text' ? kind : null;
+  const resolution = resolveWorkspacePreview({
+    path: fileName,
+    policy: 'managed-readonly',
+    capabilities: MANAGED_PREVIEW_CAPABILITIES,
+    interactiveHtml: true,
+  });
+  if (resolution.mode === 'editor') return 'text';
+  if (resolution.mode === 'markdown') return 'markdown';
+  if (resolution.mode === 'isolated-html' || resolution.mode === 'static-html') return 'html';
+  return resolution.kind === 'image' && resolution.mode === 'scoped-media' ? 'image' : null;
 }
 
 export function getLocalBinaryPreviewKind(fileName: string): LocalBinaryPreviewKind | null {
-  const kind = workspaceFileKind(fileName);
-  return kind === 'image' || kind === 'audio' || kind === 'video' || kind === 'pdf' ? kind : null;
+  const resolution = resolveWorkspacePreview({
+    path: fileName,
+    policy: 'managed-readonly',
+    capabilities: MANAGED_PREVIEW_CAPABILITIES,
+  });
+  if (resolution.mode === 'scoped-media' && (resolution.kind === 'image' || resolution.kind === 'audio' || resolution.kind === 'video')) {
+    return resolution.kind;
+  }
+  return resolution.mode === 'scoped-pdf' ? 'pdf' : null;
 }
 
 export function decodeBase64Utf8(base64: string): string {
