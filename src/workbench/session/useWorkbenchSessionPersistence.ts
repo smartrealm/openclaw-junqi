@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { loadWorkbenchSession, saveWorkbenchSession } from './storage';
 import { WorkbenchSessionWriter } from './writer';
 import { useWorkbenchStore } from '../store/workbenchStore';
+import { stopAllWorkbenchPtys } from '../pty/workbenchPtyClient';
 
 const LOCAL_PARTITION = 'local';
 const WRITE_DEBOUNCE_MS = 180;
@@ -47,9 +48,10 @@ export function useWorkbenchSessionPersistence(): void {
         event.preventDefault();
         if (closeCheckpointRef.current) return;
         const checkpoint = writer.checkpoint(useWorkbenchStore.getState().sessionSnapshot())
+          .then(() => stopAllWorkbenchPtys())
           .then(() => window.destroy())
           .catch(() => {
-            useWorkbenchStore.getState().failHydration('Workbench shutdown checkpoint failed; close again to retry');
+            useWorkbenchStore.getState().failHydration('Workbench shutdown checkpoint or PTY cleanup failed; close again to retry');
           })
           .finally(() => {
             if (closeCheckpointRef.current === checkpoint) closeCheckpointRef.current = null;

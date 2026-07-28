@@ -369,6 +369,7 @@ pub fn run() {
             commands::workbench_pty::input_workbench_pty,
             commands::workbench_pty::resize_workbench_pty,
             commands::workbench_pty::snapshot_workbench_pty,
+            commands::workbench_pty::stop_all_workbench_ptys,
             commands::workbench_pty::stop_workbench_pty,
             commands::workbench_pty::stop_workbench_ptys,
             commands::workbench_session::load_workbench_session,

@@ -50,6 +50,10 @@ export function snapshotWorkbenchPty(identity: WorkbenchPtyIdentity): Promise<Wo
   return invoke('snapshot_workbench_pty', { ptyId: identity.ptyId, runId: identity.runId });
 }
 
+export function stopAllWorkbenchPtys(): Promise<number> {
+  return invoke<number>('stop_all_workbench_ptys');
+}
+
 export function stopWorkbenchPty(identity: WorkbenchPtyIdentity): Promise<void> {
   return invoke('stop_workbench_pty', { ptyId: identity.ptyId, runId: identity.runId });
 }

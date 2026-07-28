@@ -17,6 +17,7 @@ test('workbench terminal subscribes before create and restores an existing run s
 
 test('snapshot resync buffers concurrent output and replays only newer sequences', () => {
   assert.match(source, /if \(resyncing\) bufferedOutput\.push/);
+  assert.match(source, /if \(snapshot\.truncated\) terminal\.write\('\[earlier output truncated\]/);
   assert.match(source, /if \(output\.sequence <= sequence\) continue/);
   assert.match(source, /sequence = output\.sequence/);
   assert.match(source, /subscription\?\.synchronize\(nextSequence\)/);

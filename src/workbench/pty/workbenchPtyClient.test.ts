@@ -6,7 +6,7 @@ const client = readFileSync(new URL('./workbenchPtyClient.ts', import.meta.url),
 const backend = readFileSync(new URL('../../../src-tauri/src/commands/workbench_pty.rs', import.meta.url), 'utf8');
 
 test('workbench PTY protocol carries explicit PTY and run identities', () => {
-  for (const command of ['create_workbench_pty', 'input_workbench_pty', 'resize_workbench_pty', 'snapshot_workbench_pty', 'stop_workbench_pty', 'stop_workbench_ptys', 'close_workbench_pty_tab', 'close_workbench_pty_tabs']) {
+  for (const command of ['create_workbench_pty', 'input_workbench_pty', 'resize_workbench_pty', 'snapshot_workbench_pty', 'stop_workbench_pty', 'stop_workbench_ptys', 'close_workbench_pty_tab', 'close_workbench_pty_tabs', 'stop_all_workbench_ptys']) {
     assert.match(client, new RegExp(command));
   }
   assert.match(client, /output\.ptyId !== identity\.ptyId \|\| output\.runId !== identity\.runId/);
@@ -67,6 +67,13 @@ test('tab close tolerates a missing prior-process registry but rejects replaceme
   assert.match(close, /Some\(_\) => Err\(format!\("stale workbench PTY run/);
   assert.match(close, /None =>/);
   assert.match(close, /consume_completed_run/);
+});
+
+test('shutdown drain removes every workbench registry entry before physical stop', () => {
+  const drain = backend.slice(backend.indexOf('pub fn stop_all_workbench_ptys'), backend.indexOf('pub fn stop_workbench_ptys'));
+  assert.match(drain, /entries\s*\.drain\(\)/);
+  assert.match(drain, /for handle in handles/);
+  assert.match(drain, /stop_handle\(&handle\)/);
 });
 
 test('batch stop validates every PTY owner before physical termination', () => {

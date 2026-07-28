@@ -58,6 +58,7 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
         const snapshot = await snapshotWorkbenchPty(identity);
         if (!alive) return snapshot.sequence;
         terminal.reset();
+        if (snapshot.truncated) terminal.write('[earlier output truncated]\r\n');
         terminal.write(snapshot.data);
         let sequence = snapshot.sequence;
         for (const output of bufferedOutput) {

@@ -560,6 +560,27 @@ pub fn close_workbench_pty_tabs(identities: Vec<WorkbenchPtyIdentity>) -> Result
 }
 
 #[tauri::command]
+pub fn stop_all_workbench_ptys() -> Result<u64, String> {
+    let _operation = lifecycle_gate()
+        .lock()
+        .map_err(|_| "workbench PTY lifecycle lock poisoned".to_string())?;
+    let handles = {
+        let mut entries = registry()
+            .lock()
+            .map_err(|_| "workbench PTY registry lock poisoned".to_string())?;
+        entries
+            .drain()
+            .map(|(_, handle)| handle)
+            .collect::<Vec<_>>()
+    };
+    let count = handles.len() as u64;
+    for handle in handles {
+        stop_handle(&handle);
+    }
+    Ok(count)
+}
+
+#[tauri::command]
 pub fn stop_workbench_ptys(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), String> {
     let _operation = lifecycle_gate()
         .lock()
