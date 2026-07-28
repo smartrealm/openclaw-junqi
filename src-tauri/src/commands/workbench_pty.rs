@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 
@@ -59,13 +59,14 @@ pub struct WorkbenchPtySnapshot {
 struct SnapshotBuffer {
     chunks: VecDeque<Vec<u8>>,
     bytes: usize,
+    sequence: u64,
     truncated: bool,
 }
 
 impl SnapshotBuffer {
-    fn push(&mut self, data: &[u8]) {
+    fn push(&mut self, data: &[u8]) -> u64 {
         if data.is_empty() {
-            return;
+            return self.sequence;
         }
         self.chunks.push_back(data.to_vec());
         self.bytes += data.len();
@@ -83,6 +84,8 @@ impl SnapshotBuffer {
             }
             self.truncated = true;
         }
+        self.sequence = self.sequence.saturating_add(1);
+        self.sequence
     }
 
     fn text(&self) -> String {
@@ -96,7 +99,6 @@ struct WorkbenchPtyHandle {
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     writer: Mutex<Box<dyn Write + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
-    sequence: AtomicU64,
     snapshot: Mutex<SnapshotBuffer>,
     stopping: AtomicBool,
 }
@@ -296,10 +298,10 @@ pub fn create_workbench_pty(
         master: Mutex::new(Some(pair.master)),
         writer: Mutex::new(writer),
         killer: Mutex::new(child.clone_killer()),
-        sequence: AtomicU64::new(0),
         snapshot: Mutex::new(SnapshotBuffer {
             chunks: VecDeque::new(),
             bytes: 0,
+            sequence: 0,
             truncated: false,
         }),
         stopping: AtomicBool::new(false),
@@ -319,10 +321,10 @@ pub fn create_workbench_pty(
             match reader.read(&mut bytes) {
                 Ok(0) => break,
                 Ok(read) => {
-                    if let Ok(mut snapshot) = output_handle.snapshot.lock() {
-                        snapshot.push(&bytes[..read]);
-                    }
-                    let sequence = output_handle.sequence.fetch_add(1, Ordering::AcqRel) + 1;
+                    let sequence = match output_handle.snapshot.lock() {
+                        Ok(mut snapshot) => snapshot.push(&bytes[..read]),
+                        Err(_) => break,
+                    };
                     let _ = output_app.emit(
                         "workbench-pty-output",
                         WorkbenchPtyOutput {
@@ -426,7 +428,7 @@ pub fn snapshot_workbench_pty(
     Ok(WorkbenchPtySnapshot {
         pty_id,
         run_id,
-        sequence: handle.sequence.load(Ordering::Acquire),
+        sequence: snapshot.sequence,
         data: snapshot.text(),
         truncated: snapshot.truncated,
     })
@@ -570,6 +572,7 @@ mod tests {
         let mut snapshot = SnapshotBuffer {
             chunks: VecDeque::new(),
             bytes: 0,
+            sequence: 0,
             truncated: false,
         };
         snapshot.push(&vec![b'a'; MAX_SNAPSHOT_BYTES]);

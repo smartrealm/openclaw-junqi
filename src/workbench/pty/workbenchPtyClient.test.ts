@@ -12,6 +12,12 @@ test('workbench PTY protocol carries explicit PTY and run identities', () => {
   assert.match(client, /output\.ptyId !== identity\.ptyId \|\| output\.runId !== identity\.runId/);
 });
 
+test('snapshot bytes and sequence advance under one backend lock', () => {
+  assert.doesNotMatch(backend, /AtomicU64/);
+  assert.match(backend, /Ok\(mut snapshot\) => snapshot\.push/);
+  assert.match(backend, /sequence: snapshot\.sequence/);
+});
+
 test('workbench PTY detects output gaps and requests snapshot-capable recovery', () => {
   assert.match(client, /output\.sequence !== sequence \+ 1/);
   assert.match(client, /onGap\(sequence \+ 1, output\.sequence\)/);
