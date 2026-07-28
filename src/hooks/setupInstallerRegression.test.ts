@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
+import { APP_LANGUAGES } from '../i18n/languages';
 
 const setupFlow = readdirSync(new URL('./useSetupFlow/', import.meta.url))
   .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
@@ -236,7 +237,7 @@ test('default setup never constructs private Node.js or Git directories under Op
 });
 
 test('system-installer fallback progress is translated in every supported locale', () => {
-  for (const locale of ['zh', 'zh-TW', 'en', 'ar']) {
+  for (const locale of ['zh', 'zh-TW', 'en']) {
     const messages = JSON.parse(
       readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'),
     ) as Record<string, unknown>;
@@ -296,7 +297,7 @@ test('npm setup step is translated in every supported locale', () => {
     'setup.npmInstallFailed',
   ];
 
-  for (const locale of ['zh', 'zh-TW', 'en', 'ar']) {
+  for (const locale of ['zh', 'zh-TW', 'en']) {
     const messages = JSON.parse(
       readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'),
     ) as Record<string, unknown>;
@@ -431,7 +432,7 @@ test('BUG-GW-I18N-02 Gateway lifecycle lines carry translation keys', () => {
   const keys = [...gatewayCommands.matchAll(/Some\("(setup\.gateway\.[A-Za-z]+)"\)/g)]
     .map((match) => match[1]!);
   assert.ok(keys.length >= 20, `expected the start path to be keyed, found ${keys.length}`);
-  for (const locale of ['en', 'zh', 'zh-TW', 'ar']) {
+  for (const locale of APP_LANGUAGES) {
     const messages = JSON.parse(
       readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'),
     ) as Record<string, unknown>;

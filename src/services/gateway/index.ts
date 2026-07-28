@@ -160,6 +160,7 @@ export interface PrivilegedRequester {
     params: Record<string, unknown>,
     timeoutMs?: number | null,
   ): Promise<T>;
+  cancelActiveRequest(): void;
   cancelPairingRetry(): void;
 }
 
@@ -291,6 +292,10 @@ export function createPrivilegedRequester(
     | { kind: 'pairing'; issue: GatewayAuthorizationIssue }
     | { kind: 'failure'; error: Error };
 
+  const requestTimeoutError = (timeoutMs: number) => (
+    new Error(`Request timeout (${timeoutMs}ms) while waiting for privileged Gateway operation`)
+  );
+
   const attempt = <T>(
     target: { url: string; token: string; deviceToken: string },
     method: string,
@@ -306,7 +311,7 @@ export function createPrivilegedRequester(
       const timer = timeoutMs === null
         ? null
         : window.setTimeout(() => {
-          finish({ kind: 'failure', error: new Error(`Privileged Gateway request timed out (${timeoutMs}ms)`) });
+          finish({ kind: 'failure', error: requestTimeoutError(timeoutMs) });
         }, timeoutMs);
       const finish = (result: AttemptResult<T>) => {
         if (settled) return;
@@ -355,7 +360,18 @@ export function createPrivilegedRequester(
     method: string,
     params: Record<string, unknown>,
     timeoutMs: number | null = 30_000,
+    enqueuedAt = Date.now(),
   ): Promise<T> => {
+    const normalizedTimeoutMs = timeoutMs === null ? null : Math.max(1_000, timeoutMs);
+    const requestDeadline = normalizedTimeoutMs === null ? null : enqueuedAt + normalizedTimeoutMs;
+    const remainingBudget = () => requestDeadline === null
+      ? null
+      : Math.max(0, requestDeadline - Date.now());
+    const requireRemainingBudget = () => {
+      const remaining = remainingBudget();
+      if (remaining !== null && remaining <= 0) throw requestTimeoutError(normalizedTimeoutMs!);
+      return remaining;
+    };
     const sourceConnectionId = source.getAttestedConnectionId();
     if (!source.isConnected()
       || !sourceConnectionId
@@ -374,18 +390,22 @@ export function createPrivilegedRequester(
     const assertSourceCurrent = () => {
       if (!sourceIsCurrent()) throw new GatewayPrivilegedSourceChangedError();
     };
-    const pairingDeadline = Date.now() + pairingTimeoutMs;
+    const pairingDeadline = Math.min(
+      Date.now() + pairingTimeoutMs,
+      requestDeadline ?? Number.POSITIVE_INFINITY,
+    );
     let pairingObserved = false;
     let pairingResolvedEmitted = false;
 
     try {
       for (;;) {
+        const attemptTimeoutMs = requireRemainingBudget();
         assertSourceCurrent();
         const result = await attempt<T>(
           target,
           method,
           params,
-          timeoutMs,
+          attemptTimeoutMs,
           (cancel) => { cancelActivePairingRetry = cancel; },
           () => {
             if (!sourceIsCurrent()) return;
@@ -426,10 +446,38 @@ export function createPrivilegedRequester(
   };
 
   const request = (<T>(method: string, params: Record<string, unknown>, timeoutMs?: number | null) => {
-    const operation = lane.then(() => execute<T>(method, params, timeoutMs));
-    lane = operation.then(() => undefined, () => undefined);
-    return operation;
+    const enqueuedAt = Date.now();
+    const normalizedTimeoutMs = timeoutMs === null
+      ? null
+      : Math.max(1_000, timeoutMs ?? 30_000);
+    let expiredInQueue = false;
+    const execution = lane.then(() => {
+      if (expiredInQueue && normalizedTimeoutMs !== null) {
+        throw requestTimeoutError(normalizedTimeoutMs);
+      }
+      return execute<T>(method, params, normalizedTimeoutMs, enqueuedAt);
+    });
+    lane = execution.then(() => undefined, () => undefined);
+    if (normalizedTimeoutMs === null) return execution;
+
+    return new Promise<T>((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        expiredInQueue = true;
+        reject(requestTimeoutError(normalizedTimeoutMs));
+      }, normalizedTimeoutMs);
+      void execution.then(
+        (value) => {
+          window.clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          window.clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
   }) as PrivilegedRequester;
+  request.cancelActiveRequest = () => cancelActivePairingRetry?.();
   request.cancelPairingRetry = () => cancelActivePairingRetry?.();
   return request;
 }
@@ -773,6 +821,7 @@ export const gateway = {
   getToken() { return connection.token; },
   getDeviceToken() { return connection.deviceToken; },
   stopPairingRetry() { connection.stopPairingRetry(); },
+  cancelActivePrivilegedRequest() { requestPrivileged.cancelActiveRequest(); },
   cancelPrivilegedAuthorizationRetry() { requestPrivileged.cancelPairingRetry(); },
   reconnectWithToken(newToken: string) { connection.reconnectWithToken(newToken); },
 };

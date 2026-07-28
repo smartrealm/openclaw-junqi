@@ -25,3 +25,6 @@
     cancel the scoped backend operation, and compensate staged runtime state.
 11. BUG-ONB-48: distinguish missing prerequisites from retryable failures and
     route Git/Node verification failures to their dedicated recovery screens.
+12. BUG-ONB-49: use official `wizard.status` recovery, bound Wizard and queued
+    privileged requests, preserve healthy Gateway connections, and expose
+    connection phases before producing and launching a new candidate build.

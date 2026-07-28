@@ -19,6 +19,7 @@ import { DEFAULT_SETTING, STORAGE_KEY } from './constants';
 import { AEGIS_FONTS_STORAGE_KEYS, isThemeSetting } from './types';
 import { detectOSPreference, resolveTheme } from './resolver';
 import { applyAccentColor, readPersistedAccentColor } from './accent';
+import { buildFontStack } from '@/utils/fonts';
 
 /** Reads localStorage, resolves to a concrete theme, writes data-theme to <html>. Also applies any persisted font families to --font-ui / --font-mono CSS custom properties so the correct fonts are ready before the first paint. Returns the resolved theme so callers can log / inspect it. */
 export function earlyBootstrap(): void {
@@ -37,13 +38,25 @@ export function earlyBootstrap(): void {
   const root = document.documentElement;
   try {
     const uiFont = localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.uiFont);
-    if (uiFont) root.style.setProperty('--font-ui', uiFont);
+    const stack = buildFontStack(uiFont ?? '', 'ui');
+    if (stack) {
+      root.style.setProperty('--font-ui', stack);
+      root.style.setProperty('--font-sans', stack);
+    }
   } catch {
     // localStorage unavailable — skip
   }
   try {
     const monoFont = localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.monoFont);
-    if (monoFont) root.style.setProperty('--font-mono', monoFont);
+    const stack = buildFontStack(monoFont ?? '', 'mono');
+    if (stack) root.style.setProperty('--font-mono', stack);
+  } catch {
+    // localStorage unavailable — skip
+  }
+  try {
+    const editorFont = localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.editorFont);
+    const stack = buildFontStack(editorFont ?? '', 'editor');
+    if (stack) root.style.setProperty('--font-editor', stack);
   } catch {
     // localStorage unavailable — skip
   }

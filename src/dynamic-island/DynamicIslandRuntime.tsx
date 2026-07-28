@@ -9,7 +9,6 @@ import { useNotificationStore } from '@/stores/notificationStore';
 import { usePetStore } from '@/stores/petStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { notifications } from '@/services/notifications';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent, subscribeTauriListener } from '@/utils/tauriEvents';
@@ -228,7 +227,6 @@ export default function DynamicIslandRuntime() {
         case 'toggle-dnd': {
           const next = !useSettingsStore.getState().dndMode;
           useSettingsStore.getState().setDndMode(next);
-          notifications.setDndMode(next);
           break;
         }
         case 'pomodoro-toggle':

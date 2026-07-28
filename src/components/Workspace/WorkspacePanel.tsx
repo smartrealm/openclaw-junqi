@@ -1,30 +1,32 @@
 /**
  * Agent workspace panel. Resolves an agent's workspace directory, shows a lazy
- * file tree, and opens files into a CodeMirror editor or an image preview.
- * Edits save back via write_file_content (Ctrl/Cmd+S or the Save button).
+ * file tree, and opens files into a text editor or a typed read-only preview.
+ * Text edits save back via write_file_content (Ctrl/Cmd+S or the Save button).
  */
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { useTranslation } from 'react-i18next';
-import { githubLight, githubDark } from '@uiw/codemirror-theme-github';
 import type { Extension } from '@codemirror/state';
 import { ChevronLeft, RefreshCw, Save, Loader2, FileWarning, FolderOpen } from 'lucide-react';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { useTheme } from '@/theme/useTheme';
 import { WorkspaceFileTree } from './WorkspaceFileTree';
+import { FileReadOnlyPreview } from '@/components/FileExplorer/FileReadOnlyPreview';
+import { pathIsTargetOrDescendant, rebaseOpenFilePath } from '@/components/FileExplorer/openFilePaths';
 import {
-  readFileText, writeFileText, readImagePreview, getWorkspacePath, isImageExt,
-  type FsEntry, type ImagePreview,
+  readFilePreview, writeFileText, getWorkspacePath, type FsEntry,
 } from '@/services/workspaceFs';
+import type { WorkspaceFilePreview } from '@/utils/filePreviewCapabilities';
 import { loadCodeMirrorLanguage } from '@/utils/codeMirrorLanguages';
+import { aegisCodeMirrorBaseTheme, getCodeMirrorColorTheme } from '@/utils/codeMirrorTheme';
 import { showConfirm } from '@/components/shared/AlertDialog';
 
 interface OpenFile {
   entry: FsEntry;
   content: string;
   saved: string;
-  image: ImagePreview | null;
+  preview: WorkspaceFilePreview | null;
   error: string | null;
 }
 
@@ -38,9 +40,8 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
   const { t } = useTranslation();
   const activeKey = useChatStore((s) => s.activeSessionKey);
   const agents = useGatewayDataStore((s) => s.agents);
-  const theme = useSettingsStore((s) => s.theme);
-  const isDark = theme === 'aegis-dark'
-    || (theme === 'system' && (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true));
+  const resolvedTheme = useTheme();
+  const editorTheme = getCodeMirrorColorTheme(resolvedTheme);
 
   const [root, setRoot] = useState<string | null>(null);
   const [rootErr, setRootErr] = useState(false);
@@ -53,7 +54,8 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
   const rootRef = useRef<string | null>(null);
   const openRef = useRef<OpenFile | null>(null);
   const loadRequestRef = useRef(0);
-  const dirty = !!open && open.image === null && open.error === null && open.content !== open.saved;
+  const saveInFlightRef = useRef<Promise<void> | null>(null);
+  const dirty = !!open && open.preview?.kind === 'text' && open.error === null && open.content !== open.saved;
 
   // Resolve the target agent's workspace dir (fall back to the runtime default).
   const agentId = useMemo(() => agentIdProp || activeKey?.split(':')[1] || 'main', [agentIdProp, activeKey]);
@@ -98,7 +100,7 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
   useEffect(() => {
     let alive = true;
     setLanguageExtension([]);
-    if (!open || open.image !== null || open.error !== null) return;
+    if (!open || open.preview?.kind !== 'text' || open.error !== null) return;
     loadCodeMirrorLanguage(open.entry.name || open.entry.extension)
       .then((extension) => {
         if (alive) setLanguageExtension(extension);
@@ -109,7 +111,7 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
     return () => {
       alive = false;
     };
-  }, [open?.entry.name, open?.entry.extension, open?.image, open?.error]);
+  }, [open?.entry.name, open?.entry.extension, open?.preview?.kind, open?.error]);
 
   const loadFile = useCallback(async (entry: FsEntry) => {
     if (!root) return;
@@ -117,18 +119,13 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
     setSaveError(null);
     setLoadingFile(true);
     try {
-      if (isImageExt(entry.extension)) {
-        const img = await readImagePreview(entry.path, root);
-        if (requestId !== loadRequestRef.current) return;
-        setOpen({ entry, content: '', saved: '', image: img, error: null });
-      } else {
-        const text = await readFileText(entry.path, root);
-        if (requestId !== loadRequestRef.current) return;
-        setOpen({ entry, content: text, saved: text, image: null, error: null });
-      }
+      const preview = await readFilePreview(entry.path, root);
+      if (requestId !== loadRequestRef.current) return;
+      const text = preview.kind === 'text' ? preview.text : '';
+      setOpen({ entry, content: text, saved: text, preview, error: null });
     } catch (e: any) {
       if (requestId !== loadRequestRef.current) return;
-      setOpen({ entry, content: '', saved: '', image: null, error: e?.message || t('workspace.previewFailed', 'Unable to preview this file') });
+      setOpen({ entry, content: '', saved: '', preview: null, error: e?.message || t('workspace.previewFailed', 'Unable to preview this file') });
     } finally {
       if (requestId === loadRequestRef.current) setLoadingFile(false);
     }
@@ -136,7 +133,7 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
 
   const openFile = useCallback((entry: FsEntry) => {
     const cur = openRef.current;
-    if (cur && cur.image === null && cur.error === null && cur.content !== cur.saved) {
+    if (cur?.preview?.kind === 'text' && cur.error === null && cur.content !== cur.saved) {
       showConfirm(
         t('workspace.discardUnsavedTitle', 'Unsaved changes'),
         t('workspace.discardUnsavedConfirm', 'Discard unsaved changes in "{{name}}" and open another file?', { name: cur.entry.name }),
@@ -150,7 +147,7 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
   const requestClose = useCallback(() => {
     if (!onClose || saving) return;
     const current = openRef.current;
-    if (current && current.image === null && current.error === null && current.content !== current.saved) {
+    if (current?.preview?.kind === 'text' && current.error === null && current.content !== current.saved) {
       showConfirm(
         t('workspace.discardUnsavedTitle', 'Unsaved changes'),
         t('workspace.closeUnsavedConfirm', 'Discard unsaved changes in "{{name}}" and close the workspace?', { name: current.entry.name }),
@@ -161,18 +158,57 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
     onClose();
   }, [onClose, saving, t]);
 
-  const save = useCallback(async () => {
-    if (!open || !root || !dirty || saving) return;
-    setSaving(true);
-    setSaveError(null);
+  const persistCurrentOpenFile = useCallback(async () => {
+    if (saveInFlightRef.current) await saveInFlightRef.current;
+    const current = openRef.current;
+    const currentRoot = rootRef.current;
+    if (!current || !currentRoot || current.preview?.kind !== 'text' || current.error !== null || current.content === current.saved) return;
+    const path = current.entry.path;
+    const content = current.content;
+    const task = (async () => {
+      setSaving(true);
+      setSaveError(null);
+      try {
+        await writeFileText(path, content, currentRoot);
+        setOpen((candidate) => candidate?.entry.path === path ? { ...candidate, saved: content } : candidate);
+      } catch (error) {
+        setSaveError(error instanceof Error ? error.message : String(error));
+        throw error;
+      } finally {
+        setSaving(false);
+      }
+    })();
+    saveInFlightRef.current = task;
     try {
-      await writeFileText(open.entry.path, open.content, root);
-      setOpen((o) => (o ? { ...o, saved: o.content } : o));
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err));
+      await task;
+    } finally {
+      if (saveInFlightRef.current === task) saveInFlightRef.current = null;
     }
-    finally { setSaving(false); }
-  }, [open, root, dirty, saving]);
+  }, []);
+
+  const save = useCallback(() => {
+    void persistCurrentOpenFile().catch(() => undefined);
+  }, [persistCurrentOpenFile]);
+
+  const handleBeforePathMutation = useCallback(async (path: string, isDirectory: boolean) => {
+    const current = openRef.current;
+    if (!current || !pathIsTargetOrDescendant(current.entry.path, path, isDirectory)) return;
+    await persistCurrentOpenFile();
+  }, [persistCurrentOpenFile]);
+
+  const handlePathRenamed = useCallback((oldPath: string, newPath: string, isDirectory: boolean) => {
+    setOpen((current) => {
+      if (!current) return current;
+      const path = rebaseOpenFilePath(current.entry.path, oldPath, newPath, isDirectory);
+      if (path === current.entry.path) return current;
+      const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
+      return { ...current, entry: { ...current.entry, path, name } };
+    });
+  }, []);
+
+  const handlePathDeleted = useCallback((path: string, isDirectory: boolean) => {
+    setOpen((current) => current && pathIsTargetOrDescendant(current.entry.path, path, isDirectory) ? null : current);
+  }, []);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
@@ -206,7 +242,15 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
           {rootErr || !root ? (
             <div className="p-4 text-center text-[11px] text-aegis-text-dim">{t('workspace.locateFailed', "Unable to locate this agent's workspace directory")}</div>
           ) : (
-            <WorkspaceFileTree key={`${root}:${treeKey}`} root={root} activePath={open?.entry.path ?? null} onOpenFile={openFile} />
+            <WorkspaceFileTree
+              key={`${root}:${treeKey}`}
+              root={root}
+              activePath={open?.entry.path ?? null}
+              onOpenFile={openFile}
+              onBeforePathMutation={handleBeforePathMutation}
+              onPathRenamed={handlePathRenamed}
+              onPathDeleted={handlePathDeleted}
+            />
           )}
         </div>
       </aside>
@@ -218,7 +262,7 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
               <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-aegis-text" title={open.entry.path}>
                 {open.entry.name}{dirty ? ' •' : ''}
               </span>
-              {open.image === null && open.error === null && (
+              {open.preview?.kind === 'text' && open.error === null && (
                 <button onClick={save} disabled={!dirty || saving} title={t('workspace.saveShortcut', 'Save (⌘S)')}
                   className="rounded p-1.5 text-aegis-primary transition-colors hover:bg-aegis-primary/10 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary">
                   {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -239,11 +283,13 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
                 <FileWarning size={22} className="mx-auto mb-2 opacity-40" />
                 <p className="text-[11px]">{open.error}</p>
               </div>
-            ) : open.image ? (
-              <div className="flex min-h-full flex-col items-center justify-center gap-3 p-6">
-                <img src={open.image.data_url} alt={open.entry.name} className="max-h-[calc(100vh-190px)] max-w-full rounded border border-[rgb(var(--aegis-overlay)/0.1)] object-contain" />
-                <span className="text-[10px] text-aegis-text-dim">{open.image.mime_type} · {(open.image.byte_length / 1024).toFixed(1)} KB</span>
-              </div>
+            ) : open.preview && open.preview.kind !== 'text' && root ? (
+              <FileReadOnlyPreview
+                preview={open.preview}
+                fileName={open.entry.name}
+                filePath={open.entry.path}
+                projectPath={root}
+              />
             ) : (
               <div className="flex min-h-full flex-col">
                 {saveError && (
@@ -253,8 +299,8 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
                 )}
                 <CodeMirror
                   value={open.content}
-                  theme={isDark ? githubDark : githubLight}
-                  extensions={[languageExtension]}
+                  theme={editorTheme}
+                  extensions={[languageExtension, aegisCodeMirrorBaseTheme]}
                   onChange={(v) => { setSaveError(null); setOpen((o) => (o ? { ...o, content: v } : o)); }}
                   basicSetup={{ lineNumbers: true, highlightActiveLine: true, foldGutter: true }}
                   height="100%"

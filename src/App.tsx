@@ -13,6 +13,7 @@ const PairingScreen = lazy(() => import('@/components/PairingScreen').then(m => 
 const GatewayErrorScreen = lazy(() => import('@/components/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
 const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
 const DynamicIslandRuntime = lazy(() => import('@/dynamic-island/DynamicIslandRuntime'));
+const NotificationPreferencesRuntime = lazy(() => import('@/runtime/NotificationPreferencesRuntime'));
 import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { usePetStore } from '@/stores/petStore';
@@ -1212,6 +1213,9 @@ export default function App() {
     return (
       <>
         <ThemeRuntime />
+        <Suspense fallback={null}>
+          <NotificationPreferencesRuntime />
+        </Suspense>
         <LazyPetRuntimeHost />
         <Suspense fallback={<RouteLoadingFallback />}>
           <SetupPage />
@@ -1232,6 +1236,9 @@ export default function App() {
   return (
     <>
       <ThemeRuntime />
+      <Suspense fallback={null}>
+        <NotificationPreferencesRuntime />
+      </Suspense>
       <LazyPetRuntimeHost />
       {hasTauriEventBridge() && (
         <Suspense fallback={null}>

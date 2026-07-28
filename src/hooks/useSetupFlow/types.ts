@@ -52,6 +52,7 @@ export interface SetupFlow {
   installTarget: InstallTarget | null;
   wizardStep: OpenClawWizardStep | null;
   wizardSubmitting: boolean;
+  wizardActivity: string | null;
   wizardCanGoBack: boolean;
   wizardError: string | null;
   wizardRecoveryRequired: boolean;

@@ -106,3 +106,38 @@
 - [x] Failed Git post-install verification reaches `git-missing`.
 - [x] Each dedicated screen retains its download guidance and retry action.
 - [x] Non-prerequisite failures continue to use the generic error route.
+
+## BUG-ONB-49 - Bounded official Wizard recovery
+
+**Current**
+
+- A persisted session is resumed through `wizard.next` without first checking
+  the official `wizard.status` endpoint.
+- `wizard.next` and resume explicitly disable timeouts.
+- A privileged request's timeout starts after earlier admin work finishes, so
+  the connecting UI can wait forever in the serialized lane.
+- Entering every Wizard operation reconnects an already healthy Gateway and the
+  UI exposes only one repeated `Connecting` sentence.
+
+**Target**
+
+- Query `wizard.status({ sessionId })` with a finite budget before resuming.
+- Use a short finite budget for status/resume and a longer finite budget for
+  user-started external authorization without suppressing provider output.
+- Start the privileged timeout when the request is queued and never dispatch a
+  request whose total budget expired while waiting.
+- Keep a verified Gateway connection intact and surface transport/session phase
+  changes in the setup UI and diagnostic log.
+
+**Acceptance**
+
+- [x] A missing process-local session fails or recovers within a bounded time;
+      it cannot leave `wizardSubmitting` true forever.
+- [x] Resume calls `wizard.status` before the no-answer `wizard.next` request.
+- [x] A request queued behind another admin operation times out from its enqueue
+      time and is not dispatched later.
+- [x] An interactive timeout retains the session id and Retry resumes the
+      official session without replaying an answer.
+- [x] A healthy Gateway is not deliberately disconnected at Wizard entry.
+- [x] The visible activity and setup log distinguish Gateway connection,
+      session inspection, and Wizard start/resume.

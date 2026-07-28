@@ -6,6 +6,10 @@
  * Field names mirror the Rust structs (serde default = snake_case).
  */
 import { invoke } from '@tauri-apps/api/core';
+import {
+  decodeWorkspaceFilePreview,
+  type WorkspaceFilePreview,
+} from '@/utils/filePreviewCapabilities';
 
 export interface FsEntry {
   name: string;
@@ -14,12 +18,6 @@ export interface FsEntry {
   is_symlink?: boolean;
   extension?: string | null;
   is_gitignored?: boolean;
-}
-
-export interface ImagePreview {
-  data_url: string;
-  mime_type: string;
-  byte_length: number;
 }
 
 export interface TerminalGitFileDiff {
@@ -79,9 +77,9 @@ export function clearTerminalWorkspaceWatches(watchId: string, generation: numbe
   return invoke('clear_terminal_workspace_watches', { watchId, generation });
 }
 
-/** Read a text file's content. Throws for binary/oversized files (Rust guards). */
-export function readFileText(path: string, root: string): Promise<string> {
-  return invoke('read_file_content', { path, projectPath: root });
+/** Read and classify a workspace file without treating unknown binary data as text. */
+export async function readFilePreview(path: string, root: string): Promise<WorkspaceFilePreview> {
+  return decodeWorkspaceFilePreview(await invoke('read_file_preview', { path, projectPath: root }));
 }
 
 /** Overwrite a text file. */
@@ -89,19 +87,8 @@ export function writeFileText(path: string, content: string, root: string): Prom
   return invoke('write_file_content', { path, content, projectPath: root });
 }
 
-/** Read an image as a data URL for inline preview. */
-export function readImagePreview(path: string, root: string): Promise<ImagePreview> {
-  return invoke('read_image_preview', { path, projectPath: root });
-}
-
 /** Resolve the current runtime workspace natively, including the active
  *  `agents.defaults.workspace` override and the configured storage layout. */
 export function getWorkspacePath(): Promise<string> {
   return invoke('get_workspace_path');
-}
-
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif', 'tiff']);
-
-export function isImageExt(ext?: string | null): boolean {
-  return !!ext && IMAGE_EXTS.has(ext.toLowerCase());
 }

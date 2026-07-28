@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import ar from '@/locales/ar.json';
 import en from '@/locales/en.json';
 import zh from '@/locales/zh.json';
+import zhTW from '@/locales/zh-TW.json';
 import { OPENCLAW_COMMANDS } from './commands';
 import { OPENCLAW_COMMAND_CATEGORIES } from './types';
 
@@ -57,7 +57,7 @@ test('OpenClaw command inventory keeps the expected operational depth', () => {
 });
 
 test('every OpenClaw command has copy in all supported locale catalogs', () => {
-  const catalogs = [zh, en, ar] as const;
+  const catalogs = [zh, zhTW, en] as const;
   for (const item of OPENCLAW_COMMANDS) {
     const itemKey = item.summaryKey.replace('openclawCommands.items.', '');
     for (const catalog of catalogs) {

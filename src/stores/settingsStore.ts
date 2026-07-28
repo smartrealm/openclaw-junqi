@@ -30,6 +30,7 @@ import {
   resolveGatewayCredentialRuntimeKey,
   storeGatewayDeviceCredential,
 } from '@/services/gateway/credentialProvider';
+import { buildFontStack } from '@/utils/fonts';
 
 // ═══════════════════════════════════════════════════════════
 // Settings Store
@@ -50,10 +51,11 @@ interface SettingsState {
   uiFont: string;
   /** Monospace font family (CSS font stack). Empty string means "use platform default". */
   monoFont: string;
+  /** File editor and diff font stack. Empty string means "follow monospace font". */
+  editorFont: string;
   terminalFontSize: number;
   sidebarOpen: boolean;
   sidebarWidth: number;
-  settingsOpen: boolean;
   language: AppLanguage;
   notificationsEnabled: boolean;
   soundEnabled: boolean;
@@ -70,12 +72,6 @@ interface SettingsState {
   toolIntentEnabled: boolean;
   audioAutoPlay: boolean;
   voiceAutoSpeak: boolean;
-  /** Picovoice AccessKey for Porcupine wake-word engine (phase 2). Free from Picovoice Console. */
-  picovoiceAccessKey: string;
-  /** Builtin wake word id (e.g. 'porcupine') or empty to use the default. */
-  wakeWord: string;
-  /** Wake-word sensitivity 0..1 (higher = more sensitive, more false alarms). */
-  wakeSensitivity: number;
   gatewayUrl: string;
   gatewayToken: string;
   sidebarCollapsed: boolean;
@@ -87,11 +83,11 @@ interface SettingsState {
   setUiScale: (scale: number) => void;
   setUiFont: (font: string) => void;
   setMonoFont: (font: string) => void;
+  setEditorFont: (font: string) => void;
   setTerminalFontSize: (size: number) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
-  setSettingsOpen: (open: boolean) => void;
   setLanguage: (lang: AppLanguage) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setSoundEnabled: (enabled: boolean) => void;
@@ -108,9 +104,6 @@ interface SettingsState {
   setToolIntentEnabled: (enabled: boolean) => void;
   setAudioAutoPlay: (enabled: boolean) => void;
   setVoiceAutoSpeak: (enabled: boolean) => void;
-  setPicovoiceAccessKey: (key: string) => void;
-  setWakeWord: (word: string) => void;
-  setWakeSensitivity: (s: number) => void;
   setGatewayUrl: (url: string) => void;
   setGatewayToken: (token: string) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -144,6 +137,10 @@ const detectLang = (): AppLanguage => {
 };
 const savedLang = detectLang();
 
+for (const key of ['aegis-picovoice-access-key', 'aegis-wake-word', 'aegis-wake-sensitivity']) {
+  localStorage.removeItem(key);
+}
+
 // UI scale persists across launches (unlike the old fontSize, which always reset).
 // Symmetric around the 100% default so the slider midpoint == 100%.
 export const UI_SCALE_MIN = 50;
@@ -175,12 +172,12 @@ const readPersistedTheme = (): ThemeSetting => {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   theme: readPersistedTheme(),
   uiScale: savedUiScale,
-  uiFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.uiFont) || '',
-  monoFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.monoFont) || '',
+  uiFont: buildFontStack(localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.uiFont) || '', 'ui'),
+  monoFont: buildFontStack(localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.monoFont) || '', 'mono'),
+  editorFont: buildFontStack(localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.editorFont) || '', 'editor'),
   terminalFontSize: Math.min(20, Math.max(10, Number(localStorage.getItem('junqi:terminalFontSize')) || 12)),
   sidebarOpen: true,
   sidebarWidth: 280,
-  settingsOpen: false,
   language: savedLang,
   notificationsEnabled: localStorage.getItem('aegis-notifications') !== 'false',
   soundEnabled: localStorage.getItem('aegis-sound') !== 'false',
@@ -197,9 +194,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   toolIntentEnabled: localStorage.getItem('aegis-tool-intent') === 'true',
   audioAutoPlay: localStorage.getItem(AUDIO_AUTO_PLAY_STORAGE_KEY) === 'true',
   voiceAutoSpeak: localStorage.getItem(VOICE_AUTO_SPEAK_STORAGE_KEY) === 'true',
-  picovoiceAccessKey: localStorage.getItem('aegis-picovoice-access-key') || '',
-  wakeWord: localStorage.getItem('aegis-wake-word') || '',
-  wakeSensitivity: parseFloat(localStorage.getItem('aegis-wake-sensitivity') || '0.7') || 0.7,
   gatewayUrl: localStorage.getItem('aegis-gateway-url') || '',
   // Gateway credentials are restored through credentialProvider after the
   // runtime target is known. Browser storage is legacy migration input only.
@@ -228,16 +222,30 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     window.aegis?.settings?.save?.('uiScale', v).catch?.(() => {});
   },
   setUiFont: (font) => {
-    localStorage.setItem(AEGIS_FONTS_STORAGE_KEYS.uiFont, font);
-    set({ uiFont: font });
-    if (font) document.documentElement.style.setProperty('--font-ui', font);
-    else document.documentElement.style.removeProperty('--font-ui');
+    const next = buildFontStack(font, 'ui');
+    localStorage.setItem(AEGIS_FONTS_STORAGE_KEYS.uiFont, next);
+    set({ uiFont: next });
+    if (next) {
+      document.documentElement.style.setProperty('--font-ui', next);
+      document.documentElement.style.setProperty('--font-sans', next);
+    } else {
+      document.documentElement.style.removeProperty('--font-ui');
+      document.documentElement.style.removeProperty('--font-sans');
+    }
   },
   setMonoFont: (font) => {
-    localStorage.setItem(AEGIS_FONTS_STORAGE_KEYS.monoFont, font);
-    set({ monoFont: font });
-    if (font) document.documentElement.style.setProperty('--font-mono', font);
+    const next = buildFontStack(font, 'mono');
+    localStorage.setItem(AEGIS_FONTS_STORAGE_KEYS.monoFont, next);
+    set({ monoFont: next });
+    if (next) document.documentElement.style.setProperty('--font-mono', next);
     else document.documentElement.style.removeProperty('--font-mono');
+  },
+  setEditorFont: (font) => {
+    const next = buildFontStack(font, 'editor');
+    localStorage.setItem(AEGIS_FONTS_STORAGE_KEYS.editorFont, next);
+    set({ editorFont: next });
+    if (next) document.documentElement.style.setProperty('--font-editor', next);
+    else document.documentElement.style.removeProperty('--font-editor');
   },
   setTerminalFontSize: (size) => {
     const next = Math.min(20, Math.max(10, Math.round(size)));
@@ -247,7 +255,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
-  setSettingsOpen: (open) => set({ settingsOpen: open }),
   setLanguage: (lang) => {
     if (!isAppLanguage(lang)) return;
     persistLanguagePreference(lang);
@@ -269,9 +276,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setToolIntentEnabled: (enabled) => { localStorage.setItem('aegis-tool-intent', String(enabled)); set({ toolIntentEnabled: enabled }); },
   setAudioAutoPlay: (enabled) => { localStorage.setItem(AUDIO_AUTO_PLAY_STORAGE_KEY, String(enabled)); set({ audioAutoPlay: enabled }); },
   setVoiceAutoSpeak: (enabled) => { localStorage.setItem(VOICE_AUTO_SPEAK_STORAGE_KEY, String(enabled)); set({ voiceAutoSpeak: enabled }); },
-  setPicovoiceAccessKey: (key) => { localStorage.setItem('aegis-picovoice-access-key', key); set({ picovoiceAccessKey: key }); },
-  setWakeWord: (word) => { localStorage.setItem('aegis-wake-word', word); set({ wakeWord: word }); },
-  setWakeSensitivity: (s) => { const v = Math.min(1, Math.max(0, s)); localStorage.setItem('aegis-wake-sensitivity', String(v)); set({ wakeSensitivity: v }); },
   setGatewayUrl: (url) => {
     localStorage.setItem('aegis-gateway-url', url);
     set({ gatewayUrl: url });

@@ -11,7 +11,7 @@
 //         junqi/src/components/RunningView.tsx (788 lines)
 // ═══════════════════════════════════════════════════════════
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Channel } from '@tauri-apps/api/core';
 import { invoke } from '@tauri-apps/api/core';
@@ -70,6 +70,13 @@ import claudeGif from '@/assets/gif/claude.gif';
 import codexGif from '@/assets/gif/codex.gif';
 import { captureTaskNameSnapshot, taskStillMatchesNameSnapshot } from './AgentWorkspace/taskNameGuard';
 import { getUsageColor, useUsageSnapshot, type UsageWindow } from '@/hooks/useUsageSnapshot';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useTerminalPreferences } from '@/hooks/useTerminalPreferences';
+import { useTheme } from '@/theme/useTheme';
+import {
+  getTerminalAppearancePreferencesSnapshot,
+  subscribeTerminalAppearancePreferences,
+} from '@/components/Terminal/terminalAppearancePreferences';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -405,6 +412,22 @@ export interface AgentRunViewProps {
   visible?: boolean;
 }
 
+export function AgentRunRoute() {
+  const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
+  const configuredMonoFont = useSettingsStore((state) => state.monoFont);
+  const { scrollback: terminalScrollback } = useTerminalPreferences();
+  const resolvedTheme = useTheme();
+
+  return (
+    <AgentRunView
+      terminalScrollback={terminalScrollback}
+      terminalFontSize={terminalFontSize}
+      monoFontFamily={(configuredMonoFont || getDefaultMonoFont()) as FontFamily}
+      themeVariant={resolvedTheme.replace('aegis-', '') as ThemeVariant}
+    />
+  );
+}
+
 export function AgentRunView({
   taskId: providedTaskId,
   initialTitle = '',
@@ -433,6 +456,11 @@ export function AgentRunView({
   visible = true,
 }: AgentRunViewProps = {}) {
   const { t } = useTranslation();
+  const terminalAppearance = useSyncExternalStore(
+    subscribeTerminalAppearancePreferences,
+    getTerminalAppearancePreferencesSnapshot,
+    getTerminalAppearancePreferencesSnapshot,
+  );
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const updateWorkspaceTask = useAgentWorkspaceStore((state) => state.updateTask);
@@ -584,7 +612,13 @@ export function AgentRunView({
   const metricsTimerRef = useRef<number | null>(null);
   const shiftEnterNewlineRef = useRef(DEFAULT_SHIFT_ENTER_NEWLINE);
   const terminalScrollbackRef = useRef(terminalScrollback);
+  const terminalFontSizeRef = useRef(terminalFontSize);
+  const monoFontFamilyRef = useRef(monoFontFamily);
+  const terminalCursorStyleRef = useRef(terminalAppearance.cursorStyle);
   terminalScrollbackRef.current = terminalScrollback;
+  terminalFontSizeRef.current = terminalFontSize;
+  monoFontFamilyRef.current = monoFontFamily;
+  terminalCursorStyleRef.current = terminalAppearance.cursorStyle;
 
   // ── Terminal output buffer ───────────────────────────────────────────────
   // Channel callbacks can fire BEFORE the xterm instance is mounted (the
@@ -644,8 +678,9 @@ export function AgentRunView({
       try {
         term = new deps.Terminal({
           cursorBlink: true,
-          fontSize: terminalFontSize,
-          fontFamily: monoFontFamily,
+          cursorStyle: terminalCursorStyleRef.current,
+          fontSize: terminalFontSizeRef.current,
+          fontFamily: monoFontFamilyRef.current,
           theme: (() => {
             const cs = getComputedStyle(document.documentElement);
             return {
@@ -781,6 +816,17 @@ export function AgentRunView({
     applyTerminalThemeOnPanel(xtermRef.current, themeVariant, termRef.current);
     refreshTerminalDisplay(xtermRef.current);
   }, [themeVariant]);
+
+  useEffect(() => {
+    if (!xtermRef.current) return;
+    xtermRef.current.options.cursorStyle = terminalAppearance.cursorStyle;
+    refreshTerminalDisplay(xtermRef.current);
+  }, [terminalAppearance.cursorStyle]);
+
+  useEffect(() => {
+    if (!xtermRef.current) return;
+    xtermRef.current.options.scrollback = terminalScrollback;
+  }, [terminalScrollback]);
 
   useEffect(() => {
     const loadNewlineSetting = () => {

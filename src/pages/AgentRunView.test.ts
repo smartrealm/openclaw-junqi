@@ -38,6 +38,15 @@ test('AI task terminal applies live font and theme settings', () => {
   assert.match(source, /agent_resize_pty/);
 });
 
+test('standalone and workspace task terminals share live terminal preferences', () => {
+  assert.match(source, /export function AgentRunRoute\(\)/);
+  assert.match(source, /useTerminalPreferences\(\)/);
+  assert.match(source, /useSettingsStore\(\(state\) => state\.terminalFontSize\)/);
+  assert.match(source, /cursorStyle: terminalCursorStyleRef\.current/);
+  assert.match(source, /options\.cursorStyle = terminalAppearance\.cursorStyle/);
+  assert.match(source, /options\.scrollback = terminalScrollback/);
+});
+
 test('worktree actions are mutually exclusive while running', () => {
   assert.match(source, /worktreeBusy/);
   assert.match(source, /disabled=\{worktreeBusy !== null\}/);

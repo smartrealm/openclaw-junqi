@@ -81,15 +81,6 @@ export interface DiffFile {
 
 export type FileViewMode = "tree" | "list";
 
-// ── File browser scroll context ───────────────────────────────────────────────
-
-export interface GitFileBrowserScrollContext {
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  scrollTop: number;
-  viewportHeight: number;
-  layoutKey: string;
-}
-
 // ── Git utility functions ─────────────────────────────────────────────────────
 
 export function getGitStatusColor(status: string): string {

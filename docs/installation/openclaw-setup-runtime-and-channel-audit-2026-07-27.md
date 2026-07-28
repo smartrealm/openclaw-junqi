@@ -12,6 +12,9 @@ Official source cross-checks:
 - DingTalk `DingTalk-Real-AI/dingtalk-openclaw-connector` at
   `5e2b4d9356ee8f80c4617142d823d2ca7de0f3d9` (0.8.24).
 - Installed OpenClaw 2026.7.1-2 distribution for version-specific behavior.
+- OpenClaw official onboarding and Gateway protocol references:
+  `https://docs.openclaw.ai/reference/wizard` and
+  `https://docs.openclaw.ai/gateway/protocol` (checked 2026-07-27).
 
 ## Findings
 
@@ -149,6 +152,41 @@ screen. Retrying cannot resolve a prerequisite that still is not installed.
 **Target:** classify missing Git/Node as prerequisite failures and route them to
 their existing download/instruction screens without collapsing other failures.
 
+### BUG-ONB-49 - Wizard reconnect can remain pending forever
+
+**Severity:** P1
+
+The 2026-07-27 packaged run completed the official Gateway handoff, and the
+official CLI subsequently reported a healthy, admin-capable RPC connection.
+The renderer nevertheless remained on `Connecting to the official OpenClaw
+wizard`. The Gateway log recorded `wizard not found` for the process-local
+session, followed by a successful service restart, but no replacement
+`wizard.start` or resume request reached the new process.
+
+Cross-file verification found three interacting gaps:
+
+- `OpenClawWizardClient.resume()` uses an unbounded `wizard.next` request even
+  though the official protocol exposes `wizard.status` for session liveness.
+- The privileged-request timeout begins only after the request reaches the head
+  of its serialized admin lane, so a request queued behind an unbounded Wizard
+  operation has no effective deadline.
+- `waitForGatewayConnection()` disconnects an already verified connection before
+  every Wizard operation, creating an avoidable identity transition and leaving
+  the connecting screen with no phase-specific diagnostic.
+
+**Impact:** a stale process-local session or interrupted Gateway handoff can
+leave first-run setup permanently disabled even though OpenClaw is healthy. A
+retry cannot be offered because `wizardSubmitting` never settles, and the setup
+log contains no record of whether it is waiting for Gateway transport, session
+status, or a new Wizard step.
+
+**Target:** use the official `wizard.status` RPC before resuming a persisted
+session, apply finite transport budgets to resume/interactive calls, make the
+privileged budget cover queue wait as well as socket execution, preserve an
+already verified Gateway connection, and expose each connection phase in both
+the setup UI and diagnostics. A timed-out answer must retain the opaque session
+id so Retry can resume without replaying secrets or accepted answers.
+
 ## Validation Contract
 
 - TypeScript interface validation and complete locale JSON parsing.
@@ -163,11 +201,22 @@ their existing download/instruction screens without collapsing other failures.
 - Source-contract tests for Gateway-owned progress polling and QR persistence.
 - Source-contract tests for backend cancellation reachability, staged-runtime
   compensation, and dedicated prerequisite recovery routes.
+- Behavioral tests for official `wizard.status` recovery, finite Wizard
+  budgets, and privileged queue deadlines that begin when the caller queues.
+- Source-contract tests that a healthy Wizard entry does not force a Gateway
+  reconnect and that connection phases are observable.
 - Full frontend test suite and production Tauri packaging.
 
 ## 2026-07-27 Validation
 
-The final integrated worktree passed the full frontend/scripts suite, module
-boundaries, TypeScript, and 622 Rust library tests. The macOS ARM64 DMG was
-built and launched from its mounted image; a composited screen-region capture
-confirmed the onboarding UI rendered correctly.
+The final integrated worktree passed 1,653 frontend tests, 217 script tests,
+module boundaries, TypeScript, and 624 Rust library tests.
+
+The macOS ARM64 application, DMG, and updater archive were produced. The local
+candidate was launched from the generated application bundle as PID 62756; a
+desktop capture confirmed it rendered the dashboard instead of remaining on
+the Wizard connection screen, while the official OpenClaw CLI reported a
+healthy admin-capable RPC connection. Trusted updater signing was not attempted:
+this workstation has the public updater key but intentionally does not have the
+release private key, so the Tauri command exited after bundle creation when it
+reached updater signing.
