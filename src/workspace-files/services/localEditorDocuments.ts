@@ -54,6 +54,19 @@ function ownedLeases(leases: LocalEditorDocumentLease[]) {
   });
 }
 
+function allOwnedLeases(): LocalEditorDocumentLease[] {
+  return [...owners.entries()].flatMap(([documentKey, documentOwners]) => {
+    const separator = documentKey.indexOf('\u0000');
+    const rootPath = documentKey.slice(0, separator);
+    const path = documentKey.slice(separator + 1);
+    return [...documentOwners].map((ownerId) => ({ rootPath, path, ownerId }));
+  });
+}
+
+export async function checkpointAllLocalEditorDocuments(): Promise<void> {
+  await checkpointLocalEditorDocuments(allOwnedLeases());
+}
+
 export async function checkpointLocalEditorDocuments(leases: LocalEditorDocumentLease[]): Promise<void> {
   const owned = ownedLeases(leases);
   // Validate every lease before checkpointing any document.

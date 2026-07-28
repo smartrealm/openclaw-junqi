@@ -3,6 +3,7 @@ import { loadWorkbenchSession, saveWorkbenchSession } from './storage';
 import { WorkbenchSessionWriter } from './writer';
 import { useWorkbenchStore } from '../store/workbenchStore';
 import { stopAllWorkbenchPtys } from '../pty/workbenchPtyClient';
+import { checkpointAllLocalEditorDocuments } from '@/workspace-files/services/localEditorDocuments';
 
 const LOCAL_PARTITION = 'local';
 const WRITE_DEBOUNCE_MS = 180;
@@ -47,7 +48,8 @@ export function useWorkbenchSessionPersistence(): void {
         if (!writer?.isReady() || !useWorkbenchStore.getState().writerReady) return;
         event.preventDefault();
         if (closeCheckpointRef.current) return;
-        const checkpoint = writer.checkpoint(useWorkbenchStore.getState().sessionSnapshot())
+        const checkpoint = checkpointAllLocalEditorDocuments()
+          .then(() => writer.checkpoint(useWorkbenchStore.getState().sessionSnapshot()))
           .then(() => stopAllWorkbenchPtys())
           .then(() => window.destroy())
           .catch(() => {

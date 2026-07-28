@@ -18,10 +18,11 @@ test('main-window close is fenced by one durable checkpoint before destroy', () 
   assert.match(hook, /event\.preventDefault\(\)/);
   assert.match(hook, /closeCheckpointRef\.current/);
   assert.match(hook, /writer\.checkpoint\(useWorkbenchStore\.getState\(\)\.sessionSnapshot\(\)\)/);
-  const checkpoint = hook.indexOf('writer.checkpoint');
+  const documents = hook.indexOf('checkpointAllLocalEditorDocuments()');
+  const checkpoint = hook.indexOf('writer.checkpoint', documents);
   const stopPtys = hook.indexOf('stopAllWorkbenchPtys()', checkpoint);
   const destroy = hook.indexOf('window.destroy()', stopPtys);
-  assert.ok(checkpoint >= 0 && stopPtys > checkpoint && destroy > stopPtys);
+  assert.ok(documents >= 0 && checkpoint > documents && stopPtys > checkpoint && destroy > stopPtys);
 });
 
 test('failed hydration leaves the durable writer fail closed', () => {

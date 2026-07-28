@@ -20,6 +20,12 @@ test('deleted files tombstone the shared controller before releasing the final o
   assert.doesNotMatch(deletion, /\.save\(\)/);
 });
 
+test('shutdown checkpoints every active editor owner before other teardown', () => {
+  assert.match(service, /function allOwnedLeases\(\)/);
+  assert.match(service, /checkpointAllLocalEditorDocuments/);
+  assert.match(service, /checkpointLocalEditorDocuments\(allOwnedLeases\(\)\)/);
+});
+
 test('document release checkpoints drafts and refuses unresolved conflicts', () => {
   assert.match(service, /status === 'conflicted'/);
   assert.match(service, /status === 'dirty' \|\| status === 'saving' \|\| status === 'error'/);
