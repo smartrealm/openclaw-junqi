@@ -19,7 +19,7 @@ import { readDir, readFileText, readImagePreview } from "@/services/workspaceFs"
 import { subscribeLocalWorkspacePath } from "@/workspace-files/services/localWatchCoordinator";
 import { resolveWorkspacePreview } from "@/workspace-files/services/previewResolver";
 import type { EditorDocumentSnapshot } from "@/workspace-files/services/editorDocumentManager";
-import { acquireLocalEditorDocument, releaseLocalEditorDocuments } from "@/workspace-files/services/localEditorDocuments";
+import { acquireLocalEditorDocument, deleteLocalEditorDocument, releaseLocalEditorDocuments } from "@/workspace-files/services/localEditorDocuments";
 import { showAlert } from "@/components/shared/alertStore";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -1299,7 +1299,13 @@ export function FileViewer({
                 themeVariant={themeVariant}
                 previewMode={!!previewModes[tab.path]}
                 onRunMakeTarget={onRunMakeTarget}
-                onFileMissing={onFileMissing}
+                onFileMissing={(path) => {
+                  void deleteLocalEditorDocument(
+                    projectPath,
+                    path,
+                    `${documentOwnerPrefix}:${path}`,
+                  ).then(() => onFileMissing?.(path));
+                }}
                 ownerId={`${documentOwnerPrefix}:${tab.path}`}
               />
             </div>

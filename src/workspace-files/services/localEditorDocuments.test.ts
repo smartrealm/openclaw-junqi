@@ -13,6 +13,13 @@ test('FileViewer detach retains the shared document while explicit tab close rel
   assert.match(workspace, /await releaseLocalEditorDocument\(localPath, tab\.filePath/);
 });
 
+test('deleted files tombstone the shared controller before releasing the final owner', () => {
+  assert.match(viewer, /deleteLocalEditorDocument\(/);
+  const deletion = service.slice(service.indexOf('export async function deleteLocalEditorDocument'));
+  assert.ok(deletion.indexOf('.markDeleted()') < deletion.indexOf('manager.close(scope, path)'));
+  assert.doesNotMatch(deletion, /\.save\(\)/);
+});
+
 test('document release checkpoints drafts and refuses unresolved conflicts', () => {
   assert.match(service, /status === 'conflicted'/);
   assert.match(service, /status === 'dirty' \|\| status === 'saving' \|\| status === 'error'/);

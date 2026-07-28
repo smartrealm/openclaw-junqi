@@ -80,3 +80,15 @@ export async function releaseLocalEditorDocuments(leases: LocalEditorDocumentLea
 export function releaseLocalEditorDocument(rootPath: string, path: string, ownerId: string): Promise<void> {
   return releaseLocalEditorDocuments([{ rootPath, path, ownerId }]);
 }
+
+export async function deleteLocalEditorDocument(rootPath: string, path: string, ownerId: string): Promise<void> {
+  const documentKey = key(rootPath, path);
+  const documentOwners = owners.get(documentKey);
+  if (!documentOwners?.has(ownerId)) return;
+  const scope = localEditorScope(rootPath);
+  manager.open(scope, path).markDeleted();
+  documentOwners.delete(ownerId);
+  if (documentOwners.size > 0) return;
+  owners.delete(documentKey);
+  manager.close(scope, path);
+}
