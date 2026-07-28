@@ -83,4 +83,5 @@ pub(crate) mod uninstall;
 pub mod usage;
 pub mod voice;
 pub mod voice_wake;
+pub mod workbench_session;
 pub mod workspace;

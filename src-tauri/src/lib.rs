@@ -363,6 +363,8 @@ pub fn run() {
             commands::agent_task_pty::get_active_task_ids,
             commands::agent_workspace_storage::load_agent_workspace_tasks,
             commands::agent_workspace_storage::save_agent_workspace_tasks,
+            commands::workbench_session::load_workbench_session,
+            commands::workbench_session::save_workbench_session,
         ])
         .setup(|app| {
             // A location reconfiguration can own a platform service (notably a
