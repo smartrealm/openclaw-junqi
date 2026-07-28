@@ -8,7 +8,8 @@ test('workbench terminal subscribes before create and restores an existing run s
   const subscribe = source.indexOf('await subscribeWorkbenchPty(');
   const create = source.indexOf('await createWorkbenchPty(');
   assert.ok(subscribe >= 0 && create > subscribe);
-  assert.match(source, /if \(!created\.created\)/);
+  assert.match(source, /if \(created\.completed\)/);
+  assert.match(source, /else if \(!created\.created\)/);
   assert.match(source, /subscription\?\.synchronize\(sequence\)/);
 });
 

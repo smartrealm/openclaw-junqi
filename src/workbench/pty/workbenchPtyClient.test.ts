@@ -30,6 +30,8 @@ test('create and stop lifecycle operations share one backend gate', () => {
 test('completed runs remain exactly closable through a bounded tombstone', () => {
   assert.match(backend, /MAX_COMPLETED_RUNS: usize = 512/);
   assert.match(backend, /remember_completed_run\(&exit_id, &exit_run\)/);
+  assert.match(backend, /if is_completed_run\(&pty_id, &run_id\)/);
+  assert.match(backend, /completed: true/);
   assert.match(backend, /consume_completed_run\(&pty_id, &run_id\)/);
 });
 

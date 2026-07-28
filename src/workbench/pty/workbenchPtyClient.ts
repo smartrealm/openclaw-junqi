@@ -20,6 +20,7 @@ export interface WorkbenchPtySnapshot extends WorkbenchPtyIdentity {
 export interface WorkbenchPtyCreateResult extends WorkbenchPtyIdentity {
   cwd: string;
   created: boolean;
+  completed: boolean;
 }
 
 export interface WorkbenchPtySubscription {

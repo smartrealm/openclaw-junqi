@@ -43,6 +43,7 @@ pub struct WorkbenchPtyCreateResult {
     run_id: String,
     cwd: String,
     created: bool,
+    completed: bool,
 }
 
 #[derive(Serialize)]
@@ -235,6 +236,15 @@ pub fn create_workbench_pty(
     let _operation = lifecycle_gate()
         .lock()
         .map_err(|_| "workbench PTY lifecycle lock poisoned".to_string())?;
+    if is_completed_run(&pty_id, &run_id) {
+        return Ok(WorkbenchPtyCreateResult {
+            pty_id,
+            run_id,
+            cwd: cwd.to_string_lossy().into_owned(),
+            created: false,
+            completed: true,
+        });
+    }
     if let Ok(mut runs) = completed_runs().lock() {
         runs.retain(|(id, _)| id != &pty_id);
     }
@@ -249,6 +259,7 @@ pub fn create_workbench_pty(
                     run_id,
                     cwd: cwd.to_string_lossy().into_owned(),
                     created: false,
+                    completed: false,
                 });
             }
             return Err("workbench PTY id is owned by another run".into());
@@ -348,6 +359,7 @@ pub fn create_workbench_pty(
         run_id,
         cwd: cwd.to_string_lossy().into_owned(),
         created: true,
+        completed: false,
     })
 }
 

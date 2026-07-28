@@ -69,7 +69,9 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
         );
         const created = await createWorkbenchPty(identity, cwd, terminal.cols, terminal.rows);
         if (!alive) return;
-        if (!created.created) {
+        if (created.completed) {
+          terminal.write('\r\n[process already exited]\r\n');
+        } else if (!created.created) {
           sequence = await resync();
           subscription?.synchronize(sequence);
         }
