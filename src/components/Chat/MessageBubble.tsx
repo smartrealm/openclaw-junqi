@@ -19,6 +19,7 @@ import { Icon } from '@/components/shared/icons';
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import clsx from 'clsx';
 import { debugError } from '@/utils/debugLog';
+import { fileExtension, workspaceFileKind } from '@/workspace-files/domain/fileKinds';
 
 const CodeBlock = lazy(() => import('./CodeBlock').then((m) => ({ default: m.CodeBlock })));
 const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
@@ -436,24 +437,18 @@ function isLocalFilePath(value?: string) {
 function FileCard({ path, meta }: { path: string; meta?: string }) {
   const { t } = useTranslation();
   const name = path.split(/[/\\]/).pop() || path;
-  const ext = name.split('.').pop()?.toLowerCase() || '';
+  const ext = fileExtension(name);
+  const kind = workspaceFileKind(name);
   const fileIcon = (() => {
-    const imageExts = new Set(['png','jpg','jpeg','gif','svg','webp','ico','bmp']);
-    const audioExts = new Set(['mp3','wav','ogg','flac','aac','m4a']);
-    const videoExts = new Set(['mp4','mkv','mov','avi','webm']);
-    const archiveExts = new Set(['zip','tar','gz','7z','rar','bz2']);
-    const codeExts = new Set(['ts','tsx','js','jsx','py','rs','go','java','c','cpp','h','rb','swift','kt']);
-    const configExts = new Set(['json','yaml','yml','toml','xml']);
-    const docExts = new Set(['pdf','doc','docx','md','txt','rst']);
-    const sheetExts = new Set(['xls','xlsx','csv']);
-    if (imageExts.has(ext)) return Icon.chat.attachment.image;
-    if (audioExts.has(ext)) return Icon.chat.attachment.audio;
-    if (videoExts.has(ext)) return Icon.chat.attachment.video;
-    if (archiveExts.has(ext)) return Icon.chat.attachment.archive;
-    if (codeExts.has(ext)) return Icon.chat.attachment.code;
-    if (configExts.has(ext)) return Icon.chat.attachment.config;
-    if (sheetExts.has(ext)) return Icon.chat.attachment.sheet;
-    if (docExts.has(ext)) return Icon.chat.attachment.document;
+    if (kind === 'image') return Icon.chat.attachment.image;
+    if (kind === 'audio') return Icon.chat.attachment.audio;
+    if (kind === 'video') return Icon.chat.attachment.video;
+    if (kind === 'code') return ['json', 'jsonc', 'yaml', 'yml', 'toml', 'xml'].includes(ext)
+      ? Icon.chat.attachment.config
+      : Icon.chat.attachment.code;
+    if (kind === 'markdown' || kind === 'text' || kind === 'pdf' || kind === 'html') {
+      return Icon.chat.attachment.document;
+    }
     return Icon.chat.attachment.generic;
   })();
 
