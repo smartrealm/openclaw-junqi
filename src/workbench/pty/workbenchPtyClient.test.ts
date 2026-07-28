@@ -12,6 +12,13 @@ test('workbench PTY protocol carries explicit PTY and run identities', () => {
   assert.match(client, /output\.ptyId !== identity\.ptyId \|\| output\.runId !== identity\.runId/);
 });
 
+test('PTY output uses incremental UTF-8 decoding without breaking sequence continuity', () => {
+  assert.match(backend, /fn take_utf8_ready/);
+  assert.match(backend, /pending_utf8\.extend_from_slice/);
+  assert.match(backend, /Emit even an empty data frame so sequence continuity is/);
+  assert.doesNotMatch(backend, /data: String::from_utf8_lossy\(&bytes\[\.\.read\]\)/);
+});
+
 test('snapshot bytes and sequence advance under one backend lock', () => {
   assert.doesNotMatch(backend, /AtomicU64/);
   assert.match(backend, /Ok\(mut snapshot\) => snapshot\.push/);

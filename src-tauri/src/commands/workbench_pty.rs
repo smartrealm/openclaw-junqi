@@ -151,6 +151,35 @@ fn consume_completed_run(pty_id: &str, run_id: &str) -> bool {
     true
 }
 
+fn take_utf8_ready(bytes: &mut Vec<u8>) -> String {
+    let mut output = String::new();
+    loop {
+        match std::str::from_utf8(bytes) {
+            Ok(text) => {
+                output.push_str(text);
+                bytes.clear();
+                return output;
+            }
+            Err(error) => {
+                let valid_len = error.valid_up_to();
+                if valid_len > 0 {
+                    output.push_str(&String::from_utf8_lossy(&bytes[..valid_len]));
+                }
+                match error.error_len() {
+                    Some(invalid_len) => {
+                        output.push('\u{FFFD}');
+                        bytes.drain(..valid_len + invalid_len);
+                    }
+                    None => {
+                        bytes.drain(..valid_len);
+                        return output;
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn validate_id(label: &str, value: &str) -> Result<(), String> {
     if value.is_empty()
         || value.len() > MAX_ID_BYTES
@@ -317,6 +346,7 @@ pub fn create_workbench_pty(
     let output_handle = handle.clone();
     std::thread::spawn(move || {
         let mut bytes = [0_u8; 32 * 1024];
+        let mut pending_utf8 = Vec::new();
         loop {
             match reader.read(&mut bytes) {
                 Ok(0) => break,
@@ -325,19 +355,38 @@ pub fn create_workbench_pty(
                         Ok(mut snapshot) => snapshot.push(&bytes[..read]),
                         Err(_) => break,
                     };
+                    pending_utf8.extend_from_slice(&bytes[..read]);
+                    let data = take_utf8_ready(&mut pending_utf8);
+                    // Emit even an empty data frame so sequence continuity is
+                    // preserved while a multibyte codepoint awaits its tail.
                     let _ = output_app.emit(
                         "workbench-pty-output",
                         WorkbenchPtyOutput {
                             pty_id: output_id.clone(),
                             run_id: output_run.clone(),
                             sequence,
-                            data: String::from_utf8_lossy(&bytes[..read]).into_owned(),
+                            data,
                         },
                     );
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => break,
             }
+        }
+        if !pending_utf8.is_empty() {
+            let sequence = output_handle
+                .snapshot
+                .lock()
+                .map_or(0, |snapshot| snapshot.sequence);
+            let _ = output_app.emit(
+                "workbench-pty-output",
+                WorkbenchPtyOutput {
+                    pty_id: output_id.clone(),
+                    run_id: output_run.clone(),
+                    sequence,
+                    data: String::from_utf8_lossy(&pending_utf8).into_owned(),
+                },
+            );
         }
         // Reader EOF does not own process completion. The child monitor removes
         // the registry entry and records the completed-run tombstone atomically
@@ -542,8 +591,8 @@ pub fn stop_workbench_ptys(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::{
-        consume_completed_run, is_completed_run, remember_completed_run, validate_id,
-        SnapshotBuffer, MAX_COMPLETED_RUNS, MAX_SNAPSHOT_BYTES,
+        consume_completed_run, is_completed_run, remember_completed_run, take_utf8_ready,
+        validate_id, SnapshotBuffer, MAX_COMPLETED_RUNS, MAX_SNAPSHOT_BYTES,
     };
     use std::collections::VecDeque;
 
@@ -553,6 +602,15 @@ mod tests {
         assert!(validate_id("id", "bad\nrun").is_err());
         assert!(validate_id("id", &"x".repeat(161)).is_err());
         assert!(validate_id("id", "workbench:pty:one").is_ok());
+    }
+
+    #[test]
+    fn utf8_decoder_retains_split_multibyte_characters() {
+        let mut pending = vec![0xe4, 0xb8];
+        assert_eq!(take_utf8_ready(&mut pending), "");
+        pending.push(0xad);
+        assert_eq!(take_utf8_ready(&mut pending), "中");
+        assert!(pending.is_empty());
     }
 
     #[test]
