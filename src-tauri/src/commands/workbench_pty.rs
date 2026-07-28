@@ -110,7 +110,7 @@ fn registry() -> &'static Mutex<HashMap<String, Handle>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn lifecycle_gate() -> &'static Mutex<()> {
+pub(crate) fn lifecycle_gate() -> &'static Mutex<()> {
     static GATE: OnceLock<Mutex<()>> = OnceLock::new();
     GATE.get_or_init(|| Mutex::new(()))
 }
@@ -209,6 +209,19 @@ fn shell_command(cwd: &std::path::Path) -> CommandBuilder {
     }
     command.env("JUNQI_WORKBENCH", "1");
     command
+}
+
+pub(crate) fn assert_current_run_locked(pty_id: &str, run_id: &str) -> Result<(), String> {
+    let handle = registry()
+        .lock()
+        .map_err(|_| "workbench PTY registry lock poisoned".to_string())?
+        .get(pty_id)
+        .cloned()
+        .ok_or_else(|| format!("unknown workbench PTY: {pty_id}"))?;
+    if handle.run_id != run_id || handle.stopping.load(Ordering::Acquire) {
+        return Err(format!("stale workbench PTY run: {pty_id}"));
+    }
+    Ok(())
 }
 
 fn current_handle(pty_id: &str, run_id: &str) -> Result<Handle, String> {
@@ -409,6 +422,7 @@ pub fn create_workbench_pty(
         );
         exit_handle.stopping.store(true, Ordering::Release);
         remove_if_current(&exit_id, &exit_handle);
+        super::workbench_provider::release_claims_for_pty_locked(&exit_id);
         remember_completed_run(&exit_id, &exit_run);
     });
 
@@ -492,6 +506,7 @@ pub fn stop_workbench_pty(pty_id: String, run_id: String) -> Result<(), String> 
         Ok(handle) => {
             stop_handle(&handle);
             remove_if_current(&pty_id, &handle);
+            super::workbench_provider::release_claims_for_pty_locked(&pty_id);
             Ok(())
         }
         Err(_) if consume_completed_run(&pty_id, &run_id) => Ok(()),
@@ -515,6 +530,7 @@ pub fn close_workbench_pty_tab(pty_id: String, run_id: String) -> Result<(), Str
         Some(handle) if handle.run_id == run_id && !handle.stopping.load(Ordering::Acquire) => {
             stop_handle(&handle);
             remove_if_current(&pty_id, &handle);
+            super::workbench_provider::release_claims_for_pty_locked(&pty_id);
             Ok(())
         }
         Some(_) => Err(format!("stale workbench PTY run: {pty_id}")),
@@ -552,6 +568,7 @@ pub fn close_workbench_pty_tabs(identities: Vec<WorkbenchPtyIdentity>) -> Result
         if let Some(handle) = handle {
             stop_handle(&handle);
             remove_if_current(&identity.pty_id, &handle);
+            super::workbench_provider::release_claims_for_pty_locked(&identity.pty_id);
         } else {
             consume_completed_run(&identity.pty_id, &identity.run_id);
         }
@@ -577,6 +594,7 @@ pub fn stop_all_workbench_ptys() -> Result<u64, String> {
     for handle in handles {
         stop_handle(&handle);
     }
+    super::workbench_provider::clear_claims_locked();
     Ok(count)
 }
 
@@ -602,6 +620,7 @@ pub fn stop_workbench_ptys(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), 
         if let Some(handle) = handle {
             stop_handle(&handle);
             remove_if_current(&pty_id, &handle);
+            super::workbench_provider::release_claims_for_pty_locked(&pty_id);
         } else {
             consume_completed_run(&identity.pty_id, &identity.run_id);
         }
