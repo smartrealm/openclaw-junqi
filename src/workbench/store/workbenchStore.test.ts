@@ -43,6 +43,16 @@ test('closing an active tab selects the adjacent right tab before the left fallb
   assert.equal(useWorkbenchStore.getState().groups[mainGroup]?.activeTabId, 'a');
 });
 
+test('workbench-owned projects survive session snapshots independently of legacy tasks', () => {
+  const worktree = {
+    id: 'local-project', projectId: 'project', repositoryId: 'repo', hostId: 'local',
+    hostRevision: 0, path: '/repo', branch: null, lifecycle: 'active' as const,
+  };
+  useWorkbenchStore.getState().addWorktree(worktree);
+  const persisted = useWorkbenchStore.getState().sessionSnapshot();
+  assert.deepEqual(persisted.worktrees['local-project'], worktree);
+});
+
 test('hydration is the only action that opens the session writer gate', () => {
   assert.equal(useWorkbenchStore.getState().writerReady, false);
   useWorkbenchStore.getState().hydrateSession(null);

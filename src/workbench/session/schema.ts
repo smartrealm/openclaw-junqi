@@ -1,11 +1,12 @@
 import { listTabGroupIds } from '../domain/tabGroupLayout';
-import type { TabGroup, TabGroupId, TabGroupLayoutNode, TabId, WorkbenchTab, WorkbenchTabKind, WorktreeId } from '../domain/types';
+import type { TabGroup, TabGroupId, TabGroupLayoutNode, TabId, WorkbenchTab, WorkbenchTabKind, WorkbenchWorktree, WorktreeId } from '../domain/types';
 
 export const WORKBENCH_SESSION_SCHEMA_VERSION = 1;
 
 export interface WorkbenchSessionSnapshot {
   schemaVersion: typeof WORKBENCH_SESSION_SCHEMA_VERSION;
   activeWorktreeId: WorktreeId | null;
+  worktrees: Record<WorktreeId, WorkbenchWorktree>;
   activeGroupId: TabGroupId;
   layout: TabGroupLayoutNode;
   groups: Record<TabGroupId, TabGroup>;
@@ -59,6 +60,14 @@ export function isWorkbenchSessionSnapshot(value: unknown): value is WorkbenchSe
   const candidate = record(value);
   if (!candidate || candidate.schemaVersion !== WORKBENCH_SESSION_SCHEMA_VERSION) return false;
   if (candidate.activeWorktreeId !== null && typeof candidate.activeWorktreeId !== 'string') return false;
+  const worktrees = record(candidate.worktrees);
+  if (!worktrees) return false;
+  for (const [id, value] of Object.entries(worktrees)) {
+    const worktree = record(value);
+    if (!worktree || worktree.id !== id || typeof worktree.path !== 'string' || !worktree.path) return false;
+    if (typeof worktree.hostId !== 'string' || typeof worktree.hostRevision !== 'number') return false;
+  }
+  if (candidate.activeWorktreeId !== null && !worktrees[candidate.activeWorktreeId]) return false;
   if (typeof candidate.activeGroupId !== 'string') return false;
   if (candidate.sidebarMode !== 'full' && candidate.sidebarMode !== 'compact' && candidate.sidebarMode !== 'hidden') return false;
   if (typeof candidate.rightSidebarPanel !== 'string' || !RIGHT_PANELS.has(candidate.rightSidebarPanel)) return false;

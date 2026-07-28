@@ -6,6 +6,7 @@ function snapshot(): WorkbenchSessionSnapshot {
   return {
     schemaVersion: WORKBENCH_SESSION_SCHEMA_VERSION,
     activeWorktreeId: null,
+    worktrees: {},
     activeGroupId: 'main',
     layout: { type: 'group', groupId: 'main' },
     groups: { main: { id: 'main', tabIds: ['tab'], activeTabId: 'tab' } },

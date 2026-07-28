@@ -8,6 +8,7 @@ function snapshot(panel: WorkbenchSessionSnapshot['rightSidebarPanel']): Workben
   return {
     schemaVersion: WORKBENCH_SESSION_SCHEMA_VERSION,
     activeWorktreeId: null,
+    worktrees: {},
     activeGroupId: 'main',
     layout: { type: 'group', groupId: 'main' },
     groups: { main: { id: 'main', tabIds: [], activeTabId: null } },

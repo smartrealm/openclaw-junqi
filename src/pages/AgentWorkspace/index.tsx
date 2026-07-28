@@ -30,6 +30,7 @@ import {
   readAgentWorkspaceSidebarMode,
 } from '@/components/Layout/agentWorkspaceSidebarEvents';
 import type { WorkspaceSidebarMode } from '@/components/Layout/workspaceSidebarChannel';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
 import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
@@ -107,12 +108,14 @@ function WorktreeSidebar({
   onSelect,
   mode,
   onToggle,
+  onAdd,
 }: {
   worktrees: WorktreeItem[];
   activeId: string | null;
   onSelect: (id: string) => void;
   mode: WorkspaceSidebarMode;
   onToggle: () => void;
+  onAdd: () => void;
 }) {
   if (mode === 'hidden') return null;
   if (mode === 'compact') {
@@ -145,7 +148,7 @@ function WorktreeSidebar({
           <strong>工作区</strong>
         </div>
         <div className="junqi-wb-inline-actions">
-          <IconButton label="新建工作区"><Plus size={15} /></IconButton>
+          <IconButton label="打开本机项目" onClick={onAdd}><Plus size={15} /></IconButton>
           <IconButton label="收起工作区" onClick={onToggle}><SidebarSimple size={16} /></IconButton>
         </div>
       </header>
@@ -540,6 +543,7 @@ export function AgentWorkspacePage() {
   const worktreeRecords = useWorkbenchStore((state) => state.worktrees);
   const activeWorktree = useWorkbenchStore((state) => state.activeWorktreeId);
   const setWorktrees = useWorkbenchStore((state) => state.setWorktrees);
+  const addWorktree = useWorkbenchStore((state) => state.addWorktree);
   const setActiveWorktree = useWorkbenchStore((state) => state.activateWorktree);
   const groups = useWorkbenchStore((state) => state.groups);
   const layout = useWorkbenchStore((state) => state.layout);
@@ -570,7 +574,9 @@ export function AgentWorkspacePage() {
 
   useEffect(() => {
     const migration = projectLegacyTasksToWorkbench(legacyTasks);
-    setWorktrees(migration.worktrees);
+    const current = useWorkbenchStore.getState().worktrees;
+    const additions = migration.worktrees.filter((worktree) => !current[worktree.id]);
+    if (additions.length > 0) setWorktrees([...Object.values(current), ...additions]);
   }, [legacyTasks, setWorktrees]);
 
   useEffect(() => {
@@ -590,6 +596,22 @@ export function AgentWorkspacePage() {
     window.addEventListener(AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT, toggle);
     return () => window.removeEventListener(AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT, toggle);
   }, []);
+  const addLocalProject = async () => {
+    const selected = await openDialog({ directory: true, multiple: false, title: '打开本机项目' });
+    if (typeof selected !== 'string' || !selected) return;
+    const id = `workbench:local:${selected}`;
+    addWorktree({
+      id,
+      projectId: id,
+      repositoryId: id,
+      hostId: 'local',
+      hostRevision: 0,
+      path: selected,
+      branch: null,
+      lifecycle: 'active',
+    });
+  };
+
   const closeTab = (id: string) => {
     if (group) closeStoreTab(group.id, id);
   };
@@ -647,6 +669,7 @@ export function AgentWorkspacePage() {
         onSelect={setActiveWorktree}
         mode={sidebarMode}
         onToggle={() => setSidebarMode(sidebarMode === 'full' ? 'compact' : 'full')}
+        onAdd={() => { void addLocalProject(); }}
       />
 
       <main className="junqi-wb-main">

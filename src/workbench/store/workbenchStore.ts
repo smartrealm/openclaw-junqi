@@ -30,6 +30,7 @@ interface WorkbenchState {
   layout: TabGroupLayoutNode;
   activeGroupId: TabGroupId;
   setWorktrees: (worktrees: WorkbenchWorktree[]) => void;
+  addWorktree: (worktree: WorkbenchWorktree) => void;
   activateWorktree: (id: WorktreeId) => void;
   openTab: (groupId: TabGroupId, tab: WorkbenchTab) => void;
   activateTab: (groupId: TabGroupId, tabId: TabId) => void;
@@ -75,6 +76,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         : worktrees[0]?.id ?? null,
     };
   }),
+
+  addWorktree: (worktree) => set((state) => ({
+    worktrees: { ...state.worktrees, [worktree.id]: worktree },
+    activeWorktreeId: worktree.id,
+  })),
 
   activateWorktree: (id) => set((state) => (
     state.worktrees[id] ? { activeWorktreeId: id } : {}
@@ -159,6 +165,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     writerReady: true,
     hydrationError: null,
     activeWorktreeId: snapshot.activeWorktreeId,
+    worktrees: snapshot.worktrees,
     activeGroupId: snapshot.activeGroupId,
     layout: snapshot.layout,
     groups: snapshot.groups,
@@ -179,6 +186,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     return {
       schemaVersion: 1,
       activeWorktreeId: state.activeWorktreeId,
+      worktrees: state.worktrees,
       activeGroupId: state.activeGroupId,
       layout: state.layout,
       groups: state.groups,

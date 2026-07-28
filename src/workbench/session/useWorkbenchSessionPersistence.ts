@@ -75,6 +75,7 @@ export function useWorkbenchSessionPersistence(): void {
       if (!state.writerReady || !writerRef.current?.isReady()) return;
       if (
         state.activeWorktreeId === previous.activeWorktreeId
+        && state.worktrees === previous.worktrees
         && state.activeGroupId === previous.activeGroupId
         && state.layout === previous.layout
         && state.groups === previous.groups
