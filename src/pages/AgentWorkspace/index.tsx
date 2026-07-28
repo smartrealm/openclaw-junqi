@@ -11,7 +11,6 @@ import {
   Files,
   GitBranch,
   GitDiff,
-  HardDrives,
   MagnifyingGlass,
   Plus,
   Robot,
@@ -210,7 +209,6 @@ function WorktreeSidebar({
         <span className="junqi-wb-host-dot" />
         <span>本机</span>
         <span className="junqi-wb-muted">{worktrees.length} 个工作区</span>
-        <IconButton label="主机与运行时"><HardDrives size={15} /></IconButton>
       </footer>
     </aside>
   );
@@ -272,8 +270,8 @@ function AgentTerminal() {
     <section className="junqi-wb-pane junqi-wb-terminal-pane">
       <div className="junqi-wb-browser-empty">
         <TerminalWindow size={44} weight="thin" />
-        <strong>Agent PTY 尚未连接</strong>
-        <span>Workbench 专属 attach、sequence、snapshot 和 resync 后端完成后才能启动 Agent。</span>
+        <strong>Agent Provider 未连接</strong>
+        <span>Workbench PTY 已可用；Provider claim、会话恢复和 Agent 状态解析完成后才能启动 Agent。</span>
       </div>
     </section>
   );
@@ -307,7 +305,7 @@ function EditorPreview() {
   return <div className="junqi-wb-empty-panel">编辑器标签不可用：文件路径缺失</div>;
 }
 
-function WorkbenchDiff({ tab, projectPath }: { tab: DomainWorkbenchTab; projectPath: string }) {
+function WorkbenchDiff({ tab, projectPath, onClose }: { tab: DomainWorkbenchTab; projectPath: string; onClose: () => void }) {
   if (!tab.filePath) return <div className="junqi-wb-empty-panel">Diff 标签缺少文件路径</div>;
   return (
     <GitDiffViewer
@@ -316,7 +314,7 @@ function WorkbenchDiff({ tab, projectPath }: { tab: DomainWorkbenchTab; projectP
       filePath={tab.filePath}
       staged={tab.diffStaged === true}
       title={tab.title}
-      onClose={() => undefined}
+      onClose={onClose}
     />
   );
 }
@@ -327,14 +325,11 @@ function DiffPreview() {
 
 function BrowserPreview() {
   return (
-    <section className="junqi-wb-pane">
-      <header className="junqi-wb-browser-bar">
-        <button type="button">‹</button><button type="button">›</button>
-        <div><span className="junqi-wb-host-dot" />localhost:1420/ai-workspace</div>
-        <IconButton label="浏览器操作"><DotsThree size={16} /></IconButton>
-      </header>
-      <div className="junqi-wb-browser-empty"><Browser size={44} weight="thin" /><strong>Browser Pane</strong><span>Tauri Browser 后端接入后在这里显示真实页面。</span></div>
-    </section>
+    <div className="junqi-wb-empty-panel">
+      <Browser size={28} weight="thin" />
+      <strong>Browser Pane 不可用</strong>
+      <span>Tauri 隔离浏览器后端尚未实现；当前不会创建模拟页面或本机文件权限。</span>
+    </div>
   );
 }
 
@@ -508,16 +503,16 @@ function SearchPanel({ projectPath, onFileSelect }: {
   );
 }
 
-function WorkbenchContent({ activeTab, domainTab, projectPath, onMissing }: {
+function WorkbenchContent({ activeTab, domainTab, projectPath, onClose }: {
   activeTab: WorkbenchTab | undefined;
   domainTab: DomainWorkbenchTab | undefined;
   projectPath: string | null;
-  onMissing: () => void;
+  onClose: () => void;
 }) {
-  if (!activeTab) return <div className="junqi-wb-empty-panel">选择项目后新建 Agent、文件或 Diff 标签</div>;
-  if (activeTab.kind === 'editor' && domainTab && projectPath) return <WorkbenchEditor tab={domainTab} projectPath={projectPath} onMissing={onMissing} />;
+  if (!activeTab) return <div className="junqi-wb-empty-panel">选择项目后新建 Shell，或从文件与 Git 面板打开标签</div>;
+  if (activeTab.kind === 'editor' && domainTab && projectPath) return <WorkbenchEditor tab={domainTab} projectPath={projectPath} onMissing={onClose} />;
   if (activeTab.kind === 'editor') return <EditorPreview />;
-  if (activeTab.kind === 'diff' && domainTab && projectPath) return <WorkbenchDiff tab={domainTab} projectPath={projectPath} />;
+  if (activeTab.kind === 'diff' && domainTab && projectPath) return <WorkbenchDiff tab={domainTab} projectPath={projectPath} onClose={onClose} />;
   if (activeTab.kind === 'diff') return <DiffPreview />;
   if (activeTab.kind === 'browser') return <BrowserPreview />;
   if (domainTab?.kind === 'terminal' && projectPath) return <WorkbenchTerminalPane tab={domainTab} cwd={projectPath} />;
@@ -730,9 +725,8 @@ export function AgentWorkspacePage() {
             <span><GitBranch size={12} />{selectedWorktree?.branch ?? '选择项目或迁移旧任务'}</span>
           </div>
           <div className="junqi-wb-inline-actions">
-            <span className="junqi-wb-header-status"><Robot size={13} weight="fill" />Agent 状态未知</span>
-            <span className="junqi-wb-header-status"><Bell size={13} />等待 PTY Adapter</span>
-            <IconButton label="工作区菜单"><DotsThree size={17} /></IconButton>
+            <span className="junqi-wb-header-status"><Robot size={13} weight="fill" />Agent Provider 未连接</span>
+            <span className="junqi-wb-header-status"><Bell size={13} />本机 Shell PTY 可用</span>
           </div>
         </header>
 
@@ -766,7 +760,7 @@ export function AgentWorkspacePage() {
                       activeTab={targetActive}
                       domainTab={targetDomainTab}
                       projectPath={targetWorktree?.path ?? null}
-                      onMissing={() => { if (targetActiveId) closeStoreTab(groupId, targetActiveId); }}
+                      onClose={() => { if (targetActiveId) void closeTab(groupId, targetActiveId); }}
                     />
                   </div>
                 </section>
