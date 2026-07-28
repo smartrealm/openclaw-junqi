@@ -1267,6 +1267,7 @@ export function AgentWorkspacePage() {
                   setOpenFiles([]);
                   setActiveFilePath(null);
                 }}
+                onOpenFile={openFile}
               />
             </WorkspaceContentScene>
           ) : !projectPath ? (

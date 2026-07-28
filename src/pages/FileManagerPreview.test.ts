@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const fileManager = readFileSync(new URL('./FileManager.tsx', import.meta.url), 'utf8');
+const markdownPreview = readFileSync(new URL('./FileMarkdownPreview.tsx', import.meta.url), 'utf8');
 
 test('FILE-01 binary file-manager previews use a scoped URL rather than the text reader', () => {
   const binaryEffectStart = fileManager.indexOf('useEffect(() => {\n    setBinaryPreview(null);');
@@ -29,4 +30,11 @@ test('FILE-03 changing the selected file clears stale preview loading states', (
   assert.match(fileManager, /setBinaryPreview\(null\);\n    setBinaryLoading\(false\);/);
   assert.match(fileManager, /setHtmlPreview\(null\);\n    setHtmlPreviewLoading\(false\);/);
   assert.match(fileManager, /binaryLoading \|\| htmlPreviewLoading \|\| textPreviewLoading/);
+});
+
+test('FILE-04 managed Markdown uses the shared renderer and preserves local-link opening', () => {
+  assert.match(markdownPreview, /import \{ MarkdownPreview \} from '@\/components\/FileExplorer\/MarkdownPreview'/);
+  assert.match(markdownPreview, /onOpenLocalLink=\{openManagedMarkdownLink\}/);
+  assert.match(markdownPreview, /managedFiles\?\.open \|\| window\.aegis\?\.uploads\?\.open/);
+  assert.doesNotMatch(markdownPreview, /ReactMarkdown|remarkGfm|markdownPreviewComponents/);
 });

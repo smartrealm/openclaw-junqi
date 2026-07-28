@@ -11,14 +11,26 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Marked } from "marked";
-import DOMPurify from "dompurify";
+import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import { Eye, MoreHorizontal, Pencil, Play, Save, X } from "lucide-react";
-import ReactCodeMirror from "@uiw/react-codemirror";
+import {
+  Copy,
+  CopyX,
+  ExternalLink,
+  Eye,
+  ListX,
+  PanelLeftClose,
+  PanelRightClose,
+  Play,
+  Save,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import ReactCodeMirror, { EditorView } from "@uiw/react-codemirror";
 import type { Extension } from "@codemirror/state";
 import { loadCodeMirrorLanguage } from "@/utils/codeMirrorLanguages";
 import { aegisCodeMirrorBaseTheme, getCodeMirrorColorTheme } from "@/utils/codeMirrorTheme";
+import { useNotificationStore } from "@/stores/notificationStore";
 import { pathIsTargetOrDescendant } from "./openFilePaths";
 import { isMarkdownFile } from "@/utils/filePreviewCapabilities";
 import { ExternalFileChangeBanner } from "./ExternalFileChangeBanner";
@@ -28,6 +40,14 @@ import {
   useFilePreviewDocument,
   type RegisterSaveHandler,
 } from "./useFilePreviewDocument";
+import { FileViewerToolbar } from "./FileViewerToolbar";
+import { MarkdownPreview, extractMarkdownHeadings } from "./MarkdownPreview";
+import { MarkdownTableOfContents } from "./MarkdownTableOfContents";
+import {
+  resolveMarkdownResourcePath,
+  workspaceRelativePath,
+  type FileViewMode,
+} from "./fileViewerModel";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,8 +61,6 @@ export interface FileViewerHandle {
 }
 
 export type ThemeVariant = "dark" | "midnight" | "light" | "eyecare";
-
-type TocEntry = { depth: number; text: string; id: string };
 
 // ── File helpers ─────────────────────────────────────────────────────────────
 
@@ -94,36 +112,6 @@ function parseMakeTargets(content: string): string[] {
     }
   }
   return out;
-}
-
-// ── Markdown rendering ───────────────────────────────────────────────────────
-
-function renderMarkdownWithToc(content: string): { html: string; toc: TocEntry[] } {
-  const used = new Set<string>();
-  const toc: TocEntry[] = [];
-  const instance = new Marked({
-    renderer: {
-      heading(token) {
-        const inlineHtml = this.parser.parseInline(token.tokens);
-        const plain = inlineHtml.replace(/<[^>]*>/g, "").trim();
-        const base =
-          plain
-            .toLowerCase()
-            .replace(/[^\w一-鿿 -]/g, "")
-            .replace(/\s+/g, "-")
-            .replace(/-+/g, "-")
-            .replace(/^-+|-+$/g, "") || "section";
-        let id = base;
-        let n = 1;
-        while (used.has(id)) id = `${base}-${n++}`;
-        used.add(id);
-        toc.push({ depth: token.depth, text: plain, id });
-        return `<h${token.depth} id="${id}">${inlineHtml}</h${token.depth}>\n`;
-      },
-    },
-  });
-  const html = instance.parse(content, { async: false }) as string;
-  return { html: DOMPurify.sanitize(html), toc };
 }
 
 // ── Tab color helper ─────────────────────────────────────────────────────────
@@ -178,101 +166,6 @@ function getFileColor(name: string): string {
   }
 }
 
-// ── Markdown TOC ─────────────────────────────────────────────────────────────
-
-function MarkdownToc({
-  toc,
-  activeId,
-  onJump,
-}: {
-  toc: TocEntry[];
-  activeId: string | null;
-  onJump: (id: string) => void;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const minDepth = useMemo(() => Math.min(...toc.map((e) => e.depth)), [toc]);
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        right: 8,
-        top: 8,
-        maxWidth: "min(220px, calc(100% - 16px))",
-        maxHeight: "calc(100% - 16px)",
-        overflowY: "auto",
-        background: "var(--aegis-elevated)",
-        border: "1px solid var(--aegis-border)",
-        borderRadius: 8,
-        boxShadow: "0 4px 16px rgba(0,0,0,0.24)",
-        zIndex: 50,
-        opacity: open ? 1 : undefined,
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          width: "100%",
-          padding: "6px 10px",
-          border: "none",
-          borderBottom: open ? "1px solid var(--aegis-border)" : "none",
-          background: "transparent",
-          color: "rgb(var(--aegis-text-dim))",
-          fontSize: 11,
-          fontWeight: 600,
-          cursor: "pointer",
-          fontFamily: "var(--font-ui, var(--font-sans))",
-          textAlign: "left",
-        }}
-      >
-        {t("file.outline", "Outline")}
-      </button>
-      {open && (
-        <nav style={{ padding: "4px 0" }}>
-          {toc.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              data-depth={Math.min(entry.depth - minDepth + 1, 6)}
-              onClick={() => onJump(entry.id)}
-              title={entry.text}
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "2px 10px",
-                paddingLeft: 10 + (entry.depth - minDepth) * 12,
-                border: "none",
-                background:
-                  activeId === entry.id
-                    ? "rgb(var(--aegis-primary) / 0.12)"
-                    : "transparent",
-                color:
-                  activeId === entry.id
-                    ? "rgb(var(--aegis-primary))"
-                    : "rgb(var(--aegis-text-muted))",
-                fontSize: 11.5,
-                textAlign: "left",
-                cursor: "pointer",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                fontFamily: "var(--font-ui, var(--font-sans))",
-              }}
-            >
-              {entry.text}
-            </button>
-          ))}
-        </nav>
-      )}
-    </div>
-  );
-}
-
 // ── FilePreviewPane ──────────────────────────────────────────────────────────
 
 function FilePreviewPane({
@@ -281,8 +174,13 @@ function FilePreviewPane({
   projectPath,
   themeVariant,
   previewMode,
+  tableOfContentsVisible,
+  wordWrap,
   active,
   registerSaveHandler,
+  onOpenFile,
+  onCloseTableOfContents,
+  onTableOfContentsAvailabilityChange,
   onRunMakeTarget,
 }: {
   filePath: string;
@@ -290,8 +188,13 @@ function FilePreviewPane({
   projectPath: string;
   themeVariant: ThemeVariant;
   previewMode: boolean;
+  tableOfContentsVisible: boolean;
+  wordWrap: boolean;
   active: boolean;
   registerSaveHandler: RegisterSaveHandler;
+  onOpenFile: (path: string, name: string) => void;
+  onCloseTableOfContents: () => void;
+  onTableOfContentsAvailabilityChange: (path: string, available: boolean) => void;
   onRunMakeTarget?: (target: string) => void;
 }) {
   const editorTheme = getCodeMirrorColorTheme(themeVariant);
@@ -328,13 +231,14 @@ function FilePreviewPane({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const showMarkdownPreview = isMarkdown && previewMode && content !== null;
-  const { html: markdownHtml, toc } = useMemo(
-    () =>
-      isMarkdown && content !== null
-        ? renderMarkdownWithToc(content)
-        : { html: "", toc: [] },
+  const headings = useMemo(
+    () => (isMarkdown && content !== null ? extractMarkdownHeadings(content) : []),
     [isMarkdown, content],
   );
+
+  useEffect(() => {
+    onTableOfContentsAvailabilityChange(filePath, headings.length > 0);
+  }, [filePath, headings.length, onTableOfContentsAvailabilityChange]);
 
   const jumpToHeading = useCallback((id: string) => {
     const target = scrollRef.current?.querySelector<HTMLElement>(
@@ -343,14 +247,21 @@ function FilePreviewPane({
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
+  const openLocalMarkdownLink = useCallback((href: string) => {
+    const path = resolveMarkdownResourcePath(href, filePath, projectPath);
+    if (!path) return;
+    const name = path.split(/[\\/]/).pop();
+    if (name) onOpenFile(path, name);
+  }, [filePath, onOpenFile, projectPath]);
+
   // Intersection observer for active TOC heading
   useEffect(() => {
     const root = scrollRef.current;
-    if (!root || !showMarkdownPreview || toc.length === 0) return;
-    const headings = toc
+    if (!root || !showMarkdownPreview || headings.length === 0) return;
+    const headingElements = headings
       .map((entry) => root.querySelector<HTMLElement>(`#${CSS.escape(entry.id)}`))
       .filter((el): el is HTMLElement => el !== null);
-    if (headings.length === 0) return;
+    if (headingElements.length === 0) return;
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
@@ -360,9 +271,9 @@ function FilePreviewPane({
       },
       { root, rootMargin: "0px 0px -65% 0px", threshold: 0 },
     );
-    headings.forEach((el) => observer.observe(el));
+    headingElements.forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [showMarkdownPreview, toc]);
+  }, [headings, showMarkdownPreview]);
 
   useEffect(() => {
     let alive = true;
@@ -393,8 +304,12 @@ function FilePreviewPane({
   }, [active, content, handleSaveNow, isTextPreview, previewMode]);
 
   const extensions = useMemo(
-    () => [languageExtension, aegisCodeMirrorBaseTheme],
-    [languageExtension],
+    () => [
+      languageExtension,
+      aegisCodeMirrorBaseTheme,
+      ...(wordWrap ? [EditorView.lineWrapping] : []),
+    ],
+    [languageExtension, wordWrap],
   );
 
   const saveLabel =
@@ -486,21 +401,24 @@ function FilePreviewPane({
             />
           ) : content !== null ? (
             isMarkdown && previewMode ? (
-              <>
+              <div className="md-preview-layout">
                 <div ref={scrollRef} className="md-preview-scroll">
-                  <div
-                    className="md-preview"
-                    dangerouslySetInnerHTML={{ __html: markdownHtml }}
+                  <MarkdownPreview
+                    content={content}
+                    filePath={filePath}
+                    projectPath={projectPath}
+                    onOpenLocalLink={openLocalMarkdownLink}
                   />
                 </div>
-                {toc.length > 0 && (
-                  <MarkdownToc
-                    toc={toc}
+                {tableOfContentsVisible && headings.length > 0 && (
+                  <MarkdownTableOfContents
+                    headings={headings}
                     activeId={activeHeadingId}
-                    onJump={jumpToHeading}
+                    onNavigate={jumpToHeading}
+                    onClose={onCloseTableOfContents}
                   />
                 )}
-              </>
+              </div>
             ) : (
               <ReactCodeMirror
                 value={content}
@@ -655,6 +573,7 @@ export const FileViewer = forwardRef<FileViewerHandle, {
   onCloseTabsToRight: (path: string) => void;
   onCloseTabsToLeft: (path: string) => void;
   onCloseAllTabs: () => void;
+  onOpenFile: (path: string, name: string) => void;
   themeVariant?: ThemeVariant;
   onRunMakeTarget?: (target: string) => void;
 }>(function FileViewer({
@@ -667,12 +586,16 @@ export const FileViewer = forwardRef<FileViewerHandle, {
   onCloseTabsToRight,
   onCloseTabsToLeft,
   onCloseAllTabs,
+  onOpenFile,
   themeVariant = "dark",
   onRunMakeTarget,
 }, ref) {
   const { t } = useTranslation();
+  const addToast = useNotificationStore((state) => state.addToast);
   const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [tableOfContentsModes, setTableOfContentsModes] = useState<Record<string, boolean>>({});
+  const [tableOfContentsAvailability, setTableOfContentsAvailability] = useState<Record<string, boolean>>({});
+  const [wordWrap, setWordWrap] = useState(true);
   const [tabMenu, setTabMenu] = useState<{
     x: number;
     y: number;
@@ -691,6 +614,16 @@ export const FileViewer = forwardRef<FileViewerHandle, {
       if (saveHandlersRef.current.get(path) === handler) saveHandlersRef.current.delete(path);
     };
   }, []);
+
+  const handleTableOfContentsAvailabilityChange = useCallback(
+    (path: string, available: boolean) => {
+      setTableOfContentsAvailability((prev) => {
+        if (prev[path] === available) return prev;
+        return { ...prev, [path]: available };
+      });
+    },
+    [],
+  );
 
   useImperativeHandle(ref, () => ({
     flushPath: async (path, isDirectory) => {
@@ -754,6 +687,20 @@ export const FileViewer = forwardRef<FileViewerHandle, {
         ? prev
         : next;
     });
+    setTableOfContentsModes((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const tab of tabs) {
+        if (Object.prototype.hasOwnProperty.call(prev, tab.path)) next[tab.path] = prev[tab.path];
+      }
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+    setTableOfContentsAvailability((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const tab of tabs) {
+        if (Object.prototype.hasOwnProperty.call(prev, tab.path)) next[tab.path] = prev[tab.path];
+      }
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
   }, [tabs]);
 
   const activeTab = useMemo(
@@ -768,19 +715,40 @@ export const FileViewer = forwardRef<FileViewerHandle, {
 
   const activeIsMarkdown = isMarkdownFile(activeTab.name);
   const activePreviewMode = activeIsMarkdown && (previewModes[activeTab.path] ?? true);
-  const canCloseOtherTabs = tabs.length > 1;
-  const activeTabIndex = tabs.findIndex((tab) => tab.path === activeTab.path);
-  const canCloseTabsToRight =
-    activeTabIndex !== -1 && activeTabIndex < tabs.length - 1;
-  const canCloseTabsToLeft = activeTabIndex > 0;
+  const activeViewMode: FileViewMode = activePreviewMode ? "preview" : "source";
+  const activeTableOfContentsVisible = activePreviewMode
+    && (tableOfContentsModes[activeTab.path] ?? false);
+  const activeTableOfContentsAvailable = tableOfContentsAvailability[activeTab.path] ?? false;
+  const activeRelativePath = workspaceRelativePath(activeTab.path, projectPath);
 
   const tabMenuIndex = tabMenu
     ? tabs.findIndex((tab) => tab.path === tabMenu.path)
     : -1;
+  const tabMenuTab = tabMenuIndex === -1 ? null : tabs[tabMenuIndex];
   const tabMenuCanCloseOthers = tabs.length > 1;
   const tabMenuCanCloseRight =
     tabMenuIndex !== -1 && tabMenuIndex < tabs.length - 1;
   const tabMenuCanCloseLeft = tabMenuIndex > 0;
+
+  const copyPath = (path: string) => {
+    if (!navigator.clipboard?.writeText) {
+      addToast("error", t("file.copyPathFailed", "Unable to copy path"), path);
+      return;
+    }
+    void navigator.clipboard.writeText(path).then(
+      () => addToast("info", t("file.pathCopied", "Path copied"), path),
+      () => addToast("error", t("file.copyPathFailed", "Unable to copy path"), path),
+    );
+  };
+  const revealPath = (path: string) => {
+    void invoke("open_in_system_file_manager", { path, projectPath }).catch(() => {
+      addToast(
+        "error",
+        t("file.revealFailed", "Unable to reveal file"),
+        t("file.revealFailedHint", "The file could not be shown in the system file manager."),
+      );
+    });
+  };
 
   return (
     <div
@@ -828,7 +796,6 @@ export const FileViewer = forwardRef<FileViewerHandle, {
                 onClick={() => onSelectTab(tab.path)}
                 onContextMenu={(event) => {
                   event.preventDefault();
-                  setMenuOpen(false);
                   setTabMenuPos(null);
                   setTabMenu({
                     x: event.clientX,
@@ -907,149 +874,29 @@ export const FileViewer = forwardRef<FileViewerHandle, {
           })}
         </div>
 
-        {/* Toggle preview/edit for markdown */}
-        <div
-          style={{
-            marginLeft: 8,
-            marginRight: 8,
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            flexShrink: 0,
-          }}
-        >
-          {activeIsMarkdown && (
-            <button
-              onClick={() =>
-                setPreviewModes((prev) => ({
-                  ...prev,
-                  [activeTab.path]: !(prev[activeTab.path] ?? true),
-                }))
-              }
-              title={
-                activePreviewMode
-                  ? t("common.edit", "Edit")
-                  : t("common.preview", "Preview")
-              }
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "3px 8px",
-                borderRadius: 4,
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                color: activePreviewMode
-                  ? "rgb(var(--aegis-primary))"
-                  : "rgb(var(--aegis-text-dim))",
-                fontSize: 11.5,
-                fontFamily: "var(--font-ui, var(--font-sans))",
-                flexShrink: 0,
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "var(--aegis-hover)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "none")
-              }
-            >
-              {activePreviewMode ? <Pencil size={13} /> : <Eye size={13} />}
-              {activePreviewMode ? t("common.edit", "Edit") : t("common.preview", "Preview")}
-            </button>
-          )}
-
-          {/* More tab actions */}
-          <div style={{ position: "relative" }}>
-            <button
-              title={t("file.tabActions", "Tab actions")}
-              aria-label={t("file.tabActions", "Tab actions")}
-              onClick={() => setMenuOpen((prev) => !prev)}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "4px",
-                borderRadius: 4,
-                display: "flex",
-                alignItems: "center",
-                color: "rgb(var(--aegis-text-dim))",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "var(--aegis-hover)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "none")
-              }
-            >
-              <MoreHorizontal size={15} />
-            </button>
-            {menuOpen && (
-              <>
-                <div
-                  style={{
-                    position: "fixed",
-                    inset: 0,
-                    zIndex: 199,
-                  }}
-                  onClick={() => setMenuOpen(false)}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    right: 0,
-                    top: "100%",
-                    marginTop: 4,
-                    zIndex: 200,
-                    background: "var(--aegis-menu-bg)",
-                    border: "1px solid var(--aegis-menu-border)",
-                    borderRadius: 8,
-                    boxShadow:
-                      "0 8px 32px rgba(0,0,0,0.32)",
-                    minWidth: 160,
-                    padding: "4px 0",
-                    fontSize: 12,
-                    color: "rgb(var(--aegis-menu-text))",
-                  }}
-                >
-                  <TabMenuItem
-                    label={t("file.closeOtherTabs", "Close Other Tabs")}
-                    disabled={!canCloseOtherTabs}
-                    onClick={() => {
-                      onCloseOtherTabs(activeTab.path);
-                      setMenuOpen(false);
-                    }}
-                  />
-                  <TabMenuItem
-                    label={t("file.closeTabsToRight", "Close Tabs to the Right")}
-                    disabled={!canCloseTabsToRight}
-                    onClick={() => {
-                      onCloseTabsToRight(activeTab.path);
-                      setMenuOpen(false);
-                    }}
-                  />
-                  <TabMenuItem
-                    label={t("file.closeTabsToLeft", "Close Tabs to the Left")}
-                    disabled={!canCloseTabsToLeft}
-                    onClick={() => {
-                      onCloseTabsToLeft(activeTab.path);
-                      setMenuOpen(false);
-                    }}
-                  />
-                  <TabMenuItem
-                    label={t("file.closeAllTabs", "Close All Tabs")}
-                    disabled={tabs.length === 0}
-                    onClick={() => {
-                      onCloseAllTabs();
-                      setMenuOpen(false);
-                    }}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        </div>
       </div>
+
+      <FileViewerToolbar
+        relativePath={activeRelativePath}
+        isMarkdown={activeIsMarkdown}
+        viewMode={activeViewMode}
+        tableOfContentsVisible={activeTableOfContentsVisible}
+        tableOfContentsAvailable={activeTableOfContentsAvailable}
+        wordWrap={wordWrap}
+        onViewModeChange={(mode) => {
+          setPreviewModes((prev) => ({ ...prev, [activeTab.path]: mode === "preview" }));
+        }}
+        onToggleTableOfContents={() => {
+          setTableOfContentsModes((prev) => ({
+            ...prev,
+            [activeTab.path]: !(prev[activeTab.path] ?? false),
+          }));
+        }}
+        onToggleWordWrap={() => setWordWrap((current) => !current)}
+        onCopyPath={() => copyPath(activeTab.path)}
+        onCopyRelativePath={() => copyPath(activeRelativePath)}
+        onReveal={() => revealPath(activeTab.path)}
+      />
 
       {/* Content panes */}
       <div
@@ -1080,8 +927,17 @@ export const FileViewer = forwardRef<FileViewerHandle, {
                 projectPath={projectPath}
                 themeVariant={themeVariant}
                 previewMode={isMarkdownFile(tab.name) && (previewModes[tab.path] ?? true)}
+                tableOfContentsVisible={isMarkdownFile(tab.name)
+                  && (previewModes[tab.path] ?? true)
+                  && (tableOfContentsModes[tab.path] ?? false)}
+                wordWrap={wordWrap}
                 active={isActive}
                 registerSaveHandler={registerSaveHandler}
+                onOpenFile={onOpenFile}
+                onCloseTableOfContents={() => {
+                  setTableOfContentsModes((prev) => ({ ...prev, [tab.path]: false }));
+                }}
+                onTableOfContentsAvailabilityChange={handleTableOfContentsAvailabilityChange}
                 onRunMakeTarget={onRunMakeTarget}
               />
             </div>
@@ -1090,7 +946,7 @@ export const FileViewer = forwardRef<FileViewerHandle, {
       </div>
 
       {/* Right-click tab context menu */}
-      {tabMenu && tabMenuIndex !== -1 && createPortal(
+      {tabMenu && tabMenuTab && createPortal(
         <div
           ref={tabMenuRef}
           style={{
@@ -1103,13 +959,28 @@ export const FileViewer = forwardRef<FileViewerHandle, {
             border: "1px solid var(--aegis-menu-border)",
             borderRadius: 8,
             boxShadow: "0 8px 32px rgba(0,0,0,0.32)",
-            minWidth: 160,
+            minWidth: 220,
             padding: "4px 0",
             fontSize: 12,
             color: "rgb(var(--aegis-menu-text))",
           }}
         >
+          {isMarkdownFile(tabMenuTab.name) && (
+            <>
+              <TabMenuItem
+                icon={Eye}
+                label={t("file.openMarkdownPreview", "Open Markdown Preview")}
+                onClick={() => {
+                  onSelectTab(tabMenu.path);
+                  setPreviewModes((prev) => ({ ...prev, [tabMenu.path]: true }));
+                  setTabMenu(null);
+                }}
+              />
+              <TabMenuSeparator />
+            </>
+          )}
           <TabMenuItem
+            icon={X}
             label={t("file.closeThisTab", "Close")}
             onClick={() => {
               onCloseTab(tabMenu.path);
@@ -1117,6 +988,7 @@ export const FileViewer = forwardRef<FileViewerHandle, {
             }}
           />
           <TabMenuItem
+            icon={CopyX}
             label={t("file.closeOtherTabs", "Close Other Tabs")}
             disabled={!tabMenuCanCloseOthers}
             onClick={() => {
@@ -1125,6 +997,7 @@ export const FileViewer = forwardRef<FileViewerHandle, {
             }}
           />
           <TabMenuItem
+            icon={PanelRightClose}
             label={t("file.closeTabsToRight", "Close Tabs to the Right")}
             disabled={!tabMenuCanCloseRight}
             onClick={() => {
@@ -1133,6 +1006,7 @@ export const FileViewer = forwardRef<FileViewerHandle, {
             }}
           />
           <TabMenuItem
+            icon={PanelLeftClose}
             label={t("file.closeTabsToLeft", "Close Tabs to the Left")}
             disabled={!tabMenuCanCloseLeft}
             onClick={() => {
@@ -1141,10 +1015,37 @@ export const FileViewer = forwardRef<FileViewerHandle, {
             }}
           />
           <TabMenuItem
+            icon={ListX}
             label={t("file.closeAllTabs", "Close All Tabs")}
             disabled={tabs.length === 0}
             onClick={() => {
               onCloseAllTabs();
+              setTabMenu(null);
+            }}
+          />
+          <TabMenuSeparator />
+          <TabMenuItem
+            icon={Copy}
+            label={t("file.copyPath", "Copy path")}
+            onClick={() => {
+              copyPath(tabMenu.path);
+              setTabMenu(null);
+            }}
+          />
+          <TabMenuItem
+            icon={Copy}
+            label={t("file.copyRelativePath", "Copy relative path")}
+            onClick={() => {
+              copyPath(workspaceRelativePath(tabMenu.path, projectPath));
+              setTabMenu(null);
+            }}
+          />
+          <TabMenuSeparator />
+          <TabMenuItem
+            icon={ExternalLink}
+            label={t("file.revealInFileManager", "Reveal in file manager")}
+            onClick={() => {
+              revealPath(tabMenu.path);
               setTabMenu(null);
             }}
           />
@@ -1158,10 +1059,12 @@ export const FileViewer = forwardRef<FileViewerHandle, {
 // ── TabMenuItem ──────────────────────────────────────────────────────────────
 
 function TabMenuItem({
+  icon: Icon,
   label,
   onClick,
   disabled,
 }: {
+  icon?: LucideIcon;
   label: string;
   onClick: () => void;
   disabled?: boolean;
@@ -1172,7 +1075,9 @@ function TabMenuItem({
       disabled={disabled}
       onClick={onClick}
       style={{
-        display: "block",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
         width: "calc(100% - 8px)",
         height: 28,
         padding: "0 10px",
@@ -1197,7 +1102,12 @@ function TabMenuItem({
         e.currentTarget.style.background = "transparent";
       }}
     >
+      {Icon && <Icon size={14} aria-hidden="true" />}
       {label}
     </button>
   );
+}
+
+function TabMenuSeparator() {
+  return <div role="separator" className="mx-1 my-1 h-px bg-[rgb(var(--aegis-overlay)/0.1)]" />;
 }

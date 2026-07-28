@@ -88,6 +88,17 @@
 
 目标：JunQi 使用一个 `read_file_preview` IPC 返回严格的 `text/image/pdf/binary` 判别联合。所有工作区入口只允许 `text` 进入编辑和保存链路；图片与 PDF 共用只读渲染器；未知二进制显示大小和“使用系统应用打开”，不向前端发送其内容。对齐 Orca 的图片/PDF 范围；Mermaid、CSV/TSV、Notebook 当前稳定按源码文本打开，不虚构已迁移 Orca 的富编辑器。
 
+### BUG-AW-FILE-08：Markdown 预览与编辑器操作栏缺少一致结构
+
+等级：A
+
+- `FileViewer` 此前把 Markdown 渲染、模式按钮和状态操作混在单个大组件中；标签栏右侧只有语义不明确的动作，用户无法稳定区分源码与预览。
+- 文件管理页 `FileMarkdownPreview` 另有一套 `react-markdown` 组件映射，表格、代码、链接和 HTML 安全策略与智能体工作区发生漂移。
+- 标题没有可复用目录，长文档缺少定位入口；标签右键也只有关闭动作，缺少关闭其他/左右标签、复制相对路径和系统中显示。
+- Orca 的 `EditorPanelHeader`、`EditorViewToggle`、`EditorPanelMarkdownActionsMenu`、`MarkdownPreview`、`MarkdownTableOfContentsPanel` 与 `EditorFileTabContextMenu` 提供了可核对的结构：标签栏下方使用稳定操作栏，源码/预览用图标分段控制，Markdown 目录独立成栏，通用动作进入更多菜单，标签菜单承载批量关闭与路径操作。
+
+目标：JunQi 采用上述信息架构并保持自身 Tauri 边界。Markdown 默认预览，使用统一的 GFM React 渲染组件；原始 HTML 不进入 DOM；工作区内图片继续通过 `read_file_preview` 和根目录校验加载。标题生成可链接且处理重复项的稳定锚点，目录只在预览且存在标题时可用。源码模式保留 CodeMirror 行号与折叠栏，预览模式不显示编辑器装饰。标签栏下方增加固定高度操作栏，集中模式切换、目录、长行换行、路径复制和系统中显示；标签右键补齐批量关闭与路径操作。Orca 的 Mermaid、数学公式、搜索、批注和审阅能力不在本次范围。
+
 ## 官方文档依据
 
 - React `createPortal`：Portal 可把浮层 DOM 放到组件 DOM 层级之外，同时保留 React context 与事件关系。<https://react.dev/reference/react-dom/createPortal>
@@ -113,6 +124,7 @@
 4. 执行 TypeScript lint、前端全量测试、Rust `fs_neu` 测试与生产构建。
 5. 源码回归覆盖文件管理页主题传递、两套编辑器复用基础主题、CodeMirror 有效 RGB 颜色和 Markdown 预览布局；桌面包分别检查智能体工作区编辑正文与文件管理页预览正文的可见性。
 6. 纯状态回归覆盖加载、编辑、干净重载、脏草稿冲突、成功保存事件回声、磁盘内容已等于草稿、保留本地修改和写入期间继续编辑；Rust 行为回归覆盖 guarded write 成功与基线过期不写入。
+7. Markdown 回归覆盖 GFM、原始 HTML 隔离、Unicode/重复标题锚点、代码围栏内标题忽略和本地资源根目录边界；生产构建不得重新出现循环分包或超限 chunk 警告。
 
 ## 验证结论
 
@@ -125,3 +137,5 @@
 2026-07-28 跨页面右键一致性：增加共享命令矩阵、名称输入对话框和路径操作控制器；智能体详情与终端文件树已移除各自缺失或私有的菜单分支并接入共享菜单。定向行为与接入回归 15 项通过，四份 locale JSON 可解析；`pnpm test` 共 1,894 项通过（前端 1,677、脚本 217）；`pnpm lint` 与 573 个模块边界检查、`pnpm build`、`git diff --check` 通过。Apple Silicon 本地 `.app` 使用显式 ad-hoc identity 完成资源封装签名；Tauri 内置 DMG Finder 美化脚本在本机退出后，以其已生成的临时映像完成压缩和 ad-hoc 签名。最终 DMG、源码 `.app` 和 DMG 内 `.app` 均通过严格 codesign，`hdiutil verify` 通过。该包没有 Developer ID、notarization 或 Gatekeeper 接受结论；尚未在实际 Tauri 窗口逐页右键走查。
 
 2026-07-28 文件格式分流：定向 TypeScript 回归 13 项通过；`pnpm test`、`pnpm lint`（575 个模块边界检查）、`pnpm build`、`cargo fmt -- --check`、`cargo check --lib` 和 `git diff --check` 通过；`cargo test --lib` 为 627 项通过、3 项环境依赖测试忽略。重新生成的 Apple Silicon `.app` 与 DMG 均通过严格 codesign，DMG 校验和有效；挂载后确认应用版本 `1.4.14`、架构 `arm64`、签名类型为 ad-hoc。未启动实际 Tauri 窗口，图片、PDF、未知二进制及源码格式仍需桌面交互走查；该制品未做 Developer ID 签名或 notarization。
+
+2026-07-28 Markdown 预览与操作栏：用统一 GFM React 渲染器替换 `FileViewer` 的字符串 HTML 注入和文件管理页的重复渲染器；标题目录由标准 Markdown AST 生成，工作区本地图片仍经过前端路径规范化与 Rust IPC 根目录门禁。Markdown、跨平台路径、工作区源码接入和文件管理页接入定向回归 14 项通过；`pnpm test` 共 1,932 项通过（前端 1,709、脚本 223）；`pnpm lint` 与 582 个模块边界检查、`pnpm build`、locale JSON 解析和 `git diff --check` 通过。最大 JavaScript chunk 为 513.31 kB，低于 550 kB 门禁，构建没有循环 chunk 或超限提示。应用内浏览器控制技能已尝试连接，但当前会话没有可用浏览器实例；未把源码检查描述成实际 Tauri 窗口验收，长文档目录、模式切换、更多菜单、标签右键和本地图片仍需桌面走查。

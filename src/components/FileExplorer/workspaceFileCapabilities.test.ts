@@ -5,6 +5,8 @@ import test from "node:test";
 const contextMenuSource = readFileSync(new URL("./ContextMenu.tsx", import.meta.url), "utf8");
 const explorerSource = readFileSync(new URL("./FileExplorer.tsx", import.meta.url), "utf8");
 const viewerSource = readFileSync(new URL("./FileViewer.tsx", import.meta.url), "utf8");
+const viewerToolbarSource = readFileSync(new URL("./FileViewerToolbar.tsx", import.meta.url), "utf8");
+const markdownPreviewSource = readFileSync(new URL("./MarkdownPreview.tsx", import.meta.url), "utf8");
 const previewDocumentSource = readFileSync(new URL("./useFilePreviewDocument.ts", import.meta.url), "utf8");
 const managerSource = readFileSync(new URL("../../pages/FileManager.tsx", import.meta.url), "utf8");
 const workspacePanelSource = readFileSync(new URL("../Workspace/WorkspacePanel.tsx", import.meta.url), "utf8");
@@ -25,6 +27,14 @@ test("file tree context menu escapes workspace clipping and exposes complete act
 
 test("file viewer defaults markdown to preview and supports explicit durable save", () => {
   assert.match(viewerSource, /previewModes\[activeTab\.path\] \?\? true/);
+  assert.match(viewerSource, /<FileViewerToolbar/);
+  assert.match(viewerToolbarSource, /aria-pressed=\{active\}/);
+  assert.match(viewerToolbarSource, /onViewModeChange\("source"\)/);
+  assert.match(viewerToolbarSource, /onViewModeChange\("preview"\)/);
+  assert.match(markdownPreviewSource, /<ReactMarkdown[\s\S]*remarkPlugins=\{\[remarkGfm\]\}/);
+  assert.match(viewerSource, /onOpenLocalLink=\{openLocalMarkdownLink\}/);
+  assert.match(viewerSource, /resolveMarkdownResourcePath\(href, filePath, projectPath\)/);
+  assert.doesNotMatch(viewerSource, /dangerouslySetInnerHTML/);
   assert.match(viewerSource, /event\.key\.toLowerCase\(\) === "s"/);
   assert.match(viewerSource, /handleSaveNow/);
   assert.match(viewerSource, /flushPath: async \(path, isDirectory\)/);
@@ -36,7 +46,7 @@ test("file viewer keeps editor and Markdown preview readable in every applicatio
   assert.match(managerSource, /themeVariant=\{themeVariant\}/);
   assert.match(workspacePanelSource, /const resolvedTheme = useTheme\(\)/);
   assert.match(workspacePanelSource, /extensions=\{\[languageExtension, aegisCodeMirrorBaseTheme\]\}/);
-  assert.match(viewerSource, /\[languageExtension, aegisCodeMirrorBaseTheme\]/);
+  assert.match(viewerSource, /const extensions = useMemo\([\s\S]*languageExtension,[\s\S]*aegisCodeMirrorBaseTheme/);
   assert.match(editorThemeSource, /color: 'rgb\(var\(--aegis-text\)\)'/);
   assert.match(editorThemeSource, /color: 'rgb\(var\(--aegis-text-dim\)\)'/);
   assert.doesNotMatch(editorThemeSource, /color: 'var\(--aegis-text(?:-dim|-muted|-secondary)?\)'/);

@@ -330,6 +330,13 @@ export function FileManagerPage() {
     });
   }, []);
 
+  const openTreeFile = useCallback((path: string, name: string) => {
+    setTreeTabs((current) => current.some((tab) => tab.path === path)
+      ? current
+      : [...current, { path, name }]);
+    setTreeActiveFilePath(path);
+  }, []);
+
   const isOutputKind = useCallback((kind?: string) => kind === 'outputs' || kind === 'output', []);
 
   const hasManagedBridge = useCallback(() => {
@@ -683,18 +690,7 @@ export function FileManagerPage() {
             <FileExplorer
               projectPath={treeProjectPath}
               projectName={treeProjectPath.split(/[\\/]/).pop() || 'project'}
-              onFileSelect={(path, name) => {
-                setTreeTabs((prev) => {
-                  const exists = prev.some((t) => t.path === path);
-                  if (exists) {
-                    setTreeActiveFilePath(path);
-                    return prev;
-                  }
-                  const tab: OpenFileTab = { path, name };
-                  setTreeActiveFilePath(path);
-                  return [...prev, tab];
-                });
-              }}
+              onFileSelect={openTreeFile}
               onPathRenamed={handleTreePathRenamed}
               onPathDeleted={handleTreePathDeleted}
               onBeforePathMutation={(path, isDirectory) => treeFileViewerRef.current?.flushPath(path, isDirectory) ?? Promise.resolve()}
@@ -736,6 +732,7 @@ export function FileManagerPage() {
                   setTreeTabs([]);
                   setTreeActiveFilePath(null);
                 }}
+                onOpenFile={openTreeFile}
                 onRunMakeTarget={(target) => {
                   enqueueTerminalCommand({
                     command: `make -- ${target}\n`,
