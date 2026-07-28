@@ -229,12 +229,12 @@ fn task_final_status(
 
 // ── Agent definitions (data-driven, inspired by kooky's AgentTemplate) ───────
 
-struct AgentSpec {
+pub(crate) struct AgentSpec {
     /// Binary name on PATH. Also used as the lookup key from the frontend.
-    bin: &'static str,
+    pub(crate) bin: &'static str,
     /// Display label (for logs / notifications).
     #[allow(dead_code)]
-    label: &'static str,
+    pub(crate) label: &'static str,
     /// CLI flag(s) for permission mode: (ask, auto_edit, full_access).
     /// Empty vec = agent doesn't support permission modes.
     perm_flags: Option<(&'static str, &'static str, &'static str)>,
@@ -381,6 +381,10 @@ fn find_agent(agent_id: &str) -> Option<&'static AgentSpec> {
 
 fn list_agent_ids() -> Vec<&'static str> {
     AGENTS.iter().map(|a| a.bin).collect()
+}
+
+pub(crate) fn workbench_agent_specs() -> &'static [AgentSpec] {
+    AGENTS
 }
 
 /// Map `permission_mode` to the CLI flag the agent expects.

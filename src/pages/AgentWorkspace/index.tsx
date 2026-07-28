@@ -31,6 +31,7 @@ import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
 import { useWorkbenchStore } from '@/workbench/store/workbenchStore';
 import { resetWorkbenchSession } from '@/workbench/session/storage';
+import { probeWorkbenchProviders, type WorkbenchProviderCapability } from '@/workbench/provider/providerCapabilities';
 import {
   checkpointLocalEditorDocuments,
   commitLocalEditorDocumentRelease,
@@ -569,6 +570,15 @@ export function AgentWorkspacePage() {
   const selectedLocalPath = localWorktreePath(selectedWorktree);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [resettingSession, setResettingSession] = useState(false);
+  const [providerCapabilities, setProviderCapabilities] = useState<WorkbenchProviderCapability[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void probeWorkbenchProviders()
+      .then((capabilities) => { if (alive) setProviderCapabilities(capabilities); })
+      .catch(() => { if (alive) setProviderCapabilities([]); });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -752,7 +762,12 @@ export function AgentWorkspacePage() {
             <span><GitBranch size={12} />{selectedWorktree?.branch ?? '选择项目或迁移旧任务'}</span>
           </div>
           <div className="junqi-wb-inline-actions">
-            <span className="junqi-wb-header-status"><Robot size={13} weight="fill" />Agent Provider 未连接</span>
+            <span className="junqi-wb-header-status">
+              <Robot size={13} weight="fill" />
+              {providerCapabilities === null
+                ? '正在检测 Provider'
+                : `${providerCapabilities.filter((provider) => provider.available).length} 个 Provider 可用`}
+            </span>
             <span className="junqi-wb-header-status"><Bell size={13} />本机 Shell PTY 可用</span>
           </div>
         </header>

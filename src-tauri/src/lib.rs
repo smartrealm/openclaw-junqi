@@ -364,6 +364,7 @@ pub fn run() {
             commands::agent_workspace_storage::load_agent_workspace_tasks,
             commands::agent_workspace_storage::save_agent_workspace_tasks,
             commands::workbench_provider::claim_workbench_provider,
+            commands::workbench_provider::probe_workbench_providers,
             commands::workbench_provider::release_workbench_provider,
             commands::workbench_pty::create_workbench_pty,
             commands::workbench_pty::close_workbench_pty_tab,
