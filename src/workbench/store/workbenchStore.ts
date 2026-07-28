@@ -111,9 +111,22 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const tabIds = retainedIds.includes(tab.id) ? retainedIds : [...retainedIds, tab.id];
     const tabs = { ...state.tabs, [tab.id]: tab };
     if (existingPreviewId && existingPreviewId !== tab.id) delete tabs[existingPreviewId];
+    const groups = Object.fromEntries(Object.entries(state.groups).map(([id, candidate]) => {
+      if (id === groupId || !candidate.tabIds.includes(tab.id)) return [id, candidate];
+      const movedIndex = candidate.tabIds.indexOf(tab.id);
+      const nextIds = candidate.tabIds.filter((candidateId) => candidateId !== tab.id);
+      return [id, {
+        ...candidate,
+        tabIds: nextIds,
+        activeTabId: candidate.activeTabId === tab.id
+          ? adjacentTabId(nextIds, movedIndex)
+          : candidate.activeTabId,
+      }];
+    }));
+    groups[groupId] = { ...group, tabIds, activeTabId: tab.id };
     return {
       tabs,
-      groups: { ...state.groups, [groupId]: { ...group, tabIds, activeTabId: tab.id } },
+      groups,
       activeGroupId: groupId,
       activeWorktreeId: tab.worktreeId,
     };

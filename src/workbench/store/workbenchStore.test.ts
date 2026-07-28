@@ -40,6 +40,16 @@ test('workbench store replaces only clean preview tabs', () => {
   assert.deepEqual(useWorkbenchStore.getState().groups[mainGroup]?.tabIds, ['dirty-preview', 'preview-c']);
 });
 
+test('opening an existing tab in another group moves its single ownership', () => {
+  useWorkbenchStore.getState().openTab(mainGroup, tab('shared'));
+  useWorkbenchStore.getState().splitGroup(mainGroup, 'right', 'split-owner', 'horizontal');
+  useWorkbenchStore.getState().openTab('right', tab('shared'));
+  const state = useWorkbenchStore.getState();
+  assert.deepEqual(state.groups[mainGroup]?.tabIds, []);
+  assert.equal(state.groups[mainGroup]?.activeTabId, null);
+  assert.deepEqual(state.groups.right?.tabIds, ['shared']);
+});
+
 test('tab activation synchronizes its worktree owner', () => {
   useWorkbenchStore.getState().addWorktree({
     id: 'other', projectId: 'other', repositoryId: 'other', hostId: 'local',
