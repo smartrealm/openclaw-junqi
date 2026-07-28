@@ -814,6 +814,49 @@
   gap: 6px;
 }
 
+.junqi-wb-search-input input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  color: var(--wb-text-2);
+  background: transparent;
+}
+
+.junqi-wb-search-results {
+  display: flex;
+  flex-direction: column;
+}
+
+.junqi-wb-search-results button {
+  display: grid;
+  min-height: 42px;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 2px 6px;
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--wb-line);
+  background: transparent;
+  text-align: left;
+}
+
+.junqi-wb-search-results button:hover {
+  background: rgb(var(--aegis-overlay, 255 255 255) / 0.035);
+}
+
+.junqi-wb-search-results span,
+.junqi-wb-search-results small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.junqi-wb-search-results small {
+  grid-column: 2;
+  color: var(--wb-dim);
+  font-size: 9px;
+}
+
 .junqi-wb-search-options {
   display: flex;
   justify-content: flex-end;

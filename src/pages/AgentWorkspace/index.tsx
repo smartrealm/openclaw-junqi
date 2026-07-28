@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowsOutSimple,
   Bell,
@@ -38,6 +38,8 @@ import type { WorkbenchTab as DomainWorkbenchTab } from '@/workbench/domain/type
 import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import { GitChanges, GitDiffViewer } from '@/components/Git';
+import { localWorkspaceFiles } from '@/workspace-files/adapters/localWorkspaceFiles';
+import type { WorkspaceFileScope } from '@/workspace-files/domain/types';
 import './workbench.css';
 
 type WorktreeState = 'running' | 'attention' | 'idle' | 'done';
@@ -388,7 +390,7 @@ function RightPanelContent({ panel, projectPath, projectName, onFileSelect, onDi
   if (panel === 'source') return <SourceControlPanel projectPath={projectPath} onFileSelect={onDiffSelect} />;
   if (panel === 'checks') return <ChecksPanel />;
   if (panel === 'vault') return <VaultPanel />;
-  if (panel === 'search') return <SearchPanel />;
+  if (panel === 'search') return <SearchPanel projectPath={projectPath} onFileSelect={onFileSelect} />;
   return <FilesPanel projectPath={projectPath} projectName={projectName} onFileSelect={onFileSelect} />;
 }
 
@@ -438,13 +440,66 @@ function VaultPanel() {
   return <div className="junqi-wb-empty-panel">AI Vault Host-local scanner 尚未连接</div>;
 }
 
-function SearchPanel() {
+function SearchPanel({ projectPath, onFileSelect }: {
+  projectPath: string | null;
+  onFileSelect: (path: string, name: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<string[]>([]);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const generationRef = useRef(0);
+
+  useEffect(() => {
+    generationRef.current += 1;
+    setResults([]);
+    setStatus('idle');
+  }, [projectPath]);
+
+  useEffect(() => {
+    const value = query.trim();
+    if (!projectPath || !value) {
+      setResults([]);
+      setStatus('idle');
+      return;
+    }
+    const generation = ++generationRef.current;
+    const timer = setTimeout(() => {
+      const scope: WorkspaceFileScope = {
+        hostId: 'local', hostRevision: 0, workspaceId: projectPath,
+        rootPath: projectPath, rootRevision: 0, policy: 'workspace',
+      };
+      setStatus('loading');
+      void localWorkspaceFiles.search(scope, { query: value, maxResults: 200 }).then((response) => {
+        if (generation !== generationRef.current) return;
+        setResults(response.paths);
+        setStatus('idle');
+      }).catch(() => {
+        if (generation !== generationRef.current) return;
+        setResults([]);
+        setStatus('error');
+      });
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [projectPath, query]);
+
   return (
     <div className="junqi-wb-panel-content">
       <PanelTitle>搜索</PanelTitle>
-      <div className="junqi-wb-search-input"><MagnifyingGlass size={14} /><span>在当前 Worktree 中搜索</span></div>
-      <div className="junqi-wb-search-options"><button type="button">Aa</button><button type="button">ab</button><button type="button">.*</button></div>
-      <div className="junqi-wb-empty-panel"><MagnifyingGlass size={28} weight="thin" /><span>输入关键词搜索当前工作区</span></div>
+      <label className="junqi-wb-search-input">
+        <MagnifyingGlass size={14} />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="在当前 Worktree 中搜索文件" />
+      </label>
+      {!projectPath ? <div className="junqi-wb-empty-panel">选择本机 Worktree 后搜索</div> : null}
+      {projectPath && status === 'loading' ? <div className="junqi-wb-empty-panel">正在搜索…</div> : null}
+      {status === 'error' ? <div className="junqi-wb-empty-panel">搜索不可用</div> : null}
+      {projectPath && status === 'idle' && query.trim() && results.length === 0 ? <div className="junqi-wb-empty-panel">没有匹配文件</div> : null}
+      <div className="junqi-wb-search-results">
+        {results.map((path) => (
+          <button type="button" key={path} onClick={() => onFileSelect(path, pathLabel(path))}>
+            <FileCode size={13} /><span>{pathLabel(path)}</span><small>{path}</small>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
