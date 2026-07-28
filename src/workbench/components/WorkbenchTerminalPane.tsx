@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import type { WorkbenchTab } from '../domain/types';
 import { useWorkbenchStore } from '../store/workbenchStore';
 import {
+  closeWorkbenchPtyTab,
   createWorkbenchPty,
   inputWorkbenchPty,
   resizeWorkbenchPty,
@@ -15,6 +16,7 @@ import {
 
 export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: string }) {
   const acknowledgePtyCreate = useWorkbenchStore((state) => state.acknowledgePtyCreate);
+  const replacePtyIdentity = useWorkbenchStore((state) => state.replacePtyIdentity);
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const identity = useMemo<WorkbenchPtyIdentity | null>(() => (
@@ -106,10 +108,28 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
     };
   }, [acknowledgePtyCreate, cwd, identity, tab.id, tab.ptyCreatePending]);
 
+  const restart = async () => {
+    if (!identity) return;
+    try {
+      // Retire the exact old identity before authorizing a replacement run.
+      await closeWorkbenchPtyTab(identity);
+      const next = crypto.randomUUID();
+      replacePtyIdentity(tab.id, `workbench:pty:${next}`, `workbench:run:${crypto.randomUUID()}`);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
   if (!identity) return <div className="junqi-wb-empty-panel">Terminal 标签缺少 PTY identity</div>;
   return (
     <section className="junqi-wb-pane junqi-wb-terminal-pane">
-      {error ? <div className="junqi-wb-terminal-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="junqi-wb-terminal-error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={() => { void restart(); }}>重新启动 Shell</button>
+        </div>
+      ) : null}
       <div ref={containerRef} className="junqi-wb-xterm" />
     </section>
   );

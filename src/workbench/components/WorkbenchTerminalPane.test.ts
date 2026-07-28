@@ -15,6 +15,14 @@ test('workbench terminal subscribes before create and restores an existing run s
   assert.match(source, /subscription\?\.synchronize\(sequence\)/);
 });
 
+test('explicit restart retires the exact old run before replacing identity', () => {
+  const start = source.indexOf('const restart = async');
+  const restart = source.slice(start, source.indexOf('\n\n  if (!identity) return <', start));
+  assert.ok(restart.indexOf('await closeWorkbenchPtyTab(identity)') < restart.indexOf('replacePtyIdentity'));
+  assert.match(restart, /workbench:pty:/);
+  assert.match(restart, /workbench:run:/);
+});
+
 test('workbench terminal detach does not stop its backend PTY', () => {
   assert.doesNotMatch(source, /stopWorkbenchPty/);
   assert.match(source, /Deliberately do not stop the PTY/);

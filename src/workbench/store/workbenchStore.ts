@@ -36,6 +36,7 @@ interface WorkbenchState {
   activateTab: (groupId: TabGroupId, tabId: TabId) => void;
   closeTab: (groupId: TabGroupId, tabId: TabId) => void;
   acknowledgePtyCreate: (tabId: TabId) => void;
+  replacePtyIdentity: (tabId: TabId, ptyId: string, runId: string) => void;
   splitGroup: (targetGroupId: TabGroupId, newGroupId: TabGroupId, splitId: string, direction: 'horizontal' | 'vertical') => void;
   removeGroup: (groupId: TabGroupId) => void;
   resizeSplit: (splitId: string, ratio: number) => void;
@@ -154,6 +155,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const tab = state.tabs[tabId];
     if (!tab?.ptyCreatePending) return {};
     return { tabs: { ...state.tabs, [tabId]: { ...tab, ptyCreatePending: false } } };
+  }),
+
+  replacePtyIdentity: (tabId, ptyId, ptyRunId) => set((state) => {
+    const tab = state.tabs[tabId];
+    if (!tab || tab.kind !== 'terminal') return {};
+    return {
+      tabs: {
+        ...state.tabs,
+        [tabId]: { ...tab, ptyId, ptyRunId, ptyCreatePending: true },
+      },
+    };
   }),
 
   splitGroup: (targetGroupId, newGroupId, splitId, direction) => set((state) => {

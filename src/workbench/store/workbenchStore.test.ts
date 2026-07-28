@@ -100,6 +100,10 @@ test('PTY create authorization is one-shot and never durable', () => {
   assert.equal(useWorkbenchStore.getState().sessionSnapshot().tabs.terminal?.ptyCreatePending, false);
   useWorkbenchStore.getState().acknowledgePtyCreate('terminal');
   assert.equal(useWorkbenchStore.getState().tabs.terminal?.ptyCreatePending, false);
+  useWorkbenchStore.getState().replacePtyIdentity('terminal', 'pty-next', 'run-next');
+  assert.equal(useWorkbenchStore.getState().tabs.terminal?.ptyId, 'pty-next');
+  assert.equal(useWorkbenchStore.getState().tabs.terminal?.ptyRunId, 'run-next');
+  assert.equal(useWorkbenchStore.getState().tabs.terminal?.ptyCreatePending, true);
 });
 
 test('session snapshots always emit the current schema version', () => {

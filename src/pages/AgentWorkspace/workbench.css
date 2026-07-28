@@ -712,6 +712,15 @@
   background: var(--wb-elevated);
 }
 
+.junqi-wb-terminal-error button {
+  margin-left: 10px;
+  padding: 3px 7px;
+  border: 1px solid rgb(var(--aegis-primary, 127 154 255) / 0.35);
+  border-radius: 4px;
+  color: var(--wb-text);
+  background: rgb(var(--aegis-primary, 127 154 255) / 0.1);
+}
+
 .junqi-wb-muted {
   color: var(--wb-dim);
 }
