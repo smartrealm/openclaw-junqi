@@ -16,6 +16,7 @@ import type { Extension } from "@codemirror/state";
 import { loadCodeMirrorLanguage } from "@/utils/codeMirrorLanguages";
 import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import { parentPathOf } from "./treeUtils";
+import { readDir, readFileText, readImagePreview, writeFileText } from "@/services/workspaceFs";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,9 +32,9 @@ type SaveStatus = "idle" | "saving" | "saved" | "error";
 type TocEntry = { depth: number; text: string; id: string };
 
 type ImagePreviewData = {
-  dataUrl: string;
-  mimeType: string;
-  byteLength: number;
+  data_url: string;
+  mime_type: string;
+  byte_length: number;
 };
 
 // ── File helpers ─────────────────────────────────────────────────────────────
@@ -336,10 +337,7 @@ async function fileIsGone(
   const directory = parentPathOf(filePath);
   if (!directory) return false;
   try {
-    const entries = await invoke<{ name: string; is_dir: boolean }[]>("read_dir_entries", {
-      path: directory,
-      projectPath,
-    });
+    const entries = await readDir(directory, projectPath);
     return !entries.some((entry) => !entry.is_dir && entry.name === fileName);
   } catch {
     // The directory itself is unreadable or gone; either way the file cannot be
@@ -459,18 +457,12 @@ function FilePreviewPane({
     dirtyRef.current = false;
 
     const loadFile = isPreviewableImage
-      ? invoke<ImagePreviewData>("read_image_preview", {
-          path: filePath,
-          projectPath,
-        }).then((preview) => {
+      ? readImagePreview(filePath, projectPath).then((preview) => {
           if (cancelled) return;
           setImagePreview(preview);
           setLoading(false);
         })
-      : invoke<string>("read_file_content", {
-          path: filePath,
-          projectPath,
-        }).then((nextContent) => {
+      : readFileText(filePath, projectPath).then((nextContent) => {
           if (cancelled) return;
           setContent(nextContent);
           setLoading(false);
@@ -506,10 +498,7 @@ function FilePreviewPane({
     const reload = async () => {
       if (isPreviewableImage) {
         try {
-          const preview = await invoke<ImagePreviewData>("read_image_preview", {
-            path: filePath,
-            projectPath,
-          });
+          const preview = await readImagePreview(filePath, projectPath);
           if (alive) setImagePreview(preview);
         } catch {
           if (alive) onFileMissingRef.current?.(filePath);
@@ -518,7 +507,7 @@ function FilePreviewPane({
       }
       let next: string;
       try {
-        next = await invoke<string>("read_file_content", { path: filePath, projectPath });
+        next = await readFileText(filePath, projectPath);
       } catch {
         // The file is gone: its tab has nothing left to show, and any further
         // save would fail against a path that no longer exists.
@@ -587,11 +576,7 @@ function FilePreviewPane({
       setSaveStatus("saving");
       saveTimerRef.current = setTimeout(async () => {
         try {
-          await invoke("write_file_content", {
-            path: filePath,
-            content: value,
-            projectPath,
-          });
+          await writeFileText(filePath, value, projectPath);
           lastWrittenRef.current = value;
           dirtyRef.current = false;
           setSaveStatus("saved");
@@ -603,7 +588,7 @@ function FilePreviewPane({
           // arrived. Confirm before taking the tab down.
           setSaveStatus("error");
           try {
-            await invoke<string>("read_file_content", { path: filePath, projectPath });
+            await readFileText(filePath, projectPath);
           } catch {
             onFileMissingRef.current?.(filePath);
           }
@@ -629,7 +614,7 @@ function FilePreviewPane({
 
   const statusLabel = isPreviewableImage
     ? imagePreview
-      ? `${imagePreview.mimeType} - ${t("file.readOnly", "Read-only")}`
+      ? `${imagePreview.mime_type} - ${t("file.readOnly", "Read-only")}`
       : t("file.imagePreview", "Image preview")
     // An external write that could not be applied because of unsaved input is
     // the one state the user has to resolve, so it outranks the save status.
@@ -703,7 +688,7 @@ function FilePreviewPane({
               }}
             >
               <img
-                src={imagePreview.dataUrl}
+                src={imagePreview.data_url}
                 alt={fileName}
                 style={{
                   maxWidth: "100%",
