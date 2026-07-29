@@ -10,10 +10,11 @@ test('Tools opens its catalog before the dedicated terminal route', () => {
   assert.match(tabBar, /id: 'tools'.*path: '\/tools'/);
 });
 
-test('terminal and AI workspace keep JunQi navigation plus contextual sidebar controls', () => {
+test('terminal uses the same JunQi navigation content and top menu as the main workbench', () => {
   assert.match(appLayout, /usesGlobalSidebar = !isWorkspacePage/);
   assert.match(appLayout, /terminal-kooky-app/);
-  assert.match(appLayout, /globalSidebarPresentation = isTerminalPage \|\| isAgentWorkspacePage \? 'terminal-rail' : 'default'/);
+  assert.match(appLayout, /globalSidebarPresentation = isAgentWorkspacePage \? 'terminal-rail' : 'default'/);
+  assert.match(appLayout, /!isWorkspacePage && <TabBar \/>/);
   assert.match(appLayout, /<NavSidebar presentation=\{globalSidebarPresentation\} \/>/);
   assert.match(appLayout, /sidebarTarget=\{isTerminalPage \? 'terminal' : isAgentWorkspacePage \? 'agent-workspace' : 'app'\}/);
   assert.match(topBar, /requestTerminalSidebarToggle/);
@@ -24,5 +25,5 @@ test('AI workspace remains inside the product shell instead of drill-in back chr
   assert.doesNotMatch(appLayout, /showBack=\{showRouteBack\}/);
   assert.doesNotMatch(appLayout, /showRouteBack = isAgentWorkspacePage/);
   assert.doesNotMatch(appLayout, /routeBackFallback = '\/tools'/);
-  assert.match(appLayout, /!isWorkspacePage && !isTerminalPage && <TabBar \/>/);
+  assert.match(appLayout, /!isWorkspacePage && <TabBar \/>/);
 });

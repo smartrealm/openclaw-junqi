@@ -7,8 +7,8 @@ const layout = readFileSync(new URL('../../components/Layout/AppLayout.tsx', imp
 
  test('AI workspace remains inside the JunQi product shell', () => {
   assert.match(layout, /usesGlobalSidebar = !isWorkspacePage/);
-  assert.match(layout, /isTerminalPage \|\| isAgentWorkspacePage \? 'terminal-rail' : 'default'/);
-  assert.match(layout, /!isWorkspacePage && !isTerminalPage && <TabBar \/>/);
+  assert.match(layout, /globalSidebarPresentation = isAgentWorkspacePage \? 'terminal-rail' : 'default'/);
+  assert.match(layout, /!isWorkspacePage && <TabBar \/>/);
 });
 
 test('AI workspace exposes worktree, unified tab and right-sidebar regions', () => {

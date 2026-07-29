@@ -81,10 +81,10 @@ export function AppLayout() {
   const isTerminalPage = matchPath('/terminal/*', location.pathname) !== null;
   const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
   const usesGlobalSidebar = !isWorkspacePage;
-  // Terminal and AI Workspace keep JunQi's compact product rail while their
-  // own contextual sidebars manage terminals or worktrees. This preserves a
-  // continuous product shell instead of turning either route into another app.
-  const globalSidebarPresentation = isTerminalPage || isAgentWorkspacePage ? 'terminal-rail' : 'default';
+  // The terminal keeps the same product navigation and top-level menu as the
+  // main workbench. AI Workspace retains its compact rail because its own
+  // worktree sidebar is the primary navigation surface.
+  const globalSidebarPresentation = isAgentWorkspacePage ? 'terminal-rail' : 'default';
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
@@ -108,7 +108,7 @@ export function AppLayout() {
       />
 
       {/* ── Navigation tabs ── */}
-      {!isWorkspacePage && !isTerminalPage && <TabBar />}
+      {!isWorkspacePage && <TabBar />}
 
       <div className="flex flex-1 min-h-0 relative z-[1]" dir={dir}>
         {usesGlobalSidebar && (
