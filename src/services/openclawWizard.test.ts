@@ -184,7 +184,7 @@ test('wizard client starts fresh after terminal failure without replaying accept
 
   const retried = await client.retry();
   assert.equal(retried.step?.id, 'credential');
-  assert.equal(retried.sessionId, 'session-2');
+  assert.equal(client.activeSessionId, 'session-2');
   assert.deepEqual(calls, [
     { method: 'wizard.start', value: undefined },
     { method: 'wizard.next', value: 'secret-value' },
@@ -261,46 +261,22 @@ test('wizard client never records or replays an answer rejected by a running ses
   ]);
 });
 
-test('wizard client retains the official session when cancellation does not terminate it', async () => {
-  let starts = 0;
-  const calls: string[] = [];
-  const client = new OpenClawWizardClient(async (method, params) => {
-    calls.push(`${method}:${String(params.sessionId ?? '')}`);
+test('wizard client rejects cancellation status outside the installed synchronous contract', async () => {
+  const client = new OpenClawWizardClient(async (method) => {
     if (method === 'wizard.start') {
-      starts += 1;
       return {
-        sessionId: `session-${starts}`,
+        sessionId: 'session-cancel-drift',
         done: false,
         status: 'running',
         step: { id: 'persistent-effect', type: 'progress' },
       };
     }
-    if (method === 'wizard.cancel') return { status: 'running' };
-    if (method === 'wizard.status') return { status: 'running' };
-    if (method === 'wizard.next') {
-      return { done: false, status: 'running', step: { id: 'persistent-effect', type: 'progress' } };
-    }
-    throw new Error(`unexpected ${method}`);
+    return { status: 'running' };
   });
 
   await client.start();
-  await assert.rejects(() => client.cancel(), /did not terminate the session/);
-  assert.equal(client.activeSessionId, 'session-1');
-
-  // Starting again must not forget the live session or create a competing one.
-  await assert.rejects(() => client.start(), /did not terminate the session/);
-  assert.equal(starts, 1);
-  assert.equal(client.activeSessionId, 'session-1');
-
-  const resumed = await client.resume();
-  assert.equal(resumed.step?.id, 'persistent-effect');
-  assert.deepEqual(calls, [
-    'wizard.start:',
-    'wizard.cancel:session-1',
-    'wizard.cancel:session-1',
-    'wizard.status:session-1',
-    'wizard.next:session-1',
-  ]);
+  await assert.rejects(() => client.cancel(), /must be `cancelled`/);
+  assert.equal(client.activeSessionId, 'session-cancel-drift');
 });
 
 test('wizard client rejects malformed cancellation status without forgetting the session', async () => {
@@ -308,7 +284,7 @@ test('wizard client rejects malformed cancellation status without forgetting the
     if (method === 'wizard.start') {
       return { sessionId: 'session-malformed', done: false, status: 'running', step: { id: 'confirm', type: 'confirm' } };
     }
-    return { done: true };
+    return { status: 'invalid' };
   });
 
   await client.start();
@@ -333,8 +309,8 @@ test('wizard client treats cancelled as a terminal session that can restart clea
   assert.equal(client.activeSessionId, null);
   assert.equal(client.diagnosticSessionId, null);
   assert.equal(classifyOpenClawWizardFailure(new OpenClawWizardCancelledError()), 'cancelled');
-  const restarted = await client.retry();
-  assert.equal(restarted.sessionId, 'session-2');
+  await client.retry();
+  assert.equal(client.activeSessionId, 'session-2');
 });
 
 test('wizard client preserves Gateway option identity from the installed schema', async () => {
@@ -380,6 +356,73 @@ test('wizard client rejects fields and step types outside the installed schema',
 test('wizard client rejects malformed gateway responses', async () => {
   const client = new OpenClawWizardClient(async () => ({ status: 'running' }));
   await assert.rejects(() => client.start(), /missing `done`/);
+});
+
+test('wizard start requires its exact installed result shape', async () => {
+  const missingSession = new OpenClawWizardClient(async () => ({
+    done: true,
+    status: 'done',
+  }));
+  await assert.rejects(() => missingSession.start(), /invalid `sessionId`/);
+
+  const extraField = new OpenClawWizardClient(async () => ({
+    sessionId: 'session-extra',
+    done: false,
+    status: 'running',
+    step: { id: 'provider', type: 'select' },
+    future: true,
+  }));
+  await assert.rejects(() => extraField.start(), /unknown field `future`/);
+});
+
+test('wizard next rejects start-only fields', async () => {
+  const client = new OpenClawWizardClient(async (method) => {
+    if (method === 'wizard.start') {
+      return {
+        sessionId: 'session-next-shape',
+        done: false,
+        status: 'running',
+        step: { id: 'provider', type: 'select' },
+      };
+    }
+    return { sessionId: 'not-allowed', done: true, status: 'done' };
+  });
+
+  await client.start();
+  await assert.rejects(() => client.next('provider', 'openai'), /unknown field `sessionId`/);
+  assert.equal(client.activeSessionId, 'session-next-shape');
+});
+
+test('wizard status and cancellation reject unknown result fields', async () => {
+  const statusClient = new OpenClawWizardClient(async (method) => {
+    if (method === 'wizard.start') {
+      return {
+        sessionId: 'session-status-shape',
+        done: false,
+        status: 'running',
+        step: { id: 'provider', type: 'select' },
+      };
+    }
+    return { status: 'done', extra: true };
+  });
+  await statusClient.start();
+  await assert.rejects(() => statusClient.resume(), /unknown field `extra`/);
+  assert.equal(statusClient.activeSessionId, 'session-status-shape');
+
+  const cancelClient = new OpenClawWizardClient(async (method) => {
+    if (method === 'wizard.start') {
+      return {
+        sessionId: 'session-cancel-shape',
+        done: false,
+        status: 'running',
+        step: { id: 'provider', type: 'select' },
+      };
+    }
+    return { status: 'cancelled', extra: true };
+  });
+  await cancelClient.start();
+  await assert.rejects(() => cancelClient.cancel(), /unknown field `extra`/);
+  assert.equal(cancelClient.activeSessionId, 'session-cancel-shape');
 });
 
 test('recognizes only recoverable wizard session loss errors', () => {

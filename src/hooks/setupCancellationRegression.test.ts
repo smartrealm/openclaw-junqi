@@ -19,6 +19,10 @@ const runtimeTransaction = readFileSync(
   new URL("../services/setup/runtimeSelectionTransaction.ts", import.meta.url),
   "utf8",
 );
+const operationCoordinator = readFileSync(
+  new URL("../services/setup/setupOperationCoordinator.ts", import.meta.url),
+  "utf8",
+);
 
 test("BUG-WIN-CANCEL-01 setup cancellation is scoped to the initiating run", () => {
   assert.match(setup, /struct SetupOperationCoordinator/);
@@ -29,10 +33,12 @@ test("BUG-WIN-CANCEL-01 setup cancellation is scoped to the initiating run", () 
   assert.match(setup, /Arc::ptr_eq\(&active\.cancellation\.requested, &self\.cancellation\.requested\)/);
   assert.match(app, /commands::setup::cancel_setup_operation/);
   assert.match(api, /cancelSetupOperation = \(operationId: string\)/);
-  assert.match(flow, /const activeOperationRef = useRef<string \| null>\(null\)/);
-  assert.match(flow, /const requestCancellation = useCallback\([\s\S]*?cancelSetupOperation\(operationId\)/);
-  assert.match(flow, /const cancelActiveRun = useCallback\([\s\S]*?requestCancellation\(operationId\)/);
-  assert.match(flow, /const runSetupOperation = useCallback[\s\S]*?operationId = `\$\{scopeRef\.current\}:\$\{runId\}:\$\{kind\}`/);
+  assert.match(operationCoordinator, /private activeOperationId: string \| null = null/);
+  assert.match(operationCoordinator, /operationId = `\$\{this\.scope\}:\$\{runId\}:\$\{kind\}`/);
+  assert.match(operationCoordinator, /invalidateActiveRun\(\): Promise<void>/);
+  assert.match(operationCoordinator, /async cancelActiveRun\(\): Promise<void>/);
+  assert.match(operationCoordinator, /await this\.options\.cancelOperation\(operationId\)/);
+  assert.match(operationCoordinator, /await completion/);
 });
 
 test("BUG-IW-01 OpenClaw npm and Docker pulls share cancellation and confirmed cleanup", () => {
@@ -102,18 +108,19 @@ test("BUG-WIN-CANCEL-05 a running install always offers a cancellation path", ()
     flow.indexOf("const cancelSetupRun = useCallback"),
     flow.indexOf("const retryGit = useCallback"),
   );
-  assert.match(cancel, /const completion = cancelActiveRun\(\);/);
-  assert.match(cancel, /await completion/);
+  assert.match(cancel, /await cancelActiveRun\(\)/);
+  assert.match(cancel, /setup\.cancelInstallFailed/);
+  assert.match(cancel, /catch \(error\)[\s\S]*?setSetupError\(message\)[\s\S]*?return;/);
   assert.match(cancel, /try \{\s*\n\s*restoredLocations = await rollbackRuntimeReconfiguration\(\);\s*\n\s*\} catch \(error\)/);
   assert.match(cancel, /catch \(error\)[\s\S]*?setForceStorageSelection\(true\);\s*\n\s*replaceSetupStep\("storage"\);\s*\n\s*return;/);
   assert.match(cancel, /rollbackActiveGatewayRuntime\(installMode\)/);
   assert.match(cancel, /await performGoBack\(\)/);
   assert.doesNotMatch(cancel, /runtimeSelectionInFlightRef\.current = false/);
   assert.doesNotMatch(cancel, /retrySetupInFlightRef\.current = false/);
-  assert.match(flow, /const cancelActiveRun = useCallback[\s\S]*?requestCancellation\(operationId\)/);
-  assert.match(flow, /const beginSetupTransaction[\s\S]*?another setup transaction is still stopping/);
-  assert.match(flow, /const runNativeSetup[\s\S]*?beginSetupOperation\(runId\)[\s\S]*?finally \{\s*\n\s*finishSetupOperation\(runId\)/);
-  assert.match(flow, /const runDockerSetup[\s\S]*?beginSetupOperation\(runId\)[\s\S]*?finally \{\s*\n\s*finishSetupOperation\(runId\)/);
+  assert.match(operationCoordinator, /async cancelActiveRun\(\)[\s\S]*?await this\.options\.cancelOperation\(operationId\)[\s\S]*?await completion/);
+  assert.match(operationCoordinator, /beginTransaction\(runId: number\): boolean[\s\S]*?if \(current\) return false/);
+  assert.match(flow, /const runNativeSetup[\s\S]*?if \(!beginSetupOperation\(runId\)\) return false[\s\S]*?finally \{\s*\n\s*finishSetupOperation\(runId\)/);
+  assert.match(flow, /const runDockerSetup[\s\S]*?if \(!beginSetupOperation\(runId\)\) return false[\s\S]*?finally \{\s*\n\s*finishSetupOperation\(runId\)/);
 });
 
 test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff UI", () => {

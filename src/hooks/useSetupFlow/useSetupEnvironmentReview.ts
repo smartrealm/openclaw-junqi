@@ -29,6 +29,7 @@ interface SetupEnvironmentReviewPorts {
   setInstallTarget: (target: InstallTarget) => void;
   setDockerStatus: (status: DockerStatus) => void;
   setCheckingDocker: (checking: boolean) => void;
+  setSetupComplete: (complete: boolean | null) => void;
   setPostStorageStep: (step: PostStorageStep) => void;
   commitSteps: (steps: StepState[]) => void;
   report: (message: string, progress?: number) => void;
@@ -59,6 +60,7 @@ export function useSetupEnvironmentReview({
   setInstallTarget,
   setDockerStatus,
   setCheckingDocker,
+  setSetupComplete,
   setPostStorageStep,
   commitSteps,
   report,
@@ -83,7 +85,7 @@ export function useSetupEnvironmentReview({
       setOpenclawStatus(openclaw);
       if (runtime === "native" && (!openclaw.installed || openclaw.relocation_required)) {
         relocationRequestedRef.current = openclaw.relocation_required;
-        localStorage.removeItem("junqi-setup-done");
+        setSetupComplete(null);
         return "choosing-mode";
       }
 
@@ -118,7 +120,7 @@ export function useSetupEnvironmentReview({
       setOpenclawStatus(null);
       return "choosing-mode";
     }
-  }, [commitSteps, isRunActive, navigationLeavingRef, relocationRequestedRef, resolveOnboardingRequirement, setGatewayRunning, setInstallMode, setInstallTarget, setOpenclawStatus, stepsRef, updateOnboardingRequirement]);
+  }, [commitSteps, isRunActive, navigationLeavingRef, relocationRequestedRef, resolveOnboardingRequirement, setGatewayRunning, setInstallMode, setInstallTarget, setOpenclawStatus, setSetupComplete, stepsRef, updateOnboardingRequirement]);
 
   useEffect(() => {
     if (setupStep !== "detecting") return;

@@ -34,11 +34,11 @@ test("environment detection Back invalidates the probe before it can auto-advanc
   assert.match(environmentReview, /const redetectEnvironment[\s\S]*?environmentActionInFlightRef\.current = true;[\s\S]*?setCheckingDocker\(true\);[\s\S]*?detectEnvironment\(runId\)/);
   assert.match(environmentReview, /finally \{[\s\S]*?environmentActionInFlightRef\.current = false/);
   assert.doesNotMatch(environmentReview, /navigateSetup\("detecting", "replace"\)/);
-  assert.match(setupFlow, /const performGoBack[\s\S]*?cancelActiveRun\(\);[\s\S]*?const backPolicy = setupBackPolicy\(setupStep\);[\s\S]*?if \(backPolicy === "cancel-run"\)[\s\S]*?goBackSetup\("welcome"\)[\s\S]*?return;/);
+  assert.match(setupFlow, /const performGoBack[\s\S]*?invalidateActiveRun\(\);[\s\S]*?const backPolicy = setupBackPolicy\(setupStep\);[\s\S]*?if \(backPolicy === "cancel-run"\)[\s\S]*?goBackSetup\("welcome"\)[\s\S]*?return;/);
 });
 
 test("Gateway alternatives invalidate auto-start before navigating", () => {
-  assert.match(setupFlow, /const requestReinstall[\s\S]*?cancelActiveRun\(\);[\s\S]*?navigateSetup\("choosing-mode", "push"\)/);
+  assert.match(setupFlow, /const requestReinstall[\s\S]*?invalidateActiveRun\(\);[\s\S]*?navigateSetup\("choosing-mode", "push"\)/);
   assert.match(setupFlow, /const refreshRuntime[\s\S]*?const runId = beginRun\(\);[\s\S]*?if \(!isRunActive\(runId\)\) return/);
 });
 

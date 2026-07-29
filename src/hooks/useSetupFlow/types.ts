@@ -82,7 +82,11 @@ export interface SetupFlow {
   }) => void;
   selectMode: (mode: InstallMode) => Promise<void>;
   detectDocker: () => Promise<void>;
-  refreshRuntime: () => Promise<{ status: OpenclawStatus | null; gatewayRunning: boolean }>;
+  refreshRuntime: () => Promise<{
+    status: OpenclawStatus | null;
+    gatewayRunning: boolean;
+    needsOnboarding: boolean;
+  }>;
   goBack: () => Promise<void>;
   /** Abort a running install and return to the last user-selected screen. */
   cancelSetupRun: () => Promise<void>;

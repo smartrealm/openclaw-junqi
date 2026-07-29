@@ -34,6 +34,9 @@ docs/
 - [Windows 首次安装观测复审](installation/openclaw-windows-first-run-observation-audit.md)
 - [Windows Node 探测补充审计](installation/openclaw-windows-node-probe-audit.md)
 - [Windows Wizard 链路审计](installation/openclaw-windows-wizard-audit.md)
+- [安装与 Wizard 第四轮审计](installation/openclaw-install-wizard-fourth-pass-audit-2026-07-29.md)
+- [安装与 Wizard 第五轮审计](installation/openclaw-install-wizard-fifth-pass-audit-2026-07-29.md)
+- [安装与 Wizard 第六轮审计](installation/openclaw-install-wizard-sixth-pass-audit-2026-07-29.md)
 - [Windows 卸载流程复审](installation/windows-uninstall-flow-audit-2026-07-26.md)
 - [安装诊断链路审计](installation/install-diagnostics-audit.md)
 - [Setup runtime 与渠道兼容审计](installation/openclaw-setup-runtime-and-channel-audit-2026-07-27.md)
@@ -45,6 +48,12 @@ docs/
 - [`../plans/installation/2026-07-24-openclaw-windows-first-run.md`](../plans/installation/2026-07-24-openclaw-windows-first-run.md)
 - [`../specs/installation/2026-07-26-windows-uninstall-flow-bugfix.md`](../specs/installation/2026-07-26-windows-uninstall-flow-bugfix.md)
 - [`../plans/installation/2026-07-26-windows-uninstall-flow.md`](../plans/installation/2026-07-26-windows-uninstall-flow.md)
+- [`../specs/installation/2026-07-29-install-completion-model-gate.md`](../specs/installation/2026-07-29-install-completion-model-gate.md)
+- [`../plans/installation/2026-07-29-install-completion-model-gate.md`](../plans/installation/2026-07-29-install-completion-model-gate.md)
+- [`../specs/installation/2026-07-29-install-cancellation-and-diagnostic-boundary.md`](../specs/installation/2026-07-29-install-cancellation-and-diagnostic-boundary.md)
+- [`../plans/installation/2026-07-29-install-cancellation-and-diagnostic-boundary.md`](../plans/installation/2026-07-29-install-cancellation-and-diagnostic-boundary.md)
+- [`../specs/installation/2026-07-29-setup-state-ownership.md`](../specs/installation/2026-07-29-setup-state-ownership.md)
+- [`../plans/installation/2026-07-29-setup-state-ownership.md`](../plans/installation/2026-07-29-setup-state-ownership.md)
 
 ## Gateway 生命周期与服务归属
 
@@ -98,6 +107,7 @@ docs/
 - [OpenClaw 配置权威源审计](quality/openclaw-config-authority-audit-2026-07-29.md)
 - [加载指示器收敛记录](quality/loading-indicator-convergence-2026-07-29.md)
 - [萌宠文字与聊天窗口恢复记录](quality/pet-caption-and-chat-window-recovery-2026-07-29.md)
+- [默认模型已安装契约审计](quality/default-model-installed-contract-audit-2026-07-29.md)
 
 ## 产品设计草案
 

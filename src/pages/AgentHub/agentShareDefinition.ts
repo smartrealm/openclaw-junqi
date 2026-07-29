@@ -14,7 +14,6 @@ const SHAREABLE_AGENT_FIELDS = [
   'videoGenerationModel',
   'utilityModel',
   'models',
-  'modelPolicy',
   'thinkingDefault',
   'maxConcurrent',
   'subagents',

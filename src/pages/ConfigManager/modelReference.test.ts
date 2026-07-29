@@ -5,6 +5,7 @@ import {
   getModelPrimary,
   normalizeModelReferenceConfig,
   rewriteModelReferenceConfig,
+  setModelFallbacks,
   setModelPrimary,
 } from './modelReference';
 
@@ -31,6 +32,31 @@ test('changing a structured primary preserves its fallback chain', () => {
   ]);
 });
 
+test('primary and fallback routing stay disjoint from every mutation entry point', () => {
+  const changedPrimary = setModelPrimary(
+    { primary: 'openai/gpt-4o', fallbacks: ['qwen/qwen3.6-plus', 'openai/gpt-5.6'] },
+    'qwen/qwen3.6-plus',
+  );
+  assert.equal(getModelPrimary(changedPrimary), 'qwen/qwen3.6-plus');
+  assert.deepEqual(getModelFallbacks(changedPrimary), ['openai/gpt-5.6']);
+
+  const changedFallbacks = setModelFallbacks(
+    { primary: 'qwen/qwen3.6-plus', fallbacks: ['openai/gpt-5.6'] },
+    ['qwen/qwen3.6-plus', 'openai/gpt-5.6', 'qwen/qwen3.6-plus'],
+  );
+  assert.deepEqual(getModelFallbacks(changedFallbacks), ['openai/gpt-5.6']);
+
+  const normalized = normalizeModelReferenceConfig(
+    {
+      primary: 'legacy/primary',
+      fallbacks: ['legacy/primary', 'legacy/fallback'],
+    },
+    (value) => value?.replace('legacy/', 'runtime/'),
+  );
+  assert.equal(getModelPrimary(normalized), 'runtime/primary');
+  assert.deepEqual(getModelFallbacks(normalized), ['runtime/fallback']);
+});
+
 test('rewriting a removed model updates primary and fallback references without string spreading', () => {
   const next = rewriteModelReferenceConfig(
     { primary: 'openai/removed', fallbacks: ['openai/removed', 'qwen/keep'] },
@@ -39,6 +65,26 @@ test('rewriting a removed model updates primary and fallback references without 
   );
 
   assert.equal(getModelPrimary(next), 'qwen/replacement');
-  assert.deepEqual(getModelFallbacks(next), ['qwen/replacement', 'qwen/keep']);
+  assert.deepEqual(getModelFallbacks(next), ['qwen/keep']);
   assert.equal(rewriteModelReferenceConfig('openai/removed', new Set(['openai/removed'])), undefined);
+});
+
+test('removing a primary promotes only its configured fallback', () => {
+  const next = rewriteModelReferenceConfig(
+    {
+      primary: 'openai/removed',
+      fallbacks: ['openai/removed', 'qwen/first', 'anthropic/second'],
+    },
+    new Set(['openai/removed']),
+  );
+
+  assert.equal(getModelPrimary(next), 'qwen/first');
+  assert.deepEqual(getModelFallbacks(next), ['anthropic/second']);
+  assert.equal(
+    getModelPrimary(rewriteModelReferenceConfig(
+      { primary: 'openai/removed' },
+      new Set(['openai/removed']),
+    )),
+    undefined,
+  );
 });

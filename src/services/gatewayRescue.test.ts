@@ -178,6 +178,34 @@ test('resolveGatewayRescueTargets enumerates only explicitly configured provider
   assert.equal(targets.some((target) => target.modelId === 'gpt-4o-mini'), false);
 });
 
+test('resolveGatewayRescueTargets does not label catalog order as the default', () => {
+  const targets = resolveGatewayRescueTargets({
+    agents: {
+      defaults: {
+        models: {
+          'vllm/catalog-first': {},
+          'vllm/catalog-second': {},
+        },
+      },
+    },
+    models: {
+      providers: {
+        vllm: {
+          baseUrl: 'http://127.0.0.1:8000/v1',
+          api: 'openai-completions',
+          apiKey: 'test-key',
+          models: [{ id: 'catalog-first' }, { id: 'catalog-second' }],
+        },
+      },
+    },
+  } as any);
+
+  assert.deepEqual(targets.map((target) => target.source), [
+    'configured-provider',
+    'configured-provider',
+  ]);
+});
+
 test('resolveGatewayRescueTargets reads provider config despite provider key case drift', () => {
   const targets = resolveGatewayRescueTargets({
     agents: {

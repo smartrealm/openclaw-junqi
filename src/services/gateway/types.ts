@@ -48,10 +48,19 @@ export type GatewayEvent =
 
 /** External gateway process status (from Rust gateway_status command). */
 export interface GatewayProcessStatus {
-  processAlive: boolean;
-  ready: boolean;
+  running: boolean;
+  processAlive?: boolean;
+  ready?: boolean;
   error: string | null;
+  retrying?: boolean;
   logs?: { stdout: string; stderr: string };
+}
+
+export interface GatewayStartResult {
+  success: boolean;
+  error?: string;
+  port?: number;
+  token?: string | null;
 }
 
 /** Connection target resolved from config. */

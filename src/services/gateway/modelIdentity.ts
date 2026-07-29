@@ -1,17 +1,5 @@
-const PROVIDER_ALIASES: Record<string, string> = {
-  modelstudio: 'qwen',
-  qwencloud: 'qwen',
-  'qwen-dashscope': 'qwen',
-  'z.ai': 'zai',
-  'z-ai': 'zai',
-  kimi: 'kimi-coding',
-  'kimi-code': 'kimi-coding',
-  'kimi-coding': 'kimi-coding',
-};
-
 export function canonicalProviderId(providerId: string | undefined): string {
-  const normalized = String(providerId ?? '').trim().toLowerCase();
-  return PROVIDER_ALIASES[normalized] ?? normalized;
+  return String(providerId ?? '').trim().toLowerCase();
 }
 
 export function canonicalModelRef(modelRef: string | undefined): string | undefined {

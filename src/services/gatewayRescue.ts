@@ -51,12 +51,6 @@ function parseModelRef(modelRef: string): { providerId: string; modelId: string 
   };
 }
 
-function firstModelRef(config: GatewayRuntimeConfig): string {
-  const primary = getModelPrimary(config.agents?.defaults?.model) ?? '';
-  if (primary) return primary;
-  return Object.keys(config.agents?.defaults?.models ?? {})[0] ?? '';
-}
-
 function configuredModelRefs(config: GatewayRuntimeConfig): string[] {
   const refs = new Set<string>();
   const add = (value: unknown) => {
@@ -174,7 +168,7 @@ export function resolveGatewayRescueTargets(config: GatewayRuntimeConfig): Gatew
     targets.push(target);
   };
 
-  const primaryRef = firstModelRef(config);
+  const primaryRef = getModelPrimary(config.agents?.defaults?.model) ?? '';
   const primary = parseModelRef(primaryRef);
   if (primary) add(buildTargetFromProvider(config, primary.providerId, primaryRef, 'primary'));
 

@@ -49,21 +49,22 @@ test('replace mode checks primary and ordered fallbacks against provider declara
   }]);
 });
 
-test('model policy preview recognizes aliases and provider wildcards without changing routing', () => {
+test('installed provider wildcard reports a primary outside the visible provider', () => {
   const health = inspectModelRouting({
     agents: {
       defaults: {
         model: { primary: 'openai/gpt-5' },
         models: {
-          'openai/gpt-5': { alias: 'quality' },
-          'openai/gpt-5-mini': {},
-          'anthropic/claude': {},
+          'anthropic/*': {},
         },
-        modelPolicy: { allow: ['quality', 'anthropic/*'] },
       },
     },
   });
 
-  assert.deepEqual(health.allowedConfiguredModels, ['anthropic/claude', 'openai/gpt-5']);
-  assert.deepEqual(health.issues, []);
+  assert.deepEqual(health.configuredVisibilityRules, ['anthropic/*']);
+  assert.deepEqual(health.issues, [{
+    kind: 'primary-not-visible',
+    severity: 'error',
+    refs: ['openai/gpt-5'],
+  }]);
 });

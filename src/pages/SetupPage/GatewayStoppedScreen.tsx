@@ -43,7 +43,7 @@ export function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: Se
             onUpdated={async () => {
               const refreshed = await flow.refreshRuntime();
               if (refreshed.gatewayRunning) {
-                navigateSetup(flow.needsOnboarding ? "configure-openclaw" : "ready");
+                navigateSetup(refreshed.needsOnboarding ? "configure-openclaw" : "ready");
               }
             }}
           />
@@ -52,4 +52,3 @@ export function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: Se
     </SetupShell>
   );
 }
-

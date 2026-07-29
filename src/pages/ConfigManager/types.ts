@@ -85,10 +85,6 @@ export interface ModelConfig {
  */
 export type ModelReferenceConfig = ModelConfig | string;
 
-export interface ModelPolicyConfig {
-  allow?: string[];
-}
-
 export interface ModelEntry {
   alias?: string;
   supportsImage?: boolean;
@@ -140,7 +136,6 @@ export interface CompactionConfig {
 
 export interface AgentDefaults {
   models?: Record<string, ModelEntry>;
-  modelPolicy?: ModelPolicyConfig;
   workspace?: string;
   contextPruning?: ContextPruningConfig;
   compaction?: CompactionConfig;
@@ -162,7 +157,6 @@ export interface AgentConfig {
   imageGenerationModel?: ModelReferenceConfig;
   videoGenerationModel?: ModelReferenceConfig;
   models?: Record<string, ModelEntry>;
-  modelPolicy?: ModelPolicyConfig;
   workspace?: string;
   heartbeat?: HeartbeatConfig;
   subagents?: SubagentConfig;

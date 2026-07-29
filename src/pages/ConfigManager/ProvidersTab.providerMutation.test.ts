@@ -36,6 +36,43 @@ test('applyProviderAddition normalizes provider ids, profile keys, model ids, an
   assert.equal(getModelPrimary(next.agents?.defaults?.model), 'my-vllm/model-a');
 });
 
+test('adding a provider preserves existing global defaults unless replacements are explicit', () => {
+  const current = {
+    agents: {
+      defaults: {
+        model: {
+          primary: 'anthropic/claude-sonnet-4-6',
+          fallbacks: ['deepseek/deepseek-chat'],
+        },
+        imageModel: { primary: 'anthropic/claude-sonnet-4-6' },
+        models: {
+          'anthropic/claude-sonnet-4-6': { input: ['text', 'image'] },
+          'deepseek/deepseek-chat': { input: ['text'] },
+        },
+      },
+    },
+  };
+
+  const preserved = applyProviderAddition(
+    current,
+    'openai:main',
+    { provider: 'openai', mode: 'api_key' },
+    ['openai/gpt-5.6'],
+  );
+  assert.equal(getModelPrimary(preserved.agents?.defaults?.model), 'anthropic/claude-sonnet-4-6');
+  assert.equal(getModelPrimary(preserved.agents?.defaults?.imageModel), 'anthropic/claude-sonnet-4-6');
+
+  const explicit = applyProviderAddition(
+    current,
+    'openai:main',
+    { provider: 'openai', mode: 'api_key' },
+    ['openai/gpt-5.6'],
+    { textPrimaryModel: 'openai/gpt-5.6', imagePrimaryModel: 'openai/gpt-5.6' },
+  );
+  assert.equal(getModelPrimary(explicit.agents?.defaults?.model), 'openai/gpt-5.6');
+  assert.equal(getModelPrimary(explicit.agents?.defaults?.imageModel), 'openai/gpt-5.6');
+});
+
 test('applyProviderAddition migrates case-drifted provider config instead of duplicating it', () => {
   const next = applyProviderAddition(
     {
@@ -121,7 +158,7 @@ test('applyProviderRemoval removes matching provider config, models, and orphan 
   assert.equal(next.env?.vars?.CUSTOM_VLLM_SECRET, undefined);
   assert.equal(next.env?.vars?.KEEP_ME, 'value');
   assert.equal(next.agents?.defaults?.models?.['my-vllm/model-a'], undefined);
-  assert.equal(getModelPrimary(next.agents?.defaults?.model), 'openai/gpt-4o');
+  assert.equal(getModelPrimary(next.agents?.defaults?.model), undefined);
 });
 
 test('applyProviderRemoval keeps shared env refs still used by another provider', () => {

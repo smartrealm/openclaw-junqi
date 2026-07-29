@@ -63,7 +63,9 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
 test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () => {
   const stopped = screen('GatewayStoppedScreen');
 
-  assert.match(stopped, /flow\.needsOnboarding \? "configure-openclaw" : "ready"/);
+  assert.match(stopped, /refreshed\.needsOnboarding \? "configure-openclaw" : "ready"/);
+  assert.match(setupFlow, /needsOnboarding = await resolveActiveRuntimeOnboardingRequirement\(\)/);
+  assert.match(setupFlow, /updateOnboardingRequirement\(needsOnboarding\)/);
 });
 
 test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway readiness', () => {
@@ -132,15 +134,19 @@ test('BUG-ONB-34 a failed cached installation validation blocks Gateway recovery
   assert.match(healthGate, /navigateSetup\(['"]detecting['"], ['"]replace['"]\)/);
 });
 
-test('BUG-ONB-37 dashboard completion re-probes Gateway before committing the setup marker', () => {
+test('BUG-ONB-37 dashboard completion revalidates Gateway, config, and model before committing the setup marker', () => {
   const entry = setupFlow.slice(
     setupFlow.indexOf('const enterDashboard = useCallback'),
     setupFlow.indexOf('const detectDocker = useCallback'),
   );
 
-  assert.match(entry, /await invoke<boolean>\("probe_selected_gateway", \{\}\)/);
-  assert.ok(entry.indexOf('probe_selected_gateway') < entry.indexOf('setSetupComplete(true)'));
+  assert.match(entry, /validateSetupCompletion\(\{/);
+  assert.match(entry, /probeGateway: \(\) => invoke<boolean>\("probe_selected_gateway", \{\}\)/);
+  assert.match(entry, /requiresOnboarding: resolveActiveRuntimeOnboardingRequirement/);
+  assert.match(entry, /probeModel: probeActiveRuntimeModel/);
+  assert.ok(entry.indexOf('validateSetupCompletion') < entry.indexOf('setSetupComplete(true)'));
   assert.match(entry, /replaceSetupStep\("gateway-stopped"\)/);
+  assert.match(entry, /replaceSetupStep\("configure-openclaw"\)/);
   assert.match(entry, /dashboardEntryInFlightRef\.current/);
 });
 

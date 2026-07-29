@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MutableRefObject } from "react";
 import type { InstallMode, SetupStep } from "@/stores/setup-navigation";
-import type { SetupLog } from "@/stores/app-store";
+import type { PostStorageStep, SetupLog } from "@/stores/app-store";
 import { pullOpenclawImage } from "@/api/tauri-commands";
 import {
   diagnoseGatewayRecovery,
@@ -39,7 +39,7 @@ export interface PluginRecoveryPorts {
   replaceSetupStep: (step: SetupStep) => void;
   setSetupError: (error: string | null) => void;
   setGatewayRunning: (running: boolean) => void;
-  setPostStorageStep: (step: any) => void;
+  setPostStorageStep: (step: PostStorageStep) => void;
   setForceStorageSelection: (force: boolean) => void;
   startGatewayAction: (requestedMode?: InstallMode, existingRunId?: number) => Promise<boolean>;
   isConflictingRecoveryInFlight: () => boolean;

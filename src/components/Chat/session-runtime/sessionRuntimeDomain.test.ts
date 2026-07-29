@@ -12,11 +12,13 @@ test('groupSessionModels derives providers from gateway model ids', () => {
     { id: 'deepseek/deepseek-chat', label: 'DeepSeek Chat' },
     { id: 'deepseek/deepseek-reasoner', label: 'DeepSeek Reasoner' },
     { id: 'minimax/MiniMax-M2.7', label: 'MiniMax M2.7' },
+    { id: 'modelstudio/private-model', label: 'Private model' },
   ]);
 
   assert.deepEqual(groups.map((group) => [group.providerId, group.models.length]), [
     ['deepseek', 2],
     ['minimax', 1],
+    ['modelstudio', 1],
   ]);
 });
 

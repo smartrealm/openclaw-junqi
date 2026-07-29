@@ -1,6 +1,9 @@
-import type { GatewayRuntimeConfig, ModelEntry } from './types';
+import type { GatewayRuntimeConfig } from './types';
 import { getModelFallbacks, getModelPrimary } from './modelReference';
-import { getModelPolicyAllow } from './providerPolicy';
+import {
+  inspectInstalledModelVisibility,
+  isModelVisibleForInstalledRuntime,
+} from '@/services/gateway/modelVisibility';
 
 export type ModelRoutingIssueKind =
   | 'missing-primary'
@@ -8,7 +11,8 @@ export type ModelRoutingIssueKind =
   | 'replace-primary-not-explicit'
   | 'replace-fallback-not-explicit'
   | 'fallback-repeats-primary'
-  | 'policy-rule-unmatched';
+  | 'primary-not-visible'
+  | 'fallback-not-visible';
 
 export interface ModelRoutingIssue {
   kind: ModelRoutingIssueKind;
@@ -21,7 +25,7 @@ export interface ModelRoutingHealth {
   primary?: string;
   fallbacks: string[];
   explicitProviderModels: string[];
-  allowedConfiguredModels: string[];
+  configuredVisibilityRules: string[];
   issues: ModelRoutingIssue[];
 }
 
@@ -47,36 +51,17 @@ export function getExplicitProviderModelRefs(config: GatewayRuntimeConfig): stri
   return Array.from(refs).sort((a, b) => a.localeCompare(b));
 }
 
-function ruleMatchesModel(rule: string, modelRef: string, entry?: ModelEntry): boolean {
-  const normalizedRule = rule.trim().toLowerCase();
-  const normalizedRef = modelRef.trim().toLowerCase();
-  if (!normalizedRule) return false;
-  if (normalizedRule.endsWith('/*')) {
-    return normalizedRef.startsWith(normalizedRule.slice(0, -1));
-  }
-  return normalizedRule === normalizedRef || normalizedRule === String(entry?.alias ?? '').trim().toLowerCase();
-}
-
-function configuredModelsAllowedByPolicy(
-  models: Record<string, ModelEntry>,
-  rules: string[],
-): string[] {
-  if (rules.length === 0) return Object.keys(models).sort((a, b) => a.localeCompare(b));
-  return Object.entries(models)
-    .filter(([modelRef, entry]) => rules.some((rule) => ruleMatchesModel(rule, modelRef, entry)))
-    .map(([modelRef]) => modelRef)
-    .sort((a, b) => a.localeCompare(b));
-}
-
 export function inspectModelRouting(config: GatewayRuntimeConfig): ModelRoutingHealth {
   const mode = config.models?.mode === 'replace' ? 'replace' : 'merge';
   const defaults = config.agents?.defaults;
   const primary = getModelPrimary(defaults?.model);
   const fallbacks = getModelFallbacks(defaults?.model);
   const explicitProviderModels = getExplicitProviderModelRefs(config);
-  const policyRules = getModelPolicyAllow(config);
-  const configuredModels = defaults?.models ?? {};
-  const allowedConfiguredModels = configuredModelsAllowedByPolicy(configuredModels, policyRules);
+  const visibility = inspectInstalledModelVisibility(config);
+  const configuredVisibilityRules = [
+    ...visibility.exactModelRefs,
+    ...visibility.providerWildcards.map((provider) => `${provider}/*`),
+  ];
   const issues: ModelRoutingIssue[] = [];
 
   if (!primary) {
@@ -85,6 +70,16 @@ export function inspectModelRouting(config: GatewayRuntimeConfig): ModelRoutingH
 
   if (fallbacks.includes(primary ?? '')) {
     issues.push({ kind: 'fallback-repeats-primary', severity: 'warning', refs: [primary ?? ''].filter(Boolean) });
+  }
+
+  if (primary && !isModelVisibleForInstalledRuntime(primary, visibility)) {
+    issues.push({ kind: 'primary-not-visible', severity: 'error', refs: [primary] });
+  }
+  const hiddenFallbacks = fallbacks.filter((fallback) => (
+    !isModelVisibleForInstalledRuntime(fallback, visibility)
+  ));
+  if (hiddenFallbacks.length > 0) {
+    issues.push({ kind: 'fallback-not-visible', severity: 'error', refs: hiddenFallbacks });
   }
 
   if (mode === 'replace') {
@@ -98,11 +93,6 @@ export function inspectModelRouting(config: GatewayRuntimeConfig): ModelRoutingH
     if (unavailableFallbacks.length > 0) {
       issues.push({ kind: 'replace-fallback-not-explicit', severity: 'error', refs: unavailableFallbacks });
     }
-    for (const rule of policyRules) {
-      if (!explicitProviderModels.some((modelRef) => ruleMatchesModel(rule, modelRef, configuredModels[modelRef]))) {
-        issues.push({ kind: 'policy-rule-unmatched', severity: 'info', refs: [rule] });
-      }
-    }
   }
 
   return {
@@ -110,7 +100,7 @@ export function inspectModelRouting(config: GatewayRuntimeConfig): ModelRoutingH
     primary,
     fallbacks,
     explicitProviderModels,
-    allowedConfiguredModels,
+    configuredVisibilityRules,
     issues,
   };
 }

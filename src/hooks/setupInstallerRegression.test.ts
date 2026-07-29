@@ -8,6 +8,11 @@ const setupFlow = readdirSync(new URL('./useSetupFlow/', import.meta.url))
   .sort()
   .map((entry) => readFileSync(new URL(`./useSetupFlow/${entry}`, import.meta.url), 'utf8'))
   .join('\n');
+const setupInstallers = readFileSync(
+  new URL('./useSetupFlow/useSetupInstallers.ts', import.meta.url),
+  'utf8',
+);
+const setupFlowRoot = readFileSync(new URL('./useSetupFlow/index.ts', import.meta.url), 'utf8');
 const setupFlowPanels = readFileSync(new URL('../components/setup/SetupFlowPanels.tsx', import.meta.url), 'utf8');
 const setupPage = readdirSync(new URL('../pages/SetupPage/', import.meta.url))
   .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
@@ -56,7 +61,7 @@ test('Gateway preparation has one current-state surface and keeps installation t
 test('step transitions populate the shared activity log even when no installer process runs', () => {
   assert.match(
     setupFlow,
-    /function patchStep[\s\S]*?appendSetupLog\(\{[\s\S]*?step: id,[\s\S]*?message: detail/,
+    /const patchStep = useCallback[\s\S]*?appendSetupLog\(\{[\s\S]*?step: id,[\s\S]*?message: detail/,
   );
   assert.match(appStore, /const isDuplicate = previous[\s\S]*?previous\.message === nextLog\.message/);
 });
@@ -115,11 +120,18 @@ test('BUG-INSTALL-LOG-05 Gateway startup uses the shared persistent diagnostic t
 test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /\{ id: "npm",\s+label: "npm"/);
   assert.match(setupFlow, /setupNode = await checkSetupNode\(\)/);
-  assert.match(setupFlow, /const installedNode = setupNode\.node/);
-  assert.match(setupFlow, /patchStep\("node", "done", installedNode\.version/);
+  assert.match(setupInstallers, /nodeStatus = setupNode\.node/);
+  assert.match(setupInstallers, /patchStep\("node", "done", nodeStatus\.version/);
   assert.match(setupFlow, /let npmStatus = setupNode\.npm/);
   assert.match(setupFlow, /patchStep\("npm", "done", npmStatus\.version/);
-  assert.match(setupFlow, /patchStep\("openclaw", "done", installedStatus\.version/);
+  assert.match(setupInstallers, /patchStep\("openclaw", "done", installed\.version/);
+});
+
+test('Native and Docker installation transactions have one focused owner', () => {
+  assert.match(setupFlowRoot, /useSetupInstallers\(\{/);
+  assert.doesNotMatch(setupFlowRoot, /const runNativeSetup = useCallback|const runDockerSetup = useCallback/);
+  assert.match(setupInstallers, /const runNativeSetup = useCallback/);
+  assert.match(setupInstallers, /const runDockerSetup = useCallback/);
 });
 
 test('BUG-INSTALL-12 Windows installs Git only after npm reports a missing Git process', () => {
@@ -316,9 +328,9 @@ test('npm setup step is translated in every supported locale', () => {
 test('visual setup commits keep the synchronous step reference current', () => {
   assert.match(
     setupFlow,
-    /const commitSteps = useCallback\([\s\S]*?stepsRef\.current = next;[\s\S]*?setSteps\(next\)/,
+    /const commitSteps = useCallback\([\s\S]*?sanitizeSetupDiagnostic\(step\.detail\)[\s\S]*?stepsRef\.current = safe;[\s\S]*?setSteps\(safe\)/,
   );
-  assert.doesNotMatch(setupFlow, /(?<!const )setSteps\((?!next\))/);
+  assert.doesNotMatch(setupFlow, /stepsRef\.current = next;[\s\S]*?setSteps\(next\)/);
 });
 
 test('mobile installation console switches between steps and logs', () => {
@@ -381,12 +393,11 @@ test('a missing prerequisite reaches its own recovery screen', () => {
   assert.match(helpers, /class SetupPrerequisiteError extends Error/);
   assert.match(helpers, /"git-missing" \| "node-missing"/);
 
-  const hook = readFileSync(new URL('./useSetupFlow/index.ts', import.meta.url), 'utf8');
-  assert.match(hook, /throw new SetupPrerequisiteError\(\s*"node-missing"/);
-  assert.match(hook, /throw new SetupPrerequisiteError\("git-missing"/);
+  assert.match(setupInstallers, /throw new SetupPrerequisiteError\(\s*"node-missing"/);
+  assert.match(setupInstallers, /throw new SetupPrerequisiteError\("git-missing"/);
   assert.match(
-    hook,
-    /if \(err instanceof SetupPrerequisiteError\) \{[\s\S]*?setNeedsGit\(true\)[\s\S]*?replaceSetupStep\(err\.step\)/,
+    setupInstallers,
+    /if \(error instanceof SetupPrerequisiteError\) \{[\s\S]*?setNeedsGit\(true\)[\s\S]*?replaceSetupStep\(error\.step\)/,
   );
 
   const router = readFileSync(new URL('../pages/SetupPage/index.tsx', import.meta.url), 'utf8');

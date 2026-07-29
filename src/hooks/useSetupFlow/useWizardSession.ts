@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import type { SetupStep } from "@/stores/setup-navigation";
-import type { SetupLog } from "@/stores/app-store";
+import type { PostStorageStep, SetupLog } from "@/stores/app-store";
 import {
   gateway,
   GatewayPrivilegedAuthorizationError,
@@ -27,6 +27,7 @@ import {
 } from "@/services/openclawWizard";
 import { cacheGatewayTarget } from "./helpers";
 import type { StepStatus } from "./types";
+import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 
 export interface WizardSessionPorts {
   setupStep: SetupStep;
@@ -37,7 +38,7 @@ export interface WizardSessionPorts {
   updateOnboardingRequirement: (required: boolean) => void;
   appendSetupLog: (log: Omit<SetupLog, "ts"> & { ts?: number }) => void;
   replaceSetupStep: (step: SetupStep) => void;
-  setPostStorageStep: (step: any) => void;
+  setPostStorageStep: (step: PostStorageStep) => void;
   setSetupError: (error: string | null) => void;
   setGatewayRunning: (running: boolean) => void;
   navigationLeavingRef: RefObject<boolean>;
@@ -75,7 +76,7 @@ export function useWizardSession({
     );
   }
   const wizardFailureMessage = useCallback((error: unknown): string => {
-    const diagnostic = error instanceof Error ? error.message : String(error);
+    const diagnostic = sanitizeSetupDiagnostic(error instanceof Error ? error.message : error);
     appendSetupLog({
       source: "setup",
       step: "gateway",
@@ -197,9 +198,9 @@ export function useWizardSession({
       // / 单会话冲突等),但此前统一替换成一句通用文案,导致同一症状
       // 会反复复现而拿不到根因。透传原文并附上当前会话上下文,异常发生时
       // 用户能直接看到错误并复贴给我们定位。
-      const rawError = result.error
-        ? result.error
-        : t("setup.wizard.failed", "OpenClaw 配置向导执行失败。");
+      const rawError = sanitizeSetupDiagnostic(
+        result.error || t("setup.wizard.failed", "OpenClaw 配置向导执行失败。"),
+      );
       const sessionId = wizardClientRef.current?.diagnosticSessionId ?? "(none)";
       const lastStepId = wizardClientRef.current?.failedStepView?.id
         ?? wizardClientRef.current?.currentStepView?.id
@@ -240,7 +241,9 @@ export function useWizardSession({
         // to observe on the next connection, but this obsolete operation must
         // not mutate setup UI or launch subsequent probes.
         assertWizardOperationCurrent(operationId);
-        const message = handoffError instanceof Error ? handoffError.message : String(handoffError);
+        const message = sanitizeSetupDiagnostic(
+          handoffError instanceof Error ? handoffError.message : handoffError,
+        );
         setWizardStep(null);
         setWizardRecoveryRequired(false);
         setGatewayRunning(false);

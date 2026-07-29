@@ -8,7 +8,16 @@ import { gateway } from './index';
 import { GatewayStateMachine, type GatewayAction } from './GatewayStateMachine';
 import { executeConnect, executeDockerStart, executeStart } from './GatewayActionExecutor';
 import { LifecycleEpoch } from './LifecycleEpoch';
-import { type GatewayEvent, type GatewayStateSnapshot } from './types';
+import {
+  type GatewayEvent,
+  type GatewayProcessStatus,
+  type GatewayStartResult,
+  type GatewayStateSnapshot,
+} from './types';
+import type {
+  GatewayEnsureResult,
+  GatewayRestartResult,
+} from './GatewayLifecycleCoordinator';
 
 type StateListener = (snapshot: GatewayStateSnapshot) => void;
 
@@ -21,8 +30,8 @@ export class GatewayConnectionManager {
   private logs: { stdout: string; stderr: string } | undefined;
   private statusUnsub: (() => void) | undefined;
   private pendingStart: {
-    promise: Promise<any>;
-    resolve: (result: any) => void;
+    promise: Promise<GatewayStartResult>;
+    resolve: (result: GatewayStartResult) => void;
     reject: (error: Error) => void;
     generation: number;
   } | null = null;
@@ -49,7 +58,7 @@ export class GatewayConnectionManager {
     }
 
     // Subscribe to real-time status updates
-    this.statusUnsub = window.aegis.gateway.onStatusChanged((status: any) => {
+    this.statusUnsub = window.aegis.gateway.onStatusChanged((status: GatewayProcessStatus) => {
       if (!this.isCurrent(generation)) return;
       this.dispatch({
         type: 'STATUS_RECEIVED',
@@ -96,7 +105,7 @@ export class GatewayConnectionManager {
       return;
     }
     const generation = this.lifecycleEpoch.capture();
-    void window.aegis.gateway.getStatus().then((status: any) => {
+    void window.aegis.gateway.getStatus().then((status: GatewayProcessStatus) => {
       if (!this.isCurrent(generation)) return;
       this.dispatch({
         type: 'STATUS_RECEIVED',
@@ -123,15 +132,15 @@ export class GatewayConnectionManager {
     this.beginRecovery('RESET');
   }
 
-  startForSetup(): Promise<any> {
+  startForSetup(): Promise<GatewayStartResult> {
     return this.requestSetupStart('START_REQUESTED');
   }
 
-  startDockerForSetup(): Promise<any> {
+  startDockerForSetup(): Promise<GatewayStartResult> {
     return this.requestSetupStart('DOCKER_START_REQUESTED');
   }
 
-  private requestSetupStart(event: 'START_REQUESTED' | 'DOCKER_START_REQUESTED'): Promise<any> {
+  private requestSetupStart(event: 'START_REQUESTED' | 'DOCKER_START_REQUESTED'): Promise<GatewayStartResult> {
     if (this.pendingStart) return this.pendingStart.promise;
     if (!this.lifecycleEpoch.isActive()) {
       this.lifecycleEpoch.activate();
@@ -141,9 +150,9 @@ export class GatewayConnectionManager {
     // already single-flight above; invalidating here would make that listener
     // discard the status emitted by the start it is meant to observe.
     const generation = this.lifecycleEpoch.capture();
-    let resolve!: (result: any) => void;
+    let resolve!: (result: GatewayStartResult) => void;
     let reject!: (error: Error) => void;
-    const promise = new Promise<any>((resolvePromise, rejectPromise) => {
+    const promise = new Promise<GatewayStartResult>((resolvePromise, rejectPromise) => {
       resolve = resolvePromise;
       reject = rejectPromise;
     });
@@ -152,13 +161,13 @@ export class GatewayConnectionManager {
     return promise;
   }
 
-  async ensureRunning(): Promise<any> {
+  async ensureRunning(): Promise<GatewayEnsureResult> {
     if (!window.aegis?.gateway?.ensureRunning) {
       this.reconnect();
       return { healthy: true, mode: 'browser' };
     }
     const generation = this.beginProcessRecovery();
-    let result: any;
+    let result: GatewayEnsureResult;
     try {
       result = await window.aegis.gateway.ensureRunning();
     } catch (error) {
@@ -180,14 +189,14 @@ export class GatewayConnectionManager {
     return result;
   }
 
-  async restart(): Promise<any> {
+  async restart(): Promise<GatewayRestartResult> {
     if (!window.aegis?.gateway?.retry) {
       const result = { success: false, error: 'Gateway restart is unavailable in this runtime.' };
       this.dispatch({ type: 'STATUS_RECEIVED', processAlive: false, endpointReady: false, error: result.error, retrying: false });
       return result;
     }
     const generation = this.beginProcessRecovery();
-    let result: any;
+    let result: GatewayRestartResult;
     try {
       result = await window.aegis.gateway.retry();
     } catch (error) {
@@ -326,7 +335,7 @@ export class GatewayConnectionManager {
     this.probe();
   }
 
-  private completeStart(result: any, generation: number): void {
+  private completeStart(result: GatewayStartResult, generation: number): void {
     if (!this.isCurrent(generation)) {
       if (this.pendingStart?.generation === generation) {
         this.rejectPendingStart('Gateway start was superseded by a newer lifecycle');

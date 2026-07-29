@@ -6,17 +6,29 @@ import {
   canonicalProviderId,
   providerScopedModelId,
 } from './modelIdentity';
+import {
+  inspectInstalledModelVisibility,
+  installedSyntheticVisibleModelRefs,
+  isModelVisibleForInstalledRuntime,
+} from './modelVisibility';
 
 function addModel(out: Map<string, ModelEntry>, entry: ModelEntry | undefined): void {
   const id = canonicalModelRef(entry?.id);
-  if (!id || out.has(id)) return;
+  if (!id) return;
+  const current = out.get(id);
   const supportsImage = entry?.supportsImage;
   const alias = entry?.alias?.trim() || undefined;
   out.set(id, {
     id,
-    label: entry?.label?.trim() || id,
-    ...(alias ? { alias } : {}),
-    ...(typeof supportsImage === 'boolean' ? { supportsImage } : {}),
+    label: current?.label && current.label !== id
+      ? current.label
+      : entry?.label?.trim() || id,
+    ...(current?.alias || alias ? { alias: current?.alias ?? alias } : {}),
+    ...(typeof current?.supportsImage === 'boolean'
+      ? { supportsImage: current.supportsImage }
+      : typeof supportsImage === 'boolean'
+        ? { supportsImage }
+        : {}),
   });
 }
 
@@ -45,40 +57,6 @@ export function hasConfiguredModelProviders(config: any): boolean {
   return configuredProviderIds(p).size > 0
     || Object.keys(p.models?.providers ?? {}).length > 0
     || Object.keys(p.env?.vars ?? {}).length > 0;
-}
-
-function configuredModelPolicy(config: any): string[] {
-  const allow = config?.agents?.defaults?.modelPolicy?.allow;
-  if (!Array.isArray(allow)) return [];
-  return Array.from(new Set(
-    allow
-      .map((entry) => String(entry ?? '').trim())
-      .filter(Boolean),
-  ));
-}
-
-function isModelAllowedByPolicy(
-  model: ModelEntry,
-  policy: string[],
-  configuredModels: Record<string, any>,
-): boolean {
-  if (policy.length === 0) return true;
-  const ref = canonicalModelRef(model.id)?.toLowerCase() ?? '';
-  const aliases = new Set<string>();
-  if (model.alias) aliases.add(model.alias.trim().toLowerCase());
-  for (const [id, entry] of Object.entries(configuredModels)) {
-    if (canonicalModelRef(id)?.toLowerCase() !== ref) continue;
-    if (typeof entry?.alias === 'string' && entry.alias.trim()) {
-      aliases.add(entry.alias.trim().toLowerCase());
-    }
-  }
-
-  return policy.some((rule) => {
-    const normalizedRule = rule.toLowerCase();
-    if (aliases.has(normalizedRule)) return true;
-    if (normalizedRule.endsWith('*')) return ref.startsWith(normalizedRule.slice(0, -1));
-    return ref === normalizedRule;
-  });
 }
 
 /** Parse the live `models.list` response without guessing at provider catalogs. */
@@ -125,20 +103,18 @@ export function extractAvailableModelsFromConfig(config: any): ModelEntry[] {
   const providers = config?.models?.providers ?? {};
   const configuredModels = config?.agents?.defaults?.models ?? {};
   const replaceCatalog = config?.models?.mode === 'replace';
+  const visibility = inspectInstalledModelVisibility(config);
 
-  // `agents.defaults.models` is metadata, not a provider catalog. It can
-  // enrich merge-mode fallbacks, but wildcards and replace-mode entries must
-  // never become selectable concrete models on their own.
-  if (!replaceCatalog) {
-    for (const [id, cfg] of Object.entries(configuredModels)) {
-      if (id.endsWith('/*')) continue;
-      addModel(out, {
-        id,
-        label: id,
-        alias: typeof (cfg as any)?.alias === 'string' ? (cfg as any).alias : undefined,
-        supportsImage: resolveModelSupportsImage(cfg),
-      });
-    }
+  // The pinned Runtime synthesizes exact configured refs even when catalog
+  // discovery cannot provide a row for them. Wildcards remain rules only.
+  for (const id of installedSyntheticVisibleModelRefs(visibility)) {
+    const cfg = configuredModels[id];
+    addModel(out, {
+      id,
+      label: id,
+      alias: typeof cfg?.alias === 'string' ? cfg.alias : undefined,
+      supportsImage: resolveModelSupportsImage(cfg),
+    });
   }
 
   for (const [rawProviderId, providerConfig] of Object.entries(providers)) {
@@ -178,6 +154,7 @@ export function extractAvailableModelsFromConfig(config: any): ModelEntry[] {
     }
   }
 
-  const policy = configuredModelPolicy(config);
-  return [...out.values()].filter((model) => isModelAllowedByPolicy(model, policy, configuredModels));
+  return [...out.values()].filter((model) => (
+    isModelVisibleForInstalledRuntime(model.id, visibility)
+  ));
 }

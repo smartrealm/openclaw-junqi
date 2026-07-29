@@ -16,29 +16,13 @@ import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
 import { ModelDropdownOption } from './ModelDropdownOption';
+import { formatModelRef, modelCatalogLabel } from './modelPresentation';
 
 // ── Helpers ───────────────────────────────────────────────
 
 /** Converts full model IDs to short display names. */
 export function formatModelName(model: string | null | undefined): string {
-  if (!model) return '—';
-  const m = model.toLowerCase();
-  if (m.includes('claude-opus-4-6'))   return 'Opus 4.6';
-  if (m.includes('claude-opus-4-5'))   return 'Opus 4.5';
-  if (m.includes('claude-sonnet-4-6')) return 'Sonnet 4.6';
-  if (m.includes('claude-sonnet-4-5')) return 'Sonnet 4.5';
-  if (m.includes('claude-haiku-3-5'))  return 'Haiku 3.5';
-  if (m.includes('claude-haiku'))      return 'Haiku';
-  if (m.includes('claude-3-5'))        return 'Claude 3.5';
-  if (m.includes('gemini-2.5-pro'))    return 'Gemini 2.5 Pro';
-  if (m.includes('gemini-2.0'))        return 'Gemini 2.0';
-  if (m.includes('gemini'))            return 'Gemini';
-  if (m.includes('gpt-4o'))            return 'GPT-4o';
-  if (m.includes('gpt-4'))             return 'GPT-4';
-  if (m.includes('o3'))                return 'o3';
-  if (m.includes('o1'))                return 'o1';
-  const parts = model.split('/');
-  return parts[parts.length - 1];
+  return formatModelRef(model);
 }
 
 export function getProviderDisplayLabel(provider: string): string {
@@ -116,7 +100,9 @@ export function ModelDropdown({
 
   const active = modelList.find((m) => m.id === value);
   const hasValue = Boolean(value);
-  const displayShort = active?.alias || (hasValue ? formatModelName(value) : (placeholder ?? t('config.notSet')));
+  const displayShort = hasValue
+    ? modelCatalogLabel(active, value)
+    : (placeholder ?? t('config.notSet'));
   const displayProvider = hasValue && value?.includes('/') ? value.split('/')[0] : '';
 
   return (
@@ -212,8 +198,8 @@ export function ModelDropdown({
                     <ModelDropdownOption
                       key={m.id}
                       modelId={m.id}
-                      label={m.alias || formatModelName(m.id)}
-                      detail={m.alias ? formatModelName(m.id) : undefined}
+                      label={modelCatalogLabel(m, m.id)}
+                      detail={modelCatalogLabel(m, m.id) !== m.id ? m.id : undefined}
                       current={isActive}
                       currentLabel={t('config.currentModel')}
                       onSelect={() => {

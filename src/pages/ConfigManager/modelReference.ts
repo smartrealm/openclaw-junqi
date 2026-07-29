@@ -40,6 +40,11 @@ export function setModelPrimary(
   const next: ModelConfig = { ...value };
   if (nextPrimary) next.primary = nextPrimary;
   else delete next.primary;
+  if (nextPrimary && Array.isArray(next.fallbacks)) {
+    const fallbacks = getModelFallbacks(next).filter((fallback) => fallback !== nextPrimary);
+    if (fallbacks.length > 0) next.fallbacks = fallbacks;
+    else delete next.fallbacks;
+  }
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
@@ -53,7 +58,7 @@ export function setModelFallbacks(
 
   const normalized = Array.from(new Set(
     fallbacks.map(asNonEmptyString).filter((ref): ref is string => Boolean(ref)),
-  ));
+  )).filter((fallback) => fallback !== primary);
   if (normalized.length > 0) next.fallbacks = normalized;
   else delete next.fallbacks;
   return Object.keys(next).length > 0 ? next : undefined;
@@ -77,7 +82,7 @@ export function normalizeModelReferenceConfig(
     const fallbacks = Array.from(new Set(
       value.fallbacks
         .map((fallback) => canonicalize(fallback))
-        .filter((fallback): fallback is string => Boolean(fallback)),
+        .filter((fallback): fallback is string => Boolean(fallback) && fallback !== primary),
     ));
     if (fallbacks.length > 0) next.fallbacks = fallbacks;
     else delete next.fallbacks;
@@ -97,15 +102,20 @@ export function rewriteModelReferenceConfig(
   if (!isModelReferenceObject(value)) return value;
 
   const next: ModelConfig = { ...value };
+  const removedPrimary = Boolean(next.primary && refs.has(next.primary));
   if (next.primary && refs.has(next.primary)) {
     if (replacement) next.primary = replacement;
     else delete next.primary;
   }
   if (Array.isArray(next.fallbacks)) {
-    const fallbacks = Array.from(new Set(next.fallbacks.flatMap((ref) => {
+    let fallbacks = Array.from(new Set(next.fallbacks.flatMap((ref) => {
       if (!refs.has(ref)) return [ref];
       return replacement ? [replacement] : [];
-    })));
+    }))).filter((fallback) => fallback !== next.primary);
+    if (removedPrimary && !replacement && !next.primary && fallbacks.length > 0) {
+      next.primary = fallbacks[0];
+      fallbacks = fallbacks.slice(1);
+    }
     if (fallbacks.length > 0) next.fallbacks = fallbacks;
     else delete next.fallbacks;
   }

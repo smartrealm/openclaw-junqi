@@ -27,11 +27,14 @@ export interface OpenClawWizardStep {
 }
 
 export interface OpenClawWizardResult {
-  sessionId?: string;
   done: boolean;
   status?: 'running' | 'done' | 'cancelled' | 'error';
   step?: OpenClawWizardStep;
   error?: string;
+}
+
+export interface OpenClawWizardStartResult extends OpenClawWizardResult {
+  sessionId: string;
 }
 
 const WIZARD_PROBE_TITLE = /(?:connection|connectivity|channel).{0,20}(?:test|check|probe|verification)|(?:连接|連線|渠道|通道).{0,20}(?:测试|測試|检查|檢查|验证|驗證)/i;
@@ -55,8 +58,11 @@ export function isOpenClawWizardNonBlockingProbeFailure(step?: OpenClawWizardSte
 function isWizardOption(value: unknown): value is OpenClawWizardOption {
   if (!value || typeof value !== 'object') return false;
   const option = value as Record<string, unknown>;
+  const allowedKeys = new Set(['value', 'label', 'hint']);
+  if (Object.keys(option).some((key) => !allowedKeys.has(key))) return false;
   return Object.prototype.hasOwnProperty.call(option, 'value')
     && typeof option.label === 'string'
+    && Boolean(option.label.trim())
     && (option.hint === undefined || typeof option.hint === 'string');
 }
 
@@ -146,11 +152,26 @@ export function createBrowserOpenClawWizardSessionStore(): OpenClawWizardSession
   };
 }
 
-function assertWizardResult(value: unknown): OpenClawWizardResult {
+function assertExactWizardKeys(
+  result: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  context: string,
+): void {
+  const allowed = new Set(allowedKeys);
+  const unknown = Object.keys(result).find((key) => !allowed.has(key));
+  if (unknown) throw new Error(`${context} has an unknown field \`${unknown}\`.`);
+}
+
+function assertWizardResultFields(
+  value: unknown,
+  allowedKeys: readonly string[],
+  context: string,
+): OpenClawWizardResult {
   if (!value || typeof value !== 'object') {
-    throw new Error('OpenClaw returned an invalid wizard response.');
+    throw new Error(`OpenClaw returned an invalid ${context}.`);
   }
   const result = value as Record<string, unknown>;
+  assertExactWizardKeys(result, allowedKeys, `OpenClaw ${context}`);
   if (typeof result.done !== 'boolean') {
     throw new Error('OpenClaw wizard response is missing `done`.');
   }
@@ -163,9 +184,6 @@ function assertWizardResult(value: unknown): OpenClawWizardResult {
   }
   if (result.error !== undefined && typeof result.error !== 'string') {
     throw new Error('OpenClaw wizard response has an invalid `error`.');
-  }
-  if (result.sessionId !== undefined && typeof result.sessionId !== 'string') {
-    throw new Error('OpenClaw wizard response has an invalid `sessionId`.');
   }
   // Terminal error/cancel responses intentionally do not carry a next step.
   // They are valid official Wizard outcomes and must reach the recovery
@@ -180,11 +198,33 @@ function assertWizardResult(value: unknown): OpenClawWizardResult {
   return value as OpenClawWizardResult;
 }
 
+function assertWizardStartResult(value: unknown): OpenClawWizardStartResult {
+  const result = assertWizardResultFields(
+    value,
+    ['sessionId', 'done', 'step', 'status', 'error'],
+    'wizard start response',
+  );
+  const sessionId = (value as Record<string, unknown>).sessionId;
+  if (typeof sessionId !== 'string' || !sessionId.trim()) {
+    throw new Error('OpenClaw wizard start response has an invalid `sessionId`.');
+  }
+  return { ...result, sessionId: sessionId.trim() };
+}
+
+function assertWizardNextResult(value: unknown): OpenClawWizardResult {
+  return assertWizardResultFields(
+    value,
+    ['done', 'step', 'status', 'error'],
+    'wizard next response',
+  );
+}
+
 function assertWizardStatusResult(value: unknown): Pick<OpenClawWizardResult, 'status' | 'error'> {
   if (!value || typeof value !== 'object') {
     throw new Error('OpenClaw returned an invalid wizard status response.');
   }
   const result = value as Record<string, unknown>;
+  assertExactWizardKeys(result, ['status', 'error'], 'OpenClaw wizard status response');
   if (result.status !== 'running'
     && result.status !== 'done'
     && result.status !== 'cancelled'
@@ -221,15 +261,25 @@ export class OpenClawWizardOperationSupersededError extends Error {
   }
 }
 
-function assertWizardCancelStatus(value: unknown): 'running' | 'done' | 'cancelled' | 'error' {
+function assertWizardCancelStatus(value: unknown): 'cancelled' {
   if (!value || typeof value !== 'object') {
     throw new Error('OpenClaw returned an invalid wizard cancellation response.');
   }
-  const status = (value as Record<string, unknown>).status;
-  if (status !== 'running' && status !== 'done' && status !== 'cancelled' && status !== 'error') {
+  const result = value as Record<string, unknown>;
+  assertExactWizardKeys(result, ['status', 'error'], 'OpenClaw wizard cancellation response');
+  if (result.error !== undefined && typeof result.error !== 'string') {
+    throw new Error('OpenClaw wizard cancellation response has an invalid `error`.');
+  }
+  if (result.status !== 'running'
+    && result.status !== 'done'
+    && result.status !== 'cancelled'
+    && result.status !== 'error') {
     throw new Error('OpenClaw wizard cancellation response has an invalid `status`.');
   }
-  return status;
+  if (result.status !== 'cancelled') {
+    throw new Error('OpenClaw wizard cancellation response status must be `cancelled`.');
+  }
+  return result.status;
 }
 
 export class OpenClawWizardClient {
@@ -284,7 +334,7 @@ export class OpenClawWizardClient {
     if (operation !== this.operationEpoch) throw new OpenClawWizardOperationSupersededError();
   }
 
-  async start(workspace?: string): Promise<OpenClawWizardResult> {
+  async start(workspace?: string): Promise<OpenClawWizardStartResult> {
     const operation = this.captureOperation();
     // A refresh/back navigation can leave the official server-side session
     // alive. Reconcile it before starting a new session so OpenClaw's
@@ -296,12 +346,12 @@ export class OpenClawWizardClient {
     this.currentStep = null;
     this.failedStep = null;
     this.failedSessionId = null;
-    const result = assertWizardResult(await this.callGateway('wizard.start', {
+    const result = assertWizardStartResult(await this.callGateway('wizard.start', {
       mode: 'local',
       ...(this.workspace ? { workspace: this.workspace } : {}),
     }, { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS }));
     this.assertOperationCurrent(operation);
-    const returnedSessionId = String(result.sessionId ?? '').trim() || null;
+    const returnedSessionId = result.sessionId;
     const terminal = isTerminalWizardResult(result);
     const failed = result.status === 'error';
     const rejected = Boolean(result.error) && !terminal;
@@ -309,9 +359,6 @@ export class OpenClawWizardClient {
     this.currentStep = failed || rejected || !terminal ? result.step ?? null : null;
     this.failedStep = failed || rejected ? result.step ?? null : null;
     this.failedSessionId = failed || rejected ? returnedSessionId : null;
-    if (!terminal && !this.sessionId) {
-      throw new Error('OpenClaw wizard did not return a session id.');
-    }
     return result;
   }
 
@@ -320,7 +367,7 @@ export class OpenClawWizardClient {
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
     const submittedSessionId = this.sessionId;
     const submittedStep = this.currentStep;
-    const result = assertWizardResult(await this.callGateway('wizard.next', {
+    const result = assertWizardNextResult(await this.callGateway('wizard.next', {
       sessionId: this.sessionId,
       answer: {
         stepId,
@@ -374,7 +421,7 @@ export class OpenClawWizardClient {
         ...(status.error ? { error: status.error } : {}),
       };
     }
-    const result = assertWizardResult(await this.callGateway('wizard.next', {
+    const result = assertWizardNextResult(await this.callGateway('wizard.next', {
       sessionId: resumedSessionId,
     }, { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS }));
     this.assertOperationCurrent(operation);
@@ -419,15 +466,12 @@ export class OpenClawWizardClient {
     if (!this.sessionId) return;
     const sessionId = this.sessionId;
     try {
-      const status = assertWizardCancelStatus(await this.callGateway(
+      assertWizardCancelStatus(await this.callGateway(
         'wizard.cancel',
         { sessionId },
         { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
       ));
       this.assertOperationCurrent(operation);
-      if (status === 'running') {
-        throw new Error('OpenClaw wizard cancellation did not terminate the session.');
-      }
       this.setSession(null);
     } catch (error) {
       // A server-side expiry means the session is already gone. For transport

@@ -1,7 +1,7 @@
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
 import type { AgentDefaults, ModelEntry, ModelReferenceConfig } from './types';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
-import { getModelPrimary, setModelPrimary } from './modelReference';
+import { getModelFallbacks, getModelPrimary, setModelPrimary } from './modelReference';
 
 function normalizeProviderIdForCatalog(providerId: string): string {
   const normalized = providerId.trim().toLowerCase();
@@ -62,11 +62,39 @@ function isModelImageCapable(modelRef: string, imageSupportMap?: Map<string, boo
   return resolveGeneratedModelSupportsImage(modelRef) === true;
 }
 
+function resolveTextPrimaryModel(
+  currentConfig: ModelReferenceConfig | undefined,
+  availableModelIds: string[],
+  requestedPrimary: string | null | undefined,
+): string | undefined {
+  if (requestedPrimary === null) return undefined;
+  if (requestedPrimary !== undefined) {
+    return availableModelIds.includes(requestedPrimary)
+      ? requestedPrimary
+      : getModelPrimary(currentConfig);
+  }
+
+  // An omitted override is not proof that an explicit route was removed. The
+  // provider mutation domain rewrites a primary when that exact model is
+  // deleted; unrelated catalog edits preserve external/plugin-owned defaults.
+  return getModelPrimary(currentConfig);
+}
+
 function resolveImagePrimaryModel(
+  currentConfig: ModelReferenceConfig | undefined,
   currentImagePrimary: string | undefined,
   availableModelIds: string[],
   imageSupportMap?: Map<string, boolean>,
+  requestedPrimary?: string | null,
 ): string | undefined {
+  if (requestedPrimary === null) return undefined;
+  if (requestedPrimary !== undefined) {
+    return availableModelIds.includes(requestedPrimary)
+      && isModelImageCapable(requestedPrimary, imageSupportMap)
+      ? requestedPrimary
+      : undefined;
+  }
+
   // A plugin-owned or externally discovered image model is valid even when the
   // local editor has not loaded its capability metadata yet. Preserve that
   // explicit setting rather than deleting it during an unrelated provider edit.
@@ -80,7 +108,9 @@ function resolveImagePrimaryModel(
   ) {
     return currentImagePrimary;
   }
-  return availableModelIds.find((id) => isModelImageCapable(id, imageSupportMap));
+  return getModelFallbacks(currentConfig).find((fallback) => (
+    availableModelIds.includes(fallback) && isModelImageCapable(fallback, imageSupportMap)
+  ));
 }
 
 function modelConfigWithPrimary(
@@ -93,20 +123,24 @@ function modelConfigWithPrimary(
 export function buildDefaultsWithResolvedModels(params: {
   defaults: AgentDefaults | undefined;
   models: Record<string, ModelEntry>;
-  primary?: string | undefined;
-  imagePrimary?: string | undefined;
+  /** `undefined` preserves/reconciles the current route; `null` explicitly clears it. */
+  primary?: string | null;
+  /** `undefined` preserves/reconciles the current route; `null` explicitly clears it. */
+  imagePrimary?: string | null;
 }): AgentDefaults {
   const modelIds = Object.keys(params.models);
   const imageSupportMap = buildConfiguredImageSupportMap(params.models);
-  const requestedPrimary = params.primary ?? getModelPrimary(params.defaults?.model);
-  const nextPrimary =
-    requestedPrimary && modelIds.includes(requestedPrimary)
-      ? requestedPrimary
-      : modelIds[0] ?? undefined;
+  const nextPrimary = resolveTextPrimaryModel(
+    params.defaults?.model,
+    modelIds,
+    params.primary,
+  );
   const nextImagePrimary = resolveImagePrimaryModel(
-    params.imagePrimary ?? getModelPrimary(params.defaults?.imageModel),
+    params.defaults?.imageModel,
+    getModelPrimary(params.defaults?.imageModel),
     modelIds,
     imageSupportMap,
+    params.imagePrimary,
   );
 
   return {

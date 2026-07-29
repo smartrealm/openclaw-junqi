@@ -10,3 +10,19 @@ Date: 2026-07-29
 6. [x] Validate the Gateway-resolved effective model and add regression tests
    for config/session separation and exact IPC payloads.
 7. [x] Run focused and full validation before resuming release work.
+8. [x] Remove implicit default selection from provider addition and preserve
+   existing text/image routing unless the operator explicitly changes it.
+9. [x] Centralize primary/fallback disjointness in the model-reference domain.
+10. [x] Remove model-specific display branches and preserve authoritative
+    provider identities at the Gateway/model-catalog projection boundary.
+11. [x] Add behavior regressions and rerun focused, lint, full test, and build
+    validation.
+12. [x] Separate omitted overrides from explicit clears in the shared default
+    model reconciliation domain.
+13. [x] Reconcile removed primaries through ordered configured fallbacks only.
+14. [x] Reuse one final setup-completion gate for Gateway, selected config, and
+    live model readiness.
+15. [x] Remove catalog-order assumptions from rescue labels and remove the
+    `modelPolicy` editor rejected by the pinned Runtime.
+16. [x] Add behavior regressions and rerun focused, lint, full test, Rust, and
+    production build validation.

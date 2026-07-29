@@ -34,7 +34,7 @@ test('BUG-GSC09 ensure rejection commits a visible error instead of retrying for
     const result = await manager.ensureRunning();
 
     assert.equal(result.healthy, false);
-    assert.match(result.error, /native ensure failed/);
+    assert.match(result.error ?? '', /native ensure failed/);
     assert.equal(snapshots.at(-1)?.state, GatewayState.ERROR);
     assert.equal(snapshots.at(-1)?.retrying, false);
     assert.match(snapshots.at(-1)?.error ?? '', /native ensure failed/);

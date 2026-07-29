@@ -7,10 +7,13 @@ import {
 } from './providerDefaults';
 import { getModelPrimary } from './modelReference';
 
-test('buildDefaultsWithResolvedModels falls back when primary model was removed', () => {
+test('buildDefaultsWithResolvedModels preserves an explicit primary outside local metadata', () => {
   const defaults = buildDefaultsWithResolvedModels({
     defaults: {
-      model: { primary: 'openai/removed' },
+      model: {
+        primary: 'openai/removed',
+        fallbacks: ['openai/missing', 'openai/gpt-4o', 'qwen/qwen3.6-plus'],
+      },
       models: {
         'openai/removed': {},
       },
@@ -21,7 +24,46 @@ test('buildDefaultsWithResolvedModels falls back when primary model was removed'
     },
   });
 
-  assert.equal(getModelPrimary(defaults.model), 'qwen/qwen3.6-plus');
+  assert.equal(getModelPrimary(defaults.model), 'openai/removed');
+  assert.deepEqual(
+    typeof defaults.model === 'object' ? defaults.model.fallbacks : undefined,
+    ['openai/missing', 'openai/gpt-4o', 'qwen/qwen3.6-plus'],
+  );
+});
+
+test('buildDefaultsWithResolvedModels keeps an absent primary unset when catalog entries appear', () => {
+  const defaults = buildDefaultsWithResolvedModels({
+    defaults: {},
+    models: {
+      'qwen/qwen3.6-plus': {},
+      'openai/gpt-4o': {},
+    },
+  });
+
+  assert.equal(defaults.model, undefined);
+  assert.equal(defaults.imageModel, undefined);
+});
+
+test('buildDefaultsWithResolvedModels distinguishes explicit clear from an omitted override', () => {
+  const defaults = buildDefaultsWithResolvedModels({
+    defaults: {
+      model: { primary: 'openai/gpt-4o', fallbacks: ['qwen/qwen3.6-plus'] },
+      imageModel: { primary: 'openai/gpt-4o' },
+    },
+    models: {
+      'qwen/qwen3.6-plus': {},
+      'openai/gpt-4o': { supportsImage: true, input: ['text', 'image'] },
+    },
+    primary: null,
+    imagePrimary: null,
+  });
+
+  assert.equal(getModelPrimary(defaults.model), undefined);
+  assert.deepEqual(
+    typeof defaults.model === 'object' ? defaults.model.fallbacks : undefined,
+    ['qwen/qwen3.6-plus'],
+  );
+  assert.equal(defaults.imageModel, undefined);
 });
 
 test('buildDefaultsWithResolvedModels clears invalid image primary without leaving an empty object', () => {
@@ -51,7 +93,7 @@ test('buildDefaultsWithResolvedModels preserves an explicit image model outside 
   assert.equal(getModelPrimary(defaults.imageModel), 'openai/removed');
 });
 
-test('buildDefaultsWithResolvedModels recognizes provider metadata image modalities', () => {
+test('buildDefaultsWithResolvedModels recognizes provider metadata without choosing an image default', () => {
   const defaults = buildDefaultsWithResolvedModels({
     defaults: {},
     models: {
@@ -60,10 +102,10 @@ test('buildDefaultsWithResolvedModels recognizes provider metadata image modalit
     },
   });
 
-  assert.equal(getModelPrimary(defaults.imageModel), 'custom/vision');
+  assert.equal(getModelPrimary(defaults.imageModel), undefined);
 });
 
-test('buildDefaultsWithResolvedModels clears a removed text model but preserves an explicit image model', () => {
+test('omitted reconciliation preserves explicit text and image models outside the local catalog', () => {
   const defaults = buildDefaultsWithResolvedModels({
     defaults: {
       model: { primary: 'openai/removed' },
@@ -72,7 +114,7 @@ test('buildDefaultsWithResolvedModels clears a removed text model but preserves 
     models: {},
   });
 
-  assert.equal(defaults.model, undefined);
+  assert.equal(getModelPrimary(defaults.model), 'openai/removed');
   assert.equal(getModelPrimary(defaults.imageModel), 'openai/removed');
 });
 
@@ -111,6 +153,19 @@ test('applyFetchedModelAdditionsToDefaults preserves fetched capabilities withou
   assert.equal(defaults.models?.['qwen/vision']?.alias, 'vision');
   assert.equal(defaults.models?.['qwen/vision']?.supportsImage, true);
   assert.deepEqual(defaults.models?.['qwen/vision']?.input, ['text', 'image']);
-  assert.equal(getModelPrimary(defaults.model), 'qwen/text-only');
+  assert.equal(getModelPrimary(defaults.model), 'openai/removed');
   assert.equal(getModelPrimary(defaults.imageModel), 'openai/removed');
+});
+
+test('applyFetchedModelAdditionsToDefaults does not turn fetched catalog order into a default', () => {
+  const defaults = applyFetchedModelAdditionsToDefaults({
+    defaults: {},
+    additions: [
+      { fullRef: 'qwen/text', alias: 'text', supportsImage: false },
+      { fullRef: 'qwen/vision', alias: 'vision', supportsImage: true },
+    ],
+  });
+
+  assert.equal(defaults.model, undefined);
+  assert.equal(defaults.imageModel, undefined);
 });

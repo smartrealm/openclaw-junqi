@@ -8,7 +8,7 @@ import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
 import type {
@@ -28,8 +28,9 @@ import {
   type ProviderCatalogEntry,
   type ProviderTab,
 } from './providerTemplates';
-import { MaskedInput, ChipList, ChipInput, ToggleSwitch } from './components';
+import { MaskedInput, ChipList, ChipInput } from './components';
 import { buildProviderSubmissionModelIds } from './providerModelSelection';
+import { resolveExplicitProviderDefault } from './providerDefaultSelection';
 import { gateway } from '@/services/gateway';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
 import {
@@ -71,6 +72,7 @@ import {
   addProviderModel,
   buildEditableProviderModels,
   removeProviderModel,
+  removeProviderModelReferences,
   updateProviderModel,
 } from './providerModelMutations';
 import {
@@ -86,13 +88,12 @@ import {
   providerProbeProfileKey,
 } from './providerAuthFlow';
 import {
-  getModelPolicyAllow,
   hasProviderWildcard,
   setModelCatalogMode,
-  setModelPolicyAllow,
   setProviderAuthOrder,
   setProviderWildcard,
 } from './providerPolicy';
+import { DefaultModelControls, modelDisplayLabel } from './DefaultModelControls';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -275,13 +276,6 @@ function isModelImageCapable(modelRef: string, imageSupportMap?: Map<string, boo
   return resolveGeneratedModelSupportsImage(modelRef) === true;
 }
 
-function pickFirstImageCapableModel(
-  modelIds: string[],
-  imageSupportMap?: Map<string, boolean>,
-): string | undefined {
-  return modelIds.find((id) => isModelImageCapable(id, imageSupportMap));
-}
-
 function parseGatewayModelsResponse(res: unknown): GatewayModelOption[] {
   const out: GatewayModelOption[] = [];
   const pushModel = (value: any) => {
@@ -349,89 +343,6 @@ function ensureProviderModelEnabled(
     alias: entry.alias,
     supportsImage: resolveModelSupportsImage(entry),
   });
-}
-
-function modelDisplayLabel(id: string, entry?: ModelEntry): string {
-  return entry?.alias && entry.alias !== id ? `${entry.alias} · ${id}` : id;
-}
-
-interface DefaultModelControlsProps {
-  models: Record<string, ModelEntry>;
-  primaryModel?: string;
-  imageModel?: string;
-  imageSupportMap?: Map<string, boolean>;
-  onSetPrimary: (id: string) => void;
-  onSetImageModel: (id: string) => void;
-  disabled?: boolean;
-  compact?: boolean;
-}
-
-function DefaultModelControls({
-  models,
-  primaryModel,
-  imageModel,
-  imageSupportMap,
-  onSetPrimary,
-  onSetImageModel,
-  disabled = false,
-  compact = false,
-}: DefaultModelControlsProps) {
-  const { t } = useTranslation();
-  const entries = Object.entries(models);
-  const imageEntries = entries.filter(([id, entry]) => (
-    imageSupportMap?.get(id) ?? resolveModelSupportsImage(entry) ?? false
-  ));
-
-  if (entries.length === 0) return null;
-
-  return (
-    <div className={clsx(
-      'grid gap-3',
-      compact ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'
-    )}>
-      <div className="rounded-lg border border-aegis-border bg-aegis-surface p-3">
-        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted mb-1.5">
-          <Star size={11} className="text-aegis-primary" />
-          {t('config.defaultTextModel', 'Default Text Model')}
-        </div>
-        <select
-          value={primaryModel && models[primaryModel] ? primaryModel : ''}
-          disabled={disabled}
-          onChange={(e) => e.target.value && onSetPrimary(e.target.value)}
-          className="w-full rounded-lg border border-aegis-border bg-aegis-elevated px-2 py-2 text-xs text-aegis-text outline-none focus:border-aegis-primary"
-        >
-          {(!primaryModel || !models[primaryModel]) && (
-            <option value="">{t('config.notSet', 'Not set')}</option>
-          )}
-          {entries.map(([id, entry]) => (
-            <option key={id} value={id}>{modelDisplayLabel(id, entry)}</option>
-          ))}
-        </select>
-      </div>
-      <div className="rounded-lg border border-aegis-border bg-aegis-surface p-3">
-        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted mb-1.5">
-          <Image size={11} className="text-blue-400" />
-          {t('config.defaultImageModel', 'Default Image Model')}
-        </div>
-        <select
-          value={imageModel && imageEntries.some(([id]) => id === imageModel) ? imageModel : ''}
-          disabled={disabled || imageEntries.length === 0}
-          onChange={(e) => e.target.value && onSetImageModel(e.target.value)}
-          className="w-full rounded-lg border border-aegis-border bg-aegis-elevated px-2 py-2 text-xs text-aegis-text outline-none focus:border-aegis-primary disabled:opacity-50"
-        >
-          <option value="">{t('config.notSet', 'Not set')}</option>
-          {imageEntries.map(([id, entry]) => (
-            <option key={id} value={id}>{modelDisplayLabel(id, entry)}</option>
-          ))}
-        </select>
-        {imageEntries.length === 0 && (
-          <p className="mt-1.5 text-[10px] text-aegis-text-muted">
-            {t('config.imageModelStrictHint', 'No image-capable models detected in current selection')}
-          </p>
-        )}
-      </div>
-    </div>
-  );
 }
 
 interface DefaultFallbackChainControlsProps {
@@ -543,8 +454,10 @@ function modelRoutingIssueMessage(t: TFunction, issue: ModelRoutingIssue): strin
       return t('config.routingIssueReplaceFallback', 'One or more fallback models are not declared by an explicit provider.');
     case 'fallback-repeats-primary':
       return t('config.routingIssueRepeatedFallback', 'A fallback repeats the primary model and will not provide failover.');
-    case 'policy-rule-unmatched':
-      return t('config.routingIssueUnmatchedPolicy', 'A session access rule has no match in the configured-only preview.');
+    case 'primary-not-visible':
+      return t('config.routingIssuePrimaryNotVisible', 'The default primary is outside the configured model visibility rules.');
+    case 'fallback-not-visible':
+      return t('config.routingIssueFallbackNotVisible', 'One or more fallback models are outside the configured model visibility rules.');
     default:
       return '';
   }
@@ -897,38 +810,18 @@ export function applyProviderAddition(
     };
   }
 
-  const firstSelectedModel = normalizedModels[0];
-  const currentPrimary = getModelPrimary(next.agents?.defaults?.model);
-  const shouldOverridePrimary =
-    !currentPrimary || currentPrimary.startsWith('anthropic/');
-  const primaryStillValid = currentPrimary && currentPrimary in existingModels;
-  const nextPrimary = requestedTextPrimary
-    ? requestedTextPrimary
-    : shouldOverridePrimary && firstSelectedModel
-    ? firstSelectedModel
-    : primaryStillValid
-      ? currentPrimary
-      : Object.keys(existingModels)[0];
-  const currentImagePrimary = getModelPrimary(next.agents?.defaults?.imageModel);
-  const modelIds = Object.keys(existingModels);
+  const currentDefaults = next.agents?.defaults ?? {};
   const imageSupportMap = buildConfiguredImageSupportMap(existingModels);
-  const imagePrimaryStillValid =
-    currentImagePrimary && (
-      !(currentImagePrimary in existingModels)
-      || isModelImageCapable(currentImagePrimary, imageSupportMap)
-    );
-  const nextImagePrimary = requestedImagePrimary
-    ? (isModelImageCapable(requestedImagePrimary, imageSupportMap) ? requestedImagePrimary : undefined)
-    : imagePrimaryStillValid
-      ? currentImagePrimary
-      : pickFirstImageCapableModel(modelIds, imageSupportMap);
-
-  const nextDefaults = buildDefaultsWithResolvedModels({
-    defaults: next.agents?.defaults,
+  const nextDefaults = {
+    ...currentDefaults,
     models: existingModels,
-    primary: nextPrimary,
-    imagePrimary: nextImagePrimary,
-  });
+    model: requestedTextPrimary
+      ? setModelPrimary(currentDefaults.model, requestedTextPrimary)
+      : currentDefaults.model,
+    imageModel: requestedImagePrimary && isModelImageCapable(requestedImagePrimary, imageSupportMap)
+      ? setModelPrimary(currentDefaults.imageModel, requestedImagePrimary)
+      : currentDefaults.imageModel,
+  };
 
   return {
     ...next,
@@ -1008,6 +901,9 @@ export function applyProviderRemoval(
       }
     }
   }
+  const nextAgents = shouldRemoveProviderResources
+    ? removeProviderModelReferences(prev, providerId)
+    : prev.agents;
 
   return {
     ...prev,
@@ -1015,9 +911,9 @@ export function applyProviderRemoval(
     env: nextEnv,
     models: { ...prev.models, providers },
     agents: {
-      ...prev.agents,
+      ...nextAgents,
       defaults: buildDefaultsWithResolvedModels({
-        defaults: prev.agents?.defaults,
+        defaults: nextAgents?.defaults,
         models: nextDefaultsModels,
       }),
     },
@@ -1508,8 +1404,21 @@ function ProfileRow({
     onChange((prev) => applyProviderRemoval(prev, profile.provider || getProviderFromProfileKey(profileKey), profileKey));
   };
 
-  const setModelPrimary = (modelId: string) => {
+  const setProviderDefaultTextModel = (modelId: string | null) => {
     onChange((prev) => {
+      if (!modelId) {
+        return {
+          ...prev,
+          agents: {
+            ...prev.agents,
+            defaults: buildDefaultsWithResolvedModels({
+              defaults: prev.agents?.defaults,
+              models: prev.agents?.defaults?.models ?? {},
+              primary: null,
+            }),
+          },
+        };
+      }
       const next = ensureProviderModelEnabled(prev, providerId, modelId, providerModels);
       return {
         ...next,
@@ -1525,8 +1434,21 @@ function ProfileRow({
     });
   };
 
-  const setImageModelPrimary = (modelId: string) => {
+  const setProviderDefaultImageModel = (modelId: string | null) => {
     onChange((prev) => {
+      if (!modelId) {
+        return {
+          ...prev,
+          agents: {
+            ...prev.agents,
+            defaults: buildDefaultsWithResolvedModels({
+              defaults: prev.agents?.defaults,
+              models: prev.agents?.defaults?.models ?? {},
+              imagePrimary: null,
+            }),
+          },
+        };
+      }
       const next = ensureProviderModelEnabled(prev, providerId, modelId, providerModels);
       return {
         ...next,
@@ -1779,8 +1701,8 @@ function ProfileRow({
               primaryModel={primaryModel}
               imageModel={imagePrimaryModel}
               imageSupportMap={imageSupportMap}
-              onSetPrimary={setModelPrimary}
-              onSetImageModel={setImageModelPrimary}
+              onSetPrimary={setProviderDefaultTextModel}
+              onSetImageModel={setProviderDefaultImageModel}
               disabled={saving}
             />
             <ProviderModelEditor
@@ -1790,8 +1712,8 @@ function ProfileRow({
               primaryModel={primaryModel}
               imageModel={imagePrimaryModel}
               imageSupportMap={imageSupportMap}
-              onSetPrimary={setModelPrimary}
-              onSetImageModel={setImageModelPrimary}
+              onSetPrimary={setProviderDefaultTextModel}
+              onSetImageModel={setProviderDefaultImageModel}
               onRemove={removeModel}
               onAdd={(modelId, modelAlias, supportsImage) => onChange((prev) => addProviderModel({
                 config: prev,
@@ -2574,12 +2496,14 @@ function ConfigureStep({
     () => normalizedModelOptions.filter((id) => imageSupportMap.get(id) === true),
     [normalizedModelOptions, imageSupportMap]
   );
-  const resolvedTextPrimaryModel = normalizedModelOptions.includes(textPrimaryModel)
-    ? textPrimaryModel
-    : normalizedModelOptions[0] ?? '';
-  const resolvedImagePrimaryModel = imageModelOptions.includes(imagePrimaryModel)
-    ? imagePrimaryModel
-    : imageModelOptions[0] ?? '';
+  const resolvedTextPrimaryModel = resolveExplicitProviderDefault(
+    normalizedModelOptions,
+    textPrimaryModel,
+  ) ?? '';
+  const resolvedImagePrimaryModel = resolveExplicitProviderDefault(
+    imageModelOptions,
+    imagePrimaryModel,
+  ) ?? '';
   const canSubmit = Boolean(profileName) && (!oauthMode || Boolean(officialOAuthProfile)) && (
     isCustomLike
       ? Boolean(baseUrl.trim()) && modelsToAdd.length > 0
@@ -3099,6 +3023,7 @@ function ConfigureStep({
                   'transition-colors duration-200 cursor-pointer'
                 )}
               >
+                <option value="">{t('config.keepCurrentDefault', 'Keep current default')}</option>
                 {normalizedModelOptions.map((id) => (
                   <option key={id} value={id}>{id}</option>
                 ))}
@@ -3117,7 +3042,7 @@ function ConfigureStep({
                   'transition-colors duration-200 cursor-pointer'
                 )}
               >
-                <option value="">{t('config.notSet', 'Not set')}</option>
+                <option value="">{t('config.keepCurrentDefault', 'Keep current default')}</option>
                 {imageModelOptions.map((id) => (
                   <option key={id} value={id}>{id}</option>
                 ))}
@@ -3386,9 +3311,6 @@ export function ProvidersTab({
   );
   const modelCount = Object.keys(allModels).length;
   const aliasCount = Object.values(allModels).filter((m) => m.alias).length;
-  const modelPolicyAllow = getModelPolicyAllow(config);
-  const modelAccessRestricted = modelPolicyAllow.length > 0;
-  const firstConfigurableModel = primaryModel ?? Object.keys(allModels)[0];
   const defaultModelFallbacks = getModelFallbacks(config.agents?.defaults?.model);
   const routingHealth = useMemo(() => inspectModelRouting(config), [config]);
   const replaceModeHealth = useMemo(
@@ -3421,7 +3343,7 @@ export function ProvidersTab({
               : prev.agents?.defaults?.model,
           },
           models: prev.agents?.defaults?.models ?? {},
-          primary: modelId || undefined,
+          primary: modelId || null,
         }),
       },
     }));
@@ -3470,7 +3392,7 @@ export function ProvidersTab({
         defaults: buildDefaultsWithResolvedModels({
           defaults: prev.agents?.defaults,
           models: prev.agents?.defaults?.models ?? {},
-          imagePrimary: modelId || undefined,
+          imagePrimary: modelId || null,
         }),
       },
     }));
@@ -3563,7 +3485,7 @@ export function ProvidersTab({
         </div>
 
         <div
-          className="mt-4 grid gap-4 border-t border-aegis-border pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
+          className="mt-4 border-t border-aegis-border pt-4"
           aria-label={t('config.modelRouting', 'Model routing controls')}
           data-testid="model-routing-controls"
         >
@@ -3607,48 +3529,6 @@ export function ProvidersTab({
               </div>
             </div>
           </div>
-
-          <div className="min-w-0 border-t border-aegis-border pt-4 lg:border-s lg:border-t-0 lg:ps-4 lg:pt-0">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-aegis-text">
-                  <ShieldCheck size={14} className="text-aegis-primary" aria-hidden="true" />
-                  {t('config.sessionModelAccess', 'Session model access')}
-                </div>
-                <p className="mt-1 text-[11px] leading-5 text-aegis-text-muted">
-                  {t('config.sessionModelAccessHint', 'Limits models users can choose for session overrides. It does not change the default model or provider credentials.')}
-                </p>
-              </div>
-              <ToggleSwitch
-                value={modelAccessRestricted}
-                disabled={saving || (!modelAccessRestricted && !firstConfigurableModel)}
-                onChange={(enabled) => onChange((prev) => setModelPolicyAllow(
-                  prev,
-                  enabled
-                    ? [getModelPrimary(prev.agents?.defaults?.model) ?? Object.keys(prev.agents?.defaults?.models ?? {})[0]].filter(Boolean) as string[]
-                    : undefined,
-                ))}
-                label={modelAccessRestricted
-                  ? t('config.restricted', 'Restricted')
-                  : t('config.unrestricted', 'Any configured model')}
-              />
-            </div>
-            {modelAccessRestricted && (
-              <div className="mt-3">
-                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted">
-                  {t('config.allowedModelRules', 'Allowed model rules')}
-                </label>
-                <ChipInput
-                  values={modelPolicyAllow}
-                  onChange={(rules) => onChange((prev) => setModelPolicyAllow(prev, rules))}
-                  placeholder={t('config.allowedModelRulePlaceholder', 'provider/model, provider/*, or alias')}
-                />
-                <p className="mt-1.5 text-[10px] leading-4 text-aegis-text-dim">
-                  {t('config.allowedModelRulesHint', 'Use a full model reference, a provider wildcard, or a configured alias.')}
-                </p>
-              </div>
-            )}
-          </div>
         </div>
 
         <div className="mt-4 border-t border-aegis-border pt-4" data-testid="model-routing-health">
@@ -3674,11 +3554,6 @@ export function ProvidersTab({
               {routingHealth.mode === 'replace' && (
                 <span className="rounded-md border border-aegis-border bg-aegis-surface px-2 py-1 text-aegis-text-secondary">
                   {t('config.explicitModelCount', '{{count}} explicit models', { count: routingHealth.explicitProviderModels.length })}
-                </span>
-              )}
-              {modelAccessRestricted && (
-                <span className="rounded-md border border-aegis-primary/20 bg-aegis-primary/8 px-2 py-1 text-aegis-primary">
-                  {t('config.allowedConfiguredCount', '{{count}} configured choices allowed', { count: routingHealth.allowedConfiguredModels.length })}
                 </span>
               )}
             </div>
@@ -3724,63 +3599,16 @@ export function ProvidersTab({
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-          <div className="flex items-center gap-3 p-3.5 bg-aegis-surface border border-aegis-primary/20 rounded-xl">
-            <div
-              className={clsx(
-                'w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0',
-                'bg-aegis-primary/10 border border-aegis-primary/20 text-aegis-primary'
-              )}
-            >
-              <Star size={19} aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[10px] text-aegis-text-muted uppercase tracking-wider font-bold">
-                {t('config.primaryModel')}
-              </div>
-              <select
-                value={primaryModel && allModels[primaryModel] ? primaryModel : ''}
-                disabled={saving || modelCount === 0}
-                onChange={(event) => setDefaultTextModel(event.target.value)}
-                aria-label={t('config.defaultTextModel', 'Default Text Model')}
-                className="mt-1 w-full min-w-0 rounded border border-aegis-border bg-aegis-elevated px-2 py-1.5 text-xs font-semibold text-aegis-primary outline-none focus:border-aegis-primary disabled:opacity-50"
-              >
-                <option value="">{t('config.notSet', 'Not set')}</option>
-                {Object.entries(allModels).map(([id, entry]) => (
-                  <option key={id} value={id}>{modelDisplayLabel(id, entry)}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 p-3.5 bg-aegis-surface border border-blue-500/20 rounded-xl">
-            <div
-              className={clsx(
-                'w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0',
-                'bg-blue-500/10 border border-blue-500/20 text-blue-400'
-              )}
-            >
-              <Image size={19} aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[10px] text-aegis-text-muted uppercase tracking-wider font-bold">
-                {t('config.imageModel', 'Image Model')}
-              </div>
-              <select
-                value={imagePrimaryModel && isModelImageCapable(imagePrimaryModel, allModelImageSupportMap) ? imagePrimaryModel : ''}
-                disabled={saving || modelCount === 0}
-                onChange={(event) => setDefaultImageModel(event.target.value)}
-                aria-label={t('config.defaultImageModel', 'Default Image Model')}
-                className="mt-1 w-full min-w-0 rounded border border-aegis-border bg-aegis-elevated px-2 py-1.5 text-xs font-semibold text-blue-400 outline-none focus:border-blue-400 disabled:opacity-50"
-              >
-                <option value="">{t('config.notSet', 'Not set')}</option>
-                {Object.entries(allModels)
-                  .filter(([id]) => isModelImageCapable(id, allModelImageSupportMap))
-                  .map(([id, entry]) => (
-                    <option key={id} value={id}>{modelDisplayLabel(id, entry)}</option>
-                  ))}
-              </select>
-            </div>
-          </div>
+        <div className="mt-3">
+          <DefaultModelControls
+            models={allModels}
+            primaryModel={primaryModel}
+            imageModel={imagePrimaryModel}
+            imageSupportMap={allModelImageSupportMap}
+            onSetPrimary={(id) => setDefaultTextModel(id ?? '')}
+            onSetImageModel={(id) => setDefaultImageModel(id ?? '')}
+            disabled={saving}
+          />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
           <div className="flex items-center gap-3 p-3.5 bg-aegis-surface border border-emerald-500/20 rounded-xl">

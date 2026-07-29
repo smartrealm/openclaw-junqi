@@ -14,3 +14,14 @@ test('sessions.list provider and bare model fields form a canonical model id', (
   assert.equal(resolveGatewaySessionModelId(undefined, 'openai/gpt-5.6'), 'openai/gpt-5.6');
   assert.equal(resolveGatewaySessionModelId('openai', ''), null);
 });
+
+test('Gateway provider identity is preserved instead of applying renderer aliases', () => {
+  assert.equal(
+    resolveGatewaySessionModelId('modelstudio', 'custom-model'),
+    'modelstudio/custom-model',
+  );
+  assert.equal(
+    resolveGatewaySessionModelId('kimi', 'kimi-for-coding'),
+    'kimi/kimi-for-coding',
+  );
+});

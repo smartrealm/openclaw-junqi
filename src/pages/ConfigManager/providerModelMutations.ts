@@ -3,10 +3,11 @@ import type {
   ModelEntry,
   ModelProviderConfig,
   ModelProviderModelEntry,
+  ModelReferenceConfig,
 } from './types';
 import { buildDefaultsWithResolvedModels } from './providerDefaults';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
-import { getModelPrimary, rewriteModelReferenceConfig } from './modelReference';
+import { getModelFallbacks, getModelPrimary, rewriteModelReferenceConfig } from './modelReference';
 
 function normalizeProviderId(value: string): string {
   const normalized = value.trim().toLowerCase();
@@ -185,6 +186,39 @@ function rewriteAgentModelReferences(
       : defaults,
     list,
   };
+}
+
+function collectModelReferenceValues(value: ModelReferenceConfig | undefined): string[] {
+  return [getModelPrimary(value), ...getModelFallbacks(value)]
+    .filter((ref): ref is string => Boolean(ref));
+}
+
+/** Remove every global and per-agent route owned by one removed provider. */
+export function removeProviderModelReferences(
+  config: GatewayRuntimeConfig,
+  providerId: string,
+): Pick<GatewayRuntimeConfig, 'agents'>['agents'] {
+  const candidates = new Set<string>(Object.keys(config.agents?.defaults?.models ?? {}));
+  const defaults = config.agents?.defaults;
+  for (const value of [
+    defaults?.model,
+    defaults?.imageModel,
+    defaults?.imageGenerationModel,
+    defaults?.videoGenerationModel,
+  ]) {
+    collectModelReferenceValues(value).forEach((ref) => candidates.add(ref));
+  }
+  for (const agent of config.agents?.list ?? []) {
+    for (const value of [agent.model, agent.imageModel, agent.imageGenerationModel, agent.videoGenerationModel]) {
+      collectModelReferenceValues(value).forEach((ref) => candidates.add(ref));
+    }
+  }
+
+  const refs = new Set(Array.from(candidates).filter((ref) => {
+    const slash = ref.indexOf('/');
+    return slash > 0 && providerIdsMatch(ref.slice(0, slash), providerId);
+  }));
+  return rewriteAgentModelReferences(config, refs);
 }
 
 function upsertProviderModel(params: {

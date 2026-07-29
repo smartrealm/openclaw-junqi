@@ -7,6 +7,7 @@ import {
   type SetupNavigationMode,
   type SetupStep,
 } from "./setup-navigation";
+import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 
 export type { InstallMode, SetupStep } from "./setup-navigation";
 
@@ -107,7 +108,7 @@ export const useAppStore = create<AppState>((set) => ({
   setSetupComplete: (v) => {
     if (v === true) {
       localStorage.setItem("junqi-setup-done", SETUP_DONE_MARKER);
-    } else if (v === false) {
+    } else {
       localStorage.removeItem("junqi-setup-done");
     }
     set({ setupComplete: v });
@@ -125,9 +126,11 @@ export const useAppStore = create<AppState>((set) => ({
     });
     return destination;
   },
-  setSetupError: (err) => set({ setupError: err }),
+  setSetupError: (err) => set({
+    setupError: err === null ? null : sanitizeSetupDiagnostic(err),
+  }),
   setSetupStatus: (message, progress) => set((s) => ({
-    setupStatusMessage: message,
+    setupStatusMessage: sanitizeSetupDiagnostic(message),
     setupProgress: progress ?? s.setupProgress,
   })),
   setInstallMode: (mode) => {
@@ -136,7 +139,11 @@ export const useAppStore = create<AppState>((set) => ({
   },
   setGatewayRunning: (v) => set({ gatewayRunning: v }),
   appendSetupLog: (log) => set((s) => {
-    const nextLog = { ...log, ts: log.ts ?? Date.now() };
+    const nextLog = {
+      ...log,
+      message: sanitizeSetupDiagnostic(log.message),
+      ts: log.ts ?? Date.now(),
+    };
     if (nextLog.coalesceKey) {
       let matchIndex = -1;
       for (let index = s.setupLogs.length - 1; index >= 0; index -= 1) {

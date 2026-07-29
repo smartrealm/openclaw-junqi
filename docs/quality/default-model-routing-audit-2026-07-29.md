@@ -60,6 +60,79 @@ default when it was absent. That hides protocol drift and resolves per-agent
 defaults incorrectly. The projection must be validated and remain the only
 post-mutation effective-model source.
 
+### BUG-DM-07 - Adding a provider silently replaces global defaults
+
+`ConfigureStep` derives both text and image defaults from the first selected
+model even when the operator never selected either default. The derived values
+are then passed to `applyProviderAddition`, so adding a provider also rewrites
+`agents.defaults.model.primary` and `agents.defaults.imageModel`. Provider
+registration and global routing are separate decisions; catalog order is not a
+default-model choice.
+
+### BUG-DM-08 - The two default-model editors enforce different fallback rules
+
+The provider editor removes a newly selected primary from the fallback chain,
+while the Agent defaults editor calls `setModelPrimary` directly and can retain
+the same ref in both positions. `setModelFallbacks` also accepts the active
+primary. The invariant belongs in the shared model-reference domain, not in one
+of its callers.
+
+### BUG-DM-09 - Shared model presentation contains model-specific branches
+
+`ModelDropdown.formatModelName` recognizes a fixed list of Claude, Gemini, GPT,
+and o-series ids. This becomes stale as the installed catalog changes and
+contradicts the runtime-owned display contract. Gateway/catalog `alias` and
+`label` fields are authoritative; the full model ref is the lossless fallback.
+
+### BUG-DM-10 - Session/catalog alias rewriting can steal explicit identities
+
+The session/catalog identity helper unconditionally rewrites provider ids such
+as `modelstudio` to another provider. OpenClaw 2026.7.1 explicitly says an exact
+custom `models.providers.modelstudio` entry owns its own refs instead of the
+Qwen compatibility alias. Session results and model-catalog provider keys must
+therefore be preserved; compatibility resolution belongs to OpenClaw's
+contextual plugin catalog, not a renderer-wide lookup table.
+
+### BUG-DM-11 - "Not set" is replaced by catalog order
+
+The provider settings UI exposes an explicit `Not set` option for text and
+image defaults. `buildDefaultsWithResolvedModels`, however, cannot distinguish
+an explicit clear from an omitted override and replaces the empty primary with
+the first key in `agents.defaults.models`. The image route similarly chooses
+the first locally image-capable entry. The rendered selection therefore lies
+about the persisted routing decision and object insertion order becomes model
+policy.
+
+### BUG-DM-12 - Model removal ignores the configured fallback order
+
+When the active primary is removed, the same helper promotes the first catalog
+key even when `agents.defaults.model.fallbacks` contains an explicit ordered
+recovery route. Adding or fetching a model while no primary is configured also
+selects the first model implicitly. Catalog reconciliation must preserve an
+unset primary, and a removed primary may only promote the first still-available
+configured fallback.
+
+### BUG-DM-13 - Setup completion persists before revalidating the default route
+
+The final setup action probes the selected Gateway process and immediately
+writes the setup-complete marker. A configuration or credential change made
+after the earlier Ready transition can therefore persist an installation whose
+default model is structurally incomplete or no longer live. The completion
+action must re-read the selected-runtime config and repeat the official live
+model probe in the same transaction as the marker write.
+
+### BUG-DM-14 - Secondary controls still treat catalog order as a default
+
+Two read-side controls retained the same implicit-order assumption after the
+primary route was cleared. Gateway rescue labeled the first enabled model as
+the default, while the provider editor also exposed a session-model restriction
+control. Rescue may enumerate configured candidates, but only
+`agents.defaults.model.primary` may receive the Default label.
+
+The later installed-contract audit supersedes the restriction half of this
+finding: pinned `openclaw@2026.7.1` rejects `agents.defaults.modelPolicy`, so the
+control and write path were removed instead of being initialized from a model.
+
 ## Target boundary
 
 - Config save changes configuration only and refreshes the Gateway model view.
@@ -69,6 +142,23 @@ post-mutation effective-model source.
 - A missing post-patch resolved model is a visible protocol error, never a
   renderer fallback.
 - Provider editor rendering does not mutate the draft.
+- Adding a provider preserves global text/image defaults unless the operator
+  explicitly selects replacements.
+- Primary/fallback disjointness is enforced by the shared model-reference
+  functions used by every editor.
+- Model labels and session/catalog provider identities come from runtime/config
+  data without model-specific display branches or unconditional compatibility
+  rewrites.
+- Explicitly clearing a default remains clear; catalog discovery and model
+  addition never fill it from object order.
+- Removing the active primary promotes the first available configured fallback,
+  or leaves the primary unset when no configured fallback remains.
+- Setup completion persists only after the selected Gateway, selected-runtime
+  configuration, and live default model all pass the final completion gate.
+- The pinned Runtime's configured-model visibility is mirrored only for the
+  disconnected config fallback; connected choices remain Gateway-owned.
+- Diagnostic and session-access controls never promote catalog order to a
+  default or policy rule.
 
 ## Implementation
 
@@ -83,14 +173,35 @@ post-mutation effective-model source.
   Gateway restart is in progress, avoiding a composer control unmount/remount.
 - Made `resolved.modelProvider` and `resolved.model` mandatory in the typed
   patch response and reject missing values as protocol drift.
+- Provider addition now preserves current text and image defaults unless the
+  operator explicitly chooses a replacement in the provider wizard.
+- Moved primary/fallback disjointness into the shared model-reference helpers,
+  so every settings entry point enforces the same invariant.
+- Replaced model-id-specific display branches with catalog `alias`/`label`
+  metadata and a generic short label while retaining the full model ref as
+  row detail.
+- Removed renderer-wide provider alias rewriting from the Gateway session and
+  model-catalog identity layer. Legacy provider-template migrations remain
+  isolated in Config Manager and are not treated as runtime model identity.
+- Distinguished omitted default overrides from explicit clears. Adding or
+  fetching models now preserves an unset route; removing a primary promotes
+  only its first remaining configured fallback.
+- Gateway rescue and session-access restriction seeding now recognize only the
+  explicit primary instead of treating object insertion order as policy.
+- Added the final Gateway/config/live-model completion gate before the durable
+  setup marker is written.
 
 ## Validation
 
-- Focused default-model, session-settings, identity, composer, and provider
-  routing tests: passed (22 tests before the final response-hardening change;
-  13 directly affected tests passed after it).
+- Focused default-model, policy, provider mutation, and rescue routing tests:
+  passed (45 tests).
 - `pnpm lint`: passed, including module boundaries and TypeScript.
-- `pnpm test`: passed for the complete frontend and script suites.
+- `pnpm test`: passed for the complete frontend and script suites; the frontend
+  phase reported 1863/1863 and the script phase 223/223 passing tests.
+- `pnpm test:rust`: passed with 652 tests and 3 environment-dependent tests
+  ignored by their existing contracts.
+- `cargo fmt -- --check` and `cargo check --lib`: passed.
+- `pnpm verify:openclaw-docs`: passed for 55 official links and anchors.
 - `pnpm build`: passed; no circular-chunk or chunk-budget warning was emitted.
 - Live provider fallback and agent-specific default routing: not exercised;
   they require real provider credentials and a running authenticated Gateway.
@@ -99,3 +210,8 @@ post-mutation effective-model source.
 
 Provider account availability and automatic fallback recovery require live
 provider credentials and are not inferred from catalog metadata.
+
+Config Manager still contains explicit legacy provider-template migration
+rules. They are versioned compatibility behavior with existing regression
+coverage, not a source of session/catalog identity. Removing them requires a
+separate migration contract for existing user configurations.

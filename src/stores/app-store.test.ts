@@ -54,3 +54,33 @@ test("a coalesced setup log keeps the timestamp of the row it replaces", () => {
   assert.equal(logs[0]!.ts, 1_000, "the replaced row keeps its original timestamp");
   assert.deepEqual(logs.map((log) => log.ts), [1_000, 2_000], "timestamps stay non-decreasing");
 });
+
+test("every setup store diagnostic surface redacts credentials", () => {
+  useAppStore.setState({ setupError: null, setupStatusMessage: "", setupLogs: [] });
+  const { setSetupError, setSetupStatus, appendSetupLog } = useAppStore.getState();
+
+  setSetupError("Gateway failed: api_key=sk-error-secret");
+  setSetupStatus("Authorization: Bearer status-secret");
+  appendSetupLog({
+    source: "gateway",
+    message: "refresh_token=log-secret",
+  });
+
+  const state = useAppStore.getState();
+  assert.equal(state.setupError, "Gateway failed: api_key=[REDACTED]");
+  assert.equal(state.setupStatusMessage, "Authorization: [REDACTED]");
+  assert.equal(state.setupLogs[0]?.message, "refresh_token=[REDACTED]");
+});
+
+test("only a complete setup retains the durable completion marker", () => {
+  const store = useAppStore.getState();
+  store.setSetupComplete(true);
+  assert.equal(localStorage.getItem("junqi-setup-done"), "3");
+
+  store.setSetupComplete(null);
+  assert.equal(localStorage.getItem("junqi-setup-done"), null);
+
+  store.setSetupComplete(true);
+  store.setSetupComplete(false);
+  assert.equal(localStorage.getItem("junqi-setup-done"), null);
+});
