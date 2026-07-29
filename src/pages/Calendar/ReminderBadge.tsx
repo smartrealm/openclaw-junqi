@@ -2,7 +2,6 @@
 // ReminderBadge — Cron job status indicator for events
 // ═══════════════════════════════════════════════════════════
 
-import { useTranslation } from 'react-i18next';
 import { Circle, CheckCircle2, XCircle } from 'lucide-react';
 import type { ReminderStatus } from './calendarTypes';
 import React from 'react';
@@ -12,7 +11,6 @@ interface ReminderBadgeProps {
   size?: 'sm' | 'md';
 }
 
-const s = (size: string) => size === 'sm' ? 10 : 12;
 
 const STATUS_CONFIG: Record<ReminderStatus, React.ReactNode> = {
   scheduled: <Circle size={12} fill="rgb(74 222 128)" stroke="none" />,

@@ -117,12 +117,6 @@ function getLanguageLabel(ext: string): string {
   return map[ext] || ext.toUpperCase() || 'File';
 }
 
-function getKindLabel(t: any, kind?: string): string {
-  if (kind === 'uploads' || kind === 'upload') return t('fileManager.kindUploads');
-  if (kind === 'outputs' || kind === 'output') return t('fileManager.kindOutputs');
-  if (kind === 'voice') return t('fileManager.kindVoice');
-  return kind || '';
-}
 
 function getVisibilityLabel(t: any, visibility?: string): string {
   if (!visibility) return t('fileManager.visibility.unknown');

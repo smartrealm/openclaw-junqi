@@ -213,7 +213,7 @@ export function useWorkspaceFileDocument({
     if (!document) return;
     try {
       const next = await readFileText(filePath, projectPath);
-      document.applyExternalChange(next, null);
+      document.replaceWithDiskContent(next, null);
       diskUnavailableRef.current = false;
       setDiskReadError(null);
     } catch (reason) {
@@ -222,6 +222,15 @@ export function useWorkspaceFileDocument({
       setDiskReadError(reason instanceof Error ? reason.message : String(reason));
     }
   }, [document, filePath, projectPath]);
+
+  const keepLocalEdits = useCallback(() => {
+    if (!document) return;
+    document.keepLocalEdits();
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (!diskUnavailableRef.current) void document.save();
+    }, 1500);
+  }, [document]);
 
   return {
     content,
@@ -235,5 +244,6 @@ export function useWorkspaceFileDocument({
     edit,
     saveNow,
     reloadFromDisk,
+    keepLocalEdits,
   };
 }

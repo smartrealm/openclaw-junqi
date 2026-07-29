@@ -80,6 +80,53 @@ test('external changes distinguish self-write echoes, clean reloads and conflict
   assert.equal(document.snapshot().draftContent, 'mine');
 });
 
+test('a rejected compare-and-swap keeps the draft and exposes the newer disk content as a conflict', async () => {
+  const writes: Array<{ content: string; expectedContent: string }> = [];
+  const document = new EditorDocumentController({
+    read: async () => ({ content: 'base', revision: '1' }),
+    write: async (_scope, _path, content, expectedContent) => {
+      writes.push({ content, expectedContent });
+      return { revision: '2', conflictContent: 'external' };
+    },
+  }, scope, '/repo/a.ts');
+  await document.load();
+  document.edit('draft');
+  await document.save();
+
+  assert.deepEqual(writes, [{ content: 'draft', expectedContent: 'base' }]);
+  assert.equal(document.snapshot().status, 'conflicted');
+  assert.equal(document.snapshot().diskContent, 'external');
+  assert.equal(document.snapshot().draftContent, 'draft');
+});
+
+test('external-change conflict resolutions either accept disk content or retain the local draft', async () => {
+  const writes: string[] = [];
+  const document = new EditorDocumentController({
+    read: async () => ({ content: 'base', revision: '1' }),
+    write: async (_scope, _path, content) => {
+      writes.push(content);
+      return { revision: '4' };
+    },
+  }, scope, '/repo/a.ts');
+  await document.load();
+  document.edit('draft');
+  document.applyExternalChange('external', '2');
+
+  document.replaceWithDiskContent('latest external', '3');
+  assert.equal(document.snapshot().status, 'clean');
+  assert.equal(document.snapshot().diskContent, 'latest external');
+  assert.equal(document.snapshot().draftContent, 'latest external');
+
+  document.edit('second draft');
+  document.applyExternalChange('second external', '4');
+  document.keepLocalEdits();
+  assert.equal(document.snapshot().status, 'dirty');
+  assert.equal(document.snapshot().draftContent, 'second draft');
+  await document.save();
+  assert.deepEqual(writes, ['second draft']);
+  assert.equal(document.snapshot().status, 'saved');
+});
+
 test('deleted documents fence pending loads and saves', async () => {
   const read = deferred<{ content: string; revision: string | null }>();
   let writes = 0;

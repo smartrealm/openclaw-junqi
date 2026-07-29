@@ -8,7 +8,7 @@ import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
 import type {
@@ -21,7 +21,6 @@ import type {
 } from './types';
 import {
   PROVIDER_TEMPLATES,
-  POPULAR_PROVIDER_IDS,
   UI_CATALOG,
   getCatalogEntriesForTab,
   getTemplateById,
@@ -55,7 +54,6 @@ import {
   inspectModelRouting,
   type ModelRoutingIssue,
 } from './modelRoutingHealth';
-import { Badge, StatusDot } from '@/components/shared/badge';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { AUTH_MODE_INFO, normalizeProviderAuthMode } from '@/types/providerAuthMode';
 import { OPENCLAW_API_PROTOCOLS, normalizeOpenClawApiProtocol } from '@/types/openclawApiProtocol';
@@ -2308,48 +2306,6 @@ function CatalogCard({
   );
 }
 
-/** Compact card used by the existing providers list. The picker uses ProviderCatalogEntry. */
-function ProviderCard({
-  tmpl,
-  onPick,
-  compact,
-}: {
-  tmpl: ProviderTemplate;
-  onPick: (t: ProviderTemplate) => void;
-  compact?: boolean;
-}) {
-  return (
-    <button
-      onClick={() => onPick(tmpl)}
-      className={clsx(
-        'flex items-center gap-2.5 p-2.5 rounded-xl',
-        'border border-aegis-border bg-aegis-elevated text-left',
-        'hover:border-aegis-border-hover hover:bg-white/[0.03]',
-        'transition-all duration-200 group',
-        compact && 'flex-col items-center text-center gap-1.5'
-      )}
-    >
-      <div
-        className={clsx(
-          'flex items-center justify-center rounded-lg font-black text-aegis-btn-primary-text flex-shrink-0',
-          `bg-gradient-to-br ${tmpl.colorClass}`,
-          compact ? 'w-8 h-8 text-sm' : 'w-7 h-7 text-xs'
-        )}
-      >
-        {tmpl.icon}
-      </div>
-      <div className="min-w-0">
-        <div className="font-semibold text-xs text-aegis-text group-hover:text-aegis-primary transition-colors truncate">
-          {tmpl.name}
-        </div>
-        {!compact && tmpl.envKey && (
-          <div className="text-[9px] text-aegis-text-muted font-mono truncate">{tmpl.envKey}</div>
-        )}
-      </div>
-    </button>
-  );
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Add Provider Modal — Step 2: Configure
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3592,14 +3548,6 @@ export function ProvidersTab({
   }, [addRequestId, openModal]);
 
   // ── Add provider (auth profile + models) ──
-  const handleAdd = (
-    profileKey: string,
-    profile: AuthProfile,
-    models: string[],
-    providerConfig?: ProviderConfigOverride
-  ) => {
-    onChange((prev) => applyProviderAddition(prev, profileKey, profile, models, providerConfig));
-  };
 
   return (
     <div className="flex flex-col gap-5">

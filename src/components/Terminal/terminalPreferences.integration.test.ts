@@ -7,7 +7,6 @@ const read = (path: string) => readFile(new URL(path, import.meta.url), 'utf8');
 test('shell terminals consume shared scrollback and newline preferences', async () => {
   const shell = await read('./ShellTerminalPanel.tsx');
   const terminalPage = await read('../../pages/TerminalPage/index.tsx');
-  const workspace = await read('../Workspace/WorkspaceView.tsx');
 
   const initialization = shell.slice(
     shell.indexOf('const { term, fitAddon, whenFontsReady } = initTerminal('),
@@ -19,6 +18,4 @@ test('shell terminals consume shared scrollback and newline preferences', async 
   assert.match(shell, /sendInput\(TERMINAL_NEWLINE_SEQUENCE\)/);
   assert.match(terminalPage, /useTerminalPreferences\(\)/);
   assert.match(terminalPage, /terminalScrollback=\{terminalScrollback\}/);
-  assert.match(workspace, /useTerminalPreferences\(\)/);
-  assert.match(workspace, /terminalFontSize=\{terminalFontSize\}/);
 });

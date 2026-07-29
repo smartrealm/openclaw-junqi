@@ -242,9 +242,6 @@ export class GatewayConnection {
   private challengeNonce: string | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Stable per-window instance ID for diagnostics
-  private readonly instanceId =
-    crypto.randomUUID?.() || `aegis-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   // ── Heartbeat (activity-based dead connection detection) ──
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;

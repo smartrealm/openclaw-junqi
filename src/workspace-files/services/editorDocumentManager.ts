@@ -27,7 +27,13 @@ export interface EditorDocumentSnapshot {
 
 export interface EditorDocumentIO {
   read(scope: WorkspaceFileScope, path: string): Promise<{ content: string; revision: string | null }>;
-  write(scope: WorkspaceFileScope, path: string, content: string, operationId: string): Promise<{ revision: string | null }>;
+  write(
+    scope: WorkspaceFileScope,
+    path: string,
+    content: string,
+    expectedContent: string,
+    operationId: string,
+  ): Promise<{ revision: string | null; conflictContent?: string }>;
 }
 
 export type EditorDocumentListener = (snapshot: EditorDocumentSnapshot) => void;
@@ -109,7 +115,8 @@ export class EditorDocumentController {
   save(): Promise<void> {
     if (this.snapshotValue.status === 'deleted') return Promise.resolve();
     const content = this.snapshotValue.draftContent;
-    if (content === this.snapshotValue.diskContent) {
+    const expectedContent = this.snapshotValue.diskContent;
+    if (content === expectedContent) {
       this.update({ status: 'clean', error: null });
       return Promise.resolve();
     }
@@ -119,8 +126,22 @@ export class EditorDocumentController {
     const write = async () => {
       if (this.disposed || this.isDeleted()) return;
       try {
-        const result = await this.io.write(this.snapshotValue.scope, this.snapshotValue.path, content, opId);
+        const result = await this.io.write(
+          this.snapshotValue.scope,
+          this.snapshotValue.path,
+          content,
+          expectedContent,
+          opId,
+        );
         if (this.disposed || this.isDeleted()) return;
+        if (result.conflictContent !== undefined) {
+          this.update({
+            diskContent: result.conflictContent,
+            diskRevision: result.revision,
+            status: 'conflicted',
+          });
+          return;
+        }
         const draftChangedDuringWrite = this.snapshotValue.draftContent !== content;
         this.update({
           diskContent: content,
@@ -149,6 +170,22 @@ export class EditorDocumentController {
       return;
     }
     this.update({ diskContent: content, draftContent: content, diskRevision: revision, status: 'clean' });
+  }
+
+  replaceWithDiskContent(content: string, revision: string | null): void {
+    if (this.snapshotValue.status === 'deleted') return;
+    this.update({
+      diskContent: content,
+      draftContent: content,
+      diskRevision: revision,
+      status: 'clean',
+      error: null,
+    });
+  }
+
+  keepLocalEdits(): void {
+    if (this.snapshotValue.status !== 'conflicted') return;
+    this.update({ status: 'dirty', error: null });
   }
 
   markDeleted(): void {

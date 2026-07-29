@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { selectActiveSessionTyping, useChatStore } from '@/stores/chatStore';

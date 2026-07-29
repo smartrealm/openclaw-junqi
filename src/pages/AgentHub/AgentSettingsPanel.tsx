@@ -26,7 +26,6 @@ import { themeHex, themeAlpha } from '@/utils/theme-colors';
 import type { GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
 import {
   getModelFallbacks,
-  getModelPrimary,
   isModelReferenceObject,
   setModelFallbacks,
   setModelPrimary,

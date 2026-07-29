@@ -4,9 +4,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Copy, Check, User, RotateCcw, Pencil,
-  ChevronDown, ChevronRight, AlertTriangle, Eye, Code2,
-  Sparkles, Bot, Globe, FileText,
-  FileSpreadsheet, FileArchive, FileJson, FileCode2, Music, Film,
+  ChevronDown, ChevronRight, AlertTriangle,
+  Sparkles, Bot, FileText,
+
   Kanban, Wrench, Brain, CheckCircle2, Info, GitFork, Loader2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';

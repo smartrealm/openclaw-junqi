@@ -4,7 +4,6 @@ import {
   Bot,
   CheckCircle2,
   CircleDashed,
-  Clock3,
   FileCheck2,
   GitFork,
   History,

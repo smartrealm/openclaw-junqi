@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { AlertCircle, Code2, Copy, ExternalLink, Eye, EyeOff, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, MoreHorizontal, RefreshCw, Sparkles, ChevronDown, Globe, Image, FileCode2, Layers, type LucideIcon } from 'lucide-react';
+import { AlertCircle, Code2, Copy, ExternalLink, Eye, EyeOff, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, MoreHorizontal, RefreshCw, Sparkles, Layers, type LucideIcon } from 'lucide-react';
 import { ArrowsClockwise } from '@phosphor-icons/react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';

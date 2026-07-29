@@ -580,9 +580,6 @@ export function AgentWorkspacePage() {
         ? 'active'
         : 'unavailable',
   })), [worktreeRecords]);
-  const tabs = useMemo(() => (group?.tabIds ?? []).flatMap((id) => tabRecords[id] ? [presentationTab(tabRecords[id])] : []), [group, tabRecords]);
-  const activeTabId = group?.activeTabId ?? null;
-  const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const selectedWorktree = activeWorktree ? worktreeRecords[activeWorktree] : undefined;
   const selectedLocalPath = localWorktreePath(selectedWorktree);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);

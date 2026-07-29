@@ -11,7 +11,7 @@
 // NotificationBell, Workspace sidebar.
 // ─────────────────────────────────────────────────────────────────
 
-import { Circle, AlertCircle, Loader2, CheckCircle2, Minus } from 'lucide-react';
+import { Circle, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 

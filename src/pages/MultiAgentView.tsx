@@ -29,16 +29,6 @@ interface HistoryMessage {
 
 const SUBAGENT_RE = /^agent:([^:]+):subagent:(.+)$/;
 
-/** Format a session key:
- *  agent:core:subagent:abc123def → "Core • abc123"
- */
-function formatAgentKey(key: string): string {
-  const m = key.match(SUBAGENT_RE);
-  if (!m) return key.length > 32 ? key.substring(0, 32) + '…' : key;
-  const agentId = m[1].charAt(0).toUpperCase() + m[1].slice(1);
-  const uuid = m[2].replace(/-/g, '').substring(0, 6);
-  return `${agentId} • ${uuid}`;
-}
 
 /** Format seconds as human-readable duration: 1m 30s, 2h 5m, etc. */
 function formatDuration(seconds: number): string {

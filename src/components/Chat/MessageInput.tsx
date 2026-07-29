@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Send, Paperclip, Camera, Mic, X, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio, RefreshCw, Plus, AtSign } from 'lucide-react';
+import { Send, Paperclip, Camera, Mic, X, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, Radio, RefreshCw, Plus, AtSign } from 'lucide-react';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { Icon } from '@/components/shared/icons';
@@ -342,10 +342,6 @@ export function MessageInput() {
     }
   }, [workspaceFilesLoaded]);
 
-  const clearWorkspaceFiles = useCallback(() => {
-    setWorkspaceFiles([]);
-    setWorkspaceFilesLoaded(false);
-  }, []);
 
   // ── Slash commands (built-in only, no skills) ──
   const slashCommands = SLASH_COMMANDS.filter((c) => c.cmd !== '/skill:');

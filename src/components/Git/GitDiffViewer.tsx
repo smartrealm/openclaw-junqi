@@ -122,7 +122,7 @@ export function GitDiffViewer({
   }, [projectPath, mode, commitHash, filePath, staged]);
 
   const { parsedFiles, totalAdditions, totalDeletions } = useMemo(() => {
-    const files = parseDiff(diff, projectPath);
+    const files = parseDiff(diff);
     let add = 0;
     let del = 0;
     for (const f of files) {
@@ -130,7 +130,7 @@ export function GitDiffViewer({
       del += f.deletions;
     }
     return { parsedFiles: files, totalAdditions: add, totalDeletions: del };
-  }, [diff, projectPath]);
+  }, [diff]);
 
   return (
     <div

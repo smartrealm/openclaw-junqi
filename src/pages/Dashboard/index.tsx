@@ -50,7 +50,7 @@ import {
 
 import {
   ContextRing, QuickAction, SessionItem, FeedItem, AgentItem,
-  fmtCost, fmtCostShort, timeAgo, fmtUptime,
+  fmtCostShort, timeAgo, fmtUptime,
 } from './components';
 
 const CostChart = lazy(() => import('./CostChart').then((m) => ({ default: m.CostChart })));

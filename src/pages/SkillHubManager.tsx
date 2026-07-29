@@ -84,7 +84,7 @@ function healthIcon(h: string | undefined) {
 }
 
 export function SkillHubManager() {
-  const { t } = useTranslation();
+  useTranslation();
   const [config, setConfig] = useState<SkillHubConfig | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [installations, setInstallations] = useState<SkillInstallation[]>([]);

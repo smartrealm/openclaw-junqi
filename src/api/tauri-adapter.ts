@@ -159,11 +159,9 @@ try {
 
 // ── Listen for gateway-config event (may arrive before or after listener) ──
 let _gwConfig: any = null;
-let _gwReady = false;
 try {
   subscribeTauriEvent("gateway-config", (event: any) => {
     _gwConfig = event.payload;
-    _gwReady = true;
   });
 } catch {}
 
@@ -955,7 +953,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     startRecording: async () => { try { const r: any = await invoke("voice_start_recording"); return r; } catch (e: any) { return { success: false, error: String(e) }; } },
     stopRecording: async () => { try { const r: any = await invoke("voice_stop_recording"); return r; } catch (e: any) { return { success: false, error: String(e) }; } },
     isRecording: async () => { try { const r: any = await invoke("voice_is_recording"); return r; } catch { return { recording: false }; } },
-    save: async (filename: string, base64: string, sessionKey?: string, agentId?: string) => {
+    save: async (filename: string, base64: string, sessionKey?: string) => {
       try {
         const { mkdir, writeFile } = await import("@tauri-apps/plugin-fs");
         const { appDataDir } = await import("@tauri-apps/api/path");

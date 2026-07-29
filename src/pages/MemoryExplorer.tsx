@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Loader2, Plus, Pencil, Trash2, RefreshCw, Settings, X, AlertCircle, CalendarDays, FolderOpen, Plug, Network, Archive } from 'lucide-react';
+import { Search, Loader2, Plus, Pencil, Trash2, RefreshCw, Settings, X, CalendarDays, FolderOpen, Plug, Network, Archive } from 'lucide-react';
 import { Brain, Gear, Cube, Lightbulb, Heart, Users, Target, Calendar, Note } from '@phosphor-icons/react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useSettingsStore } from '@/stores/settingsStore';

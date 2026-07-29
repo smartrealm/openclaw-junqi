@@ -26,7 +26,6 @@ import {
 } from "@/api/tauri-commands";
 import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import {
-  setupProgressI18nParams,
   translateSetupProgressMessage,
 } from "../setupProgressParams";
 import {
@@ -37,39 +36,10 @@ import {
 import { normalizeSetupProgressPayload } from "../setupProgressEvents";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { debugWarn } from "@/utils/debugLog";
-import { gateway, GatewayPrivilegedAuthorizationError } from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
-import {
-  diagnoseGatewayRecovery,
-  gatewayMigrationRetryDelayMs,
-  runOpenClawRepair,
-} from "@/services/gateway/openclawRepair";
-import {
-  disableOpenclawPlugin,
-  healOpenclawPlugin,
-  isAwaitingGatewayVerification,
-  listBrokenGatewayPlugins,
-  mergeBrokenPlugins,
-  planPluginRecovery,
-  pluginsNeedingHeal,
-  unhealedPlugins,
-  UNVERIFIABLE_PLUGIN_REASON,
-  type BrokenGatewayPlugin,
-  type PluginHealOutcome,
-} from "@/services/gateway/pluginRecovery";
-import { defaultGatewayWsUrl } from "@/config/runtimeDefaults";
 import { executeRuntimeSelectionTransaction } from "@/services/setup/runtimeSelectionTransaction";
 import {
-  classifyOpenClawWizardFailure,
-  createBrowserOpenClawWizardSessionStore,
-  OpenClawWizardCancelledError,
-  OpenClawWizardClient,
-  OpenClawWizardOperationSupersededError,
-  isOpenClawWizardSessionLost,
-  isOpenClawWizardStepDesynchronized,
   requiresOpenClawOnboarding,
-  type OpenClawWizardResult,
-  type OpenClawWizardStep,
 } from "@/services/openclawWizard";
 
 

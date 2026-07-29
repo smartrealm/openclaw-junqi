@@ -1,5 +1,5 @@
 // Setup flow contracts shared by the hook, its sub-hooks, and the step screens.
-import type { InstallMode, SetupStep } from "@/stores/setup-navigation";
+import type { InstallMode } from "@/stores/setup-navigation";
 import type { DockerStatus, OpenclawStatus } from "@/api/tauri-commands";
 import type { BrokenGatewayPlugin } from "@/services/gateway/pluginRecovery";
 import type { OpenClawWizardResult, OpenClawWizardStep } from "@/services/openclawWizard";

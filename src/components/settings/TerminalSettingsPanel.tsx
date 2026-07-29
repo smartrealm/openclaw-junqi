@@ -6,7 +6,6 @@ import clsx from 'clsx';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { useSettingsStore } from '@/stores/settingsStore';
 import {
-  DEFAULT_TERMINAL_SCROLLBACK,
   DEFAULT_TERMINAL_SHIFT_ENTER_NEWLINE,
   TERMINAL_SETTINGS_CHANGED_EVENT,
   useTerminalPreferences,

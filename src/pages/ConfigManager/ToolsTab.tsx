@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { Plus, Trash2, AlertCircle, Globe, Wrench } from 'lucide-react';
+import { Plus, Trash2, Globe, Wrench } from 'lucide-react';
 import type { OpenClawConfig, ToolsConfig } from './types';
 import { resolveConfiguredWebFetchProviders, resolveConfiguredWebSearchProviders } from './toolsProviderDetection';
 import { removeFetchProviderFromConfig, removeSearchProviderFromConfig } from './toolsProviderMutation';

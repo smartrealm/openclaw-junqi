@@ -195,173 +195,12 @@ function formatDuration(ms?: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-/** Cycle progress: how far through current interval (0–100) */
-function cycleProgress(job: CronJob): number {
-  const next = job.state?.nextRunAtMs || (job.nextRun ? new Date(job.nextRun).getTime() : 0);
-  const last = job.state?.lastRunAtMs || (job.lastRun ? new Date(job.lastRun).getTime() : 0);
-  if (!next || !last || next <= last) return 0;
-  const total = next - last;
-  const elapsed = Date.now() - last;
-  return Math.max(0, Math.min(100, Math.round((elapsed / total) * 100)));
-}
 
-/** Hour angle (0–360) for placing a cron job on the 24h clock */
-function scheduleAngle(schedule: any): number | null {
-  if (!schedule) return null;
-  if (schedule.kind === 'cron') {
-    const parts = (schedule.expr || '').split(' ');
-    if (parts.length >= 2) {
-      const hour = +parts[1];
-      if (!isNaN(hour)) return (hour / 24) * 360;
-    }
-  }
-  return null;
-}
 
 // ═══════════════════════════════════════════════════════════
 // ClockFace — 24h circular schedule visualization
 // ═══════════════════════════════════════════════════════════
 
-function ClockFace({ jobs, colorMap, selectedId, onSelect }: {
-  jobs: CronJob[];
-  colorMap: Record<string, string>;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const primaryHex = themeHex('primary');
-  const [nowAngle, setNowAngle] = useState(0);
-  const [timeStr, setTimeStr] = useState('');
-
-  useEffect(() => {
-    const update = () => {
-      const now = new Date();
-      const hours = now.getHours() + now.getMinutes() / 60;
-      setNowAngle((hours / 24) * 360);
-      setTimeStr(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`);
-    };
-    update();
-    const iv = setInterval(update, 30000);
-    return () => clearInterval(iv);
-  }, []);
-
-  const cx = 200, cy = 200, outerR = 170;
-
-  // 24h major ticks (every 3h) + labels
-  const ticks = [0, 3, 6, 9, 12, 15, 18, 21].map(h => {
-    const a = ((h / 24) * 360 - 90) * (Math.PI / 180);
-    return {
-      h,
-      x1: cx + Math.cos(a) * (outerR - 6), y1: cy + Math.sin(a) * (outerR - 6),
-      x2: cx + Math.cos(a) * (outerR + 4), y2: cy + Math.sin(a) * (outerR + 4),
-      lx: cx + Math.cos(a) * (outerR + 16), ly: cy + Math.sin(a) * (outerR + 16),
-    };
-  });
-
-  // Job dots on the clock
-  const jobDots = jobs.filter(j => j.enabled).map(job => {
-    const angle = scheduleAngle(job.schedule);
-    if (angle === null) return null;
-    const rad = (angle - 90) * (Math.PI / 180);
-    const r = outerR - 30;
-    const color = colorMap[job.id] || dataColor(9);
-    const isError = job.state?.lastStatus === 'error';
-    const isSelected = selectedId === job.id;
-    return { x: cx + Math.cos(rad) * r, y: cy + Math.sin(rad) * r, color, job, isError, isSelected };
-  }).filter(Boolean) as { x: number; y: number; color: string; job: CronJob; isError: boolean; isSelected: boolean }[];
-
-  // NOW hand endpoint
-  const handRad = (nowAngle - 90) * (Math.PI / 180);
-  const handX = cx + Math.cos(handRad) * (outerR - 50);
-  const handY = cy + Math.sin(handRad) * (outerR - 50);
-  // Time label near the hand tip
-  const tlR = outerR - 60;
-  const tlx = cx + Math.cos(handRad) * tlR;
-  const tly = cy + Math.sin(handRad) * tlR;
-
-  return (
-    <svg viewBox="0 0 400 400" className="w-full h-full" style={{ maxWidth: 420, maxHeight: 420 }}>
-      <defs>
-        <radialGradient id="mc-cg">
-          <stop offset="0%" stopColor={primaryHex} stopOpacity={0.08} />
-          <stop offset="100%" stopColor={primaryHex} stopOpacity={0} />
-        </radialGradient>
-      </defs>
-
-      {/* Background rings */}
-      <circle cx={cx} cy={cy} r={outerR} fill="none" stroke="rgb(var(--aegis-overlay) / 0.08)" strokeWidth={1} />
-      <circle cx={cx} cy={cy} r={outerR - 40} fill="none" stroke="rgb(var(--aegis-overlay) / 0.05)" strokeWidth={0.5} />
-      <circle cx={cx} cy={cy} r={outerR - 80} fill="none" stroke="rgb(var(--aegis-overlay) / 0.05)" strokeWidth={0.5} />
-
-      {/* Center glow */}
-      <circle cx={cx} cy={cy} r={60} fill="url(#mc-cg)">
-        <animate attributeName="r" values="60;65;60" dur="4s" repeatCount="indefinite" />
-      </circle>
-
-      {/* Heartbeat: continuous dashed ring at inner orbit */}
-      {jobs.some(j => j.enabled && (j.name || '').toLowerCase().includes('heart')) && (
-        <circle cx={cx} cy={cy} r={outerR - 80} fill="none"
-          stroke={primaryHex} strokeWidth={3} strokeOpacity={0.08} strokeDasharray="4 12" />
-      )}
-
-      {/* Hour ticks + labels */}
-      {ticks.map(t => (
-        <g key={t.h}>
-          <line x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="rgb(var(--aegis-overlay) / 0.12)" strokeWidth={1} />
-          <text x={t.lx} y={t.ly} textAnchor="middle" dominantBaseline="central"
-            fontSize={9} fill="rgb(var(--aegis-overlay) / 0.25)" fontFamily="monospace" fontWeight={600}>
-            {t.h}
-          </text>
-        </g>
-      ))}
-
-      {/* Job dots */}
-      {jobDots.map((dot, i) => (
-        <g key={dot.job.id} className="cursor-pointer" onClick={() => onSelect(dot.job.id)}>
-          {/* Glow ring */}
-          <circle cx={dot.x} cy={dot.y} r={12} fill={dot.color} opacity={dot.isSelected ? 0.12 : 0.05}>
-            {!dot.isError && (
-              <animate attributeName="opacity"
-                values={dot.isSelected ? '0.12;0.06;0.12' : '0.05;0.02;0.05'}
-                dur="3s" repeatCount="indefinite" begin={`${i * 0.5}s`} />
-            )}
-          </circle>
-          {/* Main dot */}
-          <circle cx={dot.x} cy={dot.y} r={dot.isSelected ? 7 : 6}
-            fill={dot.color} opacity={dot.isError ? 0.6 : 0.8}
-            stroke={dot.isSelected ? 'white' : 'none'} strokeWidth={dot.isSelected ? 1.5 : 0} strokeOpacity={0.3}>
-            {dot.isError && (
-              <animate attributeName="opacity" values="0.6;0.2;0.6" dur="1.5s" repeatCount="indefinite" />
-            )}
-          </circle>
-          {/* Label */}
-          <text x={dot.x} y={dot.y - 12} textAnchor="middle" fontSize={7}
-            fill={`${dot.color}99`} fontFamily="-apple-system, sans-serif" fontWeight={600}>
-            {(dot.job.name || '').length > 12 ? (dot.job.name || '').substring(0, 11) + '…' : dot.job.name}
-          </text>
-        </g>
-      ))}
-
-      {/* NOW hand */}
-      <line x1={cx} y1={cy} x2={handX} y2={handY}
-        stroke={primaryHex} strokeWidth={2} strokeLinecap="round"
-        style={{ filter: `drop-shadow(0 0 4px ${themeAlpha('primary', 0.5)})` }} />
-      <circle cx={cx} cy={cy} r={5} fill={primaryHex}
-        style={{ filter: `drop-shadow(0 0 6px ${themeAlpha('primary', 0.5)})` }} />
-      {/* Pulse ring */}
-      <circle cx={cx} cy={cy} r={10} fill="none" stroke={primaryHex} strokeWidth={1} opacity={0.2}>
-        <animate attributeName="r" values="10;16;10" dur="3s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.2;0;0.2" dur="3s" repeatCount="indefinite" />
-      </circle>
-
-      {/* Time label near hand tip */}
-      <text x={tlx} y={tly} textAnchor="middle" dominantBaseline="central"
-        fontSize={8} fill={primaryHex} fontFamily="monospace" fontWeight={800} letterSpacing={1}
-        transform={`rotate(${-nowAngle} ${tlx} ${tly})`}>
-        {timeStr}
-      </text>
-    </svg>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════
 // Main Page
@@ -694,7 +533,7 @@ export function CronMonitorPage() {
                 <p className="text-[10px] text-aegis-text-dim mt-1">{t('cron.noJobsHint')}</p>
               </div>
             ) : (
-              sortedJobs.map((job, idx) => {
+              sortedJobs.map((job) => {
                 const color = colorMap[job.id] || dataColor(9);
                 const status = getStatus(job);
                 const isError = status === 'error';

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Pause, Volume2, VolumeX, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
@@ -275,14 +275,6 @@ export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutpu
     audio.playbackRate = next;
     setPlaybackRate(next);
   }, [playbackRate]);
-
-  // ── Replay ──
-  const replay = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = 0;
-    audio.play().then(() => setPlaying(true)).catch(() => {});
-  }, []);
 
   // Progress percentage
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;

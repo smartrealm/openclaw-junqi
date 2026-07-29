@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Trash2, ArrowRight, AlertCircle, CalendarDays, Briefcase, GraduationCap, HeartPulse, House, Tag, Users, type LucideIcon } from 'lucide-react';
+import { X, Trash2, CalendarDays, Briefcase, GraduationCap, HeartPulse, House, Tag, Users, type LucideIcon } from 'lucide-react';
 import { useCalendarStore } from '@/stores/calendarStore';
 import { toDateStr } from './calendarUtils';
 import { ALL_CATEGORIES, REMINDER_PRESETS } from './calendarTypes';

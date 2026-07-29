@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ShieldCheck, RefreshCw, AlertTriangle, KeyRound, AlertCircle, Circle } from 'lucide-react';
+import { ShieldCheck, RefreshCw, AlertTriangle, KeyRound, Circle } from 'lucide-react';
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';

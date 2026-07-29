@@ -21,8 +21,7 @@ interface DayViewProps {
 const HOUR_HEIGHT = 64;
 
 export function DayView({ onEventClick }: DayViewProps) {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.language || 'en';
+  const { t } = useTranslation();
   const { selectedDate, events, settings, filter } = useCalendarStore();
 
   const scrollRef = useRef<HTMLDivElement>(null);

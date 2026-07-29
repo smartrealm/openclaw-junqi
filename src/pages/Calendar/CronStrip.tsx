@@ -22,8 +22,6 @@ export function CronStrip() {
 
   // ── Upcoming cron runs (next 7 days) ──
   const upcomingCrons = useMemo(() => {
-    const today = toDateStr(new Date());
-    const end = toDateStr(new Date(Date.now() + 7 * 86400000));
     return cronJobs
       .filter((j) => j.enabled !== false && j.lastRun)
       .map((j) => {

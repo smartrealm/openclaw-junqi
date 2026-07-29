@@ -2,7 +2,7 @@
 // FileExplorer — tree utilities
 // ═══════════════════════════════════════════════════════════
 
-import type { FsEntry, TreeNode, CreateKind, FlatEntry, FlatInputRow, FlatRow } from "./types";
+import type { FsEntry, TreeNode, CreateKind, FlatEntry } from "./types";
 
 export function pathSeparator(p: string): string {
   return p.includes("\\") ? "\\" : "/";

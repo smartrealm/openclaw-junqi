@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const viewer = readFileSync(new URL("./FileViewer.tsx", import.meta.url), "utf8");
 const previewPane = readFileSync(new URL("./FilePreviewPane.tsx", import.meta.url), "utf8");
 const documentHook = readFileSync(new URL("./useWorkspaceFileDocument.ts", import.meta.url), "utf8");
 const capabilities = readFileSync(new URL("./fileViewerCapabilities.ts", import.meta.url), "utf8");

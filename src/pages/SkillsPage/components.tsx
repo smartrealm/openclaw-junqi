@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
-import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare, AlertCircle, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star, Share2 } from 'lucide-react';
+import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';

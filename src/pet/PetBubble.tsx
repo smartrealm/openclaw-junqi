@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Image, FileArchive, FileCode2, FileText, FolderOpen, type LucideIcon } from 'lucide-react';

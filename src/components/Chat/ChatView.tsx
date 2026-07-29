@@ -1069,31 +1069,6 @@ function ChatViewContent() {
     return renderGroup(index, item.group);
   }, [renderGroup]);
 
-  // ── Header: loading indicator / session start divider ──
-  const Header = useCallback(() => {
-    const meta = historyMetaBySession[activeSessionKey];
-    if (!meta) return null;
-    if (isLoadingOlderRef.current) {
-      return (
-        <div className="flex items-center justify-center py-2">
-          <div className="h-[1px] w-24 bg-gradient-to-r from-transparent via-aegis-primary/40 to-transparent animate-pulse" />
-        </div>
-      );
-    }
-    if (!meta.hasMore && meta.loadedCount > 0) {
-      return (
-        <div className="flex items-center gap-2 px-5 py-3">
-          <div className="flex-1 h-px bg-aegis-border" />
-          <span className="text-[9px] text-aegis-text-dim shrink-0 uppercase tracking-wider">
-            {t('chat.historyExhausted', 'Session start')}
-          </span>
-          <div className="flex-1 h-px bg-aegis-border" />
-        </div>
-      );
-    }
-    return null;
-  }, [activeSessionKey, historyMetaBySession, t]);
-
   // ── Footer: thinking stream + typing indicator inside Virtuoso list ──
   const lastGroup = responseGroups[responseGroups.length - 1];
   const tailBlock = lastGroup?.blocks[lastGroup.blocks.length - 1];

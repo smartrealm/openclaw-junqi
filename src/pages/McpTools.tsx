@@ -10,8 +10,8 @@ import { Wrench, Plug, Clock, CheckCircle, XCircle, Zap } from 'lucide-react';
 import {
   MagnifyingGlass, Globe, Monitor, FileText, PencilSimple,
   TerminalWindow, Gear, Brain, Robot, PaperPlaneRight,
-  ChartBar, Image, SpeakerHigh, WifiHigh, ChatCircle,
-  DeviceMobile, Palette, PuzzlePiece, Lightning,
+  ChartBar, Image, SpeakerHigh, ChatCircle,
+  DeviceMobile, Palette, PuzzlePiece,
 } from '@phosphor-icons/react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useChatStore } from '@/stores/chatStore';

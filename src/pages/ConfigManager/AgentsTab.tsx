@@ -17,7 +17,6 @@ import {
   ToggleSwitch,
   ChipInput,
   ConfirmDialog,
-  MaskedInput,
 } from './components';
 import { ModelDropdown } from '@/components/shared/ModelDropdown';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
@@ -221,7 +220,7 @@ interface AgentRowProps {
   onRemove: () => void;
 }
 
-function AgentRow({ agent, displayIndex, isMain, onChange, onUpdate, onRemove }: AgentRowProps) {
+function AgentRow({ agent, isMain, onUpdate, onRemove }: AgentRowProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);

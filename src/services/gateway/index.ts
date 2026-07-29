@@ -789,7 +789,7 @@ export const gateway = {
   },
 
   // Models & Usage
-  async getSessionStatus(sessionKey = 'agent:main:main') { return connection.request('sessions.list', {}); },
+  async getSessionStatus(_sessionKey = 'agent:main:main') { return connection.request('sessions.list', {}); },
   async getAvailableModels(view: 'default' | 'configured' | 'all' = 'configured') {
     return connection.request('models.list', { view });
   },

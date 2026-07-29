@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Activity, ArrowUpRight, BarChart3, BookOpenText, Bot, Brain, Calendar, Clock, Cpu, Database, FileText, Folder, History, KeyRound, ListChecks, MessageSquare, Plus, Puzzle, Server, Settings, Terminal, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';

@@ -15,7 +15,7 @@ import { marked } from 'marked';
 import {
   ChevronDown, ChevronRight, Wrench, Copy, Check,
   AlertCircle, Loader2, ArrowLeft,
-  User, Sparkles, Bot, Download, Braces,
+  User, Sparkles, Braces,
   MessageSquare, Clock, FileDown,
   Play,
 } from 'lucide-react';

@@ -6,7 +6,7 @@
  * the caller's job. This means it's trivially testable and reusable
  * from both the synchronous boot path and the React render path.
  */
-import type { AegisTheme, ThemeSetting } from './types';
+import type { AegisTheme } from './types';
 import { DEFAULT_THEME } from './constants';
 import { isAegisTheme, isThemeSetting } from './types';
 

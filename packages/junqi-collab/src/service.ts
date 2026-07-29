@@ -167,7 +167,6 @@ const ACTIVE_ATTEMPT_STATUSES = [...CURRENT_PLAN_ACTIVE_ATTEMPT_STATUSES];
 const TERMINAL_RUN_STATUSES = ["COMPLETED", "CANCELLED", "FAILED"];
 const WORK_ITEM_INPUT_STATUSES = ["BLOCKED", "READY", "NEEDS_INTERVENTION", "CANCELLED"];
 const WORK_ITEM_CANCEL_STATUSES = ["BLOCKED", "READY", "DISPATCHING", "RUNNING", "NEEDS_INTERVENTION"];
-const ACTIVE_RUN_STATUSES_SQL = "'COMPLETED','CANCELLED','FAILED'";
 const COMMAND_LEASE_MS = 30_000;
 // Digesting a run and synchronously staging its exports are bounded local
 // work. Use a longer lease for that phase and re-check ownership in the write
@@ -410,15 +409,6 @@ export class CollaborationService {
       return;
     }
     this.scheduleCommandDrainWake(Math.max(0, numberValue(row.available_at) - nowMs()));
-  }
-
-  private scheduleActiveRunReconciliation(): void {
-    if (this.stopped) return;
-    void this.lifecycle.runOnce(
-      "active-run-reconciliation",
-      "active-run reconciliation",
-      async () => this.reconcileActiveRuns(),
-    );
   }
 
   private scheduleRunReconciliation(runId: string): void {
@@ -9704,16 +9694,6 @@ function parseAssignments(value: unknown): Record<string, string> {
       readBoundedRequiredString(agentId, `assignments.${key}`, PERSISTENCE_LIMITS.originAgentIdBytes),
     ];
   }));
-}
-
-function readStringArray(value: unknown, field: string): string[] {
-  assertCondition(Array.isArray(value), "INVALID_REQUEST", `${field} must be an array`);
-  const result = value.map((entry, index) => readString(entry, `${field}[${index}]`));
-  assertBoundedStringArray(result, field, {
-    maxItems: PERSISTENCE_LIMITS.workItemArrayItems,
-    maxItemBytes: 64,
-  });
-  return result;
 }
 
 function readBoundedRequiredString(value: unknown, field: string, maxBytes: number): string {

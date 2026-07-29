@@ -263,7 +263,7 @@ function SessionThinkingPicker({ currentThinking }: { currentThinking: string | 
 
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession } = useChatStore();
+  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
   const skills = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);

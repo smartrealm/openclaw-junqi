@@ -8,7 +8,7 @@ import { useAppStore } from '@/stores/app-store';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSequenceStore';
 import { usePetStore } from '@/stores/petStore';
-import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
+import { startPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { useSetupProgress } from '@/hooks/useSetupProgress';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import clsx from 'clsx';

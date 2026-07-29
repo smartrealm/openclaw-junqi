@@ -10,7 +10,7 @@ import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useCalendarStore } from '@/stores/calendarStore';
 import { ensureGroupFresh } from '@/stores/gatewayDataStore';
-import { getMonthName, toDateStr } from './calendarUtils';
+import { getMonthName } from './calendarUtils';
 import { MonthView } from './MonthView';
 import { WeekView } from './WeekView';
 import { DayView } from './DayView';

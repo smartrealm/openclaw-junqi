@@ -15,7 +15,7 @@ import {
   type KeyboardEvent, type ChangeEvent, type DragEvent,
 } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { File, Folder, X, Image as ImageIcon } from 'lucide-react';
+import { File, Folder, X } from 'lucide-react';
 
 const LARGE_PASTE_THRESHOLD = 2000;
 

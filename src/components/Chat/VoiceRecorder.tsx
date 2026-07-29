@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, Square, X, Send, Loader2, Pause, Play } from 'lucide-react';
+import { X, Send, Loader2, Pause, Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
@@ -21,12 +21,12 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
   const { t } = useTranslation();
   const { language } = useSettingsStore();
   const dir = getDirection(language);
-  const [recording, setRecording] = useState(false);
+  const [, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [paused, setPaused] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nativeBackend, setNativeBackend] = useState(false);
-  const [level, setLevel] = useState(0); // Audio level 0-1 for visualizer
+  const [, setLevel] = useState(0); // Audio level 0-1 for visualizer
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const backendRef = useRef<'browser' | 'native' | null>(null);

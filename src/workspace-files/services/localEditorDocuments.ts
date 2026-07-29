@@ -1,4 +1,5 @@
-import { readFileText, writeFileText } from '@/services/workspaceFs';
+import { invoke } from '@tauri-apps/api/core';
+import { readFileText } from '@/services/workspaceFs';
 import type { WorkspaceFileScope } from '../domain/types';
 import { EditorDocumentManager } from './editorDocumentManager';
 
@@ -7,9 +8,18 @@ const manager = new EditorDocumentManager({
     content: await readFileText(path, scope.rootPath),
     revision: null,
   }),
-  write: async (scope, path, content) => {
-    await writeFileText(path, content, scope.rootPath);
-    return { revision: null };
+  write: async (scope, path, content, expectedContent) => {
+    const written = await invoke<boolean>('write_file_content_if_unchanged', {
+      path,
+      content,
+      expectedContent,
+      projectPath: scope.rootPath,
+    });
+    if (written) return { revision: null };
+    return {
+      revision: null,
+      conflictContent: await readFileText(path, scope.rootPath),
+    };
   },
 });
 const owners = new Map<string, Set<string>>();

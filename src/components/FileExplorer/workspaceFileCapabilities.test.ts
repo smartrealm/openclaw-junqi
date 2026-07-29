@@ -10,7 +10,7 @@ const documentHookSource = readFileSync(new URL("./useWorkspaceFileDocument.ts",
 const tabBarSource = readFileSync(new URL("./FileViewerTabBar.tsx", import.meta.url), "utf8");
 const viewerToolbarSource = readFileSync(new URL("./FileViewerToolbar.tsx", import.meta.url), "utf8");
 const markdownPreviewSource = readFileSync(new URL("./MarkdownPreview.tsx", import.meta.url), "utf8");
-const previewDocumentSource = readFileSync(new URL("./useFilePreviewDocument.ts", import.meta.url), "utf8");
+const localEditorDocumentsSource = readFileSync(new URL("../../workspace-files/services/localEditorDocuments.ts", import.meta.url), "utf8");
 const managerSource = readFileSync(new URL("../../pages/FileManager.tsx", import.meta.url), "utf8");
 const workspacePanelSource = readFileSync(new URL("../Workspace/WorkspacePanel.tsx", import.meta.url), "utf8");
 const editorThemeSource = readFileSync(new URL("../../utils/codeMirrorTheme.ts", import.meta.url), "utf8");
@@ -61,20 +61,12 @@ test("file viewer keeps editor and Markdown preview readable in every applicatio
 });
 
 test("guarded file writes stay registered across the TypeScript and Rust IPC boundary", () => {
-  assert.match(previewDocumentSource, /invoke<boolean>\("write_file_content_if_unchanged", \{[\s\S]*expectedContent:/);
-  // Unmounting must still flush unsaved content. The call goes through a ref so
-  // the handler can depend on nothing and stay a true unmount handler.
-  assert.match(
-    previewDocumentSource,
-    /useEffect\(\(\) => \(\) => \{[\s\S]*void persistLatestContent(?:Ref\.current)?\(\)/,
-  );
-  assert.doesNotMatch(previewDocumentSource, /useEffect\(\(\) => \(\) => \{[\s\S]*void invoke\("write_file_content_if_unchanged"/);
+  assert.match(localEditorDocumentsSource, /invoke<boolean>\('write_file_content_if_unchanged', \{[\s\S]*expectedContent,/);
   assert.match(tauriLibSource, /commands::fs_neu::write_file_content_if_unchanged/);
   assert.match(fsCommandSource, /pub async fn write_file_content_if_unchanged\([\s\S]*expected_content: String/);
 });
 
 test("workspace previews share one typed IPC contract and never edit unknown binary files", () => {
-  assert.match(previewDocumentSource, /invoke<unknown>\("read_file_preview"/);
   assert.match(workspacePanelSource, /<FileViewer/);
   assert.doesNotMatch(workspacePanelSource, /readFilePreview|writeFileText|FileReadOnlyPreview/);
   assert.match(previewPaneSource, /<FileReadOnlyPreview/);

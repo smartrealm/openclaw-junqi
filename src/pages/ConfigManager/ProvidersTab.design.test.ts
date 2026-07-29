@@ -8,13 +8,20 @@ test('the model-service picker uses a quiet two-pane work layout', async () => {
   const source = await read('./ProvidersTab.tsx');
   const picker = source.slice(
     source.indexOf('function PickStep'),
-    source.indexOf('/** Compact card used by the existing providers list'),
+    source.indexOf('export interface ProviderConfigOverride'),
   );
 
   assert.match(picker, /grid-cols-\[148px_minmax\(0,1fr\)\]/);
   assert.match(picker, /providerIcon\.icon/);
   assert.doesNotMatch(picker, /bg-gradient-to-br/);
   assert.doesNotMatch(picker, /rounded-full/);
+});
+
+test('the provider picker does not retain the superseded ProviderCard implementation', async () => {
+  const source = await read('./ProvidersTab.tsx');
+
+  assert.doesNotMatch(source, /function ProviderCard\(/);
+  assert.doesNotMatch(source, /Compact card used by the existing providers list/);
 });
 
 test('the add-service dialog remains compact and exposes both workflow steps', async () => {

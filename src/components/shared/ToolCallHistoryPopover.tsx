@@ -54,13 +54,6 @@ function toolIcon(name: string, size = 11): React.ReactNode {
   return <Box size={size} />;
 }
 
-function classifyCategory(name: string): ToolCallEvent['category'] {
-  const key = name.toLowerCase();
-  if (key.includes('bash')) return 'bash';
-  if (key.includes('edit') || key.includes('write') || key.includes('multiedit')) return 'edit';
-  if (key.includes('read') || key.includes('notebook')) return 'read';
-  return 'other';
-}
 
 // ── Duration formatting (kooky ToolCallActivityPill.formatElapsed) ───────────
 
@@ -78,7 +71,7 @@ export function formatElapsed(ms: number): string {
 // ── Live duration text (kooky LiveDurationText) ──────────────────────────────
 
 function LiveDurationText({ startTime, isRunning }: { startTime: number; isRunning: boolean }) {
-  const [tick, setTick] = useState(0);
+  const [, setTick] = useState(0);
   useEffect(() => {
     if (!isRunning) return;
     const timer = setInterval(() => setTick((n) => n + 1), 1000);
@@ -179,7 +172,7 @@ function CounterSegment({ icon: iconName, count, label }: { icon: string; count:
   );
 }
 
-function ToolCallHistoryPopoverContent({ events, stats, sessionStartedAt, onClose }: PopoverProps) {
+function ToolCallHistoryPopoverContent({ events, stats, onClose }: PopoverProps) {
   // Session elapsed (kooky: from oldest event to now, or to latest completed)
   const sessionElapsed = events.length > 0
     ? (() => {

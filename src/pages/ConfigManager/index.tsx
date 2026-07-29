@@ -7,7 +7,7 @@ import { lazy, Suspense, useEffect, useRef, useState, useCallback, useMemo } fro
 import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { FileJson, CheckCircle2, AlertCircle, Pencil, History, RefreshCw, Bot, Users, MessageSquare, Wrench, SlidersHorizontal, KeyRound, Sparkles, type LucideIcon, Download, Upload, Check } from 'lucide-react';
+import { FileJson, CheckCircle2, AlertCircle, Pencil, History, RefreshCw, Bot, Users, MessageSquare, Wrench, SlidersHorizontal, KeyRound, type LucideIcon, Download, Upload, Check } from 'lucide-react';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { getTemplateById } from './providerTemplates';
@@ -775,7 +775,6 @@ export function ConfigManagerPage() {
       };
     }
     const profiles = next.auth?.profiles ?? {};
-    let mutated = false;
 
     for (const [profileKey, profile] of Object.entries(profiles)) {
       const providerId = (profile as any).provider ?? profileKey.split(':')[0];
@@ -785,7 +784,6 @@ export function ConfigManagerPage() {
       const key = (profile as any).token ?? (profile as any).apiKey ?? (profile as any).key;
       if (!key) continue;
 
-      mutated = true;
       next = {
         ...next,
         env: {
@@ -1042,7 +1040,6 @@ export function ConfigManagerPage() {
   // Count should match what the user sees in the Agents tab.
   const agentCount = hasMainAgent ? rawAgents.length : rawAgents.length + 1;
   const channelCount = config?.channels ? Object.keys(config.channels).length : 0;
-  const modelCount = config?.agents?.defaults?.models ? Object.keys(config.agents.defaults.models).length : 0;
 
   // ── Smart tab badges ──
   const toolCount = [

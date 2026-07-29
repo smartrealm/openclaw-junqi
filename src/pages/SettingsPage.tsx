@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, PawPrint, Info, Clock, Palette, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard, GlassCardEnterMotionScope } from '@/components/shared/GlassCard';
@@ -77,7 +77,7 @@ export function SettingsPageFull() {
   }, [budgetLimit]);
   const { connected, connecting } = useChatStore();
   const prefersDark = usePrefersDark();
-  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, backdropContrastEnabled, setBackdropContrastEnabled, captionScale: petCaptionScale, setCaptionScale: setPetCaptionScale } = usePetStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, backdropContrastEnabled, setBackdropContrastEnabled, captionScale: petCaptionScale, setCaptionScale: setPetCaptionScale } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
   const [petIdea, setPetIdea] = useState('');
   const [preparingPetSkill, setPreparingPetSkill] = useState(false);

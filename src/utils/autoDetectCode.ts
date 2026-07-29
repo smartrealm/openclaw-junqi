@@ -113,7 +113,6 @@ const CODE_KEYWORDS = [
   'console.', 'require(', 'module.',
 ];
 
-const ARABIC = /[\u0600-\u06FF]/;
 
 function scoreLine(line: string): number {
   const trimmed = line.trim();

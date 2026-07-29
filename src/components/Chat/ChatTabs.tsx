@@ -338,7 +338,6 @@ function NewSessionPicker({
   onOpenExisting,
   onOpenMainSession,
   onCreateDesktopSession,
-  openTabs,
   loadingNew,
   newSessions,
   setNewSessions,
@@ -1168,7 +1167,7 @@ export function ChatTabs() {
         {openTabs.map((key) => {
           const isActive = key === activeSessionKey;
           const isMain = key === MAIN_SESSION;
-          const { isMainSession, isDesktopSession } = parseSessionKey(key);
+          const { isMainSession } = parseSessionKey(key);
           const session = sessions.find((s) => s.key === key);
           const label = sessionLabel(session, key, agents, mainAgentName, messagesPerSession[key]);
           const fullLabel = session?.topic

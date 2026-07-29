@@ -29,7 +29,6 @@ import {
   getTerminalAgentAvailabilitySnapshot,
   subscribeTerminalAgentAvailability,
 } from "@/components/Terminal/terminalAgentAvailability";
-import { terminalAgentLauncher } from "@/components/Terminal/terminalAgentCatalog";
 import {
   getTerminalAgentPreferencesSnapshot,
   subscribeTerminalAgentPreferences,
@@ -910,7 +909,6 @@ function ProjectWorkspaceRow({
   compact,
   hasChildren,
   collapsed,
-  depth,
   draggable,
   dragTargetPosition,
   onSelect,

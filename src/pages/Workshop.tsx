@@ -1,16 +1,15 @@
 // ═══════════════════════════════════════════════════════════
-// Workshop — Kanban task management with stats & activity log
+// Workshop — Kanban task management with stats
 //
-// Layout: Header → Stats Row → Completion Bar → Kanban → Timeline
+// Layout: Header → Stats Row → Completion Bar → Kanban
 // Design: Glass cards, priority strips, agent avatars, tags
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { timeAgo as centralTimeAgo } from '@/utils/format';
 import {
-  Plus, X, Search, Filter, Activity, Trash2, ArrowLeft, ArrowRight,
+  Plus, X, Search, Filter, Trash2, ArrowLeft, ArrowRight,
 } from 'lucide-react';
 import {
   SoccerBall, Cube, MagnifyingGlass, Lightbulb,
@@ -18,7 +17,7 @@ import {
 } from '@phosphor-icons/react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { StatusIcon, type StatusIconValue } from '@/components/shared/StatusIcon';
-import { useWorkshopStore, Task, ActivityEntry } from '@/stores/workshopStore';
+import { useWorkshopStore, Task } from '@/stores/workshopStore';
 import clsx from 'clsx';
 import { themeHex, themeAlpha } from '@/utils/theme-colors';
 
@@ -63,9 +62,6 @@ function agentEmoji(name?: string): React.ReactNode {
   if (!name) return <Robot size={14} weight="regular" />;
   return AGENT_ICONS[name.toLowerCase()] ?? <Robot size={14} weight="regular" />;
 }
-
-// ── Time formatting (uses central utils/format.ts) ──────
-const timeAgo = (iso: string) => centralTimeAgo(iso);
 
 // ═══════════════════════════════════════════════════════════
 // Stats Row
@@ -351,94 +347,6 @@ function TaskCard({ task, onMove, onDelete, onProgress }: {
 }
 
 // ═══════════════════════════════════════════════════════════
-// Activity Timeline
-// ═══════════════════════════════════════════════════════════
-
-function ActivityTimeline({ activities }: { activities: ActivityEntry[] }) {
-  const { t } = useTranslation();
-  if (activities.length === 0) return null;
-
-  const dotColor = (type: ActivityEntry['type']) => {
-    if (type === 'completed') return themeHex('success');
-    if (type === 'moved') return themeHex('accent');
-    if (type === 'progress') return themeHex('primary');
-    if (type === 'created') return themeHex('warning');
-    if (type === 'deleted') return themeHex('danger');
-    return themeHex('primary');
-  };
-
-  const describe = (a: ActivityEntry) => {
-    switch (a.type) {
-      case 'created':
-        return (
-          <>
-            <strong>{a.taskTitle}</strong> {t('workshop.activity.addedTo', 'added to')}{' '}
-            <strong>{t('workshop.queue', 'Queue')}</strong>
-          </>
-        );
-      case 'moved':
-        return (
-          <>
-            <strong>{a.taskTitle}</strong> {t('workshop.activity.movedTo', 'moved to')}{' '}
-            <strong>{a.to}</strong>
-          </>
-        );
-      case 'completed':
-        return (
-          <span className="inline-flex items-center gap-1">
-            <strong>{a.taskTitle}</strong> {t('workshop.activity.completed', 'completed')}
-            <StatusIcon status="done" size={11} />
-          </span>
-        );
-      case 'progress':
-        return (
-          <>
-            <strong>{a.taskTitle}</strong> {t('workshop.activity.progress', 'progress')} →{' '}
-            <strong>{a.progress}%</strong>
-          </>
-        );
-      case 'deleted':
-        return (
-          <>
-            <strong>{a.taskTitle}</strong> {t('workshop.activity.deleted', 'deleted')}
-          </>
-        );
-      default:          return <>{a.taskTitle}</>;
-    }
-  };
-
-  const recent = activities.slice(0, 8);
-
-  return (
-    <div
-      className="rounded-[14px] border border-[rgb(var(--aegis-overlay)/0.06)] p-4 mt-4"
-      style={{ background: 'rgb(var(--aegis-overlay) / 0.03)' }}
-    >
-      <div className="flex items-center gap-1.5 text-[12px] font-bold text-aegis-text-secondary mb-3">
-        <Activity size={14} />
-        {t('workshop.recentActivity', 'Recent Activity')}
-      </div>
-      <div className="flex flex-col">
-        {recent.map((a) => (
-          <div
-            key={a.id}
-            className="flex items-start gap-2.5 py-2 border-b border-[rgb(var(--aegis-overlay)/0.03)] last:border-b-0 text-[11px]"
-          >
-            <div className="w-[6px] h-[6px] rounded-full mt-1 shrink-0" style={{ background: dotColor(a.type) }} />
-            <div className="flex-1 text-aegis-text-secondary leading-relaxed [&_strong]:text-aegis-text [&_strong]:font-semibold">
-              {describe(a)}
-            </div>
-            <span className="text-[10px] text-aegis-text-dim font-mono tabular-nums whitespace-nowrap">
-              {timeAgo(a.timestamp)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
 // Add Task Modal
 // ═══════════════════════════════════════════════════════════
 
@@ -565,7 +473,7 @@ function AddTaskModal({ open, onClose, onAdd }: {
 
 export function WorkshopPage() {
   const { t } = useTranslation();
-  const { tasks, activities, addTask, moveTask, deleteTask, reorderInColumn, setProgress, clearCompleted } = useWorkshopStore();
+  const { tasks, addTask, moveTask, deleteTask, reorderInColumn, setProgress, clearCompleted } = useWorkshopStore();
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');

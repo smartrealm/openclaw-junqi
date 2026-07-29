@@ -1,5 +1,5 @@
 // ── DiffFileBlock — renders a single file's diff in unified or split view ─────
-import { useState, useCallback, useMemo } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { DiffFile, DiffViewMode } from "./types";

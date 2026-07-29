@@ -11,7 +11,6 @@ import { debugWarn } from "@/utils/debugLog";
 
 // xterm 6 的自绘滚动条宽度由 overviewRuler.width 复用控制；FitAddon 会用它
 // 计算可用列数，因此必须和 App.css 中的滚动条槽宽保持一致。
-const XTERM_SCROLLBAR_WIDTH = 12;
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 //

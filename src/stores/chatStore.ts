@@ -1103,7 +1103,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const canonicalMessages = coalesceMessagesById(msgs);
     const derived = recomputeDerived(canonicalMessages, targetKey);
     const isActive = targetKey === state.activeSessionKey;
-    const currentSession = state.sessions.find((session) => session.key === targetKey);
     return {
       sessions: updateSession(state.sessions, targetKey, (session) => ({
         ...session,

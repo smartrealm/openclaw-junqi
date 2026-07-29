@@ -65,7 +65,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 export const useWorkshopStore = create<WorkshopState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       tasks: [],
       activities: [],
 

@@ -38,7 +38,6 @@ import {
   OPENCLAW_UPDATE_MAINTENANCE_FINISHED,
   OPENCLAW_UPDATE_MAINTENANCE_STARTED,
 } from '@/services/openclawUpdateLifecycle';
-import { changeLanguage } from '@/i18n';
 import { clearSessionModelPref, getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
 import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
@@ -48,7 +47,6 @@ import { createLatestRequestGate, isSessionDeleted } from '@/utils/sessionLifecy
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
-import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
@@ -106,7 +104,6 @@ export default function App() {
     updateStreamingMessage,
     finalizeStreamingMessage,
     setConnectionStatus,
-    setIsTyping,
     settleSessionRunUi,
     incrementSessionUnread,
     markSessionCompleted,

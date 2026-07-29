@@ -47,7 +47,7 @@ i18n.use(initReactI18next).init({
 });
 
 // Helper: get direction for current language
-export const getDirection = (lang?: string): 'rtl' | 'ltr' => {
+export const getDirection = (_lang?: string): 'rtl' | 'ltr' => {
   return 'ltr';
 };
 

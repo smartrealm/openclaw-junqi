@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo, useS
 import { useNavigate } from 'react-router-dom';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useTranslation } from 'react-i18next';
-import { AppWindow, ArrowLeft, ChevronDown, PanelLeftOpen, PanelLeftClose, PanelLeft, PanelRightOpen, Bell, Search, LayoutGrid } from 'lucide-react';
+import { AppWindow, ArrowLeft, ChevronDown, PanelLeftOpen, PanelLeftClose, PanelLeft, Bell, Search, LayoutGrid } from 'lucide-react';
 import clsx from 'clsx';
 import { invoke } from '@tauri-apps/api/core';
 

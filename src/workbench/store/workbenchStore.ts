@@ -376,7 +376,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   setRightSidebarPanel: (rightSidebarPanel) => set({ rightSidebarPanel }),
   setRightSidebarCollapsed: (rightSidebarCollapsed) => set({ rightSidebarCollapsed }),
 
-  hydrateSession: (snapshot) => set((state) => snapshot ? {
+  hydrateSession: (snapshot) => set(() => snapshot ? {
     hydrated: true,
     writerReady: true,
     hydrationError: null,

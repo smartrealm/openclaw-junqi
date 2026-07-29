@@ -14,6 +14,14 @@ test('scheduled tasks uses a filterable master-detail maintenance layout', async
   assert.doesNotMatch(source, /🚀|⏰|⏱️|⚡|🔄|👈/u);
 });
 
+test('workshop does not retain the unrendered activity timeline', async () => {
+  const source = await read('./Workshop.tsx');
+
+  assert.doesNotMatch(source, /function ActivityTimeline\(/);
+  assert.doesNotMatch(source, /ActivityEntry/);
+  assert.doesNotMatch(source, /tasks, activities,/);
+});
+
 test('channels prioritizes configured instances and shows diagnostics on demand', async () => {
   const source = await read('./ChannelsCenter/index.tsx');
 

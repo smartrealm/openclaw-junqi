@@ -35,7 +35,6 @@ export async function executeRuntimeSelectionTransaction(
   previousMode: GatewayRuntimeMode,
   ports: RuntimeSelectionTransactionPorts,
 ): Promise<RuntimeSelectionOutcome> {
-  const switchedMode = targetMode !== previousMode;
   let modeStaged = false;
   let cause: unknown = new Error(`${targetMode} setup did not complete`);
 

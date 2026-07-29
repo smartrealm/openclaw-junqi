@@ -19,12 +19,12 @@ import { confirm, save } from '@tauri-apps/plugin-dialog';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import {
-  Play, Square, RotateCcw, ChevronDown, ChevronRight, AlertCircle,
-  ExternalLink, GitBranch, GitMerge, Trash2, Clock,
-  Loader2, BarChart3, FileText, CheckCircle2, XCircle,
-  Activity, FileWarning, FilePlus2, Image as ImageIcon, Bookmark, Command,
-  CornerDownLeft, Laptop, GitPullRequestArrow, Plus, RefreshCw,
-  Search, X, Check, Globe, List, Box, SquareTerminal, Pencil, Folder, Download, Copy,
+  Play, Square, RotateCcw, ChevronDown, AlertCircle,
+  GitBranch,
+  Loader2, FileText, CheckCircle2,
+  FileWarning, FilePlus2, Bookmark,
+  Laptop, GitPullRequestArrow, RefreshCw,
+  Search, X, Check, SquareTerminal, Pencil, Download, Copy,
 } from 'lucide-react';
 import {
   Sparkle,
@@ -182,27 +182,7 @@ function InlineUsageWindow({ label, window }: { label: string; window: UsageWind
 
 // ── Kooky ToolCallActivityStrip sub-components ─────────────────────────────
 
-function ToolIcon({ name, size = 11 }: { name: string; size?: number }) {
-  const key = name.toLowerCase();
-  if (key.includes('bash')) return <SquareTerminal size={size} className="shrink-0" />;
-  if (key.includes('edit') || key.includes('write') || key.includes('multiedit')) return <Pencil size={size} className="shrink-0" />;
-  if (key.includes('read')) return <FileText size={size} className="shrink-0" />;
-  if (key.includes('grep') || key.includes('glob') || key.includes('find') || key.includes('search'))
-    return <Search size={size} className="shrink-0" />;
-  if (key.includes('web') || key.includes('fetch')) return <Globe size={size} className="shrink-0" />;
-  if (key.includes('list') || key.includes('ls')) return <List size={size} className="shrink-0" />;
-  return <Box size={size} className="shrink-0" />;
-}
 
-function CounterSeg({ icon, count, label, color }: { icon: string; count: number; label: string; color: string }) {
-  return (
-    <span className="inline-flex items-center gap-1" title={`${label} count: ${count}`}>
-      <ToolIcon name={icon} />
-      <span className="font-semibold" style={{ color }}>{count}</span>
-      <span className="opacity-70">{label}</span>
-    </span>
-  );
-}
 
 // ── FollowUpDock — Plan A input channel (Plan A: only way to talk to agent) ─
 //

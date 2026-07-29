@@ -10,7 +10,7 @@ import i18n from '@/i18n';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid, FileArchive, Share2, X } from 'lucide-react';
 import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
-import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
+import { showAlert } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { PageTransition } from '@/components/shared/PageTransition';

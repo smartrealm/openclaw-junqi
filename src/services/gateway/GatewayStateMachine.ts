@@ -114,7 +114,7 @@ export class GatewayStateMachine {
     return this.apply(rule.from, rule.event, rule.to, rule.actions);
   }
 
-  private apply(from: GatewayState, _event: string, to: GatewayState, actions: GatewayAction[]): TransitionResult {
+  private apply(_from: GatewayState, _event: string, to: GatewayState, actions: GatewayAction[]): TransitionResult {
     this.state = to;
     return { state: to, actions };
   }

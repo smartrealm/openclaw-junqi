@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Monitor, AppWindow, Loader2, Camera, Crosshair, ShieldAlert, ChevronRight, Zap } from 'lucide-react';
+import { X, Monitor, AppWindow, Loader2, Camera, Crosshair, ShieldAlert, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';

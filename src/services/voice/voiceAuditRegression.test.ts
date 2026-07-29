@@ -31,6 +31,12 @@ test('BUG-06 AudioPlayer claims runtime media instead of global auto-play', () =
   assert.doesNotMatch(player, /useSettingsStore\.getState\(\)\.audioAutoPlay/);
 });
 
+test('AudioPlayer does not retain an unreachable replay implementation', () => {
+  const player = read('../../components/Chat/AudioPlayer.tsx');
+  assert.doesNotMatch(player, /const replay =/);
+  assert.doesNotMatch(player, /RotateCcw/);
+});
+
 test('BUG-07 all direct chat send paths interrupt voice first', () => {
   const input = read('../../components/Chat/MessageInput.tsx');
   const chat = read('../../components/Chat/ChatView.tsx');
@@ -98,7 +104,6 @@ test('BUG-15 native recorder holds one slot across replacement and installation'
 
 test('BUG-16 native VAD suppresses assistant playback feedback', () => {
   const wake = read('../../hooks/useVoiceWake.ts');
-  const input = read('../../components/Chat/MessageInput.tsx');
   assert.match(wake, /isVoiceOutputActive/);
   assert.match(wake, /voice\.remoteOutput !== null/);
   assert.match(wake, /suppressNativeCaptureRef\.current = isVoiceOutputActive/);

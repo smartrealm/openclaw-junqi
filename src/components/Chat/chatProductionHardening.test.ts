@@ -95,6 +95,12 @@ test('CHAT-06 history pagination uses chat.history offsets only', () => {
   assert.match(view, /resolveHistoryPageMetadata/);
 });
 
+test('ChatView does not retain an unmounted Virtuoso header', () => {
+  const view = source('src/components/Chat/ChatView.tsx');
+  assert.doesNotMatch(view, /const Header = useCallback/);
+  assert.doesNotMatch(view, /chat\.historyExhausted/);
+});
+
 test('CHAT-07 persona never calls unsupported sessions.patch systemPrompt', () => {
   const gateway = source('src/services/gateway/index.ts');
   const tabs = source('src/components/Chat/ChatTabs.tsx');

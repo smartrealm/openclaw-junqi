@@ -1,17 +1,14 @@
 // ── Git diff parser ───────────────────────────────────────────────────────────
 // Parses unified git diff output into structured DiffFile[] for rendering.
-import type { DiffFile, DiffHunk, DiffHunkLine } from "./types";
+import type { DiffFile, DiffHunk } from "./types";
 
-function pathBasename(filePath: string): string {
-  return filePath.split("/").pop() ?? filePath;
-}
 
-function isBinaryDiff(diff: string, oldPath: string, newPath: string): boolean {
+function isBinaryDiff(diff: string): boolean {
   // Binary diffs contain a "Binary files ... differ" or "GIT binary patch" line
   return /^Binary files/i.test(diff) || /^GIT binary patch/i.test(diff);
 }
 
-function countFileLines(file: DiffFile, diff: string): { additions: number; deletions: number } {
+function countFileLines(file: DiffFile): { additions: number; deletions: number } {
   let add = 0;
   let del = 0;
   for (const hunk of file.hunks) {
@@ -25,7 +22,6 @@ function countFileLines(file: DiffFile, diff: string): { additions: number; dele
 
 export function parseDiff(
   diffText: string,
-  projectPath: string,
 ): DiffFile[] {
   if (!diffText || diffText.trim().length === 0) return [];
   const files: DiffFile[] = [];
@@ -70,7 +66,7 @@ export function parseDiff(
 
     // Detect binary
     const blockText = blockLines.join("\n");
-    if (isBinaryDiff(blockText, oldPath, newPath)) {
+    if (isBinaryDiff(blockText)) {
       binary = true;
     }
 
@@ -148,7 +144,7 @@ export function parseDiff(
 
   // Compute per-file add/delete counts
   for (const file of files) {
-    const counts = countFileLines(file, "");
+    const counts = countFileLines(file);
     file.additions = counts.additions;
     file.deletions = counts.deletions;
   }

@@ -78,7 +78,7 @@ export class AgentsSessionLoader implements ModelLoaderStrategy {
     private getAgents: () => Promise<any>,
   ) {}
 
-  async load(ctx: ModelLoadContext): Promise<ModelEntry[] | null> {
+  async load(_ctx: ModelLoadContext): Promise<ModelEntry[] | null> {
     const modelMap = new Map<string, ModelEntry>();
     try {
       const sessionsResult = await this.getSessions();

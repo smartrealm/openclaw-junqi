@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactCodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { useTranslation } from "react-i18next";
 import { aegisCodeMirrorBaseTheme, getCodeMirrorColorTheme } from "@/utils/codeMirrorTheme";
+import { ExternalFileChangeBanner } from "./ExternalFileChangeBanner";
 import { FileReadOnlyPreview } from "./FileReadOnlyPreview";
 import { FileUnavailableBanner } from "./FileUnavailableBanner";
 import { MarkdownPreview, extractMarkdownHeadings } from "./MarkdownPreview";
@@ -62,6 +63,7 @@ export function FilePreviewPane({
     edit,
     saveNow,
     reloadFromDisk,
+    keepLocalEdits,
   } = useWorkspaceFileDocument({
     filePath,
     fileName,
@@ -141,6 +143,12 @@ export function FilePreviewPane({
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0, minHeight: 0 }}>
       {diskReadError ? <FileUnavailableBanner onRetry={() => void reloadFromDisk()} /> : null}
+      {snapshot?.status === "conflicted" ? (
+        <ExternalFileChangeBanner
+          onReload={() => void reloadFromDisk()}
+          onKeepEdits={keepLocalEdits}
+        />
+      ) : null}
       <div style={{ flex: 1, overflow: "hidden", position: "relative", minWidth: 0, minHeight: 0 }}>
         {loading ? (
           <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "var(--aegis-text-dim)", fontSize: 12 }}>

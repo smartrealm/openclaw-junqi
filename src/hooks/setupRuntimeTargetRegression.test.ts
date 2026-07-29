@@ -28,8 +28,6 @@ const gateway = source('../../src-tauri/src/commands/gateway.rs');
 const repair = source('../../src-tauri/src/commands/openclaw_repair.rs');
 const cli = source('../../src-tauri/src/commands/openclaw_cli.rs');
 const maintenance = source('../../src-tauri/src/commands/maintenance.rs');
-const terminalUnix = source('../../src-tauri/src/commands/terminal_integration/unix.rs');
-const terminalWindows = source('../../src-tauri/src/commands/terminal_integration/windows.rs');
 const runtimePanel = source('../components/settings/ManagedRuntimeSettingsPanel.tsx');
 
 test('BUG-RT-01 restores the persisted Docker target before setup detection', () => {

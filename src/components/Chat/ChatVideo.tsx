@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, Maximize2, X, Play, Pause, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
+import { Download, Maximize2, Play, Pause, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { debugError, debugLog } from '@/utils/debugLog';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
@@ -87,7 +87,7 @@ export function ChatVideo({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
   const [error, setError] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [, setIsFullscreen] = useState(false);
 
   const resolvedSrc = resolveVideoSrc(src);
 
@@ -151,9 +151,9 @@ export function ChatVideo({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
         ref={videoRef}
         src={resolvedSrc}
         className="rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] cursor-pointer transition-all hover:border-[rgb(var(--aegis-overlay)/0.15)]"
-        style={{ 
-          maxWidth, 
-          maxHeight, 
+        style={{
+          maxWidth,
+          maxHeight,
           display: loaded ? 'block' : 'none',
           backgroundColor: 'var(--aegis-bg-frosted-60)'
         }}
@@ -169,7 +169,7 @@ export function ChatVideo({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
 
       {/* Loading placeholder */}
       {!loaded && !error && (
-        <span 
+        <span
           className="rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] flex items-center justify-center"
           style={{ display: 'inline-flex', width: 300, height: 170, background: 'rgb(var(--aegis-overlay) / 0.03)' }}
         >
@@ -179,16 +179,16 @@ export function ChatVideo({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
 
       {/* Play button overlay (when paused) */}
       {loaded && !playing && (
-        <span 
+        <span
           className="absolute inset-0 flex items-center justify-center cursor-pointer"
           style={{ display: 'flex' }}
           onClick={togglePlay}
         >
-          <span 
+          <span
             className="w-14 h-14 rounded-full flex items-center justify-center transition-all hover:scale-110"
-            style={{ 
+            style={{
               display: 'inline-flex',
-              background: 'var(--aegis-bg-frosted-60)', 
+              background: 'var(--aegis-bg-frosted-60)',
               backdropFilter: 'blur(4px)',
               border: '1px solid var(--aegis-border)'
             }}
@@ -200,7 +200,7 @@ export function ChatVideo({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
 
       {/* Hover overlay with buttons */}
       {loaded && hovered && (
-        <span 
+        <span
           className="absolute top-2 right-2 flex items-center gap-1"
           style={{ display: 'inline-flex', animation: 'fadeIn 0.15s ease-out' }}
         >
@@ -237,11 +237,11 @@ export function ChatVideo({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
 
       {/* Bottom controls (visible when hovered and playing) */}
       {loaded && hovered && playing && (
-        <span 
+        <span
           className="absolute bottom-2 left-2 right-2 flex items-center gap-2 px-2 py-1 rounded-lg"
-          style={{ 
+          style={{
             display: 'inline-flex',
-            background: 'var(--aegis-bg-frosted-60)', 
+            background: 'var(--aegis-bg-frosted-60)',
             backdropFilter: 'blur(4px)'
           }}
         >

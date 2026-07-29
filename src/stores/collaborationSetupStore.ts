@@ -319,7 +319,6 @@ export function createHealthConfirmation(
   bundle: CollaborationPluginBundleMetadata,
 ): BootstrapConfirmHealthParams | null {
   const journal = status.journal;
-  const features = capabilities.features ?? {};
   const featureEvidence = capabilities.featureEvidence;
   const capabilityContractValid = collaborationCapabilityIssue(capabilities, bundle) === null;
   if (
@@ -536,7 +535,7 @@ export function createCollaborationSetupStore(
       set({ open: false, requestReason: null });
     },
 
-    refresh: async (options = {}) => {
+    refresh: async (_options = {}) => {
       const generation = ++refreshGeneration;
       const identity = dependencies.getRuntimeIdentity();
       set({
