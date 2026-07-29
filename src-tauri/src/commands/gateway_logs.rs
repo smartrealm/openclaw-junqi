@@ -2,7 +2,7 @@
 //!
 //! Frontend-facing surface for the 200-entry circular log buffer maintained
 //! in `GatewayProcess::logs`. The buffer is filled by:
-//!   - `start_gateway` / `restart_local_gateway` capturing child stdout/stderr
+//!   - `start_gateway` / `restart_gateway` capturing child stdout/stderr
 //!   - Docker log streaming when `start_docker_gateway` runs
 //!   - Synthetic lifecycle events emitted on start/stop/restart transitions
 //!

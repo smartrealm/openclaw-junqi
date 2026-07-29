@@ -5,7 +5,7 @@ import { Activity, AlertCircle, Bot, Check, ChevronDown, Copy, Download, Link2, 
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
-import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { gateway } from '@/services/gateway';
 import type { LogEntry } from '@/api/tauri-commands';
 import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
@@ -487,7 +487,7 @@ export function ChannelsCenterPage() {
     try {
       const merged = await persistChannelsOnly(configPath, next);
       setConfig(merged);
-      const restart = await window.aegis.config.restart().catch((err: unknown) => ({
+      const restart = await gatewayLifecycle.restart('channels-config-save').catch((err: unknown) => ({
         success: false,
         error: err instanceof Error ? err.message : String(err),
       }));
@@ -580,7 +580,7 @@ export function ChannelsCenterPage() {
     if (gatewayActionBusy) return;
     setGatewayActionBusy(true);
     try {
-      const result = await gatewayManager.restart();
+      const result = await gatewayLifecycle.restart('channels-center');
       if (!result?.success) {
         throw new Error(result?.error || 'Gateway restart failed');
       }

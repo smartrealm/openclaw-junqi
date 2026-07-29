@@ -444,7 +444,8 @@ export const tauriChannelConfigRepository: ChannelConfigRepository = {
     }
   },
   async restart() {
-    return window.aegis.config.restart().catch(() => null);
+    const { gatewayLifecycle } = await import('@/services/gateway/gatewayLifecycle');
+    return gatewayLifecycle.restart('channel-config-repository').catch(() => null);
   },
 };
 

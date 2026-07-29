@@ -2847,9 +2847,9 @@ pub async fn handoff_gateway_to_official_service(
     Ok(true)
 }
 
-/// Front-end bridge (`aegis-adapter.ts → gateway.retry()`) invokes the command
-/// named `restart_local_gateway`. Exposed as a thin alias so the existing
-/// bridge keeps working without renaming JS-side code.
+/// Compatibility alias for older frontend integrations. Current ordinary
+/// lifecycle requests use `restart_gateway`; keeping this registered preserves
+/// compatibility without creating a second restart implementation.
 #[tauri::command]
 pub async fn restart_local_gateway(
     app: AppHandle,

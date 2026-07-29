@@ -9,6 +9,7 @@ import { disableGatewayAutostart, enableGatewayAutostart, gatewayAutostartStatus
 import { SetupShell, STEP_META } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
 import { type InstallMode } from "@/stores/setup-navigation";
+import { gatewayLifecycle } from "@/services/gateway/gatewayLifecycle";
 
 export function GatewayAutostartPreference({
   installMode,
@@ -66,7 +67,8 @@ export function GatewayAutostartPreference({
       // 交接托管方:开启后交给系统服务,关闭后回落到桌面托管。
       setPhase(t("setup.autostart.switching", "正在切换 OpenClaw 的运行方式,请稍候…"));
       if (enabled) {
-        await window.aegis.config.restart();
+        const restarted = await gatewayLifecycle.restart("setup-autostart-disabled");
+        if (!restarted.success) throw new Error(restarted.error || "Gateway restart failed");
       } else if (!(await handoffGatewayToOfficialService())) {
         throw new Error(t(
           "setup.autostart.handoffFailed",

@@ -18,6 +18,7 @@ import type { AegisTheme } from '@/theme/types';
 import { setThemeWithTransition } from '@/motion/themeTransition';
 import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
 import { projectSessionActivity } from '@/utils/sessionPresentation';
+import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 
 const THEME_CYCLE: AegisTheme[] = ['aegis-dark', 'aegis-light', 'aegis-eyecare', 'aegis-midnight'];
 
@@ -131,11 +132,9 @@ export function StatusBar() {
     setGatewayPanelOpen(true);
     setShowGatewayResult(false);
     setReconnecting(true);
-    // App owns the complete lifecycle sequence. Keeping this surface event-only
-    // prevents a status-bar click from racing the offline recovery route.
-    window.dispatchEvent(new CustomEvent('aegis:manual-reconnect', {
-      detail: { action: connected ? 'restart' : 'reconnect', source: 'status-bar' },
-    }));
+    void (connected
+      ? gatewayLifecycle.restart('status-bar')
+      : gatewayLifecycle.recover('status-bar'));
   };
 
   const reconnectBusy = isBooting || gatewayOperationActive;

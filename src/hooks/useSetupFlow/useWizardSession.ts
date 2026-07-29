@@ -11,6 +11,7 @@ import {
   GatewayPrivilegedSourceChangedError,
 } from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
+import { gatewayLifecycle } from "@/services/gateway/gatewayLifecycle";
 import { detectGatewayConfig, handoffGatewayToOfficialService } from "@/api/tauri-commands";
 import {
   classifyOpenClawWizardFailure,
@@ -554,7 +555,7 @@ export function useWizardSession({
       // selected-runtime restart safely clears that in-memory lock without
       // changing the selected data directory, workspace, or configuration.
       wizardClientRef.current!.forgetSession();
-      const restarted = await gatewayManager.restart();
+      const restarted = await gatewayLifecycle.restart("wizard-reclaim");
       if (restarted?.success === false) {
         throw new Error(restarted.error || "OpenClaw Gateway restart failed.");
       }

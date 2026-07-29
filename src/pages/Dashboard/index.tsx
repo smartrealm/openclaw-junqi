@@ -29,6 +29,7 @@ import { isIsolatedExecutionSessionKey, projectSessionActivity } from '@/utils/s
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { useSceneRecovery } from '@/motion/sceneRecovery';
 import { gateway } from '@/services/gateway';
+import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useSetupProgress } from '@/hooks/useSetupProgress';
@@ -209,9 +210,7 @@ export function DashboardPage() {
   }, []);
 
   const handleGatewayReconnect = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('aegis:manual-reconnect', {
-      detail: { action: 'reconnect', source: 'dashboard' },
-    }));
+    void gatewayLifecycle.recover('dashboard');
   }, []);
 
   // ── Quick Actions ────────────────────────────────────────────

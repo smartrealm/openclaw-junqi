@@ -1,6 +1,22 @@
 # OpenClaw Gateway Lifecycle Audit
 
-Reviewed against the bundled OpenClaw `2026.7.1` documentation and CLI source on 2026-07-18.
+Reviewed against the bundled OpenClaw `2026.7.1` documentation and CLI source on 2026-07-18. Frontend restart/recovery entry points were re-audited and unified on 2026-07-29.
+
+## 2026-07-29 Frontend Orchestration Resolution
+
+Ordinary frontend restart and recovery requests now enter through `src/services/gateway/GatewayLifecycleCoordinator.ts` and the singleton in `gatewayLifecycle.ts`.
+
+The coordinator defines three explicit intents:
+
+- `reconnect`: reconnect the WebSocket without mutating the Gateway process;
+- `recover`: ensure the selected runtime is healthy and restart only when that fails;
+- `restart`: explicitly restart the selected runtime.
+
+It also owns frontend single-flight, startup-migration lease waiting, common progress events, and structured results. Pages, components, setup preferences, configuration apply, channel binding apply, and Wizard reclaim no longer call `gatewayManager.restart()`, `window.aegis.config.restart()`, or restart IPC directly. `App.tsx` temporarily retains a compatibility listener for third-party or older `aegis:manual-reconnect` producers, but first-party callers no longer dispatch that command event.
+
+The Rust `operation_gate`, selected-runtime ownership checks, readiness contract, and runtime-specific behavior remain authoritative. Collaboration bootstrap and OpenClaw update retain their dedicated transactional commands; routing either through the ordinary coordinator would discard their target/journal or package-replacement invariants.
+
+Automated validation does not establish Windows/macOS service restart or Docker Desktop cold-start behavior on target machines.
 
 ## Critical Findings
 

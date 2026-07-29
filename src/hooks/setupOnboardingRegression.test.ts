@@ -490,7 +490,7 @@ test('BUG-GSO-02 autostart enable completes the official service handoff', () =>
   assert.match(gatewayService, /fn service_status_args\(\)[\s\S]*"gateway", "status", "--json", "--no-probe"/);
   assert.match(gatewayService, /OpenClawRuntimeMode::Native/);
   assert.match(setupPage, /await handoffGatewayToOfficialService\(\)/);
-  assert.match(setupPage, /if \(enabled\)[\s\S]*await window\.aegis\.config\.restart\(\)/);
+  assert.match(setupPage, /if \(enabled\)[\s\S]*gatewayLifecycle\.restart\("setup-autostart-disabled"\)/);
 
   // All three commands are reachable from the frontend.
   for (const command of [

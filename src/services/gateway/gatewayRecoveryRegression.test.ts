@@ -93,18 +93,31 @@ test('BUG-GL04 diagnostics expose lifecycle and runtime ownership together', () 
   assert.match(panel, /runtimeModeLabel/);
 });
 
-test('BUG-GSC01 application lifecycle requests use the manager core', () => {
+test('BUG-GSC01 ordinary application lifecycle requests use one coordinator', () => {
   const app = source('src/App.tsx');
   const channels = source('src/pages/ChannelsCenter/index.tsx');
   const settings = source('src/pages/SettingsPage.tsx');
   const palette = source('src/components/CommandPalette.tsx');
   const setup = sourceDirTs('src/hooks/useSetupFlow');
+  const ordinaryUi = [
+    app,
+    channels,
+    settings,
+    source('src/components/Layout/TopBar.tsx'),
+    source('src/components/Layout/StatusBar.tsx'),
+    source('src/pages/Dashboard/index.tsx'),
+    source('src/pages/ConfigManager/index.tsx'),
+    source('src/pages/AgentHub/AgentSettingsPanel.tsx'),
+    source('src/pages/SetupPage/ReadyScreen.tsx'),
+    setup,
+  ].join('\n');
   assert.doesNotMatch(app, /gateway\.disconnect\(\)/);
   assert.doesNotMatch(app, /window\.aegis\??\.gateway\??\.(?:retry|ensureRunning)\??\.\(/);
   assert.doesNotMatch(app, /gateway\.reconnectWithToken\(/);
-  assert.match(app, /gatewayManager\.ensureRunning\(\)/);
-  assert.match(app, /gatewayManager\.restart\(\)/);
-  assert.match(channels, /gatewayManager\.restart\(\)/);
+  assert.match(ordinaryUi, /gatewayLifecycle\.(?:recover|restart)\(/);
+  assert.doesNotMatch(ordinaryUi, /gatewayManager\.restart\(\)/);
+  assert.doesNotMatch(ordinaryUi, /window\.aegis\.config\.restart\(\)/);
+  assert.doesNotMatch(ordinaryUi, /invoke\(['"]restart_(?:local_)?gateway/);
   assert.match(setup, /gatewayManager\.startForSetup\(\)/);
   assert.match(setup, /gatewayManager\.startDockerForSetup\(\)/);
   assert.doesNotMatch(setup, /await startGateway\(\)/);
@@ -587,14 +600,14 @@ test('BUG-GL11 nonblocking recovery shares the App route and exposes determinate
   const settings = source('src/pages/SettingsPage.tsx');
   const console = source('src-tauri/src/commands/console.rs');
   assert.match(dashboard, /useSetupProgress\('gateway'\)/);
-  assert.match(dashboard, /aegis:manual-reconnect/);
+  assert.match(dashboard, /gatewayLifecycle\.recover\('dashboard'\)/);
   assert.match(dashboard, /role="status"/);
   assert.match(statusBar, /<GatewaySelfRescuePanel/);
   assert.doesNotMatch(dashboard, /gateway\?\.ensureRunning/);
   assert.match(adapter, /gatewayRestartProgressFromLog/);
   assert.doesNotMatch(adapter.slice(adapter.indexOf('consoleUi:'), adapter.indexOf('\n  logs:')), /plugin-shell/);
   assert.match(app, /openControlUiAfterRecoveryRef/);
-  assert.match(settings, /openControlUi:\s*true/);
+  assert.match(settings, /gatewayLifecycle\.recover\('settings-control-ui'\)/);
   assert.match(console, /configured_gateway_port/);
   assert.match(console, /is_gateway_healthy\(port\)/);
 });
@@ -604,7 +617,7 @@ test('BUG-06 stalled boot exposes the complete self-rescue center', () => {
   const panel = source('src/components/GatewaySelfRescuePanel.tsx');
   assert.match(statusBar, /gatewayPanelOpen[\s\S]*<GatewaySelfRescuePanel/);
   assert.match(statusBar, /onOpenLogs=/);
-  assert.match(statusBar, /aegis:manual-reconnect/);
+  assert.match(statusBar, /gatewayLifecycle\.(?:restart|recover)\('status-bar'\)/);
   assert.match(panel, /runOpenClawRepair/);
   assert.match(panel, /disabled=\{actionDisabled\}/);
   assert.match(panel, /<GatewayRescueChat/);
@@ -665,11 +678,12 @@ test('OpenClaw updates reuse boot recovery UI without racing the updater restart
 test('migration-lock failures wait for OpenClaw expiry before another restart attempt', () => {
   const app = source('src/App.tsx');
   const recovery = source('src/services/gateway/openclawRepair.ts');
+  const coordinator = source('src/services/gateway/GatewayLifecycleCoordinator.ts');
 
   assert.match(recovery, /MAX_MIGRATION_RETRY_DELAY_MS = 5 \* 60 \* 1000/);
-  assert.match(app, /gatewayMigrationRetryDelayMs/);
-  assert.match(app, /waitForGatewayMigrationLock/);
-  assert.match(app, /gateway\.progress\.waitingForMigrationLock/);
+  assert.match(coordinator, /gatewayMigrationRetryDelayMs/);
+  assert.match(coordinator, /migrationRetry\.wait\(delayMs\)/);
+  assert.match(coordinator, /gateway\.progress\.waitingForMigrationLock/);
   assert.match(app, /restartGatewayFromBoot\(result\?\.error/);
   assert.match(app, /cancelGatewayMigrationRetry/);
 });

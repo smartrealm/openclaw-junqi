@@ -26,12 +26,8 @@ import {
 } from '@/services/gateway';
 import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
-import {
-  createGatewayMigrationRetryCoordinator,
-  gatewayMigrationRetryDelayMs,
-  type GatewayMigrationRetryCoordinator,
-} from '@/services/gateway/openclawRepair';
 import type { GatewayRecoveryStatus } from '@/services/gateway/recoveryProgress';
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
 import {
@@ -173,10 +169,6 @@ export default function App() {
     previousVoiceSessionRef.current = activeSessionKey;
   }, [activeSessionKey]);
   const manualGatewayRecoveryAwaitingConnectionRef = useRef(false);
-  const gatewayMigrationRetryCoordinatorRef = useRef<GatewayMigrationRetryCoordinator | null>(null);
-  if (!gatewayMigrationRetryCoordinatorRef.current) {
-    gatewayMigrationRetryCoordinatorRef.current = createGatewayMigrationRetryCoordinator();
-  }
   const openControlUiAfterRecoveryRef = useRef(false);
 
   // The local marker is only a cache. Validate the durable installation before
@@ -490,27 +482,10 @@ export default function App() {
   }, []);
 
   const cancelGatewayMigrationRetry = useCallback(() => {
-    return gatewayMigrationRetryCoordinatorRef.current?.cancel() ?? false;
+    return gatewayLifecycle.cancelMigrationWait();
   }, []);
 
-  const waitForGatewayMigrationLock = useCallback(async (diagnostic?: string) => {
-    const delayMs = gatewayMigrationRetryDelayMs(diagnostic || '');
-    if (!delayMs) return true;
-
-    const seconds = Math.max(1, Math.ceil(delayMs / 1_000));
-    addBootRecoveryLog(`OpenClaw startup migration is still active; retrying after ${seconds}s`);
-    emitGatewayProgress(
-      'Waiting for OpenClaw startup migration to finish…',
-      0.36,
-      'gateway.progress.waitingForMigrationLock',
-      { seconds },
-    );
-
-    return gatewayMigrationRetryCoordinatorRef.current?.wait(delayMs) ?? Promise.resolve(true);
-  }, [addBootRecoveryLog, emitGatewayProgress]);
-
-  const restartGatewayFromBoot = useCallback(async (diagnostic?: string) => {
-    if (!(await waitForGatewayMigrationLock(diagnostic))) return false;
+  const restartGatewayFromBoot = useCallback(async (diagnostic?: string, source = 'app-recovery') => {
     if (!window.aegis?.gateway?.retry) {
       const message = 'Gateway restart is unavailable in this runtime.';
       manualGatewayRecoveryAwaitingConnectionRef.current = false;
@@ -520,15 +495,13 @@ export default function App() {
       return false;
     }
     addBootRecoveryLog('Restarting Gateway service…');
-    emitGatewayProgress('Restarting OpenClaw Gateway…', 0.15, 'gateway.progress.restart');
     try {
-      const result = await gatewayManager.restart();
+      const result = await gatewayLifecycle.restart(source, diagnostic);
       if (result?.superseded) return false;
       if (result?.success === false) {
         throw new Error(result.error || 'Gateway restart failed');
       }
       addBootRecoveryLog('Gateway restart command completed');
-      emitGatewayProgress('Gateway service restarted, reconnecting…', 0.94, 'gateway.progress.restartDone');
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -549,7 +522,7 @@ export default function App() {
       }
       return false;
     }
-  }, [addBootRecoveryLog, emitGatewayProgress, waitForGatewayMigrationLock]);
+  }, [addBootRecoveryLog, emitGatewayProgress]);
 
   // During boot, separate two different failures:
   // 1. Gateway process is running, but the WebSocket handshake is late.
@@ -1088,9 +1061,8 @@ export default function App() {
     };
     window.addEventListener('aegis:sessions-changed', handleSessionsChanged);
 
-    // Every visible recovery entry point dispatches this event. App owns the
-    // process lifecycle so Dashboard and StatusBar cannot race each
-    // other with separate ensure/restart sequences.
+    // Compatibility bridge for extensions or older surfaces that still emit
+    // the former command event. First-party callers use gatewayLifecycle.
     const handleManualReconnect = (event: Event) => {
       const detail = (event as CustomEvent<{
         action?: string;
@@ -1109,34 +1081,27 @@ export default function App() {
         bootRecoveryStartedRef.current = false;
         addBootRecoveryLog(`Gateway recovery requested (${source}, ${action})`);
         try {
-          if (action === 'restart') {
-            await restartGatewayFromBoot(gatewayBootErrorRef.current ?? undefined);
-            return;
-          }
-
-          emitGatewayProgress('Reconnecting to OpenClaw Gateway…', 0.10, 'gateway.progress.reconnect');
-          emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.45, 'gateway.progress.detectConnectSync');
-          const result = await gatewayManager.ensureRunning();
-          if (result?.superseded) return;
-          if (result?.healthy) cancelGatewayMigrationRetry();
-          addBootRecoveryLog(result?.healthy
-            ? `Gateway healthy (${result.mode ?? 'native'}) — reconnecting`
-            : 'ensure_gateway_running returned unhealthy — restarting');
-          emitGatewayProgress(
-            result?.healthy
-              ? `Gateway healthy (${result.mode ?? 'native'}), reconnecting…`
-              : 'ensure_gateway_running status abnormal, restarting…',
-            result?.healthy ? 0.75 : 0.45,
-            result?.healthy ? 'gateway.progress.gatewayHealthy' : 'gateway.progress.ensureUnhealthy',
-          );
-          if (!result?.healthy) {
-            await restartGatewayFromBoot(result?.error);
-          }
+          const result = action === 'restart'
+            ? await gatewayLifecycle.restart(source, gatewayBootErrorRef.current ?? undefined)
+            : await gatewayLifecycle.recover(source, gatewayBootErrorRef.current ?? undefined);
+          if (result.superseded) return;
+          if (!result.success) throw new Error(result.error || 'Gateway recovery failed');
+          cancelGatewayMigrationRetry();
+          addBootRecoveryLog(result.mode
+            ? `Gateway healthy (${result.mode}) — reconnecting`
+            : 'Gateway restart command completed');
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          addBootRecoveryLog(`ensure_gateway_running failed: ${message}`);
-          emitGatewayProgress('ensure_gateway_running call failed, restarting…', 0.45, 'gateway.progress.ensureFailed');
-          await restartGatewayFromBoot(message);
+          manualGatewayRecoveryAwaitingConnectionRef.current = false;
+          addBootRecoveryLog(`Gateway recovery failed: ${message}`);
+          emitGatewayProgress(
+            `Gateway recovery failed: ${message}`,
+            1,
+            'gateway.progress.restartFailed',
+            { error: message },
+            'failed',
+          );
+          setGatewayBootError(message);
         }
       })().finally(() => {
         manualGatewayRecoveryInFlightRef.current = false;
@@ -1186,10 +1151,9 @@ export default function App() {
 
   const handleGatewayRetry = useCallback(() => {
     setGatewayRetrying(true);
-    window.dispatchEvent(new CustomEvent('aegis:manual-reconnect', {
-      detail: { action: 'restart', source: 'gateway-error-screen' },
-    }));
-  }, []);
+    manualGatewayRecoveryAwaitingConnectionRef.current = true;
+    void restartGatewayFromBoot(gatewayBootErrorRef.current ?? undefined, 'gateway-error-screen');
+  }, [restartGatewayFromBoot]);
 
   const handleGatewayRecovered = useCallback(() => {
     setGatewayBootError(null);

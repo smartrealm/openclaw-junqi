@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
+import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import {
   Activity,
   AlertTriangle,
@@ -208,7 +209,8 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
       if (autostart.enabled) {
         const next = await disableGatewayAutostart();
         setAutostart(next);
-        await invoke('restart_local_gateway');
+        const restarted = await gatewayLifecycle.restart('gateway-autostart-disabled');
+        if (!restarted.success) throw new Error(restarted.error || 'Gateway restart failed');
       } else {
         const next = await enableGatewayAutostart();
         setAutostart(next);

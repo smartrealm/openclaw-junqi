@@ -72,6 +72,6 @@ test('quick actions expose real product routes in addition to compaction', () =>
 test('Gateway startup stays inside the dashboard instead of blocking the workbench', () => {
   assert.match(dashboard, /const gatewayConnecting = !connected/);
   assert.match(dashboard, /role="status"/);
-  assert.match(dashboard, /aegis:manual-reconnect/);
+  assert.match(dashboard, /gatewayLifecycle\.recover\('dashboard'\)/);
   assert.match(dashboard, /dashboard\.gatewayConnectingDescription/);
 });

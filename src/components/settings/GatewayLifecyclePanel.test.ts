@@ -7,7 +7,7 @@ const source = readFileSync(new URL('./GatewayLifecyclePanel.tsx', import.meta.u
 test('Gateway lifecycle settings reuse the official autostart transaction', () => {
   assert.match(source, /gatewayAutostartStatus/);
   assert.match(source, /enableGatewayAutostart\(\)[\s\S]*handoffGatewayToOfficialService\(\)/);
-  assert.match(source, /disableGatewayAutostart\(\)[\s\S]*invoke\('restart_local_gateway'\)/);
+  assert.match(source, /disableGatewayAutostart\(\)[\s\S]*gatewayLifecycle\.restart\('gateway-autostart-disabled'\)/);
   assert.match(source, /variant === 'full' \? gatewayAutostartStatus\(\)/);
 });
 

@@ -94,6 +94,7 @@ docs/
 - [Vite 生产分包审计](quality/vite-chunking-audit-2026-07-28.md)
 - [工作台可靠性审计](quality/workspace-reliability-audit-2026-07-29.md)
 - [无引用与废弃代码清理验证](quality/dead-code-cleanup-validation-2026-07-29.md)
+- [Gateway 生命周期审计与前端重启协调器](gateway/openclaw-gateway-lifecycle-audit.md)
 
 ## 产品设计草案
 

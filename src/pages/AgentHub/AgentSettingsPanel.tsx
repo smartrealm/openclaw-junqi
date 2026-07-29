@@ -20,6 +20,7 @@ import {
   Search, FolderOpen, Clock, Zap, MessageSquare, Puzzle, Plus, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { gateway } from '@/services/gateway';
+import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { themeHex, themeAlpha } from '@/utils/theme-colors';
@@ -646,7 +647,7 @@ export function AgentSettingsPanel({
       const next = updateChannelBinding(channelConfig, group.id, account, nextAgentId);
       const merged = await persistChannelsOnly(channelConfigPath, next);
       setChannelConfig(merged);
-      const restart = await window.aegis.config.restart().catch((err: unknown) => ({
+      const restart = await gatewayLifecycle.restart('agent-channel-binding').catch((err: unknown) => ({
         success: false,
         error: err instanceof Error ? err.message : String(err),
       }));

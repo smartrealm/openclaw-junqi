@@ -12,6 +12,7 @@ import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { getTemplateById } from './providerTemplates';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
+import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import {
   summarizeOfficialProviderProbe,
   type ProviderProbeRequest,
@@ -459,10 +460,7 @@ export function ConfigManagerPage() {
 
       // Restart gateway after successful save
       try {
-        const restartResult = await window.aegis.config.restart();
-        if (restartResult.method === 'gateway-restart') {
-          window.dispatchEvent(new CustomEvent('aegis:gateway-restart-requested'));
-        }
+        const restartResult = await gatewayLifecycle.restart('config-manager');
         if (restartResult.success) {
           if (restartResult.requiresAppRestart) {
             setError('Config saved. Restart the desktop app to apply shell-level changes.');

@@ -21,6 +21,7 @@ import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { notifications } from '@/services/notifications';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { PET_SKIN_OPTIONS } from '@/pet/skins';
@@ -326,9 +327,9 @@ export function SettingsPageFull() {
       t('settings.controlUi', 'Control UI'),
       t('settings.controlUiRecovering', 'Gateway 正在恢复，连接完成后将自动打开 Control UI。'),
     );
-    window.dispatchEvent(new CustomEvent('aegis:manual-reconnect', {
-      detail: { action: 'reconnect', source: 'settings-control-ui', openControlUi: true },
-    }));
+    void gatewayLifecycle.recover('settings-control-ui').then((result) => {
+      if (result.success) void window.aegis?.consoleUi?.open();
+    });
   };
 
   const copyDiagnosticInfo = async () => {

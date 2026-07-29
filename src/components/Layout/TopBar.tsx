@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { useTranslation } from 'react-i18next';
 import { AppWindow, ArrowLeft, ChevronDown, PanelLeftOpen, PanelLeftClose, PanelLeft, Bell, Search, LayoutGrid } from 'lucide-react';
 import clsx from 'clsx';
@@ -395,7 +395,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
       useChatStore.getState().openTab(workingDisplayKey);
       navigate('/chat');
     } else if (status === 'disconnected') {
-      void gatewayManager.restart();
+      void gatewayLifecycle.recover('top-bar');
     }
   }, [navigate, status, workingDisplayKey]);
 
