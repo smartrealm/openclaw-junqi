@@ -109,9 +109,9 @@ function readProviderConfigApiKey(config: GatewayRuntimeConfig, providerConfig: 
   return trimmed;
 }
 
-function resolveApi(template?: ProviderTemplate): RescueProviderApi | null {
-  if (template?.api === 'anthropic-messages') return 'anthropic-messages';
-  if (!template || template.api === 'openai-completions') return 'openai-compatible';
+function resolveApi(providerConfig: Record<string, any> | undefined): RescueProviderApi | null {
+  if (providerConfig?.api === 'anthropic-messages') return 'anthropic-messages';
+  if (providerConfig?.api === 'openai-completions') return 'openai-compatible';
   return null;
 }
 
@@ -132,10 +132,13 @@ function buildTargetFromProvider(
   if (!modelId) return null;
   const providerConfig = getProviderConfig(config, providerId);
   const template = getTemplateById(providerId);
-  const api = resolveApi(template);
+  // Rescue runs while the Runtime may be unavailable, so it can only use
+  // explicit values already present in the selected config. Template defaults
+  // are presentation metadata and must never become Runtime facts.
+  const api = resolveApi(providerConfig);
   if (!api) return null;
 
-  const baseUrl = String(providerConfig?.baseUrl ?? template?.baseUrl ?? '').trim();
+  const baseUrl = String(providerConfig?.baseUrl ?? '').trim();
   if (!baseUrl) return null;
 
   const profileKey = findProfileKey(config, providerId);

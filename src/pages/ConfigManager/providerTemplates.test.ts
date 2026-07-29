@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PROVIDER_TEMPLATES, UI_CATALOG, getTemplateById } from './providerTemplates';
-import { OPENCLAW_API_PROTOCOLS } from '@/types/openclawApiProtocol';
 import { AUTH_MODE_ORDER } from '@/types/providerAuthMode';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
 
@@ -15,11 +14,10 @@ test('provider templates only use current JunQi auth modes', () => {
   }
 });
 
-test('provider templates only use OpenClaw runtime API protocols', () => {
-  const allowed = new Set(OPENCLAW_API_PROTOCOLS);
+test('provider template protocol suggestions are non-empty opaque Runtime values', () => {
   for (const template of PROVIDER_TEMPLATES) {
-    if (!template.api) continue;
-    assert.ok(allowed.has(template.api), `${template.id} has invalid api protocol ${template.api}`);
+    if (template.api === undefined) continue;
+    assert.ok(template.api.trim(), `${template.id} has a blank protocol suggestion`);
   }
 });
 

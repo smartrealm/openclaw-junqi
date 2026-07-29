@@ -6,6 +6,7 @@ import {
   assessChannelAccountReadiness,
   buildChannelGroups,
   channelAccountEditorValues,
+  getChannelAgentOptions,
   getRequiredCredentialFields,
   persistChannelsOnlyWithRepository,
   migrateLegacyChannelBindings,
@@ -286,7 +287,7 @@ describe('channelConfig', () => {
     );
   });
 
-  test('official runtime readiness still requires an agent binding', () => {
+  test('BUG-CRA-07 an account without an explicit binding routes to the Runtime default agent', () => {
     const account = {
       id: 'default',
       label: 'Default',
@@ -296,8 +297,25 @@ describe('channelConfig', () => {
     };
     assert.equal(
       assessChannelAccountReadiness('feishu', account, { configured: true, enabled: true }).state,
-      'unbound',
+      'ready',
     );
+  });
+
+  test('BUG-CRA-07 binding options include OpenClaw implicit main and selected default agents', () => {
+    assert.deepEqual(getChannelAgentOptions(cfg({ agents: { defaults: {} } })), [
+      { id: 'main', name: 'main', isDefault: true },
+    ]);
+    assert.deepEqual(getChannelAgentOptions(cfg({
+      agents: {
+        list: [
+          { id: 'research', name: 'Research' },
+          { id: 'support', name: 'Support', default: true },
+        ],
+      },
+    })), [
+      { id: 'research', name: 'Research', isDefault: false },
+      { id: 'support', name: 'Support', isDefault: true },
+    ]);
   });
 
   test('account editor values retain official root binding selection', () => {

@@ -1,3 +1,4 @@
+use crate::commands::docker::{OPENCLAW_CONTAINER_CONFIG_PATH, OPENCLAW_CONTAINER_STATE_DIR};
 use crate::paths;
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode};
 use crate::state::runtime_identity::{
@@ -10,9 +11,6 @@ use sha2::{Digest, Sha256};
 use std::path::{Component, Path, PathBuf};
 use tauri::State;
 use url::Url;
-
-const DOCKER_STATE_DIR: &str = "/home/node/.openclaw";
-const DOCKER_CONFIG_PATH: &str = "/home/node/.openclaw/openclaw.json";
 
 #[derive(Debug, Clone)]
 struct RuntimeEvidence {
@@ -323,8 +321,8 @@ fn runtime_evidence(state: &GatewayProcess) -> Result<RuntimeEvidence, String> {
             local_config_path: host_config_path.clone(),
             accepted_observed_paths: vec![
                 (
-                    PathBuf::from(DOCKER_STATE_DIR),
-                    PathBuf::from(DOCKER_CONFIG_PATH),
+                    PathBuf::from(OPENCLAW_CONTAINER_STATE_DIR),
+                    PathBuf::from(OPENCLAW_CONTAINER_CONFIG_PATH),
                 ),
                 (host_state_dir, host_config_path),
             ],
@@ -522,12 +520,12 @@ mod tests {
     #[test]
     fn docker_accepts_the_container_visible_state_path() {
         let mut hello = observation("conn-docker");
-        hello.state_dir = Some(DOCKER_STATE_DIR.to_string());
-        hello.config_path = Some(DOCKER_CONFIG_PATH.to_string());
+        hello.state_dir = Some(OPENCLAW_CONTAINER_STATE_DIR.to_string());
+        hello.config_path = Some(OPENCLAW_CONTAINER_CONFIG_PATH.to_string());
         let mut docker_evidence = evidence(GatewayRuntimeMode::Docker);
         docker_evidence.accepted_observed_paths = vec![(
-            PathBuf::from(DOCKER_STATE_DIR),
-            PathBuf::from(DOCKER_CONFIG_PATH),
+            PathBuf::from(OPENCLAW_CONTAINER_STATE_DIR),
+            PathBuf::from(OPENCLAW_CONTAINER_CONFIG_PATH),
         )];
         let identity = resolve_from_evidence(
             hello,

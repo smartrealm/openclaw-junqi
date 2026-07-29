@@ -28,3 +28,6 @@
 12. BUG-ONB-49: use official `wizard.status` recovery, bound Wizard and queued
     privileged requests, preserve healthy Gateway connections, and expose
     connection phases before producing and launching a new candidate build.
+13. BUG-CRA-07: align channel readiness and binding selectors with the selected
+    Runtime's implicit/default-agent routing after the official Wizard, while
+    preserving explicit root bindings as optional overrides.

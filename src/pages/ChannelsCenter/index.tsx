@@ -16,6 +16,7 @@ import {
   addChannelAccount,
   buildChannelGroups,
   channelAccountEditorValues,
+  getChannelAgentOptions,
   persistChannelsOnly,
   removeChannelAccount,
   removeChannel,
@@ -241,9 +242,11 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
                 onChange={(e) => setField('agentId', e.target.value)}
                 className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-aegis-bg px-3 py-2 text-[12px] text-aegis-text focus:outline-none focus:border-aegis-primary/40"
               >
-                <option value="">{t('channelsCenter.noBinding', 'No bound agent')}</option>
+                <option value="">{t('channelsCenter.defaultAgentRoute', 'Runtime default agent (no override)')}</option>
                 {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>{agent.name || agent.id}</option>
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name || agent.id}{agent.default ? ` · ${t('channelsCenter.defaultAgent', 'default')}` : ''}
+                  </option>
                 ))}
               </select>
             </Field>
@@ -432,7 +435,13 @@ export function ChannelsCenterPage() {
     })),
     [config, officialChannelIds, runtimeSnapshot?.channelLabels, t]
   );
-  const agents = useMemo(() => (config?.agents?.list ?? []) as AgentConfig[], [config]);
+  const agents = useMemo<AgentConfig[]>(() => (
+    getChannelAgentOptions(config).map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      default: agent.isDefault,
+    }))
+  ), [config]);
   const accountCount = groups.reduce((sum, group) => sum + group.accounts.length, 0);
   const readinessSummary = useMemo(() => {
     const summary = summarizeChannelReadiness([]);
@@ -1113,9 +1122,11 @@ export function ChannelsCenterPage() {
                                     disabled={saving}
                                     className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-aegis-bg px-3 py-2 text-[12px] text-aegis-text focus:outline-none focus:border-aegis-primary/40"
                                   >
-                                    <option value="">{t('channelsCenter.noBinding', 'No bound agent')}</option>
+                                    <option value="">{t('channelsCenter.defaultAgentRoute', 'Runtime default agent (no override)')}</option>
                                     {agents.map((agent) => (
-                                      <option key={agent.id} value={agent.id}>{agent.name || agent.id}</option>
+                                      <option key={agent.id} value={agent.id}>
+                                        {agent.name || agent.id}{agent.default ? ` · ${t('channelsCenter.defaultAgent', 'default')}` : ''}
+                                      </option>
                                     ))}
                                   </select>
                                   </div>

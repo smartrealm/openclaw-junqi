@@ -152,6 +152,24 @@ screen. Retrying cannot resolve a prerequisite that still is not installed.
 **Target:** classify missing Git/Node as prerequisite failures and route them to
 their existing download/instruction screens without collapsing other failures.
 
+### BUG-CRA-07 - Wizard channels appear unbound and the implicit main agent cannot be selected
+
+**Severity:** P1
+
+The official onboarding Wizard writes channel credentials but does not write
+root `bindings` for the implicit default agent. OpenClaw 2026.7.1 routes an
+unmatched channel/account to `resolveDefaultAgentId(cfg)`, which is the implicit
+`main` agent when `agents.list` is absent. JunQi instead treated missing root
+bindings as unusable and built its binding selector only from `agents.list`, so
+a fresh Windows setup showed an empty agent list and an alarming "unbound"
+state even though Runtime routing remained valid.
+
+**Target:** mirror the selected Runtime default-agent semantics in the channel
+projection: expose implicit `main` when no explicit list exists, identify the
+Runtime-selected default when a list does exist, describe an empty root binding
+as "use Runtime default" rather than "no target", and keep explicit root
+bindings as optional route overrides.
+
 ### BUG-ONB-49 - Wizard reconnect can remain pending forever
 
 **Severity:** P1
@@ -205,7 +223,20 @@ id so Retry can resume without replaying secrets or accepted answers.
   budgets, and privileged queue deadlines that begin when the caller queues.
 - Source-contract tests that a healthy Wizard entry does not force a Gateway
   reconnect and that connection phases are observable.
+- Behavioral tests that a fresh Wizard config exposes implicit `main`, that an
+  explicit Runtime default is marked correctly, and that a healthy account
+  without an override binding remains routable.
 - Full frontend test suite and production Tauri packaging.
+
+## 2026-07-29 Windows channel-binding follow-up
+
+BUG-CRA-07 was reproduced from the post-Wizard Windows symptom and verified
+against installed OpenClaw 2026.7.1-2 sources:
+`resolveAgentRoute()` falls through to `resolveDefaultAgentId()`, while an empty
+`agents.list` resolves to `main`. JunQi's previous `config.agents.list ?? []`
+selector therefore omitted the valid implicit agent and its readiness model
+contradicted Runtime behavior. The channel projection and selectors now follow
+the Runtime fallback without writing a speculative binding.
 
 ## 2026-07-27 Validation
 

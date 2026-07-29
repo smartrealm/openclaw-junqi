@@ -33,6 +33,7 @@ import { debugLog, debugWarn } from '@/utils/debugLog';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { readConfigNavigationIntent, type ConfigTab } from './configNavigation';
 import { migrateLegacyChannelBindings } from '@/services/channelConfig';
+import { smartMerge } from './configMerge';
 
 type Tab = ConfigTab;
 
@@ -75,76 +76,6 @@ const ToolsTab = lazy(() => import('./ToolsTab').then((module) => ({ default: mo
 const AdvancedTab = lazy(() => import('./AdvancedTab').then((module) => ({ default: module.AdvancedTab })));
 const SecretsTab = lazy(() => import('./SecretsTab').then((module) => ({ default: module.SecretsTab })));
 
-// ─────────────────────────────────────────────────────────────
-// smartMerge — applies only the user's changes (diff between
-// original and current) on top of the latest disk version.
-// This preserves any CLI / external edits made after page load.
-//
-// Rules:
-//   current[key] !== original[key]  → user changed it   → use current
-//   current[key] === original[key]  → user didn't touch  → use disk  (preserves external changes)
-//   key in disk but NOT in original → external addition  → preserve
-//   key in original but NOT in current → user deleted    → omit
-//   Arrays are treated as atomic (no element-level merge)
-// ─────────────────────────────────────────────────────────────
-function smartMerge(disk: any, original: any, current: any): any {
-  // Handle non-object / null cases
-  if (disk === null || disk === undefined) return current;
-  if (
-    typeof disk !== 'object' ||
-    typeof original !== 'object' ||
-    typeof current !== 'object'
-  ) {
-    return JSON.stringify(original) !== JSON.stringify(current) ? current : disk;
-  }
-
-  // Arrays — treat as atomic (order matters, e.g. agents.list)
-  if (Array.isArray(current) || Array.isArray(disk)) {
-    return JSON.stringify(original) !== JSON.stringify(current) ? current : disk;
-  }
-
-  // Treat null original as empty object so deletion semantics work correctly
-  if (original === null || original === undefined) original = {};
-
-  const result: Record<string, any> = {};
-
-  const allKeys = new Set([
-    ...Object.keys(disk),
-    ...Object.keys(current),
-  ]);
-
-  for (const key of allKeys) {
-    const inDisk     = key in disk;
-    const inOriginal = key in (original || {});
-    const inCurrent  = key in current;
-
-    if (inCurrent && !inOriginal && !inDisk) {
-      // User added a brand-new key → include it
-      result[key] = current[key];
-    } else if (!inCurrent && inOriginal) {
-      // User deleted this key → respect the deletion
-      continue;
-    } else if (inDisk && !inCurrent && !inOriginal) {
-      // External addition (not in original, not in current) → preserve it
-      result[key] = disk[key];
-    } else if (inCurrent && inDisk) {
-      // Both exist — recurse
-      result[key] = smartMerge(disk[key], (original || {})[key], current[key]);
-    } else if (inCurrent) {
-      result[key] = current[key];
-    } else if (inDisk) {
-      result[key] = disk[key];
-    }
-  }
-
-  return result;
-}
-
-function hasAnyAuthProfile(config: GatewayRuntimeConfig, providerId: string): boolean {
-  const profiles = config.auth?.profiles ?? {};
-  return Object.keys(profiles).some((k) => k.split(':')[0] === providerId);
-}
-
 /// Compare two configs to detect whether the user changed *which* provider
 /// or its credentials (env vars, base URLs, models.providers). Used to
 /// decide whether the WebSocket needs a full reconnect after save — a
@@ -176,75 +107,6 @@ function detectProviderChange(
   }
 
   return false;
-}
-
-function resolveConfiguredWebSearchProviders(config: GatewayRuntimeConfig): string[] {
-  const envVars = config.env?.vars ?? {};
-  const has = (k: string) => Boolean(String(envVars[k] ?? '').trim());
-  const entries = config.plugins?.entries ?? {};
-  const hasPlugin = (pluginId: string, field: 'apiKey' | 'baseUrl') =>
-    Boolean(String(entries[pluginId]?.config?.webSearch?.[field] ?? '').trim());
-  const set = new Set<string>();
-  if (has('BRAVE_API_KEY') || hasPlugin('brave', 'apiKey')) set.add('brave');
-  if (has('EXA_API_KEY') || hasPlugin('exa', 'apiKey')) set.add('exa');
-  if (has('FIRECRAWL_API_KEY') || hasPlugin('firecrawl', 'apiKey')) set.add('firecrawl');
-  if (has('GEMINI_API_KEY') || hasAnyAuthProfile(config, 'google') || hasPlugin('google', 'apiKey')) set.add('gemini');
-  if (has('XAI_API_KEY') || hasAnyAuthProfile(config, 'xai') || hasPlugin('xai', 'apiKey')) set.add('grok');
-  if (has('KIMI_API_KEY') || has('MOONSHOT_API_KEY') || hasAnyAuthProfile(config, 'moonshot') || hasAnyAuthProfile(config, 'kimi')) set.add('kimi');
-  if (has('MINIMAX_CODE_PLAN_KEY') || has('MINIMAX_CODING_API_KEY') || has('MINIMAX_API_KEY') || hasAnyAuthProfile(config, 'minimax')) set.add('minimax');
-  if (has('PERPLEXITY_API_KEY') || has('OPENROUTER_API_KEY') || hasAnyAuthProfile(config, 'perplexity')) set.add('perplexity');
-  if (has('SEARXNG_BASE_URL') || hasPlugin('searxng', 'baseUrl')) set.add('searxng');
-  if (has('TAVILY_API_KEY') || hasPlugin('tavily', 'apiKey')) set.add('tavily');
-  if (hasAnyAuthProfile(config, 'ollama')) set.add('ollama');
-  return Array.from(set);
-}
-
-function resolveConfiguredWebFetchProviders(config: GatewayRuntimeConfig): string[] {
-  const envVars = config.env?.vars ?? {};
-  const has = (k: string) => Boolean(String(envVars[k] ?? '').trim());
-  const firecrawlCfg = config.plugins?.entries?.firecrawl?.config?.webFetch;
-  if (has('FIRECRAWL_API_KEY') || Boolean(String(firecrawlCfg?.apiKey ?? '').trim())) {
-    return ['firecrawl'];
-  }
-  return [];
-}
-
-function applyPreferredWebProviders(config: GatewayRuntimeConfig): GatewayRuntimeConfig {
-  const next = structuredClone(config);
-  const searchConfigured = resolveConfiguredWebSearchProviders(next);
-  const fetchConfigured = resolveConfiguredWebFetchProviders(next);
-  const currentSearch = next.tools?.web?.search?.provider;
-  const currentFetch = next.tools?.web?.fetch?.provider;
-
-  if (searchConfigured.length === 1) {
-    const only = searchConfigured[0];
-    const shouldSet = !currentSearch || currentSearch === 'auto' || !searchConfigured.includes(currentSearch);
-    if (shouldSet) {
-      next.tools = {
-        ...next.tools,
-        web: {
-          ...next.tools?.web,
-          search: { ...next.tools?.web?.search, provider: only },
-        },
-      };
-    }
-  }
-
-  if (fetchConfigured.length === 1) {
-    const only = fetchConfigured[0];
-    const shouldSet = !currentFetch || currentFetch === 'auto' || !fetchConfigured.includes(currentFetch);
-    if (shouldSet) {
-      next.tools = {
-        ...next.tools,
-        web: {
-          ...next.tools?.web,
-          fetch: { ...next.tools?.web?.fetch, provider: only },
-        },
-      };
-    }
-  }
-
-  return next;
 }
 
 export function ConfigManagerPage() {
@@ -401,16 +263,15 @@ export function ConfigManagerPage() {
       const { data: diskConfig } = await window.aegis.config.read(configPath);
 
       // 2. Apply only the user's changes on top of the fresh disk version
-      const mergedRaw = smartMerge(diskConfig, originalConfig, configToSave);
+      const mergedRaw = smartMerge(diskConfig, originalConfig, configToSave) as GatewayRuntimeConfig;
       // Preserve provider env vars from disk when the UI state lost them but the
       // provider/profile still exists. Prevents accidental API key deletion.
       const merged = preserveProviderSecretsFromDisk(diskConfig, mergedRaw);
 
-      // Apply save-time provider preference and strip UI-only fields before
-      // validating or probing. The probe must exercise the exact candidate that
-      // will be written, not an approximation assembled from form fields.
-      const mergedWithPreferredProviders = applyPreferredWebProviders(merged);
-      const toWrite = normalizeConfigForDisk(mergedWithPreferredProviders);
+      // Strip UI-only fields before validation/probing. Do not infer or replace
+      // OpenClaw tool providers from JunQi-owned credential heuristics: only an
+      // explicit user edit or the selected Runtime may choose those values.
+      const toWrite = normalizeConfigForDisk(merged);
       const precheckResult = await runConnectionPrecheck(toWrite, options?.connectionProbe);
       if (!precheckResult.ok) {
         const continueSave = await requestConnectionFailureConfirm(precheckResult.failures);

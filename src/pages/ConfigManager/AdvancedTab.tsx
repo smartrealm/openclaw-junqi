@@ -12,9 +12,14 @@ import clsx from 'clsx';
 import type { OpenClawConfig } from './types';
 import {
   ExpandableCard,
-  ToggleSwitch,
   MaskedInput,
 } from './components';
+import { SchemaDrivenObjectEditor } from './SchemaDrivenObjectEditor';
+import {
+  configObjectFieldSchemas,
+  loadOpenClawConfigSchema,
+  type OpenClawFieldSchema,
+} from '@/services/openclawConfigSchema';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -70,6 +75,20 @@ export function AdvancedTab({ config, onChange }: AdvancedTabProps) {
 
   const commands = config.commands ?? {};
   const envVars  = config.env?.vars ?? {};
+  const [commandFields, setCommandFields] = useState<Record<string, OpenClawFieldSchema>>({});
+  const [commandSchemaError, setCommandSchemaError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    loadOpenClawConfigSchema()
+      .then((schema) => {
+        if (!cancelled) setCommandFields(configObjectFieldSchemas(schema, 'commands'));
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setCommandSchemaError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Raw JSON state ──
   const [jsonStr,     setJsonStr]     = useState(() => JSON.stringify(config, null, 2));
@@ -88,9 +107,6 @@ export function AdvancedTab({ config, onChange }: AdvancedTabProps) {
   // ── Env-var add form ──
   const [newVarKey,   setNewVarKey]   = useState('');
   const [newVarValue, setNewVarValue] = useState('');
-
-  const patchCommands = (patch: Record<string, any>) =>
-    onChange(prev => ({ ...prev, commands: { ...prev.commands, ...patch } }));
 
   // ─────────────────────────────────────────────────────────
   // Env-var operations
@@ -342,35 +358,20 @@ export function AdvancedTab({ config, onChange }: AdvancedTabProps) {
         icon={<Settings2 size={15} aria-hidden="true" />}
         defaultExpanded={false}
       >
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-aegis-text-secondary">
-              {t('config.nativeCommands')}
-            </span>
-            <ToggleSwitch
-              value={Boolean(commands.native)}
-              onChange={v => patchCommands({ native: v })}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-aegis-text-secondary">
-              {t('config.nativeSkills')}
-            </span>
-            <ToggleSwitch
-              value={Boolean(commands.nativeSkills)}
-              onChange={v => patchCommands({ nativeSkills: v })}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-aegis-text-secondary">
-              {t('config.restartCommand')}
-            </span>
-            <ToggleSwitch
-              value={commands.restart ?? false}
-              onChange={v => patchCommands({ restart: v })}
-            />
-          </div>
-        </div>
+        {Object.keys(commandFields).length > 0 ? (
+          <SchemaDrivenObjectEditor
+            title={t('config.commands', 'Commands')}
+            fields={commandFields}
+            value={commands}
+            initiallyOpen
+            onChange={(nextCommands) => onChange((prev) => ({ ...prev, commands: nextCommands }))}
+          />
+        ) : (
+          <p className="text-xs text-yellow-300">
+            {t('config.runtimeSchemaRequired', 'The selected OpenClaw Runtime schema is required to edit these settings.')}
+            {commandSchemaError ? ` ${commandSchemaError}` : ''}
+          </p>
+        )}
       </ExpandableCard>
 
     </div>

@@ -18,6 +18,7 @@ test('resolveGatewayRescueTarget resolves OpenAI-compatible provider from primar
       providers: {
         openai: {
           baseUrl: 'https://api.openai.com/v1',
+          api: 'openai-completions',
           apiKey: '${OPENAI_API_KEY}',
           models: [{ id: 'gpt-4o-mini' }],
         },
@@ -47,6 +48,7 @@ test('resolveGatewayRescueTarget resolves Anthropic Messages provider', () => {
       providers: {
         anthropic: {
           baseUrl: 'https://api.anthropic.com/v1',
+          api: 'anthropic-messages',
           apiKey: '${ANTHROPIC_API_KEY}',
         },
       },
@@ -74,6 +76,7 @@ test('resolveGatewayRescueTarget returns null without readable secret value', ()
       providers: {
         openai: {
           baseUrl: 'https://api.openai.com/v1',
+          api: 'openai-completions',
           apiKey: '${OPENAI_API_KEY}',
           models: [{ id: 'gpt-4o-mini' }],
         },
@@ -120,6 +123,7 @@ test('resolveGatewayRescueTargets falls back to configured providers when primar
       providers: {
         openai: {
           baseUrl: 'https://api.openai.com/v1',
+          api: 'openai-completions',
           apiKey: '${OPENAI_API_KEY}',
           models: [{ id: 'gpt-4o-mini' }],
         },
@@ -143,6 +147,7 @@ test('resolveGatewayRescueTargets does not invent a model for a provider', () =>
       providers: {
         vllm: {
           baseUrl: 'http://127.0.0.1:8000/v1',
+          api: 'openai-completions',
           apiKey: 'test-key',
         },
       },
@@ -158,6 +163,7 @@ test('resolveGatewayRescueTargets enumerates only explicitly configured provider
       providers: {
         vllm: {
           baseUrl: 'http://127.0.0.1:8000/v1',
+          api: 'openai-completions',
           apiKey: 'test-key',
           models: [{ id: 'local-qwen' }, { id: 'vllm/local-llama' }],
         },
@@ -183,6 +189,7 @@ test('resolveGatewayRescueTargets reads provider config despite provider key cas
       providers: {
         OpenAI: {
           baseUrl: 'https://api.openai.com/v1',
+          api: 'openai-completions',
           apiKey: '${OPENAI_API_KEY}',
         },
       },
@@ -212,6 +219,7 @@ test('resolveGatewayRescueTargets deduplicates primary and configured model cand
       providers: {
         openai: {
           baseUrl: 'https://api.openai.com/v1',
+          api: 'openai-completions',
           apiKey: 'raw-key',
         },
       },

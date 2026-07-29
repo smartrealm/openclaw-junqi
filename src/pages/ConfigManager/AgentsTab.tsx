@@ -4,9 +4,9 @@
 // Design: aegis-* Tailwind classes only
 // ═══════════════════════════════════════════════════════════
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2, Bot, Settings2, Activity, Cpu, Scissors, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Bot, Settings2, AlertCircle } from 'lucide-react';
 import { Users } from '@phosphor-icons/react';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig, AgentConfig } from './types';
@@ -27,6 +27,13 @@ import {
   MAIN_GATEWAY_AGENT_ID,
   normalizeGatewayAgentId,
 } from '@/utils/gatewayAgentFlow';
+import { SchemaDrivenObjectEditor } from './SchemaDrivenObjectEditor';
+import {
+  configFieldSchema,
+  loadOpenClawConfigSchema,
+  schemaStringOptions,
+  type OpenClawFieldSchema,
+} from '@/services/openclawConfigSchema';
 import {
   getModelFallbacks,
   getModelPrimary,
@@ -44,28 +51,23 @@ interface AgentsTabProps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Runtime schema helpers. Existing values remain visible if a future Runtime
+// removes an option, but JunQi never invents an option when schema loading fails.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const THINKING_OPTIONS = [
-  { value: 'off',    label: 'Off' },
-  { value: 'low',    label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high',   label: 'High' },
-];
+type AgentRuntimeSchemas = {
+  thinkingDefault?: OpenClawFieldSchema;
+  maxConcurrent?: OpenClawFieldSchema;
+  heartbeat: Record<string, OpenClawFieldSchema>;
+  compaction: Record<string, OpenClawFieldSchema>;
+  contextPruning: Record<string, OpenClawFieldSchema>;
+};
 
-const COMPACTION_MODE_OPTIONS = [
-  { value: 'rolling',   label: 'Rolling' },
-  { value: 'safeguard', label: 'Safeguard' },
-  { value: 'full',      label: 'Full' },
-  { value: 'off',       label: 'Off' },
-];
-
-const PRUNING_MODE_OPTIONS = [
-  { value: 'adaptive',  label: 'Adaptive' },
-  { value: 'cache-ttl', label: 'Cache TTL' },
-  { value: 'off',       label: 'Off' },
-];
+function schemaOptions(schema: OpenClawFieldSchema | undefined, current?: string) {
+  const values = schema ? schemaStringOptions(schema) : [];
+  if (current && !values.includes(current)) values.unshift(current);
+  return values.map((value) => ({ value, label: value }));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FallbackModelPicker — chips of existing fallbacks + ModelDropdown to add more
@@ -130,18 +132,21 @@ interface TextFieldProps {
   placeholder?: string;
   className?: string;
   mono?: boolean;
+  disabled?: boolean;
 }
 
-function TextField({ value, onChange, placeholder, className, mono }: TextFieldProps) {
+function TextField({ value, onChange, placeholder, className, mono, disabled = false }: TextFieldProps) {
   return (
     <input
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       className={clsx(
         'w-full bg-aegis-surface border border-aegis-border rounded-lg px-3 py-2',
         'text-aegis-text text-sm placeholder:text-aegis-text-muted',
         'outline-none focus:border-aegis-primary transition-colors duration-200',
+        'disabled:cursor-not-allowed disabled:opacity-50',
         mono && 'font-mono',
         className
       )}
@@ -156,13 +161,15 @@ interface NumberFieldProps {
   min?: number;
   max?: number;
   className?: string;
+  disabled?: boolean;
 }
 
-function NumberField({ value, onChange, placeholder, min, max, className }: NumberFieldProps) {
+function NumberField({ value, onChange, placeholder, min, max, className, disabled = false }: NumberFieldProps) {
   return (
     <input
       type="number"
       value={value ?? ''}
+      disabled={disabled}
       min={min}
       max={max}
       onChange={(e) => {
@@ -174,31 +181,7 @@ function NumberField({ value, onChange, placeholder, min, max, className }: Numb
         'w-full bg-aegis-surface border border-aegis-border rounded-lg px-3 py-2',
         'text-aegis-text text-sm placeholder:text-aegis-text-muted',
         'outline-none focus:border-aegis-primary transition-colors duration-200',
-        className
-      )}
-    />
-  );
-}
-
-interface TextareaFieldProps {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  rows?: number;
-  className?: string;
-}
-
-function TextareaField({ value, onChange, placeholder, rows = 3, className }: TextareaFieldProps) {
-  return (
-    <textarea
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      rows={rows}
-      className={clsx(
-        'w-full bg-aegis-surface border border-aegis-border rounded-lg px-3 py-2',
-        'text-aegis-text text-sm placeholder:text-aegis-text-muted',
-        'outline-none focus:border-aegis-primary transition-colors duration-200 resize-y',
+        'disabled:cursor-not-allowed disabled:opacity-50',
         className
       )}
     />
@@ -549,6 +532,30 @@ function AddAgentModal({ onClose, onAdd, existingIds }: AddAgentModalProps) {
 export function AgentsTab({ config, onChange }: AgentsTabProps) {
   const { t } = useTranslation();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [runtimeSchemas, setRuntimeSchemas] = useState<AgentRuntimeSchemas>({
+    heartbeat: {},
+    compaction: {},
+    contextPruning: {},
+  });
+  const [schemaReady, setSchemaReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadOpenClawConfigSchema()
+      .then((schema) => {
+        if (cancelled) return;
+        setRuntimeSchemas({
+          thinkingDefault: configFieldSchema(schema, 'agents.defaults.thinkingDefault'),
+          maxConcurrent: configFieldSchema(schema, 'agents.defaults.maxConcurrent'),
+          heartbeat: configFieldSchema(schema, 'agents.defaults.heartbeat')?.properties ?? {},
+          compaction: configFieldSchema(schema, 'agents.defaults.compaction')?.properties ?? {},
+          contextPruning: configFieldSchema(schema, 'agents.defaults.contextPruning')?.properties ?? {},
+        });
+        setSchemaReady(true);
+      })
+      .catch(() => { if (!cancelled) setSchemaReady(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const mainAgentDefault: AgentConfig = {
     id: MAIN_AGENT_ID,
@@ -560,6 +567,10 @@ export function AgentsTab({ config, onChange }: AgentsTabProps) {
 
   const defaults = config.agents?.defaults ?? {};
   const list     = normalizeAgentList(config.agents?.list);
+  const thinkingOptions = useMemo(
+    () => schemaOptions(runtimeSchemas.thinkingDefault, defaults.thinkingDefault),
+    [runtimeSchemas.thinkingDefault, defaults.thinkingDefault],
+  );
 
   // ── Patch helpers ──
 
@@ -579,10 +590,6 @@ export function AgentsTab({ config, onChange }: AgentsTabProps) {
 
   const patchCompaction = (patch: Partial<typeof defaults.compaction>) => {
     patchDefaults({ compaction: { ...defaults.compaction, ...patch } });
-  };
-
-  const patchMemoryFlush = (patch: Partial<NonNullable<typeof defaults.compaction>['memoryFlush']>) => {
-    patchCompaction({ memoryFlush: { ...defaults.compaction?.memoryFlush, ...patch } });
   };
 
   const patchPruning = (patch: Partial<typeof defaults.contextPruning>) => {
@@ -680,8 +687,9 @@ export function AgentsTab({ config, onChange }: AgentsTabProps) {
             <SelectField
               value={defaults.thinkingDefault ?? ''}
               onChange={(v) => patchDefaults({ thinkingDefault: v || undefined })}
-              options={THINKING_OPTIONS}
-              placeholder={t('config.inherit', 'Inherit')}
+              options={thinkingOptions}
+              disabled={!schemaReady || thinkingOptions.length === 0}
+              placeholder={schemaReady ? t('config.inherit', 'Inherit') : t('config.runtimeSchemaUnavailable', 'Runtime schema unavailable')}
             />
           </FormField>
 
@@ -689,157 +697,36 @@ export function AgentsTab({ config, onChange }: AgentsTabProps) {
             <NumberField
               value={defaults.maxConcurrent}
               onChange={(v) => patchDefaults({ maxConcurrent: v })}
-              placeholder="5"
-              min={1}
-              max={10}
+              placeholder=""
+              min={runtimeSchemas.maxConcurrent?.minimum}
+              max={runtimeSchemas.maxConcurrent?.maximum}
+              disabled={!schemaReady || !runtimeSchemas.maxConcurrent}
             />
           </FormField>
         </div>
       </ExpandableCard>
 
-      {/* ── B) Heartbeat Settings ── */}
-      <ExpandableCard
-        title={t('config.heartbeat')}
-        subtitle={defaults.heartbeat?.every ?? '—'}
-        icon={<Activity size={16} />}
-        defaultExpanded={false}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <FormField label={t('config.heartbeatEvery')} hint="e.g. 30m, 1h, 45m">
-            <TextField
-              value={defaults.heartbeat?.every ?? ''}
-              onChange={(v) => patchHeartbeat({ every: v || undefined })}
-              placeholder="30m"
+      {/* Runtime-owned advanced Agent settings. */}
+      {([
+        ['heartbeat', t('config.heartbeat'), runtimeSchemas.heartbeat, defaults.heartbeat ?? {}, patchHeartbeat],
+        ['compaction', t('config.compaction'), runtimeSchemas.compaction, defaults.compaction ?? {}, patchCompaction],
+        ['contextPruning', t('config.contextPruning'), runtimeSchemas.contextPruning, defaults.contextPruning ?? {}, patchPruning],
+      ] as const).map(([key, title, fields, value, patch]) => (
+        <div key={key} className="rounded-xl border border-aegis-border bg-aegis-elevated p-4">
+          {schemaReady && Object.keys(fields).length > 0 ? (
+            <SchemaDrivenObjectEditor
+              title={title}
+              fields={fields}
+              value={value}
+              onChange={(next) => patch(next)}
             />
-          </FormField>
-        </div>
-        <FormField label={t('config.heartbeatPrompt')}>
-          <TextareaField
-            value={defaults.heartbeat?.prompt ?? ''}
-            onChange={(v) => patchHeartbeat({ prompt: v || undefined })}
-            placeholder={t('config.heartbeatReadmePlaceholder', 'Read HEARTBEAT.md if it exists...')}
-            rows={4}
-          />
-        </FormField>
-      </ExpandableCard>
-
-      {/* ── C) Compaction Settings ── */}
-      <ExpandableCard
-        title={t('config.compaction')}
-        subtitle={defaults.compaction?.mode ?? '—'}
-        icon={<Cpu size={16} />}
-        defaultExpanded={false}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <FormField label={t('config.compactionMode')}>
-            <SelectField
-              value={defaults.compaction?.mode ?? ''}
-              onChange={(v) => patchCompaction({ mode: v || undefined })}
-              options={COMPACTION_MODE_OPTIONS}
-              placeholder={t('config.inherit', 'Inherit')}
-            />
-          </FormField>
-          <FormField label={t('config.reserveTokensFloor')}>
-            <NumberField
-              value={defaults.compaction?.reserveTokensFloor}
-              onChange={(v) => patchCompaction({ reserveTokensFloor: v })}
-              placeholder="8000"
-            />
-          </FormField>
-        </div>
-
-        {/* Memory Flush sub-section */}
-        <div className="rounded-lg border border-aegis-border bg-aegis-surface p-3 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-aegis-text-secondary uppercase tracking-wider">
-              {t('config.memoryFlush')}
-            </span>
-            <ToggleSwitch
-              value={defaults.compaction?.memoryFlush?.enabled ?? false}
-              onChange={(v) => patchMemoryFlush({ enabled: v })}
-            />
-          </div>
-
-          {defaults.compaction?.memoryFlush?.enabled && (
-            <div className="space-y-3 pt-1">
-              <FormField label={t('config.softThresholdTokens')}>
-                <NumberField
-                  value={defaults.compaction?.memoryFlush?.softThresholdTokens}
-                  onChange={(v) => patchMemoryFlush({ softThresholdTokens: v })}
-                  placeholder="120000"
-                />
-              </FormField>
-              <FormField label={t('config.heartbeatPrompt')}>
-                <TextareaField
-                  value={defaults.compaction?.memoryFlush?.prompt ?? ''}
-                  onChange={(v) => patchMemoryFlush({ prompt: v || undefined })}
-                  placeholder={t('config.memoryFlushPromptPlaceholder', 'Memory flush prompt...')}
-                  rows={3}
-                />
-              </FormField>
-              <FormField label="System Prompt">
-                <TextareaField
-                  value={defaults.compaction?.memoryFlush?.systemPrompt ?? ''}
-                  onChange={(v) => patchMemoryFlush({ systemPrompt: v || undefined })}
-                  placeholder={t('config.memoryFlushSystemPromptPlaceholder', 'System prompt for memory flush...')}
-                  rows={3}
-                />
-              </FormField>
-            </div>
+          ) : (
+            <p className="text-xs text-yellow-300">
+              {t('config.runtimeSchemaRequired', 'The selected OpenClaw Runtime schema is required to edit these settings.')}
+            </p>
           )}
         </div>
-      </ExpandableCard>
-
-      {/* ── D) Context Pruning (collapsed by default) ── */}
-      <ExpandableCard
-        title={t('config.contextPruning')}
-        subtitle={defaults.contextPruning?.mode ?? '—'}
-        icon={<Scissors size={16} />}
-        defaultExpanded={false}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <FormField label={t('config.pruningMode')}>
-            <SelectField
-              value={defaults.contextPruning?.mode ?? ''}
-              onChange={(v) => patchPruning({ mode: v || undefined })}
-              options={PRUNING_MODE_OPTIONS}
-              placeholder={t('config.inherit', 'Inherit')}
-            />
-          </FormField>
-          <FormField label={t('config.ttl')} hint="e.g. 2h, 30m">
-            <TextField
-              value={defaults.contextPruning?.ttl ?? ''}
-              onChange={(v) => patchPruning({ ttl: v || undefined })}
-              placeholder="2h"
-            />
-          </FormField>
-          <FormField label={t('config.keepLastAssistants')}>
-            <NumberField
-              value={defaults.contextPruning?.keepLastAssistants}
-              onChange={(v) => patchPruning({ keepLastAssistants: v })}
-              placeholder="3"
-              min={0}
-            />
-          </FormField>
-          <FormField label={t('config.softTrimRatio')} hint="0 – 1">
-            <NumberField
-              value={defaults.contextPruning?.softTrimRatio}
-              onChange={(v) => patchPruning({ softTrimRatio: v })}
-              placeholder="0.2"
-              min={0}
-              max={1}
-            />
-          </FormField>
-          <FormField label={t('config.minPrunableToolChars')}>
-            <NumberField
-              value={defaults.contextPruning?.minPrunableToolChars}
-              onChange={(v) => patchPruning({ minPrunableToolChars: v })}
-              placeholder="500"
-              min={0}
-            />
-          </FormField>
-        </div>
-      </ExpandableCard>
+      ))}
 
       {/* ── E) Agent List ── */}
       <div className="rounded-xl border border-aegis-border bg-aegis-elevated overflow-hidden">

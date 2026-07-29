@@ -2015,17 +2015,19 @@
       "unknown": "Runtime 状态不可用"
     },
     "readinessHint": {
-      "ready": "配置完整，已绑定智能体。",
+      "ready": "配置完整，将按显式路由或 Runtime 默认智能体处理消息。",
       "disabled": "账号或渠道已停用，不会接收消息。",
       "missing_credentials": "补齐凭证后才能连接该通道。",
       "unbound": "请绑定一个智能体，入站消息才有处理目标。"
     },
     "noBinding": "不绑定智能体",
+    "defaultAgentRoute": "Runtime 默认智能体（不设置覆盖路由）",
+    "defaultAgent": "默认",
     "addChannels": "添加通道",
     "multiAccount": "支持多账号",
     "singleAccount": "单账号",
     "agentHintTitle": "智能体绑定",
-    "agentHint": "把每个渠道账号绑定到智能体，消息会进入对应的人设和工作区。",
+    "agentHint": "需要覆盖 Runtime 默认路由时，可把渠道账号显式绑定到指定智能体。",
     "qrUnavailable": "OpenClaw 没有返回二维码。请检查 Gateway 和渠道日志。",
     "qrDenied": "手机端已拒绝此次扫码登录。请重新生成二维码后再试。",
     "qrTimedOut": "二维码已过期。请刷新后重新扫码。",

@@ -1,6 +1,8 @@
 // ═══════════════════════════════════════════════════════════
-// Config Manager — TypeScript Types
-// Based on actual clawdbot.json structure
+// Config Manager — non-authoritative UI projection
+// Accepted fields, values, defaults and constraints come from the selected
+// OpenClaw Runtime schema. These interfaces only type fields JunQi currently
+// renders and must preserve unknown future Runtime fields during round trips.
 // ═══════════════════════════════════════════════════════════
 
 export interface MetaConfig {
@@ -398,6 +400,7 @@ export interface ModelsSection {
 // ── Root Config ──
 
 export interface OpenClawConfig {
+  [key: string]: unknown;
   meta?: MetaConfig;
   env?: EnvConfig;
   wizard?: WizardConfig;

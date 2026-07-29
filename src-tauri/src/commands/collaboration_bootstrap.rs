@@ -1,4 +1,4 @@
-use crate::commands::docker::OPENCLAW_CONTAINER_NAME;
+use crate::commands::docker::{OPENCLAW_CONTAINER_NAME, OPENCLAW_CONTAINER_STATE_DIR};
 use crate::commands::openclaw_cli::{
     output_diagnostic, parse_json_with_warnings, run_openclaw_cli, OpenClawCliLimits,
     OpenClawCliOutput, PinnedOpenClawCliTarget,
@@ -2824,7 +2824,7 @@ fn target_artifact_dirs(
                 0o755,
                 "Docker bootstrap operation directory",
             )?,
-            PathBuf::from("/home/node/.openclaw").join(relative),
+            PathBuf::from(OPENCLAW_CONTAINER_STATE_DIR).join(relative),
         )
     } else {
         let directory = private_operation_dir(control, operation_id)?;
@@ -3289,7 +3289,7 @@ fn cli_path_to_host(target: &MutationTarget, path: &str) -> Option<PathBuf> {
     if target.class != BootstrapTargetClass::Docker {
         return Some(PathBuf::from(path));
     }
-    let container_root = Path::new("/home/node/.openclaw");
+    let container_root = Path::new(OPENCLAW_CONTAINER_STATE_DIR);
     let source = Path::new(path);
     let relative = source.strip_prefix(container_root).ok()?;
     Some(target.cli.state_dir.join(relative))
@@ -6419,7 +6419,7 @@ fn rollback_archive_cli_path_to_host(
         return Ok(cli_path.to_path_buf());
     }
     let relative = cli_path
-        .strip_prefix("/home/node/.openclaw")
+        .strip_prefix(OPENCLAW_CONTAINER_STATE_DIR)
         .map_err(|_| "The Docker rollback archive is outside its mounted state".to_string())?;
     Ok(Path::new(&journal.target.state_dir).join(relative))
 }
@@ -6522,7 +6522,7 @@ fn journal_plugin_root_to_host(
         return Ok(path.to_path_buf());
     }
     let relative = path
-        .strip_prefix("/home/node/.openclaw")
+        .strip_prefix(OPENCLAW_CONTAINER_STATE_DIR)
         .map_err(|_| "The restored Docker plugin root is outside its mounted state".to_string())?;
     Ok(Path::new(&journal.target.state_dir).join(relative))
 }

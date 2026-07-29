@@ -107,6 +107,30 @@
 - [x] Each dedicated screen retains its download guidance and retry action.
 - [x] Non-prerequisite failures continue to use the generic error route.
 
+## BUG-CRA-07 - Runtime default channel routing
+
+**Current**
+
+- Official onboarding can configure a channel without creating a root
+  `bindings` override.
+- JunQi treats that account as unbound and builds the binding selector from
+  `agents.list` only, so a fresh Runtime with implicit `main` has no selectable
+  agent.
+
+**Target**
+
+- Follow the selected Runtime's default-agent fallback and present root
+  bindings as optional overrides.
+
+**Acceptance**
+
+- [x] A missing `agents.list` exposes the implicit `main` agent.
+- [x] An explicit `agents.list[].default` entry is marked as Runtime default;
+      otherwise the first configured entry is used.
+- [x] A healthy account without a root binding is ready through Runtime default
+      routing rather than reported as having no message target.
+- [x] Existing explicit account/channel/peer/ACP bindings remain unchanged.
+
 ## BUG-ONB-49 - Bounded official Wizard recovery
 
 **Current**

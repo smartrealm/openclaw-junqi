@@ -27,6 +27,12 @@ export interface ChannelAccountReadiness {
   messages: string[];
 }
 
+export interface ChannelAgentOption {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
 export interface ChannelAccountRuntimeState {
   enabled?: boolean | null;
   configured?: boolean | null;
@@ -112,6 +118,30 @@ export function buildChannelGroups(config: GatewayRuntimeConfig | null): Channel
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
+/**
+ * Mirrors OpenClaw's selected-Runtime default-agent contract: an absent
+ * `agents.list` means the implicit `main` agent; otherwise the explicitly
+ * default entry wins, falling back to the first configured entry.
+ */
+export function getChannelAgentOptions(config: GatewayRuntimeConfig | null): ChannelAgentOption[] {
+  const configured = (config?.agents?.list ?? []).filter((agent) => (
+    typeof agent?.id === 'string' && Boolean(agent.id.trim())
+  ));
+  if (configured.length === 0) {
+    return [{ id: 'main', name: 'main', isDefault: true }];
+  }
+  const defaultAgentId = configured.find((agent) => agent.default === true)?.id.trim()
+    ?? configured[0].id.trim();
+  return configured.map((agent) => {
+    const id = agent.id.trim();
+    return {
+      id,
+      name: typeof agent.name === 'string' && agent.name.trim() ? agent.name.trim() : id,
+      isDefault: id === defaultAgentId,
+    };
+  });
+}
+
 function hasUsableValue(value: unknown): boolean {
   return typeof value === 'string' ? value.trim().length > 0 : value !== undefined && value !== null;
 }
@@ -148,12 +178,11 @@ export function assessChannelAccountReadiness(
     return { state: 'missing_credentials', missingFields, messages };
   }
 
-  if (!account.agentId) {
-    messages.push('unbound');
-    return { state: 'unbound', missingFields: [], messages };
-  }
-
-  messages.push('ready');
+  // Root bindings are overrides. OpenClaw routes an unmatched channel/account
+  // to its selected default agent, so absence of an explicit binding is not a
+  // delivery failure and must not make a healthy Wizard-configured account
+  // appear unusable.
+  messages.push(account.agentId ? 'ready' : 'default_agent');
   return { state: 'ready', missingFields: [], messages };
 }
 

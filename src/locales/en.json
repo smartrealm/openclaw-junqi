@@ -2017,17 +2017,19 @@
       "unknown": "Runtime status unavailable"
     },
     "readinessHint": {
-      "ready": "Configuration is complete and an agent is bound.",
+      "ready": "Configuration is complete; messages use an explicit route or the Runtime default agent.",
       "disabled": "This account or channel is disabled and will not receive messages.",
       "missing_credentials": "Add the missing credentials before this channel can connect.",
       "unbound": "Bind an agent so inbound messages have a target."
     },
     "noBinding": "No bound agent",
+    "defaultAgentRoute": "Runtime default agent (no route override)",
+    "defaultAgent": "default",
     "addChannels": "Add channels",
     "multiAccount": "Multi-account",
     "singleAccount": "Single account",
     "agentHintTitle": "Agent binding",
-    "agentHint": "Bind each channel account to an agent so inbound messages are routed to the right persona and workspace.",
+    "agentHint": "Add an explicit account binding only when it should override the Runtime default route.",
     "qrUnavailable": "OpenClaw did not return a QR code. Check the Gateway and channel logs.",
     "qrDenied": "The QR sign-in was declined. Generate a new QR code and try again.",
     "qrTimedOut": "The QR code expired. Refresh it and try again.",

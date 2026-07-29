@@ -20,9 +20,8 @@ export interface ProviderTemplate {
   envKey: string;
   envKeyAlt?: string[];
   baseUrl?: string;
-  /**
-   * API protocol — values must be in OPENCLAW_API_PROTOCOLS
-   * (see src/types/openclawApiProtocol.ts, owned by JunQi).
+  /** Suggested protocol for this reviewed onboarding template.
+   * The selected Runtime schema remains the write-time authority.
    */
   api?: OpenClawApiProtocol;
   popularModels: { id: string; suggestedAlias?: string; supportsImage?: boolean }[];

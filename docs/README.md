@@ -95,6 +95,7 @@ docs/
 - [工作台可靠性审计](quality/workspace-reliability-audit-2026-07-29.md)
 - [无引用与废弃代码清理验证](quality/dead-code-cleanup-validation-2026-07-29.md)
 - [Gateway 生命周期审计与前端重启协调器](gateway/openclaw-gateway-lifecycle-audit.md)
+- [OpenClaw 配置权威源审计](quality/openclaw-config-authority-audit-2026-07-29.md)
 
 ## 产品设计草案
 

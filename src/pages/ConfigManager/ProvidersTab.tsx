@@ -56,7 +56,12 @@ import {
 } from './modelRoutingHealth';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { AUTH_MODE_INFO, normalizeProviderAuthMode } from '@/types/providerAuthMode';
-import { OPENCLAW_API_PROTOCOLS, normalizeOpenClawApiProtocol } from '@/types/openclawApiProtocol';
+import { normalizeOpenClawApiProtocol } from '@/types/openclawApiProtocol';
+import {
+  configFieldSchema,
+  loadOpenClawConfigSchema,
+  schemaStringOptions,
+} from '@/services/openclawConfigSchema';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { ProviderModelEditor } from './ProviderModelEditor';
 import { ProviderAdvancedEditor } from './ProviderAdvancedEditor';
@@ -830,10 +835,8 @@ export function applyProviderAddition(
   const key = (normalizedProfile as any).token ?? (normalizedProfile as any).apiKey ?? (normalizedProfile as any).key;
   const nextProviderModels = buildNextProviderModels();
   const effectiveBaseUrl = trimmedOptionalString(providerConfig?.baseUrl)
-    ?? trimmedOptionalString(tmpl?.baseUrl)
     ?? trimmedOptionalString(currentProviderCfg.baseUrl);
   const effectiveApi = normalizeOpenClawApiProtocol(providerConfig?.api)
-    ?? normalizeOpenClawApiProtocol(tmpl?.api)
     ?? normalizeOpenClawApiProtocol(currentProviderCfg.api);
 
   next = buildProviderSecretPatch({
@@ -1278,6 +1281,7 @@ interface ProfileRowProps {
   apiKeyConfigured?: boolean;
   apiKeySource?: ProviderSecretSource;
   credentialUnverified?: boolean;
+  apiProtocolOptions: string[];
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
   saving?: boolean;
 }
@@ -1376,6 +1380,7 @@ function ProfileRow({
   apiKeyConfigured,
   apiKeySource,
   credentialUnverified = false,
+  apiProtocolOptions,
   onChange,
   saving = false,
 }: ProfileRowProps) {
@@ -1425,8 +1430,8 @@ function ProfileRow({
   // ── Inline edit state ──
   const [localProfile, setLocalProfile] = useState<string>(profile.profileName ?? profileKey);
   const [localMode, setLocalMode]       = useState<string>(normalizeProviderAuthMode(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode));
-  const [localBaseUrl, setLocalBaseUrl] = useState<string>(modelsProvider?.baseUrl ?? tmpl?.baseUrl ?? '');
-  const [localApi, setLocalApi] = useState<string>(modelsProvider?.api ?? tmpl?.api ?? '');
+  const [localBaseUrl, setLocalBaseUrl] = useState<string>(modelsProvider?.baseUrl ?? '');
+  const [localApi, setLocalApi] = useState<string>(modelsProvider?.api ?? '');
   const [apiKeyInput, setApiKeyInput]   = useState('');
   const [apiKeySaved, setApiKeySaved]   = useState(false);
   const [authFlowError, setAuthFlowError] = useState('');
@@ -1445,8 +1450,8 @@ function ProfileRow({
   // Sync local state when prop changes (e.g. after backup restore)
   useEffect(() => { setLocalProfile(profile.profileName ?? profileKey); }, [profile.profileName, profileKey]);
   useEffect(() => { setLocalMode(normalizeProviderAuthMode(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode)); }, [profile.mode, (profile as any).type, tmpl?.defaultAuthMode]);
-  useEffect(() => { setLocalBaseUrl(modelsProvider?.baseUrl ?? tmpl?.baseUrl ?? ''); }, [modelsProvider?.baseUrl, tmpl?.baseUrl]);
-  useEffect(() => { setLocalApi(modelsProvider?.api ?? tmpl?.api ?? ''); }, [modelsProvider?.api, tmpl?.api]);
+  useEffect(() => { setLocalBaseUrl(modelsProvider?.baseUrl ?? ''); }, [modelsProvider?.baseUrl]);
+  useEffect(() => { setLocalApi(modelsProvider?.api ?? ''); }, [modelsProvider?.api]);
 
   const updateProfile = (patch: Partial<AuthProfile>) => {
     onChange((prev) => {
@@ -1495,7 +1500,7 @@ function ProfileRow({
         : {};
       const nextPatch = { ...patch };
       if (nextPatch.api) {
-        nextPatch.api = normalizeOpenClawApiProtocol(nextPatch.api) ?? currentProviderCfg.api ?? tmpl?.api;
+        nextPatch.api = normalizeOpenClawApiProtocol(nextPatch.api) ?? currentProviderCfg.api;
       }
       const providers = { ...(prev.models?.providers ?? {}) };
       if (existingProviderKey && existingProviderKey !== providerKey) {
@@ -1738,7 +1743,7 @@ function ProfileRow({
                 disabled={saving}
                 onChange={(e) => setLocalBaseUrl(e.target.value)}
                 onBlur={() => updateProviderConnection({ baseUrl: localBaseUrl.trim() || undefined })}
-                placeholder={tmpl?.baseUrl || t('config.baseUrlPlaceholder')}
+                placeholder={t('config.baseUrlPlaceholder')}
                 className={clsx(
                   'bg-aegis-surface border border-aegis-border rounded-lg px-3 py-2',
                   'text-aegis-text text-sm font-mono outline-none focus:border-aegis-primary',
@@ -1764,7 +1769,7 @@ function ProfileRow({
                 )}
               >
                 <option value="">{t('config.notSet', 'Not set')}</option>
-                {OPENCLAW_API_PROTOCOLS.map((protocol) => (
+                {Array.from(new Set([localApi, ...apiProtocolOptions])).filter(Boolean).map((protocol) => (
                   <option key={protocol} value={protocol}>{protocol}</option>
                 ))}
               </select>
@@ -1862,10 +1867,11 @@ interface ModelsProviderRowProps {
   primaryModel?: string;
   imagePrimaryModel?: string;
   imageSupportMap?: Map<string, boolean>;
+  apiProtocolOptions: string[];
   saving?: boolean;
 }
 
-function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, imagePrimaryModel, imageSupportMap, saving = false }: ModelsProviderRowProps) {
+function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, imagePrimaryModel, imageSupportMap, apiProtocolOptions, saving = false }: ModelsProviderRowProps) {
   const [open, setOpen] = useState(false);
   const { provider, modelsProvider, template, envKeyFound, credentialSource, credentialUnverified } = unifiedProvider;
   const { t } = useTranslation();
@@ -1875,10 +1881,10 @@ function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, im
   );
 
   const [localBaseUrl, setLocalBaseUrl] = useState(modelsProvider?.baseUrl ?? '');
-  const [localApi, setLocalApi] = useState(modelsProvider?.api ?? template?.api ?? '');
+  const [localApi, setLocalApi] = useState(modelsProvider?.api ?? '');
   // Sync when prop changes after backup restore
   useEffect(() => { setLocalBaseUrl(modelsProvider?.baseUrl ?? ''); }, [modelsProvider?.baseUrl]);
-  useEffect(() => { setLocalApi(modelsProvider?.api ?? template?.api ?? ''); }, [modelsProvider?.api, template?.api]);
+  useEffect(() => { setLocalApi(modelsProvider?.api ?? ''); }, [modelsProvider?.api]);
 
   const updateModelsProvider = (patch: Partial<ModelProviderConfig>) => {
     onChange((prev) => {
@@ -1961,7 +1967,7 @@ function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, im
               )}
             >
               <option value="">{t('config.notSet', 'Not set')}</option>
-              {OPENCLAW_API_PROTOCOLS.map((protocol) => (
+              {Array.from(new Set([localApi, ...apiProtocolOptions])).filter(Boolean).map((protocol) => (
                 <option key={protocol} value={protocol}>{protocol}</option>
               ))}
             </select>
@@ -2324,7 +2330,7 @@ export interface ProviderConfigOverride {
 interface ConfigureStepProps {
   config: GatewayRuntimeConfig;
   tmpl: ProviderTemplate;
-  /** Catalog entry that drove the pick (carries region, plan, baseUrlOverride, warning). */
+  /** Presentation catalog entry that drove the pick; it does not author Runtime config values. */
   catalogEntry?: ProviderCatalogEntry;
   onBack: () => void;
   onSubmit: (
@@ -2361,8 +2367,8 @@ function ConfigureStep({
   const [profileName, setProfileName] = useState(`${tmpl.id}:main`);
   const [apiKey, setApiKey]           = useState('');
   const [authMode, setAuthMode]       = useState(tmpl.defaultAuthMode);
-  // Pre-fill baseUrl from catalog entry's region-specific override, falling back to template default.
-  const [baseUrl, setBaseUrl]         = useState(catalogEntry?.baseUrlOverride ?? tmpl.baseUrl ?? '');
+  // Never pre-fill a Runtime config value from JunQi's presentation catalog.
+  const [baseUrl, setBaseUrl]         = useState('');
   const [customModelIds, setCustomModelIds] = useState<string[]>([]);
   const [imageCapableModelIds, setImageCapableModelIds] = useState<string[]>([]);
   const [extraModelIds, setExtraModelIds] = useState<string[]>([]);
@@ -2459,7 +2465,7 @@ function ConfigureStep({
     }
   };
 
-  const resolvedBaseUrl = baseUrl.trim() || catalogEntry?.baseUrlOverride || tmpl.baseUrl;
+  const resolvedBaseUrl = baseUrl.trim() || undefined;
   const modelsToAdd = buildProviderSubmissionModelIds({
     isCustomLike,
     selectedModels,
@@ -2612,7 +2618,6 @@ function ConfigureStep({
     )
       ? {
         baseUrl: isCustomLike || resolvedBaseUrl ? resolvedBaseUrl : undefined,
-        api: tmpl.api,
         textPrimaryModel: resolvedTextPrimaryModel || undefined,
         imagePrimaryModel: resolvedImagePrimaryModel || undefined,
         imageCapableModels: imageCapableModelsForSubmission,
@@ -2656,7 +2661,7 @@ function ConfigureStep({
     );
   };
 
-  const effectiveBaseUrl = baseUrl.trim() || (tmpl.baseUrl ?? '').trim();
+  const effectiveBaseUrl = baseUrl.trim();
   const canTestConnection = Boolean(submission && previewDraft);
 
   const testConnection = async () => {
@@ -2680,8 +2685,6 @@ function ConfigureStep({
 
   const hasCatalogRegion = catalogEntry && catalogEntry.region !== 'none';
   const hasCatalogPlan   = catalogEntry && catalogEntry.plan   !== 'general';
-  // Warn if user has changed baseUrl away from what the catalog specified.
-  const baseUrlDrifted   = catalogEntry?.baseUrlOverride && baseUrl.trim() !== catalogEntry.baseUrlOverride;
 
   useEffect(() => {
     if (isCustomLike || selectedModels.length > 0 || suggestedModels.length === 0) return;
@@ -2846,8 +2849,8 @@ function ConfigureStep({
         </div>
       )}
 
-      {/* API Endpoint (Base URL) — for providers that require a URL, or when baseUrl was overridden by catalog */}
-      {(isCustomLike || catalogEntry?.baseUrlOverride) && (
+      {/* API Endpoint (Base URL) — only when the user-selected custom provider requires one. */}
+      {isCustomLike && (
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
             {t('config.baseUrl')}
@@ -2855,21 +2858,14 @@ function ConfigureStep({
           <input
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder={tmpl.baseUrl || t('config.baseUrlPlaceholder')}
+            placeholder={t('config.baseUrlPlaceholder')}
             className={clsx(
               'bg-aegis-surface border border-aegis-border rounded-lg px-3 py-2',
               'text-aegis-text text-sm font-mono outline-none focus:border-aegis-primary',
               'transition-colors duration-200'
             )}
           />
-          {/* Drift warning: user changed the pre-filled URL */}
-          {baseUrlDrifted && (
-            <p className="flex items-start gap-1 text-[10px] text-amber-400 leading-tight">
-              <AlertTriangle size={11} className="mt-px shrink-0" aria-hidden="true" />
-              {t('config.baseUrlDriftWarning', { url: catalogEntry?.baseUrlOverride })}
-            </p>
-          )}
-          {tmpl.hint && !baseUrlDrifted && (
+          {tmpl.hint && (
             <p className="text-[10px] text-aegis-text-muted leading-tight">{tmpl.hint}</p>
           )}
         </div>
@@ -3360,6 +3356,19 @@ export function ProvidersTab({
   const { t } = useTranslation();
   const [showModal, setShowModal]                   = useState(false);
   const [modalInitialTemplate, setModalInitialTemplate] = useState<ProviderTemplate | undefined>();
+  const [apiProtocolOptions, setApiProtocolOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadOpenClawConfigSchema()
+      .then((schema) => {
+        if (cancelled) return;
+        const field = configFieldSchema(schema, 'models.providers.*.api');
+        setApiProtocolOptions(field ? schemaStringOptions(field) : []);
+      })
+      .catch(() => { if (!cancelled) setApiProtocolOptions([]); });
+    return () => { cancelled = true; };
+  }, []);
 
   const allModels    = config.agents?.defaults?.models ?? {};
   const allModelImageSupportMap = useMemo(
@@ -3916,6 +3925,7 @@ export function ProvidersTab({
                       apiKeyConfigured={up.envKeyFound}
                       apiKeySource={up.credentialSource}
                       credentialUnverified={up.credentialUnverified}
+                      apiProtocolOptions={apiProtocolOptions}
                       onChange={onChange}
                       saving={saving}
                     />
@@ -3931,6 +3941,7 @@ export function ProvidersTab({
                       primaryModel={primaryModel}
                       imagePrimaryModel={imagePrimaryModel}
                       imageSupportMap={allModelImageSupportMap}
+                      apiProtocolOptions={apiProtocolOptions}
                       saving={saving}
                     />
                   );
