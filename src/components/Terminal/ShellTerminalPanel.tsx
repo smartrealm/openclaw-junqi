@@ -40,6 +40,7 @@ import {
   parseJunqiAgentStatusTitle,
   recordClosedTerminalShell,
   resolveShellDisplayTitle,
+  resolveShellOpenDisposition,
   resolveShellRename,
   shellStateFromExit,
   takeRecentlyClosedTerminalShell,
@@ -131,9 +132,11 @@ import {
 import { TerminalHookNotificationTracker } from './terminalNotifications';
 import type { Terminal as XTermType } from '@xterm/xterm';
 import "@xterm/xterm/css/xterm.css";
+import { findShellIdForDirectory } from './terminalDirectoryTarget';
 
 export interface ShellTerminalPanelHandle {
   sendCommand: (cmd: string) => boolean;
+  openDirectory: (path: string) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1063,7 +1066,14 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
               runId: requestedRunId,
             })
               .then((result) => {
-                if (cleaned || result.run_id !== requestedRunId) return;
+                if (resolveShellOpenDisposition(cleaned, requestedRunId, result.run_id) === 'terminate') {
+                  void invoke('kill_shell', { shellId, runId: result.run_id });
+                  if (!cleaned) {
+                    onLifecycleChangeRef.current?.('failed');
+                    debugError('terminal', '[ShellTerminalPanel] open_shell returned an unexpected run id');
+                  }
+                  return;
+                }
                 runIdRef.current = result.run_id;
                 registerTerminalPtyOwner(shellId, result.run_id, rendererInstanceIdRef.current);
                 onRunIdChangeRef.current?.(result.run_id);
@@ -1806,16 +1816,6 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       saveShellState(projectId, shells, activeShellId, nextShellIndexRef.current);
     }, [projectId, shells, activeShellId]);
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        sendCommand: (cmd: string) => {
-          return sendCommandToActiveShell(cmd);
-        },
-      }),
-      [sendCommandToActiveShell],
-    );
-
     // ── kooky ComposerBar 状态 ──
     const [composerOpen, setComposerOpen] = useState(false);
     const [composerDraft, setComposerDraft] = useState("");
@@ -1859,6 +1859,30 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       setActiveShellId(nextShell.id);
       if (!isRemoteWorkspace && activeCwd) onDirectoryChangeRef.current?.(activeCwd);
     }, [activeShellId, isRemoteWorkspace, projectId, projectPath, shells]);
+
+    const openDirectory = useCallback((directory: string) => {
+      if (isRemoteWorkspace || !directory.trim()) return;
+      const existingShellId = findShellIdForDirectory(
+        shells,
+        directory,
+        APP_PLATFORM === 'windows',
+      );
+      if (existingShellId) {
+        setActiveShellId(existingShellId);
+        onDirectoryChangeRef.current?.(directory);
+        return;
+      }
+      handleAddShell({ cwd: directory });
+    }, [handleAddShell, isRemoteWorkspace, shells]);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        sendCommand: (cmd: string) => sendCommandToActiveShell(cmd),
+        openDirectory,
+      }),
+      [openDirectory, sendCommandToActiveShell],
+    );
 
     const launchTarget = useCallback(async (target: TerminalLaunchTarget) => {
       if (target.kind === 'terminal') {

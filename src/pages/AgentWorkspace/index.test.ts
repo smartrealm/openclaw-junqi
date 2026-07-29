@@ -10,9 +10,11 @@ test('clearing a project removes persisted drafts and mounted task state', () =>
   assert.match(source, /setAutoStartTaskId/);
 });
 
-test('deleting an active task surfaces cancellation failures', () => {
-  assert.match(source, /取消任务失败/);
-  assert.match(source, /remove_task_worktree/);
+test('task deletion keeps persisted state until runtime and worktree cleanup succeeds', () => {
+  assert.match(source, /await cleanupAgentWorkspaceTask/);
+  assert.match(source, /removeTask\(task\.id\)/);
+  assert.ok(source.indexOf('await cleanupAgentWorkspaceTask') < source.indexOf('removeTask(task.id)'));
+  assert.match(source, /return removedIds\.size === deletingIds\.size/);
 });
 
 test('switching projects preserves isolated project view state', () => {
@@ -39,7 +41,7 @@ test('new task drafts open the full editor instead of the todo detail view', () 
 test('opening a local project initializes the JunQi project configuration', () => {
   assert.match(source, /invoke\('init_project_config', \{ projectPath \}\)/);
   assert.match(source, /workspace\?\.sshRemoteHost/);
-  assert.match(source, /初始化项目配置失败/);
+  assert.match(source, /agentWorkspace\.initProjectFailed/);
 });
 
 test('the empty task page can open a local project directly', () => {
@@ -51,10 +53,10 @@ test('the empty task page can open a local project directly', () => {
 });
 
 test('task list actions match JunQi ownership boundaries', () => {
-  const start = source.indexOf("title={task.starred ? '取消收藏'");
-  const end = source.indexOf('title="删除任务"', start);
+  const start = source.indexOf("agentWorkspace.unstarTask");
+  const end = source.indexOf('agentWorkspace.deleteTask', start);
   const taskActions = source.slice(start, end);
-  assert.match(taskActions, /title="立即运行"/);
+  assert.match(taskActions, /agentWorkspace\.runNow/);
   assert.doesNotMatch(taskActions, /编辑任务/);
   assert.doesNotMatch(taskActions, /生成任务名称/);
   assert.doesNotMatch(source, /editingTaskId|commitTaskRename/);
@@ -73,12 +75,12 @@ test('project rail uses WebView-safe pointer reordering', () => {
 test('hidden projects remain available in the drawer and active project stays on the rail', () => {
   assert.match(source, /!item\.hiddenFromRail \|\| item\.id === activeRailWorkspaceId/);
   assert.match(source, /toggleWorkspaceHidden\(item\.id\)/);
-  assert.match(source, /从项目栏隐藏/);
-  assert.match(source, /固定到项目栏/);
+  assert.match(source, /agentWorkspace\.hideProject/);
+  assert.match(source, /agentWorkspace\.pinProject/);
   assert.match(source, /projectRailRef\.current\?\.contains/);
   assert.match(source, /document\.addEventListener\('pointerdown', onPointerDown, true\)/);
   assert.match(source, /setProjectDrawerQuery\(''\)/);
-  assert.match(source, /已隐藏/);
+  assert.match(source, /agentWorkspace\.hidden/);
 });
 
 test('project management keeps rename, visibility and removal actions discoverable', () => {
@@ -99,8 +101,8 @@ test('full task panel owns footer actions while compact mode keeps only the proj
   assert.match(source, /navigate\('\/settings\?tab=terminal'\)/);
   assert.match(source, /terminalSettings\.title/);
   assert.match(source, /setTheme\(darkTheme \? 'aegis-light' : 'aegis-dark'\)/);
-  assert.match(source, /切换到浅色主题/);
-  assert.match(source, /切换到深色主题/);
+  assert.match(source, /agentWorkspace\.switchLightTheme/);
+  assert.match(source, /agentWorkspace\.switchDarkTheme/);
   assert.match(source, /ENABLE_USAGE_INSIGHTS && <UsagePopover \/>/);
   assert.match(source, /visible=\{selected\?\.id === task\.id && selectedRunVisible\}/);
 });
@@ -115,6 +117,8 @@ test('AI workspace exposes a deterministic back hierarchy and animated content s
   assert.match(source, /aria-label=\{backLabel\}/);
   assert.match(source, /<AnimatePresence initial=\{false\} mode="wait">/);
   assert.match(source, /<WorkspaceContentScene key=/);
+  assert.match(source, /key=\{`files:\$\{projectPath\}`\}/);
+  assert.doesNotMatch(source, /key=\{`file:\$\{activeFilePath\}`\}/);
   assert.match(source, /agentWorkspace\.backToTask/);
   assert.match(source, /agentWorkspace\.backToTaskList/);
   assert.doesNotMatch(source, /agentWorkspace\.backToDashboard/);
@@ -146,7 +150,7 @@ test('closing the active file tab follows JunQi adjacent-tab fallback', () => {
 test('task notification deep links select their project and task', () => {
   assert.match(source, /new URLSearchParams\(location\.search\)\.get\('task'\)/);
   assert.match(source, /findWorkspaceForDirectory\(workspaces, task\.projectPath\)/);
-  assert.match(source, /setActiveWorkspace\(targetWorkspace\.id\)/);
+  assert.match(source, /activateWorkspace\(targetWorkspace\.id\)/);
   assert.match(source, /selectProjectTask\(task\.projectPath, task\.id\)/);
   assert.match(source, /navigate\('\/ai-workspace', \{ replace: true \}\)/);
 });
@@ -156,7 +160,7 @@ test('task history and attention badge preferences live in JunQi app settings', 
   assert.match(source, /attentionBadge && activity\.attention > 0/);
   assert.match(source, /attentionBadge && hasAttention/);
   assert.doesNotMatch(source, /aria-label="任务历史范围"/);
-  assert.match(source, /<Trash2 size=\{12\} \/>清空/);
+  assert.match(source, /agentWorkspace\.clear/);
 });
 
 test('workspace capability panel reuses shared skills and persisted task settings', () => {
@@ -166,9 +170,17 @@ test('workspace capability panel reuses shared skills and persisted task setting
   assert.match(source, /task\.launchMode/);
   assert.match(source, /toggleRightPanel\('capabilities'\)/);
   assert.match(source, /onNavigate\('\/activity'\)/);
+  assert.match(source, /agentWorkspace\.directMode/);
+  assert.doesNotMatch(source, />Skills<|>Memory</);
 });
 
 test('task list delegates JunQi attention ordering to the shared model', () => {
   assert.match(source, /sort\(compareAgentWorkspaceTasks\)/);
   assert.match(source, /agentTaskNeedsAttention\(task\)/);
+});
+
+test('worktree terminals route the selected directory through the shared shell panel', () => {
+  assert.match(source, /setPendingTerminalDirectory\(worktreePath\)/);
+  assert.match(source, /shellTerminalRef\.current\?\.openDirectory\(pendingTerminalDirectory\)/);
+  assert.match(source, /ref=\{shellTerminalRef\}/);
 });

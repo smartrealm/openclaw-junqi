@@ -3,16 +3,20 @@ import test from 'node:test';
 import {
   decodeBase64Utf8,
   getFilePreviewKind,
-  getLocalBinaryPreviewKind,
-  loadLocalBinaryPreview,
   loadLocalFilePreview,
+  resolveLocalFileReference,
   readLocalTextPreview,
 } from './filePreview';
 
 test('CHAT-12 classifies only formats with a real inline renderer', () => {
   assert.equal(getFilePreviewKind('training/index.html'), 'html');
   assert.equal(getFilePreviewKind('notes.md'), 'markdown');
+  assert.equal(getFilePreviewKind('component.mdx'), 'markdown');
   assert.equal(getFilePreviewKind('diagram.webp'), 'image');
+  assert.equal(getFilePreviewKind('recording.m4a'), 'audio');
+  assert.equal(getFilePreviewKind('movie.mp4'), 'video');
+  assert.equal(getFilePreviewKind('report.pdf'), 'pdf');
+  assert.equal(getFilePreviewKind('Dockerfile'), 'text');
   assert.equal(getFilePreviewKind('slides.pptx'), null);
 });
 
@@ -71,12 +75,7 @@ test('CHAT-12 static fallback and legacy raw reads preserve UTF-8 text', async (
 });
 
 test('FILE-01 binary previews use the scoped native URL instead of a raw file read', async () => {
-  assert.equal(getLocalBinaryPreviewKind('recording.m4a'), 'audio');
-  assert.equal(getLocalBinaryPreviewKind('report.pdf'), 'pdf');
-  assert.equal(getLocalBinaryPreviewKind('scan.tiff'), 'image');
-  assert.equal(getLocalBinaryPreviewKind('slides.pptx'), null);
-
-  const preview = await loadLocalBinaryPreview('/Users/wei/Desktop/report.pdf', 'report.pdf', {
+  const preview = await loadLocalFilePreview('/Users/wei/Desktop/report.pdf', 'report.pdf', {
     managedFiles: {
       createPreview: async (path) => ({
         success: path.endsWith('/report.pdf'),
@@ -88,4 +87,24 @@ test('FILE-01 binary previews use the scoped native URL instead of a raw file re
     kind: 'pdf',
     url: 'junqi-preview://localhost/token/report.pdf',
   });
+});
+
+test('FILE-02 Markdown resources resolve beside their owner without escaping an absolute root', () => {
+  assert.equal(
+    resolveLocalFileReference('../images/diagram.png', '/Users/wei/docs/guide/readme.md'),
+    null,
+  );
+  assert.equal(
+    resolveLocalFileReference('../../../../etc/passwd', '/Users/wei/docs/readme.md'),
+    null,
+  );
+  assert.equal(
+    resolveLocalFileReference('../images/diagram.png', '/Users/wei/docs/guide/readme.md', '/Users/wei/docs'),
+    '/Users/wei/docs/images/diagram.png',
+  );
+  assert.equal(
+    resolveLocalFileReference('..\\images\\diagram.png', 'C:\\Users\\wei\\docs\\guide\\readme.md', 'C:\\Users\\wei\\docs'),
+    'C:/Users/wei/docs/images/diagram.png',
+  );
+  assert.equal(resolveLocalFileReference('https://example.com/image.png', '/tmp/readme.md'), null);
 });

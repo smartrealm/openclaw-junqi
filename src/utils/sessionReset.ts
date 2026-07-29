@@ -67,7 +67,7 @@ function resumeQueuedMessages(sessionKey: string): void {
       && !chat.typingBySession[sessionKey]
       && (chat.messageQueue[sessionKey]?.length ?? 0) > 0
     ) {
-      void chat.drainQueue(sessionKey);
+      void chat.drainQueue(sessionKey).catch(() => undefined);
     }
   });
 }

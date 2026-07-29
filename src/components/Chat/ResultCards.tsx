@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { AlertCircle, Code2, Copy, ExternalLink, Eye, EyeOff, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, MoreHorizontal, RefreshCw, Sparkles, ChevronDown, Globe, Image, FileCode2, Layers, type LucideIcon } from 'lucide-react';
 import { ArrowsClockwise } from '@phosphor-icons/react';
 import clsx from 'clsx';
@@ -10,10 +10,15 @@ import { Icon } from '@/components/shared/icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getFileName, getFileParentFolder } from '@/services/chat/filePresentation';
-import { getFilePreviewKind, loadLocalFilePreview, type LocalFilePreview } from '@/services/chat/filePreview';
+import {
+  getFilePreviewKind,
+  loadLocalFilePreview,
+  loadLocalMarkdownImage,
+  resolveLocalFileReference,
+  type LocalFilePreview,
+} from '@/services/chat/filePreview';
 import { debugError, debugWarn } from '@/utils/debugLog';
-
-const ResultMarkdownPreview = lazy(() => import('./ResultMarkdownPreview').then((m) => ({ default: m.ResultMarkdownPreview })));
+import { ManagedFilePreview } from '@/components/FileExplorer/ManagedFilePreview';
 
 function isLocalFilePath(value?: string) {
   if (!value) return false;
@@ -221,6 +226,18 @@ function FileRow({ file }: { file: FileRef }) {
     }
   };
 
+  const handleOpenMarkdownLink = useCallback(async (href: string) => {
+    const resolved = resolveLocalFileReference(href, path, file.workspaceRoot);
+    if (!resolved) return;
+    const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
+    if (openManagedPath) await openManagedPath(resolved);
+  }, [file.workspaceRoot, path]);
+
+  const resolveMarkdownImage = useCallback(
+    (source: string) => loadLocalMarkdownImage(source, path, file.workspaceRoot),
+    [file.workspaceRoot, path],
+  );
+
   const renderPreview = () => {
     if (previewLoading) {
       return (
@@ -253,79 +270,15 @@ function FileRow({ file }: { file: FileRef }) {
         </div>
       );
     }
-    if (preview.kind === 'html') {
-      const notice = preview.mode === 'static' && preview.truncated ? (
-        <div className="flex items-center gap-1.5 px-1 pb-2 text-[10px] text-aegis-warning">
-          <Info size={12} />
-          {t('resultCards.previewTruncated', 'This preview is truncated. Open the original file to view everything.')}
-        </div>
-      ) : null;
-      if (preview.mode === 'interactive') {
-        return (
-          <>
-            <iframe
-              src={preview.url}
-              // The native protocol only serves the clicked file's directory and its response CSP blocks external network and form access.
-              sandbox="allow-scripts"
-              referrerPolicy="no-referrer"
-              loading="lazy"
-              className="block h-[min(560px,58vh)] min-h-[320px] w-full rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] bg-white"
-              title={name}
-            />
-            {notice}
-          </>
-        );
-      }
-      return (
-        <>
-          <div className="flex items-center gap-1.5 px-1 pb-2 text-[10px] text-aegis-text-dim">
-            <Info size={12} />
-            {t('resultCards.staticPreviewFallback', 'Interactive resources are unavailable; showing a safe static preview.')}
-          </div>
-          <iframe
-            srcDoc={preview.content}
-            sandbox=""
-            referrerPolicy="no-referrer"
-            className="block h-[min(560px,58vh)] min-h-[320px] w-full rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] bg-white"
-            title={name}
-          />
-          {notice}
-        </>
-      );
-    }
-    if (preview.kind === 'image') {
-      return (
-        <div className="flex max-h-[min(560px,58vh)] min-h-[220px] items-center justify-center overflow-auto rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.03)] p-3">
-          <img src={preview.url} alt={name} className="max-h-[520px] max-w-full object-contain" draggable={false} />
-        </div>
-      );
-    }
-    if (preview.kind === 'markdown') {
-      return (
-        <Suspense
-          fallback={
-            <div className="space-y-2 p-3" role="status" aria-label={t('common.loading', 'Loading…')}>
-              <div className="h-3 w-1/3 animate-pulse rounded-sm bg-[rgb(var(--aegis-overlay)/0.09)]" />
-              <div className="h-28 animate-pulse rounded-md bg-[rgb(var(--aegis-overlay)/0.05)]" />
-            </div>
-          }
-        >
-          <ResultMarkdownPreview content={preview.content} />
-        </Suspense>
-      );
-    }
     return (
-      <>
-        {preview.truncated && (
-          <div className="flex items-center gap-1.5 px-1 pb-2 text-[10px] text-aegis-warning">
-            <Info size={12} />
-            {t('resultCards.previewTruncated', 'This preview is truncated. Open the original file to view everything.')}
-          </div>
-        )}
-        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-[rgb(var(--aegis-overlay)/0.05)] p-3 font-mono text-[11px] text-aegis-text-muted">
-          {preview.content}
-        </pre>
-      </>
+      <ManagedFilePreview
+        preview={preview}
+        fileName={name}
+        compact
+        onOpenExternal={() => void handleOpen()}
+        onOpenLocalLink={handleOpenMarkdownLink}
+        resolveMarkdownImage={resolveMarkdownImage}
+      />
     );
   };
 

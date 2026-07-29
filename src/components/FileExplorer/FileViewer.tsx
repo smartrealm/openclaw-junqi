@@ -48,6 +48,7 @@ import {
   workspaceRelativePath,
   type FileViewMode,
 } from "./fileViewerModel";
+import { runAfterSaveBarrier } from "./saveBeforeTransition";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -615,6 +616,27 @@ export const FileViewer = forwardRef<FileViewerHandle, {
     };
   }, []);
 
+  const flushPath = useCallback(async (path: string, isDirectory: boolean) => {
+    const handlers = [...saveHandlersRef.current.entries()]
+      .filter(([openPath]) => pathIsTargetOrDescendant(openPath, path, isDirectory))
+      .map(([, handler]) => handler());
+    await Promise.all(handlers);
+  }, []);
+
+  const closeTabsAfterSave = useCallback((paths: string[], close: () => void) => {
+    const uniquePaths = [...new Set(paths)];
+    void runAfterSaveBarrier(
+      () => Promise.all(uniquePaths.map((path) => flushPath(path, false))).then(() => undefined),
+      close,
+    ).catch((error) => {
+      addToast(
+        "error",
+        t("workspace.saveFailed", "Save failed"),
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+  }, [addToast, flushPath, t]);
+
   const handleTableOfContentsAvailabilityChange = useCallback(
     (path: string, available: boolean) => {
       setTableOfContentsAvailability((prev) => {
@@ -626,13 +648,8 @@ export const FileViewer = forwardRef<FileViewerHandle, {
   );
 
   useImperativeHandle(ref, () => ({
-    flushPath: async (path, isDirectory) => {
-      const handlers = [...saveHandlersRef.current.entries()]
-        .filter(([openPath]) => pathIsTargetOrDescendant(openPath, path, isDirectory))
-        .map(([, handler]) => handler());
-      await Promise.all(handlers);
-    },
-  }), []);
+    flushPath,
+  }), [flushPath]);
 
   // Clamp menu to viewport
   useLayoutEffect(() => {
@@ -851,7 +868,7 @@ export const FileViewer = forwardRef<FileViewerHandle, {
                 <span
                   onClick={(event) => {
                     event.stopPropagation();
-                    onCloseTab(tab.path);
+                    closeTabsAfterSave([tab.path], () => onCloseTab(tab.path));
                   }}
                   style={{
                     background: "none",
@@ -983,7 +1000,7 @@ export const FileViewer = forwardRef<FileViewerHandle, {
             icon={X}
             label={t("file.closeThisTab", "Close")}
             onClick={() => {
-              onCloseTab(tabMenu.path);
+              closeTabsAfterSave([tabMenu.path], () => onCloseTab(tabMenu.path));
               setTabMenu(null);
             }}
           />
@@ -992,7 +1009,10 @@ export const FileViewer = forwardRef<FileViewerHandle, {
             label={t("file.closeOtherTabs", "Close Other Tabs")}
             disabled={!tabMenuCanCloseOthers}
             onClick={() => {
-              onCloseOtherTabs(tabMenu.path);
+              closeTabsAfterSave(
+                tabs.filter((tab) => tab.path !== tabMenu.path).map((tab) => tab.path),
+                () => onCloseOtherTabs(tabMenu.path),
+              );
               setTabMenu(null);
             }}
           />
@@ -1001,7 +1021,11 @@ export const FileViewer = forwardRef<FileViewerHandle, {
             label={t("file.closeTabsToRight", "Close Tabs to the Right")}
             disabled={!tabMenuCanCloseRight}
             onClick={() => {
-              onCloseTabsToRight(tabMenu.path);
+              const index = tabs.findIndex((tab) => tab.path === tabMenu.path);
+              closeTabsAfterSave(
+                index < 0 ? [] : tabs.slice(index + 1).map((tab) => tab.path),
+                () => onCloseTabsToRight(tabMenu.path),
+              );
               setTabMenu(null);
             }}
           />
@@ -1010,7 +1034,11 @@ export const FileViewer = forwardRef<FileViewerHandle, {
             label={t("file.closeTabsToLeft", "Close Tabs to the Left")}
             disabled={!tabMenuCanCloseLeft}
             onClick={() => {
-              onCloseTabsToLeft(tabMenu.path);
+              const index = tabs.findIndex((tab) => tab.path === tabMenu.path);
+              closeTabsAfterSave(
+                index < 0 ? [] : tabs.slice(0, index).map((tab) => tab.path),
+                () => onCloseTabsToLeft(tabMenu.path),
+              );
               setTabMenu(null);
             }}
           />
@@ -1019,7 +1047,7 @@ export const FileViewer = forwardRef<FileViewerHandle, {
             label={t("file.closeAllTabs", "Close All Tabs")}
             disabled={tabs.length === 0}
             onClick={() => {
-              onCloseAllTabs();
+              closeTabsAfterSave(tabs.map((tab) => tab.path), onCloseAllTabs);
               setTabMenu(null);
             }}
           />

@@ -12,18 +12,71 @@ import { useTranslation } from 'react-i18next';
 import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
-interface PdfPreviewProps {
-  /** Raw PDF data as base64 string */
-  base64: string;
-  onOpenExternal?: () => void;
-}
+type PdfPreviewProps =
+  | {
+      /** Raw PDF data as base64 string. */
+      base64: string;
+      url?: never;
+      title?: string;
+      onOpenExternal?: () => void;
+    }
+  | {
+      /** Scoped native preview URL for files outside a workspace IPC root. */
+      url: string;
+      base64?: never;
+      title?: string;
+      onOpenExternal?: () => void;
+    };
 
 const SCALE_STEP = 0.25;
 const SCALE_MIN = 0.5;
 const SCALE_MAX = 3.0;
 const SCALE_DEFAULT = 1.2;
 
-export function PdfPreview({ base64, onOpenExternal }: PdfPreviewProps) {
+export function PdfPreview(props: PdfPreviewProps) {
+  if (typeof props.url === 'string') {
+    return <NativePdfPreview url={props.url} title={props.title} onOpenExternal={props.onOpenExternal} />;
+  }
+  if (typeof props.base64 !== 'string') return null;
+  return <CanvasPdfPreview base64={props.base64} onOpenExternal={props.onOpenExternal} />;
+}
+
+function NativePdfPreview({
+  url,
+  title = 'PDF',
+  onOpenExternal,
+}: {
+  url: string;
+  title?: string;
+  onOpenExternal?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-[rgb(var(--aegis-overlay)/0.03)]">
+      {onOpenExternal && (
+        <div className="flex h-9 shrink-0 items-center justify-end border-b border-[rgb(var(--aegis-overlay)/0.06)] px-2">
+          <button
+            type="button"
+            onClick={onOpenExternal}
+            className="flex items-center gap-1.5 rounded border border-[rgb(var(--aegis-overlay)/0.1)] px-2.5 py-1 text-[11px] text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text"
+          >
+            <ExternalLink size={12} />
+            {t('file.openExternal', 'Open with system app')}
+          </button>
+        </div>
+      )}
+      <iframe
+        title={title}
+        src={url}
+        sandbox=""
+        referrerPolicy="no-referrer"
+        className="min-h-0 w-full flex-1 border-0 bg-white"
+      />
+    </div>
+  );
+}
+
+function CanvasPdfPreview({ base64, onOpenExternal }: { base64: string; onOpenExternal?: () => void }) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);

@@ -6,6 +6,7 @@ import {
   GatewayConnectionFenceError,
   GatewayRpcError,
 } from './Connection';
+import { GatewayTransportLifecycleError } from './GatewayTransportError';
 
 function failedGatewayCall(
   connection: GatewayConnection,
@@ -19,6 +20,25 @@ function failedGatewayCall(
 }
 
 describe('GatewayConnection request identity', () => {
+  it('uses the recoverable transport contract before connect and for pending disconnects', async () => {
+    const connection = new GatewayConnection();
+    await assert.rejects(
+      connection.request('sessions.list', {}),
+      (error: unknown) => error instanceof GatewayTransportLifecycleError
+        && error.message === 'Gateway is not connected',
+    );
+
+    const pending = new Promise((resolve, reject) => {
+      connection.registerCallback('pending-disconnect', { resolve, reject });
+    });
+    connection.disconnect();
+    await assert.rejects(
+      pending,
+      (error: unknown) => error instanceof GatewayTransportLifecycleError
+        && error.message === 'Gateway connection closed',
+    );
+  });
+
   it('rejects an identity-fenced request before sending on a different connection', async () => {
     const connection = new GatewayConnection() as any;
     let sends = 0;

@@ -12,6 +12,7 @@ import {
 import { FileExplorerContextMenu } from '@/components/FileExplorer/ContextMenu';
 import { useFileExplorerContextActions } from '@/components/FileExplorer/useFileExplorerContextActions';
 import { readDir, type FsEntry } from '@/services/workspaceFs';
+import { useTranslation } from 'react-i18next';
 
 function extensionOf(name: string): string | null {
   const dot = name.lastIndexOf('.');
@@ -35,6 +36,7 @@ function TreeNode({
   onOpenFile: (entry: FsEntry) => void;
   onEntryContextMenu: (event: MouseEvent, entry: FsEntry) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [children, setChildren] = useState<FsEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -115,7 +117,7 @@ function TreeNode({
       ))}
       {open && err && (
         <div className="text-[10px] text-aegis-danger/70" style={{ paddingInlineStart: 6 + (depth + 1) * 12 }}>
-          读取失败
+          {t('workspace.readFailed', 'Unable to read directory')}
         </div>
       )}
     </div>
@@ -137,6 +139,7 @@ export function WorkspaceFileTree({
   onPathRenamed?: (oldPath: string, newPath: string, isDirectory: boolean) => void;
   onPathDeleted?: (path: string, isDirectory: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<FsEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -196,11 +199,11 @@ export function WorkspaceFileTree({
     <div className="p-3 text-center">
       <p className="mb-2 break-words text-[11px] text-aegis-danger/80">{err}</p>
       <button type="button" onClick={() => void load()} className="inline-flex items-center gap-1 text-[11px] text-aegis-text-muted hover:text-aegis-text">
-        <RefreshCw size={11} /> 重试
+        <RefreshCw size={11} /> {t('common.retry', 'Retry')}
       </button>
     </div>
   ) : !entries || entries.length === 0 ? (
-    <div className="p-4 text-center text-[11px] text-aegis-text-dim">工作区为空</div>
+    <div className="p-4 text-center text-[11px] text-aegis-text-dim">{t('workspace.empty', 'Workspace is empty')}</div>
   ) : (
     <div className="py-1">
       {entries.map((entry) => (

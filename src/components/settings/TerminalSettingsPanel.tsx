@@ -72,6 +72,7 @@ import {
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { FontSelector } from '@/components/settings/FontSelector';
 import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
+import { commitTerminalSettingsReset } from './terminalSettingsTransaction';
 
 const SCROLLBACK_OPTIONS = [500, 1000, 2000, 3000, 5000] as const;
 type SaveState = 'idle' | 'saving' | 'saved';
@@ -468,22 +469,23 @@ export function TerminalSettingsPanel() {
   };
 
   const resetDefaults = async () => {
-    setTerminalFontSize(12);
-    setMonoFont('');
-    setShiftEnterNewline(DEFAULT_TERMINAL_SHIFT_ENTER_NEWLINE);
-    resetTerminalAgentPreferences();
-    resetTerminalPresetPreferences();
-    resetTerminalCustomAgentPreferences();
-    resetTerminalOpenInPreferences();
-    resetTerminalStatusPreferences();
-    resetTerminalAppearancePreferences();
     setSaveState('saving');
     setError(null);
     try {
-      await Promise.all([
-        invoke('save_terminal_scrollback', { scrollback: DEFAULT_TERMINAL_SCROLLBACK }),
-        invoke('save_terminal_shift_enter_newline', { enabled: DEFAULT_TERMINAL_SHIFT_ENTER_NEWLINE }),
-      ]);
+      await commitTerminalSettingsReset(
+        () => invoke('reset_terminal_settings'),
+        () => {
+          setTerminalFontSize(12);
+          setMonoFont('');
+          setShiftEnterNewline(DEFAULT_TERMINAL_SHIFT_ENTER_NEWLINE);
+          resetTerminalAgentPreferences();
+          resetTerminalPresetPreferences();
+          resetTerminalCustomAgentPreferences();
+          resetTerminalOpenInPreferences();
+          resetTerminalStatusPreferences();
+          resetTerminalAppearancePreferences();
+        },
+      );
       window.dispatchEvent(new Event(TERMINAL_SETTINGS_CHANGED_EVENT));
       showSaved();
     } catch (reason) {

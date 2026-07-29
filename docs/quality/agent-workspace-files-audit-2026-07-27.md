@@ -93,7 +93,7 @@
 等级：A
 
 - `FileViewer` 此前把 Markdown 渲染、模式按钮和状态操作混在单个大组件中；标签栏右侧只有语义不明确的动作，用户无法稳定区分源码与预览。
-- 文件管理页 `FileMarkdownPreview` 另有一套 `react-markdown` 组件映射，表格、代码、链接和 HTML 安全策略与智能体工作区发生漂移。
+- 文件管理页此前由 `FileMarkdownPreview` 维护另一套接入；2026-07-29 的文件预览收敛已删除该组件，托管文件与聊天文件结果统一进入 `ManagedFilePreview` 和共享 `MarkdownPreview`。
 - 标题没有可复用目录，长文档缺少定位入口；标签右键也只有关闭动作，缺少关闭其他/左右标签、复制相对路径和系统中显示。
 - Orca 的 `EditorPanelHeader`、`EditorViewToggle`、`EditorPanelMarkdownActionsMenu`、`MarkdownPreview`、`MarkdownTableOfContentsPanel` 与 `EditorFileTabContextMenu` 提供了可核对的结构：标签栏下方使用稳定操作栏，源码/预览用图标分段控制，Markdown 目录独立成栏，通用动作进入更多菜单，标签菜单承载批量关闭与路径操作。
 
@@ -139,3 +139,5 @@
 2026-07-28 文件格式分流：定向 TypeScript 回归 13 项通过；`pnpm test`、`pnpm lint`（575 个模块边界检查）、`pnpm build`、`cargo fmt -- --check`、`cargo check --lib` 和 `git diff --check` 通过；`cargo test --lib` 为 627 项通过、3 项环境依赖测试忽略。重新生成的 Apple Silicon `.app` 与 DMG 均通过严格 codesign，DMG 校验和有效；挂载后确认应用版本 `1.4.14`、架构 `arm64`、签名类型为 ad-hoc。未启动实际 Tauri 窗口，图片、PDF、未知二进制及源码格式仍需桌面交互走查；该制品未做 Developer ID 签名或 notarization。
 
 2026-07-28 Markdown 预览与操作栏：用统一 GFM React 渲染器替换 `FileViewer` 的字符串 HTML 注入和文件管理页的重复渲染器；标题目录由标准 Markdown AST 生成，工作区本地图片仍经过前端路径规范化与 Rust IPC 根目录门禁。Markdown、跨平台路径、工作区源码接入和文件管理页接入定向回归 14 项通过；`pnpm test` 共 1,932 项通过（前端 1,709、脚本 223）；`pnpm lint` 与 582 个模块边界检查、`pnpm build`、locale JSON 解析和 `git diff --check` 通过。最大 JavaScript chunk 为 513.31 kB，低于 550 kB 门禁，构建没有循环 chunk 或超限提示。应用内浏览器控制技能已尝试连接，但当前会话没有可用浏览器实例；未把源码检查描述成实际 Tauri 窗口验收，长文档目录、模式切换、更多菜单、标签右键和本地图片仍需桌面走查。
+
+2026-07-29 跨功能文件预览收敛：托管输出、上传文件和聊天文件结果共用 `ManagedFilePreview` 与单一加载入口，独立 `ResultMarkdownPreview`、`FileMarkdownPreview` 和文件管理器三套加载 effect 已删除；终端文件树通过受根目录约束的路由进入共享 `FileViewer`。定向回归 32 项、前端 1736 项和脚本 223 项通过；`pnpm lint`、`pnpm build`、`git diff --check` 通过，构建无循环 chunk 或超限提示。未执行 Tauri 桌面交互验收。

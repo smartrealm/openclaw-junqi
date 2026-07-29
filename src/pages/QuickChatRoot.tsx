@@ -110,7 +110,7 @@ export default function QuickChatRoot() {
             if (disposed) return;
             const store = useChatStore.getState();
             if ((store.messageQueue[sessionKey]?.length ?? 0) > 0 && !store.typingBySession[sessionKey]) {
-              void store.drainQueue(sessionKey);
+              void store.drainQueue(sessionKey).catch(() => undefined);
             }
           });
         }
@@ -135,7 +135,7 @@ export default function QuickChatRoot() {
         && state.typingBySession[sessionKey] === false
         && (state.messageQueue[sessionKey]?.length ?? 0) > 0
       ) {
-        void state.drainQueue(sessionKey);
+        void state.drainQueue(sessionKey).catch(() => undefined);
       }
     });
     return () => {

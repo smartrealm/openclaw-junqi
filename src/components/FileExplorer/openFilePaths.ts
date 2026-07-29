@@ -6,7 +6,9 @@ function separatorFor(path: string): "/" | "\\" {
 export function pathIsTargetOrDescendant(path: string, targetPath: string, isDirectory: boolean): boolean {
   if (path === targetPath) return true;
   if (!isDirectory) return false;
-  return path.startsWith(`${targetPath}${separatorFor(targetPath)}`);
+  const separator = separatorFor(targetPath);
+  const prefix = targetPath.endsWith(separator) ? targetPath : `${targetPath}${separator}`;
+  return path.startsWith(prefix);
 }
 
 export function rebaseOpenFilePath(

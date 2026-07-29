@@ -39,6 +39,7 @@
 - [x] 抽离统一 Markdown GFM 预览、目录、文件查看器操作栏和路径模型，删除文件管理页的重复渲染器。
 - [x] 增加稳定标题锚点、当前预览内跳转、本地图片根目录门禁、长行换行和完整标签右键操作。
 - [x] 补充 Markdown 渲染、标题提取、跨平台路径与源码接入回归。
+- [x] 将托管文件与聊天文件结果收敛到共享只读预览，并让终端文件树进入共享 `FileViewer`。
 - [ ] 在实际 Tauri 桌面窗口走查文本自动刷新、冲突恢复操作和图片热刷新。
 - [ ] 在实际 Tauri 桌面窗口逐页走查文件/目录/空白处右键操作。
 - [ ] 在实际 Tauri 桌面窗口走查 Markdown 目录、模式切换、更多菜单、标签右键和本地图片。
@@ -59,6 +60,7 @@
 - 重新生成的 Apple Silicon `.app` 与 DMG 严格 codesign 和 `hdiutil verify` 通过；DMG 内应用为 `1.4.14`、`arm64`、ad-hoc 签名。未做 Developer ID 签名、公证或桌面交互验收。
 - Markdown、跨平台路径、工作区源码接入和文件管理页接入定向回归 14 项通过；`pnpm test` 共 1,932 项通过（前端 1,709、脚本 223）；`pnpm lint` 与 582 个模块边界检查、`pnpm build`、locale JSON 解析和 `git diff --check` 通过。
 - 生产构建最大 JavaScript chunk 为 513.31 kB，低于 550 kB 门禁，没有循环 chunk 或超限提示。当前会话没有可用应用内浏览器实例，Markdown 目录、模式切换、更多菜单、标签右键和本地图片未完成实际 Tauri 窗口验收。
+- 跨功能文件预览定向回归 32 项、前端 1736 项和脚本 223 项通过；`pnpm lint`、`pnpm build` 与 `git diff --check` 通过。终端跳转、托管 PDF/音视频和 Markdown 本地资源未做桌面真机验收。
 
 ## 影响文件
 

@@ -668,7 +668,7 @@ export default function App() {
       if (cur === old) return;
       for (const key of Object.keys(cur)) {
         if (cur[key] === false && old[key] === true && (state.messageQueue[key] || []).length > 0) {
-          void useChatStore.getState().drainQueue(key);
+          void useChatStore.getState().drainQueue(key).catch(() => undefined);
         }
       }
     });
@@ -795,10 +795,10 @@ export default function App() {
       },
       onStreamReconciliationNeeded: (sessionKey) => {
         refreshDurableTranscript(sessionKey);
-        void gateway.reconcileChatSessionRun(sessionKey);
+        void gateway.reconcileChatSessionRun(sessionKey).catch(() => undefined);
       },
       onSessionRunReconciliationNeeded: (sessionKey) => {
-        void gateway.reconcileChatSessionRun(sessionKey);
+        void gateway.reconcileChatSessionRun(sessionKey).catch(() => undefined);
       },
       onTranscriptChanged: (sessionKey) => {
         refreshDurableTranscript(sessionKey);

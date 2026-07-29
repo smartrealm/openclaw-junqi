@@ -324,6 +324,7 @@ pub fn run() {
             commands::app_settings::set_application_language,
             commands::app_settings::save_terminal_scrollback,
             commands::app_settings::save_terminal_shift_enter_newline,
+            commands::app_settings::reset_terminal_settings,
             commands::app_settings::save_app_settings,
             commands::app_settings::detect_agent_paths,
             // Hooks (minimal port of junqi hooks.rs)

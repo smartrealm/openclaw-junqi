@@ -1796,7 +1796,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           && !sessionMutationGate.isBlocked(sessionKey)
           && !isSessionDeleted(sessionKey)
         ) {
-          void state.drainQueue(sessionKey);
+          void state.drainQueue(sessionKey).catch(() => undefined);
         }
       });
     }

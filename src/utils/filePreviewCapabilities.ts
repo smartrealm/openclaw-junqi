@@ -28,7 +28,29 @@ export type WorkspaceFilePreview =
       byteLength: number;
     };
 
-const MARKDOWN_EXTENSIONS = new Set(["md", "mdx", "markdown"]);
+export type ManagedFilePreview =
+  | {
+      kind: "html";
+      mode: "interactive";
+      url: string;
+    }
+  | {
+      kind: "html";
+      mode: "static";
+      content: string;
+      truncated: boolean;
+    }
+  | {
+      kind: "image" | "audio" | "video" | "pdf";
+      url: string;
+    }
+  | {
+      kind: "markdown" | "text";
+      content: string;
+      truncated: boolean;
+    };
+
+const MARKDOWN_EXTENSIONS = new Set(["md", "mdx", "markdown", "mdown"]);
 const RICH_SOURCE_EXTENSIONS = new Set(["mmd", "mermaid", "csv", "tsv", "ipynb"]);
 
 export function fileExtension(fileName: string): string {

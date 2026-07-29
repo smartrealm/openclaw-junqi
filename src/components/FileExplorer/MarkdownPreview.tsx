@@ -71,11 +71,13 @@ function LocalMarkdownImage({
   alt,
   filePath,
   projectPath,
+  resolveImageSource,
 }: {
   source: string;
   alt: string;
   filePath?: string;
   projectPath?: string;
+  resolveImageSource?: (source: string) => Promise<string | null>;
 }) {
   const [resolvedSource, setResolvedSource] = useState<string | null>(() =>
     /^(?:https?:|data:)/i.test(source) ? source : null,
@@ -85,6 +87,20 @@ function LocalMarkdownImage({
     if (/^(?:https?:|data:)/i.test(source)) {
       setResolvedSource(source);
       return;
+    }
+    if (resolveImageSource) {
+      let active = true;
+      setResolvedSource(null);
+      void resolveImageSource(source)
+        .then((resolved) => {
+          if (active) setResolvedSource(resolved);
+        })
+        .catch(() => {
+          if (active) setResolvedSource(null);
+        });
+      return () => {
+        active = false;
+      };
     }
     if (!filePath || !projectPath) {
       setResolvedSource(null);
@@ -109,7 +125,7 @@ function LocalMarkdownImage({
     return () => {
       active = false;
     };
-  }, [filePath, projectPath, source]);
+  }, [filePath, projectPath, resolveImageSource, source]);
 
   if (!resolvedSource) return <span className="md-preview-image-unavailable">{alt}</span>;
   return <img src={resolvedSource} alt={alt} draggable={false} />;
@@ -130,12 +146,14 @@ export function MarkdownPreview({
   projectPath,
   className = "md-preview",
   onOpenLocalLink,
+  resolveImageSource,
 }: {
   content: string;
   filePath?: string;
   projectPath?: string;
   className?: string;
   onOpenLocalLink?: (href: string) => void | Promise<void>;
+  resolveImageSource?: (source: string) => Promise<string | null>;
 }) {
   const headingsByLine = useMemo(
     () => new Map(parseMarkdownHeadings(content).map((heading) => [heading.line, heading.id])),
@@ -168,11 +186,12 @@ export function MarkdownPreview({
             alt={alt ?? ""}
             filePath={filePath}
             projectPath={projectPath}
+            resolveImageSource={resolveImageSource}
           />
         );
       },
     };
-  }, [filePath, headingsByLine, projectPath]);
+  }, [filePath, headingsByLine, projectPath, resolveImageSource]);
 
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
     const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");

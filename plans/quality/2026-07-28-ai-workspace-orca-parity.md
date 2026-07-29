@@ -14,6 +14,8 @@
 - [x] 补齐三套当前启用的 locale，并覆盖 Git 变更、历史和 diff。
 - [x] 防止历史、分支和提交详情的旧请求覆盖当前选择。
 - [x] 修复命令面板 `forwardRef` 图标对象渲染崩溃并补回归测试。
+- [x] 删除智能体展开工作区的重复文件预览管线并接入共享 `FileViewer`。
+- [x] 提取工作区页签 reducer，覆盖关闭、删除和目录重命名。
 - [x] 运行定向和全量验证。
 
 ## 未验证边界
@@ -36,6 +38,8 @@
 - `src/locales/*.json`
 - `src/components/CommandPalette.tsx`
 - `src/components/CommandPalette.test.tsx`
+- `src/components/Workspace/WorkspacePanel.tsx`
+- `src/components/FileExplorer/fileViewerTabsState.ts`
 
 ## 回滚边界
 

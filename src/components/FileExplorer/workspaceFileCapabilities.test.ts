@@ -37,7 +37,9 @@ test("file viewer defaults markdown to preview and supports explicit durable sav
   assert.doesNotMatch(viewerSource, /dangerouslySetInnerHTML/);
   assert.match(viewerSource, /event\.key\.toLowerCase\(\) === "s"/);
   assert.match(viewerSource, /handleSaveNow/);
-  assert.match(viewerSource, /flushPath: async \(path, isDirectory\)/);
+  assert.match(viewerSource, /const flushPath = useCallback\(async \(path: string, isDirectory: boolean\)/);
+  assert.match(viewerSource, /useImperativeHandle\(ref, \(\) => \(\{[\s\S]*flushPath/);
+  assert.match(viewerSource, /closeTabsAfterSave/);
   assert.match(viewerSource, /createPortal\([\s\S]*tabMenu[\s\S]*document\.body/);
 });
 
@@ -45,7 +47,7 @@ test("file viewer keeps editor and Markdown preview readable in every applicatio
   assert.match(managerSource, /const resolvedTheme = useTheme\(\)/);
   assert.match(managerSource, /themeVariant=\{themeVariant\}/);
   assert.match(workspacePanelSource, /const resolvedTheme = useTheme\(\)/);
-  assert.match(workspacePanelSource, /extensions=\{\[languageExtension, aegisCodeMirrorBaseTheme\]\}/);
+  assert.match(workspacePanelSource, /<FileViewer[\s\S]*themeVariant=\{themeVariant\}/);
   assert.match(viewerSource, /const extensions = useMemo\([\s\S]*languageExtension,[\s\S]*aegisCodeMirrorBaseTheme/);
   assert.match(editorThemeSource, /color: 'rgb\(var\(--aegis-text\)\)'/);
   assert.match(editorThemeSource, /color: 'rgb\(var\(--aegis-text-dim\)\)'/);
@@ -65,8 +67,8 @@ test("guarded file writes stay registered across the TypeScript and Rust IPC bou
 
 test("workspace previews share one typed IPC contract and never edit unknown binary files", () => {
   assert.match(previewDocumentSource, /invoke<unknown>\("read_file_preview"/);
-  assert.match(workspacePanelSource, /readFilePreview\(entry\.path, root\)/);
-  assert.match(workspacePanelSource, /open\.preview\?\.kind === 'text'/);
+  assert.match(workspacePanelSource, /<FileViewer/);
+  assert.doesNotMatch(workspacePanelSource, /readFilePreview|writeFileText|FileReadOnlyPreview/);
   assert.match(viewerSource, /<FileReadOnlyPreview/);
   assert.match(tauriLibSource, /commands::fs_neu::read_file_preview/);
   assert.match(fsCommandSource, /enum FilePreviewKind \{[\s\S]*Text,[\s\S]*Image,[\s\S]*Pdf,[\s\S]*Binary/);

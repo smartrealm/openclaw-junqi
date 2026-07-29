@@ -227,6 +227,9 @@ export function useFilePreviewDocument({
     }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     await persistLatestContent();
+    if (textDocumentIsDirty(textDocumentRef.current)) {
+      throw new Error(changedOnDiskError);
+    }
   }, [changedOnDiskError, persistLatestContent, preview?.kind]);
 
   useEffect(

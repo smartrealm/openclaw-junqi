@@ -42,6 +42,12 @@ JunQi 已经具备 Orca 工作区的核心布局：项目/任务导航、中间�
 
 目标：命令图标只接受 `LucideIcon`，统一通过组件语义渲染；删除快速 Agent 配置中从未使用的 Phosphor 图标节点，并增加能在旧实现上触发同类异常的渲染回归测试。
 
+### BUG-AW-ORCA-06：智能体展开工作区绕过共享文件预览器
+
+`WorkspacePanel` 独立维护单文件读取、CodeMirror、保存和只读预览。该分支没有 Markdown 默认预览、Source/Preview 切换、目录、操作菜单、文件页签和共享磁盘同步，因此 `.md` 会直接显示为只有行号的空白源码视图，其他文件格式也与文件管理页行为不一致。
+
+目标：删除智能体工作区的重复文件管线，统一复用 `FileViewer`；工作区只负责目录树、根目录生命周期和页签状态。重命名、删除、切换根目录和关闭工作区前必须通过共享预览器刷新待保存内容。
+
 ## Orca 依据
 
 - `src/renderer/src/components/right-sidebar/index.tsx`：右侧活动栏按工作区能力展示 Explorer、Source Control 等稳定工具，而不是把它们混进任务正文。
@@ -77,9 +83,13 @@ JunQi 已经具备 Orca 工作区的核心布局：项目/任务导航、中间�
 - Git 历史、分支和提交详情使用独立请求序号，项目、分支、搜索或提交快速切换后不接受旧结果；pull/push 会等待刷新收敛后再结束忙碌态。
 - `GitChanges` 与 `GitHistory` 共用一个卸载安全的 Tauri invoke hook。
 - 命令面板图标契约收紧为 `LucideIcon` 并统一组件化渲染，删除未消费的快速 Agent 图标字段和 Phosphor imports。
+- 智能体展开工作区删除了独立 CodeMirror、文件读取、保存和只读预览分支，所有格式统一进入共享 `FileViewer`；Markdown 默认预览、Source/Preview、目录、操作菜单、页签和磁盘变更处理与文件管理页一致。
+- 页签开关、左右/其他页签关闭、目录重命名和删除路径迁移集中到纯 reducer，工作区不再复制路径状态算法。
 
 ## 验证结果
 
+- 2026-07-28 文件预览收敛补充验证：定向 TypeScript 与 23 条文件/Gateway 回归通过；`pnpm lint`、`pnpm test`、`pnpm build` 和 `git diff --check` 通过。
+- 新的 macOS ARM64 本地包完成 DMG 挂载、版本、Mach-O 架构和 ad-hoc 签名完整性检查；没有替换或中断用户当前运行中的正式应用，因此智能体工作区真实 Markdown 点击仍标记为待手工验收。
 - `pnpm lint`：通过，模块边界检查覆盖 570 个文件，TypeScript 无错误。
 - 定向回归：10 条通过，覆盖筛选、可见窗口 interval、刷新合并、Git 三个视图的三语言键集合及命令面板 `forwardRef` 图标渲染。
 - `pnpm test`：通过，前端测试 1672 条、脚本测试 217 条，零失败。

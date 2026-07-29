@@ -30,8 +30,10 @@ test('terminal settings have native persistence and a deep-linkable settings tab
 
   assert.match(appSettings, /save_terminal_scrollback/);
   assert.match(appSettings, /save_terminal_shift_enter_newline/);
+  assert.match(appSettings, /reset_terminal_settings/);
   assert.match(commandRegistry, /commands::app_settings::save_terminal_scrollback/);
   assert.match(commandRegistry, /commands::app_settings::save_terminal_shift_enter_newline/);
+  assert.match(commandRegistry, /commands::app_settings::reset_terminal_settings/);
   assert.match(settingsPage, /useSearchParams\(\)/);
   assert.match(settingsPage, /activeTab === 'terminal'/);
   assert.match(settingsPage, /<TerminalSettingsPanel \/>/);
