@@ -633,11 +633,30 @@ pub fn stop_all_workbench_ptys() -> Result<u64, String> {
             .collect::<Vec<_>>()
     };
     let count = handles.len() as u64;
-    for handle in handles {
-        stop_handle(&handle)?;
+    // Draining the registry already made these handles unreachable: nothing can
+    // look them up again. Abandoning the rest on the first failure would leave
+    // live shells behind with no way left to reach them, and this runs while
+    // the app is shutting down — precisely when a PTY that just exited on its
+    // own makes `kill` fail with ESRCH. Attempt every handle, report after.
+    let mut failures = collect_stop_failures(handles, |handle| stop_handle(handle));
+    if let Err(error) = super::workbench_provider::clear_claims_locked() {
+        failures.push(error);
     }
-    super::workbench_provider::clear_claims_locked()?;
-    Ok(count)
+    if failures.is_empty() {
+        return Ok(count);
+    }
+    Err(format!(
+        "failed to stop {} of {count} workbench PTYs: {}",
+        failures.len(),
+        failures.join("; ")
+    ))
+}
+
+/// Run `stop` over every item, keeping the failures instead of returning at the
+/// first one. Used where the caller has already given up its only handle on the
+/// resources being released.
+fn collect_stop_failures<T>(items: Vec<T>, stop: impl Fn(&T) -> Result<(), String>) -> Vec<String> {
+    items.iter().filter_map(|item| stop(item).err()).collect()
 }
 
 #[tauri::command]
@@ -673,10 +692,63 @@ pub fn stop_workbench_ptys(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::{
-        consume_completed_run, is_completed_run, remember_completed_run, take_utf8_ready,
-        validate_id, SnapshotBuffer, MAX_COMPLETED_RUNS, MAX_SNAPSHOT_BYTES,
+        collect_stop_failures, consume_completed_run, is_completed_run, remember_completed_run,
+        take_utf8_ready, validate_id, SnapshotBuffer, MAX_COMPLETED_RUNS, MAX_SNAPSHOT_BYTES,
     };
     use std::collections::VecDeque;
+
+    #[test]
+    fn stopping_every_handle_survives_one_that_refuses_to_die() {
+        // Shutdown drains the registry before stopping anything, so a handle
+        // skipped here is a shell left running with nothing able to reach it.
+        // A PTY that exited a moment earlier makes `kill` fail with ESRCH —
+        // that must not cost the remaining ones their stop.
+        let attempted = std::cell::RefCell::new(Vec::new());
+        let failures = collect_stop_failures(vec!["first", "second", "third"], |item| {
+            attempted.borrow_mut().push(*item);
+            if *item == "first" {
+                return Err("no such process".to_string());
+            }
+            Ok(())
+        });
+
+        assert_eq!(
+            attempted.into_inner(),
+            vec!["first", "second", "third"],
+            "every handle must be attempted"
+        );
+        assert_eq!(failures, vec!["no such process".to_string()]);
+    }
+
+    #[test]
+    fn stopping_reports_nothing_when_every_handle_yields() {
+        let failures = collect_stop_failures(vec![1, 2, 3], |_| Ok(()));
+        assert!(failures.is_empty());
+    }
+
+    #[test]
+    fn shutdown_never_returns_before_every_handle_was_attempted() {
+        // The tests above cover the helper. This one covers its *use*: reverting
+        // `stop_all_workbench_ptys` to `stop_handle(&handle)?` would leave the
+        // helper tests green while shutdown silently abandoned live shells again.
+        let source = include_str!("workbench_pty.rs");
+        let start = source
+            .find("pub fn stop_all_workbench_ptys")
+            .expect("shutdown command");
+        let end = source[start..]
+            .find("\nfn collect_stop_failures")
+            .map_or(source.len(), |offset| start + offset);
+        let body = &source[start..end];
+
+        assert!(
+            body.contains("collect_stop_failures"),
+            "shutdown must attempt every drained handle"
+        );
+        assert!(
+            !body.contains("stop_handle(&handle)?"),
+            "shutdown must not return before the remaining handles are stopped"
+        );
+    }
 
     #[test]
     fn ids_reject_empty_control_and_unbounded_values() {

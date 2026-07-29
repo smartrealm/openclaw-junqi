@@ -76,8 +76,12 @@ test('tab close tolerates a missing prior-process registry but rejects replaceme
 test('shutdown drain removes every workbench registry entry before physical stop', () => {
   const drain = backend.slice(backend.indexOf('pub fn stop_all_workbench_ptys'), backend.indexOf('pub fn stop_workbench_ptys'));
   assert.match(drain, /entries\s*\.drain\(\)/);
-  assert.match(drain, /for handle in handles/);
-  assert.match(drain, /stop_handle\(&handle\)/);
+  assert.ok(drain.indexOf('.drain()') < drain.indexOf('stop_handle'), 'the registry empties before anything is killed');
+  // Draining first means a handle skipped here can never be reached again, so
+  // every one must be attempted even after an earlier one fails — `kill` on a
+  // PTY that just exited returns ESRCH, which is routine during shutdown.
+  assert.match(drain, /collect_stop_failures/);
+  assert.doesNotMatch(drain, /stop_handle\(&handle\)\?/);
 });
 
 test('batch stop validates every PTY owner before physical termination', () => {
