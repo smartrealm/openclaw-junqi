@@ -72,7 +72,9 @@ fn rotate_backup(path: &Path, generation: u64) -> Result<(), String> {
         fs::remove_file(&backup).map_err(|error| format!("remove workbench backup: {error}"))?;
     }
     fs::copy(path, &backup).map_err(|error| format!("backup workbench session: {error}"))?;
-    fs::File::open(&backup)
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&backup)
         .and_then(|file| file.sync_all())
         .map_err(|error| format!("sync workbench backup: {error}"))
 }

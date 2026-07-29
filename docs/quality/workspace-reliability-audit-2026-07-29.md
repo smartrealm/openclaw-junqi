@@ -54,7 +54,7 @@ Durable Session 在替换会话文件后无条件以普通文件方式打开父�
 - 工作区切换失败保留目标并提供重试；工作台新增文案覆盖 `zh`、`zh-TW`、`en`。
 - 终端恢复默认通过单个原生命令更新两个原生字段，成功后才提交全部前端偏好。
 - PTY 打开结果按清理状态和 run-id 判定接管或终止，迟到结果不会留在后台。
-- Durable Session 已拆为命令契约、持久化事务和回归测试三个模块。会话文件在所有平台先执行 `sync_all`；Unix 继续同步父目录，Windows 使用 `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` 完成替换，不再执行没有官方契约支撑的目录 flush。
+- Durable Session 已拆为命令契约、持久化事务和回归测试三个模块。会话文件和备份在所有平台均以可写句柄执行 `sync_all`；Unix 继续同步父目录，Windows 使用 `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` 完成替换，不再执行没有官方契约支撑的目录 flush。
 
 ## 验证边界
 
@@ -77,6 +77,7 @@ Durable Session 在替换会话文件后无条件以普通文件方式打开父�
 ### Windows CI 追加验证
 
 - 首次 main CI `30412281113`：前端、脚本、Linux Rust 全部通过；Windows x64/x86 各有 4 个 Durable Session 测试因目录打开被拒绝而失败。
+- 第二次 main CI `30413334628`：Windows 条件代码编译通过，首次写入测试通过；后续三项测试证明备份仍用只读句柄调用 `FlushFileBuffers`，Windows x64 返回 access denied。备份同步句柄据此收紧为写权限。
 - 修复后的本地 Durable Session 定向测试：4 项通过，0 失败。
 - 当前 macOS 工具链没有安装 Windows Rust 标准库，无法在本机替代 Windows 原生编译和运行；修复后的 x64/x86 结果以重新触发的 main CI 为准。
 
