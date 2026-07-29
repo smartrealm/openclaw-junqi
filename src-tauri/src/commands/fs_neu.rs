@@ -4,8 +4,9 @@
 //!   crate::junqi::subprocess::configure_background_command
 //!     → crate::platform::suppress_console_window
 //!
-//! Provides: read_dir_entries, read_file_content, read_image_preview,
-//! write_file_content, create_file, create_directory, delete_path,
+//! Provides: read_dir_entries, read_file_preview,
+//! write_file_content, write_file_content_if_unchanged, create_file,
+//! create_directory, rename_path, delete_path,
 //! open_in_system_file_manager, list_project_files, search_project_files.
 
 use base64::Engine;
@@ -30,12 +31,23 @@ pub(crate) struct ProjectFileSearchResult {
     extension: Option<String>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ImagePreviewData {
-    data_url: String,
-    mime_type: String,
+pub(crate) struct FilePreviewData {
+    kind: FilePreviewKind,
+    text: Option<String>,
+    base64: Option<String>,
+    mime_type: Option<String>,
     byte_length: u64,
+}
+
+#[derive(Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+enum FilePreviewKind {
+    Text,
+    Image,
+    Pdf,
+    Binary,
 }
 
 const IGNORED_DIRS: &[&str] = &[
@@ -58,7 +70,8 @@ const IGNORED_DIRS: &[&str] = &[
     ".tox",
 ];
 
-const MAX_IMAGE_PREVIEW_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_TEXT_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_BINARY_PREVIEW_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_FILE_SEARCH_RESULTS: usize = 200;
 
 /// Validate that `target` is an absolute path within `allowed_root` (prevents directory traversal).
@@ -266,16 +279,70 @@ fn validate_new_path_within(
     Ok((canonical_parent, file_name))
 }
 
-fn previewable_image_mime_type(path: &Path) -> Option<&'static str> {
+fn previewable_binary_type(path: &Path) -> Option<(FilePreviewKind, &'static str)> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "gif" => Some("image/gif"),
-        "webp" => Some("image/webp"),
-        "bmp" => Some("image/bmp"),
-        "svg" => Some("image/svg+xml"),
+        "png" => Some((FilePreviewKind::Image, "image/png")),
+        "jpg" | "jpeg" => Some((FilePreviewKind::Image, "image/jpeg")),
+        "gif" => Some((FilePreviewKind::Image, "image/gif")),
+        "webp" => Some((FilePreviewKind::Image, "image/webp")),
+        "bmp" => Some((FilePreviewKind::Image, "image/bmp")),
+        "svg" => Some((FilePreviewKind::Image, "image/svg+xml")),
+        "ico" => Some((FilePreviewKind::Image, "image/x-icon")),
+        "pdf" => Some((FilePreviewKind::Pdf, "application/pdf")),
         _ => None,
+    }
+}
+
+fn read_file_preview_data(path: &Path) -> Result<FilePreviewData, String> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let meta = file.metadata().map_err(|e| e.to_string())?;
+    let binary_type = previewable_binary_type(path);
+    let size_limit = if binary_type.is_some() {
+        MAX_BINARY_PREVIEW_BYTES
+    } else {
+        MAX_TEXT_PREVIEW_BYTES
+    };
+    if meta.len() > size_limit {
+        return Err(format!(
+            "File too large ({:.1} MB; limit {:.0} MB)",
+            meta.len() as f64 / 1024.0 / 1024.0,
+            size_limit as f64 / 1024.0 / 1024.0,
+        ));
+    }
+
+    let mut bytes = Vec::with_capacity(meta.len() as usize);
+    std::io::BufReader::new(file)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+
+    if let Some((kind, mime_type)) = binary_type {
+        return Ok(FilePreviewData {
+            kind,
+            text: None,
+            base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes)),
+            mime_type: Some(mime_type.to_string()),
+            byte_length: meta.len(),
+        });
+    }
+
+    match String::from_utf8(bytes) {
+        Ok(text) => Ok(FilePreviewData {
+            kind: FilePreviewKind::Text,
+            text: Some(text),
+            base64: None,
+            mime_type: Some("text/plain; charset=utf-8".to_string()),
+            byte_length: meta.len(),
+        }),
+        Err(_) => Ok(FilePreviewData {
+            kind: FilePreviewKind::Binary,
+            text: None,
+            base64: None,
+            mime_type: None,
+            byte_length: meta.len(),
+        }),
     }
 }
 
@@ -528,10 +595,98 @@ fn compact_directory_entry(mut entry: FsEntry, project_path: &str) -> Result<FsE
 mod tests {
     use super::{
         compact_directory_entry, git_check_ignore_key, parse_git_check_ignore_z,
-        read_directory_entries, validate_path_within,
+        read_directory_entries, read_file_preview_data, validate_path_within,
+        write_file_content_if_unchanged_in_workspace, FilePreviewKind,
     };
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
+
+    fn workspace_fixture(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("junqi-{name}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn compare_and_swap_write_rejects_a_changed_file_and_leaves_it_intact() {
+        let root = workspace_fixture("cas-reject");
+        let file = root.join("notes.md");
+        std::fs::write(&file, "changed by someone else").unwrap();
+
+        let written = write_file_content_if_unchanged_in_workspace(
+            &file.to_string_lossy(),
+            "my edit",
+            "what I loaded",
+            &root.to_string_lossy(),
+        )
+        .unwrap();
+
+        assert!(!written, "a file that moved on must not be overwritten");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "changed by someone else"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn compare_and_swap_write_replaces_atomically_without_truncation_leftovers() {
+        // Writing in place left the tail of a longer previous version behind if
+        // the process died between the write and the truncation.
+        let root = workspace_fixture("cas-replace");
+        let file = root.join("notes.md");
+        let long_previous = "a much longer previous version of this file";
+        std::fs::write(&file, long_previous).unwrap();
+
+        let written = write_file_content_if_unchanged_in_workspace(
+            &file.to_string_lossy(),
+            "short",
+            long_previous,
+            &root.to_string_lossy(),
+        )
+        .unwrap();
+
+        assert!(written);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "short");
+        // The staging file is a sibling; none may survive the rename.
+        let leftovers: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .filter(|name| name != "notes.md")
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temporary files left behind: {leftovers:?}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn compare_and_swap_write_preserves_file_permissions() {
+        // The replacement is a fresh file, so without carrying permissions over
+        // a rename would silently reset the mode of the original.
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = workspace_fixture("cas-perms");
+        let file = root.join("script.sh");
+        std::fs::write(&file, "old").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let written = write_file_content_if_unchanged_in_workspace(
+            &file.to_string_lossy(),
+            "new",
+            "old",
+            &root.to_string_lossy(),
+        )
+        .unwrap();
+
+        assert!(written);
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "executable bit must survive the replacement");
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     /// An editor tab can outlive the file it shows. The strict mode used by the
     /// write path must refuse a path that no longer exists, so a save cannot
@@ -587,6 +742,41 @@ mod tests {
                 .unwrap(),
             second.canonicalize().unwrap(),
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn file_preview_classifies_text_previewable_binary_and_unknown_binary() {
+        let root = std::env::temp_dir().join(format!("junqi-preview-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let text_path = root.join("notes.mmd");
+        std::fs::write(&text_path, "graph TD; A-->B\n").unwrap();
+        let text = read_file_preview_data(&text_path).unwrap();
+        assert_eq!(text.kind, FilePreviewKind::Text);
+        assert_eq!(text.text.as_deref(), Some("graph TD; A-->B\n"));
+        assert_eq!(text.base64, None);
+
+        let pdf_path = root.join("report.PDF");
+        std::fs::write(&pdf_path, b"%PDF-1.7\0").unwrap();
+        let pdf = read_file_preview_data(&pdf_path).unwrap();
+        assert_eq!(pdf.kind, FilePreviewKind::Pdf);
+        assert_eq!(pdf.mime_type.as_deref(), Some("application/pdf"));
+        assert!(pdf.base64.is_some());
+
+        let icon_path = root.join("favicon.ico");
+        std::fs::write(&icon_path, [0_u8, 0, 1, 0]).unwrap();
+        let icon = read_file_preview_data(&icon_path).unwrap();
+        assert_eq!(icon.kind, FilePreviewKind::Image);
+        assert_eq!(icon.mime_type.as_deref(), Some("image/x-icon"));
+
+        let archive_path = root.join("archive.bin");
+        std::fs::write(&archive_path, [0xff_u8, 0xfe, 0xfd]).unwrap();
+        let archive = read_file_preview_data(&archive_path).unwrap();
+        assert_eq!(archive.kind, FilePreviewKind::Binary);
+        assert_eq!(archive.text, None);
+        assert_eq!(archive.base64, None);
+
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -681,64 +871,14 @@ pub async fn read_terminal_workspace_dir_entries(
 }
 
 #[tauri::command]
-pub async fn read_file_content(path: String, project_path: String) -> Result<String, String> {
-    validate_path_within(&path, &project_path, true)?;
-
-    use std::io::Read;
-    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-    let meta = file.metadata().map_err(|e| e.to_string())?;
-    if meta.len() > 2 * 1024 * 1024 {
-        return Err(format!(
-            "File too large ({:.1} MB)",
-            meta.len() as f64 / 1024.0 / 1024.0
-        ));
-    }
-    let mut buf = String::with_capacity(meta.len() as usize);
-    std::io::BufReader::new(file)
-        .read_to_string(&mut buf)
-        .map_err(|e| e.to_string())?;
-    Ok(buf)
-}
-
-#[tauri::command]
-pub async fn read_image_preview(
+pub async fn read_file_preview(
     path: String,
     project_path: String,
-) -> Result<ImagePreviewData, String> {
+) -> Result<FilePreviewData, String> {
     let validated_path = validate_path_within(&path, &project_path, true)?;
-
-    tauri::async_runtime::spawn_blocking(move || {
-        use std::io::Read;
-
-        let mime_type = previewable_image_mime_type(&validated_path)
-            .ok_or_else(|| "Unsupported image format".to_string())?;
-
-        let file = std::fs::File::open(&validated_path).map_err(|e| e.to_string())?;
-        let meta = file.metadata().map_err(|e| e.to_string())?;
-        if meta.len() > MAX_IMAGE_PREVIEW_BYTES {
-            return Err(format!(
-                "Image too large ({:.1} MB)",
-                meta.len() as f64 / 1024.0 / 1024.0
-            ));
-        }
-
-        let mut bytes = Vec::with_capacity(meta.len() as usize);
-        std::io::BufReader::new(file)
-            .read_to_end(&mut bytes)
-            .map_err(|e| e.to_string())?;
-
-        Ok(ImagePreviewData {
-            data_url: format!(
-                "data:{};base64,{}",
-                mime_type,
-                base64::engine::general_purpose::STANDARD.encode(bytes)
-            ),
-            mime_type: mime_type.to_string(),
-            byte_length: meta.len(),
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || read_file_preview_data(&validated_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -750,6 +890,86 @@ pub async fn write_file_content(
     tauri::async_runtime::spawn_blocking(move || {
         validate_path_within(&path, &project_path, false)?;
         std::fs::write(&path, content).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Replace a file's contents only while it still holds `expected_content`.
+///
+/// The comparison and the write are not one atomic operation — nothing stops a
+/// third writer from landing in between — so this is a best-effort guard aimed
+/// at the case it was built for: an editor tab racing an agent that rewrites
+/// the same file. It narrows that window; it is not a lock, and callers must
+/// not treat a `true` result as proof they were the only writer.
+///
+/// The write itself *is* atomic. Writing in place would leave a half-updated
+/// file behind if the process died between the write and the truncation, so the
+/// new contents go to a sibling temporary file that is durably flushed and then
+/// renamed over the target.
+fn write_file_content_if_unchanged_in_workspace(
+    path: &str,
+    content: &str,
+    expected_content: &str,
+    project_path: &str,
+) -> Result<bool, String> {
+    use std::io::Write;
+
+    let validated_path = validate_path_within(path, project_path, false)?;
+    let current_content = std::fs::read_to_string(&validated_path).map_err(|e| e.to_string())?;
+    if current_content != expected_content {
+        return Ok(false);
+    }
+
+    let parent = validated_path
+        .parent()
+        .ok_or_else(|| "Cannot resolve the file's directory".to_string())?;
+    let file_name = validated_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Invalid file name".to_string())?;
+    // Same directory as the target: `rename` is only atomic within a filesystem.
+    let temporary = parent.join(format!(".{file_name}.junqi-{}", uuid::Uuid::new_v4()));
+
+    let write_result = (|| -> std::io::Result<()> {
+        let mut file = std::fs::File::create(&temporary)?;
+        file.write_all(content.as_bytes())?;
+        // Without this the rename can be visible while the contents are not.
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(error) = write_result {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error.to_string());
+    }
+
+    // `File::create` uses default permissions; carry over whatever the original
+    // file had so a rename cannot silently widen or narrow access to it.
+    if let Ok(metadata) = std::fs::metadata(&validated_path) {
+        let _ = std::fs::set_permissions(&temporary, metadata.permissions());
+    }
+
+    if let Err(error) = std::fs::rename(&temporary, &validated_path) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error.to_string());
+    }
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn write_file_content_if_unchanged(
+    path: String,
+    content: String,
+    expected_content: String,
+    project_path: String,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        write_file_content_if_unchanged_in_workspace(
+            &path,
+            &content,
+            &expected_content,
+            &project_path,
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -795,6 +1015,88 @@ pub async fn create_directory(path: String, project_path: String) -> Result<(), 
 /// First-segment names under the project root that are never deletable through this command.
 const PROTECTED_FIRST_SEGMENTS: &[&str] = &[".git", ".junqi"];
 
+fn protected_first_segment<'a>(path: &'a Path, root: &Path) -> Option<&'a str> {
+    path.strip_prefix(root)
+        .ok()?
+        .components()
+        .next()?
+        .as_os_str()
+        .to_str()
+        .filter(|name| {
+            PROTECTED_FIRST_SEGMENTS
+                .iter()
+                .any(|protected| protected.eq_ignore_ascii_case(name))
+        })
+}
+
+fn rename_path_in_workspace(
+    path: &str,
+    new_name: &str,
+    project_path: &str,
+) -> Result<String, String> {
+    validate_entry_name(new_name)?;
+
+    let target_path = Path::new(path);
+    if !target_path.is_absolute() {
+        return Err("Path must be absolute".to_string());
+    }
+
+    let parent = target_path
+        .parent()
+        .ok_or_else(|| "Cannot resolve parent directory".to_string())?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve parent directory: {}", e))?;
+    let canonical_root = Path::new(project_path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve root directory: {}", e))?;
+
+    if !canonical_parent.starts_with(&canonical_root) {
+        return Err("Path is outside the allowed directory".to_string());
+    }
+
+    let old_name = target_path
+        .file_name()
+        .ok_or_else(|| "Invalid file name".to_string())?;
+    let source = canonical_parent.join(old_name);
+    if source == canonical_root {
+        return Err("Cannot rename the project root".to_string());
+    }
+    if source.symlink_metadata().is_err() {
+        return Err("Path does not exist".to_string());
+    }
+    if let Some(name) = protected_first_segment(&source, &canonical_root) {
+        return Err(format!("Cannot rename protected directory: {}", name));
+    }
+
+    let destination = canonical_parent.join(new_name);
+    if let Some(name) = protected_first_segment(&destination, &canonical_root) {
+        return Err(format!("Cannot create protected directory: {}", name));
+    }
+    if destination != source && destination.symlink_metadata().is_ok() {
+        return Err("A file or folder with that name already exists".to_string());
+    }
+    if destination == source {
+        return Ok(destination.to_string_lossy().into_owned());
+    }
+
+    std::fs::rename(&source, &destination).map_err(|e| e.to_string())?;
+    Ok(destination.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn rename_path(
+    path: String,
+    new_name: String,
+    project_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        rename_path_in_workspace(&path, &new_name, &project_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Validate a deletion target.
 fn validate_existing_path_for_delete(
     target: &str,
@@ -835,20 +1137,153 @@ fn validate_existing_path_for_delete(
         return Err("Path does not exist".to_string());
     }
 
-    if let Ok(rel) = resolved.strip_prefix(&canonical_root) {
-        if let Some(first) = rel.components().next() {
-            if let Some(name) = first.as_os_str().to_str() {
-                if PROTECTED_FIRST_SEGMENTS
-                    .iter()
-                    .any(|protected| protected.eq_ignore_ascii_case(name))
-                {
-                    return Err(format!("Cannot delete protected directory: {}", name));
-                }
-            }
-        }
+    if let Some(name) = protected_first_segment(&resolved, &canonical_root) {
+        return Err(format!("Cannot delete protected directory: {}", name));
     }
 
     Ok(resolved)
+}
+
+#[cfg(test)]
+mod rename_tests {
+    use super::rename_path_in_workspace;
+    use std::path::PathBuf;
+
+    fn temp_root(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "junqi-fs-rename-{}-{}-{}",
+            label,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn rename_stays_inside_workspace_and_does_not_overwrite() {
+        let root = temp_root("success");
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::write(root.join("docs/old.md"), "content").unwrap();
+
+        let renamed = rename_path_in_workspace(
+            &root.join("docs/old.md").to_string_lossy(),
+            "guide.md",
+            &root.to_string_lossy(),
+        )
+        .unwrap();
+        assert_eq!(
+            PathBuf::from(renamed),
+            root.canonicalize().unwrap().join("docs/guide.md")
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("docs/guide.md")).unwrap(),
+            "content"
+        );
+
+        std::fs::write(root.join("docs/existing.md"), "keep").unwrap();
+        let collision = rename_path_in_workspace(
+            &root.join("docs/guide.md").to_string_lossy(),
+            "existing.md",
+            &root.to_string_lossy(),
+        )
+        .unwrap_err();
+        assert!(collision.contains("already exists"));
+        assert_eq!(
+            std::fs::read_to_string(root.join("docs/existing.md")).unwrap(),
+            "keep"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rename_rejects_protected_entries_and_path_escape() {
+        let root = temp_root("protected");
+        let outside = temp_root("outside");
+        std::fs::create_dir_all(root.join(".git/objects")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("outside.txt"), "outside").unwrap();
+
+        let protected = rename_path_in_workspace(
+            &root.join(".git/objects").to_string_lossy(),
+            "moved",
+            &root.to_string_lossy(),
+        )
+        .unwrap_err();
+        assert!(protected.contains("protected"));
+
+        let escaped = rename_path_in_workspace(
+            &outside.join("outside.txt").to_string_lossy(),
+            "renamed.txt",
+            &root.to_string_lossy(),
+        )
+        .unwrap_err();
+        assert!(escaped.contains("outside"));
+        assert!(outside.join("outside.txt").exists());
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
+    }
+}
+
+#[cfg(test)]
+mod guarded_write_tests {
+    use super::write_file_content_if_unchanged_in_workspace;
+    use std::path::PathBuf;
+
+    fn temp_root(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "junqi-fs-guarded-write-{}-{}-{}",
+            label,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn writes_only_when_the_disk_content_matches_the_expected_baseline() {
+        let root = temp_root("match");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("notes.md");
+        std::fs::write(&path, "original content that is longer").unwrap();
+
+        let written = write_file_content_if_unchanged_in_workspace(
+            &path.to_string_lossy(),
+            "short",
+            "original content that is longer",
+            &root.to_string_lossy(),
+        )
+        .unwrap();
+
+        assert!(written);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "short");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_a_stale_baseline_without_modifying_the_disk_file() {
+        let root = temp_root("conflict");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("notes.md");
+        std::fs::write(&path, "agent update").unwrap();
+
+        let written = write_file_content_if_unchanged_in_workspace(
+            &path.to_string_lossy(),
+            "my draft",
+            "original",
+            &root.to_string_lossy(),
+        )
+        .unwrap();
+
+        assert!(!written);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "agent update");
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
 
 #[tauri::command]

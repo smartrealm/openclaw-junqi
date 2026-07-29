@@ -1,49 +1,64 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
-const read = (path: string) => readFile(new URL(path, import.meta.url), 'utf8');
+const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 
-test('switching files with unsaved edits uses the application confirmation dialog', async () => {
-  const source = await read('./WorkspacePanel.tsx');
+test("agent workspace delegates every file format to the shared FileViewer", async () => {
+  const source = await read("./WorkspacePanel.tsx");
 
-  assert.match(source, /showConfirm\(/);
-  assert.match(source, /workspace\.discardUnsavedTitle/);
-  assert.doesNotMatch(source, /window\.confirm/);
+  assert.match(source, /import \{[\s\S]*FileViewer,[\s\S]*type FileViewerHandle,[\s\S]*\} from "@\/components\/FileExplorer\/FileViewer"/);
+  assert.match(source, /<FileViewer[\s\S]*projectPath=\{root\}[\s\S]*themeVariant=\{themeVariant\}/);
+  assert.doesNotMatch(source, /CodeMirror|FileReadOnlyPreview|readFilePreview|writeFileText/);
 });
 
-test('workspace keeps the explorer visible beside the editor and preview', async () => {
-  const source = await read('./WorkspacePanel.tsx');
+test("agent workspace keeps the explorer visible beside shared tabbed previews", async () => {
+  const source = await read("./WorkspacePanel.tsx");
 
   assert.match(source, /<aside className=/);
-  assert.match(source, /<WorkspaceFileTree[\s\S]*activePath=\{open\?\.entry\.path \?\? null\}/);
+  assert.match(source, /<WorkspaceFileTree[\s\S]*activePath=\{files\.activePath\}/);
   assert.match(source, /<section className="flex min-w-0 flex-1 flex-col/);
-  assert.match(source, /<CodeMirror/);
-  assert.match(source, /open\.image\.data_url/);
+  assert.match(source, /tabs=\{files\.tabs\}/);
+  assert.match(source, /activeFilePath=\{files\.activePath\}/);
 });
 
-test('agent polling with an unchanged workspace cannot reset the editor', async () => {
-  const source = await read('./WorkspacePanel.tsx');
+test("workspace mutations flush and synchronize all affected preview tabs", async () => {
+  const source = await read("./WorkspacePanel.tsx");
+  const treeSource = await read("./WorkspaceFileTree.tsx");
+
+  assert.match(treeSource, /<FileExplorerContextMenu/);
+  assert.match(treeSource, /useFileExplorerContextActions/);
+  assert.match(source, /fileViewerRef\.current\?\.flushPath\(path, isDirectory\)/);
+  assert.match(source, /dispatchFiles\(\{ type: "rebase"/);
+  assert.match(source, /dispatchFiles\(\{ type: "remove"/);
+});
+
+test("agent polling with an unchanged workspace cannot reset open tabs", async () => {
+  const source = await read("./WorkspacePanel.tsx");
 
   assert.match(source, /const agentWorkspace = useMemo/);
-  assert.match(source, /\[agentId, agentWorkspace, dirty, rootOverride\]/);
+  assert.match(source, /rootRef\.current === target\.root/);
+  assert.match(source, /dispatchFiles\(\{ type: "reset" \}\)/);
   assert.doesNotMatch(source, /\[agentId, agents, rootOverride\]/);
-  assert.match(source, /rootRef\.current === nextRoot/);
 });
 
-test('closing a dirty workspace uses the application confirmation dialog', async () => {
-  const source = await read('./WorkspacePanel.tsx');
+test("closing or switching a workspace flushes shared pending edits first", async () => {
+  const source = await read("./WorkspacePanel.tsx");
 
-  assert.match(source, /const requestClose = useCallback/);
-  assert.match(source, /workspace\.closeUnsavedConfirm/);
-  assert.match(source, /onClick=\{requestClose\}/);
-  assert.doesNotMatch(source, /<button onClick=\{onClose\}/);
+  assert.ok((source.match(/fileViewerRef\.current\?\.flushPath\(rootRef\.current, true\)/g) ?? []).length >= 2);
+  assert.match(source, /const requestClose = useCallback\(async/);
+  assert.match(source, /onClick=\{\(\) => void requestClose\(\)\}/);
+  assert.match(source, /workspace\.saveFailed/);
 });
 
-test('only the latest asynchronous file read may update the editor', async () => {
-  const source = await read('./WorkspacePanel.tsx');
+test("a failed workspace switch stays retryable without resetting open tabs", async () => {
+  const source = await read("./WorkspacePanel.tsx");
+  const failureStart = source.indexOf("catch (error)", source.indexOf("const switchRoot"));
+  const commitStart = source.indexOf("rootRef.current = target.root", failureStart);
+  const failureBranch = source.slice(failureStart, commitStart);
 
-  assert.match(source, /const requestId = \+\+loadRequestRef\.current/);
-  assert.ok((source.match(/requestId !== loadRequestRef\.current/g) ?? []).length >= 3);
-  assert.match(source, /requestId === loadRequestRef\.current\) setLoadingFile\(false\)/);
+  assert.match(failureBranch, /setPendingRootSwitch\(target\)/);
+  assert.doesNotMatch(failureBranch, /dispatchFiles\(\{ type: "reset" \}\)/);
+  assert.match(source, /onClick=\{\(\) => void switchRoot\(pendingRootSwitch\)\}/);
+  assert.match(source, /workspace\.switchPending/);
 });

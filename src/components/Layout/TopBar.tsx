@@ -429,7 +429,6 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
   const toggleDnd = useCallback(() => {
     const next = !dndMode;
     setDndMode(next);
-    void import('@/services/notifications').then((mod) => mod.notifications.setDndMode(next));
   }, [dndMode, setDndMode]);
 
   const [panelOpen, setPanelOpen] = useState(false);

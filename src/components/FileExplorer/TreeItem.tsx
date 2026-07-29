@@ -16,6 +16,12 @@ export const TreeItem = memo(function TreeItem({
   onContextMenu,
   onPointerDown,
   draggingPath,
+  renamingPath,
+  renameValue,
+  onRenameValueChange,
+  onRenameCommit,
+  onRenameCancel,
+  renameInputRef,
 }: {
   node: TreeNode;
   depth: number;
@@ -26,12 +32,19 @@ export const TreeItem = memo(function TreeItem({
   onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
   onPointerDown?: (e: React.PointerEvent, node: TreeNode) => void;
   draggingPath?: string | null;
+  renamingPath?: string | null;
+  renameValue?: string;
+  onRenameValueChange?: (value: string) => void;
+  onRenameCommit?: () => void;
+  onRenameCancel?: () => void;
+  renameInputRef?: React.Ref<HTMLInputElement>;
 }) {
   const isDir = node.is_dir;
   const isExpanded = node.expanded;
   const isSelected = node.path === selectedPath;
   const isContext = node.path === contextPath;
   const isDragging = node.path === draggingPath;
+  const isRenaming = node.path === renamingPath;
   const padLeft = 2 + depth * 16;
 
   const rowBg = isSelected
@@ -72,6 +85,7 @@ export const TreeItem = memo(function TreeItem({
         }
       }}
       onClick={() => {
+        if (isRenaming) return;
         if (isDir) {
           onToggle(node.path);
         } else {
@@ -79,7 +93,9 @@ export const TreeItem = memo(function TreeItem({
         }
       }}
       onContextMenu={(e) => onContextMenu(e, node)}
-      onPointerDown={(event) => onPointerDown?.(event, node)}
+      onPointerDown={(event) => {
+        if (!isRenaming) onPointerDown?.(event, node);
+      }}
       draggable={false}
     >
       {/* Indent spacer */}
@@ -136,24 +152,58 @@ export const TreeItem = memo(function TreeItem({
       </span>
 
       {/* Label */}
-      <span
-        style={{
-          fontSize: 12,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          flex: 1,
-          fontFamily: "var(--aegis-body)",
-          color: isSelected
-            ? "var(--aegis-text)"
-            : node.is_gitignored
-              ? "var(--aegis-text-dim)"
-              : "var(--aegis-text-secondary)",
-          fontWeight: isSelected ? 500 : 400,
-        }}
-      >
-        {node.name}
-      </span>
+      {isRenaming ? (
+        <input
+          ref={renameInputRef}
+          value={renameValue ?? ""}
+          aria-label="Rename file or folder"
+          onChange={(event) => onRenameValueChange?.(event.target.value)}
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onRenameCommit?.();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              onRenameCancel?.();
+            }
+          }}
+          onBlur={() => onRenameCommit?.()}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            height: 19,
+            padding: "0 4px",
+            border: "1px solid var(--aegis-primary)",
+            borderRadius: 3,
+            outline: "none",
+            background: "var(--aegis-input)",
+            color: "var(--aegis-text)",
+            fontFamily: "var(--font-ui, var(--font-sans))",
+            fontSize: 12,
+          }}
+        />
+      ) : (
+        <span
+          style={{
+            fontSize: 12,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            flex: 1,
+            fontFamily: "var(--font-ui, var(--font-sans))",
+            color: isSelected
+              ? "var(--aegis-text)"
+              : node.is_gitignored
+                ? "var(--aegis-text-dim)"
+                : "var(--aegis-text-secondary)",
+            fontWeight: isSelected ? 500 : 400,
+          }}
+        >
+          {node.name}
+        </span>
+      )}
     </div>
   );
 });

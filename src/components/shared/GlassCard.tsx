@@ -5,7 +5,7 @@
  */
 
 import clsx from 'clsx';
-import React, { type ReactNode } from 'react';
+import React, { createContext, type ReactNode, useContext } from 'react';
 
 interface GlassCardProps {
   children: ReactNode;
@@ -16,6 +16,22 @@ interface GlassCardProps {
   onClick?: () => void;
 }
 
+const GlassCardEnterMotionContext = createContext(true);
+
+export function GlassCardEnterMotionScope({
+  enabled,
+  children,
+}: {
+  enabled: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <GlassCardEnterMotionContext.Provider value={enabled}>
+      {children}
+    </GlassCardEnterMotionContext.Provider>
+  );
+}
+
 export const GlassCard = React.memo(function GlassCard({
   children,
   className = '',
@@ -24,6 +40,8 @@ export const GlassCard = React.memo(function GlassCard({
   noPad = false,
   onClick,
 }: GlassCardProps) {
+  const enterMotionEnabled = useContext(GlassCardEnterMotionContext);
+
   return (
     <div
       onClick={onClick}
@@ -31,13 +49,13 @@ export const GlassCard = React.memo(function GlassCard({
         'relative overflow-hidden rounded-xl',
         'border border-aegis-border',
         'bg-aegis-card',
-        'animate-slide-up',
+        enterMotionEnabled && 'animate-slide-up',
         hover && 'hover:border-aegis-border-hover hover:bg-aegis-hover hover:-translate-y-px',
         'transition-[background,border-color,transform] duration-200',
         onClick && 'cursor-pointer',
         className,
       )}
-      style={delay > 0 ? { animationDelay: `${delay}s` } : undefined}
+      style={enterMotionEnabled && delay > 0 ? { animationDelay: `${delay}s` } : undefined}
     >
       <div className={noPad ? undefined : 'p-5'}>
         {children}

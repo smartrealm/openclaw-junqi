@@ -222,6 +222,14 @@ export function shellStateFromExit(event: ShellExitEvent): ShellRuntimeState {
   return event.reason === 'exited' ? 'exited' : 'failed';
 }
 
+export function resolveShellOpenDisposition(
+  cleaned: boolean,
+  requestedRunId: string,
+  returnedRunId: string,
+): 'adopt' | 'terminate' {
+  return !cleaned && requestedRunId === returnedRunId ? 'adopt' : 'terminate';
+}
+
 /**
  * Private OSC 2 marker emitted by JunQi's per-terminal agent shims.
  *

@@ -149,7 +149,6 @@ export default function GitPage() {
       </div>
       <GitChanges
         projectPath={projectPath}
-        currentTaskCreatedAt={null}
         onFileSelect={handleFileSelect}
         width={320}
       />

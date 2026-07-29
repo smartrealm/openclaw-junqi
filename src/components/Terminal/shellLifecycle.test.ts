@@ -15,6 +15,7 @@ import {
   parseJunqiAgentStatusTitle,
   recordClosedTerminalShell,
   resolveShellDisplayTitle,
+  resolveShellOpenDisposition,
   resolveShellRename,
   shellStateFromExit,
   terminalAgentLaunchCommand,
@@ -62,6 +63,12 @@ test('shell exit state marks transport failures distinctly', () => {
   assert.equal(shellStateFromExit({ shell_id: 'a', run_id: 'r', exit_code: null, reason: 'io_error' }), 'failed');
   assert.equal(isGeneratedShellTitle('Terminal 3'), true);
   assert.equal(isGeneratedShellTitle('API terminal'), false);
+});
+
+test('late or mismatched shell opens are terminated instead of becoming orphan PTYs', () => {
+  assert.equal(resolveShellOpenDisposition(false, 'run-1', 'run-1'), 'adopt');
+  assert.equal(resolveShellOpenDisposition(true, 'run-1', 'run-1'), 'terminate');
+  assert.equal(resolveShellOpenDisposition(false, 'run-1', 'run-other'), 'terminate');
 });
 
 test('agent OSC title markers only affect JunQi-owned agent state', () => {

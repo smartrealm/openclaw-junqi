@@ -803,7 +803,7 @@ function SkillsView() {
         </div>
         <button
           type="button"
-          onClick={() => navigate('/skill-hub')}
+          onClick={() => navigate('/skills')}
           className="flex h-8 items-center gap-1.5 rounded-md border border-aegis-border px-3 text-[11px] font-semibold text-aegis-text-secondary hover:bg-aegis-hover/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
         >
           {t('common.manage', 'Manage')}

@@ -30,20 +30,21 @@ test('terminal settings have native persistence and a deep-linkable settings tab
 
   assert.match(appSettings, /save_terminal_scrollback/);
   assert.match(appSettings, /save_terminal_shift_enter_newline/);
+  assert.match(appSettings, /reset_terminal_settings/);
   assert.match(commandRegistry, /commands::app_settings::save_terminal_scrollback/);
   assert.match(commandRegistry, /commands::app_settings::save_terminal_shift_enter_newline/);
+  assert.match(commandRegistry, /commands::app_settings::reset_terminal_settings/);
   assert.match(settingsPage, /useSearchParams\(\)/);
   assert.match(settingsPage, /activeTab === 'terminal'/);
   assert.match(settingsPage, /<TerminalSettingsPanel \/>/);
 });
 
 test('terminal settings are translated in every supported locale', () => {
-  const locales = ['zh', 'zh-TW', 'en', 'ar'] as const;
+  const locales = ['zh', 'zh-TW', 'en'] as const;
   const openTerminalMarkers: Record<(typeof locales)[number], string> = {
     zh: '已打开',
     'zh-TW': '已打開',
     en: 'open',
-    ar: 'المفتوحة',
   };
   const keys = [
     'settings.tab.terminal',

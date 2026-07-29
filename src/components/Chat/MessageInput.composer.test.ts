@@ -56,7 +56,7 @@ test('composer menu labels are localized in every shipped language', () => {
     'dismissVoiceInputError',
   ];
 
-  for (const language of ['en', 'zh', 'zh-TW', 'ar']) {
+  for (const language of ['en', 'zh', 'zh-TW']) {
     const locale = JSON.parse(source(`src/locales/${language}.json`));
     for (const key of keys) {
       assert.equal(typeof locale.input?.[key], 'string', `${language} is missing input.${key}`);

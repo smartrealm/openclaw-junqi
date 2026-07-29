@@ -14,6 +14,7 @@ const PairingScreen = lazy(() => import('@/components/PairingScreen').then(m => 
 const GatewayErrorScreen = lazy(() => import('@/components/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
 const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
 const DynamicIslandRuntime = lazy(() => import('@/dynamic-island/DynamicIslandRuntime'));
+const NotificationPreferencesRuntime = lazy(() => import('@/runtime/NotificationPreferencesRuntime'));
 import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { usePetStore } from '@/stores/petStore';
@@ -669,7 +670,7 @@ export default function App() {
       if (cur === old) return;
       for (const key of Object.keys(cur)) {
         if (cur[key] === false && old[key] === true && (state.messageQueue[key] || []).length > 0) {
-          void useChatStore.getState().drainQueue(key);
+          void useChatStore.getState().drainQueue(key).catch(() => undefined);
         }
       }
     });
@@ -796,10 +797,10 @@ export default function App() {
       },
       onStreamReconciliationNeeded: (sessionKey) => {
         refreshDurableTranscript(sessionKey);
-        void gateway.reconcileChatSessionRun(sessionKey);
+        void gateway.reconcileChatSessionRun(sessionKey).catch(() => undefined);
       },
       onSessionRunReconciliationNeeded: (sessionKey) => {
-        void gateway.reconcileChatSessionRun(sessionKey);
+        void gateway.reconcileChatSessionRun(sessionKey).catch(() => undefined);
       },
       onTranscriptChanged: (sessionKey) => {
         refreshDurableTranscript(sessionKey);
@@ -1214,6 +1215,9 @@ export default function App() {
     return (
       <>
         <ThemeRuntime />
+        <Suspense fallback={null}>
+          <NotificationPreferencesRuntime />
+        </Suspense>
         <LazyPetRuntimeHost />
         <Suspense fallback={<RouteLoadingFallback />}>
           <SetupPage />
@@ -1234,6 +1238,9 @@ export default function App() {
   return (
     <>
       <ThemeRuntime />
+      <Suspense fallback={null}>
+        <NotificationPreferencesRuntime />
+      </Suspense>
       <LazyPetRuntimeHost />
       {hasTauriEventBridge() && (
         <Suspense fallback={null}>

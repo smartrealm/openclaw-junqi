@@ -88,7 +88,7 @@ export function CreateInputRow({
           height: 18,
           padding: "0 4px",
           fontSize: 12,
-          fontFamily: "var(--aegis-body)",
+          fontFamily: "var(--font-ui, var(--font-sans))",
           color: "var(--aegis-text)",
           background: "var(--aegis-input)",
           border: "1px solid var(--aegis-primary)",

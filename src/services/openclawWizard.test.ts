@@ -9,6 +9,8 @@ import {
   OpenClawWizardCancelledError,
   OpenClawWizardCancellationLockedError,
   OpenClawWizardClient,
+  OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS,
+  OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS,
   OpenClawWizardOperationSupersededError,
   requiresOpenClawOnboarding,
 } from './openclawWizard';
@@ -56,14 +58,47 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
   assert.deepEqual(started.step?.options?.[0].value, { id: 'dynamic' });
   await client.next('provider', { id: 'dynamic' });
   assert.deepEqual(calls, [
-    { method: 'wizard.start', params: { mode: 'local', workspace: '/tmp/workspace' } },
+    {
+      method: 'wizard.start',
+      params: { mode: 'local', workspace: '/tmp/workspace' },
+      options: { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
+    },
     {
       method: 'wizard.next',
       params: { sessionId: 'session-1', answer: { stepId: 'provider', value: { id: 'dynamic' } } },
-      options: { timeoutMs: null },
+      options: { timeoutMs: OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS },
     },
   ]);
   await assert.rejects(() => client.next('provider', 'again'), /not running/);
+});
+
+test('wizard client retains its session when a bounded interactive request times out', async () => {
+  const calls: Array<{ method: string; options?: { timeoutMs?: number | null } }> = [];
+  const client = new OpenClawWizardClient(async (method, _params, options) => {
+    calls.push({ method, ...(options ? { options } : {}) });
+    if (method === 'wizard.start') {
+      return {
+        sessionId: 'session-timeout',
+        done: false,
+        status: 'running',
+        step: { id: 'external-authorization', type: 'action' },
+      };
+    }
+    throw new Error(`Request timeout (${OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS}ms)`);
+  });
+
+  await client.start();
+  await assert.rejects(
+    () => client.next('external-authorization'),
+    /Request timeout/,
+  );
+
+  assert.equal(client.activeSessionId, 'session-timeout');
+  assert.equal(client.currentStepView?.id, 'external-authorization');
+  assert.deepEqual(calls.at(-1), {
+    method: 'wizard.next',
+    options: { timeoutMs: OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS },
+  });
 });
 
 test('wizard client rejects a late response after its owning setup operation is invalidated', async () => {
@@ -103,14 +138,26 @@ test('wizard client restores an unfinished official session after a renderer res
   await firstClient.start();
   assert.equal(storedSessionId, 'persisted-session');
 
-  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
-  const resumedClient = new OpenClawWizardClient(async (method, params) => {
-    calls.push({ method, params });
+  const calls: Array<{ method: string; params: Record<string, unknown>; options?: { timeoutMs?: number | null } }> = [];
+  const resumedClient = new OpenClawWizardClient(async (method, params, options) => {
+    calls.push({ method, params, ...(options ? { options } : {}) });
+    if (method === 'wizard.status') return { status: 'running' };
     return { done: true, status: 'done' };
   }, store);
   await resumedClient.resume();
 
-  assert.deepEqual(calls, [{ method: 'wizard.next', params: { sessionId: 'persisted-session' } }]);
+  assert.deepEqual(calls, [
+    {
+      method: 'wizard.status',
+      params: { sessionId: 'persisted-session' },
+      options: { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
+    },
+    {
+      method: 'wizard.next',
+      params: { sessionId: 'persisted-session' },
+      options: { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
+    },
+  ]);
   assert.equal(storedSessionId, null);
 });
 
@@ -186,10 +233,8 @@ test('wizard client restores a failed step for retry and preserves a previous-st
 });
 
 test('wizard client preserves resume context when the official session terminates with an error', async () => {
-  let calls = 0;
-  const client = new OpenClawWizardClient(async () => {
-    calls += 1;
-    if (calls === 1) {
+  const client = new OpenClawWizardClient(async (method) => {
+    if (method === 'wizard.start') {
       return {
         sessionId: 'windows-session',
         done: false,
@@ -197,6 +242,7 @@ test('wizard client preserves resume context when the official session terminate
         step: { id: 'provider-auth', type: 'action' },
       };
     }
+    if (method === 'wizard.status') return { status: 'running' };
     return { done: false, status: 'error' };
   });
 
@@ -220,6 +266,7 @@ test('wizard client never records or replays an answer rejected by a running ses
       return { sessionId: `session-${starts}`, done: false, status: 'running', step: { id: 'first', type: 'select' } };
     }
     if (method === 'wizard.cancel') return { done: true, status: 'cancelled' };
+    if (method === 'wizard.status') return { status: 'running' };
     if (stepId === 'first') {
       return { done: false, status: 'running', step: { id: 'second', type: 'text' } };
     }
@@ -272,6 +319,7 @@ test('wizard client retains the official session when cancellation is locked by 
       };
     }
     if (method === 'wizard.cancel') return { status: 'running' };
+    if (method === 'wizard.status') return { status: 'running' };
     if (method === 'wizard.next') {
       return { done: false, status: 'running', step: { id: 'persistent-effect', type: 'progress' } };
     }
@@ -293,6 +341,7 @@ test('wizard client retains the official session when cancellation is locked by 
     'wizard.start:',
     'wizard.cancel:session-1',
     'wizard.cancel:session-1',
+    'wizard.status:session-1',
     'wizard.next:session-1',
   ]);
 });
@@ -420,6 +469,7 @@ test('resumes a desynchronized wizard without replaying an answer', async () => 
         step: { id: 'initial', type: 'note' },
       };
     }
+    if (method === 'wizard.status') return { status: 'running' };
     return {
       done: false,
       status: 'running',
@@ -432,9 +482,14 @@ test('resumes a desynchronized wizard without replaying an answer', async () => 
 
   assert.equal(resumed.step?.id, 'current');
   assert.deepEqual(calls[1], {
+    method: 'wizard.status',
+    params: { sessionId: 'session-2' },
+    options: { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
+  });
+  assert.deepEqual(calls[2], {
     method: 'wizard.next',
     params: { sessionId: 'session-2' },
-    options: { timeoutMs: null },
+    options: { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
   });
   assert.equal(isOpenClawWizardStepDesynchronized(new Error('wizard: no pending step')), true);
 });

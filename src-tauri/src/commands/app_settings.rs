@@ -350,6 +350,26 @@ pub async fn save_terminal_shift_enter_newline(enabled: bool) -> Result<AppSetti
     .map_err(|e| e.to_string())?
 }
 
+fn apply_terminal_settings_defaults(settings: &mut AppSettings) {
+    settings.terminal_scrollback = default_terminal_scrollback();
+    settings.terminal_shift_enter_newline = default_shift_enter_newline();
+}
+
+#[tauri::command]
+pub async fn reset_terminal_settings() -> Result<AppSettings, String> {
+    tokio::task::spawn_blocking(move || {
+        let _guard = settings_lock()
+            .lock()
+            .map_err(|_| "settings lock poisoned".to_string())?;
+        let mut settings = load_settings_unlocked();
+        apply_terminal_settings_defaults(&mut settings);
+        persist_settings(&settings)?;
+        Ok::<AppSettings, String>(settings)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn detect_agent_paths() -> Result<AppSettings, String> {
     tokio::task::spawn_blocking(|| {
@@ -429,6 +449,18 @@ mod tests {
     #[test]
     fn terminal_defaults_match_the_settings_ui() {
         let settings = AppSettings::default();
+        assert_eq!(settings.terminal_scrollback, 1000);
+        assert!(settings.terminal_shift_enter_newline);
+    }
+
+    #[test]
+    fn terminal_reset_changes_both_native_preferences_as_one_settings_value() {
+        let mut settings = AppSettings {
+            terminal_scrollback: 5000,
+            terminal_shift_enter_newline: false,
+            ..AppSettings::default()
+        };
+        apply_terminal_settings_defaults(&mut settings);
         assert_eq!(settings.terminal_scrollback, 1000);
         assert!(settings.terminal_shift_enter_newline);
     }

@@ -9,6 +9,7 @@ import {
   Settings, Wifi, WifiOff, Heart, Mail, Calendar, RefreshCw,
   Globe, Bell, BellOff, BookOpenText, Command, Sparkles, Terminal, Cpu,
   Activity, FolderKanban,
+  type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -24,21 +25,18 @@ import clsx from 'clsx';
 
 const DEFAULT_GATEWAY_WS_URL = defaultGatewayWsUrl();
 
-// Quick-launch agents (kooky supports 13; we expose the common ones in palette).
-import { Sparkle, Robot, Diamond, Pi, Brain as BrainPh, Cube } from '@phosphor-icons/react';
-
 const QUICK_AGENTS = [
-  { id: 'claude',  icon: <Sparkle size={14} weight="regular" />, label: 'Claude Code',  desc: 'Anthropic Claude',    keywords: ['claude', 'anthropic'] },
-  { id: 'codex',   icon: <Robot size={14} weight="regular" />, label: 'Codex',         desc: 'OpenAI Codex CLI',    keywords: ['codex', 'openai'] },
-  { id: 'gemini',  icon: <Diamond size={14} weight="regular" />, label: 'Gemini CLI',    desc: 'Google Gemini',       keywords: ['gemini', 'google'] },
-  { id: 'pi',      icon: <Pi size={14} weight="regular" />, label: 'Pi',             desc: 'Pi coding agent',     keywords: ['pi'] },
-  { id: 'qwen',    icon: <BrainPh size={14} weight="regular" />, label: 'Qwen CLI',      desc: 'Alibaba Qwen',        keywords: ['qwen', 'alibaba', 'tongyi'] },
-  { id: 'ollama',  icon: <Cube size={14} weight="regular" />, label: 'Ollama',        desc: 'Local Ollama models', keywords: ['ollama', 'local'] },
+  { id: 'claude', label: 'Claude Code', desc: 'Anthropic Claude', keywords: ['claude', 'anthropic'] },
+  { id: 'codex', label: 'Codex', desc: 'OpenAI Codex CLI', keywords: ['codex', 'openai'] },
+  { id: 'gemini', label: 'Gemini CLI', desc: 'Google Gemini', keywords: ['gemini', 'google'] },
+  { id: 'pi', label: 'Pi', desc: 'Pi coding agent', keywords: ['pi'] },
+  { id: 'qwen', label: 'Qwen CLI', desc: 'Alibaba Qwen', keywords: ['qwen', 'alibaba', 'tongyi'] },
+  { id: 'ollama', label: 'Ollama', desc: 'Local Ollama models', keywords: ['ollama', 'local'] },
 ];
 
 interface PaletteCommand {
   id: string;
-  icon: React.ReactNode | React.ComponentType<any>;
+  icon: LucideIcon;
   name: string;
   description?: string;
   shortcut?: string;
@@ -46,6 +44,15 @@ interface PaletteCommand {
   action: () => void;
   /** If set, command is hidden when the edition feature is off */
   feature?: EditionFeatureKey;
+}
+
+export function CommandPaletteIcon({ icon: Icon, selected }: { icon: LucideIcon; selected: boolean }) {
+  return (
+    <Icon
+      size={16}
+      className={clsx(selected ? 'text-aegis-primary' : 'text-aegis-text-dim')}
+    />
+  );
 }
 
 export function CommandPalette() {
@@ -245,32 +252,32 @@ export function CommandPalette() {
             {filtered.length === 0 && (
               <div className="text-center py-8 text-[13px] text-aegis-text-dim">{t('commandPaletteFooter.noResults')}</div>
             )}
-            {filtered.slice(0, 12).map((cmd, i) => (
-              <button
-                key={cmd.id}
-                onClick={() => { cmd.action(); setCommandPaletteOpen(false); }}
-                onMouseEnter={() => setSelectedIdx(i)}
-                className={clsx(
-                  'w-full flex items-center gap-3 px-4 py-2.5 text-start transition-colors',
-                  i === selectedIdx ? 'bg-aegis-primary/10' : 'hover:bg-[rgb(var(--aegis-overlay)/0.03)]'
-                )}
-              >
-                {typeof cmd.icon === 'function'
-                  ? <cmd.icon size={16} className={clsx(i === selectedIdx ? 'text-aegis-primary' : 'text-aegis-text-dim')} />
-                  : <span className={clsx('flex items-center', i === selectedIdx ? 'text-aegis-primary' : 'text-aegis-text-dim')}>{cmd.icon}</span>
-                }
-                <div className="flex-1 min-w-0">
-                  <span className={clsx('text-[13px]', i === selectedIdx ? 'text-aegis-text' : 'text-aegis-text-muted')}>
-                    {cmd.name}
-                  </span>
-                </div>
-                {cmd.shortcut && (
-                  <kbd className="text-[10px] text-aegis-text-dim/60 bg-aegis-surface/30 px-1.5 py-0.5 rounded border border-aegis-border/15">
-                    {cmd.shortcut}
-                  </kbd>
-                )}
-              </button>
-            ))}
+            {filtered.slice(0, 12).map((cmd, i) => {
+              const Icon = cmd.icon;
+              return (
+                <button
+                  key={cmd.id}
+                  onClick={() => { cmd.action(); setCommandPaletteOpen(false); }}
+                  onMouseEnter={() => setSelectedIdx(i)}
+                  className={clsx(
+                    'w-full flex items-center gap-3 px-4 py-2.5 text-start transition-colors',
+                    i === selectedIdx ? 'bg-aegis-primary/10' : 'hover:bg-[rgb(var(--aegis-overlay)/0.03)]'
+                  )}
+                >
+                  <CommandPaletteIcon icon={Icon} selected={i === selectedIdx} />
+                  <div className="flex-1 min-w-0">
+                    <span className={clsx('text-[13px]', i === selectedIdx ? 'text-aegis-text' : 'text-aegis-text-muted')}>
+                      {cmd.name}
+                    </span>
+                  </div>
+                  {cmd.shortcut && (
+                    <kbd className="text-[10px] text-aegis-text-dim/60 bg-aegis-surface/30 px-1.5 py-0.5 rounded border border-aegis-border/15">
+                      {cmd.shortcut}
+                    </kbd>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Footer hint */}

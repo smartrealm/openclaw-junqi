@@ -8,10 +8,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
-import { GlassCard } from '@/components/shared/GlassCard';
+import { GlassCard, GlassCardEnterMotionScope } from '@/components/shared/GlassCard';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { OpenClawUpdatePanel } from '@/components/shared/OpenClawUpdatePanel';
@@ -38,6 +38,8 @@ import { MaintenanceCenter } from '@/components/settings/MaintenanceCenter';
 import { TerminalSettingsPanel } from '@/components/settings/TerminalSettingsPanel';
 import { NpmCacheSettingsPanel } from '@/components/settings/NpmCacheSettingsPanel';
 import { ManagedRuntimeSettingsPanel } from '@/components/settings/ManagedRuntimeSettingsPanel';
+import { FontPanel } from '@/components/settings/FontPanel';
+import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
@@ -53,6 +55,8 @@ export function SettingsPageFull() {
   const {
     theme, setTheme,
     uiScale, setUiScale,
+    uiFont, setUiFont,
+    editorFont, setEditorFont,
     language, setLanguage,
     notificationsEnabled, setNotificationsEnabled,
     soundEnabled, setSoundEnabled,
@@ -65,9 +69,6 @@ export function SettingsPageFull() {
     budgetLimit, setBudgetLimit,
     setGatewayToken,
     accentColor, setAccentColor,
-    picovoiceAccessKey, setPicovoiceAccessKey,
-    wakeWord, setWakeWord,
-    wakeSensitivity, setWakeSensitivity,
   } = useSettingsStore();
   const costSummary = useGatewayDataStore((s) => s.costSummary);
 
@@ -166,10 +167,16 @@ export function SettingsPageFull() {
   };
   const handlePetClear = async () => {
     setPetUploadError(null);
-    await invoke('clear_pet_asset').catch(() => undefined);
-    await invoke('clear_pet_package').catch(() => undefined);
-    setPetCustomAsset(null);
-    setCustomPet(null);
+    try {
+      await Promise.all([
+        invoke('clear_pet_asset'),
+        invoke('clear_pet_package'),
+      ]);
+      setPetCustomAsset(null);
+      setCustomPet(null);
+    } catch (error) {
+      setPetUploadError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const [openclawVersion, setOpenclawVersion] = useState<string | null>(null);
@@ -182,13 +189,9 @@ export function SettingsPageFull() {
   const [hasStoredGatewayToken, setHasStoredGatewayToken] = useState(false);
   const [connectionDirty, setConnectionDirty] = useState(false);
   const requestedTab = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState<SettingsTab>(() => (
-    SETTINGS_TABS.includes(requestedTab as SettingsTab) ? requestedTab as SettingsTab : 'appearance'
-  ));
-
-  useEffect(() => {
-    if (SETTINGS_TABS.includes(requestedTab as SettingsTab)) setActiveTab(requestedTab as SettingsTab);
-  }, [requestedTab]);
+  const activeTab: SettingsTab = SETTINGS_TABS.includes(requestedTab as SettingsTab)
+    ? requestedTab as SettingsTab
+    : 'appearance';
 
   useEffect(() => {
     if (activeTab !== 'connect') return;
@@ -201,8 +204,11 @@ export function SettingsPageFull() {
     return () => { cancelled = true; };
   }, [activeTab, gatewayUrl]);
 
+  useEffect(() => {
+    if (!connectionDirty) setEditUrl(gatewayUrl);
+  }, [connectionDirty, gatewayUrl]);
+
   const selectTab = (tab: SettingsTab) => {
-    setActiveTab(tab);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set('tab', tab);
@@ -217,7 +223,9 @@ export function SettingsPageFull() {
         setCustomPet(pet);
         if (pet) setPetCustomAsset(null);
       })
-      .catch(() => undefined);
+      .catch((error) => {
+        setPetUploadError(error instanceof Error ? error.message : String(error));
+      });
     void refreshPetPackages();
   // The pet tab is the ownership boundary for loading package metadata.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -276,10 +284,11 @@ export function SettingsPageFull() {
   }, [t]);
 
   useEffect(() => {
+    if (activeTab !== 'storage') return;
     refreshManagedIndexInfo().then((r) => {
       if (!r.success && r.error) setAttachmentsStatus(r.error);
     });
-  }, [refreshManagedIndexInfo]);
+  }, [activeTab, refreshManagedIndexInfo]);
 
   const handleLanguageChange = (lang: AppLanguage) => {
     setLanguage(lang);
@@ -288,17 +297,14 @@ export function SettingsPageFull() {
 
   const handleNotificationsToggle = (enabled: boolean) => {
     setNotificationsEnabled(enabled);
-    notifications.setEnabled(enabled);
   };
 
   const handleSoundToggle = (enabled: boolean) => {
     setSoundEnabled(enabled);
-    notifications.setSoundEnabled(enabled);
   };
 
   const handleDndToggle = (dnd: boolean) => {
     setDndMode(dnd);
-    notifications.setDndMode(dnd);
   };
 
   const notifyInfo = (title: string, body: string) => {
@@ -450,49 +456,30 @@ export function SettingsPageFull() {
   };
 
   const handleReconnect = async () => {
-    const { url, token, deviceToken } = await resolveConnectionUrl();
-    gatewayManager.connect(url, token, deviceToken);
+    setTestResult(null);
+    try {
+      const { url, token, deviceToken } = await resolveConnectionUrl();
+      gatewayManager.connect(url, token, deviceToken);
+    } catch {
+      setTestResult('fail');
+    }
   };
 
   const handleSaveConnection = async () => {
-    setGatewayUrl(editUrl.trim());
-    if (tokenDirty) setGatewayToken(editToken.trim());
-    setConnectionDirty(false);
-    const { url, token, deviceToken } = await resolveConnectionUrl();
-    setHasStoredGatewayToken(Boolean(token || deviceToken));
-    setEditToken('');
-    setTokenDirty(false);
-    gatewayManager.connect(url, token, deviceToken);
+    setTestResult(null);
+    try {
+      const { url, token, deviceToken } = await resolveConnectionUrl();
+      setGatewayUrl(editUrl.trim());
+      if (tokenDirty) setGatewayToken(editToken.trim());
+      setHasStoredGatewayToken(Boolean(token || deviceToken));
+      setEditToken('');
+      setTokenDirty(false);
+      setConnectionDirty(false);
+      gatewayManager.connect(url, token, deviceToken);
+    } catch {
+      setTestResult('fail');
+    }
   };
-
-  // Toggle switch — unified design (used everywhere in settings)
-  const Toggle = ({
-    enabled,
-    onChange,
-    disabled,
-  }: {
-    enabled: boolean;
-    onChange: (v: boolean) => void;
-    disabled?: boolean;
-  }) => (
-    <button
-      onClick={() => !disabled && onChange(!enabled)}
-      className={clsx(
-        'w-[42px] h-[24px] rounded-full relative transition-all shrink-0 border',
-        enabled
-          ? 'bg-aegis-primary/30 border-aegis-primary/40'
-          : 'bg-[rgb(var(--aegis-overlay)/0.08)] border-[rgb(var(--aegis-overlay)/0.1)]',
-        disabled && 'opacity-50 cursor-not-allowed'
-      )}
-    >
-      <div className={clsx(
-        'absolute top-[2px] w-[18px] h-[18px] rounded-full transition-all duration-300',
-        enabled
-          ? 'left-[21px] bg-aegis-primary shadow-[0_0_8px_rgb(var(--aegis-primary)/0.5)]'
-          : 'left-[2px] bg-[rgb(var(--aegis-overlay)/0.3)]'
-      )} />
-    </button>
-  );
 
   return (
     <PageTransition className="p-6 space-y-6 max-w-[920px] mx-auto">
@@ -527,6 +514,7 @@ export function SettingsPageFull() {
           </button>
         ))}
       </div>
+      <GlassCardEnterMotionScope enabled={false}>
       <div className="space-y-6">
 
       {activeTab === 'terminal' && <TerminalSettingsPanel />}
@@ -577,6 +565,19 @@ export function SettingsPageFull() {
           value={theme}
           onChange={setTheme}
           systemPrefersDark={prefersDark}
+        />
+      </GlassCard>
+
+      <GlassCard delay={0.1}>
+        <h3 className="mb-1 flex items-center gap-2 text-[14px] font-semibold text-aegis-text">
+          <Type size={16} className="text-aegis-primary" />
+          {t('font.title', 'Typography')}
+        </h3>
+        <FontPanel
+          uiFont={uiFont}
+          onUiFontChange={setUiFont}
+          editorFont={editorFont}
+          onEditorFontChange={setEditorFont}
         />
       </GlassCard>
 
@@ -700,7 +701,7 @@ export function SettingsPageFull() {
               <div className="text-[13px] text-aegis-text">{t('settings.enableNotifications')}</div>
               <div className="text-[11px] text-aegis-text-dim">{t('settings.notificationsDesc')}</div>
             </div>
-            <Toggle enabled={notificationsEnabled} onChange={handleNotificationsToggle} />
+            <SettingsSwitch checked={notificationsEnabled} onCheckedChange={handleNotificationsToggle} label={t('settings.enableNotifications')} />
           </div>
 
           <div className="flex items-center justify-between">
@@ -711,7 +712,7 @@ export function SettingsPageFull() {
               </div>
               <div className="text-[11px] text-aegis-text-dim">{t('settings.soundDesc')}</div>
             </div>
-            <Toggle enabled={soundEnabled} onChange={handleSoundToggle} />
+            <SettingsSwitch checked={soundEnabled} onCheckedChange={handleSoundToggle} label={t('settings.sound')} />
           </div>
 
           <div className="flex items-center justify-between">
@@ -724,7 +725,7 @@ export function SettingsPageFull() {
                 {t('settings.audioAutoPlayDesc', '自动播放助手实时回复携带的音频；历史录音仍需手动播放。')}
               </div>
             </div>
-            <Toggle enabled={audioAutoPlay} onChange={(enabled) => {
+            <SettingsSwitch checked={audioAutoPlay} label={t('settings.audioAutoPlay', '自动播放实时回复音频')} onCheckedChange={(enabled) => {
               setAudioAutoPlay(enabled);
               if (!enabled) voiceRuntime.interruptAll();
             }} />
@@ -740,7 +741,7 @@ export function SettingsPageFull() {
                 {t('settings.voiceAutoSpeakDesc', '用系统语音朗读当前会话的助手回复，可随时打断。')}
               </div>
             </div>
-            <Toggle enabled={voiceAutoSpeak} onChange={(enabled) => {
+            <SettingsSwitch checked={voiceAutoSpeak} label={t('settings.voiceAutoSpeak', '自动语音回复')} onCheckedChange={(enabled) => {
               setVoiceAutoSpeak(enabled);
               if (!enabled) voiceRuntime.interruptAll();
             }} />
@@ -754,12 +755,14 @@ export function SettingsPageFull() {
               </div>
               <div className="text-[11px] text-aegis-text-dim">{t('settings.dndDesc')}</div>
             </div>
-            <Toggle enabled={dndMode} onChange={handleDndToggle} />
+            <SettingsSwitch checked={dndMode} onCheckedChange={handleDndToggle} label={t('settings.dnd')} />
           </div>
 
           <button
+            type="button"
+            disabled={!notificationsEnabled || dndMode}
             onClick={() => notifications.notify({ type: 'info', title: t('app.title', 'JunQi Desktop'), body: t('settings.testNotification') })}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-aegis-border/20 px-4 py-2 text-[12px] text-aegis-text-dim transition-colors hover:border-aegis-border/40 hover:text-aegis-text"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-aegis-border/20 px-4 py-2 text-[12px] text-aegis-text-dim transition-colors hover:border-aegis-border/40 hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Bell size={13} aria-hidden="true" />
             {t('settings.testSound')}
@@ -778,7 +781,7 @@ export function SettingsPageFull() {
               <div className="text-[13px] text-aegis-text">{t('settings.dynamicIslandEnabled', '启用灵动岛')}</div>
               <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.dynamicIslandDesc', '主窗口最小化且会话正在执行时显示；拖入文件时临时显示接收状态。')}</div>
             </div>
-            <Toggle enabled={dynamicIslandEnabled} onChange={setDynamicIslandEnabled} />
+            <SettingsSwitch checked={dynamicIslandEnabled} onCheckedChange={setDynamicIslandEnabled} label={t('settings.dynamicIslandEnabled', '启用灵动岛')} />
           </div>
 
           <div className="flex items-center justify-between gap-5">
@@ -786,13 +789,20 @@ export function SettingsPageFull() {
               <div className="text-[13px] text-aegis-text">{t('settings.dynamicIslandAutoExpand', '重要状态自动展开')}</div>
               <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.dynamicIslandAutoExpandDesc', '等待输入、执行完成、失败或接收文件时短暂展开，随后自动收起。')}</div>
             </div>
-            <Toggle enabled={dynamicIslandAutoExpand} onChange={setDynamicIslandAutoExpand} disabled={!dynamicIslandEnabled} />
+            <SettingsSwitch checked={dynamicIslandAutoExpand} onCheckedChange={setDynamicIslandAutoExpand} disabled={!dynamicIslandEnabled} label={t('settings.dynamicIslandAutoExpand', '重要状态自动展开')} />
           </div>
 
           <button
             type="button"
             disabled={!dynamicIslandEnabled}
-            onClick={() => invoke('open_dynamic_island').catch(() => undefined)}
+            onClick={() => {
+              void invoke('open_dynamic_island').catch((error) => {
+                notifyError(
+                  t('settings.dynamicIslandPreview', '预览灵动岛'),
+                  error instanceof Error ? error.message : String(error),
+                );
+              });
+            }}
             className={clsx(
               'text-[12px] px-4 py-2 rounded-lg border transition-colors',
               dynamicIslandEnabled
@@ -820,7 +830,7 @@ export function SettingsPageFull() {
             <div className="text-[13px] text-aegis-text">{t('pet.settings.enabled')}</div>
             <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.enabledHint')}</div>
           </div>
-          <Toggle enabled={petEnabled} onChange={setPetEnabled} />
+          <SettingsSwitch checked={petEnabled} onCheckedChange={setPetEnabled} label={t('pet.settings.enabled')} />
         </div>
 
         {/* Toggle the pet window: shown → hide (close_pet_window), hidden → recall (open_pet_window). */}
@@ -834,8 +844,14 @@ export function SettingsPageFull() {
             </div>
           </div>
           <button
+            type="button"
             disabled={!petEnabled}
-            onClick={() => invoke(petVisible ? 'close_pet_window' : 'open_pet_window').catch(() => undefined)}
+            onClick={() => {
+              setPetUploadError(null);
+              void invoke(petVisible ? 'close_pet_window' : 'open_pet_window').catch((error) => {
+                setPetUploadError(error instanceof Error ? error.message : String(error));
+              });
+            }}
             className={clsx('text-[12px] px-3 py-1.5 rounded-xl border transition-colors',
               petEnabled ? 'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10' : 'border-aegis-border/20 text-aegis-text-dim opacity-40 cursor-not-allowed')}>
             {petVisible ? t('pet.settings.hide', '隐藏') : t('pet.settings.show', '显示')}
@@ -888,7 +904,7 @@ export function SettingsPageFull() {
             <div className="text-[13px] text-aegis-text">{t('pet.settings.backdropContrast', '自动调整文字对比度')}</div>
             <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.backdropContrastHint', '根据萌宠附近桌面颜色调整提示文字，不保存桌面图像')}</div>
           </div>
-          <Toggle enabled={backdropContrastEnabled} onChange={setBackdropContrastEnabled} />
+          <SettingsSwitch checked={backdropContrastEnabled} onCheckedChange={setBackdropContrastEnabled} label={t('pet.settings.backdropContrast', '背景对比增强')} />
         </div>
 
         <div className="mt-4">
@@ -988,7 +1004,7 @@ export function SettingsPageFull() {
             <div className="text-[13px] text-aegis-text">{t('pet.pomodoro.enable', '启用番茄钟')}</div>
             <div className="text-[11px] text-aegis-text-dim">{t('pet.pomodoro.enableHint', '工作时长提醒，专注与休息循环')}</div>
           </div>
-          <Toggle enabled={petPomodoro.enabled} onChange={(v) => setPetPomodoro({ enabled: v })} />
+          <SettingsSwitch checked={petPomodoro.enabled} onCheckedChange={(v) => setPetPomodoro({ enabled: v })} label={t('pet.settings.pomodoroEnabled', '启用专注计时')} />
         </div>
         <div className="flex items-center gap-2 mt-4 flex-wrap">
           <label className="text-[12px] text-aegis-text-dim">{t('pet.pomodoro.workMin', '工作')}</label>
@@ -1044,72 +1060,6 @@ export function SettingsPageFull() {
         </div>
       </GlassCard>
 
-      {/* Voice input runtime and reserved wake-word provider settings. */}
-      <GlassCard delay={0.14}>
-        <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
-          <Radio size={16} className="text-aegis-primary" />
-          {t('voiceWake.title', '语音输入与打断')}
-        </h3>
-        <div className="space-y-4">
-          <div className="rounded-lg border border-aegis-border/20 bg-[rgb(var(--aegis-overlay)/0.02)] p-3 text-[11px] leading-relaxed text-aegis-text-dim">
-            {t('voiceWake.hint', '支持系统语音识别时会直接转写；其他桌面环境使用本地 VAD 捕获语音并发送给 OpenClaw。开始说话会打断当前回复。Picovoice 配置为后续唤醒词适配器预留。')}
-          </div>
-
-          <div>
-            <label className="text-[12px] text-aegis-text-dim mb-1.5 flex items-center gap-1.5">
-              <KeyRound size={12} />
-              {t('voiceWake.accessKey', 'Picovoice AccessKey（预留）')}
-            </label>
-            <input
-              type="password"
-              value={picovoiceAccessKey}
-              onChange={(e) => setPicovoiceAccessKey(e.target.value)}
-              placeholder={t('voiceWake.accessKeyPlaceholder', '在 console.picovoice.ai 免费获取')}
-              className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border/30 rounded-lg px-3 py-2 text-[13px] text-aegis-text outline-none focus:border-aegis-primary/40 font-mono"
-            />
-          </div>
-
-          <div>
-            <label className="text-[12px] text-aegis-text-dim mb-1.5">{t('voiceWake.keyword', '唤醒词（预留）')}</label>
-            <input
-              type="text"
-              value={wakeWord}
-              onChange={(e) => setWakeWord(e.target.value)}
-              placeholder={t('voiceWake.keywordPlaceholder', '内置词如 porcupine / hey google，留空用默认')}
-              className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border/30 rounded-lg px-3 py-2 text-[13px] text-aegis-text outline-none focus:border-aegis-primary/40"
-            />
-          </div>
-
-          <div>
-            <label className="text-[12px] text-aegis-text-dim mb-1.5 flex items-center justify-between">
-              <span>{t('voiceWake.sensitivity', '灵敏度（预留）')}</span>
-              <span className="font-mono text-aegis-text-muted">{wakeSensitivity.toFixed(2)}</span>
-            </label>
-            <input
-              type="range" min="0" max="1" step="0.05" value={wakeSensitivity}
-              onChange={(e) => setWakeSensitivity(Number(e.target.value))}
-              className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-              style={{
-                background: `linear-gradient(to right, rgb(var(--aegis-primary)) 0%, rgb(var(--aegis-primary)) ${wakeSensitivity * 100}%, rgb(var(--aegis-overlay) / 0.15) ${wakeSensitivity * 100}%, rgb(var(--aegis-overlay) / 0.15) 100%)`,
-                accentColor: 'rgb(var(--aegis-primary))',
-              }}
-            />
-            <div className="flex justify-between text-[10px] text-aegis-text-dim mt-1">
-              <span>{t('voiceWake.sensLow', '低误触')}</span>
-              <span>{t('voiceWake.sensHigh', '高灵敏')}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 text-[11px]">
-            <StatusDot status="active" size={8} />
-            <span className="text-aegis-text-dim">
-              {picovoiceAccessKey.trim()
-                ? t('voiceWake.configured', 'AccessKey 已保存；当前版本仍使用系统识别或本地 VAD')
-                : t('voiceWake.notConfigured', '当前使用系统语音识别或本地 VAD')}
-            </span>
-          </div>
-        </div>
-      </GlassCard>
         </>
       )}
 
@@ -1211,6 +1161,7 @@ export function SettingsPageFull() {
           <div className="flex items-center gap-2 flex-wrap">
             {connectionDirty && (
               <button
+                type="button"
                 onClick={handleSaveConnection}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-semibold
                   bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/25
@@ -1221,6 +1172,7 @@ export function SettingsPageFull() {
               </button>
             )}
             <button
+              type="button"
               onClick={handleTestConnection}
               disabled={testingConnection}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/40 transition-colors disabled:opacity-40"
@@ -1230,6 +1182,7 @@ export function SettingsPageFull() {
             </button>
             {!connected && !connectionDirty && (
               <button
+                type="button"
                 onClick={handleReconnect}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors"
               >
@@ -1436,6 +1389,7 @@ export function SettingsPageFull() {
       )}
 
       </div>
+      </GlassCardEnterMotionScope>
     </PageTransition>
   );
 }

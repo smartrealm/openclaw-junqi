@@ -1551,6 +1551,57 @@ pub async fn merge_task_worktree(
 }
 
 /// Remove the worktree directory and its branch.
+fn remove_task_worktree_from_repo(
+    project_path: &str,
+    worktree_path: &str,
+    branch: &str,
+) -> Result<(), String> {
+    let worktree_existed = std::path::Path::new(worktree_path).exists();
+    let remove_out = run_git(
+        project_path,
+        &["worktree", "remove", "--force", worktree_path],
+    )?;
+    if !remove_out.status.success() {
+        if worktree_existed {
+            return Err(String::from_utf8_lossy(&remove_out.stderr)
+                .trim()
+                .to_string());
+        }
+        let prune_out = run_git(project_path, &["worktree", "prune"])?;
+        if !prune_out.status.success() {
+            return Err(String::from_utf8_lossy(&prune_out.stderr)
+                .trim()
+                .to_string());
+        }
+    }
+
+    if branch.trim().is_empty() {
+        return Ok(());
+    }
+    let branch_ref = format!("refs/heads/{branch}");
+    let exists_out = run_git(
+        project_path,
+        &["show-ref", "--verify", "--quiet", &branch_ref],
+    )?;
+    match exists_out.status.code() {
+        Some(0) => {}
+        Some(1) => return Ok(()),
+        _ => {
+            return Err(String::from_utf8_lossy(&exists_out.stderr)
+                .trim()
+                .to_string())
+        }
+    }
+
+    let branch_out = run_git(project_path, &["branch", "-D", branch])?;
+    if !branch_out.status.success() {
+        return Err(String::from_utf8_lossy(&branch_out.stderr)
+            .trim()
+            .to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn remove_task_worktree(
     project_path: String,
@@ -1561,25 +1612,7 @@ pub async fn remove_task_worktree(
     ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
 
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let remove_out = run_git(
-            &project_path,
-            &["worktree", "remove", "--force", &worktree_path],
-        )?;
-        if !remove_out.status.success() {
-            return Err(String::from_utf8_lossy(&remove_out.stderr)
-                .trim()
-                .to_string());
-        }
-
-        if !branch.trim().is_empty() {
-            let branch_out = run_git(&project_path, &["branch", "-D", &branch])?;
-            if !branch_out.status.success() {
-                return Err(String::from_utf8_lossy(&branch_out.stderr)
-                    .trim()
-                    .to_string());
-            }
-        }
-        Ok(())
+        remove_task_worktree_from_repo(&project_path, &worktree_path, &branch)
     })
     .await
     .map_err(|e| format!("Remove worktree task panicked: {}", e))?
@@ -1887,7 +1920,24 @@ pub async fn git_file_diff_stats(project_path: String) -> Result<GitFileDiffResp
 
 #[cfg(test)]
 mod terminal_file_diff_tests {
-    use super::{parse_numstat_z, GitFileDiffResponse, GitFileDiffStat, WorktreeCreated};
+    use super::{
+        parse_numstat_z, remove_task_worktree_from_repo, GitFileDiffResponse, GitFileDiffStat,
+        WorktreeCreated,
+    };
+
+    fn run_test_git(path: &std::path::Path, args: &[&str]) {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(path)
+            .output()
+            .expect("git must run in worktree cleanup regression");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     #[test]
     fn worktree_created_matches_the_junqi_frontend_contract() {
@@ -1902,6 +1952,32 @@ mod terminal_file_diff_tests {
         assert_eq!(value["worktreeBranch"], "junqi-task/task-1");
         assert_eq!(value["baseBranch"], "main");
         assert!(value.get("worktree_path").is_none());
+    }
+
+    #[test]
+    fn task_worktree_cleanup_is_idempotent_after_state_retry() {
+        let root =
+            std::env::temp_dir().join(format!("junqi-worktree-cleanup-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        run_test_git(&root, &["init"]);
+        run_test_git(&root, &["config", "user.email", "junqi@example.invalid"]);
+        run_test_git(&root, &["config", "user.name", "JunQi Test"]);
+        std::fs::write(root.join("README.md"), "base\n").unwrap();
+        run_test_git(&root, &["add", "README.md"]);
+        run_test_git(&root, &["commit", "-m", "initial"]);
+
+        let worktrees_root = root.join(".junqi").join("worktrees");
+        std::fs::create_dir_all(&worktrees_root).unwrap();
+        let worktree = worktrees_root.join("task-1");
+        let worktree_text = worktree.to_string_lossy().into_owned();
+        let branch = "junqi-task/task-1";
+        run_test_git(&root, &["worktree", "add", "-b", branch, &worktree_text]);
+
+        remove_task_worktree_from_repo(root.to_str().unwrap(), &worktree_text, branch).unwrap();
+        remove_task_worktree_from_repo(root.to_str().unwrap(), &worktree_text, branch).unwrap();
+        assert!(!worktree.exists());
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

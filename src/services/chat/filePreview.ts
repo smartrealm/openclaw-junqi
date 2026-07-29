@@ -1,34 +1,8 @@
+import type { ManagedFilePreview } from '@/utils/filePreviewCapabilities';
 import { resolveWorkspacePreview } from '@/workspace-files/services/previewResolver';
 
-export type FilePreviewKind = 'html' | 'image' | 'markdown' | 'text';
-export type LocalBinaryPreviewKind = 'image' | 'audio' | 'video' | 'pdf';
-
-export type LocalFilePreview =
-  | {
-      kind: 'html';
-      mode: 'interactive';
-      url: string;
-    }
-  | {
-      kind: 'html';
-      mode: 'static';
-      content: string;
-      truncated: boolean;
-    }
-  | {
-      kind: 'image';
-      url: string;
-    }
-  | {
-      kind: 'markdown' | 'text';
-      content: string;
-      truncated: boolean;
-    };
-
-export interface LocalBinaryPreview {
-  kind: LocalBinaryPreviewKind;
-  url: string;
-}
+export type FilePreviewKind = ManagedFilePreview['kind'];
+export type LocalFilePreview = ManagedFilePreview;
 
 export interface ManagedTextReadResult {
   success: boolean;
@@ -56,14 +30,18 @@ export interface LocalFilePreviewBridge {
   };
 }
 
+const MANAGED_PREVIEW_CAPABILITIES = {
+  read: true,
+  write: false,
+  nativePreview: true,
+} as const;
+
 export class FilePreviewError extends Error {
   constructor(readonly code: 'unsupported' | 'unavailable') {
     super(code === 'unsupported' ? 'This file type cannot be previewed inline' : 'The file could not be read for preview');
     this.name = 'FilePreviewError';
   }
 }
-
-const MANAGED_PREVIEW_CAPABILITIES = { read: true, write: false, nativePreview: true } as const;
 
 export function getFilePreviewKind(fileName: string): FilePreviewKind | null {
   const resolution = resolveWorkspacePreview({
@@ -75,19 +53,14 @@ export function getFilePreviewKind(fileName: string): FilePreviewKind | null {
   if (resolution.mode === 'editor') return 'text';
   if (resolution.mode === 'markdown') return 'markdown';
   if (resolution.mode === 'isolated-html' || resolution.mode === 'static-html') return 'html';
-  return resolution.kind === 'image' && resolution.mode === 'scoped-media' ? 'image' : null;
-}
-
-export function getLocalBinaryPreviewKind(fileName: string): LocalBinaryPreviewKind | null {
-  const resolution = resolveWorkspacePreview({
-    path: fileName,
-    policy: 'managed-readonly',
-    capabilities: MANAGED_PREVIEW_CAPABILITIES,
-  });
-  if (resolution.mode === 'scoped-media' && (resolution.kind === 'image' || resolution.kind === 'audio' || resolution.kind === 'video')) {
+  if (resolution.mode === 'scoped-pdf') return 'pdf';
+  if (
+    resolution.mode === 'scoped-media'
+    && (resolution.kind === 'image' || resolution.kind === 'audio' || resolution.kind === 'video')
+  ) {
     return resolution.kind;
   }
-  return resolution.mode === 'scoped-pdf' ? 'pdf' : null;
+  return null;
 }
 
 export function decodeBase64Utf8(base64: string): string {
@@ -163,19 +136,6 @@ async function createNativePreviewUrl(
   }
 }
 
-/** Loads binary media through the native scoped preview protocol, never by raw file read. */
-export async function loadLocalBinaryPreview(
-  rawPath: string,
-  fileName: string,
-  bridge: LocalFilePreviewBridge = window.aegis ?? {},
-): Promise<LocalBinaryPreview> {
-  const kind = getLocalBinaryPreviewKind(fileName);
-  if (!kind) throw new FilePreviewError('unsupported');
-  const url = await createNativePreviewUrl(rawPath, bridge);
-  if (!url) throw new FilePreviewError('unavailable');
-  return { kind, url };
-}
-
 export async function loadLocalFilePreview(
   rawPath: string,
   fileName: string,
@@ -184,14 +144,14 @@ export async function loadLocalFilePreview(
   const kind = getFilePreviewKind(fileName);
   if (!kind) throw new FilePreviewError('unsupported');
 
-  if (kind === 'html' || kind === 'image') {
+  if (kind === 'html' || kind === 'image' || kind === 'audio' || kind === 'video' || kind === 'pdf') {
     const url = await createNativePreviewUrl(rawPath, bridge);
     if (url) {
       return kind === 'html'
         ? { kind: 'html', mode: 'interactive', url }
-        : { kind: 'image', url };
+        : { kind, url };
     }
-    if (kind === 'image') throw new FilePreviewError('unavailable');
+    if (kind !== 'html') throw new FilePreviewError('unavailable');
   }
 
   const text = await readLocalTextPreview(rawPath, bridge);
@@ -199,4 +159,63 @@ export async function loadLocalFilePreview(
     return { kind: 'html', mode: 'static', ...text };
   }
   return { kind, ...text };
+}
+
+function normalizedDirectory(path: string): string {
+  const normalized = normalizePreviewPath(path).replace(/\\/g, '/').replace(/\/+$/, '');
+  const slash = normalized.lastIndexOf('/');
+  return slash <= 0 ? normalized.slice(0, slash + 1) : normalized.slice(0, slash);
+}
+
+function pathIsInside(candidate: string, root: string): boolean {
+  const normalizedCandidate = candidate.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalizedRoot = root.replace(/\\/g, '/').replace(/\/+$/, '');
+  const caseInsensitive = /^[A-Za-z]:/.test(normalizedRoot);
+  const comparableCandidate = caseInsensitive ? normalizedCandidate.toLowerCase() : normalizedCandidate;
+  const comparableRoot = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot;
+  return comparableCandidate === comparableRoot || comparableCandidate.startsWith(`${comparableRoot}/`);
+}
+
+export function resolveLocalFileReference(
+  reference: string,
+  ownerPath: string,
+  allowedRoot = normalizedDirectory(ownerPath),
+): string | null {
+  const value = reference.trim();
+  if (!value || value.startsWith('#') || /^(?:https?:|data:|mailto:)/i.test(value)) return null;
+  const absoluteReference = value.startsWith('file://')
+    ? normalizePreviewPath(value)
+    : value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
+      ? value
+      : null;
+  if (absoluteReference) {
+    return pathIsInside(absoluteReference, allowedRoot) ? absoluteReference : null;
+  }
+
+  const normalizedOwner = normalizePreviewPath(ownerPath).replace(/\\/g, '/');
+  const drive = normalizedOwner.match(/^[A-Za-z]:/)?.[0] ?? '';
+  const absolute = normalizedOwner.startsWith('/') || Boolean(drive);
+  const ownerSegments = normalizedOwner.split('/');
+  ownerSegments.pop();
+  const floor = drive ? 1 : absolute ? 1 : 0;
+  for (const segment of value.replace(/\\/g, '/').split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      if (ownerSegments.length > floor) ownerSegments.pop();
+      continue;
+    }
+    ownerSegments.push(segment);
+  }
+  const resolved = ownerSegments.join('/') || (absolute ? '/' : null);
+  return resolved && pathIsInside(resolved, allowedRoot) ? resolved : null;
+}
+
+export async function loadLocalMarkdownImage(
+  reference: string,
+  ownerPath: string,
+  allowedRoot?: string,
+  bridge: LocalFilePreviewBridge = window.aegis ?? {},
+): Promise<string | null> {
+  const resolved = resolveLocalFileReference(reference, ownerPath, allowedRoot);
+  return resolved ? createNativePreviewUrl(resolved, bridge) : null;
 }

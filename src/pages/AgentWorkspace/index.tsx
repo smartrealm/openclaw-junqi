@@ -422,7 +422,6 @@ function SourceControlPanel({ projectPath, onFileSelect }: {
   return (
     <GitChanges
       projectPath={projectPath}
-      currentTaskCreatedAt={null}
       onFileSelect={onFileSelect}
       width={350}
     />

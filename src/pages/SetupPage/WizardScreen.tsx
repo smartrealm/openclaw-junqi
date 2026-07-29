@@ -257,7 +257,7 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
         }}
       >
         <div className={clsx("rounded-lg border p-4 text-sm leading-6", flow.wizardError ? "border-red-500/25 bg-red-500/5 text-red-300" : "border-aegis-primary/25 bg-aegis-primary/5 text-aegis-text-secondary")}>
-          {flow.wizardError || t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
+          {flow.wizardError || flow.wizardActivity || t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
         </div>
       </SetupShell>
     );

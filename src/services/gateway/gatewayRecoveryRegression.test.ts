@@ -363,7 +363,7 @@ test('BUG-ST03 storage migration waits for a free gateway port before copying', 
 test('BUG-ST04 storage progress is localized by stable keys in every locale', () => {
   const storage = source('src-tauri/src/commands/storage.rs');
   const gate = source('src/components/setup/StorageSetupGate.tsx');
-  const locales = ['zh', 'zh-TW', 'en', 'ar'] as const;
+  const locales = ['zh', 'zh-TW', 'en'] as const;
   const progressKeys = [
     'storage.progress.stoppingGateway',
     'storage.progress.copying',

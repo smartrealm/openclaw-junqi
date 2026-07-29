@@ -28,11 +28,19 @@ const EXTENSION_KIND: Readonly<Record<string, WorkspaceFileKind>> = {
   mp3: 'audio', wav: 'audio', ogg: 'audio', m4a: 'audio', aac: 'audio', flac: 'audio',
   mp4: 'video', webm: 'video', mov: 'video', avi: 'video', mkv: 'video', m4v: 'video',
   pdf: 'pdf',
-  txt: 'text', text: 'text', log: 'text', csv: 'text',
+  txt: 'text', text: 'text', log: 'text', csv: 'text', tsv: 'text',
   json: 'code', jsonc: 'code', xml: 'code', yml: 'code', yaml: 'code', toml: 'code',
   js: 'code', mjs: 'code', cjs: 'code', ts: 'code', tsx: 'code', jsx: 'code',
   py: 'code', rs: 'code', go: 'code', java: 'code', c: 'code', cpp: 'code', h: 'code', hpp: 'code',
-  css: 'code', scss: 'code', sh: 'code', bash: 'code', zsh: 'code', sql: 'code',
+  css: 'code', scss: 'code', sass: 'code', less: 'code', sh: 'code', bash: 'code', zsh: 'code', fish: 'code', sql: 'code',
+  ini: 'code', conf: 'code', config: 'code', properties: 'code', env: 'code', editorconfig: 'code', gitignore: 'code',
+  rb: 'code', php: 'code', swift: 'code', kt: 'code', kts: 'code', scala: 'code', lua: 'code', r: 'code', dart: 'code', ex: 'code', exs: 'code',
+  vue: 'code', svelte: 'code', astro: 'code', graphql: 'code', gql: 'code', proto: 'code', gradle: 'code', mmd: 'code', mermaid: 'code', ipynb: 'code',
+};
+
+const FILE_NAME_KIND: Readonly<Record<string, WorkspaceFileKind>> = {
+  dockerfile: 'code', makefile: 'code', gnumakefile: 'code', bsdmakefile: 'code', justfile: 'code',
+  license: 'text', readme: 'text', changelog: 'text', authors: 'text', contributors: 'text',
 };
 
 const MIME_TYPES: Readonly<Partial<Record<WorkspaceFileKind, string>>> = {
@@ -47,6 +55,13 @@ export function fileExtension(pathOrName: string): string {
 }
 
 export function workspaceFileKind(pathOrName: string): WorkspaceFileKind {
+  const normalized = pathOrName.split(/[?#]/, 1)[0]?.replace(/\\/g, '/') ?? '';
+  const fileName = normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase();
+  const namedKind = FILE_NAME_KIND[fileName];
+  if (namedKind) return namedKind;
+  if (fileName.startsWith('dockerfile.') || fileName.startsWith('makefile.') || fileName.startsWith('.env.')) {
+    return 'code';
+  }
   const extension = fileExtension(pathOrName);
   return extension ? EXTENSION_KIND[extension] ?? 'unsupported' : 'unsupported';
 }

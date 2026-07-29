@@ -4,6 +4,7 @@
 // they reach the user-visible failure overlay.
 import { installXtermSafePatch } from './components/Terminal/xtermSafePatch';
 import { showFatalErrorOverlay } from './runtime/fatalErrorOverlay';
+import { handleUnhandledPromiseRejection } from './runtime/globalErrorPolicy';
 installXtermSafePatch();
 
 function showError(title: string, detail: unknown) {
@@ -23,7 +24,9 @@ window.addEventListener('error', (e) => {
   }
   showError('JS Error', e.error?.stack || e.message);
 });
-window.addEventListener('unhandledrejection', (e) => showError('Promise Rejection', e.reason || String(e.reason)));
+window.addEventListener('unhandledrejection', (event) => {
+  handleUnhandledPromiseRejection(event, showError);
+});
 
 // Apply the saved theme SYNCHRONOUSLY before any render so chrome-bg / glass-bg
 // resolve the right --aegis-* variables on the very first paint (no dark→light

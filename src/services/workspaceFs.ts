@@ -9,6 +9,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { isImageFile } from '@/workspace-files/domain/fileKinds';
 import { localWorkspaceFiles } from '@/workspace-files/adapters/localWorkspaceFiles';
 import type { WorkspaceFileScope } from '@/workspace-files/domain/types';
+import {
+  decodeWorkspaceFilePreview,
+  type WorkspaceFilePreview,
+} from '@/utils/filePreviewCapabilities';
 
 export interface FsEntry {
   name: string;
@@ -80,6 +84,11 @@ export function setTerminalWorkspaceWatches(watchId: string, generation: number,
 
 export function clearTerminalWorkspaceWatches(watchId: string, generation: number): Promise<void> {
   return invoke('clear_terminal_workspace_watches', { watchId, generation });
+}
+
+/** Read and classify a workspace file without treating unknown binary data as text. */
+export async function readFilePreview(path: string, root: string): Promise<WorkspaceFilePreview> {
+  return decodeWorkspaceFilePreview(await invoke('read_file_preview', { path, projectPath: root }));
 }
 
 function legacyLocalScope(root: string): WorkspaceFileScope {

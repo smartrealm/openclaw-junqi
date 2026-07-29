@@ -1,4 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
+import {
+  decodeWorkspaceFilePreview,
+  imageDataUrl,
+} from '@/utils/filePreviewCapabilities';
 import type { WorkspaceFilesAdapter } from './types';
 import type {
   WorkspaceFileCapabilities,
@@ -17,12 +21,6 @@ interface NativeFileEntry {
   is_symlink?: boolean;
   extension?: string | null;
   is_gitignored?: boolean;
-}
-
-interface NativeImagePreview {
-  data_url: string;
-  mime_type: string;
-  byte_length: number;
 }
 
 interface NativeFileSearchResult {
@@ -81,14 +79,20 @@ export const localWorkspaceFiles: WorkspaceFilesAdapter = {
 
   async readText(scope, path): Promise<WorkspaceTextSnapshot> {
     assertLocalScope(scope);
-    const content = await invoke<string>('read_file_content', { path, projectPath: scope.rootPath });
-    return { content, revision: null, truncated: false };
+    const preview = decodeWorkspaceFilePreview(
+      await invoke<unknown>('read_file_preview', { path, projectPath: scope.rootPath }),
+    );
+    if (preview.kind !== 'text') throw new Error('Workspace file is not readable text');
+    return { content: preview.text, revision: null, truncated: false };
   },
 
   async readImagePreview(scope, path): Promise<WorkspaceImagePreview> {
     assertLocalScope(scope);
-    const preview = await invoke<NativeImagePreview>('read_image_preview', { path, projectPath: scope.rootPath });
-    return { dataUrl: preview.data_url, mimeType: preview.mime_type, byteLength: preview.byte_length };
+    const preview = decodeWorkspaceFilePreview(
+      await invoke<unknown>('read_file_preview', { path, projectPath: scope.rootPath }),
+    );
+    if (preview.kind !== 'image') throw new Error('Workspace file is not a previewable image');
+    return { dataUrl: imageDataUrl(preview), mimeType: preview.mimeType, byteLength: preview.byteLength };
   },
 
   async writeText(scope, path, content): Promise<void> {

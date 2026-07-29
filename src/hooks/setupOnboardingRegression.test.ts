@@ -25,10 +25,10 @@ const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.t
 const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
 const appStore = readFileSync(new URL('../stores/app-store.ts', import.meta.url), 'utf8');
 const gatewayClient = readFileSync(new URL('../services/gateway/index.ts', import.meta.url), 'utf8');
+const wizardClient = readFileSync(new URL('../services/openclawWizard.ts', import.meta.url), 'utf8');
 const adapter = readFileSync(new URL('../api/tauri-adapter.ts', import.meta.url), 'utf8');
 const settingsStore = readFileSync(new URL('../stores/settingsStore.ts', import.meta.url), 'utf8');
 const settingsPage = readFileSync(new URL('../pages/SettingsPage.tsx', import.meta.url), 'utf8');
-const settingsDialog = readFileSync(new URL('../components/shared/AppSettingsDialog.tsx', import.meta.url), 'utf8');
 const setupCommand = readdirSync(new URL('../../src-tauri/src/commands/setup/', import.meta.url))
   .filter((entry) => entry.endsWith('.rs'))
   .sort()
@@ -202,9 +202,29 @@ test('BUG-WFR-04 stale wizard operations cannot commit after setup navigation or
   );
 
   assert.match(wizardOperations, /wizardClientRef\.current\?\.invalidatePendingOperations\(\)/);
-  assert.match(wizardOperations, /gateway\.cancelPrivilegedAuthorizationRetry\(\)/);
+  assert.match(wizardOperations, /gateway\.cancelActivePrivilegedRequest\(\)/);
   assert.match(wizardOperations, /assertWizardOperationCurrent\(operationId\)/);
   assert.match(back, /invalidateWizardOperations\(\)/);
+});
+
+test('BUG-ONB-49 wizard recovery is bounded, status-aware, and keeps healthy transport', () => {
+  const wizardOperations = hookFile('useWizardSession');
+  const waitForConnection = wizardOperations.slice(
+    wizardOperations.indexOf('const waitForGatewayConnection'),
+    wizardOperations.indexOf('const wizardFailureMessage'),
+  );
+  const resume = wizardClient.slice(
+    wizardClient.indexOf('async resume()'),
+    wizardClient.indexOf('async back()'),
+  );
+
+  assert.match(resume, /callGateway\('wizard\.status'/);
+  assert.ok(resume.indexOf("callGateway('wizard.status'") < resume.indexOf("callGateway('wizard.next'"));
+  assert.doesNotMatch(wizardClient, /timeoutMs:\s*null/);
+  assert.doesNotMatch(waitForConnection, /gatewayManager\.reconnect\(\)/);
+  assert.match(wizardOperations, /setup\.wizard\.connectingGateway/);
+  assert.match(wizardOperations, /setup\.wizard\.inspectingSession/);
+  assert.match(wizardOperations, /setup\.wizard\.startingSession/);
 });
 
 test('BUG-WFR-03 wizard failures are visible first and change the primary action to Retry', () => {
@@ -232,7 +252,6 @@ test('BUG-ONB-24 URL-only settings changes preserve endpoint-scoped credentials'
   assert.doesNotMatch(settingsStore, /setItem\(['"]aegis-gateway-token/);
   assert.match(settingsStore, /config\?\.save\?\.\(\{ gatewayUrl: url \}\)/);
   assert.match(settingsPage, /if \(tokenDirty\) setGatewayToken\(editToken\.trim\(\)\)/);
-  assert.match(settingsDialog, /if \(tokenDirty\) setGatewayToken\(editToken\.trim\(\)\)/);
   assert.match(adapter, /const safe = \{ \.\.\.current, \.\.\.update \}/);
   assert.match(adapter, /delete safe\.gatewayToken/);
   assert.match(adapter, /if \(token\) await persistGatewayToken\(token,/);
@@ -271,13 +290,13 @@ test('BUG-ONB-36 the runtime choice presents reuse first instead of claiming eve
 });
 
 test('BUG-ONB-06 every setup message is complete in all supported locales', () => {
-  const locales = Object.fromEntries(['zh', 'zh-TW', 'en', 'ar'].map((locale) => [
+  const locales = Object.fromEntries(['zh', 'zh-TW', 'en'].map((locale) => [
     locale,
     flattenMessages(JSON.parse(readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'))),
   ])) as Record<string, Record<string, unknown>>;
   const setupKeys = Object.keys(locales.zh).filter((key) => key.startsWith('setup.'));
 
-  for (const locale of ['en', 'ar']) {
+  for (const locale of ['en', 'zh-TW']) {
     for (const key of setupKeys) {
       assert.equal(typeof locales[locale][key], 'string', `${locale} is missing ${key}`);
       assert.notEqual(String(locales[locale][key]).trim(), '', `${locale} has an empty ${key}`);
@@ -333,8 +352,8 @@ test('BUG-ONB-14 selected runtimes resume their full startup closure after stora
 
 test('BUG-ONB-15 setup navigation has one complete seven-step translation contract per locale', () => {
   const zh = JSON.parse(readFileSync(new URL('../locales/zh.json', import.meta.url), 'utf8'));
+  const zhTW = JSON.parse(readFileSync(new URL('../locales/zh-TW.json', import.meta.url), 'utf8'));
   const en = JSON.parse(readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'));
-  const ar = JSON.parse(readFileSync(new URL('../locales/ar.json', import.meta.url), 'utf8'));
 
   const zhExpected = {
     identity: { title: '品牌与偏好', description: '语言 / 主题' },
@@ -357,10 +376,7 @@ test('BUG-ONB-15 setup navigation has one complete seven-step translation contra
 
   assert.deepEqual(zh.setup.steps, zhExpected);
   assert.deepEqual(en.setup.steps, enExpected);
-  for (const step of Object.keys(zhExpected)) {
-    assert.equal(typeof ar[`setup.steps.${step}.title`], 'string');
-    assert.equal(typeof ar[`setup.steps.${step}.description`], 'string');
-  }
+  assert.deepEqual(Object.keys(zhTW.setup.steps), Object.keys(zhExpected));
 });
 
 test('BUG-ONB-09 terminal integration is an optional storage preference, not an install step', () => {

@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const viewer = readFileSync(new URL("./FileViewer.tsx", import.meta.url), "utf8");
+const previewPane = readFileSync(new URL("./FilePreviewPane.tsx", import.meta.url), "utf8");
+const documentHook = readFileSync(new URL("./useWorkspaceFileDocument.ts", import.meta.url), "utf8");
+const capabilities = readFileSync(new URL("./fileViewerCapabilities.ts", import.meta.url), "utf8");
 const explorer = readFileSync(new URL("./FileExplorer.tsx", import.meta.url), "utf8");
 const fileManager = readFileSync(new URL("../../pages/FileManager.tsx", import.meta.url), "utf8");
 
@@ -10,34 +13,36 @@ test("BUG-FILE-STALE-01 an open file follows the file on disk", () => {
   // The pane loaded once and never looked again: an agent writing to the
   // workspace left the tab showing a stale snapshot, and the next keystroke
   // wrote that snapshot back over the newer content.
-  assert.match(viewer, /subscribeLocalWorkspacePath\(projectPath, directory/);
-  assert.match(viewer, /if \(alive\) void reload\(\)/);
-  assert.match(viewer, /release\?\.\(\)/);
+  assert.match(documentHook, /subscribeLocalWorkspacePath\(projectPath, directory/);
+  assert.match(documentHook, /if \(alive\) void reload\(\)/);
+  assert.match(documentHook, /release\?\.\(\)/);
 
   // Shared Document Controller owns self-write echo, dirty conflict and serialized saves.
-  assert.match(viewer, /acquireLocalEditorDocument\(projectPath, filePath, ownerId\)/);
-  assert.match(viewer, /document\?\.applyExternalChange\(next, null\)/);
-  assert.match(viewer, /document\.edit\(value\)/);
-  assert.match(viewer, /document\.save\(\)/);
-  assert.match(viewer, /documentSnapshot\?\.status === 'conflicted'/);
-  assert.match(viewer, /onClick=\{\(\) => \{ void document\.save\(\); \}\}/);
-  assert.match(viewer, /file\.changedOnDisk/);
+  assert.match(documentHook, /acquireLocalEditorDocument\(projectPath, filePath, ownerId\)/);
+  assert.match(documentHook, /document\?\.applyExternalChange\(next, null\)/);
+  assert.match(documentHook, /document\.edit\(value\)/);
+  assert.match(documentHook, /document\.save\(\)/);
+  assert.match(documentHook, /diskUnavailableRef\.current = true;[\s\S]*clearTimeout\(saveTimerRef\.current\)/);
+  assert.match(documentHook, /if \(diskUnavailableRef\.current\) return;[\s\S]*document\.save\(\)/);
+  assert.match(previewPane, /snapshot\?\.status === "conflicted"/);
+  assert.match(previewPane, /onRetrySave=\{\(\) => void saveNow\(\)\}/);
+  assert.match(previewPane, /file\.changedOnDisk/);
 });
 
 test("BUG-FILE-STALE-02 a tab whose file disappeared is taken down", () => {
   // Deleting a file left its tab open and editable; every later save failed
   // against a path the write validator refuses, losing the user's input with
   // only a generic "Save failed" to show for it.
-  assert.match(viewer, /onFileMissing\?: \(path: string\) => void;/);
+  assert.match(documentHook, /onFileMissing\?: \(path: string\) => void;/);
   // Routed through a ref so an unstable callback cannot re-run the load.
-  assert.match(viewer, /const onFileMissingRef = useRef\(onFileMissing\)/);
-  assert.match(viewer, /if \(alive\) onFileMissingRef\.current\?\.\(filePath\)/);
+  assert.match(documentHook, /const onFileMissingRef = useRef\(onFileMissing\)/);
+  assert.match(documentHook, /onFileMissingRef\.current\?\.\(filePath\)/);
 
   // A read can fail while the file is still there (too large, not UTF-8), so
   // only a genuinely missing file costs its tab.
-  assert.match(viewer, /async function fileIsGone\(/);
-  assert.match(viewer, /document\.snapshot\(\)\.status === 'error' && await fileIsGone/);
-  assert.match(viewer, /return !entries\.some\(\(entry\) => !entry\.is_dir && entry\.name === fileName\)/);
+  assert.match(capabilities, /export async function fileIsGone\(/);
+  assert.match(documentHook, /document\.snapshot\(\)\.status === "error"/);
+  assert.match(capabilities, /return !entries\.some\(\(entry\) => !entry\.is_dir && entry\.name === fileName\)/);
 
   // FileManager remains the legacy FileViewer host and closes missing tabs.
   // The new AI workspace owns documents through EditorDocumentManager instead.
@@ -67,7 +72,7 @@ test("BUG-FILE-FEEDBACK-04 the delete confirmation is not raw i18n keys", () => 
     "file.confirmDeleteFolder",
     "file.delete",
   ];
-  for (const locale of ["en", "zh", "zh-TW", "ar"]) {
+  for (const locale of ["en", "zh", "zh-TW"]) {
     const messages = JSON.parse(
       readFileSync(new URL(`../../locales/${locale}.json`, import.meta.url), "utf8"),
     ) as Record<string, unknown>;

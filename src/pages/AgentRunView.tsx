@@ -11,7 +11,7 @@
 //         junqi/src/components/RunningView.tsx (788 lines)
 // ═══════════════════════════════════════════════════════════
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Channel } from '@tauri-apps/api/core';
 import { invoke } from '@tauri-apps/api/core';
@@ -64,12 +64,25 @@ import {
   normalizeShiftEnterNewline,
   TERMINAL_NEWLINE_SEQUENCE,
 } from '@/junqi/shortcuts';
-import { createTaskWorktreeArgs, mergeTaskWorktreeArgs, taskWorktreeArgs, worktreeDiffStatsArgs } from './agentWorktreeCommands';
+import {
+  createTaskWorktreeArgs,
+  mergeAndRemoveTaskWorktree,
+  mergeTaskWorktreeArgs,
+  taskWorktreeArgs,
+  worktreeDiffStatsArgs,
+} from './agentWorktreeCommands';
 import { applyPlanModePrompt } from './agentPrompt';
 import claudeGif from '@/assets/gif/claude.gif';
 import codexGif from '@/assets/gif/codex.gif';
 import { captureTaskNameSnapshot, taskStillMatchesNameSnapshot } from './AgentWorkspace/taskNameGuard';
 import { getUsageColor, useUsageSnapshot, type UsageWindow } from '@/hooks/useUsageSnapshot';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useTerminalPreferences } from '@/hooks/useTerminalPreferences';
+import { useTheme } from '@/theme/useTheme';
+import {
+  getTerminalAppearancePreferencesSnapshot,
+  subscribeTerminalAppearancePreferences,
+} from '@/components/Terminal/terminalAppearancePreferences';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -199,6 +212,7 @@ function CounterSeg({ icon, count, label, color }: { icon: string; count: number
 // browser's input pipeline) as the only channel for follow-up messages
 // while the agent runs. The xterm panel becomes read-only output.
 function FollowUpDock({ agent, onSend, disabled }: { agent: AgentType; onSend: (text: string) => void; disabled?: boolean }) {
+  const { t } = useTranslation();
   const [text, setText] = useState('');
   const handleSubmit = () => {
     const trimmed = text.trim();
@@ -224,14 +238,14 @@ function FollowUpDock({ agent, onSend, disabled }: { agent: AgentType; onSend: (
         }}
         disabled={disabled}
         rows={1}
-        aria-label="向运行中的智能体发送消息"
-        placeholder="输入消息（Enter 发送，Shift+Enter 换行）"
+        aria-label={t('agentWorkspace.run.sendFollowUp', 'Send a message to the running agent')}
+        placeholder={t('agentWorkspace.run.followUpPlaceholder', 'Message the agent (Enter to send, Shift+Enter for a new line)')}
         className="max-h-24 min-h-6 flex-1 resize-none bg-transparent px-2 py-1 text-[12px] leading-4 text-aegis-text outline-none placeholder:text-aegis-text-dim/60 disabled:cursor-not-allowed disabled:opacity-50"
       />
       <button type="button" onClick={handleSubmit} disabled={disabled || !text.trim()}
         className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-all"
         style={{ background: text.trim() ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-input))', color: text.trim() ? 'rgb(var(--aegis-on-primary))' : 'rgb(var(--aegis-text-dim))', opacity: text.trim() ? 1 : 0.5, border: text.trim() ? 'none' : '1px solid var(--aegis-border)' }}>
-        <Play size={10} fill="currentColor" /> Send
+        <Play size={10} fill="currentColor" /> {t('agentWorkspace.run.sendFollowUpAction', 'Send')}
       </button>
     </div>
   );
@@ -341,7 +355,7 @@ function LaunchSelector({ mode, baseBranch, onMode, onBranch, disabled, projectP
             onClick={() => { setOpen(!open); if (!open) load(); }}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[12px] font-mono"
             style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }}>
-            <GitBranch size={11} /> {baseBranch || '选择基础分支'}
+            <GitBranch size={11} /> {baseBranch || t('agentWorkspace.run.selectBaseBranch', 'Select base branch')}
             {loading ? <Loader2 size={11} className="animate-spin" /> : <ChevronDown size={11} />}
           </button>
           {open && (
@@ -397,12 +411,28 @@ export interface AgentRunViewProps {
   autoStart?: boolean;
   onTaskStarted?: () => void;
   onTaskSaved?: () => void;
-  onOpenWorktreeTerminal?: () => void;
+  onOpenWorktreeTerminal?: (worktreePath: string) => void;
   terminalScrollback?: number;
   terminalFontSize?: TerminalFontSize;
   monoFontFamily?: FontFamily;
   themeVariant?: ThemeVariant;
   visible?: boolean;
+}
+
+export function AgentRunRoute() {
+  const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
+  const configuredMonoFont = useSettingsStore((state) => state.monoFont);
+  const { scrollback: terminalScrollback } = useTerminalPreferences();
+  const resolvedTheme = useTheme();
+
+  return (
+    <AgentRunView
+      terminalScrollback={terminalScrollback}
+      terminalFontSize={terminalFontSize}
+      monoFontFamily={(configuredMonoFont || getDefaultMonoFont()) as FontFamily}
+      themeVariant={resolvedTheme.replace('aegis-', '') as ThemeVariant}
+    />
+  );
 }
 
 export function AgentRunView({
@@ -433,6 +463,11 @@ export function AgentRunView({
   visible = true,
 }: AgentRunViewProps = {}) {
   const { t } = useTranslation();
+  const terminalAppearance = useSyncExternalStore(
+    subscribeTerminalAppearancePreferences,
+    getTerminalAppearancePreferencesSnapshot,
+    getTerminalAppearancePreferencesSnapshot,
+  );
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const updateWorkspaceTask = useAgentWorkspaceStore((state) => state.updateTask);
@@ -584,7 +619,13 @@ export function AgentRunView({
   const metricsTimerRef = useRef<number | null>(null);
   const shiftEnterNewlineRef = useRef(DEFAULT_SHIFT_ENTER_NEWLINE);
   const terminalScrollbackRef = useRef(terminalScrollback);
+  const terminalFontSizeRef = useRef(terminalFontSize);
+  const monoFontFamilyRef = useRef(monoFontFamily);
+  const terminalCursorStyleRef = useRef(terminalAppearance.cursorStyle);
   terminalScrollbackRef.current = terminalScrollback;
+  terminalFontSizeRef.current = terminalFontSize;
+  monoFontFamilyRef.current = monoFontFamily;
+  terminalCursorStyleRef.current = terminalAppearance.cursorStyle;
 
   // ── Terminal output buffer ───────────────────────────────────────────────
   // Channel callbacks can fire BEFORE the xterm instance is mounted (the
@@ -644,8 +685,9 @@ export function AgentRunView({
       try {
         term = new deps.Terminal({
           cursorBlink: true,
-          fontSize: terminalFontSize,
-          fontFamily: monoFontFamily,
+          cursorStyle: terminalCursorStyleRef.current,
+          fontSize: terminalFontSizeRef.current,
+          fontFamily: monoFontFamilyRef.current,
           theme: (() => {
             const cs = getComputedStyle(document.documentElement);
             return {
@@ -781,6 +823,17 @@ export function AgentRunView({
     applyTerminalThemeOnPanel(xtermRef.current, themeVariant, termRef.current);
     refreshTerminalDisplay(xtermRef.current);
   }, [themeVariant]);
+
+  useEffect(() => {
+    if (!xtermRef.current) return;
+    xtermRef.current.options.cursorStyle = terminalAppearance.cursorStyle;
+    refreshTerminalDisplay(xtermRef.current);
+  }, [terminalAppearance.cursorStyle]);
+
+  useEffect(() => {
+    if (!xtermRef.current) return;
+    xtermRef.current.options.scrollback = terminalScrollback;
+  }, [terminalScrollback]);
 
   useEffect(() => {
     const loadNewlineSetting = () => {
@@ -974,9 +1027,12 @@ export function AgentRunView({
       setSessionPathCopied(true);
       window.setTimeout(() => setSessionPathCopied(false), 1600);
     } catch (reason) {
-      setError(`复制会话路径失败：${String(reason)}`);
+      setError(t('agentWorkspace.run.copySessionPathFailed', {
+        error: String(reason),
+        defaultValue: 'Unable to copy session path: {{error}}',
+      }));
     }
-  }, [sessionPath]);
+  }, [sessionPath, t]);
 
   // ── Start / Cancel ───────────────────────────────────────────────────────
   const handleStart = useCallback(async (promptOverride?: string, forceResume = false) => {
@@ -984,7 +1040,7 @@ export function AgentRunView({
     if ((!basePrompt && attachedImages.length === 0 && textAttachments.length === 0 && !resumeIdRef.current) || (running && !forceResume)) return;
     const resumingExistingWorktree = Boolean(resumeIdRef.current && worktreePathRef.current);
     if (launchMode === 'worktree' && !resumingExistingWorktree && !baseBranch.trim()) {
-      setError('请选择工作树的基础分支');
+      setError(t('agentWorkspace.run.baseBranchRequired', 'Select a base branch for the worktree.'));
       return;
     }
     const taskPrompt = applyPlanModePrompt(basePrompt, planMode);
@@ -1056,7 +1112,7 @@ export function AgentRunView({
       updateWorkspaceTaskState('failed', { failureReason });
       setRunning(false);
     }
-  }, [prompt, running, agent, perm, projectPath, launchMode, baseBranch, taskId, writeTerm, clearTerm, updateWorkspaceTask, updateWorkspaceTaskState, workspaceTaskId, onTaskStarted, planMode, attachedImages, textAttachments]);
+  }, [prompt, running, agent, perm, projectPath, launchMode, baseBranch, taskId, writeTerm, clearTerm, updateWorkspaceTask, updateWorkspaceTaskState, workspaceTaskId, onTaskStarted, planMode, attachedImages, textAttachments, t]);
 
   const autoStartHandledRef = useRef(false);
   useEffect(() => {
@@ -1093,8 +1149,10 @@ export function AgentRunView({
     if (!worktreePath || !worktreeBranch || worktreeBusy) return;
     setWorktreeBusy('merge');
     try {
-      await invoke('merge_task_worktree', mergeTaskWorktreeArgs(projectPath, worktreePath, worktreeBranch, baseBranch));
-      await invoke('remove_task_worktree', taskWorktreeArgs(projectPath, worktreePath, worktreeBranch)).catch(() => undefined);
+      await mergeAndRemoveTaskWorktree(
+        () => invoke('merge_task_worktree', mergeTaskWorktreeArgs(projectPath, worktreePath, worktreeBranch, baseBranch)),
+        () => invoke('remove_task_worktree', taskWorktreeArgs(projectPath, worktreePath, worktreeBranch)),
+      );
       setDiffStats(null);
       setWorktreePath(null);
       worktreePathRef.current = null;
@@ -1105,8 +1163,11 @@ export function AgentRunView({
   };
   const discardWorktree = async () => {
     if (!worktreePath || !worktreeBranch || worktreeBusy) return;
-    const accepted = await confirm(`确定丢弃工作树“${worktreeBranch}”及其中的所有修改吗？`, {
-      title: '丢弃工作树',
+    const accepted = await confirm(t('agentWorkspace.run.discardWorktreeConfirm', {
+      branch: worktreeBranch,
+      defaultValue: 'Discard worktree “{{branch}}” and all of its changes?',
+    }), {
+      title: t('agentWorkspace.run.discardWorktree', 'Discard worktree'),
       kind: 'warning',
     });
     if (!accepted) return;
@@ -1125,14 +1186,14 @@ export function AgentRunView({
   const isDone = status === 'done' || status === 'failed' || status === 'cancelled';
   const needsRecovery = status === 'detached' || status === 'interrupted';
   const statusLabel = status === 'input_required'
-    ? '需要输入'
+    ? t('agentWorkspace.status.inputRequired', 'Input required')
     : status === 'awaiting_review'
-      ? '等待审阅'
+      ? t('agentWorkspace.status.awaitingReview', 'Awaiting review')
       : status === 'detached'
-        ? '任务已分离'
+        ? t('agentWorkspace.status.detached', 'Detached')
         : status === 'interrupted'
-          ? '任务已中断'
-          : '智能体运行中';
+          ? t('agentWorkspace.status.interrupted', 'Interrupted')
+          : t('agentWorkspace.status.running', 'Running');
   const currentHookReadiness = agent === 'claude' || agent === 'codex'
     ? hookReadiness?.find((entry) => entry.agent === agent) ?? null
     : null;
@@ -1140,10 +1201,18 @@ export function AgentRunView({
     if (!currentHookReadiness || currentHookReadiness.usable) return null;
     const agentLabel = agent === 'claude' ? 'Claude Code' : 'Codex';
     if (currentHookReadiness.reason === 'version_too_low') {
-      return `${agentLabel} ${currentHookReadiness.detected_version ?? ''} 低于钩子所需版本 ${currentHookReadiness.min_version ?? ''}。`;
+      return t('agentWorkspace.run.hookVersionTooLow', {
+        agent: agentLabel,
+        detected: currentHookReadiness.detected_version ?? '',
+        minimum: currentHookReadiness.min_version ?? '',
+        defaultValue: '{{agent}} {{detected}} is below the required hook version {{minimum}}.',
+      });
     }
-    if (currentHookReadiness.reason === 'no_node') return '未检测到 Node.js，实时任务钩子不可用。';
-    return `${agentLabel} 的实时任务钩子尚未安装。`;
+    if (currentHookReadiness.reason === 'no_node') return t('agentWorkspace.run.hookNodeMissing', 'Node.js was not detected; live task hooks are unavailable.');
+    return t('agentWorkspace.run.hookNotInstalled', {
+      agent: agentLabel,
+      defaultValue: 'Live task hooks are not installed for {{agent}}.',
+    });
   })();
 
   // Match JunQi's NewTask draft behavior: configuration and prompt survive
@@ -1208,9 +1277,12 @@ export function AgentRunView({
       await invoke('reset_task_process', { taskId });
       handleResume();
     } catch (reason) {
-      setError(`重置任务进程失败：${String(reason)}`);
+      setError(t('agentWorkspace.run.resetProcessFailed', {
+        error: String(reason),
+        defaultValue: 'Unable to reset task process: {{error}}',
+      }));
     }
-  }, [handleResume, recoverySessionId, taskId]);
+  }, [handleResume, recoverySessionId, taskId, t]);
 
   const handleExportSession = useCallback(async () => {
     if (!sessionPath || exportingSession) return;
@@ -1219,7 +1291,7 @@ export function AgentRunView({
       const title = (prompt.split('\n')[0].trim() || 'session').slice(0, 50);
       const safeName = title.replace(/[^\w\u4e00-\u9fa5-]+/g, '_').replace(/^_+|_+$/g, '') || 'session';
       const outputPath = await save({
-        title: '导出会话 Markdown',
+        title: t('agentWorkspace.run.exportSessionMarkdown', 'Export session Markdown'),
         defaultPath: `junqi-${safeName}.md`,
         filters: [{ name: 'Markdown', extensions: ['md'] }],
       });
@@ -1236,11 +1308,14 @@ export function AgentRunView({
         },
       });
     } catch (reason) {
-      setError(`导出会话失败：${String(reason)}`);
+      setError(t('agentWorkspace.run.exportSessionFailed', {
+        error: String(reason),
+        defaultValue: 'Unable to export session: {{error}}',
+      }));
     } finally {
       setExportingSession(false);
     }
-  }, [agent, exportingSession, prompt, sessionPath]);
+  }, [agent, exportingSession, prompt, sessionPath, t]);
 
   useEffect(() => { if (prompt === '' && resumeIdRef.current) resumeIdRef.current = null; }, [prompt]);
 
@@ -1274,11 +1349,14 @@ export function AgentRunView({
       setTitleDraft(title);
       updateWorkspaceTask(workspaceTaskId, { title });
     } catch (reason) {
-      setError(`生成任务名称失败：${String(reason)}`);
+      setError(t('agentWorkspace.run.generateNameFailed', {
+        error: String(reason),
+        defaultValue: 'Unable to generate task name: {{error}}',
+      }));
     } finally {
       setGeneratingTitle(false);
     }
-  }, [agent, generatingTitle, projectPath, prompt, running, updateWorkspaceTask, workspaceTaskId]);
+  }, [agent, generatingTitle, projectPath, prompt, running, updateWorkspaceTask, workspaceTaskId, t]);
 
   // ── Save as Todo ────────────────────────────────────────────────────────
   const handleSaveTodo = useCallback(() => {
@@ -1298,7 +1376,7 @@ export function AgentRunView({
     }
     onTaskSaved?.();
     setAttachedImages([]); setTextAttachments([]);
-  }, [prompt, agent, perm, attachedImages, textAttachments, workspaceTaskId, updateWorkspaceTask, onTaskSaved, launchMode]);
+  }, [prompt, agent, perm, attachedImages, textAttachments, workspaceTaskId, updateWorkspaceTask, onTaskSaved, launchMode, baseBranch, planMode]);
 
   // ── Xterm re-fit on done ────────────────────────────────────────────────
   useEffect(() => {
@@ -1338,23 +1416,23 @@ export function AgentRunView({
             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-aegis-text">{taskTitle || prompt || statusLabel}</span>
           )}
           {!editingTitle && (
-            <button type="button" onClick={() => { setTitleDraft(taskTitle); setEditingTitle(true); }} title="重命名任务" className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">
+            <button type="button" onClick={() => { setTitleDraft(taskTitle); setEditingTitle(true); }} title={t('agentWorkspace.run.renameTask', 'Rename task')} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">
               <Pencil size={13} />
             </button>
           )}
           {!running && (
-            <button type="button" disabled={generatingTitle} onClick={() => void generateTitle()} title="生成任务名称" className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-50">
+            <button type="button" disabled={generatingTitle} onClick={() => void generateTitle()} title={t('agentWorkspace.run.generateTaskName', 'Generate task name')} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-50">
               <Sparkle size={13} className={generatingTitle ? 'animate-spin' : ''} />
             </button>
           )}
           {running && worktreePath && onOpenWorktreeTerminal && (
-            <button type="button" onClick={onOpenWorktreeTerminal} title="打开工作树终端" className="inline-flex h-7 items-center gap-1.5 rounded border border-aegis-border px-2 text-[11px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">
-              <SquareTerminal size={12} />工作树终端
+            <button type="button" onClick={() => onOpenWorktreeTerminal(worktreePath)} title={t('agentWorkspace.run.openWorktreeTerminal', 'Open worktree terminal')} className="inline-flex h-7 items-center gap-1.5 rounded border border-aegis-border px-2 text-[11px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">
+              <SquareTerminal size={12} />{t('agentWorkspace.run.worktreeTerminal', 'Worktree terminal')}
             </button>
           )}
           {running && <>
-            <button type="button" onClick={handleMarkDone} title="标记完成" className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-emerald-500/10 hover:text-emerald-400"><CheckCircle2 size={13} /></button>
-            <button type="button" onClick={handleCancel} title="取消任务" className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400"><Square size={12} fill="currentColor" /></button>
+            <button type="button" onClick={handleMarkDone} title={t('agentWorkspace.run.markDone', 'Mark complete')} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-emerald-500/10 hover:text-emerald-400"><CheckCircle2 size={13} /></button>
+            <button type="button" onClick={handleCancel} title={t('agentWorkspace.run.cancelTask', 'Cancel task')} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400"><Square size={12} fill="currentColor" /></button>
           </>}
         </div>
       )}
@@ -1386,10 +1464,16 @@ export function AgentRunView({
         <div className="mx-4 mt-3 px-3 py-2 rounded-lg flex items-center gap-2 text-[12px]"
           style={{ background: 'rgb(var(--aegis-warning)/0.06)', border: '1px solid rgb(var(--aegis-warning)/0.2)', color: 'rgb(var(--aegis-warning))' }}>
           <FileWarning size={14} className="shrink-0" />
-          <span className="min-w-0 flex-1">{agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md'} 未找到，创建后可让智能体理解项目约束。</span>
+          <span className="min-w-0 flex-1">{t('agentWorkspace.run.instructionsMissing', {
+            file: agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md',
+            defaultValue: '{{file}} is missing. Create it to give the agent project instructions.',
+          })}</span>
           <button
             type="button"
-            title={`初始化 ${agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md'}`}
+            title={t('agentWorkspace.run.initializeInstructions', {
+              file: agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md',
+              defaultValue: 'Initialize {{file}}',
+            })}
             onClick={() => void handleStart(`Create a concise ${agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md'} for this project. Inspect the repository first, then document its architecture, development commands, test commands, and coding conventions.`)}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-aegis-warning hover:bg-aegis-warning/10"
           >
@@ -1411,7 +1495,7 @@ export function AgentRunView({
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4">
             {providedProjectPath === undefined && (
               <input value={projectPath} onChange={(event) => setProjectPath(event.target.value)}
-                placeholder="项目路径（留空使用当前目录）"
+                placeholder={t('agentWorkspace.run.projectPathPlaceholder', 'Project path (leave empty for current directory)')}
                 className="h-9 w-full rounded-md border border-aegis-border bg-aegis-bg px-3 font-mono text-xs text-aegis-text outline-none focus:border-aegis-primary" />
             )}
 
@@ -1422,7 +1506,7 @@ export function AgentRunView({
                     draftUserEditedRef.current = true;
                     setPrompt(next);
                   }} onSubmit={handleStart} submitHint=""
-                  placeholder="描述你的任务... 输入 @ 引用文件"
+                  placeholder={t('agentWorkspace.run.taskPromptPlaceholder', 'Describe your task... Type @ to reference files')}
                   rows={4} disabled={running} draftKey={`agent-run:${taskId}`}
                   projectPath={projectPath}
                   mentionProjects={mentionProjects}
@@ -1437,8 +1521,11 @@ export function AgentRunView({
                   {textAttachments.map((attachment, index) => (
                     <div key={index} className="flex items-center gap-1.5 rounded border border-aegis-border bg-aegis-surface px-2.5 py-1 text-[11px] text-aegis-text-dim">
                       <FileText size={11} />
-                      <span>文本附件 · {attachment.chars > 1000 ? `${(attachment.chars / 1000).toFixed(1)}K` : attachment.chars} 字符</span>
-                      <button type="button" title="移除附件" onClick={() => setTextAttachments((previous) => previous.filter((_, itemIndex) => itemIndex !== index))} className="ml-1 rounded p-0.5 hover:bg-red-500/10 hover:text-red-400">
+                      <span>{t('agentWorkspace.run.textAttachment', {
+                        count: attachment.chars > 1000 ? `${(attachment.chars / 1000).toFixed(1)}K` : attachment.chars,
+                        defaultValue: 'Text attachment · {{count}} characters',
+                      })}</span>
+                      <button type="button" title={t('agentWorkspace.run.removeAttachment', 'Remove attachment')} onClick={() => setTextAttachments((previous) => previous.filter((_, itemIndex) => itemIndex !== index))} className="ml-1 rounded p-0.5 hover:bg-red-500/10 hover:text-red-400">
                         <X size={10} />
                       </button>
                     </div>
@@ -1460,25 +1547,25 @@ export function AgentRunView({
                     draftUserEditedRef.current = true;
                     setPlanMode(event.target.checked);
                   }} className="h-3.5 w-3.5 accent-aegis-primary" />
-                  计划模式
+                  {t('agentWorkspace.run.planMode', 'Plan mode')}
                 </label>
                 <div className="min-w-2 flex-1" />
                 {attachedImages.length > 0 && (
-                  <button type="button" title="清空图片" onClick={() => setAttachedImages([])} className="flex h-8 items-center gap-1 rounded px-2 text-[11px] text-aegis-text-dim hover:bg-aegis-hover hover:text-red-400">
+                  <button type="button" title={t('agentWorkspace.run.clearImages', 'Clear images')} onClick={() => setAttachedImages([])} className="flex h-8 items-center gap-1 rounded px-2 text-[11px] text-aegis-text-dim hover:bg-aegis-hover hover:text-red-400">
                     <X size={12} />{attachedImages.length}
                   </button>
                 )}
                 <button type="button" onClick={handleSaveTodo}
                   disabled={launchMode === 'worktree' || attachedImages.length > 0 || textAttachments.length > 0 || !prompt.trim()}
                   title={launchMode === 'worktree'
-                    ? '工作树任务需要直接启动'
+                    ? t('agentWorkspace.run.worktreeMustStart', 'Worktree tasks must start immediately')
                     : attachedImages.length > 0 || textAttachments.length > 0
-                      ? '包含附件的任务必须立即发送'
-                      : '保存为待办'}
+                      ? t('agentWorkspace.run.attachmentsMustStart', 'Tasks with attachments must be sent immediately')
+                      : t('agentWorkspace.run.saveTodo', 'Save as to-do')}
                   className="flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40">
-                  <Bookmark size={13} />保存为待办
+                  <Bookmark size={13} />{t('agentWorkspace.run.saveTodo', 'Save as to-do')}
                 </button>
-                <button type="button" title="发送任务" onClick={() => void handleStart()}
+                <button type="button" title={t('agentWorkspace.run.sendTask', 'Send task')} onClick={() => void handleStart()}
                   disabled={!prompt.trim() && textAttachments.length === 0 && attachedImages.length === 0}
                   className="flex h-8 w-8 items-center justify-center rounded bg-aegis-primary text-white disabled:cursor-not-allowed disabled:opacity-40">
                   <Play size={14} fill="currentColor" />
@@ -1506,35 +1593,39 @@ export function AgentRunView({
               <div className="flex min-h-[300px] flex-1 flex-col items-center justify-center gap-3 rounded border border-amber-400/25 bg-amber-400/5 p-6 text-center">
                 <AlertCircle size={26} className="text-amber-400" />
                 <div>
-                  <div className="text-sm font-semibold text-aegis-text">{status === 'detached' ? '运行连接已分离' : '运行被中断'}</div>
-                  <p className="mt-1 text-xs leading-5 text-aegis-text-dim">会话记录会保留。恢复后可以继续编辑提示词并重新运行。</p>
+                  <div className="text-sm font-semibold text-aegis-text">{status === 'detached'
+                    ? t('agentWorkspace.run.connectionDetached', 'Run connection detached')
+                    : t('agentWorkspace.run.runInterrupted', 'Run interrupted')}</div>
+                  <p className="mt-1 text-xs leading-5 text-aegis-text-dim">{t('agentWorkspace.run.recoveryHint', 'The session is preserved. Recover it to continue editing and running.')}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     disabled={!recoverySessionId}
-                    title={!recoverySessionId ? '未保存会话 ID，无法恢复' : undefined}
+                    title={!recoverySessionId ? t('agentWorkspace.run.missingSessionId', 'No saved session ID is available for recovery') : undefined}
                     onClick={() => {
                       if (status === 'detached') void handleReconnect();
                       else handleResume();
                     }}
                     className="inline-flex items-center gap-1.5 rounded bg-aegis-primary px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
                   >
-                    <RotateCcw size={12} />{status === 'detached' ? '重新连接' : '继续会话'}
+                    <RotateCcw size={12} />{status === 'detached'
+                      ? t('agentWorkspace.run.reconnect', 'Reconnect')
+                      : t('agentWorkspace.run.resumeSession', 'Resume session')}
                   </button>
                   <button
                     type="button"
                     onClick={handleMarkDone}
                     className="inline-flex items-center gap-1.5 rounded border border-aegis-border px-3 py-1.5 text-xs text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
                   >
-                    <CheckCircle2 size={12} />标记完成
+                    <CheckCircle2 size={12} />{t('agentWorkspace.run.markDone', 'Mark complete')}
                   </button>
                   <button
                     type="button"
                     onClick={handleCancel}
                     className="inline-flex items-center gap-1.5 rounded border border-aegis-border px-3 py-1.5 text-xs text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
                   >
-                    <X size={12} />结束任务
+                    <X size={12} />{t('agentWorkspace.run.endTask', 'End task')}
                   </button>
                 </div>
               </div>
@@ -1623,11 +1714,11 @@ export function AgentRunView({
                     </>}
                     <button type="button" disabled={worktreeBusy !== null} onClick={() => void mergeWorktree()}
                       className="hover:text-[rgb(var(--aegis-success))] transition-colors disabled:cursor-wait disabled:opacity-50">
-                      {worktreeBusy === 'merge' ? '合并中...' : t('agent.worktree.merge', 'merge')}
+                      {worktreeBusy === 'merge' ? t('agentWorkspace.run.merging', 'Merging...') : t('agent.worktree.merge', 'merge')}
                     </button>
                     <button type="button" disabled={worktreeBusy !== null} onClick={() => void discardWorktree()}
                       className="hover:text-[rgb(var(--aegis-danger))] transition-colors disabled:cursor-wait disabled:opacity-50">
-                      {worktreeBusy === 'discard' ? '丢弃中...' : t('agent.worktree.discard', 'discard')}
+                      {worktreeBusy === 'discard' ? t('agentWorkspace.run.discarding', 'Discarding...') : t('agent.worktree.discard', 'discard')}
                     </button>
                     <span className="text-[rgb(var(--aegis-text-dim))]">·</span>
                   </>
@@ -1638,7 +1729,9 @@ export function AgentRunView({
                       <button type="button" onClick={() => void copySessionPath()} title={sessionPath}
                         className="inline-flex items-center gap-1 hover:text-[rgb(var(--aegis-primary))] transition-colors">
                         {sessionPathCopied ? <Check size={10} /> : <Copy size={10} />}
-                        {sessionPathCopied ? '已复制路径' : '会话文件'}
+                        {sessionPathCopied
+                          ? t('agentWorkspace.run.pathCopied', 'Path copied')
+                          : t('agentWorkspace.run.sessionFile', 'Session file')}
                       </button>
                       <button onClick={() => navigate(`/session?path=${encodeURIComponent(sessionPath)}`)} title={sessionPath}
                         className="hover:text-[rgb(var(--aegis-primary))] transition-colors">{t('agent.session.view', 'session')}</button>
@@ -1646,7 +1739,7 @@ export function AgentRunView({
                         type="button"
                         disabled={exportingSession}
                         onClick={() => void handleExportSession()}
-                        title="导出会话 Markdown"
+                        title={t('agentWorkspace.run.exportSessionMarkdown', 'Export session Markdown')}
                         className="flex h-5 w-5 items-center justify-center rounded hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-50"
                       >
                         <Download size={11} />

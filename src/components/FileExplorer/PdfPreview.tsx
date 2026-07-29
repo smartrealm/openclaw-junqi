@@ -1,5 +1,5 @@
 // PDF preview component powered by pdfjs-dist (canvas rendering, no native plugin).
-// Accepts raw base64 PDF data so it works inside Electron's strict CSP.
+// Accepts raw base64 PDF data so it works inside the desktop webview CSP.
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.min.mjs';
@@ -12,18 +12,71 @@ import { useTranslation } from 'react-i18next';
 import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
-interface PdfPreviewProps {
-  /** Raw PDF data as base64 string */
-  base64: string;
-  onOpenExternal?: () => void;
-}
+type PdfPreviewProps =
+  | {
+      /** Raw PDF data as base64 string. */
+      base64: string;
+      url?: never;
+      title?: string;
+      onOpenExternal?: () => void;
+    }
+  | {
+      /** Scoped native preview URL for files outside a workspace IPC root. */
+      url: string;
+      base64?: never;
+      title?: string;
+      onOpenExternal?: () => void;
+    };
 
 const SCALE_STEP = 0.25;
 const SCALE_MIN = 0.5;
 const SCALE_MAX = 3.0;
 const SCALE_DEFAULT = 1.2;
 
-export function PdfPreview({ base64, onOpenExternal }: PdfPreviewProps) {
+export function PdfPreview(props: PdfPreviewProps) {
+  if (typeof props.url === 'string') {
+    return <NativePdfPreview url={props.url} title={props.title} onOpenExternal={props.onOpenExternal} />;
+  }
+  if (typeof props.base64 !== 'string') return null;
+  return <CanvasPdfPreview base64={props.base64} onOpenExternal={props.onOpenExternal} />;
+}
+
+function NativePdfPreview({
+  url,
+  title = 'PDF',
+  onOpenExternal,
+}: {
+  url: string;
+  title?: string;
+  onOpenExternal?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-[rgb(var(--aegis-overlay)/0.03)]">
+      {onOpenExternal && (
+        <div className="flex h-9 shrink-0 items-center justify-end border-b border-[rgb(var(--aegis-overlay)/0.06)] px-2">
+          <button
+            type="button"
+            onClick={onOpenExternal}
+            className="flex items-center gap-1.5 rounded border border-[rgb(var(--aegis-overlay)/0.1)] px-2.5 py-1 text-[11px] text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text"
+          >
+            <ExternalLink size={12} />
+            {t('file.openExternal', 'Open with system app')}
+          </button>
+        </div>
+      )}
+      <iframe
+        title={title}
+        src={url}
+        sandbox=""
+        referrerPolicy="no-referrer"
+        className="min-h-0 w-full flex-1 border-0 bg-white"
+      />
+    </div>
+  );
+}
+
+function CanvasPdfPreview({ base64, onOpenExternal }: { base64: string; onOpenExternal?: () => void }) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
@@ -149,6 +202,13 @@ export function PdfPreview({ base64, onOpenExternal }: PdfPreviewProps) {
     renderPage(doc, page, scale);
   }, [doc, page, scale, renderPage]);
 
+  // A loaded document holds resources on the pdf.js worker side. The loading
+  // task is disposed above, but the document it produced outlives it — without
+  // this, every PDF opened leaks its own worker-side document.
+  useEffect(() => () => {
+    void doc?.destroy().catch(() => {});
+  }, [doc]);
+
   useEffect(() => {
     return () => {
       try {
@@ -181,7 +241,7 @@ export function PdfPreview({ base64, onOpenExternal }: PdfPreviewProps) {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-[11px] text-aegis-text-muted hover:text-aegis-text transition-colors"
           >
             <ExternalLink size={12} />
-            {t('fileManager.openExternal', 'Open in system viewer')}
+            {t('file.openExternal', 'Open with system app')}
           </button>
         )}
       </div>
@@ -192,7 +252,7 @@ export function PdfPreview({ base64, onOpenExternal }: PdfPreviewProps) {
     return (
       <div className="h-full bg-[rgb(var(--aegis-overlay)/0.03)] p-2 flex flex-col gap-2">
         <div className="text-[11px] text-aegis-text-dim px-1">
-          {t('fileManager.openExternal', 'Open')} PDF (native fallback)
+          {t('file.openExternal', 'Open with system app')} PDF
         </div>
         <iframe
           title="pdf-native-preview"
@@ -238,7 +298,7 @@ export function PdfPreview({ base64, onOpenExternal }: PdfPreviewProps) {
             className="flex items-center gap-1 px-2 py-1 rounded hover:bg-[rgb(var(--aegis-overlay)/0.06)] text-[11px] text-aegis-text-dim hover:text-aegis-text transition-colors"
           >
             <ExternalLink size={11} />
-            {t('fileManager.openExternal', 'Open')}
+            {t('file.openExternal', 'Open with system app')}
           </button>
         )}
       </div>

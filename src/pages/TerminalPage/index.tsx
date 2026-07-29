@@ -10,6 +10,7 @@ import {
 import { AgentOverviewPanel } from "@/components/Terminal/AgentOverviewPanel";
 import { PaneTreeView } from "@/components/Terminal/PaneTreeView";
 import { TerminalWorkspaceFiles } from "@/components/Terminal/TerminalWorkspaceFiles";
+import { createFilePreviewRoute } from '@/components/FileExplorer/filePreviewRoute';
 import {
   isTerminalAgentPanelMode,
   nextTerminalAgentPanelMode,
@@ -667,6 +668,13 @@ export function TerminalPage() {
             closeWorkspaceRequestId={closeWorkspaceRequestId}
             onCloseWorkspaceRequestHandled={() => setCloseWorkspaceRequestId(null)}
             sshWorkspaceRequestVersion={sshWorkspaceRequestVersion}
+            onOpenFile={(filePath) => {
+              const root = sidebarFileRoot
+                || workspace?.projectDirectory
+                || workspace?.workingDirectory
+                || projectPath;
+              navigate(createFilePreviewRoute(root, filePath));
+            }}
           />
         )}
 
@@ -1202,6 +1210,7 @@ function WorkspaceSidebarPanel({
   onClearRecentDirectories, onCloseWorkspace, onCreateWorktree, onAdoptWorktrees, worktreeEligibleWorkspaceIds, worktreeCreateRequestId, onWorktreeCreateRequestHandled,
   onCloseWorktree, onRenameWorkspace, onMoveWorkspace, onDuplicateWorkspace, onCloseOtherWorkspaces, onRevealWorkspace,
   renameWorkspaceRequestId, onRenameWorkspaceRequestHandled, closeWorkspaceRequestId, onCloseWorkspaceRequestHandled, sshWorkspaceRequestVersion,
+  onOpenFile,
 }: {
   mode: 'full' | 'compact';
   width: number;
@@ -1235,6 +1244,7 @@ function WorkspaceSidebarPanel({
   closeWorkspaceRequestId: string | null;
   onCloseWorkspaceRequestHandled: () => void;
   sshWorkspaceRequestVersion: number;
+  onOpenFile: (path: string) => void;
 }) {
   const { t } = useTranslation();
   const panelWidth = mode === 'full' ? width : 52;
@@ -1375,7 +1385,11 @@ function WorkspaceSidebarPanel({
             </span>
           </div>
           {fileRootAvailable ? (
-            <TerminalWorkspaceFiles root={projectPath} refreshVersion={fileTreeVersion} />
+            <TerminalWorkspaceFiles
+              root={projectPath}
+              refreshVersion={fileTreeVersion}
+              onFileOpen={(entry) => onOpenFile(entry.path)}
+            />
           ) : (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, color: 'rgb(var(--aegis-text-dim))', fontSize: 11, textAlign: 'center' }}>
               {t('terminal.filesUnavailable')}

@@ -17,6 +17,7 @@ import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import i18n from '@/i18n';
 import { gatewayLocaleForLanguage } from './gatewayLocale';
 import type { GatewayHelloObservation, RuntimeIdentity } from '@/types/gatewayRuntime';
+import { GatewayTransportLifecycleError } from './GatewayTransportError';
 import {
   buildGatewayHelloObservation,
   invalidateGatewayRuntimeIdentity,
@@ -402,7 +403,9 @@ export class GatewayConnection {
       this.connecting = false;
       this.ws = null;
       if (!this.transient) this.invalidateObservedRuntimeIdentity();
-      this.rejectAllPending(event.reason || 'Gateway connection closed');
+      this.rejectAllPending(new GatewayTransportLifecycleError(
+        event.reason || 'Gateway connection closed',
+      ));
       this.emitStatus();
 
       // 1008 is a generic policy close. Only the structured Gateway code (or a
@@ -447,7 +450,7 @@ export class GatewayConnection {
       this.ws.close();
       this.ws = null;
     }
-    this.rejectAllPending('Gateway connection closed');
+    this.rejectAllPending(new GatewayTransportLifecycleError());
     this.connected = false;
     this.connecting = false;
     if (!this.transient) this.invalidateObservedRuntimeIdentity();
@@ -500,12 +503,12 @@ export class GatewayConnection {
     });
   }
 
-  private rejectAllPending(reason: string) {
+  private rejectAllPending(error: GatewayTransportLifecycleError) {
     const pending = [...this.pendingRequests.values()];
     this.pendingRequests.clear();
     for (const request of pending) {
       if (request.timer) clearTimeout(request.timer);
-      request.reject(reason);
+      request.reject(error);
     }
   }
 
@@ -682,7 +685,9 @@ export class GatewayConnection {
   // ══════════════════════════════════════════════════════
 
   async request(method: string, params: any, options?: GatewayRequestOptions): Promise<any> {
-    if (!this.ws || !this.connected) throw new Error('Not connected');
+    if (!this.ws || !this.connected) {
+      throw new GatewayTransportLifecycleError('Gateway is not connected');
+    }
 
     return new Promise((resolve, reject) => {
       const id = this.nextId();
@@ -912,7 +917,10 @@ export class GatewayConnection {
     this.connecting = false;
     this.invalidateObservedRuntimeIdentity();
     this.retryPolicy.reset();
-    this.rejectAllPending('Gateway credentials changed');
+    this.rejectAllPending(new GatewayTransportLifecycleError(
+      'Gateway credentials changed',
+      'credentials-changed',
+    ));
     this.token = newToken;
     setTimeout(() => this.connect(this.url, newToken, this.deviceToken), 300);
   }

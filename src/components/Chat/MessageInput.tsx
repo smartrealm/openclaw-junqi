@@ -195,7 +195,7 @@ export function MessageInput() {
     onTranscript: handleVoiceTranscript,
     onCaptureFallback: handleVoiceWakeCapture,
     onWakeDetected: handleVoiceWakeDetected,
-    lang: runtimeLanguage === 'zh-TW' ? 'zh-TW' : runtimeLanguage === 'zh' ? 'zh-CN' : runtimeLanguage === 'ar' ? 'ar-SA' : 'en-US',
+    lang: runtimeLanguage === 'zh-TW' ? 'zh-TW' : runtimeLanguage === 'zh' ? 'zh-CN' : 'en-US',
     sessionKey: activeSessionKey,
   });
 

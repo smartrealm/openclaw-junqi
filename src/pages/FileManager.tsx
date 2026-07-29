@@ -2,7 +2,7 @@
 // FileManager — Managed Files (uploads + outputs) + Tree Explorer
 // ═══════════════════════════════════════════════════════════
 
-import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { showConfirm } from '@/components/shared/AlertDialog';
@@ -28,18 +28,26 @@ import {
 } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useChatStore } from '@/stores/chatStore';
-import type { OpenFileTab } from '@/components/FileExplorer/FileViewer';
+import type { FileViewerHandle, OpenFileTab, ThemeVariant } from '@/components/FileExplorer/FileViewer';
+import {
+  pathIsTargetOrDescendant,
+  rebaseOpenFilePath,
+  rebaseOpenFileTabs,
+  removeOpenFileTabs,
+} from '@/components/FileExplorer/openFilePaths';
+import { parseFilePreviewRoute } from '@/components/FileExplorer/filePreviewRoute';
 import clsx from 'clsx';
 import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
+import { useTheme } from '@/theme/useTheme';
 import {
-  loadLocalBinaryPreview,
+  getFilePreviewKind,
   loadLocalFilePreview,
-  type LocalBinaryPreview,
+  loadLocalMarkdownImage,
+  resolveLocalFileReference,
   type LocalFilePreview,
 } from '@/services/chat/filePreview';
-import { fileExtension, workspaceFileKind, type WorkspaceFileKind } from '@/workspace-files/domain/fileKinds';
+import { ManagedFilePreview } from '@/components/FileExplorer/ManagedFilePreview';
 
-const FileMarkdownPreview = lazy(() => import('./FileMarkdownPreview').then((m) => ({ default: m.FileMarkdownPreview })));
 const FileExplorer = lazy(() => import('@/components/FileExplorer/FileExplorer').then((m) => ({ default: m.FileExplorer })));
 const FileViewer = lazy(() => import('@/components/FileExplorer/FileViewer').then((m) => ({ default: m.FileViewer })));
 
@@ -60,12 +68,14 @@ interface FileEntry {
   visibility?: 'user-output' | 'noncanonical-output' | 'internal';
 }
 
-function getExt(name: string): string {
-  return fileExtension(name);
-}
+type ManagedPreviewState =
+  | { path: string; status: 'loading' }
+  | { path: string; status: 'ready'; preview: LocalFilePreview }
+  | { path: string; status: 'failed' };
 
-function hasFileKind(ext: string, ...kinds: WorkspaceFileKind[]): boolean {
-  return kinds.includes(workspaceFileKind(`file.${ext}`));
+function getExt(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
 import { formatBytes } from '@/utils/format';
@@ -82,13 +92,14 @@ function formatDate(iso: string): string {
 
 function getFileIcon(ext: string) {
   const size = 14;
+  const previewKind = getFilePreviewKind(ext ? `file.${ext}` : '');
   if (['json', 'jsonc'].includes(ext)) return <FileJson size={size} className="text-yellow-400/80" />;
   if (['ts', 'tsx', 'js', 'jsx', 'py', 'sh', 'bash'].includes(ext)) return <FileCode size={size} className="text-blue-400/80" />;
   if (['md', 'txt', 'log'].includes(ext)) return <FileText size={size} className="text-green-400/80" />;
-  if (hasFileKind(ext, 'image')) return <FileImage size={size} className="text-purple-400/80" />;
-  if (hasFileKind(ext, 'audio')) return <FileAudio size={size} className="text-pink-400/80" />;
-  if (hasFileKind(ext, 'video')) return <FileVideo size={size} className="text-orange-400/80" />;
-  if (hasFileKind(ext, 'pdf')) return <FileText size={size} className="text-red-400/80" />;
+  if (previewKind === 'image') return <FileImage size={size} className="text-purple-400/80" />;
+  if (previewKind === 'audio') return <FileAudio size={size} className="text-pink-400/80" />;
+  if (previewKind === 'video') return <FileVideo size={size} className="text-orange-400/80" />;
+  if (previewKind === 'pdf') return <FileText size={size} className="text-red-400/80" />;
   return <File size={size} className="text-aegis-text-dim" />;
 }
 
@@ -248,8 +259,12 @@ type FileManagerView = 'outputs' | 'uploads' | 'tree';
 
 export function FileManagerPage() {
   const { t } = useTranslation();
+  const resolvedTheme = useTheme();
+  const themeVariant = resolvedTheme.replace('aegis-', '') as ThemeVariant;
   const navigate = useNavigate();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const [searchParams] = useSearchParams();
+  const initialFileRoute = parseFilePreviewRoute(searchParams);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -257,22 +272,17 @@ export function FileManagerPage() {
   const [query, setQuery] = useState('');
   const [hasAegis, setHasAegis] = useState<boolean | null>(null);
   const [cleanMessage, setCleanMessage] = useState('');
-  const [binaryPreview, setBinaryPreview] = useState<LocalBinaryPreview | null>(null);
-  const [htmlPreview, setHtmlPreview] = useState<LocalFilePreview | null>(null);
-  const [binaryLoading, setBinaryLoading] = useState(false);
-  const [htmlPreviewLoading, setHtmlPreviewLoading] = useState(false);
-  const [textPreviewLoading, setTextPreviewLoading] = useState(false);
-  const [activeView, setActiveView] = useState<FileManagerView>('outputs');
+  const [managedPreviewState, setManagedPreviewState] = useState<ManagedPreviewState | null>(null);
+  const [activeView, setActiveView] = useState<FileManagerView>(() => (
+    initialFileRoute.treeRequested ? 'tree' : 'outputs'
+  ));
   const [sessionOnly, setSessionOnly] = useState(false);
   const [agentFilter, setAgentFilter] = useState('all');
   const [visibilityFilter, setVisibilityFilter] = useState('all');
 
   // ── Tree Explorer state ──
-  const [searchParams] = useSearchParams();
   const [treeProjectPath, setTreeProjectPath] = useState(() => {
-    // URL param wins (e.g. /files?path=/foo from WelcomePage Browse button)
-    const urlPath = searchParams.get('path');
-    if (urlPath) return urlPath;
+    if (initialFileRoute.projectPath) return initialFileRoute.projectPath;
     try {
       const config = localStorage.getItem('aegis:workspaceRoot');
       return config || '';
@@ -280,8 +290,31 @@ export function FileManagerPage() {
       return '';
     }
   });
-  const [treeTabs, setTreeTabs] = useState<OpenFileTab[]>([]);
-  const [treeActiveFilePath, setTreeActiveFilePath] = useState<string | null>(null);
+  const [treeTabs, setTreeTabs] = useState<OpenFileTab[]>(() => (
+    initialFileRoute.file ? [initialFileRoute.file] : []
+  ));
+  const [treeActiveFilePath, setTreeActiveFilePath] = useState<string | null>(
+    initialFileRoute.file?.path ?? null,
+  );
+  const treeFileViewerRef = useRef<FileViewerHandle>(null);
+
+  const handleTreePathRenamed = useCallback((oldPath: string, newPath: string, isDirectory: boolean) => {
+    setTreeTabs((current) => rebaseOpenFileTabs(current, oldPath, newPath, isDirectory));
+    setTreeActiveFilePath((current) => current
+      ? rebaseOpenFilePath(current, oldPath, newPath, isDirectory)
+      : null);
+  }, []);
+
+  const handleTreePathDeleted = useCallback((path: string, isDirectory: boolean) => {
+    setTreeTabs((current) => {
+      const next = removeOpenFileTabs(current, path, isDirectory);
+      setTreeActiveFilePath((active) => {
+        if (!active || !pathIsTargetOrDescendant(active, path, isDirectory)) return active;
+        return next[next.length - 1]?.path ?? null;
+      });
+      return next;
+    });
+  }, []);
 
   const closeTreeTab = useCallback((path: string) => {
     setTreeTabs((prev) => {
@@ -292,6 +325,22 @@ export function FileManagerPage() {
       return next;
     });
   }, []);
+
+  const openTreeFile = useCallback((path: string, name: string) => {
+    setTreeTabs((current) => current.some((tab) => tab.path === path)
+      ? current
+      : [...current, { path, name }]);
+    setTreeActiveFilePath(path);
+  }, []);
+
+  const fileRouteKey = searchParams.toString();
+  useEffect(() => {
+    const route = parseFilePreviewRoute(new URLSearchParams(fileRouteKey));
+    if (!route.treeRequested) return;
+    setActiveView('tree');
+    if (route.projectPath) setTreeProjectPath(route.projectPath);
+    if (route.file) openTreeFile(route.file.path, route.file.name);
+  }, [fileRouteKey, openTreeFile]);
 
   const isOutputKind = useCallback((kind?: string) => kind === 'outputs' || kind === 'output', []);
 
@@ -329,12 +378,6 @@ export function FileManagerPage() {
     }
     return window.aegis?.uploads?.delete?.({ path: file.path });
   }, [isOutputKind]);
-
-  const decodeBase64Utf8 = useCallback((base64: string) => {
-    const binary = atob(base64);
-    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
-    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-  }, []);
 
   useEffect(() => {
     const updateBridgeState = () => setHasAegis(hasManagedBridge());
@@ -412,8 +455,9 @@ export function FileManagerPage() {
     }
   }, [t, activeSessionKey, activeView, sessionOnly]);
 
-  useEffect(() => { if (hasAegis) loadFiles(); }, [hasAegis, loadFiles]);
-  useEffect(() => { if (hasAegis) loadFiles(); }, [activeView, sessionOnly, hasAegis, loadFiles]);
+  useEffect(() => {
+    if (hasAegis && activeView !== 'tree') void loadFiles();
+  }, [activeView, hasAegis, loadFiles]);
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -447,93 +491,64 @@ export function FileManagerPage() {
   }, [files]);
 
   const lineCount = useMemo(() => {
-    if (!selected?.content) return 0;
-    return selected.content.split('\n').length;
-  }, [selected]);
+    const content = managedPreviewState?.status === 'ready'
+      && managedPreviewState.path === selected?.path
+      && 'content' in managedPreviewState.preview
+      ? managedPreviewState.preview.content
+      : selected?.content;
+    return content ? content.split('\n').length : 0;
+  }, [managedPreviewState, selected?.content, selected?.path]);
 
   useEffect(() => {
-    setBinaryPreview(null);
-    setBinaryLoading(false);
-    if (!selected) return;
-    const isBinary = hasFileKind(selected.ext, 'image', 'audio', 'video', 'pdf');
-    if (!isBinary || !selected.exists) return;
-    let cancelled = false;
-    setBinaryLoading(true);
-    void loadLocalBinaryPreview(selected.path, selected.name)
-      .then((preview) => {
-        if (!cancelled) setBinaryPreview(preview);
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setBinaryLoading(false); });
-    return () => { cancelled = true; };
-  }, [selected?.path, selected?.name, selected?.ext, selected?.exists]);
-
-  useEffect(() => {
-    setHtmlPreview(null);
-    setHtmlPreviewLoading(false);
-    if (!selected || !selected.exists || !hasFileKind(selected.ext, 'html')) return;
-    let cancelled = false;
-    setHtmlPreviewLoading(true);
-    void loadLocalFilePreview(selected.path, selected.name)
-      .then((preview) => {
-        if (!cancelled && preview.kind === 'html') setHtmlPreview(preview);
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setHtmlPreviewLoading(false); });
-    return () => {
-      cancelled = true;
-    };
-  }, [selected?.path, selected?.name, selected?.ext, selected?.exists]);
-
-  useEffect(() => {
-    setTextPreviewLoading(false);
-    if (!selected || !selected.exists) return;
-    if (selected.content) return;
-    const isBinary = hasFileKind(selected.ext, 'image', 'audio', 'video', 'pdf');
-    if (isBinary) return;
-    // HTML owns its own native/static preview flow so a successful scoped URL
-    // is never blocked behind an unrelated text read.
-    if (hasFileKind(selected.ext, 'html')) return;
-    if (!hasFileKind(selected.ext, 'code', 'text', 'markdown')) return;
-
-    let cancelled = false;
-    setTextPreviewLoading(true);
-    const managedReader = (window as any).aegis?.managedFiles?.read;
-    const fallbackReader = (window as any).aegis?.managedFiles?.readBinary
-      || (window as any).aegis?.uploads?.read;
-    const readRequest = managedReader
-      ? managedReader(selected.path)
-      : fallbackReader?.({ path: selected.path });
-    if (!readRequest) {
-      setTextPreviewLoading(false);
+    if (!selected?.exists || !getFilePreviewKind(selected.name)) {
+      setManagedPreviewState(null);
       return;
     }
-
-    readRequest
-      .then((res: any) => {
-        if (cancelled || !res?.success) return;
-        const decoded = typeof res.content === 'string'
-          ? res.content
-          : typeof res.data === 'string'
-            ? decodeBase64Utf8(res.data)
-            : null;
-        if (decoded === null) return;
-        setSelected((prev) => (prev && prev.path === selected.path ? { ...prev, content: decoded } : prev));
-        setFiles((prev) => prev.map((file) => (
-          file.path === selected.path ? { ...file, content: decoded } : file
-        )));
+    let cancelled = false;
+    const selectedPath = selected.path;
+    setManagedPreviewState({ path: selectedPath, status: 'loading' });
+    void loadLocalFilePreview(selected.path, selected.name)
+      .then((preview) => {
+        if (!cancelled) setManagedPreviewState({ path: selectedPath, status: 'ready', preview });
       })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setTextPreviewLoading(false);
+      .catch(() => {
+        if (!cancelled) setManagedPreviewState({ path: selectedPath, status: 'failed' });
       });
-
     return () => {
       cancelled = true;
     };
-  }, [selected?.path, selected?.content, selected?.ext, selected?.exists, decodeBase64Utf8]);
+  }, [selected?.exists, selected?.name, selected?.path]);
 
-  if (hasAegis === false) {
+  const activeManagedPreviewState = selected
+    && managedPreviewState?.path === selected.path
+      ? managedPreviewState
+      : null;
+  const activeManagedPreview = activeManagedPreviewState?.status === 'ready'
+    ? activeManagedPreviewState.preview
+    : null;
+  const previewLoading = Boolean(
+    selected?.exists
+    && getFilePreviewKind(selected.name)
+    && (!activeManagedPreviewState || activeManagedPreviewState.status === 'loading'),
+  );
+  const previewFailed = activeManagedPreviewState?.status === 'failed';
+
+  const openManagedMarkdownLink = useCallback(async (href: string) => {
+    if (!selected) return;
+    const resolved = resolveLocalFileReference(href, selected.path, selected.workspaceRoot);
+    if (!resolved) return;
+    const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
+    if (openManagedPath) await openManagedPath(resolved);
+  }, [selected]);
+
+  const resolveManagedMarkdownImage = useCallback(
+    (source: string) => selected
+      ? loadLocalMarkdownImage(source, selected.path, selected.workspaceRoot)
+      : Promise.resolve(null),
+    [selected],
+  );
+
+  if (hasAegis === false && activeView !== 'tree') {
     return (
       <PageTransition className="flex flex-col flex-1 min-h-0">
         <div className="shrink-0 flex items-center gap-3 px-5 py-3.5 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
@@ -642,18 +657,10 @@ export function FileManagerPage() {
             <FileExplorer
               projectPath={treeProjectPath}
               projectName={treeProjectPath.split(/[\\/]/).pop() || 'project'}
-              onFileSelect={(path, name) => {
-                setTreeTabs((prev) => {
-                  const exists = prev.some((t) => t.path === path);
-                  if (exists) {
-                    setTreeActiveFilePath(path);
-                    return prev;
-                  }
-                  const tab: OpenFileTab = { path, name };
-                  setTreeActiveFilePath(path);
-                  return [...prev, tab];
-                });
-              }}
+              onFileSelect={openTreeFile}
+              onPathRenamed={handleTreePathRenamed}
+              onPathDeleted={handleTreePathDeleted}
+              onBeforePathMutation={(path, isDirectory) => treeFileViewerRef.current?.flushPath(path, isDirectory) ?? Promise.resolve()}
               width={260}
             />
           </Suspense>
@@ -666,9 +673,11 @@ export function FileManagerPage() {
               }
             >
               <FileViewer
+                ref={treeFileViewerRef}
                 tabs={treeTabs}
                 activeFilePath={treeActiveFilePath}
                 projectPath={treeProjectPath}
+                themeVariant={themeVariant}
                 onSelectTab={setTreeActiveFilePath}
                 onCloseTab={closeTreeTab}
                 onFileMissing={closeTreeTab}
@@ -691,6 +700,7 @@ export function FileManagerPage() {
                   setTreeTabs([]);
                   setTreeActiveFilePath(null);
                 }}
+                onOpenFile={openTreeFile}
                 onRunMakeTarget={(target) => {
                   enqueueTerminalCommand({
                     command: `make -- ${target}\n`,
@@ -926,67 +936,19 @@ export function FileManagerPage() {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-auto">
-                {binaryLoading || htmlPreviewLoading || textPreviewLoading ? (
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {previewLoading ? (
                   <div className="flex items-center justify-center h-full">
                     <Loader2 size={22} className="animate-spin text-aegis-primary" />
                   </div>
-                ) : hasFileKind(selected.ext, 'image') && binaryPreview ? (
-                  <div className="flex items-center justify-center h-full p-6 bg-[rgb(var(--aegis-overlay)/0.02)]">
-                    <img src={binaryPreview.url} alt={selected.name} className="max-w-full max-h-full object-contain rounded-lg shadow-lg" draggable={false} />
-                  </div>
-                ) : hasFileKind(selected.ext, 'audio') && binaryPreview ? (
-                  <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
-                    <FileAudio size={40} className="text-pink-400/60" />
-                    <span className="text-[13px] font-medium text-aegis-text">{selected.name}</span>
-                    <audio controls src={binaryPreview.url} className="w-full max-w-md" />
-                  </div>
-                ) : hasFileKind(selected.ext, 'video') && binaryPreview ? (
-                  <div className="flex items-center justify-center h-full p-4 bg-black/40">
-                    <video controls src={binaryPreview.url} className="max-w-full max-h-full rounded-lg" />
-                  </div>
-                ) : hasFileKind(selected.ext, 'pdf') && binaryPreview ? (
-                  <iframe
-                    title={selected.name}
-                    src={binaryPreview.url}
-                    sandbox=""
-                    className="h-full w-full border-0 bg-white"
+                ) : activeManagedPreview ? (
+                  <ManagedFilePreview
+                    preview={activeManagedPreview}
+                    fileName={selected.name}
+                    onOpenExternal={() => void openFile(selected)}
+                    onOpenLocalLink={openManagedMarkdownLink}
+                    resolveMarkdownImage={resolveManagedMarkdownImage}
                   />
-                ) : hasFileKind(selected.ext, 'html') && selected.exists && htmlPreview?.kind === 'html' ? (
-                  <div className="h-full bg-[rgb(var(--aegis-overlay)/0.03)] p-3 flex flex-col gap-2">
-                    <div className="flex items-center justify-end">
-                      <button
-                        onClick={() => openFile(selected)}
-                        disabled={!selected.exists}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-[11px] text-aegis-text-muted hover:text-aegis-text transition-colors disabled:opacity-40"
-                      >
-                        <ExternalLink size={12} />
-                        {t('fileManager.openInBrowser')}
-                      </button>
-                    </div>
-                    <iframe
-                      title={selected.name}
-                      src={htmlPreview.mode === 'interactive' ? htmlPreview.url : undefined}
-                      srcDoc={htmlPreview.mode === 'interactive' ? undefined : htmlPreview.content}
-                      sandbox={htmlPreview.mode === 'interactive' ? 'allow-scripts' : ''}
-                      referrerPolicy="no-referrer"
-                      className="w-full flex-1 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-white"
-                    />
-                  </div>
-                ) : hasFileKind(selected.ext, 'markdown') && selected.content ? (
-                  <Suspense
-                    fallback={
-                      <div className="flex items-center justify-center h-full">
-                        <Loader2 size={22} className="animate-spin text-aegis-primary" />
-                      </div>
-                    }
-                  >
-                    <FileMarkdownPreview content={selected.content} />
-                  </Suspense>
-                ) : selected.content ? (
-                  <pre className="p-4 text-[11.5px] leading-[1.65] font-mono text-aegis-text-muted whitespace-pre-wrap break-all select-text" style={{ minHeight: '100%', tabSize: 2 }}>
-                    {selected.content}
-                  </pre>
                 ) : !selected.exists ? (
                   <div className="flex flex-col items-center justify-center gap-3 h-full text-center p-6">
                     <AlertCircle size={28} className="text-amber-300/80" />
@@ -994,7 +956,7 @@ export function FileManagerPage() {
                       {t('fileManager.missingFileDesc')}
                     </div>
                   </div>
-                ) : (
+                ) : previewFailed || !getFilePreviewKind(selected.name) ? (
                   <div className="flex flex-col items-center justify-center gap-3 h-full text-center p-6">
                     <File size={28} className="text-aegis-text-dim opacity-40" />
                     <div className="text-[12px] text-aegis-text-dim">
@@ -1008,7 +970,7 @@ export function FileManagerPage() {
                       {t('fileManager.openExternal')}
                     </button>
                   </div>
-                )}
+                ) : null}
               </div>
             </>
           ) : (

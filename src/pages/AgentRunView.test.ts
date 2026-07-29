@@ -38,19 +38,28 @@ test('AI task terminal applies live font and theme settings', () => {
   assert.match(source, /agent_resize_pty/);
 });
 
+test('standalone and workspace task terminals share live terminal preferences', () => {
+  assert.match(source, /export function AgentRunRoute\(\)/);
+  assert.match(source, /useTerminalPreferences\(\)/);
+  assert.match(source, /useSettingsStore\(\(state\) => state\.terminalFontSize\)/);
+  assert.match(source, /cursorStyle: terminalCursorStyleRef\.current/);
+  assert.match(source, /options\.cursorStyle = terminalAppearance\.cursorStyle/);
+  assert.match(source, /options\.scrollback = terminalScrollback/);
+});
+
 test('worktree actions are mutually exclusive while running', () => {
   assert.match(source, /worktreeBusy/);
   assert.match(source, /disabled=\{worktreeBusy !== null\}/);
   assert.match(source, /finally \{ setWorktreeBusy\(null\); \}/);
-  assert.match(source, /合并中\.\.\./);
-  assert.match(source, /丢弃中\.\.\./);
+  assert.match(source, /agentWorkspace\.run\.merging/);
+  assert.match(source, /agentWorkspace\.run\.discarding/);
 });
 
 test('detached and interrupted tasks perform a real session recovery', () => {
   assert.match(source, /reset_task_process/);
   assert.match(source, /handleStart\(prompt, true\)/);
   assert.match(source, /disabled=\{!recoverySessionId\}/);
-  assert.match(source, /未保存会话 ID，无法恢复/);
+  assert.match(source, /agentWorkspace\.run\.missingSessionId/);
   assert.match(source, /shouldIgnoreAgentWorkspaceTaskStatusTransition\(currentStatus, nextStatus\)/);
 });
 
@@ -69,7 +78,7 @@ test('failed and cancelled sessions can resume when a session id exists', () => 
 
 test('workspace-owned tasks cannot change their project path', () => {
   assert.match(source, /providedProjectPath === undefined && \(/);
-  assert.match(source, /placeholder="项目路径（留空使用当前目录）"/);
+  assert.match(source, /agentWorkspace\.run\.projectPathPlaceholder/);
 });
 
 test('new task composition follows the JunQi card and launch-bar hierarchy', () => {
@@ -78,7 +87,7 @@ test('new task composition follows the JunQi card and launch-bar hierarchy', () 
   assert.match(source, /agent === 'codex' \? codexGif : claudeGif/);
   assert.match(source, /rounded-lg border border-aegis-border bg-aegis-card/);
   assert.match(source, /border-t border-aegis-border px-3 py-2/);
-  assert.match(source, /保存为待办/);
+  assert.match(source, /agentWorkspace\.run\.saveTodo/);
   assert.match(source, /rounded-md border border-aegis-border bg-aegis-surface px-3/);
   assert.doesNotMatch(source, /<SessionHistoryStrip agent=/);
 });
@@ -86,7 +95,7 @@ test('new task composition follows the JunQi card and launch-bar hierarchy', () 
 test('todo tasks reject attachments instead of silently dropping them', () => {
   assert.match(source, /attachedImages\.length > 0 \|\| textAttachments\.length > 0 \|\| !prompt\.trim\(\)/);
   assert.match(source, /disabled=\{launchMode === 'worktree' \|\| attachedImages\.length > 0 \|\| textAttachments\.length > 0 \|\| !prompt\.trim\(\)\}/);
-  assert.match(source, /包含附件的任务必须立即发送/);
+  assert.match(source, /agentWorkspace\.run\.attachmentsMustStart/);
 });
 
 test('workspace task agent choices match JunQi while standalone runs may use Pi', () => {
@@ -97,7 +106,7 @@ test('workspace task agent choices match JunQi while standalone runs may use Pi'
 
 test('new worktree tasks require an explicit base branch', () => {
   assert.match(source, /launchMode === 'worktree' && !resumingExistingWorktree && !baseBranch\.trim\(\)/);
-  assert.match(source, /请选择工作树的基础分支/);
+  assert.match(source, /agentWorkspace\.run\.baseBranchRequired/);
 });
 
 test('new worktree creation consumes the JunQi camel-case response contract', () => {
@@ -129,7 +138,7 @@ test('worktree branch loading is stable across parent renders', () => {
   assert.match(source, /baseBranchRef\.current = baseBranch/);
   assert.match(source, /onBranchRef\.current = onBranch/);
   assert.match(source, /\}, \[projectPath\]\);/);
-  assert.match(source, /baseBranch \|\| '选择基础分支'/);
+  assert.match(source, /baseBranch \|\| t\('agentWorkspace\.run\.selectBaseBranch'/);
 });
 
 test('completed tasks cannot be reset into a new task with the same id', () => {
@@ -149,4 +158,9 @@ test('visible task runs share usage snapshots and pause hidden metrics polling',
   assert.match(source, /usageSnapshot\?\.codex\.status === 'available'/);
   assert.match(source, /<InlineUsageWindow label="5h"/);
   assert.match(source, /<InlineUsageWindow label="7d"/);
+});
+
+test('worktree terminal actions pass the concrete worktree path to their owner', () => {
+  assert.match(source, /onOpenWorktreeTerminal\?: \(worktreePath: string\) => void/);
+  assert.match(source, /onOpenWorktreeTerminal\(worktreePath\)/);
 });

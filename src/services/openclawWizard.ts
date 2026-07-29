@@ -110,6 +110,9 @@ export interface OpenClawWizardRequestOptions {
   timeoutMs?: number | null;
 }
 
+export const OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS = 30_000;
+export const OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS = 10 * 60_000;
+
 export type OpenClawWizardFailureKind =
   | 'session_lost'
   | 'step_desynchronized'
@@ -196,6 +199,26 @@ function assertWizardResult(value: unknown): OpenClawWizardResult {
     return { ...value as OpenClawWizardResult, step };
   }
   return value as OpenClawWizardResult;
+}
+
+function assertWizardStatusResult(value: unknown): Pick<OpenClawWizardResult, 'status' | 'error'> {
+  if (!value || typeof value !== 'object') {
+    throw new Error('OpenClaw returned an invalid wizard status response.');
+  }
+  const result = value as Record<string, unknown>;
+  if (result.status !== 'running'
+    && result.status !== 'done'
+    && result.status !== 'cancelled'
+    && result.status !== 'error') {
+    throw new Error('OpenClaw wizard status response has an invalid `status`.');
+  }
+  if (result.error !== undefined && typeof result.error !== 'string') {
+    throw new Error('OpenClaw wizard status response has an invalid `error`.');
+  }
+  return {
+    status: result.status,
+    ...(typeof result.error === 'string' ? { error: result.error } : {}),
+  };
 }
 
 function isTerminalWizardResult(result: OpenClawWizardResult): boolean {
@@ -315,7 +338,7 @@ export class OpenClawWizardClient {
     const result = assertWizardResult(await this.callGateway('wizard.start', {
       mode: 'local',
       ...(this.workspace ? { workspace: this.workspace } : {}),
-    }));
+    }, { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS }));
     this.assertOperationCurrent(operation);
     const returnedSessionId = String(result.sessionId ?? '').trim() || null;
     const terminal = isTerminalWizardResult(result);
@@ -342,7 +365,7 @@ export class OpenClawWizardClient {
         stepId,
         ...(value !== undefined ? { value } : {}),
       },
-    }, { timeoutMs: null }));
+    }, { timeoutMs: OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS }));
     this.assertOperationCurrent(operation);
     if (isTerminalWizardResult(result)) {
       this.setSession(null);
@@ -375,9 +398,25 @@ export class OpenClawWizardClient {
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
     const resumedSessionId = this.sessionId;
     const resumedStep = this.currentStep;
+    const status = assertWizardStatusResult(await this.callGateway('wizard.status', {
+      sessionId: resumedSessionId,
+    }, { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS }));
+    this.assertOperationCurrent(operation);
+    if (status.status !== 'running') {
+      const failed = status.status === 'error';
+      this.setSession(null);
+      this.currentStep = failed ? resumedStep : null;
+      this.failedStep = failed ? resumedStep : null;
+      this.failedSessionId = failed ? resumedSessionId : null;
+      return {
+        done: true,
+        status: status.status,
+        ...(status.error ? { error: status.error } : {}),
+      };
+    }
     const result = assertWizardResult(await this.callGateway('wizard.next', {
-      sessionId: this.sessionId,
-    }, { timeoutMs: null }));
+      sessionId: resumedSessionId,
+    }, { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS }));
     this.assertOperationCurrent(operation);
     if (isTerminalWizardResult(result)) {
       this.setSession(null);
@@ -454,7 +493,11 @@ export class OpenClawWizardClient {
     if (!this.sessionId) return;
     const sessionId = this.sessionId;
     try {
-      const status = assertWizardCancelStatus(await this.callGateway('wizard.cancel', { sessionId }));
+      const status = assertWizardCancelStatus(await this.callGateway(
+        'wizard.cancel',
+        { sessionId },
+        { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
+      ));
       this.assertOperationCurrent(operation);
       // The official Gateway can reject cancellation once a durable write has
       // started. Its RPC still succeeds but reports `running`; retain the

@@ -11,7 +11,9 @@ test('workspace file kinds are classified by one case-insensitive authority', ()
   assert.equal(workspaceFileKind('movie.MOV'), 'video');
   assert.equal(workspaceFileKind('report.pdf'), 'pdf');
   assert.equal(workspaceFileKind('src/App.tsx'), 'code');
-  assert.equal(workspaceFileKind('README'), 'unsupported');
+  assert.equal(workspaceFileKind('README'), 'text');
+  assert.equal(workspaceFileKind('Dockerfile'), 'code');
+  assert.equal(workspaceFileKind('Makefile'), 'code');
   assert.equal(workspaceFileKind('.gitignore'), 'unsupported');
   assert.equal(workspaceFileKind('slides.pptx'), 'unsupported');
 });

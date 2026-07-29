@@ -293,11 +293,12 @@ pub fn run() {
             // JunQi-style file system commands
             commands::fs_neu::read_dir_entries,
             commands::fs_neu::read_compact_dir_entries,
-            commands::fs_neu::read_file_content,
-            commands::fs_neu::read_image_preview,
+            commands::fs_neu::read_file_preview,
             commands::fs_neu::write_file_content,
+            commands::fs_neu::write_file_content_if_unchanged,
             commands::fs_neu::create_file,
             commands::fs_neu::create_directory,
+            commands::fs_neu::rename_path,
             commands::fs_neu::delete_path,
             commands::fs_neu::open_in_system_file_manager,
             commands::fs_neu::open_path_with_system_default,
@@ -323,6 +324,7 @@ pub fn run() {
             commands::app_settings::set_application_language,
             commands::app_settings::save_terminal_scrollback,
             commands::app_settings::save_terminal_shift_enter_newline,
+            commands::app_settings::reset_terminal_settings,
             commands::app_settings::save_app_settings,
             commands::app_settings::detect_agent_paths,
             // Hooks (minimal port of junqi hooks.rs)

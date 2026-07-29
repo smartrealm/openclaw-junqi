@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import ar from '@/locales/ar.json';
 import en from '@/locales/en.json';
 import zh from '@/locales/zh.json';
 import type { CollaborationRunSnapshot } from '@/services/collaboration/types';
@@ -183,8 +182,8 @@ test('removes the card risk notice after resolution or for a nonmatching interve
   assert.doesNotMatch(render(), /data-collaboration-residual-execution-risk/);
 });
 
-test('ships bounded residual-risk copy in every collaboration locale', () => {
-  for (const [locale, catalog] of Object.entries({ en, zh, ar })) {
+test('ships bounded residual-risk copy in each localized collaboration catalog', () => {
+  for (const [locale, catalog] of Object.entries({ en, zh })) {
     const copy = catalog.collaboration.residualExecutionRisk;
     for (const [field, value] of Object.entries(copy)) {
       assert.ok(value.trim().length > 0, `${locale}.${field} must not be empty`);

@@ -1,18 +1,16 @@
-// ── Git File Browser — tree/list view for git file lists ──────────────────────
-// Ported from junqi's git-view/GitFileBrowser with --aegis-* CSS var rewrites.
 import {
   useState,
   useMemo,
   useCallback,
   type ReactNode,
-  type CSSProperties,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ChevronRight,
   ChevronDown,
   Folder,
   FolderClosed,
-  File,
+  Undo2,
   ListTree,
   List,
 } from "lucide-react";
@@ -21,7 +19,6 @@ import {
   getGitStatusLabel,
   fileName,
   type FileViewMode,
-  type GitFileBrowserScrollContext,
   type GitDirectoryActionTarget,
   type GitFileChange,
 } from "./types";
@@ -50,7 +47,6 @@ function isGitFileChangeEntry(entry: GitFileEntry): entry is GitFileChange {
 interface GitFileBrowserProps {
   entries: GitFileEntry[];
   mode: FileViewMode;
-  scrollContext?: GitFileBrowserScrollContext;
   showStats?: boolean;
   onFileClick?: (entry: GitFileEntry) => void;
   onStageToggle?: (entry: GitFileChange, e: React.MouseEvent) => void | Promise<void>;
@@ -63,14 +59,12 @@ interface GitFileBrowserProps {
     dir: GitDirectoryActionTarget,
     e: React.MouseEvent,
   ) => void | Promise<void>;
-  autoCollapseLargeDirectories?: boolean;
 }
 
 // ── Tree node types ──
 
 interface TreeNode {
   kind: "file";
-  name: string;
   path: string;
   entry: GitFileEntry;
 }
@@ -78,7 +72,6 @@ interface TreeNode {
 interface TreeDir {
   kind: "dir";
   name: string;
-  path: string;
   children: Map<string, TreeNode | TreeDir>;
   filePaths: string[];
   staged: boolean;
@@ -87,25 +80,21 @@ interface TreeDir {
 
 // ── Build tree from flat file list ──
 
-function buildTree(
-  entries: GitFileEntry[],
-): { root: Map<string, TreeNode | TreeDir>; fileCount: number } {
+function buildTree(entries: GitFileEntry[]): Map<string, TreeNode | TreeDir> {
   const root = new Map<string, TreeNode | TreeDir>();
 
   for (const entry of entries) {
     const parts = entry.path.split("/");
     if (parts.length === 1) {
-      root.set(parts[0], { kind: "file", name: parts[0], path: entry.path, entry });
+      root.set(parts[0], { kind: "file", path: entry.path, entry });
       continue;
     }
 
     let current = root;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
-      const fullPath = parts.slice(0, i + 1).join("/");
-
       if (i === parts.length - 1) {
-        current.set(part, { kind: "file", name: part, path: entry.path, entry });
+        current.set(part, { kind: "file", path: entry.path, entry });
         break;
       }
 
@@ -114,7 +103,6 @@ function buildTree(
         dir = {
           kind: "dir",
           name: part,
-          path: fullPath,
           children: new Map(),
           filePaths: [],
           staged: entry.staged ?? false,
@@ -133,7 +121,7 @@ function buildTree(
     }
   }
 
-  return { root, fileCount: entries.length };
+  return root;
 }
 
 // ── Components ──
@@ -141,7 +129,6 @@ function buildTree(
 function DirectoryNode({
   node,
   depth,
-  mode,
   onFileClick,
   onStageToggle,
   onDirectoryStageToggle,
@@ -150,7 +137,6 @@ function DirectoryNode({
 }: {
   node: TreeDir;
   depth: number;
-  mode: FileViewMode;
   onFileClick?: (entry: GitFileEntry) => void;
   onStageToggle?: (entry: GitFileChange, e: React.MouseEvent) => void | Promise<void>;
   onDirectoryStageToggle?: (
@@ -163,6 +149,7 @@ function DirectoryNode({
     e: React.MouseEvent,
   ) => void | Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const children = [...node.children.values()];
@@ -187,6 +174,7 @@ function DirectoryNode({
         }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
+        onClick={() => setCollapsed((value) => !value)}
       >
         <button
           onClick={(e) => {
@@ -202,6 +190,8 @@ function DirectoryNode({
             padding: 0,
             color: "var(--aegis-text-dim)",
           }}
+          title={collapsed ? t("gitChanges.expandDirectory") : t("gitChanges.collapseDirectory")}
+          aria-label={collapsed ? t("gitChanges.expandDirectory") : t("gitChanges.collapseDirectory")}
         >
           {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
         </button>
@@ -215,12 +205,6 @@ function DirectoryNode({
           {collapsed ? <FolderClosed size={14} /> : <Folder size={14} />}
         </span>
         <span
-          onClick={() => {
-            if (mode === "list") {
-              // In list mode, clicking a directory expands it into a flat list
-              setCollapsed((v) => !v);
-            }
-          }}
           style={{
             flex: 1,
             minWidth: 0,
@@ -256,6 +240,59 @@ function DirectoryNode({
         >
           {node.filePaths.length}
         </span>
+        <span
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            flexShrink: 0,
+            opacity: hovered ? 1 : 0,
+            visibility: hovered ? "visible" : "hidden",
+          }}
+        >
+          {onDirectoryStageToggle && (
+            <button
+              type="button"
+              onClick={(event) => onDirectoryStageToggle(node, event)}
+              title={node.staged ? t("gitChanges.unstageDirectory") : t("gitChanges.stageDirectory")}
+              aria-label={node.staged ? t("gitChanges.unstageDirectory") : t("gitChanges.stageDirectory")}
+              style={{
+                flexShrink: 0,
+                background: "var(--aegis-card)",
+                border: "1px solid var(--aegis-border)",
+                borderRadius: 4,
+                fontSize: 12,
+                lineHeight: 1,
+                padding: "1px 6px",
+                color: "var(--aegis-text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              {node.staged ? "-" : "+"}
+            </button>
+          )}
+          {onDirectoryDiscard && (
+            <button
+              type="button"
+              onClick={(event) => onDirectoryDiscard(node, event)}
+              title={t("gitChanges.discardDirectory")}
+              aria-label={t("gitChanges.discardDirectory")}
+              style={{
+                flexShrink: 0,
+                background: "var(--aegis-card)",
+                border: "1px solid var(--aegis-border)",
+                borderRadius: 4,
+                padding: "2px 5px",
+                color: "var(--aegis-text-muted)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <Undo2 size={11} />
+            </button>
+          )}
+        </span>
       </div>
 
       {!collapsed && (
@@ -265,7 +302,6 @@ function DirectoryNode({
               key={dir.name}
               node={dir}
               depth={depth + 1}
-              mode={mode}
               onFileClick={onFileClick}
               onStageToggle={onStageToggle}
               onDirectoryStageToggle={onDirectoryStageToggle}
@@ -278,7 +314,7 @@ function DirectoryNode({
               key={file.path}
               entry={file.entry}
               depth={depth + 1}
-              mode={mode}
+              mode="tree"
               showStats={false}
               onClick={onFileClick ? () => onFileClick(file.entry) : undefined}
               onStageToggle={onStageToggle}
@@ -308,6 +344,7 @@ function FileRow({
   onStageToggle?: (entry: GitFileChange, e: React.MouseEvent) => void | Promise<void>;
   onDiscard?: (entry: GitFileChange, e: React.MouseEvent) => void | Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
   const statusColor = getGitStatusColor(entry.status ?? "M");
   const statusLabel = getGitStatusLabel(entry.status ?? "M");
@@ -392,8 +429,10 @@ function FileRow({
       >
         {onStageToggle && isGitFileChangeEntry(entry) && (
           <button
+            type="button"
             onClick={(e) => onStageToggle(entry, e)}
-            title={entry.staged ? "Unstage" : "Stage"}
+            title={entry.staged ? t("gitChanges.unstage") : t("gitChanges.stage")}
+            aria-label={entry.staged ? t("gitChanges.unstage") : t("gitChanges.stage")}
             style={{
               flexShrink: 0,
               background: "var(--aegis-card)",
@@ -413,8 +452,10 @@ function FileRow({
         )}
         {onDiscard && isGitFileChangeEntry(entry) && (
           <button
+            type="button"
             onClick={(e) => onDiscard(entry, e)}
-            title="Discard Changes"
+            title={t("gitChanges.discard")}
+            aria-label={t("gitChanges.discard")}
             style={{
               flexShrink: 0,
               background: "var(--aegis-card)",
@@ -427,7 +468,7 @@ function FileRow({
               alignItems: "center",
             }}
           >
-            <File size={11} />
+            <Undo2 size={11} />
           </button>
         )}
       </span>
@@ -444,6 +485,7 @@ export function GitFileViewToggle({
   mode: FileViewMode;
   onChange: (mode: FileViewMode) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       style={{
@@ -458,14 +500,14 @@ export function GitFileViewToggle({
     >
       <ViewToggleBtn
         active={mode === "tree"}
-        title="View as tree"
+        title={t("gitChanges.viewTree")}
         onClick={() => onChange("tree")}
       >
         <ListTree size={14} />
       </ViewToggleBtn>
       <ViewToggleBtn
         active={mode === "list"}
-        title="View as list"
+        title={t("gitChanges.viewList")}
         onClick={() => onChange("list")}
       >
         <List size={14} />
@@ -490,6 +532,7 @@ function ViewToggleBtn({
       type="button"
       onClick={onClick}
       title={title}
+      aria-label={title}
       aria-pressed={active}
       style={{
         width: 24,
@@ -536,17 +579,16 @@ export function useGitFileViewMode(): [FileViewMode, (m: FileViewMode) => void] 
 export function GitFileBrowser({
   entries,
   mode,
-  scrollContext,
   showStats,
   onFileClick,
   onStageToggle,
   onDirectoryStageToggle,
   onDiscard,
   onDirectoryDiscard,
-  autoCollapseLargeDirectories,
 }: GitFileBrowserProps) {
+  const root = useMemo(() => buildTree(entries), [entries]);
+
   if (mode === "tree") {
-    const { root } = useMemo(() => buildTree(entries), [entries]);
     const children = [...root.values()];
     const dirs = children.filter((c) => c.kind === "dir") as TreeDir[];
     const files = children.filter((c) => c.kind === "file") as TreeNode[];
@@ -558,7 +600,6 @@ export function GitFileBrowser({
             key={dir.name}
             node={dir}
             depth={0}
-            mode={mode}
             onFileClick={onFileClick}
             onStageToggle={onStageToggle}
             onDirectoryStageToggle={onDirectoryStageToggle}
