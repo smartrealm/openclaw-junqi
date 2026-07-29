@@ -1,12 +1,13 @@
 import { listTabGroupIds } from '../domain/tabGroupLayout';
 import type { TabGroup, TabGroupId, TabGroupLayoutNode, TabId, WorkbenchTab, WorkbenchTabKind, WorkbenchWorktree, WorktreeId } from '../domain/types';
 
-export const WORKBENCH_SESSION_SCHEMA_VERSION = 2;
+export const WORKBENCH_SESSION_SCHEMA_VERSION = 3;
 
 export interface WorkbenchSessionSnapshot {
   schemaVersion: typeof WORKBENCH_SESSION_SCHEMA_VERSION;
   activeWorktreeId: WorktreeId | null;
   worktrees: Record<WorktreeId, WorkbenchWorktree>;
+  forgottenLegacyWorktreeIds: WorktreeId[];
   activeGroupId: TabGroupId;
   layout: TabGroupLayoutNode;
   groups: Record<TabGroupId, TabGroup>;
@@ -44,20 +45,33 @@ function validLayout(value: unknown, splitIds: Set<string>, groupIds: Set<string
 
 function validTab(id: string, value: unknown): value is WorkbenchTab {
   const tab = record(value);
-  return !!tab
-    && tab.id === id
-    && typeof tab.worktreeId === 'string' && tab.worktreeId.length > 0
-    && typeof tab.paneId === 'string' && tab.paneId.length > 0
-    && typeof tab.kind === 'string' && TAB_KINDS.has(tab.kind as WorkbenchTabKind)
-    && typeof tab.title === 'string'
-    && typeof tab.preview === 'boolean'
-    && typeof tab.pinned === 'boolean'
-    && typeof tab.dirty === 'boolean'
-    && (tab.filePath === undefined || typeof tab.filePath === 'string')
-    && (tab.diffStaged === undefined || typeof tab.diffStaged === 'boolean')
-    && (tab.ptyId === undefined || typeof tab.ptyId === 'string')
-    && (tab.ptyRunId === undefined || typeof tab.ptyRunId === 'string')
-    && (tab.ptyCreatePending === undefined || tab.ptyCreatePending === false);
+  if (!tab
+    || tab.id !== id
+    || typeof tab.worktreeId !== 'string' || tab.worktreeId.length === 0
+    || typeof tab.paneId !== 'string' || tab.paneId.length === 0
+    || typeof tab.kind !== 'string' || !TAB_KINDS.has(tab.kind as WorkbenchTabKind)
+    || typeof tab.title !== 'string'
+    || typeof tab.preview !== 'boolean'
+    || typeof tab.pinned !== 'boolean'
+    || typeof tab.dirty !== 'boolean'
+    || (tab.filePath !== undefined && typeof tab.filePath !== 'string')
+    || (tab.diffStaged !== undefined && typeof tab.diffStaged !== 'boolean')
+    || (tab.ptyId !== undefined && typeof tab.ptyId !== 'string')
+    || (tab.ptyRunId !== undefined && typeof tab.ptyRunId !== 'string')
+    || (tab.ptyCreatePending !== undefined && tab.ptyCreatePending !== false)) return false;
+  const processTab = tab.kind === 'terminal' || tab.kind === 'agent-terminal';
+  if (processTab !== (typeof tab.ptyId === 'string' && tab.ptyId.length > 0
+    && typeof tab.ptyRunId === 'string' && tab.ptyRunId.length > 0)) return false;
+  if ((tab.kind === 'editor' || tab.kind === 'diff')
+    && (typeof tab.filePath !== 'string' || tab.filePath.length === 0)) return false;
+  if (!processTab && (tab.ptyId !== undefined || tab.ptyRunId !== undefined)) return false;
+  return true;
+}
+
+export function migrateWorkbenchSessionSnapshot(value: unknown): unknown {
+  const candidate = record(value);
+  if (!candidate || candidate.schemaVersion !== 2) return value;
+  return { ...candidate, schemaVersion: WORKBENCH_SESSION_SCHEMA_VERSION, forgottenLegacyWorktreeIds: [] };
 }
 
 export function isWorkbenchSessionSnapshot(value: unknown): value is WorkbenchSessionSnapshot {
@@ -72,6 +86,9 @@ export function isWorkbenchSessionSnapshot(value: unknown): value is WorkbenchSe
     if (typeof worktree.hostId !== 'string' || typeof worktree.hostRevision !== 'number') return false;
   }
   if (candidate.activeWorktreeId !== null && !worktrees[candidate.activeWorktreeId]) return false;
+  if (!Array.isArray(candidate.forgottenLegacyWorktreeIds)
+    || !candidate.forgottenLegacyWorktreeIds.every((id): id is string => typeof id === 'string' && id.startsWith('legacy-worktree:'))
+    || new Set(candidate.forgottenLegacyWorktreeIds).size !== candidate.forgottenLegacyWorktreeIds.length) return false;
   if (typeof candidate.activeGroupId !== 'string') return false;
   if (candidate.sidebarMode !== 'full' && candidate.sidebarMode !== 'compact' && candidate.sidebarMode !== 'hidden') return false;
   if (typeof candidate.rightSidebarPanel !== 'string' || !RIGHT_PANELS.has(candidate.rightSidebarPanel)) return false;
@@ -85,6 +102,9 @@ export function isWorkbenchSessionSnapshot(value: unknown): value is WorkbenchSe
   if (!layoutGroupIds.has(candidate.activeGroupId)) return false;
 
   const referencedTabs = new Set<string>();
+  const paneIds = new Set<string>();
+  const ptyIds = new Set<string>();
+  const ptyRunIds = new Set<string>();
   for (const groupId of layoutGroupIds) {
     const group = record(groups[groupId]);
     if (!group || group.id !== groupId || !Array.isArray(group.tabIds)) return false;
@@ -95,7 +115,14 @@ export function isWorkbenchSessionSnapshot(value: unknown): value is WorkbenchSe
     if (group.activeTabId !== null && !tabIds.includes(group.activeTabId)) return false;
     for (const tabId of tabIds) {
       if (referencedTabs.has(tabId) || !validTab(tabId, tabs[tabId])) return false;
-      if (!worktrees[(tabs[tabId] as WorkbenchTab).worktreeId]) return false;
+      const tab = tabs[tabId] as WorkbenchTab;
+      if (!worktrees[tab.worktreeId] || paneIds.has(tab.paneId)) return false;
+      paneIds.add(tab.paneId);
+      if (tab.ptyId && tab.ptyRunId) {
+        if (ptyIds.has(tab.ptyId) || ptyRunIds.has(tab.ptyRunId)) return false;
+        ptyIds.add(tab.ptyId);
+        ptyRunIds.add(tab.ptyRunId);
+      }
       referencedTabs.add(tabId);
     }
   }

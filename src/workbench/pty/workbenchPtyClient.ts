@@ -31,11 +31,13 @@ export interface WorkbenchPtySubscription {
 export async function createWorkbenchPty(
   identity: WorkbenchPtyIdentity,
   cwd: string,
+  worktreeId: string,
+  paneId: string,
   cols = 120,
   rows = 24,
   allowCreate = false,
 ): Promise<WorkbenchPtyCreateResult> {
-  return invoke('create_workbench_pty', { ...identity, cwd, cols, rows, allowCreate });
+  return invoke('create_workbench_pty', { ...identity, cwd, worktreeId, paneId, cols, rows, allowCreate });
 }
 
 export function inputWorkbenchPty(identity: WorkbenchPtyIdentity, data: string): Promise<void> {

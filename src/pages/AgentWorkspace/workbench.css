@@ -322,9 +322,18 @@
   gap: 7px;
 }
 
-.junqi-wb-worktree-line strong {
-  overflow: hidden;
+.junqi-wb-worktree-select {
+  min-width: 0;
   flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.junqi-wb-worktree-line strong {
+  display: block;
+  overflow: hidden;
   color: var(--wb-text);
   font-size: 11.5px;
   font-weight: 620;
@@ -335,6 +344,8 @@
 .junqi-wb-worktree-forget {
   display: none;
   padding: 2px;
+  border: 0;
+  background: transparent;
   border-radius: 3px;
   color: var(--wb-dim);
 }
@@ -516,7 +527,7 @@
   max-width: 190px;
   align-items: center;
   gap: 7px;
-  padding: 0 8px 0 10px;
+  padding: 0 4px 0 0;
   border: 0;
   border-right: 1px solid var(--wb-line);
   color: var(--wb-dim);
@@ -524,7 +535,21 @@
   text-align: left;
 }
 
-.junqi-wb-tab > span:nth-child(2) {
+.junqi-wb-tab-select {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px 0 10px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.junqi-wb-tab-select > span:nth-child(2) {
   overflow: hidden;
   flex: 1;
   text-overflow: ellipsis;

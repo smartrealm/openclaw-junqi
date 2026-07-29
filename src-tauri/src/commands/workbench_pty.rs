@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 
 const MAX_ID_BYTES: usize = 160;
+const MAX_OWNER_ID_BYTES: usize = 16 * 1024;
 const MAX_INPUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SNAPSHOT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_COMPLETED_RUNS: usize = 512;
@@ -96,6 +97,9 @@ impl SnapshotBuffer {
 
 struct WorkbenchPtyHandle {
     run_id: String,
+    worktree_id: String,
+    pane_id: String,
+    cwd: PathBuf,
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     writer: Mutex<Box<dyn Write + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
@@ -180,14 +184,18 @@ fn take_utf8_ready(bytes: &mut Vec<u8>) -> String {
     }
 }
 
-fn validate_id(label: &str, value: &str) -> Result<(), String> {
+fn validate_value(label: &str, value: &str, max_bytes: usize) -> Result<(), String> {
     if value.is_empty()
-        || value.len() > MAX_ID_BYTES
+        || value.len() > max_bytes
         || value.bytes().any(|byte| byte.is_ascii_control())
     {
         return Err(format!("invalid workbench {label}"));
     }
     Ok(())
+}
+
+fn validate_id(label: &str, value: &str) -> Result<(), String> {
+    validate_value(label, value, MAX_ID_BYTES)
 }
 
 fn resolve_cwd(path: &str) -> Result<PathBuf, String> {
@@ -211,7 +219,12 @@ fn shell_command(cwd: &std::path::Path) -> CommandBuilder {
     command
 }
 
-pub(crate) fn assert_current_run_locked(pty_id: &str, run_id: &str) -> Result<(), String> {
+pub(crate) fn assert_current_owner_locked(
+    pty_id: &str,
+    run_id: &str,
+    worktree_id: &str,
+    pane_id: &str,
+) -> Result<PathBuf, String> {
     let handle = registry()
         .lock()
         .map_err(|_| "workbench PTY registry lock poisoned".to_string())?
@@ -221,7 +234,10 @@ pub(crate) fn assert_current_run_locked(pty_id: &str, run_id: &str) -> Result<()
     if handle.run_id != run_id || handle.stopping.load(Ordering::Acquire) {
         return Err(format!("stale workbench PTY run: {pty_id}"));
     }
-    Ok(())
+    if handle.worktree_id != worktree_id || handle.pane_id != pane_id {
+        return Err(format!("workbench PTY owner mismatch: {pty_id}"));
+    }
+    Ok(handle.cwd.clone())
 }
 
 fn current_handle(pty_id: &str, run_id: &str) -> Result<Handle, String> {
@@ -240,26 +256,33 @@ fn current_handle(pty_id: &str, run_id: &str) -> Result<Handle, String> {
     Ok(handle)
 }
 
-fn remove_if_current(pty_id: &str, handle: &Handle) {
-    let Ok(mut entries) = registry().lock() else {
-        return;
-    };
+fn remove_if_current(pty_id: &str, handle: &Handle) -> Result<(), String> {
+    let mut entries = registry()
+        .lock()
+        .map_err(|_| "workbench PTY registry lock poisoned".to_string())?;
     if entries
         .get(pty_id)
         .is_some_and(|current| Arc::ptr_eq(current, handle))
     {
         entries.remove(pty_id);
     }
+    Ok(())
 }
 
-fn stop_handle(handle: &Handle) {
+fn stop_handle(handle: &Handle) -> Result<(), String> {
     handle.stopping.store(true, Ordering::Release);
-    if let Ok(mut killer) = handle.killer.lock() {
-        let _ = killer.kill();
-    }
-    if let Ok(mut master) = handle.master.lock() {
-        master.take();
-    }
+    handle
+        .killer
+        .lock()
+        .map_err(|_| "workbench PTY killer lock poisoned".to_string())?
+        .kill()
+        .map_err(|error| format!("failed to stop workbench PTY: {error}"))?;
+    handle
+        .master
+        .lock()
+        .map_err(|_| "workbench PTY master lock poisoned".to_string())?
+        .take();
+    Ok(())
 }
 
 #[tauri::command]
@@ -268,12 +291,16 @@ pub fn create_workbench_pty(
     pty_id: String,
     run_id: String,
     cwd: String,
+    worktree_id: String,
+    pane_id: String,
     cols: u16,
     rows: u16,
     allow_create: bool,
 ) -> Result<WorkbenchPtyCreateResult, String> {
     validate_id("PTY id", &pty_id)?;
     validate_id("run id", &run_id)?;
+    validate_value("worktree id", &worktree_id, MAX_OWNER_ID_BYTES)?;
+    validate_value("pane id", &pane_id, MAX_OWNER_ID_BYTES)?;
     if !(2..=10_000).contains(&cols) || !(2..=10_000).contains(&rows) {
         return Err("invalid workbench PTY dimensions".into());
     }
@@ -301,7 +328,11 @@ pub fn create_workbench_pty(
             .lock()
             .map_err(|_| "workbench PTY registry lock poisoned".to_string())?;
         if let Some(existing) = entries.get(&pty_id) {
-            if existing.run_id == run_id && !existing.stopping.load(Ordering::Acquire) {
+            if existing.run_id == run_id
+                && existing.worktree_id == worktree_id
+                && existing.pane_id == pane_id
+                && !existing.stopping.load(Ordering::Acquire)
+            {
                 return Ok(WorkbenchPtyCreateResult {
                     pty_id,
                     run_id,
@@ -337,6 +368,9 @@ pub fn create_workbench_pty(
         .map_err(|error| format!("open workbench PTY writer: {error}"))?;
     let handle = Arc::new(WorkbenchPtyHandle {
         run_id: run_id.clone(),
+        worktree_id,
+        pane_id,
+        cwd: cwd.clone(),
         master: Mutex::new(Some(pair.master)),
         writer: Mutex::new(writer),
         killer: Mutex::new(child.clone_killer()),
@@ -411,19 +445,27 @@ pub fn create_workbench_pty(
     let exit_handle = handle;
     std::thread::spawn(move || {
         let exit_code = child.wait().ok().map(|status| status.exit_code());
-        let _operation = lifecycle_gate().lock().ok();
-        let _ = app.emit(
-            "workbench-pty-exit",
-            WorkbenchPtyExit {
-                pty_id: exit_id.clone(),
-                run_id: exit_run.clone(),
-                exit_code,
-            },
-        );
-        exit_handle.stopping.store(true, Ordering::Release);
-        remove_if_current(&exit_id, &exit_handle);
-        super::workbench_provider::release_claims_for_pty_locked(&exit_id);
-        remember_completed_run(&exit_id, &exit_run);
+        let committed = lifecycle_gate()
+            .lock()
+            .ok()
+            .and_then(|_operation| {
+                exit_handle.stopping.store(true, Ordering::Release);
+                remove_if_current(&exit_id, &exit_handle).ok()?;
+                super::workbench_provider::release_claims_for_pty_locked(&exit_id).ok()?;
+                remember_completed_run(&exit_id, &exit_run);
+                Some(())
+            })
+            .is_some();
+        if committed {
+            let _ = app.emit(
+                "workbench-pty-exit",
+                WorkbenchPtyExit {
+                    pty_id: exit_id.clone(),
+                    run_id: exit_run.clone(),
+                    exit_code,
+                },
+            );
+        }
     });
 
     Ok(WorkbenchPtyCreateResult {
@@ -504,9 +546,9 @@ pub fn stop_workbench_pty(pty_id: String, run_id: String) -> Result<(), String> 
         .map_err(|_| "workbench PTY lifecycle lock poisoned".to_string())?;
     match current_handle(&pty_id, &run_id) {
         Ok(handle) => {
-            stop_handle(&handle);
-            remove_if_current(&pty_id, &handle);
-            super::workbench_provider::release_claims_for_pty_locked(&pty_id);
+            stop_handle(&handle)?;
+            remove_if_current(&pty_id, &handle)?;
+            super::workbench_provider::release_claims_for_pty_locked(&pty_id)?;
             Ok(())
         }
         Err(_) if consume_completed_run(&pty_id, &run_id) => Ok(()),
@@ -528,9 +570,9 @@ pub fn close_workbench_pty_tab(pty_id: String, run_id: String) -> Result<(), Str
         .cloned();
     match current {
         Some(handle) if handle.run_id == run_id && !handle.stopping.load(Ordering::Acquire) => {
-            stop_handle(&handle);
-            remove_if_current(&pty_id, &handle);
-            super::workbench_provider::release_claims_for_pty_locked(&pty_id);
+            stop_handle(&handle)?;
+            remove_if_current(&pty_id, &handle)?;
+            super::workbench_provider::release_claims_for_pty_locked(&pty_id)?;
             Ok(())
         }
         Some(_) => Err(format!("stale workbench PTY run: {pty_id}")),
@@ -566,9 +608,9 @@ pub fn close_workbench_pty_tabs(identities: Vec<WorkbenchPtyIdentity>) -> Result
     drop(entries);
     for (identity, handle) in identities.iter().zip(handles) {
         if let Some(handle) = handle {
-            stop_handle(&handle);
-            remove_if_current(&identity.pty_id, &handle);
-            super::workbench_provider::release_claims_for_pty_locked(&identity.pty_id);
+            stop_handle(&handle)?;
+            remove_if_current(&identity.pty_id, &handle)?;
+            super::workbench_provider::release_claims_for_pty_locked(&identity.pty_id)?;
         } else {
             consume_completed_run(&identity.pty_id, &identity.run_id);
         }
@@ -592,9 +634,9 @@ pub fn stop_all_workbench_ptys() -> Result<u64, String> {
     };
     let count = handles.len() as u64;
     for handle in handles {
-        stop_handle(&handle);
+        stop_handle(&handle)?;
     }
-    super::workbench_provider::clear_claims_locked();
+    super::workbench_provider::clear_claims_locked()?;
     Ok(count)
 }
 
@@ -618,9 +660,9 @@ pub fn stop_workbench_ptys(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), 
     }
     for (identity, (pty_id, handle)) in identities.iter().zip(handles) {
         if let Some(handle) = handle {
-            stop_handle(&handle);
-            remove_if_current(&pty_id, &handle);
-            super::workbench_provider::release_claims_for_pty_locked(&pty_id);
+            stop_handle(&handle)?;
+            remove_if_current(&pty_id, &handle)?;
+            super::workbench_provider::release_claims_for_pty_locked(&pty_id)?;
         } else {
             consume_completed_run(&identity.pty_id, &identity.run_id);
         }

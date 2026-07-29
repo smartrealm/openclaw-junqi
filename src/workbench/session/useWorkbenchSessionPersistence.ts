@@ -80,6 +80,7 @@ export function useWorkbenchSessionPersistence(): void {
       if (
         state.activeWorktreeId === previous.activeWorktreeId
         && state.worktrees === previous.worktrees
+        && state.forgottenLegacyWorktreeIds === previous.forgottenLegacyWorktreeIds
         && state.activeGroupId === previous.activeGroupId
         && state.layout === previous.layout
         && state.groups === previous.groups

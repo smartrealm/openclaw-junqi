@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { isWorkbenchSessionSnapshot, type WorkbenchSessionSnapshot } from './schema';
+import { isWorkbenchSessionSnapshot, migrateWorkbenchSessionSnapshot, type WorkbenchSessionSnapshot } from './schema';
 
 interface NativeLoadResult {
   found: boolean;
@@ -26,8 +26,9 @@ export interface LoadedWorkbenchSession {
 export async function loadWorkbenchSession(partitionId: string): Promise<LoadedWorkbenchSession> {
   const result = await invoke<NativeLoadResult>('load_workbench_session', { partitionId });
   if (!result.found) return { ...result, snapshot: null };
-  if (!isWorkbenchSessionSnapshot(result.payload)) throw new Error('Workbench session payload failed schema validation');
-  return { ...result, snapshot: result.payload };
+  const payload = migrateWorkbenchSessionSnapshot(result.payload);
+  if (!isWorkbenchSessionSnapshot(payload)) throw new Error('Workbench session payload failed schema validation');
+  return { ...result, snapshot: payload };
 }
 
 export function resetWorkbenchSession(partitionId: string): Promise<boolean> {

@@ -17,6 +17,9 @@ import {
 export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: string }) {
   const acknowledgePtyCreate = useWorkbenchStore((state) => state.acknowledgePtyCreate);
   const replacePtyIdentity = useWorkbenchStore((state) => state.replacePtyIdentity);
+  const beginResourceTransaction = useWorkbenchStore((state) => state.beginResourceTransaction);
+  const endResourceTransaction = useWorkbenchStore((state) => state.endResourceTransaction);
+  const reconcileProviderPtyExit = useWorkbenchStore((state) => state.reconcileProviderPtyExit);
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const identity = useMemo<WorkbenchPtyIdentity | null>(() => (
@@ -88,12 +91,17 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
               .then((nextSequence) => { if (nextSequence !== null) subscription?.synchronize(nextSequence); })
               .catch(() => undefined);
           },
-          () => { if (alive) terminal.write('\r\n[process exited]\r\n'); },
+          () => {
+            reconcileProviderPtyExit(identity.ptyId, identity.runId);
+            if (alive) terminal.write('\r\n[process exited]\r\n');
+          },
           sequence,
         );
         const created = await createWorkbenchPty(
           identity,
           cwd,
+          tab.worktreeId,
+          tab.paneId,
           terminal.cols,
           terminal.rows,
           tab.ptyCreatePending === true,
@@ -126,18 +134,22 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
       terminal.dispose();
       // Deliberately do not stop the PTY: hidden/unmounted panes detach only.
     };
-  }, [acknowledgePtyCreate, cwd, identity, tab.id, tab.ptyCreatePending]);
+  }, [acknowledgePtyCreate, cwd, identity, reconcileProviderPtyExit, tab.id, tab.paneId, tab.ptyCreatePending, tab.worktreeId]);
 
   const restart = async () => {
     if (!identity) return;
+    const transactionToken = beginResourceTransaction('restart-terminal');
+    if (!transactionToken) return;
     try {
       // Retire the exact old identity before authorizing a replacement run.
       await closeWorkbenchPtyTab(identity);
       const next = crypto.randomUUID();
-      replacePtyIdentity(tab.id, `workbench:pty:${next}`, `workbench:run:${crypto.randomUUID()}`);
+      replacePtyIdentity(tab.id, `workbench:pty:${next}`, `workbench:run:${crypto.randomUUID()}`, transactionToken);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      endResourceTransaction(transactionToken);
     }
   };
 

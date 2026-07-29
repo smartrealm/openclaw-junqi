@@ -619,6 +619,9 @@ pub fn run() {
         }
         if let RunEvent::Exit = event {
             commands::terminal_keep_awake::shutdown();
+            if let Err(error) = commands::workbench_pty::stop_all_workbench_ptys() {
+                eprintln!("[workbench] failed to drain PTYs during application exit: {error}");
+            }
             // Kill the gateway child process on app exit
             let state = app_handle.state::<GatewayProcess>();
             if let Ok(mut child_lock) = state.child.lock() {

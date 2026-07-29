@@ -33,7 +33,7 @@ test('replacement requires the exact current claim and increments generation', (
   assert.deepEqual(stale, { ok: false, state: first.state, reason: 'stale-replacement' });
   const next = claimProviderSession(first.state, request({ claimId: 'claim-2', expectedClaimId: 'claim-1', ptyId: 'pty-2', ptyRunId: 'run-2' }));
   assert.equal(next.ok, true);
-  if (next.ok) assert.equal(next.claim.generation, 2);
+  if (next.ok) assert.ok(next.claim.generation > first.claim.generation);
 });
 
 test('PTY and resume identities cannot be claimed by another pane', () => {
@@ -46,6 +46,16 @@ test('PTY and resume identities cannot be claimed by another pane', () => {
     ...resumable, paneId: 'pane-2', claimId: 'claim-2', ptyId: 'pty-2', ptyRunId: 'run-2',
   });
   assert.deepEqual(resumeCollision, { ok: false, state: first.state, reason: 'resume-owned' });
+});
+
+test('released pane claims never reuse renderer generations', () => {
+  const first = claimProviderSession(empty(), request());
+  assert.equal(first.ok, true);
+  if (!first.ok) return;
+  const released = releaseProviderClaim(first.state, 'pane-1', 'claim-1', first.claim.generation);
+  const next = claimProviderSession(released, request({ claimId: 'claim-2' }));
+  assert.equal(next.ok, true);
+  if (next.ok) assert.ok(next.claim.generation > first.claim.generation);
 });
 
 test('resume fingerprint includes worktree provider session and transcript', () => {
@@ -62,7 +72,7 @@ test('late status and release results cannot mutate a replacement claim', () => 
   const next = claimProviderSession(first.state, request({ claimId: 'claim-2', expectedClaimId: 'claim-1', ptyId: 'pty-2', ptyRunId: 'run-2' }));
   assert.equal(next.ok, true);
   if (!next.ok) return;
-  assert.equal(updateProviderClaimStatus(next.state, 'pane-1', 'claim-1', 1, 'running'), next.state);
-  assert.equal(releaseProviderClaim(next.state, 'pane-1', 'claim-1', 1), next.state);
-  assert.equal(updateProviderClaimStatus(next.state, 'pane-1', 'claim-2', 2, 'running').byPane['pane-1']?.status, 'running');
+  assert.equal(updateProviderClaimStatus(next.state, 'pane-1', 'claim-1', first.claim.generation, 'running'), next.state);
+  assert.equal(releaseProviderClaim(next.state, 'pane-1', 'claim-1', first.claim.generation), next.state);
+  assert.equal(updateProviderClaimStatus(next.state, 'pane-1', 'claim-2', next.claim.generation, 'running').byPane['pane-1']?.status, 'running');
 });

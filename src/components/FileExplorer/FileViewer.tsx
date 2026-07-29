@@ -350,6 +350,7 @@ function FilePreviewPane({
   previewMode,
   onRunMakeTarget,
   onFileMissing,
+  onDirtyChange,
   ownerId,
 }: {
   filePath: string;
@@ -360,6 +361,7 @@ function FilePreviewPane({
   onRunMakeTarget?: (target: string) => void;
   /** The file backing this tab is gone from disk. */
   onFileMissing?: (path: string) => void;
+  onDirtyChange?: (path: string, dirty: boolean) => void;
   ownerId: string;
 }) {
   const editorTheme =
@@ -391,9 +393,13 @@ function FilePreviewPane({
   // Held in a ref so an unstable callback identity cannot re-run the load or
   // re-register the directory watch.
   const onFileMissingRef = useRef(onFileMissing);
+  const onDirtyChangeRef = useRef(onDirtyChange);
   useEffect(() => {
     onFileMissingRef.current = onFileMissing;
   }, [onFileMissing]);
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange;
+  }, [onDirtyChange]);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const showMarkdownPreview = isMarkdown && previewMode && content !== null;
   const { html: markdownHtml, toc } = useMemo(
@@ -442,6 +448,7 @@ function FilePreviewPane({
     setError(null);
     setDocumentSnapshot(null);
 
+    let unsubscribeDocument: (() => void) | null = null;
     const loadFile = isPreviewableImage
       ? readImagePreview(filePath, projectPath).then((preview) => {
           if (cancelled) return;
@@ -450,18 +457,19 @@ function FilePreviewPane({
         })
       : document
         ? (async () => {
-            const unsubscribe = document.subscribe((snapshot) => {
+            unsubscribeDocument = document.subscribe((snapshot) => {
               if (cancelled) return;
               setDocumentSnapshot(snapshot);
               setContent(snapshot.draftContent);
               setError(snapshot.error);
               setLoading(snapshot.status === 'loading');
+              onDirtyChangeRef.current?.(filePath, snapshot.status === 'dirty' || snapshot.status === 'saving' || snapshot.status === 'conflicted' || snapshot.status === 'error');
             });
             await document.load();
             if (document.snapshot().status === 'error' && await fileIsGone(filePath, fileName, projectPath)) {
               if (!cancelled) onFileMissingRef.current?.(filePath);
             }
-            if (cancelled) unsubscribe();
+            if (cancelled) unsubscribeDocument?.();
           })()
         : Promise.reject(new Error('Document controller unavailable'));
 
@@ -479,6 +487,7 @@ function FilePreviewPane({
 
     return () => {
       cancelled = true;
+      unsubscribeDocument?.();
       // Unified-tab switches detach only. The shared manager retains drafts,
       // conflicts and queued writes until the owning tab is explicitly closed.
     };
@@ -850,6 +859,7 @@ export function FileViewer({
   themeVariant = "dark",
   onRunMakeTarget,
   onFileMissing,
+  onDirtyChange,
   hideTabBar = false,
   documentOwnerPrefix = 'file-viewer',
 }: {
@@ -874,6 +884,7 @@ export function FileViewer({
    * so it decides what to do — normally closing that tab.
    */
   onFileMissing?: (path: string) => void;
+  onDirtyChange?: (path: string, dirty: boolean) => void;
   /** Unified workbench supplies its own group tab strip. */
   hideTabBar?: boolean;
   documentOwnerPrefix?: string;
@@ -1299,6 +1310,7 @@ export function FileViewer({
                 themeVariant={themeVariant}
                 previewMode={!!previewModes[tab.path]}
                 onRunMakeTarget={onRunMakeTarget}
+                onDirtyChange={onDirtyChange}
                 onFileMissing={(path) => {
                   void deleteLocalEditorDocument(
                     projectPath,

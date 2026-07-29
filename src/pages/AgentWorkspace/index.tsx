@@ -26,6 +26,7 @@ import {
   readAgentWorkspaceSidebarMode,
 } from '@/components/Layout/agentWorkspaceSidebarEvents';
 import type { WorkspaceSidebarMode } from '@/components/Layout/workspaceSidebarChannel';
+import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
@@ -51,7 +52,7 @@ import './workbench.css';
 
 type WorktreeState = 'idle' | 'active' | 'unavailable';
 type WorkbenchTabKind = 'terminal' | 'editor' | 'diff' | 'browser';
-type RightPanel = 'files' | 'search' | 'source' | 'checks' | 'vault';
+type RightPanel = 'files' | 'search' | 'source' | 'checks' | 'ports' | 'vault';
 
 interface WorktreeItem {
   id: string;
@@ -73,6 +74,7 @@ const rightPanels: Array<{ id: RightPanel; label: string; icon: ReactNode }> = [
   { id: 'search', label: '搜索', icon: <MagnifyingGlass size={16} /> },
   { id: 'source', label: '源代码管理', icon: <GitBranch size={16} /> },
   { id: 'checks', label: '检查', icon: <CheckCircle size={16} /> },
+  { id: 'ports', label: '端口', icon: <TreeStructure size={16} /> },
   { id: 'vault', label: 'AI Vault', icon: <ClockCounterClockwise size={16} /> },
 ];
 
@@ -170,35 +172,29 @@ function WorktreeSidebar({
           <div className="junqi-wb-worktree-list">
             {worktrees.length === 0 ? <div className="junqi-wb-empty-panel">尚无可迁移的项目或 Worktree</div> : null}
             {worktrees.map((worktree) => (
-              <button
+              <div
                 key={worktree.id}
-                type="button"
                 className={`junqi-wb-worktree${worktree.id === activeId ? ' is-active' : ''}`}
-                onClick={() => onSelect(worktree.id)}
               >
                 <span className="junqi-wb-worktree-rail" />
                 <span className="junqi-wb-worktree-main">
                   <span className="junqi-wb-worktree-line">
                     <StateDot state={worktree.state} />
-                    <strong>{worktree.label}</strong>
-                    <span
-                      role="button"
-                      tabIndex={0}
+                    <button type="button" className="junqi-wb-worktree-select" onClick={() => onSelect(worktree.id)}>
+                      <strong>{worktree.label}</strong>
+                    </button>
+                    <button
+                      type="button"
                       className="junqi-wb-worktree-forget"
                       title="从工作台移除（不删除目录）"
-                      onClick={(event) => { event.stopPropagation(); onForget(worktree.id); }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.stopPropagation();
-                          onForget(worktree.id);
-                        }
-                      }}
-                    ><X size={12} /></span>
+                      aria-label={`从工作台移除 ${worktree.label}`}
+                      onClick={() => onForget(worktree.id)}
+                    ><X size={12} /></button>
                   </span>
                   <span className="junqi-wb-worktree-branch"><GitBranch size={11} />{worktree.branch}</span>
                   <span className="junqi-wb-worktree-detail">{worktree.detail}</span>
                 </span>
-              </button>
+              </div>
             ))}
           </div>
         </section>
@@ -227,33 +223,31 @@ function WorkbenchTabBar({ tabs, activeTab, onSelect, onClose, onAdd, onSplit, o
     <div className="junqi-wb-tab-strip">
       <div className="junqi-wb-tabs" role="tablist">
         {tabs.map((tab) => (
-          <button
+          <div
             key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={tab.id === activeTab}
+            role="presentation"
             className={`junqi-wb-tab${tab.id === activeTab ? ' is-active' : ''}`}
-            onClick={() => onSelect(tab.id)}
           >
-            <TabIcon kind={tab.kind} />
-            <span>{tab.label}</span>
-            {tab.dirty ? <span className="junqi-wb-dirty" /> : null}
-            <span
-              role="button"
-              tabIndex={0}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab.id === activeTab}
+              className="junqi-wb-tab-select"
+              onClick={() => onSelect(tab.id)}
+            >
+              <TabIcon kind={tab.kind} />
+              <span>{tab.label}</span>
+              {tab.dirty ? <span className="junqi-wb-dirty" /> : null}
+            </button>
+            <button
+              type="button"
               className="junqi-wb-tab-close"
               aria-label={`关闭 ${tab.label}`}
-              onClick={(event) => { event.stopPropagation(); onClose(tab.id); }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.stopPropagation();
-                  onClose(tab.id);
-                }
-              }}
+              onClick={() => onClose(tab.id)}
             >
               <X size={12} />
-            </span>
-          </button>
+            </button>
+          </div>
         ))}
         <IconButton label="新建标签" onClick={onAdd}><Plus size={14} /></IconButton>
       </div>
@@ -282,6 +276,7 @@ function WorkbenchEditor({ tab, projectPath, onMissing }: {
   projectPath: string;
   onMissing: () => void;
 }) {
+  const setTabDirty = useWorkbenchStore((state) => state.setTabDirty);
   if (!tab.filePath) return <div className="junqi-wb-empty-panel">编辑器标签缺少文件路径</div>;
   const file: OpenFileTab = { path: tab.filePath, name: pathLabel(tab.filePath) };
   return (
@@ -296,6 +291,7 @@ function WorkbenchEditor({ tab, projectPath, onMissing }: {
       onCloseTabsToLeft={() => undefined}
       onCloseAllTabs={onMissing}
       onFileMissing={onMissing}
+      onDirtyChange={(_, dirty) => setTabDirty(tab.id, dirty)}
       hideTabBar
       documentOwnerPrefix={tab.id}
     />
@@ -389,6 +385,7 @@ function RightPanelContent({ panel, projectPath, projectName, onFileSelect, onDi
 }) {
   if (panel === 'source') return <SourceControlPanel projectPath={projectPath} onFileSelect={onDiffSelect} />;
   if (panel === 'checks') return <ChecksPanel />;
+  if (panel === 'ports') return <PortsPanel />;
   if (panel === 'vault') return <VaultPanel />;
   if (panel === 'search') return <SearchPanel projectPath={projectPath} onFileSelect={onFileSelect} />;
   return <FilesPanel projectPath={projectPath} projectName={projectName} onFileSelect={onFileSelect} />;
@@ -434,6 +431,10 @@ function SourceControlPanel({ projectPath, onFileSelect }: {
 
 function ChecksPanel() {
   return <div className="junqi-wb-empty-panel">Checks 与 Hosted Review Adapter 尚未连接</div>;
+}
+
+function PortsPanel() {
+  return <div className="junqi-wb-empty-panel">端口发现 Adapter 尚未连接</div>;
 }
 
 function VaultPanel() {
@@ -547,6 +548,7 @@ export function AgentWorkspacePage() {
   const hydrationError = useWorkbenchStore((state) => state.hydrationError);
   const worktreeRecords = useWorkbenchStore((state) => state.worktrees);
   const activeWorktree = useWorkbenchStore((state) => state.activeWorktreeId);
+  const forgottenLegacyWorktreeIds = useWorkbenchStore((state) => state.forgottenLegacyWorktreeIds);
   const setWorktrees = useWorkbenchStore((state) => state.setWorktrees);
   const addWorktree = useWorkbenchStore((state) => state.addWorktree);
   const forgetStoreWorktree = useWorkbenchStore((state) => state.forgetWorktree);
@@ -586,7 +588,10 @@ export function AgentWorkspacePage() {
   const selectedLocalPath = localWorktreePath(selectedWorktree);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [resettingSession, setResettingSession] = useState(false);
+  const resetInFlightRef = useRef(false);
   const [providerCapabilities, setProviderCapabilities] = useState<WorkbenchProviderCapability[] | null>(null);
+  const beginResourceTransaction = useWorkbenchStore((state) => state.beginResourceTransaction);
+  const endResourceTransaction = useWorkbenchStore((state) => state.endResourceTransaction);
 
   useEffect(() => {
     let alive = true;
@@ -600,9 +605,10 @@ export function AgentWorkspacePage() {
     if (!hydrated) return;
     const migration = projectLegacyTasksToWorkbench(legacyTasks);
     const current = useWorkbenchStore.getState().worktrees;
-    const additions = migration.worktrees.filter((worktree) => !current[worktree.id]);
+    const forgotten = new Set(useWorkbenchStore.getState().forgottenLegacyWorktreeIds);
+    const additions = migration.worktrees.filter((worktree) => !current[worktree.id] && !forgotten.has(worktree.id));
     if (additions.length > 0) setWorktrees([...Object.values(current), ...additions]);
-  }, [hydrated, legacyTasks, setWorktrees]);
+  }, [forgottenLegacyWorktreeIds, hydrated, legacyTasks, setWorktrees]);
 
   useEffect(() => {
     const persisted = readAgentWorkspaceSidebarMode();
@@ -622,6 +628,8 @@ export function AgentWorkspacePage() {
     return () => window.removeEventListener(AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT, toggle);
   }, []);
   const forgetWorktree = async (worktreeId: string) => {
+    const transactionToken = beginResourceTransaction('forget-worktree');
+    if (!transactionToken) return;
     const ownedTabs = Object.values(tabRecords).filter((tab) => tab.worktreeId === worktreeId);
     try {
       const documentLeases = ownedTabs.flatMap<LocalEditorDocumentLease>((tab) => {
@@ -636,30 +644,46 @@ export function AgentWorkspacePage() {
       });
       if (identities.length > 0) await closeWorkbenchPtyTabs(identities);
       commitLocalEditorDocumentRelease(documentLeases);
-      forgetStoreWorktree(worktreeId);
+      forgetStoreWorktree(worktreeId, transactionToken);
       setLifecycleError(null);
     } catch (reason) {
       setLifecycleError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      endResourceTransaction(transactionToken);
     }
   };
 
   const addLocalProject = async () => {
-    const selected = await openDialog({ directory: true, multiple: false, title: '打开本机项目' });
-    if (typeof selected !== 'string' || !selected) return;
-    const id = `workbench:local:${selected}`;
-    addWorktree({
-      id,
-      projectId: id,
-      repositoryId: id,
-      hostId: 'local',
-      hostRevision: 0,
-      path: selected,
-      branch: null,
-      lifecycle: 'active',
-    });
+    const transactionToken = beginResourceTransaction('add-worktree');
+    if (!transactionToken) return;
+    try {
+      const selected = await openDialog({ directory: true, multiple: false, title: '打开本机项目' });
+      if (typeof selected !== 'string' || !selected) return;
+      const resolved = await invoke<{ path: string }>('open_terminal_workspace_directory', { path: selected });
+      if (!resolved.path) throw new Error('无法解析所选工作区目录');
+      // Release the dialog transaction before the admitted ordinary Store mutation.
+      if (!endResourceTransaction(transactionToken)) return;
+      const id = `workbench:local:${resolved.path}`;
+      addWorktree({
+        id,
+        projectId: id,
+        repositoryId: id,
+        hostId: 'local',
+        hostRevision: 0,
+        path: resolved.path,
+        branch: null,
+        lifecycle: 'active',
+      });
+    } catch (reason) {
+      setLifecycleError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      endResourceTransaction(transactionToken);
+    }
   };
 
   const closeTab = async (groupId: string, id: string) => {
+    const transactionToken = beginResourceTransaction('close-tab');
+    if (!transactionToken) return;
     const tab = tabRecords[id];
     try {
       if (tab?.kind === 'editor' && tab.filePath) {
@@ -671,14 +695,18 @@ export function AgentWorkspacePage() {
         if (!tab.ptyId || !tab.ptyRunId) throw new Error('Terminal 标签缺少 PTY identity');
         await closeWorkbenchPtyTab({ ptyId: tab.ptyId, runId: tab.ptyRunId });
       }
-      closeStoreTab(groupId, id);
+      closeStoreTab(groupId, id, transactionToken);
       setLifecycleError(null);
     } catch (reason) {
       setLifecycleError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      endResourceTransaction(transactionToken);
     }
   };
 
   const closeGroup = async (groupId: string) => {
+    const transactionToken = beginResourceTransaction('close-group');
+    if (!transactionToken) return;
     const ownedTabs = groups[groupId]?.tabIds.map((id) => tabRecords[id]).filter(Boolean) ?? [];
     try {
       const documentLeases = ownedTabs.flatMap<LocalEditorDocumentLease>((tab) => {
@@ -693,10 +721,12 @@ export function AgentWorkspacePage() {
       });
       if (identities.length > 0) await closeWorkbenchPtyTabs(identities);
       commitLocalEditorDocumentRelease(documentLeases);
-      removeStoreGroup(groupId);
+      removeStoreGroup(groupId, transactionToken);
       setLifecycleError(null);
     } catch (reason) {
       setLifecycleError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      endResourceTransaction(transactionToken);
     }
   };
 
@@ -756,7 +786,10 @@ export function AgentWorkspacePage() {
   };
 
   const resetSession = async () => {
-    if (resettingSession) return;
+    if (resetInFlightRef.current) return;
+    const transactionToken = beginResourceTransaction('reset-session');
+    if (!transactionToken) return;
+    resetInFlightRef.current = true;
     setResettingSession(true);
     try {
       await resetWorkbenchSession('local');
@@ -764,6 +797,9 @@ export function AgentWorkspacePage() {
     } catch (reason) {
       setLifecycleError(reason instanceof Error ? reason.message : String(reason));
       setResettingSession(false);
+    } finally {
+      resetInFlightRef.current = false;
+      endResourceTransaction(transactionToken);
     }
   };
 
@@ -853,13 +889,10 @@ export function AgentWorkspacePage() {
 
         <footer className="junqi-wb-local-status">
           <span><GitBranch size={12} />{selectedWorktree?.branch ?? '无活动分支'}</span>
-          <span><GitDiff size={12} />状态待 Git Adapter 刷新</span>
-          <span><WarningCircle size={12} />0</span>
+          <span><GitDiff size={12} />Git 状态按右侧 Source 面板加载</span>
           <span className="junqi-wb-status-spacer" />
-          <span><User size={12} />本机</span>
-          <span><Code size={12} />TypeScript React</span>
-          <span>UTF-8</span>
-          <span>Ln 41, Col 7</span>
+          <span><User size={12} />{selectedWorktree?.hostId ?? '未选择主机'}</span>
+          <span><Code size={12} />编辑器状态以当前文件为准</span>
         </footer>
       </main>
 

@@ -1,7 +1,7 @@
 # JunQi AI 工作台与共享文件平台实施计划
 
 > 日期：2026-07-28  
-> 状态：待实施；当前仅完成前端方向验证，禁止把硬编码模拟数据当作正式实现  
+> 状态：实施中；Phase 0-8 的本机能力已按下述检查点落地，未完成能力继续保持 unavailable/fail closed
 > 范围：重写 `/ai-workspace`，建设可供 AI 工作台、文件管理器、Agent Hub 和 Chat 结果复用的 Workspace Files Platform  
 > 明确排除：独立 `/terminal` 的 UI、Store、持久化键、PTY handoff、session registry 与生命周期
 
@@ -832,6 +832,35 @@ npm run build
 - Plugin Host、共享命令/快捷键、Ports/Resource Status；
 - Worktree 安全创建/休眠/删除完整生命周期；
 - Windows/Linux/macOS 真实跨平台行为矩阵。
+
+## 10.2 2026-07-29 工作台可靠性检查点
+
+在 10.1 的基础上完成：
+
+- Provider claim 使用完整 ownership fingerprint、generation 和已验证绝对可执行文件，迟到的 claim/release 不能接管 replacement session；
+- Workbench PTY 以 `ptyId + runId` 隔离输出、resize、stop 和已完成 run，跨块 UTF-8、snapshot/resync 与重复完成保持有界且幂等；
+- Durable Session schema、writer 和 Store 对 replacement generation、持久化失败、损坏恢复及移除 Worktree 使用 fail-closed 状态转换；
+- 移除 Worktree 前先完成文档与 PTY 检查点，失败时保留可重试状态和原始项目记录；
+- FileViewer 与 Workbench 文件标签继续复用共享 Document lifecycle，不引入第二套预览 authority。
+
+本检查点在合并主线前的分支验证：
+
+```text
+pnpm lint
+✓ module boundaries and TypeScript
+
+pnpm test
+✓ frontend and script suites
+
+pnpm test:rust
+✓ 638 passed
+✓ 3 ignored by design
+
+git diff --check
+✓ clean
+```
+
+未验证边界：三平台真机 PTY/Provider 生命周期、SSH/Runtime owner、正式签名与公证。
 
 ### Phase 7 — Worktree/Host 路由与真实文件工作流
 

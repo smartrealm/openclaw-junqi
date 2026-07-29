@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 const MAX_ID_BYTES: usize = 256;
+const MAX_OWNER_ID_BYTES: usize = 16 * 1024;
 const MAX_PATH_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Debug, Serialize)]
@@ -64,16 +66,25 @@ fn claims() -> &'static Mutex<HashMap<String, ProviderClaim>> {
     CLAIMS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-pub(crate) fn release_claims_for_pty_locked(pty_id: &str) {
-    if let Ok(mut entries) = claims().lock() {
-        entries.retain(|_, claim| claim.pty_id != pty_id);
-    }
+fn lock_claims() -> Result<MutexGuard<'static, HashMap<String, ProviderClaim>>, String> {
+    claims()
+        .lock()
+        .map_err(|_| "workbench provider registry lock poisoned; ownership is degraded".to_string())
 }
 
-pub(crate) fn clear_claims_locked() {
-    if let Ok(mut entries) = claims().lock() {
-        entries.clear();
-    }
+fn next_generation() -> u64 {
+    static GENERATION: AtomicU64 = AtomicU64::new(0);
+    GENERATION.fetch_add(1, Ordering::Relaxed).saturating_add(1)
+}
+
+pub(crate) fn release_claims_for_pty_locked(pty_id: &str) -> Result<(), String> {
+    lock_claims()?.retain(|_, claim| claim.pty_id != pty_id);
+    Ok(())
+}
+
+pub(crate) fn clear_claims_locked() -> Result<(), String> {
+    lock_claims()?.clear();
+    Ok(())
 }
 
 fn validate_component(label: &str, value: &str, max: usize) -> Result<(), String> {
@@ -140,14 +151,14 @@ fn same_claim(current: &ProviderClaim, request: &ProviderClaimRequest) -> bool {
 pub fn claim_workbench_provider(request: ProviderClaimRequest) -> Result<ProviderClaim, String> {
     for (label, value) in [
         ("claim id", request.claim_id.as_str()),
-        ("worktree id", request.worktree_id.as_str()),
-        ("pane id", request.pane_id.as_str()),
         ("PTY id", request.pty_id.as_str()),
         ("PTY run id", request.pty_run_id.as_str()),
         ("provider id", request.provider_id.as_str()),
     ] {
         validate_component(label, value, MAX_ID_BYTES)?;
     }
+    validate_component("worktree id", &request.worktree_id, MAX_OWNER_ID_BYTES)?;
+    validate_component("pane id", &request.pane_id, MAX_OWNER_ID_BYTES)?;
     if let Some(value) = request.provider_session_id.as_deref() {
         validate_component("session id", value, MAX_ID_BYTES)?;
     }
@@ -159,10 +170,21 @@ pub fn claim_workbench_provider(request: ProviderClaimRequest) -> Result<Provide
     let _operation = super::workbench_pty::lifecycle_gate()
         .lock()
         .map_err(|_| "workbench provider lifecycle lock poisoned".to_string())?;
-    super::workbench_pty::assert_current_run_locked(&request.pty_id, &request.pty_run_id)?;
-    let mut entries = claims()
-        .lock()
-        .map_err(|_| "workbench provider registry lock poisoned".to_string())?;
+    let cwd = super::workbench_pty::assert_current_owner_locked(
+        &request.pty_id,
+        &request.pty_run_id,
+        &request.worktree_id,
+        &request.pane_id,
+    )?;
+    if let Some(path) = request.transcript_path.as_deref() {
+        let transcript = std::path::PathBuf::from(path)
+            .canonicalize()
+            .map_err(|_| "provider transcript is not an existing file".to_string())?;
+        if !transcript.is_file() || !transcript.starts_with(&cwd) {
+            return Err("provider transcript is outside the PTY worktree".into());
+        }
+    }
+    let mut entries = lock_claims()?;
     let current = entries.get(&request.pane_id).cloned();
     if current
         .as_ref()
@@ -191,9 +213,7 @@ pub fn claim_workbench_provider(request: ProviderClaimRequest) -> Result<Provide
     }
     let claim = ProviderClaim {
         claim_id: request.claim_id,
-        generation: current
-            .as_ref()
-            .map_or(1, |claim| claim.generation.saturating_add(1)),
+        generation: next_generation(),
         worktree_id: request.worktree_id,
         pane_id: request.pane_id,
         pty_id: request.pty_id,
@@ -213,14 +233,12 @@ pub fn release_workbench_provider(
     claim_id: String,
     generation: u64,
 ) -> Result<bool, String> {
-    validate_component("pane id", &pane_id, MAX_ID_BYTES)?;
+    validate_component("pane id", &pane_id, MAX_OWNER_ID_BYTES)?;
     validate_component("claim id", &claim_id, MAX_ID_BYTES)?;
     let _operation = super::workbench_pty::lifecycle_gate()
         .lock()
         .map_err(|_| "workbench provider lifecycle lock poisoned".to_string())?;
-    let mut entries = claims()
-        .lock()
-        .map_err(|_| "workbench provider registry lock poisoned".to_string())?;
+    let mut entries = lock_claims()?;
     let matches = entries
         .get(&pane_id)
         .is_some_and(|claim| claim.claim_id == claim_id && claim.generation == generation);

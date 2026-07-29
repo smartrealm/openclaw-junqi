@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isWorkbenchSessionSnapshot, WORKBENCH_SESSION_SCHEMA_VERSION, type WorkbenchSessionSnapshot } from './schema';
+import { isWorkbenchSessionSnapshot, migrateWorkbenchSessionSnapshot, WORKBENCH_SESSION_SCHEMA_VERSION, type WorkbenchSessionSnapshot } from './schema';
 
 function snapshot(): WorkbenchSessionSnapshot {
   return {
     schemaVersion: WORKBENCH_SESSION_SCHEMA_VERSION,
     activeWorktreeId: 'worktree',
+    forgottenLegacyWorktreeIds: [],
     worktrees: {
       worktree: {
         id: 'worktree', projectId: 'project', repositoryId: 'repo', hostId: 'local',
@@ -24,6 +25,14 @@ function snapshot(): WorkbenchSessionSnapshot {
 
 test('session schema accepts a complete referentially consistent snapshot', () => {
   assert.equal(isWorkbenchSessionSnapshot(snapshot()), true);
+});
+
+test('session schema deterministically migrates v2 tombstones to an empty set', () => {
+  const legacy = { ...snapshot(), schemaVersion: 2 } as Record<string, unknown>;
+  delete legacy.forgottenLegacyWorktreeIds;
+  const migrated = migrateWorkbenchSessionSnapshot(legacy);
+  assert.equal(isWorkbenchSessionSnapshot(migrated), true);
+  assert.deepEqual((migrated as WorkbenchSessionSnapshot).forgottenLegacyWorktreeIds, []);
 });
 
 test('session schema rejects durable PTY process-create authorization', () => {
@@ -48,6 +57,23 @@ test('session schema rejects dangling, duplicate and orphan tab identities', () 
   const orphan = snapshot();
   orphan.tabs.orphan = { ...orphan.tabs.tab!, id: 'orphan' };
   assert.equal(isWorkbenchSessionSnapshot(orphan), false);
+});
+
+test('session schema rejects incomplete process tabs and duplicate native ownership identities', () => {
+  const missingPty = snapshot();
+  missingPty.tabs.tab = { ...missingPty.tabs.tab!, kind: 'terminal', filePath: undefined };
+  assert.equal(isWorkbenchSessionSnapshot(missingPty), false);
+
+  const duplicatePane = snapshot();
+  duplicatePane.groups.main!.tabIds.push('other');
+  duplicatePane.tabs.other = { ...duplicatePane.tabs.tab!, id: 'other' };
+  assert.equal(isWorkbenchSessionSnapshot(duplicatePane), false);
+
+  const duplicatePty = snapshot();
+  duplicatePty.tabs.tab = { ...duplicatePty.tabs.tab!, kind: 'terminal', filePath: undefined, ptyId: 'pty', ptyRunId: 'run' };
+  duplicatePty.groups.main!.tabIds.push('other');
+  duplicatePty.tabs.other = { ...duplicatePty.tabs.tab!, id: 'other', paneId: 'other-pane' };
+  assert.equal(isWorkbenchSessionSnapshot(duplicatePty), false);
 });
 
 test('session schema rejects invalid recursive layouts and inactive groups', () => {

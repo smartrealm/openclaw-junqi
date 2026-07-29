@@ -10,6 +10,10 @@ test('workbench PTY protocol carries explicit PTY and run identities', () => {
     assert.match(client, new RegExp(command));
   }
   assert.match(client, /output\.ptyId !== identity\.ptyId \|\| output\.runId !== identity\.runId/);
+  assert.match(client, /worktreeId/);
+  assert.match(client, /paneId/);
+  assert.match(backend, /worktree_id: String/);
+  assert.match(backend, /pane_id: String/);
 });
 
 test('PTY output uses incremental UTF-8 decoding without breaking sequence continuity', () => {

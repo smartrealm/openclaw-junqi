@@ -28,6 +28,13 @@ export interface ProviderClaimState {
   byPane: Record<PaneId, ProviderSessionClaim>;
 }
 
+let nextProviderGeneration = 0;
+
+function allocateProviderGeneration(): number {
+  nextProviderGeneration += 1;
+  return nextProviderGeneration;
+}
+
 export type ProviderClaimResult =
   | { ok: true; state: ProviderClaimState; claim: ProviderSessionClaim; idempotent: boolean }
   | { ok: false; state: ProviderClaimState; reason: 'pane-owned' | 'pty-owned' | 'resume-owned' | 'stale-replacement' };
@@ -82,7 +89,7 @@ export function claimProviderSession(state: ProviderClaimState, request: Provide
   }
   const claim: ProviderSessionClaim = {
     claimId: request.claimId,
-    generation: (current?.generation ?? 0) + 1,
+    generation: allocateProviderGeneration(),
     worktreeId: request.worktreeId,
     paneId: request.paneId,
     ptyId: request.ptyId,
