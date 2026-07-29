@@ -3,7 +3,10 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
 const client = readFileSync(new URL('./workbenchPtyClient.ts', import.meta.url), 'utf8');
-const backend = readFileSync(new URL('../../../src-tauri/src/commands/workbench_pty.rs', import.meta.url), 'utf8');
+const commandBackend = readFileSync(new URL('../../../src-tauri/src/commands/workbench_pty.rs', import.meta.url), 'utf8');
+const runtimeBackend = readFileSync(new URL('../../../src-tauri/src/commands/workbench_pty/runtime.rs', import.meta.url), 'utf8');
+const modelBackend = readFileSync(new URL('../../../src-tauri/src/commands/workbench_pty/model.rs', import.meta.url), 'utf8');
+const backend = [commandBackend, runtimeBackend, modelBackend].join('\n');
 
 test('workbench PTY protocol carries explicit PTY and run identities', () => {
   for (const command of ['create_workbench_pty', 'input_workbench_pty', 'resize_workbench_pty', 'snapshot_workbench_pty', 'stop_workbench_pty', 'stop_workbench_ptys', 'close_workbench_pty_tab', 'close_workbench_pty_tabs', 'stop_all_workbench_ptys']) {
@@ -19,7 +22,7 @@ test('workbench PTY protocol carries explicit PTY and run identities', () => {
 test('PTY output uses incremental UTF-8 decoding without breaking sequence continuity', () => {
   assert.match(backend, /fn take_utf8_ready/);
   assert.match(backend, /pending_utf8\.extend_from_slice/);
-  assert.match(backend, /Emit even an empty data frame so sequence continuity is/);
+  assert.match(backend, /Keep sequence continuity while a multibyte codepoint awaits its tail/);
   assert.doesNotMatch(backend, /data: String::from_utf8_lossy\(&bytes\[\.\.read\]\)/);
 });
 
@@ -44,15 +47,15 @@ test('missing PTYs require one explicit renderer create authorization', () => {
 
 test('create and stop lifecycle operations share one backend gate', () => {
   assert.match(backend, /fn lifecycle_gate\(\)/);
-  const create = backend.slice(backend.indexOf('pub fn create_workbench_pty'), backend.indexOf('pub fn input_workbench_pty'));
-  const stop = backend.slice(backend.indexOf('pub fn stop_workbench_pty'), backend.indexOf('#\[cfg\(test\)\]'));
+  const create = runtimeBackend.slice(runtimeBackend.indexOf('pub(super) fn create_workbench_pty'), runtimeBackend.indexOf('fn spawn_output_reader'));
+  const stop = commandBackend.slice(commandBackend.indexOf('pub fn stop_workbench_pty'));
   assert.match(create, /lifecycle_gate\(\)/);
   assert.match(stop, /lifecycle_gate\(\)/);
 });
 
 test('reader EOF cannot remove ownership before the child exit tombstone exists', () => {
-  const reader = backend.slice(backend.indexOf('let output_app'), backend.indexOf('let exit_id'));
-  const monitor = backend.slice(backend.indexOf('let exit_id'), backend.indexOf('#[tauri::command]\npub fn input_workbench_pty'));
+  const reader = runtimeBackend.slice(runtimeBackend.indexOf('fn spawn_output_reader'));
+  const monitor = runtimeBackend.slice(runtimeBackend.indexOf('let exit_id'), runtimeBackend.indexOf('fn spawn_output_reader'));
   assert.doesNotMatch(reader, /remove_if_current/);
   assert.ok(monitor.indexOf('lifecycle_gate().lock()') < monitor.indexOf('remove_if_current'));
   assert.ok(monitor.indexOf('remove_if_current') < monitor.indexOf('remember_completed_run'));
@@ -67,14 +70,14 @@ test('completed runs remain exactly closable through a bounded tombstone', () =>
 });
 
 test('tab close tolerates a missing prior-process registry but rejects replacement ownership', () => {
-  const close = backend.slice(backend.indexOf('pub fn close_workbench_pty_tab'), backend.indexOf('pub fn close_workbench_pty_tabs'));
+  const close = commandBackend.slice(commandBackend.indexOf('pub fn close_workbench_pty_tab'), commandBackend.indexOf('pub fn close_workbench_pty_tabs'));
   assert.match(close, /Some\(_\) => Err\(format!\("stale workbench PTY run/);
   assert.match(close, /None =>/);
   assert.match(close, /consume_completed_run/);
 });
 
 test('shutdown drain removes every workbench registry entry before physical stop', () => {
-  const drain = backend.slice(backend.indexOf('pub fn stop_all_workbench_ptys'), backend.indexOf('pub fn stop_workbench_ptys'));
+  const drain = commandBackend.slice(commandBackend.indexOf('pub fn stop_all_workbench_ptys'), commandBackend.indexOf('pub fn stop_workbench_ptys'));
   assert.match(drain, /entries\s*\.drain\(\)/);
   assert.ok(drain.indexOf('.drain()') < drain.indexOf('stop_handle'), 'the registry empties before anything is killed');
   // Draining first means a handle skipped here can never be reached again, so
@@ -85,7 +88,7 @@ test('shutdown drain removes every workbench registry entry before physical stop
 });
 
 test('batch stop validates every PTY owner before physical termination', () => {
-  const batch = backend.slice(backend.indexOf('pub fn stop_workbench_ptys'));
+  const batch = commandBackend.slice(commandBackend.indexOf('pub fn stop_workbench_ptys'));
   assert.ok(batch.indexOf('current_handle') < batch.indexOf('stop_handle'));
   assert.match(batch, /for identity in &identities/);
   assert.match(batch, /for \(identity, \(pty_id, handle\)\) in identities\.iter\(\)\.zip\(handles\)/);

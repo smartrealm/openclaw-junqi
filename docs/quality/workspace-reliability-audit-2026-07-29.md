@@ -42,6 +42,10 @@
 
 终端在 `open_shell` 尚未返回时卸载，会先调用一次 `kill_shell`。如果原生 PTY 在该调用之后才注册，旧实现收到结果后只因组件已清理而退出，不会再次终止刚创建的 PTY。
 
+### BUG-TERM-03 · HIGH：退出清理在首个 PTY 失败后提前终止
+
+工作台退出时先排空 PTY 注册表，再逐个停止进程。旧实现遇到首个已自行退出或停止失败的 PTY 就立即返回，剩余进程已经无法再从注册表访问，可能成为后台残留。现在会尝试停止全部已排空句柄、独立清理 provider claim，最后汇总错误；PTY 命令、运行时状态、协议缓冲和测试也已拆为独立模块。
+
 ### BUG-WS-07 · HIGH：Windows 工作台会话持久化被目录同步阻断
 
 Durable Session 在替换会话文件后无条件以普通文件方式打开父目录并调用 `sync_all`。Windows x64 与 x86 CI 均稳定返回 `Access is denied (os error 5)`，使保存、备份恢复和重置全部失败。Microsoft 的 `CreateFileW` 契约要求目录句柄使用 `FILE_FLAG_BACKUP_SEMANTICS`，而 `FlushFileBuffers` 没有承诺目录句柄具备 POSIX 目录 `fsync` 语义，因此不能把 Unix 目录同步流程直接移植到 Windows。
@@ -54,6 +58,7 @@ Durable Session 在替换会话文件后无条件以普通文件方式打开父�
 - 工作区切换失败保留目标并提供重试；工作台新增文案覆盖 `zh`、`zh-TW`、`en`。
 - 终端恢复默认通过单个原生命令更新两个原生字段，成功后才提交全部前端偏好。
 - PTY 打开结果按清理状态和 run-id 判定接管或终止，迟到结果不会留在后台。
+- 退出清理不会因单个 PTY 停止失败而跳过其余进程，错误在全部清理尝试后统一返回。
 - Durable Session 已拆为命令契约、持久化事务和回归测试三个模块。会话文件和备份在所有平台均以可写句柄执行 `sync_all`；Unix 继续同步父目录，Windows 使用 `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` 完成替换，不再执行没有官方契约支撑的目录 flush。
 
 ## 验证边界
@@ -68,8 +73,8 @@ Durable Session 在替换会话文件后无条件以普通文件方式打开父�
 - `pnpm lint`：通过，模块边界检查覆盖 613 个文件。
 - `pnpm test`：前端 1820 项、脚本 223 项全部通过；仅输出项目既有的 Node `module.register` 弃用提示和 Radix SSR `useLayoutEffect` 警告。
 - `pnpm build`：通过；collaboration package contract、TypeScript 和 Vite production build 均成功，未报告循环分包或 chunk 预算失败。
-- `cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets`：通过；clippy 仅保留 5 项本任务外既有警告。
-- `cargo test --lib --no-fail-fast`：648 项通过，0 失败，3 项按环境要求忽略。
+- `cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets`：通过；clippy 仅保留 4 项本任务外既有警告。
+- `cargo test --lib --no-fail-fast`：650 项通过，0 失败，3 项按环境要求忽略。
 - `git diff --check`：通过。
 
 未执行实际 Tauri 桌面窗口交互，因此文件冲突横幅、工作树终端真实 cwd、终端设置失败提示和 PTY 进程列表仍属于真机走查边界。

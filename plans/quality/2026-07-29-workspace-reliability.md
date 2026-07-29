@@ -15,6 +15,7 @@
 | D | BUG-TERM-01 | `TerminalSettingsPanel.tsx`、`app_settings.rs`、`lib.rs` | 原生一次提交，成功后提交本地默认值 |
 | D | BUG-TERM-02 | `ShellTerminalPanel.tsx`、`shellLifecycle.ts` | 迟到或异常 PTY 打开结果主动终止 |
 | E | BUG-WS-07 | `workbench_session.rs`、`workbench_session/storage.rs`、`storage_tests.rs` | 分离命令/事务/测试，按 Unix/Windows 官方持久化能力实现文件替换 |
+| F | BUG-TERM-03 | `workbench_pty.rs`、`workbench_pty/runtime.rs`、`model.rs`、`tests.rs` | 全量尝试退出清理，并拆分命令、运行时、协议与测试职责 |
 
 ## 验证
 
@@ -29,4 +30,4 @@
 
 ## 完成状态
 
-阶段 A-E 的代码、文档和自动化验证均已完成。main CI `30413681291` 已在 Windows x64、x86 原生通过 Durable Session 回归，daxia CI `30413681394` 亦通过其完整矩阵。真实 Tauri 桌面交互未执行，保留为人工验收项。
+阶段 A-F 的代码、文档和自动化验证均已完成。main CI `30413681291` 已在 Windows x64、x86 原生通过 Durable Session 回归，daxia CI `30413681394` 亦通过其完整矩阵；BUG-TERM-03 的最终分支 CI 以对应提交记录为准。真实 Tauri 桌面交互未执行，保留为人工验收项。

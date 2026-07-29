@@ -3,7 +3,10 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
 const backend = readFileSync(new URL('../../../src-tauri/src/commands/workbench_provider.rs', import.meta.url), 'utf8');
-const pty = readFileSync(new URL('../../../src-tauri/src/commands/workbench_pty.rs', import.meta.url), 'utf8');
+const pty = [
+  readFileSync(new URL('../../../src-tauri/src/commands/workbench_pty.rs', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../../src-tauri/src/commands/workbench_pty/runtime.rs', import.meta.url), 'utf8'),
+].join('\n');
 const client = readFileSync(new URL('./providerClaimClient.ts', import.meta.url), 'utf8');
 
 test('native provider claim validates the exact live PTY under the shared lifecycle gate', () => {
