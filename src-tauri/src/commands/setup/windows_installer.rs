@@ -355,7 +355,7 @@ pub(super) fn preserve_windows_installer_log(
 
 #[cfg(windows)]
 pub(super) fn dependency_install_windows_failure(error: String) -> WindowsInstallerFailure {
-    if error == DEPENDENCY_INSTALL_CANCELLED_MESSAGE {
+    if error == SETUP_OPERATION_CANCELLED_MESSAGE {
         WindowsInstallerFailure::cancelled(error)
     } else {
         WindowsInstallerFailure::source_unavailable(error)
@@ -561,7 +561,7 @@ pub(super) async fn wait_for_elevated_windows_process(
     process: &mut ElevatedWindowsProcess,
     policy: ControlledProcessPolicy,
     progress: &WindowsInstallProgress<'_>,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<(), WindowsInstallerFailure> {
     let deadline = std::time::Instant::now() + policy.timeout;
     progress.report_installer_wait();
@@ -629,7 +629,7 @@ pub(super) async fn run_windows_installer(
     args: &[std::ffi::OsString],
     policy: ControlledProcessPolicy,
     progress: WindowsInstallProgress<'_>,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<(), WindowsInstallerFailure> {
     operation
         .ensure_active()
@@ -790,7 +790,7 @@ pub(super) async fn ensure_winget_package(
     tool: &str,
     package_id: &str,
     budget: DependencyInstallBudget,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<(), WindowsInstallerFailure> {
     operation
         .ensure_active()
@@ -855,7 +855,7 @@ pub(super) async fn run_winget_package_command(
     package_id: &str,
     policy: ControlledProcessPolicy,
     progress: &WindowsInstallProgress<'_>,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<std::process::Output, WindowsInstallerFailure> {
     operation
         .ensure_active()

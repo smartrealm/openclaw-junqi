@@ -55,15 +55,15 @@ test('BUG-WRM-02 npm prefix change runs a dedicated dynamic-prefix relocation', 
     setup,
     /OpenclawInstallMode::Relocate => \{[\s\S]*?pick_install_target\(&app, step, &compatible_node\)/,
   );
-  assert.match(setupFlow, /await relocateOpenclaw\(\)/);
-  assert.match(api, /invoke<string>\("relocate_openclaw"\)/);
+  assert.match(setupFlow, /await relocateOpenclaw\(operationId\)/);
+  assert.match(api, /invoke<string>\("relocate_openclaw", \{ operationId \}\)/);
   assert.match(lib, /commands::setup::relocate_openclaw/);
 });
 
 test('BUG-WRM-03 pending relocation survives restart and clears only after success', () => {
   assert.match(paths, /openclaw_relocation_required: bool/);
   assert.match(paths, /pub fn complete_openclaw_relocation\(/);
-  assert.match(setupFlow, /oclaw\.relocation_required/);
+  assert.match(setupFlow, /openclaw\.relocation_required/);
   const relocationCommit = setup.slice(
     setup.indexOf('impl OpenclawRelocationRequest'),
     setup.indexOf('async fn install_openclaw_impl'),
@@ -113,10 +113,10 @@ test('BUG-WRM-05 relocation shares the global operation lock and validates its p
     setup.indexOf('async fn install_openclaw_impl'),
     setup.indexOf('/// 准备 Gateway'),
   );
-  assert.ok(relocate.indexOf('operation_gate.lock_owned().await') >= 0);
+  assert.ok(relocate.indexOf('operation_gate.lock_owned()') >= 0);
   assert.ok(
-    relocate.indexOf('operation_gate.lock_owned().await')
-      < relocate.indexOf('install_lock.lock().await'),
+    relocate.indexOf('operation_gate.lock_owned()')
+      < relocate.indexOf('wait_for_setup_operation_lock(install_lock, operation).await'),
   );
   assert.match(paths, /complete_openclaw_relocation\(expected_npm_prefix: Option<&Path>\)/);
   assert.match(paths, /optional_paths_refer_to_same_location\(layout\.npm_prefix\.as_deref\(\), expected_npm_prefix\)/);

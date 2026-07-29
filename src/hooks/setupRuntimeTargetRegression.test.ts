@@ -31,19 +31,16 @@ const maintenance = source('../../src-tauri/src/commands/maintenance.rs');
 const runtimePanel = source('../components/settings/ManagedRuntimeSettingsPanel.tsx');
 
 test('BUG-RT-01 restores the persisted Docker target before setup detection', () => {
-  const detection = setupFlow.slice(
-    setupFlow.indexOf('const detectEnvironmentForReview'),
-    setupFlow.indexOf('const continueAfterEnvironmentReview'),
-  );
+  const detection = hookFile('useSetupEnvironmentReview');
 
   assert.match(commands, /export const detectGatewayConfig = \(\) => invoke<GatewayConfigInfo>\("detect_gateway_config"\)/);
   assert.match(detection, /const runtimeTarget = await detectGatewayConfig\(\);/);
-  assert.match(detection, /const selectedRuntime = runtimeTarget\.runtime_mode;/);
-  assert.match(detection, /setInstallMode\(selectedRuntime\);/);
-  assert.match(detection, /const oclaw = await checkOpenclaw\(\);/);
+  assert.match(detection, /const runtime = runtimeTarget\.runtime_mode;/);
+  assert.match(detection, /setInstallMode\(runtime\);/);
+  assert.match(detection, /const openclaw = await checkOpenclaw\(\);/);
   assert.match(
     detection,
-    /selectedRuntime === "native" && \(!oclaw\?\.installed \|\| oclaw\.relocation_required\)/,
+    /runtime === "native" && \(!openclaw\.installed \|\| openclaw\.relocation_required\)/,
   );
   const refreshRuntime = setupFlow.slice(
     setupFlow.indexOf('const refreshRuntime = useCallback'),
@@ -60,7 +57,7 @@ test('BUG-RT-02 selected Docker recovery never invokes native repair', () => {
     recovery.indexOf('const repairingMessage = t("setup.repairingGateway"'),
   );
 
-  assert.match(dockerRepair, /await pullOpenclawImage\("latest"\)/);
+  assert.match(dockerRepair, /await pullOpenclawImage\(\)/);
   assert.match(dockerRepair, /await startGatewayAction\(\)/);
   assert.doesNotMatch(dockerRepair, /runOpenClawRepair/);
   assert.match(
@@ -83,8 +80,8 @@ test('BUG-RT-02 selected Docker recovery never invokes native repair', () => {
 test('BUG-RT-03 reinstall requests an actual forced package installation', () => {
   assert.match(setupPage, /onClick=\{flow\.requestReinstall\}/);
   assert.match(setupFlow, /const forceReinstall = reinstallRequestedRef\.current \|\| repairInvalidInstall;/);
-  assert.match(setupFlow, /await reinstallOpenclaw\(\)/);
-  assert.match(commands, /invoke<string>\("reinstall_openclaw"\)/);
+  assert.match(setupFlow, /await reinstallOpenclaw\(operationId\)/);
+  assert.match(commands, /invoke<string>\("reinstall_openclaw", \{ operationId \}\)/);
 });
 
 test('BUG-RT-05 only supported platforms expose automatic Node updates', () => {

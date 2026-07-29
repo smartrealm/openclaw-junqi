@@ -89,8 +89,7 @@ async fn run_selected_docker_repair(app: AppHandle, state: &GatewayProcess) -> R
 
     let result = async {
         crate::commands::docker::release_managed_native_gateway_for_docker(state, port).await?;
-        crate::commands::docker::pull_openclaw_image(app.clone(), Some("latest".to_string()))
-            .await?;
+        crate::commands::docker::pull_openclaw_image(app.clone(), None, None).await?;
         crate::commands::docker::start_docker_gateway_locked(app.clone(), Some(port), None).await
     }
     .await;

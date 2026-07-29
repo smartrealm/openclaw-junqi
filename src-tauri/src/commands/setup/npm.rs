@@ -316,6 +316,7 @@ pub(super) fn npm_diagnostic_text(diagnostics: &NpmDiagnostics) -> String {
 
 pub(super) enum NpmWaitResult {
     Exited(std::io::Result<std::process::ExitStatus>),
+    Cancelled,
     DeadlineExceeded,
     SlowSource(String),
 }
@@ -381,13 +382,21 @@ pub(super) async fn wait_for_npm_process(
     deadline: std::time::Instant,
 ) -> NpmWaitResult {
     let (_slow_fetch_tx, mut slow_fetch_rx) = tokio::sync::watch::channel(None);
-    wait_for_npm_process_with_slow_signal(child, &mut slow_fetch_rx, deadline).await
+    wait_for_npm_process_with_slow_signal(child, &mut slow_fetch_rx, deadline, None).await
+}
+
+async fn wait_for_npm_cancellation(cancellation: Option<&SetupOperationCancellation>) {
+    match cancellation {
+        Some(cancellation) => cancellation.cancelled().await,
+        None => std::future::pending::<()>().await,
+    }
 }
 
 pub(super) async fn wait_for_npm_process_with_slow_signal(
     child: &mut tokio::process::Child,
     slow_fetch: &mut tokio::sync::watch::Receiver<Option<String>>,
     deadline: std::time::Instant,
+    cancellation: Option<&SetupOperationCancellation>,
 ) -> NpmWaitResult {
     let wait = child.wait();
     tokio::pin!(wait);
@@ -398,6 +407,7 @@ pub(super) async fn wait_for_npm_process_with_slow_signal(
         tokio::select! {
             biased;
             status = &mut wait => return NpmWaitResult::Exited(status),
+            _ = wait_for_npm_cancellation(cancellation) => return NpmWaitResult::Cancelled,
             _ = &mut deadline_wait => return NpmWaitResult::DeadlineExceeded,
             changed = slow_fetch.changed(), if slow_fetch_open => {
                 if changed.is_ok() {
@@ -654,6 +664,29 @@ mod tests {
         .await;
 
         assert!(matches!(result, NpmWaitResult::DeadlineExceeded));
+        let pid = child.id();
+        terminate_process_tree(&mut child, pid).await;
+    }
+
+    #[tokio::test]
+    async fn npm_process_wait_stops_on_scoped_setup_cancellation() {
+        let mut child = tokio::process::Command::new(platform::bin_name("node"))
+            .args(["-e", "setTimeout(() => {}, 10000)"])
+            .spawn()
+            .expect("Node.js is required by the desktop build");
+        let cancellation = SetupOperationCancellation::new();
+        cancellation.request();
+        let (_slow_fetch_tx, mut slow_fetch_rx) = tokio::sync::watch::channel(None);
+
+        let result = wait_for_npm_process_with_slow_signal(
+            &mut child,
+            &mut slow_fetch_rx,
+            std::time::Instant::now() + std::time::Duration::from_secs(5),
+            Some(&cancellation),
+        )
+        .await;
+
+        assert!(matches!(result, NpmWaitResult::Cancelled));
         let pid = child.id();
         terminate_process_tree(&mut child, pid).await;
     }

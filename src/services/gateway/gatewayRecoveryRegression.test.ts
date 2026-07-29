@@ -111,11 +111,13 @@ test('BUG-GSC01 ordinary application lifecycle requests use one coordinator', ()
     source('src/pages/SetupPage/ReadyScreen.tsx'),
     setup,
   ].join('\n');
+  const userRecoveryUi = ordinaryUi.replace(app, '');
   assert.doesNotMatch(app, /gateway\.disconnect\(\)/);
   assert.doesNotMatch(app, /window\.aegis\??\.gateway\??\.(?:retry|ensureRunning)\??\.\(/);
   assert.doesNotMatch(app, /gateway\.reconnectWithToken\(/);
   assert.match(ordinaryUi, /gatewayLifecycle\.(?:recover|restart)\(/);
   assert.doesNotMatch(ordinaryUi, /gatewayManager\.restart\(\)/);
+  assert.doesNotMatch(userRecoveryUi, /gatewayManager\.ensureRunning\(\)/);
   assert.doesNotMatch(ordinaryUi, /window\.aegis\.config\.restart\(\)/);
   assert.doesNotMatch(ordinaryUi, /invoke\(['"]restart_(?:local_)?gateway/);
   assert.match(setup, /gatewayManager\.startForSetup\(\)/);
@@ -356,10 +358,10 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
   // Detection records the post-storage destination on a stable Environment
   // result page. Storage is pushed only after explicit confirmation so Back
   // returns to step 2 without replaying probes.
-  assert.match(flow, /const detectEnvironmentForReview[\s\S]*?return "choosing-mode"/);
-  assert.match(flow, /const detectEnvironmentForReview[\s\S]*?return "gateway-stopped"/);
+  assert.match(flow, /const detectEnvironment[\s\S]*?return "choosing-mode"/);
+  assert.match(flow, /const detectEnvironment[\s\S]*?return "gateway-stopped"/);
   assert.match(flow, /return onboardingRequired \? "configure-openclaw" : "ready"/);
-  assert.match(flow, /const next = await detectEnvironmentForReview\(runId\);[\s\S]*?setPostStorageStep\(next\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
+  assert.match(flow, /const next = await detectEnvironment\(runId\);[\s\S]*?setPostStorageStep\(next\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
   assert.match(flow, /const continueAfterEnvironmentReview[\s\S]*?navigateSetup\("storage", "push"\)/);
   assert.match(setup, /case "storage"[\s\S]*<StorageSetupStep/);
   assert.match(gate, /get_storage_setup_status/);

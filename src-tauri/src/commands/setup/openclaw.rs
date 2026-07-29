@@ -717,8 +717,9 @@ pub(super) fn remove_broken_openclaw_install(prefix: &std::path::Path) -> Result
 pub async fn install_openclaw(
     app: tauri::AppHandle,
     state: tauri::State<'_, GatewayProcess>,
+    operation_id: Option<String>,
 ) -> Result<String, String> {
-    install_openclaw_impl(app, state, OpenclawInstallMode::Normal).await
+    install_openclaw_impl(app, state, OpenclawInstallMode::Normal, operation_id).await
 }
 
 /// Reinstall the selected OpenClaw package even when a binary is still
@@ -728,19 +729,27 @@ pub async fn install_openclaw(
 pub async fn reinstall_openclaw(
     app: tauri::AppHandle,
     state: tauri::State<'_, GatewayProcess>,
+    operation_id: Option<String>,
 ) -> Result<String, String> {
-    install_openclaw_impl(app, state, OpenclawInstallMode::ReinstallExisting).await
+    install_openclaw_impl(
+        app,
+        state,
+        OpenclawInstallMode::ReinstallExisting,
+        operation_id,
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn relocate_openclaw(
     app: tauri::AppHandle,
     state: tauri::State<'_, GatewayProcess>,
+    operation_id: Option<String>,
 ) -> Result<String, String> {
     if !paths::openclaw_relocation_required() {
         return Err("OpenClaw relocation was not requested by storage migration".into());
     }
-    install_openclaw_impl(app, state, OpenclawInstallMode::Relocate).await
+    install_openclaw_impl(app, state, OpenclawInstallMode::Relocate, operation_id).await
 }
 
 pub(super) fn existing_npm_prefix_for_reinstall(binary: &Path, windows: bool) -> Option<PathBuf> {
@@ -879,25 +888,31 @@ pub(super) async fn install_openclaw_impl(
     app: tauri::AppHandle,
     state: tauri::State<'_, GatewayProcess>,
     mode: OpenclawInstallMode,
+    operation_id: Option<String>,
 ) -> Result<String, String> {
     // npm owns the OpenClaw installation deadline and performs explicit
     // process-tree cleanup before retrying a registry. An outer timeout would
     // cancel that cleanup future and could detach npm lifecycle children.
-    install_openclaw_impl_inner(app, state, mode).await
+    let operation = SetupOperation::begin(&app, SetupOperationKind::OpenClaw, operation_id)?;
+    install_openclaw_impl_inner(app, state, mode, &operation).await
 }
 
 pub(super) async fn install_openclaw_impl_inner(
     app: tauri::AppHandle,
     state: tauri::State<'_, GatewayProcess>,
     mode: OpenclawInstallMode,
+    operation: &SetupOperation,
 ) -> Result<String, String> {
     paths::validate_runtime_overrides()?;
     crate::commands::system::validate_openclaw_binary_override()?;
     let step = "openclaw";
     let operation_gate = state.operation_gate.clone();
-    let _operation_guard = operation_gate.lock_owned().await;
+    let _operation_guard = tokio::select! {
+        guard = operation_gate.lock_owned() => guard,
+        _ = operation.cancelled() => return Err(SETUP_OPERATION_CANCELLED_MESSAGE.into()),
+    };
     let install_lock = OPENCLAW_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(()));
-    let _install_guard = install_lock.lock().await;
+    let _install_guard = wait_for_setup_operation_lock(install_lock, operation).await?;
     reset_timeline_log(&app, step);
     let mode = mode.for_current_storage();
     let mut relocation = matches!(mode, OpenclawInstallMode::Relocate)
@@ -1089,6 +1104,7 @@ pub(super) async fn install_openclaw_impl_inner(
         target: &target.release,
         force: mode.forces_npm_install(),
         progress: 0.10..0.90,
+        operation,
     })
     .await?;
 
@@ -1217,6 +1233,7 @@ pub(super) struct NpmInstallRequest<'a> {
     pub(super) target: &'a npm_registry::OpenclawReleaseTarget,
     pub(super) force: bool,
     pub(super) progress: std::ops::Range<f64>,
+    pub(super) operation: &'a SetupOperation,
 }
 
 pub(super) async fn npm_install_with_fallback(
@@ -1230,6 +1247,7 @@ pub(super) async fn npm_install_with_fallback(
         target,
         force,
         progress,
+        operation,
     } = request;
     let prog_start = progress.start;
     let prog_end = progress.end;
@@ -1303,6 +1321,7 @@ pub(super) async fn npm_install_with_fallback(
     );
 
     for (reg_idx, source) in sources.into_iter().enumerate() {
+        operation.ensure_active()?;
         if deadline
             .checked_duration_since(std::time::Instant::now())
             .is_none()
@@ -1571,8 +1590,13 @@ pub(super) async fn npm_install_with_fallback(
                 }
             }
         });
-        let wait_result =
-            wait_for_npm_process_with_slow_signal(&mut child, &mut slow_fetch_rx, deadline).await;
+        let wait_result = wait_for_npm_process_with_slow_signal(
+            &mut child,
+            &mut slow_fetch_rx,
+            deadline,
+            Some(&operation.cancellation),
+        )
+        .await;
         let _ = heartbeat_tx.send(true);
         let _ = heartbeat_task.await;
         let output = NpmOutputTasks {
@@ -1657,6 +1681,23 @@ pub(super) async fn npm_install_with_fallback(
                     );
                 }
                 continue;
+            }
+            NpmWaitResult::Cancelled => {
+                let cleanup = stop_npm_process(&mut child, child_pid, output).await;
+                record_process_finished(
+                    app,
+                    step,
+                    &process_label,
+                    child_pid,
+                    None,
+                    attempt_started.elapsed(),
+                );
+                if let Err(cleanup_error) = cleanup {
+                    return Err(format!(
+                        "{SETUP_OPERATION_CANCELLED_MESSAGE}; process cleanup was not confirmed: {cleanup_error}"
+                    ));
+                }
+                return Err(SETUP_OPERATION_CANCELLED_MESSAGE.into());
             }
             NpmWaitResult::SlowSource(reason) => {
                 let diagnostic = npm_diagnostic_text(&diagnostics);

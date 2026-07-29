@@ -5,6 +5,7 @@ import test from "node:test";
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const setupFlow = read("./hooks/useSetupFlow/index.ts");
 const wizardSession = read("./hooks/useSetupFlow/useWizardSession.ts");
+const environmentReview = read("./hooks/useSetupFlow/useSetupEnvironmentReview.ts");
 const pluginRecovery = read("./hooks/useSetupFlow/usePluginRecovery.ts");
 const welcome = read("./pages/SetupPage/WelcomeScreen.tsx");
 const mode = read("./pages/SetupPage/ModeSelectScreen.tsx");
@@ -26,18 +27,13 @@ test("storage Back, configure, and advance actions exclude one another synchrono
 });
 
 test("environment detection Back invalidates the probe before it can auto-advance", () => {
-  const redetect = setupFlow.slice(
-    setupFlow.indexOf("const redetectEnvironment"),
-    setupFlow.indexOf("// ── Docker detect"),
-  );
-  assert.match(setupFlow, /if \(setupStep !== "detecting"\) return;[\s\S]*?const runId = beginRun\(\)/);
-  assert.match(setupFlow, /const detectionWasCancelled = \(\) => \([\s\S]*?!isRunActive\(runId\)[\s\S]*?setupNavigationLeavingRef\.current/);
-  assert.match(setupFlow, /const next = await detectEnvironmentForReview\(runId\);[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
-  assert.match(setupFlow, /const continueAfterEnvironmentReview[\s\S]*?navigateSetup\("storage", "push"\)/);
-  assert.match(redetect, /environmentActionInFlightRef\.current = true;[\s\S]*?setCheckingDocker\(true\);[\s\S]*?detectEnvironmentForReview\(runId\)/);
-  assert.match(redetect, /finally \{[\s\S]*?environmentActionInFlightRef\.current = false/);
-  assert.match(setupFlow, /const continueAfterEnvironmentReview[\s\S]*?environmentActionInFlightRef\.current[\s\S]*?dockerDetectingRef\.current[\s\S]*?environmentActionInFlightRef\.current = true/);
-  assert.doesNotMatch(redetect, /navigateSetup\("detecting", "replace"\)/);
+  assert.match(environmentReview, /if \(setupStep !== "detecting"\) return;[\s\S]*?const runId = beginRun\(\)/);
+  assert.match(environmentReview, /const cancelled = \(\) => !isRunActive\(runId\) \|\| navigationLeavingRef\.current/);
+  assert.match(environmentReview, /const next = await detectEnvironment\(runId\);[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
+  assert.match(environmentReview, /const continueAfterEnvironmentReview[\s\S]*?navigateSetup\("storage", "push"\)/);
+  assert.match(environmentReview, /const redetectEnvironment[\s\S]*?environmentActionInFlightRef\.current = true;[\s\S]*?setCheckingDocker\(true\);[\s\S]*?detectEnvironment\(runId\)/);
+  assert.match(environmentReview, /finally \{[\s\S]*?environmentActionInFlightRef\.current = false/);
+  assert.doesNotMatch(environmentReview, /navigateSetup\("detecting", "replace"\)/);
   assert.match(setupFlow, /const performGoBack[\s\S]*?cancelActiveRun\(\);[\s\S]*?const backPolicy = setupBackPolicy\(setupStep\);[\s\S]*?if \(backPolicy === "cancel-run"\)[\s\S]*?goBackSetup\("welcome"\)[\s\S]*?return;/);
 });
 
@@ -65,10 +61,10 @@ test("wizard auto-start runs at most once per configure-page visit", () => {
   assert.doesNotMatch(wizardSession, /startOfficialOnboarding\(\)\.finally\([\s\S]*?wizardAutoStartRef\.current = false/);
 });
 
-test("wizard Back and Next share one synchronous gate", () => {
-  assert.match(wizardSession, /wizardNavigationInFlightRef = useRef<"next" \| "back" \| null>/);
+test("wizard Next is single-flight and page Back does not replay protocol answers", () => {
+  assert.match(wizardSession, /wizardNavigationInFlightRef = useRef<"next" \| null>/);
   assert.match(wizardSession, /const submitWizardStep[\s\S]*?if \(wizardNavigationInFlightRef\.current\) return null;[\s\S]*?wizardNavigationInFlightRef\.current = "next"/);
-  assert.match(wizardSession, /const backOfficialOnboarding[\s\S]*?if \(!wizardClientRef\.current\?\.canGoBack \|\| wizardNavigationInFlightRef\.current\) return null;[\s\S]*?wizardNavigationInFlightRef\.current = "back"/);
+  assert.doesNotMatch(wizardSession, /backOfficialOnboarding|\.back\(\)|canGoBack/);
 });
 
 test("recovery and dependency actions are single-flight", () => {

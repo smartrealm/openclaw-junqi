@@ -145,7 +145,7 @@ pub fn run() {
             commands::voice_wake::voice_wake_status,
             // Setup
             commands::setup::install_node,
-            commands::setup::cancel_dependency_install,
+            commands::setup::cancel_setup_operation,
             commands::managed_runtime::update_managed_node,
             commands::setup::install_git,
             commands::managed_runtime::update_managed_git,

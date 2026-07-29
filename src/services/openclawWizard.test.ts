@@ -7,7 +7,6 @@ import {
   isOpenClawWizardSessionLost,
   isOpenClawWizardStepDesynchronized,
   OpenClawWizardCancelledError,
-  OpenClawWizardCancellationLockedError,
   OpenClawWizardClient,
   OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS,
   OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS,
@@ -161,75 +160,36 @@ test('wizard client restores an unfinished official session after a renderer res
   assert.equal(storedSessionId, null);
 });
 
-test('wizard client recreates a session to provide a previous-step action', async () => {
+test('wizard client starts fresh after terminal failure without replaying accepted answers', async () => {
   let starts = 0;
-  const calls: string[] = [];
+  const calls: Array<{ method: string; value?: unknown }> = [];
   const client = new OpenClawWizardClient(async (method, params) => {
-    calls.push(`${method}:${String((params.answer as any)?.stepId ?? '')}`);
+    calls.push({ method, value: (params.answer as { value?: unknown } | undefined)?.value });
     if (method === 'wizard.start') {
       starts += 1;
-      return {
-        sessionId: `session-${starts}`,
-        done: false,
-        status: 'running',
-        step: { id: 'first', type: 'select', options: [{ value: 'yes', label: 'Yes' }] },
-      };
-    }
-    if ((params.answer as any)?.stepId === 'first') {
-      return {
-        done: false,
-        status: 'running',
-        step: { id: 'second', type: 'select', options: [{ value: 'next', label: 'Next' }] },
-      };
-    }
-    if (method === 'wizard.cancel') return { status: 'cancelled' };
-    throw new Error(`unexpected ${method}`);
-  });
-
-  await client.start();
-  await client.next('first', 'yes');
-  assert.equal(client.canGoBack, true);
-  const previous = await client.back();
-  assert.equal(previous?.step?.id, 'first');
-  assert.deepEqual(calls, [
-    'wizard.start:',
-    'wizard.next:first',
-    'wizard.cancel:',
-    'wizard.start:',
-  ]);
-});
-
-test('wizard client restores a failed step for retry and preserves a previous-step action', async () => {
-  let starts = 0;
-  const client = new OpenClawWizardClient(async (method, params) => {
-    if (method === 'wizard.cancel') return { done: true, status: 'cancelled' };
-    if (method === 'wizard.start') {
-      starts += 1;
-      return { sessionId: `session-${starts}`, done: false, status: 'running', step: { id: 'first', type: 'select' } };
+      return { sessionId: `session-${starts}`, done: false, status: 'running', step: { id: 'credential', type: 'text', sensitive: true } };
     }
     const stepId = (params.answer as { stepId?: string } | undefined)?.stepId;
-    if (stepId === 'first') {
-      return { done: false, status: 'running', step: { id: 'second', type: 'select' } };
-    }
-    if (stepId === 'second' && starts === 1) {
-      return { done: false, status: 'error', error: 'gateway choice rejected' };
+    if (stepId === 'credential') {
+      return { done: true, status: 'error', error: 'credential rejected' };
     }
     throw new Error(`unexpected ${method}:${stepId ?? ''}`);
   });
 
   await client.start();
-  await client.next('first', 'keep');
-  const failed = await client.next('second', 'channels');
+  const failed = await client.next('credential', 'secret-value');
   assert.equal(failed.status, 'error');
-  assert.equal(client.failedStepView?.id, 'second');
+  assert.equal(client.failedStepView?.id, 'credential');
   assert.equal(client.diagnosticSessionId, 'session-1');
-  assert.equal(client.canGoBack, true);
 
   const retried = await client.retry();
-  assert.equal(retried.step?.id, 'second');
-  assert.equal(client.canGoBack, true);
-  const previous = await client.back();
-  assert.equal(previous?.step?.id, 'first');
+  assert.equal(retried.step?.id, 'credential');
+  assert.equal(retried.sessionId, 'session-2');
+  assert.deepEqual(calls, [
+    { method: 'wizard.start', value: undefined },
+    { method: 'wizard.next', value: 'secret-value' },
+    { method: 'wizard.start', value: undefined },
+  ]);
 });
 
 test('wizard client preserves resume context when the official session terminates with an error', async () => {
@@ -295,16 +255,13 @@ test('wizard client never records or replays an answer rejected by a running ses
   assert.equal(resumed.step?.id, 'second');
   assert.equal(client.failedStepView, null);
 
-  const previous = await client.back();
-  assert.equal(previous?.step?.id, 'first');
-  assert.deepEqual(calls.slice(-3), [
+  assert.deepEqual(calls.slice(-2), [
+    'wizard.status:',
     'wizard.next:',
-    'wizard.cancel:',
-    'wizard.start:',
   ]);
 });
 
-test('wizard client retains the official session when cancellation is locked by a durable write', async () => {
+test('wizard client retains the official session when cancellation does not terminate it', async () => {
   let starts = 0;
   const calls: string[] = [];
   const client = new OpenClawWizardClient(async (method, params) => {
@@ -327,11 +284,11 @@ test('wizard client retains the official session when cancellation is locked by 
   });
 
   await client.start();
-  await assert.rejects(() => client.cancel(), OpenClawWizardCancellationLockedError);
+  await assert.rejects(() => client.cancel(), /did not terminate the session/);
   assert.equal(client.activeSessionId, 'session-1');
 
-  // start/back must not forget the locked session or create a competing one.
-  await assert.rejects(() => client.start(), OpenClawWizardCancellationLockedError);
+  // Starting again must not forget the live session or create a competing one.
+  await assert.rejects(() => client.start(), /did not terminate the session/);
   assert.equal(starts, 1);
   assert.equal(client.activeSessionId, 'session-1');
 
@@ -376,12 +333,11 @@ test('wizard client treats cancelled as a terminal session that can restart clea
   assert.equal(client.activeSessionId, null);
   assert.equal(client.diagnosticSessionId, null);
   assert.equal(classifyOpenClawWizardFailure(new OpenClawWizardCancelledError()), 'cancelled');
-  assert.equal(classifyOpenClawWizardFailure(new OpenClawWizardCancellationLockedError()), 'cancellation_locked');
   const restarted = await client.retry();
   assert.equal(restarted.sessionId, 'session-2');
 });
 
-test('wizard client preserves Gateway option identity and extra metadata', async () => {
+test('wizard client preserves Gateway option identity from the installed schema', async () => {
   const client = new OpenClawWizardClient(async () => ({
     sessionId: 'session-feishu',
     done: false,
@@ -390,9 +346,6 @@ test('wizard client preserves Gateway option identity and extra metadata', async
       id: 'channels',
       type: 'select',
       format: 'plain',
-      externalUrl: 'https://auth.example/device',
-      deviceCode: { code: 'ABCD-1234', expiresInMinutes: 10, message: 'Enter this code' },
-      futureMetadata: { source: 'gateway' },
       options: [
         { value: 'openclaw-lark', label: 'Feishu/Lark (飞书)' },
         { value: 'feishu', label: 'Feishu/Lark (飞书)' },
@@ -406,36 +359,22 @@ test('wizard client preserves Gateway option identity and extra metadata', async
     { value: 'feishu', label: 'Feishu/Lark (飞书)' },
   ]);
   assert.equal(result.step?.format, 'plain');
-  assert.equal(result.step?.externalUrl, 'https://auth.example/device');
-  assert.deepEqual(result.step?.deviceCode, {
-    code: 'ABCD-1234',
-    expiresInMinutes: 10,
-    message: 'Enter this code',
-  });
-  assert.deepEqual(result.step?.futureMetadata, { source: 'gateway' });
 });
 
-test('wizard client preserves a future plugin step type as a readable fallback', async () => {
-  const client = new OpenClawWizardClient(async () => ({
-    sessionId: 'session-future-channel',
-    done: false,
-    status: 'running',
-    step: {
-      id: 'third-party-auth',
-      type: 'browser-approval',
-      format: 'markdown',
-      title: 'Third-party authorization',
-      message: 'Complete authorization in the provider application.',
-      futureMetadata: { providerOwnsPolling: true },
-    },
-  }));
-
-  const result = await client.start();
-
-  assert.equal(result.step?.type, 'browser-approval');
-  assert.equal(result.step?.format, 'markdown');
-  assert.equal(result.step?.message, 'Complete authorization in the provider application.');
-  assert.deepEqual(result.step?.futureMetadata, { providerOwnsPolling: true });
+test('wizard client rejects fields and step types outside the installed schema', async () => {
+  for (const step of [
+    { id: 'external', type: 'note', externalUrl: 'https://auth.example/device' },
+    { id: 'device', type: 'note', deviceCode: { code: 'ABCD-1234' } },
+    { id: 'future', type: 'browser-approval', format: 'markdown' },
+  ]) {
+    const client = new OpenClawWizardClient(async () => ({
+      sessionId: 'session-invalid',
+      done: false,
+      status: 'running',
+      step,
+    }));
+    await assert.rejects(() => client.start(), /missing the next step/);
+  }
 });
 
 test('wizard client rejects malformed gateway responses', async () => {

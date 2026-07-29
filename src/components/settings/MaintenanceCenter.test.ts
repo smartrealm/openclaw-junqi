@@ -68,7 +68,7 @@ test('BUG-M04 findings and Gateway failures have application-native actions', ()
   const settings = source('src/pages/SettingsPage.tsx');
   const center = source('src/components/settings/MaintenanceCenter.tsx');
   assert.match(settings, /category === 'mcp' \? 'tools' : category === 'security' \? 'secrets' : 'advanced'/);
-  assert.match(settings, /onRecoverGateway=\{\(\) => gatewayManager\.ensureRunning\(\)\}/);
+  assert.match(settings, /onRecoverGateway=\{\(\) => gatewayLifecycle\.recover\('settings-maintenance'\)\}/);
   assert.match(center, /onOpenConfig\(category\)/);
   assert.match(center, /onRecoverGateway[\s\S]*gatewayRecovering[\s\S]*检查并恢复 Gateway/);
 });

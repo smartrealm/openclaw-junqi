@@ -214,7 +214,7 @@ pub(super) async fn persist_verified_download_cache(cache: &Path, source: &Path)
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
 pub(super) async fn download_with_fallback(
     request: DownloadRequest<'_>,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<u64, String> {
     download_with_fallback_with_budget(request, DependencyInstallBudget::new(), operation).await
 }
@@ -223,7 +223,7 @@ pub(super) async fn download_with_fallback(
 pub(super) async fn download_with_fallback_with_budget(
     request: DownloadRequest<'_>,
     budget: DependencyInstallBudget,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<u64, String> {
     operation.ensure_active()?;
     let DownloadRequest {
@@ -332,7 +332,7 @@ pub(super) async fn download_with_fallback_with_budget(
         })?;
         let connection = tokio::select! {
             response = tokio::time::timeout(connect_timeout, client.get(url).send()) => response,
-            _ = operation.cancelled() => return Err(DEPENDENCY_INSTALL_CANCELLED_MESSAGE.into()),
+            _ = operation.cancelled() => return Err(SETUP_OPERATION_CANCELLED_MESSAGE.into()),
         };
         let mut response = match connection {
             Ok(result) => match result {
@@ -426,7 +426,7 @@ pub(super) async fn download_with_fallback_with_budget(
                 _ = operation.cancelled() => {
                     drop(file);
                     let _ = tokio::fs::remove_file(destination).await;
-                    return Err(DEPENDENCY_INSTALL_CANCELLED_MESSAGE.into());
+                    return Err(SETUP_OPERATION_CANCELLED_MESSAGE.into());
                 }
             };
             let chunk = match chunk_result {
@@ -578,7 +578,7 @@ pub(super) fn extract_zip(
     dest: &Path,
     strip_top_level: bool,
     progress: f64,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<(), String> {
     operation.ensure_active()?;
     let file =
@@ -642,7 +642,7 @@ pub(super) fn extract_tar_gz(
     archive: &Path,
     dest: &Path,
     progress: f64,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<(), String> {
     operation.ensure_active()?;
     let file =
@@ -680,7 +680,7 @@ pub(super) async fn extract_node_archive(
     stage_container: &Path,
     version: &str,
     platform: ManagedNodePlatform,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<PathBuf, String> {
     operation.ensure_active()?;
     match platform.archive_format {

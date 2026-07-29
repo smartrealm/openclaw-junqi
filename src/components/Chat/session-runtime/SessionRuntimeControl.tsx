@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, LoaderCircle } from 'lucide-react';
+import { Check, ChevronDown, LoaderCircle, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
@@ -21,7 +21,7 @@ function ProviderIcon({ providerId }: { providerId: string }) {
 export function SessionRuntimeControl() {
   const { t } = useTranslation();
   const availableModels = useChatStore((state) => state.availableModels);
-  const { activeSessionKey, committed, saving, apply } = useSessionRuntimeSettings();
+  const { activeSessionKey, committed, saving, apply, restoreDefaultModel } = useSessionRuntimeSettings();
   const [open, setOpen] = useState(false);
   const [draftModelId, setDraftModelId] = useState<string | null>(committed.modelId);
   const [draftThinking, setDraftThinking] = useState<SessionThinkingLevel>(committed.thinking);
@@ -29,7 +29,6 @@ export function SessionRuntimeControl() {
   const rootRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => groupSessionModels(availableModels), [availableModels]);
   const activeModel = availableModels.find((model) => model.id === committed.modelId);
-  const draftModel = availableModels.find((model) => model.id === draftModelId);
   const selectedGroup = groups.find((group) => group.providerId === providerId) ?? groups[0];
   const hasChanges = draftModelId !== committed.modelId || draftThinking !== committed.thinking;
 
@@ -64,10 +63,6 @@ export function SessionRuntimeControl() {
 
   const modelLabel = modelDisplayName(activeModel, committed.modelId) || t('config.notSet');
   const thinkingLabel = t(`titlebar.thinking.levels.${committed.thinking}`);
-  const draftProviderLabel = draftModelId
-    ? getProviderDisplayLabel(modelProviderId(draftModelId))
-    : t('config.notSet');
-
   return (
     <div ref={rootRef} className="relative min-w-0">
       <button
@@ -183,12 +178,19 @@ export function SessionRuntimeControl() {
           </div>
 
           <div className="flex items-center justify-between gap-2 border-t border-aegis-menu-border px-3 py-2.5">
-            <div className="min-w-0 truncate text-[10px] text-aegis-text-dim">
-              {t('input.sessionRuntimeDraft', {
-                provider: draftProviderLabel,
-                model: modelDisplayName(draftModel, draftModelId),
-              })}
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void restoreDefaultModel()
+                  .then((updated) => { if (updated) setOpen(false); });
+              }}
+              disabled={saving}
+              title={t('input.useDefaultModelHint')}
+              className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-md border border-aegis-border px-3 text-[11px] text-aegis-text-muted transition-colors hover:border-aegis-border-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <RotateCcw size={12} className="shrink-0" />
+              <span className="truncate">{t('input.useDefaultModel')}</span>
+            </button>
             <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"

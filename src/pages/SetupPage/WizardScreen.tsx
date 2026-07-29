@@ -152,23 +152,18 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
   const { t } = useTranslation();
   const step = flow.wizardStep;
   const [value, setValue] = useState<unknown>(() => step ? wizardInitialValue(step) : undefined);
-  const [deviceCodeCopied, setDeviceCodeCopied] = useState(false);
   const [terminalQr, setTerminalQr] = useState<OpenClawTerminalQrMatrix | null>(null);
   const [terminalQrCaptureActive, setTerminalQrCaptureActive] = useState(false);
   const autoSubmittedQrStepRef = useRef<string | null>(null);
   const autoPolledProgressStepRef = useRef<string | null>(null);
   const terminalQrStartedAtRef = useRef(0);
-  const wizardScanQrUrl = resolveOpenClawWizardQrUrl(
-    step?.message,
-    typeof step?.externalUrl === "string" ? step.externalUrl : undefined,
-  );
+  const wizardScanQrUrl = resolveOpenClawWizardQrUrl(step?.message);
   const autoAdvanceQr = shouldAutoAdvanceOpenClawWizardQr(step?.message, wizardScanQrUrl ?? undefined);
   const terminalQrFallback = isOpenClawWizardQrMessage(step?.message) && !wizardScanQrUrl;
   const autoPollProgress = step?.type === "progress" && step.executor === "gateway";
 
   useEffect(() => {
     setValue(step ? wizardInitialValue(step) : undefined);
-    setDeviceCodeCopied(false);
   }, [step?.id]);
 
   useEffect(() => {
@@ -266,7 +261,6 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
   // Gateway owns wizard presentation and language. Keep its rendered step
   // intact so local, remote, and externally managed Gateways behave alike.
   const presentedStep = step;
-  const deviceCode = presentedStep.deviceCode;
   const options = Array.isArray(presentedStep.options) ? presentedStep.options : [];
   const selectedValues = Array.isArray(value) ? value : [];
   const toggleMulti = (optionValue: unknown) => {
@@ -289,15 +283,6 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
     : presentedStep.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。");
   const completionStep = isOpenClawWizardCompletionStep(presentedStep);
   const nonBlockingProbeFailure = isOpenClawWizardNonBlockingProbeFailure(presentedStep);
-  const copyWizardDeviceCode = async () => {
-    if (!deviceCode?.code) return;
-    try {
-      await navigator.clipboard.writeText(deviceCode.code);
-      setDeviceCodeCopied(true);
-    } catch {
-      setDeviceCodeCopied(false);
-    }
-  };
   const submitCurrentStep = async () => {
     if (terminalQrFallback) {
       terminalQrStartedAtRef.current = Date.now() - 2_000;
@@ -322,8 +307,8 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
       subtitle={wizardSubtitle}
       logs={logs}
       previousAction={{
-        label: t("setup.previousStep", "上一步"),
-        onClick: flow.wizardCanGoBack ? flow.backWizard : flow.goBack,
+        label: t("setup.wizard.pauseAndReturn", "暂停并返回"),
+        onClick: flow.goBack,
         disabled: flow.wizardSubmitting,
       }}
       nextAction={{
@@ -433,33 +418,6 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
                     : t('setup.wizard.terminalQrWaiting', '正在等待插件输出二维码…')}
                 </p>
               </div>
-            )}
-          </div>
-        )}
-        {(presentedStep.externalUrl || deviceCode) && (
-          <div className="space-y-3 border-t border-aegis-border pt-4">
-            {deviceCode && (
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <code className="block break-all font-mono text-lg font-semibold text-aegis-text" dir="ltr">{deviceCode.code}</code>
-                  {deviceCode.message && deviceCode.message !== presentedStep.message && (
-                    <p className="mt-1 text-xs leading-5 text-aegis-text-muted">{deviceCode.message}</p>
-                  )}
-                  {deviceCode.expiresInMinutes && (
-                    <p className="mt-1 text-xs text-aegis-text-dim">{t("setup.wizard.deviceCodeExpires", { count: deviceCode.expiresInMinutes, defaultValue: "Expires in {{count}} minutes" })}</p>
-                  )}
-                </div>
-                <button type="button" onClick={() => void copyWizardDeviceCode()} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-aegis-border px-3 text-sm font-semibold text-aegis-text-secondary hover:border-aegis-primary/40 hover:text-aegis-text">
-                  <Copy size={15} />
-                  {deviceCodeCopied ? t("common.copied", "Copied") : t("common.copy", "Copy")}
-                </button>
-              </div>
-            )}
-            {presentedStep.externalUrl && (
-              <button type="button" onClick={() => void openWizardExternalUrl(presentedStep.externalUrl)} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-aegis-primary px-3 text-sm font-semibold text-aegis-btn-primary-text hover:bg-[rgb(var(--aegis-primary-hover))]">
-                <ExternalLink size={15} />
-                {t("setup.wizard.openAuthorization", "Open authorization")}
-              </button>
             )}
           </div>
         )}

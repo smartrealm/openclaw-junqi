@@ -1,22 +1,26 @@
-//! Dependency-install operation lifecycle: cancellation, mutual exclusion,
+//! Setup operation lifecycle: cancellation, mutual exclusion,
 //! time budgets, and controlled child-process supervision.
 
 use super::*;
 
-/// The dependency installer is intentionally a separate operation from the
-/// surrounding setup flow. It lets a UI run cancel exactly the Node.js or Git
-/// work it started without a late cancel request affecting a newer retry.
+/// Native setup work is registered independently from the surrounding UI flow.
+/// A run can cancel exactly the process it started without a late request
+/// affecting a newer retry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DependencyInstallTool {
+pub(crate) enum SetupOperationKind {
     Node,
     Git,
+    OpenClaw,
+    DockerImage,
 }
 
-impl DependencyInstallTool {
-    pub(super) fn step(self) -> &'static str {
+impl SetupOperationKind {
+    pub(crate) fn step(self) -> &'static str {
         match self {
             Self::Node => "node",
             Self::Git => "git",
+            Self::OpenClaw => "openclaw",
+            Self::DockerImage => "pull",
         }
     }
 
@@ -24,17 +28,19 @@ impl DependencyInstallTool {
         match self {
             Self::Node => "Node.js",
             Self::Git => "Git",
+            Self::OpenClaw => "OpenClaw",
+            Self::DockerImage => "OpenClaw Docker image",
         }
     }
 }
 
 #[derive(Clone)]
-pub(super) struct DependencyInstallCancellation {
+pub(crate) struct SetupOperationCancellation {
     pub(super) requested: Arc<AtomicBool>,
     pub(super) changes: tokio::sync::watch::Sender<bool>,
 }
 
-impl DependencyInstallCancellation {
+impl SetupOperationCancellation {
     pub(super) fn new() -> Self {
         let (changes, _) = tokio::sync::watch::channel(false);
         Self {
@@ -67,97 +73,94 @@ impl DependencyInstallCancellation {
 }
 
 #[derive(Clone)]
-pub(super) struct ActiveDependencyInstallOperation {
+pub(crate) struct ActiveSetupOperation {
     pub(super) app: tauri::AppHandle,
-    pub(super) tool: DependencyInstallTool,
-    pub(super) cancellation: DependencyInstallCancellation,
+    pub(super) kind: SetupOperationKind,
+    pub(super) cancellation: SetupOperationCancellation,
 }
 
 #[derive(Default)]
-pub(super) struct DependencyInstallOperationCoordinator {
-    pub(super) active: HashMap<String, ActiveDependencyInstallOperation>,
+pub(crate) struct SetupOperationCoordinator {
+    pub(super) active: HashMap<String, ActiveSetupOperation>,
 }
 
-pub(super) fn dependency_install_operations(
-) -> &'static Mutex<DependencyInstallOperationCoordinator> {
-    DEPENDENCY_INSTALL_OPERATIONS
-        .get_or_init(|| Mutex::new(DependencyInstallOperationCoordinator::default()))
+pub(crate) fn setup_operations() -> &'static Mutex<SetupOperationCoordinator> {
+    SETUP_OPERATIONS.get_or_init(|| Mutex::new(SetupOperationCoordinator::default()))
 }
 
-pub(super) fn lock_dependency_install_operations(
-) -> std::sync::MutexGuard<'static, DependencyInstallOperationCoordinator> {
-    dependency_install_operations()
+pub(crate) fn lock_setup_operations() -> std::sync::MutexGuard<'static, SetupOperationCoordinator> {
+    setup_operations()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// An RAII lease for one cancellable Node.js or Git install. The coordinator
+/// An RAII lease for one cancellable native setup action. The coordinator
 /// only stores active leases; dropping a completed or failed lease removes its
 /// identifier so a later retry can reuse neither its cancellation signal nor
 /// its progress ownership.
-pub(super) struct DependencyInstallOperation {
+pub(crate) struct SetupOperation {
     pub(super) id: String,
-    pub(super) cancellation: DependencyInstallCancellation,
+    pub(super) cancellation: SetupOperationCancellation,
 }
 
-impl DependencyInstallOperation {
-    pub(super) fn begin(
+impl SetupOperation {
+    pub(crate) fn begin(
         app: &tauri::AppHandle,
-        tool: DependencyInstallTool,
+        kind: SetupOperationKind,
         requested_id: Option<String>,
     ) -> Result<Self, String> {
         let id = match requested_id {
             Some(id) => {
                 let id = id.trim();
                 if id.is_empty()
-                    || id.len() > DEPENDENCY_INSTALL_OPERATION_ID_MAX_LEN
+                    || id.len() > SETUP_OPERATION_ID_MAX_LEN
                     || id.chars().any(char::is_control)
                 {
-                    return Err("Invalid dependency installation operation identifier".into());
+                    return Err("Invalid setup operation identifier".into());
                 }
                 id.to_owned()
             }
-            None => format!("internal-dependency-install-{}", uuid::Uuid::new_v4()),
+            None => format!("internal-setup-operation-{}", uuid::Uuid::new_v4()),
         };
-        let cancellation = DependencyInstallCancellation::new();
-        let mut coordinator = lock_dependency_install_operations();
+        let cancellation = SetupOperationCancellation::new();
+        let mut coordinator = lock_setup_operations();
         if coordinator.active.contains_key(&id) {
             return Err(format!(
-                "A dependency installation is already active for this setup operation ({})",
-                tool.label()
+                "A setup operation is already active for this identifier ({})",
+                kind.label()
             ));
         }
         coordinator.active.insert(
             id.clone(),
-            ActiveDependencyInstallOperation {
+            ActiveSetupOperation {
                 app: app.clone(),
-                tool,
+                kind,
                 cancellation: cancellation.clone(),
             },
         );
         Ok(Self { id, cancellation })
     }
 
-    pub(super) fn ensure_active(&self) -> Result<(), String> {
+    pub(crate) fn ensure_active(&self) -> Result<(), String> {
         if self.cancellation.is_requested() {
-            Err(DEPENDENCY_INSTALL_CANCELLED_MESSAGE.into())
+            Err(SETUP_OPERATION_CANCELLED_MESSAGE.into())
         } else {
             Ok(())
         }
     }
 
-    pub(super) fn cancellation_requested(&self) -> bool {
+    pub(crate) fn cancellation_requested(&self) -> bool {
         self.cancellation.is_requested()
     }
 
-    pub(super) async fn cancelled(&self) {
+    pub(crate) async fn cancelled(&self) {
         self.cancellation.cancelled().await;
     }
 }
 
-impl Drop for DependencyInstallOperation {
+impl Drop for SetupOperation {
     fn drop(&mut self) {
-        let mut coordinator = lock_dependency_install_operations();
+        let mut coordinator = lock_setup_operations();
         let is_current = coordinator.active.get(&self.id).is_some_and(|active| {
             Arc::ptr_eq(&active.cancellation.requested, &self.cancellation.requested)
         });
@@ -167,38 +170,35 @@ impl Drop for DependencyInstallOperation {
     }
 }
 
-pub(super) async fn wait_for_dependency_install_lock<'a>(
+pub(super) async fn wait_for_setup_operation_lock<'a>(
     lock: &'a tokio::sync::Mutex<()>,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<tokio::sync::MutexGuard<'a, ()>, String> {
     tokio::select! {
         guard = lock.lock() => {
             operation.ensure_active()?;
             Ok(guard)
         }
-        _ = operation.cancelled() => Err(DEPENDENCY_INSTALL_CANCELLED_MESSAGE.into()),
+        _ = operation.cancelled() => Err(SETUP_OPERATION_CANCELLED_MESSAGE.into()),
     }
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DependencyInstallCancellationResult {
+pub struct SetupOperationCancellationResult {
     pub accepted: bool,
     pub queued: bool,
 }
 
-/// Request cancellation for one frontend-owned dependency install. A Windows
+/// Request cancellation for one frontend-owned setup action. A Windows
 /// UAC prompt cannot be interrupted while ShellExecuteExW is inside the OS,
 /// so cancellation is reported as queued. As soon as a process handle is
 /// available, the normal process-tree cleanup path terminates and reaps it.
 #[tauri::command]
-pub fn cancel_dependency_install(operation_id: String) -> DependencyInstallCancellationResult {
-    let active = lock_dependency_install_operations()
-        .active
-        .get(&operation_id)
-        .cloned();
+pub fn cancel_setup_operation(operation_id: String) -> SetupOperationCancellationResult {
+    let active = lock_setup_operations().active.get(&operation_id).cloned();
     let Some(active) = active else {
-        return DependencyInstallCancellationResult {
+        return SetupOperationCancellationResult {
             accepted: false,
             queued: false,
         };
@@ -207,14 +207,14 @@ pub fn cancel_dependency_install(operation_id: String) -> DependencyInstallCance
     active.cancellation.request();
     emit(
         &active.app,
-        active.tool.step(),
+        active.kind.step(),
         &format!(
             "Cancellation requested. JunQi is safely stopping the active {} installer before setup continues.",
-            active.tool.label()
+            active.kind.label()
         ),
         0.0,
     );
-    DependencyInstallCancellationResult {
+    SetupOperationCancellationResult {
         accepted: true,
         queued: true,
     }
@@ -363,7 +363,7 @@ pub(super) enum ControlledProcessWaitError {
 pub(super) async fn wait_for_controlled_child<F>(
     child: &mut tokio::process::Child,
     policy: ControlledProcessPolicy,
-    operation: Option<&DependencyInstallOperation>,
+    operation: Option<&SetupOperation>,
     mut report_heartbeat: F,
 ) -> Result<std::process::ExitStatus, ControlledProcessWaitError>
 where
@@ -372,7 +372,7 @@ where
     let deadline = std::time::Instant::now() + policy.timeout;
     report_heartbeat();
     loop {
-        if operation.is_some_and(DependencyInstallOperation::cancellation_requested) {
+        if operation.is_some_and(SetupOperation::cancellation_requested) {
             let cleanup = terminate_process_tree_confirmed(child, child.id()).await;
             return match cleanup {
                 Ok(()) => Err(ControlledProcessWaitError::Cancelled),
@@ -452,8 +452,8 @@ mod tests {
     }
     #[tokio::test]
     async fn dependency_install_cancellation_wakes_waiters_without_reusing_the_signal() {
-        let first = DependencyInstallCancellation::new();
-        let second = DependencyInstallCancellation::new();
+        let first = SetupOperationCancellation::new();
+        let second = SetupOperationCancellation::new();
         let waiting = first.clone();
         let waiter = tokio::spawn(async move {
             waiting.cancelled().await;

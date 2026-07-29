@@ -21,7 +21,6 @@ import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPersona';
 import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
-import { debugWarn } from '@/utils/debugLog';
 import { applyPersonaToSessionDraft } from '@/utils/personaDraft';
 import { useOptionalCollaborationChat } from './CollaborationChatProvider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -831,8 +830,6 @@ export function ChatTabs() {
     connecting,
     tokenUsage,
     currentThinking,
-    currentModel,
-    manualModelOverride,
   } = useChatStore();
 
   // ── Drag-to-reorder sensors ──
@@ -953,18 +950,12 @@ export function ChatTabs() {
 
   const handleCreateDesktopSession = useCallback((agentId: string, persona?: SkillPersona | null) => {
     const desktopKey = createAgentSessionKey(agentId);
-    const sourceMainKey = `agent:${agentId}:main`;
-    const sourceMainSession = sessions.find((session) => session.key === sourceMainKey);
-    const inheritedModel =
-      sourceMainSession?.model
-      ?? (sourceMainKey === activeSessionKey ? (manualModelOverride ?? currentModel) : null);
 
     useChatStore.getState().addLocalSession({
       key: desktopKey,
-      label: '新会话',
+      label: t('sidebar.newSession', 'New session'),
       agentId,
       createdAt: Date.now(),
-      model: inheritedModel ?? undefined,
     });
     setShowNewPicker(false);
     setPendingPersona(null);
@@ -973,18 +964,7 @@ export function ChatTabs() {
       applyPersonaToSessionDraft(desktopKey, persona);
     }
 
-    if (!inheritedModel) return;
-
-    useChatStore.getState().setManualModelOverride(inheritedModel);
-    void gateway.setSessionModel(inheritedModel, desktopKey)
-      .then(() => {
-        useChatStore.getState().setSessionModel(desktopKey, inheritedModel);
-        window.dispatchEvent(new Event('aegis:refresh'));
-      })
-      .catch((err) => {
-        debugWarn('models', '[ChatTabs] Failed to inherit desktop session model:', err);
-      });
-  }, [openTab, sessions, activeSessionKey, manualModelOverride, currentModel]);
+  }, [t]);
 
   const agents = useGatewayDataStore((s) => s.agents);
   const mainAgentName = agents.find((a) => a.id === 'main')?.name || t('agents.mainAgent', 'Main Agent');

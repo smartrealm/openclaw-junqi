@@ -1330,7 +1330,8 @@
     "sessionRuntimeProvider": "供應商",
     "sessionRuntimeModel": "模型",
     "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}",
-    "sessionRuntimeDraft": "{{provider}} · {{model}}"
+    "useDefaultModel": "使用預設模型",
+    "useDefaultModelHint": "清除目前會話覆蓋並遵循已設定的模型路由"
   },
   "screenshot": {
     "title": "截圖",
@@ -3144,7 +3145,7 @@
       "reclaim": "重新接管設定精靈",
       "requestTimeout": "OpenClaw 配置請求等待超時，請重新連接後繼續。",
       "cancelled": "OpenClaw 配置精靈已取消，請重試以開始新的配置會話。",
-      "cancellationLocked": "OpenClaw 正在提交持久化配置，目前無法取消。請稍候後繼續目前會話。",
+      "pauseAndReturn": "暫停並返回",
       "retry": "重試",
       "run": "執行",
       "finish": "完成",
@@ -3153,8 +3154,6 @@
       "textInput": "OpenClaw 配置值",
       "readyForStep": "此步驟由 OpenClaw 執行。",
       "nonBlockingProbeFailure": "這是渠道外掛程式返回的非阻斷檢查結果，不代表 OpenClaw 或 Gateway 安裝失敗。可以繼續完成設定精靈，啟動後再以渠道實際運行狀態為準。",
-      "openAuthorization": "打開授權頁面",
-      "deviceCodeExpires": "驗證碼將在 {{count}} 分鐘後失效",
       "checkingModel": "正在驗證所選模型…",
       "modelNotReady": "所選模型尚未通過即時驗證，請繼續完成 OpenClaw 配置。",
       "qrAlt": "掃描授權二維碼",

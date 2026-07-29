@@ -2,7 +2,11 @@ export type SessionPatchResult = {
   ok: true;
   key: string;
   entry: Record<string, unknown>;
-  resolved?: Record<string, unknown>;
+  resolved: {
+    modelProvider: string;
+    model: string;
+    [key: string]: unknown;
+  };
 };
 
 type SessionMutationRunner = <T>(sessionKey: string, operation: () => Promise<T>) => Promise<T>;
@@ -17,26 +21,50 @@ export interface SessionSettingsClientDeps {
 export class SessionSettingsResponseError extends Error {
   readonly code = 'SESSION_SETTINGS_RESPONSE_INVALID';
 
-  constructor(readonly reason: 'invalid-payload' | 'not-confirmed' | 'missing-entry') {
+  constructor(readonly reason: 'invalid-payload' | 'not-confirmed' | 'missing-entry' | 'missing-resolved-model') {
     super('SESSION_SETTINGS_RESPONSE_INVALID');
     this.name = 'SessionSettingsResponseError';
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 function confirmedPatchResult(result: unknown, sessionKey: string): SessionPatchResult {
-  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+  if (!isRecord(result)) {
     throw new SessionSettingsResponseError('invalid-payload');
   }
 
-  const response = result as Record<string, unknown>;
-  if (response.ok !== true || response.key !== sessionKey) {
+  if (result.ok !== true || result.key !== sessionKey) {
     throw new SessionSettingsResponseError('not-confirmed');
   }
-  if (!response.entry || typeof response.entry !== 'object' || Array.isArray(response.entry)) {
+  if (!isRecord(result.entry)) {
     throw new SessionSettingsResponseError('missing-entry');
   }
+  if (!isRecord(result.resolved)) {
+    throw new SessionSettingsResponseError('missing-resolved-model');
+  }
+  const resolved = result.resolved;
+  if (
+    typeof resolved.modelProvider !== 'string'
+    || !resolved.modelProvider.trim()
+    || typeof resolved.model !== 'string'
+    || !resolved.model.trim()
+  ) {
+    throw new SessionSettingsResponseError('missing-resolved-model');
+  }
 
-  return result as SessionPatchResult;
+  return {
+    ok: true,
+    key: sessionKey,
+    entry: result.entry,
+    resolved: {
+      ...resolved,
+      modelProvider: resolved.modelProvider,
+      model: resolved.model,
+    },
+  };
 }
 
 /**
@@ -59,7 +87,7 @@ export class SessionSettingsClient {
     });
   }
 
-  setModel(sessionKey: string, model: string): Promise<SessionPatchResult> {
+  setModel(sessionKey: string, model: string | null): Promise<SessionPatchResult> {
     return this.patch(sessionKey, { model }, true);
   }
 

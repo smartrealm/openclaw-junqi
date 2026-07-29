@@ -1363,7 +1363,8 @@
     "sessionRuntimeProvider": "Provider",
     "sessionRuntimeModel": "Model",
     "sessionRuntimeSummary": "{{model}}, thinking {{thinking}}",
-    "sessionRuntimeDraft": "{{provider}} · {{model}}"
+    "useDefaultModel": "Use default model",
+    "useDefaultModelHint": "Clear this session override and follow the configured model routing"
   },
   "screenshot": {
     "title": "Screenshot",
@@ -3180,7 +3181,7 @@
       "reclaim": "Take over setup",
       "requestTimeout": "The OpenClaw setup request timed out. Reconnect to continue.",
       "cancelled": "The OpenClaw setup wizard was cancelled. Retry to start a new setup session.",
-      "cancellationLocked": "OpenClaw is committing durable configuration and cannot be cancelled right now. Wait, then continue the current session.",
+      "pauseAndReturn": "Pause and return",
       "retry": "Retry",
       "run": "Run",
       "finish": "Finish",
@@ -3189,8 +3190,6 @@
       "textInput": "OpenClaw configuration value",
       "readyForStep": "OpenClaw will perform this step.",
       "nonBlockingProbeFailure": "This is a non-blocking check reported by the channel plugin; it does not mean that OpenClaw or Gateway installation failed. Continue the wizard, then verify the channel's actual runtime status after startup.",
-      "openAuthorization": "Open authorization",
-      "deviceCodeExpires": "Code expires in {{count}} minutes",
       "checkingModel": "Verifying the selected model…",
       "modelNotReady": "The selected model has not passed a live check. Continue OpenClaw setup.",
       "qrAlt": "Scan authorization QR code",

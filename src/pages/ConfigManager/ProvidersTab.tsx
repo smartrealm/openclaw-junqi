@@ -282,24 +282,6 @@ function pickFirstImageCapableModel(
   return modelIds.find((id) => isModelImageCapable(id, imageSupportMap));
 }
 
-function resolveImagePrimaryModel(
-  currentImagePrimary: string | undefined,
-  availableModelIds: string[],
-  imageSupportMap?: Map<string, boolean>,
-): string | undefined {
-  if (currentImagePrimary && !availableModelIds.includes(currentImagePrimary)) {
-    return currentImagePrimary;
-  }
-  if (
-    currentImagePrimary &&
-    availableModelIds.includes(currentImagePrimary) &&
-    isModelImageCapable(currentImagePrimary, imageSupportMap)
-  ) {
-    return currentImagePrimary;
-  }
-  return pickFirstImageCapableModel(availableModelIds, imageSupportMap);
-}
-
 function parseGatewayModelsResponse(res: unknown): GatewayModelOption[] {
   const out: GatewayModelOption[] = [];
   const pushModel = (value: any) => {
@@ -3393,32 +3375,6 @@ export function ProvidersTab({
     ])).sort((a, b) => a.localeCompare(b)),
     [videoGenerationPrimaryModel]
   );
-
-  useEffect(() => {
-    const modelIds = Object.keys(allModels);
-    if (modelIds.length === 0) return;
-    const desiredPrimary = primaryModel && modelIds.includes(primaryModel)
-      ? primaryModel
-      : modelIds[0];
-    const desiredImagePrimary = resolveImagePrimaryModel(
-      imagePrimaryModel,
-      modelIds,
-      allModelImageSupportMap
-    );
-    if (desiredPrimary === primaryModel && desiredImagePrimary === imagePrimaryModel) return;
-    onChange((prev) => ({
-      ...prev,
-      agents: {
-        ...prev.agents,
-        defaults: buildDefaultsWithResolvedModels({
-          defaults: prev.agents?.defaults,
-          models: prev.agents?.defaults?.models ?? {},
-          primary: desiredPrimary,
-          imagePrimary: desiredImagePrimary,
-        }),
-      },
-    }));
-  }, [allModelImageSupportMap, allModels, imagePrimaryModel, onChange, primaryModel]);
 
   // ── Build unified provider list ──
   const unifiedProviders = useMemo(() => buildUnifiedProviders(config), [config]);

@@ -1,4 +1,4 @@
-export type OpenClawKnownWizardStepType =
+export type OpenClawWizardStepType =
   | 'note'
   | 'select'
   | 'text'
@@ -7,21 +7,10 @@ export type OpenClawKnownWizardStepType =
   | 'progress'
   | 'action';
 
-// Keep literal autocomplete for today's protocol while allowing a newer
-// Gateway or third-party wizard to introduce a presentation type without the
-// desktop rejecting the complete response.
-export type OpenClawWizardStepType = OpenClawKnownWizardStepType | (string & {});
-
 export interface OpenClawWizardOption {
   value: unknown;
   label: string;
   hint?: string;
-}
-
-export interface OpenClawWizardDeviceCode {
-  code: string;
-  expiresInMinutes?: number;
-  message?: string;
 }
 
 export interface OpenClawWizardStep {
@@ -29,15 +18,12 @@ export interface OpenClawWizardStep {
   type: OpenClawWizardStepType;
   title?: string;
   message?: string;
-  format?: string;
+  format?: 'plain';
   options?: OpenClawWizardOption[];
   initialValue?: unknown;
   placeholder?: string;
   sensitive?: boolean;
   executor?: 'gateway' | 'client';
-  externalUrl?: string;
-  deviceCode?: OpenClawWizardDeviceCode;
-  [key: string]: unknown;
 }
 
 export interface OpenClawWizardResult {
@@ -74,36 +60,30 @@ function isWizardOption(value: unknown): value is OpenClawWizardOption {
     && (option.hint === undefined || typeof option.hint === 'string');
 }
 
-function isWizardDeviceCode(value: unknown): value is OpenClawWizardDeviceCode {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const deviceCode = value as Record<string, unknown>;
-  return typeof deviceCode.code === 'string'
-    && Boolean(deviceCode.code.trim())
-    && (deviceCode.message === undefined || typeof deviceCode.message === 'string')
-    && (deviceCode.expiresInMinutes === undefined
-      || (Number.isInteger(deviceCode.expiresInMinutes)
-        && Number(deviceCode.expiresInMinutes) >= 1
-        && Number(deviceCode.expiresInMinutes) <= 1440));
-}
-
 function normalizeWizardStep(value: unknown): OpenClawWizardStep | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
+  const allowedKeys = new Set([
+    'id', 'type', 'title', 'message', 'format', 'options', 'initialValue',
+    'placeholder', 'sensitive', 'executor',
+  ]);
+  if (Object.keys(raw).some((key) => !allowedKeys.has(key))) return null;
   if (typeof raw.id !== 'string' || !raw.id.trim()) return null;
-  if (typeof raw.type !== 'string' || !raw.type.trim()) return null;
+  if (raw.type !== 'note'
+    && raw.type !== 'select'
+    && raw.type !== 'text'
+    && raw.type !== 'confirm'
+    && raw.type !== 'multiselect'
+    && raw.type !== 'progress'
+    && raw.type !== 'action') return null;
   if (raw.title !== undefined && typeof raw.title !== 'string') return null;
   if (raw.message !== undefined && typeof raw.message !== 'string') return null;
-  if (raw.format !== undefined && typeof raw.format !== 'string') return null;
+  if (raw.format !== undefined && raw.format !== 'plain') return null;
   if (raw.options !== undefined && (!Array.isArray(raw.options) || !raw.options.every(isWizardOption))) return null;
   if (raw.placeholder !== undefined && typeof raw.placeholder !== 'string') return null;
   if (raw.sensitive !== undefined && typeof raw.sensitive !== 'boolean') return null;
   if (raw.executor !== undefined && raw.executor !== 'gateway' && raw.executor !== 'client') return null;
-  if (raw.externalUrl !== undefined && typeof raw.externalUrl !== 'string') return null;
-  if (raw.deviceCode !== undefined && !isWizardDeviceCode(raw.deviceCode)) return null;
-
-  // The Gateway is the source of truth for presentation and option identity.
-  // Keep the complete object so newer protocol metadata survives unchanged.
-  return value as OpenClawWizardStep;
+  return raw as unknown as OpenClawWizardStep;
 }
 
 export interface OpenClawWizardRequestOptions {
@@ -119,7 +99,6 @@ export type OpenClawWizardFailureKind =
   | 'already_running'
   | 'request_timeout'
   | 'cancelled'
-  | 'cancellation_locked'
   | 'unknown';
 
 type GatewayCaller = (
@@ -242,18 +221,6 @@ export class OpenClawWizardOperationSupersededError extends Error {
   }
 }
 
-/**
- * OpenClaw may lock cancellation while a durable configuration write is in
- * progress. In that case `wizard.cancel` succeeds as an RPC but reports the
- * session as still running; callers must retain and resume that session.
- */
-export class OpenClawWizardCancellationLockedError extends Error {
-  constructor() {
-    super('OpenClaw wizard is still running because cancellation is currently locked.');
-    this.name = 'OpenClawWizardCancellationLockedError';
-  }
-}
-
 function assertWizardCancelStatus(value: unknown): 'running' | 'done' | 'cancelled' | 'error' {
   if (!value || typeof value !== 'object') {
     throw new Error('OpenClaw returned an invalid wizard cancellation response.');
@@ -272,7 +239,6 @@ export class OpenClawWizardClient {
   private currentStep: OpenClawWizardStep | null = null;
   private failedStep: OpenClawWizardStep | null = null;
   private workspace: string | undefined;
-  private history: Array<{ step: OpenClawWizardStep; value: unknown }> = [];
 
   constructor(
     private readonly callGateway: GatewayCaller,
@@ -305,10 +271,6 @@ export class OpenClawWizardClient {
     return this.sessionId ?? this.failedSessionId;
   }
 
-  get canGoBack(): boolean {
-    return this.history.length > 0 && (this.sessionId !== null || this.failedStep !== null);
-  }
-
   /** Fence responses belonging to a setup screen or Gateway lifecycle that is no longer active. */
   invalidatePendingOperations(): void {
     this.operationEpoch += 1;
@@ -331,7 +293,6 @@ export class OpenClawWizardClient {
       await this.cancel();
     }
     this.workspace = workspace?.trim() || undefined;
-    this.history = [];
     this.currentStep = null;
     this.failedStep = null;
     this.failedSessionId = null;
@@ -380,7 +341,6 @@ export class OpenClawWizardClient {
       this.failedStep = submittedStep ?? result.step ?? null;
       this.failedSessionId = submittedSessionId;
     } else {
-      if (submittedStep && submittedStep.id === stepId) this.history.push({ step: submittedStep, value });
       this.currentStep = result.step ?? null;
       this.failedStep = null;
       this.failedSessionId = null;
@@ -438,46 +398,13 @@ export class OpenClawWizardClient {
   }
 
   /**
-   * Gateway exposes no wizard.back RPC. Recreate the official session and
-   * replay only answers that were already accepted, stopping at the prior
-   * step. Values remain memory-only and are never written to localStorage.
-   */
-  async back(): Promise<OpenClawWizardResult | null> {
-    if (!this.canGoBack) return null;
-    const replay = this.history.slice(0, -1).map((entry) => ({ ...entry }));
-    await this.cancel();
-    const result = await this.start(this.workspace);
-    let current = result;
-    for (const entry of replay) {
-      if (current.done || !current.step || current.step.id !== entry.step.id) {
-        throw new Error('OpenClaw wizard could not restore the previous step.');
-      }
-      current = await this.next(entry.step.id, entry.value);
-    }
-    return current;
-  }
-
-  /**
-   * Rebuilds a terminally failed official session at the same step without
-   * replaying its rejected answer. This keeps recovery deterministic while
-   * leaving all configuration writes with the Gateway.
+   * Resume a live official session. A terminal failure starts a fresh official
+   * session and lets OpenClaw read any state it durably committed; accepted
+   * answers are never retained or replayed by the desktop.
    */
   async retry(): Promise<OpenClawWizardResult> {
     if (this.sessionId) return await this.resume();
-    const failedStep = this.failedStep;
-    if (!failedStep) return await this.start(this.workspace);
-    const replay = this.history.map((entry) => ({ ...entry }));
-    let current = await this.start(this.workspace);
-    for (const entry of replay) {
-      if (current.done || !current.step || current.step.id !== entry.step.id) {
-        throw new Error('OpenClaw wizard could not restore the failed step.');
-      }
-      current = await this.next(entry.step.id, entry.value);
-    }
-    if (current.done || !current.step || current.step.id !== failedStep.id) {
-      throw new Error('OpenClaw wizard could not restore the failed step.');
-    }
-    return current;
+    return await this.start(this.workspace);
   }
 
   forgetSession(): void {
@@ -485,7 +412,6 @@ export class OpenClawWizardClient {
     this.currentStep = null;
     this.failedStep = null;
     this.failedSessionId = null;
-    this.history = [];
   }
 
   async cancel(): Promise<void> {
@@ -499,14 +425,13 @@ export class OpenClawWizardClient {
         { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
       ));
       this.assertOperationCurrent(operation);
-      // The official Gateway can reject cancellation once a durable write has
-      // started. Its RPC still succeeds but reports `running`; retain the
-      // opaque id so callers resume instead of creating a conflicting session.
-      if (status === 'running') throw new OpenClawWizardCancellationLockedError();
+      if (status === 'running') {
+        throw new Error('OpenClaw wizard cancellation did not terminate the session.');
+      }
       this.setSession(null);
     } catch (error) {
       // A server-side expiry means the session is already gone. For transport
-      // failures retain the id so a later start/back action can retry cleanup.
+      // failures retain the id so a later start action can retry cleanup.
       // Re-check the epoch before mutating: a stale cancel must never clear a
       // newer setup operation's session, even when the old RPC says not-found.
       if (isOpenClawWizardSessionLost(error)) {
@@ -526,7 +451,6 @@ export class OpenClawWizardClient {
 
 export function classifyOpenClawWizardFailure(error: unknown): OpenClawWizardFailureKind {
   if (error instanceof OpenClawWizardCancelledError) return 'cancelled';
-  if (error instanceof OpenClawWizardCancellationLockedError) return 'cancellation_locked';
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
   const record = error && typeof error === 'object' ? error as Record<string, unknown> : null;

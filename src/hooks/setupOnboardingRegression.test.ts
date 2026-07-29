@@ -50,17 +50,14 @@ function flattenMessages(value: unknown, prefix = '', result: Record<string, unk
 }
 
 test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
-  const detection = setupFlow.slice(
-    setupFlow.indexOf('const detectEnvironmentForReview'),
-    setupFlow.indexOf('const continueAfterEnvironmentReview'),
-  );
+  const detection = hookFile('useSetupEnvironmentReview');
 
   assert.match(detection, /const runId = beginRun\(\)/);
-  assert.match(detection, /const detectionWasCancelled = \(\) => \([\s\S]*?!isRunActive\(runId\) \|\| setupNavigationLeavingRef\.current/);
-  assert.match(detection, /await detectGatewayConfig\(\);\s*if \(detectionWasCancelled\(\)\) return null/);
-  assert.match(detection, /const oclaw = await checkOpenclaw\(\);\s*if \(detectionWasCancelled\(\)\) return null/);
+  assert.match(detection, /const cancelled = \(\) => !isRunActive\(runId\) \|\| navigationLeavingRef\.current/);
+  assert.match(detection, /await detectGatewayConfig\(\);\s*if \(cancelled\(\)\) return null/);
+  assert.match(detection, /const openclaw = await checkOpenclaw\(\);\s*if \(cancelled\(\)\) return null/);
   assert.match(setupFlow, /await window\.aegis\.config\.detect\(\);/);
-  assert.match(detection, /const next = await detectEnvironmentForReview\(runId\);[\s\S]*?!isRunActive\(runId\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
+  assert.match(detection, /const next = await detectEnvironment\(runId\);[\s\S]*?!isRunActive\(runId\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
 });
 
 test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () => {
@@ -185,13 +182,9 @@ test('BUG-WFR-02 every interactive wizard RPC waits for a verified Gateway conne
     setupFlow.indexOf('const submitWizardStep'),
     setupFlow.indexOf('const retryOfficialOnboarding'),
   );
-  const back = setupFlow.slice(
-    setupFlow.indexOf('const backOfficialOnboarding'),
-    setupFlow.indexOf('const reclaimOfficialOnboarding'),
-  );
 
   assert.match(submit, /await waitForGatewayConnection\(operationId\);[\s\S]*?\.next\(stepId, value\)/);
-  assert.match(back, /await waitForGatewayConnection\(operationId\);[\s\S]*?\.back\(\)/);
+  assert.doesNotMatch(setupFlow, /\.back\(\)/);
 });
 
 test('BUG-WFR-04 stale wizard operations cannot commit after setup navigation or Gateway replacement', () => {
@@ -273,14 +266,11 @@ test('BUG-ONB-36 the runtime choice presents reuse first instead of claiming eve
   const mode = screen('ModeSelectScreen');
   const zh = JSON.parse(readFileSync(new URL('../locales/zh.json', import.meta.url), 'utf8'));
 
-  const detection = setupFlow.slice(
-    setupFlow.indexOf('const detectEnvironmentForReview'),
-    setupFlow.indexOf('const continueAfterEnvironmentReview'),
-  );
+  const detection = hookFile('useSetupEnvironmentReview');
 
   assert.match(mode, /flow\.openclawStatus\?\.installed === true/);
-  assert.match(detection, /const oclaw = await checkOpenclaw\(\)/);
-  assert.doesNotMatch(detection, /selectedRuntime === "native" \? await checkOpenclaw\(\) : null/);
+  assert.match(detection, /const openclaw = await checkOpenclaw\(\)/);
+  assert.doesNotMatch(detection, /runtime === "native" \? await checkOpenclaw\(\) : null/);
   assert.match(mode, /setup\.nativeDetected/);
   assert.match(mode, /setup\.dockerReady/);
   assert.match(mode, /setup\.dockerImageWillPrepare/);
@@ -449,7 +439,7 @@ test('BUG-ONB-10 setup leaves system tools and npm cache at their native default
 test('BUG-CPI-03 macOS missing Node runs the domestic system-installer recovery path', () => {
   assert.match(setupFlow, /let setupNode = await checkSetupNode\(\)/);
   assert.doesNotMatch(setupFlow, /useMacSystemRecovery/);
-  assert.match(setupFlow, /if \(!nodeStatus\.available\)[\s\S]*?setupNode = await runDependencyInstall\([\s\S]*?installNode\(false, operationId\)/);
+  assert.match(setupFlow, /if \(!nodeStatus\.available\)[\s\S]*?setupNode = await runSetupOperation\([\s\S]*?installNode\(false, operationId\)/);
   assert.match(setupCommand, /install_macos_system_node/);
   assert.match(setupCommand, /Command::new\("\/usr\/bin\/open"\)/);
   assert.doesNotMatch(setupPage, /nodejs\.org/);
@@ -534,14 +524,13 @@ test('BUG-ONB-25 lost terminal sessions reconcile observable completion before r
   assert.ok(recovery.indexOf('return await client.start()') > recovery.indexOf('if (modelProbe.ready)'));
 });
 
-test('BUG-ONB-26 official external URL and device code remain actionable', () => {
+test('BUG-IW-04 wizard presentation stays within the installed strict schema', () => {
   const wizard = screen('WizardScreen');
-  assert.match(wizard, /presentedStep\.externalUrl/);
-  assert.match(wizard, /deviceCode\.code/);
-  assert.match(wizard, /openWizardExternalUrl\(presentedStep\.externalUrl\)/);
+  assert.doesNotMatch(wizard, /presentedStep\.externalUrl|presentedStep\.deviceCode/);
+  assert.doesNotMatch(wizardClient, /externalUrl|deviceCode|\[key: string\]/);
+  assert.match(wizardClient, /raw\.type !== 'note'/);
   assert.match(setupPage, /async function openWizardExternalUrl/);
   assert.match(setupPage, /@tauri-apps\/plugin-shell/);
-  assert.match(wizard, /navigator\.clipboard\.writeText/);
 });
 
 test('BUG-ONB-27 terminal QR notes render a bounded local image and use the system browser action', () => {
@@ -561,14 +550,14 @@ test('BUG-ONB-27 terminal QR notes render a bounded local image and use the syst
   assert.match(setupPage, /flow\.submitWizardStep\(step\.id\)/);
 });
 
-test('BUG-ONB-41 channel authorization remains vendor-neutral and future wizard steps stay visible', () => {
+test('BUG-ONB-41 channel authorization remains vendor-neutral and schema-bound', () => {
   const qr = readFileSync(new URL('../services/openclawWizardQr.ts', import.meta.url), 'utf8');
   const wizardService = readFileSync(new URL('../services/openclawWizard.ts', import.meta.url), 'utf8');
 
   assert.doesNotMatch(qr, /dingtalk|feishu|lark/i);
-  assert.match(qr, /normalizeOpenClawWizardHttpUrl\(externalUrl\)/);
-  assert.match(wizardService, /typeof raw\.type !== 'string'/);
-  assert.doesNotMatch(wizardService, /WIZARD_STEP_TYPES\.has/);
+  assert.match(qr, /extractOpenClawWizardQrUrl\(message\)/);
+  assert.match(wizardService, /raw\.type !== 'note'/);
+  assert.match(wizardService, /Object\.keys\(raw\)\.some/);
   assert.match(setupPage, /\{messageRenderedInBody && \(/);
   assert.match(setupPage, /presentedStep\.message/);
 });
@@ -652,12 +641,9 @@ test('a superseded wizard submit releases its re-entry guard', () => {
   );
 });
 
-test('wizard Back and Next share a synchronous navigation gate', () => {
-  assert.match(setupFlow, /const wizardNavigationInFlightRef = useRef<"next" \| "back" \| null>\(null\)/);
-  assert.match(
-    setupFlow,
-    /const backOfficialOnboarding[\s\S]*?if \(!wizardClientRef\.current\?\.canGoBack \|\| wizardNavigationInFlightRef\.current\) return null;\s*\n\s*const operationId = beginWizardOperation\(\);\s*\n\s*wizardNavigationInFlightRef\.current = "back";/,
-  );
+test('wizard submission has a synchronous navigation gate without simulated Back', () => {
+  assert.match(setupFlow, /const wizardNavigationInFlightRef = useRef<"next" \| null>\(null\)/);
+  assert.doesNotMatch(setupFlow, /backOfficialOnboarding|\.back\(\)|canGoBack/);
   assert.match(
     setupFlow,
     /const submitWizardStep[\s\S]*?if \(wizardNavigationInFlightRef\.current\) return null;[\s\S]*?wizardNavigationInFlightRef\.current = "next";/,
@@ -731,10 +717,7 @@ test('each setup screen highlights the stage it actually belongs to', () => {
 
 test('environment review distinguishes Docker installation from daemon readiness', () => {
   const review = screen('EnvironmentReviewScreen');
-  const redetect = setupFlow.slice(
-    setupFlow.indexOf('const redetectEnvironment'),
-    setupFlow.indexOf('// ── Docker detect'),
-  );
+  const redetect = hookFile('useSetupEnvironmentReview');
 
   assert.match(review, /const dockerInstalled = flow\.dockerStatus\?\.available === true/);
   assert.match(review, /const dockerReady = dockerInstalled && flow\.dockerStatus\?\.daemon_running === true/);
@@ -744,7 +727,7 @@ test('environment review distinguishes Docker installation from daemon readiness
   assert.match(review, /loading: flow\.checkingDocker/);
   assert.match(review, /disabled: flow\.checkingDocker/);
   assert.match(review, /setup\.recheckingEnvironmentHint/);
-  assert.match(redetect, /detectEnvironmentForReview\(runId\)/);
+  assert.match(redetect, /detectEnvironment\(runId\)/);
   assert.doesNotMatch(redetect, /navigateSetup\("detecting", "replace"\)/);
 });
 

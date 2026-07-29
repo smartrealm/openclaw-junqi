@@ -53,7 +53,6 @@ export interface SetupFlow {
   wizardStep: OpenClawWizardStep | null;
   wizardSubmitting: boolean;
   wizardActivity: string | null;
-  wizardCanGoBack: boolean;
   wizardError: string | null;
   wizardRecoveryRequired: boolean;
   needsOnboarding: boolean;
@@ -72,7 +71,6 @@ export interface SetupFlow {
   pollWizard: () => Promise<OpenClawWizardResult | null>;
   retryWizard: () => Promise<OpenClawWizardResult | null>;
   reclaimWizard: () => Promise<OpenClawWizardResult | null>;
-  backWizard: () => Promise<OpenClawWizardResult | null>;
   runNativeSetup: () => Promise<boolean>;
   runDockerSetup: () => Promise<boolean>;
   retrySetup: () => Promise<boolean>;

@@ -44,7 +44,7 @@ export interface SetupNodeStatus {
   requirement: string | null;
   requirementError: string | null;
 }
-export interface DependencyInstallCancellationResult {
+export interface SetupOperationCancellationResult {
   accepted: boolean;
   queued: boolean;
 }
@@ -150,12 +150,12 @@ export const installNode = (force = false, operationId?: string) => (
 export const installGit = (operationId?: string) => (
   invoke<string>("install_git", { operationId })
 );
-export const cancelDependencyInstall = (operationId: string) => (
-  invoke<DependencyInstallCancellationResult>("cancel_dependency_install", { operationId })
+export const cancelSetupOperation = (operationId: string) => (
+  invoke<SetupOperationCancellationResult>("cancel_setup_operation", { operationId })
 );
-export const installOpenclaw = () => invoke<string>("install_openclaw");
-export const reinstallOpenclaw = () => invoke<string>("reinstall_openclaw");
-export const relocateOpenclaw = () => invoke<string>("relocate_openclaw");
+export const installOpenclaw = (operationId?: string) => invoke<string>("install_openclaw", { operationId });
+export const reinstallOpenclaw = (operationId?: string) => invoke<string>("reinstall_openclaw", { operationId });
+export const relocateOpenclaw = (operationId?: string) => invoke<string>("relocate_openclaw", { operationId });
 export const openSetupDiagnosticsDirectory = async () => {
   const path = await invoke<string>("get_setup_diagnostics_directory");
   await invoke<void>("open_folder", { path });
@@ -169,7 +169,9 @@ export const startGateway = (port?: number) => (
   port == null ? invoke<GatewayStatus>("start_gateway") : invoke<GatewayStatus>("start_gateway", { port })
 );
 export const checkDocker = () => invoke<DockerStatus>("check_docker");
-export const pullOpenclawImage = (tag?: string) => invoke<string>("pull_openclaw_image", { tag });
+export const pullOpenclawImage = (tag?: string, operationId?: string) => (
+  invoke<string>("pull_openclaw_image", { tag, operationId })
+);
 export const startDockerGateway = (port?: number, tag?: string) => invoke<GatewayStatus>("start_docker_gateway", { port, tag });
 export const detectGatewayConfig = () => invoke<GatewayConfigInfo>("detect_gateway_config");
 export const setActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (

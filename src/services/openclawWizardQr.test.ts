@@ -59,10 +59,7 @@ test('still recognizes every channel plugin prompt that tells the user to scan',
   ]) {
     assert.equal(isOpenClawWizardQrMessage(prompt), true, prompt);
   }
-  assert.equal(
-    resolveOpenClawWizardQrUrl('Scan this QR code.', 'https://auth.third-party.example/device'),
-    'https://auth.third-party.example/device',
-  );
+  assert.equal(resolveOpenClawWizardQrUrl('Scan this QR code.'), null);
 });
 
 // @dingtalk-real-ai/dingtalk-connector 0.8.24 src/onboarding.ts
@@ -120,25 +117,22 @@ test('auto-advances any safe QR note that explicitly starts plugin authorization
   ), true);
 });
 
-test('resolves QR URLs from structured plugin fields without a channel allowlist', () => {
+test('resolves QR URLs only from the installed plain-text step contract', () => {
   assert.equal(
     resolveOpenClawWizardQrUrl(
-      'Scan this QR code and wait for authorization status.',
-      'https://auth.third-party.example/device',
+      'Scan this QR code and wait for authorization status: https://auth.third-party.example/device',
     ),
     'https://auth.third-party.example/device',
   );
   assert.equal(
     resolveOpenClawWizardQrUrl(
-      'Open this link to authorize.',
-      'https://auth.third-party.example/device',
+      'Open this link to authorize: https://auth.third-party.example/device',
     ),
     null,
   );
   assert.equal(
     resolveOpenClawWizardQrUrl(
-      'Scan this QR code.',
-      'javascript:alert(1)',
+      'Scan this QR code: javascript:alert(1)',
     ),
     null,
   );

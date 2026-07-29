@@ -131,7 +131,7 @@ test('BUG-INSTALL-12 Windows installs Git only after npm reports a missing Git p
   assert.doesNotMatch(nativeSteps, /id: "git"/);
   assert.match(
     setupFlow,
-    /await installSelectedOpenclaw\(\)[\s\S]*isMissingGitDependencyError\(error\)[\s\S]*ensureStepBefore\([\s\S]*id: "git"[\s\S]*runDependencyInstall\(runId, "git", installGit\)[\s\S]*await installSelectedOpenclaw\(\)/,
+    /runSetupOperation\(runId, "openclaw", installSelectedOpenclaw\)[\s\S]*isMissingGitDependencyError\(error\)[\s\S]*ensureStepBefore\([\s\S]*id: "git"[\s\S]*runSetupOperation\(runId, "git", installGit\)[\s\S]*runSetupOperation\(runId, "openclaw", installSelectedOpenclaw\)/,
   );
 });
 

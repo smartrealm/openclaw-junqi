@@ -218,7 +218,7 @@ export function usePluginRecovery({
           message: t("setup.dockerRepairStarting", "正在刷新选定的 Docker 镜像…"),
           level: "info",
         });
-        await pullOpenclawImage("latest");
+        await pullOpenclawImage();
         if (!isRunActive(runId)) return;
         appendSetupLog({
           source: "setup",

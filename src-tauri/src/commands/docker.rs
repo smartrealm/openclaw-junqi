@@ -1,4 +1,7 @@
 use crate::commands::gateway::{ensure_config_with_token, GatewayStatus};
+use crate::commands::setup::{
+    SetupOperation, SetupOperationKind, SETUP_OPERATION_CANCELLED_MESSAGE,
+};
 use crate::commands::setup_progress::{emit, emit_error};
 use crate::paths;
 use crate::platform;
@@ -10,6 +13,8 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const OPENCLAW_IMAGE: &str = "ghcr.io/openclaw/openclaw";
+const DEFAULT_OPENCLAW_IMAGE_TAG: &str = "latest";
+const DOCKER_OUTPUT_REAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// Stable container name owned exclusively by JunQi. Keep every Docker entry
 /// point on this constant so terminal integration and CLI helpers cannot drift
 /// from the lifecycle manager.
@@ -661,6 +666,23 @@ async fn stream_docker_output<R>(
             entries.push_back(line.to_owned());
         }
         emit(&app, "pull", line, progress);
+    }
+}
+
+async fn finish_docker_output_task(
+    stream: &str,
+    task: Option<tokio::task::JoinHandle<()>>,
+) -> Result<(), String> {
+    let Some(mut task) = task else { return Ok(()) };
+    match tokio::time::timeout(DOCKER_OUTPUT_REAP_TIMEOUT, &mut task).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(format!("docker {stream} reader failed: {error}")),
+        Err(_) => {
+            task.abort();
+            Err(format!(
+                "docker {stream} reader did not stop after process exit"
+            ))
+        }
     }
 }
 
@@ -1464,9 +1486,14 @@ pub async fn check_docker() -> Result<DockerStatus, String> {
 
 /// Pull the official OpenClaw Docker image.
 #[tauri::command]
-pub async fn pull_openclaw_image(app: AppHandle, tag: Option<String>) -> Result<String, String> {
+pub async fn pull_openclaw_image(
+    app: AppHandle,
+    tag: Option<String>,
+    operation_id: Option<String>,
+) -> Result<String, String> {
+    let operation = SetupOperation::begin(&app, SetupOperationKind::DockerImage, operation_id)?;
     paths::validate_runtime_mode(paths::OpenClawRuntimeMode::Docker)?;
-    let tag = tag.unwrap_or_else(|| "latest".to_string());
+    let tag = tag.unwrap_or_else(|| DEFAULT_OPENCLAW_IMAGE_TAG.to_string());
     let image = format!("{}:{}", OPENCLAW_IMAGE, tag);
 
     emit(&app, "pull", &format!("Pulling {}...", image), 0.0);
@@ -1502,20 +1529,38 @@ pub async fn pull_openclaw_image(app: AppHandle, tag: Option<String>) -> Result<
             Arc::clone(&tail),
         ))
     });
-    let status = match child.wait().await {
-        Ok(status) => status,
-        Err(error) => {
+    let child_pid = child.id();
+    let wait_result = tokio::select! {
+        status = child.wait() => Some(status),
+        _ = operation.cancelled() => None,
+    };
+    let status = match wait_result {
+        Some(Ok(status)) => status,
+        Some(Err(error)) => {
             let message = format!("docker pull process failed: {}", error);
             emit_error(&app, "pull", &message, None);
             return Err(message);
         }
+        None => {
+            let cleanup = crate::commands::process_control::terminate_process_tree_confirmed(
+                &mut child, child_pid,
+            )
+            .await;
+            let output = finish_docker_output_task("stdout", stdout_task)
+                .await
+                .and(finish_docker_output_task("stderr", stderr_task).await);
+            return match (cleanup, output) {
+                (Ok(()), Ok(())) => Err(SETUP_OPERATION_CANCELLED_MESSAGE.into()),
+                (process, output) => Err(format!(
+                    "{SETUP_OPERATION_CANCELLED_MESSAGE}; cleanup incomplete: {}; {}",
+                    process.err().unwrap_or_else(|| "process reaped".into()),
+                    output.err().unwrap_or_else(|| "output closed".into()),
+                )),
+            };
+        }
     };
-    if let Some(task) = stdout_task {
-        let _ = task.await;
-    }
-    if let Some(task) = stderr_task {
-        let _ = task.await;
-    }
+    finish_docker_output_task("stdout", stdout_task).await?;
+    finish_docker_output_task("stderr", stderr_task).await?;
     if !status.success() {
         let detail = tail
             .lock()
@@ -1576,7 +1621,7 @@ pub(crate) async fn start_docker_gateway_locked(
     port: Option<u16>,
     tag: Option<String>,
 ) -> Result<GatewayStatus, String> {
-    let tag = tag.unwrap_or_else(|| "latest".to_string());
+    let tag = tag.unwrap_or_else(|| DEFAULT_OPENCLAW_IMAGE_TAG.to_string());
     let image = format!("{}:{}", OPENCLAW_IMAGE, tag);
     start_docker_gateway_with_image_locked(app, port, &image).await
 }

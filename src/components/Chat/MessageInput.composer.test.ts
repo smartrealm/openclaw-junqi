@@ -39,6 +39,8 @@ test('session runtime control has a single stable composer owner', () => {
   assert.doesNotMatch(runtime, /switching \? null/);
   assert.match(settings, /activeSessionKey === sessionKey/);
   assert.match(settings, /setSessionThinking\(sessionKey, nextThinking\)/);
+  assert.match(settings, /setSessionModel\(null, sessionKey\)/);
+  assert.match(runtime, /input\.useDefaultModel/);
 });
 
 test('composer keeps dictation observable and recoverable', () => {
@@ -81,6 +83,8 @@ test('composer menu labels are localized in every shipped language', () => {
     'sessionRuntimeTitle',
     'sessionRuntimeProvider',
     'sessionRuntimeModel',
+    'useDefaultModel',
+    'useDefaultModelHint',
   ];
 
   for (const language of ['en', 'zh', 'zh-TW']) {

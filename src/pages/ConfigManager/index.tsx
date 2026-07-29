@@ -27,7 +27,6 @@ import {
   normalizeAuthProfilesFromDisk,
 } from './configUtils';
 import { deriveProviderApiKeyEnvKey, preserveProviderSecretsFromDisk } from './providerSecretResolver';
-import { getModelPrimary } from './modelReference';
 import { FloatingSaveButton, ChangesPill } from './components';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
@@ -75,39 +74,6 @@ const ChannelsTab = lazy(() => import('./ChannelsTab').then((module) => ({ defau
 const ToolsTab = lazy(() => import('./ToolsTab').then((module) => ({ default: module.ToolsTab })));
 const AdvancedTab = lazy(() => import('./AdvancedTab').then((module) => ({ default: module.AdvancedTab })));
 const SecretsTab = lazy(() => import('./SecretsTab').then((module) => ({ default: module.SecretsTab })));
-
-/// Compare two configs to detect whether the user changed *which* provider
-/// or its credentials (env vars, base URLs, models.providers). Used to
-/// decide whether the WebSocket needs a full reconnect after save — a
-/// sessions.patch alone is not enough when the active provider changes.
-function detectProviderChange(
-  prev: GatewayRuntimeConfig | null,
-  next: GatewayRuntimeConfig,
-): boolean {
-  if (!prev) return false;
-
-  // 1. env.vars — adding/removing/changing a key under a known envKey means
-  //    the new auth material is in play. Compare by the union of keys.
-  const prevEnv = (prev.env?.vars ?? {}) as Record<string, string>;
-  const nextEnv = (next.env?.vars ?? {}) as Record<string, string>;
-  const envKeys = new Set([...Object.keys(prevEnv), ...Object.keys(nextEnv)]);
-  for (const k of envKeys) {
-    if ((prevEnv[k] ?? '') !== (nextEnv[k] ?? '')) return true;
-  }
-
-  // 2. models.providers — switching active provider or its base URL counts.
-  const prevProviders = (prev.models?.providers ?? {}) as Record<string, any>;
-  const nextProviders = (next.models?.providers ?? {}) as Record<string, any>;
-  const providerIds = new Set([...Object.keys(prevProviders), ...Object.keys(nextProviders)]);
-  for (const id of providerIds) {
-    const a = prevProviders[id] ?? {};
-    const b = nextProviders[id] ?? {};
-    if ((a.baseUrl ?? '') !== (b.baseUrl ?? '')) return true;
-    if (JSON.stringify(a.models ?? {}) !== JSON.stringify(b.models ?? {})) return true;
-  }
-
-  return false;
-}
 
 export function ConfigManagerPage() {
   const { t } = useTranslation();
@@ -253,11 +219,6 @@ export function ConfigManagerPage() {
     if (!configToSave || !configPath) return false;
     setSaving(true);
 
-    // Detect whether the user changed Provider (env vars, base URLs, or
-    // models.providers). On a Provider switch the Gateway needs a fresh
-    // WebSocket so its handshake re-evaluates the new auth/credentials —
-    // a simple sessions.patch is not enough.
-    const providerChanged = detectProviderChange(originalConfig, configToSave);
     try {
       // 1. Re-read the latest version from disk to capture any external edits
       const { data: diskConfig } = await window.aegis.config.read(configPath);
@@ -293,7 +254,6 @@ export function ConfigManagerPage() {
       }
 
       // 3. Write the already validated candidate.
-      const savedPrimaryModel = getModelPrimary(toWrite.agents?.defaults?.model) ?? null;
       const writeResult = await window.aegis.config.write(configPath, toWrite);
       if (!writeResult.success) {
         throw new Error(writeResult.error || t('config.saveFailed'));
@@ -313,10 +273,9 @@ export function ConfigManagerPage() {
       setConfig(structuredClone(normalizedSavedConfig));
       setOriginalConfig(structuredClone(normalizedSavedConfig));
 
-      // Restart gateway after successful save — temporarily mark models
-      // as loading so the chat view doesn't flash "no provider" banner.
+      // Keep the last confirmed catalog mounted while the Gateway reloads.
+      // Clearing it here unmounts the composer control and causes a visible flash.
       const chatStore = (await import('@/stores/chatStore')).useChatStore;
-      chatStore.getState().setAvailableModels([]);
       chatStore.setState({ modelsLoading: true });
 
       // Restart gateway after successful save
@@ -329,25 +288,19 @@ export function ConfigManagerPage() {
             setError('');
           }
           setSaveSuccess(true);
-          window.dispatchEvent(new CustomEvent('aegis:config-saved', {
-            detail: { primaryModel: savedPrimaryModel, providerChanged },
-          }));
+          window.dispatchEvent(new Event('aegis:config-saved'));
           debugLog('app', '[Config] Apply method:', restartResult.method, restartResult.changedPaths);
         } else {
           // Save succeeded but restart failed — show warning with instructions
           setSaveSuccess(true);
-          window.dispatchEvent(new CustomEvent('aegis:config-saved', {
-            detail: { primaryModel: savedPrimaryModel, providerChanged },
-          }));
+          window.dispatchEvent(new Event('aegis:config-saved'));
           debugWarn('app', '[Config] Restart failed:', restartResult.error);
           setError(`Config saved, but gateway restart failed: ${restartResult.error || 'Unknown error'}`);
         }
       } catch {
         // restart IPC not available — still show save success
         setSaveSuccess(true);
-        window.dispatchEvent(new CustomEvent('aegis:config-saved', {
-          detail: { primaryModel: savedPrimaryModel },
-        }));
+        window.dispatchEvent(new Event('aegis:config-saved'));
         debugWarn('app', '[Config] Restart IPC unavailable');
       }
 

@@ -5,7 +5,6 @@ import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
-import { clearSessionModelPref } from '@/utils/sessionModelPrefs';
 import { debugWarn } from '@/utils/debugLog';
 import {
   gatewayMutationFailure,
@@ -69,7 +68,6 @@ function removeLocalStorageMapEntry(storageKey: string, sessionKey: string): voi
 }
 
 function clearDeletedSessionLocalPrefs(sessionKey: string): void {
-  clearSessionModelPref(sessionKey);
   removeLocalStorageMapEntry(SESSION_TOPIC_PREFS_KEY, sessionKey);
 }
 

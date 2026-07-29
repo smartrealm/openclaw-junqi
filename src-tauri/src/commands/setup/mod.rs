@@ -44,8 +44,7 @@ use std::sync::{
 static OPENCLAW_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static NODE_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static GIT_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-static DEPENDENCY_INSTALL_OPERATIONS: OnceLock<Mutex<DependencyInstallOperationCoordinator>> =
-    OnceLock::new();
+static SETUP_OPERATIONS: OnceLock<Mutex<SetupOperationCoordinator>> = OnceLock::new();
 #[cfg(windows)]
 const WINGET_NODE_LTS_PACKAGE: &str = "OpenJS.NodeJS.LTS";
 #[cfg(windows)]
@@ -75,9 +74,9 @@ const PROCESS_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::fro
 const WINDOWS_RUNTIME_SETTLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const PROCESS_REAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-const DEPENDENCY_INSTALL_OPERATION_ID_MAX_LEN: usize = 160;
-const DEPENDENCY_INSTALL_CANCELLED_MESSAGE: &str =
-    "Dependency installation was cancelled before JunQi activated a runtime";
+const SETUP_OPERATION_ID_MAX_LEN: usize = 160;
+pub(crate) const SETUP_OPERATION_CANCELLED_MESSAGE: &str =
+    "Setup operation was cancelled before JunQi activated a runtime";
 
 mod download;
 mod git;

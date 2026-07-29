@@ -74,15 +74,15 @@ test('BUG-IU-13 Windows x86 exposes a capability reason instead of pretending Do
 });
 
 test('BUG-IU-07 Docker readiness distinguishes an installed daemon from an available OpenClaw image', () => {
-  const detection = setupFlow.slice(
-    setupFlow.indexOf('// ── Docker detect after the welcome step'),
-    setupFlow.indexOf('// ── setup-progress event listener'),
+  const detection = readFileSync(
+    new URL('./useSetupFlow/useSetupEnvironmentReview.ts', import.meta.url),
+    'utf8',
   );
 
   assert.match(dockerCommand, /pub struct DockerStatus[\s\S]*?image_available: bool/);
   assert.match(dockerCommand, /args\(\["image", "inspect", &image\]\)/);
   assert.match(detection, /image_available: false/);
-  assert.match(setupFlow, /if \(dockerStatus\?\.image_available\)[\s\S]*?reusingDockerImage[\s\S]*?else \{[\s\S]*?pullOpenclawImage\("latest"\)/);
+  assert.match(setupFlow, /if \(dockerStatus\?\.image_available\)[\s\S]*?reusingDockerImage[\s\S]*?else \{[\s\S]*?pullOpenclawImage\(undefined, operationId\)/);
 });
 
 test('BUG-IU-08 an exact managed Docker container is reused while contract drift recreates it', () => {

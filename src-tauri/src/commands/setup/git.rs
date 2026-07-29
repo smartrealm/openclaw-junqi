@@ -34,8 +34,7 @@ pub(super) async fn install_git_impl(
     operation_id: Option<String>,
 ) -> Result<String, String> {
     paths::validate_runtime_overrides()?;
-    let operation =
-        DependencyInstallOperation::begin(&app, DependencyInstallTool::Git, operation_id)?;
+    let operation = SetupOperation::begin(&app, SetupOperationKind::Git, operation_id)?;
     operation.ensure_active()?;
     // See install_node_for_requirement: the Windows path must await managed
     // installer cleanup rather than cancel its owner future externally.
@@ -66,9 +65,9 @@ pub(super) async fn install_git_impl(
 pub(super) async fn install_git_impl_inner(
     app: tauri::AppHandle,
     force: bool,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<String, String> {
-    let _guard = wait_for_dependency_install_lock(
+    let _guard = wait_for_setup_operation_lock(
         GIT_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(())),
         operation,
     )
@@ -182,7 +181,7 @@ pub(super) async fn install_git_impl_inner(
 #[cfg(windows)]
 pub(super) async fn install_windows_system_git(
     app: tauri::AppHandle,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<String, String> {
     operation.ensure_active()?;
     let budget = DependencyInstallBudget::new();
@@ -248,7 +247,7 @@ pub(super) async fn install_windows_system_git(
 pub(super) async fn install_windows_system_git_from_mirrors(
     app: &tauri::AppHandle,
     budget: DependencyInstallBudget,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<String, WindowsInstallerFailure> {
     operation
         .ensure_active()
@@ -353,7 +352,7 @@ pub(super) async fn install_windows_portable_git(
     app: tauri::AppHandle,
     force: bool,
     target: PathBuf,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<String, String> {
     operation.ensure_active()?;
     let target_git = runtime_binary(&target, "git");

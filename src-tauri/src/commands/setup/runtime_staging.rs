@@ -187,12 +187,12 @@ pub(super) fn rollback_cancelled_runtime_activation(
 ) -> String {
     match activation.rollback() {
         Ok(Some(recovery)) => format!(
-            "{DEPENDENCY_INSTALL_CANCELLED_MESSAGE}; the partially activated runtime was preserved for recovery at {}",
+            "{SETUP_OPERATION_CANCELLED_MESSAGE}; the partially activated runtime was preserved for recovery at {}",
             recovery.display()
         ),
-        Ok(None) => DEPENDENCY_INSTALL_CANCELLED_MESSAGE.into(),
+        Ok(None) => SETUP_OPERATION_CANCELLED_MESSAGE.into(),
         Err(rollback_error) => format!(
-            "{DEPENDENCY_INSTALL_CANCELLED_MESSAGE}; runtime rollback also failed: {rollback_error}"
+            "{SETUP_OPERATION_CANCELLED_MESSAGE}; runtime rollback also failed: {rollback_error}"
         ),
     }
 }

@@ -51,18 +51,13 @@ export function extractOpenClawWizardQrUrl(message?: string): string | null {
 }
 
 /**
- * Resolve a QR destination from either the current plain-text convention or a
- * structured URL that a newer Gateway/plugin may expose. The message must
- * still identify the step as QR-related so OAuth/device-code links are not
- * silently reclassified as scan flows.
+ * Resolve a QR destination from the installed Gateway's plain-text step
+ * contract. Unknown structured fields are rejected by the Wizard decoder.
  */
 export function resolveOpenClawWizardQrUrl(
   message?: string,
-  externalUrl?: string,
 ): string | null {
-  if (!isOpenClawWizardQrMessage(message)) return null;
-  return normalizeOpenClawWizardHttpUrl(externalUrl)
-    ?? extractOpenClawWizardQrUrl(message);
+  return extractOpenClawWizardQrUrl(message);
 }
 
 /**

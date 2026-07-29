@@ -34,7 +34,7 @@ test("BUG-INSTALL-01 Node checksums use independent sources with an official fal
 
 test("BUG-INSTALL-02 a missing bundled npm uses the constrained runtime repair path", () => {
   assert.match(flow, /let npmStatus = setupNode\.npm/);
-  assert.match(flow, /nodeStatus\.available && !npmStatus\.available[\s\S]*?await runDependencyInstall\(runId, "node", repairSetupNodeRuntime\)/);
+  assert.match(flow, /nodeStatus\.available && !npmStatus\.available[\s\S]*?await runSetupOperation\(runId, "node", repairSetupNodeRuntime\)/);
   assert.doesNotMatch(flow, /await installNode\(true\)/);
   assert.match(api, /repairSetupNodeRuntime/);
   assert.match(setup, /pub async fn repair_setup_node_runtime/);

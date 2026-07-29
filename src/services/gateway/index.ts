@@ -772,7 +772,7 @@ export const gateway = {
   },
 
   // Session Settings
-  async setSessionModel(model: string, sessionKey = 'agent:main:main') {
+  async setSessionModel(model: string | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setModel(sessionKey, model);
   },
   async setSessionThinking(level: string | null, sessionKey = 'agent:main:main') {

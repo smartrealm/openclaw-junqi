@@ -522,7 +522,7 @@ export function SettingsPageFull() {
 
       {activeTab === 'maintenance' && (
         <MaintenanceCenter
-          onRecoverGateway={() => gatewayManager.ensureRunning()}
+          onRecoverGateway={() => gatewayLifecycle.recover('settings-maintenance')}
           onOpenConfig={(category) => {
             const tab = category === 'mcp' ? 'tools' : category === 'security' ? 'secrets' : 'advanced';
             navigate(`/config?tab=${tab}`);

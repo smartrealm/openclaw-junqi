@@ -32,13 +32,11 @@ import {
   gatewayProgress,
   type GatewayRecoveryProgress,
 } from '@/services/gateway/recoveryProgress';
-import type { ModelEntry } from '@/services/gateway/modelLoaders';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
 import {
   OPENCLAW_UPDATE_MAINTENANCE_FINISHED,
   OPENCLAW_UPDATE_MAINTENANCE_STARTED,
 } from '@/services/openclawUpdateLifecycle';
-import { clearSessionModelPref, getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
 import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
@@ -109,7 +107,6 @@ export default function App() {
     markSessionCompleted,
     setSessions,
     setAvailableModels,
-    setSessionModel: setLocalSessionModel,
   } = useChatStore();
 
   // ── Auto-Pairing State ──
@@ -282,12 +279,7 @@ export default function App() {
             ? s.sessionKey.trim()
             : '';
         if (!key) return [];
-        const persistedModel = getSessionModelPref(key);
         const gatewayModel = resolveGatewaySessionModelId(s.modelProvider, s.model);
-        const resolvedModel = gatewayModel ?? persistedModel ?? null;
-        if (gatewayModel) {
-          setSessionModelPref(key, gatewayModel);
-        }
         return [{
           key,
           sessionId: typeof s.sessionId === 'string' ? s.sessionId : undefined,
@@ -312,7 +304,7 @@ export default function App() {
           subagentRunState: typeof s.subagentRunState === 'string' ? s.subagentRunState : undefined,
           systemSent: s.systemSent === true,
           // Per-session metadata for TitleBar
-          model: resolvedModel,
+          model: gatewayModel,
           thinkingLevel: s.thinkingLevel ?? null,
           totalTokens: s.totalTokens,
           contextTokens: s.contextTokens,
@@ -338,29 +330,6 @@ export default function App() {
   // Uses Chain of Responsibility: models.list(WS) → config.get(WS) → openclaw.json(file) → agents+sessions.
   // Each strategy returns models or null (delegate to next).
   const loadAvailableModels = useCallback(async () => {
-    const applyModels = async (models: ModelEntry[]) => {
-      const state = useChatStore.getState();
-      const sessionKey = state.activeSessionKey || 'agent:main:main';
-      const activeSession = state.sessions.find((s) => s.key === sessionKey);
-      const persistedModel = activeSession?.model ?? getSessionModelPref(sessionKey) ?? state.currentModel;
-      const persistedStillAvailable = persistedModel ? models.some((m) => m.id === persistedModel) : false;
-
-      setAvailableModels(models);
-
-      const shouldAutoSelect = models.length > 0 && (!persistedModel || (!!persistedModel && !persistedStillAvailable));
-      if (!shouldAutoSelect) return;
-      const targetModel = persistedStillAvailable ? persistedModel! : models[0].id;
-      if (targetModel === persistedModel) return;
-
-      try {
-        await gateway.setSessionModel(targetModel, sessionKey);
-        state.setSessionModel(sessionKey, targetModel);
-        state.setManualModelOverride(targetModel);
-        setSessionModelPref(sessionKey, targetModel);
-        setTimeout(() => void loadSessions(), 500);
-      } catch (err) { debugWarn('models', '[Models] Failed to auto-select model:', err); }
-    };
-
     const [
       { ModelLoaderChain, GatewayModelsListLoader, ConfigGetLoader, FileReadLoader, AgentsSessionLoader },
       {
@@ -403,8 +372,8 @@ export default function App() {
         localStorage.setItem('aegis-provider-health', JSON.stringify({ profiles, providers, modelDefs, loadedModels: models.length }));
       }
     } catch {}
-    await applyModels(models);
-  }, [setAvailableModels, loadSessions]);
+    setAvailableModels(models);
+  }, [setAvailableModels]);
 
   // ── Request notification permission (Web Notification API) ──
   // Notification access is not an onboarding prerequisite. Defer the prompt
@@ -611,7 +580,6 @@ export default function App() {
     return subscribeSessionIdentityTransitions((transition) => {
       sessionTranscriptFence.invalidate(transition.sessionKey);
       gateway.invalidateChatSession(transition.sessionKey);
-      clearSessionModelPref(transition.sessionKey);
       useCollaborationStore.getState().clearSessionProjection({
         sessionKey: transition.sessionKey,
         sessionId: transition.previousSessionId,
@@ -982,33 +950,9 @@ export default function App() {
     const handleModelChanged = () => void loadSessions();
     window.addEventListener('aegis:model-changed', handleModelChanged);
 
-    // Listen for config saved (e.g. from Config Manager) → refresh available
-    // models after a short delay so the gateway can restart/reload. When the
-    // user switched Provider (env vars / base URL / models.providers), the
-    // existing WebSocket is still using the old auth material — disconnect
-    // and let ensureRunning re-handshake so the new credentials take effect.
-    const handleConfigSaved = (event: Event) => {
-      const detail = (event as CustomEvent)?.detail ?? {};
-      const primaryModel = detail.primaryModel;
-      const providerChanged = detail.providerChanged === true;
-      if (typeof primaryModel === 'string' && primaryModel.trim()) {
-        const st = useChatStore.getState();
-        const key = st.activeSessionKey || 'agent:main:main';
-        const model = primaryModel.trim();
-        void gateway.setSessionModel(model, key)
-          .then(() => {
-            st.setManualModelOverride(model);
-            setLocalSessionModel(key, model);
-            setSessionModelPref(key, model);
-          })
-          .catch((err) => {
-            debugWarn('models', '[Models] Failed to apply saved primary model to active session:', err);
-          });
-      }
-      if (providerChanged) {
-        void gatewayManager.ensureRunning()
-          .catch(() => { /* handled by status poller */ });
-      }
+    // Configuration and session selection are separate domains. The config
+    // manager already owns the restart; this listener only reloads its model view.
+    const handleConfigSaved = () => {
       setTimeout(() => loadAvailableModels(), 1500);
     };
     window.addEventListener('aegis:config-saved', handleConfigSaved);

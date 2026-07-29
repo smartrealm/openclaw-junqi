@@ -250,7 +250,7 @@ pub(super) async fn wait_for_node_runtime_settle(
     app: &tauri::AppHandle,
     requirement: &NodeRuntimeRequirement,
     budget: DependencyInstallBudget,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<crate::commands::system::NodeRuntimeContract, WindowsInstallerFailure> {
     let remaining = budget.remaining().unwrap_or_default();
     let deadline = std::time::Instant::now() + remaining.min(WINDOWS_RUNTIME_SETTLE_TIMEOUT);
@@ -283,7 +283,7 @@ pub(super) async fn wait_for_node_runtime_settle(
             _ = tokio::time::sleep(remaining.min(PROCESS_HEARTBEAT_INTERVAL)) => {}
             _ = operation.cancelled() => {
                 return Err(WindowsInstallerFailure::cancelled(
-                    DEPENDENCY_INSTALL_CANCELLED_MESSAGE,
+                    SETUP_OPERATION_CANCELLED_MESSAGE,
                 ));
             }
         }
@@ -299,7 +299,7 @@ pub(super) async fn wait_for_node_runtime_settle(
 pub(super) async fn wait_for_git_runtime_settle(
     app: &tauri::AppHandle,
     budget: DependencyInstallBudget,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<crate::commands::system::GitStatus, WindowsInstallerFailure> {
     let remaining = budget.remaining().unwrap_or_default();
     let deadline = std::time::Instant::now() + remaining.min(WINDOWS_RUNTIME_SETTLE_TIMEOUT);
@@ -340,7 +340,7 @@ pub(super) async fn wait_for_git_runtime_settle(
             _ = tokio::time::sleep(remaining.min(PROCESS_HEARTBEAT_INTERVAL)) => {}
             _ = operation.cancelled() => {
                 return Err(WindowsInstallerFailure::cancelled(
-                    DEPENDENCY_INSTALL_CANCELLED_MESSAGE,
+                    SETUP_OPERATION_CANCELLED_MESSAGE,
                 ));
             }
         }
@@ -393,8 +393,7 @@ pub async fn repair_setup_node_runtime(
     app: tauri::AppHandle,
     operation_id: Option<String>,
 ) -> Result<SetupNodeStatus, String> {
-    let operation =
-        DependencyInstallOperation::begin(&app, DependencyInstallTool::Node, operation_id)?;
+    let operation = SetupOperation::begin(&app, SetupOperationKind::Node, operation_id)?;
     paths::validate_runtime_overrides()?;
     let requirement = setup_node_requirement_for_operation(&operation).await?;
     if let Ok(runtime) = resolve_complete_node_runtime_contract(&requirement).await {
@@ -414,8 +413,7 @@ pub async fn install_node(
     force: Option<bool>,
     operation_id: Option<String>,
 ) -> Result<SetupNodeStatus, String> {
-    let operation =
-        DependencyInstallOperation::begin(&app, DependencyInstallTool::Node, operation_id)?;
+    let operation = SetupOperation::begin(&app, SetupOperationKind::Node, operation_id)?;
     paths::validate_runtime_overrides()?;
     let requirement = setup_node_requirement_for_operation(&operation).await?;
     let runtime = install_node_for_requirement_with_operation(
@@ -458,13 +456,12 @@ pub(super) async fn install_node_for_requirement(
     force: bool,
     operation_id: Option<String>,
 ) -> Result<crate::commands::system::NodeRuntimeContract, String> {
-    let operation =
-        DependencyInstallOperation::begin(&app, DependencyInstallTool::Node, operation_id)?;
+    let operation = SetupOperation::begin(&app, SetupOperationKind::Node, operation_id)?;
     install_node_for_requirement_with_operation(app, requirement, force, &operation).await
 }
 
 pub(super) async fn setup_node_requirement_for_operation(
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<NodeRuntimeRequirement, String> {
     operation.ensure_active()?;
     tokio::select! {
@@ -472,7 +469,7 @@ pub(super) async fn setup_node_requirement_for_operation(
             operation.ensure_active()?;
             result
         }
-        _ = operation.cancelled() => Err(DEPENDENCY_INSTALL_CANCELLED_MESSAGE.into()),
+        _ = operation.cancelled() => Err(SETUP_OPERATION_CANCELLED_MESSAGE.into()),
     }
 }
 
@@ -480,7 +477,7 @@ pub(super) async fn install_node_for_requirement_with_operation(
     app: tauri::AppHandle,
     requirement: NodeRuntimeRequirement,
     force: bool,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     operation.ensure_active()?;
     // Windows system installers own elevated child processes. Their explicit
@@ -515,9 +512,9 @@ pub(super) async fn install_node_for_requirement_inner(
     app: tauri::AppHandle,
     requirement: NodeRuntimeRequirement,
     force: bool,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<crate::commands::system::NodeRuntimeContract, String> {
-    let _guard = wait_for_dependency_install_lock(
+    let _guard = wait_for_setup_operation_lock(
         NODE_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(())),
         operation,
     )
@@ -566,7 +563,7 @@ pub(super) async fn install_portable_node_runtime(
     requirement: NodeRuntimeRequirement,
     force: bool,
     target: PathBuf,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     operation.ensure_active()?;
     let target_node = runtime_binary(&target, "node");
@@ -672,7 +669,7 @@ pub(super) async fn install_windows_system_node(
     app: tauri::AppHandle,
     requirement: NodeRuntimeRequirement,
     force: bool,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     operation.ensure_active()?;
     if !force {
@@ -721,7 +718,7 @@ pub(super) async fn install_macos_system_node(
     app: tauri::AppHandle,
     requirement: NodeRuntimeRequirement,
     force: bool,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     operation.ensure_active()?;
     if !force {
@@ -786,7 +783,7 @@ pub(super) async fn install_macos_system_node(
     loop {
         if operation.cancellation_requested() {
             let _ = child.kill().await;
-            return Err(DEPENDENCY_INSTALL_CANCELLED_MESSAGE.into());
+            return Err(SETUP_OPERATION_CANCELLED_MESSAGE.into());
         }
         if let Some(status) = child
             .try_wait()
@@ -833,7 +830,7 @@ pub(super) async fn install_macos_system_node(
             _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
             _ = operation.cancelled() => {
                 let _ = child.kill().await;
-                return Err(DEPENDENCY_INSTALL_CANCELLED_MESSAGE.into());
+                return Err(SETUP_OPERATION_CANCELLED_MESSAGE.into());
             }
         }
     }
@@ -844,7 +841,7 @@ pub(super) async fn install_windows_system_node_from_mirrors(
     app: &tauri::AppHandle,
     requirement: &NodeRuntimeRequirement,
     budget: DependencyInstallBudget,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<crate::commands::system::NodeRuntimeContract, WindowsInstallerFailure> {
     operation
         .ensure_active()
@@ -968,7 +965,7 @@ pub(super) async fn install_windows_system_node_with_winget(
     app: &tauri::AppHandle,
     requirement: &NodeRuntimeRequirement,
     budget: DependencyInstallBudget,
-    operation: &DependencyInstallOperation,
+    operation: &SetupOperation,
 ) -> Result<crate::commands::system::NodeRuntimeContract, WindowsInstallerFailure> {
     ensure_winget_package(
         app,
