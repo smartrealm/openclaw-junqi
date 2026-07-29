@@ -65,11 +65,11 @@ Durable Session 在替换会话文件后无条件以普通文件方式打开父�
 2026-07-29 已执行：
 
 - 工作台与终端定向测试：78 项通过，0 失败。
-- `pnpm lint`：通过，模块边界检查覆盖 588 个文件。
-- `pnpm test`：通过；仅输出项目既有的 Node `module.register` 弃用提示和 Radix SSR `useLayoutEffect` 警告。
+- `pnpm lint`：通过，模块边界检查覆盖 613 个文件。
+- `pnpm test`：前端 1820 项、脚本 223 项全部通过；仅输出项目既有的 Node `module.register` 弃用提示和 Radix SSR `useLayoutEffect` 警告。
 - `pnpm build`：通过；collaboration package contract、TypeScript 和 Vite production build 均成功，未报告循环分包或 chunk 预算失败。
-- `cargo fmt -- --check`、`cargo check --lib`：通过。
-- `cargo test --lib`：635 项通过，0 失败，3 项按环境要求忽略。
+- `cargo fmt --all -- --check`、`cargo check --all-targets`、`cargo clippy --all-targets`：通过；clippy 仅保留 5 项本任务外既有警告。
+- `cargo test --lib --no-fail-fast`：648 项通过，0 失败，3 项按环境要求忽略。
 - `git diff --check`：通过。
 
 未执行实际 Tauri 桌面窗口交互，因此文件冲突横幅、工作树终端真实 cwd、终端设置失败提示和 PTY 进程列表仍属于真机走查边界。
@@ -79,6 +79,7 @@ Durable Session 在替换会话文件后无条件以普通文件方式打开父�
 - 首次 main CI `30412281113`：前端、脚本、Linux Rust 全部通过；Windows x64/x86 各有 4 个 Durable Session 测试因目录打开被拒绝而失败。
 - 第二次 main CI `30413334628`：Windows 条件代码编译通过，首次写入测试通过；后续三项测试证明备份仍用只读句柄调用 `FlushFileBuffers`，Windows x64 返回 access denied。备份同步句柄据此收紧为写权限。
 - 修复后的本地 Durable Session 定向测试：4 项通过，0 失败。
-- 当前 macOS 工具链没有安装 Windows Rust 标准库，无法在本机替代 Windows 原生编译和运行；修复后的 x64/x86 结果以重新触发的 main CI 为准。
+- 第三次 main CI `30413681291`：Windows x64、Windows x86、Linux Rust、前端构建、类型检查、lint、桌面测试和 collaboration 测试全部通过；同一组 Durable Session 回归已在两个 Windows 架构原生执行。
+- daxia CI `30413681394`：前端、Linux Rust、桌面和 collaboration 测试全部通过；该分支工作流按既有条件跳过 Windows 矩阵。
 
 平台依据：[CreateFileW](https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew)、[FlushFileBuffers](https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers)。
