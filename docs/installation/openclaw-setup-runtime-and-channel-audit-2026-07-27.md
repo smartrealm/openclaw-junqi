@@ -244,6 +244,30 @@ tarballs, not from a live wizard run. A future plugin whose scan prompt omits
 any scan verb would need the structured `externalUrl` field instead; that field
 is already preferred when present.
 
+### BUG-ONB-51 - Gateway lifecycle lines this app authors bypass i18n
+
+**Severity:** P2
+
+`emit_gateway_log_keyed` documents the contract: every lifecycle line this app
+authors carries a translation key, and the unkeyed variant is reserved for text
+assembled at runtime (error details, child output). Seven self-authored lines
+still used the unkeyed call, so a Chinese session saw raw English interleaved
+with translated lines during the longest wait in first-run setup — the startup
+heartbeat `Still waiting for the Gateway to become reachable on 127.0.0.1:{port}
+(elapsed {n}s)...` and the `Port {port} became occupied during Gateway
+startup...` transition, plus five ownership/handoff transitions.
+
+**Target:** route every self-authored lifecycle line through
+`emit_gateway_log_keyed` under `setup.gateway.*`, and supply zh/en/zh-TW
+strings. Child process output and messages embedding a runtime error stay
+verbatim, matching the existing contract. The heartbeat needs both its port and
+elapsed seconds, so it gets its own two-capture param rule rather than reusing
+the single-capture port rule.
+
+**Unverified boundary:** verified by unit test and by cross-checking that all 27
+`setup.gateway.*` keys referenced in `gateway.rs` resolve in all three locale
+files. Not observed in a live Windows run.
+
 ## Validation Contract
 
 - TypeScript interface validation and complete locale JSON parsing.
@@ -255,6 +279,9 @@ is already preferred when present.
   continuation before plugin polling begins.
 - Behavioral tests that distinguish the official terminal note from an
   intermediate channel success note and recover only after durable setup exists.
+- Param-extraction tests for the Gateway startup heartbeat and the startup
+  port-occupied transition, plus the rule table's own guard that fails when a
+  suffix is added without a fixture.
 - Behavioral tests pinning the channel primer note as a non-scan step while
   every QR-authorizing channel plugin's verbatim scan prompt still resolves,
   including the DingTalk note that must keep driving URL extraction and the

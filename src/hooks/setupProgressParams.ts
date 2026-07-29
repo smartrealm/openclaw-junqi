@@ -165,10 +165,20 @@ export const SETUP_PROGRESS_PARAM_RULES: readonly ParamRule[] = [
     },
   },
   {
+    // Startup heartbeat carries both the endpoint port and how long the wait
+    // has run, so it cannot reuse the single-capture port rule below.
+    suffix: ".stillWaiting",
+    extract: (message) => {
+      const match = message.match(/127\.0\.0\.1:(\d+).*?elapsed\s+(\d+)s/);
+      return match ? { port: match[1]!, elapsed: match[2]! } : null;
+    },
+  },
+  {
     suffix: [
       ".portResolved",
       ".alreadyUp",
       ".portOccupied",
+      ".portOccupiedDuringStartup",
       ".checkServiceOwnership",
       ".awaitReadiness",
       ".externalStalePackage",

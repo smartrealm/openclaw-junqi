@@ -2165,17 +2165,19 @@ pub async fn restart_gateway(
     let _global_operation_guard = match operation_gate.clone().try_lock_owned() {
         Ok(guard) => guard,
         Err(_) => {
-            emit_gateway_log(
+            emit_gateway_log_keyed(
                 &app,
                 "Gateway lifecycle operation in progress; waiting for ownership...",
+                Some("setup.gateway.awaitingOwnership"),
             );
             operation_gate.lock_owned().await
         }
     };
     if state.restart_completed_generation.load(Ordering::Acquire) != observed_restart_generation {
-        emit_gateway_log(
+        emit_gateway_log_keyed(
             &app,
             "Concurrent Gateway restart finished; reusing its final status.",
+            Some("setup.gateway.concurrentRestartFinished"),
         );
         return gateway_status(state).await;
     }
@@ -2583,9 +2585,10 @@ async fn recover_failed_official_gateway_handoff(
 
     match start_managed_gateway_locked(app.clone(), state.clone(), Some(context.port)).await {
         Ok(status) if status.running => {
-            emit_gateway_log(
+            emit_gateway_log_keyed(
                 &app,
                 "Desktop-managed Gateway restored after official service handoff failed.",
+                Some("setup.gateway.managedRestoredAfterHandoff"),
             );
             Ok(false)
         }
@@ -2683,9 +2686,10 @@ async fn restore_stale_gateway_after_failed_handoff(
         Some(false),
         "wizard handoff: stale Gateway service restored after failure",
     );
-    emit_gateway_log(
+    emit_gateway_log_keyed(
         &app,
         "Official Gateway service was restored after a failed handoff.",
+        Some("setup.gateway.officialServiceRestored"),
     );
     Ok(false)
 }
@@ -2840,9 +2844,10 @@ pub async fn handoff_gateway_to_official_service(
         Some(false),
         "wizard handoff: official Gateway service is now the owner",
     );
-    emit_gateway_log(
+    emit_gateway_log_keyed(
         &app,
         "Official OpenClaw Gateway service is now the selected lifecycle owner.",
+        Some("setup.gateway.officialServiceOwner"),
     );
     Ok(true)
 }
@@ -3664,12 +3669,13 @@ async fn start_gateway_locked_with_policy(
                 ),
             );
             previous_activity = activity;
-            emit_gateway_log(
+            emit_gateway_log_keyed(
                 &app,
                 format!(
                     "Still waiting for the Gateway to become reachable on 127.0.0.1:{} (elapsed {}s)...",
                     port, elapsed
                 ),
+                Some("setup.gateway.stillWaiting"),
             );
             next_heartbeat_at = now + startup_policy.heartbeat_interval;
         }
@@ -3708,12 +3714,13 @@ async fn start_gateway_locked_with_policy(
             && !crate::commands::gateway_supervisor::is_port_available(port).await
         {
             observed_bound_port = true;
-            emit_gateway_log(
+            emit_gateway_log_keyed(
                 &app,
                 format!(
                     "Port {} became occupied during Gateway startup; waiting for OpenClaw health and authentication checks...",
                     port
                 ),
+                Some("setup.gateway.portOccupiedDuringStartup"),
             );
         }
 

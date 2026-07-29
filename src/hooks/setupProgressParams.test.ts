@@ -176,6 +176,19 @@ const CASES: Record<string, Case> = {
     message: "Probing 127.0.0.1:18789 for existing Gateway listener…",
     expected: { port: "18789" },
   },
+  // Verbatim startup heartbeat from gateway.rs; needs both captures.
+  ".stillWaiting": {
+    key: "setup.gateway.stillWaiting",
+    message:
+      "Still waiting for the Gateway to become reachable on 127.0.0.1:18789 (elapsed 15s)...",
+    expected: { port: "18789", elapsed: "15" },
+  },
+  ".portOccupiedDuringStartup": {
+    key: "setup.gateway.portOccupiedDuringStartup",
+    message:
+      "Port 18789 became occupied during Gateway startup; waiting for OpenClaw health and authentication checks...",
+    expected: { port: "18789" },
+  },
 };
 
 /**
