@@ -595,10 +595,98 @@ fn compact_directory_entry(mut entry: FsEntry, project_path: &str) -> Result<FsE
 mod tests {
     use super::{
         compact_directory_entry, git_check_ignore_key, parse_git_check_ignore_z,
-        read_directory_entries, read_file_preview_data, validate_path_within, FilePreviewKind,
+        read_directory_entries, read_file_preview_data, validate_path_within,
+        write_file_content_if_unchanged_in_workspace, FilePreviewKind,
     };
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
+
+    fn workspace_fixture(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("junqi-{name}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn compare_and_swap_write_rejects_a_changed_file_and_leaves_it_intact() {
+        let root = workspace_fixture("cas-reject");
+        let file = root.join("notes.md");
+        std::fs::write(&file, "changed by someone else").unwrap();
+
+        let written = write_file_content_if_unchanged_in_workspace(
+            &file.to_string_lossy(),
+            "my edit",
+            "what I loaded",
+            &root.to_string_lossy(),
+        )
+        .unwrap();
+
+        assert!(!written, "a file that moved on must not be overwritten");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "changed by someone else"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn compare_and_swap_write_replaces_atomically_without_truncation_leftovers() {
+        // Writing in place left the tail of a longer previous version behind if
+        // the process died between the write and the truncation.
+        let root = workspace_fixture("cas-replace");
+        let file = root.join("notes.md");
+        let long_previous = "a much longer previous version of this file";
+        std::fs::write(&file, long_previous).unwrap();
+
+        let written = write_file_content_if_unchanged_in_workspace(
+            &file.to_string_lossy(),
+            "short",
+            long_previous,
+            &root.to_string_lossy(),
+        )
+        .unwrap();
+
+        assert!(written);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "short");
+        // The staging file is a sibling; none may survive the rename.
+        let leftovers: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .filter(|name| name != "notes.md")
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temporary files left behind: {leftovers:?}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn compare_and_swap_write_preserves_file_permissions() {
+        // The replacement is a fresh file, so without carrying permissions over
+        // a rename would silently reset the mode of the original.
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = workspace_fixture("cas-perms");
+        let file = root.join("script.sh");
+        std::fs::write(&file, "old").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let written = write_file_content_if_unchanged_in_workspace(
+            &file.to_string_lossy(),
+            "new",
+            "old",
+            &root.to_string_lossy(),
+        )
+        .unwrap();
+
+        assert!(written);
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "executable bit must survive the replacement");
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     /// An editor tab can outlive the file it shows. The strict mode used by the
     /// write path must refuse a path that no longer exists, so a save cannot
@@ -807,33 +895,64 @@ pub async fn write_file_content(
     .map_err(|e| e.to_string())?
 }
 
+/// Replace a file's contents only while it still holds `expected_content`.
+///
+/// The comparison and the write are not one atomic operation — nothing stops a
+/// third writer from landing in between — so this is a best-effort guard aimed
+/// at the case it was built for: an editor tab racing an agent that rewrites
+/// the same file. It narrows that window; it is not a lock, and callers must
+/// not treat a `true` result as proof they were the only writer.
+///
+/// The write itself *is* atomic. Writing in place would leave a half-updated
+/// file behind if the process died between the write and the truncation, so the
+/// new contents go to a sibling temporary file that is durably flushed and then
+/// renamed over the target.
 fn write_file_content_if_unchanged_in_workspace(
     path: &str,
     content: &str,
     expected_content: &str,
     project_path: &str,
 ) -> Result<bool, String> {
-    use std::io::{Read, Seek, Write};
+    use std::io::Write;
 
     let validated_path = validate_path_within(path, project_path, false)?;
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(validated_path)
-        .map_err(|e| e.to_string())?;
-
-    let mut current_content = String::new();
-    file.read_to_string(&mut current_content)
-        .map_err(|e| e.to_string())?;
+    let current_content = std::fs::read_to_string(&validated_path).map_err(|e| e.to_string())?;
     if current_content != expected_content {
         return Ok(false);
     }
 
-    file.rewind().map_err(|e| e.to_string())?;
-    file.write_all(content.as_bytes())
-        .map_err(|e| e.to_string())?;
-    file.set_len(content.len() as u64)
-        .map_err(|e| e.to_string())?;
+    let parent = validated_path
+        .parent()
+        .ok_or_else(|| "Cannot resolve the file's directory".to_string())?;
+    let file_name = validated_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Invalid file name".to_string())?;
+    // Same directory as the target: `rename` is only atomic within a filesystem.
+    let temporary = parent.join(format!(".{file_name}.junqi-{}", uuid::Uuid::new_v4()));
+
+    let write_result = (|| -> std::io::Result<()> {
+        let mut file = std::fs::File::create(&temporary)?;
+        file.write_all(content.as_bytes())?;
+        // Without this the rename can be visible while the contents are not.
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(error) = write_result {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error.to_string());
+    }
+
+    // `File::create` uses default permissions; carry over whatever the original
+    // file had so a rename cannot silently widen or narrow access to it.
+    if let Ok(metadata) = std::fs::metadata(&validated_path) {
+        let _ = std::fs::set_permissions(&temporary, metadata.permissions());
+    }
+
+    if let Err(error) = std::fs::rename(&temporary, &validated_path) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error.to_string());
+    }
     Ok(true)
 }
 

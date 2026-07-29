@@ -59,7 +59,12 @@ test("file viewer keeps editor and Markdown preview readable in every applicatio
 
 test("guarded file writes stay registered across the TypeScript and Rust IPC boundary", () => {
   assert.match(previewDocumentSource, /invoke<boolean>\("write_file_content_if_unchanged", \{[\s\S]*expectedContent:/);
-  assert.match(previewDocumentSource, /useEffect\(\(\) => \(\) => \{[\s\S]*void persistLatestContent\(\)/);
+  // Unmounting must still flush unsaved content. The call goes through a ref so
+  // the handler can depend on nothing and stay a true unmount handler.
+  assert.match(
+    previewDocumentSource,
+    /useEffect\(\(\) => \(\) => \{[\s\S]*void persistLatestContent(?:Ref\.current)?\(\)/,
+  );
   assert.doesNotMatch(previewDocumentSource, /useEffect\(\(\) => \(\) => \{[\s\S]*void invoke\("write_file_content_if_unchanged"/);
   assert.match(tauriLibSource, /commands::fs_neu::write_file_content_if_unchanged/);
   assert.match(fsCommandSource, /pub async fn write_file_content_if_unchanged\([\s\S]*expected_content: String/);
