@@ -1,4 +1,9 @@
-const WIZARD_QR_MESSAGE_HINT = /scan|扫码|二维码|qr\b/i;
+// A step that merely *names* QR login is not a scan step. OpenClaw's channel
+// primer note lists every channel's capability blurb ("… via QR-code login")
+// next to a plain docs link, so matching the bare noun reclassified that note
+// as an authorization step and rendered its docs URL as a scannable code.
+// Official scan prompts always tell the user to scan, so require that verb.
+const WIZARD_QR_MESSAGE_HINT = /\bscan(?:s|ned|ning)?\b|扫描|掃描|扫码|掃碼/i;
 const WIZARD_QR_URL_PATTERN = /https?:\/\/[^\s"'<>]+/;
 const WIZARD_AUTHORIZATION_POLLING_HINT =
   /waiting for (?:the )?authorization (?:result|status)|(?:正在)?等待授权结果|(?:正在)?等待授權結果/i;
