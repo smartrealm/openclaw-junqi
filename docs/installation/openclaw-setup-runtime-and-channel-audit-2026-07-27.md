@@ -205,6 +205,45 @@ already verified Gateway connection, and expose each connection phase in both
 the setup UI and diagnostics. A timed-out answer must retain the opaque session
 id so Retry can resume without replaying secrets or accepted answers.
 
+### BUG-ONB-50 - The channel primer note is presented as a scan step
+
+**Severity:** P1
+
+Verified on 2026-07-29 against installed `openclaw@2026.7.1-2`.
+`noteChannelPrimer()` (`dist/onboard-channels-BsIvPxyr.js`) emits a plain
+explanatory note titled `How channels work`. Its body carries the pairing docs
+link and then every channel's capability blurb, three of which only *name* a QR
+login (`Personal WeChat messaging via QR-code login.`,
+`通过二维码登录接入 Zalo 个人账号。`, and the ZaloClawBot blurb).
+
+JunQi matched the bare noun with `/scan|扫码|二维码|qr\b/i` over the whole
+message, so this primer was reclassified as an authorization step. The URL
+extractor then took the message's *first* URL — the docs link — and rendered
+`https://docs.openclaw.ai/channels/pairing` as a scannable code. The primary
+action was relabelled `我已完成授权，继续`, and submitting it also attempted a
+QR authorization continuation. Because the blurbs are catalog-driven, this
+occurred on every run that reached channel selection, before any channel was
+chosen.
+
+**Target:** require an explicit scan verb rather than the bare noun, so a note
+that merely names QR login stays a note. Cross-checked against every channel
+plugin that authorizes by QR, all of which phrase the real prompt as an action:
+`@tencent-weixin/openclaw-weixin` 2.4.6 (`用手机微信扫描以下二维码，以继续连接：`),
+`@openclaw/whatsapp` 2026.7.1 (`…then scan this QR:`), `@openclaw/zalouser`
+2026.7.1 (`QR already active. Scan it with the Zalo app.`), `@openclaw/feishu`
+2026.7.1 via `wizard.feishu.scanQr`, and
+`@dingtalk-real-ai/dingtalk-connector` 0.8.24, whose single note combines
+`Scan with DingTalk to configure your bot (请使用钉钉扫码，配置机器人):`, the
+device `Authorization URL:`, and the `Waiting for authorization result...`
+polling cue that drives BUG-ONB-41/42 hand-off. Plugin expiry and failure
+notices (`二维码已过期，请重新生成。`, `QR login was declined on the phone.`)
+carry no verb and correctly stop starting a scan presentation.
+
+**Unverified boundary:** channel plugins were read from their published npm
+tarballs, not from a live wizard run. A future plugin whose scan prompt omits
+any scan verb would need the structured `externalUrl` field instead; that field
+is already preferred when present.
+
 ## Validation Contract
 
 - TypeScript interface validation and complete locale JSON parsing.
@@ -216,6 +255,10 @@ id so Retry can resume without replaying secrets or accepted answers.
   continuation before plugin polling begins.
 - Behavioral tests that distinguish the official terminal note from an
   intermediate channel success note and recover only after durable setup exists.
+- Behavioral tests pinning the channel primer note as a non-scan step while
+  every QR-authorizing channel plugin's verbatim scan prompt still resolves,
+  including the DingTalk note that must keep driving URL extraction and the
+  polling hand-off.
 - Source-contract tests for Gateway-owned progress polling and QR persistence.
 - Source-contract tests for backend cancellation reachability, staged-runtime
   compensation, and dedicated prerequisite recovery routes.
