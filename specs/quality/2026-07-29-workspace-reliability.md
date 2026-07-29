@@ -66,7 +66,16 @@
 
 **验收**：纯函数行为测试覆盖正常接管、迟到结果和错误 run-id；组件不再静默忽略异常返回。
 
+## BUG-WS-07：Durable Session 跨平台持久化
+
+**当前**：持久化事务无条件打开父目录并 `sync_all`；Windows x64/x86 返回 access denied，所有会话保存、恢复和重置测试失败。
+
+**目标**：命令契约与持久化实现分离；文件内容在替换前完成同步，Unix 同步目录元数据，Windows 使用有替换和 write-through 语义的系统 API，不模拟未受支持的目录 `fsync`。
+
+**验收**：同一组 generation/no-op、损坏恢复、证据归档重置和临时文件清理测试必须在 Linux、Windows x64 与 Windows x86 通过；生产代码、测试和 Tauri command 分属清晰模块，单文件不再混合三种职责。
+
 ## 未验证边界
 
 - 实际 PTY cwd、进程退出、文件冲突横幅和 Tauri 对话框需要桌面窗口走查。
 - 新增 `reset_terminal_settings`，其余 Tauri command 名称、参数和 Rust 序列化契约不变。
+- Durable Session schema、Tauri command 名称、参数和 camelCase 返回字段不变；Windows 目录元数据的持久性边界遵循系统公开契约，不声称等价于 Unix 目录 `fsync`。

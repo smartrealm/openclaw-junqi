@@ -14,12 +14,14 @@
 | C | BUG-WS-06 | 工作台组件、三套 locale | 删除硬编码用户文案 |
 | D | BUG-TERM-01 | `TerminalSettingsPanel.tsx`、`app_settings.rs`、`lib.rs` | 原生一次提交，成功后提交本地默认值 |
 | D | BUG-TERM-02 | `ShellTerminalPanel.tsx`、`shellLifecycle.ts` | 迟到或异常 PTY 打开结果主动终止 |
+| E | BUG-WS-07 | `workbench_session.rs`、`workbench_session/storage.rs`、`storage_tests.rs` | 分离命令/事务/测试，按 Unix/Windows 官方持久化能力实现文件替换 |
 
 ## 验证
 
 - 每个 BUG 至少一条能覆盖原失败路径的回归测试。
 - 运行定向测试、`pnpm lint`、`pnpm test`、`pnpm build` 和 `git diff --check`。
 - 运行 `cargo fmt -- --check`、`cargo check --lib` 和 `cargo test --lib`，核对新增 command 注册。
+- main CI 必须在 Windows x64、x86 原生执行同一组 Durable Session 回归，不能用本机 macOS 结果替代。
 
 ## 回滚边界
 
@@ -27,4 +29,4 @@
 
 ## 完成状态
 
-阶段 A-D 的代码、文档和自动化验证均已完成。真实 Tauri 桌面交互未执行，保留为人工验收项。
+阶段 A-D 的代码、文档和自动化验证均已完成。阶段 E 已完成代码和本地定向测试，Windows x64/x86 CI 复验待新提交触发。真实 Tauri 桌面交互未执行，保留为人工验收项。

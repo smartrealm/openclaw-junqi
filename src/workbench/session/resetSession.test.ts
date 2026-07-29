@@ -4,15 +4,21 @@ import { readFileSync } from 'node:fs';
 
 const storage = readFileSync(new URL('./storage.ts', import.meta.url), 'utf8');
 const page = readFileSync(new URL('../../pages/AgentWorkspace/index.tsx', import.meta.url), 'utf8');
-const backend = readFileSync(new URL('../../../src-tauri/src/commands/workbench_session.rs', import.meta.url), 'utf8');
+const backendCommands = readFileSync(new URL('../../../src-tauri/src/commands/workbench_session.rs', import.meta.url), 'utf8');
+const backendStorage = readFileSync(new URL('../../../src-tauri/src/commands/workbench_session/storage.rs', import.meta.url), 'utf8');
 
 test('session reset is a native archive operation, not a renderer overwrite', () => {
   assert.match(storage, /invoke<boolean>\('reset_workbench_session'/);
-  assert.match(backend, /recovery-\{\}/);
-  assert.match(backend, /fs::rename\(&source, &destination\)/);
-  assert.match(backend, /for \(original, archived\) in moved\.into_iter\(\)\.rev\(\)/);
-  assert.match(backend, /recovery rollback incomplete/);
-  assert.doesNotMatch(backend.slice(backend.indexOf('fn reset_at'), backend.indexOf('fn save_at')), /remove_file/);
+  assert.match(backendCommands, /storage::reset\(&session_path/);
+  assert.match(backendStorage, /recovery-\{\}/);
+  assert.match(backendStorage, /fs::rename\(&source, &destination\)/);
+  assert.match(backendStorage, /moved\s*\.into_iter\(\)\s*\.rev\(\)/);
+  assert.match(backendStorage, /recovery rollback incomplete/);
+  const resetTransaction = backendStorage.slice(
+    backendStorage.indexOf('pub(super) fn reset'),
+    backendStorage.indexOf('pub(super) fn save'),
+  );
+  assert.doesNotMatch(resetTransaction, /remove_file/);
 });
 
 test('failed hydration offers one explicit reset action and reloads only after success', () => {
@@ -22,6 +28,6 @@ test('failed hydration offers one explicit reset action and reloads only after s
 });
 
 test('load save and reset share the native session operation gate', () => {
-  const commands = backend.slice(backend.indexOf('pub fn load_workbench_session'));
+  const commands = backendCommands.slice(backendCommands.indexOf('pub fn load_workbench_session'));
   assert.equal(commands.match(/session_operation_gate\(\)/g)?.length, 3);
 });

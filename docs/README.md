@@ -92,6 +92,7 @@ docs/
 - [字体设置与 Orca 对齐审计](quality/font-settings-orca-parity-audit-2026-07-28.md)
 - [设置与运行时一致性审计](quality/settings-runtime-consistency-audit-2026-07-28.md)
 - [Vite 生产分包审计](quality/vite-chunking-audit-2026-07-28.md)
+- [工作台可靠性审计](quality/workspace-reliability-audit-2026-07-29.md)
 
 ## 产品设计草案
 
