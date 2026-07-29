@@ -4,8 +4,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.min.mjs';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, ExternalLink, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // Use upstream worker directly. We pin pdfjs-dist to a Chromium-compatible
 // release, so no custom worker/polyfill bridge is needed.
@@ -226,7 +227,12 @@ function CanvasPdfPreview({ base64, onOpenExternal }: { base64: string; onOpenEx
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 size={22} className="animate-spin text-aegis-primary" />
+        <LoadingIndicator
+          variant="dots"
+          size={12}
+          label={t('common.loading', 'Loading...')}
+          className="text-aegis-primary"
+        />
       </div>
     );
   }
@@ -290,7 +296,13 @@ function CanvasPdfPreview({ base64, onOpenExternal }: { base64: string; onOpenEx
 
         <div className="flex-1" />
 
-        {renderLoading && <Loader2 size={12} className="animate-spin text-aegis-text-dim" />}
+        {renderLoading && (
+          <LoadingIndicator
+            size={12}
+            label={t('common.loading', 'Loading...')}
+            className="text-aegis-text-dim"
+          />
+        )}
 
         {onOpenExternal && (
           <button

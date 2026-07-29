@@ -90,9 +90,7 @@ export function StatusBar() {
   const gatewayPanelRef = useRef<HTMLDivElement>(null);
   const gatewayButtonRef = useRef<HTMLButtonElement>(null);
   const gatewayProgress = useSetupProgress('gateway');
-  const gatewayProgressActive = Boolean(gatewayProgress)
-    && gatewayProgress?.status !== 'completed'
-    && gatewayProgress?.status !== 'failed';
+  const gatewayProgressActive = gatewayProgress?.status === 'running';
   const gatewayProgressTerminal = gatewayProgress?.status === 'completed'
     || gatewayProgress?.status === 'failed';
   const gatewayOperationActive = reconnecting || gatewayProgressActive;
@@ -100,11 +98,12 @@ export function StatusBar() {
   // for up to 12s before falling back to normal cold-start recovery. Don't
   // let the leftover setup-phase progress message flash "reconnecting" here
   // for a connection nothing is actually wrong with. An operation the user
-  // just triggered themselves (gatewayProgressActive/showGatewayResult)
-  // still shows, since that's a deliberate action, not passive boot state.
+  // just triggered themselves (`reconnecting`) still shows, since that's a
+  // deliberate action, not passive boot state.
   const isVerifiedHandoff = useAppStore((s) => s.workspaceStartupMode) === 'verified-gateway-handoff';
   const showGatewayProgress = Boolean(gatewayProgress)
-    && (gatewayProgressActive || showGatewayResult || (!connected && !gatewayProgressTerminal && !isVerifiedHandoff));
+    && (showGatewayResult
+      || (gatewayProgressActive && (reconnecting || (!connected && !isVerifiedHandoff))));
   const gatewayMsg = showGatewayProgress ? gatewayProgress?.message ?? null : null;
   const gatewayProg = showGatewayProgress ? gatewayProgress?.progress ?? null : null;
 

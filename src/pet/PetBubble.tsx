@@ -5,7 +5,7 @@ import { Image, FileArchive, FileCode2, FileText, FolderOpen, type LucideIcon } 
 import type { PetEmotion, PetState } from './pet-states';
 import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
-import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetAccentPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle, type PetThemeName } from './petTheme';
+import { normalizePetThemeName, petBubbleTextContainerStyle, resolvePetAccentPalette, resolvePetDarkMode, solidPetTextStyle, type PetThemeName } from './petTheme';
 import { resolvePetBackdropTextStyle, type PetBackdropReading } from './backdropContrast';
 import { usePetStore } from '@/stores/petStore';
 
@@ -166,20 +166,12 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
   const backdropStyle = resolvePetBackdropTextStyle(backdrop ?? null);
-  const baseTextPalette = resolvePetTextPalette(themeName);
-  const textPalette = backdropStyle
-    ? {
-        ...baseTextPalette,
-        primary: backdropStyle.foreground,
-        secondary: backdropStyle.foreground,
-        danger: backdropStyle.foreground,
-      }
-    : baseTextPalette;
-  const readableText = (color: string) => backdropStyle
-      ? {
-        ...solidPetTextStyle(color, backdropStyle.shadow),
-      }
-    : solidPetTextStyle(color, petTextShadowForTheme(themeName));
+  const textPalette = {
+    primary: backdropStyle.foreground,
+    secondary: backdropStyle.foreground,
+    danger: backdropStyle.foreground,
+  };
+  const readableText = (color: string) => solidPetTextStyle(color, backdropStyle.shadow);
 
   // Operation-hint carousel, shown only while the cursor is over the pet
   // AND the pet is idle (i.e. the tip branch is the rendered body — busy
@@ -210,7 +202,7 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
   const bubbleStyle: CSSProperties = {
     maxWidth: Math.round(240 * captionScale),
     textAlign: 'center',
-    ...petBubbleTextContainerStyle(textPalette.primary, themeName),
+    ...petBubbleTextContainerStyle(textPalette.primary),
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontSize: 13 * captionScale,
     fontWeight: 760,
@@ -218,11 +210,11 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
     overflowWrap: 'anywhere',
     wordBreak: 'normal',
     whiteSpace: 'normal',
-    ...(backdropStyle ? {
-      background: backdropStyle.bubble,
-      borderRadius: 6,
-      padding: '2px 6px',
-    } : {}),
+    background: backdropStyle.bubble,
+    border: backdropStyle.border,
+    boxShadow: backdropStyle.boxShadow,
+    borderRadius: 6,
+    padding: '4px 7px',
   };
 
   let body: ReactNode = null;

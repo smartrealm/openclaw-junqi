@@ -9,36 +9,60 @@ function source(path: string): string {
 
 test('composer consolidates attachments and voice input into accessible menus', () => {
   const input = source('src/components/Chat/MessageInput.tsx');
+  const surface = source('src/components/Chat/message-input/ComposerInputSurface.tsx');
+  const menu = source('src/components/Chat/message-input/useComposerMenu.ts');
+  const interruption = source('src/components/Chat/message-input/useComposerInterruption.ts');
 
-  assert.match(input, /const \[composerMenu, setComposerMenu\] = useState<'add' \| 'voice' \| null>/);
-  assert.match(input, /input\.addContent/);
-  assert.match(input, /input\.voiceInputMenu/);
-  assert.match(input, /input\.recordVoice/);
-  assert.match(input, /input\.continuousDictation/);
-  assert.match(input, /aria-haspopup="menu"/);
-  assert.match(input, /if \(composerMenu\) \{\s+e\.preventDefault\(\);\s+setComposerMenu\(null\)/);
-  assert.doesNotMatch(input, /\{\s*icon: Radio,/);
+  assert.match(input, /useComposerMenu\(activeSessionKey\)/);
+  assert.match(input, /<ComposerInputSurface/);
+  assert.match(menu, /useState<ComposerMenuId>\(null\)/);
+  assert.match(surface, /input\.addContent/);
+  assert.match(surface, /input\.voiceInputMenu/);
+  assert.match(surface, /input\.recordVoice/);
+  assert.match(surface, /input\.continuousDictation/);
+  assert.match(surface, /aria-haspopup="menu"/);
+  assert.match(interruption, /if \(activeMenu\) \{\s+event\.preventDefault\(\);\s+closeMenu\(\)/);
+  assert.doesNotMatch(surface, /\{\s*icon: Radio,/);
+  assert.doesNotMatch(input, /lucide-react|gateway\.|useVoiceWake|<textarea/);
+});
+
+test('session runtime control has a single stable composer owner', () => {
+  const input = source('src/components/Chat/message-input/ComposerInputSurface.tsx');
+  const runtime = source('src/components/Chat/session-runtime/SessionRuntimeControl.tsx');
+  const settings = source('src/components/Chat/session-runtime/useSessionRuntimeSettings.ts');
+  const topBar = source('src/components/Chat/SessionContextBar.tsx');
+
+  assert.match(input, /<SessionRuntimeControl/);
+  assert.doesNotMatch(topBar, /SessionRuntimeControl|ModelDropdown|SessionThinkingPicker/);
+  assert.match(runtime, /const modelLabel = modelDisplayName\(activeModel, committed\.modelId\)/);
+  assert.match(runtime, /if \(!saving\) setOpen/);
+  assert.doesNotMatch(runtime, /switching \? null/);
+  assert.match(settings, /activeSessionKey === sessionKey/);
+  assert.match(settings, /setSessionThinking\(sessionKey, nextThinking\)/);
 });
 
 test('composer keeps dictation observable and recoverable', () => {
   const input = source('src/components/Chat/MessageInput.tsx');
+  const status = source('src/components/Chat/message-input/VoiceStatusBanner.tsx');
+  const voice = source('src/components/Chat/message-input/useComposerVoice.ts');
   const wake = source('src/hooks/useVoiceWake.ts');
 
-  assert.match(input, /voiceWake\.enabled && !voiceMode/);
-  assert.match(input, /voiceWake\.error && !voiceMode/);
-  assert.match(input, /input\.stopDictation/);
-  assert.match(input, /input\.retryVoiceInput/);
+  assert.match(input, /<VoiceStatusBanner/);
+  assert.match(status, /input\.stopDictation/);
+  assert.match(status, /input\.retryVoiceInput/);
+  assert.match(voice, /useVoiceWake/);
   assert.match(wake, /setEnabled\(false\);\s+setError\(null\);\s+updatePhase\('idle'\)/);
 });
 
 test('queued messages use a collapsed dispatch control instead of a second message timeline', () => {
   const input = source('src/components/Chat/MessageInput.tsx');
+  const queue = source('src/components/Chat/message-input/MessageQueuePanel.tsx');
 
-  assert.match(input, /Pending dispatch is a compact control, never a second message timeline/);
-  assert.match(input, /onClick=\{\(\) => setQueueExpanded\(\(value\) => !value\)\}/);
-  assert.match(input, /\{queueExpanded && \(/);
-  assert.doesNotMatch(input, /const COLLAPSE_AT/);
-  assert.doesNotMatch(input, /const visible = queue/);
+  assert.match(input, /<MessageQueuePanel/);
+  assert.match(queue, /onClick=\{\(\) => setExpanded\(\(value\) => !value\)\}/);
+  assert.match(queue, /\{expanded && \(/);
+  assert.doesNotMatch(queue, /const COLLAPSE_AT/);
+  assert.doesNotMatch(queue, /const visible = queue/);
 });
 
 test('composer menu labels are localized in every shipped language', () => {
@@ -54,6 +78,9 @@ test('composer menu labels are localized in every shipped language', () => {
     'voiceInputFailed',
     'retryVoiceInput',
     'dismissVoiceInputError',
+    'sessionRuntimeTitle',
+    'sessionRuntimeProvider',
+    'sessionRuntimeModel',
   ];
 
   for (const language of ['en', 'zh', 'zh-TW']) {

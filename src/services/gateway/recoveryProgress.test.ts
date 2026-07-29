@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { gatewayRestartProgressFromLog } from './recoveryProgress';
+import {
+  gatewayProgress,
+  gatewayRestartProgressFromLog,
+} from './recoveryProgress';
 
 test('gateway restart progress maps lifecycle phases to stable localized keys', () => {
   assert.deepEqual(
@@ -43,4 +46,25 @@ test('gateway restart progress keeps unknown CLI output out of the primary UI co
   assert.equal(detail.key, 'gateway.progress.restartWorking');
   assert.equal(detail.progress, 0.50);
   assert.doesNotMatch(detail.message, /third-party launcher/);
+});
+
+test('runtime readiness carries its interpolation contract without claiming authentication', () => {
+  const detail = gatewayProgress.runtimeReady('system-service');
+
+  assert.deepEqual(detail.params, { mode: 'system-service' });
+  assert.equal(detail.key, 'gateway.progress.runtimeReady');
+  assert.equal(detail.status, 'running');
+  assert.match(detail.message, /establishing authenticated connection/i);
+  assert.doesNotMatch(detail.message, /authenticated\.$/i);
+});
+
+test('process detection and authenticated connection completion stay distinct', () => {
+  const detected = gatewayProgress.processDetected();
+  const completed = gatewayProgress.recoveryComplete();
+
+  assert.equal(detected.status, 'running');
+  assert.equal(detected.progress, 0.72);
+  assert.equal(completed.status, 'completed');
+  assert.equal(completed.progress, 1);
+  assert.match(completed.message, /authenticated/i);
 });

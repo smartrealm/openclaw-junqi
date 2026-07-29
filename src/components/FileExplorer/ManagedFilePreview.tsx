@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
-import { Info, Loader2 } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import type { ManagedFilePreview as ManagedFilePreviewValue } from '@/utils/filePreviewCapabilities';
 import { MarkdownPreview } from './MarkdownPreview';
 
@@ -99,7 +100,11 @@ export function ManagedFilePreview({
         <Suspense
           fallback={(
             <div className="flex h-full items-center justify-center text-aegis-text-dim">
-              <Loader2 size={18} className="animate-spin" />
+              <LoadingIndicator
+                variant="dots"
+                size={10}
+                label={t('common.loading', 'Loading...')}
+              />
             </div>
           )}
         >

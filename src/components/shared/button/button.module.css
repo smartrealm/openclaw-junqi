@@ -169,17 +169,3 @@
   transform: none;
 }
 .button[data-loading="true"] { cursor: wait; }
-
-/* ── Spinner ─────────────────────────────────────────── */
-.spinner {
-  width: 1em;
-  height: 1em;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: aegisButtonSpin 650ms linear infinite;
-  flex-shrink: 0;
-}
-@keyframes aegisButtonSpin {
-  to { transform: rotate(360deg); }
-}

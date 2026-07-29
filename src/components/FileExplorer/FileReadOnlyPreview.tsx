@@ -1,7 +1,8 @@
 import { lazy, Suspense } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ExternalLink, FileWarning, Loader2 } from "lucide-react";
+import { ExternalLink, FileWarning } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { LoadingIndicator } from "@/components/shared/LoadingIndicator";
 import { formatBytes } from "@/utils/format";
 import { imageDataUrl, type WorkspaceFilePreview } from "@/utils/filePreviewCapabilities";
 
@@ -46,7 +47,11 @@ export function FileReadOnlyPreview({
       <Suspense
         fallback={(
           <div className="flex h-full items-center justify-center text-aegis-text-dim">
-            <Loader2 size={18} className="animate-spin" />
+            <LoadingIndicator
+              variant="dots"
+              size={10}
+              label={t("common.loading", "Loading...")}
+            />
           </div>
         )}
       >

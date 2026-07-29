@@ -3,6 +3,7 @@
 // data-* attributes drive all CSS variants — no clsx switching needed.
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import clsx from 'clsx';
+import { LoadingIndicator } from '../LoadingIndicator';
 import s from './button.module.css';
 
 export type ButtonVariant = 'solid' | 'soft' | 'outline' | 'ghost' | 'plain';
@@ -53,7 +54,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       data-loading={loading ? "true" : undefined}
       className={clsx(s.button, className)}
     >
-      {loading ? <span className={s.spinner} aria-hidden="true" /> : leadingIcon}
+      {loading ? <LoadingIndicator size="1em" /> : leadingIcon}
       {children}
       {trailingIcon}
     </button>

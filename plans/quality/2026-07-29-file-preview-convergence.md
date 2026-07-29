@@ -13,14 +13,17 @@
 - [x] 补充行为回归并完成全量自动化验证。
 - [x] 拆分 `FileViewer` 的编排、文档生命周期、预览、状态栏、标签栏与能力职责。
 - [x] 合并工作区 Adapter 到 typed `read_file_preview` IPC，并清理注销 command 的调用。
+- [x] 为共享源码编辑器补充不依赖运行时主题注入时序的静态结构契约。
+- [x] 增加 gutter 与正文横向布局源码回归。
 - [ ] 完成 Tauri 桌面交互验收。
 
 ## 验证结果
 
-- 前端全量 1820 项、脚本 223 项、Rust 648 项通过；Rust 3 项按环境契约忽略。
+- 前端全量 1829 项、脚本 223 项、Rust 648 项通过；Rust 3 项按环境契约忽略。
 - `pnpm lint`、`pnpm build`、`cargo fmt -- --check`、`cargo check --lib` 与 `git diff --check` 通过。
 - 构建最大 JavaScript chunk 为 513.31 kB，无循环 chunk 或超限警告。
-- 未运行桌面真机走查，PDF WebView、音视频播放和终端跳转保留为待验证。
+- `1.4.17` ARM64 本地 DMG 已通过镜像、版本、架构和 ad-hoc 签名核验。
+- 未运行桌面真机走查，源码 gutter 布局、PDF WebView、音视频播放和终端跳转保留为待验证。
 
 ## 影响文件
 

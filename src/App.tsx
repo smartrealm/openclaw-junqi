@@ -28,8 +28,12 @@ import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawCha
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
-import type { GatewayRecoveryStatus } from '@/services/gateway/recoveryProgress';
+import {
+  gatewayProgress,
+  type GatewayRecoveryProgress,
+} from '@/services/gateway/recoveryProgress';
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
+import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
 import {
   OPENCLAW_UPDATE_MAINTENANCE_FINISHED,
   OPENCLAW_UPDATE_MAINTENANCE_STARTED,
@@ -159,6 +163,7 @@ export default function App() {
   const bootRecoveryStartedRef = useRef(false);
   const verifiedGatewayHandoffRef = useRef(false);
   const manualGatewayRecoveryInFlightRef = useRef(false);
+  const gatewayRecoveryProgressActiveRef = useRef(false);
   const previousVoiceSessionRef = useRef(activeSessionKey);
 
   useEffect(() => {
@@ -168,7 +173,6 @@ export default function App() {
     }
     previousVoiceSessionRef.current = activeSessionKey;
   }, [activeSessionKey]);
-  const manualGatewayRecoveryAwaitingConnectionRef = useRef(false);
   const openControlUiAfterRecoveryRef = useRef(false);
 
   // The local marker is only a cache. Validate the durable installation before
@@ -263,7 +267,13 @@ export default function App() {
       const rawSessions = sessionListSnapshot.sessions;
       // Gateway-level defaults (configured model, context window)
       const defaults = result?.defaults
-        ? { model: result.defaults.model ?? null, contextTokens: result.defaults.contextTokens ?? null }
+        ? {
+            model: resolveGatewaySessionModelId(
+              result.defaults.modelProvider,
+              result.defaults.model,
+            ),
+            contextTokens: result.defaults.contextTokens ?? null,
+          }
         : undefined;
       const sessions = rawSessions.flatMap((s: any) => {
         const key = typeof s?.key === 'string' && s.key.trim()
@@ -273,9 +283,10 @@ export default function App() {
             : '';
         if (!key) return [];
         const persistedModel = getSessionModelPref(key);
-        const resolvedModel = s.model ?? persistedModel ?? null;
-        if (typeof s.model === 'string' && s.model.trim().length > 0) {
-          setSessionModelPref(key, s.model);
+        const gatewayModel = resolveGatewaySessionModelId(s.modelProvider, s.model);
+        const resolvedModel = gatewayModel ?? persistedModel ?? null;
+        if (gatewayModel) {
+          setSessionModelPref(key, gatewayModel);
         }
         return [{
           key,
@@ -469,15 +480,10 @@ export default function App() {
    * just synthesized in-process so non-install flows (manual reconnect,
    * boot recovery) still show granular progress text inline.
    */
-  const emitGatewayProgress = useCallback((
-    message: string,
-    progress: number,
-    key?: string,
-    params?: Record<string, unknown>,
-    status: GatewayRecoveryStatus = 'running',
-  ) => {
+  const emitGatewayProgress = useCallback((detail: GatewayRecoveryProgress) => {
+    gatewayRecoveryProgressActiveRef.current = detail.status === 'running';
     window.dispatchEvent(new CustomEvent('aegis:gateway-progress', {
-      detail: { step: 'gateway', message, progress, key, params, status },
+      detail,
     }));
   }, []);
 
@@ -488,8 +494,7 @@ export default function App() {
   const restartGatewayFromBoot = useCallback(async (diagnostic?: string, source = 'app-recovery') => {
     if (!window.aegis?.gateway?.retry) {
       const message = 'Gateway restart is unavailable in this runtime.';
-      manualGatewayRecoveryAwaitingConnectionRef.current = false;
-      emitGatewayProgress(message, 1, 'gateway.progress.restartUnavailable', undefined, 'failed');
+      emitGatewayProgress(gatewayProgress.restartUnavailable());
       setGatewayBootError(message);
       openControlUiAfterRecoveryRef.current = false;
       return false;
@@ -497,23 +502,16 @@ export default function App() {
     addBootRecoveryLog('Restarting Gateway service…');
     try {
       const result = await gatewayLifecycle.restart(source, diagnostic);
-      if (result?.superseded) return false;
-      if (result?.success === false) {
+      if (result.superseded) return false;
+      if (!result.success) {
         throw new Error(result.error || 'Gateway restart failed');
       }
       addBootRecoveryLog('Gateway restart command completed');
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      manualGatewayRecoveryAwaitingConnectionRef.current = false;
       addBootRecoveryLog(`Gateway restart failed: ${message}`);
-      emitGatewayProgress(
-        `Restart failed: ${message}`,
-        1.0,
-        'gateway.progress.restartFailed',
-        { error: message },
-        'failed',
-      );
+      emitGatewayProgress(gatewayProgress.restartFailed(message));
       setGatewayBootError(message);
       openControlUiAfterRecoveryRef.current = false;
       const logs = await window.aegis.gateway.getLogs?.(80);
@@ -549,32 +547,24 @@ export default function App() {
     let cancelled = false;
     const startGatewayRecovery = async (reason: string) => {
       addBootRecoveryLog(`Starting Gateway recovery immediately (${reason})…`);
-      emitGatewayProgress('Starting OpenClaw Gateway…', 0.20, 'gateway.progress.starting');
+      emitGatewayProgress(gatewayProgress.starting());
       try {
         const result = await gatewayManager.ensureRunning();
         if (cancelled || useChatStore.getState().connected) return;
         if (result?.superseded) return;
         if (result?.healthy) {
           cancelGatewayMigrationRetry();
-          addBootRecoveryLog(`Gateway healthy (${result.mode ?? 'native'}); reconnecting WebSocket`);
-          emitGatewayProgress(
-            `Gateway healthy (${result.mode ?? 'native'}), reconnecting…`,
-            0.75,
-            'gateway.progress.gatewayHealthy',
-          );
+          addBootRecoveryLog(`Gateway runtime ready (${result.mode ?? 'native'}); establishing authenticated WebSocket`);
+          emitGatewayProgress(gatewayProgress.runtimeReady(result.mode));
           return;
         }
         addBootRecoveryLog(`ensure_gateway_running returned unhealthy: ${result?.error ?? 'unknown error'}`);
-        emitGatewayProgress(
-          'Gateway did not become healthy, attempting restart…',
-          0.45,
-          'gateway.progress.ensureUnhealthy',
-        );
+        emitGatewayProgress(gatewayProgress.ensureUnhealthy());
         await restartGatewayFromBoot(result?.error ?? reason);
       } catch (err) {
         if (cancelled || useChatStore.getState().connected) return;
         addBootRecoveryLog(`ensure_gateway_running exception: ${String(err)}`);
-        emitGatewayProgress('Gateway recovery failed, attempting restart…', 0.45, 'gateway.progress.ensureFailed');
+        emitGatewayProgress(gatewayProgress.ensureFailed());
         await restartGatewayFromBoot(String(err));
       }
     };
@@ -588,11 +578,7 @@ export default function App() {
         if (status?.running && !status.error) {
           cancelGatewayMigrationRetry();
           addBootRecoveryLog('Gateway process is running; reconnecting WebSocket quietly…');
-          emitGatewayProgress(
-            'Gateway process is running, reconnecting…',
-            0.72,
-            'gateway.progress.gatewayHealthy',
-          );
+          emitGatewayProgress(gatewayProgress.processDetected());
           try { gatewayManager.reconnect(); } catch {}
           return;
         }
@@ -795,15 +781,8 @@ export default function App() {
         }
       },
       onRetryState: (retry) => {
-        if (retry.phase === 'exhausted' && manualGatewayRecoveryAwaitingConnectionRef.current) {
-          manualGatewayRecoveryAwaitingConnectionRef.current = false;
-          emitGatewayProgress(
-            'Gateway recovery finished, but the authenticated connection could not be established.',
-            1,
-            'gateway.progress.connectionFailed',
-            undefined,
-            'failed',
-          );
+        if (retry.phase === 'exhausted' && gatewayRecoveryProgressActiveRef.current) {
+          emitGatewayProgress(gatewayProgress.connectionFailed());
         }
         if (retry.phase === 'exhausted') {
           surfaceVerifiedGatewayHandoffFailure();
@@ -971,15 +950,8 @@ export default function App() {
       }
 
       if (snap.connected) {
-        if (manualGatewayRecoveryAwaitingConnectionRef.current) {
-          manualGatewayRecoveryAwaitingConnectionRef.current = false;
-          emitGatewayProgress(
-            'Gateway recovered and authenticated.',
-            1,
-            'gateway.progress.recoveryComplete',
-            undefined,
-            'completed',
-          );
+        if (gatewayRecoveryProgressActiveRef.current) {
+          emitGatewayProgress(gatewayProgress.recoveryComplete());
         }
         setGatewayBootError(null);
         setGatewayBootLogs(undefined);
@@ -1076,7 +1048,6 @@ export default function App() {
         : 'reconnect';
       const source = detail?.source || 'manual';
       manualGatewayRecoveryInFlightRef.current = true;
-      manualGatewayRecoveryAwaitingConnectionRef.current = true;
       void (async () => {
         bootRecoveryStartedRef.current = false;
         addBootRecoveryLog(`Gateway recovery requested (${source}, ${action})`);
@@ -1088,19 +1059,12 @@ export default function App() {
           if (!result.success) throw new Error(result.error || 'Gateway recovery failed');
           cancelGatewayMigrationRetry();
           addBootRecoveryLog(result.mode
-            ? `Gateway healthy (${result.mode}) — reconnecting`
+            ? `Gateway runtime ready (${result.mode}) — establishing authenticated connection`
             : 'Gateway restart command completed');
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          manualGatewayRecoveryAwaitingConnectionRef.current = false;
           addBootRecoveryLog(`Gateway recovery failed: ${message}`);
-          emitGatewayProgress(
-            `Gateway recovery failed: ${message}`,
-            1,
-            'gateway.progress.restartFailed',
-            { error: message },
-            'failed',
-          );
+          emitGatewayProgress(gatewayProgress.restartFailed(message));
           setGatewayBootError(message);
         }
       })().finally(() => {
@@ -1151,7 +1115,6 @@ export default function App() {
 
   const handleGatewayRetry = useCallback(() => {
     setGatewayRetrying(true);
-    manualGatewayRecoveryAwaitingConnectionRef.current = true;
     void restartGatewayFromBoot(gatewayBootErrorRef.current ?? undefined, 'gateway-error-screen');
   }, [restartGatewayFromBoot]);
 

@@ -55,6 +55,9 @@ test("file viewer keeps editor and Markdown preview readable in every applicatio
   assert.match(editorThemeSource, /color: 'rgb\(var\(--aegis-text\)\)'/);
   assert.match(editorThemeSource, /color: 'rgb\(var\(--aegis-text-dim\)\)'/);
   assert.doesNotMatch(editorThemeSource, /color: 'var\(--aegis-text(?:-dim|-muted|-secondary)?\)'/);
+  assert.match(previewPaneSource, /className="file-source-editor"/);
+  assert.match(stylesSource, /\.file-source-editor \.cm-scroller\s*\{[\s\S]*display: flex !important;[\s\S]*align-items: flex-start !important;/);
+  assert.match(stylesSource, /\.file-source-editor \.cm-gutters\s*\{[\s\S]*display: flex;[\s\S]*flex-shrink: 0;/);
   assert.match(stylesSource, /\.md-preview-scroll\s*\{[\s\S]*overflow: auto/);
   assert.match(stylesSource, /\.md-preview\s*\{[\s\S]*color: rgb\(var\(--aegis-text\)\)/);
   assert.match(stylesSource, /\.md-preview table[\s\S]*overflow-x: auto/);

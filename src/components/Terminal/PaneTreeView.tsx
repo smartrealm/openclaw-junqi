@@ -20,7 +20,7 @@ import type {
   SplitDirection,
   Workspace,
 } from '@/workspace/types';
-import type { ThemeVariant, TerminalFontSize, FontFamily } from '@/junqi/types';
+import type { ThemeVariant, TerminalFontSize, FontFamily } from './terminalTypes';
 
 // ── Props ───────────────────────────────────────────────────────────────────
 

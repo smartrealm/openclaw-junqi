@@ -83,7 +83,7 @@ import { ChevronRight, Clock3, FolderOpen, FolderTree, GitBranch, Layers, Plus, 
 import { Icon } from '@/components/shared/icons';
 import { KookyAgentIcon } from '@/components/Terminal/KookyAgentIcon';
 import { TerminalKookyMenuDivider, TerminalKookyMenuItem } from '@/components/Terminal/KookyMenu';
-import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/junqi/types";
+import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/components/Terminal/terminalTypes";
 import type { Workspace } from "@/workspace/types";
 import { takePendingTerminalCommands } from '@/services/terminalCommandQueue';
 import { useSettingsStore } from '@/stores/settingsStore';

@@ -899,3 +899,114 @@ html {
     animation: none;
   }
 }
+
+/* Shared indeterminate loading indicators. */
+.aegis-loading-indicator {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  vertical-align: middle;
+}
+
+.aegis-loading-indicator svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.aegis-loading-indicator__spinner {
+  animation: aegis-loading-indicator-spin 720ms linear infinite;
+}
+
+.aegis-loading-indicator__track {
+  opacity: 0.2;
+}
+
+.aegis-loading-indicator__dots circle {
+  animation: aegis-loading-indicator-dot 900ms ease-in-out infinite;
+  transform-origin: center;
+}
+
+.aegis-loading-indicator__dots circle:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.aegis-loading-indicator__dots circle:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+@keyframes aegis-loading-indicator-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes aegis-loading-indicator-dot {
+  0%, 60%, 100% { opacity: 0.28; transform: scale(0.75); }
+  30% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aegis-loading-indicator__spinner,
+  .aegis-loading-indicator__dots circle {
+    animation: none;
+  }
+
+  .aegis-loading-indicator__dots circle {
+    opacity: 0.65;
+    transform: none;
+  }
+}
+/* CodeMirror injects its base theme at runtime. Keep its structural contract in
+ * the application stylesheet as well so packaged webviews cannot stack the
+ * gutter above the document when runtime styles are delayed or unavailable. */
+.file-source-editor,
+.file-source-editor .cm-editor {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.file-source-editor .cm-editor {
+  display: flex !important;
+  flex-direction: column;
+}
+
+.file-source-editor .cm-scroller {
+  position: relative;
+  display: flex !important;
+  align-items: flex-start !important;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.file-source-editor .cm-gutters {
+  display: flex;
+  flex-shrink: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.file-source-editor .cm-gutter {
+  display: flex !important;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.file-source-editor .cm-content {
+  display: block;
+  flex-grow: 2;
+  flex-shrink: 0;
+  min-height: 100%;
+  margin: 0;
+  outline: none;
+}
+
+.file-source-editor .cm-line {
+  display: block;
+}

@@ -60,6 +60,11 @@ import {
   CollaborationUnanchoredBanner,
   useCollaborationChat,
 } from './CollaborationChatProvider';
+import {
+  editFailedUserMessage,
+  localUserMessageCapabilities,
+  removeLocalUserMessage,
+} from './localUserMessageMutations';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -736,7 +741,12 @@ function ChatViewContent() {
     // Load on first connect, or whenever the active session changes.
     if (prevSessionRef.current !== activeSessionKey || messages.length === 0) {
       prevSessionRef.current = activeSessionKey;
-      void loadHistory();
+      void loadHistory().catch((error) => {
+        // loadHistory already projects the failure into the recoverable chat
+        // notice. Consume it here so opening the window cannot trigger the
+        // global fatal Promise Rejection overlay.
+        debugWarn('app', '[ChatView] Initial history load failed:', error);
+      });
     }
   }, [connected, activeSessionKey, messages.length, loadHistory]);
 
@@ -784,29 +794,55 @@ function ChatViewContent() {
     revealConversationTail({ instant: true });
   }, [activeSessionKey, activeHistoryMeta?.loaded, revealConversationTail]);
 
-  const handleRecallMessage = useCallback((content: string) => {
-    useChatStore.getState().setDraft(activeSessionKey, content);
-    window.dispatchEvent(new Event('aegis:focus-composer'));
-  }, [activeSessionKey]);
-
-  const handleRetryMessage = useCallback(async (sourceMessage: ChatMessage) => {
+  const retryMessageDelivery = useCallback(async (sourceMessage: ChatMessage) => {
     const payload = sourceMessage.retryPayload ?? { text: sourceMessage.content };
     const clientMessageId = sourceMessage.clientMessageId ?? sourceMessage.id;
     revealConversationTail({ instant: true });
+    await chatSendCoordinator.send({
+      sessionKey: activeSessionKey,
+      message: payload.text,
+      clientMessageId,
+      sessionId: payload.sessionId ?? activeSessionId,
+      attachments: payload.attachments,
+      displayAttachments: payload.displayAttachments,
+      optimisticMessage: false,
+    });
+  }, [activeSessionKey, activeSessionId, revealConversationTail]);
+
+  const handleRetryMessage = useCallback(async (sourceMessage: ChatMessage) => {
     try {
-      await chatSendCoordinator.send({
-        sessionKey: activeSessionKey,
-        message: payload.text,
-        clientMessageId,
-        sessionId: payload.sessionId ?? activeSessionId,
-        attachments: payload.attachments,
-        displayAttachments: payload.displayAttachments,
-        optimisticMessage: false,
-      });
+      await retryMessageDelivery(sourceMessage);
     } catch (error) {
       debugError('app', '[Retry] Send error:', error);
     }
-  }, [activeSessionKey, activeSessionId, revealConversationTail]);
+  }, [retryMessageDelivery]);
+
+  const handleEditFailedMessage = useCallback(async (
+    sourceMessage: ChatMessage,
+    content: string,
+  ) => {
+    const edited = editFailedUserMessage(sourceMessage, content);
+    useChatStore.getState().updateMessage(activeSessionKey, sourceMessage.id, {
+      content: edited.content,
+      retryPayload: edited.retryPayload,
+    });
+    await retryMessageDelivery(edited);
+  }, [activeSessionKey, retryMessageDelivery]);
+
+  const handleDeleteLocalMessage = useCallback((sourceMessage: ChatMessage) => {
+    showConfirm(
+      t('chat.deleteMessage', 'Delete message'),
+      t('chat.deleteUnsentMessageConfirm', 'Delete this unsent message?'),
+      () => {
+        const state = useChatStore.getState();
+        const current = state.messagesPerSession[activeSessionKey] ?? [];
+        const updated = removeLocalUserMessage(current, sourceMessage.id);
+        if (updated.length === current.length) return;
+        state.removeQueuedMessage(activeSessionKey, sourceMessage.id);
+        state.setMessages(updated, activeSessionKey);
+      },
+    );
+  }, [activeSessionKey, t]);
 
   // ── Error Action Handler — called by MessageBubble when user clicks an error action button ──
   const handleErrorAction = useCallback(async (action: string) => {
@@ -953,13 +989,19 @@ function ChatViewContent() {
 
       case 'message':
         const sourceMessage = messages.find((message) => message.id === block.id);
+        const messageCapabilities = localUserMessageCapabilities(sourceMessage);
         return (
           <Suspense fallback={<MessageBubbleFallback block={block} groupPosition={groupPosition} />}>
             <MessageBubble
               block={block}
               sessionKey={responseSessionKey}
               groupPosition={groupPosition}
-              onRecall={block.role === 'user' ? handleRecallMessage : undefined}
+              onEdit={messageCapabilities.canEditAndRetry && sourceMessage
+                ? (content) => handleEditFailedMessage(sourceMessage, content)
+                : undefined}
+              onDelete={messageCapabilities.canDelete && sourceMessage
+                ? () => handleDeleteLocalMessage(sourceMessage)
+                : undefined}
               onRetry={block.role === 'user' && sourceMessage?.status === 'failed'
                 ? () => handleRetryMessage(sourceMessage)
                 : undefined}
@@ -984,7 +1026,8 @@ function ChatViewContent() {
     }
   }, [
     collaboration,
-    handleRecallMessage,
+    handleDeleteLocalMessage,
+    handleEditFailedMessage,
     handleRetryMessage,
     handleInlineButtonClick,
     handleDecisionSelect,

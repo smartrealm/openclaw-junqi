@@ -9,27 +9,40 @@ export interface PetBackdropTextStyle {
   foreground: string;
   shadow: string;
   bubble: string;
+  border: string;
+  boxShadow: string;
 }
 
-const DARK: PetBackdropTextStyle = {
+const LIGHT_SURFACE: PetBackdropTextStyle = {
   foreground: '#101318',
-  shadow: '0 0 2px rgba(255,255,255,0.98), 0 1px 4px rgba(255,255,255,0.92)',
-  bubble: 'rgba(255,255,255,0.52)',
+  shadow: 'none',
+  bubble: 'rgba(248,250,252,0.84)',
+  border: '1px solid rgba(15,23,42,0.16)',
+  boxShadow: '0 2px 8px rgba(15,23,42,0.2)',
 };
 
-const LIGHT: PetBackdropTextStyle = {
+const DARK_SURFACE: PetBackdropTextStyle = {
   foreground: '#f8fafc',
-  shadow: '0 0 2px rgba(0,0,0,0.96), 0 1px 4px rgba(0,0,0,0.9)',
-  bubble: 'rgba(0,0,0,0.52)',
+  shadow: 'none',
+  bubble: 'rgba(8,12,18,0.78)',
+  border: '1px solid rgba(255,255,255,0.12)',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.42)',
 };
 
-export function resolvePetBackdropTextStyle(reading: PetBackdropReading | null): PetBackdropTextStyle | null {
-  if (!reading?.available || reading.luminance == null) return null;
-  // Use the WCAG relative-luminance crossover. A translucent backing and
-  // soft shadow keep text legible on busy wallpaper without an outline.
-  const base = reading.luminance > 0.45 ? DARK : LIGHT;
+export function resolvePetBackdropTextStyle(reading: PetBackdropReading | null): PetBackdropTextStyle {
+  // Desktop sampling is an optional enhancement. It may be unavailable on
+  // macOS without Screen Recording permission, so readability must never
+  // depend on it.
+  if (!reading?.available || reading.luminance == null) return DARK_SURFACE;
+
+  const lightSurface = reading.luminance > 0.45;
+  const base = lightSurface ? LIGHT_SURFACE : DARK_SURFACE;
   const busy = (reading.contrast ?? 0) > 0.18;
-  return busy
-    ? { ...base, bubble: base.bubble.replace('0.52', '0.66') }
-    : base;
+  if (!busy) return base;
+  return {
+    ...base,
+    bubble: lightSurface
+      ? 'rgba(248,250,252,0.92)'
+      : 'rgba(8,12,18,0.9)',
+  };
 }

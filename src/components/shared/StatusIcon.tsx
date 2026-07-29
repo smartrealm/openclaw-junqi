@@ -18,13 +18,13 @@ import {
   XCircle,
   MinusCircle,
   Circle,
-  Loader2,
   AlertCircle,
   AlertTriangle,
   PlayCircle,
   Clock,
   Hourglass,
 } from "lucide-react";
+import { LoadingIndicator } from "./LoadingIndicator";
 
 /**
  * Union of all status strings the app actually renders as an icon.
@@ -67,15 +67,7 @@ export function StatusIcon({ status, size = 14 }: StatusIconProps) {
     // ── running / in-progress ──
     case "running":
     case "inProgress":
-      return (
-        <Loader2
-          size={size}
-          style={{
-            animation: "spin 1s linear infinite",
-            color: "rgb(var(--aegis-text-muted))",
-          }}
-        />
-      );
+      return <LoadingIndicator size={size} className="text-aegis-text-muted" />;
 
     // ── waiting on user / pending ──
     case "input_required":

@@ -7,6 +7,7 @@ import { debugError, debugLog } from '@/utils/debugLog';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { resolveOpenClawMediaPreviewUrl } from '@/services/chat/openclawMediaPreview';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // ChatImage — Image display with save, zoom, and lightbox
@@ -347,7 +348,11 @@ export function ChatImage({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
         {!loaded && !error && (
           <span className="rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] flex items-center justify-center"
             style={{ display: 'inline-flex', width: 200, height: 150, background: 'rgb(var(--aegis-overlay) / 0.03)' }}>
-            <span className="w-5 h-5 border-2 border-[rgb(var(--aegis-overlay)/0.1)] border-t-white/30 rounded-full animate-spin" style={{ display: 'inline-block' }} />
+            <LoadingIndicator
+              size={20}
+              label={t('common.loading', 'Loading...')}
+              className="text-aegis-text-dim"
+            />
           </span>
         )}
 

@@ -15,10 +15,9 @@ function render(status: string) {
   return renderToStaticMarkup(createElement(StatusIcon, { status: status as never }));
 }
 
-test('running renders a Loader2 with spin animation', () => {
+test('running renders the shared loading indicator', () => {
   const html = render('running');
-  // Loader2 emits inline `animation:spin 1s linear infinite` via style attribute.
-  assert.match(html, /animation:spin/);
+  assert.match(html, /data-loading-indicator="spinner"/);
   assert.match(html, /<svg/);
 });
 

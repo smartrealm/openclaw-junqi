@@ -314,10 +314,3 @@ pub async fn ensure_gateway_running(
         error: Some(err),
     })
 }
-
-// Pull `app` into the manager trait surface so `app.state::<GatewayProcess>()`
-// can be called from any helper above that needs to look up state.
-#[allow(dead_code)]
-fn _state_lookup_helper(app: &AppHandle) -> State<'_, GatewayProcess> {
-    app.state::<GatewayProcess>()
-}

@@ -471,6 +471,8 @@ interface ChatState {
   setSessionLabel: (key: string, label: string) => void;
   /** Update a single session's model locally after sessions.patch succeeds. */
   setSessionModel: (key: string, model: string | null) => void;
+  /** Update a single session's thinking level locally after sessions.patch succeeds. */
+  setSessionThinking: (key: string, level: string | null) => void;
   /** Pin/unpin a session. Pinned sessions surface at the top of the
    *  sidebar above the active/recent sections. Pure local state — no
    *  backend round-trip. */
@@ -1440,6 +1442,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
             session.model === model ? session : { ...session, model },
           ),
           ...(state.activeSessionKey === key ? { currentModel: model } : {}),
+        }
+  )),
+
+  /** Locally apply a thinking-level switch without waiting for sessions.list. */
+  setSessionThinking: (key, level) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : {
+          sessions: upsertSession(state.sessions, key, (session) =>
+            session.thinkingLevel === level ? session : { ...session, thinkingLevel: level },
+          ),
+          ...(state.activeSessionKey === key ? { currentThinking: level } : {}),
         }
   )),
 

@@ -126,6 +126,21 @@ test('BUG-GSC01 ordinary application lifecycle requests use one coordinator', ()
   assert.doesNotMatch(palette, /gateway\.connect\(/);
 });
 
+test('BUG-GW-UI-02 recovery progress terminates on every authenticated connection', () => {
+  const app = source('src/App.tsx');
+  const statusBar = source('src/components/Layout/StatusBar.tsx');
+  const connectedBranch = app.slice(
+    app.indexOf('if (snap.connected) {'),
+    app.indexOf('gatewayManager.init();'),
+  );
+
+  assert.match(app, /gatewayRecoveryProgressActiveRef\.current = detail\.status === 'running'/);
+  assert.match(connectedBranch, /gatewayRecoveryProgressActiveRef\.current[\s\S]*gatewayProgress\.recoveryComplete\(\)/);
+  assert.doesNotMatch(app, /manualGatewayRecoveryAwaitingConnectionRef/);
+  assert.match(statusBar, /gatewayProgress\?\.status === 'running'/);
+  assert.match(statusBar, /gatewayProgressActive && \(reconnecting \|\| \(!connected/);
+});
+
 test('managed Gateway start owns readiness and preserves process diagnostics', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const gatewayService = source('src-tauri/src/commands/gateway_service.rs');
@@ -679,12 +694,14 @@ test('migration-lock failures wait for OpenClaw expiry before another restart at
   const app = source('src/App.tsx');
   const recovery = source('src/services/gateway/openclawRepair.ts');
   const coordinator = source('src/services/gateway/GatewayLifecycleCoordinator.ts');
+  const progress = source('src/services/gateway/recoveryProgress.ts');
 
   assert.match(recovery, /MAX_MIGRATION_RETRY_DELAY_MS = 5 \* 60 \* 1000/);
   assert.match(coordinator, /gatewayMigrationRetryDelayMs/);
   assert.match(coordinator, /migrationRetry\.wait\(delayMs\)/);
   assert.match(coordinator, /gateway\.progress\.waitingForMigrationLock/);
-  assert.match(app, /restartGatewayFromBoot\(result\?\.error/);
+  assert.match(progress, /gateway\.progress\.waitingForMigrationLock/);
+  assert.match(app, /gatewayLifecycle\.(restart|recover)/);
   assert.match(app, /cancelGatewayMigrationRetry/);
 });
 

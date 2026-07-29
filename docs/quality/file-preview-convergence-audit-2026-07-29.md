@@ -44,6 +44,16 @@
 
 目标：集中解析和生成文件预览路由；`view=tree`、`path` 和 `file` 同步决定目录模式、根目录和活动页签，拒绝根目录外的文件参数。
 
+### BUG-PREVIEW-05：打包 WebView 中源码编辑器 gutter 与正文纵向堆叠
+
+2026-07-29 的 macOS 本地包截图显示 Markdown 源码模式先绘制整列 `1..12`，随后才显示正文。
+直接读取截图中的 `IDENTITY.md` 证明磁盘文件没有这些数字；它们来自 CodeMirror gutter。
+CodeMirror 上游要求 `.cm-scroller` 横向 flex、gutter 不收缩，但应用此前只依赖运行时注入的基础样式，
+应用静态 CSS 没有维护这一结构不变量。当前证据能确认打包窗口中的布局结果，尚未确认运行时样式缺失的具体 WebView 时序原因。
+
+目标：所有共享 `FileViewer` 源码编辑器使用稳定 class，并在应用静态 CSS 中保留 CodeMirror 的最小结构契约；
+即使运行时主题尚未生效，行号、折叠栏和正文也必须处于同一横向滚动容器。
+
 ## 统一边界
 
 - 可编辑工作区文件：继续使用 `FileViewer`、typed Tauri IPC 和保存冲突保护。
@@ -73,13 +83,16 @@
 - `FileViewer` 从 1265 行的混合实现拆为编排器、文档生命周期 Hook、预览面板、状态栏、标签栏、能力解析和公共类型；核心文件均不超过 226 行。
 - 工作区格式解析只依赖 `workspace-files/domain/fileKinds.ts` 与 `previewResolver.ts`；本地 Adapter 统一通过 typed `read_file_preview` IPC，不再调用已注销的 `read_file_content`/`read_image_preview`。
 - 文件管理器和工作台都向共享预览器提供缺失文件关闭回调；磁盘暂时不可读时保留草稿、暂停全部保存入口并允许重试。
+- 共享源码编辑器新增静态结构样式兜底；删除基础主题中无效的嵌套 `.cm-editor` 选择器。
 
 ## 验证结果
 
 - 定向回归通过，覆盖格式分类、安全 Markdown、HTML sandbox、媒体渲染、缺失文件、磁盘异常、保存竞态与终端预览路由。
-- `pnpm lint`：通过，模块边界检查覆盖 613 个文件。
-- `pnpm test`：通过，前端 1820 项、脚本 223 项，零失败。
+- `pnpm lint`：通过，模块边界检查覆盖 614 个文件。
+- `pnpm test`：通过，前端 1829 项、脚本 223 项，零失败。
 - `pnpm build`：通过；最大 JavaScript chunk 为 513.31 kB，低于 550 kB 门禁，没有循环 chunk 或超限警告。
 - `cargo fmt -- --check`、`cargo check --lib`、`cargo test --lib`：通过；Rust 648 项通过、3 项明确忽略。
 - `git diff --check`：通过。
+- macOS ARM64 本地 DMG 已重建并只读挂载核验；镜像内应用版本为 `1.4.17`，Mach-O 为 `arm64`，应用与 DMG 的 ad-hoc 签名及镜像校验均通过。最终 SHA-256 为 `2e70709380da7dd9fc7e0777b430b2af35b69d22a8a6f52abff9b86cee0563d7`。
 - 未启动 Tauri 真机窗口；终端跳转、scoped PDF WebView、音视频播放及托管 Markdown 本地资源仍需桌面走查。
+- BUG-PREVIEW-05 的源码结构回归、TypeScript 检查与修复后打包均通过；当前自动化浏览器环境没有可用窗口，gutter 与正文的实际并排效果仍需在 Tauri 窗口确认。

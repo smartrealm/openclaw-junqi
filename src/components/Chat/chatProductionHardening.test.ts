@@ -51,10 +51,12 @@ test('CHAT-14 persisted OpenClaw media uses a state-scoped preview bridge', () =
 
 test('CHAT-03 composer state and prepared attachments are keyed by session', () => {
   const input = source('src/components/Chat/MessageInput.tsx');
+  const attachments = source('src/components/Chat/message-input/useComposerAttachments.ts');
+  const send = source('src/components/Chat/message-input/useMessageSend.ts');
   const store = source('src/stores/chatStore.ts');
-  assert.match(input, /s\.drafts\[activeSessionKey\]/);
-  assert.match(input, /s\.preparedAttachments\[activeSessionKey\]/);
-  assert.match(input, /const sendSessionKey = activeSessionKey/);
+  assert.match(input, /drafts\[activeSessionKey\]/);
+  assert.match(attachments, /preparedAttachments\[activeSessionKey\]/);
+  assert.match(send, /const sessionKey = activeSessionKey/);
   assert.match(store, /preparedAttachments: Record<string, PreparedAttachment\[\]>/);
   assert.match(store, /sendingBySession: Record<string, boolean>/);
   assert.match(store, /loadingHistoryBySession: Record<string, boolean>/);
@@ -68,9 +70,12 @@ test('CHAT-02 and CHAT-10 expose one cancellable queue and preserve transcript s
   const app = source('src/App.tsx');
   assert.doesNotMatch(connection, /enqueueMessage|flushQueue|getQueueSize/);
   assert.match(send, /sessionMutationGate\.isBlocked/);
-  assert.match(view, /handleRecallMessage/);
-  assert.doesNotMatch(view, /handleEditMessage|handleRegenerate|onDelete=/);
-  assert.doesNotMatch(bubble, /onRegenerate|onDelete\?|isEditing/);
+  assert.doesNotMatch(view, /handleRecallMessage|setDraft\(activeSessionKey, content\)/);
+  assert.match(view, /localUserMessageCapabilities\(sourceMessage\)/);
+  assert.match(view, /handleEditFailedMessage/);
+  assert.match(view, /handleDeleteLocalMessage/);
+  assert.match(bubble, /InlineUserMessageEditor/);
+  assert.match(bubble, /<Trash2 size=\{14\}/);
   const streamEnd = app.slice(
     app.indexOf('onStreamEnd:'),
     app.indexOf('onRetryState:'),
@@ -81,11 +86,25 @@ test('CHAT-02 and CHAT-10 expose one cancellable queue and preserve transcript s
   );
 });
 
+test('CHAT-15 never claims durable per-message mutation support from OpenClaw', () => {
+  const gateway = source('src/services/gateway/index.ts');
+  const policy = source('src/components/Chat/localUserMessageMutations.ts');
+  assert.doesNotMatch(gateway, /chat\.message\.(?:edit|delete)|messages\.(?:edit|delete)/);
+  assert.match(policy, /!message\.nativeMessageId/);
+  assert.match(policy, /message\?\.status === 'failed'/);
+});
+
 test('CHAT-05 forced history refreshes queue behind the active request', () => {
   const view = source('src/components/Chat/ChatView.tsx');
   assert.match(view, /queuedForcedHistoryBySession/);
   assert.match(view, /await inFlightHistoryBySession\.current\[sessionKey\]/);
   assert.match(view, /await loadHistory\(sessionKey, queued\)/);
+});
+
+test('CHAT-16 initial history failure stays in the recoverable chat surface', () => {
+  const view = source('src/components/Chat/ChatView.tsx');
+  assert.match(view, /void loadHistory\(\)\.catch\(\(error\) => \{/);
+  assert.match(view, /Initial history load failed/);
 });
 
 test('CHAT-06 history pagination uses chat.history offsets only', () => {
@@ -115,9 +134,9 @@ test('CHAT-08 Gateway sends user-authored text without private context injection
 });
 
 test('CHAT-09 voice paths use an official attachment and never truncated base64 text', () => {
-  const input = source('src/components/Chat/MessageInput.tsx');
-  assert.doesNotMatch(input, /substring\(0,\s*50\)|\[voice:[^\]]*:base64\]/);
-  assert.match(input, /toGatewayAttachments\(\[createPreparedAttachment\(\{/);
+  const voice = source('src/components/Chat/message-input/useComposerVoice.ts');
+  assert.doesNotMatch(voice, /substring\(0,\s*50\)|\[voice:[^\]]*:base64\]/);
+  assert.match(voice, /toGatewayAttachments\(\[createPreparedAttachment\(\{/);
   const adapter = source('src/api/tauri-adapter.ts');
   assert.match(adapter, /mkdir\(voiceDir, \{ recursive: true \}\)/);
 });

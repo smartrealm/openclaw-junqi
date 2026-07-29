@@ -233,7 +233,6 @@ pub(crate) struct AgentSpec {
     /// Binary name on PATH. Also used as the lookup key from the frontend.
     pub(crate) bin: &'static str,
     /// Display label (for logs / notifications).
-    #[allow(dead_code)]
     pub(crate) label: &'static str,
     /// CLI flag(s) for permission mode: (ask, auto_edit, full_access).
     /// Empty vec = agent doesn't support permission modes.
@@ -243,7 +242,6 @@ pub(crate) struct AgentSpec {
     /// Some("--") = `codex -- "prompt"` (POSIX separator).
     prompt_flag: Option<&'static str>,
     /// Flag for resuming a conversation. None = resume not supported yet.
-    #[allow(dead_code)]
     resume_flag: Option<&'static str>,
     /// Whether this agent reports per-tool-call activity (Claude via hooks,
     /// Pi via extension events). Drives the frontend's tool-call pill.

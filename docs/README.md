@@ -96,6 +96,8 @@ docs/
 - [无引用与废弃代码清理验证](quality/dead-code-cleanup-validation-2026-07-29.md)
 - [Gateway 生命周期审计与前端重启协调器](gateway/openclaw-gateway-lifecycle-audit.md)
 - [OpenClaw 配置权威源审计](quality/openclaw-config-authority-audit-2026-07-29.md)
+- [加载指示器收敛记录](quality/loading-indicator-convergence-2026-07-29.md)
+- [萌宠文字与聊天窗口恢复记录](quality/pet-caption-and-chat-window-recovery-2026-07-29.md)
 
 ## 产品设计草案
 

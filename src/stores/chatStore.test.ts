@@ -15,13 +15,14 @@ const OTHER_KEY = 'agent:worker:main';
 
 function seedSessions(activeSessionKey = MAIN_KEY) {
   const sessions: Session[] = [
-    { key: MAIN_KEY, label: 'Main', model: 'anthropic/claude-sonnet-4-6' },
-    { key: OTHER_KEY, label: 'Worker', model: 'openai/gpt-4o' },
+    { key: MAIN_KEY, label: 'Main', model: 'anthropic/claude-sonnet-4-6', thinkingLevel: 'low' },
+    { key: OTHER_KEY, label: 'Worker', model: 'openai/gpt-4o', thinkingLevel: 'medium' },
   ];
   useChatStore.setState({
     sessions,
     activeSessionKey,
     currentModel: sessions.find((s) => s.key === activeSessionKey)?.model ?? null,
+    currentThinking: sessions.find((s) => s.key === activeSessionKey)?.thinkingLevel ?? null,
     manualModelOverride: null,
   });
 }
@@ -37,6 +38,20 @@ test('setSessionModel updates the session row and active currentModel', () => {
     state.sessions.find((session) => session.key === MAIN_KEY)?.model,
     'google/gemini-2.5-pro',
   );
+});
+
+test('setSessionThinking updates only the matching session and active title state', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionThinking(OTHER_KEY, 'high');
+  assert.equal(useChatStore.getState().currentThinking, 'low');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.thinkingLevel,
+    'high',
+  );
+
+  useChatStore.getState().setSessionThinking(MAIN_KEY, 'xhigh');
+  assert.equal(useChatStore.getState().currentThinking, 'xhigh');
 });
 
 test('setSessionModel does not overwrite currentModel for inactive sessions', () => {

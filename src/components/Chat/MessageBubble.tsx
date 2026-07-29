@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  Copy, Check, User, RotateCcw, Pencil,
+  Copy, User, RotateCcw, Pencil, Trash2,
   ChevronDown, ChevronRight, AlertTriangle,
   Sparkles, Bot, FileText,
 
@@ -20,6 +20,9 @@ import { StatusIcon } from '@/components/shared/StatusIcon';
 import clsx from 'clsx';
 import { debugError } from '@/utils/debugLog';
 import { fileExtension, workspaceFileKind } from '@/workspace-files/domain/fileKinds';
+import { InlineUserMessageEditor } from './InlineUserMessageEditor';
+import { MessageBubbleActions } from './MessageBubbleActions';
+import { hasPreviewableArtifact, isPreviewableArtifact } from './artifactPreview';
 
 const CodeBlock = lazy(() => import('./CodeBlock').then((m) => ({ default: m.CodeBlock })));
 const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
@@ -92,7 +95,7 @@ function detectErrorAction(content: string): ErrorAction | null {
 // leaving the chat (the original behavior was a separate preview window).
 // Mermaid is rendered via <pre> + the renderer (if loaded); plain code falls
 // through to a syntax-highlighted <pre>.
-function ArtifactCard({ artifact }: { artifact: Artifact }) {
+function ArtifactCard({ artifact, previewRequest }: { artifact: Artifact; previewRequest: number }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<'preview' | 'source'>('source');
   const typeIcons: Record<string, React.ReactNode> = {
@@ -106,7 +109,11 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
 
   const defaultArtifactIcon = Icon.chat.artifact.generic;
 
-  const supportsPreview = artifact.type === 'html' || artifact.type === 'svg';
+  const supportsPreview = isPreviewableArtifact(artifact);
+
+  useEffect(() => {
+    if (supportsPreview && previewRequest > 0) setTab('preview');
+  }, [previewRequest, supportsPreview]);
 
   return (
     <div className="my-3 rounded-xl border border-aegis-primary/20 bg-aegis-primary/[0.04] overflow-hidden">
@@ -221,7 +228,8 @@ interface MessageBubbleProps {
   block: MessageBlock;
   sessionKey?: string;
   groupPosition?: ResponseGroupMessagePosition;
-  onRecall?: (content: string) => void;
+  onEdit?: (content: string) => Promise<void>;
+  onDelete?: () => void;
   onRetry?: () => void;
   onErrorAction?: (action: string) => void;
   deliveryStatus?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
@@ -482,15 +490,21 @@ function FileCard({ path, meta }: { path: string; meta?: string }) {
 }
 
 // ── Action Button (icon-only, hover tooltip via title) ──
-function ActionBtn({ icon, label, onClick, disabled }: {
-  icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean;
+function ActionBtn({ icon, label, onClick, disabled, danger = false }: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
 }) {
   return (
-    <button onClick={onClick} disabled={disabled}
+    <button type="button" onClick={onClick} disabled={disabled}
       className={clsx(
         'inline-flex items-center justify-center w-7 h-7 rounded transition-all duration-150',
         '[@media(pointer:coarse)]:h-[40px] [@media(pointer:coarse)]:w-[40px]',
-        'hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text',
+        danger
+          ? 'text-aegis-text-muted hover:bg-aegis-danger/10 hover:text-aegis-danger'
+          : 'hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text',
         'disabled:cursor-wait disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-aegis-text-muted',
       )}
       title={label}
@@ -589,7 +603,7 @@ const markdownComponents = {
 };
 
 export const MessageBubble = memo(function MessageBubble({
-  block, sessionKey, onRecall, onRetry, onErrorAction, collaborationAction,
+  block, sessionKey, onEdit, onDelete, onRetry, onErrorAction, collaborationAction,
   deliveryStatus, deliveryError, outboundAttachments,
   historyTruncated, historyTruncationReason, onLoadFullMessage,
   groupPosition = 'standalone',
@@ -598,8 +612,10 @@ export const MessageBubble = memo(function MessageBubble({
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const responseSessionKey = sessionKey ?? activeSessionKey;
   const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [loadingFullMessage, setLoadingFullMessage] = useState(false);
   const [fullMessageError, setFullMessageError] = useState('');
+  const [artifactPreviewRequest, setArtifactPreviewRequest] = useState(0);
 
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
@@ -649,6 +665,7 @@ function stripInlineCodeTicks(md: string): string {
     : '';
 
   const isEmptyAssistantStreaming = !isUser && block.isStreaming && !content.trim() && block.images.length === 0 && block.artifacts.length === 0 && !block.audio;
+  const canPreviewArtifact = hasPreviewableArtifact(block.artifacts);
   const showAvatar = groupPosition === 'standalone' || groupPosition === 'first';
   const showFooter = groupPosition === 'standalone' || groupPosition === 'last';
   const [waitElapsedSec, setWaitElapsedSec] = useState(0);
@@ -694,7 +711,8 @@ function stripInlineCodeTicks(md: string): string {
           key={`${block.id}-bubble`}
           className={clsx(
           'relative block rounded-xl py-2.5 transition-colors duration-150',
-          'pl-4 pr-9 max-w-full box-border min-w-0 break-words group/bubble',
+          'pl-4 max-w-full box-border min-w-0 break-words group/bubble',
+          canPreviewArtifact ? 'pr-[68px]' : 'pr-9',
           isEmptyAssistantStreaming
             ? 'bg-transparent shadow-none p-0 pl-0 pr-0 py-0'
             : isUser
@@ -705,25 +723,13 @@ function stripInlineCodeTicks(md: string): string {
           style={{ width: 'auto' }}
         >
 
-          {/* Floating Copy button — top-right corner of the FIRST line, hugging
-              the bubble border (4px inset). opacity-0 by default and reveals on
-              bubble hover, focus, or after a successful copy. Sits in the
-              reserved pr-9 gutter so it never overlaps text. */}
-          {!block.isStreaming && !isEmptyAssistantStreaming && (
-            <button onClick={handleCopy}
-              className={clsx(
-                'absolute right-1 top-1 z-10',
-                'inline-flex items-center justify-center w-7 h-7 rounded-md transition-all duration-150',
-                'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100',
-                copied && 'opacity-100',
-                'bg-[rgb(var(--aegis-bg)/0.92)] border border-aegis-border backdrop-blur-sm shadow-sm',
-                'hover:bg-[rgb(var(--aegis-elevated))] hover:border-aegis-border-hover',
-                'text-aegis-text-muted hover:text-aegis-text',
-              )}
-              title={copied ? t('chat.copied', 'Copied') : t('chat.copy', 'Copy')}
-              aria-label={copied ? t('chat.copied', 'Copied') : t('chat.copy', 'Copy')}>
-              {copied ? <Check size={14} className="text-aegis-success" /> : <Copy size={14} />}
-            </button>
+          {!block.isStreaming && !isEditing && !isEmptyAssistantStreaming && (
+            <MessageBubbleActions
+              copied={copied}
+              previewable={canPreviewArtifact}
+              onCopy={() => { void handleCopy(); }}
+              onPreview={() => setArtifactPreviewRequest((request) => request + 1)}
+            />
           )}
 
           {/* Audio Player */}
@@ -784,7 +790,16 @@ function stripInlineCodeTicks(md: string): string {
           )}
 
           {/* Content */}
-          {block.isStreaming ? (
+          {isUser && isEditing && onEdit ? (
+            <InlineUserMessageEditor
+              initialValue={content}
+              onCancel={() => setIsEditing(false)}
+              onSave={async (nextContent) => {
+                await onEdit(nextContent);
+                setIsEditing(false);
+              }}
+            />
+          ) : block.isStreaming ? (
             <div className="flex flex-col gap-2">
               {content.trim() && (
                 <pre className="markdown-body text-[14px] leading-relaxed text-aegis-text whitespace-pre-wrap break-words font-[inherit]">
@@ -867,7 +882,7 @@ function stripInlineCodeTicks(md: string): string {
 
           {/* Artifacts */}
           {block.artifacts.map((art, idx) => (
-            <ArtifactCard key={`art-${idx}`} artifact={art} />
+            <ArtifactCard key={`art-${idx}`} artifact={art} previewRequest={artifactPreviewRequest} />
           ))}
 
           {/* Collapsed Meta */}
@@ -937,14 +952,14 @@ function stripInlineCodeTicks(md: string): string {
                 </span>
               )}
             </span>
-            {(block as { editedAt?: string }).editedAt && (
-              <span className="text-[10px] text-aegis-text-dim italic">· {t('chat.edited', 'edited')}</span>
-            )}
             <span className="inline-flex items-center gap-0.5">
             <span className="text-aegis-border text-[10px] select-none">·</span>
-            {onRecall && (
-              <ActionBtn icon={<Pencil size={14} />} label={t('chat.recallToInput', 'Edit in composer')}
-                onClick={() => onRecall(block.markdown)} />
+            {onEdit && !isEditing && (
+              <ActionBtn
+                icon={<Pencil size={14} />}
+                label={t('chat.editMessage', 'Edit message')}
+                onClick={() => setIsEditing(true)}
+              />
             )}
             {onRetry && (
               <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.retryDelivery', 'Retry delivery')}
@@ -962,6 +977,14 @@ function stripInlineCodeTicks(md: string): string {
                     : t('collaboration.chat.confirmingMessage', 'Confirming message identity')}
                 onClick={() => collaborationAction.onClick?.()}
                 disabled={collaborationAction.state === 'confirming' || !collaborationAction.onClick}
+              />
+            )}
+            {onDelete && !isEditing && (
+              <ActionBtn
+                icon={<Trash2 size={14} />}
+                label={t('chat.deleteMessage', 'Delete message')}
+                onClick={onDelete}
+                danger
               />
             )}
             </span>

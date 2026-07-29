@@ -1,43 +1,11 @@
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
 import type { ModelEntry } from './modelLoaders';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
-
-const PROVIDER_ALIASES: Record<string, string> = {
-  modelstudio: 'qwen',
-  qwencloud: 'qwen',
-  'qwen-dashscope': 'qwen',
-  'z.ai': 'zai',
-  'z-ai': 'zai',
-  kimi: 'kimi-coding',
-  'kimi-code': 'kimi-coding',
-  'kimi-coding': 'kimi-coding',
-};
-
-function canonicalProviderId(providerId: string | undefined): string {
-  const normalized = String(providerId ?? '').trim().toLowerCase();
-  return PROVIDER_ALIASES[normalized] ?? normalized;
-}
-
-function canonicalModelRef(modelRef: string | undefined): string | undefined {
-  const trimmed = String(modelRef ?? '').trim();
-  if (!trimmed) return undefined;
-  const slashIndex = trimmed.indexOf('/');
-  if (slashIndex <= 0) return trimmed;
-  const provider = canonicalProviderId(trimmed.slice(0, slashIndex));
-  const model = trimmed.slice(slashIndex + 1).trim();
-  return provider && model ? `${provider}/${model}` : trimmed;
-}
-
-function providerScopedModelId(providerId: string, modelId: string | undefined): string | undefined {
-  const trimmed = String(modelId ?? '').trim();
-  if (!trimmed) return undefined;
-  const slashIndex = trimmed.indexOf('/');
-  if (slashIndex <= 0) return `${providerId}/${trimmed}`;
-
-  const head = canonicalProviderId(trimmed.slice(0, slashIndex));
-  const tail = trimmed.slice(slashIndex + 1).trim();
-  return head && tail ? `${head}/${tail}` : canonicalModelRef(trimmed);
-}
+import {
+  canonicalModelRef,
+  canonicalProviderId,
+  providerScopedModelId,
+} from './modelIdentity';
 
 function addModel(out: Map<string, ModelEntry>, entry: ModelEntry | undefined): void {
   const id = canonicalModelRef(entry?.id);

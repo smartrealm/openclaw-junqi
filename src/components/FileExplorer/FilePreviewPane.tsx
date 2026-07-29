@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactCodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { useTranslation } from "react-i18next";
+import { LoadingIndicator } from "@/components/shared/LoadingIndicator";
 import { aegisCodeMirrorBaseTheme, getCodeMirrorColorTheme } from "@/utils/codeMirrorTheme";
 import { ExternalFileChangeBanner } from "./ExternalFileChangeBanner";
 import { FileReadOnlyPreview } from "./FileReadOnlyPreview";
@@ -151,8 +152,13 @@ export function FilePreviewPane({
       ) : null}
       <div style={{ flex: 1, overflow: "hidden", position: "relative", minWidth: 0, minHeight: 0 }}>
         {loading ? (
-          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "var(--aegis-text-dim)", fontSize: 12 }}>
-            {t("common.loading", "Loading...")}
+          <div
+            role="status"
+            aria-live="polite"
+            style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "var(--aegis-text-dim)", fontSize: 12 }}
+          >
+            <LoadingIndicator variant="dots" size={10} />
+            <span>{t("common.loading", "Loading...")}</span>
           </div>
         ) : error ? (
           <div style={{ height: "100%", display: "grid", placeItems: "center", color: "var(--aegis-text-muted)", fontSize: 12.5 }}>
@@ -176,6 +182,7 @@ export function FilePreviewPane({
           </>
         ) : content !== null ? (
           <ReactCodeMirror
+            className="file-source-editor"
             value={content}
             onChange={edit}
             theme={getCodeMirrorColorTheme(themeVariant)}

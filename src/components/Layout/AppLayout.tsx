@@ -5,10 +5,10 @@
 
 import { lazy, Suspense, useLayoutEffect, useRef } from 'react';
 import { matchPath, Outlet, useLocation } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
 import { TopBar } from '@/components/Layout/TopBar';
 import { TabBar } from '@/components/Layout/TabBar';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -125,7 +125,7 @@ export function AppLayout() {
             <ErrorBoundary>
               <Suspense fallback={
                 <div className="flex-1 flex items-center justify-center h-full">
-                  <Loader2 className="w-6 h-6 animate-spin text-aegis-primary/50" />
+                  <LoadingIndicator variant="dots" size={12} className="text-aegis-primary/60" />
                 </div>
               }>
                 <Outlet />

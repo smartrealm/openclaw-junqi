@@ -10,11 +10,12 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useRef } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useChatStore } from '@/stores/chatStore';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
+import { ModelDropdownOption } from './ModelDropdownOption';
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ export function ModelDropdown({
 
   const active = modelList.find((m) => m.id === value);
   const hasValue = Boolean(value);
-  const displayShort = active?.alias || (hasValue ? formatModelName(value) : (placeholder ?? t('config.notSet', 'Not set')));
+  const displayShort = active?.alias || (hasValue ? formatModelName(value) : (placeholder ?? t('config.notSet')));
   const displayProvider = hasValue && value?.includes('/') ? value.split('/')[0] : '';
 
   return (
@@ -167,7 +168,7 @@ export function ModelDropdown({
               </div>
             ) : (
               <span className="text-aegis-text-muted">
-                {placeholder ?? 'Select a model…'}
+                {placeholder ?? t('agentSettings.selectModel')}
               </span>
             )}
           </div>
@@ -191,10 +192,7 @@ export function ModelDropdown({
           <div className="overflow-y-auto max-h-[252px] py-1">
             {providers.length === 0 ? (
               <div className="px-3 py-4 text-[12px] text-aegis-text-muted text-center">
-                {t(
-                  'config.noModelsConfiguredHint',
-                  'No models configured. Add providers in Config Manager.'
-                )}
+                {t('config.noModelsConfiguredHint')}
               </div>
             ) : providers.map((provider, pi) => (
               <div key={provider}>
@@ -211,29 +209,18 @@ export function ModelDropdown({
                 {grouped[provider].map((m) => {
                   const isActive = value === m.id;
                   return (
-                    <button
+                    <ModelDropdownOption
                       key={m.id}
-                      type="button"
-                      onClick={() => { onChange(m.id); setOpen(false); }}
-                      className={clsx(
-                        'w-full flex items-center justify-between px-3 py-1.5 text-[12px] text-start transition-colors',
-                        isActive
-                          ? 'text-aegis-primary bg-[rgb(var(--aegis-primary)/0.08)]'
-                          : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
-                      )}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <span className="font-mono truncate block">
-                          {m.alias || formatModelName(m.id)}
-                        </span>
-                        {m.alias && (
-                          <span className="text-[9px] text-aegis-text-dim font-mono truncate block">
-                            {formatModelName(m.id)}
-                          </span>
-                        )}
-                      </div>
-                      {isActive && <Check size={11} className="text-aegis-primary shrink-0 ms-2" />}
-                    </button>
+                      modelId={m.id}
+                      label={m.alias || formatModelName(m.id)}
+                      detail={m.alias ? formatModelName(m.id) : undefined}
+                      current={isActive}
+                      currentLabel={t('config.currentModel')}
+                      onSelect={() => {
+                        onChange(m.id);
+                        setOpen(false);
+                      }}
+                    />
                   );
                 })}
               </div>

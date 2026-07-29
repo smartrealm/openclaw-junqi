@@ -6,87 +6,10 @@ import clsx from 'clsx';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
-import { ModelDropdown } from '@/components/shared/ModelDropdown';
 import { exportChatMarkdown } from '@/utils/exportChat';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
-import { setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { debugError } from '@/utils/debugLog';
 import { useSkillsStore } from '@/stores/skillsStore';
-
-const THINKING_LEVELS = [
-  { id: 'auto', label: 'Auto' },
-  { id: 'high', label: 'High' },
-  { id: 'medium', label: 'Medium' },
-  { id: 'low', label: 'Low' },
-  { id: 'minimal', label: 'Minimal' },
-  { id: 'off', label: 'Off' },
-];
-
-function SessionModelPicker({ currentModel }: { currentModel: string | null }) {
-  const { t } = useTranslation();
-  const navigate = useNavigate();
-  const [switching, setSwitching] = useState(false);
-  const { setManualModelOverride, setSessionModel, manualModelOverride, availableModels, addMessage } = useChatStore();
-  const activeSessionKey = useChatStore((s) => s.activeSessionKey);
-  const effectiveModel = manualModelOverride ?? currentModel;
-
-  const handleSelect = async (modelId: string) => {
-    if (switching) return;
-    setSwitching(true);
-    try {
-      const sessionKey = activeSessionKey || 'agent:main:main';
-      await gateway.setSessionModel(modelId, sessionKey);
-      setSessionModel(sessionKey, modelId);
-      setManualModelOverride(modelId);
-      setSessionModelPref(sessionKey, modelId);
-      // Drop a system notice into the chat so the switch is visible in-stream.
-      const fromModel = effectiveModel || '';
-      if (fromModel && fromModel !== modelId) {
-        addMessage({
-          id: `model-switch-${Date.now()}`,
-          role: 'system',
-          kind: 'model-switch',
-          content: JSON.stringify({ from: fromModel, to: modelId }),
-          timestamp: new Date().toISOString(),
-        }, sessionKey);
-      }
-      setTimeout(() => window.dispatchEvent(new Event('aegis:model-changed')), 500);
-    } catch (err) {
-      debugError('models', '[SessionModelPicker] Failed to switch model:', err);
-    } finally {
-      setSwitching(false);
-    }
-  };
-
-  if (availableModels.length === 0) {
-    return (
-      <button
-        type="button"
-        onClick={() => navigate('/config')}
-        className={clsx(
-          'no-drag flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono transition-all duration-150',
-          'text-aegis-warning hover:text-aegis-warning/80',
-          'hover:bg-aegis-warning/[0.08] border border-aegis-warning/30',
-        )}
-        title={t('config.addFirstProvider', 'Add your first AI provider to get started')}
-      >
-        <span>{t('config.setupProviderShort', 'Setup →')}</span>
-      </button>
-    );
-  }
-
-  return (
-    <div className="no-drag">
-      <ModelDropdown
-        value={switching ? null : effectiveModel}
-        onChange={handleSelect}
-        variant="pill"
-        placeholder={switching ? '…' : t('config.notSet', 'Not set')}
-        disabled={switching}
-      />
-    </div>
-  );
-}
 
 function WorkspacePicker({ agentId, current }: { agentId: string; current?: string }) {
   const { t } = useTranslation();
@@ -119,7 +42,7 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
     const result = typeof openDialog === 'function' ? await openDialog({ properties: ['openDirectory'] }) : null;
     if (result?.filePaths?.[0]) await switchTo(result.filePaths[0]);
   };
-  const label = current ? (current.split(/[\\/]/).pop() || current) : t('chat.workspaceDefault', 'default');
+  const label = current ? (current.split(/[\\/]/).pop() || current) : t('chat.workspaceDefault');
   const filtered = query.trim()
     ? recents.filter((ws) => ws.toLowerCase().includes(query.toLowerCase()) || (ws.split(/[\\/]/).pop() || '').toLowerCase().includes(query.toLowerCase()))
     : recents;
@@ -129,7 +52,7 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-        title={current || t('chat.workspaceDefault', 'default')}
+        title={current || t('chat.workspaceDefault')}
       >
         <Folder size={11} />
         <span className="font-mono max-w-[120px] truncate">{label}</span>
@@ -142,7 +65,7 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={t('chat.workspaceSearch', 'Search workspaces…')}
+              placeholder={t('chat.workspaceSearch')}
               className="w-full rounded-md bg-[rgb(var(--aegis-overlay)/0.06)] px-2 py-1 text-[11px] text-aegis-text placeholder:text-aegis-text-dim outline-none focus:bg-[rgb(var(--aegis-overlay)/0.1)]"
             />
           </div>
@@ -157,12 +80,12 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
                 </button>
               );
             }) : (
-              <div className="px-3 py-2 text-[11px] text-aegis-text-dim">{t('chat.workspaceNoResults', 'No match')}</div>
+              <div className="px-3 py-2 text-[11px] text-aegis-text-dim">{t('chat.workspaceNoResults')}</div>
             )}
           </div>
           <div className="border-t border-[rgb(var(--aegis-overlay)/0.06)]">
             <button onClick={pickFolder} className="w-full flex items-center gap-1.5 text-start px-3 py-2 text-[11px] text-aegis-primary hover:bg-aegis-primary/10 transition-colors">
-              <Plus size={11} /> {t('chat.workspacePick', 'Choose folder…')}
+              <Plus size={11} /> {t('chat.workspacePick')}
             </button>
           </div>
         </div>
@@ -171,104 +94,13 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
   );
 }
 
-function SessionThinkingPicker({ currentThinking }: { currentThinking: string | null }) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [switching, setSwitching] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const { setCurrentThinking } = useChatStore();
-  const activeSessionKey = useChatStore((s) => s.activeSessionKey);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const handleSelect = async (level: string) => {
-    if (switching) return;
-    setOpen(false);
-    setSwitching(true);
-    try {
-      const sessionKey = activeSessionKey || 'agent:main:main';
-      const nextLevel = level === 'auto' ? null : level;
-      await gateway.setSessionThinking(nextLevel, sessionKey);
-      setCurrentThinking(nextLevel);
-    } catch (err) {
-      debugError('app', '[SessionThinkingPicker] Failed to switch thinking:', err);
-    } finally {
-      setSwitching(false);
-    }
-  };
-
-  const currentThinkingId = currentThinking ?? 'auto';
-  const active = THINKING_LEVELS.find((it) => it.id === currentThinkingId);
-  const displayLabel = t(`titlebar.thinking.levels.${active?.id ?? 'auto'}`, active?.label ?? 'Auto');
-
-  return (
-    <div ref={ref} className="relative no-drag">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        disabled={switching}
-        aria-label={t('titlebar.thinking.ariaLabel', { level: displayLabel })}
-        title={t('titlebar.thinking.ariaLabel', { level: displayLabel })}
-        className={clsx(
-          'flex items-center gap-1.5 px-1.5 py-0.5 rounded-md text-[11px] transition-all duration-150',
-          'text-aegis-text-muted hover:text-aegis-text-secondary',
-          'hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
-          open && 'bg-[rgb(var(--aegis-overlay)/0.08)]',
-          switching && 'opacity-60 cursor-wait',
-        )}
-      >
-        <span className="text-[10px] uppercase tracking-[0.5px] text-aegis-text-dim">
-          {t('titlebar.thinking.label')}
-        </span>
-        <span className="font-mono text-aegis-text-secondary">
-          {switching ? t('titlebar.thinking.updating') : displayLabel}
-        </span>
-        <ChevronDown size={9} className={clsx('transition-transform duration-150', open && 'rotate-180')} />
-      </button>
-
-      {open && (
-        <div
-          className="absolute top-full left-0 mt-1 z-50 min-w-[150px] rounded-xl overflow-hidden bg-aegis-menu-bg border border-aegis-menu-border"
-          style={{ boxShadow: 'var(--aegis-menu-shadow)' }}
-        >
-          {THINKING_LEVELS.map((level) => {
-            const isActive = currentThinkingId === level.id;
-            return (
-              <button
-                key={level.id}
-                onClick={() => handleSelect(level.id)}
-                className={clsx(
-                  'w-full flex items-center justify-between px-3 py-2 text-[12px] text-start transition-colors',
-                  isActive
-                    ? 'text-aegis-primary bg-[rgb(var(--aegis-primary)/0.08)]'
-                    : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
-                )}
-              >
-                <span className="font-mono">{t(`titlebar.thinking.levels.${level.id}`, level.label)}</span>
-                {isActive && <Check size={11} className="text-aegis-primary shrink-0" />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey } = useChatStore();
+  const { tokenUsage, renderBlocks, activeSessionKey } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
   const skills = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
   const navigate = useNavigate();
-  const hasProviders = availableModels.length > 0;
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRefreshed, setIsRefreshed] = useState(false);
 
@@ -276,7 +108,7 @@ export function SessionContextBar() {
   const keyParts = activeSessionKey.split(':');
   const agentId = keyParts.length >= 3 ? (keyParts[1] ?? 'main') : 'main';
   const agent = agents.find((a) => a.id === agentId);
-  const mainAgentName = getAgentDisplayName(agents.find((a) => a.id === 'main'), t('agents.mainAgent', 'Main Agent'));
+  const mainAgentName = getAgentDisplayName(agents.find((a) => a.id === 'main'), t('agents.mainAgent'));
   const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
   const enabledSkillCount = Object.values(skills).filter((skill) => skill.enabled !== false).length;
 
@@ -297,21 +129,13 @@ export function SessionContextBar() {
         {agentDisplayName}
       </span>
       <WorkspacePicker agentId={agentId} current={agent?.workspace} />
-
-      <SessionModelPicker currentModel={currentModel} />
-      {hasProviders && (
-        <>
-          <span className="text-aegis-text-dim opacity-40">·</span>
-          <SessionThinkingPicker currentThinking={currentThinking} />
-        </>
-      )}
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
         <div className="hidden items-center gap-0.5 lg:flex">
           <button
             type="button"
             onClick={() => navigate('/skills')}
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('activity.skillsHint', '查看当前可用技能')}
+            title={t('activity.skillsHint')}
           >
             <Puzzle size={11} />{enabledSkillCount}
           </button>
@@ -319,7 +143,7 @@ export function SessionContextBar() {
             type="button"
             onClick={() => navigate('/tools')}
             className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('activity.mcpHint', '查看 MCP 工具')}
+            title={t('activity.mcpHint')}
           >
             <Wrench size={11} />
           </button>
@@ -327,7 +151,7 @@ export function SessionContextBar() {
             type="button"
             onClick={() => navigate('/activity')}
             className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('activity.open', '打开活动中心')}
+            title={t('activity.open')}
           >
             <Activity size={11} />
           </button>
@@ -341,7 +165,7 @@ export function SessionContextBar() {
           <button
             onClick={() => exportChatMarkdown(renderBlocks, activeSessionKey)}
             className="p-1.5 rounded-md transition-colors text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)]"
-            title={t('chat.exportMarkdown', 'Export as Markdown')}
+            title={t('chat.exportMarkdown')}
           >
             <Download size={13} />
           </button>
@@ -363,7 +187,7 @@ export function SessionContextBar() {
             isRefreshing && 'opacity-50 cursor-wait',
             isRefreshed && 'text-aegis-success hover:text-aegis-success',
           )}
-          title={isRefreshed ? t('chat.refreshDone', 'Refreshed') : t('chat.refresh', 'Refresh chat')}
+          title={isRefreshed ? t('chat.refreshDone') : t('chat.refresh')}
         >
           {isRefreshed
             ? <Check size={13} />

@@ -39,15 +39,19 @@ test('AudioPlayer does not retain an unreachable replay implementation', () => {
 
 test('BUG-07 all direct chat send paths interrupt voice first', () => {
   const input = read('../../components/Chat/MessageInput.tsx');
+  const composerVoice = read('../../components/Chat/message-input/useComposerVoice.ts');
+  const interruption = read('../../components/Chat/message-input/useComposerInterruption.ts');
   const chat = read('../../components/Chat/ChatView.tsx');
   const quick = read('../../pages/QuickChatPage.tsx');
-  assert.match(input, /if \(st\.typingBySession\[activeSessionKey\] \|\| voiceActive\)/);
-  const voiceSend = input.slice(
-    input.indexOf('const sendVoicePayload'),
-    input.indexOf('const handleVoiceWakeCapture'),
+  assert.match(input, /useComposerInterruption\(\{/);
+  assert.match(interruption, /if \(state\.typingBySession\[activeSessionKey\] \|\| voiceOutputActive\)/);
+  assert.match(input, /useComposerVoice\(\{/);
+  const voiceSend = composerVoice.slice(
+    composerVoice.indexOf('const sendVoice'),
+    composerVoice.indexOf('const stopAssistant'),
   );
   assert.ok(
-    voiceSend.indexOf('voiceRuntime.interruptGlobally(sendSessionKey)')
+    voiceSend.indexOf('voiceRuntime.interruptGlobally(sessionKey)')
       < voiceSend.indexOf('await chatSendCoordinator.send'),
   );
   assert.match(chat, /voiceRuntime\.interruptGlobally\(activeSessionKey\)/);
@@ -128,10 +132,10 @@ test('BUG-20 Quick Chat ownership never writes main tab state', () => {
 });
 
 test('BUG-21 voice sends portable attachments and cleanup scopes the directory', () => {
-  const input = read('../../components/Chat/MessageInput.tsx');
+  const composerVoice = read('../../components/Chat/message-input/useComposerVoice.ts');
   const adapter = read('../../api/tauri-adapter.ts');
-  assert.match(input, /toGatewayAttachments\(\[createPreparedAttachment\(\{[\s\S]*fileName: filename,[\s\S]*mimeType,[\s\S]*base64,/);
-  assert.doesNotMatch(input, /\[voice\] \$\{savedPath\}/);
+  assert.match(composerVoice, /toGatewayAttachments\(\[createPreparedAttachment\(\{[\s\S]*fileName,[\s\S]*mimeType,[\s\S]*base64,/);
+  assert.doesNotMatch(composerVoice, /\[voice\] \$\{savedPath\}/);
   const hostilePath = voiceSessionDirectory('/app/data/', 'agent:main/../../main');
   const formerlyCollidingPath = voiceSessionDirectory('/app/data/', 'agent_main_______main');
   assert.match(hostilePath, /^\/app\/data\/voice\/v1\/[a-zA-Z0-9_\/-]+\/_$/);
@@ -145,12 +149,15 @@ test('BUG-21 voice sends portable attachments and cleanup scopes the directory',
 
 test('BUG-23 remote output is visible to controls, status surfaces, and native feedback suppression', () => {
   const input = read('../../components/Chat/MessageInput.tsx');
+  const composerVoice = read('../../components/Chat/message-input/useComposerVoice.ts');
+  const interruption = read('../../components/Chat/message-input/useComposerInterruption.ts');
   const quick = read('../../pages/QuickChatPage.tsx');
   const island = read('../../dynamic-island/DynamicIslandRuntime.tsx');
   const pet = read('../../pet/usePetStateEmitter.ts');
-  assert.match(input, /remoteVoiceOutput !== null/);
-  assert.match(input, /const voiceActive = voice\.remoteOutput !== null/);
-  assert.match(input, /interruptGlobally\(activeSessionKey\)/);
+  assert.match(composerVoice, /const remoteOutput = useVoiceStore/);
+  assert.match(composerVoice, /const outputActive = remoteOutput !== null/);
+  assert.match(input, /voiceOutputActive=\{voice\.outputActive\}/);
+  assert.match(interruption, /interruptGlobally\(activeSessionKey\)/);
   assert.match(quick, /state\.remoteOutput !== null/);
   assert.match(island, /remoteVoiceOutput \? 'speaking' : localVoicePhase/);
   assert.match(pet, /voice\.remoteOutput !== null/);

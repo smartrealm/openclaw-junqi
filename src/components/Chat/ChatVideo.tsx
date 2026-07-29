@@ -4,6 +4,7 @@ import { Download, Maximize2, Play, Pause, Volume2, VolumeX, AlertTriangle } fro
 import clsx from 'clsx';
 import { debugError, debugLog } from '@/utils/debugLog';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // ChatVideo — Video display with controls, save, and fullscreen
@@ -173,7 +174,11 @@ export function ChatVideo({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
           className="rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] flex items-center justify-center"
           style={{ display: 'inline-flex', width: 300, height: 170, background: 'rgb(var(--aegis-overlay) / 0.03)' }}
         >
-          <span className="w-5 h-5 border-2 border-[rgb(var(--aegis-overlay)/0.1)] border-t-white/30 rounded-full animate-spin" style={{ display: 'inline-block' }} />
+          <LoadingIndicator
+            size={20}
+            label={t('common.loading', 'Loading...')}
+            className="text-aegis-text-dim"
+          />
         </span>
       )}
 

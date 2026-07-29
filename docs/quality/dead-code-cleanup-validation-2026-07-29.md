@@ -82,6 +82,18 @@
 - 结果：迁移后删除旧 preview hook、watch hook 和旧 state helper；Tauri CAS command、注册项与 Rust 行为测试继续保留。
 - 回归：`editorDocumentManager.test.ts` 覆盖 CAS 拒绝、冲突状态、接受磁盘内容和保留本地草稿；文件预览契约测试改为约束现行链路。
 
+### 10. 快捷键、终端类型与 Rust dead-code 豁免收敛
+
+- `src/junqi/shortcuts.ts` 删除零引用的提示词发送、隐藏窗口和快捷键标签逻辑，只保留实际运行中的终端换行序列、默认值、规范化和匹配函数。
+- 删除仅被废弃快捷键依赖的 `src/junqi/platform.ts` 和零引用的 `src/theme/index.ts` barrel。
+- 将 `TerminalPage` 与 `PaneTreeView` 迁移到现行 `terminalTypes.ts`，删除已发生字体栈漂移的重复 `src/junqi/types.ts`。
+- 删除 Rust 零引用的 `devices_dir()` 与 `_state_lookup_helper()`。
+- `AgentSpec.label` 与 `resume_flag` 分别由 provider 能力探测和会话恢复读取，不是死字段；只删除其错误的 `#[allow(dead_code)]`。
+- `providerClaimClient.ts` 仍按 Workbench 目标架构及 TypeScript/Rust IPC 契约保留。
+- 回归：`src/deadCodeCleanup.test.ts` 约束删除结果、单一类型来源、活字段消费者和 provider claim 保留边界。
+- 验证：定向清理与终端测试 29/29、`pnpm lint`、`cargo fmt -- --check`、`cargo check --lib`、
+  `cargo test --lib`（651 通过、3 ignored）、`pnpm test`、`pnpm build` 和 `git diff --check` 均通过。
+
 ## 验证结果
 
 - `pnpm exec tsc --noEmit --noUnusedLocals --noUnusedParameters --pretty false`：通过，0 条 unused 诊断。

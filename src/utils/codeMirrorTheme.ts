@@ -23,12 +23,11 @@ export function getCodeMirrorColorTheme(theme: CodeMirrorThemeVariant): Extensio
 export const aegisCodeMirrorBaseTheme = EditorView.theme({
   '&': {
     height: '100%',
+    minHeight: '0',
+    minWidth: '0',
     color: 'rgb(var(--aegis-text))',
     fontFamily: 'var(--font-editor, var(--font-mono))',
     fontSize: '13px',
-    background: 'var(--aegis-elevated)',
-  },
-  '.cm-editor': {
     background: 'var(--aegis-elevated)',
   },
   '.cm-scroller': {
@@ -48,6 +47,7 @@ export const aegisCodeMirrorBaseTheme = EditorView.theme({
     borderLeftColor: 'rgb(var(--aegis-text))',
   },
   '.cm-gutters': {
+    flexShrink: '0',
     borderRight: '1px solid var(--aegis-border)',
     background: 'var(--aegis-surface)',
     color: 'rgb(var(--aegis-text-dim))',

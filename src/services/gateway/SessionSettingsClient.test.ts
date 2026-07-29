@@ -1,0 +1,81 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { SessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
+import { SessionSettingsClient } from './SessionSettingsClient';
+
+const SESSION_KEY = 'agent:main:main';
+
+function response(entry: Record<string, unknown> = {}) {
+  return { ok: true as const, key: SESSION_KEY, entry };
+}
+
+describe('SessionSettingsClient', () => {
+  it('uses operator.admin requests only for runtime overrides', async () => {
+    const calls: Array<{ lane: 'daily' | 'admin'; method: string; params: Record<string, unknown> }> = [];
+    const client = new SessionSettingsClient({
+      runMutation: (_key, operation) => operation(),
+      request: async (method, params) => {
+        calls.push({ lane: 'daily', method, params });
+        return response() as never;
+      },
+      requestPrivileged: async (method, params) => {
+        calls.push({ lane: 'admin', method, params });
+        return response() as never;
+      },
+    });
+
+    await client.setModel(SESSION_KEY, 'openai/gpt-5.6');
+    await client.setThinking(SESSION_KEY, 'high');
+    await client.setLabel(SESSION_KEY, 'Planning');
+
+    assert.deepEqual(calls, [
+      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, model: 'openai/gpt-5.6' } },
+      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, thinkingLevel: 'high' } },
+      { lane: 'daily', method: 'sessions.patch', params: { key: SESSION_KEY, label: 'Planning' } },
+    ]);
+  });
+
+  it('keeps session setting mutations ordered in the shared session lane', async () => {
+    const coordinator = new SessionCommandCoordinator();
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    let requestCount = 0;
+    const client = new SessionSettingsClient({
+      runMutation: (key, operation) => coordinator.runMutation(key, operation),
+      request: async () => response() as never,
+      requestPrivileged: async () => {
+        requestCount += 1;
+        order.push(`start-${requestCount}`);
+        if (requestCount === 1) await firstPending;
+        order.push(`end-${requestCount}`);
+        return response() as never;
+      },
+    });
+
+    const first = client.setModel(SESSION_KEY, 'openai/gpt-5.6');
+    const second = client.setThinking(SESSION_KEY, 'high');
+    await Promise.resolve();
+    assert.deepEqual(order, ['start-1']);
+
+    releaseFirst();
+    await Promise.all([first, second]);
+    assert.deepEqual(order, ['start-1', 'end-1', 'start-2', 'end-2']);
+  });
+
+  it('rejects an unconfirmed Gateway response', async () => {
+    const client = new SessionSettingsClient({
+      runMutation: (_key, operation) => operation(),
+      request: async () => ({ ok: false }) as never,
+      requestPrivileged: async () => ({ ok: false }) as never,
+    });
+
+    await assert.rejects(
+      client.setModel(SESSION_KEY, 'openai/gpt-5.6'),
+      (error: unknown) => (
+        error instanceof Error
+        && (error as Error & { code?: string }).code === 'SESSION_SETTINGS_RESPONSE_INVALID'
+      ),
+    );
+  });
+});

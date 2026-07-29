@@ -31,6 +31,7 @@ import { routeGatewayEvent } from './collaborationEventBridge';
 import type { GatewayAuthorizationIssue } from './messageRouter';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
 import type { GatewayAttachment } from '@/services/chat/types';
+import { SessionSettingsClient } from './SessionSettingsClient';
 
 // Re-export types for consumers
 export type {
@@ -483,6 +484,11 @@ export function createPrivilegedRequester(
 }
 
 const requestPrivileged = createPrivilegedRequester(connection);
+const sessionSettings = new SessionSettingsClient({
+  runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
+  request: (method, params) => connection.request(method, params),
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+});
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
 });
@@ -767,22 +773,13 @@ export const gateway = {
 
   // Session Settings
   async setSessionModel(model: string, sessionKey = 'agent:main:main') {
-    return sessionCommandCoordinator.runMutation(
-      sessionKey,
-      () => connection.request('sessions.patch', { key: sessionKey, model }),
-    );
+    return sessionSettings.setModel(sessionKey, model);
   },
   async setSessionThinking(level: string | null, sessionKey = 'agent:main:main') {
-    return sessionCommandCoordinator.runMutation(
-      sessionKey,
-      () => connection.request('sessions.patch', { key: sessionKey, thinkingLevel: level }),
-    );
+    return sessionSettings.setThinking(sessionKey, level);
   },
   async setSessionLabel(label: string | null, sessionKey = 'agent:main:main') {
-    return sessionCommandCoordinator.runMutation(
-      sessionKey,
-      () => connection.request('sessions.patch', { key: sessionKey, label }),
-    );
+    return sessionSettings.setLabel(sessionKey, label);
   },
   async updateAgentParams(agentId: string, params: Record<string, any>) {
     return requestPrivileged('agents.update', { agentId, params });

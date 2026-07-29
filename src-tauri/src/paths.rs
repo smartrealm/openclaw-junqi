@@ -2141,14 +2141,6 @@ pub fn read_workspace_from_config_relative_to(config_path: &std::path::Path) -> 
     resolve_openclaw_user_path_from(workspace, &home, &cwd).ok()
 }
 
-// ── 设备 ───────────────────────────────────────────────────────
-
-/// 返回保存配对状态的设备目录。
-#[allow(dead_code)]
-pub fn devices_dir() -> PathBuf {
-    desktop_dir().join("devices")
-}
-
 #[cfg(test)]
 mod storage_bootstrap_tests {
     use super::*;
