@@ -406,7 +406,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
                 style={{ background: `linear-gradient(135deg, ${mainColor()}20, ${mainColor()}05)`, borderColor: `${mainColor()}30` }}>
                 O
                 <div className="absolute -bottom-[2px] -end-[2px]">
-                  <StatusDot tone={mainSession?.running ? 'active' : 'idle'} size={12} />
+                  <StatusDot tone={mainSession?.running ? 'success' : 'warning'} size={12} />
                 </div>
               </div>
               <div className="flex-1 min-w-0">
@@ -504,7 +504,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
                       <div className="w-10 h-10 rounded-[10px] flex items-center justify-center text-[18px] border relative"
                         style={{ background: `linear-gradient(135deg, ${cfg.color}15, ${cfg.color}03)`, borderColor: `${cfg.color}20` }}>
                         {cfg.icon}
-                        {isRunning && <div className="absolute -bottom-[2px] -end-[2px]"><StatusDot tone="active" size={8} /></div>}
+                        {isRunning && <div className="absolute -bottom-[2px] -end-[2px]"><StatusDot tone="success" size={8} /></div>}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[13px] font-bold" style={{ color: cfg.color }}>{agent.name || agent.id}</div>
@@ -590,7 +590,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
                       <div className="text-[9px] text-aegis-text-dim font-mono">{worker.model.split('/').pop() || '—'}</div>
                       <span className="flex items-center gap-1 text-[8px] mt-0.5 font-bold"
                         style={{ color: worker.running ? meta.color : 'rgb(var(--aegis-overlay) / 0.2)' }}>
-                        <StatusDot tone={worker.running ? 'active' : 'idle'} size={5} />
+                        <StatusDot tone={worker.running ? 'success' : 'warning'} size={5} />
                         {worker.running ? t('agentHub.running', 'Running') : t('agentHub.done', 'Done')}
                       </span>
                     </div>
@@ -1141,7 +1141,7 @@ export function AgentHubPage() {
       <div key={w.key}>
         <GlassCard delay={i * 0.02} hover onClick={() => handleWorkerClick(w.key)} className="cursor-pointer">
           <div className="flex items-center gap-4">
-            <StatusDot tone={w.running ? 'active' : w.totalTokens > 0 ? 'idle' : 'sleeping'} size={10} />
+            <StatusDot tone={w.running ? 'success' : w.totalTokens > 0 ? 'warning' : 'dormant'} size={10} />
             <div className="w-[34px] h-[34px] rounded-lg flex items-center justify-center shrink-0 border text-[16px]"
               style={{ background: `linear-gradient(135deg, ${color}15, ${color}05)`, borderColor: `${color}20` }}>
               {meta.icon}
@@ -1321,7 +1321,7 @@ export function AgentHubPage() {
                       <div className="w-[64px] h-[64px] rounded-2xl flex items-center justify-center shrink-0 text-[26px] font-extrabold border-2 relative"
                         style={{ background: `linear-gradient(135deg, ${mainColor()}25, ${mainColor()}08)`, borderColor: `${mainColor()}35`, color: mainColor() }}>
                         O
-                        <div className="absolute -bottom-[3px] -right-[3px]"><StatusDot tone="active" size={14} live={mainSession.running} /></div>
+                        <div className="absolute -bottom-[3px] -right-[3px]"><StatusDot tone="success" size={14} live={mainSession.running} /></div>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[18px] font-extrabold text-aegis-text">
@@ -1347,7 +1347,7 @@ export function AgentHubPage() {
                     <div className="flex items-center gap-5">
                       <div className="w-[64px] h-[64px] rounded-2xl flex items-center justify-center shrink-0 text-[26px] font-extrabold border-2 relative"
                         style={{ background: `linear-gradient(135deg, ${mainColor()}10, ${mainColor()}04)`, borderColor: `${mainColor()}15`, color: `${mainColor()}50` }}>
-                        O<div className="absolute -bottom-[3px] -right-[3px]"><StatusDot tone="sleeping" size={14} /></div>
+                        O<div className="absolute -bottom-[3px] -right-[3px]"><StatusDot tone="dormant" size={14} /></div>
                       </div>
                       <div className="flex-1">
                         <div className="text-[18px] font-extrabold text-aegis-text-muted">
@@ -1990,7 +1990,7 @@ export function AgentHubPage() {
                               <div className="w-[48px] h-[48px] rounded-xl flex items-center justify-center shrink-0 border relative"
                                 style={{ background: `linear-gradient(135deg, ${display.color}20, ${display.color}05)`, borderColor: selectedAgentId === agent.id ? themeHex('primary') : isRunning ? `${display.color}40` : `${display.color}25`, color: display.color }}>
                                 {display.icon}
-                                {isRunning && <div className="absolute -bottom-[2px] -right-[2px]"><StatusDot tone="active" size={10} /></div>}
+                                {isRunning && <div className="absolute -bottom-[2px] -right-[2px]"><StatusDot tone="success" size={10} /></div>}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-[14px] font-bold text-aegis-text">{agent.name || agent.id}</div>

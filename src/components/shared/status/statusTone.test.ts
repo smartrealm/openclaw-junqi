@@ -155,3 +155,27 @@ test('BUG-FCA-04 exactly one StatusDot implementation remains', () => {
     'StatusDot must be defined once; re-export it instead of reimplementing',
   );
 });
+
+test('BUG-FCA-04 agent activity dots keep their original green/amber reading', () => {
+  // The removed `shared/StatusDot` painted active with `bg-aegis-success`
+  // (green) and idle with `bg-aegis-warning` (amber). Convergence must not
+  // silently repaint an agent activity dot blue/grey, so AgentHub states
+  // its intent with canonical tones instead of the legacy vocabulary.
+  const source = readFileSync(new URL('../../../pages/AgentHub/index.tsx', import.meta.url), 'utf8');
+  const calls = source.match(/<StatusDot[^>]*>/g) ?? [];
+  assert.ok(calls.length > 0, 'expected AgentHub to render status dots');
+  for (const call of calls) {
+    // Legacy words can appear inside a ternary, so scan the whole call for
+    // the string literals rather than only the `tone=` prefix.
+    assert.doesNotMatch(
+      call,
+      /['"](active|idle|sleeping)['"]/,
+      `AgentHub must not reuse the legacy dot vocabulary: ${call}`,
+    );
+  }
+
+  // Running is green, resting is amber, never-active is the dormant grey.
+  assert.equal(statusToneColor(resolveStatusTone('success')), 'rgb(var(--aegis-status-ended))');
+  assert.equal(statusToneColor(resolveStatusTone('warning')), 'rgb(var(--aegis-warning))');
+  assert.equal(statusToneColor(resolveStatusTone('dormant')), 'rgb(var(--aegis-status-dormant))');
+});
