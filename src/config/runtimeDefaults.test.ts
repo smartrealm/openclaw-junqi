@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   DEFAULT_GATEWAY_HOST,
   DEFAULT_GATEWAY_PORT,
+  DEFAULT_MEMORY_API_URL,
   defaultGatewayHttpUrl,
   defaultGatewayWsUrl,
 } from './runtimeDefaults';
@@ -28,9 +29,22 @@ test('Gateway URL helpers reject invalid resolved ports', () => {
   assert.throws(() => defaultGatewayWsUrl(Number.NaN), /gateway\.port/);
 });
 
-test('settings render the shared Gateway URL instead of duplicating its port', () => {
+test('production consumers use shared runtime endpoint defaults', () => {
+  assert.equal(DEFAULT_MEMORY_API_URL, 'http://localhost:3040');
+
   const settingsPage = readFileSync(new URL('../pages/SettingsPage.tsx', import.meta.url), 'utf8');
   assert.match(settingsPage, /placeholder=\{defaultGatewayWsUrl\(\)\}/);
   assert.match(settingsPage, /url: defaultGatewayWsUrl\(\)/);
   assert.doesNotMatch(settingsPage, /127\.0\.0\.1:18789/);
+
+  for (const relativePath of [
+    '../stores/settingsStore.ts',
+    '../services/gateway/credentialProvider.ts',
+    '../pages/MemoryExplorer.tsx',
+  ]) {
+    const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
+    assert.match(source, /runtimeDefaults/);
+    assert.doesNotMatch(source, /ws:\/\/127\.0\.0\.1:18789/);
+    assert.doesNotMatch(source, /http:\/\/localhost:3040/);
+  }
 });

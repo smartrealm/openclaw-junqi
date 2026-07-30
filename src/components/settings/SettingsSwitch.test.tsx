@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { Switch } from '@/components/shared/Switch';
 import { SettingsSwitch } from './SettingsSwitch';
 
 test('settings switch exposes its native and accessible state', () => {
@@ -19,22 +20,21 @@ test('settings switch exposes its native and accessible state', () => {
   assert.match(disabled, /aria-checked="false"/);
 });
 
-test('settings switch toggles once and rejects disabled activation', () => {
+test('shared switch toggles once and rejects disabled activation', () => {
   const changes: boolean[] = [];
-  const active = SettingsSwitch({
+  const active = Switch({
     checked: false,
     label: 'Notifications',
     onCheckedChange: (checked) => changes.push(checked),
   });
-  const disabled = SettingsSwitch({
+  const disabled = Switch({
     checked: true,
     disabled: true,
     label: 'Notifications',
     onCheckedChange: (checked) => changes.push(checked),
   });
 
-  active.props.onClick();
-  disabled.props.onClick();
-
+  active.props.children[0].props.onClick();
+  assert.equal(disabled.props.children[0].props.disabled, true);
   assert.deepEqual(changes, [true]);
 });

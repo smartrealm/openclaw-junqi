@@ -1,6 +1,6 @@
 # 全量代码审查（2026-07-29）
 
-状态：只读审查完成，未修改任何源码。全部条目待修复。
+状态：原始只读审查完成；2026-07-30 已启动分批修复。当前 FCA-01/02/03/09/10/11/12/13 已自动化验证，FCA-05/07 完成共享原语与首批迁移，FCA-04/06/08/14 及剩余消费者迁移仍待完成。实施契约见 `specs/quality/2026-07-30-full-codebase-audit-remediation.md` 与 `plans/quality/2026-07-30-full-codebase-audit-remediation.md`。
 
 ## 审计契约
 
@@ -28,6 +28,50 @@
 - 全仓库无 `TODO` / `FIXME` / `HACK` / `mockData` / `dummyData` 标记。
 
 因此本文件记录的全部是结构性问题，不是编译期或边界期问题。
+
+## 当前代码复核（`f44c630`）
+
+复核时间：2026-07-30。复核方式为逐项读取定义、调用方、生成脚本与固定版本依赖，并重新执行只读统计；本节保留原始审计快照，同时记录当前代码与原文之间的差异。状态中的“确认”表示问题仍存在，不表示已经修复。
+
+当前基线：
+
+- `src/` 中 TS/TSX 已由原审计的 923 个增长到 938 个，`src-tauri/src/` 仍为 116 个 Rust 文件；
+- `node scripts/check-boundaries.mjs`：通过，当前检查 618 个模块；
+- `pnpm exec tsc --noEmit --pretty false`：通过；
+- 生产源码仍无 `TODO` / `FIXME` / `HACK` / `mockData` / `dummyData` 标记。
+
+| 条目 | 当前状态 | 复核结果 |
+| --- | --- | --- |
+| BUG-FCA-01 | 确认，统计修正 | `DynamicIslandRuntime.tsx` 虽已使用 `useTranslation()` 生成会话标题，但独立窗口中的 `DynamicIsland.tsx` 仍直接读取 `navigator.language`，现有 `chinese ?` 分支为 45 处而非 40 处，三份 locale 仍无该窗口完整文案契约。应用内语言与繁体中文问题均成立。 |
+| BUG-FCA-02 | 确认，原统计口径错误 | Native 配置文件名仍未形成单一常量，`paths.rs`、`runtime_identity.rs`、`state_dir_probe.rs`、collaboration staging 等生产路径仍直接构造 `openclaw.json`。原文“10 个文件、71 处生产硬编码”不准确：当前 Rust 树共 132 个文本命中，其中 98 个位于各文件 `#[cfg(test)]` 测试段；剩余 34 个还包含注释、错误文案、Docker 协议常量和 `original-openclaw.json` 备份名，不能全部算作 Native 路径硬编码。问题成立，但修复前应以路径构造点而非字符串总数建立回归清单。BUG-OCA-06 的“已完成”结论仍与 Native 重复事实冲突。 |
+| BUG-FCA-03 | 确认 | 12 个 `ui/` 组件的消费者关系基本与原文一致：8 个纯样式组件仍仅被 `UIShowcase` 使用；生产侧仍使用 dialog、select、dropdown-menu、tooltip，且 popover 仍被直接消费。dropdown-menu 当前另有 `FileViewerToolbar` 消费者，生产消费者不再只有原文列出的 ResultCards。原生 `<button>` 仍精确为 838 处、147 个文件；Aegis shared button/badge/alert/copy-button 的 import 消费者仍分别为 3/3/4/1；`shadcn-tokens.css` 仍由全局样式加载。 |
+| BUG-FCA-04 | 确认，消费者描述修正 | 四套共享状态呈现仍并存，两个不同模块仍各自导出 `StatusDot`。但 `StatusBadge.tsx` 已不是“无外部消费者”：当前由 `AgentRunView.tsx` 与 `ActivityCenter.tsx` 使用；`StatusIcon` 的消费者也已扩展。应继续收敛，但迁移计划不能再按死代码删除 `StatusBadge`。 |
+| BUG-FCA-05 | 确认 | `ui/switch.tsx`、`SettingsSwitch.tsx`、Config Manager 的 `ToggleSwitch` 与 `ThemePicker.tsx` 内联 `role="switch"` 均仍存在。生产代码有 3 处显式 `role="switch"`，Radix Switch 仅由 `ui/switch.tsx` 引用且该组件仅供 showcase 使用。 |
+| BUG-FCA-06 | 确认，统计轻微漂移 | 非测试生产源码中 `LoadingIndicator` 符号出现在 11 个文件；`Loader2` 与 `animate-spin` 同一 JSX 元素当前为 110 处、45 个文件，而非原文的 109 处、48 个文件。仍未发现手写 border spinner class。收敛问题与 reduced-motion / live-region 风险成立。 |
+| BUG-FCA-07 | 确认，表述细化 | 仍不存在共享 `EmptyState` 原语；但仓库并非没有任何 EmptyState：`CodeInterpreter.tsx`、`FileManager.tsx` 等页面存在局部实现，另有 `WorkspaceEmptyState`、`EmptySection`、`EmptyOrWaiting`。问题应表述为“多处局部实现但无共享契约”，而非单纯依赖文件名搜索。 |
+| BUG-FCA-08 | 确认，原总数不可直接沿用 | 当前非测试 TSX 中十六进制字面量原始命中为 113 处、31 个文件，高于原文的 95/26；其中包含主题预览、宠物/SVG 固有配色、终端搜索标记色、注释中的 issue 编号等合理或需分类项，不能把 113 全部判为违规。`TerminalNotificationPanel.tsx` 的深色背景/前景、`StatusDot.tsx` 的 sleeping 色、Git diff 色值及多处控件色仍明确绕过 Aegis token，问题成立，修复前需逐项划分“产品 UI token”与“内容/画布固有颜色”。 |
+| BUG-FCA-09 | 确认 | `UIShowcase.tsx` 仍由 `AppRouteTree.tsx` 懒加载，`/ui-showcase` 仍无 `FeatureRoute`；`tab-utils.ts` 还把它归入 settings tab。8 个纯样式 `ui/` 组件仍只有该页面一个消费者，因此生产 demo 与连带死依赖判断成立。 |
+| BUG-FCA-10 | 确认 | `settingsStore.ts` 仍直接回退到 `ws://127.0.0.1:18789`，`credentialProvider.ts` 仍定义同值的 `DEFAULT_GATEWAY_URL`；两处均绕过 `runtimeDefaults.ts`。测试目前只禁止 `SettingsPage.tsx` 出现该字面量，未覆盖这两个事实消费者。 |
+| BUG-FCA-11 | 确认 | `settingsStore.ts` 与 `MemoryExplorer.tsx` 仍各自写死 `http://localhost:3040`；三份 locale 还重复同一 placeholder。`runtime-defaults.json` 仍只包含 Gateway host/port。应先明确 Memory API 是否属于产品默认运行时契约，再将运行默认值与纯展示 placeholder 分层。 |
+| BUG-FCA-12 | 已复现，不再“待验证” | 仓库 `mediaCatalog.generated.ts` 仍为空，Providers 页选项确实退化为“catalog + 当前值”。生成脚本已经实现 media 分支；在隔离临时目录中以当前安装的 OpenClaw 2026.7.1 系列包执行，成功生成 18 个图片模型和 56 个视频模型。根因边界也已确认：仓库没有 bundled OpenClaw package root 时脚本会保留既有 media 文件，而 `pnpm build` 不调用 `generate:provider-catalog`；该空文件自初始提交起存在且没有生成回归测试。具体修复仍需定义可复现的构建输入，不能依赖开发机全局 OpenClaw。 |
+| BUG-FCA-13 | 确认 | `README.md` 仍写 1.4.14；`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 仍一致为 1.4.18。 |
+| BUG-FCA-14 | 确认，统计口径修正 | 文件当前总长 8787 行，`#[cfg(test)]` 从第 7001 行开始，因此生产段仍为 7000 行。全文件 206 个函数，但生产段为 149 个；生产段有 28 个 struct/enum、8 个 Tauri command。原文“2 个 impl”只计算了两个领域类型的顶层 impl，生产段另有一个函数内局部 `Drop` impl。当前第二大 Rust 文件已是 `storage.rs`（4465 行），不再是原文所述 `system.rs`。单体拆分结论仍成立。 |
+
+复核后的总体结论：14 个问题方向在 `f44c630` 基线均成立；其中 BUG-FCA-12 已取得可复现证据，BUG-FCA-02、04、06、07、08、14 的原始统计或描述需要按上表修正。2026-07-30 后续修复进度以本文件顶部状态及对应 spec/plan 为准。
+
+### 2026-07-30 第一阶段实施结果
+
+已完成并验证：
+
+- FCA-01：灵动岛全部窗口文案接入应用 i18n，删除 `navigator.language` 与中英文三元分支，补齐三种语言；
+- FCA-02：`paths.rs` 导出 Native 配置文件名及构造函数，Native/Docker host 路径调用方统一消费，容器协议路径与 collaboration 备份名保持独立；
+- FCA-03/FCA-09：删除生产 `/ui-showcase`、tab 映射、8 个 showcase-only 组件及 5 个无消费者依赖；保留的 Radix 行为原语改为直接映射 Aegis token，删除 `shadcn-tokens.css`；
+- FCA-10/FCA-11/FCA-13：Gateway 与 Memory API 默认值收敛到 `runtimeDefaults`，README 版本同步到 1.4.18；
+- FCA-12：生成器从 workspace 锁定的 OpenClaw 包解析，不再依赖开发机全局安装；媒体产物现含 18 个图片模型与 56 个视频模型，并有非空回归；
+- FCA-05/FCA-07 基础：新增共享 `Switch` 与 `EmptyState`，迁移 Settings、Config Manager 及两个页面局部空状态；剩余消费者尚未全部迁移；
+- FCA-06 首批：`StatusBadge` 的 running spinner 已改用 `LoadingIndicator`，剩余 `Loader2 + animate-spin` 为 109 处。
+
+自动化结果：`pnpm lint`、`pnpm build`、完整前端 1875 项、脚本 224 项、Rust 652 项（3 项既有环境测试 ignored）、collaboration 368 项、plugin package validation、55 个官方 OpenClaw 链接、`cargo fmt -- --check`、`cargo check --lib` 与 `git diff --check` 均通过。四主题视觉验收和目标平台真机验收尚未执行。
 
 ## 符合契约的部分
 

@@ -62,6 +62,23 @@ test('dynamic island lifecycle does not surface event transport failures as glob
   assert.match(runtime, /void openAndSynchronize\(\)\.catch\(\(\) => undefined\)/);
 });
 
+test('dynamic island follows the persisted application language through i18n', () => {
+  const island = read('src/dynamic-island/DynamicIsland.tsx');
+  assert.match(island, /useTranslation\(\)/);
+  assert.match(island, /t\('dynamicIsland\./);
+  assert.doesNotMatch(island, /navigator\.language/);
+  assert.doesNotMatch(island, /\bchinese\s*\?/);
+
+  for (const locale of ['en', 'zh', 'zh-TW']) {
+    const catalog = JSON.parse(read(`src/locales/${locale}.json`)) as {
+      dynamicIsland?: { expand?: string; statuses?: Record<string, string> };
+    };
+    assert.ok(catalog.dynamicIsland?.expand);
+    assert.ok(catalog.dynamicIsland?.statuses?.running);
+    assert.ok(catalog.dynamicIsland?.statuses?.cancelled);
+  }
+});
+
 test('file drag handoff cannot steal the operating-system drop target', () => {
   const runtime = read('src/dynamic-island/DynamicIslandRuntime.tsx');
   assert.match(runtime, /subscribeTauriEvent<string\[]>\('aegis:drag-active'/);

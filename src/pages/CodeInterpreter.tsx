@@ -17,6 +17,7 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
+import { EmptyState as SharedEmptyState } from '@/components/shared/EmptyState';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useChatStore } from '@/stores/chatStore';
 import type { ToolBlock } from '@/types/RenderBlock';
@@ -386,23 +387,16 @@ function EmptyState({ activeFilter }: { activeFilter: FilterOption }) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 py-24 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5">
-        <Terminal className="h-8 w-8 text-white/20" />
-      </div>
-      <div>
-        <p className="text-base font-semibold text-white/40">
-          {activeFilter === 'All'
-            ? t('codeInterpreter.empty.noExecs', 'No tool executions yet')
-            : t('codeInterpreter.empty.noFiltered', `No "${activeFilter}" executions found`)}
-        </p>
-        <p className="mt-1 text-xs text-white/25">
-          {t(
-            'codeInterpreter.empty.hint',
-            'Tool calls will appear here as the agent executes commands',
-          )}
-        </p>
-      </div>
-    </div>
+    <SharedEmptyState
+      className="py-24"
+      icon={<Terminal className="h-8 w-8" />}
+      title={activeFilter === 'All'
+        ? t('codeInterpreter.empty.noExecs', 'No tool executions yet')
+        : t('codeInterpreter.empty.noFiltered', `No "${activeFilter}" executions found`)}
+      description={t(
+        'codeInterpreter.empty.hint',
+        'Tool calls will appear here as the agent executes commands',
+      )}
+    />
   );
 }

@@ -13,6 +13,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { dataColor } from '@/utils/theme-colors';
+import { DEFAULT_MEMORY_API_URL } from '@/config/runtimeDefaults';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -691,7 +692,7 @@ function DetailPanel({ memory, onClose, onEdit, onDelete, apiUrl, isLocal }: {
 export function MemoryExplorerPage() {
   const { t } = useTranslation();
   const { memoryExplorerEnabled, memoryMode, memoryApiUrl, memoryLocalPath } = useSettingsStore();
-  const API = memoryApiUrl || 'http://localhost:3040';
+  const API = memoryApiUrl || DEFAULT_MEMORY_API_URL;
   const isLocal = memoryMode === 'local';
 
   // ── State (always call hooks before any conditional return) ──

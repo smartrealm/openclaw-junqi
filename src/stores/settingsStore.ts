@@ -30,6 +30,7 @@ import {
   resolveGatewayCredentialRuntimeKey,
   storeGatewayDeviceCredential,
 } from '@/services/gateway/credentialProvider';
+import { DEFAULT_MEMORY_API_URL, defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { buildFontStack } from '@/utils/fonts';
 
 // ═══════════════════════════════════════════════════════════
@@ -188,7 +189,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   commandPaletteOpen: false,
   memoryExplorerEnabled: localStorage.getItem('aegis-memory-explorer') === 'true',
   memoryMode: (localStorage.getItem('aegis-memory-mode') || 'local') as 'api' | 'local',
-  memoryApiUrl: localStorage.getItem('aegis-memory-api-url') || 'http://localhost:3040',
+  memoryApiUrl: localStorage.getItem('aegis-memory-api-url') || DEFAULT_MEMORY_API_URL,
   memoryLocalPath: localStorage.getItem('aegis-memory-local-path') || '',
   context1mEnabled: localStorage.getItem('aegis-context1m') === 'true',
   toolIntentEnabled: localStorage.getItem('aegis-tool-intent') === 'true',
@@ -286,7 +287,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const normalized = token.trim();
     set({ gatewayToken: normalized });
     const runtimeKey = resolveGatewayCredentialRuntimeKey(
-      get().gatewayUrl || 'ws://127.0.0.1:18789',
+      get().gatewayUrl || defaultGatewayWsUrl(),
     );
     if (normalized) {
       void storeGatewayDeviceCredential(runtimeKey, normalized);

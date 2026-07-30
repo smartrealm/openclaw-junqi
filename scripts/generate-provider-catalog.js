@@ -12,8 +12,16 @@ const mediaOutputPath = path.join(repoRoot, 'src', 'generated', 'mediaCatalog.ge
 const runIfMissingOnly = process.argv.includes('--if-missing');
 const allowTemplateFallback = process.argv.includes('--allow-template-fallback');
 
+const workspaceOpenClawRoot = path.join(repoRoot, 'packages', 'junqi-collab', 'node_modules', 'openclaw');
+
 function resolveOpenClawBin() {
   if (process.env.OPENCLAW_BIN) return process.env.OPENCLAW_BIN;
+  const workspacePackage = path.join(workspaceOpenClawRoot, 'package.json');
+  if (fs.existsSync(workspacePackage)) {
+    const manifest = JSON.parse(fs.readFileSync(workspacePackage, 'utf8'));
+    const relativeBin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.openclaw;
+    if (relativeBin) return path.join(workspaceOpenClawRoot, relativeBin);
+  }
   const executable = process.platform === 'win32' ? 'openclaw.cmd' : 'openclaw';
   const candidates = String(process.env.PATH || '')
     .split(path.delimiter)
@@ -29,6 +37,7 @@ const bundledOpenClawRoot = (() => {
     process.env.OPENCLAW_PACKAGE_ROOT,
     path.join(repoRoot, 'resources', `node-${process.arch}`, 'node_modules', 'openclaw'),
     path.join(repoRoot, 'resources', 'node', 'node_modules', 'openclaw'),
+    workspaceOpenClawRoot,
   ].filter(Boolean);
   return candidates.find((candidate) => fs.existsSync(path.join(candidate, 'package.json'))) || null;
 })();

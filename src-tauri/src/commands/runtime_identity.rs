@@ -312,7 +312,7 @@ fn runtime_evidence(state: &GatewayProcess) -> Result<RuntimeEvidence, String> {
     let desktop_config_path = paths::config_path();
     if mode == GatewayRuntimeMode::Docker {
         let host_state_dir = desktop_state_dir.join("docker");
-        let host_config_path = host_state_dir.join("openclaw.json");
+        let host_config_path = paths::native_config_path(&host_state_dir);
         return Ok(RuntimeEvidence {
             lifecycle,
             mode,

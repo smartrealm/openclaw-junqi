@@ -26,6 +26,7 @@ import {
   Sparkles,
   ExternalLink,
 } from 'lucide-react';
+import { EmptyState as SharedEmptyState } from '@/components/shared/EmptyState';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useChatStore } from '@/stores/chatStore';
 import type { FileViewerHandle, OpenFileTab, ThemeVariant } from '@/components/FileExplorer/FileViewer';
@@ -200,19 +201,11 @@ function FileMeta({ file }: { file: FileEntry }) {
 function EmptyState({ title, description }: { title: string; description: string }) {
   const { t } = useTranslation();
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center p-8">
-      <div className="w-14 h-14 rounded-2xl bg-aegis-primary/10 border border-aegis-primary/20 flex items-center justify-center">
-        <FolderSearch size={24} className="text-aegis-primary" />
-      </div>
-      <div>
-        <div className="text-[14px] font-bold text-aegis-text mb-1">
-          {title || t('fileManager.noFiles')}
-        </div>
-        <div className="text-[12px] text-aegis-text-dim max-w-[280px] leading-relaxed">
-          {description || t('fileManager.noFilesDesc')}
-        </div>
-      </div>
-    </div>
+    <SharedEmptyState
+      icon={<FolderSearch size={24} />}
+      title={title || t('fileManager.noFiles')}
+      description={description || t('fileManager.noFilesDesc')}
+    />
   );
 }
 

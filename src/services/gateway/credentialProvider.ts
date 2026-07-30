@@ -10,6 +10,7 @@ import {
   type StoreGatewayCredentialParams,
 } from '@/api/tauri-commands';
 import { getDeviceIdentityReference } from '@/api/device-identity';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 
 export const LEGACY_GATEWAY_TOKEN_KEY = 'aegis-gateway-token';
 export const LEGACY_GATEWAY_CONFIG_KEY = 'aegis-config';
@@ -17,7 +18,7 @@ export const LEGACY_GATEWAY_SETTING_KEY = 'aegis-setting:gatewayToken';
 export const GATEWAY_CREDENTIAL_MIGRATION_MARKER = 'aegis-gateway-credential-migration-v1';
 export const GATEWAY_RUNTIME_ALIAS_KEY = 'aegis-gateway-runtime-aliases-v1';
 
-const DEFAULT_GATEWAY_URL = 'ws://127.0.0.1:18789';
+const DEFAULT_GATEWAY_URL = defaultGatewayWsUrl();
 const MAX_RUNTIME_ALIASES = 64;
 
 export interface GatewayCredential {

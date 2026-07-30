@@ -165,7 +165,7 @@ pub(crate) fn evaluate_state_dir_split(
 pub async fn detect_state_dir_split() -> Result<StateDirSplit, String> {
     let active_dir = paths::desktop_dir();
     let default_dir = paths::legacy_default_state_dir();
-    let default_config_exists = default_dir.join("openclaw.json").is_file();
+    let default_config_exists = paths::native_config_path(&default_dir).is_file();
     Ok(evaluate_state_dir_split(
         &active_dir,
         &default_dir,

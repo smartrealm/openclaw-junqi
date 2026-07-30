@@ -7,6 +7,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Star, X, Save, ChevronDown, CheckCircle2, Image, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
+import { Switch } from '@/components/shared/Switch';
 import type { ModelEntry } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -509,39 +510,14 @@ interface ToggleSwitchProps {
 
 export function ToggleSwitch({ value, onChange, label, disabled }: ToggleSwitchProps) {
   return (
-    <label
-      className={clsx(
-        'inline-flex items-center gap-2.5 cursor-pointer select-none',
-        disabled && 'opacity-50 cursor-not-allowed'
-      )}
-    >
-      {/* track */}
-      <button
-        type="button"
-        role="switch"
-        aria-checked={value}
-        disabled={disabled}
-        onClick={() => !disabled && onChange(!value)}
-        className={clsx(
-          'relative w-9 h-5 rounded-full border transition-all duration-200 flex-shrink-0',
-          value
-            ? 'bg-aegis-primary/80 border-aegis-primary/60'
-            : 'bg-aegis-surface border-aegis-border hover:border-aegis-border-hover'
-        )}
-      >
-        {/* thumb */}
-        <span
-          className={clsx(
-            'absolute top-0.5 w-4 h-4 rounded-full transition-all duration-200',
-            'bg-white shadow-sm',
-            value ? 'left-[18px]' : 'left-0.5'
-          )}
-        />
-      </button>
-      {label && (
-        <span className="text-sm text-aegis-text-secondary">{label}</span>
-      )}
-    </label>
+    <Switch
+      checked={value}
+      onCheckedChange={onChange}
+      label={label ?? 'Toggle'}
+      visibleLabel={label}
+      disabled={disabled}
+      size="sm"
+    />
   );
 }
 

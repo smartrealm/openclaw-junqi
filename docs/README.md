@@ -109,6 +109,8 @@ docs/
 - [萌宠文字与聊天窗口恢复记录](quality/pet-caption-and-chat-window-recovery-2026-07-29.md)
 - [默认模型已安装契约审计](quality/default-model-installed-contract-audit-2026-07-29.md)
 - [全量代码审查](quality/full-codebase-audit-2026-07-29.md)
+- [全量代码审查修复规格](../specs/quality/2026-07-30-full-codebase-audit-remediation.md)
+- [全量代码审查修复计划](../plans/quality/2026-07-30-full-codebase-audit-remediation.md)
 
 ## 产品设计草案
 

@@ -11,7 +11,8 @@
 // NotificationBell, Workspace sidebar.
 // ─────────────────────────────────────────────────────────────────
 
-import { Circle, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { Circle, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { LoadingIndicator } from './LoadingIndicator';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 
@@ -53,7 +54,7 @@ export function StatusBadge({
 
   // Icon variant for states that need more than a dot (running = spinner, attention = alert).
   const Glyph = state === 'running'
-    ? <Loader2 size={Math.max(size + 2, 10)} className="animate-spin shrink-0" style={{ color: tok.color }} />
+    ? <LoadingIndicator size={Math.max(size + 2, 10)} className="shrink-0" />
     : state === 'attention'
       ? <AlertCircle size={Math.max(size + 2, 10)} className="shrink-0" style={{ color: tok.color }} />
       : state === 'ended'

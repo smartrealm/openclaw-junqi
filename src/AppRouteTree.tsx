@@ -33,7 +33,6 @@ const McpToolsPage = lazy(() => import('@/pages/McpTools').then(m => ({ default:
 const PerformancePage = lazy(() => import('@/pages/Performance').then(m => ({ default: m.Performance })));
 const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.Kanban })));
 const GitPage = lazy(() => import('@/pages/GitPage'));
-const UIShowcase = lazy(() => import('@/pages/UIShowcase'));
 const OpenClawCommandsPage = lazy(() => import('@/pages/OpenClawCommands').then(m => ({ default: m.OpenClawCommandsPage })));
 
 export default function AppRouteTree() {
@@ -70,7 +69,6 @@ export default function AppRouteTree() {
         <Route path="/openclaw-commands" element={<FeatureRoute feature="tools"><OpenClawCommandsPage /></FeatureRoute>} />
         <Route path="/perf" element={<PerformancePage />} />
         <Route path="/kanban" element={<FeatureRoute feature="workshop"><KanbanPage /></FeatureRoute>} />
-        <Route path="/ui-showcase" element={<UIShowcase />} />
         <Route path="/settings" element={<FeatureRoute feature="settings"><SettingsPageFull /></FeatureRoute>} />
       </Route>
     </Routes>

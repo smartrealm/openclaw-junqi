@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
 import {
   Bot,
   Check,
@@ -51,22 +52,6 @@ function statusTone(status: DynamicIslandTask['status']) {
   return 'running';
 }
 
-function statusLabel(status: DynamicIslandTask['status'], chinese: boolean) {
-  const labels: Record<DynamicIslandTask['status'], [string, string]> = {
-    todo: ['待办', 'Todo'],
-    pending: ['排队中', 'Pending'],
-    running: ['执行中', 'Running'],
-    input_required: ['等待输入', 'Needs input'],
-    awaiting_review: ['等待审阅', 'Needs review'],
-    detached: ['已分离', 'Detached'],
-    interrupted: ['已中断', 'Interrupted'],
-    done: ['已完成', 'Done'],
-    failed: ['失败', 'Failed'],
-    cancelled: ['已取消', 'Cancelled'],
-  };
-  return labels[status][chinese ? 0 : 1];
-}
-
 function StatusGlyph({ task }: { task: DynamicIslandTask }) {
   const tone = statusTone(task.status);
   if (tone === 'success') return <Check size={13} strokeWidth={2.4} />;
@@ -75,6 +60,7 @@ function StatusGlyph({ task }: { task: DynamicIslandTask }) {
 }
 
 export default function DynamicIsland() {
+  const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState(EMPTY_DYNAMIC_ISLAND_SNAPSHOT);
   const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -82,7 +68,10 @@ export default function DynamicIsland() {
   const autoCollapseTimerRef = useRef<number | null>(null);
   const hoverExpandTimerRef = useRef<number | null>(null);
   const hoverCollapseTimerRef = useRef<number | null>(null);
-  const chinese = navigator.language.toLowerCase().startsWith('zh');
+  const statusLabel = useCallback(
+    (status: DynamicIslandTask['status']) => t(`dynamicIsland.statuses.${status}`),
+    [t],
+  );
 
   const clearAutoCollapse = useCallback(() => {
     if (autoCollapseTimerRef.current !== null) {
@@ -179,57 +168,41 @@ export default function DynamicIsland() {
   const remaining = formatRemainingTime(snapshot, now);
   const headline = useMemo(() => {
     if (snapshot.resourceDrop?.phase === 'dragging') {
-      return chinese ? `准备接收 ${snapshot.resourceDrop.count} 个文件` : `Ready for ${snapshot.resourceDrop.count} files`;
+      return t('dynamicIsland.readyForFiles', { count: snapshot.resourceDrop.count });
     }
-    if (snapshot.resourceDrop?.phase === 'received') {
-      return chinese ? '文件已送往快捷对话' : 'Files sent to Quick Chat';
-    }
+    if (snapshot.resourceDrop?.phase === 'received') return t('dynamicIsland.filesSent');
     if (snapshot.notice) return snapshot.notice.title;
     if (attentionCount === 1) return attentionTasks[0].title;
-    if (attentionCount > 0) return chinese ? `${attentionCount} 项需要处理` : `${attentionCount} need attention`;
-    if (snapshot.voicePhase === 'speaking' || snapshot.voicePhase === 'queued') {
-      return chinese ? 'JunQi 正在语音回复' : 'JunQi is speaking';
-    }
-    if (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing') {
-      return chinese ? '正在聆听' : 'Listening';
-    }
+    if (attentionCount > 0) return t('dynamicIsland.needsAttention', { count: attentionCount });
+    if (snapshot.voicePhase === 'speaking' || snapshot.voicePhase === 'queued') return t('dynamicIsland.speaking');
+    if (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing') return t('dynamicIsland.listening');
     if (runningCount === 1 && primaryRunningTask) return primaryRunningTask.title;
-    if (runningCount > 0) return chinese ? `${runningCount} 个 Agent 执行中` : `${runningCount} agents running`;
+    if (runningCount > 0) return t('dynamicIsland.agentsRunning', { count: runningCount });
     if (primarySessionActivity) {
-      return chinese
-        ? `${primarySessionActivity.agentName} ${primarySessionActivity.phase === 'thinking' ? '正在思考' : '正在回复'}`
-        : `${primarySessionActivity.agentName} is ${primarySessionActivity.phase === 'thinking' ? 'thinking' : 'responding'}`;
+      return t(`dynamicIsland.agent.${primarySessionActivity.phase}`, { agent: primarySessionActivity.agentName });
     }
-    return snapshot.connected
-      ? (chinese ? 'JunQi 已就绪' : 'JunQi is ready')
-      : snapshot.connecting
-        ? (chinese ? '正在连接 Gateway' : 'Connecting to Gateway')
-        : (chinese ? 'Gateway 离线' : 'Gateway offline');
-  }, [attentionCount, attentionTasks, chinese, primaryRunningTask, primarySessionActivity, runningCount, snapshot.connected, snapshot.connecting, snapshot.notice, snapshot.resourceDrop, snapshot.voicePhase]);
+    if (snapshot.connected) return t('dynamicIsland.ready');
+    return snapshot.connecting ? t('dynamicIsland.connecting') : t('dynamicIsland.offline');
+  }, [attentionCount, attentionTasks, primaryRunningTask, primarySessionActivity, runningCount, snapshot.connected, snapshot.connecting, snapshot.notice, snapshot.resourceDrop, snapshot.voicePhase, t]);
   const compactMeta = useMemo(() => {
     const task = attentionTasks[0] ?? primaryRunningTask;
-    if (task) return `${task.agent} · ${statusLabel(task.status, chinese)}`;
+    if (task) return `${task.agent} · ${statusLabel(task.status)}`;
     if (snapshot.pomodoro.running) {
-      return snapshot.pomodoro.phase === 'work'
-        ? (chinese ? '专注计时' : 'Focus session')
-        : (chinese ? '休息计时' : 'Break session');
+      return t(snapshot.pomodoro.phase === 'work' ? 'dynamicIsland.focusSession' : 'dynamicIsland.breakSession');
     }
     if (primarySessionActivity) {
-      const elapsed = formatElapsedTime(primarySessionActivity.startedAt, now);
-      return chinese
-        ? `已响应 ${elapsed} · ${primarySessionActivity.phase === 'thinking' ? '思考中' : '生成中'}`
-        : `${elapsed} · ${primarySessionActivity.phase === 'thinking' ? 'THINKING' : 'GENERATING'}`;
+      return t(`dynamicIsland.elapsed.${primarySessionActivity.phase}`, {
+        elapsed: formatElapsedTime(primarySessionActivity.startedAt, now),
+      });
     }
     if (snapshot.voicePhase === 'speaking' || snapshot.voicePhase === 'queued') {
       return snapshot.voiceQueueLength > 0
-        ? (chinese ? `语音队列 · ${snapshot.voiceQueueLength}` : `VOICE QUEUE · ${snapshot.voiceQueueLength}`)
-        : (chinese ? '语音播放中' : 'VOICE OUTPUT');
+        ? t('dynamicIsland.voiceQueue', { count: snapshot.voiceQueueLength })
+        : t('dynamicIsland.voiceOutput');
     }
-    if (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing') {
-      return chinese ? '语音输入' : 'VOICE INPUT';
-    }
-    return snapshot.connected ? 'OPENCLAW ONLINE' : 'OPENCLAW STANDBY';
-  }, [attentionTasks, chinese, now, primaryRunningTask, primarySessionActivity, snapshot.connected, snapshot.pomodoro.phase, snapshot.pomodoro.running, snapshot.voicePhase, snapshot.voiceQueueLength]);
+    if (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing') return t('dynamicIsland.voiceInput');
+    return t(snapshot.connected ? 'dynamicIsland.openclawOnline' : 'dynamicIsland.openclawStandby');
+  }, [attentionTasks, now, primaryRunningTask, primarySessionActivity, snapshot.connected, snapshot.pomodoro.phase, snapshot.pomodoro.running, snapshot.voicePhase, snapshot.voiceQueueLength, statusLabel, t]);
 
   return (
     <main
@@ -267,7 +240,7 @@ export default function DynamicIsland() {
             type="button"
             className="junqi-island-compact"
             onClick={() => setIslandExpanded(true)}
-            aria-label={chinese ? '展开 JunQi 灵动岛' : 'Expand JunQi Dynamic Island'}
+            aria-label={t('dynamicIsland.expand')}
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
@@ -305,19 +278,17 @@ export default function DynamicIsland() {
               <div className="junqi-island-title">
                 <span className="junqi-island-brandmark"><Radio size={15} /></span>
                 <span><strong>{headline}</strong><small>{snapshot.resourceDrop
-                  ? (snapshot.resourceDrop.phase === 'dragging'
-                    ? (chinese ? '松开鼠标，交给 JunQi 分析' : 'Release to let JunQi analyze them')
-                    : (chinese ? '快捷对话已准备好文件上下文' : 'Quick Chat has the file context'))
-                  : snapshot.notice?.body || (chinese ? '当前活动' : 'Current activity')}</small></span>
+                  ? t(snapshot.resourceDrop.phase === 'dragging' ? 'dynamicIsland.releaseFiles' : 'dynamicIsland.quickChatReady')
+                  : snapshot.notice?.body || t('dynamicIsland.currentActivity')}</small></span>
               </div>
               <div className="junqi-island-window-actions">
-                <button type="button" onClick={() => setIslandExpanded(false)} title={chinese ? '收起' : 'Collapse'}><ChevronUp size={15} /></button>
-                <button type="button" onClick={() => action({ type: 'hide' })} title={chinese ? '关闭灵动岛' : 'Hide Dynamic Island'}><X size={15} /></button>
+                <button type="button" onClick={() => setIslandExpanded(false)} title={t('dynamicIsland.collapse')}><ChevronUp size={15} /></button>
+                <button type="button" onClick={() => action({ type: 'hide' })} title={t('dynamicIsland.hide')}><X size={15} /></button>
               </div>
             </header>
 
             <div className="junqi-island-content">
-              <div className="junqi-island-task-list" aria-label={chinese ? 'Agent 状态' : 'Agent status'}>
+              <div className="junqi-island-task-list" aria-label={t('dynamicIsland.agentStatus')}>
                 {snapshot.resourceDrop ? (
                   <div className={`junqi-island-drop is-${snapshot.resourceDrop.phase}`}>
                     <div className="junqi-island-drop-visual">
@@ -336,11 +307,9 @@ export default function DynamicIsland() {
                     </div>
                     <div className="junqi-island-drop-copy">
                       <strong>{snapshot.resourceDrop.phase === 'dragging'
-                        ? snapshot.petEnabled
-                          ? (chinese ? '萌宠正在接应' : 'Your pet is receiving')
-                          : (chinese ? '文件正在接入' : 'Receiving files')
-                        : (chinese ? '接收完成' : 'Transfer complete')}</strong>
-                      <small>{snapshot.resourceDrop.labels.join(' · ') || (chinese ? '文件资源' : 'File resources')}</small>
+                        ? t(snapshot.petEnabled ? 'dynamicIsland.petReceiving' : 'dynamicIsland.receivingFiles')
+                        : t('dynamicIsland.transferComplete')}</strong>
+                      <small>{snapshot.resourceDrop.labels.join(' · ') || t('dynamicIsland.fileResources')}</small>
                     </div>
                     <div className="junqi-island-drop-progress"><span /></div>
                   </div>
@@ -350,8 +319,8 @@ export default function DynamicIsland() {
                       <button key={activity.sessionKey} type="button" className="junqi-island-task is-session" onClick={() => action({ type: 'open-session', sessionKey: activity.sessionKey })}>
                         <span className="junqi-island-task-icon is-running"><span className="junqi-island-spinner" /></span>
                         <span className="junqi-island-task-copy">
-                          <strong>{activity.agentName} {chinese ? (activity.phase === 'thinking' ? '正在思考' : '正在回复') : (activity.phase === 'thinking' ? 'is thinking' : 'is responding')}</strong>
-                          <small>{activity.sessionTitle} · {chinese ? `已响应 ${formatElapsedTime(activity.startedAt, now)} · ${activity.phase === 'thinking' ? '思考中' : '生成中'}` : `${formatElapsedTime(activity.startedAt, now)} · ${activity.phase}`}</small>
+                          <strong>{t(`dynamicIsland.agent.${activity.phase}`, { agent: activity.agentName })}</strong>
+                          <small>{activity.sessionTitle} · {t(`dynamicIsland.elapsed.${activity.phase}`, { elapsed: formatElapsedTime(activity.startedAt, now) })}</small>
                         </span>
                         <ChevronUp size={13} className="junqi-island-task-open" />
                       </button>
@@ -359,7 +328,7 @@ export default function DynamicIsland() {
                     {snapshot.tasks.slice(0, Math.max(0, 3 - snapshot.sessionActivities.length)).map((task) => (
                       <button key={task.id} type="button" className="junqi-island-task" onClick={() => action({ type: 'open-task', taskId: task.id })}>
                         <span className={`junqi-island-task-icon is-${statusTone(task.status)}`}><StatusGlyph task={task} /></span>
-                        <span className="junqi-island-task-copy"><strong>{task.title}</strong><small>{task.agent} · {statusLabel(task.status, chinese)}</small></span>
+                        <span className="junqi-island-task-copy"><strong>{task.title}</strong><small>{task.agent} · {statusLabel(task.status)}</small></span>
                         <ChevronUp size={13} className="junqi-island-task-open" />
                       </button>
                     ))}
@@ -367,35 +336,35 @@ export default function DynamicIsland() {
                 ) : voiceActive ? (
                   <div className="junqi-island-empty">
                     <Volume2 size={18} />
-                    <span><strong>{snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing'
-                      ? (chinese ? '正在处理语音' : 'Processing voice')
-                      : (chinese ? '正在播报回复' : 'Speaking a reply')}</strong><small>{snapshot.voiceQueueLength > 0
-                        ? (chinese ? `队列中还有 ${snapshot.voiceQueueLength} 句` : `${snapshot.voiceQueueLength} sentence(s) queued`)
-                        : (chinese ? '可以随时打断' : 'You can interrupt at any time')}</small></span>
+                    <span><strong>{t(snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing'
+                      ? 'dynamicIsland.processingVoice'
+                      : 'dynamicIsland.speakingReply')}</strong><small>{snapshot.voiceQueueLength > 0
+                        ? t('dynamicIsland.sentencesQueued', { count: snapshot.voiceQueueLength })
+                        : t('dynamicIsland.interruptAnytime')}</small></span>
                   </div>
                 ) : (
                   <div className="junqi-island-empty">
                     <Bot size={18} />
-                    <span><strong>{chinese ? '没有运行中的任务' : 'No active tasks'}</strong><small>{chinese ? '需要时我会在这里提醒你' : 'Important activity will appear here'}</small></span>
+                    <span><strong>{t('dynamicIsland.noActiveTasks')}</strong><small>{t('dynamicIsland.activityHint')}</small></span>
                   </div>
                 )}
               </div>
 
               <footer className="junqi-island-controls">
-                <button type="button" onClick={() => action({ type: 'open-session', sessionKey: primarySessionActivity?.sessionKey || snapshot.sessionKey })} title={chinese ? '回到当前会话' : 'Return to current chat'}><MessageCircle size={16} /><span>{chinese ? '会话' : 'Chat'}</span></button>
-                <button type="button" className={snapshot.pomodoro.running ? 'is-active' : ''} onClick={() => action({ type: 'pomodoro-toggle' })} title={chinese ? '专注计时' : 'Focus timer'}>
+                <button type="button" onClick={() => action({ type: 'open-session', sessionKey: primarySessionActivity?.sessionKey || snapshot.sessionKey })} title={t('dynamicIsland.returnToChat')}><MessageCircle size={16} /><span>{t('dynamicIsland.chat')}</span></button>
+                <button type="button" className={snapshot.pomodoro.running ? 'is-active' : ''} onClick={() => action({ type: 'pomodoro-toggle' })} title={t('dynamicIsland.focusTimer')}>
                   {snapshot.pomodoro.running && !snapshot.pomodoro.paused ? <Pause size={15} /> : <Play size={15} />}
-                  <span>{remaining || (chinese ? '专注' : 'Focus')}</span>
+                  <span>{remaining || t('dynamicIsland.focus')}</span>
                 </button>
                 {snapshot.pomodoro.running && (
-                  <button type="button" onClick={() => action({ type: 'pomodoro-stop' })} title={chinese ? '停止计时' : 'Stop timer'}><Square size={14} /><span>{chinese ? '停止' : 'Stop'}</span></button>
+                  <button type="button" onClick={() => action({ type: 'pomodoro-stop' })} title={t('dynamicIsland.stopTimer')}><Square size={14} /><span>{t('dynamicIsland.stop')}</span></button>
                 )}
                 {(snapshot.voicePhase === 'queued' || snapshot.voicePhase === 'speaking') && (
-                  <button type="button" className="is-active" onClick={() => action({ type: 'voice-stop' })} title={chinese ? '停止语音' : 'Stop voice'}><Square size={14} /><span>{chinese ? '停止语音' : 'Stop voice'}</span></button>
+                  <button type="button" className="is-active" onClick={() => action({ type: 'voice-stop' })} title={t('dynamicIsland.stopVoice')}><Square size={14} /><span>{t('dynamicIsland.stopVoice')}</span></button>
                 )}
-                <button type="button" className={snapshot.dndMode ? 'is-active' : ''} onClick={() => action({ type: 'toggle-dnd' })} title={chinese ? '请勿打扰' : 'Do not disturb'}>
+                <button type="button" className={snapshot.dndMode ? 'is-active' : ''} onClick={() => action({ type: 'toggle-dnd' })} title={t('dynamicIsland.doNotDisturb')}>
                   {snapshot.dndMode ? <VolumeX size={15} /> : <Volume2 size={15} />}
-                  <span>{snapshot.dndMode ? (chinese ? '静音' : 'Muted') : (chinese ? '通知' : 'Alerts')}</span>
+                  <span>{t(snapshot.dndMode ? 'dynamicIsland.muted' : 'dynamicIsland.alerts')}</span>
                 </button>
               </footer>
             </div>

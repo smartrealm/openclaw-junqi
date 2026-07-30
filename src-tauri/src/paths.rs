@@ -8,6 +8,11 @@ use std::path::{Component, Path, PathBuf};
 
 const STORAGE_BOOTSTRAP_VERSION: u32 = 15;
 const HISTORICAL_MEDIA_STATE_DIR_LIMIT: usize = 8;
+pub(crate) const OPENCLAW_CONFIG_FILE_NAME: &str = "openclaw.json";
+
+pub(crate) fn native_config_path(state_dir: &Path) -> PathBuf {
+    state_dir.join(OPENCLAW_CONFIG_FILE_NAME)
+}
 
 /// The OpenClaw runtime selected by the user during setup.
 ///
@@ -491,7 +496,7 @@ struct PersistedStorageBootstrap {
 
 impl StorageBootstrap {
     pub fn for_state_dir(state_dir: PathBuf, workspace_dir: Option<PathBuf>) -> Self {
-        let config_path = state_dir.join("openclaw.json");
+        let config_path = native_config_path(&state_dir);
         let workspace_dir = workspace_dir.unwrap_or_else(|| state_dir.join("workspace"));
         Self {
             version: STORAGE_BOOTSTRAP_VERSION,
@@ -526,7 +531,7 @@ impl StorageBootstrap {
     ) -> Self {
         Self {
             version: STORAGE_BOOTSTRAP_VERSION,
-            config_path: state_dir.join("openclaw.json"),
+            config_path: native_config_path(&state_dir),
             state_dir,
             historical_media_state_dirs: Vec::new(),
             workspace_dir,
@@ -596,7 +601,7 @@ impl StorageBootstrap {
                 &config_path,
                 &config_path_for_runtime(&state_dir, OpenClawRuntimeMode::Docker),
             ) {
-            state_dir.join("openclaw.json")
+            native_config_path(&state_dir)
         } else {
             config_path
         };
@@ -939,7 +944,7 @@ pub fn effective_runtime_locations() -> Result<EffectiveRuntimeLocations, String
                 .then(|| bootstrap.as_ref().map(|layout| layout.config_path.clone()))
                 .flatten()
         })
-        .unwrap_or_else(|| state_dir.join("openclaw.json"));
+        .unwrap_or_else(|| native_config_path(&state_dir));
 
     if !absolute_non_root(&state_dir) || path_has_parent_traversal(&state_dir) {
         return Err(
@@ -1460,11 +1465,11 @@ pub fn config_path() -> PathBuf {
         .and_then(|overrides| overrides.state_dir)
         .is_some()
     {
-        return desktop_dir().join("openclaw.json");
+        return native_config_path(&desktop_dir());
     }
     load_storage_bootstrap()
         .map(|bootstrap| bootstrap.config_path)
-        .unwrap_or_else(|| desktop_dir().join("openclaw.json"))
+        .unwrap_or_else(|| native_config_path(&desktop_dir()))
 }
 
 /// Resolve the configuration location inside a state root for a specific
@@ -1472,8 +1477,8 @@ pub fn config_path() -> PathBuf {
 /// configuration is the Native `openclaw.json` file.
 pub fn config_path_for_runtime(state_dir: &Path, mode: OpenClawRuntimeMode) -> PathBuf {
     match mode {
-        OpenClawRuntimeMode::Native => state_dir.join("openclaw.json"),
-        OpenClawRuntimeMode::Docker => state_dir.join("docker").join("openclaw.json"),
+        OpenClawRuntimeMode::Native => native_config_path(state_dir),
+        OpenClawRuntimeMode::Docker => state_dir.join("docker").join(OPENCLAW_CONFIG_FILE_NAME),
     }
 }
 
