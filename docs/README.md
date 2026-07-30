@@ -111,6 +111,11 @@ docs/
 - [全量代码审查](quality/full-codebase-audit-2026-07-29.md)
 - [全量代码审查修复规格](../specs/quality/2026-07-30-full-codebase-audit-remediation.md)
 - [全量代码审查修复计划](../plans/quality/2026-07-30-full-codebase-audit-remediation.md)
+- [会话模型选择器与 OpenClaw 对齐记录](quality/session-model-picker-openclaw-parity-2026-07-30.md)
+- [侧栏主操作一致性记录](quality/sidebar-primary-action-convergence-2026-07-30.md)
+- [会话模型切换闪动审计](quality/session-model-switch-flicker-audit-2026-07-30.md)
+- [主窗口关闭 ACL 审计](quality/main-window-close-acl-audit-2026-07-30.md)
+- [设置页面多语言完整性审计](quality/settings-localization-completeness-2026-07-30.md)
 
 ## 产品设计草案
 

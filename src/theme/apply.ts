@@ -3,7 +3,7 @@
  * touches `document.documentElement` or the Tauri window theme.
  * Everything else goes through these two functions.
  */
-import type { AegisTheme } from './types';
+import type { AegisTheme, ThemeSetting } from './types';
 import { HTML_ATTR, NATIVE_TITLE_BAR_MAP } from './constants';
 
 /**
@@ -18,7 +18,15 @@ import { HTML_ATTR, NATIVE_TITLE_BAR_MAP } from './constants';
  * while this class is present.
  */
 const SWITCHING_CLASS = 'theme-switching';
-let lastNativeTheme: AegisTheme | null = null;
+type NativeThemeTarget = 'light' | 'dark' | null;
+let lastNativeThemeTarget: NativeThemeTarget | undefined;
+
+export function resolveNativeThemeTarget(
+  theme: AegisTheme,
+  setting: ThemeSetting,
+): NativeThemeTarget {
+  return setting === 'system' ? null : NATIVE_TITLE_BAR_MAP[theme];
+}
 
 /** Writes the data-theme attribute that CSS selectors key on. Synchronous and idempotent. */
 export function applyToDocument(theme: AegisTheme): void {
@@ -56,20 +64,20 @@ export function applyToDocument(theme: AegisTheme): void {
  * never a fatal error, and surfacing the failure would just spam the
  * console on every theme switch.
  */
-export function syncNativeTitleBar(theme: AegisTheme): void {
-  if (lastNativeTheme === theme) return;
-  lastNativeTheme = theme;
-  const nativeMode = NATIVE_TITLE_BAR_MAP[theme];
+export function syncNativeTitleBar(theme: AegisTheme, setting: ThemeSetting): void {
+  const target = resolveNativeThemeTarget(theme, setting);
+  if (lastNativeThemeTarget === target) return;
+  lastNativeThemeTarget = target;
   import('@tauri-apps/api/window')
-    .then((m) => m.getCurrentWindow().setTheme(nativeMode))
+    .then((m) => m.getCurrentWindow().setTheme(target))
     .catch(() => {
-      if (lastNativeTheme === theme) lastNativeTheme = null;
+      if (lastNativeThemeTarget === target) lastNativeThemeTarget = undefined;
       /* not running under Tauri — no native chrome to sync */
     });
 }
 
 /** Convenience: apply both the CSS attribute and the native chrome in one call. */
-export function applyTheme(theme: AegisTheme): void {
+export function applyTheme(theme: AegisTheme, setting: ThemeSetting): void {
   applyToDocument(theme);
-  syncNativeTitleBar(theme);
+  syncNativeTitleBar(theme, setting);
 }

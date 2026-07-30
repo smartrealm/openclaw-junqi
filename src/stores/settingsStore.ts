@@ -210,7 +210,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ theme });
     window.aegis?.settings?.save?.('theme', theme).catch?.(() => {});
     const resolvedTheme = resolveTheme(theme, detectOSPreference());
-    applyTheme(resolvedTheme);
+    applyTheme(resolvedTheme, theme);
     // Notify same-document listeners; companion windows also observe the
     // persisted theme through localStorage.
     window.dispatchEvent(new CustomEvent('aegis:theme-changed', { detail: { theme, resolvedTheme } }));

@@ -99,7 +99,7 @@ export function GatewayLogPanel() {
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-[14px] font-semibold text-aegis-text flex items-center gap-2">
           <ScrollText size={16} className="text-aegis-primary" />
-          {t('settings.gatewayLog.title', 'Gateway Log')}
+          {t('settings.gatewayLog.title')}
           <span className="ml-2 text-[11px] text-aegis-text-dim font-normal">
             ({entries.length}/200)
           </span>
@@ -124,7 +124,7 @@ export function GatewayLogPanel() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-danger hover:border-aegis-danger/30 transition-colors disabled:opacity-40"
           >
             <Trash2 size={12} />
-            {t('settings.gatewayLog.clear', 'Clear')}
+            {t('settings.gatewayLog.clear')}
           </button>
         </div>
       </div>
@@ -137,7 +137,7 @@ export function GatewayLogPanel() {
         <div className="max-h-[280px] overflow-y-auto font-mono text-[11px] leading-relaxed">
           {entries.length === 0 ? (
             <div className="px-3 py-4 text-aegis-text-dim text-center">
-              {t('settings.gatewayLog.empty', 'No log entries yet. Start the Gateway to see stdout/stderr here.')}
+              {t('settings.gatewayLog.empty')}
             </div>
           ) : (
             entries.map((e, i) => {

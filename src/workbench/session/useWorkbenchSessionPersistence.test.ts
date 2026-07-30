@@ -4,6 +4,10 @@ import { readFileSync } from 'node:fs';
 
 const hook = readFileSync(new URL('./useWorkbenchSessionPersistence.ts', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+const mainWindowLifecycleCapability = JSON.parse(readFileSync(
+  new URL('../../../src-tauri/capabilities/main-window-lifecycle.json', import.meta.url),
+  'utf8',
+)) as { windows?: string[]; permissions?: string[] };
 
 test('workbench persistence is globally mounted and load precedes writer enablement', () => {
   assert.match(app, /useWorkbenchSessionPersistence\(\)/);
@@ -23,6 +27,11 @@ test('main-window close is fenced by one durable checkpoint before destroy', () 
   const stopPtys = hook.indexOf('stopAllWorkbenchPtys()', checkpoint);
   const destroy = hook.indexOf('window.destroy()', stopPtys);
   assert.ok(documents >= 0 && checkpoint > documents && stopPtys > checkpoint && destroy > stopPtys);
+});
+
+test('main-window destroy permission is scoped to the main window only', () => {
+  assert.deepEqual(mainWindowLifecycleCapability.windows, ['main']);
+  assert.deepEqual(mainWindowLifecycleCapability.permissions, ['core:window:allow-destroy']);
 });
 
 test('failed hydration leaves the durable writer fail closed', () => {

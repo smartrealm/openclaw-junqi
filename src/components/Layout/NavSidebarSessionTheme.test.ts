@@ -90,6 +90,12 @@ test('session state colors use theme semantic tokens without fixed palette color
   assert.doesNotMatch(source, /hover:bg-red-|hover:text-red-|ring-red-/);
 });
 
+test('new conversation action uses the shared sidebar primary action contract', () => {
+  assert.match(source, /import \{ SidebarPrimaryAction \} from '\.\/SidebarPrimaryAction';/);
+  assert.match(source, /<SidebarPrimaryAction[\s\S]*?sidebar\.newChat/);
+  assert.doesNotMatch(source, /bg-aegis-primary text-white[^\n]*sidebar\.newChat/);
+});
+
 test('session identity anchors title and metadata while status stays on the agent badge', () => {
   assert.match(source, /grid-cols-\[28px_minmax\(0,1fr\)_auto\]/);
   assert.match(source, /row-span-2 flex h-7 w-7/);

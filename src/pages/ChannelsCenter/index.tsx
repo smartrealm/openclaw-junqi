@@ -878,12 +878,12 @@ export function ChannelsCenterPage() {
                     onClick={() => void handleClearGatewayLogs()}
                     className="text-[10px] font-bold text-aegis-text-dim hover:text-aegis-text"
                   >
-                    {t('settings.gatewayLog.clear', 'Clear')}
+                    {t('settings.gatewayLog.clear')}
                   </button>
                 </div>
                 {gatewayLogs.length === 0 ? (
                   <div className="px-3 py-5 text-center text-[11px] text-aegis-text-dim">
-                    {t('settings.gatewayLog.empty', 'No log entries yet. Start the Gateway to see stdout/stderr here.')}
+                    {t('settings.gatewayLog.empty')}
                   </div>
                 ) : (
                   <pre className="max-h-[240px] overflow-auto px-3 py-2 text-[10px] leading-relaxed text-aegis-text-dim whitespace-pre-wrap break-all">

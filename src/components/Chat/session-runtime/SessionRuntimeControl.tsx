@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, LoaderCircle, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { Icon } from '@/components/shared/icons';
-import { getProviderDisplayLabel } from '@/components/shared/ModelDropdown';
+import { ProviderIcon, providerDisplayLabel } from '@/components/shared/provider-identity';
 import { useChatStore } from '@/stores/chatStore';
 import {
   groupSessionModels,
@@ -13,10 +12,6 @@ import {
   type SessionThinkingLevel,
 } from './sessionRuntimeDomain';
 import { useSessionRuntimeSettings } from './useSessionRuntimeSettings';
-
-function ProviderIcon({ providerId }: { providerId: string }) {
-  return <>{(Icon.provider[providerId] ?? Icon.provider.other).icon}</>;
-}
 
 export function SessionRuntimeControl() {
   const { t } = useTranslation();
@@ -63,20 +58,22 @@ export function SessionRuntimeControl() {
 
   const modelLabel = modelDisplayName(activeModel, committed.modelId) || t('config.notSet');
   const thinkingLabel = t(`titlebar.thinking.levels.${committed.thinking}`);
+  const committedProviderId = committed.modelId ? modelProviderId(committed.modelId) : 'other';
   return (
-    <div ref={rootRef} className="relative min-w-0">
+    <div ref={rootRef} className="relative min-w-0 no-drag">
       <button
         type="button"
         onClick={() => { if (!saving) setOpen((value) => !value); }}
         aria-expanded={open}
         aria-haspopup="dialog"
         className={clsx(
-          'inline-flex h-7 max-w-[280px] items-center gap-1.5 rounded-md px-2 text-[11px] text-aegis-text-muted transition-colors',
+          'inline-flex h-7 max-w-[280px] items-center gap-1.5 rounded-md px-1.5 text-[11px] text-aegis-text-muted transition-colors',
           'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
           open && 'bg-[rgb(var(--aegis-overlay)/0.07)] text-aegis-text',
         )}
         title={t('input.sessionRuntimeSummary', { model: modelLabel, thinking: thinkingLabel })}
       >
+        <ProviderIcon providerId={committedProviderId} size={14} className="text-aegis-text-dim" />
         <span className="truncate font-mono">{modelLabel}</span>
         <span aria-hidden className="text-aegis-text-dim">·</span>
         <span className="shrink-0">{thinkingLabel}</span>
@@ -91,12 +88,12 @@ export function SessionRuntimeControl() {
         <div
           role="dialog"
           aria-label={t('input.sessionRuntimeTitle')}
-          className="absolute bottom-full end-0 z-50 mb-2 flex w-[min(620px,calc(100vw-32px))] max-h-[min(520px,70vh)] flex-col overflow-hidden rounded-lg border border-aegis-menu-border bg-aegis-menu-bg"
+          className="absolute top-full start-0 z-50 mt-2 flex w-[min(420px,calc(100vw-24px))] max-h-[min(460px,calc(100vh-96px))] flex-col overflow-hidden rounded-lg border border-aegis-menu-border bg-aegis-menu-bg"
           style={{ boxShadow: 'var(--aegis-menu-shadow)' }}
         >
-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(96px,0.8fr)_minmax(0,1.7fr)]">
-            <div className="overflow-y-auto border-e border-aegis-menu-border p-2">
-              <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase text-aegis-text-dim">
+          <div className="grid min-h-[132px] max-h-[236px] grid-cols-[136px_minmax(0,1fr)] overflow-hidden">
+            <div className="overflow-y-auto border-e border-aegis-menu-border p-1.5">
+              <div className="px-1.5 pb-1 text-[10px] font-semibold uppercase text-aegis-text-dim">
                 {t('input.sessionRuntimeProvider')}
               </div>
               {groups.map((group) => (
@@ -105,20 +102,20 @@ export function SessionRuntimeControl() {
                   type="button"
                   onClick={() => setProviderId(group.providerId)}
                   className={clsx(
-                    'flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-start text-[12px] transition-colors',
+                    'flex min-h-8 w-full items-center gap-1.5 rounded-md border border-transparent px-1.5 text-start text-[12px] font-medium transition-colors',
                     selectedGroup?.providerId === group.providerId
-                      ? 'bg-[rgb(var(--aegis-primary)/0.09)] text-aegis-primary'
+                      ? 'border-aegis-border bg-[rgb(var(--aegis-overlay)/0.055)] text-aegis-text'
                       : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.05)]',
                   )}
                 >
-                  <span className="shrink-0"><ProviderIcon providerId={group.providerId} /></span>
-                  <span className="truncate">{getProviderDisplayLabel(group.providerId)}</span>
+                  <ProviderIcon providerId={group.providerId} size={16} className="text-aegis-text-muted" />
+                  <span className="truncate">{providerDisplayLabel(group.providerId)}</span>
                 </button>
               ))}
             </div>
 
             <div className="min-h-0 overflow-y-auto p-2">
-              <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase text-aegis-text-dim">
+              <div className="px-1 pb-1 text-[10px] font-semibold uppercase text-aegis-text-dim">
                 {t('input.sessionRuntimeModel')}
               </div>
               {selectedGroup?.models.map((model) => {
@@ -131,9 +128,9 @@ export function SessionRuntimeControl() {
                     disabled={selected}
                     aria-current={selected ? 'true' : undefined}
                     className={clsx(
-                      'flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-start transition-colors',
+                      'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1.5 text-start transition-colors',
                       selected
-                        ? 'cursor-default bg-[rgb(var(--aegis-primary)/0.08)] text-aegis-primary'
+                        ? 'cursor-default border-aegis-border bg-[rgb(var(--aegis-overlay)/0.055)] text-aegis-text'
                         : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.05)]',
                     )}
                   >
@@ -207,7 +204,7 @@ export function SessionRuntimeControl() {
                     .then((updated) => { if (updated) setOpen(false); });
                 }}
                 disabled={!draftModelId || !hasChanges || saving}
-                className="inline-flex h-8 min-w-16 items-center justify-center gap-1.5 rounded-md bg-aegis-primary px-3 text-[11px] font-medium text-white transition-colors hover:bg-aegis-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-8 min-w-16 items-center justify-center gap-1.5 rounded-md bg-aegis-primary px-3 text-[11px] font-medium text-aegis-btn-primary-text transition-colors hover:bg-aegis-primary-hover disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {saving && <LoaderCircle size={12} className="animate-spin" />}
                 {t('common.save')}

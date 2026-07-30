@@ -8,9 +8,15 @@ import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, RefreshCw, Download, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, RefreshCw, Download, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
-import { Icon } from '@/components/shared/icons';
+import {
+  getCustomProviderIcon,
+  ProviderIcon,
+  ProviderIconInput,
+  resolveOfficialProviderIconName,
+  setCustomProviderAppearance,
+} from '@/components/shared/provider-identity';
 import type {
   GatewayRuntimeConfig,
   AuthProfile,
@@ -964,25 +970,6 @@ function maskPreviewSecrets(value: any, path = ''): any {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Provider Icon
-// ─────────────────────────────────────────────────────────────────────────────
-
-function ProviderIcon({ providerId, size = 'md' }: { providerId: string; size?: 'sm' | 'md' }) {
-  const providerIcon = Icon.provider[providerId] ?? Icon.provider[normalizeProviderIdForCatalog(providerId)] ?? Icon.provider.other;
-  const sizeClass = size === 'sm' ? 'w-7 h-7 text-xs' : 'w-9 h-9 text-sm';
-  return (
-    <div
-      className={clsx(
-        'flex flex-shrink-0 items-center justify-center rounded-md border border-aegis-border bg-aegis-elevated font-semibold text-aegis-text-secondary',
-        sizeClass
-      )}
-    >
-      {providerIcon.icon}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // ProviderCardShell — one consistent frame for all three provider sources.
 // Renders the summary header (icon · name · type badge · subtitle · model count
 // · semantic status dot · chevron/action) plus a collapsible body. This is what
@@ -1080,7 +1067,9 @@ function ProviderCardShell({
       >
         {/* left */}
         <div className="flex items-center gap-3 min-w-0">
-          <ProviderIcon providerId={providerId} />
+          <div className="grid size-9 shrink-0 place-items-center rounded-md border border-aegis-border bg-aegis-elevated text-aegis-text-secondary">
+            <ProviderIcon providerId={providerId} size={18} />
+          </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-sm text-aegis-text truncate">{title}</span>
@@ -1787,9 +1776,12 @@ function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, im
 
   const [localBaseUrl, setLocalBaseUrl] = useState(modelsProvider?.baseUrl ?? '');
   const [localApi, setLocalApi] = useState(modelsProvider?.api ?? '');
+  const [localProviderIcon, setLocalProviderIcon] = useState(() => getCustomProviderIcon(provider));
+  const customAppearance = resolveOfficialProviderIconName(provider) === null;
   // Sync when prop changes after backup restore
   useEffect(() => { setLocalBaseUrl(modelsProvider?.baseUrl ?? ''); }, [modelsProvider?.baseUrl]);
   useEffect(() => { setLocalApi(modelsProvider?.api ?? ''); }, [modelsProvider?.api]);
+  useEffect(() => { setLocalProviderIcon(getCustomProviderIcon(provider)); }, [provider]);
 
   const updateModelsProvider = (patch: Partial<ModelProviderConfig>) => {
     onChange((prev) => {
@@ -1835,6 +1827,29 @@ function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, im
       open={open}
       onToggle={() => setOpen((o) => !o)}
     >
+          {customAppearance && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted">
+                {t('config.providerIcon')}
+              </label>
+              <ProviderIconInput
+                providerId={provider}
+                value={localProviderIcon}
+                onChange={(value) => {
+                  setLocalProviderIcon(value);
+                  setCustomProviderAppearance(provider, { icon: value });
+                }}
+                disabled={saving}
+                placeholder={t('config.providerIconPlaceholder')}
+                ariaLabel={t('config.providerIcon')}
+                className="max-w-48"
+              />
+              <p className="text-[10px] leading-tight text-aegis-text-muted">
+                {t('config.providerIconHint')}
+              </p>
+            </div>
+          )}
+
           {/* Base URL */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
@@ -2185,7 +2200,6 @@ function CatalogCard({
   const tmpl = getTemplateById(entry.templateId);
   if (!tmpl) return null;
   const displayLabel = t(`config.providerCatalog.${entry.catalogId}`, entry.label);
-  const providerIcon = Icon.provider[tmpl.id] ?? Icon.provider[normalizeProviderIdForCatalog(tmpl.id)] ?? Icon.provider.other;
   const metadata = [
     entry.region === 'cn' ? 'CN' : entry.region === 'global' ? 'Global' : null,
     entry.plan === 'coding' ? t('config.codingPlan') : entry.plan === 'oauth-portal' ? 'OAuth' : null,
@@ -2203,7 +2217,7 @@ function CatalogCard({
       )}
     >
       <div className="grid size-[34px] shrink-0 place-items-center rounded-md border border-aegis-border bg-aegis-elevated text-[12px] font-semibold text-aegis-text-secondary">
-        {providerIcon.icon}
+        <ProviderIcon providerId={tmpl.id} size={17} />
       </div>
 
       <div className="min-w-0 flex-1">
@@ -2279,6 +2293,7 @@ function ConfigureStep({
   const [extraModelIds, setExtraModelIds] = useState<string[]>([]);
   // For true custom template: let user override the provider ID written to config
   const [customProviderId, setCustomProviderId] = useState('custom');
+  const [customProviderIcon, setCustomProviderIcon] = useState('');
   const [textPrimaryModel, setTextPrimaryModel] = useState('');
   const [imagePrimaryModel, setImagePrimaryModel] = useState('');
   const [gatewayModels, setGatewayModels] = useState<GatewayModelOption[]>([]);
@@ -2559,13 +2574,16 @@ function ConfigureStep({
       providerId: effectiveProviderId,
       profileKey: providerProbeProfileKey(authMode, submission.profileKey),
     };
-    await onSubmit(
+    const added = await onSubmit(
       submission.profileKey,
       submission.profile,
       submission.models,
       submission.providerConfig,
       connectionProbe
     );
+    if (added && tmpl.id === 'custom') {
+      setCustomProviderAppearance(effectiveProviderId, { icon: customProviderIcon });
+    }
   };
 
   const effectiveBaseUrl = baseUrl.trim();
@@ -2676,7 +2694,13 @@ function ConfigureStep({
     <div className="flex flex-col gap-4">
       {/* Selected service context */}
       <div className="flex items-center gap-3 border-b border-aegis-border pb-4">
-        <ProviderIcon providerId={tmpl.id} />
+        <div className="grid size-9 shrink-0 place-items-center rounded-md border border-aegis-border bg-aegis-elevated text-aegis-text-secondary">
+          <ProviderIcon
+            providerId={effectiveProviderId}
+            size={18}
+            customIcon={tmpl.id === 'custom' ? customProviderIcon : undefined}
+          />
+        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-sm font-semibold text-aegis-text">
@@ -2700,7 +2724,8 @@ function ConfigureStep({
               rel="noreferrer"
               className="mt-0.5 inline-flex text-[10px] text-aegis-text-dim hover:text-aegis-primary"
             >
-              {t('openclawCommands.docsLink', 'Official docs')} ↗
+              {t('openclawCommands.docsLink', 'Official docs')}
+              <ExternalLink size={11} aria-hidden="true" />
             </a>
           )}
         </div>
@@ -2709,7 +2734,7 @@ function ConfigureStep({
       {/* Coding plan warning — shown whenever the selected catalog entry is a coding plan */}
       {catalogEntry?.planWarning && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-300 leading-snug">
-          <span className="flex-shrink-0 mt-0.5"><AlertTriangle size={14} strokeWidth={1.75} />️</span>
+          <span className="flex-shrink-0 mt-0.5"><AlertTriangle size={14} strokeWidth={1.75} /></span>
           <span>{catalogEntry.planWarning}</span>
         </div>
       )}
@@ -2732,27 +2757,40 @@ function ConfigureStep({
 
       {/* Provider ID override — only shown for the "custom" template */}
       {tmpl.id === 'custom' && (
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
-            {t('config.providerId')}
-          </label>
-          <input
-            value={customProviderId}
-            onChange={(e) => {
-              const nextProviderId = normalizeProviderIdForWrite(e.target.value) || 'custom';
-              setCustomProviderId(e.target.value);
-              setProfileName(`${nextProviderId}:main`);
-            }}
-            placeholder={t('config.providerIdPlaceholder')}
-            className={clsx(
-              'bg-aegis-surface border border-aegis-border rounded-lg px-3 py-2',
-              'text-aegis-text text-sm font-mono outline-none focus:border-aegis-primary',
-              'transition-colors duration-200'
-            )}
-          />
-          <p className="text-[10px] text-aegis-text-muted leading-tight">
-            {t('config.providerIdHint')}
-          </p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_160px]">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted">
+              {t('config.providerId')}
+            </label>
+            <input
+              value={customProviderId}
+              onChange={(e) => {
+                const nextProviderId = normalizeProviderIdForWrite(e.target.value) || 'custom';
+                setCustomProviderId(e.target.value);
+                setProfileName(`${nextProviderId}:main`);
+              }}
+              placeholder={t('config.providerIdPlaceholder')}
+              className="rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2 font-mono text-sm text-aegis-text outline-none transition-colors focus:border-aegis-primary"
+            />
+            <p className="text-[10px] leading-tight text-aegis-text-muted">
+              {t('config.providerIdHint')}
+            </p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted">
+              {t('config.providerIcon')}
+            </label>
+            <ProviderIconInput
+              providerId={effectiveProviderId}
+              value={customProviderIcon}
+              onChange={setCustomProviderIcon}
+              placeholder={t('config.providerIconPlaceholder')}
+              ariaLabel={t('config.providerIcon')}
+            />
+            <p className="text-[10px] leading-tight text-aegis-text-muted">
+              {t('config.providerIconHint')}
+            </p>
+          </div>
         </div>
       )}
 

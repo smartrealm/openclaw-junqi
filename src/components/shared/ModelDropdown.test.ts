@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getProviderDisplayLabel } from './ModelDropdown';
 import { formatModelRef } from './modelPresentation';
+import { providerDisplayLabel } from './provider-identity';
 
-test('getProviderDisplayLabel uses registry labels for known providers', () => {
-  assert.equal(getProviderDisplayLabel('openai'), 'OpenAI');
-  assert.equal(getProviderDisplayLabel('google'), 'Google Gemini');
+test('providerDisplayLabel preserves official provider names', () => {
+  assert.equal(providerDisplayLabel('openai'), 'OpenAI');
+  assert.equal(providerDisplayLabel('google'), 'Google');
 });
 
-test('getProviderDisplayLabel preserves custom provider ids', () => {
-  assert.equal(getProviderDisplayLabel('my-vllm'), 'my-vllm');
-  assert.equal(getProviderDisplayLabel('minimax-anthropic'), 'minimax-anthropic');
+test('providerDisplayLabel derives readable custom provider names', () => {
+  assert.equal(providerDisplayLabel('my-vllm'), 'My Vllm');
+  assert.equal(providerDisplayLabel('minimax-anthropic'), 'Minimax Anthropic');
 });
 
 test('model ref fallback display is generic and does not special-case catalog ids', () => {

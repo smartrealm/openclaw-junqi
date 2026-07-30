@@ -14,24 +14,9 @@ import { ChevronDown } from 'lucide-react';
 import { useChatStore } from '@/stores/chatStore';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { Icon } from '@/components/shared/icons';
+import { ProviderIcon, providerDisplayLabel } from './provider-identity';
 import { ModelDropdownOption } from './ModelDropdownOption';
-import { formatModelRef, modelCatalogLabel } from './modelPresentation';
-
-// ── Helpers ───────────────────────────────────────────────
-
-/** Converts full model IDs to short display names. */
-export function formatModelName(model: string | null | undefined): string {
-  return formatModelRef(model);
-}
-
-export function getProviderDisplayLabel(provider: string): string {
-  return Icon.provider[provider]?.label ?? provider;
-}
-
-function providerIcon(provider: string) {
-  return (Icon.provider[provider] ?? Icon.provider.other).icon;
-}
+import { modelCatalogLabel } from './modelPresentation';
 
 // ── Props ─────────────────────────────────────────────────
 
@@ -122,7 +107,7 @@ export function ModelDropdown({
         >
           {displayProvider && (
             <span className="shrink-0 text-aegis-text-dim">
-              {providerIcon(displayProvider)}
+              <ProviderIcon providerId={displayProvider} size={14} />
             </span>
           )}
           <span>{displayShort}</span>
@@ -147,7 +132,7 @@ export function ModelDropdown({
                 <span className="truncate">{displayShort}</span>
                 {displayProvider && (
                   <span className="inline-flex items-center gap-1 text-[10px] text-aegis-text-muted font-mono shrink-0">
-                    <span className="text-aegis-text-dim">{providerIcon(displayProvider)}</span>
+                    <ProviderIcon providerId={displayProvider} size={13} className="text-aegis-text-dim" />
                     {displayProvider}
                   </span>
                 )}
@@ -188,8 +173,8 @@ export function ModelDropdown({
                     'px-3 py-1 text-[9px] font-semibold uppercase tracking-widest text-aegis-text-dim flex items-center gap-1.5',
                     pi > 0 && 'mt-1 border-t border-[rgb(var(--aegis-overlay)/0.07)] pt-2',
                   )}>
-                    <span className="text-aegis-text-dim">{providerIcon(provider)}</span>
-                    {getProviderDisplayLabel(provider)}
+                    <ProviderIcon providerId={provider} size={13} className="text-aegis-text-dim" />
+                    {providerDisplayLabel(provider)}
                   </div>
                 )}
                 {grouped[provider].map((m) => {

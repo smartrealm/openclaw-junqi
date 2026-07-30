@@ -227,7 +227,7 @@ export function solidPetTextStyle(color: string, textShadow = 'none'): CSSProper
   };
 }
 
-export function petBubbleTextContainerStyle(color: string, themeName?: PetThemeName): CSSProperties {
+export function petCaptionTextContainerStyle(color: string, themeName?: PetThemeName): CSSProperties {
   return {
     ...solidPetTextStyle(color, themeName ? petTextShadowForTheme(themeName) : 'none'),
     border: 0,

@@ -4,7 +4,7 @@
     "fullName": "JunQi Desktop — AI-Powered Desktop Assistant",
     "clientSubtitle": "JunQi Desktop Client",
     "company": "Shaanxi Junqi Zhijing Technology Co., Ltd.",
-    "copyright": "© {{year}} Shaanxi Junqi Zhijing Technology Co., Ltd. · All rights reserved",
+    "copyright": "Copyright {{year}} Shaanxi Junqi Zhijing Technology Co., Ltd. · All rights reserved",
     "version": "v4"
   },
   "connection": {
@@ -718,8 +718,14 @@
   "settings": {
     "title": "Settings",
     "tab": {
+      "appearance": "Appearance",
       "terminal": "Terminal",
-      "maintenance": "Maintenance"
+      "notify": "Notifications",
+      "pet": "Pet",
+      "connect": "Connection",
+      "storage": "Storage",
+      "maintenance": "Maintenance",
+      "about": "About"
     },
     "language": "Language",
     "notifications": "Notifications",
@@ -763,6 +769,8 @@
     "refresh": "Refresh",
     "shortcuts": "Keyboard Shortcuts",
     "testConnection": "Test connection",
+    "connectionTestSuccess": "Connected",
+    "connectionTestFailed": "Connection failed",
     "theme": "Theme",
     "themeDark": "Dark",
     "themeLight": "Light",
@@ -820,15 +828,14 @@
       "amber": "Amber",
       "emerald": "Emerald"
     },
-    "tab.appearance": "Appearance",
-    "tab.notify": "Notifications",
-    "tab.pet": "Pet",
-    "tab.connect": "Connection",
-    "tab.storage": "Storage",
-    "tab.about": "About",
     "gatewayUrlHint": "Leave empty for default ({{url}})",
     "controlUi": "Control UI",
-    "controlUiRecovering": "Gateway is recovering. Control UI will open automatically once it reconnects."
+    "controlUiRecovering": "Gateway is recovering. Control UI will open automatically once it reconnects.",
+    "gatewayLog": {
+      "title": "Gateway log",
+      "clear": "Clear",
+      "empty": "No log entries yet. Start the Gateway to view standard output and error output."
+    }
   },
   "theme": {
     "followSystem": "Follow System",
@@ -874,7 +881,8 @@
     "deleteFailed": "Delete failed",
     "screenRecordPermission": "Screen recording permission required",
     "screenRecordHint": "Open System Settings → Privacy & Security → Screen Recording,",
-    "enterPrompt": "Enter prompt…"
+    "enterPrompt": "Enter prompt…",
+    "minuteShort": "min"
   },
   "gitChanges": {
     "title": "Changes",
@@ -1358,7 +1366,7 @@
     "attachmentReadFailed": "Unable to read {{path}}",
     "clipboardImageReadFailed": "Unable to read the clipboard image",
     "clipboardImageName": "clipboard.png",
-    "attachmentsOnlyMessage": "📎 {{files}}",
+    "attachmentsOnlyMessage": "{{files}}",
     "suggestions": {
       "searchMentions": "Search skills or files…",
       "clearSearch": "Clear search",
@@ -1547,6 +1555,12 @@
     "openConfiguration": "Configuration",
     "recoverGateway": "Check and recover Gateway",
     "gatewayRecoveryFailed": "Gateway recovery failed: {{error}}",
+    "collaborationGate": "Collaboration maintenance gate",
+    "collaborationGateActive": "Collaboration dispatch is paused for maintenance",
+    "collaborationGateUnknown": "Unable to confirm collaboration maintenance state",
+    "collaborationRunsMustSettle": "Active runs must settle in their sessions first; maintenance will not cancel them.",
+    "refreshCollaborationGate": "Refresh collaboration maintenance state",
+    "verifyAndReleaseGate": "Verify and release",
     "category": {
       "config": "Configuration",
       "plugin": "Plugins",
@@ -1598,6 +1612,24 @@
       "connecting": "Connecting",
       "connected": "Connected",
       "error": "Error"
+    },
+    "lifecycle": {
+      "stopped": "Stopped",
+      "starting": "Starting",
+      "running": "Running",
+      "error": "Error",
+      "reconnecting": "Reconnecting"
+    },
+    "runtimeMode": {
+      "none": "Not running",
+      "external": "External instance",
+      "system_service": "System service",
+      "managed_child": "Managed by JunQi",
+      "docker": "Docker"
+    },
+    "lifecyclePanel": {
+      "title": "Gateway status",
+      "waiting": "Waiting for a Gateway status update"
     }
   },
   "notifications": {
@@ -2561,6 +2593,9 @@
     "providerId": "Provider ID",
     "providerIdPlaceholder": "e.g. minimax-anthropic, my-vllm, custom",
     "providerIdHint": "Written to models.providers[id] in OpenClaw config. Defaults to \"custom\".",
+    "providerIcon": "Custom icon",
+    "providerIconPlaceholder": "e.g. V or P",
+    "providerIconHint": "Stored only as JunQi presentation metadata; never written to OpenClaw config",
     "baseUrlDriftWarning": "Drifted from recommended endpoint ({{url}}) — verify before continuing.",
     "modelIdHint": "Enter model names, confirm with Enter or comma. OpenClaw will prefix with {{providerId}}/",
     "configPreviewTitle": "Config Write Preview",
@@ -3072,7 +3107,8 @@
       "enabledBadge": "On",
       "enabling": "Setting up autostart…",
       "disabling": "Turning off autostart…",
-      "switching": "Switching how OpenClaw runs, one moment…"
+      "switching": "Switching how OpenClaw runs, one moment…",
+      "handoffFailed": "The Gateway service was installed but could not take over the current running instance."
     },
     "petReadyHint": "You can enter the dashboard now.",
     "enterDashboard": "Enter dashboard",
@@ -3303,6 +3339,8 @@
       "soundHint": "Play soft cues while dragging files",
       "backdropContrast": "Adaptive wallpaper colors",
       "backdropContrastHint": "Adapt the caption surface to nearby desktop colors; safe contrast remains when disabled, and desktop images are never saved",
+      "captionScale": "Caption text size",
+      "captionScaleHint": "Adjust the size of pet status and prompt text",
       "animatedTitle": "3D animated pet",
       "animatedHint": "Create a 3D pet with actions and look directions in the current chat with @hatch-pet",
       "animatedUsing": "Using: {{name}}",
@@ -3433,7 +3471,53 @@
     "scrollbackHint": "Applies immediately to open and new terminals; larger values use more memory in long sessions.",
     "shiftEnter": "Shift+Enter newline",
     "shiftEnterHint": "Insert a newline in interactive terminals without executing the current input.",
-    "saveFailed": "Could not save terminal settings: {{error}}"
+    "saveFailed": "Could not save terminal settings: {{error}}",
+    "defaultLauncher": "Default new-tab item",
+    "defaultLauncherHint": "Keep the selection menu when the default item is unavailable.",
+    "defaultBadge": "Default",
+    "showLaunchMenu": "Show selection menu",
+    "launcherOrder": "Agent menu",
+    "moveAgentUp": "Move up",
+    "moveAgentDown": "Move down",
+    "showAgent": "Show",
+    "hideAgent": "Hide",
+    "presets": "Terminal presets",
+    "presetsHint": "The add menu and command palette only show presets with valid paths that are not hidden.",
+    "addPreset": "Add terminal preset",
+    "noPresets": "No terminal presets configured.",
+    "presetTitle": "Preset name",
+    "presetPath": "Directory path",
+    "choosePresetDirectory": "Choose directory",
+    "deletePreset": "Delete preset",
+    "customAgents": "Custom agents",
+    "customAgentsHint": "Commands run unchanged in a new PTY; an empty command based on a built-in agent inherits its actual CLI.",
+    "addCustomAgent": "Add custom agent",
+    "noCustomAgents": "No custom agents configured.",
+    "deleteCustomAgent": "Delete custom agent",
+    "customAgentTitle": "Name",
+    "customAgentBase": "Based on",
+    "noBaseAgent": "None",
+    "customAgentCommand": "Launch command",
+    "customAgentEnv": "Environment variables",
+    "openIn": "Open in",
+    "openInHint": "Only applications detected on this device are listed; the first item becomes the segmented button default.",
+    "noOpenInApps": "No supported applications detected.",
+    "statusBar": "Status bar",
+    "statusBarHint": "Only controls the display and order of real terminal signals.",
+    "statusItems": {
+      "tool-calls": "Tool calls",
+      "remote-login": "Remote login",
+      "python-venv": "Python virtual environment",
+      "node-version": "Node.js version",
+      "proxy": "Proxy",
+      "git-branch": "Git branch",
+      "git-diff": "Git diff"
+    },
+    "cursorStyle": "Cursor style",
+    "cursorStyleHint": "Applies immediately to open terminals.",
+    "cursorBlock": "Block",
+    "cursorBar": "Bar",
+    "cursorUnderline": "Underline"
   },
   "appSettings": {
     "general": "General",

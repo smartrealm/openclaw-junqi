@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetAccentPalette, resolvePetCharacterPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
+import { normalizePetThemeName, petCaptionTextContainerStyle, petTextShadowForTheme, resolvePetAccentPalette, resolvePetCharacterPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
 import { DEFAULT_PET_SKIN } from '../stores/petStore';
 
 test('default pet skin is lobster', () => {
@@ -85,7 +85,7 @@ test('pet text style can apply dark-theme readability halo', () => {
 });
 
 test('pet bubble text container has no visual chrome', () => {
-  assert.deepEqual(petBubbleTextContainerStyle('#f8fafc'), {
+  assert.deepEqual(petCaptionTextContainerStyle('#f8fafc'), {
     WebkitTextStroke: '0 transparent',
     WebkitTextStrokeWidth: 0,
     WebkitTextStrokeColor: 'transparent',
@@ -113,7 +113,7 @@ test('pet bubble text container has no visual chrome', () => {
 });
 
 test('pet bubble text container adds readable halo in dark themes', () => {
-  const style = petBubbleTextContainerStyle('#f8fafc', 'aegis-midnight');
+  const style = petCaptionTextContainerStyle('#f8fafc', 'aegis-midnight');
   assert.equal(style.background, 'transparent');
   assert.equal(style.boxShadow, 'none');
   assert.notEqual(style.textShadow, 'none');

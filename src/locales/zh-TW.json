@@ -4,7 +4,7 @@
     "fullName": "JunQi Desktop — 浚啟桌面端",
     "clientSubtitle": "JunQi Desktop 客戶端",
     "company": "陝西浚啟智境科技有限公司",
-    "copyright": "© {{year}} 陝西浚啟智境科技有限公司 · 保留所有權利",
+    "copyright": "Copyright {{year}} 陝西浚啟智境科技有限公司 · 保留所有權利",
     "version": "v4"
   },
   "connection": {
@@ -689,8 +689,14 @@
   "settings": {
     "title": "設置",
     "tab": {
+      "appearance": "外觀",
       "terminal": "終端",
-      "maintenance": "檢修"
+      "notify": "通知",
+      "pet": "萌寵",
+      "connect": "連接",
+      "storage": "儲存",
+      "maintenance": "檢修",
+      "about": "關於"
     },
     "language": "語言",
     "notifications": "通知",
@@ -734,6 +740,8 @@
     "refresh": "刷新",
     "shortcuts": "快捷鍵",
     "testConnection": "測試連接",
+    "connectionTestSuccess": "已連接",
+    "connectionTestFailed": "連接失敗",
     "theme": "主題",
     "themeDark": "深色",
     "themeLight": "淺色",
@@ -791,15 +799,14 @@
       "amber": "琥珀",
       "emerald": "翠綠"
     },
-    "tab.appearance": "外觀",
-    "tab.notify": "通知",
-    "tab.pet": "萌寵",
-    "tab.connect": "連接",
-    "tab.storage": "存儲",
-    "tab.about": "關於",
     "gatewayUrlHint": "留空使用默認值 ({{url}})",
     "controlUi": "Control UI",
-    "controlUiRecovering": "Gateway 正在恢復，連接完成後將自動打開 Control UI。"
+    "controlUiRecovering": "Gateway 正在恢復，連接完成後將自動打開 Control UI。",
+    "gatewayLog": {
+      "title": "Gateway 日誌",
+      "clear": "清空",
+      "empty": "暫無日誌。啟動 Gateway 後可在此查看標準輸出和錯誤輸出。"
+    }
   },
   "theme": {
     "followSystem": "跟隨系統",
@@ -845,7 +852,8 @@
     "deleteFailed": "刪除失敗",
     "screenRecordPermission": "需要屏幕錄製權限",
     "screenRecordHint": "打開 系統設置 → 隱私與安全性 → 屏幕錄製，",
-    "enterPrompt": "輸入 Prompt…"
+    "enterPrompt": "輸入 Prompt…",
+    "minuteShort": "分鐘"
   },
   "gitChanges": {
     "title": "變更",
@@ -1325,7 +1333,7 @@
     "attachmentReadFailed": "無法讀取 {{path}}",
     "clipboardImageReadFailed": "無法讀取剪貼簿圖片",
     "clipboardImageName": "剪貼簿圖片.png",
-    "attachmentsOnlyMessage": "📎 {{files}}",
+    "attachmentsOnlyMessage": "{{files}}",
     "suggestions": {
       "searchMentions": "搜尋技能或檔案…",
       "clearSearch": "清除搜尋",
@@ -1514,6 +1522,12 @@
     "openConfiguration": "配置管理",
     "recoverGateway": "檢查並恢復 Gateway",
     "gatewayRecoveryFailed": "Gateway 恢復失敗：{{error}}",
+    "collaborationGate": "協作維護閘門",
+    "collaborationGateActive": "協作分派已因維護暫停",
+    "collaborationGateUnknown": "無法確認協作維護狀態",
+    "collaborationRunsMustSettle": "活動運行必須先在會話中收斂；檢修不會自動取消它們。",
+    "refreshCollaborationGate": "刷新協作維護狀態",
+    "verifyAndReleaseGate": "驗證並解除",
     "category": {
       "config": "配置",
       "plugin": "插件",
@@ -1565,6 +1579,24 @@
       "connecting": "正在連接",
       "connected": "已連接",
       "error": "錯誤"
+    },
+    "lifecycle": {
+      "stopped": "已停止",
+      "starting": "正在啟動",
+      "running": "運行中",
+      "error": "錯誤",
+      "reconnecting": "正在重新連接"
+    },
+    "runtimeMode": {
+      "none": "未運行",
+      "external": "外部實例",
+      "system_service": "系統服務",
+      "managed_child": "JunQi 託管",
+      "docker": "Docker"
+    },
+    "lifecyclePanel": {
+      "title": "Gateway 狀態",
+      "waiting": "等待 Gateway 狀態更新"
     }
   },
   "notifications": {
@@ -2525,6 +2557,9 @@
     "providerId": "Provider ID",
     "providerIdPlaceholder": "例如：minimax-anthropic、my-vllm、custom",
     "providerIdHint": "寫入 OpenClaw 配置的 models.providers[id] 的鍵名，默認 custom",
+    "providerIcon": "自定義圖標",
+    "providerIconPlaceholder": "例如 V 或 P",
+    "providerIconHint": "僅保存在 JunQi 的展示設定中，不寫入 OpenClaw 配置",
     "baseUrlDriftWarning": "已偏離推薦 endpoint（{{url}}），確認後再繼續。",
     "modelIdHint": "輸入模型名稱，回車或逗號確認。OpenClaw 會自動加 {{providerId}}/ 前綴",
     "configPreviewTitle": "配置寫入預覽",
@@ -3036,7 +3071,8 @@
       "enabledBadge": "已開啟",
       "enabling": "正在設置開機自啟…",
       "disabling": "正在關閉開機自啟…",
-      "switching": "正在切換 OpenClaw 的運行方式，請稍候…"
+      "switching": "正在切換 OpenClaw 的運行方式，請稍候…",
+      "handoffFailed": "Gateway 服務已安裝，但未能接管當前運行實例。"
     },
     "petReadyHint": "可以進入儀表盤了",
     "enterDashboard": "進入儀表盤",
@@ -3267,6 +3303,8 @@
       "soundHint": "拖動文件時播放輕柔提示音",
       "backdropContrast": "自適應桌布配色",
       "backdropContrastHint": "根據附近桌面顏色切換提示底板；關閉後仍保留安全對比度，不保存桌面圖像",
+      "captionScale": "提示文字大小",
+      "captionScaleHint": "調整萌寵狀態與提示文字的顯示大小",
       "animatedTitle": "3D 動畫萌寵",
       "animatedHint": "在當前會話中用 @hatch-pet 創建有動作和視線方向的 3D 萌寵",
       "animatedUsing": "正在使用：{{name}}",
@@ -3397,7 +3435,53 @@
     "scrollbackHint": "立即應用到已打開和新打開的終端；數值越大，長時會話佔用的內存越多。",
     "shiftEnter": "Shift+Enter 換行",
     "shiftEnterHint": "在交互式終端中插入換行，不立即執行當前輸入。",
-    "saveFailed": "終端設置保存失敗：{{error}}"
+    "saveFailed": "終端設置保存失敗：{{error}}",
+    "defaultLauncher": "新標籤頁默認項",
+    "defaultLauncherHint": "默認項不可用時保留選擇菜單。",
+    "defaultBadge": "默認",
+    "showLaunchMenu": "顯示選擇菜單",
+    "launcherOrder": "智能體菜單",
+    "moveAgentUp": "上移",
+    "moveAgentDown": "下移",
+    "showAgent": "顯示",
+    "hideAgent": "隱藏",
+    "presets": "終端預設",
+    "presetsHint": "加號菜單和命令面板只顯示路徑有效且未隱藏的預設。",
+    "addPreset": "添加終端預設",
+    "noPresets": "尚未配置終端預設。",
+    "presetTitle": "預設名稱",
+    "presetPath": "目錄路徑",
+    "choosePresetDirectory": "選擇目錄",
+    "deletePreset": "刪除預設",
+    "customAgents": "自定義 Agent",
+    "customAgentsHint": "命令會在新建 PTY 中原樣執行；基於內置 Agent 的空命令繼承其實際 CLI。",
+    "addCustomAgent": "添加自定義 Agent",
+    "noCustomAgents": "尚未配置自定義 Agent。",
+    "deleteCustomAgent": "刪除自定義 Agent",
+    "customAgentTitle": "名稱",
+    "customAgentBase": "基於",
+    "noBaseAgent": "不繼承",
+    "customAgentCommand": "啟動命令",
+    "customAgentEnv": "環境變量",
+    "openIn": "打開方式",
+    "openInHint": "只列出當前設備實際檢測到的應用；首項會成為分段按鈕默認目標。",
+    "noOpenInApps": "未檢測到可用應用。",
+    "statusBar": "狀態欄",
+    "statusBarHint": "僅控制已有真實終端信號的顯示和排列。",
+    "statusItems": {
+      "tool-calls": "工具調用",
+      "remote-login": "遠程登錄",
+      "python-venv": "Python 虛擬環境",
+      "node-version": "Node.js 版本",
+      "proxy": "代理",
+      "git-branch": "Git 分支",
+      "git-diff": "Git 差異"
+    },
+    "cursorStyle": "光標樣式",
+    "cursorStyleHint": "立即應用到已打開的終端。",
+    "cursorBlock": "方塊",
+    "cursorBar": "豎線",
+    "cursorUnderline": "下劃線"
   },
   "appSettings": {
     "general": "通用",

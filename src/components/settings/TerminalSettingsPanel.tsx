@@ -60,7 +60,6 @@ import {
   resetTerminalStatusPreferences,
   setTerminalStatusItemHidden,
   subscribeTerminalStatusPreferences,
-  TERMINAL_STATUS_ITEM_LABELS,
 } from '@/components/Terminal/terminalStatusPreferences';
 import {
   getTerminalAppearancePreferencesSnapshot,
@@ -104,8 +103,8 @@ function TerminalAgentLaunchPreferences() {
       <div className="divide-y divide-aegis-border/60">
         <div className="grid gap-4 pb-4 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
           <div>
-            <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.defaultLauncher', '新标签页默认项')}</div>
-            <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.defaultLauncherHint', '默认项不可用时保留选择菜单。')}</p>
+            <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.defaultLauncher')}</div>
+            <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.defaultLauncherHint')}</p>
           </div>
           <select
             value={preferences.defaultLauncherId ?? ''}
@@ -115,7 +114,7 @@ function TerminalAgentLaunchPreferences() {
             }}
             className="h-9 rounded-md border border-aegis-border bg-aegis-input px-3 text-[12px] text-aegis-text outline-none focus:border-aegis-primary/55"
           >
-            <option value="">{t('terminalSettings.showLaunchMenu', '显示选择菜单')}</option>
+            <option value="">{t('terminalSettings.showLaunchMenu')}</option>
             <option value="terminal">{t('terminal.newTerminal', 'Terminal')}</option>
             {presets.map((preset) => (
               <option key={preset.id} value={preset.id}>{terminalPresetDisplayTitle(preset)}</option>
@@ -130,7 +129,7 @@ function TerminalAgentLaunchPreferences() {
         </div>
 
         <div className="pt-4">
-          <div className="mb-2 text-[13px] font-medium text-aegis-text">{t('terminalSettings.launcherOrder', '智能体菜单')}</div>
+          <div className="mb-2 text-[13px] font-medium text-aegis-text">{t('terminalSettings.launcherOrder')}</div>
           <div className="overflow-hidden rounded-md border border-aegis-border/70">
             {preferences.orderedAgentIds.map((id, index) => {
               const launcher = terminalAgentLauncher(id);
@@ -142,23 +141,23 @@ function TerminalAgentLaunchPreferences() {
                     type="button"
                     onClick={() => moveTerminalAgent(id, -1)}
                     disabled={index === 0}
-                    title={t('terminalSettings.moveAgentUp', '上移')}
-                    aria-label={t('terminalSettings.moveAgentUp', '上移')}
+                    title={t('terminalSettings.moveAgentUp')}
+                    aria-label={t('terminalSettings.moveAgentUp')}
                     className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"
                   ><ArrowUp size={13} /></button>
                   <button
                     type="button"
                     onClick={() => moveTerminalAgent(id, 1)}
                     disabled={index === preferences.orderedAgentIds.length - 1}
-                    title={t('terminalSettings.moveAgentDown', '下移')}
-                    aria-label={t('terminalSettings.moveAgentDown', '下移')}
+                    title={t('terminalSettings.moveAgentDown')}
+                    aria-label={t('terminalSettings.moveAgentDown')}
                     className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"
                   ><ArrowDown size={13} /></button>
                   <button
                     type="button"
                     onClick={() => setTerminalAgentHidden(id, !isHidden)}
-                    title={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')}
-                    aria-label={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')}
+                    title={isHidden ? t('terminalSettings.showAgent') : t('terminalSettings.hideAgent')}
+                    aria-label={isHidden ? t('terminalSettings.showAgent') : t('terminalSettings.hideAgent')}
                     className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text"
                   >{isHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
                 </div>
@@ -193,20 +192,20 @@ function TerminalPresetPreferences() {
     <GlassCard delay={0.14}>
       <div className="flex items-center gap-3 border-b border-aegis-border/60 pb-3">
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.presets', '终端预设')}</div>
-          <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.presetsHint', '加号菜单和命令面板只显示路径有效且未隐藏的预设。')}</p>
+          <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.presets')}</div>
+          <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.presetsHint')}</p>
         </div>
         <button
           type="button"
-          title={t('terminalSettings.addPreset', '添加终端预设')}
-          aria-label={t('terminalSettings.addPreset', '添加终端预设')}
+          title={t('terminalSettings.addPreset')}
+          aria-label={t('terminalSettings.addPreset')}
           onClick={addTerminalPreset}
           className="flex h-8 w-8 items-center justify-center rounded-[4px] border border-aegis-border text-aegis-text-muted transition-colors hover:bg-aegis-hover hover:text-aegis-text"
         ><Plus size={14} /></button>
       </div>
       <div className="mt-3 space-y-2">
         {preferences.presets.length === 0 && (
-          <div className="py-2 text-[11px] text-aegis-text-dim">{t('terminalSettings.noPresets', '尚未配置终端预设。')}</div>
+          <div className="py-2 text-[11px] text-aegis-text-dim">{t('terminalSettings.noPresets')}</div>
         )}
         {preferences.presets.map((preset, index) => {
           const isHidden = hidden.has(preset.id);
@@ -216,7 +215,7 @@ function TerminalPresetPreferences() {
                 value={preset.title}
                 onChange={(event) => updateTerminalPreset(preset.id, { title: event.target.value })}
                 placeholder={terminalPresetDisplayTitle(preset)}
-                aria-label={t('terminalSettings.presetTitle', '预设名称')}
+                aria-label={t('terminalSettings.presetTitle')}
                 className="h-8 min-w-0 rounded-[4px] border border-aegis-border bg-aegis-input px-2 text-[11px] text-aegis-text outline-none focus:border-aegis-primary/55"
               />
               <div className="flex min-w-0">
@@ -224,22 +223,22 @@ function TerminalPresetPreferences() {
                   value={preset.path}
                   onChange={(event) => updateTerminalPreset(preset.id, { path: event.target.value })}
                   placeholder="~/project"
-                  aria-label={t('terminalSettings.presetPath', '目录路径')}
+                  aria-label={t('terminalSettings.presetPath')}
                   className="h-8 min-w-0 flex-1 rounded-s-[4px] border border-aegis-border bg-aegis-input px-2 font-mono text-[11px] text-aegis-text outline-none focus:border-aegis-primary/55"
                 />
                 <button
                   type="button"
-                  title={t('terminalSettings.choosePresetDirectory', '选择目录')}
-                  aria-label={t('terminalSettings.choosePresetDirectory', '选择目录')}
+                  title={t('terminalSettings.choosePresetDirectory')}
+                  aria-label={t('terminalSettings.choosePresetDirectory')}
                   onClick={() => void chooseDirectory(preset.id, preset.path)}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-e-[4px] border border-s-0 border-aegis-border bg-aegis-input text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text"
                 ><FolderOpen size={13} /></button>
               </div>
               <div className="flex items-center justify-end gap-0.5">
-                <button type="button" title={t('terminalSettings.moveAgentUp', '上移')} aria-label={t('terminalSettings.moveAgentUp', '上移')} onClick={() => moveTerminalPreset(preset.id, -1)} disabled={index === 0} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowUp size={13} /></button>
-                <button type="button" title={t('terminalSettings.moveAgentDown', '下移')} aria-label={t('terminalSettings.moveAgentDown', '下移')} onClick={() => moveTerminalPreset(preset.id, 1)} disabled={index === preferences.presets.length - 1} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowDown size={13} /></button>
-                <button type="button" title={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')} aria-label={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')} onClick={() => setTerminalPresetHidden(preset.id, !isHidden)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{isHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
-                <button type="button" title={t('terminalSettings.deletePreset', '删除预设')} aria-label={t('terminalSettings.deletePreset', '删除预设')} onClick={() => deleteTerminalPreset(preset.id)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-danger/15 hover:text-aegis-danger"><Trash2 size={13} /></button>
+                <button type="button" title={t('terminalSettings.moveAgentUp')} aria-label={t('terminalSettings.moveAgentUp')} onClick={() => moveTerminalPreset(preset.id, -1)} disabled={index === 0} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowUp size={13} /></button>
+                <button type="button" title={t('terminalSettings.moveAgentDown')} aria-label={t('terminalSettings.moveAgentDown')} onClick={() => moveTerminalPreset(preset.id, 1)} disabled={index === preferences.presets.length - 1} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowDown size={13} /></button>
+                <button type="button" title={isHidden ? t('terminalSettings.showAgent') : t('terminalSettings.hideAgent')} aria-label={isHidden ? t('terminalSettings.showAgent') : t('terminalSettings.hideAgent')} onClick={() => setTerminalPresetHidden(preset.id, !isHidden)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{isHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                <button type="button" title={t('terminalSettings.deletePreset')} aria-label={t('terminalSettings.deletePreset')} onClick={() => deleteTerminalPreset(preset.id)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-danger/15 hover:text-aegis-danger"><Trash2 size={13} /></button>
               </div>
             </div>
           );
@@ -273,13 +272,13 @@ function TerminalCustomAgentPreferences() {
     <GlassCard delay={0.16}>
       <div className="flex items-center gap-3 border-b border-aegis-border/60 pb-3">
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.customAgents', '自定义 Agent')}</div>
-          <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.customAgentsHint', '命令会在新建 PTY 中原样执行；基于内置 Agent 的空命令继承其实际 CLI。')}</p>
+          <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.customAgents')}</div>
+          <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.customAgentsHint')}</p>
         </div>
-        <button type="button" title={t('terminalSettings.addCustomAgent', '添加自定义 Agent')} aria-label={t('terminalSettings.addCustomAgent', '添加自定义 Agent')} onClick={add} className="flex h-8 w-8 items-center justify-center rounded-[4px] border border-aegis-border text-aegis-text-muted transition-colors hover:bg-aegis-hover hover:text-aegis-text"><Plus size={14} /></button>
+        <button type="button" title={t('terminalSettings.addCustomAgent')} aria-label={t('terminalSettings.addCustomAgent')} onClick={add} className="flex h-8 w-8 items-center justify-center rounded-[4px] border border-aegis-border text-aegis-text-muted transition-colors hover:bg-aegis-hover hover:text-aegis-text"><Plus size={14} /></button>
       </div>
       <div className="mt-3 space-y-2">
-        {preferences.agents.length === 0 && <div className="py-2 text-[11px] text-aegis-text-dim">{t('terminalSettings.noCustomAgents', '尚未配置自定义 Agent。')}</div>}
+        {preferences.agents.length === 0 && <div className="py-2 text-[11px] text-aegis-text-dim">{t('terminalSettings.noCustomAgents')}</div>}
         {preferences.agents.map((agent, index) => {
           const isHidden = hidden.has(agent.id);
           const expanded = expandedIds.has(agent.id);
@@ -290,31 +289,31 @@ function TerminalCustomAgentPreferences() {
                   {terminalCustomAgentDisplayTitle(agent)}
                 </button>
                 <div className="flex items-center gap-0.5">
-                  <button type="button" title={t('terminalSettings.moveAgentUp', '上移')} aria-label={t('terminalSettings.moveAgentUp', '上移')} onClick={() => moveTerminalCustomAgent(agent.id, -1)} disabled={index === 0} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowUp size={13} /></button>
-                  <button type="button" title={t('terminalSettings.moveAgentDown', '下移')} aria-label={t('terminalSettings.moveAgentDown', '下移')} onClick={() => moveTerminalCustomAgent(agent.id, 1)} disabled={index === preferences.agents.length - 1} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowDown size={13} /></button>
-                  <button type="button" title={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')} aria-label={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')} onClick={() => setTerminalCustomAgentHidden(agent.id, !isHidden)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{isHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
-                  <button type="button" title={t('terminalSettings.deleteCustomAgent', '删除自定义 Agent')} aria-label={t('terminalSettings.deleteCustomAgent', '删除自定义 Agent')} onClick={() => deleteTerminalCustomAgent(agent.id)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-danger/15 hover:text-aegis-danger"><Trash2 size={13} /></button>
+                  <button type="button" title={t('terminalSettings.moveAgentUp')} aria-label={t('terminalSettings.moveAgentUp')} onClick={() => moveTerminalCustomAgent(agent.id, -1)} disabled={index === 0} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowUp size={13} /></button>
+                  <button type="button" title={t('terminalSettings.moveAgentDown')} aria-label={t('terminalSettings.moveAgentDown')} onClick={() => moveTerminalCustomAgent(agent.id, 1)} disabled={index === preferences.agents.length - 1} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowDown size={13} /></button>
+                  <button type="button" title={isHidden ? t('terminalSettings.showAgent') : t('terminalSettings.hideAgent')} aria-label={isHidden ? t('terminalSettings.showAgent') : t('terminalSettings.hideAgent')} onClick={() => setTerminalCustomAgentHidden(agent.id, !isHidden)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{isHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                  <button type="button" title={t('terminalSettings.deleteCustomAgent')} aria-label={t('terminalSettings.deleteCustomAgent')} onClick={() => deleteTerminalCustomAgent(agent.id)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-danger/15 hover:text-aegis-danger"><Trash2 size={13} /></button>
                 </div>
               </div>
               {expanded && (
                 <div className="grid gap-2 border-t border-aegis-border/60 p-2 sm:grid-cols-2">
                   <label className="grid gap-1 text-[10px] text-aegis-text-dim">
-                    {t('terminalSettings.customAgentTitle', '名称')}
+                    {t('terminalSettings.customAgentTitle')}
                     <input value={agent.title} onChange={(event) => updateTerminalCustomAgent(agent.id, { title: event.target.value })} placeholder={agent.id} className="h-8 rounded-[4px] border border-aegis-border bg-aegis-input px-2 text-[11px] text-aegis-text outline-none focus:border-aegis-primary/55" />
                   </label>
                   <label className="grid gap-1 text-[10px] text-aegis-text-dim">
-                    {t('terminalSettings.customAgentBase', '基于')}
+                    {t('terminalSettings.customAgentBase')}
                     <select value={agent.baseAgentId ?? ''} onChange={(event) => updateTerminalCustomAgent(agent.id, { baseAgentId: event.target.value ? event.target.value as TerminalAgentId : null })} className="h-8 rounded-[4px] border border-aegis-border bg-aegis-input px-2 text-[11px] text-aegis-text outline-none focus:border-aegis-primary/55">
-                      <option value="">{t('terminalSettings.noBaseAgent', '不继承')}</option>
+                      <option value="">{t('terminalSettings.noBaseAgent')}</option>
                       {TERMINAL_AGENT_LAUNCHERS.map((builtin) => <option key={builtin.id} value={builtin.id}>{builtin.label}</option>)}
                     </select>
                   </label>
                   <label className="grid gap-1 text-[10px] text-aegis-text-dim sm:col-span-2">
-                    {t('terminalSettings.customAgentCommand', '启动命令')}
+                    {t('terminalSettings.customAgentCommand')}
                     <input value={agent.command} onChange={(event) => updateTerminalCustomAgent(agent.id, { command: event.target.value })} placeholder={agent.baseAgentId ?? 'aichat --model example'} className="h-8 rounded-[4px] border border-aegis-border bg-aegis-input px-2 font-mono text-[11px] text-aegis-text outline-none focus:border-aegis-primary/55" />
                   </label>
                   <label className="grid gap-1 text-[10px] text-aegis-text-dim sm:col-span-2">
-                    {t('terminalSettings.customAgentEnv', '环境变量')}
+                    {t('terminalSettings.customAgentEnv')}
                     <textarea value={agent.env} onChange={(event) => updateTerminalCustomAgent(agent.id, { env: event.target.value })} placeholder="KEY=value" rows={2} className="resize-y rounded-[4px] border border-aegis-border bg-aegis-input px-2 py-1.5 font-mono text-[11px] text-aegis-text outline-none focus:border-aegis-primary/55" />
                   </label>
                 </div>
@@ -355,24 +354,24 @@ function TerminalOpenInPreferences() {
     <GlassCard delay={0.18}>
       <div className="flex items-center gap-3 border-b border-aegis-border/60 pb-3">
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.openIn', 'Open In')}</div>
-          <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.openInHint', '只列出当前设备实际检测到的应用；首项会成为分段按钮默认目标。')}</p>
+          <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.openIn')}</div>
+          <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.openInHint')}</p>
         </div>
         <button type="button" title={t('terminalSettings.reset', '恢复默认')} aria-label={t('terminalSettings.reset', '恢复默认')} onClick={resetTerminalOpenInPreferences} className="flex h-8 w-8 items-center justify-center rounded-[4px] border border-aegis-border text-aegis-text-muted transition-colors hover:bg-aegis-hover hover:text-aegis-text"><RotateCcw size={13} /></button>
       </div>
       <div className="mt-3 overflow-hidden border border-aegis-border/65">
         {loading && <div className="px-2 py-3 text-[11px] text-aegis-text-dim">{t('common.loading', 'Loading...')}</div>}
-        {!loading && orderedApps.length === 0 && <div className="px-2 py-3 text-[11px] text-aegis-text-dim">{t('terminalSettings.noOpenInApps', '未检测到可用应用。')}</div>}
+        {!loading && orderedApps.length === 0 && <div className="px-2 py-3 text-[11px] text-aegis-text-dim">{t('terminalSettings.noOpenInApps')}</div>}
         {orderedApps.map((app, index) => {
           const isHidden = hidden.has(app.id);
           return (
             <div key={app.id} className={clsx('flex h-10 items-center gap-1.5 border-b border-aegis-border/50 px-2 last:border-b-0', isHidden && 'opacity-55')}>
               <span className="flex h-7 w-7 shrink-0 items-center justify-center text-aegis-text-muted"><TerminalOpenInAppIcon app={app} size={16} /></span>
               <span className="min-w-0 flex-1 truncate text-[12px] text-aegis-text">{app.label}</span>
-              {preferences.lastUsedAppId === app.id && <span className="text-[9px] text-aegis-primary">{t('terminalSettings.defaultLauncher', '默认')}</span>}
-              <button type="button" title={t('terminalSettings.moveAgentUp', '上移')} aria-label={t('terminalSettings.moveAgentUp', '上移')} onClick={() => moveTerminalOpenInApp(app.id, -1, orderedApps.map((entry) => entry.id))} disabled={index === 0} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowUp size={13} /></button>
-              <button type="button" title={t('terminalSettings.moveAgentDown', '下移')} aria-label={t('terminalSettings.moveAgentDown', '下移')} onClick={() => moveTerminalOpenInApp(app.id, 1, orderedApps.map((entry) => entry.id))} disabled={index === orderedApps.length - 1} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowDown size={13} /></button>
-              <button type="button" title={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')} aria-label={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')} onClick={() => setTerminalOpenInAppHidden(app.id, !isHidden)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{isHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+              {preferences.lastUsedAppId === app.id && <span className="text-[9px] text-aegis-primary">{t('terminalSettings.defaultBadge')}</span>}
+              <button type="button" title={t('terminalSettings.moveAgentUp')} aria-label={t('terminalSettings.moveAgentUp')} onClick={() => moveTerminalOpenInApp(app.id, -1, orderedApps.map((entry) => entry.id))} disabled={index === 0} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowUp size={13} /></button>
+              <button type="button" title={t('terminalSettings.moveAgentDown')} aria-label={t('terminalSettings.moveAgentDown')} onClick={() => moveTerminalOpenInApp(app.id, 1, orderedApps.map((entry) => entry.id))} disabled={index === orderedApps.length - 1} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowDown size={13} /></button>
+              <button type="button" title={isHidden ? t('terminalSettings.showAgent') : t('terminalSettings.hideAgent')} aria-label={isHidden ? t('terminalSettings.showAgent') : t('terminalSettings.hideAgent')} onClick={() => setTerminalOpenInAppHidden(app.id, !isHidden)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{isHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
             </div>
           );
         })}
@@ -394,8 +393,8 @@ function TerminalStatusBarPreferences() {
     <GlassCard delay={0.2}>
       <div className="flex items-center gap-3 border-b border-aegis-border/60 pb-3">
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.statusBar', '状态栏')}</div>
-          <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.statusBarHint', '仅控制已有真实终端信号的显示和排列。')}</p>
+          <div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.statusBar')}</div>
+          <p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.statusBarHint')}</p>
         </div>
         <button type="button" title={t('terminalSettings.reset', '恢复默认')} aria-label={t('terminalSettings.reset', '恢复默认')} onClick={resetTerminalStatusPreferences} className="flex h-8 w-8 items-center justify-center rounded-[4px] border border-aegis-border text-aegis-text-muted transition-colors hover:bg-aegis-hover hover:text-aegis-text"><RotateCcw size={13} /></button>
       </div>
@@ -404,10 +403,10 @@ function TerminalStatusBarPreferences() {
           const isHidden = hidden.has(item);
           return (
             <div key={item} className={clsx('flex h-10 items-center gap-1.5 border-b border-aegis-border/50 px-2 last:border-b-0', isHidden && 'opacity-55')}>
-              <span className="min-w-0 flex-1 truncate text-[12px] text-aegis-text">{TERMINAL_STATUS_ITEM_LABELS[item]}</span>
-              <button type="button" title={t('terminalSettings.moveAgentUp', '上移')} aria-label={t('terminalSettings.moveAgentUp', '上移')} onClick={() => moveTerminalStatusItem(item, -1)} disabled={index === 0} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowUp size={13} /></button>
-              <button type="button" title={t('terminalSettings.moveAgentDown', '下移')} aria-label={t('terminalSettings.moveAgentDown', '下移')} onClick={() => moveTerminalStatusItem(item, 1)} disabled={index === preferences.orderedItems.length - 1} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowDown size={13} /></button>
-              <button type="button" title={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')} aria-label={isHidden ? t('terminalSettings.showAgent', '显示') : t('terminalSettings.hideAgent', '隐藏')} onClick={() => setTerminalStatusItemHidden(item, !isHidden)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{isHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+              <span className="min-w-0 flex-1 truncate text-[12px] text-aegis-text">{t(`terminalSettings.statusItems.${item}`)}</span>
+              <button type="button" title={t('terminalSettings.moveAgentUp')} aria-label={t('terminalSettings.moveAgentUp')} onClick={() => moveTerminalStatusItem(item, -1)} disabled={index === 0} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowUp size={13} /></button>
+              <button type="button" title={t('terminalSettings.moveAgentDown')} aria-label={t('terminalSettings.moveAgentDown')} onClick={() => moveTerminalStatusItem(item, 1)} disabled={index === preferences.orderedItems.length - 1} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-30"><ArrowDown size={13} /></button>
+              <button type="button" title={isHidden ? t('terminalSettings.showAgent') : t('terminalSettings.hideAgent')} aria-label={isHidden ? t('terminalSettings.showAgent') : t('terminalSettings.hideAgent')} onClick={() => setTerminalStatusItemHidden(item, !isHidden)} className="flex h-7 w-7 items-center justify-center rounded-[4px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{isHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
             </div>
           );
         })}
@@ -536,11 +535,11 @@ export function TerminalSettingsPanel() {
           />
 
           <div className="grid gap-4 py-4 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
-            <div><div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.cursorStyle', '光标样式')}</div><p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.cursorStyleHint', '立即应用到已打开的终端。')}</p></div>
+            <div><div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.cursorStyle')}</div><p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.cursorStyleHint')}</p></div>
             <select value={appearancePreferences.cursorStyle} onChange={(event) => setTerminalCursorStyle(event.target.value as 'block' | 'bar' | 'underline')} className="h-9 rounded-md border border-aegis-border bg-aegis-input px-3 text-[12px] text-aegis-text outline-none focus:border-aegis-primary/55">
-              <option value="block">{t('terminalSettings.cursorBlock', '方块')}</option>
-              <option value="bar">{t('terminalSettings.cursorBar', '竖线')}</option>
-              <option value="underline">{t('terminalSettings.cursorUnderline', '下划线')}</option>
+              <option value="block">{t('terminalSettings.cursorBlock')}</option>
+              <option value="bar">{t('terminalSettings.cursorBar')}</option>
+              <option value="underline">{t('terminalSettings.cursorUnderline')}</option>
             </select>
           </div>
 

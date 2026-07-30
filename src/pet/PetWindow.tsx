@@ -10,13 +10,15 @@ import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { applyTheme } from '@/theme/apply';
 import { applyAccentColor, isAccentColor, readPersistedAccentColor } from '@/theme/accent';
-import { detectOSPreference, resolveTheme } from '@/theme/resolver';
+import { resolveTheme } from '@/theme/resolver';
 import { STORAGE_KEY as THEME_STORAGE_KEY } from '@/theme/constants';
 import { isThemeSetting, type ThemeSetting } from '@/theme/types';
 import { playPetSfx } from './petSounds';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { PetPositionScheduler } from './petPositionScheduler';
 import type { PetBackdropReading } from './backdropContrast';
+import { BackdropSampleScheduler } from './backdropSampleScheduler';
+import { usePrefersDark } from '@/hooks/usePrefersDark';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
@@ -30,7 +32,7 @@ const SNAP_MARGIN = 6;
 const DROP_CATCH_MEMORY_MS = 1_200;
 const PENDING_PACKAGE_AFTER_KEY = 'junqi:pet-package-pending-after';
 const BACKDROP_REFRESH_EVENT = 'junqi:pet-backdrop-refresh';
-const BACKDROP_DEBOUNCE_MS = 400;
+const BACKDROP_SAMPLE_INTERVAL_MS = 120;
 const BACKDROP_FALLBACK_REFRESH_MS = 90_000;
 
 const createPositionScheduler = () => new PetPositionScheduler((point) =>
@@ -76,6 +78,7 @@ export default function PetWindow() {
   const setCustomAsset = usePetStore((s) => s.setCustomAsset);
   const customPet = usePetStore((s) => s.customPet);
   const backdropContrastEnabled = usePetStore((s) => s.backdropContrastEnabled);
+  const systemPrefersDark = usePrefersDark();
   const setCustomPet = usePetStore((s) => s.setCustomPet);
   const positionRef = useRef(position);
   positionRef.current = position;
@@ -131,7 +134,8 @@ export default function PetWindow() {
   }, []);
   useLayoutEffect(() => {
     const applyResolved = (setting: ThemeSetting) => {
-      applyTheme(resolveTheme(setting, detectOSPreference()));
+      const systemTheme = systemPrefersDark ? 'aegis-dark' : 'aegis-light';
+      applyTheme(resolveTheme(setting, systemTheme), setting);
       const accent = readPersistedAccentColor();
       if (accent) applyAccentColor(accent);
     };
@@ -146,36 +150,24 @@ export default function PetWindow() {
         if (isAccentColor(event.newValue)) applyAccentColor(event.newValue);
       }
     };
-    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
-    const onSystemTheme = () => {
-      const latest = localStorage.getItem(THEME_STORAGE_KEY);
-      if (isThemeSetting(latest) && latest === 'system') applyResolved(latest);
-    };
     window.addEventListener('storage', onStorage);
-    media?.addEventListener('change', onSystemTheme);
     return () => {
       window.removeEventListener('storage', onStorage);
-      media?.removeEventListener('change', onSystemTheme);
     };
-  }, [theme]);
+  }, [systemPrefersDark, theme]);
 
   useEffect(() => {
     if (!backdropContrastEnabled) {
       setBackdrop(null);
       return;
     }
-    let alive = true;
-    let debounceTimer: number | null = null;
-    const readBackdrop = () => invoke<PetBackdropReading>('get_pet_backdrop_reading')
-      .then((reading) => { if (alive) setBackdrop(reading); })
-      .catch(() => { if (alive) setBackdrop(null); });
-    const scheduleRefresh = () => {
-      if (debounceTimer != null) window.clearTimeout(debounceTimer);
-      debounceTimer = window.setTimeout(() => {
-        debounceTimer = null;
-        void readBackdrop();
-      }, BACKDROP_DEBOUNCE_MS);
-    };
+    const sampler = new BackdropSampleScheduler<PetBackdropReading>({
+      intervalMs: BACKDROP_SAMPLE_INTERVAL_MS,
+      sample: () => invoke<PetBackdropReading>('get_pet_backdrop_reading'),
+      publish: setBackdrop,
+      fail: () => setBackdrop(null),
+    });
+    const scheduleRefresh = () => sampler.request();
     const onVisibility = () => {
       if (!document.hidden) scheduleRefresh();
     };
@@ -186,8 +178,7 @@ export default function PetWindow() {
     // normal updates come from pet movement/layout events, never a screenshot loop.
     const fallbackTimer = window.setInterval(scheduleRefresh, BACKDROP_FALLBACK_REFRESH_MS);
     return () => {
-      alive = false;
-      if (debounceTimer != null) window.clearTimeout(debounceTimer);
+      sampler.dispose();
       window.clearInterval(fallbackTimer);
       window.removeEventListener(BACKDROP_REFRESH_EVENT, scheduleRefresh);
       document.removeEventListener('visibilitychange', onVisibility);

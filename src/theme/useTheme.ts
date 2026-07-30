@@ -37,8 +37,8 @@ export function useTheme(): AegisTheme {
   );
 
   useEffect(() => {
-    applyTheme(resolved);
-  }, [resolved]);
+    applyTheme(resolved, setting);
+  }, [resolved, setting]);
 
   return resolved;
 }

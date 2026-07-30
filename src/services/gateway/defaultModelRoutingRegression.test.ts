@@ -36,6 +36,15 @@ test('BUG-DM-03 session settings expose the installed null reset contract', () =
   assert.doesNotMatch(control, /defaultModelId/);
 });
 
+test('BUG-DM-06 model patches rely on the Gateway sessions.changed invalidation only', () => {
+  const hook = source('src/components/Chat/session-runtime/useSessionRuntimeSettings.ts');
+  const app = source('src/App.tsx');
+
+  assert.doesNotMatch(hook, /aegis:model-changed/);
+  assert.doesNotMatch(app, /aegis:model-changed/);
+  assert.match(app, /aegis:sessions-changed/);
+});
+
 test('BUG-DM-04 and BUG-DM-05 rendering and local storage do not choose model routing', () => {
   const providers = source('src/pages/ConfigManager/ProvidersTab.tsx');
   const configManager = source('src/pages/ConfigManager/index.tsx');

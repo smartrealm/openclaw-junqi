@@ -7,29 +7,43 @@ const reading = (luminance: number, contrast = 0.05): PetBackdropReading => ({
 });
 
 test('pet backdrop contrast chooses dark text on a bright wallpaper', () => {
-  assert.equal(resolvePetBackdropTextStyle(reading(0.8))?.foreground, '#101318');
+  const style = resolvePetBackdropTextStyle(reading(0.8), 'dark');
+  assert.equal(style.foreground, '#101318');
+  assert.match(style.shadow, /rgba\(255,255,255/);
 });
 
 test('pet backdrop contrast chooses light text on a dark wallpaper', () => {
-  assert.equal(resolvePetBackdropTextStyle(reading(0.12))?.foreground, '#f8fafc');
+  const style = resolvePetBackdropTextStyle(reading(0.12), 'light');
+  assert.equal(style.foreground, '#f8fafc');
+  assert.match(style.shadow, /rgba\(0,0,0/);
 });
 
-test('pet backdrop contrast strengthens the backing on busy wallpaper without an outline', () => {
-  const style = resolvePetBackdropTextStyle(reading(0.8, 0.24));
-  assert.equal(style.bubble, 'rgba(248,250,252,0.92)');
+test('pet backdrop contrast never adds a card when wallpaper contrast is high', () => {
+  const calm = resolvePetBackdropTextStyle(reading(0.8), 'dark');
+  const busy = resolvePetBackdropTextStyle(reading(0.8, 0.24), 'dark');
+  assert.deepEqual(busy, calm);
+  assert.equal('bubble' in busy, false);
+  assert.equal('border' in busy, false);
+  assert.equal('boxShadow' in busy, false);
 });
 
-test('pet backdrop contrast fails safe when native sampling is unavailable', () => {
+test('pet backdrop contrast follows the resolved light theme when native sampling is unavailable', () => {
   const style = resolvePetBackdropTextStyle({
     available: false,
     luminance: null,
     contrast: null,
     reason: 'permission-denied',
-  });
+  }, 'light');
+
+  assert.equal(style.foreground, '#101318');
+  assert.match(style.shadow, /rgba\(255,255,255/);
+});
+
+test('pet backdrop contrast follows the resolved dark theme when native sampling is unavailable', () => {
+  const style = resolvePetBackdropTextStyle(null, 'dark');
 
   assert.equal(style.foreground, '#f8fafc');
-  assert.equal(style.bubble, 'rgba(8,12,18,0.78)');
-  assert.equal(style.border, '1px solid rgba(255,255,255,0.12)');
+  assert.match(style.shadow, /rgba\(0,0,0/);
 });
 
 test('pet backdrop contrast always returns a readable surface', () => {
@@ -41,9 +55,8 @@ test('pet backdrop contrast always returns a readable surface', () => {
   ];
 
   for (const state of states) {
-    const style = resolvePetBackdropTextStyle(state);
+    const style = resolvePetBackdropTextStyle(state, 'light');
     assert.ok(style.foreground);
-    assert.ok(style.bubble);
-    assert.ok(style.border);
+    assert.ok(style.shadow);
   }
 });

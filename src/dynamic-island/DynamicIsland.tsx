@@ -31,6 +31,7 @@ import {
   type DynamicIslandTask,
 } from './model';
 import './dynamic-island.css';
+import { useTheme } from '@/theme/useTheme';
 
 type IslandAction =
   | { type: 'open-task'; taskId: string }
@@ -60,6 +61,7 @@ function StatusGlyph({ task }: { task: DynamicIslandTask }) {
 }
 
 export default function DynamicIsland() {
+  useTheme();
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState(EMPTY_DYNAMIC_ISLAND_SNAPSHOT);
   const [expanded, setExpanded] = useState(false);

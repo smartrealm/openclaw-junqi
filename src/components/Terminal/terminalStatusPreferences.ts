@@ -11,16 +11,6 @@ export const TERMINAL_STATUS_ITEMS = [
 
 export type TerminalStatusItem = (typeof TERMINAL_STATUS_ITEMS)[number];
 
-export const TERMINAL_STATUS_ITEM_LABELS: Record<TerminalStatusItem, string> = {
-  'tool-calls': 'Tool calls',
-  'remote-login': 'Remote login',
-  'python-venv': 'Python venv',
-  'node-version': 'Node version',
-  proxy: 'Proxy',
-  'git-branch': 'Git branch',
-  'git-diff': 'Git diff',
-};
-
 export interface TerminalStatusPreferencesSnapshot {
   orderedItems: readonly TerminalStatusItem[];
   hiddenItems: readonly TerminalStatusItem[];

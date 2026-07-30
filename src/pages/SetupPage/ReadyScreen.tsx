@@ -70,10 +70,7 @@ export function GatewayAutostartPreference({
         const restarted = await gatewayLifecycle.restart("setup-autostart-disabled");
         if (!restarted.success) throw new Error(restarted.error || "Gateway restart failed");
       } else if (!(await handoffGatewayToOfficialService())) {
-        throw new Error(t(
-          "setup.autostart.handoffFailed",
-          "Gateway 服务已安装，但未能接管当前运行实例。",
-        ));
+        throw new Error(t("setup.autostart.handoffFailed"));
       }
       setStatus(await gatewayAutostartStatus().catch(() => next));
     } catch (cause) {
@@ -211,4 +208,3 @@ export function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] 
     </SetupShell>
   );
 }
-

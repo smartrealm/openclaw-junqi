@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const petWindow = readFileSync(new URL('./PetWindow.tsx', import.meta.url), 'utf8');
+const petBubble = readFileSync(new URL('./PetBubble.tsx', import.meta.url), 'utf8');
 const petCommands = readFileSync(new URL('../../src-tauri/src/commands/pet.rs', import.meta.url), 'utf8');
 const petEmitter = readFileSync(new URL('./usePetStateEmitter.ts', import.meta.url), 'utf8');
 
@@ -21,11 +22,13 @@ test('pet transparency is owned by the native window and every DOM root', () => 
   assert.match(petWindow, /appRoot\.style\.backgroundColor = 'transparent'/);
 });
 
-test('backdrop contrast refreshes from events and never uses a rapid capture loop', () => {
-  assert.match(petWindow, /BACKDROP_DEBOUNCE_MS = 400/);
+test('backdrop contrast follows pet movement through a bounded sample scheduler', () => {
+  assert.match(petWindow, /BACKDROP_SAMPLE_INTERVAL_MS = 120/);
+  assert.match(petWindow, /new BackdropSampleScheduler<PetBackdropReading>/);
   assert.match(petWindow, /BACKDROP_FALLBACK_REFRESH_MS = 90_000/);
   assert.match(petWindow, /subscribeTauriEvent<\{ x: number; y: number \}>\('pet-moved'/);
   assert.match(petWindow, /new Event\(BACKDROP_REFRESH_EVENT\)/);
+  assert.doesNotMatch(petWindow, /BACKDROP_DEBOUNCE_MS/);
   assert.doesNotMatch(petWindow, /setInterval\(scheduleRefresh, 1_800\)/);
 });
 
@@ -34,13 +37,17 @@ test('backdrop sampling is fully disabled when the persisted preference is off',
   assert.match(petWindow, /if \(!backdropContrastEnabled\) return;\s*window\.dispatchEvent/);
 });
 
+test('pet captions adapt their text without rendering a card or border', () => {
+  assert.doesNotMatch(petBubble, /backdropStyle\.(bubble|border|boxShadow)/);
+  assert.doesNotMatch(petBubble, /background:\s*backdropStyle/);
+});
+
 test('drag feedback scales the character instead of the transparent window root', () => {
   assert.doesNotMatch(petWindow, /transform: dragging \? 'scale\(1\.08\)'/);
   assert.match(petWindow, /dragging=\{dragging\}/);
 });
 
 test('pomodoro status owns one icon in the bubble without a duplicate head badge', () => {
-  const petBubble = readFileSync(new URL('./PetBubble.tsx', import.meta.url), 'utf8');
   assert.match(petBubble, /data-pet-pomodoro-status/);
   assert.match(petBubble, /fontVariantNumeric: 'tabular-nums'/);
   assert.doesNotMatch(petWindow, /BadgeIcon|Pomodoro badge over the character/);

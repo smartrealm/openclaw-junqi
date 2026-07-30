@@ -326,7 +326,7 @@ export function SettingsPageFull() {
     }
     notifyInfo(
       t('settings.controlUi', 'Control UI'),
-      t('settings.controlUiRecovering', 'Gateway 正在恢复，连接完成后将自动打开 Control UI。'),
+      t('settings.controlUiRecovering'),
     );
     void gatewayLifecycle.recover('settings-control-ui').then((result) => {
       if (result.success) void window.aegis?.consoleUi?.open();
@@ -495,14 +495,14 @@ export function SettingsPageFull() {
       {/* Horizontal tab bar */}
       <div className="flex gap-1 border-b border-aegis-border pb-0 overflow-x-auto" role="tablist" aria-label={t('settings.title')}>
         {([
-          ['appearance', t('settings.tab.appearance', '外观'), Sun],
-          ['terminal', t('settings.tab.terminal', '终端'), TerminalSquare],
-          ['notify', t('settings.tab.notify', '通知'), Bell],
-          ['pet', t('settings.tab.pet', '萌宠'), PawPrint],
-          ['connect', t('settings.tab.connect', '连接'), Wifi],
-          ['storage', t('settings.tab.storage', '存储'), HardDrive],
-          ['maintenance', t('settings.tab.maintenance', '检修'), Wrench],
-          ['about', t('settings.tab.about', '关于'), Info],
+          ['appearance', t('settings.tab.appearance'), Sun],
+          ['terminal', t('settings.tab.terminal'), TerminalSquare],
+          ['notify', t('settings.tab.notify'), Bell],
+          ['pet', t('settings.tab.pet'), PawPrint],
+          ['connect', t('settings.tab.connect'), Wifi],
+          ['storage', t('settings.tab.storage'), HardDrive],
+          ['maintenance', t('settings.tab.maintenance'), Wrench],
+          ['about', t('settings.tab.about'), Info],
         ] as const).map(([key, label, Icon]) => (
           <button key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => selectTab(key)}
             className={clsx(
@@ -681,7 +681,7 @@ export function SettingsPageFull() {
                   emerald: 'rgb(52, 211, 153)',
                 }[color],
               }}
-              title={t(`settings.accent.${color}`, color.charAt(0).toUpperCase() + color.slice(1))}
+              title={t(`settings.accent.${color}`)}
             />
           ))}
         </div>
@@ -763,7 +763,7 @@ export function SettingsPageFull() {
           <button
             type="button"
             disabled={!notificationsEnabled || dndMode}
-            onClick={() => notifications.notify({ type: 'info', title: t('app.title', 'JunQi Desktop'), body: t('settings.testNotification') })}
+            onClick={() => notifications.notify({ type: 'info', title: t('app.name'), body: t('settings.testNotification') })}
             className="inline-flex items-center gap-1.5 rounded-xl border border-aegis-border/20 px-4 py-2 text-[12px] text-aegis-text-dim transition-colors hover:border-aegis-border/40 hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Bell size={13} aria-hidden="true" />
@@ -864,14 +864,14 @@ export function SettingsPageFull() {
         <div className="mt-4">
           <div className="text-[13px] text-aegis-text mb-2">{t('pet.settings.skin', '皮肤')}</div>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {PET_SKIN_OPTIONS.map(({ id, label }) => (
+            {PET_SKIN_OPTIONS.map(({ id }) => (
               <button key={id} onClick={() => setPetSkin(id)}
                 aria-pressed={petSkin === id}
                 className={clsx('flex flex-col items-center gap-1 rounded-xl border p-2 transition-colors',
                   petSkin === id ? 'border-aegis-primary/60 bg-aegis-primary/10' : 'border-aegis-border/20 hover:border-aegis-border/50')}>
                 <SkinPreview skin={id} size={44} />
                 <span className={clsx('text-[11px] leading-none', petSkin === id ? 'text-aegis-text' : 'text-aegis-text-dim')}>
-                  {t(`pet.settings.${id}`, label)}
+                  {t(`pet.settings.${id}`)}
                 </span>
               </button>
             ))}
@@ -912,8 +912,8 @@ export function SettingsPageFull() {
         <div className="mt-4">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-[13px] text-aegis-text">{t('pet.settings.captionScale', '提示文字大小')}</div>
-              <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.captionScaleHint', '调整萌宠状态与提示文字的显示大小')}</div>
+              <div className="text-[13px] text-aegis-text">{t('pet.settings.captionScale')}</div>
+              <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.captionScaleHint')}</div>
             </div>
             <span className="w-10 text-right font-mono text-xs text-aegis-primary">{Math.round(petCaptionScale * 100)}%</span>
           </div>
@@ -925,7 +925,7 @@ export function SettingsPageFull() {
             step="0.05"
             value={petCaptionScale}
             onChange={(event) => setPetCaptionScale(Number(event.target.value))}
-            aria-label={t('pet.settings.captionScale', '提示文字大小')}
+            aria-label={t('pet.settings.captionScale')}
           />
         </div>
 
@@ -1006,24 +1006,24 @@ export function SettingsPageFull() {
             <div className="text-[13px] text-aegis-text">{t('pet.pomodoro.enable', '启用番茄钟')}</div>
             <div className="text-[11px] text-aegis-text-dim">{t('pet.pomodoro.enableHint', '工作时长提醒，专注与休息循环')}</div>
           </div>
-          <SettingsSwitch checked={petPomodoro.enabled} onCheckedChange={(v) => setPetPomodoro({ enabled: v })} label={t('pet.settings.pomodoroEnabled', '启用专注计时')} />
+          <SettingsSwitch checked={petPomodoro.enabled} onCheckedChange={(v) => setPetPomodoro({ enabled: v })} label={t('pet.pomodoro.enable')} />
         </div>
         <div className="flex items-center gap-2 mt-4 flex-wrap">
           <label className="text-[12px] text-aegis-text-dim">{t('pet.pomodoro.workMin', '工作')}</label>
           <input type="number" min={1} max={120} value={petPomodoro.workMin} disabled={petPomodoro.running}
             onChange={(e) => setPetPomodoro({ workMin: Math.max(1, Math.min(120, Number(e.target.value) || 30)) })}
             className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center" />
-          <span className="text-[11px] text-aegis-text-dim">min</span>
+          <span className="text-[11px] text-aegis-text-dim">{t('common.minuteShort')}</span>
           <label className="text-[12px] text-aegis-text-dim ms-2">{t('pet.pomodoro.breakMin', '休息')}</label>
           <input type="number" min={1} max={60} value={petPomodoro.breakMin} disabled={petPomodoro.running}
             onChange={(e) => setPetPomodoro({ breakMin: Math.max(1, Math.min(60, Number(e.target.value) || 5)) })}
             className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center" />
-          <span className="text-[11px] text-aegis-text-dim">min</span>
+          <span className="text-[11px] text-aegis-text-dim">{t('common.minuteShort')}</span>
           <label className="text-[12px] text-aegis-text-dim ms-2">{t('pet.pomodoro.longBreakMin', '长休')}</label>
           <input type="number" min={1} max={60} value={petPomodoro.longBreakMin} disabled={petPomodoro.running}
             onChange={(e) => setPetPomodoro({ longBreakMin: Math.max(1, Math.min(60, Number(e.target.value) || 15)) })}
             className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center" />
-          <span className="text-[11px] text-aegis-text-dim">min</span>
+          <span className="text-[11px] text-aegis-text-dim">{t('common.minuteShort')}</span>
         </div>
         <div className="flex items-center gap-2 mt-4 flex-wrap">
           <button
@@ -1200,8 +1200,8 @@ export function SettingsPageFull() {
                   ? <CheckCircle size={12} aria-hidden="true" />
                   : <WifiOff size={12} aria-hidden="true" />}
                 {testResult === 'success'
-                  ? t('settings.connectionTestSuccess', 'Connected')
-                  : t('settings.connectionTestFailed', 'Connection failed')}
+                  ? t('settings.connectionTestSuccess')
+                  : t('settings.connectionTestFailed')}
               </span>
             )}
           </div>
@@ -1300,11 +1300,11 @@ export function SettingsPageFull() {
               <JunQiLogo
                 variant="full"
                 className="h-[64px] w-[320px] max-w-full"
-                title="陕西浚启智境科技有限公司"
+                title={t('app.company')}
               />
             </div>
           </div>
-          <div className="text-[15px] font-bold text-aegis-text">JunQi Desktop</div>
+          <div className="text-[15px] font-bold text-aegis-text">{t('app.name')}</div>
           <div className="text-[12px] text-aegis-text-dim mt-1">v{APP_VERSION}</div>
           <div className="text-[11px] text-aegis-text-dim mt-0.5">{t('app.clientSubtitle')}</div>
           <div className="text-[11px] text-aegis-text-muted mt-2">{t('app.company')}</div>

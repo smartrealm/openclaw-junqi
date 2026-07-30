@@ -5,7 +5,7 @@ import { Image, FileArchive, FileCode2, FileText, FolderOpen, type LucideIcon } 
 import type { PetEmotion, PetState } from './pet-states';
 import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
-import { normalizePetThemeName, petBubbleTextContainerStyle, resolvePetAccentPalette, resolvePetDarkMode, solidPetTextStyle, type PetThemeName } from './petTheme';
+import { normalizePetThemeName, petCaptionTextContainerStyle, resolvePetAccentPalette, resolvePetDarkMode, solidPetTextStyle, type PetThemeName } from './petTheme';
 import { resolvePetBackdropTextStyle, type PetBackdropReading } from './backdropContrast';
 import { usePetStore } from '@/stores/petStore';
 
@@ -165,7 +165,7 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
   const captionScale = usePetStore((store) => store.captionScale);
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
-  const backdropStyle = resolvePetBackdropTextStyle(backdrop ?? null);
+  const backdropStyle = resolvePetBackdropTextStyle(backdrop ?? null, isDark ? 'dark' : 'light');
   const textPalette = {
     primary: backdropStyle.foreground,
     secondary: backdropStyle.foreground,
@@ -199,10 +199,10 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
   }, [carouselActive, tips.length]);
 
   // Base bubble style: pure text. Keep it visually light around the pet.
-  const bubbleStyle: CSSProperties = {
+  const captionStyle: CSSProperties = {
     maxWidth: Math.round(240 * captionScale),
     textAlign: 'center',
-    ...petBubbleTextContainerStyle(textPalette.primary),
+    ...petCaptionTextContainerStyle(textPalette.primary),
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontSize: 13 * captionScale,
     fontWeight: 760,
@@ -210,11 +210,6 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
     overflowWrap: 'anywhere',
     wordBreak: 'normal',
     whiteSpace: 'normal',
-    background: backdropStyle.bubble,
-    border: backdropStyle.border,
-    boxShadow: backdropStyle.boxShadow,
-    borderRadius: 6,
-    padding: '4px 7px',
   };
 
   let body: ReactNode = null;
@@ -463,7 +458,7 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.14 }}
-          style={bubbleStyle}
+          style={captionStyle}
         >
           {body}
         </motion.div>

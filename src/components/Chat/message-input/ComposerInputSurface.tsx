@@ -1,7 +1,6 @@
 import { AtSign, Camera, Mic, Paperclip, Plus, Radio, Send, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { SessionRuntimeControl } from '../session-runtime/SessionRuntimeControl';
 import { ComposerSuggestionMenus } from './ComposerSuggestionMenus';
 import type { useComposerAttachments } from './useComposerAttachments';
 import type { useComposerMenu } from './useComposerMenu';
@@ -219,10 +218,6 @@ export function ComposerInputSurface({
               <Square size={12} fill="currentColor" />
             </button>
           )}
-        </div>
-
-        <div className="flex min-h-7 w-full items-center justify-end border-t border-[rgb(var(--aegis-overlay)/0.05)] pt-1">
-          <SessionRuntimeControl />
         </div>
       </div>
     </div>

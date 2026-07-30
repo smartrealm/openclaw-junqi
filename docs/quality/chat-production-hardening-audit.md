@@ -22,7 +22,7 @@ Scope: JunQi Desktop chat composition, Gateway send lifecycle, transcript histor
 | CHAT-15 | P1 | User-message edit/delete controls either move content into the composer or mutate only the local array, then revert on history refresh | Failed messages without a native transcript identity edit in their existing bubble and can be deleted; durable history never exposes a fake mutation |
 | CHAT-16 | P1 | Model and thinking selectors call `sessions.patch` over the daily read/write socket and silently fail | Runtime overrides use the transient `operator.admin` lane; label changes retain `operator.write`; failures are visible and do not alter local state |
 | CHAT-17 | P2 | `sessions.list.model` is compared directly with the canonical `models.list` id, so the active row has no marker and can be selected again | Combine `modelProvider` and `model`; mark and disable the matching row |
-| CHAT-18 | P2 | Model/thinking controls are duplicated in the top bar and clear the committed value while saving, causing visible layout flicker | Keep one staged runtime control in the composer footer; preserve committed labels through pending work and close drafts on session changes |
+| CHAT-18 | P2 | Model/thinking controls either appear twice or are detached from agent/workspace context in the composer, and clearing the committed value while saving causes visible layout flicker | Keep one staged runtime control beside workspace in the top context bar; preserve committed labels through pending work and close drafts on session changes |
 | CHAT-19 | P2 | Conversation artifacts have an inline sandbox preview but no message-level discovery action | Expose a preview icon only for static HTML/SVG and route it to the existing sandbox preview |
 | CHAT-20 | P2 | `MessageInput.tsx` owns queue, attachment, completion, voice, send, and runtime UI in one 1576-line component | Keep the component as an orchestrator and isolate each workflow behind a focused component, hook, and pure domain helper |
 
@@ -63,7 +63,7 @@ The repair is complete only when each finding has a regression test, TypeScript 
 
 ## Composer runtime and artifact action verification (2026-07-29)
 
-- Replaced the duplicate top-bar model/thinking selectors with a single composer-footer control derived from the live Gateway model catalog.
+- Replaced the former independent model/thinking selectors with one control derived from the live Gateway model catalog; the control is owned by the top context bar beside workspace rather than the message composer.
 - Provider, model, and thinking selections remain draft state until Save. The committed trigger label remains mounted while the privileged mutation is pending, preventing the previous null-placeholder flicker.
 - Split the former 1576-line `MessageInput` into queue, attachment/overlay, input surface, suggestions, menu lifecycle, interruption, voice, send, and session-runtime modules. The composition file is 137 lines; the largest focused controller is 345 lines.
 - Session runtime commits retain the initiating session key. Inactive-session model/thinking results update that session row without overwriting the newly active session's title state.
@@ -75,3 +75,12 @@ The repair is complete only when each finding has a regression test, TypeScript 
 - `git diff --check`: passed.
 - Local HTTP smoke check: passed at `http://localhost:5173/`.
 - Interactive screenshot verification remains unavailable because the browser runtime exposed no browser instance. A real `operator.admin` mutation also remains intentionally unverified.
+
+## Top context runtime correction verification (2026-07-30)
+
+- Restored the single session runtime control to the top context bar immediately after workspace and removed its composer footer owner.
+- The existing staged provider/model/thinking editor, current-model disabled state, default restoration, session-key fencing, and stable pending label remain shared rather than reimplemented.
+- Focused composer and session-runtime regressions: 8/8 passed, including the pre-fix failing ownership and popover-direction contract.
+- Complete application tests: 1891/1891 passed; release-script tests: 224/224 passed.
+- TypeScript, module boundaries, production build, `git diff --check`, and local HTTP smoke check passed.
+- The production bundle and local resource server were verified, but the updated Tauri window was not exercised because an installed JunQi process already owned the application single-instance lock. These checks are not presented as desktop UI acceptance. A real privileged model mutation also remains intentionally unverified.

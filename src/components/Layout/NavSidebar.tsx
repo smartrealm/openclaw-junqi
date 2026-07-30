@@ -10,6 +10,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore, type Session } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showConfirm } from '@/components/shared/alertStore';
+import { SidebarPrimaryAction } from './SidebarPrimaryAction';
 import { resolveTab, type SidebarTab } from './tab-utils';
 import {
   bucketSessionsByActivity,
@@ -476,15 +477,9 @@ function WorkbenchPanel() {
 
   return (
     <>
-      {/* Primary "新建对话" — bigger, centered.
-          Click creates a fresh local session (main agent, pinned, active)
-          and navigates to /chat. The user sees a new row appear in the
-          sidebar immediately. After the first real message is sent, the
-          gateway's sessions.list reply merges in the canonical record. */}
-      <div className="px-4 mb-3 mt-1">
-        <button
-          type="button"
-          onClick={() => {
+      <SidebarPrimaryAction
+        icon={<Plus size={16} />}
+        onClick={() => {
             const state = useChatStore.getState();
             const current = state.sessions.find((s) => s.key === state.activeSessionKey);
             const currentMessages = state.messagesPerSession[state.activeSessionKey] ?? state.messages;
@@ -499,18 +494,15 @@ function WorkbenchPanel() {
             const newKey = createAgentSessionKey('main');
             useChatStore.getState().addLocalSession({
               key: newKey,
-              label: '新会话',
+              label: t('sidebar.newChat', 'New chat'),
               agentId: 'main',
               createdAt: Date.now(),
-            } as any);
+            });
             navigate('/chat');
-          }}
-          className="w-full h-11 bg-aegis-primary text-white rounded-xl font-semibold text-[14px] flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all shadow-sm shadow-aegis-primary/20"
-        >
-          <Plus size={16} />
-          <span>{t('sidebar.newChat', '新建对话')}</span>
-        </button>
-      </div>
+        }}
+      >
+        {t('sidebar.newChat', '新建对话')}
+      </SidebarPrimaryAction>
 
       {/* Four flat navigation rows with leading icon.
           Left-aligned, no + / 新增 / 添加 prefix on the labels — just

@@ -147,6 +147,43 @@ test('setSessions stores metadata without bypassing the run projection', () => {
   assert.deepEqual(state.thinkingBySession[MAIN_KEY], { runId: 'run-stale', text: 'still thinking' });
 });
 
+test('an equivalent sessions.list refresh preserves session object references', () => {
+  const origin = {
+    provider: 'desktop',
+    surface: 'dashboard',
+    threadId: 'thread-main',
+  };
+  useChatStore.setState({
+    sessions: [],
+    activeSessionKey: MAIN_KEY,
+    currentModel: 'openai/gpt-5.4',
+    currentThinking: 'medium',
+    manualModelOverride: null,
+  });
+  useChatStore.getState().setSessions([{
+      key: MAIN_KEY,
+      label: 'Main',
+      model: 'openai/gpt-5.4',
+      thinkingLevel: 'medium',
+      totalTokens: 1_024,
+      contextTokens: 128_000,
+      origin,
+  }]);
+  const previous = useChatStore.getState().sessions[0];
+
+  useChatStore.getState().setSessions([{
+    key: MAIN_KEY,
+    label: 'Main',
+    model: 'openai/gpt-5.4',
+    thinkingLevel: 'medium',
+    totalTokens: 1_024,
+    contextTokens: 128_000,
+    origin: { ...origin },
+  }]);
+
+  assert.equal(useChatStore.getState().sessions[0], previous);
+});
+
 test('sessionId rotation atomically replaces transcript state and preserves user preferences', () => {
   const transitions: Array<{ previousSessionId: string; nextSessionId: string }> = [];
   const unsubscribe = subscribeSessionIdentityTransitions((transition) => {

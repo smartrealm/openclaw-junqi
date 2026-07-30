@@ -44,3 +44,8 @@ plans/
 - [用户消息恢复操作](quality/2026-07-29-user-message-recovery-actions.md)
 - [萌宠文字与聊天窗口恢复](quality/2026-07-29-pet-caption-and-chat-window-recovery.md)
 - [会话模型切换权限修复](quality/2026-07-29-session-model-switch-permissions.md)
+- [会话模型选择器与 OpenClaw 对齐](quality/2026-07-30-session-model-picker-openclaw-parity.md)
+- [侧栏主操作一致性](quality/2026-07-30-sidebar-primary-action-convergence.md)
+- [会话模型切换闪动修复](quality/2026-07-30-session-model-switch-flicker.md)
+- [主窗口关闭 ACL 修复](quality/2026-07-30-main-window-close-acl.md)
+- [设置页面多语言完整性](quality/2026-07-30-settings-localization-completeness.md)

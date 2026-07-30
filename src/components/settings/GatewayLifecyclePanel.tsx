@@ -76,27 +76,11 @@ function lifecycleIcon(lifecycle: GatewayLifecycle) {
 }
 
 function lifecycleLabel(t: ReturnType<typeof useTranslation>['t'], lifecycle: GatewayLifecycle): string {
-  return t(`gateway.lifecycle.${lifecycle}`, {
-    defaultValue: ({
-      stopped: 'Stopped',
-      starting: 'Starting',
-      running: 'Running',
-      error: 'Error',
-      reconnecting: 'Reconnecting',
-    } as Record<GatewayLifecycle, string>)[lifecycle],
-  });
+  return t(`gateway.lifecycle.${lifecycle}`);
 }
 
 function runtimeModeLabel(t: ReturnType<typeof useTranslation>['t'], mode: GatewayRuntimeMode): string {
-  return t(`gateway.runtimeMode.${mode}`, {
-    defaultValue: ({
-      none: '未运行',
-      external: '外部实例',
-      system_service: '系统服务',
-      managed_child: 'JunQi 托管',
-      docker: 'Docker',
-    } as Record<GatewayRuntimeMode, string>)[mode],
-  });
+  return t(`gateway.runtimeMode.${mode}`);
 }
 
 function resolveProgressMessage(t: ReturnType<typeof useTranslation>['t'], detail: ProgressEvent): string | null {
@@ -215,10 +199,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
         const next = await enableGatewayAutostart();
         setAutostart(next);
         if (!(await handoffGatewayToOfficialService())) {
-          throw new Error(t(
-            'setup.autostart.handoffFailed',
-            'Gateway 服务已安装，但未能接管当前运行实例。',
-          ));
+          throw new Error(t('setup.autostart.handoffFailed'));
         }
       }
       await refresh();
@@ -255,7 +236,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
           <div className="flex items-center gap-2">
             <ServerCog size={isFull ? 17 : 15} className="text-aegis-primary" />
             <h3 className={clsx('font-semibold text-aegis-text', isFull ? 'text-[14px]' : 'text-[13px]')}>
-              {t('gateway.lifecyclePanel.title', 'Gateway 状态')}
+              {t('gateway.lifecyclePanel.title')}
             </h3>
             <span className={clsx('h-2 w-2 rounded-full', statusDotClass(tone))} />
           </div>
@@ -297,7 +278,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
         <div className="mt-3 flex min-h-[38px] items-start gap-2 rounded-md bg-aegis-bg/55 px-3 py-2 text-[12px] leading-5 text-aegis-text-secondary">
           <Activity size={13} className="mt-0.5 shrink-0 text-aegis-primary" />
           <span className="break-words">
-            {latestProgress ?? t('gateway.lifecyclePanel.waiting', '等待 Gateway 状态更新')}
+            {latestProgress ?? t('gateway.lifecyclePanel.waiting')}
           </span>
         </div>
       )}

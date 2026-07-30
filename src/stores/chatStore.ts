@@ -394,6 +394,32 @@ export interface Session {
   localOnly?: boolean;
 }
 
+function recordsHaveEqualValues(
+  left: Readonly<Record<string, unknown>> | undefined,
+  right: Readonly<Record<string, unknown>> | undefined,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if (!Object.is(left[key], right[key])) return false;
+  }
+  return true;
+}
+
+function sessionsHaveEqualProjection(left: Session, right: Session): boolean {
+  if (left === right) return true;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]) as Set<keyof Session>;
+  for (const key of keys) {
+    if (key === 'origin') {
+      if (!recordsHaveEqualValues(left.origin, right.origin)) return false;
+      continue;
+    }
+    if (!Object.is(left[key], right[key])) return false;
+  }
+  return true;
+}
+
 export interface TokenUsage {
   contextTokens: number;
   maxTokens: number;
@@ -1281,7 +1307,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? session.hasPendingCompletion ?? false
           : previous?.hasPendingCompletion ?? session.hasPendingCompletion ?? false,
       };
-      return session.key === activeSessionKey ? clearSessionAttentionState(merged) : merged;
+      const projected = session.key === activeSessionKey
+        ? clearSessionAttentionState(merged)
+        : merged;
+      return previous && sessionsHaveEqualProjection(previous, projected)
+        ? previous
+        : projected;
     });
     const retainedPreviousSessions = previousSessions.filter((session) => {
       if (incomingKeys.has(session.key)) return false;

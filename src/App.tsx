@@ -783,7 +783,7 @@ export default function App() {
           );
           thinkingKeys.forEach((k) => cs.clearThinking(k));
           if (thinkingKeys.length) {
-            debugLog('app', '[App] 🧹 Cleared live thinking on disconnect; pending turns await Gateway reconciliation');
+            debugLog('app', '[App] [cleanup] Cleared live thinking on disconnect; pending turns await Gateway reconciliation');
           }
         }
         if (status.connected) {
@@ -937,10 +937,6 @@ export default function App() {
     // an unconnected cold start.
     gateway.refreshConnectionStatus();
 
-    // Listen for model changes → refresh session metadata (contextTokens for new model)
-    const handleModelChanged = () => void loadSessions();
-    window.addEventListener('aegis:model-changed', handleModelChanged);
-
     // Configuration and session selection are separate domains. The config
     // manager already owns the restart; this listener only reloads its model view.
     const handleConfigSaved = () => {
@@ -1015,7 +1011,6 @@ export default function App() {
         clearTimeout(deferredModelSyncTimerRef.current);
         deferredModelSyncTimerRef.current = null;
       }
-      window.removeEventListener('aegis:model-changed', handleModelChanged);
       window.removeEventListener('aegis:config-saved', handleConfigSaved);
       window.removeEventListener('aegis:session-reset', handleSessionReset);
       window.removeEventListener('aegis:sessions-changed', handleSessionsChanged);
@@ -1028,7 +1023,7 @@ export default function App() {
 
   // ── Pairing Handlers ──
   const handlePairingComplete = useCallback(async (token: string) => {
-    debugLog('gateway', '[App] 🔑 Pairing complete — reconnecting with new token');
+    debugLog('gateway', '[App] [pairing] Pairing complete - reconnecting with new token');
     // Save token to config via IPC
     if (window.aegis?.pairing?.saveToken) {
       await window.aegis.pairing.saveToken(token);

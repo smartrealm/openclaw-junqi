@@ -6,6 +6,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { normalizeHistoryMessages } from '@/processing/normalizeHistoryMessage';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
+import { useTheme } from '@/theme/useTheme';
 
 /** Quick Chat owns one generated session and must not speak main-window events. */
 export function isOwnedQuickChatSession(sessionKey: string, ownedSessionKey: string): boolean {
@@ -15,6 +16,7 @@ export function isOwnedQuickChatSession(sessionKey: string, ownedSessionKey: str
 /** Lightweight QuickChat host. It connects to an existing Gateway process but
  * never participates in process detection, startup, recovery, or restart. */
 export default function QuickChatRoot() {
+  useTheme();
   const leaseRef = useRef<GatewayClientLease | null>(null);
   const [sessionKey] = useState(() => `quickchat:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`);
   if (!leaseRef.current) leaseRef.current = new GatewayClientLease();

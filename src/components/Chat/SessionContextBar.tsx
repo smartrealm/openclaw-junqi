@@ -10,6 +10,7 @@ import { exportChatMarkdown } from '@/utils/exportChat';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { debugError } from '@/utils/debugLog';
 import { useSkillsStore } from '@/stores/skillsStore';
+import { SessionRuntimeControl } from './session-runtime/SessionRuntimeControl';
 
 function WorkspacePicker({ agentId, current }: { agentId: string; current?: string }) {
   const { t } = useTranslation();
@@ -124,11 +125,12 @@ export function SessionContextBar() {
     : `${Math.round(maxTokens / 1000)}K`;
 
   return (
-    <div className="h-[32px] shrink-0 flex items-center gap-2 px-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[var(--aegis-bg-frosted-60)]">
+    <div className="relative z-40 h-[32px] shrink-0 flex items-center gap-2 px-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[var(--aegis-bg-frosted-60)]">
       <span className="text-[10px] uppercase tracking-[0.5px] text-aegis-text-dim" title={agentDisplayName}>
         {agentDisplayName}
       </span>
       <WorkspacePicker agentId={agentId} current={agent?.workspace} />
+      <SessionRuntimeControl />
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
         <div className="hidden items-center gap-0.5 lg:flex">
           <button

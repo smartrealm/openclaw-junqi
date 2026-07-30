@@ -10,6 +10,7 @@
  * hook in @/theme — this one is purely about the OS hint.
  */
 import { useEffect, useState } from 'react';
+import { hasTauriEventBridge, subscribeTauriListener } from '@/utils/tauriEvents';
 
 const QUERY = '(prefers-color-scheme: dark)';
 
@@ -25,15 +26,38 @@ export function usePrefersDark(): boolean {
   const [prefersDark, setPrefersDark] = useState<boolean>(readOnce);
 
   useEffect(() => {
+    let active = true;
     let mq: MediaQueryList;
     try {
       mq = window.matchMedia(QUERY);
     } catch {
       return; // no matchMedia — nothing to subscribe to
     }
-    const onChange = (event: MediaQueryListEvent) => setPrefersDark(event.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
+    const update = (dark: boolean) => {
+      if (active) setPrefersDark(dark);
+    };
+    const onChange = (event: MediaQueryListEvent) => update(event.matches);
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange);
+    else mq.addListener(onChange);
+
+    const releaseNative = hasTauriEventBridge()
+      ? subscribeTauriListener(async () => {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const currentWindow = getCurrentWindow();
+        const unlisten = await currentWindow.onThemeChanged(({ payload }) => update(payload === 'dark'));
+        void currentWindow.theme().then((theme) => {
+          if (theme) update(theme === 'dark');
+        }).catch(() => undefined);
+        return unlisten;
+      })
+      : () => {};
+
+    return () => {
+      active = false;
+      if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', onChange);
+      else mq.removeListener(onChange);
+      releaseNative();
+    };
   }, []);
 
   return prefersDark;

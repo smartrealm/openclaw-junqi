@@ -12,9 +12,26 @@ test('the model-service picker uses a quiet two-pane work layout', async () => {
   );
 
   assert.match(picker, /grid-cols-\[148px_minmax\(0,1fr\)\]/);
-  assert.match(picker, /providerIcon\.icon/);
+  assert.match(picker, /<ProviderIcon providerId=/);
+  assert.doesNotMatch(picker, /Icon\.provider/);
   assert.doesNotMatch(picker, /bg-gradient-to-br/);
   assert.doesNotMatch(picker, /rounded-full/);
+});
+
+test('custom provider setup owns a JunQi-only provider icon field', async () => {
+  const source = await read('./ProvidersTab.tsx');
+
+  assert.match(source, /customProviderIcon/);
+  assert.match(source, /setCustomProviderAppearance/);
+  assert.match(source, /config\.providerIcon/);
+});
+
+test('existing custom providers can edit the same JunQi-only icon metadata', async () => {
+  const source = await read('./ProvidersTab.tsx');
+
+  assert.match(source, /resolveOfficialProviderIconName\(provider\)/);
+  assert.match(source, /<ProviderIconInput/);
+  assert.match(source, /setCustomProviderAppearance\(provider, \{ icon: value \}\)/);
 });
 
 test('the provider picker does not retain the superseded ProviderCard implementation', async () => {

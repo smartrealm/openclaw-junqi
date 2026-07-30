@@ -24,7 +24,6 @@ export type PetSkin = 'robot' | 'lobster' | 'cat' | 'jellyfish' | 'ghost' | 'blu
 export const DEFAULT_PET_SKIN: PetSkin = 'lobster';
 export interface PetSkinOption {
   id: PetSkin;
-  label: string;
 }
 
 export interface SkinProps {
@@ -407,7 +406,7 @@ export function GhostSkin({ color, highlight = '#fff', hovered = false, walking 
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Lobster 🦞 — chibi/cartoon: oversized claws, simple curved body, cute eyes
+// Lobster - chibi/cartoon: oversized claws, simple curved body, cute eyes
 // ═══════════════════════════════════════════════════════════════════════
 
 /** Three little legs per side. At rest they're static twigs; while `walking`
@@ -541,12 +540,12 @@ export const SKIN_REGISTRY: Record<PetSkin, FC<SkinProps>> = {
 };
 
 export const PET_SKIN_OPTIONS: PetSkinOption[] = [
-  { id: 'robot', label: '机器人' },
-  { id: 'jellyfish', label: '水母' },
-  { id: 'blue-mascot', label: '蓝色萌宠' },
-  { id: 'lobster', label: '龙虾' },
-  { id: 'cat', label: '猫咪' },
-  { id: 'ghost', label: '幽灵' },
+  { id: 'robot' },
+  { id: 'jellyfish' },
+  { id: 'blue-mascot' },
+  { id: 'lobster' },
+  { id: 'cat' },
+  { id: 'ghost' },
 ];
 
 export const PET_SKIN_IDS = PET_SKIN_OPTIONS.map((option) => option.id);

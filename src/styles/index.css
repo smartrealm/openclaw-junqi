@@ -52,26 +52,26 @@
   --color-aegis-menu-hover: var(--aegis-menu-hover);
   --color-aegis-menu-active: var(--aegis-menu-active);
   --color-aegis-menu-border: var(--aegis-menu-border);
-  --color-aegis-menu-text: var(--aegis-menu-text);
-  --color-aegis-menu-text-muted: var(--aegis-menu-text-muted);
   --color-aegis-btn-primary-text: var(--aegis-btn-primary-text);
   --color-aegis-hover: var(--aegis-hover);
   --color-aegis-input: var(--aegis-input);
   --color-aegis-surface-elevated: var(--aegis-surface-elevated);
 
-  /* ── aegis colors (RGB vars — alpha via /XX) ── */
-  --color-aegis-text: rgb(var(--aegis-text) / <alpha-value>);
-  --color-aegis-text-secondary: rgb(var(--aegis-text-secondary) / <alpha-value>);
-  --color-aegis-text-muted: rgb(var(--aegis-text-muted) / <alpha-value>);
-  --color-aegis-text-dim: rgb(var(--aegis-text-dim) / <alpha-value>);
-  --color-aegis-primary: rgb(var(--aegis-primary) / <alpha-value>);
-  --color-aegis-primary-hover: rgb(var(--aegis-primary-hover) / <alpha-value>);
-  --color-aegis-primary-deep: rgb(var(--aegis-primary-deep) / <alpha-value>);
-  --color-aegis-accent: rgb(var(--aegis-accent) / <alpha-value>);
-  --color-aegis-accent-hover: rgb(var(--aegis-accent-hover) / <alpha-value>);
-  --color-aegis-danger: rgb(var(--aegis-danger) / <alpha-value>);
-  --color-aegis-warning: rgb(var(--aegis-warning) / <alpha-value>);
-  --color-aegis-success: rgb(var(--aegis-success) / <alpha-value>);
+  /* ── RGB triplets become complete colors; Tailwind derives opacity variants. ── */
+  --color-aegis-text: rgb(var(--aegis-text));
+  --color-aegis-text-secondary: rgb(var(--aegis-text-secondary));
+  --color-aegis-text-muted: rgb(var(--aegis-text-muted));
+  --color-aegis-text-dim: rgb(var(--aegis-text-dim));
+  --color-aegis-primary: rgb(var(--aegis-primary));
+  --color-aegis-primary-hover: rgb(var(--aegis-primary-hover));
+  --color-aegis-primary-deep: rgb(var(--aegis-primary-deep));
+  --color-aegis-accent: rgb(var(--aegis-accent));
+  --color-aegis-accent-hover: rgb(var(--aegis-accent-hover));
+  --color-aegis-danger: rgb(var(--aegis-danger));
+  --color-aegis-warning: rgb(var(--aegis-warning));
+  --color-aegis-success: rgb(var(--aegis-success));
+  --color-aegis-menu-text: rgb(var(--aegis-menu-text));
+  --color-aegis-menu-text-muted: rgb(var(--aegis-menu-text-muted));
 
   /* ── fonts ── */
   /* Platform-aware CJK font stack:
@@ -108,25 +108,25 @@
   --background-image-gradient-radial: radial-gradient(var(--tw-gradient-stops));
 
   /* Radix behavior primitives consume the Aegis visual token source directly. */
-  --color-background: rgb(var(--aegis-bg));
+  --color-background: var(--aegis-bg);
   --color-foreground: rgb(var(--aegis-text));
-  --color-card: rgb(var(--aegis-card));
+  --color-card: var(--aegis-card);
   --color-card-foreground: rgb(var(--aegis-text));
-  --color-popover: rgb(var(--aegis-menu-bg));
+  --color-popover: var(--aegis-menu-bg);
   --color-popover-foreground: rgb(var(--aegis-menu-text));
   --color-primary: rgb(var(--aegis-primary));
-  --color-primary-foreground: rgb(var(--aegis-btn-primary-text));
-  --color-secondary: rgb(var(--aegis-surface));
+  --color-primary-foreground: var(--aegis-btn-primary-text);
+  --color-secondary: var(--aegis-surface);
   --color-secondary-foreground: rgb(var(--aegis-text));
-  --color-muted: rgb(var(--aegis-surface));
+  --color-muted: var(--aegis-surface);
   --color-muted-foreground: rgb(var(--aegis-text-muted));
-  --color-accent: rgb(var(--aegis-menu-hover));
+  --color-accent: var(--aegis-menu-hover);
   --color-accent-foreground: rgb(var(--aegis-menu-text));
   --color-destructive: rgb(var(--aegis-danger));
-  --color-destructive-foreground: rgb(var(--aegis-btn-primary-text));
-  --color-border: rgb(var(--aegis-border));
-  --color-input: rgb(var(--aegis-input));
-  --color-ring: rgb(var(--aegis-focus-ring));
+  --color-destructive-foreground: var(--aegis-btn-primary-text);
+  --color-border: var(--aegis-border);
+  --color-input: var(--aegis-input);
+  --color-ring: rgb(var(--aegis-primary));
   /* radius scale */
   --radius-sm: 0.125rem;
   --radius-md: 0.375rem;
@@ -177,11 +177,11 @@
 
   select {
     background-color: var(--aegis-menu-bg);
-    color: var(--aegis-menu-text);
+    color: rgb(var(--aegis-menu-text));
   }
   option {
     background-color: var(--aegis-menu-bg);
-    color: var(--aegis-menu-text);
+    color: rgb(var(--aegis-menu-text));
   }
   option:checked {
     background-color: var(--aegis-menu-active);
@@ -739,14 +739,14 @@
   border-radius: 0.5rem;
   background: var(--aegis-elevated);
   border: 1px solid var(--aegis-border);
-  color: var(--aegis-text);
+  color: rgb(var(--aegis-text));
   font-size: 13px;
   outline: none;
   transition: border-color 0.15s;
 }
-.field-input:focus { border-color: var(--aegis-primary); }
+.field-input:focus { border-color: rgb(var(--aegis-primary)); }
 .field-input:disabled { opacity: 0.5; cursor: not-allowed; }
-.field-input option { background: var(--aegis-elevated-solid); color: var(--aegis-text); }
+.field-input option { background: var(--aegis-elevated-solid); color: rgb(var(--aegis-text)); }
 
 .btn-secondary {
   padding: 0.5rem 1.25rem;
@@ -754,12 +754,12 @@
   font-size: 13px;
   font-weight: 500;
   background: var(--aegis-elevated);
-  color: var(--aegis-text-muted);
+  color: rgb(var(--aegis-text-muted));
   border: 1px solid var(--aegis-border);
   cursor: pointer;
   transition: all 0.15s;
 }
-.btn-secondary:hover { border-color: var(--aegis-border-hover); color: var(--aegis-text); }
+.btn-secondary:hover { border-color: var(--aegis-border-hover); color: rgb(var(--aegis-text)); }
 
 /* Scheduled task maintenance */
 @keyframes mc-err-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }

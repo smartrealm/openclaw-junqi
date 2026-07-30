@@ -8,41 +8,31 @@ export interface PetBackdropReading {
 export interface PetBackdropTextStyle {
   foreground: string;
   shadow: string;
-  bubble: string;
-  border: string;
-  boxShadow: string;
 }
+
+export type PetBackdropSurface = 'light' | 'dark';
 
 const LIGHT_SURFACE: PetBackdropTextStyle = {
   foreground: '#101318',
-  shadow: 'none',
-  bubble: 'rgba(248,250,252,0.84)',
-  border: '1px solid rgba(15,23,42,0.16)',
-  boxShadow: '0 2px 8px rgba(15,23,42,0.2)',
+  shadow: '0 1px 2px rgba(255,255,255,0.96), 0 0 5px rgba(255,255,255,0.72)',
 };
 
 const DARK_SURFACE: PetBackdropTextStyle = {
   foreground: '#f8fafc',
-  shadow: 'none',
-  bubble: 'rgba(8,12,18,0.78)',
-  border: '1px solid rgba(255,255,255,0.12)',
-  boxShadow: '0 2px 8px rgba(0,0,0,0.42)',
+  shadow: '0 1px 2px rgba(0,0,0,0.96), 0 0 5px rgba(0,0,0,0.74)',
 };
 
-export function resolvePetBackdropTextStyle(reading: PetBackdropReading | null): PetBackdropTextStyle {
+export function resolvePetBackdropTextStyle(
+  reading: PetBackdropReading | null,
+  fallbackSurface: PetBackdropSurface,
+): PetBackdropTextStyle {
   // Desktop sampling is an optional enhancement. It may be unavailable on
   // macOS without Screen Recording permission, so readability must never
   // depend on it.
-  if (!reading?.available || reading.luminance == null) return DARK_SURFACE;
+  if (!reading?.available || reading.luminance == null) {
+    return fallbackSurface === 'dark' ? DARK_SURFACE : LIGHT_SURFACE;
+  }
 
   const lightSurface = reading.luminance > 0.45;
-  const base = lightSurface ? LIGHT_SURFACE : DARK_SURFACE;
-  const busy = (reading.contrast ?? 0) > 0.18;
-  if (!busy) return base;
-  return {
-    ...base,
-    bubble: lightSurface
-      ? 'rgba(248,250,252,0.92)'
-      : 'rgba(8,12,18,0.9)',
-  };
+  return lightSurface ? LIGHT_SURFACE : DARK_SURFACE;
 }

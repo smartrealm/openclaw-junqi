@@ -52,7 +52,6 @@ function commitSessionModel(
       timestamp: new Date().toISOString(),
     }, sessionKey);
   }
-  window.dispatchEvent(new Event('aegis:model-changed'));
 }
 
 function resolvedPatchModel(result: SessionPatchResult): string {

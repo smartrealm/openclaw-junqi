@@ -22,7 +22,7 @@ Unsupported per-session system prompts are not sent to OpenClaw. Selecting a per
 
 The session projection combines `sessions.list.modelProvider` and `model` into the same canonical `provider/model` id used by `models.list`. The active model row is visibly marked and disabled so selecting it cannot enqueue a redundant privileged mutation.
 
-Session runtime controls live in the composer footer, where they describe the next turn. The trigger keeps the committed model and thinking labels stable while a mutation is pending. Provider/model and thinking changes are staged in one popover and applied only after explicit confirmation; switching sessions closes an open draft so settings cannot leak across sessions. The top context bar must not duplicate these controls.
+Session runtime controls live once in the top context bar, immediately after the active workspace. Model, workspace, and agent identity therefore remain one stable session-context surface while the composer is reserved for message authoring. The trigger keeps the committed model and thinking labels stable while a mutation is pending. Provider/model and thinking changes are staged in one downward-opening popover and applied only after explicit confirmation; switching sessions closes an open draft so settings cannot leak across sessions. The composer must not duplicate these controls.
 
 The session key captured when Save starts remains the owner of every successful result. Model and thinking metadata update that session row; active title state and manual override state change only when the initiating session is still active. A tab switch during the privileged request cannot project the old session's settings onto the new session.
 

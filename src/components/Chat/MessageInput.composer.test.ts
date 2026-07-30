@@ -26,14 +26,17 @@ test('composer consolidates attachments and voice input into accessible menus', 
   assert.doesNotMatch(input, /lucide-react|gateway\.|useVoiceWake|<textarea/);
 });
 
-test('session runtime control has a single stable composer owner', () => {
+test('session runtime control has a single stable top context owner beside workspace', () => {
   const input = source('src/components/Chat/message-input/ComposerInputSurface.tsx');
   const runtime = source('src/components/Chat/session-runtime/SessionRuntimeControl.tsx');
   const settings = source('src/components/Chat/session-runtime/useSessionRuntimeSettings.ts');
   const topBar = source('src/components/Chat/SessionContextBar.tsx');
 
-  assert.match(input, /<SessionRuntimeControl/);
-  assert.doesNotMatch(topBar, /SessionRuntimeControl|ModelDropdown|SessionThinkingPicker/);
+  assert.doesNotMatch(input, /SessionRuntimeControl/);
+  assert.match(topBar, /<WorkspacePicker[\s\S]*<SessionRuntimeControl/);
+  assert.doesNotMatch(topBar, /ModelDropdown|SessionThinkingPicker/);
+  assert.match(runtime, /absolute top-full start-0/);
+  assert.doesNotMatch(runtime, /absolute bottom-full/);
   assert.match(runtime, /const modelLabel = modelDisplayName\(activeModel, committed\.modelId\)/);
   assert.match(runtime, /if \(!saving\) setOpen/);
   assert.doesNotMatch(runtime, /switching \? null/);

@@ -10,6 +10,7 @@ import { SidebarRow, SidebarSection } from './SidebarRow';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { agentIdFromSessionKey, projectSessionActivity } from '@/utils/sessionPresentation';
+import { SidebarPrimaryAction } from './SidebarPrimaryAction';
 
 type NavigationItem = FeatureLinkedItem & { to: string; icon: React.ReactNode; label: string };
 
@@ -125,12 +126,9 @@ export function AgentsPanel() {
 
   return (
     <>
-      <div className="px-3 mb-1">
-        <button type="button" onClick={() => navigate('/agents?new=1')}
-          className="w-full h-9 bg-aegis-primary text-white rounded font-semibold text-[14px] flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity">
-          <Plus size={14} />{t('sidebar.newAgent', '新建智能体')}
-        </button>
-      </div>
+      <SidebarPrimaryAction icon={<Plus size={16} />} onClick={() => navigate('/agents?new=1')}>
+        {t('sidebar.newAgent', '新建智能体')}
+      </SidebarPrimaryAction>
       <div className="flex-1 overflow-y-auto min-h-0">
         {sortedAgents.length > 0 && (
           <SidebarSection label={t('sidebar.active', '在线智能体')}>
@@ -226,12 +224,9 @@ export function ToolsPanel() {
   const location = useLocation();
   return (
     <>
-      <div className="px-3 mb-1">
-        <button type="button" onClick={() => navigate('/terminal')}
-          className="w-full h-9 bg-aegis-overlay/[0.05] border border-aegis-border text-aegis-text rounded font-semibold text-[14px] flex items-center justify-center gap-1.5 hover:bg-aegis-hover/40 transition-colors">
-          <Terminal size={14} />{t('sidebar.openTerminal', '快速打开终端')}
-        </button>
-      </div>
+      <SidebarPrimaryAction icon={<Terminal size={16} />} onClick={() => navigate('/terminal')}>
+        {t('sidebar.openTerminal', '快速打开终端')}
+      </SidebarPrimaryAction>
       <div className="flex-1 overflow-y-auto min-h-0">
         <SidebarSection label={t('sidebar.toolCategories', '工具分类')}>
           {filterEnabledNavigationItems(toolCategories(t)).map((it) => (

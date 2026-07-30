@@ -264,7 +264,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
       {(collaborationMaintenance.status?.active || collaborationMaintenance.error) && (
         <section
           className="border-y border-aegis-warning/30 bg-aegis-warning/[0.05] px-4 py-3"
-          aria-label={t('maintenance.collaborationGate', '协作维护闸门')}
+          aria-label={t('maintenance.collaborationGate')}
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
@@ -272,8 +272,8 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
               <div className="min-w-0">
                 <h3 className="text-[13px] font-semibold text-aegis-text">
                   {collaborationMaintenance.status?.active
-                    ? t('maintenance.collaborationGateActive', '协作分派已因维护暂停')
-                    : t('maintenance.collaborationGateUnknown', '无法确认协作维护状态')}
+                    ? t('maintenance.collaborationGateActive')
+                    : t('maintenance.collaborationGateUnknown')}
                 </h3>
                 {collaborationMaintenance.status?.lease && (
                   <p className="mt-1 break-words text-[11px] text-aegis-text-dim">
@@ -291,7 +291,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
                       </div>
                     ))}
                     <p className="text-[10.5px] text-aegis-text-dim">
-                      {t('maintenance.collaborationRunsMustSettle', '活动运行必须先在会话中收敛；检修不会自动取消它们。')}
+                      {t('maintenance.collaborationRunsMustSettle')}
                     </p>
                   </div>
                 ) : null}
@@ -308,7 +308,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
                 onClick={() => { void collaborationMaintenance.refresh(); }}
                 disabled={collaborationMaintenance.loading || collaborationMaintenance.recovering}
                 className="flex h-8 w-8 items-center justify-center rounded-md border border-aegis-border/35 text-aegis-text-dim transition-colors hover:border-aegis-border/60 hover:text-aegis-text disabled:opacity-50"
-                title={t('maintenance.refreshCollaborationGate', '刷新协作维护状态')}
+                title={t('maintenance.refreshCollaborationGate')}
               >
                 <RefreshCw size={13} className={collaborationMaintenance.loading ? 'animate-spin' : ''} />
               </button>
@@ -322,7 +322,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
                   {collaborationMaintenance.recovering
                     ? <LoadingIndicator size={12} />
                     : <ShieldCheck size={12} />}
-                  {t('maintenance.verifyAndReleaseGate', '验证并解除')}
+                  {t('maintenance.verifyAndReleaseGate')}
                 </button>
               )}
             </div>
@@ -363,9 +363,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
         <section key={category} className="border-t border-aegis-border/35 pt-4">
           <div className="mb-2 flex items-center justify-between gap-3">
             <h3 className="text-[13px] font-semibold text-aegis-text">
-              {t(`maintenance.category.${category}`, {
-                defaultValue: ({ config: '配置', plugin: '插件', mcp: 'MCP', security: '安全', gateway: 'Gateway', doctor: 'Doctor' } as Record<MaintenanceCategory, string>)[category],
-              })}
+              {t(`maintenance.category.${category}`)}
             </h3>
             <div className="flex items-center gap-2">
               <span className="text-[10px] tabular-nums text-aegis-text-dim">{findings.length}</span>

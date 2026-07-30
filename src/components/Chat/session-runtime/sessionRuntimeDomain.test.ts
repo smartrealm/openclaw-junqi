@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   groupSessionModels,
@@ -36,4 +37,13 @@ test('thinking levels normalize to the supported gateway values', () => {
   assert.equal(normalizeThinkingLevel('unexpected'), 'auto');
   assert.equal(thinkingLevelForGateway('auto'), null);
   assert.equal(thinkingLevelForGateway('minimal'), 'minimal');
+});
+
+test('session runtime picker follows the compact shared provider identity contract', () => {
+  const source = readFileSync(new URL('./SessionRuntimeControl.tsx', import.meta.url), 'utf8');
+  assert.match(source, /from '@\/components\/shared\/provider-identity'/);
+  assert.match(source, /w-\[min\(420px,calc\(100vw-24px\)\)\]/);
+  assert.match(source, /grid-cols-\[136px_minmax\(0,1fr\)\]/);
+  assert.doesNotMatch(source, /w-\[min\(620px/);
+  assert.doesNotMatch(source, /Icon\.provider/);
 });

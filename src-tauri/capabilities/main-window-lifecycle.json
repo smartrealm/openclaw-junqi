@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window-lifecycle",
+  "description": "Allows the main window to complete its checkpointed close sequence",
+  "windows": ["main"],
+  "permissions": [
+    "core:window:allow-destroy"
+  ]
+}
