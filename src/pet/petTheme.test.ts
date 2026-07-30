@@ -78,10 +78,10 @@ test('pet text style disables webkit outline-only rendering', () => {
   });
 });
 
-test('pet text style can apply dark-theme readability halo', () => {
+test('pet text style rejects theme readability effects', () => {
   const shadow = petTextShadowForTheme('aegis-dark');
-  assert.notEqual(shadow, 'none');
-  assert.equal(solidPetTextStyle('#fff', shadow).textShadow, shadow);
+  assert.equal(shadow, 'none');
+  assert.equal(solidPetTextStyle('#fff', shadow).textShadow, 'none');
 });
 
 test('pet bubble text container has no visual chrome', () => {
@@ -112,11 +112,12 @@ test('pet bubble text container has no visual chrome', () => {
   });
 });
 
-test('pet bubble text container adds readable halo in dark themes', () => {
+test('pet bubble text container stays effect-free in dark themes', () => {
   const style = petCaptionTextContainerStyle('#f8fafc', 'aegis-midnight');
   assert.equal(style.background, 'transparent');
   assert.equal(style.boxShadow, 'none');
-  assert.notEqual(style.textShadow, 'none');
+  assert.equal(style.filter, 'none');
+  assert.equal(style.textShadow, 'none');
 });
 
 test('pet character palette changes body color by theme and skin', () => {

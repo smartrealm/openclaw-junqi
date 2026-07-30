@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, Clock, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ListOrdered, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import type { QueuedChatMessage } from '@/services/chat/types';
@@ -54,23 +54,21 @@ export function MessageQueuePanel({ sessionKey, dir }: MessageQueuePanelProps) {
   if (queue.length === 0) return null;
 
   return (
-    <div className="px-4 pt-2" dir={dir}>
-      <div className="overflow-hidden border border-aegis-warning/15 bg-aegis-warning/[0.045]">
-        <div className="flex min-h-9 items-center gap-2 px-3">
-          <Clock size={13} className="shrink-0 text-aegis-warning" />
+    <div data-message-queue-placement="composer-above" className="px-3 pt-2" dir={dir}>
+      <div className="mx-auto w-full max-w-[760px] overflow-hidden rounded-xl border border-aegis-border bg-aegis-surface">
+        <div className="flex min-h-10 items-center gap-2 px-3">
+          <ListOrdered size={14} className="shrink-0 text-aegis-text-muted" />
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
-            className="flex min-w-0 flex-1 items-center gap-1.5 text-start text-[12px] font-medium text-aegis-warning transition-colors hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+            className="flex min-w-0 flex-1 items-center gap-1.5 text-start text-[12px] font-medium text-aegis-text transition-colors hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
             aria-expanded={expanded}
             aria-label={t('chat.queueTitle')}
           >
-            <span>{t('chat.queueTitle')} {queue.length}</span>
-            {waitSeconds !== null && (
-              <span className="truncate text-[11px] font-normal text-aegis-text-muted">
-                {t('chat.queueWait', { s: waitSeconds })}
-              </span>
-            )}
+            <span className="shrink-0">{t('chat.queueTitle')} · {queue.length}</span>
+            <span className="min-w-0 flex-1 truncate text-[11px] font-normal text-aegis-text-muted">
+              {expanded ? (waitSeconds !== null ? t('chat.queueWait', { s: waitSeconds }) : '') : queue[0]?.text}
+            </span>
             {expanded
               ? <ChevronUp size={14} className="ms-auto shrink-0" />
               : <ChevronDown size={14} className="ms-auto shrink-0" />}
@@ -107,9 +105,9 @@ export function MessageQueuePanel({ sessionKey, dir }: MessageQueuePanelProps) {
         </div>
 
         {expanded && (
-          <div className="max-h-[176px] overflow-y-auto border-t border-aegis-warning/15 scrollbar-hidden">
+          <div className="max-h-[176px] overflow-y-auto border-t border-aegis-border scrollbar-hidden">
             {queue.map((item) => (
-              <div key={item.id} className="flex items-start gap-2 border-b border-aegis-warning/10 px-3 py-2 last:border-b-0">
+              <div key={item.id} className="flex items-start gap-2 border-b border-aegis-border/70 px-3 py-2 last:border-b-0">
                 {editingId === item.id ? (
                   <div className="min-w-0 flex-1">
                     <textarea

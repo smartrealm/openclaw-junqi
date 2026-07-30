@@ -20,6 +20,7 @@ export class BackdropSampleScheduler<T> {
   private timer: number | null = null;
   private pending = false;
   private inFlight = false;
+  private requestRevision = 0;
   private disposed = false;
 
   constructor(options: BackdropSampleSchedulerOptions<T>) {
@@ -34,6 +35,7 @@ export class BackdropSampleScheduler<T> {
 
   request(): void {
     if (this.disposed) return;
+    this.requestRevision += 1;
     this.pending = true;
     this.schedule();
   }
@@ -63,6 +65,7 @@ export class BackdropSampleScheduler<T> {
     this.pending = false;
     this.inFlight = true;
     this.lastStartedAt = this.now();
+    const startedRevision = this.requestRevision;
 
     let request: Promise<T>;
     try {
@@ -75,7 +78,10 @@ export class BackdropSampleScheduler<T> {
 
     void request.then(
       (value) => {
-        if (!this.disposed) this.publish(value);
+        // A movement request that arrived while native capture was in flight
+        // makes this result stale. Do not flash the previous position's text
+        // color before the queued latest-position sample completes.
+        if (!this.disposed && startedRevision === this.requestRevision) this.publish(value);
       },
       () => {
         if (!this.disposed) this.fail?.();

@@ -165,7 +165,10 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
   const captionScale = usePetStore((store) => store.captionScale);
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
-  const backdropStyle = resolvePetBackdropTextStyle(backdrop ?? null, isDark ? 'dark' : 'light');
+  const backdropStyle = resolvePetBackdropTextStyle(
+    backdrop ?? null,
+    isDark ? 'dark' : 'light',
+  );
   const textPalette = {
     primary: backdropStyle.foreground,
     secondary: backdropStyle.foreground,

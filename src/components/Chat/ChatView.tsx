@@ -66,6 +66,7 @@ import {
   localUserMessageCapabilities,
   removeLocalUserMessage,
 } from './localUserMessageMutations';
+import { selectActiveExecutionPlan } from './executionPlanPlacement';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -272,6 +273,10 @@ function ChatViewContent() {
   const { timelineItems, anchoredRunIds } = useMemo(
     () => buildCollaborationChatTimeline(responseGroups, messages, collaboration.runs),
     [collaboration.runs, messages, responseGroups],
+  );
+  const activeExecutionPlan = useMemo(
+    () => selectActiveExecutionPlan(responseGroups),
+    [responseGroups],
   );
 
   // ── Virtuoso ref & scroll state ──
@@ -976,10 +981,16 @@ function ChatViewContent() {
         );
 
       case 'execution-plan':
+        // Unfinished plans are projected once above the composer instead of
+        // participating in the assistant message column. Completed plans stay
+        // in transcript history as durable execution records.
+        if (block.plan.state !== 'completed') return null;
         return (
-          <Suspense fallback={<div className="ml-[46px] mr-4 h-11 rounded-lg border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.025)] animate-pulse" />}>
-            <ExecutionPlanCard plan={block.plan} />
-          </Suspense>
+          <div className="mx-auto w-full max-w-[760px] px-3">
+            <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface animate-pulse" />}>
+              <ExecutionPlanCard plan={block.plan} />
+            </Suspense>
+          </div>
         );
 
       case 'thinking':
@@ -1367,6 +1378,19 @@ function ChatViewContent() {
             onDismiss={() => setQuickReplies([], activeSessionKey)}
           />
         </Suspense>
+      )}
+
+      {activeExecutionPlan && (
+        <div
+          data-execution-plan-placement="composer-above"
+          className="shrink-0 bg-[var(--aegis-bg-frosted-60)] px-3 pt-3 backdrop-blur-xl"
+        >
+          <div className="mx-auto w-full max-w-[760px]">
+            <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface animate-pulse" />}>
+              <ExecutionPlanCard plan={activeExecutionPlan} />
+            </Suspense>
+          </div>
+        </div>
       )}
 
       <Suspense fallback={<div className="h-[76px] border-t border-aegis-border/20" />}>

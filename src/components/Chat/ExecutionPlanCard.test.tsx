@@ -27,6 +27,9 @@ test('running plan renders expanded progress with accessible controls', () => {
   const html = renderToStaticMarkup(<ExecutionPlanCard plan={createPlan('running')} />);
   assert.match(html, /aria-expanded="true"/);
   assert.match(html, /aria-controls=/);
+  assert.match(html, /data-execution-plan-card="true"/);
+  assert.match(html, /w-full/);
+  assert.doesNotMatch(html, /ml-\[46px\]/);
   assert.match(html, /Inspect protocol/);
   assert.match(html, /Run tests/);
 });

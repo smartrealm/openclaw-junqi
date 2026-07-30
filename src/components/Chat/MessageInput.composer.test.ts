@@ -65,6 +65,10 @@ test('queued messages use a collapsed dispatch control instead of a second messa
 
   assert.match(input, /<MessageQueuePanel/);
   assert.match(queue, /onClick=\{\(\) => setExpanded\(\(value\) => !value\)\}/);
+  assert.match(queue, /data-message-queue-placement="composer-above"/);
+  assert.match(queue, /mx-auto w-full max-w-\[760px\]/);
+  assert.match(queue, /queue\[0\]\?\.text/);
+  assert.doesNotMatch(queue, /aegis-warning/);
   assert.match(queue, /\{expanded && \(/);
   assert.doesNotMatch(queue, /const COLLAPSE_AT/);
   assert.doesNotMatch(queue, /const visible = queue/);

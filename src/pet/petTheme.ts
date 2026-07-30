@@ -207,29 +207,23 @@ const PET_TEXT_RENDERING_RESET: CSSProperties = {
   MozOsxFontSmoothing: 'grayscale',
 };
 
-export function petTextShadowForTheme(themeName: PetThemeName): string {
-  switch (themeName) {
-    case 'aegis-dark':
-    case 'aegis-midnight':
-      return '0 1px 2px rgba(0,0,0,0.92), 0 0 8px rgba(0,0,0,0.72), 0 0 14px rgba(0,0,0,0.42)';
-    default:
-      return 'none';
-  }
+export function petTextShadowForTheme(_themeName: PetThemeName): string {
+  return 'none';
 }
 
-export function solidPetTextStyle(color: string, textShadow = 'none'): CSSProperties {
+export function solidPetTextStyle(color: string, _textShadow = 'none'): CSSProperties {
   return {
     ...PET_TEXT_RENDERING_RESET,
     color,
     WebkitTextFillColor: color,
     caretColor: color,
-    textShadow,
+    textShadow: 'none',
   };
 }
 
-export function petCaptionTextContainerStyle(color: string, themeName?: PetThemeName): CSSProperties {
+export function petCaptionTextContainerStyle(color: string, _themeName?: PetThemeName): CSSProperties {
   return {
-    ...solidPetTextStyle(color, themeName ? petTextShadowForTheme(themeName) : 'none'),
+    ...solidPetTextStyle(color),
     border: 0,
     isolation: 'isolate',
     opacity: 1,

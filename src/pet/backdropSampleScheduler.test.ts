@@ -27,7 +27,7 @@ test('backdrop sampling follows continuous movement at a bounded rate', async ()
   resolvers.shift()?.(1);
   await Promise.resolve();
   await Promise.resolve();
-  assert.deepEqual(samples, [1]);
+  assert.deepEqual(samples, []);
   assert.equal(timers.length, 1);
 
   now = 120;
@@ -36,7 +36,39 @@ test('backdrop sampling follows continuous movement at a bounded rate', async ()
   resolvers.shift()?.(2);
   await Promise.resolve();
   await Promise.resolve();
-  assert.deepEqual(samples, [1, 2]);
+  assert.deepEqual(samples, [2]);
+});
+
+test('backdrop sampling drops an in-flight result superseded by a movement request', async () => {
+  let now = 0;
+  const samples: number[] = [];
+  const timers: Array<() => void> = [];
+  const resolvers: Array<(value: number) => void> = [];
+  const scheduler = new BackdropSampleScheduler<number>({
+    intervalMs: 120,
+    now: () => now,
+    setTimer: (callback) => {
+      timers.push(callback);
+      return timers.length;
+    },
+    clearTimer: () => undefined,
+    sample: () => new Promise<number>((resolve) => resolvers.push(resolve)),
+    publish: (value) => samples.push(value),
+  });
+
+  scheduler.request();
+  scheduler.request();
+  resolvers.shift()?.(1);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(samples, []);
+
+  now = 120;
+  timers.shift()?.();
+  resolvers.shift()?.(2);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(samples, [2]);
 });
 
 test('backdrop sampling recovers after a failed sample and keeps the latest request', async () => {

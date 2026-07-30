@@ -39,6 +39,15 @@ JunQi 已接收 OpenClaw Gateway 的结构化工具流。工具事件包含 `ses
 - 三态设置通过 Gateway `config.get` 和带 `baseHash` 的 `config.patch` 保存；自动模式只删除 `planTool` 覆盖并保留其他 experimental 字段。
 - JunQi 不静默启用实验工具，OpenClaw 负责配置变更后的热加载或重启。
 
+## 2026-07-30 Chat 布局修正
+
+- 复核发现首版 `ExecutionPlanCard` 作为 `RenderBlock` 直接进入 Virtuoso 消息时间线，并使用 `ml-[46px]` 对齐 assistant avatar/message 列，位置与目标交互不符。
+- 最新未完成计划现从 response groups 派生为会话级投影，固定显示在输入框正上方；计划面板与输入 surface 共用水平居中的 `760px` 最大宽度，发送按钮位于同一列右端。
+- 未完成计划不再在消息流中重复渲染；最新计划完成后，输入框上方面板撤下，完成计划仍在原消息时间线位置以折叠记录保留。
+- 展开/折叠继续使用整块真实 `button`、`aria-expanded` 和 `aria-controls`，不改变 OpenClaw `update_plan` authority 或三态状态契约。
+- 消息发送队列同步收敛到 composer 上方同一中心列：正常排队使用中性 surface，折叠态显示数量与首条摘要，展开后继续提供编辑、删除和失败重试；垂直顺序为快捷回复、执行计划、发送队列、输入框。
+- 本地 `/Applications/ChatGPT.app` 已确认版本 `26.721.81911`、bundle ID `com.openai.codex`；观察时主进程没有可访问窗口（仅残留 helper/kernel，AX `windows=0`），因此本记录不声称完成其队列像素或可访问性树核对。
+
 ## 未验证边界
 
 - OpenClaw 未来版本可能扩展状态或字段，升级时必须重新核对安装版本源码。

@@ -41,8 +41,8 @@ export function ExecutionPlanCard({ plan }: { plan: AgentExecutionPlan }) {
   const displayIndex = plan.state === 'completed' ? plan.steps.length : plan.currentStepIndex + 1;
 
   useEffect(() => {
-    if (plan.state === 'running') setCollapsed(false);
-  }, [plan.revision, plan.state]);
+    setCollapsed(readCollapsedPreference(plan));
+  }, [plan.id]);
 
   const toggle = () => {
     setCollapsed((current) => {
@@ -54,7 +54,8 @@ export function ExecutionPlanCard({ plan }: { plan: AgentExecutionPlan }) {
 
   return (
     <section
-      className="ml-[46px] mr-4 overflow-hidden rounded-lg border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.025)]"
+      data-execution-plan-card="true"
+      className="w-full overflow-hidden rounded-xl border border-aegis-border bg-aegis-surface"
       aria-label={t('chat.executionPlan.ariaLabel')}
       aria-live="polite"
     >

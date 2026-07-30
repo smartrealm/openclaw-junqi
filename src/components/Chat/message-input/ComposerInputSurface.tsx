@@ -50,7 +50,7 @@ export function ComposerInputSurface({
   const canSend = Boolean(text.trim() || attachments.files.length > 0);
 
   return (
-    <div className="flex items-end gap-2 p-3" dir={dir}>
+    <div className="mx-auto flex w-full max-w-[784px] items-end gap-2 p-3" dir={dir}>
       <div
         className={clsx(
           'relative flex flex-1 flex-col gap-1 rounded-2xl border border-[rgb(var(--aegis-overlay)/0.06)] bg-aegis-surface px-3 py-2',
