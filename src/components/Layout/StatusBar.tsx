@@ -14,19 +14,12 @@ import { APP_VERSION } from '@/hooks/useAppVersion';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import { GatewaySelfRescuePanel } from '@/components/GatewaySelfRescuePanel';
-import type { AegisTheme } from '@/theme/types';
+import { nextTheme } from '@/theme/cycle';
+import { useResolvedTheme } from '@/theme/useTheme';
 import { setThemeWithTransition } from '@/motion/themeTransition';
 import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
 import { projectSessionActivity } from '@/utils/sessionPresentation';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
-
-const THEME_CYCLE: AegisTheme[] = ['aegis-dark', 'aegis-light', 'aegis-eyecare', 'aegis-midnight'];
-
-function nextTheme(current: AegisTheme): AegisTheme {
-  const idx = THEME_CYCLE.indexOf(current);
-  if (idx < 0) return 'aegis-dark';
-  return THEME_CYCLE[(idx + 1) % THEME_CYCLE.length];
-}
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -40,7 +33,7 @@ export function StatusBar() {
   const thinkingBySession = useChatStore((st) => st.thinkingBySession);
   const sendingBySession = useChatStore((st) => st.sendingBySession);
   const uiScale = useSettingsStore((st) => st.uiScale);
-  const theme = useSettingsStore((st) => st.theme);
+  const resolvedTheme = useResolvedTheme();
   const petEnabled = usePetStore((st) => st.enabled);
   const setPetEnabled = usePetStore((st) => st.setEnabled);
   const pomoEnabled = usePetStore((st) => st.pomodoro.enabled);
@@ -149,7 +142,6 @@ export function StatusBar() {
   const gatewayPanelMessage = gatewayMsg
     || (reconnectBusy ? t('statusBar.gatewayBusy', '处理中') : gatewayPanelTitle);
 
-  const resolvedTheme: AegisTheme = theme.startsWith('aegis-') ? (theme as AegisTheme) : 'aegis-dark';
   const isDarkish = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
   const themeLabel = t(`theme.${resolvedTheme.replace('aegis-', '')}`, resolvedTheme.replace('aegis-', ''));
 

@@ -25,6 +25,13 @@ test('all visible theme selectors use the shared transition service', async () =
   }
 });
 
+test('dashboard theme control uses the live resolved system theme', async () => {
+  const statusBar = await read('../components/Layout/StatusBar.tsx');
+  assert.match(statusBar, /useResolvedTheme\(\)/);
+  assert.match(statusBar, /nextTheme\(resolvedTheme\)/);
+  assert.doesNotMatch(statusBar, /theme\.startsWith\(['"]aegis-/);
+});
+
 test('enter-dashboard actions forward their button origin to the transition coordinator', async () => {
   const [page, flow, transition] = await Promise.all([
     readDir('../pages/SetupPage/'),

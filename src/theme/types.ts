@@ -14,7 +14,7 @@
  */
 
 /** Concrete themes that exist in the CSS layer. Keep in lockstep with src/styles/themes/. */
-export const AEGIS_THEMES = ['aegis-dark', 'aegis-midnight', 'aegis-light', 'aegis-eyecare'] as const;
+export const AEGIS_THEMES = ['aegis-dark', 'aegis-light', 'aegis-eyecare', 'aegis-midnight'] as const;
 export type AegisTheme = typeof AEGIS_THEMES[number];
 
 /** User-facing setting value. `system` follows the OS — at apply time it resolves to a concrete AegisTheme. */

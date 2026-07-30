@@ -24,21 +24,29 @@ import type { AegisTheme } from './types';
  * macOS appearance updates the app without a restart or focus change.
  */
 export function useTheme(): AegisTheme {
+  const resolved = useResolvedTheme();
+  const setting = useSettingsStore((s) => s.theme);
+
+  useEffect(() => {
+    applyTheme(resolved, setting);
+  }, [resolved, setting]);
+
+  return resolved;
+}
+
+/** Returns the live concrete theme without taking ownership of applying it. */
+export function useResolvedTheme(): AegisTheme {
   const setting = useSettingsStore((s) => s.theme);
   const prefersDark = usePrefersDark();
 
   // `prefersDark` is a reactive value, so when the OS flips and the
-  // user is on `system`, useMemo recomputes → useEffect re-applies.
+  // user is on `system`, useMemo recomputes and the root hook reapplies it.
   // For non-`system` settings, prefersDark is ignored by resolveTheme
   // and the memoized result is stable.
   const resolved = useMemo<AegisTheme>(
     () => resolveTheme(setting, prefersDark ? 'aegis-dark' : 'aegis-light'),
     [setting, prefersDark],
   );
-
-  useEffect(() => {
-    applyTheme(resolved, setting);
-  }, [resolved, setting]);
 
   return resolved;
 }
