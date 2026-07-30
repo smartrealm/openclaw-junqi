@@ -13,6 +13,8 @@ import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent, subscribeTauriListener } from '@/utils/tauriEvents';
 import { projectSessionActivity } from '@/utils/sessionPresentation';
+import { prepareFocusNavigation } from '@/focus/openFocus';
+import { useFocusProjection } from '@/focus/useFocusProjection';
 import {
   isVoiceActivePhase,
   selectDynamicIslandTasks,
@@ -25,6 +27,7 @@ import {
 type IslandAction =
   | { type: 'open-task'; taskId: string }
   | { type: 'open-session'; sessionKey: string }
+  | { type: 'open-focus' }
   | { type: 'toggle-dnd' }
   | { type: 'pomodoro-toggle' }
   | { type: 'pomodoro-stop' }
@@ -51,6 +54,7 @@ export default function DynamicIslandRuntime() {
   const voicePhase = remoteVoiceOutput ? 'speaking' : localVoicePhase;
   const voiceQueueLength = remoteVoiceOutput ? 0 : localVoiceQueueLength;
   const tasks = useAgentWorkspaceStore((state) => state.tasks);
+  const focus = useFocusProjection();
   const pomodoro = usePetStore((state) => state.pomodoro);
   const petEnabled = usePetStore((state) => state.enabled);
   const latestToast = useNotificationStore((state) => state.toasts.at(-1) ?? null);
@@ -104,6 +108,7 @@ export default function DynamicIslandRuntime() {
     sessionRunning,
     voiceActive,
     tasks: visibleTasks,
+    focus,
     resourceDrop,
     terminalPulse,
   });
@@ -138,6 +143,7 @@ export default function DynamicIslandRuntime() {
     dndMode,
     autoExpand,
     tasks: visibleTasks,
+    focus,
     pomodoro: {
       enabled: pomodoro.enabled,
       running: pomodoro.running,
@@ -153,7 +159,7 @@ export default function DynamicIslandRuntime() {
       body: latestToast.body,
     } : null,
     resourceDrop,
-  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, latestToast, petEnabled, pomodoro, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voicePhase, voiceQueueLength]);
+  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, focus, latestToast, petEnabled, pomodoro, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
 
@@ -222,6 +228,12 @@ export default function DynamicIslandRuntime() {
             chat.setActiveSession(action.sessionKey);
           }
           void invoke('dynamic_island_focus_main', { route: '/chat' });
+          break;
+        }
+        case 'open-focus': {
+          const currentFocus = latestSnapshotRef.current.focus;
+          const route = currentFocus ? prepareFocusNavigation(currentFocus) : null;
+          if (route) void invoke('dynamic_island_focus_main', { route });
           break;
         }
         case 'toggle-dnd': {

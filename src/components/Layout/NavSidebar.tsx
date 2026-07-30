@@ -805,6 +805,7 @@ function miniItemsFor(
     ];
     case 'tools': return [
       { to: '/ai-workspace', icon: <Bot size={20} />, label: t('nav.agentTasks', 'Agent 任务'), feature: 'agentRun' },
+      { to: '/briefs', icon: <BookOpenText size={20} />, label: t('nav.taskBriefs'), feature: 'agentRun' },
       { to: '/terminal', icon: <Terminal size={20} />, label: t('nav.terminal', 'Terminal'), feature: 'terminal' },
       { to: '/files', icon: <Folder size={20} />, label: t('nav.files', 'Files'), feature: 'files' },
       { to: '/tools', icon: <Cpu size={20} />, label: t('nav.mcpTools', 'MCP Tools'), feature: 'tools' },

@@ -42,6 +42,7 @@ import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { applyConfirmedSessionDeletion } from '@/utils/sessionDelete';
 import { createLatestRequestGate, isSessionDeleted } from '@/utils/sessionLifecycle';
+import { startRecoverableTask } from '@/utils/recoverableTask';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
@@ -600,10 +601,13 @@ export default function App() {
       if (isSessionDeleted(sessionKey)) return;
       const { activeSessionKey, historyLoader } = useChatStore.getState();
       if (!historyLoader) return;
-      void historyLoader(sessionKey === activeSessionKey ? undefined : sessionKey, {
-        force: true,
-        background: sessionKey !== activeSessionKey,
-      });
+      startRecoverableTask(
+        () => historyLoader(sessionKey === activeSessionKey ? undefined : sessionKey, {
+          force: true,
+          background: sessionKey !== activeSessionKey,
+        }),
+        (error) => debugWarn('gateway', `[App] Transcript refresh failed for ${sessionKey}:`, error),
+      );
     };
 
     gateway.setCallbacks({
@@ -674,12 +678,7 @@ export default function App() {
         if (sessionKey !== currentSessionKey) {
           markSessionCompleted(sessionKey);
         }
-        if (meta?.refreshHistory && historyLoader) {
-          void historyLoader(sessionKey === currentSessionKey ? undefined : sessionKey, {
-            force: true,
-            background: sessionKey !== currentSessionKey,
-          });
-        }
+        if (meta?.refreshHistory && historyLoader) refreshDurableTranscript(sessionKey);
         // Refresh session metadata (token usage, model) after a stream completes.
         void loadSessions();
         // Notify (sound + toast) when app is minimized/background OR user is on a different page
@@ -703,12 +702,9 @@ export default function App() {
         // immediately; durable history reconciliation may continue in the
         // background without keeping dots, timers or the stop action alive.
         chat.settleSessionRunUi(sessionKey);
-        const { activeSessionKey, historyLoader } = chat;
+        const { historyLoader } = chat;
         if (!historyLoader) return;
-        void historyLoader(sessionKey === activeSessionKey ? undefined : sessionKey, {
-          force: true,
-          background: sessionKey !== activeSessionKey,
-        });
+        refreshDurableTranscript(sessionKey);
       },
       onStreamReconciliationNeeded: (sessionKey) => {
         refreshDurableTranscript(sessionKey);

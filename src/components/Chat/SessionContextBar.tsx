@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, Check, ChevronDown, Download, Folder, Plus, Puzzle, RotateCcw, Wrench } from 'lucide-react';
+import { Activity, Check, ChevronDown, Crosshair, Download, Folder, Plus, Puzzle, RotateCcw, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -10,6 +10,7 @@ import { exportChatMarkdown } from '@/utils/exportChat';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { debugError } from '@/utils/debugLog';
 import { useSkillsStore } from '@/stores/skillsStore';
+import { useFocusContextStore } from '@/stores/focusContextStore';
 import { SessionRuntimeControl } from './session-runtime/SessionRuntimeControl';
 
 function WorkspacePicker({ agentId, current }: { agentId: string; current?: string }) {
@@ -97,7 +98,7 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
 
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, renderBlocks, activeSessionKey } = useChatStore();
+  const { tokenUsage, renderBlocks, activeSessionKey, sessions } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
   const skills = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
@@ -112,6 +113,7 @@ export function SessionContextBar() {
   const mainAgentName = getAgentDisplayName(agents.find((a) => a.id === 'main'), t('agents.mainAgent'));
   const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
   const enabledSkillCount = Object.values(skills).filter((skill) => skill.enabled !== false).length;
+  const activeSession = sessions.find((session) => session.key === activeSessionKey);
 
   useEffect(() => {
     void refreshSkills();
@@ -133,6 +135,24 @@ export function SessionContextBar() {
       <SessionRuntimeControl />
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
         <div className="hidden items-center gap-0.5 lg:flex">
+          <button
+            type="button"
+            onClick={() => useFocusContextStore.getState().setFocus({
+              schemaVersion: 1,
+              target: { kind: 'chat-session', id: activeSessionKey },
+              title: activeSession?.topic?.trim()
+                || activeSession?.label?.trim()
+                || t('chat.currentSession'),
+              detail: agentDisplayName,
+              route: `/chat?session=${encodeURIComponent(activeSessionKey)}`,
+              focusedAt: Date.now(),
+            })}
+            className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
+            title={t('focus.set')}
+            aria-label={t('focus.set')}
+          >
+            <Crosshair size={11} />
+          </button>
           <button
             type="button"
             onClick={() => navigate('/skills')}

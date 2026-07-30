@@ -99,6 +99,8 @@ test('island returns to the existing chat session and uses packaged JunQi brandi
   assert.doesNotMatch(island, /src="\/src\/assets\/brand\/junqi-emblem\.svg"/);
   assert.match(runtime, /chat\.setActiveSession\(action\.sessionKey\)/);
   assert.match(runtime, /dynamic_island_focus_main', \{ route: '\/chat' \}/);
+  assert.match(runtime, /prepareFocusNavigation/);
+  assert.match(island, /type: 'open-focus'/);
   assert.doesNotMatch(runtime, /open_quickchat_with_files', \{ paths: \[\] \}/);
   assert.match(styles, /var\(--aegis-bg-frosted\)/);
   assert.match(styles, /var\(--aegis-primary\)/);

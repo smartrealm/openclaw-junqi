@@ -2,6 +2,7 @@ import type { AgentWorkspaceTask, AgentWorkspaceTaskStatus } from '@/stores/agen
 import type { NotificationType } from '@/stores/notificationStore';
 import type { PomodoroState } from '@/stores/petStore';
 import type { VoicePhase } from '@/services/voice/types';
+import type { FocusProjection } from '@/focus/focusContext';
 
 export interface DynamicIslandTask {
   id: string;
@@ -46,6 +47,7 @@ export interface DynamicIslandSnapshot {
   dndMode: boolean;
   autoExpand: boolean;
   tasks: DynamicIslandTask[];
+  focus: FocusProjection | null;
   pomodoro: Pick<PomodoroState, 'enabled' | 'running' | 'paused' | 'phase' | 'endsAt' | 'pausedRemainingMs'>;
   notice: DynamicIslandNotice | null;
   resourceDrop: DynamicIslandDrop | null;
@@ -72,6 +74,7 @@ export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   dndMode: false,
   autoExpand: true,
   tasks: [],
+  focus: null,
   pomodoro: {
     enabled: false,
     running: false,
@@ -130,13 +133,15 @@ export function shouldShowDynamicIsland(input: {
   sessionRunning: boolean;
   voiceActive?: boolean;
   tasks: DynamicIslandTask[];
+  focus?: FocusProjection | null;
   resourceDrop: DynamicIslandDrop | null;
   terminalPulse: boolean;
 }): boolean {
   if (!input.enabled) return false;
   if (input.resourceDrop) return true;
   if (!input.mainMinimized) return false;
-  return input.sessionRunning
+  return Boolean(input.focus)
+    || input.sessionRunning
     || Boolean(input.voiceActive)
     || input.terminalPulse
     || input.tasks.some((task) => (

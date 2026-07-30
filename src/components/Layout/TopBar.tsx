@@ -51,6 +51,7 @@ import {
   requestAgentWorkspaceSidebarToggle,
 } from './agentWorkspaceSidebarEvents';
 import { isWorkspaceSidebarMode, type WorkspaceSidebarMode } from './workspaceSidebarChannel';
+import { FocusControl } from '@/components/Focus/FocusControl';
 
 const NotificationPanel = lazy(() => import('@/components/Layout/NotificationPanel').then(m => ({ default: m.NotificationPanel })));
 
@@ -576,7 +577,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
         </button>
       )}
 
-      {/* Right — notifications (kooky: 28x28, cornerRadius 5, icon 12pt) */}
+      {!terminalChrome && <FocusControl />}
       {terminalChrome && (
         <TerminalOpenInControl directory={terminalOpenDirectory} />
       )}

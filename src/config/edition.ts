@@ -173,6 +173,7 @@ const PATH_PREFIXES: { prefix: string; feature: EditionFeatureKey }[] = [
   { prefix: '/terminal', feature: 'terminal' },
   { prefix: '/agent-run', feature: 'agentRun' },
   { prefix: '/ai-workspace', feature: 'agentRun' },
+  { prefix: '/briefs', feature: 'agentRun' },
   { prefix: '/memory', feature: 'memory' },
   { prefix: '/', feature: 'dashboard' },
 ];

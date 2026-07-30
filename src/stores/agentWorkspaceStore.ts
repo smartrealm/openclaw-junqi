@@ -64,6 +64,8 @@ export interface AgentWorkspaceTask {
   additions?: number;
   deletions?: number;
   failureReason?: string;
+  /** Stable source identity when this task was compiled from a Task Brief. */
+  sourceBriefId?: string;
 }
 
 interface AgentWorkspaceState {

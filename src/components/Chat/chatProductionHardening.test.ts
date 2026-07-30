@@ -101,10 +101,19 @@ test('CHAT-05 forced history refreshes queue behind the active request', () => {
   assert.match(view, /await loadHistory\(sessionKey, queued\)/);
 });
 
-test('CHAT-16 initial history failure stays in the recoverable chat surface', () => {
+test('CHAT-16 every detached history load stays in the recoverable chat surface', () => {
   const view = source('src/components/Chat/ChatView.tsx');
-  assert.match(view, /void loadHistory\(\)\.catch\(\(error\) => \{/);
-  assert.match(view, /Initial history load failed/);
+  const app = source('src/App.tsx');
+  assert.doesNotMatch(view, /void loadHistory\(/);
+  assert.match(view, /startRecoverableTask\([\s\S]*?\(\) => loadHistory\(\)/);
+  assert.equal(
+    [...view.matchAll(/\(\) => loadHistory\(sessionKey, \{ force: true, background: true \}\)/g)].length,
+    3,
+  );
+  assert.match(view, /Manual reconnect failed/);
+  assert.doesNotMatch(app, /void historyLoader\(/);
+  assert.match(app, /startRecoverableTask\([\s\S]*?\(\) => historyLoader\(/);
+  assert.match(app, /onTranscriptChanged:[\s\S]*?refreshDurableTranscript\(sessionKey\)/);
 });
 
 test('CHAT-06 history pagination uses chat.history offsets only', () => {

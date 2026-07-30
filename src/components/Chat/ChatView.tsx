@@ -49,6 +49,7 @@ import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { isSessionDeleted } from '@/utils/sessionLifecycle';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
+import { startRecoverableTask } from '@/utils/recoverableTask';
 import {
   buildCollaborationChatTimeline,
   type ChatTimelineItem,
@@ -297,6 +298,12 @@ function ChatViewContent() {
   const bottomSeenSignatureRef = useRef('');
   const lastAutoRevealedUserMessageIdRef = useRef('');
 
+  const reportBackgroundHistoryFailure = useCallback((sessionKey: string, error: unknown) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    setHistoryErrorBySession((previous) => ({ ...previous, [sessionKey]: detail }));
+    debugWarn('app', `[ChatView] Background history load failed for ${sessionKey}:`, error);
+  }, []);
+
   useEffect(() => { prevResponseGroupsLenRef.current = responseGroups.length; });
 
   const scrollToBottom = useCallback(() => {
@@ -445,7 +452,10 @@ function ChatViewContent() {
         }
         queueMicrotask(() => {
           if (isSessionDeleted(sessionKey)) return;
-          void loadHistory(sessionKey, { force: true, background: true });
+          startRecoverableTask(
+            () => loadHistory(sessionKey, { force: true, background: true }),
+            (error) => reportBackgroundHistoryFailure(sessionKey, error),
+          );
         });
         return;
       }
@@ -587,7 +597,10 @@ function ChatViewContent() {
               historyRetryTimerBySession.current[sessionKey] = setTimeout(() => {
                 delete historyRetryTimerBySession.current[sessionKey];
                 if (isSessionDeleted(sessionKey)) return;
-                void loadHistory(sessionKey, { force: true, background: true });
+                startRecoverableTask(
+                  () => loadHistory(sessionKey, { force: true, background: true }),
+                  (error) => reportBackgroundHistoryFailure(sessionKey, error),
+                );
               }, retryDelay);
             }
             if (!options?.background) {
@@ -613,7 +626,10 @@ function ChatViewContent() {
               historyRetryTimerBySession.current[sessionKey] = setTimeout(() => {
                 delete historyRetryTimerBySession.current[sessionKey];
                 if (isSessionDeleted(sessionKey)) return;
-                void loadHistory(sessionKey, { force: true, background: true });
+                startRecoverableTask(
+                  () => loadHistory(sessionKey, { force: true, background: true }),
+                  (error) => reportBackgroundHistoryFailure(sessionKey, error),
+                );
               }, retryDelay);
             }
             if (!options?.background) {
@@ -638,7 +654,15 @@ function ChatViewContent() {
       inFlightHistoryBySession.current[sessionKey] = task;
       await task;
     },
-    [activeSessionKey, setMessages, setIsLoadingHistory, getCachedMessages, cacheMessagesForSession, setSessionIdentity],
+    [
+      activeSessionKey,
+      cacheMessagesForSession,
+      getCachedMessages,
+      reportBackgroundHistoryFailure,
+      setIsLoadingHistory,
+      setMessages,
+      setSessionIdentity,
+    ],
   );
 
   useEffect(
@@ -741,14 +765,12 @@ function ChatViewContent() {
     // Load on first connect, or whenever the active session changes.
     if (prevSessionRef.current !== activeSessionKey || messages.length === 0) {
       prevSessionRef.current = activeSessionKey;
-      void loadHistory().catch((error) => {
-        // loadHistory already projects the failure into the recoverable chat
-        // notice. Consume it here so opening the window cannot trigger the
-        // global fatal Promise Rejection overlay.
-        debugWarn('app', '[ChatView] Initial history load failed:', error);
-      });
+      startRecoverableTask(
+        () => loadHistory(),
+        (error) => reportBackgroundHistoryFailure(activeSessionKey, error),
+      );
     }
-  }, [connected, activeSessionKey, messages.length, loadHistory]);
+  }, [connected, activeSessionKey, messages.length, loadHistory, reportBackgroundHistoryFailure]);
 
   // Register loadHistory in store so MessageInput can trigger it before first send
   useEffect(() => {
@@ -1177,13 +1199,15 @@ function ChatViewContent() {
               {t('connection.disconnectedBanner')}
               {connectionError && <span className="opacity-60"> — {connectionError}</span>}
               <button onClick={() => {
-                window.aegis?.config.get().then((c: any) => {
+                startRecoverableTask(async () => {
+                  const c = await window.aegis?.config.get();
+                  if (!c) return;
                   gatewayManager.connect(
                     c.gatewayUrl || c.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL,
                     c.gatewayBootstrapToken ?? c.gatewayToken ?? '',
                     c.gatewayDeviceToken ?? '',
                   );
-                });
+                }, (error) => debugWarn('gateway', '[ChatView] Manual reconnect failed:', error));
               }} className="mx-2 underline hover:no-underline">
                 {t('connection.reconnect')}
               </button>

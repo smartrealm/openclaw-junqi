@@ -116,12 +116,15 @@ docs/
 - [会话模型切换闪动审计](quality/session-model-switch-flicker-audit-2026-07-30.md)
 - [主窗口关闭 ACL 审计](quality/main-window-close-acl-audit-2026-07-30.md)
 - [设置页面多语言完整性审计](quality/settings-localization-completeness-2026-07-30.md)
+- [全局专注上下文与任务简报验证](quality/focus-context-and-task-briefs-validation-2026-07-30.md)
+- [Focus Context 与 Task Brief 来源盘点](quality/current-branch-focus-task-brief-change-inventory-2026-07-30.md)
 
 ## 产品设计草案
 
 目录：[`design/`](design/)
 
 - [ComfyUI Creative Studio 设计](design/comfyui-creative-studio-design.md)
+- [全局专注上下文与任务简报设计](design/focus-context-and-task-briefs-design.md)
 
 该文档是大型设计稿，不代表所有功能已经实现。
 

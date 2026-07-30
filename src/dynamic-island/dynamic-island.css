@@ -292,7 +292,8 @@
   overflow: hidden;
 }
 
-.junqi-island-task {
+.junqi-island-task,
+.junqi-island-focus-card {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) 15px;
   align-items: center;
@@ -308,8 +309,35 @@
   transition: background-color 160ms ease, transform 160ms ease;
 }
 
-.junqi-island-task:hover {
+.junqi-island-task:hover,
+.junqi-island-focus-card:hover:not(:disabled) {
   background: rgb(var(--aegis-overlay) / 0.055);
+}
+
+.junqi-island-focus-card {
+  width: 100%;
+  min-height: 48px;
+  margin: auto 0;
+}
+
+.junqi-island-focus-card:disabled {
+  cursor: not-allowed;
+}
+
+.junqi-island-task-icon.is-focus.is-unavailable,
+.junqi-island-task-icon.is-focus.is-error {
+  color: rgb(var(--aegis-danger));
+  background: var(--aegis-danger-surface);
+}
+
+.junqi-island-task-icon.is-focus.is-attention {
+  color: rgb(var(--aegis-warning));
+  background: var(--aegis-warning-surface);
+}
+
+.junqi-island-task-icon.is-focus.is-success {
+  color: rgb(var(--aegis-success));
+  background: var(--aegis-success-surface);
 }
 
 .junqi-island-task-icon {

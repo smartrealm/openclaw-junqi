@@ -45,6 +45,7 @@
     "workspace": "Workspace",
     "agentWorkspace": "Project launcher",
     "agentTasks": "Agent Tasks",
+    "taskBriefs": "Task Briefs",
     "mcpTools": "MCP Tools",
     "sandbox": "Code Sandbox",
     "gitRepo": "Git Repo",
@@ -445,6 +446,7 @@
     "onboardingCollapse": "Collapse startup map"
   },
   "agentWorkspace": {
+    "untitledTask": "Untitled agent task",
     "backToTask": "Back to current task",
     "backToTaskList": "Back to task list",
     "expandSidebar": "Show workspace sidebar",
@@ -532,6 +534,8 @@
       "earlier": "Earlier"
     },
     "run": {
+      "taskUnavailable": "Task unavailable",
+      "taskUnavailableDetail": "The linked Agent task no longer exists. JunQi will not substitute another task.",
       "sendFollowUp": "Send a message to the running agent",
       "sendFollowUpAction": "Send",
       "followUpPlaceholder": "Message the agent (Enter to send, Shift+Enter for a new line)",
@@ -4449,7 +4453,111 @@
       "confirmReset": "Reset"
     }
   },
+  "focus": {
+    "set": "Focus this item",
+    "worktree": "Focus this worktree",
+    "clear": "Clear focus",
+    "states": {
+      "idle": "Focused",
+      "running": "Running",
+      "attention": "Needs action",
+      "success": "Complete",
+      "error": "Problem",
+      "unavailable": "Source unavailable"
+    }
+  },
+  "taskBriefs": {
+    "kicker": "TASK PREPARATION",
+    "title": "Task Briefs",
+    "new": "New brief",
+    "empty": "No task briefs yet",
+    "createFirst": "Create the first brief",
+    "emptyTitle": "Define the task before execution",
+    "emptyBody": "Organize goals, background, constraints, and acceptance criteria before handing work to an agent.",
+    "unavailableTitle": "Task brief unavailable",
+    "unavailableBody": "The linked task brief no longer exists. JunQi will not open a different brief.",
+    "untitled": "Untitled brief",
+    "noProject": "No project selected",
+    "brief": "Task brief",
+    "preview": "Preview prompt",
+    "launch": "Create agent task",
+    "openTask": "Open agent task",
+    "archive": "Archive",
+    "restore": "Restore",
+    "archivedReadOnly": "This brief is archived. Restore it before editing or creating a task.",
+    "name": "Task name",
+    "projectPath": "Project path",
+    "chooseProject": "Choose project directory",
+    "projectPickerFailed": "The project directory picker could not be opened.",
+    "agent": "Agent",
+    "permission": "Permission",
+    "launchMode": "Launch mode",
+    "planMode": "Plan mode",
+    "baseBranch": "Base branch",
+    "cards": "Task cards",
+    "cardsHint": "Card order becomes prompt reading order",
+    "addCard": "Add card",
+    "references": "Context references",
+    "referencesHint": "Only reference metadata is stored; content is not read silently",
+    "addReference": "Add reference",
+    "noReferences": "No context references have been added.",
+    "referenceType": "Reference type",
+    "referenceLabel": "Display name",
+    "referenceValue": "Path, session ID, or URL",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "ready": "Ready to create an agent task",
+    "notReady": "Essential information is still missing",
+    "deleteBrief": "Delete this brief",
+    "deleteBriefConfirm": "Delete \"{{title}}\"? This action cannot be undone.",
+    "launchUnavailable": "The task brief no longer exists and cannot create a task.",
+    "launchFailed": "The agent task could not be created. Check the brief and try again.",
+    "status": {
+      "draft": "Draft",
+      "ready": "Ready",
+      "launched": "Launched",
+      "archived": "Archived"
+    },
+    "cardKinds": {
+      "goal": "Goal",
+      "background": "Background",
+      "constraint": "Constraint",
+      "acceptance": "Acceptance",
+      "note": "Note"
+    },
+    "cardPlaceholders": {
+      "goal": "Describe the outcome to achieve",
+      "background": "Record the current state, reasons, and known facts",
+      "constraint": "State behavior and boundaries that must not change",
+      "acceptance": "Add reproducible, verifiable completion criteria",
+      "note": "Add decisions, risks, or open questions"
+    },
+    "referenceKinds": {
+      "file": "File",
+      "directory": "Directory",
+      "chat-session": "Chat session",
+      "agent-task": "Agent task",
+      "worktree": "Worktree",
+      "url": "URL"
+    },
+    "findings": {
+      "brief-archived": "This brief is archived. Restore it first.",
+      "project-required": "Choose a project path.",
+      "goal-required": "Add at least one non-empty goal card.",
+      "acceptance-required": "Add at least one non-empty acceptance card.",
+      "ambiguous-language": "Ambiguous wording was found. Name the object and a verifiable success criterion.",
+      "reference-incomplete": "A context reference requires both a display name and a value.",
+      "context-suggested": "Consider adding a constraint or context reference to reduce agent guesswork."
+    },
+    "prompt": {
+      "task": "Task",
+      "untitled": "Untitled task",
+      "project": "Project",
+      "references": "Context references"
+    }
+  },
   "dynamicIsland": {
+    "focused": "CURRENT FOCUS",
     "expand": "Expand JunQi Dynamic Island",
     "collapse": "Collapse",
     "hide": "Hide Dynamic Island",

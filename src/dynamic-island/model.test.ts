@@ -39,6 +39,26 @@ test('auto peek only reacts to a new notice or meaningful status transition', ()
   assert.equal(shouldPeekForSnapshot(attention, { ...attention, autoExpand: false }), false);
 });
 
+test('editing a static focus snapshot does not masquerade as active work', () => {
+  const focused = {
+    ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
+    focus: {
+      schemaVersion: 1 as const,
+      target: { kind: 'task-brief' as const, id: 'brief-1' },
+      title: 'Initial title',
+      detail: '/repo',
+      route: '/briefs?brief=brief-1',
+      focusedAt: 1,
+      state: 'idle' as const,
+    },
+  };
+  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, focused), false);
+  assert.equal(shouldPeekForSnapshot(focused, {
+    ...focused,
+    focus: { ...focused.focus, title: 'Edited title' },
+  }), false);
+});
+
 test('voice activity peeks once when capture or playback starts', () => {
   const listening = { ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT, voicePhase: 'listening' as const };
   assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, listening), true);
@@ -78,6 +98,20 @@ test('the island is conditional unless a file drag needs immediate feedback', ()
   assert.equal(shouldShowDynamicIsland(base), false);
   assert.equal(shouldShowDynamicIsland({ ...base, mainMinimized: true }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], mainMinimized: true }), false);
+  assert.equal(shouldShowDynamicIsland({
+    ...base,
+    tasks: [],
+    mainMinimized: true,
+    focus: {
+      schemaVersion: 1,
+      target: { kind: 'task-brief', id: 'brief-1' },
+      title: 'Focused brief',
+      detail: '/repo',
+      route: '/briefs?brief=brief-1',
+      focusedAt: 1,
+      state: 'idle',
+    },
+  }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], mainMinimized: true, voiceActive: true }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], voiceActive: true }), false);
   assert.equal(shouldShowDynamicIsland({

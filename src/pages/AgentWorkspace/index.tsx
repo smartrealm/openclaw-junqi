@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Bell,
   Browser,
   CheckCircle,
   ClockCounterClockwise,
+  Crosshair,
   Code,
   FileCode,
   Files,
@@ -48,6 +50,7 @@ import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileView
 import { GitChanges, GitDiffViewer } from '@/components/Git';
 import { localWorkspaceFiles } from '@/workspace-files/adapters/localWorkspaceFiles';
 import type { WorkspaceFileScope } from '@/workspace-files/domain/types';
+import { useFocusContextStore } from '@/stores/focusContextStore';
 import './workbench.css';
 
 type WorktreeState = 'idle' | 'active' | 'unavailable';
@@ -541,6 +544,7 @@ function pathLabel(path: string): string {
 }
 
 export function AgentWorkspacePage() {
+  const { t } = useTranslation();
   const legacyTasks = useAgentWorkspaceStore((state) => state.tasks);
   const hydrated = useWorkbenchStore((state) => state.hydrated);
   const writerReady = useWorkbenchStore((state) => state.writerReady);
@@ -833,6 +837,24 @@ export function AgentWorkspacePage() {
             <span><GitBranch size={12} />{selectedWorktree?.branch ?? '选择项目或迁移旧任务'}</span>
           </div>
           <div className="junqi-wb-inline-actions">
+            {selectedWorktree && (
+              <button
+                type="button"
+                className="junqi-wb-header-status"
+                onClick={() => useFocusContextStore.getState().setFocus({
+                  schemaVersion: 1,
+                  target: { kind: 'worktree', id: selectedWorktree.id },
+                  title: pathLabel(selectedWorktree.path),
+                  detail: selectedWorktree.branch || selectedWorktree.path,
+                  route: '/ai-workspace',
+                  focusedAt: Date.now(),
+                })}
+                title={t('focus.set')}
+              >
+                <Crosshair size={13} />
+                {t('focus.worktree')}
+              </button>
+            )}
             <span className="junqi-wb-header-status">
               <Robot size={13} weight="fill" />
               {providerCapabilities === null

@@ -19,7 +19,7 @@ import { confirm, save } from '@tauri-apps/plugin-dialog';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import {
-  Play, Square, RotateCcw, ChevronDown, AlertCircle,
+  Play, Square, RotateCcw, ChevronDown, AlertCircle, Crosshair,
   GitBranch,
   FileText, CheckCircle2,
   FileWarning, FilePlus2, Bookmark,
@@ -84,6 +84,8 @@ import {
   subscribeTerminalAppearancePreferences,
 } from '@/components/Terminal/terminalAppearancePreferences';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { useFocusContextStore } from '@/stores/focusContextStore';
+import { resolveAgentRunTask } from './agentRunRoute';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -401,13 +403,47 @@ export interface AgentRunViewProps {
 }
 
 export function AgentRunRoute() {
+  const { t } = useTranslation();
+  const [params] = useSearchParams();
+  const tasks = useAgentWorkspaceStore((state) => state.tasks);
+  const resolution = resolveAgentRunTask(params.get('taskId'), tasks);
   const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
   const configuredMonoFont = useSettingsStore((state) => state.monoFont);
   const { scrollback: terminalScrollback } = useTerminalPreferences();
   const resolvedTheme = useTheme();
 
+  if (resolution.kind === 'unavailable') {
+    return (
+      <div className="flex h-full items-center justify-center bg-aegis-bg p-8 text-center text-aegis-text-secondary" role="alert">
+        <div className="max-w-md rounded-lg border border-aegis-border bg-aegis-card p-6">
+          <FileWarning size={28} className="mx-auto mb-3 text-aegis-warning" />
+          <strong className="block text-sm text-aegis-text">{t('agentWorkspace.run.taskUnavailable')}</strong>
+          <span className="mt-2 block text-xs">{t('agentWorkspace.run.taskUnavailableDetail')}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const requestedTask = resolution.kind === 'task' ? resolution.task : undefined;
+
   return (
     <AgentRunView
+      taskId={requestedTask?.id}
+      initialTitle={requestedTask?.title}
+      projectPath={requestedTask?.projectPath}
+      agent={requestedTask?.agent as AgentRunAgent | undefined}
+      prompt={requestedTask?.prompt}
+      permissionMode={requestedTask?.permissionMode}
+      initialStatus={requestedTask?.status}
+      initialSessionPath={requestedTask?.sessionPath}
+      initialSessionId={requestedTask?.sessionId}
+      initialWorktreePath={requestedTask?.worktreePath}
+      initialWorktreeBranch={requestedTask?.worktreeBranch}
+      initialWorktreeDiscarded={requestedTask?.worktreeDiscarded}
+      initialBaseBranch={requestedTask?.baseBranch}
+      initialPlanMode={requestedTask?.planMode}
+      initialLaunchMode={requestedTask?.launchMode}
+      initialIsDraft={requestedTask?.isDraft}
       terminalScrollback={terminalScrollback}
       terminalFontSize={terminalFontSize}
       monoFontFamily={(configuredMonoFont || getDefaultMonoFont()) as FontFamily}
@@ -1395,6 +1431,24 @@ export function AgentRunView({
             />
           ) : (
             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-aegis-text">{taskTitle || prompt || statusLabel}</span>
+          )}
+          {workspaceTaskId && (
+            <button
+              type="button"
+              onClick={() => useFocusContextStore.getState().setFocus({
+                schemaVersion: 1,
+                target: { kind: 'agent-task', id: workspaceTaskId },
+                title: taskTitle || prompt.split('\n')[0] || t('agentWorkspace.untitledTask'),
+                detail: `${agent} - ${projectPath}`,
+                route: `/agent-run?taskId=${encodeURIComponent(workspaceTaskId)}`,
+                focusedAt: Date.now(),
+              })}
+              title={t('focus.set')}
+              aria-label={t('focus.set')}
+              className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+            >
+              <Crosshair size={13} />
+            </button>
           )}
           {!editingTitle && (
             <button type="button" onClick={() => { setTitleDraft(taskTitle); setEditingTitle(true); }} title={t('agentWorkspace.run.renameTask', 'Rename task')} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">

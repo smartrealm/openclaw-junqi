@@ -5,6 +5,9 @@
 基线：`origin/main`
 基线提交：`cc6847fba0a94948e2a5f442dfc7e310455336e5`（`重构：统一状态加载与产品色彩契约`）
 
+> 本文第 1 至 17 节是 `Blues-Code/wei-dev` 工作树的来源盘点快照。当前 `main`
+> 已在提交 `35bd5c4` 之后按现有架构重新接入并扩展该能力；当前实现差异见第 18 节。
+
 ## 1. 盘点结论
 
 当前实现以最新 `origin/main` 为基线，仅叠加本轮 **Focus Context（全局专注上下文）** 与 **Task Brief（任务简报）** 相关改动。
@@ -531,3 +534,28 @@ de6d123b3db579bb03978857eeb9d62fab7037d43e1a031c957b010be555d032
 ```
 
 该包是 `origin/main` 加本轮 Focus Context / Task Brief 未提交改动构建的 macOS arm64 本地候选包，使用 adhoc 签名，未公证且未生成 updater artifacts，不能描述为正式发布包。
+
+## 18. 当前 main 扩展
+
+当前 `main` 没有直接覆盖来源工作树文件，而是保留已完成的模型选择器、侧栏主操作、
+主题、萌宠、窗口 ACL 和设置多语言改动后重新接入。扩展包括：
+
+- Focus 持久化校验增加文本边界、target 与路由类型匹配，非法替换不会清除合法 Focus；
+- Chat Session 的真实运行字段、Worktree waking 和 Brief ready/archived 进入实时投影；
+- AgentRun 深链使用独立解析器区分新任务、精确任务和 unavailable；
+- Brief 编辑后自动重新计算 `draft | ready` 并清除过期 handoff identity；
+- Brief 支持归档、恢复、只读态、项目目录选择、计划模式、启动模式和基础分支；
+- handoff 按 `sourceBriefId` 去重，重复操作不会创建第二个 Agent Task；
+- Prompt 编译器由三语言目录注入标题，不固定源码语言；
+- `/briefs?brief=...` 缺失来源时 fail closed，不回退到其他 Brief；
+- Task Brief 页面拆分为列表、工具栏、执行配置、卡片、引用和编辑器组件；
+- Dynamic Island 对 unavailable Focus 禁止跳转，并保持活动状态优先级；
+- 新增 Focus Store、Brief 生命周期、handoff 幂等、Prompt 多语言和 AgentRun 深链行为测试。
+
+当前自动化结果记录在
+`docs/quality/focus-context-and-task-briefs-validation-2026-07-30.md`。原候选包属于来源工作树，
+不代表当前 `main` 扩展后的构建结果。
+
+当前扩展已验证 `pnpm lint`、1943 项前端测试、224 项脚本测试、`pnpm build` 和
+`git diff --check`。本轮没有执行 `pnpm tauri build`，没有为当前扩展生成新的 DMG，
+也没有进行正式签名、公证或目标平台真机验收。

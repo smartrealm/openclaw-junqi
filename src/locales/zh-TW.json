@@ -45,6 +45,7 @@
     "workspace": "工作空間",
     "agentWorkspace": "項目啟動",
     "aiWorkspace": "AI 工作臺",
+    "taskBriefs": "任務簡報",
     "mcpTools": "MCP 工具",
     "sandbox": "代碼沙盒",
     "gitRepo": "Git 倉庫",
@@ -416,6 +417,7 @@
     "working": "工作中"
   },
   "agentWorkspace": {
+    "untitledTask": "未命名 Agent 任務",
     "backToTask": "返回當前任務",
     "backToTaskList": "返回任務列表",
     "expandSidebar": "展開工作臺側欄",
@@ -503,6 +505,8 @@
       "earlier": "更早"
     },
     "run": {
+      "taskUnavailable": "任務不可用",
+      "taskUnavailableDetail": "關聯的 Agent 任務已不存在。JunQi 不會自動替換為其他任務。",
       "sendFollowUp": "向運行中的智能體發送消息",
       "sendFollowUpAction": "發送",
       "followUpPlaceholder": "給智能體發送消息（Enter 發送，Shift+Enter 換行）",
@@ -4017,7 +4021,111 @@
   "setup.openclawUpdate.registryLabel": "更新源：{{registry}}",
   "setup.openclawUpdate.registry.official": "npm 官方源",
   "setup.openclawUpdate.registry.chinaMirror": "國內鏡像",
+  "focus": {
+    "set": "設為目前專注",
+    "worktree": "專注此工作樹",
+    "clear": "清除專注",
+    "states": {
+      "idle": "專注中",
+      "running": "執行中",
+      "attention": "需要處理",
+      "success": "已完成",
+      "error": "異常",
+      "unavailable": "來源不可用"
+    }
+  },
+  "taskBriefs": {
+    "kicker": "任務準備",
+    "title": "任務簡報",
+    "new": "新增簡報",
+    "empty": "還沒有任務簡報",
+    "createFirst": "建立第一份",
+    "emptyTitle": "先明確任務，再開始執行",
+    "emptyBody": "整理目標、背景、限制和驗收條件，再交給 Agent 執行。",
+    "unavailableTitle": "任務簡報不可用",
+    "unavailableBody": "連結對應的任務簡報已不存在。JunQi 不會自動開啟其他簡報。",
+    "untitled": "未命名簡報",
+    "noProject": "尚未選擇專案",
+    "brief": "任務簡報",
+    "preview": "預覽 Prompt",
+    "launch": "建立 Agent 任務",
+    "openTask": "開啟 Agent 任務",
+    "archive": "封存",
+    "restore": "恢復",
+    "archivedReadOnly": "該簡報已封存。恢復後才能繼續編輯或建立任務。",
+    "name": "任務名稱",
+    "projectPath": "專案路徑",
+    "chooseProject": "選擇專案目錄",
+    "projectPickerFailed": "無法開啟專案目錄選擇器。",
+    "agent": "Agent",
+    "permission": "權限",
+    "launchMode": "啟動模式",
+    "planMode": "計畫模式",
+    "baseBranch": "基礎分支",
+    "cards": "任務卡片",
+    "cardsHint": "卡片順序就是 Prompt 的閱讀順序",
+    "addCard": "新增卡片",
+    "references": "上下文引用",
+    "referencesHint": "只儲存引用資訊，不會靜默讀取內容",
+    "addReference": "新增引用",
+    "noReferences": "尚未新增上下文引用。",
+    "referenceType": "引用類型",
+    "referenceLabel": "顯示名稱",
+    "referenceValue": "路徑、會話 ID 或 URL",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "ready": "可以建立 Agent 任務",
+    "notReady": "還需要補充關鍵資訊",
+    "deleteBrief": "刪除這份簡報",
+    "deleteBriefConfirm": "確定刪除「{{title}}」嗎？此操作無法復原。",
+    "launchUnavailable": "任務簡報已不存在，無法建立任務。",
+    "launchFailed": "建立 Agent 任務失敗，請檢查簡報狀態後重試。",
+    "status": {
+      "draft": "草稿",
+      "ready": "可執行",
+      "launched": "已下發",
+      "archived": "已封存"
+    },
+    "cardKinds": {
+      "goal": "目標",
+      "background": "背景",
+      "constraint": "限制",
+      "acceptance": "驗收條件",
+      "note": "補充說明"
+    },
+    "cardPlaceholders": {
+      "goal": "明確要實現的結果",
+      "background": "記錄現況、原因和已知事實",
+      "constraint": "寫下不能破壞的行為和邊界",
+      "acceptance": "寫下可重現、可驗證的完成條件",
+      "note": "補充決策、風險或待確認事項"
+    },
+    "referenceKinds": {
+      "file": "檔案",
+      "directory": "目錄",
+      "chat-session": "會話",
+      "agent-task": "Agent 任務",
+      "worktree": "工作樹",
+      "url": "連結"
+    },
+    "findings": {
+      "brief-archived": "該簡報已封存，請先恢復。",
+      "project-required": "請選擇專案路徑。",
+      "goal-required": "至少需要一張非空目標卡片。",
+      "acceptance-required": "至少需要一張非空驗收條件卡片。",
+      "ambiguous-language": "存在模糊表達，請補充具體對象和可驗證的成功標準。",
+      "reference-incomplete": "上下文引用需要同時填寫顯示名稱和值。",
+      "context-suggested": "建議增加限制或上下文引用，減少 Agent 猜測。"
+    },
+    "prompt": {
+      "task": "任務",
+      "untitled": "未命名任務",
+      "project": "專案",
+      "references": "上下文引用"
+    }
+  },
   "dynamicIsland": {
+    "focused": "目前專注",
     "expand": "展開 JunQi 靈動島",
     "collapse": "收起",
     "hide": "關閉靈動島",
