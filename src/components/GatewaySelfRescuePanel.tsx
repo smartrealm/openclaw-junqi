@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Bot, CheckCircle2, ChevronUp, FileText, HeartPulse, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
+import { AlertCircle, CheckCircle2, FileText, HeartPulse, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
-import { GatewayRescueChat } from './GatewayRescueChat';
+import { GatewayAiDiagnosticDisclosure } from './GatewayAiDiagnosticDisclosure';
 import {
   diagnoseGatewayRecovery,
   runOpenClawRepair,
@@ -47,7 +47,6 @@ export function GatewaySelfRescuePanel({
   const { t } = useTranslation();
   const [doctorFixState, setDoctorFixState] = useState<DoctorFixState>('idle');
   const [doctorFixError, setDoctorFixError] = useState<string | null>(null);
-  const [showAiRescue, setShowAiRescue] = useState(false);
   const [recommendation, setRecommendation] = useState<GatewayRecoveryRecommendation | null>(null);
   const globalRepairing = useOpenClawRepairing();
   const mountedRef = useRef(false);
@@ -141,37 +140,24 @@ export function GatewaySelfRescuePanel({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-bold text-aegis-text">
-              {showAiRescue ? <Bot size={15} className="text-aegis-primary" /> : <ShieldCheck size={15} className="text-aegis-primary" />}
-              <span>{showAiRescue ? t('gatewaySelfRescue.aiRescue', 'AI 诊断') : t('gatewaySelfRescue.title', 'Gateway 自救中心')}</span>
+              <ShieldCheck size={15} className="text-aegis-primary" />
+              <span>{t('gatewaySelfRescue.title', 'Gateway 自救中心')}</span>
             </div>
-            {!showAiRescue && (
-              <p className="mt-1 text-[11px] leading-relaxed text-aegis-text-muted">
-                {t('gatewaySelfRescue.subtitle', '统一处理 Gateway 重连、官方修复和 AI 诊断。')}
-              </p>
-            )}
+            <p className="mt-1 text-[11px] leading-relaxed text-aegis-text-muted">
+              {t('gatewaySelfRescue.subtitle', '统一处理 Gateway 重连、官方修复和 AI 诊断。')}
+            </p>
           </div>
-          {showAiRescue ? (
-            <button
-              type="button"
-              onClick={() => setShowAiRescue(false)}
-              className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-aegis-text-muted hover:bg-white/[0.05] hover:text-aegis-text"
-            >
-              <ChevronUp size={13} />
-              {t('gatewaySelfRescue.hideAiRescue', '收起 AI 诊断')}
-            </button>
-          ) : (
-            <span className={clsx(
-              'shrink-0 rounded-md border px-2 py-1 text-[10px] font-semibold',
-              connected && !busy && 'border-aegis-success/25 bg-aegis-success/10 text-aegis-success',
-              busy && 'border-aegis-warning/25 bg-aegis-warning/10 text-aegis-warning',
-              !connected && !busy && 'border-aegis-danger/25 bg-aegis-danger/10 text-aegis-danger',
-            )}>
-              {statusLabel}
-            </span>
-          )}
+          <span className={clsx(
+            'shrink-0 rounded-md border px-2 py-1 text-[10px] font-semibold',
+            connected && !busy && 'border-aegis-success/25 bg-aegis-success/10 text-aegis-success',
+            busy && 'border-aegis-warning/25 bg-aegis-warning/10 text-aegis-warning',
+            !connected && !busy && 'border-aegis-danger/25 bg-aegis-danger/10 text-aegis-danger',
+          )}>
+            {statusLabel}
+          </span>
         </div>
 
-        {!showAiRescue && <div className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1.5 text-[11px]">
+        <div className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1.5 text-[11px]">
           {port != null && (
             <>
               <span className="text-aegis-text-muted">{t('gatewaySelfRescue.port', '端口')}</span>
@@ -190,9 +176,9 @@ export function GatewaySelfRescuePanel({
               </span>
             </>
           )}
-        </div>}
+        </div>
 
-        {busy && !showAiRescue && (
+        {busy && (
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
             <div
               className="h-full rounded-full bg-aegis-warning transition-all duration-300"
@@ -202,7 +188,7 @@ export function GatewaySelfRescuePanel({
         )}
       </div>
 
-      {!showAiRescue && <div className="space-y-2 px-3.5 py-3">
+      <div className="space-y-2 px-3.5 py-3">
         {recommendation && (
           <div className="flex items-center justify-between rounded-lg border border-aegis-border/60 bg-white/[0.02] px-3 py-2 text-[10.5px]">
             <span className="text-aegis-text-muted">{t('gatewaySelfRescue.recommendation', '建议操作')}</span>
@@ -283,32 +269,15 @@ export function GatewaySelfRescuePanel({
           {doctorFixLabel}
         </button>
 
-        <button
-          onClick={() => setShowAiRescue((value) => !value)}
-          className={clsx(
-            'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors',
-            showAiRescue
-              ? 'border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
-              : 'border-aegis-border bg-white/[0.03] text-aegis-text-secondary hover:border-aegis-primary/35 hover:bg-aegis-primary/8 hover:text-aegis-primary',
-          )}
-        >
-          <Bot size={13} />
-          {showAiRescue ? t('gatewaySelfRescue.hideAiRescue', '收起 AI 诊断') : t('gatewaySelfRescue.aiRescue', 'AI 诊断')}
-        </button>
+        <GatewayAiDiagnosticDisclosure
+          error={doctorFixError || error || progressMessage || t('gatewaySelfRescue.defaultAiContext', 'Gateway 需要诊断。')}
+          logs={logs}
+        />
 
         <div className="rounded-lg border border-aegis-border/60 bg-white/[0.02] px-3 py-2 text-[10.5px] leading-relaxed text-aegis-text-muted">
           {t('gatewaySelfRescue.hint', '先重连/重启；仍失败再运行自动修复；配置或日志不明朗时使用 AI 诊断。')}
         </div>
-      </div>}
-
-      {showAiRescue && (
-        <div className="max-h-[min(560px,70vh)] overflow-y-auto px-3.5 py-3">
-          <GatewayRescueChat
-            error={doctorFixError || error || progressMessage || t('gatewaySelfRescue.defaultAiContext', 'Gateway 需要诊断。')}
-            logs={logs}
-          />
-        </div>
-      )}
+      </div>
     </div>
   );
 }

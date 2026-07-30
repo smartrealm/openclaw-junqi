@@ -71,6 +71,7 @@ pub fn run() {
             commands::gateway_service::disable_gateway_autostart,
             commands::gateway_logs::get_gateway_logs,
             commands::gateway_logs::clear_gateway_logs,
+            commands::gateway_rescue::list_gateway_rescue_targets,
             commands::gateway_rescue::gateway_rescue_chat,
             state::gateway_diagnostics::diagnose_gateway_recovery,
             commands::openclaw_repair::repair_openclaw,

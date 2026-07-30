@@ -637,7 +637,7 @@ test('BUG-06 stalled boot exposes the complete self-rescue center', () => {
   assert.match(statusBar, /gatewayLifecycle\.(?:restart|recover)\('status-bar'\)/);
   assert.match(panel, /runOpenClawRepair/);
   assert.match(panel, /disabled=\{actionDisabled\}/);
-  assert.match(panel, /<GatewayRescueChat/);
+  assert.match(panel, /<GatewayAiDiagnosticDisclosure/);
 });
 
 test('Gateway startup keeps the routed workbench visible', () => {
@@ -744,13 +744,22 @@ test('BUG-GSO-06 explicit Gateway stop handles both managed and selected-service
   assert.doesNotMatch(stop, /child\s*\.kill\(\)/);
 });
 
-test('BUG-WSR-09 direct-provider failure text crosses the IPC boundary only after sanitization', () => {
+test('BUG-WSR-09 local diagnostic output crosses IPC only after bounded sanitization', () => {
   const rescue = source('src-tauri/src/commands/gateway_rescue.rs');
-  assert.match(rescue, /fn provider_error_message/);
-  assert.match(rescue, /sanitize_diagnostic_text\(&message, 1_000\)/);
-  assert.match(rescue, /fn rescue_transport_error/);
-  assert.match(rescue, /let message = provider_error_message\(&payload\)/);
-  assert.match(rescue, /return Err\(format!\("\{\} \{\}", status\.as_u16\(\), message\)\)/);
+  const cli = source('src-tauri/src/commands/openclaw_cli.rs');
+  const requestContract = rescue.slice(
+    rescue.indexOf('pub struct RescueChatRequest'),
+    rescue.indexOf('pub struct RescueChatResponse'),
+  );
+  const productionRescue = rescue.slice(0, rescue.indexOf('#[cfg(test)]'));
+  assert.match(rescue, /fn bounded_sanitized/);
+  assert.match(rescue, /fn cli_failure/);
+  assert.match(rescue, /run_openclaw_redacted/);
+  assert.match(requestContract, /model_ref: String/);
+  assert.doesNotMatch(requestContract, /api_key|base_url|protocol|authorization/);
+  assert.doesNotMatch(productionRescue, /reqwest|Bearer |RescueProtocol/);
+  assert.match(cli, /ControlledOutputLimits/);
+  assert.doesNotMatch(cli, /OpenClaw \{operation\} timed out: \{\}/);
 });
 
 test('BUG-WSR-13 a failed owned-port release aborts restart instead of launching another Gateway', () => {

@@ -410,6 +410,39 @@ pub(crate) async fn run_openclaw(
     })
 }
 
+/// Run an OpenClaw command whose arguments may contain private diagnostic
+/// context. Errors intentionally name only the operation so prompt content is
+/// never copied into timeout or process-launch diagnostics.
+pub(crate) async fn run_openclaw_redacted(
+    args: &[&str],
+    operation: &str,
+    timeout: Duration,
+) -> Result<CliOutput, String> {
+    let target = resolve_active_openclaw_target().await?;
+    let command = target.command(args);
+    let output = crate::commands::process_control::run_command_output_confirmed(
+        command,
+        crate::commands::process_control::ControlledOutputLimits {
+            timeout,
+            stdout_bytes: 2 * 1024 * 1024,
+            stderr_bytes: 256 * 1024,
+        },
+    )
+    .await
+    .map_err(|error| {
+        if error.is_timeout() {
+            format!("OpenClaw {operation} timed out")
+        } else {
+            format!("Failed to run OpenClaw {operation}: {error}")
+        }
+    })?;
+    Ok(CliOutput {
+        success: output.status.success(),
+        stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+    })
+}
+
 pub fn parse_json_with_warnings(output: &[u8]) -> Result<ParsedJsonOutput, String> {
     let text = String::from_utf8_lossy(output);
     let trimmed = text.trim();

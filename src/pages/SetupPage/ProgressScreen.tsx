@@ -6,10 +6,11 @@ import { setupBackPolicy } from "@/hooks/useSetupFlow/helpers";
 import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
 import { InstallationConsole, currentStepOf, installStepTitle, type InstallationConsoleSummary, SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
+import { GatewayAiDiagnosticDisclosure } from "@/components/GatewayAiDiagnosticDisclosure";
 
 export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const { setupStep } = useAppStore();
+  const { setupStep, setupError } = useAppStore();
   const active = setupStep === "ready" ? 6 : 4;
   const isGatewayReady = setupStep === "gateway-ready";
   const gatewayReadyChecking = isGatewayReady && flow.gatewayReadyContinuation.status === "checking";
@@ -25,6 +26,10 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
         : { kind: "installation" };
   const isInstalling = setupBackPolicy(setupStep) === "cancel-install";
   const currentInstallStep = currentStepOf(flow.steps);
+  const diagnosticLogs = logs
+    .slice(-500)
+    .map((log) => `[${log.source}] ${log.message}`)
+    .join("\n");
   const canRepairGateway = setupStep === "error" && currentInstallStep?.id === "gateway";
   // BUG-CPI-07：自愈梯子（更新→重装）已确认这些插件不可自动修复，
   // 主操作降级为"临时禁用并启动"。
@@ -124,6 +129,13 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
         setupStep={setupStep}
         summary={installationSummary}
       />
+      {setupStep === "error" && (
+        <GatewayAiDiagnosticDisclosure
+          className="mt-3"
+          error={setupError || currentInstallStep?.detail || t("setup.installPanel.errorHint")}
+          logs={diagnosticLogs}
+        />
+      )}
     </SetupShell>
   );
 }

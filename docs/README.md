@@ -120,6 +120,7 @@ docs/
 - [Focus Context 与 Task Brief 来源盘点](quality/current-branch-focus-task-brief-change-inventory-2026-07-30.md)
 - [Chat 执行计划协议审计](quality/chat-execution-plan-protocol-audit-2026-07-30.md)
 - [仪表盘首次主题切换验证](quality/dashboard-first-theme-switch-validation-2026-07-30.md)
+- [Gateway AI 诊断与 OpenClaw 运行时验证](quality/gateway-ai-diagnostics-openclaw-runtime-validation-2026-07-30.md)
 
 ## 产品设计草案
 

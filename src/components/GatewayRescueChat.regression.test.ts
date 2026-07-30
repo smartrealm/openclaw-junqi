@@ -4,16 +4,16 @@ import test from 'node:test';
 
 const chat = readFileSync(new URL('./GatewayRescueChat.tsx', import.meta.url), 'utf8');
 const panel = readFileSync(new URL('./GatewaySelfRescuePanel.tsx', import.meta.url), 'utf8');
+const disclosure = readFileSync(new URL('./GatewayAiDiagnosticDisclosure.tsx', import.meta.url), 'utf8');
+const setupProgress = readFileSync(new URL('../pages/SetupPage/ProgressScreen.tsx', import.meta.url), 'utf8');
 
-test('AI rescue exposes a real model selector and credential source', () => {
-  assert.match(chat, /const MANUAL_TARGET_KEY/);
-  assert.match(chat, /value=\{selectedTargetKey\}/);
-  assert.match(chat, /<option value=\{MANUAL_TARGET_KEY\}>/);
-  assert.doesNotMatch(chat, /targets\.length > 1 \?/);
+test('AI diagnostics enumerate OpenClaw models without renderer credentials', () => {
+  assert.match(chat, /loadGatewayRescueTargets/);
   assert.match(chat, /gatewayRescueTargetKey\(item\)/);
   assert.match(chat, /appearance-none/);
   assert.match(chat, /<ChevronDown/);
-  assert.match(chat, /gatewayRescue\.credentialLabel/);
+  assert.match(chat, /gatewayRescue\.credentialOpenClaw/);
+  assert.doesNotMatch(chat, /manualApiKey|manualBaseUrl|buildManualGatewayRescueTarget/);
 });
 
 test('AI rescue invalidates an old response after a model switch or panel unmount', () => {
@@ -24,20 +24,17 @@ test('AI rescue invalidates an old response after a model switch or panel unmoun
   assert.match(chat, /setMessages\(\[\]\)/);
 });
 
-test('AI rescue keeps temporary config collapsed after request failures', () => {
-  const sendStart = chat.indexOf('const send =');
-  const catchStart = chat.indexOf('} catch (err: any) {', sendStart);
-  const finallyStart = chat.indexOf('} finally {', catchStart);
-  const catchBlock = chat.slice(catchStart, finallyStart);
-  assert.doesNotMatch(catchBlock, /setManualOpen\(true\)/);
-  assert.match(chat, /classifyGatewayRescueFailure/);
+test('AI diagnostics surface authoritative OpenClaw failures', () => {
+  assert.match(chat, /gatewayRescue\.sendFailedForTarget/);
   assert.match(chat, /role="alert"/);
+  assert.doesNotMatch(chat, /classifyGatewayRescueFailure|authFailed|permissionFailed/);
 });
 
-test('AI rescue replaces the parent controls instead of nesting another large panel', () => {
-  assert.match(panel, /!showAiRescue && <div className="space-y-2/);
-  assert.match(panel, /max-h-\[min\(560px,70vh\)\]/);
-  assert.doesNotMatch(chat, /gatewayRescue\.subtitle/);
+test('runtime and first-run failures share one AI diagnostic disclosure', () => {
+  assert.match(disclosure, /<GatewayRescueChat/);
+  assert.match(panel, /<GatewayAiDiagnosticDisclosure/);
+  assert.match(setupProgress, /setupStep === "error"/);
+  assert.match(setupProgress, /<GatewayAiDiagnosticDisclosure/);
 });
 
 test('AI rescue ignores an obsolete repair completion after its panel unmounts', () => {
