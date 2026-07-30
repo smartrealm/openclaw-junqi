@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { AlertTriangle, Check, Loader2, ShieldAlert, X } from 'lucide-react';
+import { AlertTriangle, Check, ShieldAlert, X } from 'lucide-react';
 import { useModalFocusScope } from '@/hooks/useModalFocusScope';
 import { cn } from '@/lib/utils';
 import {
@@ -29,6 +29,7 @@ import type {
 } from '@/services/collaboration/types';
 import { useCollaborationText, type CollaborationTranslate } from './CollaborationCard';
 import { CollaborationAttemptIdentity } from './CollaborationAttemptIdentity';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 export interface CollaborationActionDialogProps {
   open: boolean;
@@ -990,7 +991,7 @@ export function CollaborationActionDialog({
                   : 'border-aegis-primary/35 bg-aegis-primary/[0.1] text-aegis-primary hover:bg-aegis-primary/[0.16]',
               )}
             >
-              {busy ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Check size={13} aria-hidden />}
+              {busy ? <LoadingIndicator size={13} /> : <Check size={13} aria-hidden />}
               <span>{buttonLabel}</span>
             </button>
           </footer>

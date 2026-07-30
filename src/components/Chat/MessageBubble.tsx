@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronRight, AlertTriangle,
   Sparkles, Bot, FileText,
 
-  Kanban, Wrench, Brain, CheckCircle2, Info, GitFork, Loader2,
+  Kanban, Wrench, Brain, CheckCircle2, Info, GitFork,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -23,6 +23,7 @@ import { fileExtension, workspaceFileKind } from '@/workspace-files/domain/fileK
 import { InlineUserMessageEditor } from './InlineUserMessageEditor';
 import { MessageBubbleActions } from './MessageBubbleActions';
 import { hasPreviewableArtifact, isPreviewableArtifact } from './artifactPreview';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 const CodeBlock = lazy(() => import('./CodeBlock').then((m) => ({ default: m.CodeBlock })));
 const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
@@ -908,7 +909,7 @@ function stripInlineCodeTicks(md: string): string {
                 title={historyTruncationReason}
               >
                 {loadingFullMessage
-                  ? <Loader2 size={13} className="animate-spin" />
+                  ? <LoadingIndicator size={13} />
                   : <FileText size={13} />}
                 {t('chat.loadFullMessage', '加载完整消息')}
               </button>
@@ -968,7 +969,7 @@ function stripInlineCodeTicks(md: string): string {
             {collaborationAction && (
               <ActionBtn
                 icon={collaborationAction.state === 'confirming'
-                  ? <Loader2 size={14} className="animate-spin" />
+                  ? <LoadingIndicator size={14} />
                   : <GitFork size={14} />}
                 label={collaborationAction.state === 'active'
                   ? t('collaboration.chat.viewRun', 'View collaboration')

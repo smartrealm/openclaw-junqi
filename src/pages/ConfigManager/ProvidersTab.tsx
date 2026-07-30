@@ -8,7 +8,7 @@ import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, RefreshCw, Download, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
 import type {
@@ -94,6 +94,7 @@ import {
   setProviderWildcard,
 } from './providerPolicy';
 import { DefaultModelControls, modelDisplayLabel } from './DefaultModelControls';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -1230,7 +1231,7 @@ function FetchModelsButton({ providerId, allModels, onChange, saving, t }: {
         )}
       >
         {fetching ? (
-          <Loader2 size={12} className="animate-spin" />
+          <LoadingIndicator size={12} />
         ) : (
           <Download size={12} />
         )}
@@ -2890,7 +2891,7 @@ function ConfigureStep({
                 title={t('common.refresh', 'Refresh')}
                 aria-label={t('common.refresh', 'Refresh')}
               >
-                <Loader2 size={12} className={loadingOfficialAuth ? 'animate-spin' : ''} />
+                {loadingOfficialAuth ? <LoadingIndicator size={12} /> : <RefreshCw size={12} />}
               </button>
             </div>
           </div>
@@ -2924,7 +2925,7 @@ function ConfigureStep({
             )}
           >
             {testStatus === 'testing' ? (
-              <Loader2 size={12} className="animate-spin" />
+              <LoadingIndicator size={12} />
             ) : null}
             {t('config.testConnection')}
           </button>

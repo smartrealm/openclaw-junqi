@@ -15,9 +15,10 @@ function render(status: string) {
   return renderToStaticMarkup(createElement(StatusIcon, { status: status as never }));
 }
 
-test('running renders the shared loading indicator', () => {
+test('running renders the shared loading indicator with the canonical running tone', () => {
   const html = render('running');
   assert.match(html, /data-loading-indicator="spinner"/);
+  assert.match(html, /color:rgb\(var\(--aegis-status-running\)\)/);
   assert.match(html, /<svg/);
 });
 
@@ -57,9 +58,16 @@ test('pending and queued render a clock icon', () => {
   }
 });
 
-test('review renders an hourglass icon', () => {
+test('review remains an informational workflow stage', () => {
   const html = render('review');
   assert.match(html, /lucide-hourglass/i);
+  assert.match(html, /color:rgb\(var\(--aegis-primary\)\)/);
+});
+
+test('sent retains the completed delivery success tone', () => {
+  const html = render('sent');
+  assert.match(html, /lucide-circle-check/i);
+  assert.match(html, /color:rgb\(var\(--aegis-status-ended\)\)/);
 });
 
 test('unknown status falls through to outline circle (todo/queue)', () => {

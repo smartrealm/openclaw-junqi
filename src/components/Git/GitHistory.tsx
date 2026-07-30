@@ -6,11 +6,11 @@ import {
   Filter,
   GitCommit as GitCommitIcon,
   GitBranch as GitBranchIcon,
-  Loader2,
   ChevronDown,
   Check,
   X,
 } from "lucide-react";
+import { LoadingIndicator } from "@/components/shared/LoadingIndicator";
 import {
   GitFileBrowser,
   GitFileViewToggle,
@@ -472,7 +472,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
           >
             {pushing ? (
               <>
-                <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+                <LoadingIndicator size={11} />
                 {t("gitHistory.pushing")}
               </>
             ) : (

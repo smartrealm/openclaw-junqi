@@ -2147,6 +2147,93 @@ pub fn read_workspace_from_config_relative_to(config_path: &std::path::Path) -> 
 }
 
 #[cfg(test)]
+mod native_config_authority_tests {
+    use super::*;
+
+    /// Production source of a module, i.e. everything before its first
+    /// `#[cfg(test)]` block. Test fixtures may name the config file freely.
+    fn production_source(source: &'static str) -> &'static str {
+        source
+            .split_once("#[cfg(test)]")
+            .map(|(production, _)| production)
+            .unwrap_or(source)
+    }
+
+    /// A `const NAME: &str = "openclaw.json";` line, with or without a
+    /// visibility prefix. Declarations are the legitimate spelling — they *are*
+    /// the source a consumer is supposed to reference.
+    fn is_constant_declaration(line: &str) -> bool {
+        let trimmed = line.trim_start();
+        (trimmed.starts_with("const ") || trimmed.starts_with("pub")) && trimmed.contains("const ")
+    }
+
+    /// Lines that still spell the Native config filename directly.
+    fn literal_filename_lines(source: &'static str) -> Vec<(usize, String)> {
+        production_source(source)
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| line.contains("\"openclaw.json\""))
+            .filter(|(_, line)| !is_constant_declaration(line))
+            .map(|(index, line)| (index + 1, line.trim().to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn bug_fca02_native_config_path_derives_from_the_single_constant() {
+        let state = Path::new("/tmp/junqi-state");
+        assert_eq!(
+            native_config_path(state),
+            state.join(OPENCLAW_CONFIG_FILE_NAME)
+        );
+        assert_eq!(
+            config_path_for_runtime(state, OpenClawRuntimeMode::Native),
+            native_config_path(state),
+            "Native mode must resolve through the shared constructor"
+        );
+    }
+
+    #[test]
+    fn bug_fca02_paths_module_owns_the_only_native_filename_literal() {
+        let offenders = literal_filename_lines(include_str!("paths.rs"));
+        assert!(
+            offenders.is_empty(),
+            "paths.rs must construct the Native config filename only via \
+             OPENCLAW_CONFIG_FILE_NAME; found {offenders:?}"
+        );
+    }
+
+    #[test]
+    fn bug_fca02_consumers_do_not_respell_the_native_filename() {
+        for (module, source) in [
+            (
+                "commands/system.rs",
+                include_str!("commands/system.rs") as &'static str,
+            ),
+            (
+                "commands/state_dir_probe.rs",
+                include_str!("commands/state_dir_probe.rs"),
+            ),
+            (
+                "commands/runtime_identity.rs",
+                include_str!("commands/runtime_identity.rs"),
+            ),
+            (
+                "commands/collaboration_bootstrap.rs",
+                include_str!("commands/collaboration_bootstrap.rs"),
+            ),
+        ] {
+            let offenders = literal_filename_lines(source);
+            assert!(
+                offenders.is_empty(),
+                "{module} must consume paths::OPENCLAW_CONFIG_FILE_NAME (or declare an \
+                 explicitly independent backup-name constant) instead of respelling the \
+                 Native config filename; found {offenders:?}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod storage_bootstrap_tests {
     use super::*;
 

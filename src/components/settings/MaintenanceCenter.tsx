@@ -7,7 +7,6 @@ import {
   ClipboardCopy,
   HeartPulse,
   LockKeyhole,
-  Loader2,
   Power,
   RefreshCw,
   ShieldCheck,
@@ -27,6 +26,7 @@ import { GlassCard } from '@/components/shared/GlassCard';
 import { GatewayLifecyclePanel } from './GatewayLifecyclePanel';
 import { runOpenClawRepair, useOpenClawRepairing } from '@/services/gateway/openclawRepair';
 import { useCollaborationMaintenance } from '@/hooks/useCollaborationMaintenance';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 const CATEGORY_ORDER: MaintenanceCategory[] = ['config', 'plugin', 'mcp', 'security', 'gateway', 'doctor'];
 
@@ -188,7 +188,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
                   ? 'border-aegis-warning/25 bg-aegis-warning/10 text-aegis-warning'
                   : 'border-aegis-border/40 bg-aegis-bg/40 text-aegis-text-dim',
             )}>
-              {scanning ? <Loader2 size={18} className="animate-spin" /> : report?.healthy ? <ShieldCheck size={18} /> : <Stethoscope size={18} />}
+              {scanning ? <LoadingIndicator size={18} /> : report?.healthy ? <ShieldCheck size={18} /> : <Stethoscope size={18} />}
             </div>
             <div className="min-w-0">
               <h2 className="text-[15px] font-semibold text-aegis-text">
@@ -233,7 +233,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
               disabled={busy || !canRepair}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-primary/30 bg-aegis-primary/10 px-3 text-[12px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/20 disabled:opacity-40"
             >
-              {repairing ? <Loader2 size={13} className="animate-spin" /> : <HeartPulse size={13} />}
+              {repairing ? <LoadingIndicator size={13} /> : <HeartPulse size={13} />}
               {t('maintenance.officialRepair', '官方修复')}
             </button>
           </div>
@@ -320,7 +320,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
                   className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-warning/35 bg-aegis-warning/10 px-3 text-[11px] font-semibold text-aegis-warning transition-colors hover:bg-aegis-warning/15 disabled:opacity-50"
                 >
                   {collaborationMaintenance.recovering
-                    ? <Loader2 size={12} className="animate-spin" />
+                    ? <LoadingIndicator size={12} />
                     : <ShieldCheck size={12} />}
                   {t('maintenance.verifyAndReleaseGate', '验证并解除')}
                 </button>
@@ -345,7 +345,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
               disabled={gatewayRecovering}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-primary/30 bg-aegis-primary/10 px-3 text-[11px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/20 disabled:opacity-50"
             >
-              {gatewayRecovering ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
+              {gatewayRecovering ? <LoadingIndicator size={12} /> : <Power size={12} />}
               {t('maintenance.recoverGateway', '检查并恢复 Gateway')}
             </button>
           </div>

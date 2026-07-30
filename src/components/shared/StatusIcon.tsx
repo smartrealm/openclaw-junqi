@@ -23,8 +23,10 @@ import {
   PlayCircle,
   Clock,
   Hourglass,
+  type LucideIcon,
 } from "lucide-react";
 import { LoadingIndicator } from "./LoadingIndicator";
+import { resolveStatusTone, statusToneColor } from "./status/statusTone";
 
 /**
  * Union of all status strings the app actually renders as an icon.
@@ -62,61 +64,64 @@ interface StatusIconProps {
   size?: number;
 }
 
+/**
+ * Glyph per status. Shape is the status's own concern — an hourglass and a
+ * cross mean different things at a glance — but color is not: it comes from
+ * the shared tone table so the same meaning is painted the same way in every
+ * presentation shape (BUG-FCA-04).
+ *
+ * `spinner` is special-cased: `LoadingIndicator` carries its own styling.
+ */
+const STATUS_GLYPH: Record<StatusIconValue, LucideIcon | "spinner"> = {
+  running: "spinner",
+  inProgress: "spinner",
+
+  input_required: AlertCircle,
+  awaiting_review: Hourglass,
+  review: Hourglass,
+
+  pending: Clock,
+  queued: Clock,
+
+  detached: AlertTriangle,
+  interrupted: AlertTriangle,
+
+  done: CheckCircle2,
+  completed: CheckCircle2,
+  sent: CheckCircle2,
+
+  failed: XCircle,
+  error: XCircle,
+
+  cancelled: MinusCircle,
+  skipped: MinusCircle,
+
+  idle: Circle,
+  todo: Circle,
+  queue: Circle,
+};
+
 export function StatusIcon({ status, size = 14 }: StatusIconProps) {
-  switch (status) {
-    // ── running / in-progress ──
-    case "running":
-    case "inProgress":
-      return <LoadingIndicator size={size} className="text-aegis-text-muted" />;
+  const glyph = STATUS_GLYPH[status];
 
-    // ── waiting on user / pending ──
-    case "input_required":
-      return <AlertCircle size={size} style={{ color: "rgb(var(--aegis-warning))" }} />;
-    case "awaiting_review":
-      return <Hourglass size={size} style={{ color: "rgb(var(--aegis-warning))" }} />;
-    case "pending":
-    case "queued":
-      return <Clock size={size} style={{ color: "rgb(var(--aegis-text-muted))" }} />;
-
-    // ── detached / interrupted ──
-    case "detached":
-    case "interrupted":
-      return <AlertTriangle size={size} style={{ color: "rgb(var(--aegis-warning))" }} />;
-
-    // ── done / completed / sent ──
-    case "done":
-    case "completed":
-    case "sent":
-      return <CheckCircle2 size={size} style={{ color: "var(--success)" }} />;
-
-    // ── failed / error ──
-    case "failed":
-    case "error":
-      return <XCircle size={size} style={{ color: "var(--danger)" }} />;
-
-    // ── cancelled / skipped ──
-    case "cancelled":
-    case "skipped":
-      return <MinusCircle size={size} style={{ color: "rgb(var(--aegis-text-dim))" }} />;
-
-    // ── review ──
-    case "review":
-      return <Hourglass size={size} style={{ color: "rgb(var(--aegis-primary))" }} />;
-
-    // ── idle (not yet started) ──
-    case "idle":
-      return <Circle size={size} style={{ color: "rgb(var(--aegis-text-dim))", opacity: 0.4 }} />;
-
-    // ── todo / queue (default) ──
-    case "todo":
-    case "queue":
-    default:
-      // Fallback for unknown values: outline circle.
-      if (status !== "todo" && status !== "queue") {
-        // unknown — render a neutral play icon so it's obvious something
-        // is missing rather than silently falling through.
-        return <PlayCircle size={size} style={{ color: "rgb(var(--aegis-text-dim))" }} />;
-      }
-      return <Circle size={size} style={{ color: "rgb(var(--aegis-text-dim))" }} />;
+  // Unknown value: a neutral play icon makes the gap visible instead of
+  // silently rendering as "not started".
+  if (!glyph) {
+    return <PlayCircle size={size} style={{ color: statusToneColor("neutral") }} />;
   }
+
+  const color = statusToneColor(resolveStatusTone(status));
+
+  if (glyph === "spinner") {
+    return <LoadingIndicator size={size} style={{ color }} />;
+  }
+
+  const Glyph = glyph;
+
+  return (
+    <Glyph
+      size={size}
+      style={{ color, ...(status === "idle" ? { opacity: 0.4 } : null) }}
+    />
+  );
 }

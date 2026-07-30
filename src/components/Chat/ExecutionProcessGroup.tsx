@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
-  Loader2,
   TriangleAlert,
   Wrench,
 } from 'lucide-react';
@@ -13,6 +12,7 @@ import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { RenderBlock } from '@/types/RenderBlock';
 import type { ExecutionProcessBlock } from './executionProcessGrouping';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface ExecutionProcessGroupProps {
   blocks: ExecutionProcessBlock[];
@@ -71,7 +71,7 @@ export function ExecutionProcessGroup({ blocks, streaming, renderBlock }: Execut
           className="flex min-h-[31px] w-full items-center gap-2 px-2.5 py-1.5 text-left"
         >
           {streaming ? (
-            <Loader2 size={13} className="shrink-0 animate-spin text-aegis-primary" />
+            <LoadingIndicator size={13} className="shrink-0 text-aegis-primary" />
           ) : errorCount > 0 ? (
             <TriangleAlert size={13} className="shrink-0 text-aegis-danger" />
           ) : (

@@ -3,13 +3,14 @@
 // Compact, minimal, information-dense — inspired by Control UI
 //
 // Tool icons: @phosphor-icons/react (regular weight, polished)
-// Chrome icons: lucide-react (ChevronDown, ChevronRight, Loader2)
+// Chrome icons: lucide-react (ChevronDown, ChevronRight)
 // ═══════════════════════════════════════════════════════════
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
 import clsx from 'clsx';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 export interface ToolCallInfo {
   toolName: string;
@@ -105,7 +106,7 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
         <div className="flex max-w-full items-center gap-2 px-0 py-1 min-h-[28px]">
           {/* Status indicator */}
           {tool.status === 'running' ? (
-            <Loader2 size={12} className="text-aegis-accent animate-spin shrink-0" />
+            <LoadingIndicator size={12} className="text-aegis-accent shrink-0" />
           ) : tool.status === 'error' ? (
             <span className="w-3 h-3 flex items-center justify-center shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-danger" />

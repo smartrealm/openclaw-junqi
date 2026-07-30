@@ -185,7 +185,7 @@ function TerminalKeepAwakeControl() {
       {enabled && (
         <span
           aria-hidden="true"
-          className="absolute h-[13px] w-[13px] rounded-full border border-[#4de873]/55 transition-opacity"
+          className="absolute h-[13px] w-[13px] rounded-full border border-aegis-success/55 transition-opacity"
           style={{ opacity: keepAwake.mode === 'always' ? 1 : 0 }}
         />
       )}
@@ -193,8 +193,8 @@ function TerminalKeepAwakeControl() {
         aria-hidden="true"
         className="h-[7px] w-[7px] rounded-full"
         style={{
-          background: enabled ? '#4de873' : 'rgb(var(--aegis-text-dim) / 0.45)',
-          boxShadow: enabled ? '0 0 5px rgb(77 232 115 / 0.7)' : 'none',
+          background: enabled ? 'rgb(var(--aegis-success))' : 'rgb(var(--aegis-text-dim) / 0.45)',
+          boxShadow: enabled ? '0 0 5px rgb(var(--aegis-success) / 0.7)' : 'none',
           opacity: keepAwake.pending ? 0.58 : 1,
           animation: enabled ? 'aegis-pulse 1.5s ease-in-out infinite' : 'none',
         }}
@@ -611,7 +611,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
         >
           <Bell size={terminalChrome ? 12 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
           {terminalChrome && unread > 0 ? (
-            <span className="absolute end-[5px] top-[5px] h-[6px] w-[6px] rounded-full bg-[#e86868]" />
+            <span className="absolute end-[5px] top-[5px] h-[6px] w-[6px] rounded-full bg-aegis-danger" />
           ) : unread > 0 && (
             <span className="absolute top-0 end-0 min-w-[12px] h-[12px] px-[2px] flex items-center justify-center rounded-full bg-aegis-danger text-white text-[8px] font-bold leading-none">
               {unread > 9 ? '9+' : unread}

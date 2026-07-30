@@ -1717,7 +1717,7 @@ pub(crate) async fn validate_openclaw_entry_with_node(binary: &Path, node_path: 
     if std::fs::create_dir_all(&smoke_root).is_err() {
         return false;
     }
-    let config = smoke_root.join("openclaw.json");
+    let config = paths::native_config_path(&smoke_root);
     let mut smoke = tokio::process::Command::new(node_path);
     smoke
         .arg(path_for_node_argument(&entry))

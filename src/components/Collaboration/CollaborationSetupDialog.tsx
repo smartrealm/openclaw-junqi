@@ -7,7 +7,6 @@ import {
   Clipboard,
   Container,
   HardDrive,
-  Loader2,
   Plug,
   RefreshCw,
   RotateCcw,
@@ -53,6 +52,7 @@ import type {
   CollaborationBootstrapStatus,
 } from '@/types/collaborationBootstrap';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface CollaborationSetupPanelProps {
   decision: CollaborationSetupViewDecision;
@@ -174,15 +174,22 @@ function DecisionMessage({ decision }: { decision: CollaborationSetupViewDecisio
     },
   };
   const message = content[decision.kind];
+  const loading = decision.kind === 'loading' || decision.kind === 'busy';
   const Icon = decision.kind === 'ready'
     ? CheckCircle2
     : decision.kind === 'error' || decision.kind === 'unsupported'
       ? TriangleAlert
-      : decision.kind === 'loading' || decision.kind === 'busy'
-        ? Loader2
-        : decision.kind === 'recovery'
-          ? Wrench
-          : AlertTriangle;
+      : decision.kind === 'recovery'
+        ? Wrench
+        : AlertTriangle;
+  const iconClassName = cn(
+    'mt-0.5 shrink-0',
+    decision.kind === 'ready'
+      ? 'text-aegis-success'
+      : decision.kind === 'error'
+        ? 'text-aegis-danger'
+        : 'text-aegis-warning',
+  );
   return (
     <div
       className={cn(
@@ -195,15 +202,9 @@ function DecisionMessage({ decision }: { decision: CollaborationSetupViewDecisio
       )}
       data-collaboration-bootstrap-view={decision.kind}
     >
-      <Icon
-        size={17}
-        className={cn(
-          'mt-0.5 shrink-0',
-          (decision.kind === 'loading' || decision.kind === 'busy') && 'animate-spin',
-          decision.kind === 'ready' ? 'text-aegis-success' : decision.kind === 'error' ? 'text-aegis-danger' : 'text-aegis-warning',
-        )}
-        aria-hidden
-      />
+      {loading
+        ? <LoadingIndicator size={17} className={iconClassName} />
+        : <Icon size={17} className={iconClassName} aria-hidden />}
       <div className="min-w-0">
         <h3 className="text-[12px] font-semibold text-aegis-text-secondary">{message.title}</h3>
         <p className="mt-0.5 max-w-[72ch] text-[10.5px] leading-4 text-aegis-text-muted">{message.body}</p>
@@ -545,7 +546,7 @@ export function CollaborationSetupPanel({
                   disabled={!canConfigureAgents}
                   onClick={onConfigureAgents}
                 >
-                  {mutation === 'configure' ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Save size={13} aria-hidden />}
+                  {mutation === 'configure' ? <LoadingIndicator size={13} /> : <Save size={13} aria-hidden />}
                   {configurationConfirmed
                     ? t('collaboration.bootstrap.policySaved', 'Policy active')
                     : t('collaboration.bootstrap.savePolicy', 'Save policy')}
@@ -690,7 +691,7 @@ export function CollaborationSetupPanel({
         </button>
         {(decision.kind === 'install' || decision.kind === 'repair' || decision.kind === 'update') && (
           <button type="button" className={cn(buttonBase, 'border-aegis-primary/35 bg-aegis-primary text-white hover:bg-aegis-primary/90')} disabled={!decision.canApply || Boolean(mutation)} onClick={onApply}>
-            {mutation === 'apply' ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Plug size={13} aria-hidden />}
+            {mutation === 'apply' ? <LoadingIndicator size={13} /> : <Plug size={13} aria-hidden />}
             {decision.kind === 'install'
               ? t('collaboration.bootstrap.enable', '启用协作')
               : decision.kind === 'update'

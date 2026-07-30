@@ -1,9 +1,9 @@
 .junqi-workbench {
-  --wb-bg: var(--aegis-bg-solid, #1d212a);
-  --wb-sidebar: var(--aegis-surface-solid, #242a35);
-  --wb-panel: var(--aegis-surface-elevated, #202631);
-  --wb-elevated: var(--aegis-elevated-solid, #2b313d);
-  --wb-editor: var(--aegis-code-bg, #171b24);
+  --wb-bg: var(--aegis-bg-solid);
+  --wb-sidebar: var(--aegis-surface-solid);
+  --wb-panel: var(--aegis-surface-elevated);
+  --wb-elevated: var(--aegis-elevated-solid);
+  --wb-editor: var(--aegis-code-bg);
   --wb-line: var(--aegis-border, rgba(255, 255, 255, 0.07));
   --wb-line-strong: var(--aegis-border-hover, rgba(255, 255, 255, 0.12));
   --wb-text: rgb(var(--aegis-text, 241 244 251));

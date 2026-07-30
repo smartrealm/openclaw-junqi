@@ -5,13 +5,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bot, RefreshCw, Loader2, Zap, Clock, ChevronRight, MessageSquare } from 'lucide-react';
+import { Bot, RefreshCw, Zap, Clock, ChevronRight, MessageSquare } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { formatTokens } from '@/utils/format';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { gateway } from '@/services/gateway';
 import clsx from 'clsx';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -486,7 +487,7 @@ export function MultiAgentViewPage() {
                   {/* Auto-refresh indicator */}
                   {isSelectedRunning && (
                     <div className="ms-auto flex items-center gap-1.5 text-[9px] text-aegis-text-dim">
-                      <Loader2 size={10} className="animate-spin" />
+                      <LoadingIndicator size={10} />
                       {t('multiAgent.liveRefresh', 'Live')}
                     </div>
                   )}
@@ -496,7 +497,7 @@ export function MultiAgentViewPage() {
                 <div className="flex-1 overflow-y-auto">
                   {loadingHistory ? (
                     <div className="flex items-center justify-center py-16 gap-2 text-aegis-text-dim text-sm">
-                      <Loader2 size={16} className="animate-spin" />
+                      <LoadingIndicator size={16} />
                       {t('common.loading', 'Loading…')}
                     </div>
                   ) : history.length === 0 ? (

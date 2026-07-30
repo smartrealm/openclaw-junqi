@@ -1,10 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Send, Loader2, Pause, Play } from 'lucide-react';
+import { X, Send, Pause, Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
 import clsx from 'clsx';
 import { debugError } from '@/utils/debugLog';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // VoiceRecorder — capture a portable audio payload in the WebView or native host.
@@ -131,6 +132,14 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
     liveHistory.current.push(val);
     if (liveHistory.current.length > 180) liveHistory.current.shift();
 
+    // Canvas APIs cannot consume CSS variables directly. Resolve the current
+    // theme token on every frame so theme changes repaint the waveform without
+    // introducing a second product-chrome color source.
+    const primary = getComputedStyle(document.documentElement)
+      .getPropertyValue('--aegis-primary')
+      .trim();
+    const waveformColor = primary ? `rgb(${primary})` : 'currentColor';
+
     // Draw
     ctx.clearRect(0, 0, w, h);
 
@@ -159,9 +168,9 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
         const y = mid + (fh[i] - 0.5) * h * 1.0;
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
-      ctx.strokeStyle = '#0ea5e9';
+      ctx.strokeStyle = waveformColor;
       ctx.lineWidth = 1.2;
-      ctx.shadowColor = '#0ea5e9';
+      ctx.shadowColor = waveformColor;
       ctx.shadowBlur = 4;
       ctx.stroke();
       ctx.shadowBlur = 0;
@@ -201,9 +210,9 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
       const y = mid + (lh[i] - 0.5) * h * 1.0;
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
-    ctx.strokeStyle = '#0ea5e9';
+    ctx.strokeStyle = waveformColor;
     ctx.lineWidth = 1.5;
-    ctx.shadowColor = '#0ea5e9';
+    ctx.shadowColor = waveformColor;
     ctx.shadowBlur = 6;
     ctx.stroke();
     ctx.shadowBlur = 0;
@@ -517,7 +526,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
         title={t('voice.sendRecording')}
       >
         {saving ? (
-          <Loader2 size={18} className="animate-spin" />
+          <LoadingIndicator size={18} />
         ) : (
           <Send size={18} className="rotate-180" />
         )}

@@ -10,11 +10,11 @@ import {
   FileArchive,
   Folder,
   FolderOpen,
-  Loader2,
   ShieldAlert,
   X,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { LoadingIndicator } from './LoadingIndicator';
 
 export type SharePackageKind = 'agent' | 'skill';
 
@@ -427,7 +427,7 @@ export function ExportSharePackageDialog({
     >
       <div className="min-h-0 flex-1 overflow-y-auto">
         {loading ? (
-          <div className="grid min-h-[320px] place-items-center"><Loader2 size={22} className="animate-spin text-aegis-primary" /></div>
+          <div className="grid min-h-[320px] place-items-center"><LoadingIndicator size={22} className="text-aegis-primary" /></div>
         ) : error ? (
           <div className="m-5 flex items-start gap-3 border border-aegis-danger/25 bg-aegis-danger/[0.06] p-4 text-[12px] text-aegis-text-secondary">
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-aegis-danger" />
@@ -486,7 +486,7 @@ export function ExportSharePackageDialog({
           onClick={() => void handleExport()}
           className="inline-flex items-center gap-1.5 rounded-md bg-aegis-primary px-3 py-1.5 text-[11px] font-semibold text-aegis-btn-primary-text transition-opacity disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileArchive size={13} />}
+          {exporting ? <LoadingIndicator size={13} /> : <FileArchive size={13} />}
           {exporting ? 'Exporting' : 'Export package'}
         </button>
       </footer>
@@ -657,7 +657,7 @@ export function ImportSharePackageDialog({
             <div>
               <div className="mx-auto grid size-11 place-items-center rounded-lg border border-aegis-primary/20 bg-aegis-primary/[0.08] text-aegis-primary"><FileArchive size={20} /></div>
               <button type="button" onClick={() => void choosePackage()} disabled={loading} className="mt-4 inline-flex items-center gap-2 rounded-md bg-aegis-primary px-3 py-2 text-[12px] font-semibold text-aegis-btn-primary-text disabled:opacity-50">
-                {loading ? <Loader2 size={14} className="animate-spin" /> : <FolderOpen size={14} />}
+                {loading ? <LoadingIndicator size={14} /> : <FolderOpen size={14} />}
                 Choose package
               </button>
               {error && <div className="mt-4 max-w-[440px] border-s-2 border-aegis-danger ps-3 text-left text-[11px] text-aegis-text-muted">{error}</div>}
@@ -729,12 +729,12 @@ export function ImportSharePackageDialog({
           <button type="button" disabled={importing} onClick={onClose} className="rounded-md px-3 py-1.5 text-[11px] font-medium text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] disabled:opacity-50">Cancel</button>
           {!preview ? (
             <button type="button" disabled={loading || !targetParent || !targetName.trim() || selected.size === 0} onClick={() => void checkConflicts()} className="inline-flex items-center gap-1.5 rounded-md bg-aegis-primary px-3 py-1.5 text-[11px] font-semibold text-aegis-btn-primary-text disabled:cursor-not-allowed disabled:opacity-45">
-              {loading ? <Loader2 size={13} className="animate-spin" /> : <ChevronRight size={13} />}
+              {loading ? <LoadingIndicator size={13} /> : <ChevronRight size={13} />}
               Review import
             </button>
           ) : (
             <button type="button" disabled={importing} onClick={() => void handleImport()} className="inline-flex items-center gap-1.5 rounded-md bg-aegis-primary px-3 py-1.5 text-[11px] font-semibold text-aegis-btn-primary-text disabled:cursor-not-allowed disabled:opacity-45">
-              {importing ? <Loader2 size={13} className="animate-spin" /> : <Archive size={13} />}
+              {importing ? <LoadingIndicator size={13} /> : <Archive size={13} />}
               {importing ? 'Importing' : 'Import package'}
             </button>
           )}

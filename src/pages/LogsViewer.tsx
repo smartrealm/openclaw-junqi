@@ -6,11 +6,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollText, RefreshCw, Loader2, ChevronDown, Pause, Play } from 'lucide-react';
+import { ScrollText, RefreshCw, ChevronDown, Pause, Play } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { gateway } from '@/services/gateway';
 import clsx from 'clsx';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -149,7 +150,7 @@ function SessionDropdown({ sessions, selected, onSelect }: SessionDropdownProps)
       {open && (
         <div className={clsx(
           'absolute top-full mt-1.5 z-50 min-w-[220px] max-h-72 overflow-y-auto',
-          'rounded-xl border border-white/10 bg-[#1a1a2e]/95 backdrop-blur-xl shadow-2xl',
+          'rounded-xl border border-aegis-border bg-aegis-menu-bg/95 backdrop-blur-xl shadow-2xl',
         )}>
           {sessions.length === 0 ? (
             <div className="px-4 py-3 text-sm text-white/40 italic">{t('logs.noSessionsFound', 'No sessions found')}</div>
@@ -329,7 +330,7 @@ export function LogsViewerPage() {
           className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/6 border border-white/10 text-white/50 hover:bg-white/10 hover:text-white/70 transition-all disabled:opacity-40"
         >
           {loading
-            ? <Loader2 size={14} className="animate-spin" />
+            ? <LoadingIndicator size={14} />
             : <RefreshCw size={14} />
           }
         </button>
@@ -343,7 +344,7 @@ export function LogsViewerPage() {
         {/* Loading skeleton */}
         {loading && logs.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-white/30">
-            <Loader2 size={24} className="animate-spin" />
+            <LoadingIndicator size={24} />
             <span className="text-sm">{t('logsViewer.loading', 'Loading logs…')}</span>
           </div>
         )}
@@ -386,7 +387,7 @@ export function LogsViewerPage() {
             {/* Loading spinner at bottom during auto-refresh */}
             {loading && (
               <div className="flex items-center gap-2 px-3 py-1 text-white/20">
-                <Loader2 size={12} className="animate-spin" />
+                <LoadingIndicator size={12} />
                 <span className="text-[11px] font-mono">{t('logsViewer.refreshing', 'Refreshing…')}</span>
               </div>
             )}

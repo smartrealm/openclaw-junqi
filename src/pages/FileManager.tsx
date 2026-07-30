@@ -13,7 +13,6 @@ import {
   Upload,
   ChevronRight,
   Eye,
-  Loader2,
   Search,
   FileText,
   FileJson,
@@ -80,6 +79,7 @@ function getExt(name: string): string {
 }
 
 import { formatBytes } from '@/utils/format';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 function formatDate(iso: string): string {
   try {
@@ -637,7 +637,7 @@ export function FileManagerPage() {
           <Suspense
             fallback={
               <div className="w-[260px] shrink-0 border-e border-[rgb(var(--aegis-overlay)/0.06)] flex items-center justify-center">
-                <Loader2 size={16} className="animate-spin text-aegis-text-dim" />
+                <LoadingIndicator size={16} className="text-aegis-text-dim" />
               </div>
             }
           >
@@ -655,7 +655,7 @@ export function FileManagerPage() {
             <Suspense
               fallback={
                 <div className="flex-1 flex items-center justify-center">
-                  <Loader2 size={18} className="animate-spin text-aegis-text-dim" />
+                  <LoadingIndicator size={18} className="text-aegis-text-dim" />
                 </div>
               }
             >
@@ -784,11 +784,11 @@ export function FileManagerPage() {
           <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
             {loading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 size={20} className="animate-spin text-aegis-primary" />
+                <LoadingIndicator size={20} className="text-aegis-primary" />
               </div>
             ) : hasAegis === null ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 size={16} className="animate-spin text-aegis-text-dim" />
+                <LoadingIndicator size={16} className="text-aegis-text-dim" />
               </div>
             ) : filtered.length === 0 ? (
               <EmptyState
@@ -926,7 +926,11 @@ export function FileManagerPage() {
               <div className="min-h-0 flex-1 overflow-hidden">
                 {previewLoading ? (
                   <div className="flex items-center justify-center h-full">
-                    <Loader2 size={22} className="animate-spin text-aegis-primary" />
+                    <LoadingIndicator
+                      size={22}
+                      className="text-aegis-primary"
+                      label={t('common.loading', 'Loading...')}
+                    />
                   </div>
                 ) : activeManagedPreview ? (
                   <ManagedFilePreview

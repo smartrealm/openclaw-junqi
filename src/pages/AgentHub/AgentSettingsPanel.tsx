@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, Save, Loader2,
+  X, Save,
   Cpu, Check, ChevronDown, Activity, AlertCircle,
   Search, FolderOpen, Clock, Zap, MessageSquare, Puzzle, Plus, ArrowUp, ArrowDown,
 } from 'lucide-react';
@@ -40,6 +40,7 @@ import {
 } from '@/services/channelConfig';
 import type { AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import clsx from 'clsx';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -794,7 +795,7 @@ export function AgentSettingsPanel({
               {/* ── Loading: fetching config ── */}
               {loadingConfig && (
                 <div className="flex flex-col items-center justify-center gap-2.5 py-12 text-aegis-text-dim">
-                  <Loader2 size={24} className="animate-spin" style={{ color: primaryColor }} />
+                  <LoadingIndicator size={24} style={{ color: primaryColor }} />
                   <span className="text-[11px]">{t('agentSettings.loadingConfig', 'Loading agent config…')}</span>
                 </div>
               )}
@@ -923,7 +924,7 @@ export function AgentSettingsPanel({
                           )}
                         </div>
                         {loadingModels
-                          ? <Loader2 size={13} className="animate-spin text-aegis-text-dim shrink-0 ms-2" />
+                          ? <LoadingIndicator size={13} className="text-aegis-text-dim shrink-0 ms-2" />
                           : (
                             <ChevronDown
                               size={13}
@@ -1132,7 +1133,7 @@ export function AgentSettingsPanel({
                     <div className="overflow-hidden rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)]">
                       {loadingAgentSkills ? (
                         <div className="flex items-center gap-2 px-3.5 py-3 text-[11px] text-aegis-text-dim">
-                          <Loader2 size={13} className="animate-spin" style={{ color: primaryColor }} />
+                          <LoadingIndicator size={13} style={{ color: primaryColor }} />
                           {t('agentSettings.loadingAgentSkills', 'Loading agent skills…')}
                         </div>
                       ) : agentSkillsError ? (
@@ -1222,7 +1223,7 @@ export function AgentSettingsPanel({
                     >
                       {loadingChannels && (
                         <div className="flex items-center gap-2 px-3.5 py-3 text-[11px] text-aegis-text-dim">
-                          <Loader2 size={13} className="animate-spin" style={{ color: primaryColor }} />
+                          <LoadingIndicator size={13} style={{ color: primaryColor }} />
                           {t('agentSettings.loadingChannels', 'Loading channel bindings…')}
                         </div>
                       )}
@@ -1361,7 +1362,7 @@ export function AgentSettingsPanel({
                                               : 'text-aegis-primary bg-aegis-primary/10 hover:bg-aegis-primary/15'
                                           )}
                                         >
-                                          {busy && <Loader2 size={10} className="animate-spin" />}
+                                          {busy && <LoadingIndicator size={10} />}
                                           {actionLabel}
                                         </button>
                                       </div>
@@ -1514,7 +1515,7 @@ export function AgentSettingsPanel({
                     ? successColor
                     : hasChanges
                       ? `rgb(var(--aegis-btn-primary-text))`
-                      : getComputedStyle(document.documentElement).getPropertyValue('--aegis-text-dim').trim() || '#5a6370',
+                      : 'rgb(var(--aegis-text-dim))',
                   border: `1px solid ${
                     saved
                       ? `${successColor}40`
@@ -1528,7 +1529,7 @@ export function AgentSettingsPanel({
                 }}
               >
                 {saving
-                  ? <Loader2 size={12} className="animate-spin" />
+                  ? <LoadingIndicator size={12} />
                   : saved
                     ? <Check size={12} />
                     : <Save size={12} />

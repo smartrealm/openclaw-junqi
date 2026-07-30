@@ -124,7 +124,7 @@ export function PaneComposerBar({
             background: draft.trim()
               ? "rgb(var(--aegis-primary))"
               : "rgb(var(--aegis-overlay)/0.10)",
-            color: draft.trim() ? "#fff" : "rgb(var(--aegis-text-dim))",
+            color: draft.trim() ? "var(--aegis-btn-primary-text)" : "rgb(var(--aegis-text-dim))",
             fontSize: 12,
             fontFamily: '"JetBrains Mono", monospace',
             cursor: draft.trim() ? "pointer" : "default",

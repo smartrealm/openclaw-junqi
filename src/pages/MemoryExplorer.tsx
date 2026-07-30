@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Loader2, Plus, Pencil, Trash2, RefreshCw, Settings, X, CalendarDays, FolderOpen, Plug, Network, Archive } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, RefreshCw, Settings, X, CalendarDays, FolderOpen, Plug, Network, Archive } from 'lucide-react';
 import { Brain, Gear, Cube, Lightbulb, Heart, Users, Target, Calendar, Note } from '@phosphor-icons/react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { dataColor } from '@/utils/theme-colors';
 import { DEFAULT_MEMORY_API_URL } from '@/config/runtimeDefaults';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -826,7 +827,7 @@ export function MemoryExplorerPage() {
               dir="auto"
               className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] rounded-xl ps-9 pe-3 py-2.5 text-[13px] text-aegis-text placeholder:text-aegis-text-dim focus:outline-none focus:border-aegis-accent/40 transition-colors"
             />
-            {searching && <Loader2 size={14} className="absolute end-3 top-1/2 -translate-y-1/2 animate-spin text-aegis-primary" />}
+            {searching && <LoadingIndicator size={14} className="absolute end-3 top-1/2 -translate-y-1/2 text-aegis-primary" />}
           </div>
           <div className="text-[9px] text-aegis-text-dim mt-1.5 ps-1">
             <kbd className="px-1 py-px rounded border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] text-[8px] font-mono">
@@ -943,7 +944,7 @@ export function MemoryExplorerPage() {
         {/* View Content */}
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
-            <Loader2 size={24} className="animate-spin text-aegis-primary" />
+            <LoadingIndicator size={24} className="text-aegis-primary" />
           </div>
         ) : (
           <>

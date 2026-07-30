@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, Copy, Loader2, QrCode, RefreshCw, X } from 'lucide-react';
+import { CheckCircle2, Copy, QrCode, RefreshCw, X } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import {
   ChannelQrLoginSession,
@@ -8,6 +8,7 @@ import {
   type ChannelQrState,
 } from '@/services/channelQrLogin';
 import { renderLocalQrDataUrl } from '@/services/qrPresentation';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 export function ChannelQrLoginDialog({
   channelId,
@@ -115,7 +116,7 @@ export function ChannelQrLoginDialog({
           ) : state.qrDataUrl || renderedQrDataUrl ? (
             <div className="rounded-md bg-white p-3"><img src={state.qrDataUrl ?? renderedQrDataUrl ?? ''} alt={t('channelsCenter.scanQr', 'Scan QR code')} className="h-64 w-64" /></div>
           ) : busy && !qrRenderFailed ? (
-            <Loader2 size={36} className="animate-spin text-aegis-primary" />
+            <LoadingIndicator size={36} className="text-aegis-primary" />
           ) : (
             <QrCode size={48} className="text-aegis-text-muted" />
           )}

@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Circle,
   Clock3,
-  Loader2,
   Power,
   RefreshCw,
   ServerCog,
@@ -26,6 +25,7 @@ import clsx from 'clsx';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
 import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 type GatewayLifecycle = 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
 type GatewayRuntimeMode = 'none' | 'external' | 'system_service' | 'managed_child' | 'docker';
@@ -67,10 +67,10 @@ function lifecycleTone(lifecycle: GatewayLifecycle): 'ok' | 'warn' | 'err' | 'id
 function lifecycleIcon(lifecycle: GatewayLifecycle) {
   switch (lifecycle) {
     case 'running': return CheckCircle2;
-    case 'starting':
-    case 'reconnecting': return Loader2;
     case 'error': return AlertTriangle;
     case 'stopped':
+    case 'starting':
+    case 'reconnecting':
     default: return Circle;
   }
 }
@@ -267,7 +267,9 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
               tone === 'err' && 'border-aegis-danger/25 bg-aegis-danger/10 text-aegis-danger',
               tone === 'idle' && 'border-aegis-border bg-aegis-bg/50 text-aegis-text-dim',
             )}>
-              <Icon size={12} className={tone === 'run' ? 'animate-spin' : ''} />
+              {tone === 'run'
+                ? <LoadingIndicator size={12} />
+                : <Icon size={12} />}
               {lifecycleLabel(t, lifecycle)}
             </span>
             <span className="inline-flex items-center rounded-md border border-aegis-border bg-aegis-bg/50 px-2 py-1 font-mono text-[11px] text-aegis-text-muted">
@@ -345,7 +347,9 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
                 )}
               >
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold">
-                  <StepIcon size={12} className={active && (item === 'starting' || item === 'reconnecting') ? 'animate-spin text-aegis-warning' : ''} />
+                  {active && (item === 'starting' || item === 'reconnecting')
+                    ? <LoadingIndicator size={12} className="text-aegis-warning" />
+                    : <StepIcon size={12} />}
                   {lifecycleLabel(t, item)}
                 </div>
               </div>

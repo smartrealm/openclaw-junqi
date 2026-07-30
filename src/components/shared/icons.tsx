@@ -18,7 +18,7 @@ import {
   Settings2, Activity, Sparkles, History, GitBranch, Users,
   Wifi,
   // ── Status / lifecycle
-  CheckCircle2, XCircle, AlertTriangle, AlertCircle, Loader2,
+  CheckCircle2, XCircle, AlertTriangle, AlertCircle,
   Play, Square, RotateCcw, RefreshCw, Pause, Image as ImageIcon,
   // ── Code / tools / content
   Code2, FileJson, FileText, FileCode, FileSearch,
@@ -39,6 +39,7 @@ import {
   CircleDot, Circle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { LoadingIndicator } from './LoadingIndicator';
 
 // ── Phosphor icons (agent brands + chat tool palette)
 import {
@@ -200,7 +201,7 @@ export const Icon = {
     error:     makeRendered(XCircle),
     warning:   makeRendered(AlertTriangle),
     info:      makeRendered(AlertCircle),
-    loading:   makeRendered(Loader2),
+    loading:   <LoadingIndicator size={16} />,
     running:   makeRendered(Play),
     stopped:   makeRendered(Square),
     paused:    makeRendered(Pause),
@@ -368,7 +369,7 @@ export const Icon = {
 
     // ── Inline state glyphs
     state: {
-      running: makeRendered(Loader2, 12),
+      running: makeRendered(Activity, 12),
       done:    makeRendered(Check, 12),
       error:   makeRendered(X, 12),
       stalled: makeRendered(Circle, 12),

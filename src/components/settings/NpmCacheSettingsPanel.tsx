@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { CheckCircle2, FolderOpen, Loader2, Package, RotateCcw } from 'lucide-react';
+import { CheckCircle2, FolderOpen, Package, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface StorageSetupStatus {
   configured: boolean;
@@ -141,7 +142,7 @@ export function NpmCacheSettingsPanel() {
           disabled={loading || !configured || saving || !draftPath.trim() || unchanged}
           className="inline-flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-md bg-aegis-primary px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {saving ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+          {saving ? <LoadingIndicator size={13} /> : <CheckCircle2 size={13} />}
           {saving ? t('storage.npmCacheSaving', '保存中…') : t('storage.npmCacheSave', '保存位置')}
         </button>
       </div>

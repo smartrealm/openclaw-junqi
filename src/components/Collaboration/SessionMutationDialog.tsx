@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CircleStop,
-  Loader2,
   RotateCcw,
   ShieldAlert,
   Trash2,
@@ -21,6 +20,7 @@ import {
   settleSessionMutationDialog,
   useSessionMutationDialogStore,
 } from '@/services/collaboration/sessionMutationDialogStore';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 const STRATEGY_ORDER: SessionMutationStrategy[] = [
   'PROCEED',
@@ -236,7 +236,7 @@ export function SessionMutationDialog() {
         <div className="min-h-0 overflow-y-auto px-4 py-4">
           {loading && !impact && (
             <div className="flex min-h-28 items-center justify-center gap-2 text-[11.5px] text-aegis-text-muted" aria-busy="true">
-              <Loader2 size={15} className="animate-spin" />
+              <LoadingIndicator size={15} />
               {t('collaboration.sessionMutation.checking', 'Checking collaboration impact...')}
             </div>
           )}
@@ -327,7 +327,7 @@ export function SessionMutationDialog() {
               disabled={loading || submitting}
               className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text disabled:opacity-40"
             >
-              {loading ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+              {loading ? <LoadingIndicator size={13} /> : <RotateCcw size={13} />}
               {t('common.refresh', 'Refresh')}
             </button>
           )}
@@ -348,7 +348,7 @@ export function SessionMutationDialog() {
               disabled={(!recoveryPending && (!impact || !strategy)) || loading || submitting}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-danger/30 bg-aegis-danger/[0.08] px-3 text-[11px] font-medium text-aegis-danger hover:bg-aegis-danger/[0.14] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {submitting ? <Loader2 size={13} className="animate-spin" /> : <ActionIcon size={13} />}
+              {submitting ? <LoadingIndicator size={13} /> : <ActionIcon size={13} />}
               {recoveryPending
                 ? t('common.retry', 'Retry')
                 : deleting

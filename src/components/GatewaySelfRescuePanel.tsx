@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Bot, CheckCircle2, ChevronUp, FileText, HeartPulse, Loader2, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Bot, CheckCircle2, ChevronUp, FileText, HeartPulse, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { GatewayRescueChat } from './GatewayRescueChat';
 import {
@@ -9,6 +9,7 @@ import {
   useOpenClawRepairing,
   type GatewayRecoveryRecommendation,
 } from '@/services/gateway/openclawRepair';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 export interface GatewaySelfRescuePanelProps {
   connected?: boolean;
@@ -232,7 +233,7 @@ export function GatewaySelfRescuePanel({
               : 'border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary hover:bg-aegis-primary/16',
           )}
         >
-          {actionDisabled ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+          {actionDisabled ? <LoadingIndicator size={13} /> : <RotateCcw size={13} />}
           {primaryActionLabel}
         </button>
 

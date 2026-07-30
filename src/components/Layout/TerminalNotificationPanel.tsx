@@ -20,13 +20,13 @@ type InboxVisual = {
 function inboxVisual(type: NotificationPanelItem['type']): InboxVisual {
   switch (type) {
     case 'error':
-      return { AccentIcon: TriangleAlert, accent: '#e86868' };
+      return { AccentIcon: TriangleAlert, accent: 'rgb(var(--aegis-danger))' };
     case 'task_complete':
-      return { AccentIcon: CheckCircle2, accent: '#68b0db' };
+      return { AccentIcon: CheckCircle2, accent: 'rgb(var(--aegis-success))' };
     case 'message':
-      return { AccentIcon: MessageSquare, accent: '#e8b066' };
+      return { AccentIcon: MessageSquare, accent: 'rgb(var(--aegis-warning))' };
     default:
-      return { AccentIcon: Info, accent: '#8c9099' };
+      return { AccentIcon: Info, accent: 'rgb(var(--aegis-text-muted))' };
   }
 }
 
@@ -58,16 +58,16 @@ export function TerminalNotificationPanel({
 
   return (
     <div
-      className="terminal-kooky-inbox absolute end-0 top-[calc(100%+8px)] z-[100] flex w-[min(420px,calc(100vw-32px))] flex-col overflow-hidden rounded-[12px] border border-[rgb(239_239_241_/_0.18)] bg-[#22252c] shadow-[0_18px_44px_rgb(0_0_0_/_0.48)]"
+      className="terminal-kooky-inbox absolute end-0 top-[calc(100%+8px)] z-[100] flex w-[min(420px,calc(100vw-32px))] flex-col overflow-hidden rounded-[12px] border border-aegis-menu-border bg-aegis-menu-bg shadow-[var(--aegis-menu-shadow)]"
       role="dialog"
       aria-label={t('notifications.title', 'Notifications')}
     >
-      <div className="flex h-[50px] shrink-0 items-center gap-[7px] border-b border-[rgb(239_239_241_/_0.07)] px-[14px]">
-        <span className="font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[13px] font-semibold text-[#efeff1]">
+      <div className="flex h-[50px] shrink-0 items-center gap-[7px] border-b border-aegis-menu-border px-[14px]">
+        <span className="font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[13px] font-semibold text-aegis-text">
           {t('notifications.title', 'Notifications')}
         </span>
         {unread > 0 && (
-          <span className="rounded-full bg-[rgb(232_102_102_/_0.15)] px-[5.5px] py-[1.5px] font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[9.5px] font-semibold text-[#e86868]">
+          <span className="rounded-full bg-aegis-danger/15 px-[5.5px] py-[1.5px] font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[9.5px] font-semibold text-aegis-danger">
             {unread}
           </span>
         )}
@@ -78,7 +78,7 @@ export function TerminalNotificationPanel({
           disabled={unread === 0}
           title={t('notifications.markAllRead', 'Mark all read')}
           aria-label={t('notifications.markAllRead', 'Mark all read')}
-          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-[#8c9099] transition-colors hover:bg-[rgb(239_239_241_/_0.07)] hover:text-[#efeff1] disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
+          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-aegis-text-muted transition-colors hover:bg-aegis-menu-hover hover:text-aegis-text disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
         >
           <Check size={12} strokeWidth={2} />
         </button>
@@ -88,7 +88,7 @@ export function TerminalNotificationPanel({
           disabled={!hasItems}
           title={t('notifications.clearAll', 'Clear all')}
           aria-label={t('notifications.clearAll', 'Clear all')}
-          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-[#8c9099] transition-colors hover:bg-[rgb(239_239_241_/_0.07)] hover:text-[#efeff1] disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
+          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-aegis-text-muted transition-colors hover:bg-aegis-menu-hover hover:text-aegis-text disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
         >
           <Trash2 size={12} strokeWidth={1.8} />
         </button>
@@ -104,7 +104,7 @@ export function TerminalNotificationPanel({
                 type="button"
                 onClick={() => onItemClick(item)}
                 className={clsx(
-                  'group flex h-[50px] w-full items-center gap-[11px] px-[14px] text-left transition-colors hover:bg-[rgb(239_239_241_/_0.07)]',
+                  'group flex h-[50px] w-full items-center gap-[11px] px-[14px] text-left transition-colors hover:bg-aegis-menu-hover',
                 )}
               >
                 <span
@@ -122,24 +122,24 @@ export function TerminalNotificationPanel({
                 <span className="min-w-0 flex-1">
                   <span className={clsx(
                     'block truncate font-[\'Kooky_JetBrains_Mono\',\'JetBrains_Mono\',monospace] text-[12.5px]',
-                    item.read ? 'font-normal text-[#8c9099]' : 'font-medium text-[#efeff1]',
+                    item.read ? 'font-normal text-aegis-text-muted' : 'font-medium text-aegis-text',
                   )}>
                     {item.title}
                   </span>
-                  <span className="mt-[2px] block truncate font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[10.5px] text-[rgb(140_144_153_/_0.72)]">
+                  <span className="mt-[2px] block truncate font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[10.5px] text-aegis-text-dim">
                     {item.body || t('notifications.title', 'Notifications')}
                   </span>
                 </span>
-                <span className="flex min-w-8 shrink-0 justify-end font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[10px] text-[rgb(140_144_153_/_0.72)]">
+                <span className="flex min-w-8 shrink-0 justify-end font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[10px] text-aegis-text-dim">
                   <span className="group-hover:hidden">{terminalInboxRelativeTime(item.timestamp)}</span>
-                  <ArrowUpRight size={10} strokeWidth={2} className="hidden text-[rgb(239_239_241_/_0.75)] group-hover:block" />
+                  <ArrowUpRight size={10} strokeWidth={2} className="hidden text-aegis-text-secondary group-hover:block" />
                 </span>
               </button>
             );
           })}
         </div>
       ) : (
-        <div className="flex h-[100px] flex-col items-center justify-center gap-[7px] text-[#8c9099]">
+        <div className="flex h-[100px] flex-col items-center justify-center gap-[7px] text-aegis-text-muted">
           <Bell size={19} strokeWidth={1.3} className="opacity-40" />
           <span className="font-['Kooky_JetBrains_Mono','JetBrains_Mono',monospace] text-[12px]">
             {t('notifications.empty', 'no notifications')}

@@ -11,11 +11,23 @@
 // NotificationBell, Workspace sidebar.
 // ─────────────────────────────────────────────────────────────────
 
+import type { ReactNode } from 'react';
 import { Circle, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { LoadingIndicator } from './LoadingIndicator';
+import {
+  resolveStatusTone,
+  statusToneColor,
+  statusToneGlow,
+  toneAnimatesByDefault,
+} from './status/statusTone';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 
+/**
+ * Agent lifecycle vocabulary. Kept as this module's public domain type
+ * because callers (AgentRunView, ActivityCenter) speak lifecycle, not
+ * presentation tones — `resolveStatusTone` bridges the two.
+ */
 export type LifecycleState = 'idle' | 'running' | 'attention' | 'failed' | 'ended';
 
 export interface StatusBadgeProps {
@@ -32,12 +44,21 @@ export interface StatusBadgeProps {
   pulse?: boolean;
 }
 
-const STATE_TOKEN: Record<LifecycleState, { color: string; glow: string; i18n: string; fallback: string }> = {
-  idle:      { color: 'rgb(var(--aegis-status-idle))',      glow: 'rgb(var(--aegis-status-idle-surface))',      i18n: 'lifecycle.idle',      fallback: 'idle' },
-  running:   { color: 'rgb(var(--aegis-status-running))',   glow: 'rgb(var(--aegis-status-running-glow))',    i18n: 'lifecycle.running',   fallback: 'running' },
-  attention: { color: 'rgb(var(--aegis-status-attention))', glow: 'rgb(var(--aegis-status-attention-glow))',  i18n: 'lifecycle.attention', fallback: 'attention' },
-  failed:    { color: 'rgb(var(--aegis-status-failed))',    glow: 'rgb(var(--aegis-status-failed-glow))',     i18n: 'lifecycle.failed',    fallback: 'failed' },
-  ended:     { color: 'rgb(var(--aegis-status-ended))',     glow: 'rgb(var(--aegis-status-running-glow))',    i18n: 'lifecycle.ended',     fallback: 'done' },
+/** Glyph shape per lifecycle state. Color comes from the shared tone table. */
+const STATE_GLYPH: Record<LifecycleState, 'spinner' | 'alert' | 'check' | 'dot'> = {
+  idle: 'dot',
+  running: 'spinner',
+  attention: 'alert',
+  failed: 'alert',
+  ended: 'check',
+};
+
+const STATE_I18N: Record<LifecycleState, { key: string; fallback: string }> = {
+  idle: { key: 'lifecycle.idle', fallback: 'idle' },
+  running: { key: 'lifecycle.running', fallback: 'running' },
+  attention: { key: 'lifecycle.attention', fallback: 'attention' },
+  failed: { key: 'lifecycle.failed', fallback: 'failed' },
+  ended: { key: 'lifecycle.ended', fallback: 'done' },
 };
 
 export function StatusBadge({
@@ -49,31 +70,39 @@ export function StatusBadge({
   pulse,
 }: StatusBadgeProps) {
   const { t } = useTranslation();
-  const tok = STATE_TOKEN[state];
-  const shouldPulse = pulse ?? state === 'running';
+  const tone = resolveStatusTone(state);
+  const color = statusToneColor(tone);
+  const glow = statusToneGlow(tone);
+  const copy = STATE_I18N[state];
+  const shouldPulse = pulse ?? toneAnimatesByDefault(tone);
+  const glyphSize = Math.max(size + 2, 10);
 
-  // Icon variant for states that need more than a dot (running = spinner, attention = alert).
-  const Glyph = state === 'running'
-    ? <LoadingIndicator size={Math.max(size + 2, 10)} className="shrink-0" />
-    : state === 'attention'
-      ? <AlertCircle size={Math.max(size + 2, 10)} className="shrink-0" style={{ color: tok.color }} />
-      : state === 'ended'
-        ? <CheckCircle2 size={Math.max(size + 2, 10)} className="shrink-0" style={{ color: tok.color }} />
-        : state === 'failed'
-          ? <AlertCircle size={Math.max(size + 2, 10)} className="shrink-0" style={{ color: tok.color }} />
-          : <Circle size={size} className="shrink-0" style={{ color: tok.color, fill: tok.color }} />;
+  let Glyph: ReactNode;
+  switch (STATE_GLYPH[state]) {
+    case 'spinner':
+      Glyph = <LoadingIndicator size={glyphSize} className="shrink-0" style={{ color }} />;
+      break;
+    case 'alert':
+      Glyph = <AlertCircle size={glyphSize} className="shrink-0" style={{ color }} />;
+      break;
+    case 'check':
+      Glyph = <CheckCircle2 size={glyphSize} className="shrink-0" style={{ color }} />;
+      break;
+    default:
+      Glyph = <Circle size={size} className="shrink-0" style={{ color, fill: color }} />;
+  }
 
   return (
     <span
       className={clsx('inline-flex items-center gap-1.5 shrink-0', className)}
-      style={shouldPulse ? { filter: `drop-shadow(0 0 4px ${tok.glow})` } : undefined}
-      title={t(tok.i18n, tok.fallback)}
-      aria-label={t(tok.i18n, tok.fallback)}
+      style={shouldPulse ? { filter: `drop-shadow(0 0 4px ${glow})` } : undefined}
+      title={t(copy.key, copy.fallback)}
+      aria-label={t(copy.key, copy.fallback)}
     >
       {Glyph}
       {label && (
-        <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: tok.color }}>
-          {labelText ?? t(tok.i18n, tok.fallback)}
+        <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color }}>
+          {labelText ?? t(copy.key, copy.fallback)}
         </span>
       )}
     </span>
@@ -81,32 +110,11 @@ export function StatusBadge({
 }
 
 /**
- * Compact inline dot for use in compact UI (tab strips, list rows).
- * Always a colored circle — no icon, no label.
+ * Compact inline dot for tab strips and list rows.
+ *
+ * Re-exported from the shared Aegis primitive rather than reimplemented:
+ * this module previously carried its own third copy of `StatusDot`
+ * (BUG-FCA-04). A `LifecycleState` is a valid `tone` because
+ * `resolveStatusTone` accepts the lifecycle vocabulary.
  */
-export function StatusDot({
-  state,
-  size = 6,
-  pulse,
-}: {
-  state: LifecycleState;
-  size?: number;
-  pulse?: boolean;
-}) {
-  const tok = STATE_TOKEN[state];
-  const shouldPulse = pulse ?? state === 'running';
-  return (
-    <span
-      className={'inline-flex rounded-full'}
-      style={{
-        width: size,
-        height: size,
-        backgroundColor: tok.color,
-        boxShadow: shouldPulse ? `0 0 6px ${tok.glow}` : 'none',
-        animation: shouldPulse ? 'aegis-pulse 1.6s ease-in-out infinite' : 'none',
-      }}
-      title={tok.fallback}
-      aria-hidden
-    />
-  );
-}
+export { StatusDot } from './badge';

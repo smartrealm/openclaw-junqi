@@ -58,35 +58,32 @@
 .badge[data-variant="outline"] { background: transparent; }
 .badge[data-variant="solid"]   { color: rgb(var(--aegis-bg)); background: var(--badge-fg); border-color: var(--badge-fg); }
 
+/* Tone color arrives as `--dot-color` / `--dot-glow` from statusTone.ts so
+ * this stylesheet owns shape, size and motion only — never a second color
+ * table (BUG-FCA-04). */
 .dot {
   display: inline-block;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: rgb(var(--aegis-text-dim));
+  background: var(--dot-color, rgb(var(--aegis-text-dim)));
 }
 .dot[data-size="sm"] { width: 5px; height: 5px; }
 .dot[data-size="md"] { width: 7px; height: 7px; }
 .dot[data-size="lg"] { width: 9px; height: 9px; }
-.dot[data-tone="running"]    { background: rgb(var(--aegis-status-running)); }
-.dot[data-tone="attention"]  { background: rgb(var(--aegis-status-attention)); }
-.dot[data-tone="success"],
-.dot[data-tone="ended"]      { background: rgb(var(--aegis-status-ended)); }
-.dot[data-tone="danger"],
-.dot[data-tone="failed"]     { background: rgb(var(--aegis-status-failed)); }
-.dot[data-tone="idle"]       { background: rgb(var(--aegis-status-idle)); }
-.dot[data-tone="warning"],
-.dot[data-tone="warn"]       { background: rgb(var(--aegis-warning)); }
-.dot[data-tone="primary"],
-.dot[data-tone="info"]       { background: rgb(var(--aegis-primary)); }
-.dot[data-tone="ok"]         { background: rgb(var(--aegis-success)); }
-.dot[data-tone="err"]        { background: rgb(var(--aegis-danger)); }
-.dot[data-tone="live"],
-.dot[data-tone="running"][data-live="true"] {
-  background: rgb(var(--aegis-status-running));
-  box-shadow: 0 0 0 2.5px var(--aegis-status-running-glow);
+
+.dot[data-live="true"] {
+  box-shadow: 0 0 0 2.5px var(--dot-glow, transparent);
   animation: aegis-status-pulse 1.6s ease-in-out infinite;
 }
+
 @keyframes aegis-status-pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.5; }
+}
+
+/* A pulsing dot is decorative emphasis, not information: the tone color
+ * already carries the meaning, so reduced-motion keeps the glow and drops
+ * the animation. */
+@media (prefers-reduced-motion: reduce) {
+  .dot[data-live="true"] { animation: none; }
 }

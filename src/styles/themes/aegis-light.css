@@ -63,6 +63,7 @@
   --aegis-status-attention-glow:rgba(232, 176, 102, 0.32);
   --aegis-status-idle:          114 123 143;
   --aegis-status-idle-surface:  rgba(114, 123, 143, 0.10);
+  --aegis-status-dormant:      176 182 194;
   --aegis-status-failed:        217 45 32;
   --aegis-status-failed-glow:   rgba(217, 45, 32, 0.30);
   --aegis-status-ended:         36 138 61;

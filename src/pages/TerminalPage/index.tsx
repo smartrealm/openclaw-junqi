@@ -1693,7 +1693,7 @@ function TerminalWorktreeCreateDialog({ workspace, existingWorktreePaths, onClos
         <div style={terminalModalPathStyle}>{workspace.projectDirectory || workspace.workingDirectory}</div>
         <div role="group" aria-label={t('terminal.worktreeMode', 'Worktree mode')} style={{ display: 'inline-flex', alignSelf: 'flex-start', gap: 2, padding: 2, border: '1px solid rgb(var(--aegis-overlay) / 0.14)', borderRadius: 5, background: 'rgb(var(--aegis-surface))' }}>
           {(['new', 'existing', 'adopt'] as const).map((candidate) => (
-            <button key={candidate} type="button" onClick={() => { setMode(candidate); setError(null); }} style={{ height: 26, padding: '0 9px', border: 'none', borderRadius: 3, cursor: 'pointer', fontSize: 10.5, color: mode === candidate ? '#fff' : 'rgb(var(--aegis-text-dim))', background: mode === candidate ? 'rgb(var(--aegis-primary))' : 'transparent' }}>
+            <button key={candidate} type="button" onClick={() => { setMode(candidate); setError(null); }} style={{ height: 26, padding: '0 9px', border: 'none', borderRadius: 3, cursor: 'pointer', fontSize: 10.5, color: mode === candidate ? 'var(--aegis-btn-primary-text)' : 'rgb(var(--aegis-text-dim))', background: mode === candidate ? 'rgb(var(--aegis-primary))' : 'transparent' }}>
               {candidate === 'new'
                 ? t('terminal.worktreeNewBranch', 'New branch')
                 : candidate === 'existing'
@@ -1876,7 +1876,7 @@ const terminalModalLabelStyle: React.CSSProperties = { display: 'flex', flexDire
 const terminalModalInputStyle: React.CSSProperties = { height: 32, borderRadius: 4, border: '1px solid rgb(var(--aegis-primary) / 0.45)', background: 'rgb(var(--aegis-surface))', color: 'rgb(var(--aegis-text))', padding: '0 9px', outline: 'none', fontFamily: '"JetBrains Mono", monospace', fontSize: 12 };
 const terminalModalActionsStyle: React.CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 };
 const terminalModalSecondaryButtonStyle: React.CSSProperties = { height: 30, padding: '0 12px', border: '1px solid rgb(var(--aegis-overlay) / 0.16)', borderRadius: 4, background: 'transparent', color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer', fontSize: 11.5 };
-const terminalModalPrimaryButtonStyle: React.CSSProperties = { height: 30, padding: '0 12px', border: 'none', borderRadius: 4, background: 'rgb(var(--aegis-primary))', color: '#fff', cursor: 'pointer', fontSize: 11.5 };
+const terminalModalPrimaryButtonStyle: React.CSSProperties = { height: 30, padding: '0 12px', border: 'none', borderRadius: 4, background: 'rgb(var(--aegis-primary))', color: 'var(--aegis-btn-primary-text)', cursor: 'pointer', fontSize: 11.5 };
 
 
 // ──────────────────────────────────────────────────────────────

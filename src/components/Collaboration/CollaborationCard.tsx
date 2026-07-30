@@ -14,7 +14,6 @@ import {
   Download,
   GitFork,
   Library,
-  Loader2,
   MessageSquarePlus,
   MoreHorizontal,
   Pause,
@@ -37,6 +36,7 @@ import type {
   CollaborationWorkItemSnapshot,
   CollaborationWorkItemStatus,
 } from '@/services/collaboration/types';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 export type CollaborationTranslate = (
   key: string,
@@ -256,7 +256,7 @@ export function CollaborationActionBar({
               definition.intent === 'neutral' && 'border-aegis-border bg-[rgb(var(--aegis-overlay)/0.025)] text-aegis-text-secondary hover:border-aegis-border-hover hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
             )}
           >
-            {pending ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Icon size={13} aria-hidden />}
+            {pending ? <LoadingIndicator size={13} /> : <Icon size={13} aria-hidden />}
             <span>{text(`collaboration.actions.${action}`, definition.fallback)}</span>
           </button>
         );

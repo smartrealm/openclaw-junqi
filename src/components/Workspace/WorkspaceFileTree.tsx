@@ -6,13 +6,13 @@ import {
   File,
   Folder,
   FolderOpen,
-  Loader2,
   RefreshCw,
 } from 'lucide-react';
 import { FileExplorerContextMenu } from '@/components/FileExplorer/ContextMenu';
 import { useFileExplorerContextActions } from '@/components/FileExplorer/useFileExplorerContextActions';
 import { readDir, type FsEntry } from '@/services/workspaceFs';
 import { useTranslation } from 'react-i18next';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 function extensionOf(name: string): string | null {
   const dot = name.lastIndexOf('.');
@@ -91,7 +91,7 @@ function TreeNode({
       >
         {entry.is_dir ? (
           loading
-            ? <Loader2 size={13} className="shrink-0 animate-spin" />
+            ? <LoadingIndicator size={13} className="shrink-0" />
             : open
               ? <ChevronDown size={13} className="shrink-0" />
               : <ChevronRight size={13} className="shrink-0" />
@@ -193,7 +193,7 @@ export function WorkspaceFileTree({
 
   const content = loading && entries === null ? (
     <div className="flex items-center justify-center py-8 text-aegis-text-dim">
-      <Loader2 size={16} className="animate-spin" />
+      <LoadingIndicator size={16} />
     </div>
   ) : err ? (
     <div className="p-3 text-center">

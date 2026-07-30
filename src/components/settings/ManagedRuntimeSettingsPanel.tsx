@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Cpu, GitBranch, Loader2, RefreshCw } from 'lucide-react';
+import { Cpu, GitBranch, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlassCard } from '@/components/shared/GlassCard';
 import type { RuntimeToolSource } from '@/api/tauri-commands';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { translateSetupProgressMessage } from '@/hooks/setupProgressParams';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface RuntimeToolStatus {
   available: boolean;
@@ -77,7 +78,7 @@ function ToolRow({
           disabled={busy || disabled}
           className="inline-flex h-9 min-w-[112px] items-center justify-center gap-2 justify-self-start rounded-md border border-aegis-border bg-aegis-surface px-3 text-xs font-semibold text-aegis-text hover:border-aegis-primary/50 hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-45 sm:mt-1 sm:justify-self-end"
         >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          {busy ? <LoadingIndicator size={14} /> : <RefreshCw size={14} />}
           {actionLabel}
         </button>
       ) : (

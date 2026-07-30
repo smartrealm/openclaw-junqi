@@ -10,7 +10,6 @@ import {
   FolderOpen,
   FolderX,
   Link,
-  Loader2,
   TextCursorInput,
 } from 'lucide-react';
 import { FileExplorerContextMenu } from '@/components/FileExplorer/ContextMenu';
@@ -40,6 +39,7 @@ import {
   type TerminalGitDiffCounts,
   type TerminalGitDiffIndex,
 } from './terminalWorkspaceTree';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface TreeNodeProps {
   entry: FsEntry;
@@ -210,7 +210,11 @@ function TerminalWorkspaceFileNode({
           </span>
         )}
         {canExpand ? (
-          loading ? <Loader2 size={9} className="shrink-0 animate-spin" style={{ width: 14, color: selected || hovered ? 'rgb(var(--aegis-text-muted))' : 'rgb(var(--aegis-text-dim))', position: 'relative' }} />
+          loading ? (
+            <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
+              <LoadingIndicator size={9} style={{ color: selected || hovered ? 'rgb(var(--aegis-text-muted))' : 'rgb(var(--aegis-text-dim))' }} />
+            </span>
+          )
             : expanded ? <ChevronDown size={9} strokeWidth={2.5} style={{ width: 14, flexShrink: 0, color: selected || hovered ? 'rgb(var(--aegis-text-muted))' : 'rgb(var(--aegis-text-dim))', position: 'relative' }} />
               : <ChevronRight size={9} strokeWidth={2.5} style={{ width: 14, flexShrink: 0, color: selected || hovered ? 'rgb(var(--aegis-text-muted))' : 'rgb(var(--aegis-text-dim))', position: 'relative' }} />
         ) : <span style={{ width: 14, flexShrink: 0, position: 'relative' }} />}
@@ -488,7 +492,7 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
 
   const content = loading && entries === null ? (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgb(var(--aegis-text-dim))' }}>
-      <Loader2 size={16} className="animate-spin" />
+      <LoadingIndicator size={16} />
     </div>
   ) : rootUnavailable ? (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 18, color: 'rgb(var(--aegis-text-dim))', textAlign: 'center' }}>

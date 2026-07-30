@@ -274,13 +274,7 @@ export function SetupShell({
                 type="button"
                 onClick={previousAction.onClick}
                 disabled={previousAction.disabled}
-                className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 px-4 py-2.5 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45"
-                style={{
-                  background: "#ffffff",
-                  borderColor: "#94a3b8",
-                  color: "#0f172a",
-                  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.12)",
-                }}
+                className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[15px] font-bold text-aegis-text transition shadow-sm hover:bg-aegis-surface disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <ChevronLeft size={15} />
                 {previousAction.label ?? t("setup.previousStep")}
@@ -304,13 +298,7 @@ export function SetupShell({
                 type="button"
                 onClick={nextAction.onClick}
                 disabled={nextAction.disabled || nextAction.loading}
-                className="inline-flex min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 px-4 py-2.5 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-55"
-                style={{
-                  background: "#0f172a",
-                  borderColor: "#0f172a",
-                  color: "#ffffff",
-                  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.28)",
-                }}
+                className="inline-flex min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition shadow-lg hover:bg-aegis-primary-hover disabled:cursor-not-allowed disabled:opacity-55"
               >
                 {nextAction.loading && <RefreshCw size={15} className="animate-spin" />}
                 {nextAction.label}

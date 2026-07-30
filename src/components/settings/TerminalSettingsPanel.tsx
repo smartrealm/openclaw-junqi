@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ArrowDown, ArrowUp, Check, Eye, EyeOff, FolderOpen, Loader2, Minus, Plus, RotateCcw, TerminalSquare, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Eye, EyeOff, FolderOpen, Minus, Plus, RotateCcw, TerminalSquare, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -72,6 +72,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { FontSelector } from '@/components/settings/FontSelector';
 import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
 import { commitTerminalSettingsReset } from './terminalSettingsTransaction';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 const SCROLLBACK_OPTIONS = [500, 1000, 2000, 3000, 5000] as const;
 type SaveState = 'idle' | 'saving' | 'saved';
@@ -506,7 +507,7 @@ export function TerminalSettingsPanel() {
           </p>
         </div>
         <div className="flex h-8 items-center gap-2">
-          {saveState === 'saving' && <span className="inline-flex items-center gap-1.5 text-[11px] text-aegis-text-dim"><Loader2 size={12} className="animate-spin" />{t('terminalSettings.saving', '正在保存')}</span>}
+          {saveState === 'saving' && <span className="inline-flex items-center gap-1.5 text-[11px] text-aegis-text-dim"><LoadingIndicator size={12} />{t('terminalSettings.saving', '正在保存')}</span>}
           {saveState === 'saved' && <span className="inline-flex items-center gap-1.5 text-[11px] text-aegis-success"><Check size={12} />{t('terminalSettings.saved', '已保存')}</span>}
           <button type="button" onClick={() => void resetDefaults()} disabled={saveState === 'saving'} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-border px-2.5 text-[11px] text-aegis-text-muted transition-colors hover:bg-aegis-hover hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45 disabled:opacity-50">
             <RotateCcw size={12} />{t('terminalSettings.reset', '恢复默认')}

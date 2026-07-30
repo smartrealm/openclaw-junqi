@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
-import { Search, Loader2, RefreshCw, Package, Globe, FolderOpen, FileArchive, CheckCircle2, AlertCircle, Zap, ExternalLink, CalendarDays, Plug, Brain, FileText, Settings2, Wrench, Pencil, GitBranch, Mail, BookOpen, HeartPulse, Volume2, Gem, Puzzle, CloudSun, Palette, Mic, Bug } from 'lucide-react';
+import { Search, RefreshCw, Package, Globe, FolderOpen, FileArchive, CheckCircle2, AlertCircle, Zap, ExternalLink, CalendarDays, Plug, Brain, FileText, Settings2, Wrench, Pencil, GitBranch, Mail, BookOpen, HeartPulse, Volume2, Gem, Puzzle, CloudSun, Palette, Mic, Bug } from 'lucide-react';
 import { Cube } from '@phosphor-icons/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { gateway } from '@/services/gateway';
@@ -28,6 +28,7 @@ import {
 } from './components';
 import { debugError, debugWarn } from '@/utils/debugLog';
 import { ExportSharePackageDialog, ImportSharePackageDialog, type SharePackageSubject } from '@/components/shared/SharePackageDialog';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // ClawHub API
@@ -1311,7 +1312,7 @@ export function SkillsPage() {
                       )}
                     >
                       {importStatus.kind === 'importing'
-                        ? <Loader2 size={13} className="animate-spin" />
+                        ? <LoadingIndicator size={13} />
                         : <FolderOpen size={13} />}
                     </button>
                     <AnimatePresence>
@@ -1387,7 +1388,7 @@ export function SkillsPage() {
 
               {loadingMy ? (
                 <div className="flex items-center justify-center py-20">
-                  <Loader2 size={22} className="animate-spin text-aegis-text-dim" />
+                  <LoadingIndicator size={22} className="text-aegis-text-dim" />
                 </div>
               ) : mySkills.length === 0 ? (
                 <div className="text-center py-20">
@@ -1474,7 +1475,7 @@ export function SkillsPage() {
                 // Show spinner while loading OR while in initial "not yet loaded" state
                 // (before the tab-switch effect fires). Avoids a flash of "no results".
                 <div className="flex items-center justify-center py-20">
-                  <Loader2 size={22} className="animate-spin text-aegis-text-dim" />
+                  <LoadingIndicator size={22} className="text-aegis-text-dim" />
                 </div>
               ) : shApiOk === false ? (
                 <SkillsHubOffline onRetry={() => loadSkillHub()} />
@@ -1509,7 +1510,7 @@ export function SkillsPage() {
                           transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {loadingShMore ? (
-                          <><Loader2 size={13} className="animate-spin" />{t('skills.loadingMore')}</>
+                          <><LoadingIndicator size={13} />{t('skills.loadingMore')}</>
                         ) : (
                           t('skills.loadMore', { count: Math.min(100, shTotal - shSkills.length) })
                         )}
@@ -1554,7 +1555,7 @@ export function SkillsPage() {
               {/* Results */}
               {loadingCh || (chApiOk === null && chSkills.length === 0) ? (
                 <div className="flex items-center justify-center py-20">
-                  <Loader2 size={22} className="animate-spin text-aegis-text-dim" />
+                  <LoadingIndicator size={22} className="text-aegis-text-dim" />
                 </div>
               ) : chApiOk === false && chSkills.length === 0 ? (
                 <ClawHubOffline
@@ -1686,7 +1687,7 @@ export function SkillsPage() {
                     hover:bg-aegis-danger/[0.14] transition-colors disabled:opacity-40
                     flex items-center gap-1.5"
                 >
-                  {deleting && <Loader2 size={12} className="animate-spin" />}
+                  {deleting && <LoadingIndicator size={12} />}
                   {t('skills.deleteConfirmOk')}
                 </button>
               </div>
@@ -1809,7 +1810,7 @@ function SkillsHubCliBanner({ installed, onCheckDone }: {
 
         {phase === 'installing' ? (
           <span className="flex items-center gap-1.5 text-aegis-text-dim text-[11px] shrink-0">
-            <Loader2 size={11} className="animate-spin" />
+            <LoadingIndicator size={11} />
             {t('skills.skillshubCliInstalling')}
           </span>
         ) : (
@@ -1903,7 +1904,7 @@ function ClawHubAuthBanner({
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2.5 min-w-0">
           {checking ? (
-            <Loader2 size={15} className="mt-0.5 animate-spin text-aegis-text-dim shrink-0" />
+            <LoadingIndicator size={15} className="mt-0.5 text-aegis-text-dim shrink-0" />
           ) : authStatus?.loggedIn ? (
             <CheckCircle2 size={15} className="mt-0.5 text-aegis-success shrink-0" />
           ) : (

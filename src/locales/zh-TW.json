@@ -1159,6 +1159,17 @@
     "failed": "失敗",
     "ended": "完成"
   },
+  "status": {
+    "neutral": "未知",
+    "info": "資訊",
+    "idle": "閒置",
+    "dormant": "休眠",
+    "running": "執行中",
+    "attention": "需要處理",
+    "success": "已完成",
+    "warning": "警告",
+    "failed": "失敗"
+  },
   "chat": {
     "quickChat": "快速對話",
     "openFullChat": "打開完整聊天",
@@ -1800,7 +1811,6 @@
     "wsUrlLabel": "WebSocket URL",
     "wsUrlPlaceholder": "WebSocket URL",
     "gatewayTokenLabel": "Gateway Token",
-    "memoryApiPlaceholder": "http://localhost:3040",
     "platform": "平臺",
     "userAgent": "User Agent",
     "modelLabel": "模型"

@@ -15,11 +15,11 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
-  Loader2,
   Terminal,
   FolderOpen,
 } from 'lucide-react';
 import { GatewaySelfRescuePanel } from './GatewaySelfRescuePanel';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface GatewayErrorScreenProps {
   error: string;
@@ -185,7 +185,7 @@ export function GatewayErrorScreen({
       {/* Subtle noise/pattern background */}
       <div className="absolute inset-0 opacity-5">
         <div className="absolute inset-0" style={{
-          backgroundImage: 'radial-gradient(circle at 20% 20%, #4EC9B0 0%, transparent 50%), radial-gradient(circle at 80% 80%, #6C9FFF 0%, transparent 50%)',
+          backgroundImage: 'radial-gradient(circle at 20% 20%, rgb(var(--aegis-danger)) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgb(var(--aegis-primary)) 0%, transparent 50%)',
         }} />
       </div>
 
@@ -254,7 +254,7 @@ export function GatewayErrorScreen({
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary text-white text-sm font-medium hover:bg-aegis-primary/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
                 {retrying
-                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  ? <LoadingIndicator size={16} />
                   : <RefreshCw className="w-4 h-4" />}
               {retrying ? t('gatewayError.actions.retrying') : t('gatewayError.actions.retryGateway')}
               </button>
@@ -266,7 +266,7 @@ export function GatewayErrorScreen({
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-600/80 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
                 {resetting
-                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  ? <LoadingIndicator size={16} />
                   : <Trash2 className="w-4 h-4" />}
                 {resetting ? t('gatewayError.actions.resetting') : t('gatewayError.actions.resetConfig')}
               </button>

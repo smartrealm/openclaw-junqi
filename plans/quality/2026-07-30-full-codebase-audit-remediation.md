@@ -15,17 +15,21 @@ Date: 2026-07-30
 4. [x] **Batch D — visual-system foundation**: FCA-03. Retheme retained Radix
    behavior primitives to Aegis and remove showcase-only wrappers, dependencies,
    and `shadcn-tokens.css`.
-5. [ ] **Batch E — shared UI primitives**: FCA-04, FCA-05, FCA-07. Shared
-   `Switch` and `EmptyState` foundations and initial consumers are complete;
-   status convergence and remaining consumer migration are pending. Define one
-   status presentation domain and shared Switch/Input/EmptyState primitives,
-   then migrate consumers without changing feature behavior.
-6. [ ] **Batch F — broad mechanical convergence**: FCA-06 and FCA-08. Migrate
-   loading states and product-chrome colors in page-sized slices, with reduced
-   motion, accessibility, and four-theme evidence.
-7. [ ] **Batch G — collaboration Rust decomposition**: FCA-14. Create a
-   subdomain map, move one domain at a time behind private module APIs, and run
-   Rust/collaboration validation after every move.
+5. [x] **Batch E — shared UI primitives**: FCA-04, FCA-05, FCA-07. One status
+   semantic domain (`shared/status/statusTone.ts`) now owns the canonical tones,
+   the alias table for every legacy/cross-layer vocabulary, and the only token
+   color map; dot/icon/badge remain as presentation shapes over it. `EmptyState`
+   gained `iconStyle`/`density` variants so secondary surfaces can reuse it.
+   Form-factor exceptions are documented in the audit rather than forced.
+6. [x] **Batch F — loading and color convergence**: FCA-06 and FCA-08. Loading
+   states now use `LoadingIndicator` while refresh-action icon rotation remains
+   intentional. Product chrome uses semantic tokens; a reviewed allowlist owns
+   content palettes (terminal/ANSI, diff, QR/canvas, theme previews and mascot
+   art) and repository tests reject unclassified hex colors.
+7. [ ] **Batch G — collaboration Rust decomposition**: FCA-14. The dependency
+   map and dedicated spec/plan are complete; the wire-contract module is the
+   first validated extraction. Target, agent-policy, package/storage,
+   journal/plugin and recovery slices remain.
 8. [ ] Run complete repository validation, update the audit status and document
    all manual/target-platform boundaries.
 

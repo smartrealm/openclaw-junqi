@@ -13,7 +13,6 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  Loader2,
   Copy,
   Check,
 } from 'lucide-react';
@@ -31,6 +30,7 @@ type FilterOption = (typeof FILTER_OPTIONS)[number];
 // ── Helpers ───────────────────────────────────────────────
 
 import { TerminalWindow, Gear, FileText, PencilSimple, Wrench } from '@phosphor-icons/react';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 function getToolIcon(toolName: string): React.ReactNode {
   switch (toolName.toLowerCase()) {
@@ -65,7 +65,7 @@ function StatusBadge({ status }: { status: ToolBlock['status'] }) {
   if (status === 'running') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] font-semibold text-blue-400">
-        <Loader2 className="h-3 w-3 animate-spin" />
+        <LoadingIndicator size={12} />
         running
       </span>
     );

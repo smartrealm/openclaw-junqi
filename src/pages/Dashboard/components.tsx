@@ -4,11 +4,12 @@
 //                 FeedItem, AgentItem
 // ═══════════════════════════════════════════════════════════
 
-import { Loader2, Pin, PinOff } from 'lucide-react';
+import { Pin, PinOff } from 'lucide-react';
 import clsx from 'clsx';
 import { themeColorVar } from '@/utils/theme-colors';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import i18n from '@/i18n';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ── Format helpers (shared with index.tsx) ──────────────────
 export const fmtCost = (n: number) => `$${n.toFixed(2)}`;
@@ -108,7 +109,7 @@ export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, 
         style={{ background: `radial-gradient(ellipse at top, ${glowColor}, transparent)` }}
       />
       {loading ? (
-        <Loader2 size={18} className="animate-spin text-aegis-text-dim relative z-10" />
+        <LoadingIndicator size={18} className="text-aegis-text-dim relative z-10" />
       ) : (
         <div
           className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform duration-250 group-hover:scale-105"

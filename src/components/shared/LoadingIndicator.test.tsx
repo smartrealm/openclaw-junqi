@@ -40,3 +40,13 @@ test('invalid dimensions fall back to a visible stable size', () => {
     assert.match(render({ size }), /width:16px;height:16px/);
   }
 });
+
+test('semantic color styles survive while size remains component-owned', () => {
+  const html = render({
+    size: 9,
+    style: { color: 'rgb(var(--aegis-status-running))', width: 99 },
+  });
+  assert.match(html, /color:rgb\(var\(--aegis-status-running\)\)/);
+  assert.match(html, /width:9px;height:9px/);
+  assert.doesNotMatch(html, /width:99px/);
+});

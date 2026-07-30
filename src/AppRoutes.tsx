@@ -6,22 +6,13 @@ import { useNotificationStore } from '@/stores/notificationStore';
 import { useSessionMutationDialogStore } from '@/services/collaboration/sessionMutationDialogStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { useCollaborationSetupStore } from '@/stores/collaborationSetupStore';
+import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
 
 const AppRouteTree = lazy(() => import('@/AppRouteTree'));
 const ToastContainer = lazy(() => import('@/components/Toast/ToastContainer').then(m => ({ default: m.ToastContainer })));
 const GlobalAlertDialog = lazy(() => import('@/components/shared/AlertDialog').then(m => ({ default: m.GlobalAlertDialog })));
 const SessionMutationDialog = lazy(() => import('@/components/Collaboration/SessionMutationDialog').then(m => ({ default: m.SessionMutationDialog })));
 const CollaborationSetupDialog = lazy(() => import('@/components/Collaboration/CollaborationSetupDialog').then(m => ({ default: m.CollaborationSetupDialog })));
-
-function RouteLoadingFallback() {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', gap: 16, background: '#0c1015' }}>
-      <div style={{ width: 32, height: 32, border: '2px solid rgba(14,165,233,0.3)', borderTopColor: '#0ea5e9', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-      <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, fontFamily: 'system-ui,sans-serif' }}>Loading workspace...</span>
-      <style>{'@keyframes spin{to{transform:rotate(360deg)}}'}</style>
-    </div>
-  );
-}
 
 function LazyToastHost() {
   const toastCount = useNotificationStore((s) => s.toasts.length);
@@ -78,7 +69,7 @@ export default function AppRoutes() {
     <HashRouter>
       <LazyToastHost />
       <ErrorBoundary>
-        <Suspense fallback={<RouteLoadingFallback />}>
+        <Suspense fallback={<AppLoadingFallback />}>
           <AppRouteTree />
         </Suspense>
       </ErrorBoundary>

@@ -5,10 +5,11 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye, EyeOff, Star, X, Save, ChevronDown, CheckCircle2, Image, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Star, X, Save, ChevronDown, CheckCircle2, Image } from 'lucide-react';
 import clsx from 'clsx';
 import { Switch } from '@/components/shared/Switch';
 import type { ModelEntry } from './types';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. MaskedInput — password input with show/hide toggle
@@ -319,7 +320,7 @@ export function FloatingSaveButton({ hasChanges, saving, onSave, onDiscard }: Fl
         )}
       >
         {saving ? (
-          <><Loader2 size={14} className="animate-spin" /> {t('config.saving')}</>
+          <><LoadingIndicator size={14} /> {t('config.saving')}</>
         ) : (
           <><Save size={14} strokeWidth={1.75} /> {t('config.reviewAndSave')}</>
         )}

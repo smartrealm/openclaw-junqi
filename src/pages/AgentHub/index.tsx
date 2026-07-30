@@ -8,14 +8,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid, FileArchive, Share2, X } from 'lucide-react';
+import { RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid, FileArchive, Share2, X } from 'lucide-react';
 import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
 import { showAlert } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { ProgressRing } from '@/components/shared/ProgressRing';
-import { StatusDot } from '@/components/shared/StatusDot';
+import { StatusDot } from '@/components/shared/badge';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
@@ -43,6 +43,7 @@ import {
   type ImportedAgentShareDefinition,
 } from './agentShareDefinition';
 import { ExportSharePackageDialog, ImportSharePackageDialog, type SharePackageManifest, type SharePackageSubject } from '@/components/shared/SharePackageDialog';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -405,7 +406,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
                 style={{ background: `linear-gradient(135deg, ${mainColor()}20, ${mainColor()}05)`, borderColor: `${mainColor()}30` }}>
                 O
                 <div className="absolute -bottom-[2px] -end-[2px]">
-                  <StatusDot status={mainSession?.running ? 'active' : 'idle'} size={12} glow beacon={mainSession?.running} />
+                  <StatusDot tone={mainSession?.running ? 'active' : 'idle'} size={12} />
                 </div>
               </div>
               <div className="flex-1 min-w-0">
@@ -503,7 +504,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
                       <div className="w-10 h-10 rounded-[10px] flex items-center justify-center text-[18px] border relative"
                         style={{ background: `linear-gradient(135deg, ${cfg.color}15, ${cfg.color}03)`, borderColor: `${cfg.color}20` }}>
                         {cfg.icon}
-                        {isRunning && <div className="absolute -bottom-[2px] -end-[2px]"><StatusDot status="active" size={8} glow beacon /></div>}
+                        {isRunning && <div className="absolute -bottom-[2px] -end-[2px]"><StatusDot tone="active" size={8} /></div>}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[13px] font-bold" style={{ color: cfg.color }}>{agent.name || agent.id}</div>
@@ -514,7 +515,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
                           {isRunning ? (
                             <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-bold"
                               style={{ background: `${cfg.color}12`, color: cfg.color }}>
-                              <Loader2 size={9} className="animate-spin" /> {t('agentHub.running', 'Running')}
+                              <LoadingIndicator size={9} /> {t('agentHub.running', 'Running')}
                             </span>
                           ) : (
                             <span className="text-[9px] px-1.5 py-0.5 rounded bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim font-bold">
@@ -589,7 +590,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
                       <div className="text-[9px] text-aegis-text-dim font-mono">{worker.model.split('/').pop() || '—'}</div>
                       <span className="flex items-center gap-1 text-[8px] mt-0.5 font-bold"
                         style={{ color: worker.running ? meta.color : 'rgb(var(--aegis-overlay) / 0.2)' }}>
-                        <StatusDot status={worker.running ? 'active' : 'idle'} size={5} glow={worker.running} />
+                        <StatusDot tone={worker.running ? 'active' : 'idle'} size={5} />
                         {worker.running ? t('agentHub.running', 'Running') : t('agentHub.done', 'Done')}
                       </span>
                     </div>
@@ -1140,7 +1141,7 @@ export function AgentHubPage() {
       <div key={w.key}>
         <GlassCard delay={i * 0.02} hover onClick={() => handleWorkerClick(w.key)} className="cursor-pointer">
           <div className="flex items-center gap-4">
-            <StatusDot status={w.running ? 'active' : w.totalTokens > 0 ? 'idle' : 'sleeping'} size={10} glow={w.running} beacon={w.running} />
+            <StatusDot tone={w.running ? 'active' : w.totalTokens > 0 ? 'idle' : 'sleeping'} size={10} />
             <div className="w-[34px] h-[34px] rounded-lg flex items-center justify-center shrink-0 border text-[16px]"
               style={{ background: `linear-gradient(135deg, ${color}15, ${color}05)`, borderColor: `${color}20` }}>
               {meta.icon}
@@ -1173,7 +1174,7 @@ export function AgentHubPage() {
               <div className="mx-2 mt-1 mb-2 rounded-xl border p-4 bg-[rgb(var(--aegis-overlay)/0.02)] border-[rgb(var(--aegis-overlay)/0.06)]">
                 {loadingLog === w.key ? (
                   <div className="flex items-center gap-2 py-3 text-[11px] text-aegis-text-muted">
-                    <Loader2 size={12} className="animate-spin" /> {t('common.loading', 'Loading...')}
+                    <LoadingIndicator size={12} /> {t('common.loading', 'Loading...')}
                   </div>
                 ) : logs.length === 0 ? (
                   <div className="text-[11px] text-aegis-text-dim py-2">{t('agents.noActivity', 'No activity recorded yet')}</div>
@@ -1198,7 +1199,7 @@ export function AgentHubPage() {
                     <div className="flex items-center gap-3 text-[10px] text-aegis-text-muted pt-1 border-t border-[rgb(var(--aegis-overlay)/0.05)]">
                       <span className={clsx('flex items-center gap-1', w.running ? 'text-aegis-primary' : 'text-aegis-text-muted')}>
                         {w.running
-                          ? <><Loader2 size={10} className="animate-spin" /> {t('agentHub.running', 'Running')}</>
+                          ? <><LoadingIndicator size={10} /> {t('agentHub.running', 'Running')}</>
                           : <><AlertCircle size={10} /> {t('agentHub.completed', 'Completed')}</>}
                       </span>
                       <span>·</span><span>{formatTokens(w.totalTokens)} tokens</span><span>·</span><span>{w.model.split('/').pop()}</span>
@@ -1278,7 +1279,13 @@ export function AgentHubPage() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-20"><Loader2 size={24} className="animate-spin text-aegis-primary" /></div>
+        <div className="flex items-center justify-center py-20">
+          <LoadingIndicator
+            size={24}
+            className="text-aegis-primary"
+            label={t('common.loading', 'Loading...')}
+          />
+        </div>
       ) : (
         <>
           {/* ══════════════════════════════════════════════ */}
@@ -1314,7 +1321,7 @@ export function AgentHubPage() {
                       <div className="w-[64px] h-[64px] rounded-2xl flex items-center justify-center shrink-0 text-[26px] font-extrabold border-2 relative"
                         style={{ background: `linear-gradient(135deg, ${mainColor()}25, ${mainColor()}08)`, borderColor: `${mainColor()}35`, color: mainColor() }}>
                         O
-                        <div className="absolute -bottom-[3px] -right-[3px]"><StatusDot status="active" size={14} glow beacon={mainSession.running} /></div>
+                        <div className="absolute -bottom-[3px] -right-[3px]"><StatusDot tone="active" size={14} live={mainSession.running} /></div>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[18px] font-extrabold text-aegis-text">
@@ -1340,7 +1347,7 @@ export function AgentHubPage() {
                     <div className="flex items-center gap-5">
                       <div className="w-[64px] h-[64px] rounded-2xl flex items-center justify-center shrink-0 text-[26px] font-extrabold border-2 relative"
                         style={{ background: `linear-gradient(135deg, ${mainColor()}10, ${mainColor()}04)`, borderColor: `${mainColor()}15`, color: `${mainColor()}50` }}>
-                        O<div className="absolute -bottom-[3px] -right-[3px]"><StatusDot status="sleeping" size={14} /></div>
+                        O<div className="absolute -bottom-[3px] -right-[3px]"><StatusDot tone="sleeping" size={14} /></div>
                       </div>
                       <div className="flex-1">
                         <div className="text-[18px] font-extrabold text-aegis-text-muted">
@@ -1750,7 +1757,7 @@ export function AgentHubPage() {
                                     className="inline-flex items-center gap-1.5 rounded-lg border border-aegis-primary/30 bg-aegis-primary/15 px-4 py-2 text-sm font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/22 disabled:cursor-not-allowed disabled:opacity-35"
                                     title={t('agentHub.wizard.quickCreateHint', 'Create with inherited model and a dedicated workspace')}
                                   >
-                                    {creatingAgent ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                                    {creatingAgent ? <LoadingIndicator size={14} /> : <Zap size={14} />}
                                     {t('agentHub.wizard.quickCreate', 'Create base agent')}
                                   </button>
                                 )}
@@ -1773,7 +1780,7 @@ export function AgentHubPage() {
                                 </button>
                                 ) : (
                                   <button onClick={handleCreateAgent} disabled={!canCreateAgent} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary/20 border border-aegis-primary/30 text-aegis-primary text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed">
-                                    {creatingAgent && <Loader2 size={14} className="animate-spin" />}
+                                    {creatingAgent && <LoadingIndicator size={14} />}
                                     {creatingAgent ? t('agentHub.addForm.creating', 'Creating...') : t('common.create', 'Create')}
                                   </button>
                                 )}
@@ -1983,7 +1990,7 @@ export function AgentHubPage() {
                               <div className="w-[48px] h-[48px] rounded-xl flex items-center justify-center shrink-0 border relative"
                                 style={{ background: `linear-gradient(135deg, ${display.color}20, ${display.color}05)`, borderColor: selectedAgentId === agent.id ? themeHex('primary') : isRunning ? `${display.color}40` : `${display.color}25`, color: display.color }}>
                                 {display.icon}
-                                {isRunning && <div className="absolute -bottom-[2px] -right-[2px]"><StatusDot status="active" size={10} glow beacon /></div>}
+                                {isRunning && <div className="absolute -bottom-[2px] -right-[2px]"><StatusDot tone="active" size={10} /></div>}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-[14px] font-bold text-aegis-text">{agent.name || agent.id}</div>
@@ -1994,7 +2001,7 @@ export function AgentHubPage() {
                                 <div className="flex items-center gap-3 mt-2 text-[10px] text-aegis-text-muted">
                                   {isRunning ? (
                                     <span className="flex items-center gap-1 text-aegis-primary">
-                                      <Loader2 size={9} className="animate-spin" />
+                                      <LoadingIndicator size={9} />
                                       {activeSessions.length > 0
                                         ? t('agentHub.card.runningSessions', { count: activeSessions.length, defaultValue: '{{count}} running' })
                                         : t('agentHub.card.working', 'Working…')}

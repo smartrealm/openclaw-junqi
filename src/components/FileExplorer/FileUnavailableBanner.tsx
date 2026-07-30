@@ -22,7 +22,7 @@ export function FileUnavailableBanner({ onRetry }: { onRetry: () => void }) {
       }}
     >
       <span style={{ display: "flex", alignItems: "center", gap: 7, lineHeight: 1.4 }}>
-        <FileWarning size={14} color="#dc2626" style={{ flexShrink: 0 }} />
+        <FileWarning size={14} color="rgb(var(--aegis-danger))" style={{ flexShrink: 0 }} />
         {t(
           "file.unavailableOnDiskHint",
           "This file cannot be read from disk. Saving is paused until it becomes available.",

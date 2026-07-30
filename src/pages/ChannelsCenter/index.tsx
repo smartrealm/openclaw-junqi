@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, AlertCircle, Bot, Check, ChevronDown, Copy, Download, Link2, ListFilter, Loader2, LogOut, MessageSquare, Pencil, Play, Plus, Power, QrCode, RefreshCw, Save, Settings2, ShieldCheck, Square, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, AlertCircle, Bot, Check, ChevronDown, Copy, Download, Link2, ListFilter, LogOut, MessageSquare, Pencil, Play, Plus, Power, QrCode, RefreshCw, Save, Settings2, ShieldCheck, Square, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
@@ -45,6 +45,7 @@ import {
   type OfficialChannelCapability,
 } from '@/services/openclawChannelRuntime';
 import { ChannelQrLoginDialog } from './ChannelQrLoginDialog';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 function channelName(
   t: ReturnType<typeof useTranslation>['t'],
@@ -284,7 +285,7 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
             disabled={!canSave}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary text-[rgb(var(--aegis-btn-primary-text))] text-[12px] font-extrabold disabled:opacity-50"
           >
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+            {saving ? <LoadingIndicator size={13} /> : <Save size={13} />}
             {t('settings.save', 'Save')}
           </button>
         </div>
@@ -799,7 +800,7 @@ export function ChannelsCenterPage() {
 
       {loading ? (
         <div className="flex items-center justify-center py-24 text-aegis-text-dim">
-          <Loader2 size={24} className="animate-spin" />
+          <LoadingIndicator size={24} label={t('common.loading', 'Loading...')} />
         </div>
       ) : (
         <>
@@ -816,7 +817,7 @@ export function ChannelsCenterPage() {
                   gatewayHealthy ? 'bg-aegis-success/12 text-aegis-success' : 'bg-aegis-warning/12 text-aegis-warning'
                 )}>
                   {gatewayLoading
-                    ? <Loader2 size={18} className="animate-spin" />
+                    ? <LoadingIndicator size={18} />
                     : gatewayHealthy
                       ? <Wifi size={18} />
                       : <WifiOff size={18} />}
@@ -847,7 +848,7 @@ export function ChannelsCenterPage() {
                   disabled={gatewayActionBusy}
                   className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-semibold text-aegis-primary disabled:opacity-50"
                 >
-                  {gatewayActionBusy ? <Loader2 size={13} className="animate-spin" /> : <Power size={13} />}
+                  {gatewayActionBusy ? <LoadingIndicator size={13} /> : <Power size={13} />}
                   {t('channelsCenter.restartGateway', 'Restart Gateway')}
                 </button>
                 <button
@@ -909,7 +910,7 @@ export function ChannelsCenterPage() {
                   {groups.length} {t('channelsCenter.enabledChannels', 'channels')} · {readinessSummary.ready} / {accountCount} {t('channelsCenter.readyAccounts', 'ready')}
                 </div>
                 </div>
-                {saving && <span className="inline-flex items-center gap-1.5 text-[11px] text-aegis-primary"><Loader2 size={12} className="animate-spin" />{t('agentSettings.saving', 'Saving...')}</span>}
+                {saving && <span className="inline-flex items-center gap-1.5 text-[11px] text-aegis-primary"><LoadingIndicator size={12} />{t('agentSettings.saving', 'Saving...')}</span>}
               </div>
 
               {groups.length > 0 && (
@@ -1029,7 +1030,7 @@ export function ChannelsCenterPage() {
                                 disabled={saving || Boolean(pluginInstalling)}
                                 className="inline-flex items-center gap-2 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 px-3 py-1.5 text-[12px] font-semibold text-aegis-primary disabled:opacity-50"
                               >
-                                {pluginInstalling === group.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                                {pluginInstalling === group.id ? <LoadingIndicator size={13} /> : <Download size={13} />}
                                 {t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
                               </button>
                             )}
@@ -1052,7 +1053,7 @@ export function ChannelsCenterPage() {
                               {t('channelsCenter.probe', 'Probe')}
                             </button>
                             <button onClick={() => void handleChannelLogs(group.id)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text">
-                              {channelLogsBusy === group.id ? <Loader2 size={13} className="animate-spin" /> : <TerminalSquare size={13} />}
+                              {channelLogsBusy === group.id ? <LoadingIndicator size={13} /> : <TerminalSquare size={13} />}
                               {t('channelsCenter.channelLogs', 'Channel logs')}
                             </button>
                             <button onClick={() => navigator.clipboard.writeText(JSON.stringify(redactChannelSecrets(group.config), null, 2)).catch(() => undefined)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text">
@@ -1138,14 +1139,14 @@ export function ChannelsCenterPage() {
                                       </button>
                                     )}
                                     <button onClick={() => void handleAccountRuntimeAction('channels.start', group, account)} disabled={Boolean(accountActionBusy)} title={t('channelsCenter.startAccount', 'Start account')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-success/20 text-aegis-success disabled:opacity-50">
-                                      {accountActionBusy === `channels.start:${runtimeBusyPrefix}` ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                                      {accountActionBusy === `channels.start:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <Play size={12} />}
                                     </button>
                                     <button onClick={() => void handleAccountRuntimeAction('channels.stop', group, account)} disabled={Boolean(accountActionBusy)} title={t('channelsCenter.stopAccount', 'Stop account')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-border text-aegis-text-muted disabled:opacity-50">
-                                      {accountActionBusy === `channels.stop:${runtimeBusyPrefix}` ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
+                                      {accountActionBusy === `channels.stop:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <Square size={12} />}
                                     </button>
                                     {(runtime?.linked || linkMode !== 'none') && (
                                       <button onClick={() => void handleAccountRuntimeAction('channels.logout', group, account)} disabled={Boolean(accountActionBusy)} title={t('channelsCenter.logoutAccount', 'Log out account')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-warning/20 text-aegis-warning disabled:opacity-50">
-                                        {accountActionBusy === `channels.logout:${runtimeBusyPrefix}` ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />}
+                                        {accountActionBusy === `channels.logout:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <LogOut size={12} />}
                                       </button>
                                     )}
                                     <button
@@ -1230,7 +1231,7 @@ export function ChannelsCenterPage() {
                         aria-label={t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
                         className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-aegis-primary/25 bg-aegis-primary/10 px-2 text-[11px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/16 disabled:cursor-wait disabled:opacity-50"
                       >
-                        {installBusy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                        {installBusy ? <LoadingIndicator size={13} /> : <Download size={13} />}
                         {t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
                       </button>
                     )}

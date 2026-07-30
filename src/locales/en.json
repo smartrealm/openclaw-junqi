@@ -1188,6 +1188,17 @@
     "failed": "failed",
     "ended": "done"
   },
+  "status": {
+    "neutral": "unknown",
+    "info": "info",
+    "idle": "idle",
+    "dormant": "sleeping",
+    "running": "running",
+    "attention": "needs attention",
+    "success": "done",
+    "warning": "warning",
+    "failed": "failed"
+  },
   "chat": {
     "mainAgentName": "Main Agent",
     "mainAgentIcon": "M",
@@ -1833,7 +1844,6 @@
     "wsUrlLabel": "WebSocket URL",
     "wsUrlPlaceholder": "WebSocket URL",
     "gatewayTokenLabel": "Gateway Token",
-    "memoryApiPlaceholder": "http://localhost:3040",
     "platform": "Platform",
     "userAgent": "User Agent",
     "modelLabel": "Model"

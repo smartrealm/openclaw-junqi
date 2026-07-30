@@ -5,10 +5,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
-import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star, Share2 } from 'lucide-react';
+import { X, Copy, ExternalLink, Download, Trash2, MessageSquare, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -442,7 +443,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
       >
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <Loader2 size={24} className="animate-spin text-aegis-text-dim" />
+            <LoadingIndicator size={24} className="text-aegis-text-dim" />
           </div>
         ) : skill ? (
           <>
@@ -618,7 +619,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                 )}
               >
                 {installState === 'installing' ? (
-                  <><Loader2 size={13} className="animate-spin" /> {installingLabel ?? t('skillsExtra.installing', 'Installing…')}</>
+                  <><LoadingIndicator size={13} /> {installingLabel ?? t('skillsExtra.installing', 'Installing…')}</>
                 ) : installState === 'done' ? (
                   <><CheckCircle2 size={13} aria-hidden="true" />{doneLabel ?? t('skillsExtra.installed', 'Installed')}</>
                 ) : installState === 'error' ? (

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Check, Copy, Key, Loader2, ShieldCheck, X } from 'lucide-react';
+import { Check, Copy, Key, ShieldCheck, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface PairingScreenProps {
   issue: GatewayAuthorizationIssue;
@@ -104,7 +105,7 @@ export function PairingScreen({ issue, onPaired, onCancel }: PairingScreenProps)
           </div>
 
           <div className="mt-4 flex items-center gap-2 text-xs text-aegis-text-dim">
-            <Loader2 size={13} className="animate-spin text-aegis-primary" />
+            <LoadingIndicator size={13} className="text-aegis-primary" />
             <span>{t('pairing.waitingApprovalRetry')}</span>
           </div>
 
@@ -157,7 +158,7 @@ export function PairingScreen({ issue, onPaired, onCancel }: PairingScreenProps)
                   disabled={!manualToken.trim() || submitting}
                   className="rounded-md bg-aegis-primary px-4 py-2 text-sm font-semibold text-aegis-btn-primary-text transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {submitting ? <Loader2 size={15} className="animate-spin" /> : t('pairing.connect')}
+                  {submitting ? <LoadingIndicator size={15} /> : t('pairing.connect')}
                 </button>
               </div>
             </div>

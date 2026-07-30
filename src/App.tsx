@@ -48,16 +48,7 @@ import { hasTauriEventBridge } from '@/utils/tauriEvents';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
-
-function RouteLoadingFallback() {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', gap: 16, background: '#0c1015' }}>
-      <div style={{ width: 32, height: 32, border: '2px solid rgba(14,165,233,0.3)', borderTopColor: '#0ea5e9', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-      <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, fontFamily: 'system-ui,sans-serif' }}>Loading workspace...</span>
-      <style>{'@keyframes spin{to{transform:rotate(360deg)}}'}</style>
-    </div>
-  );
-}
+import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
 
 function ThemeRuntime() {
   useTheme();
@@ -1074,7 +1065,7 @@ export default function App() {
     return (
       <>
         <ThemeRuntime />
-        <RouteLoadingFallback />
+        <AppLoadingFallback />
       </>
     );
   }
@@ -1087,7 +1078,7 @@ export default function App() {
           <NotificationPreferencesRuntime />
         </Suspense>
         <LazyPetRuntimeHost />
-        <Suspense fallback={<RouteLoadingFallback />}>
+        <Suspense fallback={<AppLoadingFallback />}>
           <SetupPage />
         </Suspense>
         {pairingIssue && (
@@ -1145,7 +1136,7 @@ export default function App() {
         </Suspense>
       )}
 
-      <Suspense fallback={<RouteLoadingFallback />}>
+      <Suspense fallback={<AppLoadingFallback />}>
         <AppRoutes />
       </Suspense>
     </>

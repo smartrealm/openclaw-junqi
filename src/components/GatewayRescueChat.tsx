@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, ChevronDown, ChevronRight, KeyRound, Loader2, Send, ShieldCheck } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronRight, KeyRound, Send, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
 import {
@@ -13,6 +13,7 @@ import {
   type GatewayRescueTarget,
   type RescueProviderApi,
 } from '@/services/gatewayRescue';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface GatewayRescueChatProps {
   error: string;
@@ -144,7 +145,7 @@ export function GatewayRescueChat({ error, logs }: GatewayRescueChatProps) {
     <section className="min-w-0">
       {loadingTarget ? (
         <div className="flex items-center gap-2 py-4 text-xs text-aegis-text-muted">
-          <Loader2 size={13} className="animate-spin" />
+          <LoadingIndicator size={13} />
           {t('gatewayRescue.loadingConfig', '正在读取模型配置…')}
         </div>
       ) : (
@@ -299,7 +300,7 @@ export function GatewayRescueChat({ error, logs }: GatewayRescueChatProps) {
               ))}
               {sending && (
                 <div className="mr-8 flex items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-xs text-aegis-text-muted">
-                  <Loader2 size={13} className="animate-spin" />
+                  <LoadingIndicator size={13} />
                   {t('gatewayRescue.sending', '正在分析…')}
                 </div>
               )}
@@ -335,7 +336,7 @@ export function GatewayRescueChat({ error, logs }: GatewayRescueChatProps) {
                 title={t('gatewayRescue.send', '发送')}
                 aria-label={t('gatewayRescue.send', '发送')}
               >
-                {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                {sending ? <LoadingIndicator size={16} /> : <Send size={16} />}
               </button>
             </div>
           </div>

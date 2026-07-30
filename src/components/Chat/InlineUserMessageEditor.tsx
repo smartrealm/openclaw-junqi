@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Check, Loader2, X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 export function InlineUserMessageEditor({
   initialValue,
@@ -70,7 +71,7 @@ export function InlineUserMessageEditor({
           title={t('chat.saveAndRetry', 'Save and retry')}
           aria-label={t('chat.saveAndRetry', 'Save and retry')}
         >
-          {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+          {saving ? <LoadingIndicator size={15} /> : <Check size={15} />}
         </button>
       </div>
     </div>

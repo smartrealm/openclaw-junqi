@@ -17,7 +17,7 @@ use crate::state::runtime_identity::{
 use crate::state::GatewayProcess;
 use flate2::read::GzDecoder;
 use flate2::{Compression, GzBuilder};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -43,6 +43,14 @@ const PLUGIN_PACKAGE_NAME: &str = "@junqi/openclaw-collaboration";
 const MAX_PACKAGE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ARCHIVE_EXPANDED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_CONFIG_BACKUP_BYTES: u64 = 8 * 1024 * 1024;
+/// Filename of the pre-bootstrap OpenClaw config copy kept inside this
+/// operation's private backup directory.
+///
+/// This is a collaboration-owned backup artifact name, not a Native OpenClaw
+/// config path: restore reads the journaled `original_config_backup_path`
+/// rather than reconstructing this name, so it must stay independent of
+/// `paths::OPENCLAW_CONFIG_FILE_NAME`.
+const CONFIG_BACKUP_FILE_NAME: &str = "openclaw.json";
 const MAX_ARCHIVE_ENTRIES: usize = 4_096;
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 const BUNDLED_METADATA_RESOURCE: &str = "collaboration/metadata.json";
@@ -65,206 +73,16 @@ const REQUIRED_COLLABORATION_FEATURES: [&str; 11] = [
     "WORKFLOW_TEMPLATES",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BootstrapTargetClass {
-    NativeManaged,
-    SystemService,
-    Docker,
-    ExternalLocal,
-    ExternalRemote,
-    Unknown,
-}
+mod contract;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DurableCollaborationState {
-    Absent,
-    Present,
-    Corrupt,
-    Unknown,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct BootstrapProbeParams {
-    #[serde(default)]
-    pub target_fingerprint: Option<String>,
-    #[serde(default)]
-    pub expected_connection_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BootstrapApplyParams {
-    pub target_fingerprint: String,
-    pub expected_connection_id: String,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BootstrapRecoveryStrategy {
-    Resume,
-    Rollback,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BootstrapRecoverParams {
-    pub target_fingerprint: String,
-    pub expected_connection_id: String,
-    pub strategy: BootstrapRecoveryStrategy,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BootstrapAbandonParams {
-    pub operation_id: String,
-    pub orphan_target_fingerprint: String,
-    pub current_target_fingerprint: String,
-    pub expected_connection_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BootstrapConfirmHealthParams {
-    pub operation_id: String,
-    pub target_fingerprint: String,
-    pub expected_connection_id: String,
-    pub collaboration_instance_id: String,
-    pub plugin_version: String,
-    pub schema_version: u32,
-    pub durable_state: bool,
-    #[serde(default)]
-    pub durable_runtime: bool,
-    #[serde(default)]
-    pub durable_runtime_supported: bool,
-    #[serde(default)]
-    pub feature_evidence_kind: String,
-    #[serde(default)]
-    pub feature_evidence_behavior_verified: bool,
-    #[serde(default)]
-    pub feature_evidence_required_behavior_gate: String,
-    #[serde(default)]
-    pub feature_evidence_plugin_service_started: bool,
-    #[serde(default)]
-    pub feature_evidence_database_integrity: String,
-    #[serde(default)]
-    pub features: HashMap<String, bool>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BootstrapRestartParams {
-    pub operation_id: String,
-    pub target_fingerprint: String,
-    pub expected_connection_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BootstrapConfigureParams {
-    pub target_fingerprint: String,
-    pub expected_connection_id: String,
-    pub coordinator_agent_id: String,
-    pub allowed_agent_ids: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CollaborationBootstrapProbe {
-    pub ok: bool,
-    pub code: String,
-    pub message: String,
-    pub target_fingerprint: Option<String>,
-    pub connection_id: Option<String>,
-    pub target_class: BootstrapTargetClass,
-    pub deployment_kind: Option<String>,
-    pub ownership: Option<String>,
-    pub gateway_version: Option<String>,
-    pub durable_runtime: bool,
-    pub mutation_allowed: bool,
-    pub manual_install_required: bool,
-    pub binary_path: Option<String>,
-    pub state_dir: Option<String>,
-    pub config_path: Option<String>,
-    pub plugin: BootstrapPluginSnapshot,
-    pub warnings: Vec<String>,
-    pub manual_install_instructions: Option<String>,
-    pub busy: bool,
-    pub recovery_required: bool,
-    pub durable_collaboration_state: DurableCollaborationState,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CollaborationBootstrapStatus {
-    pub busy: bool,
-    pub recovery_required: bool,
-    pub recoverable: bool,
-    pub target_fingerprint: Option<String>,
-    pub journal: Option<CollaborationBootstrapJournal>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CollaborationBootstrapResult {
-    pub ok: bool,
-    pub code: String,
-    pub message: String,
-    pub operation_id: Option<String>,
-    pub target_fingerprint: Option<String>,
-    pub action: Option<String>,
-    pub plugin: Option<BootstrapPluginSnapshot>,
-    pub restart_required: bool,
-    pub health_pending: bool,
-    pub recoverable: bool,
-    pub warnings: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CollaborationBootstrapAbandonResult {
-    pub ok: bool,
-    pub code: String,
-    pub message: String,
-    pub operation_id: Option<String>,
-    pub orphan_target_fingerprint: Option<String>,
-    pub current_target_fingerprint: Option<String>,
-    pub evidence_retained: bool,
-    pub apply_unblocked: bool,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CollaborationBootstrapRestartResult {
-    pub ok: bool,
-    pub code: String,
-    pub message: String,
-    pub operation_id: Option<String>,
-    pub target_fingerprint: Option<String>,
-    pub previous_connection_id: Option<String>,
-    pub target_class: BootstrapTargetClass,
-    pub restart_requested: bool,
-    pub reconnect_required: bool,
-    pub health_pending: bool,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CollaborationBootstrapConfigureResult {
-    pub ok: bool,
-    pub code: String,
-    pub message: String,
-    pub target_fingerprint: Option<String>,
-    pub connection_id: Option<String>,
-    pub coordinator_agent_id: Option<String>,
-    pub allowed_agent_ids: Vec<String>,
-    pub configured_agent_ids: Vec<String>,
-    pub coordinator_policy_updated: bool,
-    pub reload_expected: bool,
-    pub warnings: Vec<String>,
-}
+pub use contract::{
+    BootstrapAbandonParams, BootstrapApplyParams, BootstrapConfigureParams,
+    BootstrapConfirmHealthParams, BootstrapProbeParams, BootstrapRecoverParams,
+    BootstrapRecoveryStrategy, BootstrapRestartParams, BootstrapTargetClass,
+    CollaborationBootstrapAbandonResult, CollaborationBootstrapConfigureResult,
+    CollaborationBootstrapProbe, CollaborationBootstrapRestartResult, CollaborationBootstrapResult,
+    CollaborationBootstrapStatus, DurableCollaborationState,
+};
 
 #[derive(Debug)]
 struct VerifiedPackage {
@@ -3070,7 +2888,7 @@ fn restore_config_bytes_atomically(
         let file_name = config_path
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("openclaw.json");
+            .unwrap_or(crate::paths::OPENCLAW_CONFIG_FILE_NAME);
         let temporary = parent.join(format!(
             ".{file_name}.rollback-{}-{}.tmp",
             std::process::id(),
@@ -3144,7 +2962,7 @@ fn restore_config_bytes_atomically(
     let file_name = config_path
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("openclaw.json");
+        .unwrap_or(crate::paths::OPENCLAW_CONFIG_FILE_NAME);
     let displaced = parent.join(format!(
         ".{file_name}.rollback-{}-{}.removed",
         std::process::id(),
@@ -3248,7 +3066,7 @@ fn backup_config(
         return Err("The target OpenClaw config cannot be backed up safely".to_string());
     }
     let root = private_operation_dir(control, operation_id)?;
-    let destination = root.join("openclaw.json");
+    let destination = root.join(CONFIG_BACKUP_FILE_NAME);
     let content = std::fs::read(config_path)
         .map_err(|error| format!("Failed to read the target OpenClaw config: {error}"))?;
     if content.len() as u64 > MAX_CONFIG_BACKUP_BYTES {

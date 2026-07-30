@@ -8,6 +8,13 @@ export interface LoadingIndicatorProps {
   size?: number | string;
   className?: string;
   label?: string;
+  /**
+   * Extra inline style. The glyph is drawn with `currentColor`, so passing
+   * `{ color }` recolors it — that is how callers that used to inline a
+   * `{ color }` preserves an explicit semantic spinner color. Width and
+   * height stay owned by `size`.
+   */
+  style?: CSSProperties;
 }
 
 function normalizeSize(size: number | string): string {
@@ -27,6 +34,7 @@ export function LoadingIndicator({
   size = 16,
   className,
   label,
+  style,
 }: LoadingIndicatorProps) {
   const accessibilityProps = label
     ? { role: 'status', 'aria-label': label, 'aria-live': 'polite' as const }
@@ -36,7 +44,7 @@ export function LoadingIndicator({
     <span
       {...accessibilityProps}
       className={clsx('aegis-loading-indicator', className)}
-      style={indicatorSize(size, variant)}
+      style={{ ...style, ...indicatorSize(size, variant) }}
       data-loading-indicator={variant}
     >
       {variant === 'dots' ? (

@@ -10,8 +10,9 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface ThinkingBubbleProps {
   content: string;
@@ -86,7 +87,7 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
           )}
         >
           {isStreaming ? (
-            <Loader2 size={12} className="text-aegis-primary/75 animate-spin shrink-0" />
+            <LoadingIndicator size={12} className="text-aegis-primary/75 shrink-0" />
           ) : (
             <span className="w-3 h-3 flex items-center justify-center shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary/45" />

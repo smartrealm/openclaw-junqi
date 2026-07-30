@@ -3,11 +3,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Monitor, AppWindow, Loader2, Camera, Crosshair, ShieldAlert, ChevronRight } from 'lucide-react';
+import { X, Monitor, AppWindow, Camera, Crosshair, ShieldAlert, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
 import clsx from 'clsx';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface WindowSource { id: string; name: string; thumbnail: string; }
 
@@ -172,7 +173,7 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
                 )}
               >
                 <div className="w-10 h-10 rounded-xl bg-[rgb(var(--aegis-overlay)/0.04)] flex items-center justify-center shrink-0">
-                  {capturing === 'screen' ? <Loader2 size={18} className="animate-spin text-aegis-primary" /> : <Monitor size={18} className="text-aegis-text-muted" />}
+                  {capturing === 'screen' ? <LoadingIndicator size={18} className="text-aegis-primary" /> : <Monitor size={18} className="text-aegis-text-muted" />}
                 </div>
                 <div className="flex-1 min-w-0 text-start">
                   <div className="text-[13px] font-medium text-aegis-text">{t('screenshot.fullScreen', '全屏截图')}</div>
@@ -188,7 +189,7 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
             <>
               {loading ? (
                 <div className="flex items-center gap-2 py-3 text-[11px] text-aegis-text-dim">
-                  <Loader2 size={12} className="animate-spin" /> 加载窗口列表…
+                  <LoadingIndicator size={12} /> 加载窗口列表…
                 </div>
               ) : windows.length > 2 ? (
                 <div className="mt-1">

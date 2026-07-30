@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
-  Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
+  Wifi, WifiOff, CheckCircle, Copy, Sun, Moon,
   MonitorDot, FileText, HardDrive, RefreshCw, Type, PawPrint, Info, Clock, Palette, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
@@ -15,7 +15,7 @@ import { GlassCard, GlassCardEnterMotionScope } from '@/components/shared/GlassC
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { OpenClawUpdatePanel } from '@/components/shared/OpenClawUpdatePanel';
-import { StatusDot } from '@/components/shared/StatusDot';
+import { StatusDot } from '@/components/shared/badge';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -45,6 +45,7 @@ import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'pet' | 'connect' | 'storage' | 'maintenance' | 'about';
 const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'pet', 'connect', 'storage', 'maintenance', 'about'];
@@ -968,7 +969,7 @@ export function SettingsPageFull() {
               className="min-w-0 flex-1 px-3 py-2 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text placeholder:text-aegis-text-dim" />
             <button onClick={() => void createAnimatedPet()} disabled={preparingPetSkill}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] bg-aegis-primary text-white hover:opacity-90 transition-opacity disabled:cursor-wait disabled:opacity-60">
-              {preparingPetSkill ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              {preparingPetSkill ? <LoadingIndicator size={13} /> : <Sparkles size={13} />}
               {preparingPetSkill ? t('pet.settings.preparingBuiltinSkill') : t('pet.settings.createInChat')}
             </button>
           </div>
@@ -1077,7 +1078,7 @@ export function SettingsPageFull() {
           <div className="flex items-center justify-between">
             <div className="text-[13px] text-aegis-text">{t('settingsExtra.connectionStatus')}</div>
             <div className="flex items-center gap-2">
-              <StatusDot status={connected ? 'active' : connecting ? 'idle' : 'error'} size={7} />
+              <StatusDot tone={connected ? 'success' : connecting ? 'warning' : 'failed'} size={7} />
               <span className={clsx('text-[12px] font-medium',
                 connected ? 'text-aegis-success' : connecting ? 'text-aegis-warning' : 'text-aegis-danger'
               )}>
@@ -1178,7 +1179,7 @@ export function SettingsPageFull() {
               disabled={testingConnection}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/40 transition-colors disabled:opacity-40"
             >
-              {testingConnection ? <Loader2 size={13} className="animate-spin" /> : <Wifi size={13} />}
+              {testingConnection ? <LoadingIndicator size={13} /> : <Wifi size={13} />}
               {t('settings.testConnection')}
             </button>
             {!connected && !connectionDirty && (

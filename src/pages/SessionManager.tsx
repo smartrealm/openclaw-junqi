@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Users, RefreshCw, Loader2, Zap, Clock, Bot, Activity, Search, Pencil, Trash2, Check, X } from 'lucide-react';
+import { Users, RefreshCw, Zap, Clock, Bot, Activity, Search, Pencil, Trash2, Check, X } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useGatewayDataStore, refreshGroup } from '@/stores/gatewayDataStore';
 import { formatTokens } from '@/utils/format';
@@ -19,6 +19,7 @@ import type { AgentInfo, SessionInfo } from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import { IconButton } from '@/components/shared/button';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
@@ -479,7 +480,7 @@ export function SessionManagerPage() {
           )}
         >
           {loading ? (
-            <Loader2 size={13} className="animate-spin" />
+            <LoadingIndicator size={13} />
           ) : (
             <RefreshCw size={13} />
           )}
@@ -540,7 +541,7 @@ export function SessionManagerPage() {
         /* Initial loading state */
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-aegis-text-dim">
-            <Loader2 size={28} className="animate-spin" />
+            <LoadingIndicator size={28} />
             <p className="text-[12px]">{t('sessions.loading', 'Loading sessions…')}</p>
           </div>
         </div>

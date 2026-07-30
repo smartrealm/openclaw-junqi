@@ -45,28 +45,28 @@
   --btn-bg:      rgb(var(--aegis-primary));
   --btn-bg-soft: rgb(var(--aegis-primary) / 0.12);
   --btn-border:  rgb(var(--aegis-primary) / 0.4);
-  --btn-contrast:var(--aegis-btn-primary-text, #fff);
+  --btn-contrast:var(--aegis-btn-primary-text);
 }
 .button[data-tone=success] {
   --btn-fg:      rgb(var(--aegis-success));
   --btn-bg:      rgb(var(--aegis-success));
   --btn-bg-soft: var(--aegis-success-surface);
   --btn-border:  rgb(var(--aegis-success) / 0.4);
-  --btn-contrast:#fff;
+  --btn-contrast:rgb(var(--color-white));
 }
 .button[data-tone=warning] {
   --btn-fg:      rgb(var(--aegis-warning));
   --btn-bg:      rgb(var(--aegis-warning));
   --btn-bg-soft: var(--aegis-warning-surface);
   --btn-border:  rgb(var(--aegis-warning) / 0.4);
-  --btn-contrast:#fff;
+  --btn-contrast:rgb(var(--color-white));
 }
 .button[data-tone=danger] {
   --btn-fg:      rgb(var(--aegis-danger));
   --btn-bg:      rgb(var(--aegis-danger));
   --btn-bg-soft: var(--aegis-danger-surface);
   --btn-border:  rgb(var(--aegis-danger) / 0.4);
-  --btn-contrast:#fff;
+  --btn-contrast:rgb(var(--color-white));
 }
 
 /* ── Variants ─────────────────────────────────────────── */
@@ -76,8 +76,8 @@
   border-color: var(--btn-bg);
 }
 .button[data-variant=solid]:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--btn-bg) 86%, #000);
-  border-color: color-mix(in srgb, var(--btn-bg) 86%, #000);
+  background: color-mix(in srgb, var(--btn-bg) 86%, rgb(var(--color-black)));
+  border-color: color-mix(in srgb, var(--btn-bg) 86%, rgb(var(--color-black)));
 }
 
 .button[data-variant=soft] {

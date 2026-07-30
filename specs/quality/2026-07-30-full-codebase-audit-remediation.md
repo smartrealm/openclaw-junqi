@@ -34,14 +34,20 @@ requires implementation, regression coverage, and validation evidence.
 - [x] FCA-03/FCA-09: the production showcase route and showcase-only visual
       components/dependencies are removed; retained Radix behavior primitives
       consume Aegis tokens and no second shadcn token source remains.
-- [ ] FCA-04/FCA-05/FCA-07: status presentation, switch, input, and empty-state
-      behavior use shared Aegis primitives with typed semantic contracts.
-- [ ] FCA-06: loading states use `LoadingIndicator` or `Button loading`, retain
+- [x] FCA-04: status presentation has one semantic domain (`statusTone.ts`) and
+      one token color source; exactly one `StatusDot` implementation remains.
+- [x] FCA-05/FCA-07: switch and empty-state behavior use shared Aegis
+      primitives, with form-factor exceptions (ThemePicker's full-card toggle,
+      CollaborationDetails' inline notice) explicitly classified rather than
+      mechanically replaced. `ToolCallHistoryPopover`'s waiting/empty state
+      migrates with FCA-06.
+- [x] FCA-06: loading states use `LoadingIndicator` or `Button loading`, retain
       refresh-icon semantics, expose status semantics, and respect reduced
-      motion.
-- [ ] FCA-08: product chrome colors consume theme tokens; intentional content,
-      terminal-search, diff, QR/canvas, and mascot colors are explicitly
-      classified rather than mechanically replaced.
+      motion. A repository regression rejects production `Loader2` renderers.
+- [x] FCA-08: product chrome colors consume theme tokens; intentional content,
+      terminal/ANSI, terminal-search, diff, QR/canvas, theme-preview and mascot
+      colors are explicitly classified and guarded rather than mechanically
+      replaced.
 
 ### Rust modularity
 

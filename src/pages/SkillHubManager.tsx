@@ -16,10 +16,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import {
-  Blocks, FolderOpen, Trash2, Plus, AlertTriangle, Loader2,
-  CheckCircle2, XCircle, Link2, Settings, X,
+  Blocks, FolderOpen, Trash2, Plus, AlertTriangle,
+  CheckCircle2, XCircle, Link2, Settings, X, Circle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface SkillHubConfig {
   hubProjectId?: string | null;
@@ -79,7 +80,7 @@ function healthIcon(h: string | undefined) {
     case 'ok': return <CheckCircle2 size={12} />;
     case 'broken':
     case 'diverged': return <XCircle size={12} />;
-    default: return <Loader2 size={12} className="opacity-50" />;
+    default: return <Circle size={12} className="opacity-50" />;
   }
 }
 
@@ -409,7 +410,7 @@ export function SkillHubManager() {
       <div className="flex-1 px-6 py-4">
         {loading ? (
           <div className="flex items-center gap-2 text-aegis-text-dim text-[13px]">
-            <Loader2 size={14} className="animate-spin" />
+            <LoadingIndicator size={14} />
             Loading…
           </div>
         ) : !hubPathSet ? (

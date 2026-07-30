@@ -1,6 +1,16 @@
 # 全量代码审查（2026-07-29）
 
-状态：原始只读审查完成；2026-07-30 已启动分批修复。当前 FCA-01/02/03/09/10/11/12/13 已自动化验证，FCA-05/07 完成共享原语与首批迁移，FCA-04/06/08/14 及剩余消费者迁移仍待完成。实施契约见 `specs/quality/2026-07-30-full-codebase-audit-remediation.md` 与 `plans/quality/2026-07-30-full-codebase-audit-remediation.md`。
+状态：原始只读审查完成；2026-07-30 分批修复进行中。实施契约见 `specs/quality/2026-07-30-full-codebase-audit-remediation.md` 与 `plans/quality/2026-07-30-full-codebase-audit-remediation.md`。
+
+分级进度（以代码复核为准，不以批次声明为准）：
+
+| 分级 | 条目 |
+| --- | --- |
+| 已闭环并有守护测试 | FCA-01、FCA-02、FCA-03、FCA-04、FCA-06、FCA-08、FCA-09、FCA-10、FCA-11、FCA-12、FCA-13 |
+| 已分类，保留有理由的例外 | FCA-05、FCA-07 |
+| 分域拆分进行中 | FCA-14（wire contract 已提取，其余子域待迁移） |
+
+前一版状态行把 FCA-02 与 FCA-11 记为「已自动化验证」，但当时 `collaboration_bootstrap.rs`、`system.rs` 仍有 4 个 Native 配置路径构造点，三份 locale 仍各有一份 Memory API 端点副本，且两项都没有守护测试。该表述已按代码事实更正，两项已在 2026-07-30 第二阶段真正闭环。
 
 ## 审计契约
 
@@ -72,6 +82,44 @@
 - FCA-06 首批：`StatusBadge` 的 running spinner 已改用 `LoadingIndicator`，剩余 `Loader2 + animate-spin` 为 109 处。
 
 自动化结果：`pnpm lint`、`pnpm build`、完整前端 1875 项、脚本 224 项、Rust 652 项（3 项既有环境测试 ignored）、collaboration 368 项、plugin package validation、55 个官方 OpenClaw 链接、`cargo fmt -- --check`、`cargo check --lib` 与 `git diff --check` 均通过。四主题视觉验收和目标平台真机验收尚未执行。
+
+### 2026-07-30 第二阶段实施结果
+
+本阶段起点是对第一阶段结论的逐项代码复核，因此先修正了两处被高估的状态。
+
+**FCA-02 真正闭环。** 第一阶段建立了 `paths::OPENCLAW_CONFIG_FILE_NAME`，但四个构造点仍绕过它：`collaboration_bootstrap.rs` 的两处 `.unwrap_or("openclaw.json")` 与备份目标路径、`system.rs` 的 smoke 探测配置路径。现在前者消费共享常量，备份名提升为模块级 `CONFIG_BACKUP_FILE_NAME` 并注明它是 collaboration 拥有的产物名（恢复走 journal 记录的 `original_config_backup_path`，不重建此名），`system.rs` 改用 `paths::native_config_path`。新增 `paths.rs` 的 `native_config_authority_tests`：除行为断言外，扫描 `paths.rs`、`system.rs`、`state_dir_probe.rs`、`runtime_identity.rs`、`collaboration_bootstrap.rs` 的生产段，只允许 `const` 声明拼写该文件名。该测试已验证可在修复前失败，并精确指向 `system.rs:1720`。
+
+**FCA-11 真正闭环。** 三份 locale 的 `memoryApiPlaceholder` 是端点副本且无任何消费者（无静态引用，也无动态键拼接），已删除。新增 `BUG-FCA-11` 回归，禁止任何 locale 重述 Gateway 或 Memory API 端点。
+
+**FCA-04 收敛完成。** 新增 `src/components/shared/status/statusTone.ts` 作为唯一状态语义域：9 个无同义的规范 tone、一张把三套历史词汇与跨层任务/启动/聊天/看板词汇归一化的别名表、以及唯一的 token 取色表。三种呈现形态保留（点、图标、徽章）——它们是真实不同的 UI 需求——但都改为消费该语义域：
+
+- 删除 `shared/StatusDot.tsx`（重复实现，且含硬编码 `#424242`）；两个消费者改用共享 `StatusDot`；
+- `shared/StatusBadge.tsx` 内的第三个同名 `StatusDot` 无外部消费者，改为从共享原语再导出；
+- `badge/Badge.tsx` 的 `StatusDot` 成为唯一实现，支持数字直径以覆盖原 A 的用法，颜色/发光经 CSS 变量注入，`badge.module.css` 因此不再维护第二张颜色表，并新增 `prefers-reduced-motion` 降级；
+- `StatusIcon.tsx` 的长 switch 改为「形状查表 + 统一取色」，消除 `var(--success)` / `var(--danger)` / `--aegis-primary` 混用；
+- 新增 `--aegis-status-dormant` 到四个主题（替代原硬编码灰），并补 `status.*` 三语词条 9 键。
+
+有意的视觉统一：`review` 原为蓝色而语义相同的 `awaiting_review` 为琥珀色，现统一为 attention；`detached` 保留原琥珀色读法（映射到 warning 而非 neutral）。这两项需要四主题视觉验收确认。
+
+**FCA-05 与 FCA-07 分类完成，保留有理由的例外。**
+
+- `ThemePicker.tsx` 的 `role="switch"` 不是重复的开关控件，而是整张可点击卡片（48×28 大号轨道、22px 图标 knob、状态 pill），a11y 语义完整。机械替换为共享 `Switch` 会破坏该 UI，判定为形态例外。其 knob 的 `#ffffff` 需要一个「始终浅色、承载彩色图标」的语义 token；现有四个候选都不匹配（`--control-knob-bg` 在 light/eyecare 下解析为深色，`--aegis-btn-primary-text` 在 dark/midnight 下是深色），按 plan guardrail 留待设计决策，未机械替换。
+- `CollaborationDetails.tsx` 的 `EmptySection` 是行内单行提示（`py-2`、11px），与区域级空状态形态不同，判定为例外。
+- `EmptyState` 新增 `iconStyle`（`framed` / `bare`）与 `density`（`comfortable` / `compact`）两个变体，使共享原语能容纳次级表面而不强制统一外观；`WelcomePage` 的 `WorkspaceEmptyState` 已迁移为其包装。`ToolCallHistoryPopover` 的 `EmptyOrWaiting` 含 waiting/empty 双语义，迁移留待 Batch F 与加载状态一并处理。
+
+自动化结果：`pnpm lint`、`pnpm build`、前端 1884 项、脚本 224 项、Rust 655 项（3 项既有环境测试 ignored）、collaboration 368 项、plugin package validation、55 个官方 OpenClaw 链接、`cargo fmt -- --check`、`cargo check --lib`、`git diff --check` 全部通过。生产 CSS 产物已确认四个主题的 `--aegis-status-dormant` 均生成。
+
+未执行的验证：四主题（含 light / eyecare）视觉走查，因此上述有意的颜色统一与 dormant 取值仍属未验收边界；目标平台真机验收未执行。
+
+### 2026-07-30 第三阶段实施结果
+
+**FCA-06 闭环。** 生产 TS/TSX 不再渲染 Lucide `Loader2`；通用加载状态统一消费 `LoadingIndicator`，Button 内置 loading 契约保持不变。刷新操作自身的 `RefreshCw` / `RotateCcw` 旋转继续保留，因为它表达的是用户触发动作而不是另一套加载原语。新增 `LoadingIndicator.contract.test.ts`，扫描生产源码阻止 `Loader2` 回流，并验证共享组件独占 `role=status` / `aria-live` / decorative `aria-hidden` 与 reduced-motion 样式契约。顶层 lazy fallback 也收敛为共享 `AppLoadingFallback`，删除两份手写 border spinner。
+
+**FCA-08 闭环。** 明确属于产品 chrome 的启动页、终端通知面板、TopBar 状态灯、设置流程按钮、文件告警、Gateway 错误页、语音波形、日志菜单和终端主按钮均改为 Aegis 语义 token。新增 `productChromeColors.test.ts`：生产 TS/TSX/CSS 的十六进制色值默认禁止，仅允许经逐文件说明的内容色域，包括主题 token 定义、ANSI/xterm、终端搜索、Git diff、主题预览、QR bitmap、文件类型、数据可视化和宠物/SVG 绘图。该白名单是语义边界，不以“清零文本命中”为目标。
+
+**FCA-14 启动分域拆分。** 新增独立 spec/plan 与依赖顺序；第一条垂直切片将 Tauri 请求/响应 DTO 和序列化 enum 移至 `src-tauri/src/commands/collaboration_bootstrap/contract.rs`，父模块公开 re-export，八个 command 名称、注册路径、签名外形和 wire casing 均不变。3组 Rust JSON 契约测试覆盖全部序列化 enum、全部 command 参数的 camelCase/default 行为，以及全部 command 响应的精确字段集合。其余 target、agent policy、package/storage、journal/plugin、recovery 子域仍待迁移，因此 FCA-14 保持“进行中”。
+
+本阶段当前自动化结果：`pnpm lint`（612 模块）、前端1887项、脚本224项、Rust658项（3项既有环境测试 ignored）、collaboration 368项、plugin package validation、55个官方 OpenClaw 链接、`pnpm build`、`cargo fmt -- --check`、`cargo check --lib` 与 `git diff --check` 通过。四主题视觉走查与目标平台真机验收仍未执行。
 
 ## 符合契约的部分
 

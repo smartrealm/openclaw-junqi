@@ -14,12 +14,13 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { marked } from 'marked';
 import {
   ChevronDown, ChevronRight, Wrench, Copy, Check,
-  AlertCircle, Loader2, ArrowLeft,
+  AlertCircle, ArrowLeft,
   User, Sparkles, Braces,
   MessageSquare, Clock, FileDown,
   Play,
 } from 'lucide-react';
 import { debugError } from '@/utils/debugLog';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface SessionContent {
   type: 'text' | 'tool_use' | 'thinking';
@@ -441,7 +442,7 @@ export function SessionViewPage({
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {loading && (
           <div className="flex items-center gap-2.5 text-[13px] text-aegis-text-dim py-4">
-            <Loader2 size={15} className="animate-spin text-aegis-primary" />
+            <LoadingIndicator size={15} className="text-aegis-primary" />
             <span>{t('sessionPlayback.loading', 'Loading session…')}</span>
           </div>
         )}

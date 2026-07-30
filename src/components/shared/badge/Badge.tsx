@@ -1,8 +1,15 @@
 // Badge + StatusDot — Aegis Design System
 // Adapted from Hermes shared-ui, using aegis-* tokens.
 // Pattern: data-* attributes drive CSS variants (no clsx tone switching).
-import { forwardRef, type HTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import clsx from 'clsx';
+import {
+  resolveStatusTone,
+  statusToneColor,
+  statusToneGlow,
+  toneAnimatesByDefault,
+  type StatusTone,
+} from '../status/statusTone';
 import s from './badge.module.css';
 
 // ── Types ────────────────────────────────────────────────
@@ -52,44 +59,54 @@ export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(function Badge(
 
 // ── StatusDot ────────────────────────────────────────────
 
-export type StatusDotTone =
-  | 'neutral'
-  | 'primary'
-  | 'info'
-  | 'running'
-  | 'live'        // running + pulse animation
-  | 'attention'
-  | 'success'
-  | 'ok'
-  | 'ended'
-  | 'failed'
-  | 'danger'
-  | 'err'
-  | 'idle'
-  | 'warning'
-  | 'warn';
+/**
+ * Any vocabulary `resolveStatusTone` understands — the canonical tones plus
+ * the legacy/lifecycle spellings callers already pass. Kept as a widened
+ * string so a caller's own domain type (agent lifecycle, task status) is
+ * assignable without a cast; unknown values render `neutral`.
+ */
+export type StatusDotTone = StatusTone | (string & {});
 
-export type StatusDotSize = 'sm' | 'md' | 'lg';
+/** Named size steps, or an explicit pixel diameter. */
+export type StatusDotSize = 'sm' | 'md' | 'lg' | number;
 
-export interface StatusDotProps extends HTMLAttributes<HTMLSpanElement> {
+export interface StatusDotProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'children'> {
   tone?: StatusDotTone;
   size?: StatusDotSize;
-  /** Adds pulse glow animation on top of the running tone */
+  /**
+   * Force the pulse animation on or off. Defaults to the tone's own
+   * behavior, so in-flight work animates and settled states do not.
+   */
   live?: boolean;
+  /** Accessible name. Omit to leave the dot decorative (`aria-hidden`). */
+  label?: string;
 }
 
 export const StatusDot = forwardRef<HTMLSpanElement, StatusDotProps>(function StatusDot(
-  { className, tone = 'neutral', size = 'md', live, ...props },
+  { className, tone = 'neutral', size = 'md', live, label, style, ...props },
   ref,
 ) {
+  const resolved = resolveStatusTone(tone);
+  const animated = live ?? toneAnimatesByDefault(resolved);
+  const explicitDiameter = typeof size === 'number' ? size : undefined;
+
   return (
     <span
       {...props}
       ref={ref}
       className={clsx(s.dot, className)}
-      data-tone={tone}
-      data-size={size}
-      data-live={live ? 'true' : undefined}
+      data-tone={resolved}
+      data-size={typeof size === 'number' ? undefined : size}
+      data-live={animated ? 'true' : undefined}
+      role={label ? 'img' : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      style={{
+        ...style,
+        ...(explicitDiameter ? { width: explicitDiameter, height: explicitDiameter } : null),
+        '--dot-color': statusToneColor(resolved),
+        '--dot-glow': statusToneGlow(resolved),
+      } as CSSProperties}
     />
   );
 });

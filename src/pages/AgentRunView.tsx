@@ -21,7 +21,7 @@ import type { FitAddon } from '@xterm/addon-fit';
 import {
   Play, Square, RotateCcw, ChevronDown, AlertCircle,
   GitBranch,
-  Loader2, FileText, CheckCircle2,
+  FileText, CheckCircle2,
   FileWarning, FilePlus2, Bookmark,
   Laptop, GitPullRequestArrow, RefreshCw,
   Search, X, Check, SquareTerminal, Pencil, Download, Copy,
@@ -83,6 +83,7 @@ import {
   getTerminalAppearancePreferencesSnapshot,
   subscribeTerminalAppearancePreferences,
 } from '@/components/Terminal/terminalAppearancePreferences';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -336,7 +337,7 @@ function LaunchSelector({ mode, baseBranch, onMode, onBranch, disabled, projectP
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[12px] font-mono"
             style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }}>
             <GitBranch size={11} /> {baseBranch || t('agentWorkspace.run.selectBaseBranch', 'Select base branch')}
-            {loading ? <Loader2 size={11} className="animate-spin" /> : <ChevronDown size={11} />}
+            {loading ? <LoadingIndicator size={11} /> : <ChevronDown size={11} />}
           </button>
           {open && (
             <div className="absolute top-full mt-1 left-0 z-50 w-48 rounded-lg overflow-hidden"

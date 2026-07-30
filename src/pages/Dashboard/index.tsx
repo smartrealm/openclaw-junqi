@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   RefreshCw, BarChart3,
-  Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight, Loader2,
+  Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight,
   TrendingUp, TrendingDown, Minus, MessageSquarePlus,
   ChartNoAxesCombined, Blocks, Gauge, Clock3, FolderKanban, TerminalSquare,
 } from 'lucide-react';
@@ -62,6 +62,7 @@ import {
   SoccerBall, Cube, MagnifyingGlass, Lightbulb,
   Monitor, Robot,
 } from '@phosphor-icons/react';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 const AGENT_ICONS: Record<string, React.ReactNode> = {
   main:       <Monitor size={14} weight="regular" />,
@@ -557,7 +558,7 @@ export function DashboardPage() {
                   ? "border-aegis-primary/25 bg-aegis-primary/[0.07] text-aegis-primary"
                   : "border-aegis-warning/25 bg-aegis-warning/[0.07] text-aegis-warning",
               )}>
-                {gatewayConnecting ? <Loader2 size={14} className="animate-spin" /> : <WifiOff size={14} />}
+                {gatewayConnecting ? <LoadingIndicator size={14} /> : <WifiOff size={14} />}
               </span>
               <div className="min-w-0">
                 <h2 className="text-[13px] font-semibold text-aegis-text">

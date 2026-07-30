@@ -14,7 +14,6 @@ import {
   Hammer,
   Inbox,
   Layers,
-  Loader2,
   LayoutDashboard,
   Monitor,
   Package,
@@ -32,12 +31,14 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { TimelineView, type TimelineTask } from './TimelineView';
+import { EmptyState } from './EmptyState';
 import { Icon } from '@/components/shared/icons';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { useChatStore } from '@/stores/chatStore';
 import { useWorkshopStore } from '@/stores/workshopStore';
 import { debugWarn } from '@/utils/debugLog';
 import { migrateLegacyProjectPaths } from '@/workspace/projectWorkspace';
+import { LoadingIndicator } from './LoadingIndicator';
 
 export interface CLITool {
   id: string;
@@ -626,7 +627,7 @@ function ProjectsView({
                             {t('welcome.local', 'LOCAL')}
                           </span>
                         )}
-                        {opening && <Loader2 size={14} className="shrink-0 animate-spin text-aegis-primary" />}
+                        {opening && <LoadingIndicator size={14} className="shrink-0 text-aegis-primary" />}
                       </button>
                       <button
                         type="button"
@@ -636,7 +637,7 @@ function ProjectsView({
                         aria-label={t('welcome.removeProjectNamed', 'Remove {{name}} from recents', { name: project.name })}
                         className="me-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-aegis-text-dim opacity-0 transition-colors hover:bg-aegis-danger/10 hover:text-aegis-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/35 disabled:cursor-wait group-hover:opacity-100"
                       >
-                        {removing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                        {removing ? <LoadingIndicator size={12} /> : <Trash2 size={12} />}
                       </button>
                     </article>
                   );
@@ -750,20 +751,24 @@ function WorkspaceEmptyState({
   onAction?: () => void;
 }) {
   return (
-    <div className="flex min-h-48 flex-col items-center justify-center gap-3 px-6 py-8 text-center">
-      <span className="text-aegis-text-dim opacity-55">{icon}</span>
-      <div className="text-[12.5px] font-medium text-aegis-text-secondary">{title}</div>
-      {actionLabel && onAction && (
-        <button
-          type="button"
-          onClick={onAction}
-          className="flex h-8 items-center gap-1.5 rounded-md border border-aegis-border px-3 text-[11px] font-semibold text-aegis-text-secondary hover:bg-aegis-hover/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
-        >
-          <FolderOpen size={13} />
-          {actionLabel}
-        </button>
-      )}
-    </div>
+    <EmptyState
+      className="min-h-48 gap-3 px-6 py-8"
+      iconStyle="bare"
+      icon={icon}
+      title={title}
+      action={
+        actionLabel && onAction ? (
+          <button
+            type="button"
+            onClick={onAction}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-aegis-border px-3 text-[11px] font-semibold text-aegis-text-secondary hover:bg-aegis-hover/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
+          >
+            <FolderOpen size={13} />
+            {actionLabel}
+          </button>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -813,7 +818,7 @@ function SkillsView() {
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 size={16} className="animate-spin text-aegis-text-dim" />
+            <LoadingIndicator size={16} className="text-aegis-text-dim" />
           </div>
         ) : skills.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">

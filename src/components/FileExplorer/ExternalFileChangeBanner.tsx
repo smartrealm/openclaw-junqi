@@ -45,7 +45,7 @@ export function ExternalFileChangeBanner({
           lineHeight: 1.4,
         }}
       >
-        <TriangleAlert size={14} color="#d97706" style={{ flexShrink: 0 }} />
+        <TriangleAlert size={14} color="rgb(var(--aegis-warning))" style={{ flexShrink: 0 }} />
         {t(
           "file.externalChangeConflict",
           "This file changed on disk while you have unsaved edits. Keeping your edits will overwrite the newer disk content.",

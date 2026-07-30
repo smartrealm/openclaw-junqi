@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { Play, RotateCcw, Loader2, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock } from 'lucide-react';
+import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock } from 'lucide-react';
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
@@ -14,6 +14,7 @@ import { useGatewayDataStore, refreshGroup, ensureGroupFresh } from '@/stores/ga
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { dataColor, themeHex, themeAlpha } from '@/utils/theme-colors';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -524,7 +525,7 @@ export function CronMonitorPage() {
           <div className="flex-1 overflow-y-auto p-2">
             {loading ? (
               <div className="flex items-center justify-center py-16">
-                <Loader2 size={20} className="animate-spin text-aegis-text-dim" />
+                <LoadingIndicator size={20} className="text-aegis-text-dim" />
               </div>
             ) : sortedJobs.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -625,7 +626,7 @@ export function CronMonitorPage() {
                           : isError ? 'border-aegis-danger/20 text-aegis-danger/50 hover:text-aegis-danger hover:border-aegis-danger/40'
                           : 'border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim hover:text-aegis-accent hover:border-aegis-accent/30 hover:bg-aegis-accent/[0.04]',
                         )}>
-                        {actionLoading === `run-${job.id}` ? <Loader2 size={11} className="animate-spin" />
+                        {actionLoading === `run-${job.id}` ? <LoadingIndicator size={11} />
                           : runResult[job.id] === 'ok' ? <Check size={11} />
                           : runResult[job.id] === 'error' ? <X size={11} />
                           : isError ? <RotateCcw size={11} />
@@ -762,7 +763,7 @@ export function CronMonitorPage() {
                       bg-aegis-primary/[0.08] border border-aegis-primary/20 text-aegis-primary
                       hover:bg-aegis-primary/15 transition-colors disabled:opacity-40">
                     {actionLoading === `run-${selectedJob.id}`
-                      ? <Loader2 size={12} className="animate-spin mx-auto" />
+                      ? <LoadingIndicator size={12} className="mx-auto" />
                       : runResult[selectedJob.id] === 'ok' ? t('cronDetail.done') : t('cronDetail.runNow')}
                   </button>
                   <button onClick={() => toggleJob(selectedJob.id, !selectedJob.enabled)}
@@ -800,7 +801,7 @@ export function CronMonitorPage() {
             <div className={clsx('px-2 py-1', showAllLogs ? 'flex-1 overflow-y-auto' : 'overflow-hidden')}>
               {loadingRuns ? (
                 <div className="flex items-center gap-2 py-4 px-3 text-[10px] text-aegis-text-dim">
-                  <Loader2 size={12} className="animate-spin" /> Loading...
+                  <LoadingIndicator size={12} /> Loading...
                 </div>
               ) : activityRuns.length === 0 ? (
                 <div className="text-[10px] text-aegis-text-dim py-4 px-3">{t('cron.noRunsYet', 'No runs yet')}</div>
@@ -1006,7 +1007,7 @@ export function CronMonitorPage() {
                   disabled={creating}
                   className="px-3 py-1.5 rounded-lg text-[11.5px] font-semibold bg-aegis-accent text-aegis-btn-primary-text hover:brightness-110 disabled:opacity-50"
                 >
-                  {creating ? <Loader2 size={11} className="inline animate-spin" /> : null}
+                  {creating ? <LoadingIndicator size={11} className="inline" /> : null}
                   {t('common.create', '创建')}
                 </button>
               </div>
