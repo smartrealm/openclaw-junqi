@@ -2,6 +2,7 @@ import type {
   MetaItem,
   RenderBlock,
   ToolBlock,
+  ExecutionPlanBlock,
   ThinkingBlock,
   MessageBlock,
   InlineButtonsBlock,
@@ -17,6 +18,7 @@ import type {
   MessageSemanticBlock,
   ThinkingSemanticBlock,
   ToolActivitySemanticBlock,
+  ExecutionPlanSemanticBlock,
   InlineButtonsSemanticBlock,
   CompactionSemanticBlock,
   FileOutputSemanticBlock,
@@ -24,6 +26,10 @@ import type {
   WorkshopEventSemanticBlock,
   SessionEventSemanticBlock,
 } from '@/types/SemanticBlock';
+import {
+  parseOpenClawUpdatePlan,
+  reconcileExecutionPlanSnapshots,
+} from '@/agent-execution-plan/domain';
 import { stripDirectives, isNoise, stripUserMeta } from './TextCleaner';
 import { autoDetectCode } from '@/utils/autoDetectCode';
 import {
@@ -59,6 +65,27 @@ function createBlockBase(normalized: NormalizedMessage, id = normalized.id) {
     timestamp: normalized.timestamp,
     isStreaming: normalized.isStreaming,
     responseState: normalized.responseState,
+  };
+}
+
+function executionPlanBlock(
+  normalized: NormalizedMessage,
+  toolName: unknown,
+  toolInput: unknown,
+  id: string,
+): ExecutionPlanSemanticBlock | null {
+  const snapshot = parseOpenClawUpdatePlan(toolName, toolInput, {
+    sourceId: id,
+    sessionKey: normalized.sessionKey,
+    runId: normalized.runId,
+    sourceSequence: normalized.sourceSequence,
+    timestamp: normalized.timestamp,
+  });
+  if (!snapshot) return null;
+  return {
+    ...createBlockBase(normalized, id),
+    type: 'execution-plan',
+    snapshot,
   };
 }
 
@@ -153,23 +180,23 @@ export function buildSemanticBlocks(
   }
 
   if (role === 'assistant' && normalized.hasOnlyToolCallContent && normalized.toolCalls.length > 0) {
-    return normalized.toolCalls.map((tool, index) => ({
-      ...createBlockBase(normalized, `${normalized.id}-call-${index}`),
-      type: 'tool-activity',
-      toolName: tool.name || 'unknown',
-      input: tool.input ?? {},
-      status: 'done',
-      // Preserve the original message's toolDurationMs so the duration chip
-      // survives session switches and re-renders. Before this fix the
-      // tool block was rebuilt without durationMs on every recomputeBlocks
-      // call, so the chip disappeared whenever the user navigated away
-      // and back (or any other cache miss triggered recomputeBlocks).
-      durationMs: normalized.toolDurationMs,
-    }) satisfies ToolActivitySemanticBlock);
+    return normalized.toolCalls.map((tool, index) => {
+      const id = `${normalized.id}-call-${index}`;
+      return executionPlanBlock(normalized, tool.name, tool.input, id) ?? ({
+        ...createBlockBase(normalized, id),
+        type: 'tool-activity',
+        toolName: tool.name || 'unknown',
+        input: tool.input ?? {},
+        status: 'done',
+        durationMs: normalized.toolDurationMs,
+      } satisfies ToolActivitySemanticBlock);
+    });
   }
 
   if (role === 'toolResult' || role === 'tool') {
     const toolName = normalized.toolName || normalized.toolResults[0]?.name || 'unknown';
+    const planBlock = executionPlanBlock(normalized, toolName, normalized.toolInput, normalized.id);
+    if (planBlock) return [planBlock];
     const buttonRows = extractInlineButtonRows(toolName, normalized.toolInput);
     if (buttonRows) {
       return [{ ...base, type: 'inline-buttons', rows: buttonRows } satisfies InlineButtonsSemanticBlock];
@@ -311,6 +338,19 @@ export function projectSemanticBlocksToRenderBlocks(blocks: SemanticBlock[]): Re
           durationMs: block.durationMs,
         } satisfies ToolBlock);
         break;
+      case 'execution-plan': {
+        const plan = reconcileExecutionPlanSnapshots([block.snapshot]);
+        if (plan) {
+          renderBlocks.push({
+            type: 'execution-plan',
+            id: block.id,
+            timestamp: block.timestamp,
+            isStreaming: block.isStreaming,
+            plan,
+          } satisfies ExecutionPlanBlock);
+        }
+        break;
+      }
       case 'inline-buttons':
         renderBlocks.push({
           type: 'inline-buttons',

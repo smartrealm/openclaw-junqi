@@ -118,6 +118,7 @@ docs/
 - [设置页面多语言完整性审计](quality/settings-localization-completeness-2026-07-30.md)
 - [全局专注上下文与任务简报验证](quality/focus-context-and-task-briefs-validation-2026-07-30.md)
 - [Focus Context 与 Task Brief 来源盘点](quality/current-branch-focus-task-brief-change-inventory-2026-07-30.md)
+- [Chat 执行计划协议审计](quality/chat-execution-plan-protocol-audit-2026-07-30.md)
 
 ## 产品设计草案
 
@@ -125,6 +126,7 @@ docs/
 
 - [ComfyUI Creative Studio 设计](design/comfyui-creative-studio-design.md)
 - [全局专注上下文与任务简报设计](design/focus-context-and-task-briefs-design.md)
+- [Agent 分步执行计划与折叠进度设计](design/agent-execution-plan-progress-design.md)
 
 该文档是大型设计稿，不代表所有功能已经实现。
 

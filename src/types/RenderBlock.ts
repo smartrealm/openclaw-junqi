@@ -1,3 +1,5 @@
+import type { AgentExecutionPlan } from '@/agent-execution-plan/domain';
+
 // ═══════════════════════════════════════════════════════════
 // RenderBlock — Structured chat data BEFORE rendering
 // Each message is parsed into one or more RenderBlocks.
@@ -102,6 +104,11 @@ export interface ToolBlock extends BlockBase {
   durationMs?: number;
 }
 
+export interface ExecutionPlanBlock extends BlockBase {
+  type: 'execution-plan';
+  plan: AgentExecutionPlan;
+}
+
 /** Inline buttons from message tool */
 export interface InlineButtonsBlock extends BlockBase {
   type: 'inline-buttons';
@@ -143,6 +150,7 @@ export interface CompactionBlock extends BlockBase {
 export type RenderBlock =
   | MessageBlock
   | ToolBlock
+  | ExecutionPlanBlock
   | InlineButtonsBlock
   | ThinkingBlock
   | FileOutputBlock

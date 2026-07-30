@@ -54,3 +54,4 @@ specs/
 - [主窗口关闭 ACL 修复](quality/2026-07-30-main-window-close-acl.md)
 - [设置页面多语言完整性](quality/2026-07-30-settings-localization-completeness.md)
 - [全局专注上下文与任务简报](quality/2026-07-30-focus-context-and-task-briefs.md)
+- [Chat 执行计划](quality/2026-07-30-chat-execution-plan.md)

@@ -34,6 +34,7 @@ export interface NormalizedMessage {
   toolOutput?: string;
   toolStatus?: 'running' | 'done' | 'error';
   toolDurationMs?: number;
+  sourceSequence?: number;
   thinkingContent?: string;
   fileRefs?: FileRef[];
   decisionOptions?: DecisionOption[];

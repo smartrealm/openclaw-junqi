@@ -8,6 +8,7 @@ import type {
   SessionEvent,
   WorkshopEvent,
 } from '@/types/RenderBlock';
+import type { ExecutionPlanSnapshot } from '@/agent-execution-plan/domain';
 
 interface SemanticBlockBase {
   id: string;
@@ -50,6 +51,11 @@ export interface ToolActivitySemanticBlock extends SemanticBlockBase {
   durationMs?: number;
 }
 
+export interface ExecutionPlanSemanticBlock extends SemanticBlockBase {
+  type: 'execution-plan';
+  snapshot: ExecutionPlanSnapshot;
+}
+
 export interface InlineButtonsSemanticBlock extends SemanticBlockBase {
   type: 'inline-buttons';
   rows: InlineButtonRow[];
@@ -89,6 +95,7 @@ export type SemanticBlock =
   | ThinkingSemanticBlock
   | SystemNoteSemanticBlock
   | ToolActivitySemanticBlock
+  | ExecutionPlanSemanticBlock
   | InlineButtonsSemanticBlock
   | FileOutputSemanticBlock
   | ArtifactSemanticBlock

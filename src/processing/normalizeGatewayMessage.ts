@@ -247,6 +247,7 @@ export function normalizeGatewayMessage(message: any): NormalizedMessage {
     toolDurationMs: numberFromUnknown(
       message?.toolDurationMs ?? message?.durationMs ?? message?.duration_ms ?? message?.tool_duration_ms,
     ),
+    sourceSequence: numberFromUnknown(message?.nativeSequence ?? message?.sourceSequence ?? message?.seq),
     thinkingContent: message?.thinkingContent || thinkingFromContent,
     fileRefs: Array.isArray(message?.fileRefs) ? message.fileRefs : undefined,
     decisionOptions: Array.isArray(message?.decisionOptions) ? message.decisionOptions : undefined,

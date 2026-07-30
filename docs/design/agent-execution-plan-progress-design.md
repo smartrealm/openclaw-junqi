@@ -2,7 +2,7 @@
 
 日期：2026-07-30
 
-状态：场景分析与目标设计，尚未实现
+状态：Chat 结构化计划投影进入实现，AgentRun 与 Dynamic Island 尚未实现
 
 ## 1. 背景
 
@@ -115,7 +115,7 @@ Dynamic Island 不展开完整步骤树。点击摘要应恢复主窗口并进�
 
 ## 5. 当前代码现状
 
-本文基于本地 `main` 提交 `35bd5c4987bf2fbc42dcaed0027455c82b4f0d43` 复核。
+本文最初基于本地 `main` 提交 `35bd5c4987bf2fbc42dcaed0027455c82b4f0d43` 复核，并于 2026-07-30 按锁定的 OpenClaw `2026.7.1` 安装包再次核对协议。
 
 ### 5.1 已有能力
 
@@ -126,13 +126,24 @@ Dynamic Island 不展开完整步骤树。点击摘要应恢复主窗口并进�
 - `src/dynamic-island/model.ts` 已从 Agent Workspace Task 投影任务级摘要；
 - `src/components/setup/SetupFlowPanels.tsx` 已有安装领域的步骤状态、当前步骤、百分比和时间线展示。
 
-### 5.2 缺失能力
+### 5.2 已验证的新依据
+
+- OpenClaw `2026.7.1` 内置 `update_plan` 工具，输入是结构化有序步骤快照；
+- 每个步骤包含 `step` 和 `status`，状态限定为 `pending`、`in_progress`、`completed`；
+- Gateway 工具流提供 `sessionKey`、`runId`、`seq`、`toolCallId`、工具参数和生命周期阶段；
+- JunQi 已保存实时工具参数和历史 transcript 中的结构化工具内容。
+
+这使 Chat 首期可以忠实投影 `update_plan`，不需要解析自然语言。详细证据和适配限制见 `docs/quality/chat-execution-plan-protocol-audit-2026-07-30.md`。
+
+### 5.3 仍然缺失的能力
 
 - Agent Task 没有结构化的任务计划及稳定 Step ID；
 - 没有 plan revision、步骤新增、重排或跳过的协议；
 - Chat、AgentRun 和 Dynamic Island 无法消费同一份当前步骤；
 - Tool Call 事件无法可靠地推导业务阶段；
-- 当前 `planMode` 只调整 Prompt，不等于真实执行计划 authority。
+- 当前 `planMode` 只调整 Prompt，不等于真实执行计划 authority；
+- `update_plan` 是快照协议，不提供原生 planId、revision 或稳定 Step ID；
+- waiting、failed 和 skipped 不属于当前 OpenClaw 工具状态，不能在 Chat 首期自行推断。
 
 因此不能只新增一个截图外观组件。必须先建立可信的计划事件和状态边界，再进行 UI 投影。
 

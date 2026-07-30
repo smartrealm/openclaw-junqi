@@ -77,6 +77,7 @@ const DEFAULT_GATEWAY_WS_URL = defaultGatewayWsUrl();
 
 const InlineButtonBar = lazy(() => import('./InlineButtonBar').then((m) => ({ default: m.InlineButtonBar })));
 const DecisionCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.DecisionCard })));
+const ExecutionPlanCard = lazy(() => import('./ExecutionPlanCard').then((m) => ({ default: m.ExecutionPlanCard })));
 const FileResultCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.FileResultCard })));
 const AssistantResponseAvatar = lazy(() => import('./MessageBubble').then((m) => ({ default: m.AssistantResponseAvatar })));
 const AssistantResponseFooter = lazy(() => import('./MessageBubble').then((m) => ({ default: m.AssistantResponseFooter })));
@@ -971,6 +972,13 @@ function ChatViewContent() {
                 durationMs: block.durationMs,
               }}
             />
+          </Suspense>
+        );
+
+      case 'execution-plan':
+        return (
+          <Suspense fallback={<div className="ml-[46px] mr-4 h-11 rounded-lg border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.025)] animate-pulse" />}>
+            <ExecutionPlanCard plan={block.plan} />
           </Suspense>
         );
 

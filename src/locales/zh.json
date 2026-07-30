@@ -751,6 +751,15 @@
     "dynamicIslandAutoExpand": "重要状态自动展开",
     "dynamicIslandAutoExpandDesc": "等待输入、执行完成、失败或接收文件时短暂展开，随后自动收起。",
     "dynamicIslandPreview": "预览灵动岛",
+    "structuredPlans": {
+      "title": "结构化会话计划",
+      "description": "展示 OpenClaw update_plan 工具提供的可信分步进度。该能力目前属于 OpenClaw 实验功能。",
+      "automatic": "自动",
+      "enabled": "始终启用",
+      "disabled": "关闭",
+      "loading": "正在读取 OpenClaw 配置",
+      "saving": "正在保存 OpenClaw 配置"
+    },
     "gatewayUrl": "Gateway WebSocket 地址",
     "gatewayToken": "Gateway Token",
     "save": "保存",
@@ -1313,6 +1322,14 @@
       "done": "执行完成",
       "toolCount": "{{count}} 次工具调用",
       "thinkingCount": "{{count}} 条思考"
+    },
+    "executionPlan": {
+      "ariaLabel": "执行计划",
+      "title": "执行计划",
+      "progress": "第 {{current}}/{{total}} 步",
+      "revision": "修订 {{revision}}",
+      "completedSummary": "{{completed}}/{{total}} 已完成",
+      "stepCountChanged": "计划已从 {{previous}} 步调整为 {{current}} 步"
     }
   },
   "titlebar": {

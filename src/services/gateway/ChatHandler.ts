@@ -1001,6 +1001,7 @@ export class ChatHandler {
             toolName,
             toolInput,
             toolStatus: 'running',
+            nativeSequence: Number.isSafeInteger(payload.seq) && payload.seq >= 0 ? payload.seq : undefined,
             responseState: 'streaming',
             timestamp: new Date().toISOString(),
           },
@@ -1045,6 +1046,9 @@ export class ChatHandler {
           runId: runId ?? updated[idx].runId ?? null,
           toolOutput: output.slice(0, 2000),
           toolStatus: 'done',
+          nativeSequence: Number.isSafeInteger(payload.seq) && payload.seq >= 0
+            ? payload.seq
+            : updated[idx].nativeSequence,
           responseState: 'final',
           ...(durationMs !== undefined ? { toolDurationMs: durationMs } : {}),
         };
@@ -1060,6 +1064,7 @@ export class ChatHandler {
             toolName,
             toolOutput: output.slice(0, 2000),
             toolStatus: 'done',
+            nativeSequence: Number.isSafeInteger(payload.seq) && payload.seq >= 0 ? payload.seq : undefined,
             responseState: 'final',
             timestamp: new Date().toISOString(),
           },

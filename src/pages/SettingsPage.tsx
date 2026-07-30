@@ -41,6 +41,8 @@ import { NpmCacheSettingsPanel } from '@/components/settings/NpmCacheSettingsPan
 import { ManagedRuntimeSettingsPanel } from '@/components/settings/ManagedRuntimeSettingsPanel';
 import { FontPanel } from '@/components/settings/FontPanel';
 import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
+import { StructuredPlanSettingsPanel } from '@/components/settings/StructuredPlanSettingsPanel';
+import { useOpenClawPlanToolSetting } from '@/hooks/useOpenClawPlanToolSetting';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
@@ -194,6 +196,7 @@ export function SettingsPageFull() {
   const activeTab: SettingsTab = SETTINGS_TABS.includes(requestedTab as SettingsTab)
     ? requestedTab as SettingsTab
     : 'appearance';
+  const structuredPlans = useOpenClawPlanToolSetting(activeTab === 'connect' && connected);
 
   useEffect(() => {
     if (activeTab !== 'connect') return;
@@ -1206,6 +1209,18 @@ export function SettingsPageFull() {
             )}
           </div>
         </div>
+      </GlassCard>
+
+      <GlassCard delay={0.17}>
+        <StructuredPlanSettingsPanel
+          mode={structuredPlans.mode}
+          loading={structuredPlans.loading}
+          saving={structuredPlans.saving}
+          error={structuredPlans.error}
+          disabled={!connected}
+          onChange={(mode) => { void structuredPlans.update(mode); }}
+          onRetry={() => { void structuredPlans.refresh(); }}
+        />
       </GlassCard>
         </>
       )}

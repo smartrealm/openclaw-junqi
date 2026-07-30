@@ -751,6 +751,15 @@
     "dynamicIslandAutoExpand": "Expand for important activity",
     "dynamicIslandAutoExpandDesc": "Briefly expands for input requests, completion, failures, and incoming files, then collapses automatically.",
     "dynamicIslandPreview": "Preview Dynamic Island",
+    "structuredPlans": {
+      "title": "Structured Chat plans",
+      "description": "Show verified multi-step progress from the OpenClaw update_plan tool. This is currently an experimental OpenClaw capability.",
+      "automatic": "Automatic",
+      "enabled": "Always on",
+      "disabled": "Off",
+      "loading": "Reading OpenClaw configuration",
+      "saving": "Saving OpenClaw configuration"
+    },
     "gatewayUrl": "Gateway WebSocket URL",
     "gatewayToken": "Gateway Token",
     "save": "Save",
@@ -1315,6 +1324,14 @@
       "done": "Completed",
       "toolCount": "{{count}} tools",
       "thinkingCount": "{{count}} thoughts"
+    },
+    "executionPlan": {
+      "ariaLabel": "Execution plan",
+      "title": "Execution plan",
+      "progress": "Step {{current}}/{{total}}",
+      "revision": "Revision {{revision}}",
+      "completedSummary": "{{completed}}/{{total}} completed",
+      "stepCountChanged": "Plan updated from {{previous}} to {{current}} steps"
     }
   },
   "titlebar": {

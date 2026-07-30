@@ -213,3 +213,47 @@ test('does not create an empty message bubble for card-only output', () => {
 
   assert.deepEqual(blocks.map((block) => block.type), ['decision']);
 });
+
+test('projects a valid update_plan tool as an execution plan instead of a generic tool', () => {
+  const normalized = normalizeGatewayMessage({
+    id: 'plan-tool-1',
+    sessionKey: 'agent:main:main',
+    runId: 'run-plan',
+    role: 'tool',
+    timestamp: '2026-07-30T10:00:00.000Z',
+    toolName: 'update_plan',
+    toolInput: {
+      plan: [
+        { step: 'Inspect protocol', status: 'completed' },
+        { step: 'Build Chat projection', status: 'in_progress' },
+      ],
+    },
+    toolStatus: 'running',
+    nativeSequence: 12,
+  });
+
+  const blocks = buildSemanticBlocks(normalized, { toolIntentEnabled: true });
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].type, 'execution-plan');
+  if (blocks[0].type === 'execution-plan') {
+    assert.equal(blocks[0].snapshot.sourceSequence, 12);
+    assert.equal(blocks[0].snapshot.steps[1].status, 'in_progress');
+  }
+});
+
+test('keeps an invalid update_plan payload visible as a generic tool', () => {
+  const normalized = normalizeGatewayMessage({
+    id: 'plan-tool-invalid',
+    sessionKey: 'agent:main:main',
+    runId: 'run-plan',
+    role: 'tool',
+    timestamp: '2026-07-30T10:00:00.000Z',
+    toolName: 'update_plan',
+    toolInput: { plan: [{ step: 'Unknown state', status: 'failed' }] },
+    toolStatus: 'done',
+  });
+
+  const blocks = buildSemanticBlocks(normalized, { toolIntentEnabled: true });
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].type, 'tool-activity');
+});
