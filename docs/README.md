@@ -127,6 +127,8 @@ docs/
 - [全局专注上下文与任务简报验证](quality/focus-context-and-task-briefs-validation-2026-07-30.md)
 - [Focus Context 与 Task Brief 来源盘点](quality/current-branch-focus-task-brief-change-inventory-2026-07-30.md)
 - [Chat 执行计划协议审计](quality/chat-execution-plan-protocol-audit-2026-07-30.md)
+- [会话执行追溯的 OpenClaw 能力拓展分析](quality/chat-response-trace-openclaw-extension-analysis-2026-07-31.md)
+- [全局改进与功能拓展计划](quality/codebase-improvement-and-extension-plan-2026-07-31.md)
 - [仪表盘首次主题切换验证](quality/dashboard-first-theme-switch-validation-2026-07-30.md)
 - [Gateway AI 诊断与 OpenClaw 运行时验证](quality/gateway-ai-diagnostics-openclaw-runtime-validation-2026-07-30.md)
 - [终端与工作台 Chrome 一致性记录](quality/terminal-workbench-chrome-convergence-2026-07-30.md)
