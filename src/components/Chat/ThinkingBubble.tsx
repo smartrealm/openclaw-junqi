@@ -40,6 +40,7 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
   const lineCount = content.split('\n').length;
   const charCount = content.length;
   const sizeLabel = charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : `${charCount}`;
+  const compactSummary = t('thinking.compactSummary', { lines: lineCount, chars: sizeLabel });
 
     // ── Collapsed pill (finalized) — pl-[46px] aligns with bubble left edge
   // (renderGroup px-1=4px + pl-46px=46px = avatar(32px)+gap(10px)+mx-1(4px)+px-1(4px))
@@ -56,10 +57,10 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
             <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary/55" />
           </span>
           <span className="text-[11px] font-medium text-aegis-primary/85">
-            {t('thinking.thoughtProcess', 'Thinking')}
+            {t('thinking.thoughtProcess')}
           </span>
           <span className="text-[9px] text-aegis-text-dim/55 font-mono tabular-nums">
-            {lineCount}L · {sizeLabel}c
+            {compactSummary}
           </span>
           <ChevronRight size={10} className="text-aegis-text-dim/40" />
         </div>
@@ -98,12 +99,12 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
             'text-[11px] font-medium',
             isStreaming ? 'text-aegis-primary/75' : 'text-aegis-primary/70',
           )}>
-            {isStreaming ? t('thinking.thinking', 'Thinking…') : t('thinking.thoughtProcess', 'Thinking')}
+            {isStreaming ? t('thinking.thinking') : t('thinking.thoughtProcess')}
           </span>
 
           {!isStreaming && (
             <span className="text-[9px] text-aegis-text-dim/45 font-mono tabular-nums">
-              {lineCount}L · {sizeLabel}c
+              {compactSummary}
             </span>
           )}
 

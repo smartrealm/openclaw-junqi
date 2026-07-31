@@ -25,7 +25,7 @@ export function InlineUserMessageEditor({
     try {
       await onSave(content);
     } catch {
-      setError(t('chat.sendFailed', 'Send failed'));
+      setError(t('chat.sendFailed'));
     } finally {
       setSaving(false);
     }
@@ -49,7 +49,7 @@ export function InlineUserMessageEditor({
           }
         }}
         className="block min-h-[76px] w-full resize-y rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] p-2.5 text-[14px] leading-relaxed text-aegis-text outline-none transition-colors focus:border-aegis-primary/45 disabled:cursor-wait disabled:opacity-70"
-        aria-label={t('chat.editMessage', 'Edit message')}
+        aria-label={t('chat.editMessage')}
       />
       <div className="mt-2 flex items-center justify-end gap-1.5">
         {error && <span className="me-auto text-[10px] text-aegis-danger">{error}</span>}
@@ -58,8 +58,8 @@ export function InlineUserMessageEditor({
           onClick={onCancel}
           disabled={saving}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text disabled:cursor-wait disabled:opacity-45"
-          title={t('chat.cancel', 'Cancel')}
-          aria-label={t('chat.cancel', 'Cancel')}
+          title={t('chat.cancel')}
+          aria-label={t('chat.cancel')}
         >
           <X size={15} />
         </button>
@@ -68,8 +68,8 @@ export function InlineUserMessageEditor({
           onClick={() => void save()}
           disabled={saving || !draft.trim()}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-aegis-primary text-white transition-colors hover:bg-aegis-primary/85 disabled:cursor-not-allowed disabled:opacity-45"
-          title={t('chat.saveAndRetry', 'Save and retry')}
-          aria-label={t('chat.saveAndRetry', 'Save and retry')}
+          title={t('chat.saveAndRetry')}
+          aria-label={t('chat.saveAndRetry')}
         >
           {saving ? <LoadingIndicator size={15} /> : <Check size={15} />}
         </button>

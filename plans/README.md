@@ -52,3 +52,6 @@ plans/
 - [全局专注上下文与任务简报](quality/2026-07-30-focus-context-and-task-briefs.md)
 - [Chat 执行计划](quality/2026-07-30-chat-execution-plan.md)
 - [Gateway AI 诊断](quality/2026-07-30-gateway-ai-diagnostics.md)
+- [终端与工作台 Chrome 一致性](quality/2026-07-30-terminal-workbench-chrome-convergence.md)
+- [Chat 消息预览与 OpenClaw 对齐](quality/2026-07-30-chat-message-preview-openclaw-parity.md)
+- [Chat 响应追溯与人工审核](quality/2026-07-31-chat-response-trace-and-human-review.md)

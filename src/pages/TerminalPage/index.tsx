@@ -88,6 +88,7 @@ import type { Workspace } from "@/workspace/types";
 import { takePendingTerminalCommands } from '@/services/terminalCommandQueue';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useTerminalPreferences } from '@/hooks/useTerminalPreferences';
+import { WorkspaceChromeIconButton, WorkspaceSidebarHeader } from '@/components/Layout/WorkspaceChrome';
 
 interface TerminalWorkspaceDirectory {
   path: string;
@@ -1321,56 +1322,24 @@ function WorkspaceSidebarPanel({
   }, [finishResize, mode]);
 
   return (
-    <div className="terminal-kooky-sidebar" style={{
+    <aside className="terminal-kooky-sidebar" style={{
       width: panelWidth, flexShrink: 0, display: 'flex', flexDirection: 'column',
-      borderInlineEnd: '1px solid rgb(255 255 255 / 0.07)',
-      background: 'rgb(var(--aegis-surface))',
+      borderInlineEnd: '1px solid var(--aegis-border)',
+      background: 'var(--aegis-surface-solid)',
       transition: resizing ? 'none' : 'width 0.18s cubic-bezier(0.22,1,0.36,1)',
       overflow: 'hidden',
       position: 'relative',
     }}>
-      {/* Kooky keeps project status inside each pane's bottom bar. The
-          sidebar is intentionally just a workspace navigator. */}
-      {mode === 'full' ? (
-        <div style={{
-          height: 48, display: 'flex', alignItems: 'center',
-          padding: '0 16px', gap: 6, flexShrink: 0,
-        }}>
-          <span className="terminal-kooky-sidebar-brand" style={{
-            flex: 1, fontSize: 15, fontFamily: 'inherit', color: 'rgb(var(--aegis-text))',
-            fontWeight: 500, letterSpacing: 0,
-          }}>junqi</span>
-          <button
-            onClick={onCreateWorkspace}
-            title={t('terminal.workspaceNew')}
-            style={{
-              width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: 'none', borderRadius: 5,
-              color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
-          >
-          <Plus size={14} strokeWidth={2} />
-          </button>
-        </div>
-      ) : (
-        <div style={{ height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <button
-            onClick={onCreateWorkspace}
-            title={t('terminal.workspaceNew')}
-            style={{
-              width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: 'none', borderRadius: 6,
-              color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
-          >
-          <Plus size={14} strokeWidth={2} />
-          </button>
-        </div>
-      )}
+      <WorkspaceSidebarHeader
+        compact={mode === 'compact'}
+        eyebrow="TERMINAL"
+        title={t('terminal.workspaceList')}
+        actions={(
+          <WorkspaceChromeIconButton label={t('terminal.workspaceNew')} onClick={onCreateWorkspace}>
+            <Plus size={15} strokeWidth={2} />
+          </WorkspaceChromeIconButton>
+        )}
+      />
 
       {/* ── 工作区列表 ──────────────────────────── */}
       {showingFiles ? (
@@ -1602,7 +1571,7 @@ function WorkspaceSidebarPanel({
           }}
         />
       )}
-    </div>
+    </aside>
   );
 }
 

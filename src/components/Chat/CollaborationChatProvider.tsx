@@ -655,7 +655,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
   const startRun = useCallback(async (message: ChatMessage) => {
     if (!sessionRef || !message.nativeMessageId) {
       showSetup('error');
-      setLocalError(t('collaboration.chat.originNotReady', 'The original message identity is not confirmed yet.'));
+      setLocalError(t('collaboration.chat.originNotReady'));
       return;
     }
     const currentCapabilities = projectionCurrent && capabilities
@@ -690,7 +690,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     const agentId = sessionAgentId(activeSessionKey, activeSession?.agentId);
     if (!agentId) {
       showSetup('error');
-      setLocalError(t('collaboration.chat.agentUnknown', 'The origin agent identity is unavailable.'));
+      setLocalError(t('collaboration.chat.agentUnknown'));
       return;
     }
 
@@ -708,7 +708,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
       };
       const request = await createCollaborationWriteRequest({
         origin,
-        goal: message.content.trim() || t('collaboration.card.untitled', 'Untitled collaboration'),
+        goal: message.content.trim() || t('collaboration.card.untitled'),
         capabilitySnapshot: {
           capturedAt: Date.now(),
           desktopObservedFacts: {
@@ -752,7 +752,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
 
   const instantiateWorkflowTemplate = useCallback(async (template: CollaborationWorkflowTemplate) => {
     if (!sessionRef || !templateOriginMessage?.nativeMessageId) {
-      setLocalError(t('collaboration.chat.originNotReady', 'The original message identity is not confirmed yet.'));
+      setLocalError(t('collaboration.chat.originNotReady'));
       return;
     }
     const currentCapabilities = projectionCurrent && capabilities
@@ -787,7 +787,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     const agentId = sessionAgentId(activeSessionKey, activeSession?.agentId);
     if (!agentId) {
       showSetup('error');
-      setLocalError(t('collaboration.chat.agentUnknown', 'The origin agent identity is unavailable.'));
+      setLocalError(t('collaboration.chat.agentUnknown'));
       return;
     }
 
@@ -872,10 +872,10 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     submission: CollaborationRunActionSubmission,
   ) => {
     const snapshot = useCollaborationStore.getState().snapshotsByRunId[runId];
-    if (!snapshot) throw new Error(t('collaboration.chat.snapshotUnavailable', 'The current run snapshot is unavailable.'));
+    if (!snapshot) throw new Error(t('collaboration.chat.snapshotUnavailable'));
     const expectedCollaborationInstanceId = useCollaborationStore.getState().collaborationInstanceId;
     if (!expectedCollaborationInstanceId) {
-      throw new Error(t('collaboration.chat.snapshotUnavailable', 'The current run snapshot is unavailable.'));
+      throw new Error(t('collaboration.chat.snapshotUnavailable'));
     }
     setPendingAction(submission.action);
     setActionSubmitting(true);
@@ -978,7 +978,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     if (!dialogRunId) return;
     const snapshot = useCollaborationStore.getState().snapshotsByRunId[dialogRunId];
     if (!snapshot) {
-      setActionError(t('collaboration.chat.snapshotUnavailable', 'The current run snapshot is unavailable.'));
+      setActionError(t('collaboration.chat.snapshotUnavailable'));
       return;
     }
     if ((submission.action === 'PARTIAL' || submission.action === 'DELETE') && !submission.preview) {
@@ -1113,7 +1113,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
             ref={detailsDialogRef}
             role="dialog"
             aria-modal="true"
-            aria-label={t('collaboration.details.title', 'Collaboration details')}
+            aria-label={t('collaboration.details.title')}
             tabIndex={-1}
             className="flex max-h-[92vh] w-[min(1040px,96vw)] min-w-0 flex-col overflow-hidden rounded-lg border border-aegis-border bg-aegis-bg-solid shadow-float outline-none"
           >
@@ -1122,8 +1122,8 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
                 type="button"
                 onClick={closeSelectedRun}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-md text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text"
-                title={t('collaboration.common.close', 'Close')}
-                aria-label={t('collaboration.common.close', 'Close')}
+                title={t('collaboration.common.close')}
+                aria-label={t('collaboration.common.close')}
               >
                 <X size={16} />
               </button>
@@ -1233,7 +1233,7 @@ export function CollaborationSessionSyncNotice({
         <TriangleAlert size={13} className="mt-0.5 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="font-medium">
-            {t('collaboration.chat.sessionSyncFailed', 'Collaboration data could not be synchronized. Last known data may be stale.')}
+            {t('collaboration.chat.sessionSyncFailed')}
           </div>
           <div className="mt-0.5 break-words text-aegis-text-muted">{error}</div>
         </div>
@@ -1243,7 +1243,7 @@ export function CollaborationSessionSyncNotice({
           className="inline-flex min-h-7 shrink-0 items-center gap-1 rounded-md px-2 py-1 font-medium hover:bg-aegis-warning/[0.09]"
         >
           <RefreshCw size={11} aria-hidden />
-          {t('collaboration.common.retry', 'Retry')}
+          {t('collaboration.common.retry')}
         </button>
       </div>
     </div>
@@ -1271,8 +1271,8 @@ export function CollaborationUnanchoredBanner({ anchoredRunIds }: { anchoredRunI
               <GitFork size={14} className="shrink-0 text-aegis-primary" />
               <span className="truncate">
                 {active.length > 0
-                  ? t('collaboration.chat.activeElsewhere', '{{count}} active collaboration run(s)', { count: active.length })
-                  : t('collaboration.chat.unanchoredHistory', '{{count}} collaboration record(s)', { count: runs.length })}
+                  ? t('collaboration.chat.activeElsewhere', { count: active.length })
+                  : t('collaboration.chat.unanchoredHistory', { count: runs.length })}
               </span>
             </button>
           </div>

@@ -163,6 +163,10 @@ export function useComposerSuggestions({
     textareaRef.current?.focus();
   }, [activeSessionKey, setText, t]);
 
+  const closeSlashPicker = useCallback(() => setSlashPicker(CLOSED_PICKER), []);
+  const closeMentionPicker = useCallback(() => setMentionPicker(CLOSED_PICKER), []);
+  const closeArgumentPicker = useCallback(() => setArgumentPicker(CLOSED_ARGUMENT_PICKER), []);
+
   const pickMention = useCallback((item: MentionItem) => {
     const textarea = textareaRef.current;
     const inserted = `@${item.name} `;
@@ -327,13 +331,16 @@ export function useComposerSuggestions({
     workspaceFiles,
     slashPicker,
     setSlashPicker,
+    closeSlashPicker,
     matchedSlash,
     groupedSlash,
     mentionPicker,
     setMentionPicker,
+    closeMentionPicker,
     mentionItems,
     argumentPicker,
     setArgumentPicker,
+    closeArgumentPicker,
     argumentCompletions,
     pickSlash,
     pickMention,

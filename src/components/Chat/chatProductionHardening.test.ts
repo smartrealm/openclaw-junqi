@@ -13,7 +13,7 @@ test('CHAT-01 generated artifacts stay scriptless while local file previews use 
   const managedPreview = source('src/components/FileExplorer/ManagedFilePreview.tsx');
   const previewProtocol = source('src-tauri/src/commands/file_preview.rs');
   assert.doesNotMatch(bubble, /sandbox=["']allow-scripts/);
-  assert.match(resultCards, /srcDoc=\{artifact\.content\}[\s\S]*?sandbox=""/);
+  assert.match(bubble, /srcDoc=\{artifact\.content\}[\s\S]*?sandbox=""/);
   assert.match(managedPreview, /src=\{preview\.mode === 'interactive' \? preview\.url/);
   assert.match(managedPreview, /sandbox=\{preview\.mode === 'interactive' \? 'allow-scripts' : ''\}/);
   assert.match(resultCards, /loadLocalFilePreview\(path, name\)/);

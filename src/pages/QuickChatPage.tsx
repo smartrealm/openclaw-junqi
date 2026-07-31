@@ -40,6 +40,10 @@ import { ExecutionProcessGroup } from '@/components/Chat/ExecutionProcessGroup';
 import type { MessageBlock, RenderBlock } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import { projectQuickChatResponseGroups } from './quickChatProjection';
+import { ChatMessagePreviewPanel } from '@/components/Chat/ChatMessagePreviewPanel';
+import { ChatResponseTracePanel } from '@/components/Chat/ChatResponseTracePanel';
+import { projectChatResponseTrace } from '@/components/Chat/chatResponseTrace';
+import { useChatSidePanel } from '@/components/Chat/useChatSidePanel';
 
 interface SeedFile {
   path: string;
@@ -91,6 +95,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   const [sendError, setSendError] = useState('');
   const [fallbackSessionKey] = useState(() => `quickchat:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`);
   const sessionKey = ownedSessionKey || fallbackSessionKey;
+  const sidePanel = useChatSidePanel(sessionKey);
   const isTyping = useChatStore((state) => Boolean(state.typingBySession[sessionKey]));
   const queue = useChatStore((state) => state.messageQueue[sessionKey] ?? EMPTY_QUEUE);
   const queueCount = queue.length;
@@ -261,7 +266,12 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       case 'message':
         return (
           <Suspense fallback={<div className="ml-[46px] min-h-8 animate-pulse rounded-lg bg-white/[0.04]" />}>
-            <MessageBubble block={block} sessionKey={sessionKey} groupPosition="middle" />
+            <MessageBubble
+              block={block}
+              sessionKey={sessionKey}
+              groupPosition="middle"
+              onOpenPreview={sidePanel.openMessagePreview}
+            />
           </Suspense>
         );
       case 'tool':
@@ -308,7 +318,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       default:
         return null;
     }
-  }, [handleStructuredChoice, sessionKey]);
+  }, [handleStructuredChoice, sessionKey, sidePanel.openMessagePreview]);
 
   const renderQuickChatGroup = useCallback((group: ResponseGroup, appendTyping: boolean) => {
     const blocks = projectResponseGroupToRenderBlocks(group);
@@ -361,13 +371,14 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
               block={representative}
               timestamp={footerTimestamp}
               status={group.status}
+              onOpenTrace={() => sidePanel.openResponseTrace(group.id)}
               className="ml-[46px] mr-2"
             />
           </Suspense>
         )}
       </section>
     );
-  }, [renderQuickChatBlock, t]);
+  }, [renderQuickChatBlock, sidePanel.openResponseTrace, t]);
 
   const handleKey = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -397,7 +408,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     : -1;
 
   return (
-    <div className="flex flex-col h-screen bg-black/40 backdrop-blur-xl text-aegis-text select-none">
+    <div className="relative flex h-screen flex-col bg-black/40 text-aegis-text select-none">
       {/* Title bar — frameless so we draw our own drag region */}
       <div {...{ [titleDragRegion]: '' }} className="flex items-center gap-2 px-3 py-2 border-b border-white/10 bg-black/20">
         <GripVertical size={12} className="opacity-40" />
@@ -548,6 +559,24 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
           </div>
         </div>
       </div>
+      {sidePanel.panel?.kind === 'message-preview' && (
+        <ChatMessagePreviewPanel
+          preview={sidePanel.panel.preview}
+          onClose={sidePanel.closePanel}
+          overlay
+        />
+      )}
+      {sidePanel.panel?.kind === 'response-trace' && (() => {
+        const groupId = sidePanel.panel.groupId;
+        const group = quickChatResponseGroups.find((candidate) => candidate.id === groupId);
+        return group ? (
+          <ChatResponseTracePanel
+            trace={projectChatResponseTrace(group)}
+            onClose={sidePanel.closePanel}
+            overlay
+          />
+        ) : null;
+      })()}
     </div>
   );
 }

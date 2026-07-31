@@ -62,6 +62,8 @@ function createBlockBase(normalized: NormalizedMessage, id = normalized.id) {
     sessionKey: normalized.sessionKey,
     runId: normalized.runId ?? null,
     sourceMessageId: normalized.id,
+    ...(normalized.sourceSequence !== undefined ? { sourceSequence: normalized.sourceSequence } : {}),
+    ...(normalized.toolCallId ? { toolCallId: normalized.toolCallId } : {}),
     timestamp: normalized.timestamp,
     isStreaming: normalized.isStreaming,
     responseState: normalized.responseState,

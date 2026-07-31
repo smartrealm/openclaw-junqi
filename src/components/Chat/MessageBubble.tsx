@@ -1,13 +1,11 @@
 import { lazy, memo, Suspense, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
-  Copy, User, RotateCcw, Pencil, Trash2,
+  User, RotateCcw, Pencil, Trash2,
   ChevronDown, ChevronRight, AlertTriangle,
   Sparkles, Bot, FileText,
 
-  Kanban, Wrench, Brain, CheckCircle2, Info, GitFork,
+  Kanban, Wrench, Brain, CheckCircle2, Info, GitFork, History,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -18,57 +16,16 @@ import type { ResponseGroupMessagePosition } from '@/processing/buildResponseGro
 import { Icon } from '@/components/shared/icons';
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import clsx from 'clsx';
-import { debugError } from '@/utils/debugLog';
-import { fileExtension, workspaceFileKind } from '@/workspace-files/domain/fileKinds';
 import { InlineUserMessageEditor } from './InlineUserMessageEditor';
 import { MessageBubbleActions } from './MessageBubbleActions';
-import { hasPreviewableArtifact, isPreviewableArtifact } from './artifactPreview';
+import { isPreviewableArtifact } from './artifactPreview';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { createChatMessagePreview, type ChatMessagePreview } from './chatMessagePreview';
+import { ChatMarkdownRenderer, ChatMediaFallback } from './ChatMarkdownRenderer';
 
-const CodeBlock = lazy(() => import('./CodeBlock').then((m) => ({ default: m.CodeBlock })));
 const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
-const ChatVideo = lazy(() => import('./ChatVideo').then((m) => ({ default: m.ChatVideo })));
 const AudioPlayer = lazy(() => import('./AudioPlayer').then((m) => ({ default: m.AudioPlayer })));
 const SystemNoteBubble = lazy(() => import('./SystemNoteBubble').then((m) => ({ default: m.SystemNoteBubble })));
-
-function MediaFallback({ className }: { className?: string }) {
-  return (
-    <div
-      className={clsx(
-        'flex items-center justify-center rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] text-[11px] text-aegis-text-dim animate-pulse',
-        className,
-      )}
-    >
-      ...
-    </div>
-  );
-}
-
-function CodeBlockFallback({ language, code }: { language: string; code: string }) {
-  const displayLang = language || 'text';
-  return (
-    <div
-      className="my-2 rounded-xl overflow-hidden border border-[rgb(var(--aegis-overlay)/0.08)]"
-      dir="ltr"
-      style={{ background: 'var(--aegis-code-bg)' }}
-    >
-      <div
-        className="flex items-center justify-between px-3.5 py-1.5 border-b border-[rgb(var(--aegis-overlay)/0.06)]"
-        style={{ background: 'var(--aegis-code-header)' }}
-      >
-        <span className="text-[10px] font-mono font-medium text-aegis-text-muted uppercase tracking-widest">
-          {displayLang}
-        </span>
-      </div>
-      <pre
-        className="m-0 p-4 text-[0.87em] font-mono text-aegis-text whitespace-pre-wrap break-words overflow-x-auto"
-        style={{ background: 'var(--aegis-code-bg)' }}
-      >
-        <code>{code}</code>
-      </pre>
-    </div>
-  );
-}
 
 // ── Error Action Detection ──
 interface ErrorAction {
@@ -96,7 +53,7 @@ function detectErrorAction(content: string): ErrorAction | null {
 // leaving the chat (the original behavior was a separate preview window).
 // Mermaid is rendered via <pre> + the renderer (if loaded); plain code falls
 // through to a syntax-highlighted <pre>.
-function ArtifactCard({ artifact, previewRequest }: { artifact: Artifact; previewRequest: number }) {
+function ArtifactCard({ artifact }: { artifact: Artifact }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<'preview' | 'source'>('source');
   const typeIcons: Record<string, React.ReactNode> = {
@@ -112,10 +69,6 @@ function ArtifactCard({ artifact, previewRequest }: { artifact: Artifact; previe
 
   const supportsPreview = isPreviewableArtifact(artifact);
 
-  useEffect(() => {
-    if (supportsPreview && previewRequest > 0) setTab('preview');
-  }, [previewRequest, supportsPreview]);
-
   return (
     <div className="my-3 rounded-xl border border-aegis-primary/20 bg-aegis-primary/[0.04] overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-aegis-primary/10">
@@ -123,7 +76,9 @@ function ArtifactCard({ artifact, previewRequest }: { artifact: Artifact; previe
           <span className="shrink-0 flex items-center">{typeIcons[artifact.type] || defaultArtifactIcon}</span>
           <div className="min-w-0">
             <div className="text-[13px] font-medium text-aegis-text truncate">{artifact.title}</div>
-            <div className="text-[10px] text-aegis-text-dim uppercase tracking-wider">{artifact.type} · {artifact.content.length} chars</div>
+            <div className="text-[10px] text-aegis-text-dim uppercase tracking-wider">
+              {artifact.type} · {t('chat.trace.characterCount', { count: artifact.content.length })}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -132,12 +87,12 @@ function ArtifactCard({ artifact, previewRequest }: { artifact: Artifact; previe
               <button onClick={() => setTab('preview')}
                 className={clsx('px-2.5 py-1 transition-colors',
                   tab === 'preview' ? 'bg-aegis-primary/15 text-aegis-primary' : 'text-aegis-text-muted hover:text-aegis-text')}>
-                {t('resultCards.preview', 'Preview')}
+                {t('resultCards.preview')}
               </button>
               <button onClick={() => setTab('source')}
                 className={clsx('px-2.5 py-1 transition-colors',
                   tab === 'source' ? 'bg-aegis-primary/15 text-aegis-primary' : 'text-aegis-text-muted hover:text-aegis-text')}>
-                {t('resultCards.source', 'Source')}
+                {t('resultCards.source')}
               </button>
             </div>
           )}
@@ -189,7 +144,7 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
       {systemItems.length > 0 && (
         <div className="space-y-1.5 mb-2">
           {systemItems.map((item, idx) => (
-            <Suspense key={`system-${idx}`} fallback={<MediaFallback className="h-8 w-full" />}>
+            <Suspense key={`system-${idx}`} fallback={<ChatMediaFallback className="h-8 w-full" />}>
               <SystemNoteBubble content={item.content} />
             </Suspense>
           ))}
@@ -239,6 +194,7 @@ interface MessageBubbleProps {
   historyTruncated?: boolean;
   historyTruncationReason?: string;
   onLoadFullMessage?: () => Promise<void>;
+  onOpenPreview?: (preview: ChatMessagePreview) => void;
   collaborationAction?: {
     state: 'confirming' | 'ready' | 'active';
     onClick?: () => void;
@@ -256,7 +212,7 @@ function useAgentPresentation(sessionKey?: string | null) {
   const agents = useGatewayDataStore((state) => state.agents);
   const agentId = agentIdFromSessionKey(sessionKey);
   const name = agents.find((agent) => agent.id === agentId)?.name
-    || (agentId === 'main' ? t('agents.mainAgent', 'Main Agent') : agentId);
+    || (agentId === 'main' ? t('agents.mainAgent') : agentId);
   return { name, letter: name.charAt(0) || 'M' };
 }
 
@@ -313,12 +269,14 @@ export function AssistantResponseFooter({
   block,
   timestamp,
   status = 'final',
+  onOpenTrace,
   className,
 }: {
   sessionKey?: string | null;
   block?: MessageBlock | null;
   timestamp: string;
   status?: 'streaming' | 'final' | 'error' | 'aborted';
+  onOpenTrace?: () => void;
   className?: string;
 }) {
   const { t, i18n } = useTranslation();
@@ -402,10 +360,10 @@ export function AssistantResponseFooter({
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45',
               '[&::-webkit-details-marker]:hidden',
             )}
-            title={t('chat.showContextDetails', '显示消息上下文详情')}
+            title={t('chat.showContextDetails')}
           >
             <ChevronRight size={10} className="shrink-0 transition-transform group-open/context:rotate-90" />
-            <span>{t('chat.context', '上下文')}</span>
+            <span>{t('chat.context')}</span>
           </summary>
           <span className="inline-flex items-center gap-2 rounded-full border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] px-2 py-0.5">
             {input > 0 && <span className="text-blue-400">↑{compactTokenCount(input)}</span>}
@@ -420,10 +378,10 @@ export function AssistantResponseFooter({
                     ? 'text-aegis-warning'
                     : 'text-aegis-text-dim',
               )}>
-                {context.contextPercent}% {t('chat.context', '上下文')}
+                {context.contextPercent}% {t('chat.context')}
               </span>
             )}
-            {duration && <span>{t('chat.contextDuration', '耗时')} <span className="text-aegis-text">{duration}</span></span>}
+            {duration && <span>{t('chat.contextDuration')} <span className="text-aegis-text">{duration}</span></span>}
             {contextModel && (
               <span className="rounded bg-[rgb(var(--aegis-overlay)/0.06)] px-1.5 py-px text-aegis-text">
                 {contextModel.includes('/') ? contextModel.split('/').pop() : contextModel}
@@ -432,60 +390,19 @@ export function AssistantResponseFooter({
           </span>
         </details>
       )}
-    </div>
-  );
-}
-
-function isLocalFilePath(value?: string) {
-  if (!value) return false;
-  const v = value.trim();
-  return v && (v.startsWith('/') || v.startsWith('~/') || /^[A-Za-z]:[\\/]/.test(v) || v.startsWith('file://'));
-}
-
-// ── File Card ──
-function FileCard({ path, meta }: { path: string; meta?: string }) {
-  const { t } = useTranslation();
-  const name = path.split(/[/\\]/).pop() || path;
-  const ext = fileExtension(name);
-  const kind = workspaceFileKind(name);
-  const fileIcon = (() => {
-    if (kind === 'image') return Icon.chat.attachment.image;
-    if (kind === 'audio') return Icon.chat.attachment.audio;
-    if (kind === 'video') return Icon.chat.attachment.video;
-    if (kind === 'code') return ['json', 'jsonc', 'yaml', 'yml', 'toml', 'xml'].includes(ext)
-      ? Icon.chat.attachment.config
-      : Icon.chat.attachment.code;
-    if (kind === 'markdown' || kind === 'text' || kind === 'pdf' || kind === 'html') {
-      return Icon.chat.attachment.document;
-    }
-    return Icon.chat.attachment.generic;
-  })();
-
-  const handleOpen = async () => {
-    try {
-      const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
-      if (openManagedPath) { await openManagedPath(path); return; }
-      const url = path.startsWith('file://') ? path : `file://${path}`;
-      window.open(url, '_blank');
-    } catch (err) { debugError('media', '[MessageBubble] Failed to open file card path:', err); }
-  };
-
-  return (
-    <div onClick={handleOpen} title={path}
-      className="relative inline-flex items-center gap-2 px-3 py-1.5 my-1 rounded-lg
-      bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.08)]
-      hover:border-aegis-primary/20 transition-colors cursor-pointer max-w-full text-start group/filecard">
-      <span className="shrink-0 flex items-center">{fileIcon}</span>
-      <div className="min-w-0 flex flex-col">
-        <span className="text-[12px] font-medium text-aegis-text truncate">{name}</span>
-        <span className="text-[10px] text-aegis-text-dim truncate">{meta || t('resultCards.open', 'Open')}</span>
-      </div>
-      <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(path); }}
-        className="absolute top-0.5 right-0.5 p-1 rounded-md opacity-0 group-hover/filecard:opacity-100
-          hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-all text-aegis-text-muted hover:text-aegis-text-secondary"
-        title="Copy path">
-        <Copy size={12} />
-      </button>
+      {onOpenTrace && (
+        <button
+          type="button"
+          onClick={onOpenTrace}
+          className="inline-flex min-h-[22px] items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-aegis-primary"
+          title={t('chat.trace.open')}
+          aria-label={t('chat.trace.open')}
+          data-open-response-trace
+        >
+          <History size={11} />
+          <span>{t('chat.trace.open')}</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -515,98 +432,10 @@ function ActionBtn({ icon, label, onClick, disabled, danger = false }: {
   );
 }
 
-// ── Markdown Components ──
-async function openExternalHref(href: string): Promise<void> {
-  try {
-    const { open } = await import('@tauri-apps/plugin-shell');
-    await open(href);
-  } catch {
-    window.open(href, '_blank', 'noopener,noreferrer');
-  }
-}
-
-const markdownComponents = {
-  table({ children }: any) {
-    return <div className="table-wrapper"><table>{children}</table></div>;
-  },
-  code({ className, children, ...props }: any) {
-    const match = /language-(\w+)/.exec(className || '');
-    const codeString = String(children).replace(/\n$/, '');
-    if (match || codeString.includes('\n')) {
-      const language = match?.[1] || '';
-      return (
-        <Suspense fallback={<CodeBlockFallback language={language} code={codeString} />}>
-          <CodeBlock language={language} code={codeString} />
-        </Suspense>
-      );
-    }
-    return (
-      <code className="text-[13px] font-mono px-1.5 py-0.5 rounded"
-        style={{ background: 'rgb(var(--aegis-primary) / 0.12)', color: 'rgb(var(--aegis-primary))' }}
-        {...props}>{children}</code>
-    );
-  },
-  img({ src, alt }: any) {
-    if (!src) return null;
-    const videoExtensions = /\.(mp4|webm|mov|avi|mkv|m4v|ogg)(\?.*)?$/i;
-    if (videoExtensions.test(src)) {
-      return (
-        <Suspense fallback={<MediaFallback className="h-[220px] w-full max-w-[400px]" />}>
-          <ChatVideo src={src} alt={alt} maxWidth="100%" maxHeight="400px" />
-        </Suspense>
-      );
-    }
-    return (
-      <Suspense fallback={<MediaFallback className="h-[220px] w-full max-w-[400px]" />}>
-        <ChatImage src={src} alt={alt} maxWidth="100%" maxHeight="400px" />
-      </Suspense>
-    );
-  },
-  p({ children }: any) {
-    if (typeof children === 'string' || (Array.isArray(children) && children.length === 1 && typeof children[0] === 'string')) {
-      const text = typeof children === 'string' ? children : children[0];
-      const fileMatch = text.match(/^📎\s*file:\s*(.+?)(?:\s*\(([^)]+)\))?\s*$/);
-      if (fileMatch) return <FileCard path={fileMatch[1].trim()} meta={fileMatch[2]?.trim()} />;
-      const attachedFileMatch = text.match(/^\[file attached:\s*(.+?)\]\s*$/i);
-      if (attachedFileMatch) return <FileCard path={attachedFileMatch[1].trim()} meta="attachment" />;
-      const attachedMediaMatch = text.match(/^\[media attached:\s*(.+?)\]\s*$/i);
-      if (attachedMediaMatch) return <FileCard path={attachedMediaMatch[1].trim()} meta="media" />;
-      const voiceMatch = text.match(/^🎤\s*\[voice\]\s*(.+?)(?:\s*\(([^)]+)\))?\s*$/);
-      if (voiceMatch) return <FileCard path={voiceMatch[1].trim()} meta={voiceMatch[2]?.trim() || 'voice'} />;
-    }
-    return <p>{children}</p>;
-  },
-  a({ href, children }: any) {
-    if (href && isLocalFilePath(href)) {
-      const label = typeof children === 'string' ? children : (Array.isArray(children) ? children.join('') : '');
-      return <FileCard path={href} meta={label || 'file'} />;
-    }
-    const videoExtensions = /\.(mp4|webm|mov|avi|mkv|m4v|ogg)(\?.*)?$/i;
-    if (href && videoExtensions.test(href)) {
-      return (
-        <Suspense fallback={<MediaFallback className="h-[220px] w-full max-w-[400px]" />}>
-          <ChatVideo src={href} alt={String(children) || 'video'} maxWidth="100%" maxHeight="400px" />
-        </Suspense>
-      );
-    }
-    return (
-      <a href={href} onClick={async (e) => {
-        e.preventDefault();
-        if (!href) return;
-        const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
-        if (isLocalFilePath(href) && openManagedPath) { await openManagedPath(href); return; }
-        await openExternalHref(href);
-      }} className="text-aegis-primary hover:text-aegis-primary/70 underline underline-offset-2">
-        {children}
-      </a>
-    );
-  },
-};
-
 export const MessageBubble = memo(function MessageBubble({
   block, sessionKey, onEdit, onDelete, onRetry, onErrorAction, collaborationAction,
   deliveryStatus, deliveryError, outboundAttachments,
-  historyTruncated, historyTruncationReason, onLoadFullMessage,
+  historyTruncated, historyTruncationReason, onLoadFullMessage, onOpenPreview,
   groupPosition = 'standalone',
 }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
@@ -616,7 +445,6 @@ export const MessageBubble = memo(function MessageBubble({
   const [isEditing, setIsEditing] = useState(false);
   const [loadingFullMessage, setLoadingFullMessage] = useState(false);
   const [fullMessageError, setFullMessageError] = useState('');
-  const [artifactPreviewRequest, setArtifactPreviewRequest] = useState(0);
 
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
@@ -666,7 +494,20 @@ function stripInlineCodeTicks(md: string): string {
     : '';
 
   const isEmptyAssistantStreaming = !isUser && block.isStreaming && !content.trim() && block.images.length === 0 && block.artifacts.length === 0 && !block.audio;
-  const canPreviewArtifact = hasPreviewableArtifact(block.artifacts);
+  const messagePreview = createChatMessagePreview(block);
+  const canOpenPreview = Boolean(messagePreview && onOpenPreview);
+  const messageActions = !block.isStreaming && !isEditing && !isEmptyAssistantStreaming ? (
+    <MessageBubbleActions
+      copied={copied}
+      previewable={canOpenPreview}
+      onCopy={() => { void handleCopy(); }}
+      onPreview={() => {
+        if (messagePreview) onOpenPreview?.(messagePreview);
+      }}
+    />
+  ) : null;
+  const hasBubbleActions = !isUser && Boolean(messageActions);
+  const footerActions = isUser ? messageActions : null;
   const showAvatar = groupPosition === 'standalone' || groupPosition === 'first';
   const showFooter = groupPosition === 'standalone' || groupPosition === 'last';
   const [waitElapsedSec, setWaitElapsedSec] = useState(0);
@@ -713,7 +554,7 @@ function stripInlineCodeTicks(md: string): string {
           className={clsx(
           'relative block rounded-xl py-2.5 transition-colors duration-150',
           'pl-4 max-w-full box-border min-w-0 break-words group/bubble',
-          canPreviewArtifact ? 'pr-[68px]' : 'pr-9',
+          'pr-4',
           isEmptyAssistantStreaming
             ? 'bg-transparent shadow-none p-0 pl-0 pr-0 py-0'
             : isUser
@@ -724,19 +565,19 @@ function stripInlineCodeTicks(md: string): string {
           style={{ width: 'auto' }}
         >
 
-          {!block.isStreaming && !isEditing && !isEmptyAssistantStreaming && (
-            <MessageBubbleActions
-              copied={copied}
-              previewable={canPreviewArtifact}
-              onCopy={() => { void handleCopy(); }}
-              onPreview={() => setArtifactPreviewRequest((request) => request + 1)}
-            />
+          {hasBubbleActions && (
+            <div
+              className="absolute end-2 top-2 z-10 rounded-md bg-[rgb(var(--aegis-bg)/0.72)] p-0.5"
+              data-message-bubble-actions
+            >
+              {messageActions}
+            </div>
           )}
 
           {/* Audio Player */}
           {block.audio && !block.isStreaming && (
             <div className="mb-2">
-              <Suspense fallback={<MediaFallback className="h-10 w-full" />}>
+              <Suspense fallback={<ChatMediaFallback className="h-10 w-full" />}>
                 <AudioPlayer
                   src={block.audio}
                   sessionKey={responseSessionKey}
@@ -757,7 +598,7 @@ function stripInlineCodeTicks(md: string): string {
                 <Suspense
                   key={i}
                   fallback={
-                    <MediaFallback
+                    <ChatMediaFallback
                       className={block.images.length === 1 ? 'h-[220px] w-[360px] max-w-full' : 'h-[140px] w-full'}
                     />
                   }
@@ -824,7 +665,7 @@ function stripInlineCodeTicks(md: string): string {
                   'inline-flex items-center gap-1.5 select-none',
                   'px-3 py-2 rounded-xl border border-aegis-primary/25 bg-[color-mix(in_srgb,rgb(var(--aegis-primary))_14%,rgb(var(--aegis-elevated)))] shadow-[0_0_18px_rgb(var(--aegis-primary)/0.12)]',
                 )}
-                aria-label={t('chat.assistantPreparing', 'Assistant is preparing a response')}
+                aria-label={t('chat.assistantPreparing')}
               >
                 {[0, 1, 2].map((i) => (
                   <span
@@ -855,17 +696,15 @@ function stripInlineCodeTicks(md: string): string {
                 <span
                   className="mt-[3px] inline-flex h-4 w-4 shrink-0 items-center justify-center"
                   aria-label={responseStatus === 'cancelled'
-                    ? t('chat.stopped', 'Stopped')
-                    : t('errors.occurred', 'An error occurred')}
+                    ? t('chat.stopped')
+                    : t('errors.occurred')}
                 >
                   <StatusIcon status={responseStatus} size={14} />
                 </span>
               )}
               <div className="markdown-body min-w-0 flex-1">
                 {content && (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                    {content}
-                  </ReactMarkdown>
+                  <ChatMarkdownRenderer markdown={content} />
                 )}
               </div>
               {/* Blinking caret — gives a clear "still typing" signal while the
@@ -883,7 +722,7 @@ function stripInlineCodeTicks(md: string): string {
 
           {/* Artifacts */}
           {block.artifacts.map((art, idx) => (
-            <ArtifactCard key={`art-${idx}`} artifact={art} previewRequest={artifactPreviewRequest} />
+            <ArtifactCard key={`art-${idx}`} artifact={art} />
           ))}
 
           {/* Collapsed Meta */}
@@ -911,7 +750,7 @@ function stripInlineCodeTicks(md: string): string {
                 {loadingFullMessage
                   ? <LoadingIndicator size={13} />
                   : <FileText size={13} />}
-                {t('chat.loadFullMessage', '加载完整消息')}
+                {t('chat.loadFullMessage')}
               </button>
               {fullMessageError && (
                 <p className="mt-1 text-[10px] text-aegis-danger">{fullMessageError}</p>
@@ -935,6 +774,12 @@ function stripInlineCodeTicks(md: string): string {
           )}
         </motion.div>
 
+        {!showFooter && footerActions && (
+          <div className="mt-1 flex w-full justify-end">
+            {footerActions}
+          </div>
+        )}
+
         {showFooter && (isUser ? (
           <div className="mt-1 flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 select-none">
             <span className="inline-flex items-center gap-1.5">
@@ -942,28 +787,29 @@ function stripInlineCodeTicks(md: string): string {
                 {timeLabel}
               </time>
               {deliveryStatus === 'pending' && (
-                <span className="text-[10px] text-aegis-text-dim">{t('chat.sending', '发送中')}</span>
+                <span className="text-[10px] text-aegis-text-dim">{t('chat.sending')}</span>
               )}
               {deliveryStatus === 'queued' && (
-                <span className="text-[10px] text-aegis-warning">{t('chat.queued', '已排队')}</span>
+                <span className="text-[10px] text-aegis-warning">{t('chat.queued')}</span>
               )}
               {deliveryStatus === 'failed' && (
                 <span className="text-[10px] text-aegis-danger" title={deliveryError}>
-                  {t('chat.sendFailed', '发送失败')}
+                  {t('chat.sendFailed')}
                 </span>
               )}
             </span>
-            <span className="inline-flex items-center gap-0.5">
+            <div className="inline-flex items-center gap-0.5">
             <span className="text-aegis-border text-[10px] select-none">·</span>
+            {footerActions}
             {onEdit && !isEditing && (
               <ActionBtn
                 icon={<Pencil size={14} />}
-                label={t('chat.editMessage', 'Edit message')}
+                label={t('chat.editMessage')}
                 onClick={() => setIsEditing(true)}
               />
             )}
             {onRetry && (
-              <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.retryDelivery', 'Retry delivery')}
+              <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.retryDelivery')}
                 onClick={onRetry} />
             )}
             {collaborationAction && (
@@ -972,10 +818,10 @@ function stripInlineCodeTicks(md: string): string {
                   ? <LoadingIndicator size={14} />
                   : <GitFork size={14} />}
                 label={collaborationAction.state === 'active'
-                  ? t('collaboration.chat.viewRun', 'View collaboration')
+                  ? t('collaboration.chat.viewRun')
                   : collaborationAction.state === 'ready'
-                    ? t('collaboration.chat.startRun', 'Start collaboration')
-                    : t('collaboration.chat.confirmingMessage', 'Confirming message identity')}
+                    ? t('collaboration.chat.startRun')
+                    : t('collaboration.chat.confirmingMessage')}
                 onClick={() => collaborationAction.onClick?.()}
                 disabled={collaborationAction.state === 'confirming' || !collaborationAction.onClick}
               />
@@ -983,21 +829,22 @@ function stripInlineCodeTicks(md: string): string {
             {onDelete && !isEditing && (
               <ActionBtn
                 icon={<Trash2 size={14} />}
-                label={t('chat.deleteMessage', 'Delete message')}
+                label={t('chat.deleteMessage')}
                 onClick={onDelete}
                 danger
               />
             )}
-            </span>
+            </div>
           </div>
         ) : (
-          <AssistantResponseFooter
-            sessionKey={responseSessionKey}
-            block={block}
-            timestamp={block.timestamp}
-            status={block.responseState}
-            className="mt-1"
-          />
+          <div className="mt-1 flex w-full items-start justify-between gap-2">
+            <AssistantResponseFooter
+              sessionKey={responseSessionKey}
+              block={block}
+              timestamp={block.timestamp}
+              status={block.responseState}
+            />
+          </div>
         ))}
 
       </div>

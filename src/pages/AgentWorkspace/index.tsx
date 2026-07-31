@@ -27,6 +27,10 @@ import {
   publishAgentWorkspaceSidebarMode,
   readAgentWorkspaceSidebarMode,
 } from '@/components/Layout/agentWorkspaceSidebarEvents';
+import {
+  WorkspaceChromeIconButton as IconButton,
+  WorkspaceSidebarHeader,
+} from '@/components/Layout/WorkspaceChrome';
 import type { WorkspaceSidebarMode } from '@/components/Layout/workspaceSidebarChannel';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -92,25 +96,6 @@ function StateDot({ state }: { state: WorktreeState }) {
   return <span className={`junqi-wb-state-dot is-${state}`} aria-label={state} />;
 }
 
-function IconButton({ label, children, active, onClick }: {
-  label: string;
-  children: ReactNode;
-  active?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`junqi-wb-icon-button${active ? ' is-active' : ''}`}
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
 function WorktreeSidebar({
   worktrees,
   activeId,
@@ -132,7 +117,10 @@ function WorktreeSidebar({
   if (mode === 'compact') {
     return (
       <aside className="junqi-wb-sidebar junqi-wb-sidebar-collapsed">
-        <IconButton label="展开工作区" onClick={onToggle}><SidebarSimple size={17} /></IconButton>
+        <WorkspaceSidebarHeader
+          compact
+          actions={<IconButton label="展开工作区" onClick={onToggle}><SidebarSimple size={17} /></IconButton>}
+        />
         <div className="junqi-wb-collapsed-list">
           {worktrees.map((worktree) => (
             <button
@@ -153,16 +141,16 @@ function WorktreeSidebar({
 
   return (
     <aside className="junqi-wb-sidebar">
-      <header className="junqi-wb-sidebar-header">
-        <div>
-          <span className="junqi-wb-kicker">AI WORKSPACE</span>
-          <strong>工作区</strong>
-        </div>
-        <div className="junqi-wb-inline-actions">
+      <WorkspaceSidebarHeader
+        eyebrow="AI WORKSPACE"
+        title="工作区"
+        actions={(
+          <>
           <IconButton label="打开本机项目" onClick={onAdd}><Plus size={15} /></IconButton>
           <IconButton label="收起工作区" onClick={onToggle}><SidebarSimple size={16} /></IconButton>
-        </div>
-      </header>
+          </>
+        )}
+      />
 
       <div className="junqi-wb-worktree-scroll">
         <section className="junqi-wb-repo-group">

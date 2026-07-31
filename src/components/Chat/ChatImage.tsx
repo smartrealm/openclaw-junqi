@@ -229,35 +229,35 @@ export function ImageLightbox({ src, alt, onClose }: LightboxProps) {
       onWheel={handleWheel}
       role="dialog"
       aria-modal="true"
-      aria-label={alt || t('media.attachment', 'Attachment')}
+      aria-label={alt || t('media.attachment')}
     >
       {/* Top bar */}
       <div className="absolute top-0 left-0 right-0 h-12 flex items-center justify-between px-4 z-10"
         style={{ background: 'linear-gradient(to bottom, var(--aegis-bg-frosted-60), transparent)' }}>
         <span className="text-[12px] text-aegis-text-muted font-mono">
-          {alt || 'Image'} — {Math.round(zoom * 100)}%
+          {alt || t('media.attachment')} - {Math.round(zoom * 100)}%
         </span>
         <div className="flex items-center gap-1">
           <button onClick={() => setZoom(z => Math.min(z + 0.25, 5))}
-            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.zoomIn', 'Zoom in')}>
+            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.zoomIn')}>
             <ZoomIn size={16} />
           </button>
           <button onClick={() => setZoom(z => Math.max(z - 0.25, 0.25))}
-            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.zoomOut', 'Zoom out')}>
+            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.zoomOut')}>
             <ZoomOut size={16} />
           </button>
           <button onClick={() => setRotation(r => r + 90)}
-            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.rotate', 'Rotate')}>
+            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.rotate')}>
             <RotateCw size={16} />
           </button>
           <div className="w-px h-5 bg-[rgb(var(--aegis-overlay)/0.1)] mx-1" />
           <button onClick={handleSave}
-            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.save', 'Save')}>
+            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.save')}>
             <Download size={16} />
           </button>
           <div className="w-px h-5 bg-[rgb(var(--aegis-overlay)/0.1)] mx-1" />
           <button onClick={onClose}
-            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.closeEsc', 'Close (Esc)')}>
+            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.closeEsc')}>
             <X size={16} />
           </button>
         </div>
@@ -350,7 +350,7 @@ export function ChatImage({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
             style={{ display: 'inline-flex', width: 200, height: 150, background: 'rgb(var(--aegis-overlay) / 0.03)' }}>
             <LoadingIndicator
               size={20}
-              label={t('common.loading', 'Loading...')}
+              label={t('common.loading')}
               className="text-aegis-text-dim"
             />
           </span>

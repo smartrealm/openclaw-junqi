@@ -135,7 +135,7 @@ export function CodeBlock({ language, code }: CodeBlockProps) {
         <span className="text-[10px] font-mono font-medium text-aegis-text-muted uppercase tracking-widest">
           {displayLang}
           {isLong && (
-            <span className="ml-2 opacity-60">{totalLines} lines</span>
+            <span className="ml-2 opacity-60">{t('code.lineCount', { count: totalLines })}</span>
           )}
         </span>
         <button
@@ -190,12 +190,12 @@ export function CodeBlock({ language, code }: CodeBlockProps) {
           {collapsed ? (
             <>
               <ChevronDown size={13} />
-              Show all ({totalLines} lines)
+              {t('code.showAll', { count: totalLines })}
             </>
           ) : (
             <>
               <ChevronUp size={13} />
-              Collapse
+              {t('code.collapse')}
             </>
           )}
         </button>

@@ -96,7 +96,7 @@ export function AppLayout() {
   }, [location.pathname]);
 
   return (
-    <div className={`h-screen flex flex-col overflow-hidden bg-aegis-bg relative${isTerminalPage ? ' terminal-kooky-app' : ''}`}>
+    <div className="h-screen flex flex-col overflow-hidden bg-aegis-bg relative">
       {/* ── Ambient Background Glow (from conceptual JSX) ── */}
       {!isTerminalPage && <div className="ambient-glow-teal" />}
       {!isTerminalPage && <div className="ambient-glow-purple" />}

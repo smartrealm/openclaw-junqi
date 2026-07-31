@@ -176,7 +176,7 @@ export function ChatVideo({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
         >
           <LoadingIndicator
             size={20}
-            label={t('common.loading', 'Loading...')}
+            label={t('common.loading')}
             className="text-aegis-text-dim"
           />
         </span>

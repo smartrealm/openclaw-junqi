@@ -72,7 +72,7 @@ export function AgentOverviewPanel({ mode = 'full' }: AgentOverviewPanelProps) {
                 style={{
                   position: 'absolute', bottom: 2, right: 2, width: 7, height: 7, borderRadius: '50%',
                   background: state.color,
-                  boxShadow: '0 0 0 1.5px var(--kooky-chrome)',
+                  boxShadow: '0 0 0 1.5px var(--aegis-surface-solid)',
                 }}
               />
             </button>

@@ -847,6 +847,7 @@
     "close": "關閉",
     "copy": "複製",
     "copied": "已複製",
+    "openInCanvas": "在畫布中打開",
     "loading": "加載中…",
     "soon": "即將推出",
     "refresh": "刷新",
@@ -1194,6 +1195,28 @@
   "chat": {
     "quickChat": "快速對話",
     "openFullChat": "打開完整聊天",
+    "messagePreviewTitle": "消息預覽",
+    "closeMessagePreview": "關閉消息預覽",
+    "openInCanvas": "在畫布中開啟",
+    "openSession": "開啟",
+    "previousSession": "上一個會話",
+    "tabUnreadCount": "{{count}} 條未讀回覆",
+    "nextSession": "下一個會話",
+    "newSession": "新增會話",
+    "fullMessageUnavailable": "完整訊息無法使用",
+    "sendFailed": "傳送失敗",
+    "context": "上下文",
+    "assistantPreparing": "助理正在準備回覆",
+    "loadFullMessage": "載入完整訊息",
+    "sending": "傳送中",
+    "historyLoadFailed": "無法載入會話歷史",
+    "systemNote": "系統提示",
+    "modelSwitched": "模型已切換",
+    "historyLoadedFromCache": "已從快取載入最近會話（{{count}} 條訊息）",
+    "historySyncingBackground": "正在背景同步最近會話",
+    "historyReady": "最近會話已就緒（{{count}} 條訊息）",
+    "historySyncingBackgroundReady": "最近會話正在背景同步，現在可以開始對話。",
+    "historySyncingAfterDelay": "最近會話回應較慢，正在背景同步。",
     "typeMessage": "輸入消息…",
     "widgetPlaceholder": "問 OpenClaw 點什麼…",
     "sendError": "發送消息失敗",
@@ -1299,6 +1322,80 @@
       "revision": "修訂 {{revision}}",
       "completedSummary": "{{completed}}/{{total}} 已完成",
       "stepCountChanged": "計劃已從 {{previous}} 步調整為 {{current}} 步"
+    },
+    "trace": {
+      "open": "執行追溯",
+      "title": "執行追溯",
+      "close": "關閉執行追溯",
+      "openClawAuthority": "OpenClaw Run",
+      "transcriptAuthority": "Gateway transcript",
+      "session": "會話",
+      "run": "運行",
+      "traceId": "追溯標識",
+      "startedAt": "開始時間",
+      "completedAt": "完成時間",
+      "sourceMessages": "來源消息",
+      "sourceMessage": "來源消息",
+      "notProvided": "上游未提供",
+      "formalReviewId": "正式審核關聯標識",
+      "reviewSection": "人工審核",
+      "reviewNotRequested": "該響應沒有收到結構化人工審核請求。不會從回覆文本推斷審核狀態。",
+      "reviewTranscriptOnly": "檢測到 {{count}} 個結構化選擇請求。請求和後續用戶消息由 transcript 保存，但不構成帶審核人和決策關聯的正式審批記錄。",
+      "reviewFormalRelation": "檢測到與上游正式審核記錄的關聯標識。該標識可用於審計關聯；不會從回覆文本推斷審核人或決定結果。",
+      "timeline": "結構化時間線",
+      "planSnapshot": "計劃快照 {{number}}",
+      "thinking": "思考過程",
+      "reviewRequest": "人工選擇請求",
+      "assistantMessage": "助手回覆",
+      "fileOutput": "文件產物",
+      "workshopEvent": "工作台事件",
+      "sessionEvent": "會話事件",
+      "structuredAction": "結構化操作",
+      "artifact": "產物",
+      "sequence": "序號",
+      "toolCall": "工具調用",
+      "toolDetails": "查看工具輸入與輸出",
+      "viewContent": "查看完整內容",
+      "input": "輸入",
+      "output": "輸出",
+      "outputTruncated": "輸出已截斷，原始長度 {{count}} 個字符",
+      "toolError": "工具錯誤",
+      "transcriptOnly": "僅 transcript 記錄，非正式審核",
+      "characterCount": "{{count}} 個字符",
+      "nodeStatus": {
+        "pending": "待執行",
+        "inProgress": "執行中",
+        "completed": "已完成",
+        "running": "執行中",
+        "done": "已完成",
+        "error": "失敗"
+      },
+      "status": {
+        "streaming": "執行中",
+        "final": "已完成",
+        "error": "執行失敗",
+        "aborted": "已中止"
+      }
+    },
+    "tools": {
+      "webSearch": "網頁搜尋",
+      "webFetch": "取得網頁",
+      "browser": "瀏覽器",
+      "readFile": "讀取檔案",
+      "writeFile": "寫入檔案",
+      "editFile": "編輯檔案",
+      "execute": "執行命令",
+      "process": "程序",
+      "memorySearch": "記憶搜尋",
+      "memoryGet": "讀取記憶",
+      "spawnAgent": "啟動智能體",
+      "sendMessage": "傳送訊息",
+      "status": "狀態",
+      "cron": "排程工作",
+      "image": "圖像",
+      "textToSpeech": "文字轉語音",
+      "gateway": "閘道",
+      "message": "訊息"
     }
   },
   "titlebar": {
@@ -1352,6 +1449,7 @@
     "voiceWakeCaptured": "已擷取語音，正在傳送…",
     "voiceStop": "停止語音",
     "attachmentReadFailed": "無法讀取 {{path}}",
+    "attachmentErrorTitle": "附件錯誤",
     "clipboardImageReadFailed": "無法讀取剪貼簿圖片",
     "clipboardImageName": "剪貼簿圖片.png",
     "attachmentsOnlyMessage": "{{files}}",
@@ -1375,8 +1473,12 @@
   },
   "screenshot": {
     "title": "截圖",
+    "interactive": "選取區域截圖",
+    "interactiveDesc": "拖曳選取區域，按空白鍵切換視窗模式",
     "fullScreen": "全屏截圖",
     "fullScreenDesc": "最小化應用並截取屏幕",
+    "capturing": "截圖中…",
+    "windows": "視窗",
     "openWindows": "打開的窗口（{{count}} 個）",
     "loading": "正在加載窗口列表…",
     "noWindows": "沒有可用窗口",
@@ -1385,6 +1487,8 @@
   },
   "voice": {
     "cancel": "取消",
+    "pause": "暫停",
+    "resume": "繼續",
     "sendRecording": "發送錄音",
     "voiceMessage": "語音消息（{{seconds}} 秒）",
     "micError": "無法訪問麥克風，請檢查權限設置。",
@@ -1767,7 +1871,10 @@
   "code": {
     "copyCode": "複製代碼",
     "copied": "已複製",
-    "copy": "複製"
+    "copy": "複製",
+    "lineCount": "{{count}} 行",
+    "showAll": "顯示全部（{{count}} 行）",
+    "collapse": "收起"
   },
   "media": {
     "playbackSpeed": "播放速度",
@@ -1792,7 +1899,9 @@
     "thinking": "正在思考…",
     "thoughtProcess": "思考過程",
     "lines": "行",
-    "chars": "字符"
+    "chars": "字符",
+    "lineCount": "{{count}} 行",
+    "compactSummary": "{{lines}} 行 · {{chars}} 字符"
   },
   "pairing": {
     "pairedSuccess": "配對成功！",
@@ -2026,7 +2135,7 @@
     "addAccount": "新增賬號",
     "editAccount": "編輯賬號",
     "accountId": "賬號 ID",
-    "invalidAccountId": "請使用 2-64 位字母、數字、連字符或下劃線。",
+    "invalidAccountId": "請使用 1-128 位字母、數字、點、下劃線、連字符或冒號，且必須以字母或數字開頭。",
     "duplicateAccountTitle": "賬號 ID 重複",
     "duplicateAccountId": "該通道中已存在這個賬號 ID。",
     "accountName": "顯示名稱",
@@ -2512,8 +2621,6 @@
     "openOfficialAuth": "打開官方登錄",
     "modelSourceProvider": "來源：OpenClaw 目錄",
     "modelSourceProviderHint": "使用當前已安裝 OpenClaw 返回的模型目錄",
-    "modelSourceSynced": "來源：內置兜底目錄",
-    "modelSourceSyncedHint": "OpenClaw 目錄不可用，當前使用隨應用提供的兜底目錄",
     "schemaFields": {
       "auth": "認證方式",
       "contextWindow": "原生上下文窗口",
@@ -2829,11 +2936,19 @@
   },
   "resultCards": {
     "preview": "預覽",
+    "source": "原始碼",
     "hidePreview": "收起預覽",
     "moreFileActions": "更多檔案操作",
     "openExternal": "使用預設應用程式開啟",
     "revealInFolder": "在資料夾中顯示",
     "copyPath": "複製路徑",
+    "fileMeta": {
+      "attachment": "附件",
+      "media": "媒體",
+      "voice": "語音",
+      "file": "檔案",
+      "noncanonical": "非規範輸出"
+    },
     "retryPreview": "重新嘗試預覽",
     "previewReadFailed": "無法讀取此檔案。請確認它仍在原本的位置。",
     "previewTruncated": "預覽已截斷；請開啟原始檔案查看完整內容。",
@@ -4121,6 +4236,38 @@
       "untitled": "未命名任務",
       "project": "專案",
       "references": "上下文引用"
+    }
+  },
+  "collaboration": {
+    "common": {
+      "close": "關閉",
+      "retry": "重試"
+    },
+    "chat": {
+      "sessionSyncFailed": "協作資料無法同步，目前顯示的留存資料可能不是最新狀態。",
+      "sessionDock": "目前會話協作",
+      "activeSessionRun": "協作進行中",
+      "latestSessionRun": "最近一次協作",
+      "workItemProgress": "{{completed}}/{{total}}",
+      "activeRunCount": "{{count}} 項進行中",
+      "history": "協作執行",
+      "originNotReady": "原始訊息身分尚未確認。",
+      "agentUnknown": "來源智能體身分無法使用。",
+      "snapshotUnavailable": "目前協作執行快照無法使用。",
+      "activeElsewhere": "{{count}} 個協作執行正在進行",
+      "unanchoredHistory": "{{count}} 條協作記錄",
+      "viewRun": "檢視協作",
+      "startRun": "開始協作",
+      "confirmingMessage": "正在確認訊息身分"
+    },
+    "card": {
+      "untitled": "未命名協作"
+    },
+    "details": {
+      "title": "協作詳情"
+    },
+    "drawer": {
+      "title": "協作執行"
     }
   },
   "dynamicIsland": {

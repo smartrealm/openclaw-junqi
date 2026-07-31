@@ -51,13 +51,13 @@ export function ExecutionProcessGroup({ blocks, streaming, renderBlock }: Execut
   }, [streaming]);
 
   const summary = errorCount > 0
-    ? t('chat.execution.error', 'Execution error')
+    ? t('chat.execution.error')
     : runningCount > 0
-      ? t('chat.execution.running', 'Running')
-      : t('chat.execution.done', 'Completed');
+      ? t('chat.execution.running')
+      : t('chat.execution.done');
 
   return (
-    <section className="ml-[46px] mr-4 py-1" aria-label={t('chat.execution.ariaLabel', 'Execution process')}>
+    <section className="ml-[46px] mr-4 py-1" aria-label={t('chat.execution.ariaLabel')}>
       <div className={clsx(
         'max-w-[min(760px,88%)] overflow-hidden rounded-lg border transition-colors',
         expanded
@@ -79,8 +79,8 @@ export function ExecutionProcessGroup({ blocks, streaming, renderBlock }: Execut
           )}
           <span className="shrink-0 text-[11px] font-semibold text-aegis-text-secondary">{summary}</span>
           <span className="text-[10px] text-aegis-text-dim">
-            {toolBlocks.length > 0 && t('chat.execution.toolCount', { count: toolBlocks.length, defaultValue: '{{count}} tools' })}
-            {thinkingCount > 0 && `${toolBlocks.length > 0 ? ' · ' : ''}${t('chat.execution.thinkingCount', { count: thinkingCount, defaultValue: '{{count}} thoughts' })}`}
+            {toolBlocks.length > 0 && t('chat.execution.toolCount', { count: toolBlocks.length })}
+            {thinkingCount > 0 && `${toolBlocks.length > 0 ? ' · ' : ''}${t('chat.execution.thinkingCount', { count: thinkingCount })}`}
           </span>
           <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
             {uniqueTools.slice(0, 3).map((name) => (

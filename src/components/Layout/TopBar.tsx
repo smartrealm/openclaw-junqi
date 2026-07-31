@@ -52,6 +52,7 @@ import {
 } from './agentWorkspaceSidebarEvents';
 import { isWorkspaceSidebarMode, type WorkspaceSidebarMode } from './workspaceSidebarChannel';
 import { FocusControl } from '@/components/Focus/FocusControl';
+import { WorkspaceChromeIconButton } from './WorkspaceChrome';
 
 const NotificationPanel = lazy(() => import('@/components/Layout/NotificationPanel').then(m => ({ default: m.NotificationPanel })));
 
@@ -293,10 +294,10 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     ? workspaceSidebarMode === 'full' ? 'expanded' : workspaceSidebarMode === 'compact' ? 'mini' : 'hidden'
     : sidebarMode;
   const collapseIcon = effectiveSidebarMode === 'expanded'
-    ? <PanelLeftClose size={terminalChrome ? 12 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
+    ? <PanelLeftClose size={16} />
     : effectiveSidebarMode === 'mini'
-      ? <PanelLeft size={terminalChrome ? 12 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
-      : <PanelLeftOpen size={terminalChrome ? 12 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />;
+      ? <PanelLeft size={16} />
+      : <PanelLeftOpen size={16} />;
   const collapseTitle = effectiveSidebarMode === 'expanded'
     ? t('nav.sidebarToMini', 'Collapse to icons')
     : effectiveSidebarMode === 'mini'
@@ -507,7 +508,6 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
         // everything (native lights, sidebar toggle, AI pill, bell) shares
         // the same horizontal centre line at y=16.
         'h-[32px] shrink-0 flex items-center gap-1.5 chrome-bg select-none relative z-20 border-b border-aegis-border/30',
-        terminalChrome && 'terminal-kooky-topbar',
         isMac ? 'ps-[82px] pe-3' : 'px-3',
       )}
     >
@@ -526,15 +526,12 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
 
       {/* Left — collapse toggle (kooky: 28x28, cornerRadius 5, icon 12pt) */}
       {!hideSidebarToggle && (
-        <button
-          type="button"
+        <WorkspaceChromeIconButton
           onClick={handleSidebarToggle}
-          title={collapseTitle}
-          aria-label={collapseTitle}
-          className="w-[28px] h-[28px] flex items-center justify-center rounded-[5px] text-aegis-text-secondary hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors shrink-0"
+          label={collapseTitle}
         >
           {collapseIcon}
-        </button>
+        </WorkspaceChromeIconButton>
       )}
 
       {terminalChrome ? (
@@ -543,7 +540,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
           onClick={requestTerminalCommandPalette}
           title={t('terminal.commandPalette', 'Search workspace, tab, agent')}
           aria-label={t('terminal.commandPalette', 'Search workspace, tab, agent')}
-          className="terminal-kooky-search-trigger absolute left-1/2 flex -translate-x-1/2 items-center gap-[7px] rounded-[5px] border border-aegis-border/50 bg-[rgb(var(--aegis-overlay)/0.06)] px-2.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:border-aegis-border hover:bg-[rgb(var(--aegis-overlay)/0.1)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          className="absolute left-1/2 flex h-6 w-[min(320px,36vw)] -translate-x-1/2 items-center gap-2 rounded-[5px] border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.05)] px-2.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.09)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 max-[520px]:hidden"
         >
           <Search size={10} strokeWidth={2} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{t('terminal.commandPalette', 'Search workspace, tab, agent')}</span>
@@ -582,35 +579,25 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
         <TerminalOpenInControl directory={terminalOpenDirectory} />
       )}
       {terminalChrome && (
-        <button
-          type="button"
+        <WorkspaceChromeIconButton
           onClick={requestTerminalAgentPanelToggle}
-          title={t('terminal.agentPanelToggle', 'Toggle agent panel')}
-          aria-label={t('terminal.agentPanelToggle', 'Toggle agent panel')}
-          className="terminal-kooky-agent-toggle flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          label={t('terminal.agentPanelToggle', 'Toggle agent panel')}
         >
-          <LayoutGrid size={12} strokeWidth={1.7} />
-        </button>
+          <LayoutGrid size={16} />
+        </WorkspaceChromeIconButton>
       )}
-      <div ref={notifRef} className={clsx('relative shrink-0', terminalChrome && 'terminal-kooky-notification', !terminalChrome && 'ml-auto')}>
-        <button
-          type="button"
+      <div ref={notifRef} className={clsx('relative shrink-0', !terminalChrome && 'ml-auto')}>
+        <WorkspaceChromeIconButton
           onClick={() => setPanelOpen((value) => {
             const next = !value;
             if (next) void refreshNotifications();
             return next;
           })}
-          title={t('notifications.title', 'Notifications')}
-          aria-label={t('notifications.title', 'Notifications')}
+          label={t('notifications.title', 'Notifications')}
           aria-expanded={panelOpen}
-          className={clsx(
-            'relative w-[28px] h-[28px] flex items-center justify-center rounded-[5px] transition-colors',
-            panelOpen
-              ? 'text-aegis-text bg-[rgb(var(--aegis-overlay)/0.12)]'
-              : 'text-aegis-text-secondary hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.12)]',
-          )}
+          active={panelOpen}
         >
-          <Bell size={terminalChrome ? 12 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
+          <Bell size={16} />
           {terminalChrome && unread > 0 ? (
             <span className="absolute end-[5px] top-[5px] h-[6px] w-[6px] rounded-full bg-aegis-danger" />
           ) : unread > 0 && (
@@ -618,7 +605,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
               {unread > 9 ? '9+' : unread}
             </span>
           )}
-        </button>
+        </WorkspaceChromeIconButton>
 
         {panelOpen && (terminalChrome ? (
           <TerminalNotificationPanel

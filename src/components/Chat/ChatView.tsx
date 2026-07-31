@@ -67,6 +67,11 @@ import {
   removeLocalUserMessage,
 } from './localUserMessageMutations';
 import { selectActiveExecutionPlan } from './executionPlanPlacement';
+import { ChatMessagePreviewPanel } from './ChatMessagePreviewPanel';
+import { ChatResponseTracePanel } from './ChatResponseTracePanel';
+import { projectChatResponseTrace } from './chatResponseTrace';
+import { useChatSidePanel } from './useChatSidePanel';
+import { getToolLabelKey } from './toolCallPresentation';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -121,38 +126,46 @@ function MessageBubbleFallback({
 }
 
 function ToolCallFallback({ block }: { block: ToolBlock }) {
+  const { t } = useTranslation();
+  const labelKey = getToolLabelKey(block.toolName);
   return (
     <div className="ml-[46px] mr-4 py-[2px]">
       <div className="inline-flex max-w-[min(640px,72%)] items-center gap-2 rounded-lg px-0 py-1 text-[11px] text-aegis-text-dim">
         <span className={clsx('h-1.5 w-1.5 rounded-full', block.status === 'error' ? 'bg-aegis-danger' : 'bg-aegis-success/60')} />
-        <span className="font-medium">{block.toolName}</span>
+        <span className="font-medium">{labelKey ? t(labelKey) : block.toolName}</span>
       </div>
     </div>
   );
 }
 
 function ThinkingFallback({ block }: { block: ThinkingBlock | { content: string } }) {
+  const { t } = useTranslation();
   const lineCount = block.content ? block.content.split('\n').length : 0;
   return (
     <div className="pl-[46px] py-[2px] min-w-0">
       <div className="inline-flex items-center gap-2 px-2.5 py-1.5 min-h-[28px] rounded-full border border-aegis-primary/15 bg-aegis-primary/[0.04]">
         <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary/55" />
-        <span className="text-[11px] font-medium text-aegis-primary/85">Thinking</span>
-        {lineCount > 0 && <span className="text-[9px] text-aegis-text-dim/55 font-mono">{lineCount}L</span>}
+        <span className="text-[11px] font-medium text-aegis-primary/85">{t('thinking.thoughtProcess')}</span>
+        {lineCount > 0 && (
+          <span className="text-[9px] text-aegis-text-dim/55 font-mono">
+            {t('thinking.lineCount', { count: lineCount })}
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
 function ResultCardFallback({ block }: { block: DecisionBlock | SessionEventBlock | WorkshopEventBlock | { type: 'file-output'; files: unknown[] } }) {
+  const { t } = useTranslation();
   const label =
     block.type === 'decision'
-      ? 'Decision'
+      ? t('chat.trace.structuredAction')
       : block.type === 'session-event'
         ? block.event.text
         : block.type === 'workshop-event'
-          ? 'Workshop update'
-          : `${block.files.length} file${block.files.length === 1 ? '' : 's'}`;
+          ? t('chat.trace.workshopEvent')
+          : t('chat.trace.fileOutput');
   return (
     <div className="pl-[42px] py-[2px]">
       <div className="inline-flex rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text-muted">
@@ -242,6 +255,7 @@ function ChatViewContent() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const sidePanel = useChatSidePanel(activeSessionKey);
   const isLoadingHistory = useChatStore(
     (s) => Boolean(s.loadingHistoryBySession[activeSessionKey]),
   );
@@ -286,7 +300,10 @@ function ChatViewContent() {
   const prevResponseGroupsLenRef = useRef(0);
 
   // Reset scroll lock when switching sessions — new session should start at bottom
-  useEffect(() => { scrollLockedRef.current = false; setAtBottom(true); }, [activeSessionKey]);
+  useEffect(() => {
+    scrollLockedRef.current = false;
+    setAtBottom(true);
+  }, [activeSessionKey]);
 
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
   const [hasSeenConnectionAttempt, setHasSeenConnectionAttempt] = useState(false);
@@ -454,7 +471,10 @@ function ChatViewContent() {
         const shouldTrackConversationStage =
           boot.stages.conversation.status === 'pending' || boot.stages.conversation.status === 'running';
         if (shouldTrackConversationStage && !options?.background) {
-          boot.markStageCompleted('conversation', `Recent conversation loaded from cache (${normalizedCached.length} messages)`);
+          boot.markStageCompleted(
+            'conversation',
+            t('chat.historyLoadedFromCache', { count: normalizedCached.length }),
+          );
         }
         queueMicrotask(() => {
           if (isSessionDeleted(sessionKey)) return;
@@ -478,7 +498,7 @@ function ChatViewContent() {
         if (shouldTrackConversationStage) {
           boot.markStageRunning(
             'conversation',
-            options?.background ? 'Syncing recent conversation in background' : 'Loading recent conversation',
+            options?.background ? t('chat.historySyncingBackground') : t('input.historyLoading'),
           );
         }
 
@@ -568,7 +588,7 @@ function ChatViewContent() {
             `[ChatView] History metrics session=${sessionKey} requestMs=${requestMs} normalizeMs=${normalizeMs} totalMessages=${messages.length}`,
           );
           if (shouldTrackConversationStage && !options?.background) {
-            boot.markStageCompleted('conversation', `Recent conversation ready (${messages.length} messages)`);
+            boot.markStageCompleted('conversation', t('chat.historyReady', { count: messages.length }));
           }
           const retryTimer = historyRetryTimerBySession.current[sessionKey];
           if (retryTimer) {
@@ -589,7 +609,7 @@ function ChatViewContent() {
             if (shouldTrackConversationStage) {
               boot.markStageCompleted(
                 'conversation',
-                'Recent conversation is syncing in the background — you can chat now.',
+                t('chat.historySyncingBackgroundReady'),
               );
             }
             debugLog('app', '[ChatView] History not ready yet during startup, scheduling quick retry');
@@ -619,7 +639,7 @@ function ChatViewContent() {
             if (shouldTrackConversationStage) {
               boot.markStageCompleted(
                 'conversation',
-                'Recent conversation is syncing in the background after a slow response.',
+                t('chat.historySyncingAfterDelay'),
               );
             }
             const timeoutCount = (historyTimeoutCountBySession.current[sessionKey] ?? 0) + 1;
@@ -668,6 +688,7 @@ function ChatViewContent() {
       setIsLoadingHistory,
       setMessages,
       setSessionIdentity,
+      t,
     ],
   );
 
@@ -859,8 +880,8 @@ function ChatViewContent() {
 
   const handleDeleteLocalMessage = useCallback((sourceMessage: ChatMessage) => {
     showConfirm(
-      t('chat.deleteMessage', 'Delete message'),
-      t('chat.deleteUnsentMessageConfirm', 'Delete this unsent message?'),
+      t('chat.deleteMessage'),
+      t('chat.deleteUnsentMessageConfirm'),
       () => {
         const state = useChatStore.getState();
         const current = state.messagesPerSession[activeSessionKey] ?? [];
@@ -876,8 +897,8 @@ function ChatViewContent() {
   const handleErrorAction = useCallback(async (action: string) => {
     if (action === 'reset-session') {
       showConfirm(
-        t('chat.resetSession', 'Reset session'),
-        t('chat.resetSessionConfirm', 'Clear this session history? The session itself will remain.'),
+        t('chat.resetSession'),
+        t('chat.resetSessionConfirm'),
         async () => {
           await resetSessionEverywhere(activeSessionKey);
         },
@@ -920,7 +941,7 @@ function ChatViewContent() {
 
   const handleLoadFullMessage = useCallback(async (sourceMessage: ChatMessage) => {
     if (!sourceMessage.nativeMessageId) {
-      throw new Error(t('chat.fullMessageUnavailable', '该消息没有可查询的 OpenClaw 消息 ID'));
+      throw new Error(t('chat.fullMessageUnavailable'));
     }
     const result = await gateway.getMessage(
       activeSessionKey,
@@ -930,8 +951,8 @@ function ChatViewContent() {
     if (result?.ok !== true || !result.message) {
       throw new Error(
         result?.unavailableReason
-          ? `${t('chat.fullMessageUnavailable', '完整消息不可用')}: ${result.unavailableReason}`
-          : t('chat.fullMessageUnavailable', '完整消息不可用'),
+          ? `${t('chat.fullMessageUnavailable')}: ${result.unavailableReason}`
+          : t('chat.fullMessageUnavailable'),
       );
     }
     const normalized = normalizeHistoryMessage(result.message);
@@ -953,7 +974,7 @@ function ChatViewContent() {
   ) => {
     switch (block.type) {
       case 'compaction':
-        return <CompactDivider timestamp={block.timestamp} label={t('chat.contextCompactedLabel', 'Context Compacted')} />;
+        return <CompactDivider timestamp={block.timestamp} label={t('chat.contextCompactedLabel')} />;
 
       case 'inline-buttons':
         return (
@@ -975,6 +996,9 @@ function ChatViewContent() {
                 output: block.output,
                 status: block.status,
                 durationMs: block.durationMs,
+                error: block.error,
+                outputTruncated: block.outputTruncated,
+                outputOriginalLength: block.outputOriginalLength,
               }}
             />
           </Suspense>
@@ -1055,6 +1079,7 @@ function ChatViewContent() {
               onLoadFullMessage={sourceMessage?.historyTruncated
                 ? () => handleLoadFullMessage(sourceMessage)
                 : undefined}
+              onOpenPreview={sidePanel.openMessagePreview}
               collaborationAction={block.role === 'user'
                 ? collaboration.getMessageAction(sourceMessage)
                 : undefined}
@@ -1076,6 +1101,7 @@ function ChatViewContent() {
     handleLoadFullMessage,
     activeSessionKey,
     messages,
+    sidePanel.openMessagePreview,
   ]);
 
   const renderGroup = useCallback((index: number, group: ResponseGroup) => {
@@ -1140,13 +1166,14 @@ function ChatViewContent() {
               block={representativeBlock}
               timestamp={footerTimestamp}
               status={group.status}
+              onOpenTrace={() => sidePanel.openResponseTrace(group.id)}
               className="ml-[46px] mr-4 mt-1"
             />
           </Suspense>
         )}
       </div>
     );
-  }, [renderBlock]);
+  }, [renderBlock, sidePanel.openResponseTrace]);
 
   const renderTimelineItem = useCallback((index: number, item: ChatTimelineItem) => {
     if (item.type === 'collaboration') return <CollaborationRunAnchor runId={item.runId} />;
@@ -1199,7 +1226,7 @@ function ChatViewContent() {
     );
 
   return (
-    <div className="flex flex-1 min-h-0 bg-aegis-bg">
+    <div className="relative flex flex-1 min-h-0 bg-aegis-bg">
       {/* ── Left: chat ── */}
       <div className="flex flex-col flex-1 min-h-0 min-w-0">
       {/* Connection Banner */}
@@ -1239,7 +1266,7 @@ function ChatViewContent() {
         <div className="shrink-0 border-b border-aegis-warning/20 bg-aegis-warning/[0.06] px-4 py-2">
           <div className="flex items-center justify-between gap-3 text-[11px] text-aegis-warning">
             <span className="min-w-0 truncate" title={historyErrorBySession[activeSessionKey]}>
-              {t('chat.historySyncFailed', 'Conversation history could not be synchronized.')}
+              {t('chat.historySyncFailed')}
             </span>
             <button
               type="button"
@@ -1247,7 +1274,7 @@ function ChatViewContent() {
               disabled={isRefreshing || isLoadingHistory}
               className="shrink-0 rounded-md border border-aegis-warning/35 px-2 py-1 font-medium hover:bg-aegis-warning/10 disabled:opacity-50"
             >
-              {t('common.retry', 'Retry')}
+              {t('common.retry')}
             </button>
           </div>
         </div>
@@ -1258,13 +1285,13 @@ function ChatViewContent() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-[12px] text-aegis-warning">
               <Zap size={14} className="shrink-0" />
-              <span>{t('dashboard.setupProviderBanner', 'No AI provider configured. Set up a provider to start chatting.')}</span>
+              <span>{t('dashboard.setupProviderBanner')}</span>
             </div>
             <button
               onClick={() => navigate('/config')}
               className="shrink-0 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-aegis-warning/40 text-aegis-warning hover:bg-aegis-warning/[0.1] transition-colors"
             >
-              {t('dashboard.setupProviderAction', 'Go to Config →')}
+              {t('dashboard.setupProviderAction')}
             </button>
           </div>
         </div>
@@ -1338,7 +1365,7 @@ function ChatViewContent() {
             itemContent={renderTimelineItem}
             startReached={handleStartReached}
             components={{ Footer }}
-            className="h-full py-3 scrollbar-thin"
+            className="h-full py-3 chat-scrollbar"
             style={{ overflowX: 'clip', scrollBehavior: 'smooth' }}
           />
         )}
@@ -1397,6 +1424,22 @@ function ChatViewContent() {
         <MessageInput />
       </Suspense>
     </div>
+      {sidePanel.panel?.kind === 'message-preview' && (
+        <ChatMessagePreviewPanel
+          preview={sidePanel.panel.preview}
+          onClose={sidePanel.closePanel}
+        />
+      )}
+      {sidePanel.panel?.kind === 'response-trace' && (() => {
+        const groupId = sidePanel.panel.groupId;
+        const group = responseGroups.find((candidate) => candidate.id === groupId);
+        return group ? (
+          <ChatResponseTracePanel
+            trace={projectChatResponseTrace(group)}
+            onClose={sidePanel.closePanel}
+          />
+        ) : null;
+      })()}
   </div>
   );
 }

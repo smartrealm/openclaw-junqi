@@ -108,7 +108,7 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
             <div className="w-8 h-8 rounded-lg bg-aegis-primary/10 flex items-center justify-center">
               <Camera size={16} className="text-aegis-primary" />
             </div>
-            <h3 className="text-[14px] font-semibold text-aegis-text">{t('screenshot.title', '截图')}</h3>
+            <h3 className="text-[14px] font-semibold text-aegis-text">{t('screenshot.title')}</h3>
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[rgb(var(--aegis-overlay)/0.08)] transition-colors">
             <X size={15} className="text-aegis-text-muted" />
@@ -124,15 +124,15 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
                   <ShieldAlert size={15} className="text-amber-400" />
                 </div>
                 <div>
-                  <div className="text-[13px] font-semibold text-amber-300 mb-1.5">{t('screenshot.permissionRequired', '需要屏幕录制权限')}</div>
+                  <div className="text-[13px] font-semibold text-amber-300 mb-1.5">{t('screenshot.permissionRequired')}</div>
                   <p className="text-[11px] text-aegis-text-muted leading-relaxed mb-3">
-                    {t('screenshot.permissionHint', '打开 系统设置 → 隐私与安全性 → 屏幕录制，启用 JunQi Desktop 后重新截图。')}
+                    {t('screenshot.permissionHint')}
                   </p>
                   <button
                     onClick={() => { onClose(); }}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 transition-colors border border-amber-500/20"
                   >
-                    {t('common.dismiss', '知道了')}
+                    {t('common.dismiss')}
                   </button>
                 </div>
               </div>
@@ -153,10 +153,10 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
                 </div>
                 <div className="flex-1 min-w-0 text-start">
                   <div className="text-[13px] font-semibold text-aegis-text">
-                    {t('screenshot.interactive', '选区截图')}
+                    {t('screenshot.interactive')}
                   </div>
                   <div className="text-[11px] text-aegis-text-dim mt-0.5">
-                    {t('screenshot.interactiveDesc', '拖拽选区 · 空格键切换窗口模式')}
+                    {t('screenshot.interactiveDesc')}
                   </div>
                 </div>
                 <ChevronRight size={14} className="text-aegis-text-dim shrink-0 group-hover:translate-x-0.5 transition-transform" />
@@ -176,10 +176,10 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
                   {capturing === 'screen' ? <LoadingIndicator size={18} className="text-aegis-primary" /> : <Monitor size={18} className="text-aegis-text-muted" />}
                 </div>
                 <div className="flex-1 min-w-0 text-start">
-                  <div className="text-[13px] font-medium text-aegis-text">{t('screenshot.fullScreen', '全屏截图')}</div>
-                  <div className="text-[11px] text-aegis-text-dim mt-0.5">{t('screenshot.fullScreenDesc', '捕获所有显示器内容')}</div>
+                  <div className="text-[13px] font-medium text-aegis-text">{t('screenshot.fullScreen')}</div>
+                  <div className="text-[11px] text-aegis-text-dim mt-0.5">{t('screenshot.fullScreenDesc')}</div>
                 </div>
-                {capturing === 'screen' && <span className="text-[10px] text-aegis-text-dim shrink-0">截图中…</span>}
+                {capturing === 'screen' && <span className="text-[10px] text-aegis-text-dim shrink-0">{t('screenshot.capturing')}</span>}
               </button>
             </>
           )}
@@ -189,11 +189,11 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
             <>
               {loading ? (
                 <div className="flex items-center gap-2 py-3 text-[11px] text-aegis-text-dim">
-                  <LoadingIndicator size={12} /> 加载窗口列表…
+                  <LoadingIndicator size={12} /> {t('screenshot.loading')}
                 </div>
               ) : windows.length > 2 ? (
                 <div className="mt-1">
-                  <div className="text-[10px] font-semibold uppercase tracking-widest text-aegis-text-dim mb-2 ml-0.5">窗口</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-aegis-text-dim mb-2 ml-0.5">{t('screenshot.windows')}</div>
                   <div className="grid grid-cols-2 gap-1.5 max-h-[160px] overflow-y-auto scrollbar-hidden">
                     {windows.map(w => (
                       <button

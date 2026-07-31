@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Info } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 
 interface SystemNoteBubbleProps {
@@ -7,6 +8,7 @@ interface SystemNoteBubbleProps {
 }
 
 export function SystemNoteBubble({ content }: SystemNoteBubbleProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   if (!content.trim()) return null;
@@ -25,7 +27,7 @@ export function SystemNoteBubble({ content }: SystemNoteBubbleProps) {
         >
           <Info size={12} className="text-sky-400/80 shrink-0" />
           <span className="text-[11px] font-medium text-sky-400/85">
-            System Note
+            {t('chat.systemNote')}
           </span>
           <span className="flex-1" />
           {expanded ? (

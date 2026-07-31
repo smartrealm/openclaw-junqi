@@ -15,6 +15,8 @@ interface SemanticBlockBase {
   sessionKey: string;
   runId?: string | null;
   sourceMessageId: string;
+  sourceSequence?: number;
+  toolCallId?: string;
   timestamp: string;
   isStreaming: boolean;
   responseState: 'streaming' | 'final' | 'error' | 'aborted';

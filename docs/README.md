@@ -90,6 +90,8 @@ docs/
 - [维护中心审计](quality/maintenance-center-audit.md)
 - [Dashboard 运行审计](quality/dashboard-operations-audit.md)
 - [Chat 生产加固审计](quality/chat-production-hardening-audit.md)
+- [Chat 消息预览与 OpenClaw 对齐](quality/chat-message-preview-openclaw-parity-2026-07-30.md)
+- [Chat 响应追溯与人工审核](quality/chat-response-trace-and-human-review-2026-07-31.md)
 - [会话来源聚合审计](quality/session-origin-aggregation-audit.md)
 - [Tauri Listener 生命周期审计](quality/tauri-listener-lifecycle-audit.md)
 - [Tauri Command 边界审计](quality/tauri-command-boundary-audit-2026-07-27.md)
@@ -121,6 +123,7 @@ docs/
 - [Chat 执行计划协议审计](quality/chat-execution-plan-protocol-audit-2026-07-30.md)
 - [仪表盘首次主题切换验证](quality/dashboard-first-theme-switch-validation-2026-07-30.md)
 - [Gateway AI 诊断与 OpenClaw 运行时验证](quality/gateway-ai-diagnostics-openclaw-runtime-validation-2026-07-30.md)
+- [终端与工作台 Chrome 一致性记录](quality/terminal-workbench-chrome-convergence-2026-07-30.md)
 
 ## 产品设计草案
 

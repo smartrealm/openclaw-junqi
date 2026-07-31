@@ -499,7 +499,8 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
           'p-2 rounded-lg transition-colors',
           paused ? 'text-aegis-danger hover:bg-aegis-danger/[0.08]' : 'text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
         )}
-        title={paused ? 'Resume' : 'Pause'}
+        title={paused ? t('voice.resume') : t('voice.pause')}
+        aria-label={paused ? t('voice.resume') : t('voice.pause')}
       >
         {paused ? <Play size={18} /> : <Pause size={18} />}
       </button>

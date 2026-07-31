@@ -39,7 +39,7 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'runtime/fatalErrorOverlay.ts': 3, // pre-React emergency surface
   'styles/index.css': 6, // CSS mask sentinel colors; not rendered chrome
   'styles/primitives.css': 10, // fixed data-visualization primitives
-  'styles/terminal-kooky.css': 28, // terminal/ANSI theme definition
+  'styles/terminal-kooky.css': 0, // terminal chrome must consume semantic theme tokens
   'styles/terminal.css': 18, // terminal/ANSI theme definition
   'styles/themes/aegis-dark.css': 30,
   'styles/themes/aegis-eyecare.css': 30,

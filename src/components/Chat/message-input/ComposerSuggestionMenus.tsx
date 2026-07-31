@@ -3,9 +3,16 @@ import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { CATEGORY_META, type SlashCategory } from '@/data/slashCommands';
 import { cmdIcon } from '@/data/cmdIcons';
+import { ComposerSuggestionPopover } from './ComposerSuggestionPopover';
 import type { useComposerSuggestions } from './useComposerSuggestions';
 
 type SuggestionController = ReturnType<typeof useComposerSuggestions>;
+
+const SUGGESTION_LAYOUT = {
+  mention: { startOffset: 64, width: 320 },
+  slash: { startOffset: 12, width: 360 },
+  argument: { startOffset: 64, width: 280 },
+} as const;
 
 function KeyboardHints() {
   const { t } = useTranslation();
@@ -18,11 +25,20 @@ function KeyboardHints() {
   );
 }
 
-export function ComposerSuggestionMenus({ controller }: { controller: SuggestionController }) {
+export function ComposerSuggestionMenus({
+  controller,
+  dir,
+}: {
+  controller: SuggestionController;
+  dir: 'ltr' | 'rtl';
+}) {
   const { t } = useTranslation();
   const {
     argumentCompletions,
     argumentPicker,
+    closeArgumentPicker,
+    closeMentionPicker,
+    closeSlashPicker,
     groupedSlash,
     matchedSlash,
     mentionItems,
@@ -32,13 +48,20 @@ export function ComposerSuggestionMenus({ controller }: { controller: Suggestion
     setSlashPicker,
     skills,
     slashPicker,
+    textareaRef,
     workspaceFiles,
   } = controller;
 
   return (
     <>
       {mentionPicker.open && (
-        <div className="absolute bottom-full left-16 z-50 mb-2 w-[320px] overflow-hidden rounded-lg border border-aegis-menu-border bg-aegis-menu-bg shadow-[var(--aegis-menu-shadow)]">
+        <ComposerSuggestionPopover
+          open={mentionPicker.open}
+          onOpenChange={(open) => { if (!open) closeMentionPicker(); }}
+          dir={dir}
+          textareaRef={textareaRef}
+          {...SUGGESTION_LAYOUT.mention}
+        >
           <div className="flex items-center gap-2 border-b border-[rgb(var(--aegis-overlay)/0.06)] px-3 py-2">
             <span className="shrink-0 font-mono text-[12px] text-aegis-text-secondary">@</span>
             <input
@@ -98,11 +121,17 @@ export function ComposerSuggestionMenus({ controller }: { controller: Suggestion
             )}
           </div>
           <KeyboardHints />
-        </div>
+        </ComposerSuggestionPopover>
       )}
 
       {slashPicker.open && matchedSlash.length > 0 && (
-        <div className="absolute bottom-full left-3 z-50 mb-2 w-[360px] overflow-hidden rounded-lg border border-aegis-menu-border bg-aegis-menu-bg shadow-[var(--aegis-menu-shadow)]">
+        <ComposerSuggestionPopover
+          open={slashPicker.open}
+          onOpenChange={(open) => { if (!open) closeSlashPicker(); }}
+          dir={dir}
+          textareaRef={textareaRef}
+          {...SUGGESTION_LAYOUT.slash}
+        >
           <div className="max-h-[300px] overflow-y-auto py-1 scrollbar-hidden">
             {groupedSlash.order.map((category) => {
               const meta = CATEGORY_META[category as SlashCategory];
@@ -147,11 +176,17 @@ export function ComposerSuggestionMenus({ controller }: { controller: Suggestion
             })}
           </div>
           <KeyboardHints />
-        </div>
+        </ComposerSuggestionPopover>
       )}
 
       {argumentPicker.open && argumentCompletions.length > 0 && (
-        <div className="absolute bottom-full left-16 z-50 mb-2 w-[280px] overflow-hidden rounded-lg border border-aegis-menu-border bg-aegis-menu-bg shadow-[var(--aegis-menu-shadow)]">
+        <ComposerSuggestionPopover
+          open={argumentPicker.open}
+          onOpenChange={(open) => { if (!open) closeArgumentPicker(); }}
+          dir={dir}
+          textareaRef={textareaRef}
+          {...SUGGESTION_LAYOUT.argument}
+        >
           <div className="flex items-center gap-2 border-b border-[rgb(var(--aegis-overlay)/0.06)] px-3 py-2">
             <span className="font-mono text-[11px] text-aegis-text-secondary">{argumentPicker.cmd}</span>
             <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-aegis-text">
@@ -188,7 +223,7 @@ export function ComposerSuggestionMenus({ controller }: { controller: Suggestion
               );
             })}
           </div>
-        </div>
+        </ComposerSuggestionPopover>
       )}
     </>
   );

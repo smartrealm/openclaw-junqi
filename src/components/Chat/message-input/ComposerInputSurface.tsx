@@ -1,6 +1,7 @@
 import { AtSign, Camera, Mic, Paperclip, Plus, Radio, Send, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
+import { ComposerActionMenu, ComposerActionMenuItem } from './ComposerActionMenu';
 import { ComposerSuggestionMenus } from './ComposerSuggestionMenus';
 import type { useComposerAttachments } from './useComposerAttachments';
 import type { useComposerMenu } from './useComposerMenu';
@@ -50,7 +51,7 @@ export function ComposerInputSurface({
   const canSend = Boolean(text.trim() || attachments.files.length > 0);
 
   return (
-    <div className="mx-auto flex w-full max-w-[784px] items-end gap-2 p-3" dir={dir}>
+    <div className="mx-auto flex w-full max-w-[784px] min-w-0 items-end gap-2 p-3" dir={dir}>
       <div
         className={clsx(
           'relative flex flex-1 flex-col gap-1 rounded-2xl border border-[rgb(var(--aegis-overlay)/0.06)] bg-aegis-surface px-3 py-2',
@@ -61,56 +62,44 @@ export function ComposerInputSurface({
         onDrop={attachments.drop}
         onDragOver={(event) => event.preventDefault()}
       >
-        <div className="flex w-full items-center gap-2">
-          <div ref={menu.addRef} className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => menu.setActive((current) => current === 'add' ? null : 'add')}
-              disabled={disabled}
-              className={clsx(
-                'grid size-[34px] place-items-center rounded-lg transition-colors',
-                menu.active === 'add'
-                  ? 'bg-aegis-primary/12 text-aegis-primary'
-                  : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
-                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30',
-              )}
-              title={t('input.addContent')}
-              aria-label={t('input.addContent')}
-              aria-haspopup="menu"
-              aria-expanded={menu.active === 'add'}
-            >
-              <Plus size={17} />
-            </button>
-            {menu.active === 'add' && (
-              <div
-                role="menu"
-                aria-label={t('input.addContent')}
+        <div className="flex min-w-0 w-full items-center gap-2">
+          <ComposerActionMenu
+            open={menu.active === 'add'}
+            onOpenChange={(open) => menu.setOpen('add', open)}
+            dir={dir}
+            align="start"
+            ariaLabel={t('input.addContent')}
+            trigger={(
+              <button
+                type="button"
+                disabled={disabled}
                 className={clsx(
-                  'absolute bottom-full z-50 mb-2 w-40 overflow-hidden border border-aegis-menu-border bg-aegis-menu-bg p-1 shadow-[var(--aegis-menu-shadow)]',
-                  dir === 'rtl' ? 'right-0' : 'left-0',
+                  'grid size-[34px] shrink-0 place-items-center rounded-lg transition-colors',
+                  menu.active === 'add'
+                    ? 'bg-aegis-primary/12 text-aegis-primary'
+                    : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
+                  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30',
                 )}
+                title={t('input.addContent')}
+                aria-label={t('input.addContent')}
               >
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { menu.close(); void attachments.selectFiles(); }}
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
-                >
-                  <Paperclip size={14} className="shrink-0 text-aegis-primary" />
-                  {t('input.attachFile')}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { menu.close(); attachments.setScreenshotSessionKey(activeSessionKey); }}
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
-                >
-                  <Camera size={14} className="shrink-0 text-aegis-primary" />
-                  {t('input.screenshot')}
-                </button>
-              </div>
+                <Plus size={17} />
+              </button>
             )}
-          </div>
+          >
+            <ComposerActionMenuItem
+              icon={Paperclip}
+              onSelect={() => { menu.close(); void attachments.selectFiles(); }}
+            >
+              {t('input.attachFile')}
+            </ComposerActionMenuItem>
+            <ComposerActionMenuItem
+              icon={Camera}
+              onSelect={() => { menu.close(); attachments.setScreenshotSessionKey(activeSessionKey); }}
+            >
+              {t('input.screenshot')}
+            </ComposerActionMenuItem>
+          </ComposerActionMenu>
 
           <button
             type="button"
@@ -123,7 +112,7 @@ export function ComposerInputSurface({
             <AtSign size={16} />
           </button>
 
-          <ComposerSuggestionMenus controller={suggestions} />
+          <ComposerSuggestionMenus controller={suggestions} dir={dir} />
           <textarea
             ref={suggestions.textareaRef}
             data-input="message"
@@ -137,53 +126,49 @@ export function ComposerInputSurface({
             placeholder={historyLoading
               ? t('input.placeholderHistoryLoading')
               : connected ? t('input.placeholderSlash') : t('input.placeholderDisconnected')}
-            className="max-h-[180px] flex-1 resize-none border-none bg-transparent px-1 py-1.5 text-[14px] leading-[1.2] text-aegis-text placeholder:text-aegis-text-muted focus:outline-none focus-visible:shadow-none scrollbar-hidden"
+            className="max-h-[180px] min-w-0 flex-1 resize-none border-none bg-transparent px-1 py-1.5 text-[14px] leading-[1.2] text-aegis-text placeholder:text-aegis-text-muted focus:outline-none focus-visible:shadow-none scrollbar-hidden"
             dir={dir}
           />
 
-          <div ref={menu.voiceRef} className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                if (dictationEnabled) onToggleDictation();
-                else menu.setActive((current) => current === 'voice' ? null : 'voice');
-              }}
-              disabled={disabled}
-              className={clsx(
-                'relative grid size-[34px] place-items-center rounded-lg transition-colors',
-                dictationEnabled || menu.active === 'voice'
-                  ? 'bg-aegis-primary/12 text-aegis-primary hover:bg-aegis-primary/18'
-                  : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
-                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30',
-              )}
-              title={dictationEnabled ? t('input.stopDictation') : t('input.voiceInput')}
-              aria-label={dictationEnabled ? t('input.stopDictation') : t('input.voiceInput')}
-              aria-haspopup={dictationEnabled ? undefined : 'menu'}
-              aria-expanded={menu.active === 'voice'}
-            >
-              <Mic size={16} />
-              {dictationEnabled && <span className="absolute end-1 top-1 size-1.5 rounded-full bg-aegis-primary ring-2 ring-aegis-surface" />}
-            </button>
-            {menu.active === 'voice' && (
-              <div
-                role="menu"
-                aria-label={t('input.voiceInputMenu')}
+          <ComposerActionMenu
+            open={menu.active === 'voice'}
+            onOpenChange={(open) => {
+              if (!dictationEnabled) menu.setOpen('voice', open);
+            }}
+            dir={dir}
+            align="end"
+            ariaLabel={t('input.voiceInputMenu')}
+            trigger={(
+              <button
+                type="button"
+                onClick={(event) => {
+                  if (!dictationEnabled) return;
+                  event.preventDefault();
+                  onToggleDictation();
+                }}
+                disabled={disabled}
                 className={clsx(
-                  'absolute bottom-full z-50 mb-2 w-40 overflow-hidden border border-aegis-menu-border bg-aegis-menu-bg p-1 shadow-[var(--aegis-menu-shadow)]',
-                  dir === 'rtl' ? 'right-0' : 'left-0',
+                  'relative grid size-[34px] shrink-0 place-items-center rounded-lg transition-colors',
+                  dictationEnabled || menu.active === 'voice'
+                    ? 'bg-aegis-primary/12 text-aegis-primary hover:bg-aegis-primary/18'
+                    : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
+                  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30',
                 )}
+                title={dictationEnabled ? t('input.stopDictation') : t('input.voiceInput')}
+                aria-label={dictationEnabled ? t('input.stopDictation') : t('input.voiceInput')}
               >
-                <button type="button" role="menuitem" onClick={onStartRecording} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60">
-                  <Mic size={14} className="shrink-0 text-aegis-primary" />
-                  {t('input.recordVoice')}
-                </button>
-                <button type="button" role="menuitem" onClick={onToggleDictation} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60">
-                  <Radio size={14} className="shrink-0 text-aegis-primary" />
-                  {t('input.continuousDictation')}
-                </button>
-              </div>
+                <Mic size={16} />
+                {dictationEnabled && <span className="absolute end-1 top-1 size-1.5 rounded-full bg-aegis-primary ring-2 ring-aegis-surface" />}
+              </button>
             )}
-          </div>
+          >
+            <ComposerActionMenuItem icon={Mic} onSelect={onStartRecording}>
+              {t('input.recordVoice')}
+            </ComposerActionMenuItem>
+            <ComposerActionMenuItem icon={Radio} onSelect={onToggleDictation}>
+              {t('input.continuousDictation')}
+            </ComposerActionMenuItem>
+          </ComposerActionMenu>
 
           <button
             type="button"

@@ -1,12 +1,11 @@
 import { useCallback, useState } from 'react';
-import { AlertCircle, Code2, Copy, ExternalLink, Eye, EyeOff, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, MoreHorizontal, RefreshCw, Sparkles, Layers, type LucideIcon } from 'lucide-react';
+import { AlertCircle, Copy, ExternalLink, Eye, EyeOff, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, MoreHorizontal, RefreshCw, Sparkles, Layers, type LucideIcon } from 'lucide-react';
 import { ArrowsClockwise } from '@phosphor-icons/react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
-import type { Artifact, DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
+import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { IconButton } from '@/components/shared/button';
-import { Icon } from '@/components/shared/icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getFileName, getFileParentFolder } from '@/services/chat/filePresentation';
@@ -67,67 +66,6 @@ async function resolveExistingFilePath(path: string): Promise<string> {
   return candidate;
 }
 
-export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
-  const { t } = useTranslation();
-  const [showPreview, setShowPreview] = useState(false);
-  const typeIcons: Record<string, React.ReactNode> = {
-    html:    Icon.chat.artifact.html,
-    react:   Icon.chat.artifact.react,
-    svg:     Icon.chat.artifact.svg,
-    mermaid: Icon.chat.artifact.mermaid,
-    markdown:Icon.chat.artifact.markdown,
-    code:    Icon.chat.artifact.code,
-  };
-
-  const supportsPreview = artifact.type === 'html' || artifact.type === 'svg';
-
-  return (
-    <div className="pl-[42px] py-[2px]">
-      <div className="overflow-hidden rounded-xl border border-aegis-primary/20 bg-aegis-primary/[0.04]">
-        <div className="flex items-center justify-between gap-3 border-b border-aegis-primary/10 px-4 py-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="shrink-0 flex items-center">{typeIcons[artifact.type] || Icon.chat.artifact.generic}</span>
-            <div className="min-w-0">
-              <div className="truncate text-[13px] font-medium text-aegis-text">{artifact.title}</div>
-              <div className="text-[10px] uppercase tracking-wider text-aegis-text-dim">{artifact.type}</div>
-            </div>
-          </div>
-          {supportsPreview && <button
-            onClick={() => setShowPreview((value) => !value)}
-            className={clsx(
-              'flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-all',
-              'border-aegis-primary/20 bg-aegis-primary/15 text-aegis-primary hover:border-aegis-primary/40 hover:bg-aegis-primary/25',
-            )}
-          >
-            <Eye size={13} />
-            {showPreview ? t('resultCards.source', 'Source') : t('resultCards.preview', 'Preview')}
-          </button>}
-        </div>
-        {showPreview && supportsPreview ? (
-          <iframe
-            srcDoc={artifact.content}
-            title={artifact.title}
-            sandbox=""
-            referrerPolicy="no-referrer"
-            className="block h-[360px] w-full border-0 bg-white"
-          />
-        ) : <details className="group" open>
-          <summary className="flex cursor-pointer items-center gap-1.5 px-4 py-1.5 text-[11px] text-aegis-text-dim hover:text-aegis-text-muted">
-            <Code2 size={11} />
-            {t('resultCards.viewSource', 'View source')} ({artifact.content.length} {t('resultCards.chars', 'chars')})
-          </summary>
-          <div className="max-h-[200px] overflow-auto px-4 pb-3">
-            <pre className="whitespace-pre-wrap rounded-lg bg-[rgb(var(--aegis-overlay)/0.08)] p-3 text-[11px] text-aegis-text-dim">
-              {artifact.content.slice(0, 2000)}
-              {artifact.content.length > 2000 ? '\n...(truncated)' : ''}
-            </pre>
-          </div>
-        </details>}
-      </div>
-    </div>
-  );
-}
-
 function getFileIconByExt(ext: string): LucideIcon {
   const e = ext.toLowerCase();
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(e)) return FileImage;
@@ -145,7 +83,11 @@ function FileRow({ file }: { file: FileRef }) {
   const [previewError, setPreviewError] = useState(false);
   const path = resolveFilePath(file);
   const name = getFileName(file.path);
-  const detail = [file.meta, file.kind === 'voice' ? 'voice' : null, file.isCanonicalOutput === false ? 'noncanonical' : null]
+  const detail = [
+    file.meta,
+    file.kind === 'voice' ? t('resultCards.fileMeta.voice') : null,
+    file.isCanonicalOutput === false ? t('resultCards.fileMeta.noncanonical') : null,
+  ]
     .filter(Boolean)
     .join(' · ');
   const compactDetail = detail || getFileParentFolder(path);
@@ -168,7 +110,7 @@ function FileRow({ file }: { file: FileRef }) {
       window.open(url, '_blank');
     } catch (err) {
       debugError('media', '[FileResultCard] open file failed:', err);
-      addToast('info', t('resultCards.open', 'Open'), t('errors.occurred', 'An error occurred'));
+      addToast('info', t('resultCards.open'), t('errors.occurred'));
     }
   };
 
@@ -219,10 +161,10 @@ function FileRow({ file }: { file: FileRef }) {
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(path);
-      addToast('info', t('fileManager.copyPathDone', 'Path copied'), path);
+      addToast('info', t('fileManager.copyPathDone'), path);
     } catch (err) {
       debugWarn('media', '[FileResultCard] copy path failed:', err);
-      addToast('info', t('resultCards.path', 'Path'), t('errors.occurred', 'An error occurred'));
+      addToast('info', t('resultCards.path'), t('errors.occurred'));
     }
   };
 
@@ -241,7 +183,7 @@ function FileRow({ file }: { file: FileRef }) {
   const renderPreview = () => {
     if (previewLoading) {
       return (
-        <div className="space-y-2 p-3" role="status" aria-label={t('common.loading', 'Loading…')}>
+        <div className="space-y-2 p-3" role="status" aria-label={t('common.loading')}>
           <div className="h-3 w-1/3 animate-pulse rounded-sm bg-[rgb(var(--aegis-overlay)/0.09)]" />
           <div className="h-40 animate-pulse rounded-md bg-[rgb(var(--aegis-overlay)/0.05)]" />
         </div>
@@ -252,12 +194,12 @@ function FileRow({ file }: { file: FileRef }) {
         <div className="flex items-center justify-between gap-3 px-1 py-2 text-[11px] text-aegis-text-muted" role="status">
           <span className="flex min-w-0 items-center gap-2">
             <AlertCircle size={14} className="shrink-0 text-aegis-warning" />
-            <span>{t('resultCards.previewReadFailed', 'Unable to read this file. Confirm it is still in its original location.')}</span>
+            <span>{t('resultCards.previewReadFailed')}</span>
           </span>
           <Tooltip>
             <TooltipTrigger asChild>
               <IconButton
-                aria-label={t('resultCards.retryPreview', 'Retry preview')}
+                aria-label={t('resultCards.retryPreview')}
                 size="xs"
                 variant="ghost"
                 onClick={() => void loadPreview()}
@@ -265,7 +207,7 @@ function FileRow({ file }: { file: FileRef }) {
                 <RefreshCw size={13} />
               </IconButton>
             </TooltipTrigger>
-            <TooltipContent>{t('resultCards.retryPreview', 'Retry preview')}</TooltipContent>
+            <TooltipContent>{t('resultCards.retryPreview')}</TooltipContent>
           </Tooltip>
         </div>
       );
@@ -299,7 +241,7 @@ function FileRow({ file }: { file: FileRef }) {
             <Tooltip>
               <TooltipTrigger asChild>
                 <IconButton
-                  aria-label={previewOpen ? t('resultCards.hidePreview', 'Hide preview') : t('resultCards.preview', 'Preview')}
+                  aria-label={previewOpen ? t('resultCards.hidePreview') : t('resultCards.preview')}
                   size="xs"
                   variant={previewOpen ? 'soft' : 'ghost'}
                   tone="primary"
@@ -308,14 +250,14 @@ function FileRow({ file }: { file: FileRef }) {
                   {previewOpen ? <EyeOff size={13} /> : <Eye size={13} />}
                 </IconButton>
               </TooltipTrigger>
-              <TooltipContent>{previewOpen ? t('resultCards.hidePreview', 'Hide preview') : t('resultCards.preview', 'Preview')}</TooltipContent>
+              <TooltipContent>{previewOpen ? t('resultCards.hidePreview') : t('resultCards.preview')}</TooltipContent>
             </Tooltip>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <IconButton
-                aria-label={t('resultCards.moreFileActions', 'More file actions')}
-                title={t('resultCards.moreFileActions', 'More file actions')}
+                aria-label={t('resultCards.moreFileActions')}
+                title={t('resultCards.moreFileActions')}
                 size="xs"
                 variant="ghost"
               >
@@ -325,15 +267,15 @@ function FileRow({ file }: { file: FileRef }) {
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => void handleOpen()}>
                 <ExternalLink />
-                {t('resultCards.openExternal', 'Open with default app')}
+                {t('resultCards.openExternal')}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void handleReveal()}>
                 <FolderOpen />
-                {t('resultCards.revealInFolder', 'Show in folder')}
+                {t('resultCards.revealInFolder')}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void handleCopy()}>
                 <Copy />
-                {t('resultCards.copyPath', 'Copy path')}
+                {t('resultCards.copyPath')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -353,10 +295,10 @@ export function FileResultCard({ files }: { files: FileRef[] }) {
   if (files.length === 0) return null;
   return (
     <div className="pl-[42px] py-[3px]">
-      <section className="w-full max-w-[760px]" aria-label={t('resultCards.files', 'Files')}>
+      <section className="w-full max-w-[760px]" aria-label={t('resultCards.files')}>
         <div className="mb-1 flex h-5 items-center gap-1.5 text-[11px] font-medium text-aegis-text-muted">
           <FolderOpen size={14} className="text-aegis-accent/80" />
-          <span>{t('resultCards.files', 'Files')}</span>
+          <span>{t('resultCards.files')}</span>
           <span className="text-[10px] text-aegis-text-dim">{files.length}</span>
         </div>
         <div className="space-y-1">
@@ -375,7 +317,7 @@ export function DecisionCard({ options, onSelect }: { options: DecisionOption[];
       <div className="rounded-xl border border-aegis-primary/15 bg-aegis-primary/[0.04] px-3 py-3">
         <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-aegis-text">
           <Sparkles size={14} className="text-aegis-primary/80" />
-          <span>{t('resultCards.nextStep', 'Next step')}</span>
+          <span>{t('resultCards.nextStep')}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           {options.map((option, index) => (
@@ -404,6 +346,7 @@ const sessionEventTone: Record<SessionEvent['kind'], string> = {
 };
 
 export function SessionEventCard({ event }: { event: SessionEvent }) {
+  const { t } = useTranslation();
   // ── Model switch — single-line compact row ──────────────
   // SessionContextBar writes the switch notice as JSON in the event text;
   // try to parse it and render the dedicated compact row. Anything that
@@ -417,7 +360,7 @@ export function SessionEventCard({ event }: { event: SessionEvent }) {
           <div className="flex justify-center py-2">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-400/20 bg-slate-400/[0.04] text-[11px]">
               <Layers size={11} className="text-aegis-text-dim" />
-              <span className="text-aegis-text-dim">模型切换</span>
+              <span className="text-aegis-text-dim">{t('chat.modelSwitched')}</span>
               <span className="font-mono text-aegis-text">{data.from}</span>
               <ArrowsClockwise size={11} weight="bold" className="text-aegis-text-dim" />
               <span className="font-mono text-aegis-text">{data.to}</span>
@@ -453,7 +396,7 @@ export function WorkshopEventCard({ events }: { events: WorkshopEvent[] }) {
       <div className="rounded-xl border border-emerald-400/15 bg-emerald-400/[0.04] px-3 py-3">
         <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-aegis-text">
           <Sparkles size={14} className="text-emerald-300/80" />
-          <span>{t('resultCards.workshop', 'Workshop')}</span>
+          <span>{t('resultCards.workshop')}</span>
           <span className="text-[10px] text-aegis-text-dim">{events.length}</span>
         </div>
         <div className="space-y-2">

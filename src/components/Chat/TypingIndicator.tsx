@@ -26,7 +26,7 @@ export function TypingIndicator() {
   })();
   const activeAgentName =
     agents.find((a) => a.id === activeAgentId)?.name
-    || (activeAgentId === 'main' ? t('agents.mainAgent', 'Main Agent') : activeAgentId);
+    || (activeAgentId === 'main' ? t('agents.mainAgent') : activeAgentId);
   const activeAgentLetter = activeAgentName.charAt(0) || 'M';
 
   // The store owns the start instant. This keeps elapsed time truthful when

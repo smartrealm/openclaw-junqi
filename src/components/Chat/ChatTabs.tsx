@@ -266,7 +266,7 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
                 ? 'bg-aegis-primary/10 text-aegis-primary border-aegis-primary/20'
                 : 'bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-muted border-[rgb(var(--aegis-overlay)/0.08)]'
             )}>
-              {connected ? t('chat.statusActive', 'Active') : t('chat.statusOffline', 'Offline')}
+              {connected ? t('chat.statusActive') : t('chat.statusOffline')}
             </div>
           </div>
 
@@ -274,11 +274,11 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
           <div className="grid grid-cols-2 gap-2 p-3">
             <div className="bg-[rgb(var(--aegis-overlay)/0.02)] border border-[rgb(var(--aegis-overlay)/0.04)] rounded-xl p-2.5 text-center">
               <div className="text-base font-extrabold" style={{ color: 'rgb(var(--aegis-accent))' }}>{compactions}</div>
-              <div className="text-[8px] text-aegis-text-dim uppercase tracking-wider mt-0.5">{t('chat.compactions', 'Compactions')}</div>
+              <div className="text-[8px] text-aegis-text-dim uppercase tracking-wider mt-0.5">{t('chat.compactions')}</div>
             </div>
             <div className="bg-[rgb(var(--aegis-overlay)/0.02)] border border-[rgb(var(--aegis-overlay)/0.04)] rounded-xl p-2.5 text-center">
               <div className="text-base font-extrabold" style={{ color: dataColor(3) }}>{sessionAge}</div>
-              <div className="text-[8px] text-aegis-text-dim uppercase tracking-wider mt-0.5">{t('chat.sessionAge', 'Session Age')}</div>
+              <div className="text-[8px] text-aegis-text-dim uppercase tracking-wider mt-0.5">{t('chat.sessionAge')}</div>
             </div>
           </div>
 
@@ -286,7 +286,7 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
           <div className="px-4 pb-2">
             <div className="flex justify-between items-center mb-1.5">
               <span className="text-[10px] text-aegis-text-muted flex items-center gap-1">
-                <Zap size={10} /> {t('chat.contextUsage', 'Context Usage')}
+                <Zap size={10} /> {t('chat.contextUsage')}
               </span>
               <span className="text-[10px] font-semibold font-mono" style={{ color: usageColor }}>
                 {formatTokens(contextTokens)} / {formatTokens(maxTokens)}
@@ -304,19 +304,19 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
           <div className="px-4 pb-3 space-y-0">
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
               <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.tab.compact}</span>
-              <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.compactsAt', 'Compaction at')}</span>
+              <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.compactsAt')}</span>
               <span className={clsx('text-[10px] font-bold font-mono', compactPct > 80 ? 'text-aegis-danger' : compactPct > 50 ? 'text-aegis-warning' : 'text-aegis-primary')}>
                 ~{formatTokens(compactAt)}
               </span>
             </div>
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
               <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.state.running}</span>
-              <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.heartbeat', 'Heartbeat')}</span>
-              <span className="text-[10px] font-bold font-mono text-aegis-primary">{t('chat.heartbeatInterval', '15m interval')}</span>
+              <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.heartbeat')}</span>
+              <span className="text-[10px] font-bold font-mono text-aegis-primary">{t('chat.heartbeatInterval')}</span>
             </div>
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
               <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.tab.memory}</span>
-              <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.thinking', 'Thinking')}</span>
+              <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.thinking')}</span>
               <span className="text-[10px] font-bold font-mono" style={{ color: dataColor(3) }}>{thinkingLabel}</span>
             </div>
           </div>
@@ -374,11 +374,11 @@ function NewSessionPicker({
   const hasMain = agents.some((a) => a.id === 'main');
   const mainDisplayName = getAgentDisplayName(
     agents.find((a) => a.id === 'main'),
-    t('agents.mainAgent', 'Main Agent'),
+    t('agents.mainAgent'),
   );
   const agentList: AgentInfo[] =
     agents.length === 0
-      ? [{ id: 'main', name: t('agents.mainAgent', 'Main Agent') }]
+      ? [{ id: 'main', name: t('agents.mainAgent') }]
       : hasMain
         ? agents
         : [{ id: 'main', name: mainDisplayName }, ...agents];
@@ -452,8 +452,8 @@ function NewSessionPicker({
     if (parseSessionKey(session.key).isMainSession) return;
     setPickerCtxMenu(null);
     showConfirm(
-      t('chat.deleteSession', '删除会话'),
-      t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
+      t('chat.deleteSession'),
+      t('chat.deleteSessionConfirm'),
       async () => {
         const deleted = await deleteSessionEverywhere(session.key);
         if (deleted) onClose();
@@ -503,7 +503,7 @@ function NewSessionPicker({
           <div className="p-2 min-w-0">
             {/* Agent picker — custom dropdown matching TitleBar style */}
             <div className="text-[9px] text-aegis-text-dim uppercase tracking-wider px-2 py-1 mb-1">
-              {t('chat.newConversationWith', 'New conversation with')}
+              {t('chat.newConversationWith')}
             </div>
             <div ref={agentDropdownRef} className="relative mb-2">
               <button
@@ -571,8 +571,8 @@ function NewSessionPicker({
                     if (personaSource === 'skill') onClearPersona?.();
                     else if (personaSource === 'default') onClearDefaultPersona?.(selectedAgentId);
                   }}
-                  title={t('chat.clearPersona', 'Clear persona')}
-                  aria-label={t('chat.clearPersona', 'Clear persona')}
+                  title={t('chat.clearPersona')}
+                  aria-label={t('chat.clearPersona')}
                   className="w-5 h-5 rounded-md flex items-center justify-center text-aegis-text-dim
                     hover:text-aegis-danger hover:bg-aegis-danger/[0.06] transition-colors shrink-0"
                 >
@@ -592,7 +592,7 @@ function NewSessionPicker({
               >
                 <Shield size={13} className="text-aegis-primary shrink-0" />
                 <span className="text-[12px] text-aegis-text-secondary font-medium">
-                  {t('chat.openMainSession', 'Open main session')}
+                  {t('chat.openMainSession')}
                 </span>
               </button>
               <button
@@ -604,7 +604,7 @@ function NewSessionPicker({
               >
                 <FilePlus size={13} className="text-aegis-primary shrink-0" />
                 <span className="text-[12px] text-aegis-text-secondary font-medium">
-                  {t('chat.newDesktopSession', 'New desktop conversation')}
+                  {t('chat.newDesktopSession')}
                 </span>
               </button>
             </div>
@@ -620,13 +620,13 @@ function NewSessionPicker({
                 <>
             {agentSessions.length > 0 && (
               <div className="text-[9px] text-aegis-text-dim uppercase tracking-wider px-2 py-1 mb-0.5">
-                {t('chat.availableSessions', 'Available Sessions')}
+                {t('chat.availableSessions')}
                 <span className="ml-1 opacity-50">({agentSessions.length})</span>
               </div>
             )}
             {loadingNew ? (
               <div className="text-center py-2 text-[11px] text-aegis-text-dim">
-                {t('common.loading', 'Loading...')}
+                {t('common.loading')}
               </div>
             ) : (
               agentSessions.map((session) => {
@@ -707,8 +707,8 @@ function NewSessionPicker({
                       <span className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/picker-session:opacity-100 group-focus-within/picker-session:opacity-100">
                         <IconButton
                           size="xs"
-                          aria-label={t('chat.renameSession', 'Rename session')}
-                          title={t('chat.renameSession', 'Rename session')}
+                          aria-label={t('chat.renameSession')}
+                          title={t('chat.renameSession')}
                           onPointerDown={(event) => event.stopPropagation()}
                           onClick={(event) => { event.stopPropagation(); beginPickerRename(session); }}
                         >
@@ -718,8 +718,8 @@ function NewSessionPicker({
                           <IconButton
                             size="xs"
                             tone="danger"
-                            aria-label={t('chat.deleteSession', 'Delete session')}
-                            title={t('chat.deleteSession', 'Delete session')}
+                            aria-label={t('chat.deleteSession')}
+                            title={t('chat.deleteSession')}
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => { event.stopPropagation(); deleteAvailableSession(session); }}
                           >
@@ -754,14 +754,14 @@ function NewSessionPicker({
             className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
           >
             <Shield size={13} className="opacity-60" />
-            {t('chat.openSession', 'Open')}
+            {t('chat.openSession')}
           </button>
           <button
             onClick={() => beginPickerRename(pickerCtxMenu.session)}
             className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
           >
             <Pencil size={13} className="opacity-60" />
-            {t('chat.renameSession', 'Rename session')}
+            {t('chat.renameSession')}
           </button>
           {!parseSessionKey(pickerCtxMenu.session.key).isMainSession && (
             <>
@@ -771,7 +771,7 @@ function NewSessionPicker({
                 className="flex items-center gap-2 w-full px-3 py-1.5 text-red-400 hover:bg-red-500/10 transition-colors"
               >
                 <Trash2 size={13} />
-                {t('chat.deleteSession', 'Delete session')}
+                {t('chat.deleteSession')}
               </button>
             </>
           )}
@@ -953,7 +953,7 @@ export function ChatTabs() {
 
     useChatStore.getState().addLocalSession({
       key: desktopKey,
-      label: t('sidebar.newSession', 'New session'),
+      label: t('sidebar.newSession'),
       agentId,
       createdAt: Date.now(),
     });
@@ -967,7 +967,7 @@ export function ChatTabs() {
   }, [t]);
 
   const agents = useGatewayDataStore((s) => s.agents);
-  const mainAgentName = agents.find((a) => a.id === 'main')?.name || t('agents.mainAgent', 'Main Agent');
+  const mainAgentName = agents.find((a) => a.id === 'main')?.name || t('agents.mainAgent');
 
   // ── Tooltip (hover on main tab). Rendered in portal so it is not clipped by tab bar overflow-x-auto. ──
   const [showTooltip, setShowTooltip] = useState(false);
@@ -1016,10 +1016,10 @@ export function ChatTabs() {
       : 'bg-aegis-danger';
 
   const statusLabel = connected
-    ? t('connection.connected', 'Connected')
+    ? t('connection.connected')
     : connecting
-      ? t('connection.connecting', 'Connecting...')
-      : t('connection.disconnected', 'Disconnected');
+      ? t('connection.connecting')
+      : t('connection.disconnected');
 
   // ── Tab close (middle-click support) ──
   const handleTabClose = useCallback((e: React.MouseEvent, key: string) => {
@@ -1058,8 +1058,8 @@ export function ChatTabs() {
 
   const requestDeleteSession = useCallback((key: string) => {
     showConfirm(
-      t('chat.deleteSession', '删除会话'),
-      t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
+      t('chat.deleteSession'),
+      t('chat.deleteSessionConfirm'),
       () => { void deleteSessionEverywhere(key); },
     );
   }, [t]);
@@ -1076,8 +1076,8 @@ export function ChatTabs() {
     const key = ctxMenu.key;
     setCtxMenu(null);
     showConfirm(
-      t('chat.resetSession', '重置会话'),
-      t('chat.resetSessionConfirm', '确定清除此会话的对话历史？会话本身会保留。'),
+      t('chat.resetSession'),
+      t('chat.resetSessionConfirm'),
       async () => {
         await resetSessionEverywhere(key);
       }
@@ -1116,7 +1116,7 @@ export function ChatTabs() {
     <div
       className="shrink-0 flex items-center h-[38px] bg-[var(--aegis-bg-frosted-60)] backdrop-blur-xl border-b border-[rgb(var(--aegis-overlay)/0.06)] relative z-20"
       role="tablist"
-      aria-label={t('chat.sessions', 'Chat sessions')}
+      aria-label={t('chat.sessions')}
     >
       {hasMultipleTabs && (
         <Tooltip>
@@ -1131,12 +1131,12 @@ export function ChatTabs() {
                   ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
                   : 'text-aegis-text-dim/35 cursor-not-allowed',
               )}
-              aria-label={t('chat.previousSession', 'Previous session')}
+              aria-label={t('chat.previousSession')}
             >
               <ChevronLeft size={14} />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{t('chat.previousSession', 'Previous session')}</TooltipContent>
+          <TooltipContent side="bottom">{t('chat.previousSession')}</TooltipContent>
         </Tooltip>
       )}
 
@@ -1226,7 +1226,7 @@ export function ChatTabs() {
                       e.stopPropagation();
                       startRename(key, label);
                     }}
-                    title={t('chat.renameSessionHint', 'Double-click to rename')}
+                    title={t('chat.renameSessionHint')}
                   >
                     {label}
                   </span>
@@ -1234,10 +1234,7 @@ export function ChatTabs() {
                 {unread > 0 && !isActive && (
                   <span
                     className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-aegis-primary/15 text-aegis-primary text-[10px] font-semibold leading-[18px] text-center"
-                    title={t('chat.tabUnreadCount', {
-                      count: unread,
-                      defaultValue: '{{count}} unread replies',
-                    })}
+                    title={t('chat.tabUnreadCount', { count: unread })}
                   >
                     {unread > 99 ? '99+' : unread}
                   </span>
@@ -1248,8 +1245,8 @@ export function ChatTabs() {
                 <span className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100">
                   <IconButton
                     size="xs"
-                    aria-label={t('chat.closeTab', 'Close tab')}
-                    title={t('chat.closeTab', 'Close tab')}
+                    aria-label={t('chat.closeTab')}
+                    title={t('chat.closeTab')}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => handleTabClose(event, key)}
                   >
@@ -1279,12 +1276,12 @@ export function ChatTabs() {
                   ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
                   : 'text-aegis-text-dim/35 cursor-not-allowed',
               )}
-              aria-label={t('chat.nextSession', 'Next session')}
+              aria-label={t('chat.nextSession')}
             >
               <ChevronRight size={14} />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{t('chat.nextSession', 'Next session')}</TooltipContent>
+          <TooltipContent side="bottom">{t('chat.nextSession')}</TooltipContent>
         </Tooltip>
       )}
 
@@ -1296,7 +1293,7 @@ export function ChatTabs() {
               onClick={collaboration.openHistory}
               disabled={!collaboration.available}
               className="relative h-full w-8 shrink-0 border-l border-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-muted transition-colors hover:bg-aegis-primary/[0.06] hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-aegis-text-muted"
-              aria-label={t('collaboration.drawer.title', 'Collaboration runs')}
+              aria-label={t('collaboration.drawer.title')}
             >
               <GitFork size={14} className="mx-auto" aria-hidden />
               {collaboration.runs.length > 0 && (
@@ -1306,7 +1303,7 @@ export function ChatTabs() {
               )}
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{t('collaboration.drawer.title', 'Collaboration runs')}</TooltipContent>
+          <TooltipContent side="bottom">{t('collaboration.drawer.title')}</TooltipContent>
         </Tooltip>
       )}
 
@@ -1351,7 +1348,7 @@ export function ChatTabs() {
               className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
             >
               <Pencil size={13} className="opacity-60" />
-              {t('chat.renameSession', 'Rename session')}
+              {t('chat.renameSession')}
             </button>
             {/* Close tab — not for agent:main:main (always pinned) */}
             {!isMainTab && (
@@ -1360,7 +1357,7 @@ export function ChatTabs() {
                 className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
               >
                 <X size={13} className="opacity-60" />
-                {t('chat.closeTab', 'Close tab')}
+                {t('chat.closeTab')}
               </button>
             )}
             {/* Reset — available for all sessions */}
@@ -1369,7 +1366,7 @@ export function ChatTabs() {
               className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
             >
               <RefreshCw size={13} className="opacity-60" />
-              {t('chat.resetSession', 'Reset session')}
+              {t('chat.resetSession')}
             </button>
             {/* Delete — only for non-main sessions (main sessions are auto-recreated by Gateway) */}
             {!isMainSession && (
@@ -1380,7 +1377,7 @@ export function ChatTabs() {
                   className="flex items-center gap-2 w-full px-3 py-1.5 text-red-400 hover:bg-red-500/10 transition-colors"
                 >
                   <Trash2 size={13} />
-                  {t('chat.deleteSession', 'Delete session')}
+                  {t('chat.deleteSession')}
                 </button>
               </>
             )}
@@ -1400,12 +1397,12 @@ export function ChatTabs() {
                 'text-aegis-text-muted hover:text-aegis-primary hover:bg-aegis-primary/[0.06]',
                 showNewPicker && 'text-aegis-primary bg-aegis-primary/[0.06]',
               )}
-              aria-label={t('chat.newSession', 'New session')}
+              aria-label={t('chat.newSession')}
             >
               <Plus size={14} />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{t('chat.newSession', 'New session')}</TooltipContent>
+          <TooltipContent side="bottom">{t('chat.newSession')}</TooltipContent>
         </Tooltip>
         <NewSessionPicker
           open={showNewPicker}

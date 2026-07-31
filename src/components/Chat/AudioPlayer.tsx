@@ -68,21 +68,21 @@ export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutpu
         const fileName = filePath.split('/').pop();
         const ttsPort = localStorage.getItem('aegis-tts-port') || '5050';
         const httpUrl = `http://localhost:${ttsPort}/audio/${fileName}`;
-        debugLog('media', '[AudioPlayer] 🔊 Resolving sandbox path via HTTP:', httpUrl);
+        debugLog('media', '[AudioPlayer] Resolving sandbox path via HTTP:', httpUrl);
 
         // Try HTTP fetch from Edge TTS server
         fetch(httpUrl, { method: 'HEAD' })
           .then(r => {
             if (r.ok) {
-              debugLog('media', '[AudioPlayer] ✅ HTTP audio available:', httpUrl);
+              debugLog('media', '[AudioPlayer] HTTP audio available:', httpUrl);
               if (active) setResolvedSrc(httpUrl);
             } else {
-              debugWarn('media', '[AudioPlayer] ⚠️ HTTP 404 — file not yet copied to shared folder');
+              debugWarn('media', '[AudioPlayer] HTTP 404: file not yet copied to shared folder');
               if (active) { setError(true); setLoading(false); }
             }
           })
           .catch(() => {
-            debugWarn('media', '[AudioPlayer] ⚠️ Edge TTS server unreachable');
+            debugWarn('media', '[AudioPlayer] Edge TTS server unreachable');
             if (active) { setError(true); setLoading(false); }
           });
         return () => { active = false; };
@@ -106,14 +106,14 @@ export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutpu
           if (base64) {
             const ext = filePath.split('.').pop()?.toLowerCase() || 'mp3';
             const mime = ext === 'mp3' ? 'audio/mpeg' : ext === 'ogg' ? 'audio/ogg' : ext === 'wav' ? 'audio/wav' : 'audio/webm';
-            debugLog('media', '[AudioPlayer] ✅ Loaded via IPC, size:', Math.round(base64.length / 1024), 'KB');
+            debugLog('media', '[AudioPlayer] Loaded via IPC, size:', Math.round(base64.length / 1024), 'KB');
             if (active) setResolvedSrc(`data:${mime};base64,${base64}`);
           } else {
-            debugError('media', '[AudioPlayer] ❌ No data returned for:', filePath);
+            debugError('media', '[AudioPlayer] No data returned for:', filePath);
             if (active) { setError(true); setLoading(false); }
           }
         }).catch((err: any) => {
-          debugError('media', '[AudioPlayer] ❌ Read failed:', err);
+          debugError('media', '[AudioPlayer] Read failed:', err);
           if (active) { setError(true); setLoading(false); }
         });
       } else {
@@ -285,7 +285,7 @@ export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutpu
       <div className={clsx('flex items-center gap-2 py-2 px-3 rounded-xl bg-aegis-danger/10 border border-aegis-danger/20', className)}>
         <span className="inline-flex items-center gap-1.5 text-[12px] text-aegis-danger">
           <AlertTriangle size={12} />
-          {t('media.audioLoadError', 'Failed to load audio')}
+          {t('media.audioLoadError')}
         </span>
       </div>
     );

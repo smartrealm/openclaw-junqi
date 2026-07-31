@@ -173,6 +173,18 @@
   /* Main route viewport: slim overlay scrollbar without a reserved gutter. */
   .route-scrollbar::-webkit-scrollbar { width: 4px; }
 
+  .chat-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--aegis-scrollbar) transparent;
+  }
+  .chat-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+  .chat-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .chat-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--aegis-scrollbar);
+    border-radius: 999px;
+  }
+  .chat-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--aegis-scrollbar-hover); }
+
   ::selection { background: var(--aegis-selection); color: var(--aegis-selection-text); }
 
   select {
