@@ -1,6 +1,7 @@
 import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import type { ExecutionPlanSnapshot } from '@/agent-execution-plan/domain';
+import type { ChatMessage } from '@/stores/chatStore';
 
 interface TraceNodeBase {
   id: string;
@@ -48,6 +49,16 @@ export interface ChatResponseTrace {
     requestCount: number;
     formalReviewId?: string;
   };
+}
+
+/** Finds the already loaded transcript record without treating a local display id as a Gateway id. */
+export function findTraceSourceMessage(
+  messages: readonly ChatMessage[],
+  sourceMessageId: string,
+): ChatMessage | undefined {
+  return messages.find((message) => (
+    message.nativeMessageId === sourceMessageId || message.id === sourceMessageId
+  ));
 }
 
 export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrace {

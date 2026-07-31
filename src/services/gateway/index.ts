@@ -28,6 +28,11 @@ import {
 import { debugWarn } from '@/utils/debugLog';
 import type { GatewayAgentCreatePayload } from '@/utils/gatewayAgentFlow';
 import { routeGatewayEvent } from './collaborationEventBridge';
+import { VoiceWakeGatewayClient } from './VoiceWakeGatewayClient';
+import {
+  routeVoiceWakeGatewayEvent,
+  subscribeVoiceWakeGatewayEvents,
+} from './voiceWakeEventBridge';
 import type { GatewayAuthorizationIssue } from './messageRouter';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
 import type { GatewayAttachment } from '@/services/chat/types';
@@ -110,6 +115,19 @@ const chatHandler = new ChatHandler(connection);
 const transcriptSubscription = new OpenClawSessionTranscriptSubscription(connection);
 const SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS = 5_000;
 const RUN_STATE_LOOKUP_TIMEOUT_MS = 5_000;
+
+export const voiceWakeGatewayClient = new VoiceWakeGatewayClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+  subscribe: subscribeVoiceWakeGatewayEvents,
+});
 
 export { GatewayAgentDisplayNameUpdateError };
 
@@ -522,7 +540,10 @@ const sessionRunReconciler = new OpenClawSessionRunReconciler({
 
 // Collaboration plugin streams are refresh hints, not chat/agent activity.
 // Route them through the typed bridge before the generic ChatHandler path.
-connection.onEvent = (msg: any) => routeGatewayEvent(msg, (event) => chatHandler.handleEvent(event));
+connection.onEvent = (msg: unknown) => routeVoiceWakeGatewayEvent(
+  msg,
+  (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+);
 
 // ── Public API (matches original gateway.ts exactly) ──
 export const gateway = {
@@ -580,6 +601,10 @@ export const gateway = {
   },
   getStatus() { return connection.getStatus(); },
   getLastError() { return connection.getLastError(); },
+  captureConnectionId() { return connection.getAttestedConnectionId(); },
+  isConnectionCurrent(connectionId: string) {
+    return connection.isConnected() && connection.getAttestedConnectionId() === connectionId;
+  },
 
   // Messaging
   async sendMessage(

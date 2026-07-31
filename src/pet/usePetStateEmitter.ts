@@ -6,19 +6,53 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useWorkshopStore } from '@/stores/workshopStore';
 import { useAppStore } from '@/stores/app-store';
 import { useVoiceStore } from '@/stores/voiceStore';
+import {
+  isVoiceInputCapturePhase,
+  voiceModeCoordinator,
+} from '@/services/voice/VoiceModeCoordinator';
 import { isCronSessionKey, isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
-import { derivePetState, type CelebrateKind, type PetState } from './pet-states';
+import { hasTauriEventBridge, releaseTauriUnlisten, subscribeTauriEventReady } from '@/utils/tauriEvents';
+import { derivePetState, type CelebrateKind, type PetPresentationPreferences, type PetState } from './pet-states';
+import { PetSnapshotRelay } from './petSnapshotRelay';
+import { createPetWindowOpenRetrier } from './petWindowOpenRetrier';
 import i18n from '@/i18n';
 
 const FAST_TICK_MS = 250;
 const ACTIVE_TICK_MS = 1_000;
 const IDLE_TICK_MS = 5_000;
 const WAKE_DEBOUNCE_MS = 100;
+const PET_WINDOW_OPEN_RETRY_MS = 1_500;
 
 // Module-level guard: React StrictMode double-invokes effects in dev. Without
 // this (and the Rust-side PET_CREATE_GUARD), open_pet_window fires twice and
 // can spawn two pet windows.
 let petWindowOpened = false;
+let petWindowOpenRequest: Promise<void> | null = null;
+let petWindowLifecycleGeneration = 0;
+
+function requestPetWindowOpen(): Promise<void> {
+  if (petWindowOpened || !hasTauriEventBridge()) return Promise.resolve();
+  if (!petWindowOpenRequest) {
+    const requestGeneration = petWindowLifecycleGeneration;
+    petWindowOpenRequest = invoke('open_pet_window')
+      .then(() => {
+        if (requestGeneration !== petWindowLifecycleGeneration) {
+          void invoke('close_pet_window').catch(() => undefined);
+          throw new Error('Pet window request became stale');
+        }
+        petWindowOpened = true;
+      })
+      .finally(() => {
+        petWindowOpenRequest = null;
+      });
+  }
+  return petWindowOpenRequest;
+}
+
+function presentationPreferences(): PetPresentationPreferences {
+  const { soundEnabled, backdropContrastEnabled, captionScale } = usePetStore.getState();
+  return { soundEnabled, backdropContrastEnabled, captionScale };
+}
 
 function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): string {
   switch (app.setupStep) {
@@ -123,6 +157,7 @@ function petStateKey(state: PetState): string {
     pomodoro,
     celebrateKind: state.celebrateKind,
     drag: state.drag,
+    presentation: state.presentation,
   });
 }
 
@@ -165,12 +200,9 @@ export function usePetStateEmitter() {
   useEffect(() => {
     if (!enabled) {
       petWindowOpened = false;
+      petWindowLifecycleGeneration += 1;
       invoke('close_pet_window').catch(() => undefined);
       return;
-    }
-    if (!petWindowOpened) {
-      petWindowOpened = true;
-      invoke('open_pet_window').catch(() => undefined);
     }
 
     const mem: {
@@ -206,12 +238,20 @@ export function usePetStateEmitter() {
     let stopped = false;
     let lastEmittedKey = '';
     let wakeQueued = false;
+    const snapshotRelay = new PetSnapshotRelay(emitPetState);
+    const petWindowRetrier = createPetWindowOpenRetrier({
+      open: requestPetWindowOpen,
+      schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+      cancel: (timer) => window.clearTimeout(timer),
+      retryDelayMs: PET_WINDOW_OPEN_RETRY_MS,
+    });
+    let releasePetReadyListener: (() => void) | null = null;
 
     const emitIfChanged = (state: PetState) => {
       const key = petStateKey(state);
       if (key === lastEmittedKey) return;
       lastEmittedKey = key;
-      emitPetState(state);
+      snapshotRelay.publish(state);
     };
 
     const tick = (): PetState => {
@@ -231,6 +271,7 @@ export function usePetStateEmitter() {
           elapsedMs: mem.activeStartedAt ? now - mem.activeStartedAt : undefined,
           skin: usePetStore.getState().skin,
           setup: true,
+          presentation: presentationPreferences(),
         };
         emitIfChanged(state);
         return state;
@@ -239,7 +280,10 @@ export function usePetStateEmitter() {
       const typing = Object.values(cs.typingBySession).some(Boolean);
       const thinking = Object.values(cs.thinkingBySession).some((e) => (e?.text?.length ?? 0) > 0);
       const voice = useVoiceStore.getState();
-      const voiceListening = voice.phase === 'listening' || voice.phase === 'transcribing';
+      const voiceMode = voiceModeCoordinator.getSnapshot();
+      const voiceListening = voice.phase === 'listening'
+        || voice.phase === 'transcribing'
+        || isVoiceInputCapturePhase(voiceMode.phase);
       const voiceSpeaking = voice.remoteOutput !== null || voice.phase === 'queued' || voice.phase === 'speaking';
       const tool = cs.messages.some((m) => m.toolStatus === 'running');
       // "working" means an agent is actively running. `session.running` is the
@@ -405,6 +449,7 @@ export function usePetStateEmitter() {
         pomodoro: pomodoro.enabled
           ? { running: pomodoro.running, paused: pomodoro.paused, phase: pomodoro.phase, remainingMs, enabled: true }
           : undefined,
+        presentation: presentationPreferences(),
       };
       emitIfChanged(state);
       return state;
@@ -439,13 +484,33 @@ export function usePetStateEmitter() {
       usePetStore.subscribe(wake),
       useAppStore.subscribe(wake),
       useVoiceStore.subscribe(wake),
+      voiceModeCoordinator.subscribe(wake),
     ];
 
     loop();
+    // The pet installs its `pet-state` listener before emitting `pet-ready`.
+    // Register this listener before opening the auxiliary WebView so its first
+    // authoritative snapshot cannot be lost during startup.
+    void subscribeTauriEventReady('pet-ready', () => {
+      if (!stopped) snapshotRelay.replayLatest();
+    })
+      .then((unlisten) => {
+        if (stopped) {
+          releaseTauriUnlisten(unlisten);
+          return;
+        }
+        releasePetReadyListener = unlisten;
+        petWindowRetrier.start();
+      })
+      .catch(() => {
+        if (!stopped) petWindowRetrier.start();
+      });
     return () => {
       stopped = true;
       if (timerId) clearTimeout(timerId);
       unsubs.forEach((unsub) => unsub());
+      petWindowRetrier.stop();
+      releaseTauriUnlisten(releasePetReadyListener);
     };
   }, [enabled]);
 }

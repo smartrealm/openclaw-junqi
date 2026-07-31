@@ -768,7 +768,7 @@ function stripInlineCodeTicks(md: string): string {
                   'hover:bg-aegis-warning/20 hover:border-aegis-warning/40',
                 )}>
                 <AlertTriangle size={14} />
-                {t(errorAction.label, 'Reset Session')}
+                {t(errorAction.label)}
               </button>
             </div>
           )}

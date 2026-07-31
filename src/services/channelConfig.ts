@@ -331,9 +331,12 @@ export function removeChannelAccount(
 ): GatewayRuntimeConfig {
   const channels = { ...(config.channels ?? {}) };
   const current = { ...(channels[channelId] ?? {}) };
-  if (!isRecord(current.accounts)) return { ...config, channels };
+  const existingAccounts = current.accounts;
+  if (!existingAccounts || typeof existingAccounts !== 'object' || Array.isArray(existingAccounts)) {
+    return { ...config, channels };
+  }
 
-  const accounts = { ...(current.accounts as Record<string, unknown>) };
+  const accounts = { ...existingAccounts };
   delete accounts[accountId];
   current.accounts = accounts;
   channels[channelId] = current;

@@ -15,6 +15,7 @@ import { sessionActivityTime } from '@/components/Layout/sidebarUtils';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { sessionExecutionState } from '@/utils/sessionPresentation';
 import { activitySessionMetrics, mergeActivitySessions } from '@/utils/activitySessions';
+import { createAgentRunTaskRoute } from '@/utils/agentTaskRoute';
 
 function workspaceStatus(status: AgentWorkspaceTask['status']): TimelineTask['status'] {
   if (status === 'running') return 'running';
@@ -106,7 +107,7 @@ function deriveTimelineTasks({
       project: task.projectPath.split(/[\\/]/).pop() || task.projectPath,
       additions: task.additions,
       deletions: task.deletions,
-      href: `/ai-workspace?task=${encodeURIComponent(task.id)}`,
+      href: createAgentRunTaskRoute(task.id),
     });
   }
 

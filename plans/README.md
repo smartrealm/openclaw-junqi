@@ -38,6 +38,8 @@ plans/
 
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
 - [Session origin aggregation](quality/2026-07-20-session-origin-aggregation.md)
+- [会话分组与后台活动下钻](quality/2026-07-31-session-background-activity-drilldown.md)
+- [会话渠道来源呈现](quality/2026-07-31-session-channel-presentation.md)
 - [Tauri listener lifecycle](quality/2026-07-22-tauri-listener-lifecycle.md)
 - [Tauri command boundary](quality/2026-07-27-tauri-command-boundary.md)
 - [字体设置与 Orca 对齐](quality/2026-07-28-font-settings-orca-parity.md)
@@ -61,3 +63,5 @@ plans/
 - [Chat 消息预览与 OpenClaw 对齐](quality/2026-07-30-chat-message-preview-openclaw-parity.md)
 - [Chat 响应追溯与人工审核](quality/2026-07-31-chat-response-trace-and-human-review.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界](quality/2026-07-31-installation-dashboard-chat-provider-channel-runtime-boundaries.md)
+- [语音唤醒工作台](quality/2026-07-31-voice-wake-workspace.md)
+- [业务引导平台](quality/2026-07-31-business-onboarding-platform.md)

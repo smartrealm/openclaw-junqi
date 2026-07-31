@@ -945,7 +945,7 @@ fn spawn_toolcall_watcher(app: tauri::AppHandle, task_id: String, path: PathBuf)
 }
 
 fn task_notification_url(task_id: &str) -> String {
-    format!("/ai-workspace?task={}", url_encode(task_id))
+    format!("/agent-run?taskId={}", url_encode(task_id))
 }
 
 fn url_encode(s: &str) -> String {
@@ -1281,10 +1281,10 @@ mod tests {
     }
 
     #[test]
-    fn task_notifications_link_back_to_the_ai_workspace() {
+    fn task_notifications_link_back_to_the_exact_agent_run() {
         assert_eq!(
             task_notification_url("agent-task:123"),
-            "/ai-workspace?task=agent-task%3A123"
+            "/agent-run?taskId=agent-task%3A123"
         );
     }
 

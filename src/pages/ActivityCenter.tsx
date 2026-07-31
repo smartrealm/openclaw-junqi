@@ -32,6 +32,7 @@ import { projectSessionActivity, type SessionActivity } from '@/utils/sessionPre
 import { formatTokens } from '@/utils/format';
 import { shortModelName, formatActivityTimeTitle } from '@/pages/Dashboard/dashboardData';
 import { activitySessionMetrics, mergeActivitySessions, type ActivitySessionRecord } from '@/utils/activitySessions';
+import { createAgentRunTaskRoute } from '@/utils/agentTaskRoute';
 
 type ActivityFilter = 'all' | 'running' | 'attention' | 'done' | 'failed';
 
@@ -129,7 +130,7 @@ function workspaceEntry(task: AgentWorkspaceTask, labels: ActivityLabels): Activ
     timestamp: task.attentionRequestedAt ?? task.updatedAt ?? task.createdAt,
     durationMs,
     attention,
-    href: `/ai-workspace?task=${encodeURIComponent(task.id)}`,
+    href: createAgentRunTaskRoute(task.id),
   };
 }
 

@@ -49,11 +49,15 @@ async fn selected_native_gateway_ready(port: u16) -> bool {
     crate::commands::gateway::gateway_matches_config(port, &paths::config_path()).await
 }
 
-/// Confirms that a Docker Gateway is live. Docker owns a separate config path
-/// and is selected before this recovery path runs, so native state matching cannot
-/// be applied to its container endpoint.
-async fn probe_docker_gateway_port(port: u16) -> bool {
-    crate::commands::gateway::is_gateway_healthy(port).await
+/// Confirms that the selected Docker endpoint is live and accepts the Docker
+/// configuration's current authentication identity. Liveness alone can belong
+/// to another Gateway process bound to the same host port.
+async fn docker_gateway_matches_selected_config(port: u16, config_path: &std::path::Path) -> bool {
+    crate::commands::gateway::gateway_matches_config(port, config_path).await
+}
+
+async fn selected_docker_gateway_ready(port: u16) -> bool {
+    docker_gateway_matches_selected_config(port, &paths::docker_config_path()).await
 }
 
 /// 从当前本机配置读取 Gateway token。
@@ -99,7 +103,7 @@ async fn ensure_selected_docker_gateway(
         .await
         .map(|status| status.running)
         .unwrap_or(false);
-    if docker_running && probe_docker_gateway_port(port).await {
+    if docker_running && selected_docker_gateway_ready(port).await {
         let token = read_docker_gateway_token();
         state.transition(
             Some(GatewayLifecycle::Running),
@@ -173,6 +177,109 @@ async fn ensure_selected_docker_gateway(
                 "Docker is selected but could not be checked: {error}"
             )),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::docker_gateway_matches_selected_config;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    fn isolated_config_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir()
+            .join(format!(
+                "junqi-ensure-docker-{name}-{}",
+                uuid::Uuid::new_v4()
+            ))
+            .join("openclaw.json")
+    }
+
+    async fn serve_gateway_identity_probe(
+        accepted_token: &str,
+    ) -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test gateway");
+        let port = listener
+            .local_addr()
+            .expect("read test gateway port")
+            .port();
+        let accepted_token = accepted_token.to_owned();
+        let server = tokio::spawn(async move {
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().await.expect("accept gateway probe");
+                let mut request_bytes = [0_u8; 2048];
+                let size = stream
+                    .read(&mut request_bytes)
+                    .await
+                    .expect("read gateway probe");
+                let request = String::from_utf8_lossy(&request_bytes[..size]);
+                let authorized = request.lines().any(|line| {
+                    line.split_once(':').is_some_and(|(name, value)| {
+                        name.eq_ignore_ascii_case("authorization")
+                            && value.trim() == format!("Bearer {accepted_token}")
+                    })
+                });
+                let (status, body) = if request.starts_with("GET /healthz ") {
+                    ("200 OK", r#"{"ok":true,"status":"live"}"#)
+                } else if authorized {
+                    ("404 Not Found", "")
+                } else {
+                    ("401 Unauthorized", "")
+                };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len(),
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("write gateway probe");
+            }
+        });
+        (port, server)
+    }
+
+    fn write_gateway_config(path: &std::path::Path, port: u16, token: &str) {
+        std::fs::create_dir_all(path.parent().expect("config parent"))
+            .expect("create config parent");
+        std::fs::write(
+            path,
+            serde_json::json!({
+                "gateway": {
+                    "port": port,
+                    "auth": { "token": token },
+                },
+            })
+            .to_string(),
+        )
+        .expect("write gateway config");
+    }
+
+    #[tokio::test]
+    async fn docker_fast_path_rejects_a_healthy_endpoint_with_a_different_bearer_token() {
+        let config_path = isolated_config_path("identity");
+
+        let (foreign_port, foreign_server) = serve_gateway_identity_probe("foreign-token").await;
+        write_gateway_config(&config_path, foreign_port, "selected-token");
+        assert!(
+            !docker_gateway_matches_selected_config(foreign_port, &config_path).await,
+            "a healthy endpoint with another Docker token must not be reused"
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(2), foreign_server)
+            .await
+            .expect("foreign endpoint should receive both probes")
+            .expect("foreign endpoint task should finish");
+
+        let (selected_port, selected_server) = serve_gateway_identity_probe("selected-token").await;
+        write_gateway_config(&config_path, selected_port, "selected-token");
+        assert!(docker_gateway_matches_selected_config(selected_port, &config_path).await);
+        tokio::time::timeout(std::time::Duration::from_secs(2), selected_server)
+            .await
+            .expect("selected endpoint should receive both probes")
+            .expect("selected endpoint task should finish");
+
+        let _ = std::fs::remove_dir_all(config_path.parent().expect("config parent"));
     }
 }
 

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { computeSnapTarget, easeOutCubic, type PetBounds } from './snap';
 import { PetCharacter } from './PetCharacter';
 import { PetBubble } from './PetBubble';
-import { DEFAULT_PET_STATE, type PetState } from './pet-states';
+import { DEFAULT_PET_STATE, type PetPresentationPreferences, type PetState } from './pet-states';
 import type { PetMenuItem } from './petActions';
 import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -14,7 +14,13 @@ import { resolveTheme } from '@/theme/resolver';
 import { STORAGE_KEY as THEME_STORAGE_KEY } from '@/theme/constants';
 import { isThemeSetting, type ThemeSetting } from '@/theme/types';
 import { playPetSfx } from './petSounds';
-import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
+import {
+  combineUnlisteners,
+  emitTauriEvent,
+  releaseTauriUnlisten,
+  subscribeTauriEvent,
+  subscribeTauriEventReady,
+} from '@/utils/tauriEvents';
 import { PetPositionScheduler } from './petPositionScheduler';
 import type { PetBackdropReading } from './backdropContrast';
 import { BackdropSampleScheduler } from './backdropSampleScheduler';
@@ -38,6 +44,10 @@ const BACKDROP_FALLBACK_REFRESH_MS = 90_000;
 const createPositionScheduler = () => new PetPositionScheduler((point) =>
   invoke('set_pet_position', { x: point.x, y: point.y }),
 );
+
+function applyPresentationPreferences(preferences: PetPresentationPreferences | undefined): void {
+  if (preferences) usePetStore.getState().setPresentationPreferences(preferences);
+}
 
 /**
  * Root of the transparent floating pet window — a thin client.
@@ -123,8 +133,6 @@ export default function PetWindow() {
   const theme = useSettingsStore((s) => s.theme);
   // Pull the latest drag state out of the store so we can re-derive the
   // magnetic-pull offsets whenever the cursor moves over the main window.
-  // soundEnabled is read on demand inside the effect — no React re-render
-  // is required when the user toggles sound in settings.
   const dragActive = usePetStore((s) => s.dragActive);
   const snapCancelRef = useRef<(() => void) | null>(null);
   const cancelSnap = useCallback(() => {
@@ -245,8 +253,8 @@ export default function PetWindow() {
       })
       .catch(() => undefined);
 
+    let released = false;
     const unlistens = [
-      subscribeTauriEvent<PetState>('pet-state', (e) => setState(e.payload)),
       subscribeTauriEvent<{ x: number; y: number }>('pet-moved', (e) => {
         const previous = petPosRef.current;
         if (drag.current?.native && previous) {
@@ -264,6 +272,22 @@ export default function PetWindow() {
         window.dispatchEvent(new Event(BACKDROP_REFRESH_EVENT));
       }),
     ];
+    // `listen` is asynchronous. Do not request the initial state until the
+    // subscription exists, otherwise the main window can answer before this
+    // independent WebView is able to receive the snapshot.
+    void subscribeTauriEventReady<PetState>('pet-state', (e) => {
+      applyPresentationPreferences(e.payload.presentation);
+      setState(e.payload);
+    })
+      .then((unlisten) => {
+        if (released) {
+          releaseTauriUnlisten(unlisten);
+          return;
+        }
+        unlistens.unshift(unlisten);
+        void emitTauriEvent('pet-ready').catch(() => undefined);
+      })
+      .catch(() => undefined);
     // CRITICAL: PetWindow is a SEPARATE webview from the main window — its
     // Zustand store is a fresh instance with its own state. The main
     // window's `usePetStore.setDragActive()` call doesn't cross the IPC
@@ -326,6 +350,7 @@ export default function PetWindow() {
       }),
     );
     return () => {
+      released = true;
       window.clearInterval(pendingTimer);
       return combineUnlisteners(unlistens)();
     };
@@ -455,7 +480,7 @@ export default function PetWindow() {
     const was = prevEmotionRef.current;
     const now = state.emotion;
     if (was !== 'swallow' && was !== 'rapidSwallow' && (now === 'swallow' || now === 'rapidSwallow')) {
-      playPetSfx('munch', useSettingsStore.getState().soundEnabled);
+      playPetSfx('munch', usePetStore.getState().soundEnabled);
     }
     prevEmotionRef.current = now;
   }, [state.emotion]);

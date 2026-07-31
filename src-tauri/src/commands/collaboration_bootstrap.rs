@@ -5668,7 +5668,7 @@ pub async fn collaboration_bootstrap_probe(
             message: if capability_available {
                 "The externally managed Gateway advertises the collaboration RPC; validate its capabilities through the active connection"
             } else {
-                "The active Gateway is externally managed; JunQi will only provide pinned manual installation instructions"
+                "The active Gateway is externally managed; its administrator must complete the pinned plugin setup before JunQi can recheck it"
             }
             .to_string(),
             target_fingerprint: Some(identity.target_fingerprint),
@@ -5690,10 +5690,7 @@ pub async fn collaboration_bootstrap_probe(
                 ..BootstrapPluginSnapshot::default()
             },
             warnings: Vec::new(),
-            manual_install_instructions: (!capability_available).then(|| {
-                "On the target runtime, verify the published SHA-256, then run: openclaw plugins install --force --pin <junqi-collab.tgz>; openclaw plugins enable junqi-collab; restart that Gateway"
-                    .to_string()
-            }),
+            manual_install_instructions: None,
             busy,
             recovery_required,
             durable_collaboration_state: DurableCollaborationState::Unknown,

@@ -20,7 +20,7 @@ import { isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
 import i18n from '@/i18n';
 import { readGatewayMessageIdentity } from './messageIdentity';
 import {
-  GatewayConnection,
+  type GatewayCallbacks,
   type MediaInfo,
 } from './Connection';
 import {
@@ -60,6 +60,14 @@ export interface ChatSessionRunObservation {
   pendingRunId: string | null;
   pendingRunGeneration: number | null;
   pendingRunPhase: OpenClawPendingChatSendPhase | null;
+}
+
+/** The chat projection depends only on Gateway callback delivery, not transport internals. */
+type ChatHandlerCallbacks = Pick<GatewayCallbacks, 'onStreamChunk' | 'onStreamEnd'>
+  & Partial<GatewayCallbacks>;
+
+export interface ChatHandlerConnection {
+  callbacks: ChatHandlerCallbacks | null;
 }
 
 function sanitizeWorkshopCommands(content: string): WorkshopCommandResult {
@@ -122,7 +130,7 @@ export class ChatHandler {
   private transcriptRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private recentObservedRunIds = new Map<string, string>();
 
-  constructor(private conn: GatewayConnection) {}
+  constructor(private conn: ChatHandlerConnection) {}
 
   /** Drop a locally invalidated run after a confirmed reset or deletion. */
   invalidateSession(sessionKey: string): void {

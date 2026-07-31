@@ -82,20 +82,12 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "toggle-pet" => {
-                // Show/hide the pet window; create it on first toggle.
-                if let Some(win) = app.get_webview_window(crate::commands::pet::PET_LABEL) {
-                    if win.is_visible().unwrap_or(false) {
-                        let _ = win.hide();
-                    } else {
-                        let _ = win.show();
-                        let _ = win.set_focus();
-                    }
-                } else {
-                    let app = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = crate::commands::pet::open_pet_window(app).await;
-                    });
-                }
+                // Keep every visibility transition in the command so the
+                // settings store receives its `pet-visibility` event too.
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::commands::pet::toggle_pet_window(app).await;
+                });
             }
             "toggle-island" => {
                 let app = app.clone();

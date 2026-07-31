@@ -62,6 +62,15 @@ test('dynamic island lifecycle does not surface event transport failures as glob
   assert.match(runtime, /void openAndSynchronize\(\)\.catch\(\(\) => undefined\)/);
 });
 
+test('dynamic island voice controls only release capture or return focus to chat', () => {
+  const island = read('src/dynamic-island/DynamicIsland.tsx');
+  const runtime = read('src/dynamic-island/DynamicIslandRuntime.tsx');
+
+  assert.match(island, /voiceInputDetailKey/);
+  assert.match(runtime, /voiceModeCoordinator\.stopAndReleaseCapture\(\)/);
+  assert.doesNotMatch(runtime, /chatSendCoordinator|voiceWakeGatewayClient/);
+});
+
 test('dynamic island follows the persisted application language through i18n', () => {
   const island = read('src/dynamic-island/DynamicIsland.tsx');
   assert.match(island, /useTranslation\(\)/);

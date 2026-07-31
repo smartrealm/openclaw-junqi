@@ -5,20 +5,34 @@ import { ChatSidePanel } from './ChatSidePanel';
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import { ChatResponseTraceNodeCard } from './ChatResponseTraceNodeCard';
 import { formatTraceTimestamp } from './chatResponseTracePresentation';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { getAgentDisplayName } from '@/utils/agentDisplayName';
+import { agentIdFromSessionKey } from '@/utils/sessionPresentation';
 
 interface ChatResponseTracePanelProps {
   trace: ChatResponseTrace;
   onClose: () => void;
+  onOpenSourceMessage: (sourceMessageId: string) => void;
   overlay?: boolean;
 }
 
 export function ChatResponseTracePanel({
   trace,
   onClose,
+  onOpenSourceMessage,
   overlay = false,
 }: ChatResponseTracePanelProps) {
   const { t, i18n } = useTranslation();
   const formalReviewId = trace.review.formalReviewId;
+  const agents = useGatewayDataStore((state) => state.agents);
+  const session = useGatewayDataStore((state) => state.sessions.find((candidate) => candidate.key === trace.sessionKey));
+  const agentId = agentIdFromSessionKey(trace.sessionKey);
+  const agent = agents.find((candidate) => candidate.id === agentId);
+  const agentName = getAgentDisplayName(agent, t('chat.trace.notProvided'));
+  const sessionLabel = session?.label?.trim();
+  const conversationName = sessionLabel && sessionLabel !== trace.sessionKey
+    ? sessionLabel
+    : t('chat.trace.currentConversation');
   const titleId = `chat-trace-title-${trace.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const status = trace.status === 'final'
     ? 'completed'
@@ -46,12 +60,10 @@ export function ChatResponseTracePanel({
             </span>
           </div>
           <dl className="mt-3 grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[10px]">
-            <dt className="text-aegis-text-dim">{t('chat.trace.session')}</dt>
-            <dd className="break-all font-mono text-aegis-text-muted">{trace.sessionKey}</dd>
-            <dt className="text-aegis-text-dim">{t('chat.trace.run')}</dt>
-            <dd className="break-all font-mono text-aegis-text-muted">{trace.runId || t('chat.trace.notProvided')}</dd>
-            <dt className="text-aegis-text-dim">{t('chat.trace.traceId')}</dt>
-            <dd className="break-all font-mono text-aegis-text-muted">{trace.id}</dd>
+            <dt className="text-aegis-text-dim">{t('chat.trace.agent')}</dt>
+            <dd className="text-aegis-text-muted">{agentName}</dd>
+            <dt className="text-aegis-text-dim">{t('chat.trace.conversation')}</dt>
+            <dd className="text-aegis-text-muted">{conversationName}</dd>
             <dt className="text-aegis-text-dim">{t('chat.trace.startedAt')}</dt>
             <dd className="text-aegis-text-muted">{formatTraceTimestamp(trace.startedAt, i18n.language)}</dd>
             <dt className="text-aegis-text-dim">{t('chat.trace.completedAt')}</dt>
@@ -60,22 +72,37 @@ export function ChatResponseTracePanel({
                 ? t('chat.trace.notProvided')
                 : formatTraceTimestamp(trace.completedAt, i18n.language)}
             </dd>
-            <dt className="text-aegis-text-dim">{t('chat.trace.sourceMessages')}</dt>
-            <dd>
-              <details className="text-aegis-text-muted">
-                <summary className="cursor-pointer select-none">{trace.sourceMessageIds.length}</summary>
-                <div className="mt-1 space-y-1">
-                  {trace.sourceMessageIds.map((id) => <div key={id} className="break-all font-mono text-[9px] text-aegis-text-dim">{id}</div>)}
-                </div>
-              </details>
+            <dt className="text-aegis-text-dim">{t('chat.trace.sourceRecords')}</dt>
+            <dd className="flex flex-wrap gap-1.5">
+              {trace.sourceMessageIds.map((sourceMessageId, index) => (
+                <button
+                  key={sourceMessageId}
+                  type="button"
+                  onClick={() => onOpenSourceMessage(sourceMessageId)}
+                  className="rounded-md border border-aegis-border px-2 py-1 text-[10px] text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-aegis-primary"
+                >
+                  {t('chat.trace.sourceRecord', { number: index + 1 })}
+                </button>
+              ))}
             </dd>
-            {formalReviewId && (
-              <>
-                <dt className="text-aegis-text-dim">{t('chat.trace.formalReviewId')}</dt>
-                <dd className="break-all font-mono text-aegis-text-muted">{formalReviewId}</dd>
-              </>
-            )}
           </dl>
+          <details className="mt-3 text-[9px] text-aegis-text-dim">
+            <summary className="cursor-pointer select-none">{t('chat.trace.technicalDetails')}</summary>
+            <dl className="mt-2 grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono">
+              <dt>{t('chat.trace.sessionKey')}</dt>
+              <dd className="break-all">{trace.sessionKey}</dd>
+              <dt>{t('chat.trace.run')}</dt>
+              <dd className="break-all">{trace.runId || t('chat.trace.notProvided')}</dd>
+              <dt>{t('chat.trace.traceId')}</dt>
+              <dd className="break-all">{trace.id}</dd>
+              {formalReviewId && (
+                <>
+                  <dt>{t('chat.trace.formalReviewId')}</dt>
+                  <dd className="break-all">{formalReviewId}</dd>
+                </>
+              )}
+            </dl>
+          </details>
         </section>
 
         <section className="border-b border-aegis-border px-4 py-3" aria-label={t('chat.trace.reviewSection')}>
@@ -101,7 +128,13 @@ export function ChatResponseTracePanel({
             <span className="text-[10px] text-aegis-text-dim">{trace.nodes.length}</span>
           </div>
           <ol className="space-y-2">
-            {trace.nodes.map((node) => <ChatResponseTraceNodeCard key={node.id} node={node} />)}
+            {trace.nodes.map((node) => (
+              <ChatResponseTraceNodeCard
+                key={node.id}
+                node={node}
+                onOpenSourceMessage={() => onOpenSourceMessage(node.sourceMessageId)}
+              />
+            ))}
           </ol>
         </section>
       </div>

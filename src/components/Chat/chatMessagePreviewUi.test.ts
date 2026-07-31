@@ -12,6 +12,8 @@ const markdownRendererSource = readFileSync(new URL('./ChatMarkdownRenderer.tsx'
 const sidePanelSource = readFileSync(new URL('./ChatSidePanel.tsx', import.meta.url), 'utf8');
 const hookSource = readFileSync(new URL('./useChatSidePanel.ts', import.meta.url), 'utf8');
 const tracePanelSource = readFileSync(new URL('./ChatResponseTracePanel.tsx', import.meta.url), 'utf8');
+const traceNodeCardSource = readFileSync(new URL('./ChatResponseTraceNodeCard.tsx', import.meta.url), 'utf8');
+const traceSourcePanelSource = readFileSync(new URL('./ChatTraceSourceMessagePanel.tsx', import.meta.url), 'utf8');
 const chatSource = readFileSync(new URL('./ChatView.tsx', import.meta.url), 'utf8');
 const quickChatSource = readFileSync(new URL('../../pages/QuickChatPage.tsx', import.meta.url), 'utf8');
 
@@ -87,4 +89,11 @@ test('main and quick chat expose the same response trace entry and panel', () =>
   assert.match(tracePanelSource, /reviewFormalRelation/);
   assert.doesNotMatch(tracePanelSource, /onOpenCollaborationHistory/);
   assert.match(tracePanelSource, /reviewTranscriptOnly/);
+  assert.match(tracePanelSource, /onOpenSourceMessage/);
+  assert.match(chatSource, /openTraceSourceMessage/);
+  assert.match(quickChatSource, /openTraceSourceMessage/);
+  assert.match(traceNodeCardSource, /technicalDetails/);
+  assert.match(traceNodeCardSource, /viewSourceRecord/);
+  assert.match(traceSourcePanelSource, /sourceRecordUnavailableDescription/);
+  assert.doesNotMatch(tracePanelSource, /font-mono text-aegis-text-muted>\{trace\.sessionKey\}/);
 });

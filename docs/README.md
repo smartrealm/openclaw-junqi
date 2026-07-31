@@ -95,6 +95,8 @@ docs/
 - [Chat 响应追溯与人工审核](quality/chat-response-trace-and-human-review-2026-07-31.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界修复](quality/installation-dashboard-chat-provider-channel-runtime-boundary-remediation-2026-07-31.md)
 - [会话来源聚合审计](quality/session-origin-aggregation-audit.md)
+- [会话分组与后台活动下钻设计](quality/session-background-activity-drilldown-design-2026-07-31.md)
+- [会话渠道来源呈现记录](quality/session-channel-presentation-2026-07-31.md)
 - [Tauri Listener 生命周期审计](quality/tauri-listener-lifecycle-audit.md)
 - [Tauri Command 边界审计](quality/tauri-command-boundary-audit-2026-07-27.md)
 - [Voice Runtime 审计](quality/voice-runtime-audit.md)
@@ -128,6 +130,7 @@ docs/
 - [仪表盘首次主题切换验证](quality/dashboard-first-theme-switch-validation-2026-07-30.md)
 - [Gateway AI 诊断与 OpenClaw 运行时验证](quality/gateway-ai-diagnostics-openclaw-runtime-validation-2026-07-30.md)
 - [终端与工作台 Chrome 一致性记录](quality/terminal-workbench-chrome-convergence-2026-07-30.md)
+- [macOS Apple Silicon 本地测试包验证](quality/macos-local-package-2026-07-31.md)
 
 ## 产品设计草案
 
@@ -136,6 +139,8 @@ docs/
 - [ComfyUI Creative Studio 设计](design/comfyui-creative-studio-design.md)
 - [全局专注上下文与任务简报设计](design/focus-context-and-task-briefs-design.md)
 - [Agent 分步执行计划与折叠进度设计](design/agent-execution-plan-progress-design.md)
+- [语音唤醒与 Jarvis 式工作台设计及业务闭环审计](design/voice-wake-jarvis-surface-design-2026-07-31.md)
+- [业务引导平台设计](design/business-onboarding-platform-2026-07-31.md)
 
 该文档是大型设计稿，不代表所有功能已经实现。
 

@@ -39,6 +39,16 @@ export interface PetPomodoroState {
   enabled: boolean;
 }
 
+/**
+ * Presentation-only preferences owned by the main window and projected to the
+ * independent pet WebView with each state snapshot.
+ */
+export interface PetPresentationPreferences {
+  soundEnabled: boolean;
+  backdropContrastEnabled: boolean;
+  captionScale: number;
+}
+
 export interface PetState {
   emotion: PetEmotion;
   /** 0-100 — primary session token fill, or workshop task progress. */
@@ -55,6 +65,8 @@ export interface PetState {
   skin?: PetSkin;
   /** Live Pomodoro state — present only when the feature is enabled. */
   pomodoro?: PetPomodoroState;
+  /** Cross-window display preferences for the pet's independent WebView. */
+  presentation?: PetPresentationPreferences;
   /** Present only when emotion === 'celebrate'. */
   celebrateKind?: CelebrateKind;
   /** True while the first-run OpenClaw setup wizard owns the app state. */

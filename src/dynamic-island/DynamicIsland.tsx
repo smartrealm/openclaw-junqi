@@ -25,9 +25,11 @@ import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import {
   EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
   formatElapsedTime,
+  isDynamicIslandVoiceInputActive,
   isVoiceActivePhase,
   formatRemainingTime,
   shouldPeekForSnapshot,
+  type DynamicIslandVoiceInput,
   type DynamicIslandSnapshot,
   type DynamicIslandTask,
 } from './model';
@@ -53,6 +55,21 @@ function statusTone(status: DynamicIslandTask['status']) {
   if (status === 'failed' || status === 'interrupted') return 'error';
   if (status === 'done') return 'success';
   return 'running';
+}
+
+function voiceInputTitleKey(input: DynamicIslandVoiceInput): string {
+  if (input.requiresConfirmation) return 'dynamicIsland.voiceDraftReady';
+  if (input.phase === 'unavailable') return 'dynamicIsland.voiceInputUnavailable';
+  if (input.phase === 'error') return 'dynamicIsland.voiceInputError';
+  return input.phase === 'transcribing'
+    ? 'dynamicIsland.processingVoice'
+    : 'dynamicIsland.listening';
+}
+
+function voiceInputDetailKey(input: DynamicIslandVoiceInput): string {
+  if (input.requiresConfirmation) return 'dynamicIsland.returnToChatToConfirm';
+  if (input.phase === 'unavailable' || input.phase === 'error') return 'dynamicIsland.returnToChatToControlVoice';
+  return 'dynamicIsland.returnToChatToControlVoice';
 }
 
 function StatusGlyph({ task }: { task: DynamicIslandTask }) {
@@ -168,7 +185,9 @@ export default function DynamicIsland() {
   ));
   const attentionCount = attentionTasks.length;
   const primaryRunningTask = snapshot.tasks.find((task) => task.status === 'running');
-  const voiceActive = isVoiceActivePhase(snapshot.voicePhase);
+  const outputVoiceActive = isVoiceActivePhase(snapshot.voicePhase);
+  const inputVoiceActive = isDynamicIslandVoiceInputActive(snapshot.voiceInput);
+  const voiceActive = outputVoiceActive || inputVoiceActive;
   const remaining = formatRemainingTime(snapshot, now);
   const headline = useMemo(() => {
     if (snapshot.resourceDrop?.phase === 'dragging') {
@@ -178,8 +197,9 @@ export default function DynamicIsland() {
     if (snapshot.notice) return snapshot.notice.title;
     if (attentionCount === 1) return attentionTasks[0].title;
     if (attentionCount > 0) return t('dynamicIsland.needsAttention', { count: attentionCount });
-    if (snapshot.voicePhase === 'speaking' || snapshot.voicePhase === 'queued') return t('dynamicIsland.speaking');
-    if (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing') return t('dynamicIsland.listening');
+    if (outputVoiceActive && (snapshot.voicePhase === 'speaking' || snapshot.voicePhase === 'queued')) return t('dynamicIsland.speaking');
+    if (outputVoiceActive && (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing')) return t('dynamicIsland.listening');
+    if (inputVoiceActive) return t(voiceInputTitleKey(snapshot.voiceInput));
     if (runningCount === 1 && primaryRunningTask) return primaryRunningTask.title;
     if (runningCount > 0) return t('dynamicIsland.agentsRunning', { count: runningCount });
     if (primarySessionActivity) {
@@ -188,7 +208,7 @@ export default function DynamicIsland() {
     if (snapshot.focus) return snapshot.focus.title;
     if (snapshot.connected) return t('dynamicIsland.ready');
     return snapshot.connecting ? t('dynamicIsland.connecting') : t('dynamicIsland.offline');
-  }, [attentionCount, attentionTasks, primaryRunningTask, primarySessionActivity, runningCount, snapshot.connected, snapshot.connecting, snapshot.focus, snapshot.notice, snapshot.resourceDrop, snapshot.voicePhase, t]);
+  }, [attentionCount, attentionTasks, inputVoiceActive, outputVoiceActive, primaryRunningTask, primarySessionActivity, runningCount, snapshot.connected, snapshot.connecting, snapshot.focus, snapshot.notice, snapshot.resourceDrop, snapshot.voiceInput, snapshot.voicePhase, t]);
   const compactMeta = useMemo(() => {
     const task = attentionTasks[0] ?? primaryRunningTask;
     if (task) return `${task.agent} · ${statusLabel(task.status)}`;
@@ -203,14 +223,15 @@ export default function DynamicIsland() {
     if (snapshot.focus) {
       return `${t('dynamicIsland.focused')} - ${t(`focus.states.${snapshot.focus.state}`)}`;
     }
-    if (snapshot.voicePhase === 'speaking' || snapshot.voicePhase === 'queued') {
+    if (outputVoiceActive && (snapshot.voicePhase === 'speaking' || snapshot.voicePhase === 'queued')) {
       return snapshot.voiceQueueLength > 0
         ? t('dynamicIsland.voiceQueue', { count: snapshot.voiceQueueLength })
         : t('dynamicIsland.voiceOutput');
     }
-    if (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing') return t('dynamicIsland.voiceInput');
+    if (outputVoiceActive && (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing')) return t('dynamicIsland.voiceInput');
+    if (inputVoiceActive) return t(voiceInputDetailKey(snapshot.voiceInput));
     return t(snapshot.connected ? 'dynamicIsland.openclawOnline' : 'dynamicIsland.openclawStandby');
-  }, [attentionTasks, now, primaryRunningTask, primarySessionActivity, snapshot.connected, snapshot.focus, snapshot.pomodoro.phase, snapshot.pomodoro.running, snapshot.voicePhase, snapshot.voiceQueueLength, statusLabel, t]);
+  }, [attentionTasks, inputVoiceActive, now, outputVoiceActive, primaryRunningTask, primarySessionActivity, snapshot.connected, snapshot.focus, snapshot.pomodoro.phase, snapshot.pomodoro.running, snapshot.voiceInput, snapshot.voicePhase, snapshot.voiceQueueLength, statusLabel, t]);
 
   return (
     <main
@@ -265,7 +286,7 @@ export default function DynamicIsland() {
               {remaining ? (
                 <span className="junqi-island-timer"><Clock3 size={12} />{remaining}</span>
               ) : voiceActive ? (
-                <span className="junqi-island-running"><Volume2 size={12} />{snapshot.voiceQueueLength || ''}</span>
+                <span className="junqi-island-running">{inputVoiceActive ? <Radio size={12} /> : <Volume2 size={12} />}{snapshot.voiceQueueLength || ''}</span>
               ) : runningCount > 0 ? (
                 <span className="junqi-island-running"><span className="junqi-island-spinner" />{runningCount}</span>
               ) : (
@@ -287,7 +308,9 @@ export default function DynamicIsland() {
                 <span className="junqi-island-brandmark"><Radio size={15} /></span>
                 <span><strong>{headline}</strong><small>{snapshot.resourceDrop
                   ? t(snapshot.resourceDrop.phase === 'dragging' ? 'dynamicIsland.releaseFiles' : 'dynamicIsland.quickChatReady')
-                  : snapshot.notice?.body || t('dynamicIsland.currentActivity')}</small></span>
+                  : inputVoiceActive
+                    ? t(voiceInputDetailKey(snapshot.voiceInput))
+                    : snapshot.notice?.body || t('dynamicIsland.currentActivity')}</small></span>
               </div>
               <div className="junqi-island-window-actions">
                 <button type="button" onClick={() => setIslandExpanded(false)} title={t('dynamicIsland.collapse')}><ChevronUp size={15} /></button>
@@ -357,7 +380,12 @@ export default function DynamicIsland() {
                     </span>
                     <ChevronUp size={13} className="junqi-island-task-open" />
                   </button>
-                ) : voiceActive ? (
+                ) : inputVoiceActive ? (
+                  <div className="junqi-island-empty">
+                    <Radio size={18} />
+                    <span><strong>{t(voiceInputTitleKey(snapshot.voiceInput))}</strong><small>{t(voiceInputDetailKey(snapshot.voiceInput))}</small></span>
+                  </div>
+                ) : outputVoiceActive ? (
                   <div className="junqi-island-empty">
                     <Volume2 size={18} />
                     <span><strong>{t(snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing'
@@ -383,7 +411,7 @@ export default function DynamicIsland() {
                 {snapshot.pomodoro.running && (
                   <button type="button" onClick={() => action({ type: 'pomodoro-stop' })} title={t('dynamicIsland.stopTimer')}><Square size={14} /><span>{t('dynamicIsland.stop')}</span></button>
                 )}
-                {(snapshot.voicePhase === 'queued' || snapshot.voicePhase === 'speaking') && (
+                {(outputVoiceActive || inputVoiceActive) && (
                   <button type="button" className="is-active" onClick={() => action({ type: 'voice-stop' })} title={t('dynamicIsland.stopVoice')}><Square size={14} /><span>{t('dynamicIsland.stopVoice')}</span></button>
                 )}
                 <button type="button" className={snapshot.dndMode ? 'is-active' : ''} onClick={() => action({ type: 'toggle-dnd' })} title={t('dynamicIsland.doNotDisturb')}>
