@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  RefreshCw, BarChart3,
+  RefreshCw,
   Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight,
   TrendingUp, TrendingDown, Minus, MessageSquarePlus,
   ChartNoAxesCombined, Blocks, Gauge, Clock3, FolderKanban, TerminalSquare,
@@ -54,6 +54,7 @@ import {
   ContextRing, QuickAction, SessionItem, FeedItem, AgentItem,
   fmtCostShort, timeAgo, fmtUptime,
 } from './components';
+import { DashboardCostEmptyState } from './DashboardCostEmptyState';
 
 const CostChart = lazy(() => import('./CostChart').then((m) => ({ default: m.CostChart })));
 
@@ -756,10 +757,13 @@ export function DashboardPage() {
                   {t('common.loading')}
                 </div>
               ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-[13px] text-aegis-text-dim">
-                  <BarChart3 size={18} className="text-aegis-text-muted" />
-                  <span>{t('dashboard.costEmpty', 'No usage recorded yet')}</span>
-                </div>
+                <DashboardCostEmptyState
+                  hasProviders={hasProviders}
+                  refreshing={refreshing}
+                  onOpenConversation={() => navigate('/chat')}
+                  onConfigureProviders={() => navigate('/config')}
+                  onRefresh={handleRefresh}
+                />
               )}
             </div>
           </div>

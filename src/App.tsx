@@ -78,6 +78,7 @@ async function addToastLazy(type: 'message' | 'task_complete' | 'info' | 'error'
 }
 
 const VERIFIED_GATEWAY_HANDOFF_TIMEOUT_MS = 12_000;
+type SessionLoadResult = 'loaded' | 'failed' | 'superseded';
 
 // ═══════════════════════════════════════════════════════════
 // OpenClaw Desktop — Mission Control
@@ -270,7 +271,9 @@ export default function App() {
   // This is the single polling call for all session metadata. The store's setSessions
   // synchronously applies the active session's data to the TitleBar state — no separate
   // loadTokenUsage needed.
-  const loadSessions = useCallback(async (options: { reconcileChatRuns?: boolean } = {}): Promise<boolean> => {
+  const loadSessions = useCallback(async (
+    options: { reconcileChatRuns?: boolean } = {},
+  ): Promise<SessionLoadResult> => {
     const requestGate = sessionListRequestGateRef.current;
     const requestId = requestGate.begin();
     try {
@@ -278,12 +281,12 @@ export default function App() {
       // file. Copy confirmed entries to OpenClaw before this read, then let
       // Gateway labels remain the sole source of truth.
       await migrateLegacySessionLabelsOnce();
-      if (!requestGate.isCurrent(requestId)) return false;
+      if (!requestGate.isCurrent(requestId)) return 'superseded';
       const runObservations = options.reconcileChatRuns
         ? gateway.capturePendingChatSessionRunObservations()
         : undefined;
       const result = await gateway.getSessions();
-      if (!requestGate.isCurrent(requestId)) return false;
+      if (!requestGate.isCurrent(requestId)) return 'superseded';
       const sessionListSnapshot = parseOpenClawSessionListSnapshot(result);
       const rawSessions = sessionListSnapshot.sessions;
       // Gateway-level defaults (configured model, context window)
@@ -344,9 +347,9 @@ export default function App() {
       } else {
         gateway.observeActiveChatSessionRuns(rawSessions);
       }
-      return true;
+      return 'loaded';
     } catch {
-      return false;
+      return requestGate.isCurrent(requestId) ? 'failed' : 'superseded';
     }
   }, [setSessions]);
 
@@ -823,8 +826,9 @@ export default function App() {
           const boot = useBootSequenceStore.getState();
           boot.markStageCompleted('connection', 'WebSocket handshake complete');
           boot.markStageRunning('config', 'Loading sessions');
-          void loadSessions({ reconcileChatRuns: true }).then((sessionsLoaded) => {
-            if (!sessionsLoaded) {
+          void loadSessions({ reconcileChatRuns: true }).then((sessionLoadResult) => {
+            if (sessionLoadResult === 'superseded') return;
+            if (sessionLoadResult === 'failed') {
               boot.markStageError('config', 'Session load failed');
               // A failed authoritative read is terminal for this startup pass.
               // Release the shell so its recoverable Gateway surfaces remain reachable.

@@ -11,6 +11,7 @@ The installed `react-virtuoso` 4.18.7 type contract exposes both `followOutput` 
 - Expanding or collapsing a completed execution group changed an already measured virtual-list item. While the reader was at the tail, the list could preserve its bottom edge and move the visible message upward.
 - The application rendered the dashboard immediately after setup validation. `sessions.list` was still in flight, so the session-oriented surfaces were progressively populated after the route was visible.
 - The first history hydration used the same guarded tail-follow path as streamed output. During Virtuoso measurement, its temporary non-bottom state caused that path to do nothing, leaving a newly opened session above its newest message.
+- `loadSessions` collapsed a superseded request and a failed request into the same boolean result. A later session refresh could supersede the startup request, then incorrectly release the global loading surface through the failure path before the latest session snapshot reached the sidebar.
 
 ## Target Behavior
 
@@ -18,6 +19,7 @@ The installed `react-virtuoso` 4.18.7 type contract exposes both `followOutput` 
 - Keep initial-history positioning separate from streamed-output following. Once the active history is hydrated, position it at the final item regardless of temporary virtual-list bottom state; reset that one-time position when the active session changes. Subsequent user scrolling still locks tail following.
 - After cached setup validation, show the shared full-window loading surface until the first `sessions.list` snapshot has been reconciled into `chatStore` and the shared dashboard `sessions` plus `agents` groups have each reached a success or error terminal state. This is data readiness, not a timer.
 - A failed first session read completes the loading phase as an error terminal state so the existing recoverable Gateway surfaces remain available. Optional Gateway-independent routes remain reachable.
+- Session loading distinguishes `loaded`, `failed`, and `superseded`. Only the latest request can complete or fail the first-data gate; a superseded request leaves the loading surface in place for its replacement.
 - Recent transcript and model catalog loading stay background work because their existing contracts support later refresh and retry; they are not misrepresented as complete during the first session snapshot gate.
 
 ## Verification
