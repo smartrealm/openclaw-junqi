@@ -1399,7 +1399,7 @@
       "sourceRecordTitle": "原始会话记录",
       "backToTrace": "返回执行追溯",
       "sourceRecordUnavailable": "当前已加载的会话记录中没有这条原始记录",
-      "sourceRecordUnavailableDescription": "请重新加载会话历史后重试。JunQi 不会根据记录标识还原或猜测内容。",
+      "sourceRecordUnavailableDescription": "这条记录不在当前已加载的会话历史中，或已不再可用。JunQi 不会根据记录标识还原或猜测内容。",
       "recordRole": "记录类型",
       "recordRoleValue": {
         "user": "用户消息",
@@ -1411,6 +1411,7 @@
         "unknown": "Gateway 记录"
       },
       "recordTime": "记录时间",
+      "tool": "工具",
       "nativeMessageId": "Gateway 消息标识",
       "startedAt": "开始时间",
       "completedAt": "完成时间",
