@@ -133,6 +133,7 @@ docs/
 - [Gateway AI 诊断与 OpenClaw 运行时验证](quality/gateway-ai-diagnostics-openclaw-runtime-validation-2026-07-30.md)
 - [终端与工作台 Chrome 一致性记录](quality/terminal-workbench-chrome-convergence-2026-07-30.md)
 - [macOS Apple Silicon 本地测试包验证](quality/macos-local-package-2026-07-31.md)
+- [Windows Cargo 离线预热验证](quality/windows-cargo-offline-prefetch-validation-2026-07-31.md)
 
 ## 产品设计草案
 

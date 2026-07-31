@@ -61,17 +61,33 @@ export function parseCargoFetchOptions(argv, environment = process.env) {
 }
 
 export function cargoNetworkEnvironment(environment = process.env) {
+  const {
+    CARGO_NET_OFFLINE: _offline,
+    CARGO_NET_FROZEN: _frozen,
+    ...networkEnvironment
+  } = environment;
+
   return {
-    ...environment,
-    CARGO_NET_RETRY: nonBlankOrDefault(environment.CARGO_NET_RETRY, '2'),
-    CARGO_HTTP_TIMEOUT: nonBlankOrDefault(environment.CARGO_HTTP_TIMEOUT, '120'),
-    CARGO_HTTP_MULTIPLEXING: nonBlankOrDefault(environment.CARGO_HTTP_MULTIPLEXING, 'false'),
+    ...networkEnvironment,
+    CARGO_NET_RETRY: nonBlankOrDefault(networkEnvironment.CARGO_NET_RETRY, '2'),
+    CARGO_HTTP_TIMEOUT: nonBlankOrDefault(networkEnvironment.CARGO_HTTP_TIMEOUT, '120'),
+    CARGO_HTTP_MULTIPLEXING: nonBlankOrDefault(networkEnvironment.CARGO_HTTP_MULTIPLEXING, 'false'),
   };
 }
 
-function runCargoFetch({ target, cwd, environment }) {
+export function cargoDependencyWarmupCommands(target) {
+  const safeTarget = assertTarget(target);
+  return [
+    ['fetch', '--locked', '--target', safeTarget],
+    // `cargo fetch --target` omits host-side build dependencies. A Windows
+    // x64 runner compiling the x86 target still needs those host crates.
+    ['check', '--locked', '--all-targets', '--target', safeTarget],
+  ];
+}
+
+function runCargoCommand({ args, cwd, environment }) {
   return new Promise((resolve, reject) => {
-    const child = spawn('cargo', ['fetch', '--locked', '--target', target], {
+    const child = spawn('cargo', args, {
       cwd,
       env: environment,
       stdio: 'inherit',
@@ -89,10 +105,16 @@ function runCargoFetch({ target, cwd, environment }) {
         return;
       }
       reject(new CargoDependencyFetchError(
-        `cargo fetch failed for ${target}${signal ? ` (signal ${signal})` : ` (exit ${code ?? 'unknown'})`}`,
+        `cargo ${args[0]} failed${signal ? ` (signal ${signal})` : ` (exit ${code ?? 'unknown'})`}`,
       ));
     }));
   });
+}
+
+async function runCargoDependencyWarmup({ commands, cwd, environment }) {
+  for (const args of commands) {
+    await runCargoCommand({ args, cwd, environment });
+  }
 }
 
 function sleep(delayMs) {
@@ -105,7 +127,7 @@ export async function fetchLockedCargoDependencies({
   delayMs = DEFAULT_CARGO_FETCH_DELAY_MS,
   cwd = CARGO_WORKSPACE,
   environment = process.env,
-  run = runCargoFetch,
+  run = runCargoDependencyWarmup,
   wait = sleep,
 } = {}) {
   const safeTarget = assertTarget(target);
@@ -115,23 +137,28 @@ export async function fetchLockedCargoDependencies({
   let lastError;
 
   for (let attempt = 1; attempt <= safeAttempts; attempt += 1) {
-    process.stdout.write(`Fetching locked Cargo dependencies for ${safeTarget} (${attempt}/${safeAttempts})\n`);
+    process.stdout.write(`Warming locked Cargo dependencies for ${safeTarget} (${attempt}/${safeAttempts})\n`);
     try {
-      await run({ target: safeTarget, cwd, environment: networkEnvironment });
+      await run({
+        target: safeTarget,
+        commands: cargoDependencyWarmupCommands(safeTarget),
+        cwd,
+        environment: networkEnvironment,
+      });
       return;
     } catch (error) {
       lastError = error;
       if (attempt === safeAttempts) break;
       const delay = safeDelayMs * attempt;
       process.stderr.write(
-        `Cargo dependency fetch failed for ${safeTarget}; retrying in ${delay}ms (${attempt}/${safeAttempts}).\n`,
+        `Cargo dependency warm-up failed for ${safeTarget}; retrying in ${delay}ms (${attempt}/${safeAttempts}).\n`,
       );
       await wait(delay);
     }
   }
 
   throw new CargoDependencyFetchError(
-    `Unable to fetch locked Cargo dependencies for ${safeTarget} after ${safeAttempts} attempts`,
+    `Unable to warm locked Cargo dependencies for ${safeTarget} after ${safeAttempts} attempts`,
     { cause: lastError },
   );
 }

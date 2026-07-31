@@ -3,12 +3,13 @@ import test from 'node:test';
 
 import {
   CargoDependencyFetchError,
+  cargoDependencyWarmupCommands,
   cargoNetworkEnvironment,
   fetchLockedCargoDependencies,
   parseCargoFetchOptions,
 } from './fetch-cargo-dependencies.mjs';
 
-test('retries a locked target fetch with the shared Cargo network policy', async () => {
+test('retries a locked target warm-up with the shared Cargo network policy', async () => {
   const attempts = [];
   const delays = [];
   await fetchLockedCargoDependencies({
@@ -27,6 +28,10 @@ test('retries a locked target fetch with the shared Cargo network policy', async
   assert.deepEqual(delays, [25, 50]);
   assert.equal(attempts[0].target, 'x86_64-pc-windows-msvc');
   assert.equal(typeof attempts[0].cwd, 'string');
+  assert.deepEqual(attempts[0].commands, [
+    ['fetch', '--locked', '--target', 'x86_64-pc-windows-msvc'],
+    ['check', '--locked', '--all-targets', '--target', 'x86_64-pc-windows-msvc'],
+  ]);
   assert.deepEqual(attempts[0].environment, {
     CARGO_NET_RETRY: '2',
     CARGO_HTTP_TIMEOUT: '120',
@@ -34,7 +39,7 @@ test('retries a locked target fetch with the shared Cargo network policy', async
   });
 });
 
-test('fails after the bounded fetch retry budget is exhausted', async () => {
+test('fails after the bounded warm-up retry budget is exhausted', async () => {
   await assert.rejects(
     fetchLockedCargoDependencies({
       target: 'aarch64-pc-windows-msvc',
@@ -50,7 +55,7 @@ test('fails after the bounded fetch retry budget is exhausted', async () => {
   );
 });
 
-test('validates targets and preserves caller-provided Cargo network settings', () => {
+test('validates targets and uses an online environment for target warm-up', () => {
   assert.throws(
     () => parseCargoFetchOptions(['--target', '../unsafe']),
     /safe Rust target triple/,
@@ -60,6 +65,8 @@ test('validates targets and preserves caller-provided Cargo network settings', (
       CARGO_NET_RETRY: '5',
       CARGO_HTTP_TIMEOUT: '90',
       CARGO_HTTP_MULTIPLEXING: 'true',
+      CARGO_NET_OFFLINE: 'true',
+      CARGO_NET_FROZEN: 'true',
     }),
     {
       CARGO_NET_RETRY: '5',
@@ -67,4 +74,8 @@ test('validates targets and preserves caller-provided Cargo network settings', (
       CARGO_HTTP_MULTIPLEXING: 'true',
     },
   );
+  assert.deepEqual(cargoDependencyWarmupCommands('i686-pc-windows-msvc'), [
+    ['fetch', '--locked', '--target', 'i686-pc-windows-msvc'],
+    ['check', '--locked', '--all-targets', '--target', 'i686-pc-windows-msvc'],
+  ]);
 });

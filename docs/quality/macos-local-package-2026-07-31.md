@@ -42,3 +42,22 @@ APPLE_SIGNING_IDENTITY=- pnpm tauri build \
 
 - 未完成 Developer ID 签名、Apple notarization、stapling、updater signature 或发布资产校验。
 - 未从 DMG 完成实际安装并启动 Tauri 应用；首次启动、权限、Gateway、Keychain、Dynamic Island、宠物窗口和 macOS 版本兼容性仍需真机验收。
+
+## 1.5.1 本机重建
+
+日期：2026-07-31
+
+- 源工作树：`f1562d0` 加入本次未提交的 Windows Cargo 预热修复。
+- 目标架构：`aarch64-apple-darwin`。
+- 应用版本：`1.5.1`。
+- 制品：`src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/JunQi Desktop_1.5.1_aarch64_local.dmg`。
+- SHA-256：`96e37409bfae912a84957e8179449daa6d933b6d5c12b8ab80aad6f93b3e2e96`。
+- `hdiutil verify`、DMG 挂载、挂载后 `Info.plist` 版本读取、`arm64` 可执行文件检查和
+  `codesign --verify --deep --strict` 均通过。
+
+`pnpm tauri build` 已成功完成前端和 release app 构建。默认 DMG 容量估算在复制 app
+时耗尽，且 Finder 自动布局会阻塞当前非交互会话，因此使用 Tauri 生成的 `bundle_dmg.sh`
+以 128 MB 临时镜像和 `--skip-jenkins` 参数重建最终压缩 DMG。该参数只影响 Finder 中的
+图标自动布局，不影响 app 内容、签名或安装路径。
+
+本制品仍为 ad-hoc 本机测试包，不是 Developer ID 签名、公证或正式发布制品。

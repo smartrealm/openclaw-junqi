@@ -155,3 +155,11 @@ test('Cargo dependencies are prefetched before native Windows validation and rel
   assert.match(release, /Build unsigned candidate[\s\S]*CARGO_NET_OFFLINE: "true"/);
   assert.match(taggedRelease, /Build signed updater artifacts and installers[\s\S]*CARGO_NET_OFFLINE: "true"/);
 });
+
+test('Cargo dependency warm-up resolves both target and Windows host build dependencies', () => {
+  const fetchScript = readFileSync(new URL('./fetch-cargo-dependencies.mjs', import.meta.url), 'utf8');
+  assert.match(fetchScript, /\['fetch', '--locked', '--target', safeTarget\]/);
+  assert.match(fetchScript, /\['check', '--locked', '--all-targets', '--target', safeTarget\]/);
+  assert.match(fetchScript, /CARGO_NET_OFFLINE: _offline/);
+  assert.match(fetchScript, /CARGO_NET_FROZEN: _frozen/);
+});
