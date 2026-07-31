@@ -68,7 +68,6 @@ import {
   subscribeTerminalAppearancePreferences,
 } from '@/components/Terminal/terminalAppearancePreferences';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { FontSelector } from '@/components/settings/FontSelector';
 import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
 import { commitTerminalSettingsReset } from './terminalSettingsTransaction';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
@@ -419,8 +418,6 @@ export function TerminalSettingsPanel() {
   const { t } = useTranslation();
   const terminalFontSize = useSettingsStore((state) => state.terminalFontSize);
   const setTerminalFontSize = useSettingsStore((state) => state.setTerminalFontSize);
-  const monoFont = useSettingsStore((state) => state.monoFont);
-  const setMonoFont = useSettingsStore((state) => state.setMonoFont);
   const preferences = useTerminalPreferences();
   const appearancePreferences = useSyncExternalStore(
     subscribeTerminalAppearancePreferences,
@@ -475,7 +472,6 @@ export function TerminalSettingsPanel() {
         () => invoke('reset_terminal_settings'),
         () => {
           setTerminalFontSize(12);
-          setMonoFont('');
           setShiftEnterNewline(DEFAULT_TERMINAL_SHIFT_ENTER_NEWLINE);
           resetTerminalAgentPreferences();
           resetTerminalPresetPreferences();
@@ -524,15 +520,6 @@ export function TerminalSettingsPanel() {
               <button type="button" aria-label={t('terminalSettings.increaseFont', '增大字号')} onClick={() => setTerminalFontSize(terminalFontSize + 1)} disabled={terminalFontSize >= 20} className="flex h-full w-9 items-center justify-center text-aegis-text-muted hover:text-aegis-text disabled:opacity-35"><Plus size={13} /></button>
             </div>
           </div>
-
-          <FontSelector
-            value={monoFont}
-            onChange={setMonoFont}
-            label={t('terminalSettings.fontFamily', '等宽字体')}
-            description={t('terminalSettings.fontFamilyHint', '用于所有终端；编辑器字体留空时也跟随此设置。')}
-            defaultLabel={t('font.junqiDefault', 'JunQi 默认')}
-            role="mono"
-          />
 
           <div className="grid gap-4 py-4 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
             <div><div className="text-[13px] font-medium text-aegis-text">{t('terminalSettings.cursorStyle')}</div><p className="mt-1 text-[11px] text-aegis-text-dim">{t('terminalSettings.cursorStyleHint')}</p></div>
