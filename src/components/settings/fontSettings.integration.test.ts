@@ -6,15 +6,16 @@ function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), "utf8");
 }
 
-test("active settings expose separate interface, editor, and terminal font controls", () => {
+test("appearance is the only font settings entry and exposes interface, terminal, and editor controls", () => {
   const settingsPage = source("../../pages/SettingsPage.tsx");
   const terminalSettings = source("./TerminalSettingsPanel.tsx");
   const fontPanel = source("./FontPanel.tsx");
 
-  assert.match(settingsPage, /<FontPanel[\s\S]*uiFont=\{uiFont\}[\s\S]*editorFont=\{editorFont\}/);
+  assert.match(settingsPage, /<FontPanel[\s\S]*uiFont=\{uiFont\}[\s\S]*monoFont=\{monoFont\}[\s\S]*editorFont=\{editorFont\}/);
   assert.match(fontPanel, /role="ui"/);
+  assert.match(fontPanel, /role="mono"/);
   assert.match(fontPanel, /role="editor"/);
-  assert.match(terminalSettings, /<FontSelector[\s\S]*role="mono"/);
+  assert.doesNotMatch(terminalSettings, /FontSelector/);
   assert.doesNotMatch(terminalSettings, /MONO_FONT_OPTIONS/);
 });
 
@@ -51,6 +52,7 @@ test("font settings translations exist in every supported locale", () => {
     "showFonts",
     "uiFont",
     "uiFontHint",
+    "monoFont",
     "editorFont",
     "editorFontHint",
     "junqiDefault",

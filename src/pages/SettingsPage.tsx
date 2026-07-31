@@ -60,6 +60,7 @@ export function SettingsPageFull() {
     theme, setTheme,
     uiScale, setUiScale,
     uiFont, setUiFont,
+    monoFont, setMonoFont,
     editorFont, setEditorFont,
     language, setLanguage,
     notificationsEnabled, setNotificationsEnabled,
@@ -581,6 +582,8 @@ export function SettingsPageFull() {
         <FontPanel
           uiFont={uiFont}
           onUiFontChange={setUiFont}
+          monoFont={monoFont}
+          onMonoFontChange={setMonoFont}
           editorFont={editorFont}
           onEditorFontChange={setEditorFont}
         />
