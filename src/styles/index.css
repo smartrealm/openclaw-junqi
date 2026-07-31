@@ -317,6 +317,9 @@
   .markdown-body { line-height: 1.75; word-wrap: break-word; letter-spacing: 0.01em; overflow-x: hidden; max-width: 100%; -webkit-user-select: text; user-select: text; }
   .markdown-body p { margin-bottom: 0.6em; }
   .markdown-body p:last-child { margin-bottom: 0; }
+  .assistant-markdown-body {
+    font-size: clamp(13px, calc(11px + 0.3vw), 15px);
+  }
   .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
     font-weight: 600; margin-top: 1.1em; margin-bottom: 0.5em;
     color: rgb(var(--aegis-text)); letter-spacing: -0.01em;
