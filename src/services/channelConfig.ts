@@ -1,4 +1,9 @@
-import type { ChannelConfig, GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
+import type { ChannelConfig, GatewayRuntimeConfig } from '@/types/openclawConfig';
+import {
+  isChannelConfigurationMetadataKey,
+  isConfigRevisionConflict,
+  mergeChannelConfigPartitions,
+} from './channelConfigMerge';
 
 export type ChannelBindingSource = 'account' | 'channel';
 
@@ -41,12 +46,13 @@ export interface ChannelAccountRuntimeState {
 
 export interface ChannelConfigRepository {
   detect(): Promise<{ path: string; exists: boolean }>;
-  read(path: string): Promise<GatewayRuntimeConfig>;
-  write(path: string, config: GatewayRuntimeConfig): Promise<void>;
+  read(): Promise<{ config: GatewayRuntimeConfig; revision: string }>;
+  write(config: GatewayRuntimeConfig, expectedRevision: string): Promise<void>;
   restart(): Promise<{ success: boolean; error?: string } | null>;
 }
 
 type ChannelRouteBinding = NonNullable<GatewayRuntimeConfig['bindings']>[number];
+const CHANNEL_CONFIG_SAVE_ATTEMPTS = 3;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -105,7 +111,7 @@ export function getChannelAccounts(
 export function buildChannelGroups(config: GatewayRuntimeConfig | null): ChannelGroupView[] {
   const channels = config?.channels ?? {};
   return Object.entries(channels)
-    .filter(([id]) => id !== 'modelByChannel')
+    .filter(([id]) => !isChannelConfigurationMetadataKey(id))
     .map(([id, cfg]) => ({
       id,
       enabled: cfg?.enabled !== false,
@@ -353,7 +359,7 @@ function hasManagedBinding(
   ));
 }
 
-function migrateLegacyDingtalkFields(value: Record<string, any>): Record<string, any> {
+function migrateLegacyDingtalkFields(value: Record<string, unknown>): Record<string, unknown> {
   const next = { ...value };
   if (next.clientId === undefined && next.appKey !== undefined) next.clientId = next.appKey;
   if (next.clientSecret === undefined && next.appSecret !== undefined) next.clientSecret = next.appSecret;
@@ -374,11 +380,14 @@ export function migrateLegacyChannelBindings(config: GatewayRuntimeConfig): Gate
   ));
   const channels: Record<string, ChannelConfig> = {};
   for (const [channelId, rawChannel] of Object.entries(config.channels ?? {})) {
-    if (channelId === 'modelByChannel') continue;
+    if (isChannelConfigurationMetadataKey(channelId)) {
+      Reflect.set(channels, channelId, rawChannel);
+      continue;
+    }
     const officialChannelId = channelId === 'dingtalk' ? 'dingtalk-connector' : channelId;
-    const channel = channelId === 'dingtalk'
+    const channel: Record<string, unknown> = channelId === 'dingtalk'
       ? migrateLegacyDingtalkFields({ ...(rawChannel ?? {}) })
-      : { ...(rawChannel ?? {}) } as Record<string, any>;
+      : { ...(rawChannel ?? {}) };
     const channelAgentId = typeof channel.agentId === 'string' ? channel.agentId.trim() : '';
     delete channel.agentId;
     if (channelAgentId && !hasManagedBinding(bindings, officialChannelId, undefined)) {
@@ -400,10 +409,10 @@ export function migrateLegacyChannelBindings(config: GatewayRuntimeConfig): Gate
       }
       channel.accounts = accounts;
     }
-    channels[officialChannelId] = {
+    Reflect.set(channels, officialChannelId, {
       ...(channels[officialChannelId] ?? {}),
       ...channel,
-    } as ChannelConfig;
+    });
   }
   return { ...config, channels, bindings };
 }
@@ -421,12 +430,12 @@ export function removeAgentChannelBindings(config: GatewayRuntimeConfig, agentId
       ? { next: config, removed }
       : { next: { ...config, bindings }, removed };
   }
-  const nextChannels: Record<string, any> = { ...channels };
+  const nextChannels: Record<string, ChannelConfig> = { ...channels };
 
-  for (const [channelId, rawChannel] of Object.entries(channels as Record<string, any>)) {
-    if (channelId === 'modelByChannel' || !isRecord(rawChannel)) continue;
+  for (const [channelId, rawChannel] of Object.entries(channels)) {
+    if (isChannelConfigurationMetadataKey(channelId) || !isRecord(rawChannel)) continue;
 
-    const nextChannel: Record<string, any> = { ...rawChannel };
+    const nextChannel: Record<string, unknown> = { ...rawChannel };
     if (nextChannel.agentId === agentId) {
       delete nextChannel.agentId;
       removed += 1;
@@ -435,39 +444,42 @@ export function removeAgentChannelBindings(config: GatewayRuntimeConfig, agentId
     const accounts = nextChannel.accounts;
     if (isRecord(accounts)) {
       let accountsChanged = false;
-      const nextAccounts: Record<string, any> = { ...accounts };
+      const nextAccounts: Record<string, unknown> = { ...accounts };
       for (const [accountId, rawAccount] of Object.entries(accounts)) {
         if (!isRecord(rawAccount) || rawAccount.agentId !== agentId) continue;
         const nextAccount = { ...rawAccount };
         delete nextAccount.agentId;
-        nextAccounts[accountId] = nextAccount;
+        Reflect.set(nextAccounts, accountId, nextAccount);
         accountsChanged = true;
         removed += 1;
       }
       if (accountsChanged) nextChannel.accounts = nextAccounts;
     }
 
-    nextChannels[channelId] = nextChannel;
+    Reflect.set(nextChannels, channelId, nextChannel);
   }
 
   if (removed === 0) return { next: config, removed };
   return { next: { ...config, channels: nextChannels, bindings }, removed };
 }
 
-export async function persistChannelsOnly(configPath: string, next: GatewayRuntimeConfig): Promise<GatewayRuntimeConfig> {
-  return persistChannelsOnlyWithRepository(tauriChannelConfigRepository, configPath, next);
+export async function persistChannelsOnly(
+  base: GatewayRuntimeConfig,
+  next: GatewayRuntimeConfig,
+): Promise<GatewayRuntimeConfig> {
+  return persistChannelsOnlyWithRepository(tauriChannelConfigRepository, base, next);
 }
 
 export const tauriChannelConfigRepository: ChannelConfigRepository = {
   async detect() {
     return window.aegis.config.detect();
   },
-  async read(path: string) {
-    const { data } = await window.aegis.config.read(path);
-    return data as GatewayRuntimeConfig;
+  async read() {
+    const { data, revision } = await window.aegis.config.read();
+    return { config: data, revision };
   },
-  async write(path: string, config: GatewayRuntimeConfig) {
-    const result = await window.aegis.config.write(path, config);
+  async write(config: GatewayRuntimeConfig, expectedRevision: string) {
+    const result = await window.aegis.config.write(config, expectedRevision);
     if (result?.success === false) {
       throw new Error(result.error || 'Failed to write config');
     }
@@ -480,18 +492,40 @@ export const tauriChannelConfigRepository: ChannelConfigRepository = {
 
 export async function persistChannelsOnlyWithRepository(
   repository: ChannelConfigRepository,
-  configPath: string,
+  base: GatewayRuntimeConfig,
   next: GatewayRuntimeConfig,
 ): Promise<GatewayRuntimeConfig> {
-  const latestDiskConfig = await repository.read(configPath);
-  const normalized = migrateLegacyChannelBindings(next);
-  const merged = {
-    ...(latestDiskConfig as GatewayRuntimeConfig),
-    channels: normalized.channels ?? {},
-    bindings: normalized.bindings ?? latestDiskConfig.bindings ?? [],
-  };
-  await repository.write(configPath, merged);
-  return merged;
+  const normalizedBase = migrateLegacyChannelBindings(base);
+  const normalizedNext = migrateLegacyChannelBindings(next);
+  let lastConflict: unknown;
+
+  for (let attempt = 0; attempt < CHANNEL_CONFIG_SAVE_ATTEMPTS; attempt += 1) {
+    const latest = await repository.read();
+    const partitions = mergeChannelConfigPartitions(
+      normalizedBase,
+      normalizedNext,
+      latest.config,
+    );
+    const merged: GatewayRuntimeConfig = {
+      ...latest.config,
+      channels: partitions.channels,
+      bindings: partitions.bindings,
+    };
+
+    try {
+      await repository.write(merged, latest.revision);
+      return merged;
+    } catch (error) {
+      if (!isConfigRevisionConflict(error) || attempt + 1 === CHANNEL_CONFIG_SAVE_ATTEMPTS) {
+        throw error;
+      }
+      lastConflict = error;
+    }
+  }
+
+  throw lastConflict instanceof Error
+    ? lastConflict
+    : new Error('Unable to save channel configuration after concurrent updates.');
 }
 
 export async function cleanupDeletedAgentChannelBindings(agentId: string): Promise<number> {
@@ -504,10 +538,10 @@ export async function cleanupDeletedAgentChannelBindingsWithRepository(
 ): Promise<number> {
   const detected = await repository.detect();
   if (!detected.exists) return 0;
-  const data = await repository.read(detected.path);
-  const { next, removed } = removeAgentChannelBindings(data, agentId);
+  const { config } = await repository.read();
+  const { next, removed } = removeAgentChannelBindings(config, agentId);
   if (removed === 0) return 0;
-  await persistChannelsOnlyWithRepository(repository, detected.path, next);
+  await persistChannelsOnlyWithRepository(repository, config, next);
   window.dispatchEvent(new CustomEvent('aegis:config-saved', { detail: { channelsChanged: true, deletedAgentId: agentId } }));
   await repository.restart();
   return removed;

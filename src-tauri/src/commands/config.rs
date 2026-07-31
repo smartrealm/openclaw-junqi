@@ -1,5 +1,6 @@
 use crate::{paths, state::GatewayProcess};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use tauri::State;
@@ -56,11 +57,22 @@ pub(crate) fn gateway_port_from_config(value: &serde_json::Value) -> Option<u16>
         .map(|port| port as u16)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+const MISSING_CONFIG_REVISION: &str = "missing";
+pub(crate) const CONFIG_REVISION_CONFLICT_PREFIX: &str = "CONFIG_REVISION_CONFLICT";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConfigData {
-    pub raw: String,
+    pub data: serde_json::Value,
     pub path: String,
     pub exists: bool,
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigWriteResult {
+    pub revision: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,20 +89,54 @@ pub async fn read_config() -> Result<ConfigData, String> {
     let mode = paths::active_runtime_mode();
     paths::validate_runtime_mode(mode)?;
     let path = paths::active_config_path();
-    if path.exists() {
-        let raw =
-            std::fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {}", e))?;
-        return Ok(ConfigData {
-            raw,
-            path: path.to_string_lossy().to_string(),
-            exists: true,
-        });
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => config_data_from_raw(&path, &raw),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(missing_config_data(&path))
+        }
+        Err(error) => Err(format!("Failed to read config: {error}")),
     }
+}
+
+fn config_data_from_raw(path: &Path, raw: &str) -> Result<ConfigData, String> {
     Ok(ConfigData {
-        raw: "{}".into(),
+        data: parse_openclaw_config(raw)?,
+        path: path.to_string_lossy().to_string(),
+        exists: true,
+        revision: config_revision(raw),
+    })
+}
+
+fn missing_config_data(path: &Path) -> ConfigData {
+    ConfigData {
+        data: serde_json::json!({}),
         path: path.to_string_lossy().to_string(),
         exists: false,
-    })
+        revision: MISSING_CONFIG_REVISION.to_string(),
+    }
+}
+
+fn config_revision(raw: &str) -> String {
+    format!("{:x}", Sha256::digest(raw.as_bytes()))
+}
+
+fn config_revision_for_path(path: &Path) -> Result<String, String> {
+    match std::fs::read_to_string(path) {
+        Ok(raw) => Ok(config_revision(&raw)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(MISSING_CONFIG_REVISION.to_string())
+        }
+        Err(error) => Err(format!("Failed to read config for revision check: {error}")),
+    }
+}
+
+fn verify_expected_config_revision(expected: Option<&str>, actual: &str) -> Result<(), String> {
+    if expected.is_some_and(|revision| revision != actual) {
+        return Err(format!(
+            "{CONFIG_REVISION_CONFLICT_PREFIX}: OpenClaw config changed before save; reload and retry"
+        ));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -140,7 +186,8 @@ fn validate_openclaw_config_path(path: &Path) -> ConfigValidation {
 pub async fn write_config(
     state: State<'_, GatewayProcess>,
     json: String,
-) -> Result<String, String> {
+    expected_revision: Option<String>,
+) -> Result<ConfigWriteResult, String> {
     let operation_gate = state.operation_gate.clone();
     let _operation_guard = operation_gate.try_lock_owned().map_err(|_| {
         "Gateway or storage maintenance is running; try saving again shortly".to_string()
@@ -150,8 +197,12 @@ pub async fn write_config(
     let value = parse_openclaw_config(&json)?;
     crate::commands::openclaw_provider::validate_candidate_config(&value).await?;
     let path = paths::active_config_path();
+    let actual_revision = config_revision_for_path(&path)?;
+    verify_expected_config_revision(expected_revision.as_deref(), &actual_revision)?;
     write_openclaw_config_value(&path, &value)?;
-    Ok("Config saved".into())
+    Ok(ConfigWriteResult {
+        revision: config_revision_for_path(&path)?,
+    })
 }
 
 /// Parse an OpenClaw configuration according to the JSON5 syntax accepted by
@@ -162,6 +213,11 @@ pub(crate) fn parse_openclaw_config(raw: &str) -> Result<serde_json::Value, Stri
         json5::from_str(raw).map_err(|error| format!("Invalid JSON5 config: {error}"))?;
     validate_openclaw_config_shape(&value)?;
     Ok(value)
+}
+
+#[tauri::command]
+pub fn parse_openclaw_config_text(raw: String) -> Result<serde_json::Value, String> {
+    parse_openclaw_config(&raw)
 }
 
 fn validate_object_field(value: &serde_json::Value, key: &str) -> Result<(), String> {
@@ -511,6 +567,38 @@ mod tests {
                 .and_then(|token| token.as_str()),
             Some("test-token")
         );
+    }
+
+    #[test]
+    fn config_read_data_uses_the_shared_json5_parser_and_revision() {
+        let raw = r#"
+        {
+          // Reader and importer accept the same OpenClaw syntax.
+          gateway: { port: 18789, },
+        }
+        "#;
+        let data = config_data_from_raw(Path::new("/tmp/openclaw.json"), raw).unwrap();
+
+        assert!(data.exists);
+        assert_eq!(data.path, "/tmp/openclaw.json");
+        assert_eq!(gateway_port_from_config(&data.data), Some(18789));
+        assert_eq!(data.revision, config_revision(raw));
+    }
+
+    #[test]
+    fn config_read_data_rejects_invalid_config_instead_of_returning_an_empty_object() {
+        let err =
+            config_data_from_raw(Path::new("/tmp/openclaw.json"), "{gateway: []}").unwrap_err();
+
+        assert!(err.contains("`gateway` must be an object"));
+    }
+
+    #[test]
+    fn expected_config_revision_rejects_stale_writes() {
+        verify_expected_config_revision(Some("current"), "current").unwrap();
+        let err = verify_expected_config_revision(Some("stale"), "current").unwrap_err();
+
+        assert!(err.starts_with(CONFIG_REVISION_CONFLICT_PREFIX));
     }
 
     #[test]

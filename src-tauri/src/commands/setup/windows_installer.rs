@@ -684,39 +684,43 @@ pub(super) fn collect_process_output<R>(
     process: String,
     stream: &'static str,
     progress: f64,
+    operation_id: Option<String>,
 ) -> tokio::task::JoinHandle<Result<Vec<u8>, std::io::Error>>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
-    tokio::spawn(async move {
-        use tokio::io::{AsyncBufReadExt, BufReader};
+    tokio::spawn(crate::commands::setup_progress::scope_operation(
+        operation_id,
+        async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
 
-        const CAPTURE_LIMIT: usize = 1024 * 1024;
-        let mut bytes = Vec::new();
-        let mut reader = BufReader::new(reader);
-        let mut line = Vec::new();
-        loop {
-            line.clear();
-            let read = reader.read_until(b'\n', &mut line).await?;
-            if read == 0 {
-                break;
+            const CAPTURE_LIMIT: usize = 1024 * 1024;
+            let mut bytes = Vec::new();
+            let mut reader = BufReader::new(reader);
+            let mut line = Vec::new();
+            loop {
+                line.clear();
+                let read = reader.read_until(b'\n', &mut line).await?;
+                if read == 0 {
+                    break;
+                }
+                let remaining = CAPTURE_LIMIT.saturating_sub(bytes.len());
+                bytes.extend_from_slice(&line[..line.len().min(remaining)]);
+                let output = String::from_utf8_lossy(&line);
+                record_process_output(&app, &step, &process, stream, &output);
+                let display = crate::commands::diagnostic_output::sanitize_diagnostic_line(&output);
+                if !display.is_empty() {
+                    emit_diagnostic(
+                        &app,
+                        &step,
+                        &format!("winget {stream} › {display}"),
+                        progress,
+                    );
+                }
             }
-            let remaining = CAPTURE_LIMIT.saturating_sub(bytes.len());
-            bytes.extend_from_slice(&line[..line.len().min(remaining)]);
-            let output = String::from_utf8_lossy(&line);
-            record_process_output(&app, &step, &process, stream, &output);
-            let display = crate::commands::diagnostic_output::sanitize_diagnostic_line(&output);
-            if !display.is_empty() {
-                emit_diagnostic(
-                    &app,
-                    &step,
-                    &format!("winget {stream} › {display}"),
-                    progress,
-                );
-            }
-        }
-        Ok(bytes)
-    })
+            Ok(bytes)
+        },
+    ))
 }
 
 #[cfg(windows)]
@@ -903,6 +907,7 @@ pub(super) async fn run_winget_package_command(
             process_label.clone(),
             "stdout",
             progress.progress(),
+            operation.progress_id(),
         )
     });
     let stderr_task = child.stderr.take().map(|stderr| {
@@ -913,6 +918,7 @@ pub(super) async fn run_winget_package_command(
             process_label.clone(),
             "stderr",
             progress.progress(),
+            operation.progress_id(),
         )
     });
     let status = wait_for_controlled_child(&mut child, policy, Some(operation), || {

@@ -24,7 +24,7 @@ import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { themeHex, themeAlpha } from '@/utils/theme-colors';
-import type { GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
+import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
 import {
   getModelFallbacks,
   isModelReferenceObject,
@@ -235,7 +235,6 @@ export function AgentSettingsPanel({
   const [saved, setSaved] = useState(false);
 
   // ── Channel binding state ──
-  const [channelConfigPath, setChannelConfigPath] = useState('');
   const [channelConfig, setChannelConfig] = useState<GatewayRuntimeConfig | null>(null);
   const [loadingChannels, setLoadingChannels] = useState(false);
   const [savingChannelKey, setSavingChannelKey] = useState<string | null>(null);
@@ -270,7 +269,6 @@ export function AgentSettingsPanel({
 
   const loadChannelConfig = useCallback(async () => {
     if (!agent) {
-      setChannelConfigPath('');
       setChannelConfig(null);
       setChannelError(null);
       return;
@@ -280,14 +278,16 @@ export function AgentSettingsPanel({
     setChannelError(null);
     try {
       const detected = await window.aegis.config.detect();
-      setChannelConfigPath(detected.path);
+      if (!detected.valid) {
+        throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
+      }
       if (!detected.exists) {
         setChannelConfig(null);
         setChannelError(t('channelsCenter.configMissing', 'OpenClaw config file was not found.'));
         return;
       }
-      const { data } = await window.aegis.config.read(detected.path);
-      setChannelConfig(data as GatewayRuntimeConfig);
+      const { data } = await window.aegis.config.read();
+      setChannelConfig(data);
     } catch (err) {
       setChannelError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -640,13 +640,13 @@ export function AgentSettingsPanel({
     account: ChannelAccountBinding,
     nextAgentId: string,
   ) => {
-    if (!agent || !channelConfig || !channelConfigPath) return;
+    if (!agent || !channelConfig) return;
     const key = channelBindingKey(group.id, account);
     setSavingChannelKey(key);
     setChannelError(null);
     try {
       const next = updateChannelBinding(channelConfig, group.id, account, nextAgentId);
-      const merged = await persistChannelsOnly(channelConfigPath, next);
+      const merged = await persistChannelsOnly(channelConfig, next);
       setChannelConfig(merged);
       const restart = await gatewayLifecycle.restart('agent-channel-binding').catch((err: unknown) => ({
         success: false,
@@ -666,7 +666,7 @@ export function AgentSettingsPanel({
     } finally {
       setSavingChannelKey(null);
     }
-  }, [agent, channelConfig, channelConfigPath, onSaved, t]);
+  }, [agent, channelConfig, onSaved, t]);
 
   if (!agent) return null;
 

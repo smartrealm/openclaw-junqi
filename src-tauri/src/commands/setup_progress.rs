@@ -1,6 +1,11 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::future::Future;
 use tauri::Emitter;
+
+tokio::task_local! {
+    static SETUP_PROGRESS_OPERATION_ID: Option<String>;
+}
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -19,6 +24,8 @@ pub struct SetupProgress {
     pub params: Option<BTreeMap<String, String>>,
     #[serde(rename = "logSlot", skip_serializing_if = "Option::is_none")]
     pub log_slot: Option<String>,
+    #[serde(rename = "operationId", skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
     pub progress: Option<f64>,
     #[serde(default)]
     pub diagnostic: bool,
@@ -38,6 +45,25 @@ struct SetupProgressMetadata<'a> {
     status: Option<SetupProgressStatus>,
 }
 
+/// Bind all progress emitted by one asynchronous installer execution to the
+/// operation that created it. This is intentionally task-local instead of a
+/// lookup in the active-operation registry: a delayed child-output task must
+/// retain its original identity even after a retry becomes active.
+pub(crate) async fn scope_operation<T, F>(operation_id: Option<String>, future: F) -> T
+where
+    F: Future<Output = T>,
+{
+    SETUP_PROGRESS_OPERATION_ID
+        .scope(operation_id, future)
+        .await
+}
+
+fn operation_id_for_event() -> Option<String> {
+    SETUP_PROGRESS_OPERATION_ID
+        .try_with(Clone::clone)
+        .unwrap_or(None)
+}
+
 pub fn emit(app: &tauri::AppHandle, step: &str, message: &str, progress: f64) {
     emit_event(
         app,
@@ -47,6 +73,28 @@ pub fn emit(app: &tauri::AppHandle, step: &str, message: &str, progress: f64) {
             progress: Some(progress),
             ..Default::default()
         },
+    );
+}
+
+/// Emit a progress event from a synchronous boundary such as cancellation.
+/// Async installer code should prefer `scope_operation`, which also covers
+/// nested helpers without having to thread an identifier through each call.
+pub(crate) fn emit_for_operation(
+    app: &tauri::AppHandle,
+    operation_id: Option<&str>,
+    step: &str,
+    message: &str,
+    progress: f64,
+) {
+    emit_event_with_operation_id(
+        app,
+        step,
+        message,
+        SetupProgressMetadata {
+            progress: Some(progress),
+            ..Default::default()
+        },
+        operation_id.map(str::to_owned),
     );
 }
 
@@ -175,6 +223,7 @@ pub(crate) fn emit_log_write_failure(app: &tauri::AppHandle, step: &str, error: 
             key: Some("setup.installPanel.logWriteFailed".into()),
             params: None,
             log_slot: None,
+            operation_id: operation_id_for_event(),
             progress: None,
             diagnostic: true,
             error: Some(error.into()),
@@ -225,6 +274,16 @@ fn emit_event(
     message: &str,
     metadata: SetupProgressMetadata<'_>,
 ) {
+    emit_event_with_operation_id(app, step, message, metadata, operation_id_for_event());
+}
+
+fn emit_event_with_operation_id(
+    app: &tauri::AppHandle,
+    step: &str,
+    message: &str,
+    metadata: SetupProgressMetadata<'_>,
+    operation_id: Option<String>,
+) {
     record_timeline(app, step, message, &metadata);
     let _ = app.emit(
         "setup-progress",
@@ -234,10 +293,60 @@ fn emit_event(
             key: metadata.key.map(str::to_owned),
             params: metadata.params,
             log_slot: metadata.log_slot.map(str::to_owned),
+            operation_id,
             progress: metadata.progress.map(|value| value.clamp(0.0, 1.0)),
             diagnostic: metadata.diagnostic,
             error: metadata.error.map(str::to_owned),
             status: metadata.status,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_event_serializes_renderer_operation_identity() {
+        let event = SetupProgress {
+            step: "node".into(),
+            message: "Installing Node.js".into(),
+            key: None,
+            params: None,
+            log_slot: None,
+            operation_id: Some("setup-test:3:node".into()),
+            progress: Some(0.5),
+            diagnostic: false,
+            error: None,
+            status: None,
+        };
+
+        let value = serde_json::to_value(event).expect("setup progress must serialize");
+        assert_eq!(value["operationId"], "setup-test:3:node");
+    }
+
+    #[tokio::test]
+    async fn delayed_progress_scope_keeps_its_original_operation_identity() {
+        let (release_old, old_released) = tokio::sync::oneshot::channel();
+        let delayed_old = tokio::spawn(scope_operation(Some("setup-old".into()), async move {
+            old_released.await.expect("old output must be released");
+            operation_id_for_event()
+        }));
+
+        scope_operation(Some("setup-new".into()), async {
+            assert_eq!(operation_id_for_event().as_deref(), Some("setup-new"));
+            release_old
+                .send(())
+                .expect("old task must still be waiting");
+        })
+        .await;
+
+        assert_eq!(
+            delayed_old
+                .await
+                .expect("old output task must complete")
+                .as_deref(),
+            Some("setup-old")
+        );
+    }
 }

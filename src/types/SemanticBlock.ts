@@ -17,6 +17,7 @@ interface SemanticBlockBase {
   sourceMessageId: string;
   sourceSequence?: number;
   toolCallId?: string;
+  formalReviewId?: string;
   timestamp: string;
   isStreaming: boolean;
   responseState: 'streaming' | 'final' | 'error' | 'aborted';
@@ -51,6 +52,9 @@ export interface ToolActivitySemanticBlock extends SemanticBlockBase {
   output?: string;
   status: 'running' | 'done' | 'error';
   durationMs?: number;
+  error?: string;
+  outputTruncated?: boolean;
+  outputOriginalLength?: number;
 }
 
 export interface ExecutionPlanSemanticBlock extends SemanticBlockBase {

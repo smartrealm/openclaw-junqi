@@ -21,6 +21,7 @@ import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayD
 import { useSkillsStore } from '@/stores/skillsStore';
 import { gateway, GatewayAgentDisplayNameUpdateError } from '@/services/gateway';
 import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
+import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
 import {
   buildGatewayAgentCreatePayload,
   GATEWAY_AGENT_ID_RE,
@@ -773,7 +774,7 @@ export function AgentHubPage() {
       }
       const channels = config?.channels ?? {};
       for (const [channelId, channelConfig] of Object.entries(channels as Record<string, any>)) {
-        if (channelId === 'modelByChannel' || !channelConfig || typeof channelConfig !== 'object') continue;
+        if (isChannelConfigurationMetadataKey(channelId) || !channelConfig || typeof channelConfig !== 'object') continue;
         if (typeof channelConfig.agentId === 'string' && channelConfig.agentId) {
           channelMap[channelConfig.agentId] = [...(channelMap[channelConfig.agentId] ?? []), channelId];
         }

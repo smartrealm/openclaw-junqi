@@ -169,6 +169,7 @@ pub fn run() {
             commands::console::write_models_log,
             // Config
             commands::config::read_config,
+            commands::config::parse_openclaw_config_text,
             commands::config::validate_openclaw_config,
             commands::config::write_config,
             commands::config::read_provider_api_key,

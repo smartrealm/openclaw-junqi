@@ -268,10 +268,15 @@ pub fn reset_timeline_log(app: &tauri::AppHandle, step: &str) {
     }
 }
 
+fn sanitize_timeline_line(line: &str) -> String {
+    crate::commands::diagnostic_output::sanitize_diagnostic_line(line)
+}
+
 fn append_timeline_log(app: &tauri::AppHandle, step: &str, line: &str) {
     if !timeline_tracked(step) {
         return;
     }
+    let line = sanitize_timeline_line(line);
     let result = with_diagnostics_state(|state| {
         let now = chrono::Local::now();
         state.append(
@@ -663,5 +668,11 @@ mod tests {
         assert!(timeline.contains("attempt 2 started second"));
         drop(state);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn timeline_notes_redact_credential_like_content_before_persistence() {
+        let line = sanitize_timeline_line("download failed: Authorization: Bearer secret-value");
+        assert_eq!(line, "[sensitive diagnostic redacted]");
     }
 }

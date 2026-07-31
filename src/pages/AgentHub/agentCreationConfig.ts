@@ -1,4 +1,4 @@
-import type { ModelReferenceConfig } from '@/pages/ConfigManager/types';
+import type { ModelReferenceConfig } from '@/types/openclawConfig';
 
 type AgentConfigEntry = Record<string, unknown> & { id?: unknown };
 

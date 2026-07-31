@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import type { ChannelConfig, GatewayRuntimeConfig } from './types';
 import { ConfirmDialog, ToggleSwitch } from './components';
 import { ChannelOfficialSchemaEditor } from './ChannelOfficialSchemaEditor';
+import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
 
 interface ChannelsTabProps {
   config: GatewayRuntimeConfig;
@@ -113,7 +114,8 @@ function ChannelConfigPanel({
 export function ChannelsTab({ config, onChange }: ChannelsTabProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const channels = Object.entries(config.channels ?? {}).filter(([channelId]) => channelId !== 'modelByChannel');
+  const channels = Object.entries(config.channels ?? {})
+    .filter(([channelId]) => !isChannelConfigurationMetadataKey(channelId));
 
   const removeChannel = (channelId: string) => {
     onChange((previous) => {

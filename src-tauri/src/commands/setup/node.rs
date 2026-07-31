@@ -479,6 +479,19 @@ pub(super) async fn install_node_for_requirement_with_operation(
     force: bool,
     operation: &SetupOperation,
 ) -> Result<crate::commands::system::NodeRuntimeContract, String> {
+    crate::commands::setup_progress::scope_operation(
+        operation.progress_id(),
+        install_node_for_requirement_with_operation_inner(app, requirement, force, operation),
+    )
+    .await
+}
+
+async fn install_node_for_requirement_with_operation_inner(
+    app: tauri::AppHandle,
+    requirement: NodeRuntimeRequirement,
+    force: bool,
+    operation: &SetupOperation,
+) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     operation.ensure_active()?;
     // Windows system installers own elevated child processes. Their explicit
     // budget is enforced inside the controlled installer runner so an outer

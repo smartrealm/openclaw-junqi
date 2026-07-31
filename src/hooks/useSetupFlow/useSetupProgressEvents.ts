@@ -4,7 +4,10 @@ import type { InstallMode } from "@/stores/setup-navigation";
 import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import { translateSetupProgressMessage } from "../setupProgressParams";
 import { progressForSetupEvent } from "../setupProgressModel";
-import { normalizeSetupProgressPayload } from "../setupProgressEvents";
+import {
+  isCurrentSetupOperationProgress,
+  normalizeSetupProgressPayload,
+} from "../setupProgressEvents";
 import { pickInstallTargetFromProgress } from "./helpers";
 import type { InstallTarget, StepState, StepStatus } from "./types";
 
@@ -24,6 +27,7 @@ interface SetupProgressEventPorts {
   report: (message: string, progress?: number) => void;
   setInstallTarget: (target: InstallTarget) => void;
   commitSteps: (steps: StepState[]) => void;
+  isCurrentOperationId: (operationId: string) => boolean;
 }
 
 export function useSetupProgressEvents({
@@ -32,6 +36,7 @@ export function useSetupProgressEvents({
   report,
   setInstallTarget,
   commitSteps,
+  isCurrentOperationId,
 }: SetupProgressEventPorts): void {
   const { t } = useTranslation();
 
@@ -43,7 +48,11 @@ export function useSetupProgressEvents({
     key?: string;
   } | string>("setup-progress", (event) => {
     const normalized = normalizeSetupProgressPayload(event.payload);
-    if (!normalized || normalized.diagnostic) return;
+    if (
+      !normalized
+      || normalized.diagnostic
+      || !isCurrentSetupOperationProgress(normalized.operationId, isCurrentOperationId)
+    ) return;
     const { step, message, progress, error, key, params, status } = normalized;
     if (!step) {
       report(message);
@@ -83,5 +92,5 @@ export function useSetupProgressEvents({
             : current.progress,
         }
       : current));
-  }), [commitSteps, installMode, report, setInstallTarget, stepsRef, t]);
+  }), [commitSteps, installMode, isCurrentOperationId, report, setInstallTarget, stepsRef, t]);
 }

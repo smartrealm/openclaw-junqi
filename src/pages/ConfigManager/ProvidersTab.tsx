@@ -1170,7 +1170,7 @@ function FetchModelsButton({ providerId, allModels, onChange, saving, t }: {
     setFetching(true);
     setFetchResult(null);
     try {
-      const catalog = await loadOfficialProviderCatalog(true);
+      const catalog = await loadOfficialProviderCatalog();
       const fetchedModels = filterOfficialProviderModels(catalog, providerId).map((model) => ({
         id: model.key,
         alias: model.name,
@@ -2386,20 +2386,13 @@ function ConfigureStep({
   };
 
   const resolvedBaseUrl = baseUrl.trim() || undefined;
+  const effectiveProviderCatalogId = normalizeProviderIdForCatalog(effectiveProviderId);
   const modelsToAdd = buildProviderSubmissionModelIds({
     isCustomLike,
     selectedModels,
     customModelIds,
     extraModelIds,
   });
-  const normalizedTemplateProvider = normalizeProviderIdForCatalog(effectiveProviderId);
-  const generatedCatalogModelOptions = useMemo(() => {
-    const rows = GENERATED_PROVIDER_CATALOG[normalizedTemplateProvider] ?? [];
-    const values = rows
-      .map((item) => normalizeProviderModelRef(effectiveProviderId, item.id))
-      .filter((id): id is string => Boolean(id));
-    return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-  }, [effectiveProviderId, normalizedTemplateProvider]);
   const gatewayModelOptions = useMemo(() => {
     if (!isCustomLike) return [];
     const values = gatewayModels
@@ -2413,19 +2406,18 @@ function ConfigureStep({
             : full;
         const provider = ref.includes('/') ? ref.split('/')[0] : (item.provider ?? '');
         if (!provider) return null;
-        if (normalizeProviderIdForCatalog(provider) !== normalizedTemplateProvider) return null;
+        if (normalizeProviderIdForCatalog(provider) !== effectiveProviderCatalogId) return null;
         return ref;
       })
       .filter((id): id is string => Boolean(id));
     return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-  }, [gatewayModels, isCustomLike, normalizedTemplateProvider]);
+  }, [effectiveProviderCatalogId, gatewayModels, isCustomLike]);
   const providerCatalogModelOptions = useMemo(() => {
     const values = providerCatalogModels
       .map((item) => normalizeProviderModelRef(effectiveProviderId, item.id))
       .filter((id): id is string => Boolean(id));
     return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
   }, [effectiveProviderId, providerCatalogModels]);
-  const hasDynamicCatalogOptions = providerCatalogModelOptions.length > 0 || gatewayModelOptions.length > 0;
   const modelSourceInfo = useMemo(() => {
     if (providerCatalogModelOptions.length > 0) {
       return {
@@ -2434,36 +2426,21 @@ function ConfigureStep({
         className: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
       };
     }
-    if (!isCustomLike) {
-      return {
-        label: t('config.modelSourceSynced', 'Source: Built-in Fallback'),
-        detail: t('config.modelSourceSyncedHint', 'The OpenClaw catalog was unavailable; using the bundled fallback'),
-        className: 'bg-green-500/10 text-green-300 border-green-500/20',
-      };
-    }
     return {
       label: t('config.modelSourceGateway', 'Source: Runtime Catalog'),
       detail: t('config.modelSourceGatewayHint', 'Using the model catalog currently exposed by the connected gateway'),
       className: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20',
     };
-  }, [catalogVersion, isCustomLike, providerCatalogModelOptions.length, t]);
+  }, [catalogVersion, providerCatalogModelOptions.length, t]);
   const suggestedModels = useMemo(
     () => {
-      if (!isCustomLike && providerCatalogModelOptions.length > 0) return providerCatalogModelOptions;
-      if (!isCustomLike) return generatedCatalogModelOptions;
-      if (!hasDynamicCatalogOptions) {
-        return generatedCatalogModelOptions;
-      }
       return Array.from(new Set([
         ...providerCatalogModelOptions,
         ...gatewayModelOptions,
-      ]));
+      ])).sort((a, b) => a.localeCompare(b));
     },
     [
       gatewayModelOptions,
-      generatedCatalogModelOptions,
-      hasDynamicCatalogOptions,
-      isCustomLike,
       providerCatalogModelOptions,
     ]
   );
@@ -2475,12 +2452,6 @@ function ConfigureStep({
     .filter((id): id is string => Boolean(id));
   const imageSupportMap = useMemo(() => {
     const map = new Map<string, boolean>();
-    for (const model of GENERATED_PROVIDER_CATALOG[normalizedTemplateProvider] ?? []) {
-      if (typeof model.supportsImage !== 'boolean') continue;
-      const normalized = normalizeProviderModelRef(effectiveProviderId, model.id);
-      if (!normalized) continue;
-      map.set(normalized, model.supportsImage);
-    }
     for (const item of providerCatalogModels) {
       if (typeof item.supportsImage !== 'boolean') continue;
       const normalized = normalizeProviderModelRef(effectiveProviderId, item.id);
@@ -2501,7 +2472,6 @@ function ConfigureStep({
     effectiveProviderId,
     gatewayModels,
     normalizedExplicitImageModels,
-    normalizedTemplateProvider,
     providerCatalogModels,
   ]);
   const imageModelOptions = useMemo(

@@ -81,3 +81,17 @@ test('does not invent run or human-review records when upstream omitted them', (
     requestCount: 0,
   });
 });
+
+test('exposes a formal review relation only when the transcript explicitly provides one', () => {
+  const semanticBlocks = blocks({
+    id: 'assistant-formal-review',
+    role: 'assistant',
+    content: 'Approval required.',
+    decisionOptions: [{ text: 'Approve', value: 'approve' }],
+    formalReviewId: 'review-42',
+  });
+  const trace = projectChatResponseTrace(buildResponseGroups(semanticBlocks)[0]);
+
+  assert.equal(trace.review.status, 'requested');
+  assert.equal(trace.review.formalReviewId, 'review-42');
+});

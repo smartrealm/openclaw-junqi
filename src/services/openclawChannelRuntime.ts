@@ -80,9 +80,13 @@ const MANAGED_EXTERNAL_CHANNEL_PLUGINS: readonly ManagedExternalChannelPlugin[] 
   },
 ];
 
+export function isOpenClawChannelIdentifier(value: string): boolean {
+  return CLI_IDENTIFIER.test(value.trim());
+}
+
 export function assertChannelCliIdentifier(value: string, label: string): string {
   const normalized = value.trim();
-  if (!CLI_IDENTIFIER.test(normalized)) throw new Error(`${label} contains unsupported characters.`);
+  if (!isOpenClawChannelIdentifier(normalized)) throw new Error(`${label} contains unsupported characters.`);
   return normalized;
 }
 
@@ -93,7 +97,7 @@ export function assertChannelCliIdentifier(value: string, label: string): string
  */
 export function managedExternalChannelPlugin(channelId: string): ManagedExternalChannelPlugin | null {
   const channel = channelId.trim();
-  if (!CLI_IDENTIFIER.test(channel)) return null;
+  if (!isOpenClawChannelIdentifier(channel)) return null;
   return MANAGED_EXTERNAL_CHANNEL_PLUGINS.find((plugin) => plugin.channelId === channel) ?? null;
 }
 
@@ -222,7 +226,7 @@ export function runtimeChannelIds(snapshot: ChannelsRuntimeSnapshot | null | und
   if (!snapshot) return [];
   const ids = new Set<string>();
   const add = (value: unknown) => {
-    if (typeof value === 'string' && CLI_IDENTIFIER.test(value.trim())) ids.add(value.trim());
+    if (typeof value === 'string' && isOpenClawChannelIdentifier(value)) ids.add(value.trim());
   };
   snapshot.channelOrder?.forEach(add);
   snapshot.configuredChannels?.forEach(add);

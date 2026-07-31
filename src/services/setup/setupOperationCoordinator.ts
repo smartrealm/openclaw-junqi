@@ -25,6 +25,7 @@ interface SetupOperationCoordinatorOptions {
 export class SetupOperationCoordinator {
   private activeRun = 0;
   private activeOperationId: string | null = null;
+  private activeOperationRun: number | null = null;
   private activeTransaction: ActiveSetupTransaction | null = null;
   private readonly scope: string;
 
@@ -42,6 +43,10 @@ export class SetupOperationCoordinator {
     return this.activeRun === runId;
   }
 
+  isCurrentOperationId(operationId: string): boolean {
+    return this.activeOperationId === operationId && this.activeOperationRun === this.activeRun;
+  }
+
   async runOperation<T>(
     runId: number,
     kind: SetupOperationKind,
@@ -53,10 +58,14 @@ export class SetupOperationCoordinator {
     }
     const operationId = `${this.scope}:${runId}:${kind}`;
     this.activeOperationId = operationId;
+    this.activeOperationRun = runId;
     try {
       return await execute(operationId);
     } finally {
-      if (this.activeOperationId === operationId) this.activeOperationId = null;
+      if (this.activeOperationId === operationId) {
+        this.activeOperationId = null;
+        this.activeOperationRun = null;
+      }
     }
   }
 

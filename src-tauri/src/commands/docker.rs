@@ -1492,6 +1492,18 @@ pub async fn pull_openclaw_image(
     operation_id: Option<String>,
 ) -> Result<String, String> {
     let operation = SetupOperation::begin(&app, SetupOperationKind::DockerImage, operation_id)?;
+    crate::commands::setup_progress::scope_operation(
+        operation.progress_id(),
+        pull_openclaw_image_inner(app, tag, &operation),
+    )
+    .await
+}
+
+async fn pull_openclaw_image_inner(
+    app: AppHandle,
+    tag: Option<String>,
+    operation: &SetupOperation,
+) -> Result<String, String> {
     paths::validate_runtime_mode(paths::OpenClawRuntimeMode::Docker)?;
     let tag = tag.unwrap_or_else(|| DEFAULT_OPENCLAW_IMAGE_TAG.to_string());
     let image = format!("{}:{}", OPENCLAW_IMAGE, tag);
@@ -1513,20 +1525,17 @@ pub async fn pull_openclaw_image(
     })?;
     let tracker = Arc::new(Mutex::new(DockerPullProgress::default()));
     let tail = Arc::new(Mutex::new(VecDeque::new()));
+    let progress_operation_id = operation.progress_id();
     let stdout_task = child.stdout.take().map(|stdout| {
-        tokio::spawn(stream_docker_output(
-            stdout,
-            app.clone(),
-            Arc::clone(&tracker),
-            Arc::clone(&tail),
+        tokio::spawn(crate::commands::setup_progress::scope_operation(
+            progress_operation_id.clone(),
+            stream_docker_output(stdout, app.clone(), Arc::clone(&tracker), Arc::clone(&tail)),
         ))
     });
     let stderr_task = child.stderr.take().map(|stderr| {
-        tokio::spawn(stream_docker_output(
-            stderr,
-            app.clone(),
-            Arc::clone(&tracker),
-            Arc::clone(&tail),
+        tokio::spawn(crate::commands::setup_progress::scope_operation(
+            progress_operation_id.clone(),
+            stream_docker_output(stderr, app.clone(), Arc::clone(&tracker), Arc::clone(&tail)),
         ))
     });
     let child_pid = child.id();

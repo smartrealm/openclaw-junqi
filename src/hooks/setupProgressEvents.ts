@@ -6,6 +6,7 @@ export interface SetupProgressEvent {
   key: string | null;
   params: Record<string, string>;
   logSlot: string | null;
+  operationId: string | null;
   progress: number | null;
   diagnostic: boolean;
   error: string | null;
@@ -27,6 +28,7 @@ export function normalizeSetupProgressPayload(payload: unknown): SetupProgressEv
       key: null,
       params: {},
       logSlot: null,
+      operationId: null,
       progress: null,
       diagnostic: false,
       error: null,
@@ -51,6 +53,9 @@ export function normalizeSetupProgressPayload(payload: unknown): SetupProgressEv
     key: typeof value.key === "string" && value.key ? value.key : null,
     params,
     logSlot: typeof value.logSlot === "string" && value.logSlot ? value.logSlot : null,
+    operationId: typeof value.operationId === "string" && value.operationId.trim()
+      ? value.operationId.trim()
+      : null,
     progress: rawProgress == null ? null : Math.max(0, Math.min(100, Math.round(rawProgress * 100))),
     diagnostic: value.diagnostic === true,
     error: typeof value.error === "string" && value.error ? value.error : null,
@@ -58,6 +63,14 @@ export function normalizeSetupProgressPayload(payload: unknown): SetupProgressEv
       ? value.status
       : null,
   };
+}
+
+/** Setup screens only accept progress emitted by their active native operation. */
+export function isCurrentSetupOperationProgress(
+  operationId: string | null,
+  isActiveOperation: (operationId: string) => boolean,
+): boolean {
+  return operationId !== null && isActiveOperation(operationId);
 }
 
 export function classifySetupMessage(message: string, error?: string | null): SetupLogLevel {

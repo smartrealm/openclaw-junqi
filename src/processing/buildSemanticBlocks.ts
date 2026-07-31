@@ -64,6 +64,7 @@ function createBlockBase(normalized: NormalizedMessage, id = normalized.id) {
     sourceMessageId: normalized.id,
     ...(normalized.sourceSequence !== undefined ? { sourceSequence: normalized.sourceSequence } : {}),
     ...(normalized.toolCallId ? { toolCallId: normalized.toolCallId } : {}),
+    ...(normalized.formalReviewId ? { formalReviewId: normalized.formalReviewId } : {}),
     timestamp: normalized.timestamp,
     isStreaming: normalized.isStreaming,
     responseState: normalized.responseState,
@@ -94,7 +95,7 @@ function executionPlanBlock(
 function buildAssistantMeta(markdown: string, normalized: NormalizedMessage, options: BuildSemanticOptions): MetaItem[] {
   const meta: MetaItem[] = [];
 
-  const workshopResults = markdown.match(/✅\s+(Added|Moved|Deleted|Updated)\s+task[^\n]*/g);
+  const workshopResults = markdown.match(new RegExp('\\u2705\\s+(Added|Moved|Deleted|Updated)\\s+task[^\\n]*', 'g'));
   if (workshopResults && workshopResults.length > 0) {
     meta.push({
       kind: 'workshop',
@@ -184,8 +185,11 @@ export function buildSemanticBlocks(
   if (role === 'assistant' && normalized.hasOnlyToolCallContent && normalized.toolCalls.length > 0) {
     return normalized.toolCalls.map((tool, index) => {
       const id = `${normalized.id}-call-${index}`;
-      return executionPlanBlock(normalized, tool.name, tool.input, id) ?? ({
-        ...createBlockBase(normalized, id),
+      const toolNormalized = tool.toolCallId
+        ? { ...normalized, toolCallId: tool.toolCallId }
+        : normalized;
+      return executionPlanBlock(toolNormalized, tool.name, tool.input, id) ?? ({
+        ...createBlockBase(toolNormalized, id),
         type: 'tool-activity',
         toolName: tool.name || 'unknown',
         input: tool.input ?? {},
@@ -208,9 +212,14 @@ export function buildSemanticBlocks(
       type: 'tool-activity',
       toolName,
       input: normalized.toolInput,
-      output: (normalized.toolOutput || normalized.text || '').slice(0, 2000),
+      output: normalized.toolOutput || normalized.text || '',
       status: normalized.toolStatus || 'done',
       durationMs: normalized.toolDurationMs,
+      ...(normalized.toolError ? { error: normalized.toolError } : {}),
+      ...(normalized.toolOutputTruncated ? { outputTruncated: true } : {}),
+      ...(normalized.toolOutputOriginalLength !== undefined
+        ? { outputOriginalLength: normalized.toolOutputOriginalLength }
+        : {}),
     } satisfies ToolActivitySemanticBlock];
   }
 
@@ -338,6 +347,11 @@ export function projectSemanticBlocksToRenderBlocks(blocks: SemanticBlock[]): Re
           output: block.output,
           status: block.status,
           durationMs: block.durationMs,
+          ...(block.error ? { error: block.error } : {}),
+          ...(block.outputTruncated ? { outputTruncated: true } : {}),
+          ...(block.outputOriginalLength !== undefined
+            ? { outputOriginalLength: block.outputOriginalLength }
+            : {}),
         } satisfies ToolBlock);
         break;
       case 'execution-plan': {

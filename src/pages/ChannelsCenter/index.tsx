@@ -9,7 +9,7 @@ import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { gateway } from '@/services/gateway';
 import type { LogEntry } from '@/api/tauri-commands';
 import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
-import type { AgentConfig, GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
+import type { AgentConfig, GatewayRuntimeConfig } from '@/types/openclawConfig';
 import { ChannelOfficialSchemaEditor } from '@/pages/ConfigManager/ChannelOfficialSchemaEditor';
 import {
   assessChannelAccountReadiness,
@@ -34,6 +34,7 @@ import {
   buildChannelSetupCommand,
   channelAccountStatus,
   channelLinkMode,
+  isOpenClawChannelIdentifier,
   installManagedExternalChannelPlugin,
   loadOfficialChannelCapability,
   loadOfficialChannelCatalog,
@@ -78,7 +79,7 @@ interface EditingAccountState {
   group: ChannelGroupWithName;
   account?: ChannelAccountBinding;
   /** Draft channel defaults for a just-installed plugin, not yet persisted. */
-  baseConfig?: GatewayRuntimeConfig;
+  draftConfig?: GatewayRuntimeConfig;
 }
 
 interface GatewayUiStatus {
@@ -163,7 +164,7 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
   ));
 
   const trimmedAccountId = accountId.trim();
-  const accountIdValid = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(trimmedAccountId);
+  const accountIdValid = isOpenClawChannelIdentifier(trimmedAccountId);
   const duplicateAccountId = state.mode === 'new' && state.group.accounts.some((account) => account.id === trimmedAccountId);
   const canSave = accountIdValid && !duplicateAccountId && !saving;
 
@@ -207,7 +208,7 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
               />
               {!accountIdValid && state.mode === 'new' && (
                 <div className="mt-1 text-[10px] text-aegis-danger">
-                  {t('channelsCenter.invalidAccountId', 'Use 2-64 letters, numbers, hyphen, or underscore.')}
+                  {t('channelsCenter.invalidAccountId', 'Use 1-128 letters, numbers, period, underscore, hyphen, or colon; begin with a letter or number.')}
                 </div>
               )}
               {accountIdValid && duplicateAccountId && (
@@ -308,7 +309,6 @@ export function ChannelsCenterPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const focusedAgentId = searchParams.get('agent')?.trim() || '';
-  const [configPath, setConfigPath] = useState('');
   const [config, setConfig] = useState<GatewayRuntimeConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -358,14 +358,16 @@ export function ChannelsCenterPage() {
     setError('');
     try {
       const detected = await window.aegis.config.detect();
-      setConfigPath(detected.path);
+      if (!detected.valid) {
+        throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
+      }
       if (!detected.exists) {
         setConfig(null);
         setError(t('channelsCenter.configMissing', 'OpenClaw config file was not found.'));
         return;
       }
-      const { data } = await window.aegis.config.read(detected.path);
-      setConfig(data as GatewayRuntimeConfig);
+      const { data } = await window.aegis.config.read();
+      setConfig(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -489,13 +491,16 @@ export function ChannelsCenterPage() {
       : t('channelsCenter.gatewayOffline', 'Gateway offline');
   const latestGatewayLog = gatewayLogs[gatewayLogs.length - 1];
 
-  const saveConfig = async (next: GatewayRuntimeConfig, successMessage: string) => {
-    if (savingRef.current) return;
-    if (!configPath) return;
+  const saveConfig = async (
+    base: GatewayRuntimeConfig,
+    next: GatewayRuntimeConfig,
+    successMessage: string,
+  ): Promise<boolean> => {
+    if (savingRef.current) return false;
     savingRef.current = true;
     setSaving(true);
     try {
-      const merged = await persistChannelsOnly(configPath, next);
+      const merged = await persistChannelsOnly(base, next);
       setConfig(merged);
       const restart = await gatewayLifecycle.restart('channels-config-save').catch((err: unknown) => ({
         success: false,
@@ -508,8 +513,10 @@ export function ChannelsCenterPage() {
       }
       scheduleGatewayRefresh();
       window.dispatchEvent(new CustomEvent('aegis:config-saved', { detail: { channelsChanged: true } }));
+      return true;
     } catch (err) {
       showAlert(t('config.saveFailed', 'Save failed'), err instanceof Error ? err.message : String(err), 'error');
+      return false;
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -518,12 +525,12 @@ export function ChannelsCenterPage() {
 
   const handleToggle = (channelId: string, enabled: boolean) => {
     if (!config) return;
-    void saveConfig(updateChannelEnabled(config, channelId, enabled), t('channelsCenter.channelUpdated', 'Channel updated.'));
+    void saveConfig(config, updateChannelEnabled(config, channelId, enabled), t('channelsCenter.channelUpdated', 'Channel updated.'));
   };
 
   const handleBind = (group: ChannelGroupView & { name: string }, account: ChannelAccountBinding, agentId: string) => {
     if (!config) return;
-    void saveConfig(updateChannelBinding(config, group.id, account, agentId), t('channelsCenter.bindingUpdated', 'Binding updated.'));
+    void saveConfig(config, updateChannelBinding(config, group.id, account, agentId), t('channelsCenter.bindingUpdated', 'Binding updated.'));
   };
 
   const openChannelTerminal = (command: string) => {
@@ -641,28 +648,34 @@ export function ChannelsCenterPage() {
       );
       return;
     }
-    const baseConfig = editingAccount.baseConfig ?? config;
+    const editConfig = editingAccount.draftConfig ?? config;
     const next = editingAccount.mode === 'new'
-      ? addChannelAccount(baseConfig, editingAccount.group.id, accountId, accountConfig)
+      ? addChannelAccount(editConfig, editingAccount.group.id, accountId, accountConfig)
       : upsertChannelAccount(
-        baseConfig,
+        editConfig,
         editingAccount.group.id,
         editingAccount.account ?? { id: accountId, source: 'account' },
         accountConfig,
       );
-    await saveConfig(next, t('channelsCenter.accountSaved', 'Account saved.'));
-    setExpanded(editingAccount.group.id);
-    setEditingAccount(null);
+    const saved = await saveConfig(config, next, t('channelsCenter.accountSaved', 'Account saved.'));
+    if (saved) {
+      setExpanded(editingAccount.group.id);
+      setEditingAccount(null);
+    }
   };
 
-  const handleDeleteAccount = (group: ChannelGroupWithName, account: ChannelAccountBinding) => {
+  const handleDeleteAccount = async (group: ChannelGroupWithName, account: ChannelAccountBinding) => {
     if (!config || account.source !== 'account') return;
     showConfirm(
       t('channelsCenter.removeAccountTitle', 'Remove account'),
       t('channelsCenter.removeAccountMessage', { account: account.label, defaultValue: `Remove ${account.label}?` }),
-      () => {
-        void saveConfig(removeChannelAccount(config, group.id, account.id), t('channelsCenter.accountRemoved', 'Account removed.'));
-        setEditingAccount(null);
+      async () => {
+        const saved = await saveConfig(
+          config,
+          removeChannelAccount(config, group.id, account.id),
+          t('channelsCenter.accountRemoved', 'Account removed.'),
+        );
+        if (saved) setEditingAccount(null);
       }
     );
   };
@@ -672,7 +685,7 @@ export function ChannelsCenterPage() {
     showConfirm(
       t('channelsCenter.removeTitle', 'Remove channel'),
       t('channelsCenter.removeMessage', { channel: group.name, defaultValue: `Remove ${group.name}?` }),
-      () => { void saveConfig(removeChannel(config, group.id), t('channelsCenter.channelRemoved', 'Channel removed.')); }
+      () => { void saveConfig(config, removeChannel(config, group.id), t('channelsCenter.channelRemoved', 'Channel removed.')); }
     );
   };
 
@@ -716,7 +729,7 @@ export function ChannelsCenterPage() {
             ...draftGroup,
             name: channelName(t, entry.id, runtimeSnapshot?.channelLabels?.[entry.id]),
           },
-          baseConfig: draftConfig,
+          draftConfig,
         });
         return;
       }
@@ -1253,7 +1266,7 @@ export function ChannelsCenterPage() {
           t={t}
           onClose={() => setEditingAccount(null)}
           onSave={(accountId, accountConfig) => { void handleSaveAccount(accountId, accountConfig); }}
-          onDelete={(account) => handleDeleteAccount(editingAccount.group, account)}
+          onDelete={(account) => { void handleDeleteAccount(editingAccount.group, account); }}
         />
       )}
       {qrTarget && (

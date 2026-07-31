@@ -77,6 +77,10 @@ pub(crate) struct ActiveSetupOperation {
     pub(super) app: tauri::AppHandle,
     pub(super) kind: SetupOperationKind,
     pub(super) cancellation: SetupOperationCancellation,
+    /// Only renderer-requested operations have a progress identity. Internal
+    /// maintenance commands still emit progress, but must not be attributed to
+    /// a setup screen that does not own them.
+    pub(super) progress_id: Option<String>,
 }
 
 #[derive(Default)]
@@ -101,6 +105,7 @@ pub(crate) fn lock_setup_operations() -> std::sync::MutexGuard<'static, SetupOpe
 pub(crate) struct SetupOperation {
     pub(super) id: String,
     pub(super) cancellation: SetupOperationCancellation,
+    progress_id: Option<String>,
 }
 
 impl SetupOperation {
@@ -109,19 +114,21 @@ impl SetupOperation {
         kind: SetupOperationKind,
         requested_id: Option<String>,
     ) -> Result<Self, String> {
-        let id = match requested_id {
-            Some(id) => {
-                let id = id.trim();
+        let progress_id = requested_id
+            .map(|requested_id| -> Result<String, String> {
+                let id = requested_id.trim();
                 if id.is_empty()
                     || id.len() > SETUP_OPERATION_ID_MAX_LEN
                     || id.chars().any(char::is_control)
                 {
                     return Err("Invalid setup operation identifier".into());
                 }
-                id.to_owned()
-            }
-            None => format!("internal-setup-operation-{}", uuid::Uuid::new_v4()),
-        };
+                Ok(id.to_owned())
+            })
+            .transpose()?;
+        let id = progress_id
+            .clone()
+            .unwrap_or_else(|| format!("internal-setup-operation-{}", uuid::Uuid::new_v4()));
         let cancellation = SetupOperationCancellation::new();
         let mut coordinator = lock_setup_operations();
         if coordinator.active.contains_key(&id) {
@@ -136,9 +143,14 @@ impl SetupOperation {
                 app: app.clone(),
                 kind,
                 cancellation: cancellation.clone(),
+                progress_id: progress_id.clone(),
             },
         );
-        Ok(Self { id, cancellation })
+        Ok(Self {
+            id,
+            cancellation,
+            progress_id,
+        })
     }
 
     pub(crate) fn ensure_active(&self) -> Result<(), String> {
@@ -155,6 +167,10 @@ impl SetupOperation {
 
     pub(crate) async fn cancelled(&self) {
         self.cancellation.cancelled().await;
+    }
+
+    pub(crate) fn progress_id(&self) -> Option<String> {
+        self.progress_id.clone()
     }
 }
 
@@ -205,8 +221,9 @@ pub fn cancel_setup_operation(operation_id: String) -> SetupOperationCancellatio
     };
 
     active.cancellation.request();
-    emit(
+    crate::commands::setup_progress::emit_for_operation(
         &active.app,
+        active.progress_id.as_deref(),
         active.kind.step(),
         &format!(
             "Cancellation requested. JunQi is safely stopping the active {} installer before setup continues.",

@@ -68,6 +68,38 @@ test('normalizes real OpenClaw text blocks without discarding structured content
   assert.deepEqual(normalized.toolCalls, [{ name: 'inspect', input: { target: 'workflow' } }]);
 });
 
+test('uses the structured tool result payload instead of serializing its content envelope', () => {
+  const message = normalizeHistoryMessage({
+    role: 'tool',
+    content: [{ type: 'toolResult', name: 'search_docs', result: 'Found the contract.' }],
+  });
+
+  assert.equal(message.toolOutput, 'Found the contract.');
+  const normalized = normalizeGatewayMessage(message);
+  assert.equal(normalized.toolResults[0]?.name, 'search_docs');
+  assert.equal(normalized.toolOutput, 'Found the contract.');
+});
+
+test('preserves structured tool result errors and truncation metadata through history replay', () => {
+  const message = normalizeHistoryMessage({
+    role: 'tool',
+    content: [{
+      type: 'toolResult',
+      name: 'exec',
+      isError: true,
+      result: {
+        error: { message: 'permission denied' },
+        detail: 'x'.repeat(2_400),
+      },
+    }],
+  });
+
+  assert.equal(message.toolStatus, 'error');
+  assert.equal(message.toolError, 'permission denied');
+  assert.equal(message.toolOutputTruncated, true);
+  assert.ok((message.toolOutputOriginalLength ?? 0) > (message.toolOutput?.length ?? 0));
+});
+
 test('upgrades cached block content before chat consumers call string methods', () => {
   const legacy = {
     id: 'cached-message-blocks',
@@ -145,4 +177,46 @@ test('prefers OpenClaw MediaUrls while preserving sparse Media arrays', () => {
     'https://gateway.invalid/media/image.png',
     'https://gateway.invalid/media/third.png',
   ]);
+});
+
+test('preserves a failed structured tool result, numeric timestamp, and bounded output metadata', () => {
+  const epochMilliseconds = 1_784_000_000_123;
+  const result = {
+    error: { message: 'permission denied' },
+    detail: 'x'.repeat(2_400),
+  };
+  const message = normalizeHistoryMessage({
+    role: 'toolResult',
+    content: result,
+    timestamp: epochMilliseconds,
+    toolName: 'exec',
+    toolCallId: 'call-history-error',
+    isError: true,
+  });
+
+  assert.equal(message.role, 'toolResult');
+  assert.equal(message.toolCallId, 'call-history-error');
+  assert.equal(message.toolStatus, 'error');
+  assert.equal(message.toolError, 'permission denied');
+  assert.equal(message.timestamp, new Date(epochMilliseconds).toISOString());
+  assert.deepEqual(message.rawContent, result);
+  assert.equal(message.toolOutputTruncated, true);
+  assert.ok((message.toolOutputOriginalLength ?? 0) > (message.toolOutput?.length ?? 0));
+  assert.match(message.toolOutput ?? '', /permission denied/);
+});
+
+test('keeps nested assistant tool call identities for semantic trace projection', () => {
+  const message = normalizeHistoryMessage({
+    role: 'assistant',
+    content: [
+      { type: 'toolCall', id: 'call-history-nested', name: 'read', input: { path: 'README.md' } },
+    ],
+  });
+  const normalized = normalizeGatewayMessage(message);
+
+  assert.deepEqual(normalized.toolCalls, [{
+    toolCallId: 'call-history-nested',
+    name: 'read',
+    input: { path: 'README.md' },
+  }]);
 });

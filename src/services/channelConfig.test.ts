@@ -14,10 +14,11 @@ import {
   upsertChannelAccount,
   type ChannelConfigRepository,
 } from './channelConfig';
-import type { GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
+import { CONFIG_REVISION_CONFLICT_PREFIX } from './channelConfigMerge';
+import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
 
-function cfg(overrides: Record<string, unknown>): GatewayRuntimeConfig {
-  return overrides as GatewayRuntimeConfig;
+function cfg(overrides: GatewayRuntimeConfig): GatewayRuntimeConfig {
+  return overrides;
 }
 
 describe('channelConfig', () => {
@@ -36,6 +37,7 @@ describe('channelConfig', () => {
           agentId: 'main',
           botToken: 'token',
         },
+        defaults: { enabled: true },
         modelByChannel: { ignored: true },
       },
     }));
@@ -57,6 +59,7 @@ describe('channelConfig', () => {
     assert.equal(telegram?.accounts[0]?.id, 'default');
     assert.equal(telegram?.accounts[0]?.agentId, 'main');
     assert.equal(telegram?.accounts[0]?.source, 'channel');
+    assert.equal(groups.some((group) => group.id === 'defaults'), false);
     assert.equal(groups.some((group) => group.id === 'modelByChannel'), false);
   });
 
@@ -162,19 +165,23 @@ describe('channelConfig', () => {
     assert.equal(next.bindings?.some((binding) => binding.type === 'acp'), true);
   });
 
-  test('save migration converts every legacy agentId and removes modelByChannel', () => {
+  test('save migration converts legacy agent bindings and preserves channel metadata', () => {
     const migrated = migrateLegacyChannelBindings(cfg({
       channels: {
         telegram: {
           agentId: 'main',
           accounts: { work: { agentId: 'support', botToken: 'token' } },
         },
-        modelByChannel: { telegram: 'openai/gpt-5.6' },
+        defaults: { enabled: true },
+        modelByChannel: { openai: { telegram: 'openai/gpt-5.6' } },
       },
     }));
     assert.equal(migrated.channels?.telegram?.agentId, undefined);
     assert.equal(migrated.channels?.telegram?.accounts?.work?.agentId, undefined);
-    assert.equal(migrated.channels?.modelByChannel, undefined);
+    assert.deepEqual(migrated.channels?.defaults, { enabled: true });
+    assert.deepEqual(migrated.channels?.modelByChannel, {
+      openai: { telegram: 'openai/gpt-5.6' },
+    });
     assert.deepEqual(migrated.bindings, [
       { type: 'route', agentId: 'main', match: { channel: 'telegram' } },
       { type: 'route', agentId: 'support', match: { channel: 'telegram', accountId: 'work' } },
@@ -235,21 +242,45 @@ describe('channelConfig', () => {
     assert.equal(original.channels?.feishu?.accounts?.one?.agentId, 'target');
   });
 
-  test('persistChannelsOnlyWithRepository merges the latest disk config before writing', async () => {
+  test('persistChannelsOnlyWithRepository preserves metadata and unrelated concurrent channel changes', async () => {
     let written: GatewayRuntimeConfig | null = null;
+    const base = cfg({
+      agents: { list: [{ id: 'main' }] },
+      models: { providers: { openai: { apiKey: 'disk-value' } } },
+      channels: {
+        telegram: { enabled: false },
+        defaults: { enabled: true },
+        modelByChannel: { openai: { telegram: 'openai/gpt-5.6' } },
+      },
+      bindings: [{ type: 'route', agentId: 'main', match: { channel: 'telegram' } }],
+    });
+    const next = {
+      ...base,
+      channels: {
+        ...base.channels,
+        telegram: { enabled: true },
+      },
+    };
+    const latest = cfg({
+      ...base,
+      channels: {
+        ...base.channels,
+        discord: { enabled: true },
+      },
+      bindings: [
+        ...(base.bindings ?? []),
+        { type: 'route', agentId: 'support', match: { channel: 'discord' } },
+      ],
+    });
     const repository: ChannelConfigRepository = {
       async detect() {
         return { path: '/tmp/openclaw.json', exists: true };
       },
       async read() {
-        return cfg({
-          agents: { list: [{ id: 'main' }] },
-          providers: { openai: { apiKey: 'disk-value' } },
-          channels: { telegram: { enabled: false } },
-          bindings: [{ type: 'route', agentId: 'disk', match: { channel: 'telegram' } }],
-        });
+        return { config: latest, revision: 'revision-1' };
       },
-      async write(_path, config) {
+      async write(config, expectedRevision) {
+        assert.equal(expectedRevision, 'revision-1');
         written = config;
       },
       async restart() {
@@ -259,17 +290,77 @@ describe('channelConfig', () => {
 
     const merged = await persistChannelsOnlyWithRepository(
       repository,
-      '/tmp/openclaw.json',
-      cfg({
-        channels: { feishu: { enabled: true } },
-        bindings: [{ type: 'route', agentId: 'main', match: { channel: 'feishu' } }],
-      }),
+      base,
+      next,
     );
 
-    assert.deepEqual(merged.channels, { feishu: { enabled: true } });
-    assert.deepEqual(merged.bindings, [{ type: 'route', agentId: 'main', match: { channel: 'feishu' } }]);
-    assert.deepEqual((merged as unknown as Record<string, unknown>).providers, { openai: { apiKey: 'disk-value' } });
+    assert.equal(merged.channels?.telegram?.enabled, true);
+    assert.deepEqual(merged.channels?.discord, { enabled: true });
+    assert.deepEqual(merged.channels?.defaults, { enabled: true });
+    assert.deepEqual(merged.channels?.modelByChannel, {
+      openai: { telegram: 'openai/gpt-5.6' },
+    });
+    assert.deepEqual(merged.bindings, latest.bindings);
+    assert.deepEqual(merged.models?.providers?.openai, { apiKey: 'disk-value' });
     assert.deepEqual(written, merged);
+  });
+
+  test('persistChannelsOnlyWithRepository retries a revision conflict without losing concurrent changes', async () => {
+    const base = cfg({
+      channels: {
+        telegram: { enabled: false },
+        modelByChannel: { openai: { telegram: 'openai/gpt-5.6' } },
+      },
+      bindings: [{ type: 'route', agentId: 'main', match: { channel: 'telegram' } }],
+    });
+    const next = {
+      ...base,
+      channels: {
+        ...base.channels,
+        telegram: { enabled: true },
+      },
+    };
+    let latest = base;
+    let revision = 'revision-1';
+    let writes = 0;
+    const repository: ChannelConfigRepository = {
+      async detect() {
+        return { path: '/tmp/openclaw.json', exists: true };
+      },
+      async read() {
+        return { config: latest, revision };
+      },
+      async write(candidate, expectedRevision) {
+        assert.equal(expectedRevision, revision);
+        writes += 1;
+        if (writes === 1) {
+          latest = {
+            ...latest,
+            channels: { ...latest.channels, discord: { enabled: true } },
+            bindings: [
+              ...(latest.bindings ?? []),
+              { type: 'route', agentId: 'support', match: { channel: 'discord' } },
+            ],
+          };
+          revision = 'revision-2';
+          throw new Error(`${CONFIG_REVISION_CONFLICT_PREFIX}: stale revision`);
+        }
+        latest = candidate;
+      },
+      async restart() {
+        return { success: true };
+      },
+    };
+
+    const merged = await persistChannelsOnlyWithRepository(repository, base, next);
+
+    assert.equal(writes, 2);
+    assert.equal(merged.channels?.telegram?.enabled, true);
+    assert.deepEqual(merged.channels?.discord, { enabled: true });
+    assert.deepEqual(merged.channels?.modelByChannel, {
+      openai: { telegram: 'openai/gpt-5.6' },
+    });
+    assert.equal(merged.bindings?.some((binding) => binding.match.channel === 'discord'), true);
   });
 
   test('runtime linked=false applies to any dynamically discovered channel', () => {

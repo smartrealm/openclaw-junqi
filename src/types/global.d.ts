@@ -1,5 +1,7 @@
 // OpenClaw Desktop — Global Type Declarations
 
+type AegisOpenClawRuntimeConfig = import('./openclawConfig').GatewayRuntimeConfig;
+
 interface AegisAPI {
   platform: string;
   app: {
@@ -17,9 +19,13 @@ interface AegisAPI {
     get: () => Promise<any>;
     save: (config: any) => Promise<{ success: boolean }>;
     // OpenClaw config (clawdbot.json) management
-    detect: () => Promise<{ path: string; exists: boolean }>;
-    read: (path?: string) => Promise<{ data: any; path: string }>;
-    write: (path: string, data: any) => Promise<{ success: boolean; backupPath?: string; error?: string }>;
+    detect: () => Promise<{ valid: boolean; path: string; exists: boolean; error?: string }>;
+    read: () => Promise<{ data: AegisOpenClawRuntimeConfig; path: string; exists: boolean; revision: string }>;
+    parse: (raw: string) => Promise<AegisOpenClawRuntimeConfig>;
+    write: (
+      data: AegisOpenClawRuntimeConfig,
+      expectedRevision?: string,
+    ) => Promise<{ success: boolean; revision?: string; error?: string }>;
     restart: () => Promise<{
       success: boolean;
       error?: string;

@@ -4,8 +4,12 @@ use crate::commands::{
 };
 use serde::Serialize;
 use serde_json::Value;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::{
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 const CONFIG_VALIDATE_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_COMMAND_TIMEOUT: Duration = Duration::from_secs(45);
@@ -13,43 +17,79 @@ const PROBE_COMMAND_TIMEOUT: Duration = Duration::from_secs(75);
 
 struct CandidateConfig {
     path: PathBuf,
+    directory: PathBuf,
 }
 
 impl CandidateConfig {
     fn create(value: &Value) -> Result<Self, String> {
-        let directory = std::env::temp_dir().join("junqi-openclaw-provider");
-        std::fs::create_dir_all(&directory)
-            .map_err(|error| format!("Failed to create provider validation directory: {error}"))?;
-        let path = directory.join(format!("candidate-{}.json", uuid::Uuid::new_v4()));
+        let directory = create_private_candidate_directory()?;
+        let path = directory.join("candidate.json");
         let raw = serde_json::to_string_pretty(value)
             .map_err(|error| format!("Failed to serialize candidate config: {error}"))?;
-        std::fs::write(&path, raw)
-            .map_err(|error| format!("Failed to write candidate config: {error}"))?;
-        set_private_permissions(&path)?;
-        Ok(Self { path })
+        if let Err(error) = write_private_candidate_file(&path, raw.as_bytes()) {
+            let _ = fs::remove_dir_all(&directory);
+            return Err(error);
+        }
+        Ok(Self { path, directory })
     }
 }
 
 impl Drop for CandidateConfig {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        let _ = fs::remove_dir_all(&self.directory);
     }
 }
 
 #[cfg(unix)]
-fn set_private_permissions(path: &Path) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
-    let mut permissions = std::fs::metadata(path)
-        .map_err(|error| format!("Failed to inspect candidate config: {error}"))?
-        .permissions();
-    permissions.set_mode(0o600);
-    std::fs::set_permissions(path, permissions)
-        .map_err(|error| format!("Failed to protect candidate config: {error}"))
+fn create_private_candidate_directory() -> Result<PathBuf, String> {
+    use std::os::unix::fs::DirBuilderExt;
+
+    let directory = std::env::temp_dir().join(format!(
+        "junqi-openclaw-provider-{}",
+        uuid::Uuid::new_v4().simple()
+    ));
+    let mut builder = fs::DirBuilder::new();
+    builder.mode(0o700);
+    builder.create(&directory).map_err(|error| {
+        format!("Failed to create private provider validation directory: {error}")
+    })?;
+    Ok(directory)
 }
 
 #[cfg(not(unix))]
-fn set_private_permissions(_path: &Path) -> Result<(), String> {
-    Ok(())
+fn create_private_candidate_directory() -> Result<PathBuf, String> {
+    let directory = std::env::temp_dir().join(format!(
+        "junqi-openclaw-provider-{}",
+        uuid::Uuid::new_v4().simple()
+    ));
+    fs::create_dir(&directory)
+        .map_err(|error| format!("Failed to create provider validation directory: {error}"))?;
+    Ok(directory)
+}
+
+#[cfg(unix)]
+fn write_private_candidate_file(path: &Path, content: &[u8]) -> Result<(), String> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|error| format!("Failed to create private provider candidate config: {error}"))?;
+    file.write_all(content)
+        .map_err(|error| format!("Failed to write provider candidate config: {error}"))
+}
+
+#[cfg(not(unix))]
+fn write_private_candidate_file(path: &Path, content: &[u8]) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| format!("Failed to create provider candidate config: {error}"))?;
+    file.write_all(content)
+        .map_err(|error| format!("Failed to write provider candidate config: {error}"))
 }
 
 fn validation_error(payload: &Value) -> String {
@@ -324,12 +364,29 @@ mod tests {
 
     #[test]
     fn candidate_config_is_deleted_on_drop() {
-        let path = {
+        let (path, directory) = {
             let candidate = CandidateConfig::create(&serde_json::json!({})).unwrap();
             assert!(candidate.path.exists());
-            candidate.path.clone()
+            (candidate.path.clone(), candidate.directory.clone())
         };
         assert!(!path.exists());
+        assert!(!directory.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn candidate_config_is_created_with_private_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let candidate = CandidateConfig::create(&serde_json::json!({})).unwrap();
+        let file_mode = fs::metadata(&candidate.path).unwrap().permissions().mode() & 0o777;
+        let directory_mode = fs::metadata(&candidate.directory)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(file_mode, 0o600);
+        assert_eq!(directory_mode, 0o700);
     }
 
     #[test]

@@ -67,6 +67,18 @@ pub(super) async fn install_git_impl_inner(
     force: bool,
     operation: &SetupOperation,
 ) -> Result<String, String> {
+    crate::commands::setup_progress::scope_operation(
+        operation.progress_id(),
+        install_git_impl_inner_scoped(app, force, operation),
+    )
+    .await
+}
+
+async fn install_git_impl_inner_scoped(
+    app: tauri::AppHandle,
+    force: bool,
+    operation: &SetupOperation,
+) -> Result<String, String> {
     let _guard = wait_for_setup_operation_lock(
         GIT_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(())),
         operation,

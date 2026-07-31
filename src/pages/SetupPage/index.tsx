@@ -43,7 +43,7 @@ export function SetupPage() {
   useEffect(() => {
     const unlistenSetup = subscribeTauriEvent("setup-progress", (event) => {
       const detail = normalizeSetupProgressPayload(event.payload);
-      if (!detail) return;
+      if (!detail || !flow.acceptSetupProgressOperation(detail.operationId)) return;
       const message = translateSetupProgressMessage(
         detail.key,
         detail.message,

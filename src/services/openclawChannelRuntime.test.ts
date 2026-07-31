@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildChannelSetupCommand,
   channelLinkMode,
+  isOpenClawChannelIdentifier,
   managedExternalChannelPlugin,
   normalizeOfficialChannelCapability,
   normalizeOfficialChannelCatalog,
@@ -59,6 +60,16 @@ describe('openclawChannelRuntime', () => {
   test('builds safe cross-platform CLI commands and rejects flag injection', () => {
     assert.equal(buildChannelSetupCommand('telegram', 'work'), 'openclaw channels add --channel telegram --account work\n');
     assert.throws(() => buildChannelSetupCommand('--delete'), /unsupported characters/);
+  });
+
+  test('uses the native identifier contract for channel and account IDs', () => {
+    assert.equal(isOpenClawChannelIdentifier('a'), true);
+    assert.equal(isOpenClawChannelIdentifier('account.id:work_item-1'), true);
+    assert.equal(isOpenClawChannelIdentifier(`a${'x'.repeat(127)}`), true);
+    assert.equal(isOpenClawChannelIdentifier(''), false);
+    assert.equal(isOpenClawChannelIdentifier('-account'), false);
+    assert.equal(isOpenClawChannelIdentifier(`a${'x'.repeat(128)}`), false);
+    assert.equal(isOpenClawChannelIdentifier('account;delete'), false);
   });
 
   test('labels only the reviewed DingTalk package as a managed external plugin', () => {

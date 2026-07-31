@@ -3,7 +3,7 @@
 // Sections: Top Bar → Hero Cards → Chart + Agents → Actions
 // ═══════════════════════════════════════════════════════════
 
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -28,6 +28,7 @@ import { formatTokens } from '@/utils/format';
 import { isIsolatedExecutionSessionKey, projectSessionActivity } from '@/utils/sessionPresentation';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { useSceneRecovery } from '@/motion/sceneRecovery';
+import { useGatewayUptime } from './useGatewayUptime';
 import { gateway } from '@/services/gateway';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -120,6 +121,7 @@ export function DashboardPage() {
   const usageLoading = useGatewayDataStore((s) => s.loading.usage);
   const usageError   = useGatewayDataStore((s) => s.errors.usage);
   const agents       = useGatewayDataStore((s) => s.agents);
+  const connectionStartedAt = useGatewayDataStore((s) => s.connectionStartedAt);
 
   const [quickActionLoading, setQuickActionLoading] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -149,8 +151,6 @@ export function DashboardPage() {
     void refreshAll();
   });
 
-  const connectedSince = useRef<number | null>(null);
-
   useEffect(() => {
     if (!connected) return;
     void ensureGroupFresh('cost');
@@ -158,11 +158,7 @@ export function DashboardPage() {
     void ensureGroupFresh('agents');
   }, [connected]);
 
-  // Track connection uptime
-  useEffect(() => {
-    if (connected && !connectedSince.current)  connectedSince.current = Date.now();
-    if (!connected)                             connectedSince.current = null;
-  }, [connected]);
+  const uptime = useGatewayUptime(connected, connectionStartedAt);
 
   const activitySessions = useMemo(() => {
     const byKey = new Map<string, Session>();
@@ -383,9 +379,6 @@ export function DashboardPage() {
     () => Math.max(...agentList.map((a: any) => a.totals?.totalTokens || 0), 1),
     [agentList]
   );
-
-  // Uptime
-  const uptime = connectedSince.current ? Date.now() - connectedSince.current : 0;
 
   const agentDisplayNameFor = useCallback((agentId: string) => {
     const fallback = t(getAgentName(agentId), { defaultValue: agentId });
@@ -608,7 +601,7 @@ export function DashboardPage() {
       {/* ════ SECTION 2: HERO CARDS (4 columns) ════ */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
 
-        {/* 💰 Today's Cost */}
+        {/* Today's Cost */}
         <GlassCard hover={false} delay={0.05} className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5 text-[12px] text-aegis-text-muted font-medium">
             <DashboardIcon kind="cost" size={13} />
@@ -637,7 +630,7 @@ export function DashboardPage() {
           )}
         </GlassCard>
 
-        {/* 📅 This Month */}
+        {/* This Month */}
         <GlassCard hover={false} delay={0.08} className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5 text-[12px] text-aegis-text-muted font-medium">
             <DashboardIcon kind="month" size={13} />
@@ -668,7 +661,7 @@ export function DashboardPage() {
           )}
         </GlassCard>
 
-        {/* ⚡ Tokens Today */}
+        {/* Tokens Today */}
         <GlassCard hover={false} delay={0.11} className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5 text-[12px] text-aegis-text-muted font-medium">
             <DashboardIcon kind="tokens" size={13} />
@@ -689,7 +682,7 @@ export function DashboardPage() {
           </div>
         </GlassCard>
 
-        {/* 🧠 Context */}
+        {/* Context */}
         <GlassCard hover={false} delay={0.14} className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5 text-[12px] text-aegis-text-muted font-medium">
             <DashboardIcon kind="context" size={13} />

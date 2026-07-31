@@ -815,6 +815,67 @@ test('session.tool renders the official late-subscriber tool lifecycle exactly o
   assert.deepEqual(reconciliationRequests, []);
 });
 
+test('agent item keeps tool identity, input, failed output, and source timing through the live projection', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const handler = new ChatHandler({
+    callbacks: { onStreamChunk: () => {}, onStreamEnd: () => {} },
+  } as any);
+  const sessionKey = 'agent:main:item-tool-error';
+  const runId = 'run-item-tool-error';
+  const toolCallId = 'call-item-tool-error';
+  const startedAt = 1_784_000_000_000;
+  const endedAt = startedAt + 650;
+
+  handler.handleEvent({ event: 'agent', payload: {
+    sessionKey,
+    runId,
+    seq: 1,
+    stream: 'item',
+    ts: startedAt,
+    data: {
+      kind: 'tool',
+      phase: 'start',
+      itemId: `tool:${toolCallId}`,
+      name: 'exec',
+      toolArgs: { command: 'pnpm test' },
+      startedAt,
+    },
+  } });
+  handler.handleEvent({ event: 'agent', payload: {
+    sessionKey,
+    runId,
+    seq: 2,
+    stream: 'item',
+    ts: endedAt + 100,
+    data: {
+      kind: 'tool',
+      phase: 'end',
+      itemId: `tool:${toolCallId}`,
+      name: 'exec',
+      status: 'failed',
+      error: 'permission denied',
+      result: { stderr: 'x'.repeat(2_400) },
+      startedAt,
+      endedAt,
+    },
+  } });
+
+  const { useChatStore } = (globalThis as any).__chatDeps as { useChatStore: any };
+  const tool = (useChatStore.getState().messagesPerSession[sessionKey] ?? [])
+    .find((message: any) => message.id === `tool-live-${runId}-${toolCallId}`);
+  assert.equal(tool?.toolCallId, toolCallId);
+  assert.deepEqual(tool?.toolInput, { command: 'pnpm test' });
+  assert.equal(tool?.toolStatus, 'error');
+  assert.equal(tool?.toolError, 'permission denied');
+  assert.equal(tool?.timestamp, new Date(endedAt).toISOString());
+  assert.equal(tool?.toolDurationMs, 650);
+  assert.equal(tool?.toolOutputTruncated, true);
+  assert.ok((tool?.toolOutputOriginalLength ?? 0) > (tool?.toolOutput.length ?? 0));
+});
+
 test('session.tool uses the agent sequence fence and requests history on a live gap', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();

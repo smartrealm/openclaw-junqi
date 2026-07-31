@@ -903,6 +903,19 @@ pub(super) async fn install_openclaw_impl_inner(
     mode: OpenclawInstallMode,
     operation: &SetupOperation,
 ) -> Result<String, String> {
+    crate::commands::setup_progress::scope_operation(
+        operation.progress_id(),
+        install_openclaw_impl_inner_scoped(app, state, mode, operation),
+    )
+    .await
+}
+
+async fn install_openclaw_impl_inner_scoped(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
+    mode: OpenclawInstallMode,
+    operation: &SetupOperation,
+) -> Result<String, String> {
     paths::validate_runtime_overrides()?;
     crate::commands::system::validate_openclaw_binary_override()?;
     let step = "openclaw";
@@ -1205,7 +1218,7 @@ pub(super) async fn install_openclaw_impl_inner(
     emit(
         &app,
         step,
-        &format!("OpenClaw {} installed successfully ✓", installed_version),
+        &format!("OpenClaw {} installed successfully", installed_version),
         1.0,
     );
     Ok(format!(
@@ -1249,6 +1262,7 @@ pub(super) async fn npm_install_with_fallback(
         progress,
         operation,
     } = request;
+    let progress_operation_id = operation.progress_id();
     let prog_start = progress.start;
     let prog_end = progress.end;
     let deadline = std::time::Instant::now() + DEPENDENCY_INSTALL_DEADLINE;
@@ -1428,57 +1442,61 @@ pub(super) async fn npm_install_with_fallback(
             let process_label = process_label.clone();
             let npm_progress = Arc::clone(&npm_progress);
             let last_output_seconds = Arc::clone(&last_output_seconds);
-            tokio::spawn(async move {
-                use tokio::io::{AsyncBufReadExt, BufReader};
-                let mut lines = BufReader::new(stdout).lines();
-                while let Some(line) = lines
-                    .next_line()
-                    .await
-                    .map_err(|error| format!("Failed to read npm stdout: {error}"))?
-                {
-                    record_process_output(&app_c, &step_c, &process_label, "stdout", &line);
-                    last_output_seconds
-                        .store(attempt_started.elapsed().as_secs(), Ordering::Release);
-                    let progress =
-                        prog_start + (prog_end - prog_start) * npm_progress.observe(&line);
-                    observe_npm_fetch(
-                        &line,
-                        &source_label,
-                        &slow_fetch_tx,
-                        &slow_fetch_triggered,
-                        &fetch_metrics,
-                    );
-                    if npm_log_line_is_http_telemetry(&line) {
-                        continue;
-                    }
-                    match npm_log_line_for_display(&line) {
-                        Some(display_line) => {
-                            record_npm_diagnostic(&diagnostics, &display_line);
-                            emit(
-                                &app_c,
-                                &step_c,
-                                &format!("npm › {}", display_line),
-                                progress,
-                            );
+            let progress_operation_id = progress_operation_id.clone();
+            tokio::spawn(crate::commands::setup_progress::scope_operation(
+                progress_operation_id,
+                async move {
+                    use tokio::io::{AsyncBufReadExt, BufReader};
+                    let mut lines = BufReader::new(stdout).lines();
+                    while let Some(line) = lines
+                        .next_line()
+                        .await
+                        .map_err(|error| format!("Failed to read npm stdout: {error}"))?
+                    {
+                        record_process_output(&app_c, &step_c, &process_label, "stdout", &line);
+                        last_output_seconds
+                            .store(attempt_started.elapsed().as_secs(), Ordering::Release);
+                        let progress =
+                            prog_start + (prog_end - prog_start) * npm_progress.observe(&line);
+                        observe_npm_fetch(
+                            &line,
+                            &source_label,
+                            &slow_fetch_tx,
+                            &slow_fetch_triggered,
+                            &fetch_metrics,
+                        );
+                        if npm_log_line_is_http_telemetry(&line) {
+                            continue;
                         }
-                        // Noisy lines (npm verbose/sill/timing/notice) are dropped from
-                        // the primary progress stream, but a raw diagnostic console
-                        // still needs them to show a slow-but-alive install is doing
-                        // something, not just silently stuck.
-                        None => {
-                            if let Some(raw_line) = npm_log_line_redacted(&line) {
-                                emit_diagnostic(
+                        match npm_log_line_for_display(&line) {
+                            Some(display_line) => {
+                                record_npm_diagnostic(&diagnostics, &display_line);
+                                emit(
                                     &app_c,
                                     &step_c,
-                                    &format!("npm » {}", raw_line),
+                                    &format!("npm › {}", display_line),
                                     progress,
                                 );
                             }
+                            // Noisy lines (npm verbose/sill/timing/notice) are dropped from
+                            // the primary progress stream, but a raw diagnostic console
+                            // still needs them to show a slow-but-alive install is doing
+                            // something, not just silently stuck.
+                            None => {
+                                if let Some(raw_line) = npm_log_line_redacted(&line) {
+                                    emit_diagnostic(
+                                        &app_c,
+                                        &step_c,
+                                        &format!("npm » {}", raw_line),
+                                        progress,
+                                    );
+                                }
+                            }
                         }
                     }
-                }
-                Ok(())
-            })
+                    Ok(())
+                },
+            ))
         });
         let tar_warning_count = Arc::new(AtomicUsize::new(0));
         let stderr_task = child.stderr.take().map(|stderr| {
@@ -1493,63 +1511,67 @@ pub(super) async fn npm_install_with_fallback(
             let process_label = process_label.clone();
             let npm_progress = Arc::clone(&npm_progress);
             let last_output_seconds = Arc::clone(&last_output_seconds);
-            tokio::spawn(async move {
-                use tokio::io::{AsyncBufReadExt, BufReader};
-                let mut lines = BufReader::new(stderr).lines();
-                while let Some(line) = lines
-                    .next_line()
-                    .await
-                    .map_err(|error| format!("Failed to read npm stderr: {error}"))?
-                {
-                    record_process_output(&app_e, &step_e, &process_label, "stderr", &line);
-                    last_output_seconds
-                        .store(attempt_started.elapsed().as_secs(), Ordering::Release);
-                    let progress =
-                        prog_start + (prog_end - prog_start) * npm_progress.observe(&line);
-                    observe_npm_fetch(
-                        &line,
-                        &source_label,
-                        &slow_fetch_tx,
-                        &slow_fetch_triggered,
-                        &fetch_metrics,
-                    );
-                    if npm_log_line_is_http_telemetry(&line) {
-                        continue;
-                    }
-                    match npm_log_line_for_display(&line) {
-                        Some(display_line) => {
-                            if display_line.contains("TAR_ENTRY_ERROR")
-                                && display_line.contains("ENOENT")
-                            {
-                                let seen = tar_warning_count_e.fetch_add(1, Ordering::Relaxed);
-                                // Preserve the first diagnostic but avoid flooding the
-                                // setup UI with hundreds of identical npm warnings.
-                                if seen > 0 {
-                                    continue;
-                                }
-                            }
-                            record_npm_diagnostic(&diagnostics, &display_line);
-                            emit(
-                                &app_e,
-                                &step_e,
-                                &format!("npm › {}", display_line),
-                                progress,
-                            );
+            let progress_operation_id = progress_operation_id.clone();
+            tokio::spawn(crate::commands::setup_progress::scope_operation(
+                progress_operation_id,
+                async move {
+                    use tokio::io::{AsyncBufReadExt, BufReader};
+                    let mut lines = BufReader::new(stderr).lines();
+                    while let Some(line) = lines
+                        .next_line()
+                        .await
+                        .map_err(|error| format!("Failed to read npm stderr: {error}"))?
+                    {
+                        record_process_output(&app_e, &step_e, &process_label, "stderr", &line);
+                        last_output_seconds
+                            .store(attempt_started.elapsed().as_secs(), Ordering::Release);
+                        let progress =
+                            prog_start + (prog_end - prog_start) * npm_progress.observe(&line);
+                        observe_npm_fetch(
+                            &line,
+                            &source_label,
+                            &slow_fetch_tx,
+                            &slow_fetch_triggered,
+                            &fetch_metrics,
+                        );
+                        if npm_log_line_is_http_telemetry(&line) {
+                            continue;
                         }
-                        None => {
-                            if let Some(raw_line) = npm_log_line_redacted(&line) {
-                                emit_diagnostic(
+                        match npm_log_line_for_display(&line) {
+                            Some(display_line) => {
+                                if display_line.contains("TAR_ENTRY_ERROR")
+                                    && display_line.contains("ENOENT")
+                                {
+                                    let seen = tar_warning_count_e.fetch_add(1, Ordering::Relaxed);
+                                    // Preserve the first diagnostic but avoid flooding the
+                                    // setup UI with hundreds of identical npm warnings.
+                                    if seen > 0 {
+                                        continue;
+                                    }
+                                }
+                                record_npm_diagnostic(&diagnostics, &display_line);
+                                emit(
                                     &app_e,
                                     &step_e,
-                                    &format!("npm » {}", raw_line),
+                                    &format!("npm › {}", display_line),
                                     progress,
                                 );
                             }
+                            None => {
+                                if let Some(raw_line) = npm_log_line_redacted(&line) {
+                                    emit_diagnostic(
+                                        &app_e,
+                                        &step_e,
+                                        &format!("npm » {}", raw_line),
+                                        progress,
+                                    );
+                                }
+                            }
                         }
                     }
-                }
-                Ok(())
-            })
+                    Ok(())
+                },
+            ))
         });
         let (heartbeat_tx, mut heartbeat_rx) = tokio::sync::watch::channel(false);
         let heartbeat_app = app.clone();
@@ -1559,37 +1581,41 @@ pub(super) async fn npm_install_with_fallback(
         let heartbeat_fetch_metrics = Arc::clone(&fetch_metrics);
         let heartbeat_last_output_seconds = Arc::clone(&last_output_seconds);
         let heartbeat_log_slot = npm_activity_log_slot.clone();
-        let heartbeat_task = tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    changed = heartbeat_rx.changed() => {
-                        if changed.is_err() || *heartbeat_rx.borrow() {
-                            break;
+        let progress_operation_id = progress_operation_id.clone();
+        let heartbeat_task = tokio::spawn(crate::commands::setup_progress::scope_operation(
+            progress_operation_id,
+            async move {
+                loop {
+                    tokio::select! {
+                        changed = heartbeat_rx.changed() => {
+                            if changed.is_err() || *heartbeat_rx.borrow() {
+                                break;
+                            }
+                        }
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                            let elapsed = attempt_started.elapsed();
+                            let last_output_age = std::time::Duration::from_secs(
+                                elapsed.as_secs().saturating_sub(
+                                    heartbeat_last_output_seconds.load(Ordering::Acquire),
+                                ),
+                            );
+                            emit_coalesced(
+                                &heartbeat_app,
+                                &heartbeat_step,
+                                &npm_install_activity_message(
+                                    &heartbeat_label,
+                                    elapsed,
+                                    last_output_age,
+                                    npm_fetch_snapshot(&heartbeat_fetch_metrics),
+                                ),
+                                &heartbeat_log_slot,
+                                heartbeat_progress.overall(prog_start, prog_end),
+                            );
                         }
                     }
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
-                        let elapsed = attempt_started.elapsed();
-                        let last_output_age = std::time::Duration::from_secs(
-                            elapsed.as_secs().saturating_sub(
-                                heartbeat_last_output_seconds.load(Ordering::Acquire),
-                            ),
-                        );
-                        emit_coalesced(
-                            &heartbeat_app,
-                            &heartbeat_step,
-                            &npm_install_activity_message(
-                                &heartbeat_label,
-                                elapsed,
-                                last_output_age,
-                                npm_fetch_snapshot(&heartbeat_fetch_metrics),
-                            ),
-                            &heartbeat_log_slot,
-                            heartbeat_progress.overall(prog_start, prog_end),
-                        );
-                    }
                 }
-            }
-        });
+            },
+        ));
         let wait_result = wait_for_npm_process_with_slow_signal(
             &mut child,
             &mut slow_fetch_rx,
@@ -1831,7 +1857,7 @@ pub(super) async fn npm_install_with_fallback(
             emit(
                 app,
                 step,
-                &format!("{} installed (via {}) ✓", package_spec, reg_label),
+                &format!("{} installed (via {})", package_spec, reg_label),
                 prog_end,
             );
             return Ok(());

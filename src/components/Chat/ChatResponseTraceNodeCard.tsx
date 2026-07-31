@@ -51,7 +51,7 @@ function TraceNodeDetails({ node }: { node: ChatResponseTraceNode }) {
     );
   }
   if (node.kind === 'tool') {
-    if (node.input === undefined && node.output === undefined) return null;
+    if (node.input === undefined && node.output === undefined && !node.error) return null;
     return (
       <details className="mt-2 text-[10.5px] text-aegis-text-muted">
         <summary className="cursor-pointer select-none text-aegis-text-secondary">{t('chat.trace.toolDetails')}</summary>
@@ -65,6 +65,17 @@ function TraceNodeDetails({ node }: { node: ChatResponseTraceNode }) {
           <div className="mt-2">
             <div className="mb-1 text-aegis-text-dim">{t('chat.trace.output')}</div>
             <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md bg-[rgb(var(--aegis-overlay)/0.04)] p-2 font-mono">{node.output}</pre>
+            {node.outputTruncated && (
+              <p className="mt-1 text-[9.5px] text-aegis-text-dim">
+                {t('chat.trace.outputTruncated', { count: node.outputOriginalLength ?? node.output.length })}
+              </p>
+            )}
+          </div>
+        )}
+        {node.error && (
+          <div className="mt-2">
+            <div className="mb-1 text-aegis-danger/80">{t('chat.trace.toolError')}</div>
+            <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-danger/20 bg-aegis-danger/5 p-2 font-mono text-aegis-danger/80">{node.error}</pre>
           </div>
         )}
       </details>

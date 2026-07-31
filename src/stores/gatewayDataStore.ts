@@ -183,6 +183,7 @@ interface GatewayDataState {
 
   // Polling active flag
   polling: boolean;
+  connectionStartedAt: number | null;
 
   // ── Actions ──
 
@@ -227,6 +228,7 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   errors: { sessions: null, agents: null, cost: null, usage: null, cron: null },
 
   polling: false,
+  connectionStartedAt: null,
 
   // ── Setters ──
 
@@ -298,7 +300,13 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
 
   setRunningSubAgents: (list) => set({ runningSubAgents: list }),
 
-  setPolling: (active) => set({ polling: active }),
+  setPolling: (active) => set((state) => ({
+    polling: active,
+    connectionStartedAt: resolveGatewayConnectionStartedAt(
+      state.connectionStartedAt,
+      active,
+    ),
+  })),
 
   // ── Derived ──
 
@@ -322,7 +330,9 @@ let cronTimer: ReturnType<typeof setInterval> | null = null;
 let costTimer: ReturnType<typeof setInterval> | null = null;
 let usageTimer: ReturnType<typeof setInterval> | null = null;
 
-type PollGroup = 'sessions' | 'agents' | 'cost' | 'usage' | 'cron';
+export const GATEWAY_DATA_GROUPS = ['sessions', 'agents', 'cost', 'usage', 'cron'] as const;
+export type GatewayDataGroup = typeof GATEWAY_DATA_GROUPS[number];
+type PollGroup = GatewayDataGroup;
 const DEFAULT_FRESHNESS_MS: Record<PollGroup, number> = {
   sessions: FAST_INTERVAL,
   agents: MID_INTERVAL,
@@ -333,19 +343,79 @@ const DEFAULT_FRESHNESS_MS: Record<PollGroup, number> = {
 
 // Reference to gateway connection (set by startPolling)
 // Uses request() directly to avoid circular imports with gateway facade
-let gw: { request: (method: string, params: any) => Promise<any> } | null = null;
-const sessionsRequestGate = createLatestRequestGate();
+type GatewayRequester = { request: (method: string, params: any) => Promise<any> };
+
+interface GatewayRequestTicket<Connection> {
+  group: GatewayDataGroup;
+  connection: Connection;
+  requestId: number;
+}
+
+interface GatewayRequestFence<Connection> {
+  begin: (group: GatewayDataGroup, connection: Connection) => GatewayRequestTicket<Connection>;
+  isCurrent: (ticket: GatewayRequestTicket<Connection>, connection: Connection | null) => boolean;
+  invalidate: (group: GatewayDataGroup) => void;
+  invalidateAll: () => void;
+}
+
+/** Keep every polling group tied to both its latest request and its Gateway instance. */
+export function createGatewayRequestFence<Connection>(): GatewayRequestFence<Connection> {
+  const gates: Record<GatewayDataGroup, ReturnType<typeof createLatestRequestGate>> = {
+    sessions: createLatestRequestGate(),
+    agents: createLatestRequestGate(),
+    cost: createLatestRequestGate(),
+    usage: createLatestRequestGate(),
+    cron: createLatestRequestGate(),
+  };
+  return {
+    begin: (group, connection) => ({
+      group,
+      connection,
+      requestId: gates[group].begin(),
+    }),
+    isCurrent: (ticket, connection) => (
+      ticket.connection === connection && gates[ticket.group].isCurrent(ticket.requestId)
+    ),
+    invalidate: (group) => {
+      gates[group].invalidate();
+    },
+    invalidateAll: () => {
+      for (const group of GATEWAY_DATA_GROUPS) gates[group].invalidate();
+    },
+  };
+}
+
+/** Preserve a Gateway connection's start time across dashboard remounts. */
+export function resolveGatewayConnectionStartedAt(
+  previous: number | null,
+  polling: boolean,
+  now = Date.now(),
+): number | null {
+  if (!polling) return null;
+  return previous ?? now;
+}
+
+let gw: GatewayRequester | null = null;
+const requestFence = createGatewayRequestFence<GatewayRequester>();
+
+function beginGatewayRequest(group: GatewayDataGroup): GatewayRequestTicket<GatewayRequester> | null {
+  return gw ? requestFence.begin(group, gw) : null;
+}
+
+function isCurrentGatewayRequest(ticket: GatewayRequestTicket<GatewayRequester>): boolean {
+  return requestFence.isCurrent(ticket, gw);
+}
 
 // ── Fetch functions ──────────────────────────────────────
 
-async function fetchSessions() {
-  if (!gw) return;
-  const requestId = sessionsRequestGate.begin();
+async function fetchSessions(): Promise<boolean> {
+  const ticket = beginGatewayRequest('sessions');
+  if (!ticket) return false;
   const store = useGatewayDataStore.getState();
   store.setLoading('sessions', true);
   try {
-    const res = await gw.request('sessions.list', {});
-    if (!sessionsRequestGate.isCurrent(requestId)) return;
+    const res = await ticket.connection.request('sessions.list', {});
+    if (!isCurrentGatewayRequest(ticket)) return false;
     const sessionListSnapshot = parseOpenClawSessionListSnapshot(res);
     const rawList = sessionListSnapshot.sessions as SessionInfo[];
 
@@ -385,64 +455,78 @@ async function fetchSessions() {
     } else {
       store.setLoading('sessions', false);
     }
+    return true;
   } catch (e: any) {
-    if (!sessionsRequestGate.isCurrent(requestId)) return;
+    if (!isCurrentGatewayRequest(ticket)) return false;
     store.setError('sessions', e?.message || String(e));
     store.setLoading('sessions', false);
+    return false;
   }
 }
 
 async function fetchAgents() {
-  if (!gw) return;
+  const ticket = beginGatewayRequest('agents');
+  if (!ticket) return;
   const store = useGatewayDataStore.getState();
   store.setLoading('agents', true);
   try {
-    const res = await gw.request('agents.list', {});
+    const res = await ticket.connection.request('agents.list', {});
+    if (!isCurrentGatewayRequest(ticket)) return;
     const list = Array.isArray(res?.agents) ? res.agents
                : Array.isArray(res) ? res : [];
     store.setAgents(list);
   } catch (e: any) {
+    if (!isCurrentGatewayRequest(ticket)) return;
     store.setError('agents', e?.message || String(e));
     store.setLoading('agents', false);
   }
 }
 
 async function fetchCost() {
-  if (!gw) return;
+  const ticket = beginGatewayRequest('cost');
+  if (!ticket) return;
   const store = useGatewayDataStore.getState();
   store.setLoading('cost', true);
   try {
-    const res = await gw.request('usage.cost', { days: 30, agentScope: 'all' });
+    const res = await ticket.connection.request('usage.cost', { days: 30, agentScope: 'all' });
+    if (!isCurrentGatewayRequest(ticket)) return;
     if (res) store.setCostSummary(res);
   } catch (e: any) {
+    if (!isCurrentGatewayRequest(ticket)) return;
     store.setError('cost', e?.message || String(e));
     store.setLoading('cost', false);
   }
 }
 
 async function fetchUsage() {
-  if (!gw) return;
+  const ticket = beginGatewayRequest('usage');
+  if (!ticket) return;
   const store = useGatewayDataStore.getState();
   store.setLoading('usage', true);
   try {
-    const res = await gw.request('sessions.usage', { limit: 100, agentScope: 'all' });
+    const res = await ticket.connection.request('sessions.usage', { limit: 100, agentScope: 'all' });
+    if (!isCurrentGatewayRequest(ticket)) return;
     if (res) store.setSessionsUsage(res);
   } catch (e: any) {
+    if (!isCurrentGatewayRequest(ticket)) return;
     store.setError('usage', e?.message || String(e));
     store.setLoading('usage', false);
   }
 }
 
 async function fetchCron() {
-  if (!gw) return;
+  const ticket = beginGatewayRequest('cron');
+  if (!ticket) return;
   const store = useGatewayDataStore.getState();
   store.setLoading('cron', true);
   try {
-    const res = await gw.request('cron.list', { includeDisabled: true });
+    const res = await ticket.connection.request('cron.list', { includeDisabled: true });
+    if (!isCurrentGatewayRequest(ticket)) return;
     const list = Array.isArray(res?.jobs) ? res.jobs
                : Array.isArray(res) ? res : [];
     store.setCronJobs(list);
   } catch (e: any) {
+    if (!isCurrentGatewayRequest(ticket)) return;
     store.setError('cron', e?.message || String(e));
     store.setLoading('cron', false);
   }
@@ -451,9 +535,10 @@ async function fetchCron() {
 // ── Grouped fetchers (called by timers) ─────────────────
 
 async function tickFast() {
-  await fetchSessions();
-  // Detect running sub-agents from sessions data
-  syncRunningSubAgents();
+  if (await fetchSessions()) {
+    // Detect running sub-agents only after a current Gateway snapshot.
+    syncRunningSubAgents();
+  }
 }
 
 async function tickMid() {
@@ -498,13 +583,14 @@ async function fetchGroup(group: PollGroup) {
  * Start smart polling. Call once when gateway connects.
  * @param gateway  The GatewayService instance
  */
-export function startPolling(gateway: { request: (method: string, params: any) => Promise<any> }) {
+export function startPolling(gateway: GatewayRequester) {
   // Prevent double-start
   if (gw && useGatewayDataStore.getState().polling) return;
 
+  requestFence.invalidateAll();
   gw = gateway;
   useGatewayDataStore.getState().setPolling(true);
-  debugLog('datastore', '[DataStore] ▶ Polling started (sessions=10s, agents=30s, demand groups lazy)');
+  debugLog('datastore', '[DataStore] Polling started (sessions=10s, agents=30s, demand groups lazy)');
 
   // Immediate initial fetch — only globally useful groups. Heavier dashboard /
   // cron / analytics data is fetched when a page asks for it.
@@ -525,17 +611,19 @@ export function stopPolling() {
   if (cronTimer) { clearInterval(cronTimer); cronTimer = null; }
   if (costTimer) { clearInterval(costTimer); costTimer = null; }
   if (usageTimer) { clearInterval(usageTimer); usageTimer = null; }
+  requestFence.invalidateAll();
   gw = null;
   const store = useGatewayDataStore.getState();
   store.setPolling(false);
+  for (const group of GATEWAY_DATA_GROUPS) store.setLoading(group, false);
   // Clear running sub-agents on disconnect — presence-based detection is meaningless
   // without a live sessions.list feed. Without this, stale sub-agents keep the pet
   // in "working" state indefinitely after a gateway disconnect/reconnect cycle.
   if (store.runningSubAgents.length > 0) {
     store.setRunningSubAgents([]);
-    debugLog('datastore', '[DataStore] 🧹 Cleared runningSubAgents on disconnect');
+    debugLog('datastore', '[DataStore] Cleared runningSubAgents on disconnect');
   }
-  debugLog('datastore', '[DataStore] ⏹ Polling stopped');
+  debugLog('datastore', '[DataStore] Polling stopped');
 }
 
 /**
@@ -543,12 +631,12 @@ export function stopPolling() {
  */
 export async function refreshAll() {
   if (!gw) return;
-  debugLog('datastore', '[DataStore] 🔄 Manual refresh — all groups');
+  debugLog('datastore', '[DataStore] Manual refresh - all groups');
   ensureTimer('agents');
   ensureTimer('cron');
   ensureTimer('cost');
   ensureTimer('usage');
-  await Promise.allSettled([tickFast(), tickMid(), tickSlow()]);
+  await Promise.allSettled([tickFast(), tickMid(), tickSlow(), fetchCron()]);
 }
 
 /**
@@ -703,12 +791,12 @@ function syncRunningSubAgents() {
   // Log transitions
   for (const r of running) {
     if (!prevKeys.has(r.sessionKey)) {
-      debugLog('datastore', '[DataStore] 🚀 Sub-agent detected:', r.agentId, r.label);
+      debugLog('datastore', '[DataStore] Sub-agent detected:', r.agentId, r.label);
     }
   }
   for (const old of prev) {
     if (!newKeys.has(old.sessionKey)) {
-      debugLog('datastore', '[DataStore] ✅ Sub-agent done:', old.agentId);
+      debugLog('datastore', '[DataStore] Sub-agent done:', old.agentId);
     }
   }
 
@@ -767,7 +855,7 @@ export function handleGatewayEvent(event: string, payload: any) {
             ? payload.sessionId
             : store.sessions.find((session) => session.key === sessionKey)?.sessionId;
           markSessionDeleted(sessionKey, sessionId);
-          sessionsRequestGate.invalidate();
+          requestFence.invalidate('sessions');
           store.setSessions(store.sessions.filter((session) => session.key !== sessionKey));
         }
       }
@@ -796,7 +884,7 @@ export function handleGatewayEvent(event: string, payload: any) {
         // Spread payload first so our explicit fields (running, runningUpdatedAt) always win.
         store.setSessions([...store.sessions, { ...payload, key, running: true, runningUpdatedAt: Date.now() }]);
       }
-      debugLog('datastore', '[DataStore] 📡 Session started:', key);
+      debugLog('datastore', '[DataStore] Session started:', key);
       break;
     }
 
@@ -814,10 +902,10 @@ export function handleGatewayEvent(event: string, payload: any) {
         const filtered = store.runningSubAgents.filter((r) => r.sessionKey !== key);
         if (filtered.length !== store.runningSubAgents.length) {
           store.setRunningSubAgents(filtered);
-          debugLog('datastore', '[DataStore] 🧹 Sub-agent removed on session.ended:', key);
+          debugLog('datastore', '[DataStore] Sub-agent removed on session.ended:', key);
         }
       }
-      debugLog('datastore', '[DataStore] 📡 Session ended:', key);
+      debugLog('datastore', '[DataStore] Session ended:', key);
       break;
     }
 
@@ -839,11 +927,11 @@ export function handleGatewayEvent(event: string, payload: any) {
         // task-session has not arrived yet — buffer and replay when it does.
         // Do NOT fall back to activeSessionKey: that would pollute the wrong session.
         pendingTaskStatus.set(taskId, { status, ts: Date.now() });
-        debugLog('datastore', '[DataStore] 📡 task-status buffered (awaiting task-session):', taskId, '→', status);
+        debugLog('datastore', '[DataStore] task-status buffered (awaiting task-session):', taskId, 'to', status);
         break;
       }
       applyTaskStatus(store, sessionKey, isActive);
-      debugLog('datastore', '[DataStore] 📡 task-status:', taskId, '→', status, '(session:', sessionKey, ')');
+      debugLog('datastore', '[DataStore] task-status:', taskId, 'to', status, '(session:', sessionKey, ')');
       break;
     }
 
@@ -861,10 +949,10 @@ export function handleGatewayEvent(event: string, payload: any) {
           if (age < PENDING_TASK_TTL) {
             const isActive = pending.status === 'running';
             applyTaskStatus(useGatewayDataStore.getState(), sessionId, isActive);
-            debugLog('datastore', '[DataStore] 📡 task-status replayed:', taskId, '→', pending.status,
+            debugLog('datastore', '[DataStore] task-status replayed:', taskId, 'to', pending.status,
               '(session:', sessionId, ', lag:', age, 'ms)');
           } else {
-            debugLog('datastore', '[DataStore] 📡 task-status pending expired, discarding:', taskId);
+            debugLog('datastore', '[DataStore] task-status pending expired, discarding:', taskId);
           }
         }
       }
@@ -878,7 +966,7 @@ export function handleGatewayEvent(event: string, payload: any) {
       store.setCronJobs(
         store.cronJobs.map((j) => j.id === jobId ? { ...j, state: 'running' } : j)
       );
-      debugLog('datastore', '[DataStore] 📡 Cron started:', jobId);
+      debugLog('datastore', '[DataStore] Cron started:', jobId);
       break;
     }
 
@@ -891,7 +979,7 @@ export function handleGatewayEvent(event: string, payload: any) {
           ? { ...j, state: 'idle', lastRun: new Date().toISOString() }
           : j)
       );
-      debugLog('datastore', '[DataStore] 📡 Cron completed:', jobId);
+      debugLog('datastore', '[DataStore] Cron completed:', jobId);
       break;
     }
 
@@ -900,7 +988,7 @@ export function handleGatewayEvent(event: string, payload: any) {
     case 'agent.created': {
       // Trigger a full agents refresh to get accurate data
       fetchAgents();
-      debugLog('datastore', '[DataStore] 📡 Agent event — refreshing agents');
+      debugLog('datastore', '[DataStore] Agent event - refreshing agents');
       break;
     }
 
@@ -912,7 +1000,7 @@ export function handleGatewayEvent(event: string, payload: any) {
 
     // ── Catch-all logging ──
     default:
-      debugLog('datastore', '[DataStore] 📡 Unhandled event:', event, JSON.stringify(payload).substring(0, 200));
+      debugLog('datastore', '[DataStore] Unhandled event:', event, JSON.stringify(payload).substring(0, 200));
       break;
   }
 }

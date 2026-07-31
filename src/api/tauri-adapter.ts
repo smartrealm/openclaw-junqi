@@ -23,6 +23,7 @@ export interface SystemMetricsPayload {
 }
 
 import { invoke } from "@tauri-apps/api/core";
+import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
 import {
   checkOpenclaw,
   clearGatewayLogs,
@@ -71,6 +72,40 @@ const GATEWAY_RESTART_STARTED_EVENT = 'aegis:gateway-restart-started';
 const GATEWAY_RESTART_FINISHED_EVENT = 'aegis:gateway-restart-finished';
 const IMAGE_SAVE_DOWNLOAD_TIMEOUT_MS = 30_000;
 const IMAGE_SAVE_MAX_BYTES = 64 * 1024 * 1024;
+const LEGACY_CONFIG_BACKUPS_STORAGE_KEY = 'aegis-config-backups';
+
+interface ActiveOpenClawConfigRead {
+  data: GatewayRuntimeConfig;
+  path: string;
+  exists: boolean;
+  revision: string;
+}
+
+interface ActiveOpenClawConfigValidation {
+  valid: boolean;
+  path: string;
+  exists: boolean;
+  error?: string;
+}
+
+interface ActiveOpenClawConfigWrite {
+  revision: string;
+}
+
+function clearLegacyOpenClawConfigBackups(): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.removeItem(LEGACY_CONFIG_BACKUPS_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in a browser preview; no config is retained there.
+  }
+}
+
+clearLegacyOpenClawConfigBackups();
+
+async function readActiveOpenClawConfig(): Promise<ActiveOpenClawConfigRead> {
+  return invoke<ActiveOpenClawConfigRead>('read_config');
+}
 
 /** Encode arbitrary-sized binary data without exceeding JS argument limits. */
 export function bytesToBase64(bytes: Uint8Array): string {
@@ -454,12 +489,39 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
         return { success: false };
       }
     },
-    detect: async () => { try { const d: any = await invoke("read_config"); return { path: d.path, exists: d.exists === true }; } catch { return { path: "", exists: false }; } },
-    read: async () => { try { const d: any = await invoke("read_config"); return { data: JSON.parse(d.raw || "{}"), path: d.path }; } catch { return { data: {}, path: "" }; } },
-    write: async (_p: string, d: any) => { try { await invoke("write_config", { json: JSON.stringify(d, null, 2) }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
+    detect: async () => {
+      const validation = await invoke<ActiveOpenClawConfigValidation>('validate_openclaw_config');
+      return validation;
+    },
+    read: readActiveOpenClawConfig,
+    parse: (raw: string) => invoke<GatewayRuntimeConfig>('parse_openclaw_config_text', { raw }),
+    write: async (data: GatewayRuntimeConfig, expectedRevision?: string) => {
+      try {
+        const result = await invoke<ActiveOpenClawConfigWrite>('write_config', {
+          json: JSON.stringify(data, null, 2),
+          expectedRevision: expectedRevision ?? null,
+        });
+        return { success: true, revision: result.revision };
+      } catch (error: unknown) {
+        return { success: false, error: String(error) };
+      }
+    },
     restart: restartLocalGateway,
-    validateOpenclawJson: async () => { try { return await invoke("validate_openclaw_config"); } catch (e: any) { return { valid: false, path: "", exists: false, error: String(e) }; } },
-    backupAndResetOpenclaw: async () => { try { await invoke("write_config", { json: "{}" }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
+    validateOpenclawJson: async () => {
+      try {
+        return await invoke<ActiveOpenClawConfigValidation>('validate_openclaw_config');
+      } catch (error: unknown) {
+        return { valid: false, path: '', exists: false, error: String(error) };
+      }
+    },
+    backupAndResetOpenclaw: async () => {
+      try {
+        await invoke<ActiveOpenClawConfigWrite>('write_config', { json: '{}', expectedRevision: null });
+        return { success: true };
+      } catch (error: unknown) {
+        return { success: false, error: String(error) };
+      }
+    },
   },
   providerRuntime: {
     catalog: (provider?: string) => invoke('get_openclaw_provider_catalog', { provider: provider ?? null }),
@@ -712,9 +774,8 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     },
     openSharedFolder: async () => {
       try {
-        const config = await invoke<{ raw: string }>("read_config");
-        const parsed = JSON.parse(config.raw || "{}");
-        const configuredWorkspace = parsed?.agents?.defaults?.workspace;
+        const { data } = await readActiveOpenClawConfig();
+        const configuredWorkspace = data.agents?.defaults?.workspace;
         const workspace = typeof configuredWorkspace === 'string' && configuredWorkspace.trim()
           ? configuredWorkspace
           : (await readStorageRuntimePaths())?.workspaceDir;

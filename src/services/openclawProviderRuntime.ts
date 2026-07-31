@@ -36,17 +36,25 @@ export interface ProviderProbeRequest {
   profileKey?: string;
 }
 
-let officialCatalogPromise: Promise<OfficialProviderCatalog> | undefined;
+export type OfficialProviderCatalogReader = () => Promise<OfficialProviderCatalog>;
 
-export function loadOfficialProviderCatalog(force = false): Promise<OfficialProviderCatalog> {
-  if (force || !officialCatalogPromise) {
-    officialCatalogPromise = window.aegis.providerRuntime.catalog().catch((error) => {
-      officialCatalogPromise = undefined;
-      throw error;
-    });
-  }
-  return officialCatalogPromise;
+export function createOfficialProviderCatalogLoader(
+  readCatalog: OfficialProviderCatalogReader,
+): () => Promise<OfficialProviderCatalog> {
+  return () => readCatalog();
 }
+
+/**
+ * Read the catalog from the currently selected OpenClaw runtime.
+ *
+ * A catalog is coupled to the selected Native/Docker runtime and its installed
+ * OpenClaw version. Keeping it in a module cache let an earlier runtime's
+ * models authorize a later one, so callers intentionally receive a fresh
+ * runtime snapshot for each request.
+ */
+export const loadOfficialProviderCatalog = createOfficialProviderCatalogLoader(
+  () => window.aegis.providerRuntime.catalog(),
+);
 
 const PROBE_STATUSES = new Set<OfficialProbeStatus>([
   'ok',

@@ -1,13 +1,16 @@
 import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from './RenderBlock';
 
 export interface NormalizedToolCall {
+  toolCallId?: string;
   name: string;
   input?: Record<string, unknown>;
 }
 
 export interface NormalizedToolResult {
+  toolCallId?: string;
   name: string;
   text: string;
+  isError?: boolean;
 }
 
 export interface NormalizedMessage {
@@ -34,6 +37,10 @@ export interface NormalizedMessage {
   toolOutput?: string;
   toolStatus?: 'running' | 'done' | 'error';
   toolDurationMs?: number;
+  toolError?: string;
+  toolOutputTruncated?: boolean;
+  toolOutputOriginalLength?: number;
+  formalReviewId?: string;
   sourceSequence?: number;
   thinkingContent?: string;
   fileRefs?: FileRef[];

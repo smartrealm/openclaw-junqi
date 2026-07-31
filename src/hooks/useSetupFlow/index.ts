@@ -24,6 +24,7 @@ import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
 import { executeRuntimeSelectionTransaction } from "@/services/setup/runtimeSelectionTransaction";
 import { validateSetupCompletion } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
+import { isCurrentSetupOperationProgress } from "@/hooks/setupProgressEvents";
 import {
   requiresOpenClawOnboarding,
 } from "@/services/openclawWizard";
@@ -126,6 +127,7 @@ export function useSetupFlow(
   const {
     beginRun: beginOperationRun,
     isRunActive,
+    isCurrentOperationId,
     runSetupOperation,
     beginSetupTransaction: beginSetupOperation,
     finishSetupTransaction: finishSetupOperation,
@@ -138,6 +140,10 @@ export function useSetupFlow(
     setNodeRequirement(null);
     return runId;
   }, [beginOperationRun]);
+  const acceptSetupProgressOperation = useCallback(
+    (operationId: string | null) => isCurrentSetupOperationProgress(operationId, isCurrentOperationId),
+    [isCurrentOperationId],
+  );
 
   const waitForGatewayReady = useCallback(async (runId: number, timeoutMs = 30_000, port?: number | null) => {
     const deadline = Date.now() + timeoutMs;
@@ -165,7 +171,7 @@ export function useSetupFlow(
   const resolveActiveRuntimeOnboardingRequirement = useCallback(async (): Promise<boolean> => {
     try {
       const detected = await window.aegis.config.detect();
-      const loaded = await window.aegis.config.read(detected.path);
+      const loaded = await window.aegis.config.read();
       return requiresOpenClawOnboarding(detected.exists, loaded.data);
     } catch {
       // A missing or unreadable selected-runtime config must stay in the
@@ -227,7 +233,14 @@ export function useSetupFlow(
     navigateSetup,
   });
 
-  useSetupProgressEvents({ installMode, stepsRef, report, setInstallTarget, commitSteps });
+  useSetupProgressEvents({
+    installMode,
+    stepsRef,
+    report,
+    setInstallTarget,
+    commitSteps,
+    isCurrentOperationId,
+  });
 
   const {
     wizardStep,
@@ -921,6 +934,7 @@ export function useSetupFlow(
     repairing,
     brokenPlugins,
     forceStorageSelection,
+    acceptSetupProgressOperation,
     continueAfterEnvironmentReview,
     redetectEnvironment,
     enteringDashboard,

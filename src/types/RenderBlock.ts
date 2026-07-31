@@ -102,6 +102,9 @@ export interface ToolBlock extends BlockBase {
   output?: string;
   status: 'running' | 'done' | 'error';
   durationMs?: number;
+  error?: string;
+  outputTruncated?: boolean;
+  outputOriginalLength?: number;
 }
 
 export interface ExecutionPlanBlock extends BlockBase {

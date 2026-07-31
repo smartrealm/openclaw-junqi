@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  createOfficialProviderCatalogLoader,
   providerCatalogModels,
   summarizeOfficialProviderProbe,
 } from './openclawProviderRuntime';
@@ -45,4 +46,18 @@ test('BUG-MP-04 filters the runtime catalog by canonical provider prefix', () =>
     ],
   }, 'OpenAI');
   assert.deepEqual(rows.map((row) => row.key), ['openai/gpt-5.6']);
+});
+
+test('PROV-01 always reads the catalog from the current runtime', async () => {
+  let calls = 0;
+  const loadCatalog = createOfficialProviderCatalogLoader(async () => {
+    calls += 1;
+    return { version: `runtime-${calls}`, models: [] };
+  });
+
+  const first = await loadCatalog();
+  const second = await loadCatalog();
+  assert.equal(calls, 2);
+  assert.equal(first.version, 'runtime-1');
+  assert.equal(second.version, 'runtime-2');
 });

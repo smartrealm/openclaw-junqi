@@ -60,6 +60,8 @@ export interface SetupFlow {
   repairing: boolean;
   brokenPlugins: BrokenGatewayPlugin[];
   forceStorageSelection: boolean;
+  /** Reject progress from an obsolete or unrelated native setup operation. */
+  acceptSetupProgressOperation: (operationId: string | null) => boolean;
   continueAfterEnvironmentReview: () => void;
   redetectEnvironment: () => void;
   startGateway: () => Promise<boolean>;

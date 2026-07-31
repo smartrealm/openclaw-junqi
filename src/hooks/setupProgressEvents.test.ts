@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifySetupMessage, normalizeSetupProgressPayload } from "./setupProgressEvents";
+import {
+  classifySetupMessage,
+  isCurrentSetupOperationProgress,
+  normalizeSetupProgressPayload,
+} from "./setupProgressEvents";
 
 test("structured setup events retain step, error, and normalized local progress", () => {
   assert.deepEqual(
@@ -12,6 +16,7 @@ test("structured setup events retain step, error, and normalized local progress"
       key: null,
       params: { path: "/tmp/openclaw" },
       logSlot: null,
+      operationId: null,
       status: null,
     }),
     {
@@ -23,6 +28,7 @@ test("structured setup events retain step, error, and normalized local progress"
       key: null,
       params: { path: "/tmp/openclaw" },
       logSlot: null,
+      operationId: null,
       status: null,
     },
   );
@@ -38,6 +44,7 @@ test("plain legacy events remain readable without inventing metadata", () => {
     key: null,
     params: {},
     logSlot: null,
+    operationId: null,
     status: null,
   });
 });
@@ -50,6 +57,24 @@ test("structured setup events retain renderer log slots", () => {
     logSlot: "download-run-1",
   });
   assert.equal(event?.logSlot, "download-run-1");
+});
+
+test("structured setup events retain their owning native operation", () => {
+  const event = normalizeSetupProgressPayload({
+    step: "node",
+    message: "Downloading Node.js",
+    operationId: "setup-test:2:node",
+  });
+  assert.equal(event?.operationId, "setup-test:2:node");
+  assert.equal(
+    isCurrentSetupOperationProgress(event?.operationId ?? null, (id) => id === "setup-test:2:node"),
+    true,
+  );
+  assert.equal(
+    isCurrentSetupOperationProgress(event?.operationId ?? null, (id) => id === "setup-test:3:node"),
+    false,
+  );
+  assert.equal(isCurrentSetupOperationProgress(null, () => true), false);
 });
 
 test("structured setup events ignore non-string translation parameters", () => {

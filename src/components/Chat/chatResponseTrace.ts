@@ -20,6 +20,9 @@ export type ChatResponseTraceNode =
       output?: string;
       status: 'running' | 'done' | 'error';
       durationMs?: number;
+      error?: string;
+      outputTruncated?: boolean;
+      outputOriginalLength?: number;
     })
   | (TraceNodeBase & { kind: 'review-request'; options: DecisionOption[] })
   | (TraceNodeBase & { kind: 'message'; role: 'user' | 'assistant'; characterCount: number })
@@ -43,6 +46,7 @@ export interface ChatResponseTrace {
     status: 'not-requested' | 'requested';
     recording: 'none' | 'transcript-only';
     requestCount: number;
+    formalReviewId?: string;
   };
 }
 
@@ -72,6 +76,11 @@ export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrac
           ...(block.output !== undefined ? { output: block.output } : {}),
           status: block.status,
           ...(block.durationMs !== undefined ? { durationMs: block.durationMs } : {}),
+          ...(block.error ? { error: block.error } : {}),
+          ...(block.outputTruncated ? { outputTruncated: true } : {}),
+          ...(block.outputOriginalLength !== undefined
+            ? { outputOriginalLength: block.outputOriginalLength }
+            : {}),
         }];
       case 'decision':
         return [{ ...base, kind: 'review-request', options: block.options }];
@@ -105,6 +114,14 @@ export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrac
     }
   });
   const requestCount = nodes.filter((node) => node.kind === 'review-request').length;
+  const formalReviewIds = new Set(
+    group.blocks
+      .filter((block) => block.type === 'decision')
+      .flatMap((block) => block.formalReviewId ? [block.formalReviewId] : []),
+  );
+  const formalReviewId = formalReviewIds.size === 1
+    ? [...formalReviewIds][0]
+    : undefined;
 
   return {
     id: group.id,
@@ -117,7 +134,12 @@ export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrac
     sourceMessageIds: [...group.sourceMessageIds],
     nodes,
     review: requestCount > 0
-      ? { status: 'requested', recording: 'transcript-only', requestCount }
+      ? {
+          status: 'requested',
+          recording: 'transcript-only',
+          requestCount,
+          ...(formalReviewId ? { formalReviewId } : {}),
+        }
       : { status: 'not-requested', recording: 'none', requestCount: 0 },
   };
 }

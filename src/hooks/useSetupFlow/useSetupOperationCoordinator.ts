@@ -21,6 +21,10 @@ export function useSetupOperationCoordinator() {
 
   const beginRun = useCallback(() => coordinator.beginRun(), [coordinator]);
   const isRunActive = useCallback((runId: number) => coordinator.isRunActive(runId), [coordinator]);
+  const isCurrentOperationId = useCallback(
+    (operationId: string) => coordinator.isCurrentOperationId(operationId),
+    [coordinator],
+  );
   const runSetupOperation = useCallback(<T,>(
     runId: number,
     kind: SetupOperationKind,
@@ -40,6 +44,7 @@ export function useSetupOperationCoordinator() {
   return {
     beginRun,
     isRunActive,
+    isCurrentOperationId,
     runSetupOperation,
     beginSetupTransaction,
     finishSetupTransaction,

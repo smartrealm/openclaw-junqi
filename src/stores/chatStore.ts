@@ -291,6 +291,8 @@ function isLocalPlaceholderSession(session: Session): boolean {
   return session.localOnly === true && !session.sessionId;
 }
 
+export type ChatMessageRole = 'user' | 'assistant' | 'system' | 'tool' | 'toolResult' | 'compaction' | 'unknown';
+
 export interface ChatMessage {
   id: string;
   /** Stable Desktop idempotency key for an optimistic user message. */
@@ -299,7 +301,7 @@ export interface ChatMessage {
   nativeMessageId?: string;
   /** Stable display projection within one native transcript record. */
   nativeProjectionId?: string;
-  role: 'user' | 'assistant' | 'system' | 'tool' | 'compaction';
+  role: ChatMessageRole;
   /** Optional subtype — e.g. 'model-switch' for inline model-change notices. */
   kind?: 'model-switch' | string;
   content: string;
@@ -324,11 +326,18 @@ export interface ChatMessage {
   retryPayload?: OutboundChatPayload;
   // Tool call metadata (role === 'tool')
   toolName?: string;
-  toolInput?: Record<string, any>;
+  toolInput?: Record<string, unknown>;
   toolOutput?: string;
   toolStatus?: 'running' | 'done' | 'error';
   toolDurationMs?: number;
   toolCallId?: string;
+  /** Gateway-provided execution error, separate from the display result. */
+  toolError?: string;
+  /** The tool output is a bounded display projection, not necessarily complete. */
+  toolOutputTruncated?: boolean;
+  toolOutputOriginalLength?: number;
+  /** Formal-review relation only when an upstream integration establishes it. */
+  formalReviewId?: string;
   // Thinking/reasoning content (saved after streaming completes)
   thinkingContent?: string;
   fileRefs?: FileRef[];
@@ -736,6 +745,11 @@ const createRawHistoryPayload = (messages: ChatMessage[], sessionKey: string) =>
     toolOutput: msg.toolOutput,
     toolStatus: msg.toolStatus,
     toolDurationMs: msg.toolDurationMs,
+    toolCallId: msg.toolCallId,
+    toolError: msg.toolError,
+    toolOutputTruncated: msg.toolOutputTruncated,
+    toolOutputOriginalLength: msg.toolOutputOriginalLength,
+    formalReviewId: msg.formalReviewId,
     thinkingContent: msg.thinkingContent,
     mediaUrl: msg.mediaUrl,
     mediaType: msg.mediaType,

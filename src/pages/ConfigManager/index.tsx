@@ -7,7 +7,7 @@ import { lazy, Suspense, useEffect, useRef, useState, useCallback, useMemo } fro
 import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { FileJson, CheckCircle2, AlertCircle, Pencil, History, RefreshCw, Bot, Users, MessageSquare, Wrench, SlidersHorizontal, KeyRound, type LucideIcon, Download, Upload, Check } from 'lucide-react';
+import { FileJson, CheckCircle2, AlertCircle, RefreshCw, Bot, Users, MessageSquare, Wrench, SlidersHorizontal, KeyRound, type LucideIcon, Download, Upload } from 'lucide-react';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { getTemplateById } from './providerTemplates';
@@ -32,41 +32,10 @@ import { debugLog, debugWarn } from '@/utils/debugLog';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { readConfigNavigationIntent, type ConfigTab } from './configNavigation';
 import { migrateLegacyChannelBindings } from '@/services/channelConfig';
+import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
 import { smartMerge } from './configMerge';
 
 type Tab = ConfigTab;
-
-type ConfigBackup = {
-  key: string;
-  data: any;
-  ts: number;
-};
-
-function readLocalConfigBackups(): ConfigBackup[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem('aegis-config-backups') || '[]');
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((item): item is ConfigBackup => (
-        item &&
-        typeof item === 'object' &&
-        typeof item.key === 'string' &&
-        typeof item.ts === 'number' &&
-        'data' in item
-      ))
-      .sort((a, b) => a.ts - b.ts);
-  } catch (err) {
-    debugWarn('app', '[Config] Failed to read local backups:', err);
-    return [];
-  }
-}
-
-function summarizeBackupConfig(config: GatewayRuntimeConfig) {
-  const providers = Object.keys(config.models?.providers ?? {}).length;
-  const agents = config.agents?.list?.length ?? 0;
-  const envVars = Object.keys(config.env?.vars ?? {}).length;
-  return { providers, agents, envVars };
-}
 
 const ProvidersTab = lazy(() => import('./ProvidersTab').then((module) => ({ default: module.ProvidersTab })));
 const AgentsTab = lazy(() => import('./AgentsTab').then((module) => ({ default: module.AgentsTab })));
@@ -107,42 +76,10 @@ export function ConfigManagerPage() {
 
   // ── Modal / toast state ──
   const [saveSuccess, setSaveSuccess]     = useState(false);
-  const [showBackups, setShowBackups]     = useState(false);
   const [reloading, setReloading]         = useState(false);
   const [reloadSuccess, setReloadSuccess] = useState(false);
   const [connectionFailures, setConnectionFailures] = useState<string[] | null>(null);
   const connectionConfirmResolverRef = useRef<((value: boolean) => void) | null>(null);
-
-  // ── Backup dropdown: portal-based to escape stacking contexts ──
-  const backupBtnRef = useRef<HTMLButtonElement>(null);
-  const [backupMenuPos, setBackupMenuPos] = useState<{ top: number; right: number } | null>(null);
-
-  const openBackups = useCallback(() => {
-    if (!backupBtnRef.current) return;
-    const rect = backupBtnRef.current.getBoundingClientRect();
-    setBackupMenuPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
-    setShowBackups(true);
-  }, []);
-
-  useEffect(() => {
-    if (!showBackups) return;
-    const close = (e: MouseEvent) => {
-      // Close if the click is outside the button and the portal menu
-      const target = e.target as Node;
-      if (
-        backupBtnRef.current && !backupBtnRef.current.contains(target) &&
-        !document.getElementById('backup-menu-portal')?.contains(target)
-      ) {
-        setShowBackups(false);
-      }
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [showBackups]);
-
-  // ── Editable config path ──
-  const [editingPath, setEditingPath] = useState(false);
-  const [pathInput, setPathInput]     = useState('');
 
   // ── hasChanges — true when config differs from disk ──
   const hasChanges = useMemo(
@@ -160,12 +97,15 @@ export function ConfigManagerPage() {
         const detected = await window.aegis.config.detect();
         setConfigPath(detected.path);
         setConfigExists(detected.exists);
+        if (!detected.valid) {
+          throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
+        }
 
         // A missing openclaw.json is a valid first-run state. The backend read
-        // contract returns an empty object for that case, so keep the editor
-        // usable and let the first save create the file atomically.
-        const { data } = await window.aegis.config.read(detected.path);
-        const normalized = normalizeConfig(data ?? {});
+        // contract returns an empty object for that case. Keep the editor
+        // usable and let the first save create the selected-runtime file.
+        const { data } = await window.aegis.config.read();
+        const normalized = normalizeConfig(data);
         setConfig(normalized);
         setOriginalConfig(structuredClone(normalized));
       } catch (err: any) {
@@ -198,30 +138,18 @@ export function ConfigManagerPage() {
     []
   );
 
-  const handleRestoreBackup = useCallback((backup: ConfigBackup) => {
-    try {
-      const restoredNormalized = normalizeConfig(structuredClone(backup.data));
-      setConfig(restoredNormalized);
-      // 恢复只载入编辑区，不覆盖 originalConfig。这样浮动保存条会出现，用户确认后才写盘。
-      setShowBackups(false);
-      setError('');
-    } catch (err: any) {
-      setError(err?.message || t('config.restoreBackupFailed', '备份恢复失败'));
-    }
-  }, [t]);
-
   // ── Save ──
   async function persistConfig(
     targetConfig?: GatewayRuntimeConfig | null,
     options?: { connectionProbe?: ProviderProbeRequest }
   ): Promise<boolean> {
     const configToSave = targetConfig ?? config;
-    if (!configToSave || !configPath) return false;
+    if (!configToSave) return false;
     setSaving(true);
 
     try {
       // 1. Re-read the latest version from disk to capture any external edits
-      const { data: diskConfig } = await window.aegis.config.read(configPath);
+      const { data: diskConfig, revision } = await window.aegis.config.read();
 
       // 2. Apply only the user's changes on top of the fresh disk version
       const mergedRaw = smartMerge(diskConfig, originalConfig, configToSave) as GatewayRuntimeConfig;
@@ -239,22 +167,8 @@ export function ConfigManagerPage() {
         if (!continueSave) return false;
       }
 
-      // Auto-backup: save last 5 versions before overwriting
-      try {
-        const backupKey = `config-backup-${Date.now()}`;
-        const backups: { key: string; data: any; ts: number }[] = JSON.parse(
-          localStorage.getItem('aegis-config-backups') || '[]'
-        );
-        backups.push({ key: backupKey, data: structuredClone(diskConfig), ts: Date.now() });
-        // Keep only last 5
-        while (backups.length > 5) backups.shift();
-        localStorage.setItem('aegis-config-backups', JSON.stringify(backups));
-      } catch (backupErr) {
-        debugWarn('app', '[Config] Backup failed:', backupErr);
-      }
-
       // 3. Write the already validated candidate.
-      const writeResult = await window.aegis.config.write(configPath, toWrite);
+      const writeResult = await window.aegis.config.write(toWrite, revision);
       if (!writeResult.success) {
         throw new Error(writeResult.error || t('config.saveFailed'));
       }
@@ -349,7 +263,7 @@ export function ConfigManagerPage() {
       if (!file) return;
       const text = await file.text();
       try {
-        const data = JSON.parse(text);
+        const data = await window.aegis.config.parse(text);
         setConfig(normalizeConfig(data));
         // Don't update originalConfig — so hasChanges becomes true
       } catch {
@@ -778,15 +692,16 @@ export function ConfigManagerPage() {
     setReloadSuccess(false);
     try {
       const detected = await window.aegis.config.detect();
-      const pathToUse = configPath || detected.path;
-      setConfigPath(pathToUse);
-      setConfigExists(detected.exists || !!pathToUse);
+      setConfigPath(detected.path);
+      setConfigExists(detected.exists);
+      if (!detected.valid) {
+        throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
+      }
 
-      const { data } = await window.aegis.config.read(pathToUse);
+      const { data } = await window.aegis.config.read();
       const normalized = normalizeConfig(data);
       setConfig(normalized);
       setOriginalConfig(structuredClone(normalized));
-      setConfigExists(true);
       setReloadSuccess(true);
       setTimeout(() => setReloadSuccess(false), 2000);
     } catch (err: any) {
@@ -800,37 +715,6 @@ export function ConfigManagerPage() {
   const handleDiscard = () => {
     if (originalConfig) {
       setConfig(structuredClone(originalConfig));
-    }
-  };
-
-  // ── Path editing ──
-  const handleStartEdit = () => {
-    setPathInput(configPath);
-    setEditingPath(true);
-  };
-
-  const handlePathApply = async () => {
-    const trimmed = pathInput.trim();
-    if (!trimmed) return;
-    setConfigPath(trimmed);
-    setEditingPath(false);
-    try {
-      // Try to read from new path
-      const { data } = await window.aegis.config.read(trimmed);
-      const normalized = normalizeConfig(data);
-      setConfig(normalized);
-      setOriginalConfig(structuredClone(normalized));
-      setConfigExists(true);
-      setError('');
-      // Save path preference for next time
-      if (window.aegis.settings?.save) {
-        await window.aegis.settings.save('openclawConfigPath', trimmed);
-      }
-    } catch (err: any) {
-      setConfigExists(false);
-      setConfig(null);
-      setOriginalConfig(null);
-      setError(err.message || 'Failed to read config');
     }
   };
 
@@ -851,7 +735,9 @@ export function ConfigManagerPage() {
   // UI always shows a "Main" agent row, even when it isn't explicitly in agents.list.
   // Count should match what the user sees in the Agents tab.
   const agentCount = hasMainAgent ? rawAgents.length : rawAgents.length + 1;
-  const channelCount = config?.channels ? Object.keys(config.channels).length : 0;
+  const channelCount = config?.channels
+    ? Object.keys(config.channels).filter((channelId) => !isChannelConfigurationMetadataKey(channelId)).length
+    : 0;
 
   // ── Smart tab badges ──
   const toolCount = [
@@ -918,24 +804,6 @@ export function ConfigManagerPage() {
             <span className="whitespace-nowrap">{t('config.importConfig')}</span>
           </button>
 
-          {/* Restore from backup */}
-          <div className="relative shrink-0">
-            <button
-              ref={backupBtnRef}
-              onClick={() => showBackups ? setShowBackups(false) : openBackups()}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap',
-                'border border-aegis-border text-aegis-text-secondary',
-                'hover:bg-white/[0.03] hover:border-aegis-border-hover',
-                'transition-all duration-200',
-                showBackups && 'border-aegis-primary/40 text-aegis-primary bg-aegis-primary/5'
-              )}
-              title={t('config.restoreBackup')}
-            >
-              <History size={13} className="shrink-0" />
-              <span className="whitespace-nowrap">{t('config.restoreBackup')}</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -981,45 +849,11 @@ export function ConfigManagerPage() {
             <div className="text-xs text-aegis-text-muted mb-1 font-medium">{t('config.configPath')}</div>
             {detecting ? (
               <div className="text-sm text-aegis-text-muted animate-pulse">{t('config.detecting')}</div>
-            ) : editingPath ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={pathInput}
-                  onChange={(e) => setPathInput(e.target.value)}
-                  className="flex-1 bg-aegis-surface border border-aegis-border rounded-lg px-3 py-1.5 text-aegis-text text-sm font-mono outline-none focus:border-aegis-primary transition-colors"
-                  placeholder={t('config.pathPlaceholder', 'D:\\MyClawdbot\\clawdbot.json')}
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handlePathApply();
-                    if (e.key === 'Escape') setEditingPath(false);
-                  }}
-                />
-                <button
-                  onClick={handlePathApply}
-                  className="px-2 py-1.5 rounded-lg text-xs font-medium bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors"
-                >
-                  <Check size={14} strokeWidth={1.75} /> {t('common.apply', 'Apply')}
-                </button>
-                <button
-                  onClick={() => setEditingPath(false)}
-                  className="px-2 py-1.5 rounded-lg text-xs font-medium text-aegis-text-muted hover:text-aegis-text transition-colors"
-                >
-                  {t('common.cancel', 'Cancel')}
-                </button>
-              </div>
             ) : (
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-sm text-aegis-text font-mono truncate flex-1 min-w-0">
                   {configPath || '—'}
                 </span>
-                <button
-                  onClick={handleStartEdit}
-                  className="text-aegis-text-muted hover:text-aegis-primary transition-colors shrink-0"
-                  title={t('config.editPath', 'Edit path')}
-                >
-                  <Pencil size={13} />
-                </button>
                 {configExists ? (
                   <CheckCircle2 size={13} className="text-aegis-primary shrink-0" />
                 ) : (
@@ -1167,89 +1001,6 @@ export function ConfigManagerPage() {
         document.body
       )}
 
-      {/* ── Backup dropdown portal — rendered to body to escape stacking contexts ── */}
-      {showBackups && backupMenuPos && createPortal(
-        <div
-          id="backup-menu-portal"
-          style={{ position: 'fixed', top: backupMenuPos.top, right: backupMenuPos.right, zIndex: 9999 }}
-          className={clsx(
-            'w-72',
-            'bg-aegis-menu-bg border border-aegis-menu-border rounded-xl',
-            'shadow-[0_8px_30px_rgba(0,0,0,0.4)]',
-            'overflow-hidden'
-          )}
-        >
-          <div className="px-3 py-2 border-b border-aegis-border">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted">
-              {t('config.recentBackups')}
-            </span>
-            <p className="mt-1 text-[11px] leading-relaxed text-aegis-text-muted">
-              {t('config.restoreBackupHint')}
-            </p>
-          </div>
-          <div className="p-1">
-            {(() => {
-              const backups = readLocalConfigBackups();
-              if (backups.length === 0) {
-                return (
-                  <div className="px-3 py-4 text-xs text-aegis-text-muted text-center">
-                    {t('config.noBackupsYet')}
-                  </div>
-                );
-              }
-              return backups.slice().reverse().map((b, i) => {
-                let summary: ReturnType<typeof summarizeBackupConfig> | null = null;
-                try {
-                  summary = summarizeBackupConfig(normalizeConfig(structuredClone(b.data)));
-                } catch (err) {
-                  debugWarn('app', '[Config] Invalid backup skipped in menu:', err);
-                }
-
-                return summary ? (
-                  <button
-                    key={b.key}
-                    onClick={() => handleRestoreBackup(b)}
-                    className={clsx(
-                      'w-full flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg',
-                      'text-left transition-colors duration-150',
-                      'hover:bg-white/[0.05]'
-                    )}
-                  >
-                    <div className="min-w-0">
-                      <div className="text-xs font-medium text-aegis-text">
-                        {new Date(b.ts).toLocaleString()}
-                      </div>
-                      <div className="text-[10px] text-aegis-text-muted mt-0.5">
-                        {i === 0 ? t('config.latestBackup') : t('config.savesAgo', { count: i + 1 })}
-                      </div>
-                      <div className="mt-1 text-[10px] text-aegis-text-secondary">
-                        {t('config.backupSummary', summary)}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[10px] font-semibold text-aegis-primary shrink-0 pt-0.5">
-                      <History size={12} className="shrink-0" />
-                      <span>{t('config.restoreToEditor')}</span>
-                    </div>
-                  </button>
-                ) : (
-                  <div
-                    key={b.key}
-                    className="w-full px-3 py-2.5 rounded-lg text-left opacity-60"
-                  >
-                    <div className="text-xs font-medium text-aegis-text-muted">
-                      {new Date(b.ts).toLocaleString()}
-                    </div>
-                    <div className="text-[10px] text-red-300/80 mt-0.5">
-                      {t('config.invalidBackup')}
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        </div>,
-        document.body
-      )}
     </div>
   );
 }

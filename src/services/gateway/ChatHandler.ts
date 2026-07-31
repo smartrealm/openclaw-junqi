@@ -7,6 +7,11 @@
 
 import { extractText, stripDirectives } from '@/processing/TextCleaner';
 import { extractThinkingContent } from '@/processing/normalizeGatewayMessage';
+import {
+  normalizeGatewayToolLifecycleEvent,
+  projectToolOutput,
+  type GatewayToolEventSource,
+} from '@/processing/toolExecutionProjection';
 import { handleGatewayEvent } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { parseButtons } from '@/utils/buttonParser';
@@ -82,20 +87,11 @@ function sessionKeyFromSnapshot(raw: unknown): string {
 function isOpenClawSessionToolPayload(raw: unknown): raw is Record<string, unknown> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   const payload = raw as Record<string, unknown>;
-  const data = payload.data;
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
-  const tool = data as Record<string, unknown>;
+  const toolEvent = normalizeGatewayToolLifecycleEvent(payload, 'tool');
   return payload.stream === 'tool'
-    && typeof payload.sessionKey === 'string'
-    && payload.sessionKey.trim().length > 0
-    && typeof payload.runId === 'string'
-    && payload.runId.trim().length > 0
-    && typeof payload.seq === 'number'
-    && Number.isSafeInteger(payload.seq)
-    && payload.seq >= 0
-    && typeof tool.toolCallId === 'string'
-    && tool.toolCallId.trim().length > 0
-    && (tool.phase === 'start' || tool.phase === 'update' || tool.phase === 'result');
+    && Boolean(toolEvent?.sessionKey)
+    && Boolean(toolEvent?.runId)
+    && toolEvent?.sourceSequence !== undefined;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -961,21 +957,17 @@ export class ChatHandler {
   // `event:"chat"` or `event:"agent"` with `stream:"tool"` / `stream:"item"` (kind tool).
   // Always updates the session tool row — independent of Settings "tool intent" UI toggle.
   // ═══════════════════════════════════════════════════════════
-  handleToolStream(payload: any) {
-    const data = payload.data ?? {};
-    const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : '';
-    const toolName = typeof data.name === 'string' ? data.name : 'tool';
-    const phase    = typeof data.phase === 'string' ? data.phase : '';
+  handleToolStream(payload: unknown, source: GatewayToolEventSource = 'tool') {
+    const toolEvent = normalizeGatewayToolLifecycleEvent(payload, source);
+    if (!toolEvent) return;
 
-    if (!toolCallId) return;
-
-    const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
-    const runId =
-      typeof payload.runId === 'string' && payload.runId.trim() ? payload.runId.trim() : '';
+    const sessionKey = this.resolveSessionKey(toolEvent.sessionKey, toolEvent.runId);
+    const runId = toolEvent.runId ?? '';
     if (!sessionKey || !runId) {
       debugWarn('gateway', '[GW] Ignoring tool event without an OpenClaw sessionKey and runId');
       return;
     }
+    const { phase, toolCallId, toolName } = toolEvent;
     const msgId = `tool-live-${runId}-${toolCallId}`;
     if (!this.beginRun(sessionKey, runId)) return;
     this.bindRunToSession(sessionKey, runId);
@@ -991,7 +983,6 @@ export class ChatHandler {
       // Tool is starting — add a 'running' card (idempotent)
       const msgs = listFor();
       if (!msgs.some((m) => m.id === msgId)) {
-        const toolInput = data.args && typeof data.args === 'object' ? data.args : {};
         store.addMessage(
           {
             id: msgId,
@@ -999,11 +990,13 @@ export class ChatHandler {
             content: '',
             runId,
             toolName,
-            toolInput,
-            toolStatus: 'running',
-            nativeSequence: Number.isSafeInteger(payload.seq) && payload.seq >= 0 ? payload.seq : undefined,
+            toolInput: toolEvent.input ?? {},
+            toolStatus: toolEvent.status,
+            toolCallId,
+            ...(toolEvent.error ? { toolError: toolEvent.error } : {}),
+            ...(toolEvent.sourceSequence !== undefined ? { nativeSequence: toolEvent.sourceSequence } : {}),
             responseState: 'streaming',
-            timestamp: new Date().toISOString(),
+            timestamp: toolEvent.timestamp,
           },
           sessionKey,
         );
@@ -1015,14 +1008,26 @@ export class ChatHandler {
 
     if (phase === 'update') {
       // Partial result streaming — update existing card
-      const partial = data.partialResult != null
-        ? (typeof data.partialResult === 'string' ? data.partialResult : JSON.stringify(data.partialResult))
-        : '';
+      const output = projectToolOutput(toolEvent.output);
       const msgs = listFor();
       const idx  = msgs.findIndex((m) => m.id === msgId);
       if (idx >= 0) {
         const updated = [...msgs];
-        updated[idx] = { ...updated[idx], toolOutput: partial.slice(0, 2000) };
+        updated[idx] = {
+          ...updated[idx],
+          ...(toolEvent.input ? { toolInput: toolEvent.input } : {}),
+          ...(output
+            ? {
+                toolOutput: output.text,
+                toolOutputTruncated: output.truncated || undefined,
+                toolOutputOriginalLength: output.truncated ? output.originalLength : undefined,
+              }
+            : {}),
+          toolStatus: toolEvent.status,
+          timestamp: toolEvent.timestamp,
+          ...(toolEvent.error ? { toolError: toolEvent.error } : {}),
+          ...(toolEvent.sourceSequence !== undefined ? { nativeSequence: toolEvent.sourceSequence } : {}),
+        };
         store.setMessages(updated, sessionKey);
       }
       return;
@@ -1030,9 +1035,7 @@ export class ChatHandler {
 
     if (phase === 'result') {
       // Tool complete — finalize with output + duration
-      const output = data.result != null
-        ? (typeof data.result === 'string' ? data.result : JSON.stringify(data.result))
-        : '';
+      const output = projectToolOutput(toolEvent.output);
       const msgs = listFor();
       const idx  = msgs.findIndex((m) => m.id === msgId);
       if (idx >= 0) {
@@ -1040,15 +1043,24 @@ export class ChatHandler {
         const timingKey = this.toolTimingKey(sessionKey, runId, toolCallId);
         const startedAt = this.toolStartedAtByKey.get(timingKey);
         this.toolStartedAtByKey.delete(timingKey);
-        const durationMs = startedAt === undefined ? undefined : Math.max(0, Date.now() - startedAt);
+        const durationMs = toolEvent.durationMs
+          ?? (startedAt === undefined ? undefined : Math.max(0, Date.now() - startedAt));
         updated[idx] = {
           ...updated[idx],
-          runId: runId ?? updated[idx].runId ?? null,
-          toolOutput: output.slice(0, 2000),
-          toolStatus: 'done',
-          nativeSequence: Number.isSafeInteger(payload.seq) && payload.seq >= 0
-            ? payload.seq
-            : updated[idx].nativeSequence,
+          runId,
+          ...(toolEvent.input ? { toolInput: toolEvent.input } : {}),
+          ...(output
+            ? {
+                toolOutput: output.text,
+                toolOutputTruncated: output.truncated || undefined,
+                toolOutputOriginalLength: output.truncated ? output.originalLength : undefined,
+              }
+            : {}),
+          toolStatus: toolEvent.status,
+          toolCallId,
+          timestamp: toolEvent.timestamp,
+          ...(toolEvent.error ? { toolError: toolEvent.error } : {}),
+          nativeSequence: toolEvent.sourceSequence ?? updated[idx].nativeSequence,
           responseState: 'final',
           ...(durationMs !== undefined ? { toolDurationMs: durationMs } : {}),
         };
@@ -1062,11 +1074,18 @@ export class ChatHandler {
             content: '',
             runId,
             toolName,
-            toolOutput: output.slice(0, 2000),
-            toolStatus: 'done',
-            nativeSequence: Number.isSafeInteger(payload.seq) && payload.seq >= 0 ? payload.seq : undefined,
+            ...(toolEvent.input ? { toolInput: toolEvent.input } : {}),
+            ...(output ? { toolOutput: output.text } : {}),
+            toolStatus: toolEvent.status,
+            toolCallId,
+            ...(toolEvent.error ? { toolError: toolEvent.error } : {}),
+            ...(output?.truncated
+              ? { toolOutputTruncated: true, toolOutputOriginalLength: output.originalLength }
+              : {}),
+            ...(toolEvent.sourceSequence !== undefined ? { nativeSequence: toolEvent.sourceSequence } : {}),
+            ...(toolEvent.durationMs !== undefined ? { toolDurationMs: toolEvent.durationMs } : {}),
             responseState: 'final',
-            timestamp: new Date().toISOString(),
+            timestamp: toolEvent.timestamp,
           },
           sessionKey,
         );
@@ -1074,7 +1093,7 @@ export class ChatHandler {
       return;
     }
 
-    debugLog('gateway', '[GW] Tool stream — unknown phase:', phase, toolCallId);
+    debugLog('gateway', '[GW] Tool stream - unknown phase:', phase, toolCallId);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1241,7 +1260,7 @@ export class ChatHandler {
             content: '',
             timestamp: new Date().toISOString(),
           }, sessionKey);
-          debugLog('gateway', '[GW] 📦 Compaction detected — divider injected');
+          debugLog('gateway', '[GW] Compaction detected - divider injected');
         }
       }
     }
@@ -1273,24 +1292,7 @@ export class ChatHandler {
     // Agent "item" stream — newer event format for tool lifecycle.
     if (event === 'agent' && p.stream === 'item' && p.data?.kind === 'tool') {
       if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
-      const data = p.data;
-      const itemId = typeof data.itemId === 'string' ? data.itemId : '';
-      const toolCallId = itemId.replace(/^tool:/, '');
-      if (toolCallId) {
-        const title = typeof data.title === 'string' ? data.title : '';
-        this.handleToolStream({
-          sessionKey: p.sessionKey,
-          runId: p.runId,
-          ts: p.ts || data.startedAt,
-          data: {
-            toolCallId,
-            name: data.name || title.split(/\s/)[0] || 'tool',
-            phase: data.phase === 'end' ? 'result' : (data.phase || 'start'),
-            args: data.toolArgs || data.args || (title ? { task: title } : {}),
-            result: data.output || data.result || '',
-          },
-        });
-      }
+      this.handleToolStream(p, 'item');
       return;
     }
 
@@ -1350,11 +1352,11 @@ export class ChatHandler {
         if (/^https?:\/\//.test(mediaPath)) {
           // HTTP URL — use directly (Edge TTS server or any HTTP source)
           mediaUrl = mediaPath;
-          debugLog('media', '[GW] 🔊 Media URL (HTTP):', mediaUrl);
+          debugLog('media', '[GW] Media URL (HTTP):', mediaUrl);
         } else {
           // File path — resolve via Electron IPC
           mediaUrl = `aegis-media:${mediaPath}`;
-          debugLog('media', '[GW] 🔊 Media path:', mediaPath);
+          debugLog('media', '[GW] Media path:', mediaPath);
         }
       }
     }

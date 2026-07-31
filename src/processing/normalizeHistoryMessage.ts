@@ -6,7 +6,18 @@ import type { ChatMessage } from '@/stores/chatStore';
 import type { FileRef, DecisionOption, WorkshopEvent, SessionEvent } from '@/types/RenderBlock';
 import { readGatewayMessageIdentity } from '@/services/gateway/messageIdentity';
 import { inferMimeType } from '@/services/chat/attachments';
-import { extractGatewayMessageText } from './normalizeGatewayMessage';
+import {
+  extractGatewayToolResultError,
+  extractGatewayToolResults,
+  extractGatewayMessageText,
+  projectGatewayToolResultOutput,
+} from './normalizeGatewayMessage';
+import {
+  extractToolExecutionError,
+  normalizeGatewayTimestamp,
+  normalizeToolExecutionStatus,
+  projectToolOutput,
+} from './toolExecutionProjection';
 
 /** Loose input shape — the gateway may emit slightly different keys across versions. */
 export interface RawGatewayMessage {
@@ -26,8 +37,8 @@ export interface RawGatewayMessage {
   run_id?: string | null;
   role?: string;
   content?: unknown;
-  timestamp?: string;
-  createdAt?: string;
+  timestamp?: string | number;
+  createdAt?: string | number;
   state?: string;
   mediaUrl?: string;
   mediaType?: string;
@@ -45,14 +56,20 @@ export interface RawGatewayMessage {
   toolOutput?: unknown;
   output?: unknown;
   result?: unknown;
-  toolStatus?: ChatMessage['toolStatus'];
-  status?: ChatMessage['toolStatus'];
+  toolStatus?: string;
+  status?: string;
   toolDurationMs?: number | string;
   durationMs?: number | string;
   duration_ms?: number | string;
   tool_duration_ms?: number | string;
   toolCallId?: string;
   tool_call_id?: string;
+  isError?: boolean;
+  toolErrorSummary?: unknown;
+  error?: unknown;
+  toolOutputTruncated?: unknown;
+  toolOutputOriginalLength?: unknown;
+  formalReviewId?: string;
   thinkingContent?: string;
   fileRefs?: FileRef[];
   decisionOptions?: DecisionOption[];
@@ -78,15 +95,38 @@ export function normalizeHistoryMessage(raw: RawGatewayMessage): ChatMessage {
   const fileRefs = mergeFileRefs(raw.fileRefs, durableFileRefs);
   const responseState: ChatMessage['responseState'] =
     raw.state === 'error' || raw.state === 'aborted' ? raw.state : 'final';
+  const isToolResult = isToolHistoryRole(raw.role);
+  const structuredToolResults = extractGatewayToolResults(raw.content);
+  const hasStructuredToolError = structuredToolResults.some((result) => result.isError);
+  const explicitOutput = historyExplicitToolOutput(raw);
+  const projectionOptions = {
+    truncated: raw.toolOutputTruncated,
+    originalLength: raw.toolOutputOriginalLength,
+  };
+  const outputProjection = explicitOutput !== undefined
+    ? projectToolOutput(explicitOutput, projectionOptions)
+    : projectGatewayToolResultOutput(raw.content, projectionOptions)
+      ?? (isToolResult ? projectToolOutput(raw.content, projectionOptions) : undefined);
+  const toolStatus = isToolResult
+    ? normalizeToolExecutionStatus(raw.toolStatus ?? raw.status, raw.isError === true || hasStructuredToolError)
+      ?? (raw.isError === true || hasStructuredToolError ? 'error' : 'done')
+    : normalizeToolExecutionStatus(raw.toolStatus ?? raw.status, raw.isError === true || hasStructuredToolError);
+  const explicitToolError = extractToolExecutionError(raw.toolErrorSummary ?? raw.error);
+  const resultToolError = toolStatus === 'error'
+    ? explicitOutput !== undefined
+      ? extractToolExecutionError(explicitOutput)
+      : extractGatewayToolResultError(raw.content) ?? (isToolResult ? extractToolExecutionError(raw.content) : undefined)
+    : undefined;
+  const formalReviewId = normalizeOptionalText(raw.formalReviewId);
 
   return {
     id,
     ...identity,
     runId: raw.runId ?? raw.run_id ?? null,
-    role: (raw.role as ChatMessage['role']) ?? 'unknown',
+    role: normalizeHistoryRole(raw.role),
     content: extractGatewayMessageText(raw.content),
-    ...(Array.isArray(raw.content) ? { rawContent: raw.content } : {}),
-    timestamp: raw.timestamp || raw.createdAt || new Date().toISOString(),
+    ...(raw.content && typeof raw.content === 'object' ? { rawContent: raw.content } : {}),
+    timestamp: normalizeGatewayTimestamp(raw.timestamp ?? raw.createdAt),
     responseState,
     mediaUrl: raw.mediaUrl || audio?.source || undefined,
     mediaType: raw.mediaType || audio?.mimeType || undefined,
@@ -96,12 +136,20 @@ export function normalizeHistoryMessage(raw: RawGatewayMessage): ChatMessage {
       : undefined,
     toolName: raw.toolName || raw.name,
     toolInput: raw.toolInput || raw.input,
-    toolOutput: textValue(raw.toolOutput ?? raw.output ?? raw.result),
-    toolStatus: raw.toolStatus || raw.status,
+    toolOutput: outputProjection?.text,
+    toolStatus,
     toolDurationMs: numberValue(
       raw.toolDurationMs ?? raw.durationMs ?? raw.duration_ms ?? raw.tool_duration_ms,
     ),
     toolCallId: raw.toolCallId || raw.tool_call_id,
+    ...(explicitToolError ?? resultToolError ? { toolError: explicitToolError ?? resultToolError } : {}),
+    ...(outputProjection?.truncated
+      ? {
+          toolOutputTruncated: true,
+          toolOutputOriginalLength: outputProjection.originalLength,
+        }
+      : {}),
+    ...(formalReviewId ? { formalReviewId } : {}),
     thinkingContent: raw.thinkingContent,
     fileRefs,
     decisionOptions: Array.isArray(raw.decisionOptions) ? raw.decisionOptions : undefined,
@@ -113,6 +161,31 @@ export function normalizeHistoryMessage(raw: RawGatewayMessage): ChatMessage {
     historyTruncated: metadata?.truncated === true || undefined,
     historyTruncationReason: typeof metadata?.reason === 'string' ? metadata.reason : undefined,
   };
+}
+
+function isToolHistoryRole(role: unknown): boolean {
+  return typeof role === 'string' && ['tool', 'toolresult', 'tool_result'].includes(role.toLowerCase());
+}
+
+function historyExplicitToolOutput(raw: RawGatewayMessage): unknown {
+  if (raw.toolOutput !== undefined) return raw.toolOutput;
+  if (raw.output !== undefined) return raw.output;
+  if (raw.result !== undefined) return raw.result;
+  return undefined;
+}
+
+function normalizeHistoryRole(value: unknown): ChatMessage['role'] {
+  switch (typeof value === 'string' ? value.toLowerCase() : '') {
+    case 'user': return 'user';
+    case 'assistant': return 'assistant';
+    case 'system': return 'system';
+    case 'tool': return 'tool';
+    case 'toolresult':
+    case 'tool_result':
+      return 'toolResult';
+    case 'compaction': return 'compaction';
+    default: return 'unknown';
+  }
 }
 
 interface TranscriptMediaItem {
@@ -222,16 +295,6 @@ function numberValue(value: unknown): number | undefined {
   return undefined;
 }
 
-function textValue(value: unknown): string | undefined {
-  if (typeof value === 'string') return value;
-  if (value == null) return undefined;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
 /** Batch normalize; preserves input order. */
 export function normalizeHistoryMessages(rawList: readonly unknown[]): ChatMessage[] {
   const out: ChatMessage[] = [];
@@ -292,6 +355,10 @@ function historyProjectionFingerprint(message: ChatMessage): string {
     toolCallId: message.toolCallId,
     toolInput: message.toolInput,
     toolOutput: message.toolOutput,
+    toolError: message.toolError,
+    toolOutputTruncated: message.toolOutputTruncated,
+    toolOutputOriginalLength: message.toolOutputOriginalLength,
+    formalReviewId: message.formalReviewId,
     thinkingContent: message.thinkingContent,
   });
   let hash = 2_166_136_261;

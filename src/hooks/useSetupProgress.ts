@@ -40,6 +40,8 @@ export interface SetupProgressEventPayload extends SetupProgressDetail {
   error?: string | null;
   /** Third-party command output belongs in diagnostics, not status surfaces. */
   diagnostic?: boolean;
+  /** Renderer-owned install work belongs only to its active setup screen. */
+  operationId?: string | null;
 }
 
 export function useSetupProgress(filterStep?: string): SetupProgressDetail | null {
@@ -53,6 +55,7 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
       const message = d?.message;
       if (!d || typeof d.step !== 'string' || typeof message !== 'string') return;
       if (d.diagnostic === true) return;
+      if (typeof d.operationId === 'string' && d.operationId) return;
       if (filterStep && d.step !== filterStep) return;
       const step = d.step;
       const progress = typeof d.progress === 'number' ? d.progress : 0;

@@ -33,6 +33,7 @@ interface SetupProgress {
   params?: Record<string, string>;
   progress?: number;
   error?: string;
+  operationId?: string | null;
 }
 
 type RuntimeAction = 'node' | 'git';
@@ -117,6 +118,7 @@ export function ManagedRuntimeSettingsPanel() {
 
   useEffect(() => subscribeTauriEvent<SetupProgress>('setup-progress', (event) => {
     const payload = event.payload;
+    if (payload.operationId) return;
     if (payload.step !== 'node' && payload.step !== 'git') return;
     setLog(translateSetupProgressMessage(
       payload.key,

@@ -1,4 +1,4 @@
-import { GitFork, History, ShieldCheck } from 'lucide-react';
+import { History, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatResponseTrace } from './chatResponseTrace';
 import { ChatSidePanel } from './ChatSidePanel';
@@ -9,17 +9,16 @@ import { formatTraceTimestamp } from './chatResponseTracePresentation';
 interface ChatResponseTracePanelProps {
   trace: ChatResponseTrace;
   onClose: () => void;
-  onOpenCollaborationHistory?: () => void;
   overlay?: boolean;
 }
 
 export function ChatResponseTracePanel({
   trace,
   onClose,
-  onOpenCollaborationHistory,
   overlay = false,
 }: ChatResponseTracePanelProps) {
   const { t, i18n } = useTranslation();
+  const formalReviewId = trace.review.formalReviewId;
   const titleId = `chat-trace-title-${trace.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const status = trace.status === 'final'
     ? 'completed'
@@ -37,7 +36,7 @@ export function ChatResponseTracePanel({
       onClose={onClose}
       overlay={overlay}
     >
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin" data-chat-response-trace={trace.id}>
+      <div className="min-h-0 flex-1 overflow-y-auto chat-scrollbar" data-chat-response-trace={trace.id}>
         <section className="border-b border-aegis-border px-4 py-3">
           <div className="flex items-center gap-2">
             <StatusIcon status={status} size={14} />
@@ -70,6 +69,12 @@ export function ChatResponseTracePanel({
                 </div>
               </details>
             </dd>
+            {formalReviewId && (
+              <>
+                <dt className="text-aegis-text-dim">{t('chat.trace.formalReviewId')}</dt>
+                <dd className="break-all font-mono text-aegis-text-muted">{formalReviewId}</dd>
+              </>
+            )}
           </dl>
         </section>
 
@@ -80,19 +85,11 @@ export function ChatResponseTracePanel({
               <div className="text-[11px] font-semibold text-aegis-text">{t('chat.trace.reviewSection')}</div>
               <p className="mt-1 text-[10.5px] leading-4 text-aegis-text-muted">
                 {trace.review.status === 'requested'
-                  ? t('chat.trace.reviewTranscriptOnly', { count: trace.review.requestCount })
+                  ? formalReviewId
+                    ? t('chat.trace.reviewFormalRelation')
+                    : t('chat.trace.reviewTranscriptOnly', { count: trace.review.requestCount })
                   : t('chat.trace.reviewNotRequested')}
               </p>
-              {onOpenCollaborationHistory && (
-                <button
-                  type="button"
-                  onClick={onOpenCollaborationHistory}
-                  className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-md border border-aegis-border px-2.5 py-1 text-[10.5px] font-medium text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.05)]"
-                >
-                  <GitFork size={12} />
-                  {t('chat.trace.openFormalReview')}
-                </button>
-              )}
             </div>
           </div>
         </section>

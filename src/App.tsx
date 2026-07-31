@@ -348,7 +348,7 @@ export default function App() {
       new ConfigGetLoader((m, p) => gateway.call(m, p)),
       new FileReadLoader(async () => {
         if (!window.aegis?.config?.read) return null;
-        const { data } = await window.aegis.config.read('');
+        const { data } = await window.aegis.config.read();
         return { data };
       }),
       new AgentsSessionLoader(() => gateway.getSessions(), () => gateway.getAgents()),
@@ -357,7 +357,7 @@ export default function App() {
     const models = await chain.load(ctx);
     try {
       if (window.aegis?.config?.read) {
-        const { data } = await window.aegis.config.read('');
+        const { data } = await window.aegis.config.read();
         const profiles = Object.keys(data?.auth?.profiles ?? {}).length;
         const providers = Object.keys(data?.models?.providers ?? {}).length;
         const modelDefs = Object.keys(data?.agents?.defaults?.models ?? {}).length;

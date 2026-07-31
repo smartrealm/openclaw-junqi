@@ -116,3 +116,20 @@ test("a new run receives a controlled busy result while the prior transaction st
   assert.equal(coordinator.beginTransaction(secondRun), true);
   coordinator.finishTransaction(secondRun);
 });
+
+test("a stale native progress identity is rejected after its setup run is superseded", async () => {
+  const nativeCall = deferred<void>();
+  const coordinator = new SetupOperationCoordinator({
+    scope: "progress",
+    cancelOperation: async () => ({ accepted: true, queued: true }),
+  });
+  const firstRun = coordinator.beginRun();
+  const operation = coordinator.runOperation(firstRun, "node", async () => nativeCall.promise);
+
+  assert.equal(coordinator.isCurrentOperationId("progress:1:node"), true);
+  coordinator.beginRun();
+  assert.equal(coordinator.isCurrentOperationId("progress:1:node"), false);
+
+  nativeCall.resolve();
+  await operation;
+});

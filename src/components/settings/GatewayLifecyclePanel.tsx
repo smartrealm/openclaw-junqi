@@ -44,6 +44,7 @@ interface ProgressEvent {
   progress?: number | null;
   key?: string;
   params?: Record<string, unknown>;
+  operationId?: string | null;
 }
 
 interface GatewayLifecyclePanelProps {
@@ -149,7 +150,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
     let cancelled = false;
 
     const setupUnlisten = subscribeTauriEvent<ProgressEvent>('setup-progress', (event) => {
-      if (cancelled || event.payload?.step !== 'gateway') return;
+      if (cancelled || event.payload?.operationId || event.payload?.step !== 'gateway') return;
       const message = resolveProgressMessage(t, event.payload);
       if (message) setLatestProgress(message);
       if (typeof event.payload.progress === 'number') setProgress(event.payload.progress);
