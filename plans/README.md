@@ -33,6 +33,7 @@ plans/
 
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
 - [Session origin aggregation](quality/2026-07-20-session-origin-aggregation.md)
+- [会话分组与后台活动下钻](quality/2026-07-31-session-background-activity-drilldown.md)
 - [Tauri listener lifecycle](quality/2026-07-22-tauri-listener-lifecycle.md)
 - [Tauri command boundary](quality/2026-07-27-tauri-command-boundary.md)
 - [字体设置与 Orca 对齐](quality/2026-07-28-font-settings-orca-parity.md)

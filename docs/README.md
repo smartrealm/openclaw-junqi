@@ -94,6 +94,7 @@ docs/
 - [Chat 响应追溯与人工审核](quality/chat-response-trace-and-human-review-2026-07-31.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界修复](quality/installation-dashboard-chat-provider-channel-runtime-boundary-remediation-2026-07-31.md)
 - [会话来源聚合审计](quality/session-origin-aggregation-audit.md)
+- [会话分组与后台活动下钻设计](quality/session-background-activity-drilldown-design-2026-07-31.md)
 - [Tauri Listener 生命周期审计](quality/tauri-listener-lifecycle-audit.md)
 - [Tauri Command 边界审计](quality/tauri-command-boundary-audit-2026-07-27.md)
 - [Voice Runtime 审计](quality/voice-runtime-audit.md)

@@ -36,6 +36,7 @@ specs/
 - [维护中心](quality/2026-07-14-maintenance-center-hardening.md)
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
 - [Session origin aggregation](quality/2026-07-20-session-origin-aggregation.md)
+- [会话分组与后台活动下钻](quality/2026-07-31-session-background-activity-drilldown.md)
 - [Chat production hardening](quality/2026-07-21-chat-production-hardening.md)
 - [JunQi namespace](quality/2026-07-21-junqi-namespace-bugfix.md)
 - [Voice runtime](quality/2026-07-21-voice-runtime-bugfix.md)
