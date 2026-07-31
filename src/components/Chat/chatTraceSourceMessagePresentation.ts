@@ -11,10 +11,42 @@ function nonEmptyText(value: string | undefined): string | null {
   return text || null;
 }
 
+const MAX_STRUCTURED_DECODE_DEPTH = 6;
+
+function decodeNestedStructuredValue(value: unknown, depth = 0): unknown {
+  if (depth >= MAX_STRUCTURED_DECODE_DEPTH) return value;
+
+  if (typeof value === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return parsed !== null && typeof parsed === 'object'
+        ? decodeNestedStructuredValue(parsed, depth + 1)
+        : value;
+    } catch {
+      return value;
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => decodeNestedStructuredValue(item, depth + 1));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([key, item]) => [key, decodeNestedStructuredValue(item, depth + 1)]),
+    );
+  }
+
+  return value;
+}
+
 function parseStructuredContent(text: string): unknown | null {
   try {
     const value: unknown = JSON.parse(text);
-    return value !== null && typeof value === 'object' ? value : null;
+    return value !== null && typeof value === 'object'
+      ? decodeNestedStructuredValue(value)
+      : null;
   } catch {
     return null;
   }

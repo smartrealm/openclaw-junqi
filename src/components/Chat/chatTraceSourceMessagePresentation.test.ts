@@ -27,6 +27,19 @@ test('prefers the normalized tool output over raw transport content', () => {
   });
 });
 
+test('decodes nested JSON result strings without altering ordinary text fields', () => {
+  const result = resolveTraceSourceRecordContent(message({
+    role: 'toolResult',
+    toolOutput: '[{"type":"text","text":"{\\"status\\":200,\\"text\\":\\"Actual result\\"}","note":"plain text"}]',
+  }));
+
+  assert.deepEqual(result?.structured, [{
+    type: 'text',
+    text: { status: 200, text: 'Actual result' },
+    note: 'plain text',
+  }]);
+});
+
 test('keeps ordinary messages in the markdown presentation path', () => {
   assert.deepEqual(resolveTraceSourceRecordContent(message({ content: 'Gateway response.' })), {
     kind: 'markdown',
