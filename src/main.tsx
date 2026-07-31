@@ -65,7 +65,8 @@ earlyBootstrap();
 
 (async function boot() {
   await import('./api/tauri-adapter');
-  await import('./i18n');
+  const { i18nReady } = await import('./i18n');
+  await i18nReady;
   await import('@/styles/index.css');
   const [React, ReactDOM, ErrorBoundary, Tooltip] = await Promise.all([
     import('react'),

@@ -42,3 +42,15 @@ PDF worker 是 PDF.js 独立 worker 资产，大小 1,286.28 kB，不是 Vite �
 ## 验证边界
 
 已直接运行 Vite 生产构建并检查完整输出；完整 `pnpm build` 同时通过 collaboration bundle 合约和 TypeScript。`pnpm lint` 通过并检查 577 个源码文件，前端测试 1,694 项通过，最终脚本套件 223 项通过。该验证证明当前源码产物不再报告 circular chunk 和 chunk size warning，不代表 Tauri 安装包已经签名、公证或在各目标平台启动验证。
+
+## 2026-08-01 跟进：locale 资源按需加载
+
+三份完整 locale JSON 曾由 `src/i18n.ts` 同步导入。随着文案增长，`i18n` chunk
+达到 550.34 kB，超过同一份构建门禁的 550 kB 上限。该上限仍是有效的发布保护，
+不能通过提高预算解决。
+
+当前将资源加载职责收敛到 `src/i18n/resources.ts`：启动只并行加载所选语言及英文
+回退，后续语言在用户切换时再加载。`src/main.tsx` 等待 `i18nReady` 后才渲染 React，
+避免首屏显示翻译 key；资源加载失败时保留既有语言和持久化偏好。该策略使 locale
+成为独立按需 chunk，同时保持 `scripts/vite-chunk-strategy.mjs` 对 `src/` 模块不施加
+手工分包规则的约束。

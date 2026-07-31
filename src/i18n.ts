@@ -1,8 +1,5 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import en from './locales/en.json';
-import zh from './locales/zh.json';
-import zhTW from './locales/zh-TW.json';
 import {
   applyDocumentLanguage,
   browserDefaultLanguage,
@@ -10,6 +7,7 @@ import {
   persistLanguagePreference,
   type AppLanguage,
 } from './i18n/languages';
+import { loadInitialTranslationResources, loadTranslationResource } from './i18n/resources';
 import { syncNativeLocale } from './services/nativeLocale';
 
 // ═══════════════════════════════════════════════════════════
@@ -35,16 +33,15 @@ const getInitialLang = (): AppLanguage => {
 
 const savedLang = getInitialLang();
 
-i18n.use(initReactI18next).init({
-  resources: {
-    en: { translation: en },
-    zh: { translation: zh },
-    'zh-TW': { translation: zhTW },
-  },
-  lng: savedLang,
-  fallbackLng: 'en',
-  interpolation: { escapeValue: false },
-});
+export const i18nReady = (async () => {
+  const resources = await loadInitialTranslationResources(savedLang);
+  await i18n.use(initReactI18next).init({
+    resources,
+    lng: savedLang,
+    fallbackLng: 'en',
+    interpolation: { escapeValue: false },
+  });
+})();
 
 // Helper: get direction for current language
 export const getDirection = (_lang?: string): 'rtl' | 'ltr' => {
@@ -52,9 +49,23 @@ export const getDirection = (_lang?: string): 'rtl' | 'ltr' => {
 };
 
 // Helper: change language and persist
-export const changeLanguage = (lang: AppLanguage) => {
+export const changeLanguage = async (lang: AppLanguage): Promise<void> => {
   if (!isAppLanguage(lang)) return;
-  i18n.changeLanguage(lang);
+
+  await i18nReady;
+  try {
+    if (!i18n.hasResourceBundle(lang, 'translation')) {
+      const translation = await loadTranslationResource(lang);
+      i18n.addResourceBundle(lang, 'translation', translation, true, true);
+    }
+
+    await i18n.changeLanguage(lang);
+  } catch {
+    // Keep the active resource bundle and persisted preference when a lazy
+    // chunk is unavailable rather than leaving the UI on untranslated keys.
+    return;
+  }
+
   persistLanguagePreference(lang);
   applyDocumentLanguage(lang);
   syncNativeLocale(lang);
@@ -62,6 +73,6 @@ export const changeLanguage = (lang: AppLanguage) => {
 
 // Set initial direction
 applyDocumentLanguage(savedLang);
-syncNativeLocale(savedLang);
+void i18nReady.then(() => syncNativeLocale(savedLang));
 
 export default i18n;

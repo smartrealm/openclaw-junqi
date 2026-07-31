@@ -12,6 +12,8 @@
 - [x] 将 circular chunk 和 JavaScript chunk 预算升级为构建失败门禁。
 - [x] 重新生成生产产物并核对 chunk 清单。
 - [x] 运行完整 lint、测试、生产构建和 diff 检查。
+- [x] 将完整 locale JSON 从同步 i18n 入口移到按需资源加载器，保持初始语言与英文
+  回退的启动可用性。
 
 ## 主要影响文件
 
