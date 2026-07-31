@@ -34,6 +34,14 @@ test('CHAT-12 file result rows keep full paths out of the default chat layout', 
   assert.doesNotMatch(resultCards, /\{detail \|\| path\}/);
 });
 
+test('assistant Markdown typography scales with the available viewport', () => {
+  const bubble = source('src/components/Chat/MessageBubble.tsx');
+  const styles = source('src/styles/index.css');
+  assert.match(bubble, /!isUser && 'assistant-markdown-body'/);
+  assert.match(styles, /\.assistant-markdown-body\s*\{[\s\S]*?font-size:\s*clamp\(/);
+  assert.doesNotMatch(styles, /\.assistant-markdown-body[^}]*font-weight/);
+});
+
 test('CHAT-14 persisted OpenClaw media uses a state-scoped preview bridge', () => {
   const image = source('src/components/Chat/ChatImage.tsx');
   const adapter = source('src/api/tauri-adapter.ts');

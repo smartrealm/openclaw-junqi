@@ -367,8 +367,8 @@ export function AssistantResponseFooter({
             <span>{t('chat.context')}</span>
           </summary>
           <span className="inline-flex items-center gap-2 rounded-full border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] px-2 py-0.5">
-            {input > 0 && <span className="text-blue-400">↑{compactTokenCount(input)}</span>}
-            {output > 0 && <span className="text-emerald-400">↓{compactTokenCount(output)}</span>}
+            {input > 0 && <span className="text-blue-400">In {compactTokenCount(input)}</span>}
+            {output > 0 && <span className="text-emerald-400">Out {compactTokenCount(output)}</span>}
             {cacheRead > 0 && <span className="text-aegis-text-dim/80">R{compactTokenCount(cacheRead)}</span>}
             {cacheWrite > 0 && <span className="text-aegis-text-dim/80">W{compactTokenCount(cacheWrite)}</span>}
             {context?.contextPercent != null && (
@@ -462,11 +462,11 @@ export const MessageBubble = memo(function MessageBubble({
 // bold, links) is preserved because the target app renders it.
 //
 // Rules:
-//   `code`              → code                       (inline code: strip `` ``)
-//   ```lang\n...\n```    → ...                         (fenced: strip fence)
-//   ~~~lang\n...\n~~~   → ...                         (fenced: strip fence)
-//   ```\n...\n```        → ...                         (fenced: strip fence, no lang)
-//   plain text          → plain text                  (unchanged)
+//   `code` becomes code                       (inline code: strip `` ``)
+//   ```lang\n...\n``` becomes ...               (fenced: strip fence)
+//   ~~~lang\n...\n~~~ becomes ...               (fenced: strip fence)
+//   ```\n...\n``` becomes ...                   (fenced: strip fence, no lang)
+//   plain text stays plain text                (unchanged)
 function stripCodeFences(md: string): string {
   // Fenced code blocks (``` or ~~~), with or without a language tag.
   const fenced = /^[ \t]{0,3}(```+|~~~+)[^\n]*\n([\s\S]*?)\n?[ \t]{0,3}\1[ \t]*(?:\n|$)/gm;
@@ -475,7 +475,7 @@ function stripCodeFences(md: string): string {
 
 // Remove backticks around inline code spans — keep the contents, drop the `.
 function stripInlineCodeTicks(md: string): string {
-  // `` `code` `` → code
+  // `` `code` `` becomes code
   return md.replace(/`([^`\n]+)`/g, (_m, inner: string) => inner);
 }
 
@@ -644,7 +644,7 @@ function stripInlineCodeTicks(md: string): string {
           ) : block.isStreaming ? (
             <div className="flex flex-col gap-2">
               {content.trim() && (
-                <pre className="markdown-body text-[14px] leading-relaxed text-aegis-text whitespace-pre-wrap break-words font-[inherit]">
+                <pre className="markdown-body assistant-markdown-body leading-relaxed whitespace-pre-wrap break-words font-[inherit]">
                   {content}
                   {/* Blinking caret — visually anchors the current write position
                       and signals "agent is still typing" even on long pauses. */}
@@ -702,7 +702,7 @@ function stripInlineCodeTicks(md: string): string {
                   <StatusIcon status={responseStatus} size={14} />
                 </span>
               )}
-              <div className="markdown-body min-w-0 flex-1">
+              <div className={clsx('markdown-body min-w-0 flex-1', !isUser && 'assistant-markdown-body')}>
                 {content && (
                   <ChatMarkdownRenderer markdown={content} />
                 )}

@@ -46,6 +46,7 @@ JunQi 已接收 OpenClaw Gateway 的结构化工具流。工具事件包含 `ses
 - 未完成计划不再在消息流中重复渲染；最新计划完成后，输入框上方面板撤下，完成计划仍在原消息时间线位置以折叠记录保留。
 - 展开/折叠继续使用整块真实 `button`、`aria-expanded` 和 `aria-controls`，不改变 OpenClaw `update_plan` authority 或三态状态契约。
 - 消息发送队列同步收敛到 composer 上方同一中心列：正常排队使用中性 surface，折叠态显示数量与首条摘要，展开后继续提供编辑、删除和失败重试；垂直顺序为快捷回复、执行计划、发送队列、输入框。
+- 2026-07-31 截图复核发现窄窗口中的 assistant 正文显得过于粗大。Chat assistant Markdown 保留既有正文、强调、表头和标题字重及颜色层级，只用 `clamp()` 让正文字号随视口宽度在 13px 到 15px 之间平滑变化；用户消息和文件 Markdown 预览不受影响。
 - 本地 `/Applications/ChatGPT.app` 已确认版本 `26.721.81911`、bundle ID `com.openai.codex`；观察时主进程没有可访问窗口（仅残留 helper/kernel，AX `windows=0`），因此本记录不声称完成其队列像素或可访问性树核对。
 
 ## 未验证边界
