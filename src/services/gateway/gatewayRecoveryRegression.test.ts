@@ -635,6 +635,9 @@ test('BUG-06 stalled boot exposes the complete self-rescue center', () => {
   assert.match(statusBar, /gatewayPanelOpen[\s\S]*<GatewaySelfRescuePanel/);
   assert.match(statusBar, /onOpenLogs=/);
   assert.match(statusBar, /gatewayLifecycle\.(?:restart|recover)\('status-bar'\)/);
+  assert.match(statusBar, /progressMessage=\{gatewayProgressActive \? gatewayMsg : null\}/);
+  assert.match(statusBar, /error=\{gatewayPanelError\}/);
+  assert.doesNotMatch(statusBar, /error=\{gatewayPanelMessage\}/);
   assert.match(panel, /runOpenClawRepair/);
   assert.match(panel, /disabled=\{actionDisabled\}/);
   assert.match(panel, /<GatewayAiDiagnosticDisclosure/);
