@@ -159,3 +159,32 @@ test('the island is conditional unless a file drag needs immediate feedback', ()
   }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, enabled: false, mainMinimized: true }), false);
 });
+
+test('a plan advancing to the next step earns one peek', () => {
+  const atStepOne = {
+    ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
+    executionPlan: { currentStep: 1, totalSteps: 5, stepTitle: 'Inspect protocol' },
+  };
+  const atStepTwo = {
+    ...atStepOne,
+    executionPlan: { currentStep: 2, totalSteps: 5, stepTitle: 'Locate entry points' },
+  };
+  assert.equal(shouldPeekForSnapshot(atStepOne, atStepTwo), true);
+  // Replanning alone must not reopen the island: only forward step motion does.
+  assert.equal(shouldPeekForSnapshot(atStepOne, {
+    ...atStepOne,
+    executionPlan: { currentStep: 1, totalSteps: 7, stepTitle: 'Inspect protocol' },
+  }), false);
+  assert.equal(shouldPeekForSnapshot(atStepTwo, atStepOne), false);
+  assert.equal(shouldPeekForSnapshot(atStepOne, { ...atStepTwo, autoExpand: false }), false);
+});
+
+test('the island plan projection carries no transcript content', () => {
+  const keys = Object.keys(
+    { currentStep: 1, totalSteps: 2, stepTitle: 'Step' } satisfies NonNullable<
+      typeof EMPTY_DYNAMIC_ISLAND_SNAPSHOT.executionPlan
+    >,
+  );
+  assert.deepEqual(keys.sort(), ['currentStep', 'stepTitle', 'totalSteps']);
+  assert.equal(EMPTY_DYNAMIC_ISLAND_SNAPSHOT.executionPlan, null);
+});

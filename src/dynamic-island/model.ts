@@ -51,6 +51,17 @@ export interface DynamicIslandVoiceInput {
   error: VoiceModeErrorCode | null;
 }
 
+/**
+ * The running `update_plan` projection for the active session. Carries only the
+ * step position and its title - never the plan explanation, tool arguments, or
+ * any other transcript content, since the island is an auxiliary window.
+ */
+export interface DynamicIslandExecutionPlan {
+  currentStep: number;
+  totalSteps: number;
+  stepTitle: string;
+}
+
 export interface DynamicIslandSnapshot {
   revision: number;
   sessionKey: string;
@@ -58,6 +69,7 @@ export interface DynamicIslandSnapshot {
   connecting: boolean;
   sessionRunning: boolean;
   sessionActivities: DynamicIslandSessionActivity[];
+  executionPlan: DynamicIslandExecutionPlan | null;
   voicePhase: VoicePhase;
   voiceQueueLength: number;
   voiceInput: DynamicIslandVoiceInput;
@@ -106,6 +118,7 @@ export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   connecting: false,
   sessionRunning: false,
   sessionActivities: [],
+  executionPlan: null,
   voicePhase: 'idle',
   voiceQueueLength: 0,
   voiceInput: {
@@ -212,6 +225,14 @@ export function shouldPeekForSnapshot(
     || next.resourceDrop.count !== previous.resourceDrop.count
   )) return true;
   if (next.notice && next.notice.id !== previous.notice?.id) return true;
+  // Advancing to a new plan step is the agent reporting real progress, so it
+  // earns one peek. Step count changes alone do not - a replanned run would
+  // otherwise reopen the island on every revision.
+  if (
+    next.executionPlan
+    && previous.executionPlan
+    && next.executionPlan.currentStep > previous.executionPlan.currentStep
+  ) return true;
 
   const oldStatuses = new Map(previous.tasks.map((task) => [task.id, task.status]));
   return next.tasks.some((task) => {

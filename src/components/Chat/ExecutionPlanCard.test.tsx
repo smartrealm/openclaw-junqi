@@ -24,7 +24,9 @@ function createPlan(state: AgentExecutionPlan['state']): AgentExecutionPlan {
 }
 
 test('running plan renders expanded progress with accessible controls', () => {
-  const html = renderToStaticMarkup(<ExecutionPlanCard plan={createPlan('running')} />);
+  const html = renderToStaticMarkup(
+    <ExecutionPlanCard plan={createPlan('running')} outcome="running" />,
+  );
   assert.match(html, /aria-expanded="true"/);
   assert.match(html, /aria-controls=/);
   assert.match(html, /data-execution-plan-card="true"/);
@@ -35,7 +37,42 @@ test('running plan renders expanded progress with accessible controls', () => {
 });
 
 test('completed plan defaults to a compact summary', () => {
-  const html = renderToStaticMarkup(<ExecutionPlanCard plan={createPlan('completed')} />);
+  const html = renderToStaticMarkup(
+    <ExecutionPlanCard plan={createPlan('completed')} outcome="completed" />,
+  );
   assert.match(html, /aria-expanded="false"/);
   assert.doesNotMatch(html, /Plan adjusted after protocol review/);
+});
+
+// A completed header used to read "Step 2/2" next to "2/2 done" - the same
+// number twice, and neither said what the run actually finished.
+test('completed plan summarises the finishing step instead of repeating the count', () => {
+  const html = renderToStaticMarkup(
+    <ExecutionPlanCard plan={createPlan('completed')} outcome="completed" />,
+  );
+  assert.match(html, /Run tests/);
+  assert.doesNotMatch(html, /executionPlan\.progress/);
+});
+
+test('interrupted plan is marked and keeps the step it stopped at', () => {
+  const html = renderToStaticMarkup(
+    <ExecutionPlanCard plan={createPlan('running')} outcome="interrupted" />,
+  );
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /interruptedBadge|已中断|Interrupted/);
+  assert.match(html, /Inspect protocol/);
+});
+
+test('trace entry is a sibling control, never nested inside the collapse button', () => {
+  const withTrace = renderToStaticMarkup(
+    <ExecutionPlanCard plan={createPlan('completed')} outcome="completed" onOpenTrace={() => {}} />,
+  );
+  const openButtons = withTrace.match(/<button/g) ?? [];
+  assert.equal(openButtons.length, 2);
+  assert.doesNotMatch(withTrace, /<button[^>]*>(?:(?!<\/button>)[\s\S])*<button/);
+
+  const withoutTrace = renderToStaticMarkup(
+    <ExecutionPlanCard plan={createPlan('completed')} outcome="completed" />,
+  );
+  assert.equal((withoutTrace.match(/<button/g) ?? []).length, 1);
 });

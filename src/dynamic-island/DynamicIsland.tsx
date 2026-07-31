@@ -9,6 +9,7 @@ import {
   Clock3,
   FileCheck2,
   Files,
+  ListChecks,
   MessageCircle,
   Pause,
   Play,
@@ -344,8 +345,25 @@ export default function DynamicIsland() {
                     </div>
                     <div className="junqi-island-drop-progress"><span /></div>
                   </div>
-                ) : snapshot.sessionActivities.length > 0 || snapshot.tasks.length > 0 ? (
+                ) : snapshot.executionPlan || snapshot.sessionActivities.length > 0 || snapshot.tasks.length > 0 ? (
                   <>
+                    {snapshot.executionPlan && (
+                      <button
+                        type="button"
+                        className="junqi-island-task is-session"
+                        onClick={() => action({ type: 'open-session', sessionKey: snapshot.sessionKey })}
+                      >
+                        <span className="junqi-island-task-icon is-running"><ListChecks size={13} /></span>
+                        <span className="junqi-island-task-copy">
+                          <strong>{t('dynamicIsland.executionPlanStep', {
+                            current: snapshot.executionPlan.currentStep,
+                            total: snapshot.executionPlan.totalSteps,
+                          })}</strong>
+                          <small>{snapshot.executionPlan.stepTitle}</small>
+                        </span>
+                        <ChevronUp size={13} className="junqi-island-task-open" />
+                      </button>
+                    )}
                     {snapshot.sessionActivities.slice(0, 2).map((activity) => (
                       <button key={activity.sessionKey} type="button" className="junqi-island-task is-session" onClick={() => action({ type: 'open-session', sessionKey: activity.sessionKey })}>
                         <span className="junqi-island-task-icon is-running"><span className="junqi-island-spinner" /></span>

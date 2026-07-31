@@ -66,7 +66,7 @@ import {
   localUserMessageCapabilities,
   removeLocalUserMessage,
 } from './localUserMessageMutations';
-import { selectActiveExecutionPlan } from './executionPlanPlacement';
+import { executionPlanOutcome, selectActiveExecutionPlan } from './executionPlanPlacement';
 import { ChatMessagePreviewPanel } from './ChatMessagePreviewPanel';
 import { ChatResponseTracePanel } from './ChatResponseTracePanel';
 import { findTraceSourceMessage, projectChatResponseTrace } from './chatResponseTrace';
@@ -1005,6 +1005,7 @@ function ChatViewContent() {
     block: RenderBlock,
     groupPosition: ResponseGroupMessagePosition = 'standalone',
     responseSessionKey: string = activeSessionKey,
+    responseGroup?: ResponseGroup,
   ) => {
     switch (block.type) {
       case 'compaction':
@@ -1038,18 +1039,25 @@ function ChatViewContent() {
           </Suspense>
         );
 
-      case 'execution-plan':
-        // Unfinished plans are projected once above the composer instead of
-        // participating in the assistant message column. Completed plans stay
-        // in transcript history as durable execution records.
-        if (block.plan.state !== 'completed') return null;
+      case 'execution-plan': {
+        // Running plans are projected once above the composer instead of
+        // participating in the assistant message column. Settled plans stay in
+        // transcript history as durable execution records - including plans the
+        // run never finished, which would otherwise be lost from both surfaces.
+        const outcome = executionPlanOutcome(block.plan, responseGroup?.status ?? 'final');
+        if (outcome === 'running') return null;
         return (
           <div className="mx-auto w-full max-w-[760px] px-3">
             <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface animate-pulse" />}>
-              <ExecutionPlanCard plan={block.plan} />
+              <ExecutionPlanCard
+                plan={block.plan}
+                outcome={outcome}
+                {...(responseGroup ? { onOpenTrace: () => sidePanel.openResponseTrace(responseGroup.id) } : {})}
+              />
             </Suspense>
           </div>
         );
+      }
 
       case 'thinking':
         return (
@@ -1136,6 +1144,7 @@ function ChatViewContent() {
     activeSessionKey,
     messages,
     sidePanel.openMessagePreview,
+    sidePanel.openResponseTrace,
   ]);
 
   const renderGroup = useCallback((index: number, group: ResponseGroup) => {
@@ -1177,7 +1186,7 @@ function ChatViewContent() {
                 key={`execution-${row.blocks[0]?.id ?? rowIndex}`}
                 blocks={row.blocks}
                 streaming={isStreaming}
-                renderBlock={(block) => renderBlock(block, 'middle', group.sessionKey)}
+                renderBlock={(block) => renderBlock(block, 'middle', group.sessionKey, group)}
                 onBeforeExpandedChange={preserveViewportForExecutionToggle}
               />
             );
@@ -1190,7 +1199,7 @@ function ChatViewContent() {
             : 'standalone';
           return (
             <div key={row.block.id}>
-              {renderBlock(row.block, groupPosition, group.sessionKey)}
+              {renderBlock(row.block, groupPosition, group.sessionKey, group)}
             </div>
           );
         })}
@@ -1452,7 +1461,7 @@ function ChatViewContent() {
         >
           <div className="mx-auto w-full max-w-[760px]">
             <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface animate-pulse" />}>
-              <ExecutionPlanCard plan={activeExecutionPlan} />
+              <ExecutionPlanCard plan={activeExecutionPlan} outcome="running" />
             </Suspense>
           </div>
         </div>

@@ -1372,7 +1372,10 @@
       "title": "Execution plan",
       "progress": "Step {{current}}/{{total}}",
       "revision": "Revision {{revision}}",
-      "completedSummary": "{{completed}}/{{total}} completed",
+      "summaryCompleted": "{{total}} steps done",
+      "summaryInterrupted": "{{completed}}/{{total}} steps done",
+      "interruptedBadge": "Interrupted",
+      "openTrace": "View plan revisions",
       "stepCountChanged": "Plan updated from {{previous}} to {{current}} steps"
     },
     "trace": {
@@ -4764,6 +4767,7 @@
     "readyForFiles": "Ready for {{count}} files",
     "filesSent": "Files sent to Quick Chat",
     "needsAttention": "{{count}} need attention",
+    "executionPlanStep": "Execution plan · Step {{current}}/{{total}}",
     "speaking": "JunQi is speaking",
     "listening": "Listening",
     "agentsRunning": "{{count}} agents running",

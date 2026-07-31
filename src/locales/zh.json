@@ -1370,7 +1370,10 @@
       "title": "执行计划",
       "progress": "第 {{current}}/{{total}} 步",
       "revision": "修订 {{revision}}",
-      "completedSummary": "{{completed}}/{{total}} 已完成",
+      "summaryCompleted": "{{total}} 步已完成",
+      "summaryInterrupted": "已完成 {{completed}}/{{total}} 步",
+      "interruptedBadge": "已中断",
+      "openTrace": "查看计划修订",
       "stepCountChanged": "计划已从 {{previous}} 步调整为 {{current}} 步"
     },
     "trace": {
@@ -4789,6 +4792,7 @@
     "readyForFiles": "准备接收 {{count}} 个文件",
     "filesSent": "文件已送往快捷对话",
     "needsAttention": "{{count}} 项需要处理",
+    "executionPlanStep": "执行计划 · 第 {{current}}/{{total}} 步",
     "speaking": "JunQi 正在语音回复",
     "listening": "正在聆听",
     "agentsRunning": "{{count}} 个 Agent 执行中",

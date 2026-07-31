@@ -15,6 +15,7 @@ import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent, subscribeTauriListener } from '@/utils/tauriEvents';
 import { projectSessionActivity } from '@/utils/sessionPresentation';
+import { selectActiveExecutionPlan } from '@/components/Chat/executionPlanPlacement';
 import { prepareFocusNavigation } from '@/focus/openFocus';
 import { useFocusProjection } from '@/focus/useFocusProjection';
 import {
@@ -107,6 +108,17 @@ export default function DynamicIslandRuntime() {
     });
   }, [activityProjection, gatewayAgents, t]);
   const sessionRunning = activityProjection.active.length > 0;
+  const responseGroups = useChatStore((state) => state.responseGroups);
+  const executionPlan = useMemo(() => {
+    const plan = selectActiveExecutionPlan(responseGroups);
+    const step = plan?.steps[plan.currentStepIndex];
+    if (!plan || !step) return null;
+    return {
+      currentStep: plan.currentStepIndex + 1,
+      totalSteps: plan.steps.length,
+      stepTitle: step.title,
+    };
+  }, [responseGroups]);
   const voiceActive = isVoiceActivePhase(voicePhase) || isDynamicIslandVoiceInputActive(voiceInput);
   const shouldShow = shouldShowDynamicIsland({
     enabled,
@@ -143,6 +155,7 @@ export default function DynamicIslandRuntime() {
     connecting,
     sessionRunning,
     sessionActivities,
+    executionPlan,
     voicePhase,
     voiceQueueLength,
     voiceInput,
@@ -166,7 +179,7 @@ export default function DynamicIslandRuntime() {
       body: latestToast.body,
     } : null,
     resourceDrop,
-  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, focus, latestToast, petEnabled, pomodoro, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
+  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, executionPlan, focus, latestToast, petEnabled, pomodoro, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
 

@@ -1,13 +1,14 @@
 import { useEffect, useId, useState } from 'react';
-import { ChevronDown, ListChecks } from 'lucide-react';
+import { ChevronDown, History, ListChecks } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import type { AgentExecutionPlan, ExecutionPlanStepState } from '@/agent-execution-plan/domain';
 import { StatusIcon, type StatusIconValue } from '@/components/shared/StatusIcon';
+import type { ExecutionPlanOutcome } from './executionPlanPlacement';
 
 const COLLAPSE_PREFERENCE_PREFIX = 'junqi:chat-plan-collapsed:';
 
-function readCollapsedPreference(plan: AgentExecutionPlan): boolean {
+function readCollapsedPreference(plan: AgentExecutionPlan, outcome: ExecutionPlanOutcome): boolean {
   try {
     const stored = localStorage.getItem(`${COLLAPSE_PREFERENCE_PREFIX}${plan.id}`);
     if (stored === 'true') return true;
@@ -15,7 +16,7 @@ function readCollapsedPreference(plan: AgentExecutionPlan): boolean {
   } catch {
     // Storage is optional; the component remains usable without persistence.
   }
-  return plan.state === 'completed';
+  return outcome !== 'running';
 }
 
 function persistCollapsedPreference(planId: string, collapsed: boolean): void {
@@ -32,16 +33,33 @@ function iconStatus(state: ExecutionPlanStepState): StatusIconValue {
   return 'pending';
 }
 
-export function ExecutionPlanCard({ plan }: { plan: AgentExecutionPlan }) {
+export function ExecutionPlanCard({
+  plan,
+  outcome,
+  onOpenTrace,
+}: {
+  plan: AgentExecutionPlan;
+  /**
+   * Required: `plan.state` alone cannot tell a running plan from one whose run
+   * died mid-step, and defaulting either way would mislabel the other.
+   */
+  outcome: ExecutionPlanOutcome;
+  /** Opens the response trace, the only surface holding every plan snapshot. */
+  onOpenTrace?: () => void;
+}) {
   const { t } = useTranslation();
   const regionId = useId();
-  const [collapsed, setCollapsed] = useState(() => readCollapsedPreference(plan));
+  const [collapsed, setCollapsed] = useState(() => readCollapsedPreference(plan, outcome));
   const currentStep = plan.steps[plan.currentStepIndex] ?? plan.steps[0];
   const completedCount = plan.steps.filter((step) => step.state === 'completed').length;
-  const displayIndex = plan.state === 'completed' ? plan.steps.length : plan.currentStepIndex + 1;
+  // Running and interrupted plans summarise where they are; a completed plan
+  // summarises what it finished with, since "5/5" already carries the count.
+  const summaryStep = outcome === 'completed'
+    ? plan.steps[plan.steps.length - 1] ?? currentStep
+    : currentStep;
 
   useEffect(() => {
-    setCollapsed(readCollapsedPreference(plan));
+    setCollapsed(readCollapsedPreference(plan, outcome));
   }, [plan.id]);
 
   const toggle = () => {
@@ -59,12 +77,13 @@ export function ExecutionPlanCard({ plan }: { plan: AgentExecutionPlan }) {
       aria-label={t('chat.executionPlan.ariaLabel')}
       aria-live="polite"
     >
+      <div className="flex items-stretch">
       <button
         type="button"
         onClick={toggle}
         aria-expanded={!collapsed}
         aria-controls={regionId}
-        className="flex min-h-11 w-full items-center gap-3 px-3 py-2 text-start transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.04)]"
+        className="flex min-h-11 min-w-0 flex-1 items-center gap-3 px-3 py-2 text-start transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.04)]"
       >
         <ListChecks size={16} className="shrink-0 text-aegis-primary" />
         <div className="min-w-0 flex-1">
@@ -73,11 +92,23 @@ export function ExecutionPlanCard({ plan }: { plan: AgentExecutionPlan }) {
               {t('chat.executionPlan.title')}
             </span>
             <span className="shrink-0 text-[10px] tabular-nums text-aegis-text-dim">
-              {t('chat.executionPlan.progress', {
-                current: displayIndex,
-                total: plan.steps.length,
-              })}
+              {outcome === 'completed'
+                ? t('chat.executionPlan.summaryCompleted', { total: plan.steps.length })
+                : outcome === 'interrupted'
+                  ? t('chat.executionPlan.summaryInterrupted', {
+                    completed: completedCount,
+                    total: plan.steps.length,
+                  })
+                  : t('chat.executionPlan.progress', {
+                    current: plan.currentStepIndex + 1,
+                    total: plan.steps.length,
+                  })}
             </span>
+            {outcome === 'interrupted' && (
+              <span className="shrink-0 rounded border border-aegis-status-failed/40 px-1.5 py-0.5 text-[9px] text-aegis-status-failed">
+                {t('chat.executionPlan.interruptedBadge')}
+              </span>
+            )}
             {plan.revision > 1 && (
               <span className="shrink-0 rounded border border-aegis-border px-1.5 py-0.5 text-[9px] text-aegis-text-dim">
                 {t('chat.executionPlan.revision', {
@@ -86,14 +117,9 @@ export function ExecutionPlanCard({ plan }: { plan: AgentExecutionPlan }) {
               </span>
             )}
           </div>
-          {currentStep && (
+          {summaryStep && (
             <div className="mt-0.5 truncate text-[11px] text-aegis-text-muted">
-              {plan.state === 'completed'
-                  ? t('chat.executionPlan.completedSummary', {
-                    completed: completedCount,
-                    total: plan.steps.length,
-                  })
-                : currentStep.title}
+              {summaryStep.title}
             </div>
           )}
         </div>
@@ -105,6 +131,18 @@ export function ExecutionPlanCard({ plan }: { plan: AgentExecutionPlan }) {
           )}
         />
       </button>
+      {onOpenTrace && (
+        <button
+          type="button"
+          onClick={onOpenTrace}
+          title={t('chat.executionPlan.openTrace')}
+          aria-label={t('chat.executionPlan.openTrace')}
+          className="grid w-11 shrink-0 place-items-center border-s border-aegis-border text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.04)] hover:text-aegis-text"
+        >
+          <History size={14} />
+        </button>
+      )}
+      </div>
 
       {!collapsed && (
         <div id={regionId} className="border-t border-aegis-border px-3 py-2.5">
