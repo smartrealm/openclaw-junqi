@@ -1,5 +1,6 @@
 import { Check, Copy, PanelRightOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { ChatIconButton } from './ChatIconButton';
 
 interface MessageBubbleActionsProps {
   copied: boolean;
@@ -25,25 +26,23 @@ export function MessageBubbleActions({
   return (
     <div className="flex shrink-0 items-center gap-0.5" data-message-actions>
       {previewable && (
-        <button
+        <ChatIconButton
           type="button"
           onClick={onPreview}
           className={buttonClass}
-          title={t('chat.openInCanvas')}
-          aria-label={t('chat.openInCanvas')}
+          label={t('chat.openInCanvas')}
         >
           <PanelRightOpen size={14} />
-        </button>
+        </ChatIconButton>
       )}
-      <button
+      <ChatIconButton
         type="button"
         onClick={onCopy}
         className={buttonClass}
-        title={copied ? t('chat.copied') : t('chat.copy')}
-        aria-label={copied ? t('chat.copied') : t('chat.copy')}
+        label={copied ? t('chat.copied') : t('chat.copy')}
       >
         {copied ? <Check size={14} className="text-aegis-success" /> : <Copy size={14} />}
-      </button>
+      </ChatIconButton>
     </div>
   );
 }

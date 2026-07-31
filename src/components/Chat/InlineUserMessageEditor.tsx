@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { ChatIconButton } from './ChatIconButton';
 
 export function InlineUserMessageEditor({
   initialValue,
@@ -53,26 +54,24 @@ export function InlineUserMessageEditor({
       />
       <div className="mt-2 flex items-center justify-end gap-1.5">
         {error && <span className="me-auto text-[10px] text-aegis-danger">{error}</span>}
-        <button
+        <ChatIconButton
           type="button"
           onClick={onCancel}
           disabled={saving}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text disabled:cursor-wait disabled:opacity-45"
-          title={t('chat.cancel')}
-          aria-label={t('chat.cancel')}
+          label={t('chat.cancel')}
         >
           <X size={15} />
-        </button>
-        <button
+        </ChatIconButton>
+        <ChatIconButton
           type="button"
           onClick={() => void save()}
           disabled={saving || !draft.trim()}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-aegis-primary text-white transition-colors hover:bg-aegis-primary/85 disabled:cursor-not-allowed disabled:opacity-45"
-          title={t('chat.saveAndRetry')}
-          aria-label={t('chat.saveAndRetry')}
+          label={t('chat.saveAndRetry')}
         >
           {saving ? <LoadingIndicator size={15} /> : <Check size={15} />}
-        </button>
+        </ChatIconButton>
       </div>
     </div>
   );

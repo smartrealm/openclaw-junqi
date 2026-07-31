@@ -89,3 +89,20 @@
 ### 未验证边界
 
 - 自动化环境没有可用的桌面浏览器控制实例；尚需在真实 Tauri WebView 中验证窄窗口语音菜单、建议菜单和消息预览的无横向滚动表现。
+
+## 2026-07-31 补充：消息图标操作说明
+
+### 目标行为
+
+- 消息气泡的图标操作必须同时具备可访问名称与悬停说明，且两者使用同一个多语言标签。
+- 预览、复制、编辑、保存并重试、重试发送、协作运行和删除不再依赖浏览器原生 `title` 作为唯一说明。
+
+### 实现
+
+- `ChatIconButton` 统一封装 Radix Tooltip、按钮语义和 `aria-label`。
+- 消息操作继续从现有 `chat` 与 `collaboration` 语言资源读取标签，不在组件内写入固定文本。
+
+### 验证
+
+- `chatMessagePreviewUi.test.ts` 覆盖消息操作对共享 Tooltip 的使用。
+- 已通过 `pnpm lint`、`pnpm build`、`cargo fmt -- --check`、`cargo check --lib`、`cargo test --lib` 和 `git diff --check`。
