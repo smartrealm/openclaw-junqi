@@ -37,7 +37,6 @@ import {
 import { resolveBackgroundActivityNavigation } from '@/utils/backgroundActivityNavigation';
 import { resolveSessionChannelPresentation } from '@/utils/sessionChannelPresentation';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
-import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { SessionChannelIcon } from '@/components/shared/SessionChannelIcon';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
