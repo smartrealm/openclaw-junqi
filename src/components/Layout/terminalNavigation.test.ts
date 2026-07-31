@@ -16,9 +16,8 @@ test('Tools opens its catalog before the dedicated terminal route', () => {
 test('terminal uses the same JunQi navigation content and top menu as the main workbench', () => {
   assert.match(appLayout, /usesGlobalSidebar = !isWorkspacePage/);
   assert.doesNotMatch(appLayout, /terminal-kooky-app/);
-  assert.match(appLayout, /globalSidebarPresentation = isAgentWorkspacePage \? 'terminal-rail' : 'default'/);
   assert.match(appLayout, /!isWorkspacePage && <TabBar \/>/);
-  assert.match(appLayout, /<NavSidebar presentation=\{globalSidebarPresentation\} \/>/);
+  assert.match(appLayout, /<NavSidebar \/>/);
   assert.match(appLayout, /sidebarTarget=\{isTerminalPage \? 'terminal' : isAgentWorkspacePage \? 'agent-workspace' : 'app'\}/);
   assert.match(topBar, /requestTerminalSidebarToggle/);
   assert.match(topBar, /requestAgentWorkspaceSidebarToggle/);

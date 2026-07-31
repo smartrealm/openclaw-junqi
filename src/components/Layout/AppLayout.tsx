@@ -44,11 +44,10 @@ function LazyPetBreakOverlayHost() {
   );
 }
 
-function SidebarFallback({ presentation = 'default' }: { presentation?: 'default' | 'terminal-rail' }) {
+function SidebarFallback() {
   const sidebarMode = useSettingsStore((s) => s.sidebarMode);
-  const effectiveMode = presentation === 'terminal-rail' ? 'mini' : sidebarMode;
-  if (effectiveMode === 'hidden') return null;
-  const width = effectiveMode === 'mini'
+  if (sidebarMode === 'hidden') return null;
+  const width = sidebarMode === 'mini'
     ? 'var(--aegis-sidebar-mini)'
     : 'var(--aegis-sidebar-expanded)';
   return (
@@ -81,10 +80,6 @@ export function AppLayout() {
   const isTerminalPage = matchPath('/terminal/*', location.pathname) !== null;
   const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
   const usesGlobalSidebar = !isWorkspacePage;
-  // The terminal keeps the same product navigation and top-level menu as the
-  // main workbench. AI Workspace retains its compact rail because its own
-  // worktree sidebar is the primary navigation surface.
-  const globalSidebarPresentation = isAgentWorkspacePage ? 'terminal-rail' : 'default';
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
@@ -112,8 +107,8 @@ export function AppLayout() {
 
       <div className="flex flex-1 min-h-0 relative z-[1]" dir={dir}>
         {usesGlobalSidebar && (
-          <Suspense fallback={<SidebarFallback presentation={globalSidebarPresentation} />}>
-            <NavSidebar presentation={globalSidebarPresentation} />
+          <Suspense fallback={<SidebarFallback />}>
+            <NavSidebar />
           </Suspense>
         )}
         <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">

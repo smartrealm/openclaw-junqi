@@ -22,6 +22,7 @@ import { isPreviewableArtifact } from './artifactPreview';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { createChatMessagePreview, type ChatMessagePreview } from './chatMessagePreview';
 import { ChatMarkdownRenderer, ChatMediaFallback } from './ChatMarkdownRenderer';
+import { ChatIconButton } from './ChatIconButton';
 
 const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
 const AudioPlayer = lazy(() => import('./AudioPlayer').then((m) => ({ default: m.AudioPlayer })));
@@ -416,7 +417,7 @@ function ActionBtn({ icon, label, onClick, disabled, danger = false }: {
   danger?: boolean;
 }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled}
+    <ChatIconButton type="button" onClick={onClick} disabled={disabled}
       className={clsx(
         'inline-flex items-center justify-center w-7 h-7 rounded transition-all duration-150',
         '[@media(pointer:coarse)]:h-[40px] [@media(pointer:coarse)]:w-[40px]',
@@ -425,10 +426,9 @@ function ActionBtn({ icon, label, onClick, disabled, danger = false }: {
           : 'hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text',
         'disabled:cursor-wait disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-aegis-text-muted',
       )}
-      title={label}
-      aria-label={label}>
+      label={label}>
       {icon}
-    </button>
+    </ChatIconButton>
   );
 }
 

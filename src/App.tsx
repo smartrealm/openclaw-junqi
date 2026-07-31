@@ -19,6 +19,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import {
   gateway,
   subscribePrivilegedAuthorizationIssues,
@@ -77,6 +78,7 @@ async function addToastLazy(type: 'message' | 'task_complete' | 'info' | 'error'
 }
 
 const VERIFIED_GATEWAY_HANDOFF_TIMEOUT_MS = 12_000;
+type SessionLoadResult = 'loaded' | 'failed' | 'superseded';
 
 // ═══════════════════════════════════════════════════════════
 // OpenClaw Desktop — Mission Control
@@ -141,6 +143,13 @@ export default function App() {
   const [cachedSetupValidationPending, setCachedSetupValidationPending] = useState(
     () => setupComplete === true && hasTauriEventBridge(),
   );
+  const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
+  const initialWorkspaceDataReadyRef = useRef(false);
+  const initialSessionSnapshotSettledRef = useRef(false);
+  const gatewayBootstrapDataReady = useGatewayDataStore((state) => (
+    (state.lastFetch.sessions > 0 || state.errors.sessions !== null)
+    && (state.lastFetch.agents > 0 || state.errors.agents !== null)
+  ));
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
   const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
   const [coldStartRecoveryActive, setColdStartRecoveryActive] = useState(true);
@@ -197,6 +206,30 @@ export default function App() {
   }, [cachedSetupValidationPending, setupComplete]);
 
   useEffect(() => {
+    if (setupComplete !== true) {
+      initialWorkspaceDataReadyRef.current = false;
+      initialSessionSnapshotSettledRef.current = false;
+      setWorkspaceDataReady(false);
+      return;
+    }
+    if (!cachedSetupValidationPending && !initialWorkspaceDataReadyRef.current) {
+      setWorkspaceDataReady(false);
+    }
+  }, [cachedSetupValidationPending, setupComplete]);
+
+  const markInitialWorkspaceDataReady = useCallback((allowIncompleteData = false) => {
+    if (initialWorkspaceDataReadyRef.current) return;
+    if (!allowIncompleteData && !gatewayBootstrapDataReady) return;
+    initialWorkspaceDataReadyRef.current = true;
+    setWorkspaceDataReady(true);
+  }, [gatewayBootstrapDataReady]);
+
+  useEffect(() => {
+    if (!initialSessionSnapshotSettledRef.current) return;
+    markInitialWorkspaceDataReady();
+  }, [gatewayBootstrapDataReady, markInitialWorkspaceDataReady]);
+
+  useEffect(() => {
     const updateRoutePath = () => setRoutePath(routePathFromLocation(window.location));
     window.addEventListener('hashchange', updateRoutePath);
     window.addEventListener('popstate', updateRoutePath);
@@ -238,7 +271,9 @@ export default function App() {
   // This is the single polling call for all session metadata. The store's setSessions
   // synchronously applies the active session's data to the TitleBar state — no separate
   // loadTokenUsage needed.
-  const loadSessions = useCallback(async (options: { reconcileChatRuns?: boolean } = {}): Promise<boolean> => {
+  const loadSessions = useCallback(async (
+    options: { reconcileChatRuns?: boolean } = {},
+  ): Promise<SessionLoadResult> => {
     const requestGate = sessionListRequestGateRef.current;
     const requestId = requestGate.begin();
     try {
@@ -246,12 +281,12 @@ export default function App() {
       // file. Copy confirmed entries to OpenClaw before this read, then let
       // Gateway labels remain the sole source of truth.
       await migrateLegacySessionLabelsOnce();
-      if (!requestGate.isCurrent(requestId)) return false;
+      if (!requestGate.isCurrent(requestId)) return 'superseded';
       const runObservations = options.reconcileChatRuns
         ? gateway.capturePendingChatSessionRunObservations()
         : undefined;
       const result = await gateway.getSessions();
-      if (!requestGate.isCurrent(requestId)) return false;
+      if (!requestGate.isCurrent(requestId)) return 'superseded';
       const sessionListSnapshot = parseOpenClawSessionListSnapshot(result);
       const rawSessions = sessionListSnapshot.sessions;
       // Gateway-level defaults (configured model, context window)
@@ -312,9 +347,9 @@ export default function App() {
       } else {
         gateway.observeActiveChatSessionRuns(rawSessions);
       }
-      return true;
+      return 'loaded';
     } catch {
-      return false;
+      return requestGate.isCurrent(requestId) ? 'failed' : 'superseded';
     }
   }, [setSessions]);
 
@@ -791,9 +826,13 @@ export default function App() {
           const boot = useBootSequenceStore.getState();
           boot.markStageCompleted('connection', 'WebSocket handshake complete');
           boot.markStageRunning('config', 'Loading sessions');
-          void loadSessions({ reconcileChatRuns: true }).then((sessionsLoaded) => {
-            if (!sessionsLoaded) {
+          void loadSessions({ reconcileChatRuns: true }).then((sessionLoadResult) => {
+            if (sessionLoadResult === 'superseded') return;
+            if (sessionLoadResult === 'failed') {
               boot.markStageError('config', 'Session load failed');
+              // A failed authoritative read is terminal for this startup pass.
+              // Release the shell so its recoverable Gateway surfaces remain reachable.
+              markInitialWorkspaceDataReady(true);
               return;
             }
             queueMicrotask(() => {
@@ -805,6 +844,8 @@ export default function App() {
               }
             });
             boot.markStageCompleted('config', 'Sessions ready');
+            initialSessionSnapshotSettledRef.current = true;
+            markInitialWorkspaceDataReady();
             boot.markStageRunning('conversation', 'Warming recent conversation');
             const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
             void gateway.getHistory(sessionKey, 20, 8_000).then((result) => {
@@ -849,6 +890,7 @@ export default function App() {
             }, 1_500);
           }).catch(() => {
             boot.markStageError('config', 'Session load failed');
+            markInitialWorkspaceDataReady(true);
           });
         }
       },
@@ -1014,7 +1056,7 @@ export default function App() {
       gateway.forgetSessionTranscript();
       gatewayManager.destroy();
     };
-  }, [loadAvailableModels, setupComplete, cachedSetupValidationPending, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure]);
+  }, [loadAvailableModels, setupComplete, cachedSetupValidationPending, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure, markInitialWorkspaceDataReady]);
 
 
   // ── Pairing Handlers ──
@@ -1081,6 +1123,15 @@ export default function App() {
             />
           </Suspense>
         )}
+      </>
+    );
+  }
+
+  if (!workspaceDataReady && !gatewayOptionalRoute) {
+    return (
+      <>
+        <ThemeRuntime />
+        <AppLoadingFallback label={t('app.loadingWorkspace')} />
       </>
     );
   }

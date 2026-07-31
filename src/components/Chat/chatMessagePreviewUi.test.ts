@@ -4,6 +4,8 @@ import test from 'node:test';
 
 const actionsSource = readFileSync(new URL('./MessageBubbleActions.tsx', import.meta.url), 'utf8');
 const bubbleSource = readFileSync(new URL('./MessageBubble.tsx', import.meta.url), 'utf8');
+const iconButtonSource = readFileSync(new URL('./ChatIconButton.tsx', import.meta.url), 'utf8');
+const inlineEditorSource = readFileSync(new URL('./InlineUserMessageEditor.tsx', import.meta.url), 'utf8');
 const stylesSource = readFileSync(new URL('../../styles/index.css', import.meta.url), 'utf8');
 const panelSource = readFileSync(new URL('./ChatMessagePreviewPanel.tsx', import.meta.url), 'utf8');
 const markdownRendererSource = readFileSync(new URL('./ChatMarkdownRenderer.tsx', import.meta.url), 'utf8');
@@ -23,6 +25,15 @@ test('message preview uses the official panel-open action without glow effects',
   assert.match(bubbleSource, /const hasBubbleActions = !isUser && Boolean\(messageActions\);/);
   assert.match(bubbleSource, /const footerActions = isUser \? messageActions : null;/);
   assert.doesNotMatch(bubbleSource, /<AssistantResponseFooter[\s\S]*?\{messageActions\}/);
+});
+
+test('message icon actions use the shared localized tooltip button', () => {
+  assert.match(iconButtonSource, /<Tooltip>/);
+  assert.match(iconButtonSource, /<TooltipContent side="top">\{label\}<\/TooltipContent>/);
+  assert.match(iconButtonSource, /aria-label=\{label\}/);
+  assert.match(actionsSource, /<ChatIconButton/);
+  assert.match(bubbleSource, /<ChatIconButton type="button" onClick=\{onClick\}/);
+  assert.match(inlineEditorSource, /<ChatIconButton/);
 });
 
 test('main and quick chat reuse the shared message preview panel', () => {

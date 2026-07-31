@@ -15,7 +15,7 @@
   --wb-warning: rgb(var(--aegis-status-attention, 232 176 102));
   --wb-danger: rgb(var(--aegis-status-failed, 232 102 102));
   display: grid;
-  grid-template-columns: 280px minmax(480px, 1fr) 350px;
+  grid-template-columns: 220px minmax(480px, 1fr) 350px;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -97,7 +97,7 @@
 }
 
 .junqi-workbench.is-sidebar-compact {
-  grid-template-columns: 48px minmax(480px, 1fr) 350px;
+  grid-template-columns: 52px minmax(480px, 1fr) 350px;
 }
 
 .junqi-workbench.is-sidebar-hidden {
@@ -105,11 +105,11 @@
 }
 
 .junqi-workbench:has(.junqi-wb-rightbar.is-collapsed) {
-  grid-template-columns: 280px minmax(480px, 1fr) 42px;
+  grid-template-columns: 220px minmax(480px, 1fr) 42px;
 }
 
 .junqi-workbench.is-sidebar-compact:has(.junqi-wb-rightbar.is-collapsed) {
-  grid-template-columns: 48px minmax(480px, 1fr) 42px;
+  grid-template-columns: 52px minmax(480px, 1fr) 42px;
 }
 
 .junqi-workbench.is-sidebar-hidden:has(.junqi-wb-rightbar.is-collapsed) {
@@ -146,84 +146,23 @@
 
 .junqi-wb-worktree-scroll {
   flex: 1;
-  padding: 2px 7px 10px;
-}
-
-.junqi-wb-repo-group.is-secondary {
-  margin-top: 5px;
-  padding-top: 6px;
-  border-top: 1px solid var(--wb-line);
-}
-
-.junqi-wb-repo-heading {
-  display: grid;
-  width: 100%;
-  height: 30px;
-  grid-template-columns: 14px 22px minmax(0, 1fr) auto 22px;
-  align-items: center;
-  gap: 3px;
-  padding: 0 3px;
-  border: 0;
-  border-radius: 5px;
-  color: var(--wb-muted);
-  background: transparent;
-  text-align: left;
-}
-
-.junqi-wb-repo-heading:hover {
-  background: rgb(var(--aegis-overlay, 255 255 255) / 0.035);
-}
-
-.junqi-wb-repo-mark {
-  display: flex;
-  width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  color: var(--wb-primary);
-  background: rgb(var(--aegis-primary, 127 154 255) / 0.11);
-}
-
-.junqi-wb-repo-title {
-  overflow: hidden;
-  color: var(--wb-text-2);
-  font-size: 11.5px;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.junqi-wb-count {
-  min-width: 17px;
-  color: var(--wb-dim);
-  font: 9.5px var(--font-mono), monospace;
-  text-align: center;
+  padding: 8px;
 }
 
 .junqi-wb-worktree-list {
-  position: relative;
-  margin-left: 14px;
-  padding-left: 8px;
-}
-
-.junqi-wb-worktree-list::before {
-  position: absolute;
-  inset: 0 auto 7px 2px;
-  width: 1px;
-  background: var(--wb-line-strong);
-  content: "";
+  display: grid;
+  gap: 2px;
 }
 
 .junqi-wb-worktree {
-  position: relative;
-  display: block;
+  display: flex;
   width: 100%;
-  min-height: 66px;
-  margin: 2px 0;
-  padding: 7px 8px 7px 10px;
+  min-height: 48px;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   text-align: left;
 }
@@ -233,77 +172,64 @@
 }
 
 .junqi-wb-worktree.is-active {
-  background: rgb(var(--aegis-primary, 127 154 255) / 0.105);
-  box-shadow: inset 0 0 0 1px rgb(var(--aegis-primary, 127 154 255) / 0.12);
-}
-
-.junqi-wb-worktree-rail {
-  position: absolute;
-  inset: 9px auto 9px 0;
-  width: 2px;
-  border-radius: 2px;
-  background: transparent;
-}
-
-.junqi-wb-worktree.is-active .junqi-wb-worktree-rail {
-  background: var(--wb-primary);
-}
-
-.junqi-wb-worktree-main {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.junqi-wb-worktree-line,
-.junqi-wb-worktree-branch {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-}
-
-.junqi-wb-worktree-line {
-  gap: 7px;
+  background: rgb(var(--aegis-primary, 127 154 255) / 0.1);
 }
 
 .junqi-wb-worktree-select {
+  display: flex;
   min-width: 0;
   flex: 1;
-  padding: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
   border: 0;
+  border-radius: 4px;
   background: transparent;
+  color: var(--wb-muted);
   text-align: left;
 }
 
-.junqi-wb-worktree-line strong {
+.junqi-wb-worktree-select > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.junqi-wb-worktree-select strong {
   display: block;
   overflow: hidden;
   color: var(--wb-text);
   font-size: 11.5px;
-  font-weight: 620;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .junqi-wb-worktree-forget {
-  display: none;
-  padding: 2px;
-  border: 0;
-  background: transparent;
-  border-radius: 3px;
-  color: var(--wb-dim);
+  visibility: hidden;
 }
 
 .junqi-wb-worktree:hover .junqi-wb-worktree-forget,
 .junqi-wb-worktree.is-active .junqi-wb-worktree-forget,
 .junqi-wb-worktree-forget:focus-visible {
-  display: inline-flex;
+  visibility: visible;
 }
 
 .junqi-wb-worktree-forget:hover {
   color: var(--wb-danger);
-  background: rgb(var(--aegis-status-failed, 232 102 102) / 0.1);
+}
+
+.junqi-wb-worktree-select small {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--wb-dim);
+  font: 10px var(--font-mono), monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .junqi-wb-state-dot {
@@ -323,48 +249,6 @@
   background: var(--wb-danger);
 }
 
-.junqi-wb-worktree-branch,
-.junqi-wb-worktree-detail {
-  overflow: hidden;
-  color: var(--wb-dim);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.junqi-wb-worktree-branch {
-  gap: 4px;
-  font-family: var(--font-mono), monospace;
-}
-
-.junqi-wb-sidebar-footer {
-  display: flex;
-  height: 34px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 7px;
-  padding: 0 7px 0 13px;
-  border-top: 1px solid var(--wb-line);
-  color: var(--wb-muted);
-  font-size: 10px;
-}
-
-.junqi-wb-sidebar-footer .junqi-wb-muted {
-  overflow: hidden;
-  flex: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.junqi-wb-host-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--wb-success);
-}
-
 .junqi-wb-collapsed-list {
   display: flex;
   width: 100%;
@@ -377,29 +261,19 @@
 .junqi-wb-collapsed-worktree {
   position: relative;
   display: flex;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   align-items: center;
   justify-content: center;
   border: 0;
   border-radius: 6px;
   color: var(--wb-dim);
   background: transparent;
-  font-size: 9px;
-  font-weight: 700;
 }
 
 .junqi-wb-collapsed-worktree.is-active {
   color: var(--wb-text);
   background: rgb(var(--aegis-primary, 127 154 255) / 0.13);
-}
-
-.junqi-wb-collapsed-worktree .junqi-wb-state-dot {
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 5px;
-  height: 5px;
 }
 
 .junqi-wb-main {
