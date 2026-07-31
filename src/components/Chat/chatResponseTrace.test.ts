@@ -3,7 +3,7 @@ import test from 'node:test';
 import { buildSemanticBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
-import { projectChatResponseTrace } from './chatResponseTrace';
+import { findTraceSourceMessage, projectChatResponseTrace } from './chatResponseTrace';
 
 function blocks(message: Record<string, unknown>) {
   return buildSemanticBlocks(normalizeGatewayMessage({
@@ -94,4 +94,24 @@ test('exposes a formal review relation only when the transcript explicitly provi
 
   assert.equal(trace.review.status, 'requested');
   assert.equal(trace.review.formalReviewId, 'review-42');
+});
+
+test('source-record drilldown only resolves an already loaded transcript identity', () => {
+  const nativeMessage = {
+    id: 'display-message-1',
+    nativeMessageId: 'gateway-message-1',
+    role: 'assistant' as const,
+    content: 'Gateway-provided response.',
+    timestamp: '2026-07-31T00:00:00.000Z',
+  };
+  const localMessage = {
+    id: 'local-message-1',
+    role: 'user' as const,
+    content: 'Pending message.',
+    timestamp: '2026-07-31T00:00:01.000Z',
+  };
+
+  assert.equal(findTraceSourceMessage([nativeMessage, localMessage], 'gateway-message-1'), nativeMessage);
+  assert.equal(findTraceSourceMessage([nativeMessage, localMessage], 'local-message-1'), localMessage);
+  assert.equal(findTraceSourceMessage([nativeMessage, localMessage], 'missing-gateway-message'), undefined);
 });

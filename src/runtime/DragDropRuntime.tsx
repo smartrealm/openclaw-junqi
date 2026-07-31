@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePetStore } from '@/stores/petStore';
-import { useSettingsStore } from '@/stores/settingsStore';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { debugLog } from '@/utils/debugLog';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +27,7 @@ export default function DragDropRuntime() {
         dragSfxToken.current += 1;
         dragSfxStop.current?.();
         dragSfxStop.current = null;
-        const soundOn = useSettingsStore.getState().soundEnabled;
+        const soundOn = usePetStore.getState().soundEnabled;
         void playPetSfxLazy('drop', soundOn).catch(() => undefined);
         void playPetSfxLazy('munch', soundOn).catch(() => undefined);
 
@@ -51,7 +50,7 @@ export default function DragDropRuntime() {
         dragSfxToken.current = token;
         dragSfxStop.current?.();
         dragSfxStop.current = null;
-        void playPetSfxLazy('drag', useSettingsStore.getState().soundEnabled).then((stop) => {
+        void playPetSfxLazy('drag', usePetStore.getState().soundEnabled).then((stop) => {
           if (dragSfxToken.current !== token) {
             stop?.();
             return;

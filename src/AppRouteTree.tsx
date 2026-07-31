@@ -1,6 +1,8 @@
 import { lazy } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import { FeatureRoute } from '@/components/FeatureRoute';
+import { getFirstEnabledAppPath } from '@/config/edition';
+import { canonicalizeLegacyAgentWorkspaceTaskRoute } from '@/utils/agentTaskRoute';
 
 const AppLayout = lazy(() => import('@/components/Layout/AppLayout').then(m => ({ default: m.AppLayout })));
 const DashboardPage = lazy(() => import('@/pages/Dashboard').then(m => ({ default: m.DashboardPage })));
@@ -36,6 +38,28 @@ const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.K
 const GitPage = lazy(() => import('@/pages/GitPage'));
 const OpenClawCommandsPage = lazy(() => import('@/pages/OpenClawCommands').then(m => ({ default: m.OpenClawCommandsPage })));
 
+export function UnknownAppRouteFallback() {
+  return <Navigate replace to={getFirstEnabledAppPath()} />;
+}
+
+export function resolveLegacyAgentWorkspaceRedirectTarget(
+  pathname: string,
+  search: string,
+  hash: string,
+): string | null {
+  const currentTarget = `${pathname}${search}${hash}`;
+  const canonicalTarget = canonicalizeLegacyAgentWorkspaceTaskRoute(currentTarget);
+  return canonicalTarget === currentTarget ? null : canonicalTarget;
+}
+
+export function AgentWorkspaceRoute() {
+  const { pathname, search, hash } = useLocation();
+  const redirectTarget = resolveLegacyAgentWorkspaceRedirectTarget(pathname, search, hash);
+  if (redirectTarget) return <Navigate replace to={redirectTarget} />;
+
+  return <FeatureRoute feature="agentRun"><AgentWorkspacePage /></FeatureRoute>;
+}
+
 export default function AppRouteTree() {
   return (
     <Routes>
@@ -54,7 +78,7 @@ export default function AppRouteTree() {
         <Route path="/activity" element={<ActivityCenterPage />} />
         <Route path="/welcome" element={<FeatureRoute feature="dashboard"><WelcomePageView /></FeatureRoute>} />
         <Route path="/agent-run" element={<FeatureRoute feature="agentRun"><AgentRunRoute /></FeatureRoute>} />
-        <Route path="/ai-workspace" element={<FeatureRoute feature="agentRun"><AgentWorkspacePage /></FeatureRoute>} />
+        <Route path="/ai-workspace" element={<AgentWorkspaceRoute />} />
         <Route path="/briefs" element={<FeatureRoute feature="agentRun"><TaskBriefsPage /></FeatureRoute>} />
         <Route path="/session" element={<FeatureRoute feature="dashboard"><SessionViewPage /></FeatureRoute>} />
         <Route path="/terminal" element={<FeatureRoute feature="terminal"><TerminalPage /></FeatureRoute>} />
@@ -72,6 +96,7 @@ export default function AppRouteTree() {
         <Route path="/perf" element={<PerformancePage />} />
         <Route path="/kanban" element={<FeatureRoute feature="workshop"><KanbanPage /></FeatureRoute>} />
         <Route path="/settings" element={<FeatureRoute feature="settings"><SettingsPageFull /></FeatureRoute>} />
+        <Route path="*" element={<UnknownAppRouteFallback />} />
       </Route>
     </Routes>
   );

@@ -10,6 +10,8 @@ import { usePetStore } from '@/stores/petStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { voiceModeCoordinator } from '@/services/voice/VoiceModeCoordinator';
+import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent, subscribeTauriListener } from '@/utils/tauriEvents';
 import { projectSessionActivity } from '@/utils/sessionPresentation';
@@ -17,6 +19,8 @@ import { prepareFocusNavigation } from '@/focus/openFocus';
 import { useFocusProjection } from '@/focus/useFocusProjection';
 import {
   isVoiceActivePhase,
+  isDynamicIslandVoiceInputActive,
+  projectDynamicIslandVoiceInput,
   selectDynamicIslandTasks,
   shouldShowDynamicIsland,
   type DynamicIslandDrop,
@@ -51,8 +55,10 @@ export default function DynamicIslandRuntime() {
   const localVoicePhase = useVoiceStore((state) => state.phase);
   const localVoiceQueueLength = useVoiceStore((state) => state.queueLength);
   const remoteVoiceOutput = useVoiceStore((state) => state.remoteOutput);
+  const voiceMode = useVoiceMode();
   const voicePhase = remoteVoiceOutput ? 'speaking' : localVoicePhase;
   const voiceQueueLength = remoteVoiceOutput ? 0 : localVoiceQueueLength;
+  const voiceInput = useMemo(() => projectDynamicIslandVoiceInput(voiceMode), [voiceMode]);
   const tasks = useAgentWorkspaceStore((state) => state.tasks);
   const focus = useFocusProjection();
   const pomodoro = usePetStore((state) => state.pomodoro);
@@ -101,7 +107,7 @@ export default function DynamicIslandRuntime() {
     });
   }, [activityProjection, gatewayAgents, t]);
   const sessionRunning = activityProjection.active.length > 0;
-  const voiceActive = isVoiceActivePhase(voicePhase);
+  const voiceActive = isVoiceActivePhase(voicePhase) || isDynamicIslandVoiceInputActive(voiceInput);
   const shouldShow = shouldShowDynamicIsland({
     enabled,
     mainMinimized,
@@ -139,6 +145,7 @@ export default function DynamicIslandRuntime() {
     sessionActivities,
     voicePhase,
     voiceQueueLength,
+    voiceInput,
     petEnabled,
     dndMode,
     autoExpand,
@@ -159,7 +166,7 @@ export default function DynamicIslandRuntime() {
       body: latestToast.body,
     } : null,
     resourceDrop,
-  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, focus, latestToast, petEnabled, pomodoro, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voicePhase, voiceQueueLength]);
+  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, focus, latestToast, petEnabled, pomodoro, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
 
@@ -249,6 +256,7 @@ export default function DynamicIslandRuntime() {
           stopPomodoro();
           break;
         case 'voice-stop':
+          void voiceModeCoordinator.stopAndReleaseCapture();
           voiceRuntime.interruptAll();
           break;
         case 'hide':

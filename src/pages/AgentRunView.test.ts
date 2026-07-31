@@ -145,6 +145,10 @@ test('completed tasks cannot be reset into a new task with the same id', () => {
   assert.doesNotMatch(source, /setStatus\('idle'\); setRunning\(false\); setError\(null\); setMetrics\(null\); setSessionPath\(null\)/);
 });
 
+test('same-route task changes remount the task view with the exact task identity', () => {
+  assert.match(source, /key=\{requestedTask \? `task:\$\{requestedTask\.id\}` : 'new-task'\}/);
+});
+
 test('worktree actions remain available when diff statistics are unavailable', () => {
   assert.match(source, /worktreePath && worktreeBranch && !worktreeDiscarded/);
   assert.match(source, /\{diffStats && <>/);

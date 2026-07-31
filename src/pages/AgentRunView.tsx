@@ -428,6 +428,7 @@ export function AgentRunRoute() {
 
   return (
     <AgentRunView
+      key={requestedTask ? `task:${requestedTask.id}` : 'new-task'}
       taskId={requestedTask?.id}
       initialTitle={requestedTask?.title}
       projectPath={requestedTask?.projectPath}
@@ -1476,7 +1477,7 @@ export function AgentRunView({
       {(running || isDone) && (
         <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-2 border-b border-aegis-border px-5 py-1.5 text-[11px] text-aegis-text-dim">
           <span className="whitespace-nowrap font-medium text-aegis-text-secondary">
-            {agent === 'claude' ? '✦ Claude Code' : agent === 'codex' ? '⬡ Codex' : 'Pi'} · {t(PERM_OPTIONS.find((option) => option.value === perm)?.label ?? 'agent.perm.ask')}
+            {agent === 'claude' ? 'Claude Code' : agent === 'codex' ? 'Codex' : 'Pi'} · {t(PERM_OPTIONS.find((option) => option.value === perm)?.label ?? 'agent.perm.ask')}
           </span>
           {agent === 'claude' && usageSnapshot?.claude.status === 'available' && (
             <>

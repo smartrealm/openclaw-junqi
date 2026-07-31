@@ -230,7 +230,7 @@ export function PetBreakOverlay() {
                 />
               </div>
               <p className="text-[10px] text-center mt-1.5" style={{ color: 'rgba(var(--aegis-text-dim),0.75)' }}>
-                {t('pet.pomodoro.breakHint', '好好休息一下，待会更有状态 ✨')}
+                {t('pet.pomodoro.breakHint', '好好休息一下，待会更有状态')}
               </p>
             </div>
 

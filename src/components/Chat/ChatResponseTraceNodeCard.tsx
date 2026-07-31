@@ -9,6 +9,7 @@ import {
   MessageSquareText,
   ShieldCheck,
   SquareTerminal,
+  PanelRightOpen,
   Wrench,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -134,7 +135,13 @@ function TraceNodeDetails({ node }: { node: ChatResponseTraceNode }) {
   return null;
 }
 
-export function ChatResponseTraceNodeCard({ node }: { node: ChatResponseTraceNode }) {
+export function ChatResponseTraceNodeCard({
+  node,
+  onOpenSourceMessage,
+}: {
+  node: ChatResponseTraceNode;
+  onOpenSourceMessage: () => void;
+}) {
   const { t, i18n } = useTranslation();
   const label = (() => {
     switch (node.kind) {
@@ -167,12 +174,24 @@ export function ChatResponseTraceNodeCard({ node }: { node: ChatResponseTraceNod
               <Clock3 size={9} />
               {formatTraceTimestamp(node.timestamp, i18n.language)}
             </span>
+            <button
+              type="button"
+              onClick={onOpenSourceMessage}
+              className="grid size-6 shrink-0 place-items-center rounded-md text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-aegis-primary"
+              title={t('chat.trace.viewSourceRecord')}
+              aria-label={t('chat.trace.viewSourceRecord')}
+            >
+              <PanelRightOpen size={13} />
+            </button>
           </div>
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[9px] text-aegis-text-dim">
-            <span>{t('chat.trace.sourceMessage')}: {node.sourceMessageId}</span>
-            <span>{t('chat.trace.sequence')}: {node.sourceSequence ?? t('chat.trace.notProvided')}</span>
-            {node.kind === 'tool' && <span>{t('chat.trace.toolCall')}: {node.toolCallId || t('chat.trace.notProvided')}</span>}
-          </div>
+          <details className="mt-1 text-[9px] text-aegis-text-dim">
+            <summary className="cursor-pointer select-none">{t('chat.trace.technicalDetails')}</summary>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono">
+              <span>{t('chat.trace.sourceMessage')}: {node.sourceMessageId}</span>
+              <span>{t('chat.trace.sequence')}: {node.sourceSequence ?? t('chat.trace.notProvided')}</span>
+              {node.kind === 'tool' && <span>{t('chat.trace.toolCall')}: {node.toolCallId || t('chat.trace.notProvided')}</span>}
+            </div>
+          </details>
           <TraceNodeDetails node={node} />
         </div>
       </div>

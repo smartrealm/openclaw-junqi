@@ -42,7 +42,8 @@ import type { ResponseGroup } from '@/types/ResponseGroup';
 import { projectQuickChatResponseGroups } from './quickChatProjection';
 import { ChatMessagePreviewPanel } from '@/components/Chat/ChatMessagePreviewPanel';
 import { ChatResponseTracePanel } from '@/components/Chat/ChatResponseTracePanel';
-import { projectChatResponseTrace } from '@/components/Chat/chatResponseTrace';
+import { findTraceSourceMessage, projectChatResponseTrace } from '@/components/Chat/chatResponseTrace';
+import { ChatTraceSourceMessagePanel } from '@/components/Chat/ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from '@/components/Chat/useChatSidePanel';
 
 interface SeedFile {
@@ -572,6 +573,20 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         return group ? (
           <ChatResponseTracePanel
             trace={projectChatResponseTrace(group)}
+            onClose={sidePanel.closePanel}
+            onOpenSourceMessage={(sourceMessageId) => sidePanel.openTraceSourceMessage(groupId, sourceMessageId)}
+            overlay
+          />
+        ) : null;
+      })()}
+      {sidePanel.panel?.kind === 'trace-source-message' && (() => {
+        const { groupId, sourceMessageId } = sidePanel.panel;
+        const group = quickChatResponseGroups.find((candidate) => candidate.id === groupId);
+        return group ? (
+          <ChatTraceSourceMessagePanel
+            sourceMessageId={sourceMessageId}
+            message={findTraceSourceMessage(messages, sourceMessageId)}
+            onBack={() => sidePanel.openResponseTrace(groupId)}
             onClose={sidePanel.closePanel}
             overlay
           />

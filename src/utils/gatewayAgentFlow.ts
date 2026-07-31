@@ -32,6 +32,7 @@ export interface GatewayAgentConfigEntry {
   name?: string;
   model?: { primary?: string };
   workspace?: string;
+  [key: string]: unknown;
 }
 
 export function normalizeGatewayAgentId(value: string): string {

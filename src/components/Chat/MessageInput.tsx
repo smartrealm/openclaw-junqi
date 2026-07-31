@@ -8,6 +8,7 @@ import { ComposerInputSurface } from './message-input/ComposerInputSurface';
 import { ComposerVoiceRecorder } from './message-input/ComposerVoiceRecorder';
 import { MessageQueuePanel } from './message-input/MessageQueuePanel';
 import { VoiceStatusBanner } from './message-input/VoiceStatusBanner';
+import { VoiceWorkspace } from './message-input/VoiceWorkspace';
 import { useComposerAttachments } from './message-input/useComposerAttachments';
 import { useComposerInterruption } from './message-input/useComposerInterruption';
 import { useComposerMenu } from './message-input/useComposerMenu';
@@ -92,6 +93,17 @@ export function MessageInput() {
       />
       <MessageQueuePanel sessionKey={activeSessionKey} dir={dir} />
       {!voice.recording && (
+        <VoiceWorkspace
+          snapshot={voice.voiceMode}
+          connected={connected && !historyLoading}
+          onStartDictation={voice.startDictation}
+          onRequestWakeWord={voice.requestWakeWord}
+          onStop={voice.stopVoiceMode}
+          onConfirmDraft={voice.confirmVoiceDraft}
+          onDiscardDraft={voice.discardVoiceDraft}
+        />
+      )}
+      {!voice.recording && voice.voiceMode.mode === 'off' && voice.voiceMode.phase === 'off' && voice.voiceMode.draft === null && (
         <VoiceStatusBanner
           enabled={voice.voiceWake.enabled}
           error={voice.voiceWake.error}
@@ -123,9 +135,10 @@ export function MessageInput() {
           attachments={attachments}
           suggestions={suggestions}
           menu={menu}
-          dictationEnabled={voice.voiceWake.enabled}
+          dictationEnabled={voice.voiceWake.enabled || voice.voiceMode.mode !== 'off' || voice.voiceMode.draft !== null}
           onStartRecording={voice.startRecording}
           onToggleDictation={voice.toggleDictation}
+          onRequestWakeWord={voice.requestWakeWord}
           onSend={send}
           onStop={stop}
         />

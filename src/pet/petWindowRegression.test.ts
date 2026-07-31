@@ -6,6 +6,9 @@ const petWindow = readFileSync(new URL('./PetWindow.tsx', import.meta.url), 'utf
 const petBubble = readFileSync(new URL('./PetBubble.tsx', import.meta.url), 'utf8');
 const petCommands = readFileSync(new URL('../../src-tauri/src/commands/pet.rs', import.meta.url), 'utf8');
 const petEmitter = readFileSync(new URL('./usePetStateEmitter.ts', import.meta.url), 'utf8');
+const trayMenu = readFileSync(new URL('../../src-tauri/src/tray/menu.rs', import.meta.url), 'utf8');
+const dragDropRuntime = readFileSync(new URL('../runtime/DragDropRuntime.tsx', import.meta.url), 'utf8');
+const petBreakOverlay = readFileSync(new URL('./PetBreakOverlay.tsx', import.meta.url), 'utf8');
 
 test('native pet dragging has an explicit completion signal on Windows', () => {
   assert.match(petCommands, /start_dragging\(\)/);
@@ -66,4 +69,34 @@ test('setup pet status never exposes raw installer logs or error details', () =>
   const localizedMessage = petEmitter.slice(start, end);
   assert.doesNotMatch(localizedMessage, /setupStatusMessage/);
   assert.doesNotMatch(localizedMessage, /setupError/);
+});
+
+test('the main pet snapshot synchronizes display preferences into the independent WebView', () => {
+  assert.match(petEmitter, /presentation: presentationPreferences\(\)/);
+  assert.match(petWindow, /applyPresentationPreferences\(e\.payload\.presentation\)/);
+  assert.match(petWindow, /setPresentationPreferences\(preferences\)/);
+});
+
+test('pet sounds are governed by the pet preference in both producer windows', () => {
+  assert.match(dragDropRuntime, /usePetStore\.getState\(\)\.soundEnabled/);
+  assert.match(petWindow, /playPetSfx\('munch', usePetStore\.getState\(\)\.soundEnabled\)/);
+  assert.doesNotMatch(dragDropRuntime, /useSettingsStore/);
+  assert.doesNotMatch(petWindow, /useSettingsStore\.getState\(\)\.soundEnabled/);
+});
+
+test('tray pet toggles use the command that emits visibility changes', () => {
+  const togglePetBranch = trayMenu.slice(trayMenu.indexOf('"toggle-pet" =>'), trayMenu.indexOf('"toggle-island" =>'));
+  assert.match(togglePetBranch, /toggle_pet_window\(app\)\.await/);
+  assert.doesNotMatch(togglePetBranch, /win\.hide\(\)|win\.show\(\)/);
+});
+
+test('pet listener readiness requests a replayable initial snapshot', () => {
+  assert.match(petWindow, /subscribeTauriEventReady<PetState>\('pet-state'/);
+  assert.match(petWindow, /emitTauriEvent\('pet-ready'\)/);
+  assert.match(petEmitter, /subscribeTauriEventReady\('pet-ready'/);
+  assert.match(petEmitter, /snapshotRelay\.replayLatest\(\)/);
+});
+
+test('pet break fallback copy contains no sparkle pictograph', () => {
+  assert.doesNotMatch(petBreakOverlay, /\u2728/u);
 });

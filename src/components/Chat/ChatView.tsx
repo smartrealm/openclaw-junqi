@@ -69,7 +69,8 @@ import {
 import { selectActiveExecutionPlan } from './executionPlanPlacement';
 import { ChatMessagePreviewPanel } from './ChatMessagePreviewPanel';
 import { ChatResponseTracePanel } from './ChatResponseTracePanel';
-import { projectChatResponseTrace } from './chatResponseTrace';
+import { findTraceSourceMessage, projectChatResponseTrace } from './chatResponseTrace';
+import { ChatTraceSourceMessagePanel } from './ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from './useChatSidePanel';
 import { getToolLabelKey } from './toolCallPresentation';
 
@@ -1436,6 +1437,19 @@ function ChatViewContent() {
         return group ? (
           <ChatResponseTracePanel
             trace={projectChatResponseTrace(group)}
+            onClose={sidePanel.closePanel}
+            onOpenSourceMessage={(sourceMessageId) => sidePanel.openTraceSourceMessage(groupId, sourceMessageId)}
+          />
+        ) : null;
+      })()}
+      {sidePanel.panel?.kind === 'trace-source-message' && (() => {
+        const { groupId, sourceMessageId } = sidePanel.panel;
+        const group = responseGroups.find((candidate) => candidate.id === groupId);
+        return group ? (
+          <ChatTraceSourceMessagePanel
+            sourceMessageId={sourceMessageId}
+            message={findTraceSourceMessage(messages, sourceMessageId)}
+            onBack={() => sidePanel.openResponseTrace(groupId)}
             onClose={sidePanel.closePanel}
           />
         ) : null;

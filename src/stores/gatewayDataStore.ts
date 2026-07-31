@@ -343,7 +343,98 @@ const DEFAULT_FRESHNESS_MS: Record<PollGroup, number> = {
 
 // Reference to gateway connection (set by startPolling)
 // Uses request() directly to avoid circular imports with gateway facade
-type GatewayRequester = { request: (method: string, params: any) => Promise<any> };
+type GatewayRequestParams = Record<string, unknown>;
+type GatewayRequester = { request: (method: string, params: GatewayRequestParams) => Promise<unknown> };
+
+function isGatewayRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function gatewayCollection(response: unknown, key: string): unknown[] | null {
+  if (Array.isArray(response)) return response;
+  if (!isGatewayRecord(response) || !Array.isArray(response[key])) return null;
+  return response[key];
+}
+
+function isAgentInfo(value: unknown): value is AgentInfo {
+  return isGatewayRecord(value)
+    && typeof value.id === 'string'
+    && value.id.trim().length > 0;
+}
+
+function isCronJob(value: unknown): value is CronJob {
+  return isGatewayRecord(value)
+    && typeof value.id === 'string'
+    && value.id.trim().length > 0;
+}
+
+function gatewayCollectionOf<T>(
+  response: unknown,
+  key: string,
+  isItem: (value: unknown) => value is T,
+): T[] | null {
+  const entries = gatewayCollection(response, key);
+  if (!entries) return null;
+  const parsed = entries.filter(isItem);
+  return parsed.length === entries.length ? parsed : null;
+}
+
+const COST_METRIC_KEYS = [
+  'totalCost',
+  'inputCost',
+  'outputCost',
+  'input',
+  'output',
+  'cacheRead',
+  'cacheWrite',
+  'cacheReadCost',
+  'cacheWriteCost',
+  'totalTokens',
+  'missingCostEntries',
+] as const;
+
+function hasCostMetrics(value: Record<string, unknown>): boolean {
+  return COST_METRIC_KEYS.every((key) => typeof value[key] === 'number');
+}
+
+function isDailyEntry(value: unknown): value is DailyEntry {
+  return isGatewayRecord(value)
+    && typeof value.date === 'string'
+    && hasCostMetrics(value)
+    && (value.requests === undefined || typeof value.requests === 'number');
+}
+
+function isCostSummary(value: unknown): value is CostSummary {
+  if (!isGatewayRecord(value) || typeof value.days !== 'number' || !Array.isArray(value.daily)) {
+    return false;
+  }
+  if (!isGatewayRecord(value.totals) || !hasCostMetrics(value.totals)) return false;
+  if (value.totals.requests !== undefined && typeof value.totals.requests !== 'number') return false;
+  if (value.updatedAt !== undefined && typeof value.updatedAt !== 'number') return false;
+  return value.daily.every(isDailyEntry);
+}
+
+function isSessionsUsage(value: unknown): value is SessionsUsage {
+  if (!isGatewayRecord(value)) return false;
+  if (value.sessions !== undefined && !Array.isArray(value.sessions)) return false;
+  return value.aggregates === undefined || isGatewayRecord(value.aggregates);
+}
+
+export function parseGatewayAgentList(response: unknown): AgentInfo[] | null {
+  return gatewayCollectionOf(response, 'agents', isAgentInfo);
+}
+
+export function parseGatewayCronJobList(response: unknown): CronJob[] | null {
+  return gatewayCollectionOf(response, 'jobs', isCronJob);
+}
+
+export function parseGatewayCostSummary(response: unknown): CostSummary | null {
+  return isCostSummary(response) ? response : null;
+}
+
+export function parseGatewaySessionsUsage(response: unknown): SessionsUsage | null {
+  return isSessionsUsage(response) ? response : null;
+}
 
 interface GatewayRequestTicket<Connection> {
   group: GatewayDataGroup;
@@ -404,6 +495,15 @@ function beginGatewayRequest(group: GatewayDataGroup): GatewayRequestTicket<Gate
 
 function isCurrentGatewayRequest(ticket: GatewayRequestTicket<GatewayRequester>): boolean {
   return requestFence.isCurrent(ticket, gw);
+}
+
+function rejectGatewayResponse(
+  store: Pick<GatewayDataState, 'setError' | 'setLoading'>,
+  group: GatewayDataGroup,
+  method: string,
+): void {
+  store.setError(group, `Gateway returned an invalid ${method} response`);
+  store.setLoading(group, false);
 }
 
 // ── Fetch functions ──────────────────────────────────────
@@ -472,8 +572,11 @@ async function fetchAgents() {
   try {
     const res = await ticket.connection.request('agents.list', {});
     if (!isCurrentGatewayRequest(ticket)) return;
-    const list = Array.isArray(res?.agents) ? res.agents
-               : Array.isArray(res) ? res : [];
+    const list = parseGatewayAgentList(res);
+    if (!list) {
+      rejectGatewayResponse(store, 'agents', 'agents.list');
+      return;
+    }
     store.setAgents(list);
   } catch (e: any) {
     if (!isCurrentGatewayRequest(ticket)) return;
@@ -490,7 +593,12 @@ async function fetchCost() {
   try {
     const res = await ticket.connection.request('usage.cost', { days: 30, agentScope: 'all' });
     if (!isCurrentGatewayRequest(ticket)) return;
-    if (res) store.setCostSummary(res);
+    const summary = parseGatewayCostSummary(res);
+    if (!summary) {
+      rejectGatewayResponse(store, 'cost', 'usage.cost');
+      return;
+    }
+    store.setCostSummary(summary);
   } catch (e: any) {
     if (!isCurrentGatewayRequest(ticket)) return;
     store.setError('cost', e?.message || String(e));
@@ -506,7 +614,12 @@ async function fetchUsage() {
   try {
     const res = await ticket.connection.request('sessions.usage', { limit: 100, agentScope: 'all' });
     if (!isCurrentGatewayRequest(ticket)) return;
-    if (res) store.setSessionsUsage(res);
+    const usage = parseGatewaySessionsUsage(res);
+    if (!usage) {
+      rejectGatewayResponse(store, 'usage', 'sessions.usage');
+      return;
+    }
+    store.setSessionsUsage(usage);
   } catch (e: any) {
     if (!isCurrentGatewayRequest(ticket)) return;
     store.setError('usage', e?.message || String(e));
@@ -522,8 +635,11 @@ async function fetchCron() {
   try {
     const res = await ticket.connection.request('cron.list', { includeDisabled: true });
     if (!isCurrentGatewayRequest(ticket)) return;
-    const list = Array.isArray(res?.jobs) ? res.jobs
-               : Array.isArray(res) ? res : [];
+    const list = parseGatewayCronJobList(res);
+    if (!list) {
+      rejectGatewayResponse(store, 'cron', 'cron.list');
+      return;
+    }
     store.setCronJobs(list);
   } catch (e: any) {
     if (!isCurrentGatewayRequest(ticket)) return;
@@ -669,7 +785,7 @@ export async function ensureGroupFresh(group: PollGroup, maxAgeMs = DEFAULT_FRES
 export async function fetchFullCost(days = 365): Promise<CostSummary | null> {
   if (!gw) return null;
   try {
-    return await gw.request('usage.cost', { days, agentScope: 'all' });
+    return parseGatewayCostSummary(await gw.request('usage.cost', { days, agentScope: 'all' }));
   } catch {
     return null;
   }
@@ -681,7 +797,7 @@ export async function fetchFullCost(days = 365): Promise<CostSummary | null> {
 export async function fetchFullUsage(limit = 2000): Promise<SessionsUsage | null> {
   if (!gw) return null;
   try {
-    return await gw.request('sessions.usage', { limit, agentScope: 'all' });
+    return parseGatewaySessionsUsage(await gw.request('sessions.usage', { limit, agentScope: 'all' }));
   } catch {
     return null;
   }

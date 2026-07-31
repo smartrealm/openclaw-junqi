@@ -68,7 +68,6 @@ interface CollaborationSetupPanelProps {
     sha256: string;
     archiveFile: string;
   };
-  resolvedBundlePath: string | null;
   mutation: CollaborationSetupMutation | null;
   lastResult: CollaborationSetupResult | null;
   error: string | null;
@@ -278,7 +277,6 @@ export function CollaborationSetupPanel({
   capabilities,
   agentConfiguration,
   bundle,
-  resolvedBundlePath,
   mutation,
   lastResult,
   error,
@@ -304,15 +302,6 @@ export function CollaborationSetupPanel({
   const plugin = probe?.plugin;
   const resultWarnings = lastResult && 'warnings' in lastResult ? lastResult.warnings : [];
   const warnings = [...new Set([...(probe?.warnings ?? []), ...resultWarnings])];
-  const manualInstruction = probe?.manualInstallInstructions;
-  const manualArchive = resolvedBundlePath || t('collaboration.bootstrap.bundleInApp', 'JunQi application resource: collaboration/junqi-collab.tgz');
-  const targetArchive = '/path/on/target/junqi-collab.tgz';
-  const manualCommands = [
-    `sha256sum ${targetArchive}`,
-    `openclaw plugins install --force --pin ${targetArchive}`,
-    'openclaw plugins enable junqi-collab',
-    'openclaw gateway restart',
-  ].join('\n');
   const pluginReady = Boolean(plugin?.installed && plugin.enabled && plugin.status === 'loaded');
   const targetVerified = identity?.verified === true;
   const availableAgents = capabilities?.configuredAgents ?? [];
@@ -646,21 +635,13 @@ export function CollaborationSetupPanel({
 
       {decision.kind === 'manual' && (
         <section className="rounded-md border border-aegis-border px-3 py-2.5">
-          <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.manualSteps', 'Manual installation on the target')}</h3>
-          {manualInstruction && <p className="mt-1 text-[10px] leading-4 text-aegis-text-muted">{manualInstruction}</p>}
-          <ol className="mt-2 list-decimal space-y-1 ps-4 text-[10px] leading-4 text-aegis-text-muted">
-            <li>{t('collaboration.bootstrap.transferArchive', 'Transfer the exact archive below to the Gateway host.')}</li>
-            <li>{t('collaboration.bootstrap.verifyHash', 'Verify its SHA-256 equals the value shown above.')}</li>
-            <li>{t('collaboration.bootstrap.runCommands', 'Run the commands on the target, then reconnect JunQi.')}</li>
+          <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.externalHelpTitle')}</h3>
+          <p className="mt-1 text-[10px] leading-4 text-aegis-text-muted">{t('collaboration.bootstrap.externalHelpBody')}</p>
+          <ol className="mt-2 space-y-1.5 text-[10px] leading-4 text-aegis-text-muted">
+            <li>{t('collaboration.bootstrap.externalStepShare', { archive: bundle.archiveFile })}</li>
+            <li>{t('collaboration.bootstrap.externalStepVerify')}</li>
+            <li>{t('collaboration.bootstrap.externalStepReconnect')}</li>
           </ol>
-          <div className="mt-2 flex min-w-0 items-center gap-2 rounded bg-[rgb(var(--aegis-overlay)/0.04)] px-2 py-1.5">
-            <code className="min-w-0 flex-1 break-all font-mono text-[9.5px] text-aegis-text-dim">{manualArchive}</code>
-            <CopyButton value={manualArchive} label={t('collaboration.bootstrap.copyArchivePath', 'Copy archive path')} />
-          </div>
-          <div className="mt-2 flex min-w-0 items-start gap-2 rounded bg-[rgb(var(--aegis-overlay)/0.04)] px-2 py-1.5">
-            <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-[9.5px] leading-4 text-aegis-text-dim">{manualCommands}</pre>
-            <CopyButton value={manualCommands} label={t('collaboration.bootstrap.copyCommands', 'Copy commands')} />
-          </div>
         </section>
       )}
 
@@ -741,7 +722,6 @@ export function CollaborationSetupDialog() {
           capabilities={state.capabilities}
           agentConfiguration={state.agentConfiguration}
           bundle={state.bundle}
-          resolvedBundlePath={state.resolvedBundlePath}
           mutation={state.mutation}
           lastResult={state.lastResult}
           error={state.error}

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { DEFAULT_PET_SKIN, isPetSkin, type PetSkin } from '@/pet/skins';
+import type { PetPresentationPreferences } from '@/pet/pet-states';
 export type { PetSkin };
 export { DEFAULT_PET_SKIN };
 
@@ -134,6 +135,7 @@ interface PetSettings {
   setSoundEnabled: (v: boolean) => void;
   setBackdropContrastEnabled: (v: boolean) => void;
   setCaptionScale: (v: number) => void;
+  setPresentationPreferences: (preferences: PetPresentationPreferences) => void;
 }
 
 export const usePetStore = create<PetSettings>()(
@@ -197,6 +199,11 @@ export const usePetStore = create<PetSettings>()(
       setSoundEnabled: (v) => set({ soundEnabled: v }),
       setBackdropContrastEnabled: (backdropContrastEnabled) => set({ backdropContrastEnabled }),
       setCaptionScale: (captionScale) => set({ captionScale: normalizePetCaptionScale(captionScale) }),
+      setPresentationPreferences: (preferences) => set({
+        soundEnabled: preferences.soundEnabled,
+        backdropContrastEnabled: preferences.backdropContrastEnabled,
+        captionScale: normalizePetCaptionScale(preferences.captionScale),
+      }),
     }),
     {
       name: 'aegis-pet-settings',

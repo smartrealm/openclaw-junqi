@@ -23,6 +23,7 @@ interface ComposerInputSurfaceProps {
   dictationEnabled: boolean;
   onStartRecording: () => void;
   onToggleDictation: () => void;
+  onRequestWakeWord: () => void;
   onSend: () => Promise<void>;
   onStop: () => Promise<void>;
 }
@@ -43,6 +44,7 @@ export function ComposerInputSurface({
   dictationEnabled,
   onStartRecording,
   onToggleDictation,
+  onRequestWakeWord,
   onSend,
   onStop,
 }: ComposerInputSurfaceProps) {
@@ -167,6 +169,9 @@ export function ComposerInputSurface({
             </ComposerActionMenuItem>
             <ComposerActionMenuItem icon={Radio} onSelect={onToggleDictation}>
               {t('input.continuousDictation')}
+            </ComposerActionMenuItem>
+            <ComposerActionMenuItem icon={Radio} onSelect={onRequestWakeWord}>
+              {t('input.wakeWordMode')}
             </ComposerActionMenuItem>
           </ComposerActionMenu>
 

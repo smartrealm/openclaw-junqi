@@ -63,6 +63,7 @@ function render(
   options: {
     identity?: RuntimeIdentity;
     decision?: Parameters<typeof CollaborationSetupPanel>[0]['decision'];
+    probe?: CollaborationBootstrapProbe;
   } = {},
 ): string {
   return renderToStaticMarkup(createElement(CollaborationSetupPanel, {
@@ -76,7 +77,7 @@ function render(
     },
     loading: false,
     identity: options.identity ?? identity,
-    probe,
+    probe: options.probe ?? probe,
     status: null,
     capabilities: agentCapabilities,
     agentConfiguration: {
@@ -90,7 +91,6 @@ function render(
       sha256: 'a'.repeat(64),
       archiveFile: 'junqi-collab.tgz',
     },
-    resolvedBundlePath: '/tmp/junqi-collab.tgz',
     mutation: null,
     lastResult: null,
     error: null,
@@ -146,4 +146,29 @@ test('unverified Gateway setup does not expose a plugin package or target metada
 
   assert.match(html, /Verified Gateway required/);
   assert.doesNotMatch(html, /Fixed plugin package|SHA-256|Plugin state/);
+});
+
+test('external Gateway handoff is semantic and does not expose client paths or shell commands', () => {
+  const html = render(capabilities([]), [], {
+    decision: {
+      kind: 'manual',
+      canApply: false,
+      canRecover: false,
+      targetClass: 'external_remote',
+      pluginVersion: null,
+      expectedVersion: '0.1.0',
+    },
+    probe: {
+      ...probe,
+      targetClass: 'external_remote',
+      mutationAllowed: false,
+      manualInstallRequired: true,
+      manualInstallInstructions: null,
+    },
+  });
+
+  assert.match(html, /Gateway administrator action required/);
+  assert.match(html, /fixed plugin package junqi-collab\.tgz/i);
+  assert.doesNotMatch(html, /\/tmp\/junqi-collab\.tgz/);
+  assert.doesNotMatch(html, /sha256sum|openclaw plugins install|gateway restart/);
 });

@@ -441,7 +441,7 @@ worker 同时执行三层硬限制：
 
 Supervisor 为每次操作保存独立 bootstrap journal，至少记录目标 RuntimeIdentity/connection fence、原插件版本、精确备份路径与归档/内容 hash、配置原始与 bootstrap-owned hash、已执行步骤、回滚步骤与最终诊断。恢复逻辑必须能够在 Desktop 或 Gateway 于任一步骤退出后继续或回滚，并拒绝覆盖外部修改过的配置。
 
-对 `EXTERNAL` 实例只显示版本固定的手工安装说明，不自动修改本机 `openclaw.json`。
+对 `EXTERNAL` 实例不自动修改本机 `openclaw.json`。默认界面只展示固定插件包的身份、Gateway 管理员需要完成的步骤和重新连接后的自动核验；不得把 Desktop 当前操作系统、应用资源路径或 Shell 命令当作外部目标的属性。只有目标运行时通过受支持协议报告了可信的平台和管理能力，或管理员在目标端显式授权后，才可展示该目标对应的操作入口。
 
 ### 3.3 插件信任等级
 

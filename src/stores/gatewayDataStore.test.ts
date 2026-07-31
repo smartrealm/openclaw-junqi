@@ -4,6 +4,10 @@ import {
   GATEWAY_DATA_GROUPS,
   createGatewayRequestFence,
   isRunningSubagentSession,
+  parseGatewayAgentList,
+  parseGatewayCostSummary,
+  parseGatewayCronJobList,
+  parseGatewaySessionsUsage,
   resolveGatewayConnectionStartedAt,
 } from './gatewayDataStore';
 
@@ -72,4 +76,33 @@ test('Gateway connection start time survives polling restarts only while connect
   assert.equal(resolveGatewayConnectionStartedAt(100, true, 200), 100);
   assert.equal(resolveGatewayConnectionStartedAt(100, false, 300), null);
   assert.equal(resolveGatewayConnectionStartedAt(null, true, 400), 400);
+});
+
+test('Gateway polling decoders reject malformed responses instead of inventing empty data', () => {
+  assert.deepEqual(parseGatewayAgentList({ agents: [{ id: 'main' }] }), [{ id: 'main' }]);
+  assert.equal(parseGatewayAgentList({ agents: [{ name: 'missing-id' }] }), null);
+  assert.deepEqual(parseGatewayCronJobList([{ id: 'daily' }]), [{ id: 'daily' }]);
+  assert.equal(parseGatewayCronJobList({ jobs: [{ id: '' }] }), null);
+
+  const metrics = {
+    totalCost: 1,
+    inputCost: 0.2,
+    outputCost: 0.8,
+    input: 10,
+    output: 20,
+    cacheRead: 1,
+    cacheWrite: 2,
+    cacheReadCost: 0.01,
+    cacheWriteCost: 0.02,
+    totalTokens: 33,
+    missingCostEntries: 0,
+  };
+  const cost = { days: 30, daily: [{ date: '2026-07-31', ...metrics }], totals: metrics };
+  assert.deepEqual(parseGatewayCostSummary(cost), cost);
+  assert.equal(parseGatewayCostSummary({ days: 30, daily: [], totals: {} }), null);
+  assert.deepEqual(parseGatewaySessionsUsage({ sessions: [], aggregates: { byAgent: [] } }), {
+    sessions: [],
+    aggregates: { byAgent: [] },
+  });
+  assert.equal(parseGatewaySessionsUsage({ sessions: {} }), null);
 });

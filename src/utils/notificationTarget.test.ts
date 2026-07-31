@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveNotificationTarget } from './notificationTarget';
 
-test('notification targets accept internal application routes', () => {
+test('notification targets canonicalize the legacy agent-task route', () => {
   assert.deepEqual(resolveNotificationTarget('/ai-workspace?task=42'), {
     kind: 'internal',
-    value: '/ai-workspace?task=42',
+    value: '/agent-run?taskId=42',
   });
 });
 

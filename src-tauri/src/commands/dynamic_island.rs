@@ -21,9 +21,28 @@ const MACOS_STATUS_BAR_WINDOW_LEVEL: isize = 25;
 #[cfg(target_os = "macos")]
 const MACOS_SAFE_AREA_MARGIN: f64 = 8.0;
 
+#[derive(Debug, Default)]
+struct IslandLifecycle {
+    expected_visible: bool,
+}
+
+impl IslandLifecycle {
+    fn expect_visible(&mut self) {
+        self.expected_visible = true;
+    }
+
+    fn expect_hidden(&mut self) {
+        self.expected_visible = false;
+    }
+
+    fn allows_expansion(&self) -> bool {
+        self.expected_visible
+    }
+}
+
 static ANIMATION_GENERATION: AtomicU64 = AtomicU64::new(0);
 static LAST_MAIN_MONITOR: OnceLock<Mutex<Option<MonitorGeometry>>> = OnceLock::new();
-static WINDOW_LIFECYCLE_GATE: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+static WINDOW_LIFECYCLE_GATE: OnceLock<tokio::sync::Mutex<IslandLifecycle>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct MonitorGeometry {
@@ -78,8 +97,8 @@ fn monitor_cache() -> &'static Mutex<Option<MonitorGeometry>> {
     LAST_MAIN_MONITOR.get_or_init(|| Mutex::new(None))
 }
 
-fn lifecycle_gate() -> &'static tokio::sync::Mutex<()> {
-    WINDOW_LIFECYCLE_GATE.get_or_init(|| tokio::sync::Mutex::new(()))
+fn lifecycle_gate() -> &'static tokio::sync::Mutex<IslandLifecycle> {
+    WINDOW_LIFECYCLE_GATE.get_or_init(|| tokio::sync::Mutex::new(IslandLifecycle::default()))
 }
 
 fn cache_geometry(geometry: MonitorGeometry) -> MonitorGeometry {
@@ -248,12 +267,13 @@ fn animate_to(app: AppHandle, window: WebviewWindow, expanded: bool) -> Result<u
 
 #[tauri::command]
 pub async fn open_dynamic_island(app: AppHandle) -> Result<(), String> {
-    let _guard = lifecycle_gate().lock().await;
+    let mut lifecycle = lifecycle_gate().lock().await;
     ANIMATION_GENERATION.fetch_add(1, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window(DYNAMIC_ISLAND_LABEL) {
         let frame = target_frame(&app, false)?;
         set_frame(&app, &window, frame)?;
         window.show().map_err(|error| error.to_string())?;
+        lifecycle.expect_visible();
         let _ = window.emit("dynamic-island:opened", ());
         return Ok(());
     }
@@ -288,28 +308,34 @@ pub async fn open_dynamic_island(app: AppHandle) -> Result<(), String> {
     }
 
     set_frame(&app, &window, frame)?;
+    lifecycle.expect_visible();
 
     Ok(())
 }
 
 #[tauri::command]
 pub async fn close_dynamic_island(app: AppHandle) -> Result<(), String> {
-    let _guard = lifecycle_gate().lock().await;
+    let mut lifecycle = lifecycle_gate().lock().await;
     if let Some(window) = app.get_webview_window(DYNAMIC_ISLAND_LABEL) {
         let frame = current_frame(&window)?;
+        lifecycle.expect_hidden();
         if frame.height > COMPACT_HEIGHT + 8.0 {
-            let generation = animate_to(app, window.clone(), false)?;
+            if let Err(error) = animate_to(app, window.clone(), false) {
+                lifecycle.expect_visible();
+                return Err(error);
+            }
             tokio::time::sleep(Duration::from_millis(
                 ANIMATION_FRAMES * FRAME_DURATION_MS + 24,
             ))
             .await;
-            if ANIMATION_GENERATION.load(Ordering::SeqCst) != generation {
-                return Ok(());
-            }
-        } else {
-            ANIMATION_GENERATION.fetch_add(1, Ordering::SeqCst);
         }
-        window.hide().map_err(|error| error.to_string())?;
+        ANIMATION_GENERATION.fetch_add(1, Ordering::SeqCst);
+        if let Err(error) = window.hide() {
+            lifecycle.expect_visible();
+            return Err(error.to_string());
+        }
+    } else {
+        lifecycle.expect_hidden();
     }
     Ok(())
 }
@@ -336,9 +362,13 @@ pub async fn get_dynamic_island_visible(app: AppHandle) -> bool {
 
 #[tauri::command]
 pub async fn set_dynamic_island_expanded(app: AppHandle, expanded: bool) -> Result<(), String> {
+    let lifecycle = lifecycle_gate().lock().await;
     let window = app
         .get_webview_window(DYNAMIC_ISLAND_LABEL)
         .ok_or_else(|| "Dynamic island window is not open".to_string())?;
+    if !lifecycle.allows_expansion() {
+        return Ok(());
+    }
     animate_to(app, window, expanded).map(|_| ())
 }
 
@@ -383,6 +413,27 @@ pub async fn dynamic_island_focus_main(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn close_intent_blocks_expansion_queued_on_the_lifecycle_gate() {
+        let gate = Arc::new(tokio::sync::Mutex::new(IslandLifecycle {
+            expected_visible: true,
+        }));
+        let mut closing = gate.lock().await;
+        closing.expect_hidden();
+
+        let expansion_gate = Arc::clone(&gate);
+        let expansion = tokio::spawn(async move {
+            let lifecycle = expansion_gate.lock().await;
+            lifecycle.allows_expansion()
+        });
+
+        tokio::task::yield_now().await;
+        assert!(!expansion.is_finished());
+        drop(closing);
+        assert!(!expansion.await.expect("expansion task should complete"));
+    }
 
     #[test]
     fn interpolation_finishes_at_the_target_without_overshoot() {

@@ -75,7 +75,7 @@ async function loadDeps() {
   const { useChatStore } = await import('@/stores/chatStore');
   const { ChatHandler } = await import('@/services/gateway/ChatHandler');
   (globalThis as any).__chatDeps = { useChatStore };
-  return { ChatHandler };
+  return { ChatHandler, useChatStore };
 }
 
 test('chat.final replaces a longer streamed draft with OpenClaw canonical text', async () => {
@@ -817,12 +817,12 @@ test('session.tool renders the official late-subscriber tool lifecycle exactly o
 
 test('agent item keeps tool identity, input, failed output, and source timing through the live projection', async () => {
   installWindowMock();
-  const { ChatHandler } = await loadDeps();
+  const { ChatHandler, useChatStore } = await loadDeps();
   resetChatStore();
 
   const handler = new ChatHandler({
     callbacks: { onStreamChunk: () => {}, onStreamEnd: () => {} },
-  } as any);
+  });
   const sessionKey = 'agent:main:item-tool-error';
   const runId = 'run-item-tool-error';
   const toolCallId = 'call-item-tool-error';
@@ -863,9 +863,8 @@ test('agent item keeps tool identity, input, failed output, and source timing th
     },
   } });
 
-  const { useChatStore } = (globalThis as any).__chatDeps as { useChatStore: any };
   const tool = (useChatStore.getState().messagesPerSession[sessionKey] ?? [])
-    .find((message: any) => message.id === `tool-live-${runId}-${toolCallId}`);
+    .find((message) => message.id === `tool-live-${runId}-${toolCallId}`);
   assert.equal(tool?.toolCallId, toolCallId);
   assert.deepEqual(tool?.toolInput, { command: 'pnpm test' });
   assert.equal(tool?.toolStatus, 'error');
@@ -873,7 +872,7 @@ test('agent item keeps tool identity, input, failed output, and source timing th
   assert.equal(tool?.timestamp, new Date(endedAt).toISOString());
   assert.equal(tool?.toolDurationMs, 650);
   assert.equal(tool?.toolOutputTruncated, true);
-  assert.ok((tool?.toolOutputOriginalLength ?? 0) > (tool?.toolOutput.length ?? 0));
+  assert.ok((tool?.toolOutputOriginalLength ?? 0) > (tool?.toolOutput?.length ?? 0));
 });
 
 test('session.tool uses the agent sequence fence and requests history on a live gap', async () => {

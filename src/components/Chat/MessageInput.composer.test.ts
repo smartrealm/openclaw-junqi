@@ -72,10 +72,14 @@ test('session runtime control has a single stable top context owner beside works
 test('composer keeps dictation observable and recoverable', () => {
   const input = source('src/components/Chat/MessageInput.tsx');
   const status = source('src/components/Chat/message-input/VoiceStatusBanner.tsx');
+  const workspace = source('src/components/Chat/message-input/VoiceWorkspace.tsx');
   const voice = source('src/components/Chat/message-input/useComposerVoice.ts');
   const wake = source('src/hooks/useVoiceWake.ts');
 
   assert.match(input, /<VoiceStatusBanner/);
+  assert.match(input, /<VoiceWorkspace/);
+  assert.match(workspace, /onConfirmDraft/);
+  assert.match(workspace, /voiceWakeUnavailable/);
   assert.match(status, /input\.stopDictation/);
   assert.match(status, /input\.retryVoiceInput/);
   assert.match(voice, /useVoiceWake/);
@@ -110,6 +114,26 @@ test('composer menu labels are localized in every shipped language', () => {
     'voiceInputFailed',
     'retryVoiceInput',
     'dismissVoiceInputError',
+    'wakeWordMode',
+    'voiceWorkspaceTitle',
+    'voiceModeOff',
+    'voiceModeDictation',
+    'voiceModeWake',
+    'voiceWakeUnavailable',
+    'voiceGatewayUnavailable',
+    'voiceTargetChanged',
+    'voiceCaptureFailed',
+    'voiceWorkspaceListening',
+    'voiceWorkspaceTriggered',
+    'voiceWorkspaceTranscribing',
+    'voiceWorkspaceDraftReady',
+    'voiceWorkspaceUnavailable',
+    'voiceWorkspacePreparing',
+    'voiceWorkspaceLocalOnly',
+    'voiceAudioDraft',
+    'voiceConfirmDraft',
+    'voiceDiscardDraft',
+    'voiceWorkspaceStop',
     'sessionRuntimeTitle',
     'sessionRuntimeProvider',
     'sessionRuntimeModel',

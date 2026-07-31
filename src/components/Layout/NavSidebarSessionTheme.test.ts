@@ -141,6 +141,8 @@ test('session state labels exist in every active product language', () => {
     'chat.renameSession',
     'chat.deleteSession',
     'sidebar.userSessions',
+    'sidebar.session.channelAndAgent',
+    'sidebar.session.channelIdentity',
     'sidebar.background.title',
     'sidebar.background.status.running',
     'sidebar.background.status.done',

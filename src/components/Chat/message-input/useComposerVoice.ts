@@ -1,10 +1,15 @@
-import { useCallback, useState, type RefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject, type SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { AttachmentValidationError, createPreparedAttachment, toGatewayAttachments } from '@/services/chat/attachments';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
-import { gateway } from '@/services/gateway';
+import { gateway, voiceWakeGatewayClient } from '@/services/gateway';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
+import {
+  voiceModeCoordinator,
+  type VoiceModeContext,
+} from '@/services/voice/VoiceModeCoordinator';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { useChatStore } from '@/stores/chatStore';
 import { useVoiceStore } from '@/stores/voiceStore';
@@ -23,6 +28,19 @@ function estimateWavDuration(base64: string): number {
   } catch {
     return 0;
   }
+}
+
+function sameVoiceContext(left: VoiceModeContext, right: VoiceModeContext): boolean {
+  return left.sessionKey === right.sessionKey && left.connectionId === right.connectionId;
+}
+
+function isAttestedVoiceContext(
+  current: VoiceModeContext | null,
+  expected: VoiceModeContext,
+): boolean {
+  return current !== null
+    && sameVoiceContext(current, expected)
+    && gateway.isConnectionCurrent(expected.connectionId);
 }
 
 interface UseComposerVoiceOptions {
@@ -52,12 +70,28 @@ export function useComposerVoice({
 }: UseComposerVoiceOptions) {
   const { t } = useTranslation();
   const [recording, setRecording] = useState(false);
+  const voiceMode = useVoiceMode();
+  const activeTurnRef = useRef<string | null>(null);
+  const pendingAudioCapturesRef = useRef(new Map<string, {
+    wavDataUrl: string;
+    durationSec: number;
+  }>());
+  const stopVoiceWakeRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const currentContextRef = useRef<VoiceModeContext | null>(null);
+  const connectionId = gateway.captureConnectionId();
+  currentContextRef.current = connectionId && activeSessionKey
+    ? { sessionKey: activeSessionKey, connectionId }
+    : null;
   const phase = useVoiceStore((state) => state.phase);
   const voiceSessionKey = useVoiceStore((state) => state.sessionKey);
   const remoteOutput = useVoiceStore((state) => state.remoteOutput);
   const outputActive = remoteOutput !== null
     || ((phase === 'queued' || phase === 'speaking')
       && (voiceSessionKey == null || voiceSessionKey === activeSessionKey));
+  const isCurrentVoiceContext = useCallback(
+    (context: VoiceModeContext) => isAttestedVoiceContext(currentContextRef.current, context),
+    [],
+  );
 
   const sendVoice = useCallback(async (
     base64: string,
@@ -114,39 +148,235 @@ export function useComposerVoice({
 
   const voiceWake = useVoiceWake({
     onTranscript: (transcript) => {
-      voiceRuntime.interruptGlobally(activeSessionKey);
-      setText((current) => current ? `${current} ${transcript}` : transcript);
-      textareaRef.current?.focus();
+      const context = currentContextRef.current;
+      if (!context) return;
+      if (!voiceModeCoordinator.markTranscribing(activeTurnRef.current, context)) return;
+      voiceRuntime.interruptGlobally(context.sessionKey);
+      if (voiceModeCoordinator.acceptTranscript(activeTurnRef.current, context, transcript)) {
+        void stopVoiceWakeRef.current();
+      }
     },
     onCaptureFallback: async (wavDataUrl) => {
+      const context = currentContextRef.current;
+      if (!context) return;
+      if (!voiceModeCoordinator.markTranscribing(activeTurnRef.current, context)) return;
+      voiceRuntime.interruptGlobally(context.sessionKey);
       const base64 = wavDataUrl.split(',')[1] || '';
-      if (base64) await sendVoice(base64, 'audio/wav', estimateWavDuration(base64), wavDataUrl);
+      if (!base64) return;
+      const draft = voiceModeCoordinator.acceptAudioCapture(
+        activeTurnRef.current,
+        context,
+        estimateWavDuration(base64),
+      );
+      if (draft?.kind === 'audio') {
+        pendingAudioCapturesRef.current.set(draft.captureId, {
+          wavDataUrl,
+          durationSec: draft.durationSec,
+        });
+        void stopVoiceWakeRef.current();
+      }
     },
-    onWakeDetected: () => { void stopAssistant(); },
+    onWakeDetected: () => {
+      const context = currentContextRef.current;
+      if (!context || !voiceModeCoordinator.markTriggered(activeTurnRef.current, context)) return;
+      void stopAssistant();
+    },
     lang: language === 'zh-TW' ? 'zh-TW' : language === 'zh' ? 'zh-CN' : 'en-US',
     sessionKey: activeSessionKey,
   });
+  stopVoiceWakeRef.current = voiceWake.stop;
+
+  const stopVoiceMode = useCallback(async () => {
+    activeTurnRef.current = null;
+    pendingAudioCapturesRef.current.clear();
+    await voiceModeCoordinator.stopAndReleaseCapture();
+  }, []);
+
+  const startDictation = useCallback(async () => {
+    closeMenu();
+    const context = currentContextRef.current;
+    if (voiceWake.enabled) await voiceWake.stop();
+    if (!context) {
+      voiceModeCoordinator.start({
+        mode: 'dictation',
+        context: { sessionKey: activeSessionKey, connectionId: '' },
+        wakeDetectorAvailable: false,
+      });
+      activeTurnRef.current = null;
+      return;
+    }
+
+    if (!isCurrentVoiceContext(context)) return;
+
+    await stopAssistant();
+    if (!isCurrentVoiceContext(context)) return;
+    pendingAudioCapturesRef.current.clear();
+    const snapshot = voiceModeCoordinator.start({
+      mode: 'dictation',
+      context,
+      wakeDetectorAvailable: false,
+    });
+    activeTurnRef.current = snapshot.turnId;
+    await voiceWake.start();
+    if (
+      !isCurrentVoiceContext(context)
+      || !voiceModeCoordinator.ownsTurn(snapshot.turnId, context)
+    ) {
+      activeTurnRef.current = null;
+      pendingAudioCapturesRef.current.clear();
+      await voiceWake.stop();
+      await voiceModeCoordinator.stopOwnedTurnAndReleaseCapture(snapshot.turnId, context);
+      return;
+    }
+    textareaRef.current?.focus();
+  }, [
+    activeSessionKey,
+    closeMenu,
+    isCurrentVoiceContext,
+    stopAssistant,
+    textareaRef,
+    voiceWake.enabled,
+    voiceWake.start,
+    voiceWake.stop,
+  ]);
+
+  const requestWakeWord = useCallback(() => {
+    void (async () => {
+      closeMenu();
+      if (voiceWake.enabled) await voiceWake.stop();
+      pendingAudioCapturesRef.current.clear();
+      const context = currentContextRef.current;
+      if (!context) {
+        voiceModeCoordinator.start({
+          mode: 'wake_word',
+          context: { sessionKey: activeSessionKey, connectionId: '' },
+          wakeDetectorAvailable: false,
+        });
+        activeTurnRef.current = null;
+        return;
+      }
+
+      const snapshot = voiceModeCoordinator.start({
+        mode: 'wake_word',
+        context,
+        wakeDetectorAvailable: false,
+      });
+      activeTurnRef.current = snapshot.turnId;
+      void voiceWakeGatewayClient.getConfiguration().catch(() => {
+        voiceModeCoordinator.reportUnavailable(snapshot.turnId, context, 'gateway_unavailable');
+      });
+    })();
+  }, [activeSessionKey, closeMenu, voiceWake.enabled, voiceWake.stop]);
+
+  const confirmVoiceDraft = useCallback(async () => {
+    const context = currentContextRef.current;
+    if (!context) return;
+    const turnId = activeTurnRef.current;
+    if (
+      !isCurrentVoiceContext(context)
+      || !voiceModeCoordinator.ownsTurn(turnId, context)
+    ) {
+      pendingAudioCapturesRef.current.clear();
+      activeTurnRef.current = null;
+      voiceModeCoordinator.invalidateOwnedTurn(turnId, context, 'gateway_unavailable');
+      void stopVoiceWakeRef.current();
+      return;
+    }
+    const draft = voiceModeCoordinator.getDraft(turnId, context);
+    if (!draft) return;
+
+    if (draft.kind === 'transcript') {
+      activeTurnRef.current = null;
+      void voiceModeCoordinator.stopAndReleaseCapture();
+      setText((current) => current ? `${current} ${draft.text}` : draft.text);
+      textareaRef.current?.focus();
+      return;
+    }
+
+    const capture = pendingAudioCapturesRef.current.get(draft.captureId);
+    if (!capture) {
+      voiceModeCoordinator.fail(turnId, context, 'capture_failed');
+      return;
+    }
+    const base64 = capture.wavDataUrl.split(',')[1] || '';
+    if (!base64) {
+      voiceModeCoordinator.fail(turnId, context, 'capture_failed');
+      return;
+    }
+    pendingAudioCapturesRef.current.delete(draft.captureId);
+    activeTurnRef.current = null;
+    void voiceModeCoordinator.stopAndReleaseCapture();
+    await sendVoice(base64, 'audio/wav', capture.durationSec, capture.wavDataUrl);
+  }, [isCurrentVoiceContext, sendVoice, setText, textareaRef]);
+
+  const discardVoiceDraft = useCallback(() => {
+    const context = currentContextRef.current;
+    const draft = voiceModeCoordinator.getSnapshot().draft;
+    if (voiceModeCoordinator.discardDraft(activeTurnRef.current, context)) {
+      if (draft?.kind === 'audio') pendingAudioCapturesRef.current.delete(draft.captureId);
+      activeTurnRef.current = null;
+      void voiceModeCoordinator.stopAndReleaseCapture();
+    }
+  }, []);
+
+  useEffect(() => {
+    const snapshot = voiceModeCoordinator.getSnapshot();
+    const context = currentContextRef.current;
+    if (!snapshot.context) return;
+    if (!context) {
+      activeTurnRef.current = null;
+      pendingAudioCapturesRef.current.clear();
+      voiceModeCoordinator.invalidate('gateway_unavailable');
+      void voiceWake.stop();
+      return;
+    }
+    if (!sameVoiceContext(snapshot.context, context)) {
+      activeTurnRef.current = null;
+      pendingAudioCapturesRef.current.clear();
+      voiceModeCoordinator.invalidateContext(context);
+      void voiceWake.stop();
+    }
+  }, [activeSessionKey, connectionId, voiceWake.stop]);
+
+  useEffect(() => {
+    if (!voiceWake.error) return;
+    const context = currentContextRef.current;
+    if (context) voiceModeCoordinator.fail(activeTurnRef.current, context, 'capture_failed');
+  }, [voiceWake.error]);
+
+  useEffect(() => () => {
+    const turnId = activeTurnRef.current;
+    const context = currentContextRef.current;
+    activeTurnRef.current = null;
+    pendingAudioCapturesRef.current.clear();
+    void stopVoiceWakeRef.current();
+    void voiceModeCoordinator.stopOwnedTurnAndReleaseCapture(turnId, context);
+  }, []);
+
+  useEffect(() => voiceModeCoordinator.subscribeCaptureStop(() => voiceWake.stop()), [voiceWake.stop]);
+
+  useEffect(() => voiceWakeGatewayClient.subscribe(() => {
+    const snapshot = voiceModeCoordinator.getSnapshot();
+    const context = currentContextRef.current;
+    if (snapshot.mode !== 'wake_word' || !snapshot.turnId || !context) return;
+    voiceModeCoordinator.reportUnavailable(snapshot.turnId, context, 'wake_detector_unavailable');
+  }), []);
 
   const startRecording = useCallback(() => {
     void (async () => {
       closeMenu();
-      if (voiceWake.enabled || voiceWake.error) await voiceWake.stop();
+      if (voiceWake.enabled || voiceWake.error || voiceMode.mode !== 'off') await stopVoiceMode();
       await stopAssistant();
       setRecording(true);
     })();
-  }, [closeMenu, stopAssistant, voiceWake.enabled, voiceWake.error, voiceWake.stop]);
+  }, [closeMenu, stopAssistant, stopVoiceMode, voiceMode.mode, voiceWake.enabled, voiceWake.error]);
 
   const toggleDictation = useCallback(() => {
     void (async () => {
-      closeMenu();
-      if (voiceWake.enabled) await voiceWake.stop();
-      else {
-        await stopAssistant();
-        await voiceWake.start();
-      }
-      textareaRef.current?.focus();
+      if (voiceWake.enabled || voiceMode.mode !== 'off' || voiceMode.draft !== null) await stopVoiceMode();
+      else await startDictation();
     })();
-  }, [closeMenu, stopAssistant, textareaRef, voiceWake.enabled, voiceWake.start, voiceWake.stop]);
+  }, [startDictation, stopVoiceMode, voiceMode.draft, voiceMode.mode, voiceWake.enabled]);
 
   const status = voiceWake.phase === 'transcribing' || voiceWake.phase === 'wake_detected'
     ? t('input.dictationProcessing')
@@ -157,9 +387,15 @@ export function useComposerVoice({
     setRecording,
     outputActive,
     voiceWake,
+    voiceMode,
     status,
     startRecording,
     toggleDictation,
+    startDictation: () => { void startDictation(); },
+    requestWakeWord,
+    stopVoiceMode: () => { void stopVoiceMode(); },
+    confirmVoiceDraft: () => { void confirmVoiceDraft(); },
+    discardVoiceDraft,
     sendVoice: (base64: string, mimeType: string, durationSec: number, previewUrl: string) => {
       void sendVoice(base64, mimeType, durationSec, previewUrl);
     },

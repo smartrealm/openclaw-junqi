@@ -2,6 +2,12 @@ import type { AgentWorkspaceTask, AgentWorkspaceTaskStatus } from '@/stores/agen
 import type { NotificationType } from '@/stores/notificationStore';
 import type { PomodoroState } from '@/stores/petStore';
 import type { VoicePhase } from '@/services/voice/types';
+import type {
+  VoiceInputMode,
+  VoiceInputPhase,
+  VoiceModeErrorCode,
+  VoiceModeSnapshot,
+} from '@/services/voice/VoiceModeCoordinator';
 import type { FocusProjection } from '@/focus/focusContext';
 
 export interface DynamicIslandTask {
@@ -34,6 +40,17 @@ export interface DynamicIslandDrop {
   labels: string[];
 }
 
+/**
+ * The auxiliary window receives only a non-sensitive voice cue. It never
+ * receives the voice turn, target, transcript, audio payload, or credentials.
+ */
+export interface DynamicIslandVoiceInput {
+  mode: VoiceInputMode;
+  phase: VoiceInputPhase;
+  requiresConfirmation: boolean;
+  error: VoiceModeErrorCode | null;
+}
+
 export interface DynamicIslandSnapshot {
   revision: number;
   sessionKey: string;
@@ -43,6 +60,7 @@ export interface DynamicIslandSnapshot {
   sessionActivities: DynamicIslandSessionActivity[];
   voicePhase: VoicePhase;
   voiceQueueLength: number;
+  voiceInput: DynamicIslandVoiceInput;
   petEnabled: boolean;
   dndMode: boolean;
   autoExpand: boolean;
@@ -61,6 +79,26 @@ export function isVoiceActivePhase(phase: VoicePhase): boolean {
     || phase === 'speaking';
 }
 
+export function projectDynamicIslandVoiceInput(
+  snapshot: Pick<VoiceModeSnapshot, 'mode' | 'phase' | 'draft' | 'error'>,
+): DynamicIslandVoiceInput {
+  return {
+    mode: snapshot.mode,
+    phase: snapshot.phase,
+    requiresConfirmation: snapshot.phase === 'ready_to_send' && snapshot.draft !== null,
+    error: snapshot.error,
+  };
+}
+
+export function isDynamicIslandVoiceInputActive(input: DynamicIslandVoiceInput): boolean {
+  return input.phase === 'listening'
+    || input.phase === 'triggered'
+    || input.phase === 'transcribing'
+    || input.phase === 'ready_to_send'
+    || input.phase === 'unavailable'
+    || input.phase === 'error';
+}
+
 export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   revision: 0,
   sessionKey: '',
@@ -70,6 +108,12 @@ export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   sessionActivities: [],
   voicePhase: 'idle',
   voiceQueueLength: 0,
+  voiceInput: {
+    mode: 'off',
+    phase: 'off',
+    requiresConfirmation: false,
+    error: null,
+  },
   petEnabled: false,
   dndMode: false,
   autoExpand: true,
@@ -157,6 +201,11 @@ export function shouldPeekForSnapshot(
 ): boolean {
   if (!next.autoExpand) return false;
   if (!isVoiceActivePhase(previous.voicePhase) && isVoiceActivePhase(next.voicePhase)) return true;
+  if (
+    !isDynamicIslandVoiceInputActive(previous.voiceInput)
+    && isDynamicIslandVoiceInputActive(next.voiceInput)
+  ) return true;
+  if (!previous.voiceInput.requiresConfirmation && next.voiceInput.requiresConfirmation) return true;
   if (next.resourceDrop && (
     !previous.resourceDrop
     || next.resourceDrop.phase !== previous.resourceDrop.phase

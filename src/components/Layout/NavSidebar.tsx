@@ -35,8 +35,10 @@ import {
   type SessionActivity,
 } from '@/utils/sessionPresentation';
 import { resolveBackgroundActivityNavigation } from '@/utils/backgroundActivityNavigation';
+import { resolveSessionChannelPresentation } from '@/utils/sessionChannelPresentation';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
+import { SessionChannelIcon } from '@/components/shared/SessionChannelIcon';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
 const ToolsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.ToolsPanel })));
@@ -124,6 +126,18 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
   const agentFallbackName = agentId === 'main' ? t('agents.mainAgent', 'Main Agent') : agentId;
   const agentName = getAgentDisplayName(agents.find((agent: any) => agent?.id === agentId), agentFallbackName);
   const agentLabel = compactMeta(agentName, 20);
+  const channelPresentation = resolveSessionChannelPresentation(session);
+  const channelLabel = channelPresentation?.label ?? null;
+  const sourceLabel = channelLabel
+    ? t('sidebar.session.channelAndAgent', '{{channel}} · {{agent}}', {
+      channel: channelLabel,
+      agent: agentName,
+    })
+    : agentName;
+  const compactSourceLabel = compactMeta(sourceLabel, 30);
+  const primaryIdentityLabel = channelLabel
+    ? t('sidebar.session.channelIdentity', '{{channel}} channel', { channel: channelLabel })
+    : agentName;
   const isWorking = activity.active;
   const hasPendingCompletion = session.hasPendingCompletion === true && !isWorking;
   const sessionStatusLabel = isWorking
@@ -255,10 +269,14 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
                 : 'border-aegis-border/70 bg-aegis-elevated/70 text-aegis-text-dim group-hover/session:border-aegis-border-hover group-hover/session:text-aegis-text-secondary',
             )}
             role="group"
-            aria-label={agentName}
-            title={agentName}
+            aria-label={primaryIdentityLabel}
+            title={primaryIdentityLabel}
           >
-            <Bot size={13} aria-hidden="true" />
+            {channelPresentation ? (
+              <SessionChannelIcon icon={channelPresentation.icon} />
+            ) : (
+              <Bot size={13} aria-hidden="true" />
+            )}
             {sessionStatusLabel && (
               <span
                 className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-aegis-surface bg-aegis-elevated"
@@ -295,9 +313,9 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
           </span>
           <span
             className="col-start-2 row-start-2 min-w-0 truncate text-[11px] leading-4 text-aegis-text-dim"
-            title={agentName}
+            title={sourceLabel}
           >
-            {agentLabel}
+            {channelPresentation ? compactSourceLabel : agentLabel}
           </span>
           {timeLabel && (
             <time

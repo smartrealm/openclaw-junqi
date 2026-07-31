@@ -5,6 +5,8 @@ import {
   EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
   formatElapsedTime,
   formatRemainingTime,
+  isDynamicIslandVoiceInputActive,
+  projectDynamicIslandVoiceInput,
   selectDynamicIslandTasks,
   shouldShowDynamicIsland,
   shouldPeekForSnapshot,
@@ -64,6 +66,42 @@ test('voice activity peeks once when capture or playback starts', () => {
   assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, listening), true);
   assert.equal(shouldPeekForSnapshot(listening, { ...listening, voicePhase: 'transcribing' }), false);
   assert.equal(shouldPeekForSnapshot(listening, { ...listening, autoExpand: false }), false);
+});
+
+test('voice input projection excludes transcript, audio, target, and turn identifiers', () => {
+  const projection = projectDynamicIslandVoiceInput({
+    mode: 'dictation',
+    phase: 'ready_to_send',
+    draft: {
+      kind: 'transcript',
+      text: 'private transcript',
+      createdAt: 1,
+      turnId: 'voice-turn-17',
+    },
+    error: null,
+  });
+
+  assert.deepEqual(projection, {
+    mode: 'dictation',
+    phase: 'ready_to_send',
+    requiresConfirmation: true,
+    error: null,
+  });
+  assert.equal(isDynamicIslandVoiceInputActive(projection), true);
+  assert.equal(isDynamicIslandVoiceInputActive(EMPTY_DYNAMIC_ISLAND_SNAPSHOT.voiceInput), false);
+});
+
+test('a voice draft asks the island to peek without exposing its contents', () => {
+  const draftReady = {
+    ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
+    voiceInput: {
+      mode: 'dictation' as const,
+      phase: 'ready_to_send' as const,
+      requiresConfirmation: true,
+      error: null,
+    },
+  };
+  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, draftReady), true);
 });
 
 test('remaining time freezes while paused and uses stable tabular format', () => {
