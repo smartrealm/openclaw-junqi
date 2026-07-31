@@ -21,7 +21,6 @@
 | 命令 | 结果 |
 | --- | --- |
 | `node scripts/check-boundaries.mjs` | 通过，666 个文件，无违规 |
-| `npx tsc --noEmit` | 通过，退出码 0，无输出 |
 | `pnpm test`（`src` 套件） | 2001 项全部通过，0 失败、0 跳过 |
 | `pnpm test`（`scripts` 套件） | 224 项全部通过，0 失败、0 跳过 |
 | `cargo fmt -- --check` | 通过，退出码 0 |
@@ -29,6 +28,8 @@
 | `pnpm verify:openclaw-docs` | 通过，核对 55 个官方链接与锚点 |
 | `pnpm collab:validate` | 通过，`junqi-collab package contract: ok` |
 | `git diff --check` | 通过 |
+
+TypeScript 类型检查不在上表内。本文初版曾记录 `npx tsc --noEmit` 在基线上通过，该记录不成立：`npx` 当时并未解析到项目内的 TypeScript 编译器，命令没有真正执行类型检查。基线上的类型检查结论因此撤销，替代验证见「合并后复核」。
 
 未执行：`pnpm build`（Vite 生产构建）、`pnpm collab:test`、`collab:gateway:smoke`、`collab:gateway:behavioral`、`pnpm tauri build`。因此本轮结论覆盖到「自动化通过」层级，不覆盖生产打包、真机验收与发布签名。
 
@@ -193,9 +194,44 @@ write_agent_config_file       write_models_log              write_project_config
 
 建议处理顺序：FIND-02 与 FIND-04 影响用户可见行为与安全边界，优先；FIND-01 需要先补规范例外再批量清理，否则清理动作会与协议解析冲突；FIND-03 可随 IPC 相关改动逐步收敛。
 
+## 合并后复核
+
+审查提交后，`main` 的 4 个 commit 已合并进 `daxia`（合并提交 `b31ea3a`，无冲突）。在合并结果上重新执行验证，并修正了基线记录中的一处失效结论：
+
+| 命令 | 结果 |
+| --- | --- |
+| `node scripts/check-boundaries.mjs` | 通过，668 个文件，无违规 |
+| `pnpm exec tsc --noEmit`（TypeScript 5.9.3） | 通过，退出码 0，无输出 |
+| `src` 测试套件 | 2009 项，2008 通过、1 失败 |
+| `scripts` 测试套件 | 224 项全部通过 |
+
+复核期间发现工作区的 `node_modules` 已不存在，`pnpm lint` 因此只报出「Linter process terminated abnormally」而没有真正执行 `tsc`。执行 `pnpm install --frozen-lockfile` 恢复依赖后，上表结果才是真实的。基线上那次 `npx tsc --noEmit` 属于同一原因导致的假阳性。
+
+### FIND-08 · `main` 侧 i18n 迁移使守护测试失效
+
+严重度：中；引入来源：`main@10518b4`，非本次合并
+
+`src/pages/AgentWorkspace/worktreeForget.test.ts` 的用例 `forget action explicitly does not claim directory deletion` 失败：
+
+```
+AssertionError: The input did not match the regular expression /从工作台移除（不删除目录）/
+```
+
+该测试直接读取 `src/pages/AgentWorkspace/index.tsx` 源码，断言「从工作台移除」按钮的文案显式声明不删除目录。`main@10518b4`（优化：统一工作区导航与会话首屏体验）把该按钮改为 `WorkspaceChrome` 的 `IconButton`，文案迁移到 i18n key `agentWorkspace.forgetWorkspace`，其值为「从工作台移除 {{name}}」，「（不删除目录）」限定语在迁移中丢失，但守护测试未同步。
+
+核实结论：该字符串在 `main` 与合并结果中计数均为 0，在合并前的 `daxia@07b7bae` 中计数为 2，且该测试文件在 `main` 上同样存在。因此这是 `main` 自身已存在的红灯，合并只是把它带入 `daxia`，不是合并冲突或本次改动引入。
+
+用户仍会在确认弹窗看到该保证：`src/locales/zh.json` 的 `removeProjectConfirm` 为「确定从工作台移除“{{name}}”吗？不会删除本地项目目录。」丢失的只是按钮 tooltip 上的即时提示。
+
+修复方向需要产品判断，两种做法的用户可见行为不同，本文不代为决定：
+
+- 在 `agentWorkspace.forgetWorkspace` 的三份 locale 中补回「不删除目录」限定语，并把测试断言改为核对 i18n key 而非源码字面量；
+- 接受按钮文案简化，把守护测试改为断言确认弹窗文案承载该保证。
+
 ## 未验证边界
 
 - 未执行 `pnpm build`、`pnpm collab:test` 及协作 Gateway 冒烟与行为验证，构建产物层面的结论不在本次覆盖范围
+- 合并结果上未重跑 Rust 验证。`main` 的 4 个 commit 只改动前端与文档，未触及 `src-tauri/src/`，但这是基于 diff 范围的推断，不是实测
 - 未执行 `pnpm tauri build`，未做任何签名、公证或安装包验证
 - 未在 Windows NSIS/UAC/凭据管理器、Docker Desktop 冷启动、macOS Keychain 环境做真机验收
 - 未使用真实 Gateway、真实 provider 凭据或真实渠道账号做端到端人工测试
