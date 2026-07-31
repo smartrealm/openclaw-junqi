@@ -3,6 +3,7 @@ import type { ChatMessage } from '@/stores/chatStore';
 import { ChatMarkdownRenderer } from './ChatMarkdownRenderer';
 import { ChatSidePanel } from './ChatSidePanel';
 import { formatTraceTimestamp } from './chatResponseTracePresentation';
+import { resolveTraceSourceRecordContent } from './chatTraceSourceMessagePresentation';
 
 interface ChatTraceSourceMessagePanelProps {
   sourceMessageId: string;
@@ -12,9 +13,38 @@ interface ChatTraceSourceMessagePanelProps {
   overlay?: boolean;
 }
 
-function sourceRecordContent(message: ChatMessage | undefined): string | null {
-  if (!message) return null;
-  return message.content.trim() || message.toolOutput?.trim() || message.thinkingContent?.trim() || null;
+function formatStructuredValue(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function StructuredToolOutput({ value }: { value: unknown }) {
+  if (Array.isArray(value)) {
+    return <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5 text-aegis-text-secondary">{formatStructuredValue(value)}</pre>;
+  }
+  if (!value || typeof value !== 'object') {
+    return <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5 text-aegis-text-secondary">{String(value)}</pre>;
+  }
+
+  return (
+    <dl className="grid grid-cols-[minmax(84px,auto)_minmax(0,1fr)] gap-x-3 gap-y-2 text-[11px]">
+      {Object.entries(value as Record<string, unknown>).map(([key, fieldValue]) => (
+        <div key={key} className="col-span-2 grid grid-cols-subgrid items-start">
+          <dt className="break-words font-mono text-aegis-text-dim">{key}</dt>
+          <dd className="min-w-0 text-aegis-text-secondary">
+            {typeof fieldValue === 'string' ? (
+              <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5">{fieldValue}</pre>
+            ) : (
+              <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5">{formatStructuredValue(fieldValue)}</pre>
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 export function ChatTraceSourceMessagePanel({
@@ -26,7 +56,7 @@ export function ChatTraceSourceMessagePanel({
 }: ChatTraceSourceMessagePanelProps) {
   const { t, i18n } = useTranslation();
   const titleId = `chat-trace-source-title-${sourceMessageId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-  const content = sourceRecordContent(message);
+  const content = resolveTraceSourceRecordContent(message);
 
   return (
     <ChatSidePanel
@@ -46,10 +76,32 @@ export function ChatTraceSourceMessagePanel({
               <dd className="text-aegis-text-muted">{t(`chat.trace.recordRoleValue.${message.role}`)}</dd>
               <dt className="text-aegis-text-dim">{t('chat.trace.recordTime')}</dt>
               <dd className="text-aegis-text-muted">{formatTraceTimestamp(message.timestamp, i18n.language)}</dd>
+              {message.toolName && (
+                <>
+                  <dt className="text-aegis-text-dim">{t('chat.trace.tool')}</dt>
+                  <dd className="break-words text-aegis-text-muted">{message.toolName}</dd>
+                </>
+              )}
             </dl>
-            <div className="markdown-body text-[14px] leading-relaxed">
-              <ChatMarkdownRenderer markdown={content} />
-            </div>
+            {content.kind === 'tool-output' ? (
+              <section aria-label={t('chat.trace.output')}>
+                {message.toolInput && (
+                  <details className="mb-4 text-[11px] text-aegis-text-muted">
+                    <summary className="cursor-pointer select-none text-aegis-text-secondary">{t('chat.trace.input')}</summary>
+                    <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5">{formatStructuredValue(message.toolInput)}</pre>
+                  </details>
+                )}
+                {content.structured === null ? (
+                  <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5 text-aegis-text-secondary">{content.text}</pre>
+                ) : (
+                  <StructuredToolOutput value={content.structured} />
+                )}
+              </section>
+            ) : (
+              <div className="markdown-body text-[14px] leading-relaxed">
+                <ChatMarkdownRenderer markdown={content.text} />
+              </div>
+            )}
             <details className="mt-6 border-t border-aegis-border pt-3 text-[10px] text-aegis-text-dim">
               <summary className="cursor-pointer select-none">{t('chat.trace.technicalDetails')}</summary>
               <dl className="mt-2 grid grid-cols-[84px_minmax(0,1fr)] gap-x-3 gap-y-1.5 font-mono">

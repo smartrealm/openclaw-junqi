@@ -1368,7 +1368,7 @@
       "sourceRecordTitle": "原始對話記錄",
       "backToTrace": "返回執行追溯",
       "sourceRecordUnavailable": "目前已載入的對話記錄中沒有這條原始記錄",
-      "sourceRecordUnavailableDescription": "請重新載入對話歷史後再試。JunQi 不會根據記錄識別碼還原或猜測內容。",
+      "sourceRecordUnavailableDescription": "這條記錄不在目前已載入的對話歷史中，或已不再可用。JunQi 不會根據記錄識別碼還原或猜測內容。",
       "recordRole": "記錄類型",
       "recordRoleValue": {
         "user": "使用者訊息",
@@ -1380,6 +1380,7 @@
         "unknown": "Gateway 記錄"
       },
       "recordTime": "記錄時間",
+      "tool": "工具",
       "nativeMessageId": "Gateway 訊息識別碼",
       "startedAt": "開始時間",
       "completedAt": "完成時間",

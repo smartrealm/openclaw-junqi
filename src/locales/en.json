@@ -1401,7 +1401,7 @@
       "sourceRecordTitle": "Source record",
       "backToTrace": "Back to execution trace",
       "sourceRecordUnavailable": "This source record is not available in the loaded transcript",
-      "sourceRecordUnavailableDescription": "Reload the conversation history and try again. JunQi does not reconstruct a record from its identifier.",
+      "sourceRecordUnavailableDescription": "This record is outside the currently loaded conversation history or is no longer available. JunQi does not reconstruct a record from its identifier.",
       "recordRole": "Record type",
       "recordRoleValue": {
         "user": "User message",
@@ -1413,6 +1413,7 @@
         "unknown": "Gateway record"
       },
       "recordTime": "Recorded",
+      "tool": "Tool",
       "nativeMessageId": "Gateway message ID",
       "startedAt": "Started",
       "completedAt": "Completed",
