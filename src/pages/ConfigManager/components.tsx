@@ -5,10 +5,9 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye, EyeOff, Star, X, Save, ChevronDown, CheckCircle2, Image } from 'lucide-react';
+import { Eye, EyeOff, X, Save, ChevronDown, CheckCircle2 } from 'lucide-react';
 import clsx from 'clsx';
 import { Switch } from '@/components/shared/Switch';
-import type { ModelEntry } from './types';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,141 +69,7 @@ export function MaskedInput({ value, onChange, placeholder, className, id, disab
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. ChipList — model chips with alias + star (primary) + remove
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface ChipListProps {
-  models: Record<string, ModelEntry>;
-  primaryModel?: string;
-  imageModel?: string;
-  imageSupportMap?: Map<string, boolean>;
-  onRemove?: (id: string) => void;
-  onSetPrimary?: (id: string) => void;
-  onSetImageModel?: (id: string) => void;
-  disabled?: boolean;
-}
-
-export function ChipList({
-  models,
-  primaryModel,
-  imageModel,
-  imageSupportMap,
-  onRemove,
-  onSetPrimary,
-  onSetImageModel,
-  disabled = false,
-}: ChipListProps) {
-  const { t } = useTranslation();
-  const entries = Object.entries(models);
-
-  if (entries.length === 0) {
-    return (
-      <p className="text-xs text-aegis-text-muted italic py-1">
-        {t('config.noModelsConfigured', 'No models configured')}
-      </p>
-    );
-  }
-
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {entries.map(([id, entry]) => {
-        const isPrimary = id === primaryModel || entry.alias === primaryModel;
-        const isImagePrimary = id === imageModel || entry.alias === imageModel;
-        const supportsImage = imageSupportMap?.get(id) === true;
-        return (
-          <div
-            key={id}
-            className={clsx(
-              'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1',
-              'border text-sm transition-all duration-200',
-              disabled && 'opacity-60',
-              isPrimary
-                ? 'border-aegis-primary/30 bg-aegis-primary/10 text-aegis-text'
-                : 'border-aegis-border bg-aegis-surface text-aegis-text-secondary'
-            )}
-          >
-            {/* model id */}
-            <span className="max-w-[160px] truncate text-xs">{id}</span>
-
-            {/* alias badge */}
-            {entry.alias && (
-              <span className="bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 rounded px-1 text-[9px] font-bold uppercase tracking-wide">
-                {entry.alias}
-              </span>
-            )}
-
-            {/* star — primary toggle */}
-            {onSetPrimary && (
-              <button
-                onClick={() => onSetPrimary(id)}
-                disabled={disabled}
-                title={isPrimary
-                  ? t('config.primaryModel', 'Primary model')
-                  : t('config.setPrimary', 'Set as Primary')}
-                className={clsx(
-                  'transition-transform hover:scale-125',
-                  disabled && 'cursor-not-allowed hover:scale-100'
-                )}
-              >
-                <Star
-                  size={11}
-                  className={isPrimary ? 'text-yellow-400 fill-yellow-400' : 'text-aegis-text-muted'}
-                />
-              </button>
-            )}
-
-            {onSetImageModel && (
-              <button
-                onClick={() => onSetImageModel(id)}
-                disabled={disabled || !supportsImage}
-                title={
-                  !supportsImage
-                    ? t('config.imageModelUnavailableHint', 'Image support not declared for this model')
-                    : isImagePrimary
-                      ? t('config.imageModel', 'Image model')
-                      : t('config.setImageModel', 'Set as Image Model')
-                }
-                className={clsx(
-                  'transition-transform hover:scale-125',
-                  (disabled || !supportsImage) && 'cursor-not-allowed hover:scale-100'
-                )}
-              >
-                <Image
-                  size={11}
-                  className={
-                    isImagePrimary
-                      ? 'text-blue-400 fill-blue-400'
-                      : supportsImage
-                        ? 'text-aegis-text-muted'
-                        : 'text-aegis-text-muted/50'
-                  }
-                />
-              </button>
-            )}
-
-            {/* remove */}
-            {onRemove && (
-              <button
-                onClick={() => onRemove(id)}
-                disabled={disabled}
-                title={t('common.remove', 'Remove')}
-                className={clsx(
-                  'text-aegis-text-muted hover:text-red-400 transition-colors',
-                  disabled && 'cursor-not-allowed hover:text-aegis-text-muted'
-                )}
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. StatCard — stat number + label
+// 2. StatCard — stat number + label
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface StatCardProps {

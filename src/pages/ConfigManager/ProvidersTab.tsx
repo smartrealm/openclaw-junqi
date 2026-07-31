@@ -34,7 +34,7 @@ import {
   type ProviderCatalogEntry,
   type ProviderTab,
 } from './providerTemplates';
-import { MaskedInput, ChipList, ChipInput } from './components';
+import { MaskedInput, ChipInput } from './components';
 import { buildProviderSubmissionModelIds } from './providerModelSelection';
 import { resolveExplicitProviderDefault } from './providerDefaultSelection';
 import { gateway } from '@/services/gateway';
@@ -71,6 +71,7 @@ import {
 } from '@/services/openclawConfigSchema';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { ProviderModelEditor } from './ProviderModelEditor';
+import { ConfiguredModelDirectory } from './ConfiguredModelDirectory';
 import { ProviderAdvancedEditor } from './ProviderAdvancedEditor';
 import { ProviderSecretRefEditor } from './ProviderSecretRefEditor';
 import { isSecretRef } from './providerSecretRef';
@@ -3775,51 +3776,46 @@ export function ProvidersTab({
               <FileText size={14} strokeWidth={1.75} /> {t('config.modelsAndAliases')}
             </h3>
           </div>
-          <div className="p-4">
-            <p className="mb-3 text-[11px] leading-5 text-aegis-text-muted">
-              {t('config.modelsAndAliasesHint', 'Manage the available model references and aliases. Default routing is configured above.')}
-            </p>
-            <ChipList
-              models={allModels}
-              primaryModel={primaryModel}
-              imageModel={imagePrimaryModel}
-              imageSupportMap={allModelImageSupportMap}
-              disabled={saving}
-              onSetPrimary={(id) => {
-                onChange((prev) => ({
-                  ...prev,
-                  agents: {
-                    ...prev.agents,
-                    defaults: buildDefaultsWithResolvedModels({
-                      defaults: prev.agents?.defaults,
-                      models: prev.agents?.defaults?.models ?? {},
-                      primary: id,
-                    }),
-                  },
-                }));
-              }}
-              onSetImageModel={(id) => {
-                onChange((prev) => ({
-                  ...prev,
-                  agents: {
-                    ...prev.agents,
-                    defaults: buildDefaultsWithResolvedModels({
-                      defaults: prev.agents?.defaults,
-                      models: prev.agents?.defaults?.models ?? {},
-                      imagePrimary: id,
-                    }),
-                  },
-                }));
-              }}
-              onRemove={(id) => {
-                onChange((prev) => removeProviderModel({
-                  config: prev,
-                  providerId: getProviderFromModelId(id),
-                  modelRef: id,
-                }));
-              }}
-            />
-          </div>
+          <ConfiguredModelDirectory
+            models={allModels}
+            primaryModel={primaryModel}
+            imageModel={imagePrimaryModel}
+            imageSupportMap={allModelImageSupportMap}
+            disabled={saving}
+            onSetPrimary={(id) => {
+              onChange((prev) => ({
+                ...prev,
+                agents: {
+                  ...prev.agents,
+                  defaults: buildDefaultsWithResolvedModels({
+                    defaults: prev.agents?.defaults,
+                    models: prev.agents?.defaults?.models ?? {},
+                    primary: id,
+                  }),
+                },
+              }));
+            }}
+            onSetImageModel={(id) => {
+              onChange((prev) => ({
+                ...prev,
+                agents: {
+                  ...prev.agents,
+                  defaults: buildDefaultsWithResolvedModels({
+                    defaults: prev.agents?.defaults,
+                    models: prev.agents?.defaults?.models ?? {},
+                    imagePrimary: id,
+                  }),
+                },
+              }));
+            }}
+            onRemove={(id) => {
+              onChange((prev) => removeProviderModel({
+                config: prev,
+                providerId: getProviderFromModelId(id),
+                modelRef: id,
+              }));
+            }}
+          />
         </div>
       )}
 

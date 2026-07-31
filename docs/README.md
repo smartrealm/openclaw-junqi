@@ -118,6 +118,7 @@ docs/
 - [侧栏主操作一致性记录](quality/sidebar-primary-action-convergence-2026-07-30.md)
 - [会话模型切换闪动审计](quality/session-model-switch-flicker-audit-2026-07-30.md)
 - [主窗口关闭 ACL 审计](quality/main-window-close-acl-audit-2026-07-30.md)
+- [提供商模型目录设计记录](quality/provider-model-directory-design-2026-07-31.md)
 - [设置页面多语言完整性审计](quality/settings-localization-completeness-2026-07-30.md)
 - [全局专注上下文与任务简报验证](quality/focus-context-and-task-briefs-validation-2026-07-30.md)
 - [Focus Context 与 Task Brief 来源盘点](quality/current-branch-focus-task-brief-change-inventory-2026-07-30.md)
