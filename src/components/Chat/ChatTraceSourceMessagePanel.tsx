@@ -21,9 +21,27 @@ function formatStructuredValue(value: unknown): string {
   }
 }
 
+function StructuredValue({ value }: { value: unknown }) {
+  if (typeof value === 'string') {
+    return <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5">{value}</pre>;
+  }
+  if (value && typeof value === 'object') {
+    return <StructuredToolOutput value={value} />;
+  }
+  return <span>{String(value)}</span>;
+}
+
 function StructuredToolOutput({ value }: { value: unknown }) {
   if (Array.isArray(value)) {
-    return <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5 text-aegis-text-secondary">{formatStructuredValue(value)}</pre>;
+    return (
+      <ol className="space-y-3">
+        {value.map((item, index) => (
+          <li key={index} className="rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] p-3">
+            <StructuredValue value={item} />
+          </li>
+        ))}
+      </ol>
+    );
   }
   if (!value || typeof value !== 'object') {
     return <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5 text-aegis-text-secondary">{String(value)}</pre>;
@@ -35,11 +53,7 @@ function StructuredToolOutput({ value }: { value: unknown }) {
         <div key={key} className="col-span-2 grid grid-cols-subgrid items-start">
           <dt className="break-words font-mono text-aegis-text-dim">{key}</dt>
           <dd className="min-w-0 text-aegis-text-secondary">
-            {typeof fieldValue === 'string' ? (
-              <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5">{fieldValue}</pre>
-            ) : (
-              <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5">{formatStructuredValue(fieldValue)}</pre>
-            )}
+            <StructuredValue value={fieldValue} />
           </dd>
         </div>
       ))}
