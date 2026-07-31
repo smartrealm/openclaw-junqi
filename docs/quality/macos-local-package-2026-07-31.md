@@ -61,3 +61,25 @@ APPLE_SIGNING_IDENTITY=- pnpm tauri build \
 图标自动布局，不影响 app 内容、签名或安装路径。
 
 本制品仍为 ad-hoc 本机测试包，不是 Developer ID 签名、公证或正式发布制品。
+
+## 1.5.3 本机重建
+
+日期：2026-08-01
+
+- 发布候选提交：`161081d`。
+- 目标架构：`aarch64-apple-darwin`。
+- 应用版本：`1.5.3`。
+- 制品：`src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/JunQi Desktop_1.5.3_aarch64.dmg`。
+- DMG 大小：`8.1 MB`。
+- SHA-256：`6f0c162644cf6f3fdd3a97be8b5281a5a31b5e0dc8af044e8e29e9f4338814ef`。
+- 使用 `src-tauri/tauri.no-updater-artifacts.conf.json` 禁用了需要私钥的 updater 制品，未改写正式发布配置。
+
+执行的校验：
+
+- `hdiutil verify` 通过。
+- 源 app 与 DMG 挂载后的 app 均通过 `codesign --verify --deep --strict`。
+- 源 app 与挂载后的 `Info.plist` 均为版本 `1.5.3`。
+- 源 app 与挂载后的可执行文件均为 Mach-O `arm64`。
+- `codesign -dv` 显示 `Signature=adhoc`、`TeamIdentifier=not set`。
+
+本机制品未经过 Developer ID 签名、公证、stapling 或真实安装启动验收。GitHub 标签触发的 CI 发布由仓库工作流在其成功门禁后独立产生正式平台制品；不能将本机 DMG 视为该发布制品的替代品。
