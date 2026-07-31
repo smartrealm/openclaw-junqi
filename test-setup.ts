@@ -37,6 +37,11 @@ globalThis.localStorage = {
   },
 };
 
+// Component SSR tests assert user-facing copy. Use the shipped English catalog
+// as their deterministic baseline before application modules inspect storage or
+// the host locale. Individual locale tests can still select another language.
+localStorage.setItem('aegis-language', 'en');
+
 // `matchMedia` is referenced by some UI libs (lucide-react animations,
 // radix-ui primitives). Stub to "no-preference" so they don't crash.
 if (typeof globalThis.matchMedia !== 'function') {
@@ -89,15 +94,16 @@ if (!('navigator' in globalThis)) {
 
 // Register a minimal i18next instance for SSR-style component tests that
 // call react-i18next's useTranslation without mounting the full app.
-const [{ default: i18n }, { initReactI18next }] = await Promise.all([
+const [{ default: i18n }, { initReactI18next }, { default: englishTranslations }] = await Promise.all([
   import('i18next'),
   import('react-i18next'),
+  import(resolve(here, 'src/locales/en.json'), { with: { type: 'json' } }),
 ]);
 if (!i18n.isInitialized) {
   await i18n.use(initReactI18next).init({
     lng: 'en',
     fallbackLng: 'en',
-    resources: { en: { translation: {} } },
+    resources: { en: { translation: englishTranslations } },
     interpolation: { escapeValue: false },
   });
 }
