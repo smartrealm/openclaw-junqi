@@ -96,6 +96,14 @@ git diff --check
 
 未执行 Rust 测试：本轮没有修改 Rust/Tauri command、command 注册、serde 或 collaboration wire contract。Dynamic Island 既有 Rust command 的源码契约测试包含在前端全量测试中，但不替代目标平台真机验证。
 
+## 2026-07-31 导航调整
+
+- `/ai-workspace` 改为与 `/terminal` 使用同一个完整产品导航，不再强制显示仅图标的专用迷你栏。
+- AI Workspace 内部 Worktree 侧栏继续独立于产品导航，使用共享 Workspace Chrome，完整态宽度为 220px，紧凑态宽度为 52px。
+- 清理旧的 `terminal-rail` 展示分支、专用 Logo 入口、重复的 Worktree 分组标题和页脚；列表只保留项目名、分支与移除操作。
+- 已执行 `node --import ./test-setup.ts --import tsx --test src/pages/AgentWorkspace/index.test.ts src/pages/AgentWorkspace/noPrototypeData.test.ts src/components/Layout/terminalNavigation.test.ts src/components/Layout/WorkspaceChrome.test.tsx`，13 项通过。
+- 已执行 `pnpm lint`、`pnpm build` 与 `git diff --check`。当前环境没有可连接的应用内浏览器，因此未完成真实 Tauri 窗口的视觉验收。
+
 ## 延期边界
 
 以下能力未伪装完成：

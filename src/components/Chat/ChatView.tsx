@@ -295,14 +295,17 @@ function ChatViewContent() {
 
   // ── Virtuoso ref & scroll state ──
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scrollerRef = useRef<HTMLElement | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const scrollLockedRef = useRef(false);
   const prevResponseGroupsLenRef = useRef(0);
+  const initialHistoryTailSessionRef = useRef<string | null>(null);
 
   // Reset scroll lock when switching sessions — new session should start at bottom
   useEffect(() => {
     scrollLockedRef.current = false;
     setAtBottom(true);
+    initialHistoryTailSessionRef.current = null;
   }, [activeSessionKey]);
 
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
@@ -329,24 +332,49 @@ function ChatViewContent() {
 
   useEffect(() => { prevResponseGroupsLenRef.current = responseGroups.length; });
 
-  const scrollToBottom = useCallback(() => {
-    virtuosoRef.current?.scrollToIndex({
-      index: 'LAST',
-      behavior: 'smooth',
-      align: 'end',
-    });
-  }, [atBottom]);
-
-  const revealConversationTail = useCallback((opts?: { instant?: boolean }) => {
-    if (scrollLockedRef.current || !atBottom) return;
+  const scrollToConversationTail = useCallback((opts?: { instant?: boolean }) => {
     const bh = (opts?.instant ? 'auto' : 'smooth') as 'auto' | 'smooth';
     const fn = () => {
       virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: bh, align: 'end' });
       virtuosoRef.current?.scrollBy?.({ top: Number.MAX_SAFE_INTEGER, behavior: bh });
     };
     fn();
-    requestAnimationFrame(fn);
-    setTimeout(fn, 150);
+    let nestedFrame: number | null = null;
+    const frame = requestAnimationFrame(() => {
+      fn();
+      nestedFrame = requestAnimationFrame(fn);
+    });
+    const timeout = window.setTimeout(fn, 150);
+    return () => {
+      cancelAnimationFrame(frame);
+      if (nestedFrame !== null) cancelAnimationFrame(nestedFrame);
+      clearTimeout(timeout);
+    };
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    scrollToConversationTail();
+  }, [scrollToConversationTail]);
+
+  const revealConversationTail = useCallback((opts?: { instant?: boolean }) => {
+    if (scrollLockedRef.current || !atBottom) return;
+    scrollToConversationTail(opts);
+  }, [atBottom, scrollToConversationTail]);
+
+  const preserveViewportForExecutionToggle = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    // A completed execution group belongs to the current reading position.
+    // Do not turn its resize into a tail-follow event in the virtual list.
+    const scrollTop = scroller.scrollTop;
+    scrollLockedRef.current = true;
+    setAtBottom(false);
+    const restoreScrollTop = () => scroller.scrollTo({ top: scrollTop, behavior: 'auto' });
+    requestAnimationFrame(() => {
+      restoreScrollTop();
+      requestAnimationFrame(restoreScrollTop);
+    });
   }, []);
 
   const tailMessage = messages[messages.length - 1];
@@ -836,12 +864,17 @@ function ChatViewContent() {
 
   const activeHistoryMeta = historyMetaBySession[activeSessionKey];
 
-  // Scroll to bottom when history first loads (or session switches)
+  // The initial history position is an entry behavior, not a tail-follow
+  // behavior. Virtuoso may transiently report "not at bottom" while it
+  // measures a newly hydrated history, so do not apply the reader lock here.
   useEffect(() => {
     if (!activeHistoryMeta?.loaded) return;
-    if (scrollLockedRef.current) return;
-    revealConversationTail({ instant: true });
-  }, [activeSessionKey, activeHistoryMeta?.loaded, revealConversationTail]);
+    if (initialHistoryTailSessionRef.current === activeSessionKey) return;
+    initialHistoryTailSessionRef.current = activeSessionKey;
+    scrollLockedRef.current = false;
+    setAtBottom(true);
+    return scrollToConversationTail({ instant: true });
+  }, [activeSessionKey, activeHistoryMeta?.loaded, scrollToConversationTail]);
 
   const retryMessageDelivery = useCallback(async (sourceMessage: ChatMessage) => {
     const payload = sourceMessage.retryPayload ?? { text: sourceMessage.content };
@@ -1144,6 +1177,7 @@ function ChatViewContent() {
                 blocks={row.blocks}
                 streaming={isStreaming}
                 renderBlock={(block) => renderBlock(block, 'middle', group.sessionKey)}
+                onBeforeExpandedChange={preserveViewportForExecutionToggle}
               />
             );
           }
@@ -1173,7 +1207,7 @@ function ChatViewContent() {
         )}
       </div>
     );
-  }, [renderBlock, sidePanel.openResponseTrace]);
+  }, [renderBlock, sidePanel.openResponseTrace, preserveViewportForExecutionToggle]);
 
   const renderTimelineItem = useCallback((index: number, item: ChatTimelineItem) => {
     if (item.type === 'collaboration') return <CollaborationRunAnchor runId={item.runId} />;
@@ -1320,6 +1354,9 @@ function ChatViewContent() {
         ) : (
           <Virtuoso
             ref={virtuosoRef}
+            scrollerRef={(element) => {
+              scrollerRef.current = element instanceof HTMLElement ? element : null;
+            }}
             data={timelineItems}
             followOutput={() => {
               // Honor explicit user lock OR if atBottom is false. Without the

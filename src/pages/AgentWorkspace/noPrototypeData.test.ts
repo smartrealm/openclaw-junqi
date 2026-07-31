@@ -8,5 +8,5 @@ test('AI workspace contains no hard-coded counts or inert prototype controls', (
   assert.doesNotMatch(source, /badge:\s*7|筛选工作区|⌘K/);
   assert.doesNotMatch(source, /worktree\.agent|worktree\.unread/);
   assert.doesNotMatch(source, /state === 'running'|state === 'attention'/);
-  assert.doesNotMatch(source, /<button type="button" className="junqi-wb-repo-heading">/);
+  assert.doesNotMatch(source, /junqi-wb-repo-heading/);
 });

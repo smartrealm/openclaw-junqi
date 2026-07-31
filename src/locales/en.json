@@ -3,6 +3,7 @@
     "name": "JunQi Desktop",
     "fullName": "JunQi Desktop — AI-Powered Desktop Assistant",
     "clientSubtitle": "JunQi Desktop Client",
+    "loadingWorkspace": "Synchronizing workspace…",
     "company": "Shaanxi Junqi Zhijing Technology Co., Ltd.",
     "copyright": "Copyright {{year}} Shaanxi Junqi Zhijing Technology Co., Ltd. · All rights reserved",
     "version": "v4"
@@ -508,6 +509,13 @@
     "clearTasksConfirm": "Delete all {{count}} tasks in this project?",
     "clearTasks": "Clear tasks",
     "selectProjectFolder": "Select project folder",
+    "workspaceEyebrow": "AI WORKSPACE",
+    "workspaceList": "Workspaces",
+    "addWorkspace": "Open local project",
+    "expandWorkspaceSidebar": "Expand workspace sidebar",
+    "collapseWorkspaceSidebar": "Collapse workspace sidebar",
+    "forgetWorkspace": "Remove {{name}} from workspace",
+    "noWorkspaces": "No projects or worktrees are available to migrate",
     "status": {
       "todo": "Not started",
       "pending": "Waiting to run",

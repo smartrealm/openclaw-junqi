@@ -195,3 +195,9 @@ Dynamic Island snapshot 增加 Focus projection：
 - 不复制无许可证 FocuSD 的 React/Rust/CSS、Hook 安装脚本或 marker 协议。
 - JunQi 实现只依据通用产品需求和本仓库现有 architecture。
 
+## 10. 导航与呈现边界
+
+- `/briefs` 是任务准备入口：编辑结构化目标、背景、约束、验收条件和引用，不创建独立 Agent runtime。
+- 点击“创建 Agent 任务”后，Brief 编译为现有 `AgentWorkspaceTask`，再通过 `/agent-run?taskId=...` 进入已有执行链。
+- `/ai-workspace` 是本机 Worktree、文件和 PTY 的工作区，不应将 Brief 或 Agent Task 伪装为其左侧项目树中的实体。
+- `/ai-workspace` 的产品导航与 `/terminal` 使用同一个完整 `NavSidebar`。其内部 Worktree 侧栏使用共享 Workspace Chrome，并保持 220px 完整态与 52px 紧凑态，避免单独维护迷你导航视觉。

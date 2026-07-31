@@ -5,9 +5,10 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('./index.tsx', import.meta.url), 'utf8');
 const layout = readFileSync(new URL('../../components/Layout/AppLayout.tsx', import.meta.url), 'utf8');
 
- test('AI workspace remains inside the JunQi product shell', () => {
+test('AI workspace remains inside the JunQi product shell', () => {
   assert.match(layout, /usesGlobalSidebar = !isWorkspacePage/);
-  assert.match(layout, /globalSidebarPresentation = isAgentWorkspacePage \? 'terminal-rail' : 'default'/);
+  assert.match(layout, /<NavSidebar \/>/);
+  assert.doesNotMatch(layout, /presentation=\{globalSidebarPresentation\}/);
   assert.match(layout, /!isWorkspacePage && <TabBar \/>/);
 });
 
@@ -26,6 +27,14 @@ test('TopBar and workspace share the isolated agent sidebar channel', () => {
   assert.match(source, /AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT/);
   assert.match(source, /publishAgentWorkspaceSidebarMode\(sidebarMode\)/);
   assert.match(source, /mode === 'full' \? 'compact' : mode === 'compact' \? 'hidden' : 'full'/);
+});
+
+test('AI workspace uses shared chrome and a compact project list', () => {
+  assert.match(source, /WorkspaceSidebarHeader/);
+  assert.match(source, /agentWorkspace\.workspaceList/);
+  assert.match(source, /agentWorkspace\.noWorkspaces/);
+  assert.doesNotMatch(source, /junqi-wb-repo-heading/);
+  assert.doesNotMatch(source, /junqi-wb-sidebar-footer/);
 });
 
 test('AI workspace does not mount or navigate through the independent terminal', () => {

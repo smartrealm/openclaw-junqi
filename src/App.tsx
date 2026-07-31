@@ -19,6 +19,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import {
   gateway,
   subscribePrivilegedAuthorizationIssues,
@@ -141,6 +142,13 @@ export default function App() {
   const [cachedSetupValidationPending, setCachedSetupValidationPending] = useState(
     () => setupComplete === true && hasTauriEventBridge(),
   );
+  const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
+  const initialWorkspaceDataReadyRef = useRef(false);
+  const initialSessionSnapshotSettledRef = useRef(false);
+  const gatewayBootstrapDataReady = useGatewayDataStore((state) => (
+    (state.lastFetch.sessions > 0 || state.errors.sessions !== null)
+    && (state.lastFetch.agents > 0 || state.errors.agents !== null)
+  ));
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
   const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
   const [coldStartRecoveryActive, setColdStartRecoveryActive] = useState(true);
@@ -195,6 +203,30 @@ export default function App() {
       cancelled = true;
     };
   }, [cachedSetupValidationPending, setupComplete]);
+
+  useEffect(() => {
+    if (setupComplete !== true) {
+      initialWorkspaceDataReadyRef.current = false;
+      initialSessionSnapshotSettledRef.current = false;
+      setWorkspaceDataReady(false);
+      return;
+    }
+    if (!cachedSetupValidationPending && !initialWorkspaceDataReadyRef.current) {
+      setWorkspaceDataReady(false);
+    }
+  }, [cachedSetupValidationPending, setupComplete]);
+
+  const markInitialWorkspaceDataReady = useCallback((allowIncompleteData = false) => {
+    if (initialWorkspaceDataReadyRef.current) return;
+    if (!allowIncompleteData && !gatewayBootstrapDataReady) return;
+    initialWorkspaceDataReadyRef.current = true;
+    setWorkspaceDataReady(true);
+  }, [gatewayBootstrapDataReady]);
+
+  useEffect(() => {
+    if (!initialSessionSnapshotSettledRef.current) return;
+    markInitialWorkspaceDataReady();
+  }, [gatewayBootstrapDataReady, markInitialWorkspaceDataReady]);
 
   useEffect(() => {
     const updateRoutePath = () => setRoutePath(routePathFromLocation(window.location));
@@ -794,6 +826,9 @@ export default function App() {
           void loadSessions({ reconcileChatRuns: true }).then((sessionsLoaded) => {
             if (!sessionsLoaded) {
               boot.markStageError('config', 'Session load failed');
+              // A failed authoritative read is terminal for this startup pass.
+              // Release the shell so its recoverable Gateway surfaces remain reachable.
+              markInitialWorkspaceDataReady(true);
               return;
             }
             queueMicrotask(() => {
@@ -805,6 +840,8 @@ export default function App() {
               }
             });
             boot.markStageCompleted('config', 'Sessions ready');
+            initialSessionSnapshotSettledRef.current = true;
+            markInitialWorkspaceDataReady();
             boot.markStageRunning('conversation', 'Warming recent conversation');
             const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
             void gateway.getHistory(sessionKey, 20, 8_000).then((result) => {
@@ -849,6 +886,7 @@ export default function App() {
             }, 1_500);
           }).catch(() => {
             boot.markStageError('config', 'Session load failed');
+            markInitialWorkspaceDataReady(true);
           });
         }
       },
@@ -1014,7 +1052,7 @@ export default function App() {
       gateway.forgetSessionTranscript();
       gatewayManager.destroy();
     };
-  }, [loadAvailableModels, setupComplete, cachedSetupValidationPending, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure]);
+  }, [loadAvailableModels, setupComplete, cachedSetupValidationPending, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure, markInitialWorkspaceDataReady]);
 
 
   // ── Pairing Handlers ──
@@ -1081,6 +1119,15 @@ export default function App() {
             />
           </Suspense>
         )}
+      </>
+    );
+  }
+
+  if (!workspaceDataReady && !gatewayOptionalRoute) {
+    return (
+      <>
+        <ThemeRuntime />
+        <AppLoadingFallback label={t('app.loadingWorkspace')} />
       </>
     );
   }

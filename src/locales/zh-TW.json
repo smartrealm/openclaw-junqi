@@ -3,6 +3,7 @@
     "name": "JunQi Desktop",
     "fullName": "JunQi Desktop — 浚啟桌面端",
     "clientSubtitle": "JunQi Desktop 客戶端",
+    "loadingWorkspace": "正在同步工作區…",
     "company": "陝西浚啟智境科技有限公司",
     "copyright": "Copyright {{year}} 陝西浚啟智境科技有限公司 · 保留所有權利",
     "version": "v4"
@@ -479,6 +480,13 @@
     "clearTasksConfirm": "確定刪除該項目的全部 {{count}} 個任務嗎？",
     "clearTasks": "清空任務",
     "selectProjectFolder": "選擇項目檔案夾",
+    "workspaceEyebrow": "AI WORKSPACE",
+    "workspaceList": "工作區",
+    "addWorkspace": "開啟本機項目",
+    "expandWorkspaceSidebar": "展開工作區側欄",
+    "collapseWorkspaceSidebar": "收起工作區側欄",
+    "forgetWorkspace": "從工作臺移除 {{name}}",
+    "noWorkspaces": "尚無可遷移的項目或工作樹",
     "status": {
       "todo": "未開始",
       "pending": "等待運行",

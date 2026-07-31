@@ -9,6 +9,7 @@ import {
   Code,
   FileCode,
   Files,
+  FolderSimple,
   GitBranch,
   GitDiff,
   MagnifyingGlass,
@@ -113,13 +114,14 @@ function WorktreeSidebar({
   onAdd: () => void;
   onForget: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   if (mode === 'hidden') return null;
   if (mode === 'compact') {
     return (
       <aside className="junqi-wb-sidebar junqi-wb-sidebar-collapsed">
         <WorkspaceSidebarHeader
           compact
-          actions={<IconButton label="展开工作区" onClick={onToggle}><SidebarSimple size={17} /></IconButton>}
+          actions={<IconButton label={t('agentWorkspace.expandWorkspaceSidebar')} onClick={onToggle}><SidebarSimple size={17} /></IconButton>}
         />
         <div className="junqi-wb-collapsed-list">
           {worktrees.map((worktree) => (
@@ -128,10 +130,10 @@ function WorktreeSidebar({
               type="button"
               className={`junqi-wb-collapsed-worktree${worktree.id === activeId ? ' is-active' : ''}`}
               title={worktree.label}
+              aria-label={worktree.label}
               onClick={() => onSelect(worktree.id)}
             >
-              <span>{worktree.label.slice(0, 2).toUpperCase()}</span>
-              <StateDot state={worktree.state} />
+              <FolderSimple size={16} weight="regular" />
             </button>
           ))}
         </div>
@@ -142,61 +144,47 @@ function WorktreeSidebar({
   return (
     <aside className="junqi-wb-sidebar">
       <WorkspaceSidebarHeader
-        eyebrow="AI WORKSPACE"
-        title="工作区"
+        eyebrow={t('agentWorkspace.workspaceEyebrow')}
+        title={t('agentWorkspace.workspaceList')}
         actions={(
           <>
-          <IconButton label="打开本机项目" onClick={onAdd}><Plus size={15} /></IconButton>
-          <IconButton label="收起工作区" onClick={onToggle}><SidebarSimple size={16} /></IconButton>
+          <IconButton label={t('agentWorkspace.addWorkspace')} onClick={onAdd}><Plus size={15} /></IconButton>
+          <IconButton label={t('agentWorkspace.collapseWorkspaceSidebar')} onClick={onToggle}><SidebarSimple size={16} /></IconButton>
           </>
         )}
       />
 
       <div className="junqi-wb-worktree-scroll">
-        <section className="junqi-wb-repo-group">
-          <div className="junqi-wb-repo-heading">
-            <span className="junqi-wb-repo-mark"><TreeStructure size={13} /></span>
-            <span className="junqi-wb-repo-title">工作区</span>
-            <span className="junqi-wb-count">{worktrees.length}</span>
-          </div>
-
-          <div className="junqi-wb-worktree-list">
-            {worktrees.length === 0 ? <div className="junqi-wb-empty-panel">尚无可迁移的项目或 Worktree</div> : null}
-            {worktrees.map((worktree) => (
-              <div
-                key={worktree.id}
-                className={`junqi-wb-worktree${worktree.id === activeId ? ' is-active' : ''}`}
+        {worktrees.length === 0 ? <div className="junqi-wb-empty-panel">{t('agentWorkspace.noWorkspaces')}</div> : null}
+        <div className="junqi-wb-worktree-list">
+          {worktrees.map((worktree) => (
+            <div
+              key={worktree.id}
+              className={`junqi-wb-worktree${worktree.id === activeId ? ' is-active' : ''}`}
+            >
+              <button
+                type="button"
+                className="junqi-wb-worktree-select"
+                title={worktree.detail}
+                onClick={() => onSelect(worktree.id)}
               >
-                <span className="junqi-wb-worktree-rail" />
-                <span className="junqi-wb-worktree-main">
-                  <span className="junqi-wb-worktree-line">
-                    <StateDot state={worktree.state} />
-                    <button type="button" className="junqi-wb-worktree-select" onClick={() => onSelect(worktree.id)}>
-                      <strong>{worktree.label}</strong>
-                    </button>
-                    <button
-                      type="button"
-                      className="junqi-wb-worktree-forget"
-                      title="从工作台移除（不删除目录）"
-                      aria-label={`从工作台移除 ${worktree.label}`}
-                      onClick={() => onForget(worktree.id)}
-                    ><X size={12} /></button>
-                  </span>
-                  <span className="junqi-wb-worktree-branch"><GitBranch size={11} />{worktree.branch}</span>
-                  <span className="junqi-wb-worktree-detail">{worktree.detail}</span>
+                <FolderSimple size={15} weight="regular" />
+                <span>
+                  <strong>{worktree.label}</strong>
+                  <small><GitBranch size={11} />{worktree.branch}</small>
                 </span>
-              </div>
-            ))}
-          </div>
-        </section>
-
+              </button>
+              <IconButton
+                className="junqi-wb-worktree-forget"
+                label={t('agentWorkspace.forgetWorkspace', { name: worktree.label })}
+                onClick={() => onForget(worktree.id)}
+              >
+                <X size={13} />
+              </IconButton>
+            </div>
+          ))}
+        </div>
       </div>
-
-      <footer className="junqi-wb-sidebar-footer">
-        <span className="junqi-wb-host-dot" />
-        <span>本机</span>
-        <span className="junqi-wb-muted">{worktrees.length} 个工作区</span>
-      </footer>
     </aside>
   );
 }

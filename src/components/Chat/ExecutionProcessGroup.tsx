@@ -18,6 +18,7 @@ interface ExecutionProcessGroupProps {
   blocks: ExecutionProcessBlock[];
   streaming: boolean;
   renderBlock: (block: RenderBlock) => ReactNode;
+  onBeforeExpandedChange?: () => void;
 }
 
 function formatDuration(ms: number): string {
@@ -35,7 +36,12 @@ function toolLabel(name: string): string {
   return normalized.length > 18 ? `${normalized.slice(0, 17)}…` : normalized;
 }
 
-export function ExecutionProcessGroup({ blocks, streaming, renderBlock }: ExecutionProcessGroupProps) {
+export function ExecutionProcessGroup({
+  blocks,
+  streaming,
+  renderBlock,
+  onBeforeExpandedChange,
+}: ExecutionProcessGroupProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(streaming);
   const toolBlocks = useMemo(() => blocks.filter((block) => block.type === 'tool'), [blocks]);
@@ -67,7 +73,10 @@ export function ExecutionProcessGroup({ blocks, streaming, renderBlock }: Execut
         <button
           type="button"
           aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => {
+            onBeforeExpandedChange?.();
+            setExpanded((value) => !value);
+          }}
           className="flex min-h-[31px] w-full items-center gap-2 px-2.5 py-1.5 text-left"
         >
           {streaming ? (
