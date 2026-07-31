@@ -525,7 +525,7 @@
     "addWorkspace": "Open local project",
     "expandWorkspaceSidebar": "Expand workspace sidebar",
     "collapseWorkspaceSidebar": "Collapse workspace sidebar",
-    "forgetWorkspace": "Remove {{name}} from workspace",
+    "forgetWorkspace": "Remove {{name}} from workspace (the folder is not deleted)",
     "noWorkspaces": "No projects or worktrees are available to migrate",
     "status": {
       "todo": "Not started",

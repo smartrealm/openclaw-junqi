@@ -496,7 +496,7 @@
     "addWorkspace": "開啟本機項目",
     "expandWorkspaceSidebar": "展開工作區側欄",
     "collapseWorkspaceSidebar": "收起工作區側欄",
-    "forgetWorkspace": "從工作臺移除 {{name}}",
+    "forgetWorkspace": "從工作臺移除 {{name}}（不刪除目錄）",
     "noWorkspaces": "尚無可遷移的項目或工作樹",
     "status": {
       "todo": "未開始",

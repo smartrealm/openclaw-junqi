@@ -525,7 +525,7 @@
     "addWorkspace": "打开本机项目",
     "expandWorkspaceSidebar": "展开工作区侧栏",
     "collapseWorkspaceSidebar": "收起工作区侧栏",
-    "forgetWorkspace": "从工作台移除 {{name}}",
+    "forgetWorkspace": "从工作台移除 {{name}}（不删除目录）",
     "noWorkspaces": "尚无可迁移的项目或工作树",
     "status": {
       "todo": "未开始",
