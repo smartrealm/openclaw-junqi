@@ -254,6 +254,16 @@ async fn selected_native_service_context(
     Ok((runtime, paths::desktop_dir(), paths::active_config_path()))
 }
 
+/// Re-attest the official service that belongs to JunQi's selected Native
+/// state/config. A healthy endpoint alone cannot distinguish that service from
+/// an unrelated local Gateway that happens to use the same port.
+pub(crate) async fn inspect_selected_native_gateway_service(
+) -> Result<GatewayServiceInspection, String> {
+    let (runtime, state_dir, config_path) = selected_native_service_context().await?;
+    let identity = GatewayServiceIdentity::for_runtime(&state_dir, &config_path, &runtime);
+    inspect_gateway_service_state(&runtime, &identity, None).await
+}
+
 #[tauri::command]
 pub async fn gateway_autostart_status() -> Result<GatewayAutostartStatus, String> {
     if !matches!(
@@ -625,6 +635,10 @@ pub(crate) fn belongs_to_selected_state(ownership: GatewayServiceOwnership) -> b
     )
 }
 
+pub(crate) fn is_running_selected_service(inspection: GatewayServiceInspection) -> bool {
+    inspection.installed && inspection.running && belongs_to_selected_state(inspection.ownership)
+}
+
 async fn run_service_command(
     runtime: &system::NativeOpenclawRuntime,
     identity: &GatewayServiceIdentity,
@@ -969,6 +983,36 @@ pub(crate) async fn reconcile_pending_gateway_service(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn healthy_selected_service_is_a_durable_local_owner() {
+        assert!(is_running_selected_service(GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::SelectedState,
+            installed: true,
+            running: true,
+        }));
+        assert!(is_running_selected_service(GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::StaleRuntime,
+            installed: true,
+            running: true,
+        }));
+        for ownership in [
+            GatewayServiceOwnership::Foreign,
+            GatewayServiceOwnership::Unverifiable,
+            GatewayServiceOwnership::Absent,
+        ] {
+            assert!(!is_running_selected_service(GatewayServiceInspection {
+                ownership,
+                installed: true,
+                running: true,
+            }));
+        }
+        assert!(!is_running_selected_service(GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::SelectedState,
+            installed: true,
+            running: false,
+        }));
+    }
 
     #[test]
     fn windows_service_artifact_parser_matches_only_the_shared_gateway_task() {

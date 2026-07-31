@@ -206,12 +206,27 @@ pub async fn ensure_gateway_running(
     // 1. 本机配置端口已经可用，直接复用。
     if selected_native_gateway_ready(port).await {
         let token = read_gateway_token(&paths::config_path());
+        // A service may already be healthy before JunQi starts, while the
+        // in-memory owner is still None/External. Re-attest the official
+        // service identity before downgrading that local durable owner to an
+        // externally managed Gateway.
+        let selected_service_running = if managed_pid.is_none()
+            && !matches!(recorded_mode, GatewayRuntimeMode::SystemService)
+        {
+            crate::commands::gateway_service::inspect_selected_native_gateway_service()
+                .await
+                .is_ok_and(crate::commands::gateway_service::is_running_selected_service)
+        } else {
+            false
+        };
         let serving_mode = if managed_pid.is_some() {
             GatewayRuntimeMode::ManagedChild
-        } else if recorded_mode == GatewayRuntimeMode::None {
-            GatewayRuntimeMode::External
+        } else if matches!(recorded_mode, GatewayRuntimeMode::SystemService)
+            || selected_service_running
+        {
+            GatewayRuntimeMode::SystemService
         } else {
-            recorded_mode
+            GatewayRuntimeMode::External
         };
         state.transition(
             Some(GatewayLifecycle::Running),

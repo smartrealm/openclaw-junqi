@@ -451,6 +451,67 @@ test('health-pending rollback and rolled-back restart are both reachable through
   });
 });
 
+test('a selected System Service keeps collaboration enablement inside JunQi', () => {
+  const missingPluginProbe = {
+    ...probe(),
+    plugin: { installed: false, enabled: false },
+    durableCollaborationState: 'absent' as const,
+  };
+  const decision = deriveCollaborationSetupView({
+    identity: identity(),
+    probe: missingPluginProbe,
+    status: status(false),
+    capabilities: null,
+    bundle,
+    loading: false,
+    mutation: null,
+    error: null,
+  });
+
+  assert.equal(decision.kind, 'install');
+  assert.equal(decision.canApply, true);
+});
+
+test('a genuinely remote Gateway remains a manual administrator workflow', () => {
+  const remoteIdentity = identity({
+    endpoint: 'wss://gateway.example.test/',
+    deploymentKind: 'external',
+    ownership: 'remote',
+    persistence: 'unknown',
+    installTarget: 'remote_manual',
+    endpointAttestation: 'not_applicable',
+    pathAttestation: 'unavailable',
+    desktopMutationAllowed: false,
+    desktopExitContinuity: false,
+  });
+  const remoteProbe = {
+    ...probe(),
+    targetClass: 'external_remote' as const,
+    deploymentKind: 'external',
+    ownership: 'remote',
+    durableRuntime: true,
+    mutationAllowed: false,
+    manualInstallRequired: true,
+    binaryPath: null,
+    stateDir: '/srv/openclaw',
+    configPath: '/srv/openclaw/openclaw.json',
+    plugin: { installed: false, enabled: false },
+  };
+  const decision = deriveCollaborationSetupView({
+    identity: remoteIdentity,
+    probe: remoteProbe,
+    status: status(false),
+    capabilities: null,
+    bundle,
+    loading: false,
+    mutation: null,
+    error: null,
+  });
+
+  assert.equal(decision.kind, 'manual');
+  assert.equal(decision.canApply, false);
+});
+
 test('setup view refuses a loaded plugin with a different schema contract', () => {
   const decision = deriveCollaborationSetupView({
     identity: identity(),
