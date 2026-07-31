@@ -13,6 +13,8 @@ test('provider identity follows OpenClaw official icon aliases', () => {
   assert.equal(resolveOfficialProviderIconName('openai'), 'codex');
   assert.equal(resolveOfficialProviderIconName('anthropic'), 'claude');
   assert.equal(resolveOfficialProviderIconName('google-gemini-cli'), 'gemini');
+  assert.equal(resolveOfficialProviderIconName('volcengine'), 'doubao');
+  assert.equal(resolveOfficialProviderIconName('xiaomi'), 'mimo');
   assert.equal(resolveOfficialProviderIconName('private-vllm'), null);
 });
 

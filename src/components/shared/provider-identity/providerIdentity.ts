@@ -19,7 +19,9 @@ const OFFICIAL_PROVIDER_ICON_ALIASES: Readonly<Record<string, string>> = {
   openai: 'codex',
   'opencode-go': 'opencodego',
   'opencode-zen': 'opencode',
+  volcengine: 'doubao',
   xai: 'grok',
+  xiaomi: 'mimo',
   'vertex-ai': 'vertexai',
   'z-ai': 'zai',
 };

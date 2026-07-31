@@ -807,19 +807,19 @@ Delete 必须校验：主 checkout、根目录、home、repo ancestor、嵌套�
 
 ```text
 npm test
-✓ frontend 1712/1712
-✓ scripts 217/217
+PASS frontend 1712/1712
+PASS scripts 217/217
 
 cargo test --lib
-✓ 636 passed
-✓ 3 ignored
+PASS 636 passed
+PASS 3 ignored
 
 npm run build
-✓ 8888 modules transformed
-✓ production build completed
+PASS 8888 modules transformed
+PASS production build completed
 
 /terminal protected paths
-✓ zero diff
+PASS zero diff
 ```
 
 仍未完成，必须保持 unavailable/fail closed：
@@ -847,17 +847,17 @@ npm run build
 
 ```text
 pnpm lint
-✓ module boundaries and TypeScript
+PASS module boundaries and TypeScript
 
 pnpm test
-✓ frontend and script suites
+PASS frontend and script suites
 
 pnpm test:rust
-✓ 638 passed
-✓ 3 ignored by design
+PASS 638 passed
+PASS 3 ignored by design
 
 git diff --check
-✓ clean
+PASS clean
 ```
 
 未验证边界：三平台真机 PTY/Provider 生命周期、SSH/Runtime owner、正式签名与公证。

@@ -18,7 +18,7 @@ NSIS PREUNINSTALL
 
 首次安装、存储、Native/Docker 选择、Node/npm/Git/OpenClaw、Gateway、Ready 最终探测和完成标记已有较完整的事务及回归覆盖。本轮在卸载闭环发现两个相连缺口。
 
-### 🔴 BUG-WUF-01 · CRITICAL — Docker 模式卸载会留下可重启的 JunQi 容器
+### [critical] BUG-WUF-01 · CRITICAL — Docker 模式卸载会留下可重启的 JunQi 容器
 
 **位置**：`src-tauri/src/commands/uninstall.rs`、`src-tauri/src/commands/docker.rs`
 
@@ -31,7 +31,7 @@ Docker Gateway 由 JunQi 创建并带完整 ownership/state labels，同时使�
 
 **修复**：卸载 helper 在选中 Docker runtime 时，必须根据完整 JunQi ownership labels 与 selected state identity 验证容器归属，验证成功后 `docker rm -f`；foreign、无法验证或不同 state 的容器不得删除。
 
-### 🔴 BUG-WUF-02 · CRITICAL — NSIS 忽略 cleanup 失败并继续删除唯一修复程序
+### [critical] BUG-WUF-02 · CRITICAL — NSIS 忽略 cleanup 失败并继续删除唯一修复程序
 
 **位置**：`src-tauri/installer-hooks.nsh`
 

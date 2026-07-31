@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildDailyCostChartData,
+  getDashboardTokenUsageOverview,
   getDailyCostAvailability,
   formatActivityTime,
   formatActivityTimeTitle,
@@ -90,6 +91,36 @@ test('daily cost availability retains partial-pricing evidence alongside known c
     totalTokens: 8_000,
     missingCostEntries: 3,
   });
+});
+
+test('single-day unpriced usage becomes a summary instead of a blank trend chart', () => {
+  const overview = getDashboardTokenUsageOverview(buildDailyCostChartData([{
+    date: '2026-07-20',
+    input: 140_000,
+    output: 2_000,
+    totalTokens: 142_000,
+  }]));
+
+  assert.deepEqual(overview, {
+    totalTokens: 142_000,
+    inputTokens: 140_000,
+    outputTokens: 2_000,
+    cacheTokens: 0,
+    unclassifiedTokens: 0,
+    activeDays: 1,
+    latestActivityDate: '07-20',
+    hasTrend: false,
+  });
+});
+
+test('multiple plotted usage days remain eligible for the token trend chart', () => {
+  const overview = getDashboardTokenUsageOverview(buildDailyCostChartData([
+    { date: '2026-07-19', input: 10 },
+    { date: '2026-07-20', output: 20 },
+  ]));
+
+  assert.equal(overview.hasTrend, true);
+  assert.equal(overview.activeDays, 2);
 });
 
 test('activity metadata uses compact local time and short model names', () => {

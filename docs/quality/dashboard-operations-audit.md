@@ -7,7 +7,7 @@
 - 活动列表的信息密度与排序
 - 快速操作的真实可用能力
 
-## 🔴 BUG-DASH-01 · 活跃智能体绕过统一名称解析
+## [critical] BUG-DASH-01 · 活跃智能体绕过统一名称解析
 
 **位置**：`src/pages/Dashboard/index.tsx`
 
@@ -15,7 +15,7 @@
 
 **修复**：Dashboard 的智能体卡片与活动条目统一复用 `getAgentDisplayName()`，内置翻译只作为没有配置名称时的最终兜底。
 
-## 🔴 BUG-DASH-02 · 全局面板只查询默认智能体费用
+## [critical] BUG-DASH-02 · 全局面板只查询默认智能体费用
 
 **位置**：`src/stores/gatewayDataStore.ts`、`src/services/gateway/index.ts`
 
@@ -23,7 +23,7 @@ JunQi 调用 `usage.cost` 和 `sessions.usage` 时没有传 `agentScope: "all"`�
 
 **修复**：Dashboard 中央数据源和全量分析接口显式采用全智能体范围；保留按指定智能体查询的协议能力。
 
-## 🔴 BUG-DASH-03 · 零费用日期被误判为空数据
+## [critical] BUG-DASH-03 · 零费用日期被误判为空数据
 
 **位置**：`src/pages/Dashboard/index.tsx`、`src/pages/Dashboard/CostChart.tsx`
 
@@ -31,7 +31,7 @@ OpenClaw 会返回连续日期桶，即使某些日期费用为 0，或者模型
 
 **修复**：是否渲染图表只取决于是否存在合法日期桶；费用为 0 时继续显示日期轴和零值曲线，真正没有日期桶时才显示空状态。
 
-## 🟡 BUG-DASH-04 · 活动列表丢弃已有上下文
+## [medium] BUG-DASH-04 · 活动列表丢弃已有上下文
 
 **位置**：`src/pages/Dashboard/index.tsx`、`src/pages/Dashboard/components.tsx`
 
@@ -39,7 +39,7 @@ OpenClaw 会返回连续日期桶，即使某些日期费用为 0，或者模型
 
 **修复**：按统一活跃时间降序生成条目，展示会话、智能体、模型、Token 和本地时间；移除没有事件时间的累计压缩伪活动。
 
-## 🟡 BUG-DASH-05 · 快速操作只有两个入口
+## [medium] BUG-DASH-05 · 快速操作只有两个入口
 
 **位置**：`src/pages/Dashboard/index.tsx`
 

@@ -171,11 +171,11 @@ for (const file of files) {
 // ── Report ────────────────────────────────────────────────────────────────
 
 if (violations.length === 0) {
-  console.log(`✓ Module boundaries clean (checked ${files.length} files)`);
+  console.log(`PASS Module boundaries clean (checked ${files.length} files)`);
   process.exit(0);
 }
 
-console.error(`✗ Module boundary violations (${violations.length}):\n`);
+console.error(`FAIL Module boundary violations (${violations.length}):\n`);
 for (const v of violations) {
   console.error(`  ${v.file}`);
   console.error(`    imports "${v.import}" → ${v.target}`);

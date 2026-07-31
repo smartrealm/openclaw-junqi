@@ -57,7 +57,7 @@ function Stars(): ReactElement {
         const y = 72 + Math.sin(ang) * 32;
         return (
           <motion.g key={i} style={BOX} initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 0], scale: [0, 1, 0] }} transition={{ duration: 1.6, repeat: Infinity, delay: i * 0.2, ease: EASE }}>
-            <text x={x} y={y} fontSize={13} fill={themeHex('warning')}>✦</text>
+            <text x={x} y={y} fontSize={13} fill={themeHex('warning')}>*</text>
           </motion.g>
         );
       })}
@@ -70,7 +70,7 @@ function Hearts(): ReactElement {
     <>
       {[-1, 0, 1].map((i) => (
         <motion.g key={i} initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 0], y: [8, -16], scale: [0, 1, 0.5] }} transition={{ duration: 1.8, repeat: Infinity, delay: (i + 1) * 0.25, ease: EASE }}>
-          <text x={54 + i * 16} y={16} fontSize={15} fill={themeHex('danger')}>♥</text>
+          <text x={54 + i * 16} y={16} fontSize={15} fill={themeHex('danger')}>+</text>
         </motion.g>
       ))}
     </>
@@ -100,7 +100,7 @@ function Spark(): ReactElement {
     <>
       {[-1, 1].map((i) => (
         <motion.g key={i} style={BOX} initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 0], scale: [0, 1.2, 0] }} transition={{ duration: 0.5, repeat: Infinity, delay: (i + 1) * 0.12, ease: EASE }}>
-          <text x={56 + i * 16} y={24} fontSize={11} fill={themeHex('warning')}>✧</text>
+          <text x={56 + i * 16} y={24} fontSize={11} fill={themeHex('warning')}>*</text>
         </motion.g>
       ))}
     </>

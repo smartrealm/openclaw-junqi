@@ -53,7 +53,7 @@ async function createCronReminder(event: CalendarEvent): Promise<string | null> 
   try {
     const result = await gateway.call('cron.add', {
       job: {
-        name: `📅 ${event.title}`,
+        name: `Calendar: ${event.title}`,
         schedule: isRecurring
           ? { kind: 'cron', expr: buildCronExpr(event), tz: getLocalTimezone() }
           : { kind: 'at', at: reminderTime.toISOString() },

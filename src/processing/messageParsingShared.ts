@@ -133,7 +133,7 @@ export function extractFileRefs(text: string): { cleanText: string; files: FileR
       continue;
     }
 
-    const voiceMatch = line.match(/^🎤\s*\[voice\]\s*(.+?)(?:\s*\(([^)]+)\))?\s*$/);
+    const voiceMatch = line.match(/^\u{1F3A4}\s*\[voice\]\s*(.+?)(?:\s*\(([^)]+)\))?\s*$/u);
     if (voiceMatch) {
       files.push({ path: voiceMatch[1].trim(), meta: voiceMatch[2]?.trim() || 'voice', kind: 'voice' });
       continue;
@@ -172,12 +172,12 @@ export function extractFileRefs(text: string): { cleanText: string; files: FileR
 }
 
 function workshopKindFromLine(line: string): WorkshopEvent['kind'] {
-  if (/^✅\s+Added task:/i.test(line)) return 'add';
-  if (/^✅\s+Moved task/i.test(line)) return 'move';
-  if (/^✅\s+Deleted task/i.test(line)) return 'delete';
-  if (/^✅\s+Updated progress/i.test(line)) return 'progress';
-  if (/^📋\s+Tasks:/i.test(line)) return 'list';
-  if (/^⚠️/i.test(line)) return 'warning';
+  if (/^(?:\u{2705}\s+)?Added task:/iu.test(line)) return 'add';
+  if (/^(?:\u{2705}\s+)?Moved task/iu.test(line)) return 'move';
+  if (/^(?:\u{2705}\s+)?Deleted task/iu.test(line)) return 'delete';
+  if (/^(?:\u{2705}\s+)?Updated progress/iu.test(line)) return 'progress';
+  if (/^(?:\u{1F4CB}\s+)?Tasks:/iu.test(line)) return 'list';
+  if (/^(?:\u{26A0}\uFE0F?\s+)?(?:Invalid|Unknown)/iu.test(line)) return 'warning';
   return 'error';
 }
 
@@ -208,17 +208,17 @@ function workshopEventTextFromCommand(action: string, paramsStr: string): string
 
   switch (action) {
     case 'add':
-      return `✅ Added task: "${params.title || 'Untitled Task'}"`;
+      return `Added task: "${params.title || 'Untitled Task'}"`;
     case 'move':
-      return params.status ? `✅ Moved task to ${params.status}` : '⚠️ Invalid move command';
+      return params.status ? `Moved task to ${params.status}` : 'Invalid move command';
     case 'delete':
-      return params.id ? '✅ Deleted task' : '⚠️ Invalid delete command';
+      return params.id ? 'Deleted task' : 'Invalid delete command';
     case 'progress':
-      return params.value ? `✅ Updated progress to ${params.value}%` : '⚠️ Invalid progress command';
+      return params.value ? `Updated progress to ${params.value}%` : 'Invalid progress command';
     case 'list':
-      return '📋 Tasks';
+      return 'Tasks';
     default:
-      return `⚠️ Unknown workshop command: ${action}`;
+      return `Unknown workshop command: ${action}`;
   }
 }
 
@@ -243,12 +243,12 @@ export function extractWorkshopEvents(text: string): { cleanText: string; events
       continue;
     }
 
-    if (/^(?:✅\s+(?:Added|Moved|Deleted|Updated)\s+task|⚠️\s+(?:Invalid|Unknown)|❌\s+Error executing command:)/i.test(line)) {
+    if (/^(?:(?:\u{2705}\s+)?(?:Added|Moved|Deleted|Updated)\s+task|(?:\u{26A0}\uFE0F?\s+)?(?:Invalid|Unknown)|(?:\u{274C}\s+)?Error executing command:)/iu.test(line)) {
       events.push({ kind: workshopKindFromLine(line), text: line });
       continue;
     }
 
-    if (/^📋\s+Tasks:/i.test(line)) {
+    if (/^(?:\u{1F4CB}\s+)?Tasks:/iu.test(line)) {
       const taskLines = [line];
       let cursor = i + 1;
       while (cursor < lines.length) {

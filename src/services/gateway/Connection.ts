@@ -295,7 +295,7 @@ export class GatewayConnection {
     }, this.HEARTBEAT_DEAD_MS / 2);
 
     this.heartbeatTimer = setTimeout(() => {
-      debugWarn('gateway', '[GW] ❌ No traffic for', this.HEARTBEAT_DEAD_MS / 1000, 's — connection dead');
+      debugWarn('gateway', '[GW] No traffic for', this.HEARTBEAT_DEAD_MS / 1000, 's; connection dead');
       this.ws?.close(4000, 'Heartbeat timeout');
     }, this.HEARTBEAT_DEAD_MS);
   }
@@ -532,7 +532,7 @@ export class GatewayConnection {
       resolve: (response: any) => {
         debugLog('gateway', '[GW] Handshake response:', JSON.stringify(response).substring(0, 200));
         if (response.ok !== false && (response.payload?.type === 'hello-ok' || response.type === 'hello-ok')) {
-          debugLog('gateway', '[GW] ✅ Connected!');
+          debugLog('gateway', '[GW] Connected');
           const helloPayload = response.payload?.type === 'hello-ok' ? response.payload : response;
           const auth = helloPayload.auth;
           if (!this.transient) {
@@ -576,7 +576,7 @@ export class GatewayConnection {
           }
         } else {
           const err = response.error?.message || JSON.stringify(response);
-          debugError('gateway', '[GW] ❌ Handshake failed:', err);
+          debugError('gateway', '[GW] Handshake failed:', err);
           this.connected = false;
           this.connecting = false;
           this.emitStatus({ error: err });
@@ -587,7 +587,7 @@ export class GatewayConnection {
       },
       reject: (err: any) => {
         const errStr = String(err);
-        debugError('gateway', '[GW] ❌ Handshake rejected:', errStr);
+        debugError('gateway', '[GW] Handshake rejected:', errStr);
         this.connecting = false;
         const authorizationIssue = classifyGatewayAuthorizationError(err);
         this.pairingRequired = authorizationIssue?.kind === 'pairing_required';
@@ -634,7 +634,7 @@ export class GatewayConnection {
             signedAt: signed.signedAt,
             nonce: signed.nonce,
           };
-          debugLog('gateway', '[GW] 🔑 Device identity attached (v2):', signed.deviceId.substring(0, 16) + '...');
+          debugLog('gateway', '[GW] Device identity attached (v2):', signed.deviceId.substring(0, 16) + '...');
         } else {
           debugWarn('gateway', '[GW] Device signing returned no signature — skipping device auth');
         }
@@ -788,7 +788,7 @@ export class GatewayConnection {
       .on('event', (msg) => {
         const nonce = msg.payload?.nonce;
         if (nonce && typeof nonce === 'string') {
-          debugLog('gateway', '[GW] 🔑 Received connect.challenge with nonce');
+          debugLog('gateway', '[GW] Received connect.challenge with nonce');
           this.challengeNonce = nonce;
           if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
           this.sendHandshake();
@@ -873,7 +873,7 @@ export class GatewayConnection {
     if (this.pairingRetryTimer) clearTimeout(this.pairingRetryTimer);
     this.pairingRetryTimer = setTimeout(() => {
       if (this.pairingRequired && !this.connected && !this.connecting) {
-        debugLog('gateway', '[GW] 🔑 Pairing retry...');
+        debugLog('gateway', '[GW] Pairing retry...');
         this.connect(this.url, this.token, this.deviceToken);
       }
     }, this.PAIRING_RETRY_MS);
@@ -898,7 +898,7 @@ export class GatewayConnection {
 
   /** Reconnect with a new token (after pairing approval) */
   reconnectWithToken(newToken: string) {
-    debugLog('gateway', '[GW] 🔑 Reconnecting with new token');
+    debugLog('gateway', '[GW] Reconnecting with new token');
     this.stopHeartbeat();
     this.stopPairingRetry();
     this.clearAttemptTimers();
@@ -926,7 +926,7 @@ export class GatewayConnection {
   async ensureReasoningStream(sessionKey = 'agent:main:main') {
     try {
       await this.request('sessions.patch', { key: sessionKey, reasoningLevel: 'on' }, { timeoutMs: 15_000 });
-      debugLog('gateway', '[GW] 🧠 Reasoning visibility enabled');
+      debugLog('gateway', '[GW] Reasoning visibility enabled');
     } catch (err) {
       debugWarn('gateway', '[GW] Could not enable reasoning:', err);
     }

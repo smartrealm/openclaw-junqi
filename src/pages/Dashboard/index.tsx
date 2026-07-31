@@ -44,6 +44,7 @@ import {
 } from './dashboardMetrics';
 import {
   buildDailyCostChartData,
+  getDashboardTokenUsageOverview,
   getDailyCostAvailability,
   formatActivityTime,
   formatActivityTimeTitle,
@@ -55,6 +56,7 @@ import {
   fmtCostShort, timeAgo, fmtUptime,
 } from './components';
 import { DashboardCostEmptyState } from './DashboardCostEmptyState';
+import { DashboardTokenUsageSummary } from './DashboardTokenUsageSummary';
 
 const CostChart = lazy(() => import('./CostChart').then((m) => ({ default: m.CostChart })));
 
@@ -318,6 +320,9 @@ export function DashboardPage() {
   const costAvailability = useMemo(() => getDailyCostAvailability(allDaily), [allDaily]);
   const hasChartData = costAvailability.hasPricedCost;
   const hasTokenChartData = costAvailability.hasDatedEntries && costAvailability.totalTokens > 0;
+  const tokenUsageOverview = useMemo(() => getDashboardTokenUsageOverview(chartData), [chartData]);
+  const hasTokenTrend = hasTokenChartData && tokenUsageOverview.hasTrend;
+  const shouldRenderChart = hasChartData || hasTokenTrend;
 
   const agentIdFromKey = useCallback((key?: string) => {
     const parts = String(key || '').split(':');
@@ -723,7 +728,7 @@ export function DashboardPage() {
                   </span>
                 )}
               </div>
-              {(hasChartData || hasTokenChartData) && (
+              {shouldRenderChart && (
                 <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{hasChartData ? t('dashboard.inputCostLabel') : t('dashboard.input')}</span>
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{hasChartData ? t('dashboard.outputCostLabel') : t('dashboard.output')}</span>
@@ -734,10 +739,12 @@ export function DashboardPage() {
               )}
             </div>
             <div className="relative min-h-[160px] flex-1">
-              {(hasChartData || hasTokenChartData) ? (
+              {shouldRenderChart ? (
                 <Suspense fallback={<div className="h-full" />}>
                   <CostChart data={chartData} metric={hasChartData ? 'cost' : 'tokens'} />
                 </Suspense>
+              ) : hasTokenChartData ? (
+                <DashboardTokenUsageSummary overview={tokenUsageOverview} />
               ) : !connected ? (
                 <div className="absolute inset-0 flex items-center justify-center text-[13px] text-aegis-text-dim">
                   {t('dashboard.notConnected')}
@@ -759,6 +766,9 @@ export function DashboardPage() {
               ) : (
                 <DashboardCostEmptyState
                   hasProviders={hasProviders}
+                  sessionCount={sessions.length}
+                  activeAgentCount={agentList.length}
+                  modelCount={availableModels.length}
                   refreshing={refreshing}
                   onOpenConversation={() => navigate('/chat')}
                   onConfigureProviders={() => navigate('/config')}

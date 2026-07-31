@@ -5,7 +5,7 @@
 // on click, a 520×360px history popover with:
 //   - Header: per-category counter segments + session elapsed
 //   - Scrollable event list (newest first): tool icon, name,
-//     identifier (truncated), duration, state glyph (⋯/✓/✗/⊘)
+//     identifier (truncated), duration, and state glyph.
 //   - Empty / waiting states
 //
 // Source: kooky Sources/KookyKit/Terminal/ToolCallActivityStrip.swift (438 lines)

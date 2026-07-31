@@ -33,6 +33,17 @@ export interface DashboardCostAvailability {
   missingCostEntries: number;
 }
 
+export interface DashboardTokenUsageOverview {
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheTokens: number;
+  unclassifiedTokens: number;
+  activeDays: number;
+  latestActivityDate: string | null;
+  hasTrend: boolean;
+}
+
 function nonNegativeNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.max(0, value)
@@ -120,6 +131,50 @@ export function getDailyCostAvailability(
     totalTokens: 0,
     missingCostEntries: 0,
   });
+}
+
+/**
+ * A single dated usage bucket has useful information but cannot form a
+ * meaningful time-series. Keep that distinction outside the chart component
+ * so the dashboard can present the recorded usage without inventing a trend.
+ */
+export function getDashboardTokenUsageOverview(
+  data: DashboardCostChartPoint[],
+): DashboardTokenUsageOverview {
+  const totals = data.reduce((summary, point) => {
+    const inputTokens = summary.inputTokens + point.inputTokens;
+    const outputTokens = summary.outputTokens + point.outputTokens;
+    const cacheTokens = summary.cacheTokens + point.cacheTokens;
+    const totalTokens = summary.totalTokens + point.totalTokens;
+    const classifiedTokens = point.inputTokens + point.outputTokens + point.cacheTokens;
+
+    return {
+      totalTokens,
+      inputTokens,
+      outputTokens,
+      cacheTokens,
+      unclassifiedTokens: summary.unclassifiedTokens + Math.max(0, point.totalTokens - classifiedTokens),
+      activeDays: summary.activeDays + (point.totalTokens > 0 ? 1 : 0),
+      latestActivityDate: point.totalTokens > 0 ? point.date : summary.latestActivityDate,
+    };
+  }, {
+    totalTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheTokens: 0,
+    unclassifiedTokens: 0,
+    activeDays: 0,
+    latestActivityDate: null as string | null,
+  });
+
+  const plottedDays = data.filter((point) => (
+    point.inputTokens + point.outputTokens + point.cacheTokens > 0
+  )).length;
+
+  return {
+    ...totals,
+    hasTrend: plottedDays >= 2,
+  };
 }
 
 function pad(value: number): string {

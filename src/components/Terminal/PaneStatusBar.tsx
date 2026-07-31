@@ -437,9 +437,9 @@ function toolCallPresentation(state: TerminalToolCall['state']): ToolCallPresent
     case 'running':
       return { textColor: 'rgb(var(--aegis-status-running))', glyphColor: 'rgb(var(--aegis-status-running))', glyph: '⋯', accessibleName: 'running' };
     case 'success':
-      return { textColor: 'rgb(var(--aegis-text))', glyphColor: 'rgb(115 199 128)', glyph: '✓', accessibleName: 'succeeded' };
+      return { textColor: 'rgb(var(--aegis-text))', glyphColor: 'rgb(115 199 128)', glyph: 'OK', accessibleName: 'succeeded' };
     case 'failed':
-      return { textColor: 'rgb(var(--aegis-status-failed))', glyphColor: 'rgb(var(--aegis-status-failed))', glyph: '✗', accessibleName: 'failed' };
+      return { textColor: 'rgb(var(--aegis-status-failed))', glyphColor: 'rgb(var(--aegis-status-failed))', glyph: 'X', accessibleName: 'failed' };
     case 'stalled':
       return { textColor: 'rgb(var(--aegis-text-muted))', glyphColor: 'rgb(var(--aegis-text-muted))', glyph: '⊘', accessibleName: 'stalled' };
   }

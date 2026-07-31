@@ -6,7 +6,7 @@
 
 本审计不读取本机 OpenClaw 的渠道结果作为实现依据，只检查 JunQi 仓库源码的数据来源和降级行为。
 
-## 🔴 BUG-CRA-01 · 静态渠道模板参与配置和状态判断
+## [critical] BUG-CRA-01 · 静态渠道模板参与配置和状态判断
 
 **位置**：`src/pages/ConfigManager/channelTemplates.ts`、`src/services/channelConfig.ts`、`src/pages/ChannelsCenter/index.tsx`
 
@@ -14,7 +14,7 @@ JunQi 静态维护多个渠道的凭据字段、默认 policy、streaming、媒�
 
 **修复**：删除非钉钉静态模板；配置字段只读取 Runtime capability schema；通用新建只写必要的 UI 字段；Runtime 状态未知时不猜凭据。
 
-## 🔴 BUG-CRA-02 · 首次安装向导内置飞书协议
+## [critical] BUG-CRA-02 · 首次安装向导内置飞书协议
 
 **位置**：`src-tauri/src/commands/channel_enrollment.rs`、`src/services/channelEnrollment.ts`、`src/services/feishuQrWizardBridge.ts`、`src/pages/SetupPage.tsx`
 
@@ -22,7 +22,7 @@ JunQi 内置飞书注册端点、协议字段和 OpenClaw 向导步骤启发式�
 
 **修复**：删除飞书专项 enrollment 和步骤识别；首次安装向导原样渲染当前 OpenClaw wizard；只保留与渠道无关的本地 QR 内容渲染器。
 
-## 🔴 BUG-CRA-03 · 日历固定投递渠道并默认 Telegram
+## [critical] BUG-CRA-03 · 日历固定投递渠道并默认 Telegram
 
 **位置**：`src/pages/Calendar/calendarTypes.ts`、`src/pages/Calendar/EventModal.tsx`
 
@@ -30,7 +30,7 @@ JunQi 内置飞书注册端点、协议字段和 OpenClaw 向导步骤启发式�
 
 **修复**：投递渠道 ID 改为动态字符串；选项来自当前 Runtime status；保留 `last` 作为 OpenClaw 通用路由语义；Runtime 不可用时只保留 `last` 和既有事件值。
 
-## 🟡 BUG-CRA-04 · Agent 页固定飞书和旧钉钉快捷创建
+## [medium] BUG-CRA-04 · Agent 页固定飞书和旧钉钉快捷创建
 
 **位置**：`src/pages/AgentHub/AgentSettingsPanel.tsx`
 
@@ -38,7 +38,7 @@ Agent 页静态创建飞书和旧 `dingtalk` 配置，并写入静态默认字�
 
 **修复**：删除静态快捷创建，统一跳转动态渠道中心并携带 Agent ID。钉钉安装和迁移仍由受审专用链路处理。
 
-## 🔴 BUG-CRA-06 · 遗留 Telegram 配对命令绕过 Runtime
+## [critical] BUG-CRA-06 · 遗留 Telegram 配对命令绕过 Runtime
 
 **位置**：原 `src-tauri/src/commands/pairing.rs`
 
@@ -46,7 +46,7 @@ Native 层直接读写 Telegram 专属 pairing/allowFrom 文件，前端没有�
 
 **修复**：删除整个遗留模块、command 注册和测试；Gateway 设备配对继续使用现有 Runtime 通用 token/approval 流程。
 
-## 🟡 BUG-CRA-05 · 名称、图标和 known 状态依赖模板
+## [medium] BUG-CRA-05 · 名称、图标和 known 状态依赖模板
 
 **位置**：渠道中心、Config Manager、Agent Hub
 

@@ -45,5 +45,5 @@ rm -rf "$(dirname "$ICONSET")"
 # Windows .ico — multi-resolution via ImageMagick
 magick "$ICON_DIR/icon.png" -define icon:auto-resize=256,128,64,48,32,16 "$ICON_DIR/icon.ico"
 
-echo "✓ rendered:"
+echo "Rendered:"
 ls -la "$ICON_DIR"/{icon.png,icon.icns,icon.ico,32x32.png,128x128.png,128x128@2x.png}

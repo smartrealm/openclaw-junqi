@@ -4,7 +4,7 @@
 
 官方依据：OpenClaw 将 `wizard.*` 固定映射为 `operator.admin`；`wizard.next` 的 payload 错误可能表示回答校验失败而会话仍在运行；`wizard.next/status` 不回传 `sessionId`。参见 [Gateway protocol](https://github.com/openclaw/openclaw/blob/main/docs/gateway/protocol.md)、[Wizard schema](https://github.com/openclaw/openclaw/blob/main/packages/gateway-protocol/src/schema/wizard.ts) 和 [Wizard server methods](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/wizard.ts)。
 
-## 🔴 BUG-WIZ-01 · Wizard RPC 使用了不具备 admin scope 的日常连接
+## [critical] BUG-WIZ-01 · Wizard RPC 使用了不具备 admin scope 的日常连接
 
 **位置**：`src/hooks/useSetupFlow.ts`、`src/services/gateway/Connection.ts`
 
@@ -14,7 +14,7 @@
 
 **修复**：Wizard 只通过 admin 管理通道调用；保留 RPC 原始错误和最后已知 step/session。
 
-## 🔴 BUG-WIZ-02 · 被 Gateway 拒绝的答案会写入“已接受历史”
+## [critical] BUG-WIZ-02 · 被 Gateway 拒绝的答案会写入“已接受历史”
 
 **位置**：`src/services/openclawWizard.ts`
 
@@ -24,7 +24,7 @@
 
 **修复**：区分 payload 校验错误与 terminal error。前者保留活动 session/当前 step，不推进 history；成功 resume 后清理失败快照。
 
-## 🔴 BUG-WIZ-03 · admin scope 升级信息在握手失败链路中丢失
+## [critical] BUG-WIZ-03 · admin scope 升级信息在握手失败链路中丢失
 
 **位置**：`src/services/gateway/Connection.ts`、`src/services/gateway/index.ts`、`src/hooks/useSetupFlow.ts`
 
@@ -34,7 +34,7 @@
 
 **修复**：握手失败必须发出完整 `GatewayAuthorizationIssue`；admin requester 用类型化错误携带 requestId；Wizard 错误面给出可执行的 `openclaw devices approve <requestId>` 诊断；安装分支也必须挂载现有 Pairing approval 界面。
 
-## 🟡 BUG-WIZ-04 · cancelled 和 terminal 状态契约不完整
+## [medium] BUG-WIZ-04 · cancelled 和 terminal 状态契约不完整
 
 **位置**：`src/services/openclawWizard.ts`、`src/hooks/useSetupFlow.ts`
 

@@ -14,7 +14,7 @@
  * Source of truth: primitives.css (--color-teal-400 = 78 201 176 for dark,
  * --color-teal-500 = 61 184 159 for light), wired through aegis-*.css.
  *
- * ⚠️ These read getComputedStyle at call time — always call inside
+ * Warning: these read getComputedStyle at call time. Always call inside
  *    render functions, useMemo, or event handlers. Never at module scope.
  */
 

@@ -66,7 +66,7 @@ const NOISE_PATTERNS: RegExp[] = [
   /^HEARTBEAT_OK$/,
   /^NO_REPLY$/,
   /^احفظ جميع المعلومات المهمة/,
-  /^⚠️ Session nearing compaction/,
+  /^\u{26A0}\uFE0F? Session nearing compaction/u,
   /^\[System\]\s*\[?\d{4}/i,  // Only match [System] followed by timestamp, not arbitrary content
   /^System:\s*\[/,
   /^PS [A-Z]:\\.*>/,

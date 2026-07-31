@@ -14,7 +14,7 @@ OpenClaw 配置字段、枚举、默认值、约束、渠道/provider/plugin 能
 
 审查依据为仓库锁定的 `openclaw@2026.7.1`、本机安装的 `OpenClaw 2026.7.1-2` 及其 `openclaw config schema` 输出。
 
-## 🔴 BUG-OCA-01 · Agent 配置枚举与约束由 JunQi 静态维护且已经漂移
+## [critical] BUG-OCA-01 · Agent 配置枚举与约束由 JunQi 静态维护且已经漂移
 
 **位置**：`src/pages/ConfigManager/AgentsTab.tsx`
 
@@ -22,7 +22,7 @@ OpenClaw 配置字段、枚举、默认值、约束、渠道/provider/plugin 能
 
 **修复结果**：已完成。Agent 高级字段从当前 Runtime schema 解析 enum、minimum、maximum；schema 不可用时保留现有值并禁用受约束写入，不猜默认值。
 
-## 🔴 BUG-OCA-02 · Tools/provider/plugin 配置能力被整套硬编码
+## [critical] BUG-OCA-02 · Tools/provider/plugin 配置能力被整套硬编码
 
 **位置**：`src/pages/ConfigManager/ToolsTab.tsx`、`src/pages/ConfigManager/toolsProviderDetection.ts`、`src/pages/ConfigManager/toolsProviderMutation.ts`、`src/pages/ConfigManager/index.tsx`
 
@@ -30,7 +30,7 @@ OpenClaw 配置字段、枚举、默认值、约束、渠道/provider/plugin 能
 
 **修复结果**：已完成普通 Tools 配置面。删除静态 provider/plugin/env 写入映射与自动 provider 选择；Tools 编辑器改为当前 Runtime schema 驱动。schema 不可用时 fail closed，并引导使用 raw editor/官方 Wizard。
 
-## 🔴 BUG-OCA-03 · 本地 TypeScript/Rust 校验复制了不完整 OpenClaw schema
+## [critical] BUG-OCA-03 · 本地 TypeScript/Rust 校验复制了不完整 OpenClaw schema
 
 **位置**：`src/pages/ConfigManager/types.ts`、`src/types/openclawApiProtocol.ts`、`src-tauri/src/commands/config.rs`
 
@@ -38,7 +38,7 @@ OpenClaw 配置字段、枚举、默认值、约束、渠道/provider/plugin 能
 
 **修复结果**：已完成核心边界。手写类型已明确降级为保留未知字段的非权威 UI projection；API protocol 不再维护 JunQi 白名单，现有/未来 Runtime 字符串原样保留，仅迁移一个经审查 legacy 值；写盘仍由官方 config validation 门禁。
 
-## 🟡 BUG-OCA-04 · Schema 读取只服务 provider advanced editor
+## [medium] BUG-OCA-04 · Schema 读取只服务 provider advanced editor
 
 **位置**：`src/services/openclawConfigSchema.ts`
 
@@ -46,7 +46,7 @@ OpenClaw 配置字段、枚举、默认值、约束、渠道/provider/plugin 能
 
 **修复结果**：已完成 resolver 与首批迁移。新增通用 schema path resolver，支持本地 `$ref`、`properties`、`additionalProperties`、array items 和 `anyOf/oneOf` 枚举；Agent、Tools 与 provider API protocol 已消费同一 Runtime schema snapshot。其余面板的逐步迁移保留为后续范围。
 
-## 🟡 BUG-OCA-05 · Config Manager 保存路径会主动规范化未编辑领域
+## [medium] BUG-OCA-05 · Config Manager 保存路径会主动规范化未编辑领域
 
 **位置**：`src/pages/ConfigManager/index.tsx`
 
@@ -54,7 +54,7 @@ OpenClaw 配置字段、枚举、默认值、约束、渠道/provider/plugin 能
 
 **修复结果**：部分完成。现有 `smartMerge` 继续在最新磁盘配置上合并用户变更；已删除保存时基于静态凭据映射自动选择 Tools provider 的副作用。Provider/Agent 历史 normalization 仍需按迁移契约继续拆分，属于未完成边界。
 
-## 🟡 BUG-OCA-06 · 配置文件名和 Docker 路径存在重复协议常量
+## [medium] BUG-OCA-06 · 配置文件名和 Docker 路径存在重复协议常量
 
 **位置**：`src-tauri/src/paths.rs`、`src-tauri/src/commands/docker.rs`、`src-tauri/src/commands/runtime_identity.rs`、`src-tauri/src/commands/collaboration_bootstrap.rs`
 

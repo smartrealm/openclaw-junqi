@@ -18,7 +18,7 @@ export function exportAsMarkdown(blocks: RenderBlock[], sessionKey?: string): st
   for (const block of blocks) {
     switch (block.type) {
       case 'message': {
-        const prefix = block.role === 'user' ? '**🧑 User**' : '**🤖 Assistant**';
+        const prefix = block.role === 'user' ? '**User**' : '**Assistant**';
         const time = block.timestamp
           ? new Date(block.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           : '';
@@ -29,7 +29,7 @@ export function exportAsMarkdown(blocks: RenderBlock[], sessionKey?: string): st
         
         // Include artifacts as code blocks
         for (const art of block.artifacts) {
-          lines.push(`<details><summary>📦 Artifact: ${art.title} (${art.type})</summary>`);
+          lines.push(`<details><summary>Artifact: ${art.title} (${art.type})</summary>`);
           lines.push('');
           lines.push('```' + (art.type === 'html' ? 'html' : art.type === 'react' ? 'jsx' : art.type));
           lines.push(art.content);
@@ -40,7 +40,7 @@ export function exportAsMarkdown(blocks: RenderBlock[], sessionKey?: string): st
         break;
       }
       case 'tool': {
-        lines.push(`> 🔧 **Tool:** \`${block.toolName}\`${block.status === 'error' ? ' ❌' : ' ✅'}${block.durationMs ? ` (${(block.durationMs / 1000).toFixed(1)}s)` : ''}`);
+        lines.push(`> **Tool:** \`${block.toolName}\` [${block.status === 'error' ? 'error' : 'completed'}]${block.durationMs ? ` (${(block.durationMs / 1000).toFixed(1)}s)` : ''}`);
         if (block.output) {
           lines.push('>');
           // Truncate long outputs

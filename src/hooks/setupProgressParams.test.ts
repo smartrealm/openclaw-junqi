@@ -41,7 +41,7 @@ const CASES: Record<string, Case> = {
   },
   "[.skip, .upgrade, .done] (no version → null → fallthrough)": {
     key: "setup.openclaw.done",
-    message: "openclaw installed successfully ✓",
+    message: "openclaw installed successfully OK",
     // First rule matches the key but the extractor returns null;
     // no later rule matches .done either, so we get {}.
     expected: {},
@@ -130,8 +130,8 @@ const CASES: Record<string, Case> = {
   },
   ".runtimeSummary": {
     key: "setup.gateway.runtimeSummary",
-    message: "Runtime check done: Node.js ✓, openclaw ✓",
-    expected: { summary: "Node.js ✓, openclaw ✓" },
+    message: "Runtime check done: Node.js OK, openclaw OK",
+    expected: { summary: "Node.js OK, openclaw OK" },
   },
   ".binary": {
     key: "setup.openclawUpdate.progress.binary",

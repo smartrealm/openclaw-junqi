@@ -137,7 +137,7 @@
 
 ## P0 · 真实功能缺陷
 
-### 🔴 BUG-FCA-01 · 灵动岛绕过 i18n，并无视用户在应用内选择的语言
+### [critical] BUG-FCA-01 · 灵动岛绕过 i18n，并无视用户在应用内选择的语言
 
 **位置**：`src/dynamic-island/DynamicIsland.tsx`
 
@@ -151,7 +151,7 @@
 
 **目标行为**：文案迁入三份 locale 文件，组件通过 `useTranslation()` 读取，语言来源统一为应用内语言状态而非 `navigator.language`。
 
-### 🔴 BUG-FCA-02 · `openclaw.json` 在生产 Rust 代码中硬编码 71 处
+### [critical] BUG-FCA-02 · `openclaw.json` 在生产 Rust 代码中硬编码 71 处
 
 **位置**：跨 10 个文件
 
@@ -180,7 +180,7 @@
 
 ## P1 · 设计系统碎片化（UI 不统一与组件不复用的共同根因）
 
-### 🔴 BUG-FCA-03 · 三套并行设计系统，事实上的主力是「没有体系」
+### [critical] BUG-FCA-03 · 三套并行设计系统，事实上的主力是「没有体系」
 
 | 体系 | 技术栈 | 生产消费者 |
 | --- | --- | --- |
@@ -257,7 +257,7 @@ ui/badge.tsx    ui/separator.tsx  ui/skeleton.tsx  ui/switch.tsx
 
 **未决前提**：`components/shared/{button,badge,alert}/` 的文件头注明 "Adapted from Hermes shared-ui"。若 Hermes 是仍在维护并需保持同步的内部设计系统，本结论进一步增强；若 Hermes 已废弃、此处仅为一次性移植，结论不变，但需接受 Aegis 体系后续由本项目自行维护。该前提不影响推荐方向，仅影响长期维护归属。
 
-### 🔴 BUG-FCA-04 · 四套状态指示器，语义模型互不兼容且两者同名
+### [critical] BUG-FCA-04 · 四套状态指示器，语义模型互不兼容且两者同名
 
 | 位置 | Props 模型 | 上色方式 | 消费者 |
 | --- | --- | --- | --- |
@@ -270,13 +270,13 @@ ui/badge.tsx    ui/separator.tsx  ui/skeleton.tsx  ui/switch.tsx
 
 **目标行为**：收敛为单一状态指示器组件，状态集合取并集后由一处定义，颜色统一走主题 token。
 
-### 🟡 BUG-FCA-05 · 三套开关实现加一处内联
+### [medium] BUG-FCA-05 · 三套开关实现加一处内联
 
 **位置**：`src/components/ui/switch.tsx`、`src/components/settings/SettingsSwitch.tsx:10`、`src/pages/ConfigManager/components.tsx:510`（`ToggleSwitch`），以及 `src/components/settings/ThemePicker.tsx:300` 手写的第四个 `role="switch"`。
 
 **目标行为**：按 BUG-FCA-03 结论，`ui/switch.tsx` 属删除清单；需在 Aegis DS 下新建单一 `Switch`。`SettingsSwitch.tsx` 已实现正确的 `role="switch"` 语义，可作为新组件的行为基线，因此不必为此保留 `@radix-ui/react-switch` 依赖。
 
-### 🟡 BUG-FCA-06 · LoadingIndicator 收敛远未完成
+### [medium] BUG-FCA-06 · LoadingIndicator 收敛远未完成
 
 **位置**：48 个文件
 
@@ -290,11 +290,11 @@ ui/badge.tsx    ui/separator.tsx  ui/skeleton.tsx  ui/switch.tsx
 
 **注**：文档明确保留刷新操作旋转 `RefreshCw` 图标的语义，该部分不在收敛范围内，上述统计已排除。
 
-### 🟡 BUG-FCA-07 · 缺少共享空状态组件
+### [medium] BUG-FCA-07 · 缺少共享空状态组件
 
 **位置**：17 个文件各自手写空状态。`find src -iname '*empty*'` 无结果。
 
-### 🟡 BUG-FCA-08 · 95 处硬编码色值绕过四主题 token
+### [medium] BUG-FCA-08 · 95 处硬编码色值绕过四主题 token
 
 **位置**：26 个 tsx 文件
 
@@ -319,7 +319,7 @@ ui/badge.tsx    ui/separator.tsx  ui/skeleton.tsx  ui/switch.tsx
 
 ## P2 · demo 代码与硬编码
 
-### 🔴 BUG-FCA-09 · 验证用 demo 页随生产构建发布且无 feature 门禁
+### [critical] BUG-FCA-09 · 验证用 demo 页随生产构建发布且无 feature 门禁
 
 **位置**：`src/pages/UIShowcase.tsx`、`src/AppRouteTree.tsx:73`
 
@@ -327,7 +327,7 @@ ui/badge.tsx    ui/separator.tsx  ui/skeleton.tsx  ui/switch.tsx
 
 **影响**：验证性代码进入生产制品。它同时是 8 个 shadcn 组件的唯一消费者，移除后那些组件与相关 Radix 依赖立即成为死代码——这一依赖关系应作为 BUG-FCA-03 决策的输入。
 
-### 🟡 BUG-FCA-10 · `runtimeDefaults` 单一事实源被两处绕过
+### [medium] BUG-FCA-10 · `runtimeDefaults` 单一事实源被两处绕过
 
 **位置**：
 
@@ -338,11 +338,11 @@ ui/badge.tsx    ui/separator.tsx  ui/skeleton.tsx  ui/switch.tsx
 
 **影响**：`credentialProvider.ts` 的常量参与 Gateway 凭据 runtime key 推导。默认端口若与 `runtime-defaults.json` 漂移，凭据将写入错误的 key。
 
-### 🟡 BUG-FCA-11 · Memory API 地址双份硬编码
+### [medium] BUG-FCA-11 · Memory API 地址双份硬编码
 
 **位置**：`src/stores/settingsStore.ts:191`、`src/pages/MemoryExplorer.tsx:694`，均为 `'http://localhost:3040'`。端口 3040 未纳入 `src/config/runtime-defaults.json`。
 
-### 🟡 BUG-FCA-12 · 媒体模型 catalog 为空，导致选择器空转
+### [medium] BUG-FCA-12 · 媒体模型 catalog 为空，导致选择器空转
 
 **位置**：`src/generated/mediaCatalog.generated.ts`、`src/pages/ConfigManager/ProvidersTab.tsx:3364-3377`
 
@@ -357,7 +357,7 @@ export const GENERATED_VIDEO_GENERATION_MODELS: GeneratedMediaCatalogModel[] = [
 
 **待验证**：需确认 `pnpm generate:provider-catalog`（`scripts/generate-provider-catalog.js:450`）是否覆盖 media 分支且本机执行时有数据源，还是该功能本就未落地。在确认前不应推断修复方式。
 
-### 🟢 BUG-FCA-13 · README 版本号落后
+### [low] BUG-FCA-13 · README 版本号落后
 
 **位置**：`README.md:7` 写 `1.4.14`。
 
@@ -367,7 +367,7 @@ export const GENERATED_VIDEO_GENERATION_MODELS: GeneratedMediaCatalogModel[] = [
 
 ## P3 · 封装与抽象
 
-### 🟡 BUG-FCA-14 · `collaboration_bootstrap.rs` 是 7000 行单体
+### [medium] BUG-FCA-14 · `collaboration_bootstrap.rs` 是 7000 行单体
 
 **位置**：`src-tauri/src/commands/collaboration_bootstrap.rs`
 

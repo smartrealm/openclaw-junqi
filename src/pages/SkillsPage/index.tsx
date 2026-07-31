@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
-import { Search, RefreshCw, Package, Globe, FolderOpen, FileArchive, CheckCircle2, AlertCircle, Zap, ExternalLink, CalendarDays, Plug, Brain, FileText, Settings2, Wrench, Pencil, GitBranch, Mail, BookOpen, HeartPulse, Volume2, Gem, Puzzle, CloudSun, Palette, Mic, Bug } from 'lucide-react';
+import { Search, RefreshCw, Package, Globe, FolderOpen, FileArchive, CheckCircle2, AlertCircle, Zap, ExternalLink, CalendarDays, Plug, Brain, FileText, Settings2, Wrench, Pencil, GitBranch, Mail, BookOpen, HeartPulse, Volume2, Gem, Puzzle, CloudSun, Palette, Mic, Bug, X } from 'lucide-react';
 import { Cube } from '@phosphor-icons/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { gateway } from '@/services/gateway';
@@ -1380,7 +1380,7 @@ export function SkillsPage() {
                       <button
                         onClick={() => setImportStatus({ kind: 'idle' })}
                         className="shrink-0 opacity-60 hover:opacity-100 transition-opacity text-[11px]"
-                      >✕</button>
+                      ><X size={12} aria-label={t('common.close')} /></button>
                     </div>
                   </motion.div>
                 )}
@@ -1784,7 +1784,7 @@ function SkillsHubCliBanner({ installed, onCheckDone }: {
             bg-aegis-success/[0.06] border border-aegis-success/15 text-aegis-success text-[11.5px]">
             <CheckCircle2 size={12} className="shrink-0" />
             <span className="flex-1">{t('skills.skillshubCliInstalled')}</span>
-            <button onClick={() => setDismissed(true)} className="opacity-50 hover:opacity-100 text-[10px]">✕</button>
+            <button onClick={() => setDismissed(true)} className="opacity-50 hover:opacity-100 text-[10px]" aria-label={t('common.close')}><X size={11} /></button>
           </div>
         </motion.div>
       </AnimatePresence>

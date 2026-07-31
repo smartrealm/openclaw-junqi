@@ -48,7 +48,7 @@ function createUserMessage(text: string): NormalizedMessage {
 test('extracts output file lines into file-output semantic block', () => {
   const normalized = createAssistantMessage([
     '已经生成报告。',
-    '📎 file: /tmp/demo-report.md (18 KB)',
+    ' file: /tmp/demo-report.md (18 KB)',
     '你可以继续让我生成下一份。',
   ].join('\n'));
 
@@ -62,7 +62,7 @@ test('extracts output file lines into file-output semantic block', () => {
   assert.equal(fileBlock.files[0].path, '/tmp/demo-report.md');
   assert.match(messageBlock.markdown, /已经生成报告/);
   assert.match(messageBlock.markdown, /继续让我生成下一份/);
-  assert.doesNotMatch(messageBlock.markdown, /📎\s*file:/);
+  assert.doesNotMatch(messageBlock.markdown, /\s*file:/);
 });
 
 test('extracts labeled path lines into file-output semantic block', () => {
@@ -100,7 +100,7 @@ test('extracts relative file path from saved-to sentence into file-output block'
 
 test('extracts saved-to file path with emoji and backticks', () => {
   const normalized = createAssistantMessage(
-    '已保存到 📄 `weather-beijing-2026-04-26.txt`已保存 📄 `weather-beijing-2026-04-26.txt`',
+    '已保存到  `weather-beijing-2026-04-26.txt`已保存  `weather-beijing-2026-04-26.txt`',
   );
 
   const blocks = buildSemanticBlocks(normalized, { toolIntentEnabled: true });
@@ -113,7 +113,7 @@ test('extracts saved-to file path with emoji and backticks', () => {
 
 test('extracts saved file path without 到 keyword', () => {
   const normalized = createAssistantMessage(
-    '已保存 📄 `weather-beijing-2026-04-26.md`\n\n这次是带表格的 Markdown 格式。',
+    '已保存  `weather-beijing-2026-04-26.md`\n\n这次是带表格的 Markdown 格式。',
   );
 
   const blocks = buildSemanticBlocks(normalized, { toolIntentEnabled: true });
