@@ -202,7 +202,7 @@ write_agent_config_file       write_models_log              write_project_config
 | --- | --- |
 | `node scripts/check-boundaries.mjs` | 通过，668 个文件，无违规 |
 | `pnpm exec tsc --noEmit`（TypeScript 5.9.3） | 通过，退出码 0，无输出 |
-| `src` 测试套件 | 2009 项，2008 通过、1 失败 |
+| `src` 测试套件 | 2009 项，2008 通过、1 失败（该失败见 FIND-08，已在本轮修复，修复后 2009 项全通过） |
 | `scripts` 测试套件 | 224 项全部通过 |
 
 复核期间发现工作区的 `node_modules` 已不存在，`pnpm lint` 因此只报出「Linter process terminated abnormally」而没有真正执行 `tsc`。执行 `pnpm install --frozen-lockfile` 恢复依赖后，上表结果才是真实的。基线上那次 `npx tsc --noEmit` 属于同一原因导致的假阳性。
@@ -223,10 +223,12 @@ AssertionError: The input did not match the regular expression /从工作台移�
 
 用户仍会在确认弹窗看到该保证：`src/locales/zh.json` 的 `removeProjectConfirm` 为「确定从工作台移除“{{name}}”吗？不会删除本地项目目录。」丢失的只是按钮 tooltip 上的即时提示。
 
-修复方向需要产品判断，两种做法的用户可见行为不同，本文不代为决定：
+处理结果：已修复。采用恢复原有安全提示的方案，理由是限定语的丢失是 i18n 迁移的附带损失而非产品决定，恢复迁移前的行为比追认回归更保守。
 
-- 在 `agentWorkspace.forgetWorkspace` 的三份 locale 中补回「不删除目录」限定语，并把测试断言改为核对 i18n key 而非源码字面量；
-- 接受按钮文案简化，把守护测试改为断言确认弹窗文案承载该保证。
+- 三份 locale 的 `agentWorkspace.forgetWorkspace` 补回限定语：`zh` 为「从工作台移除 {{name}}（不删除目录）」，`zh-TW` 为「從工作臺移除 {{name}}（不刪除目錄）」，`en` 为 `Remove {{name}} from workspace (the folder is not deleted)`
+- 守护测试改为核对 i18n 契约而非源码字面量：断言 `index.tsx` 通过 `t('agentWorkspace.forgetWorkspace')` 绑定文案，并逐一断言三份 locale 的该键都声明不删除目录；`delete_worktree|remove_dir|delete_path` 与侧栏结构断言保持不变
+
+这样测试不再因为文案从源码迁到 locale 而失效，同时守住了原本要守的承诺。已用两组反证确认该测试可失败：把任一 locale 的限定语删掉，或把按钮改回不走 i18n key，测试都会失败。
 
 ## 未验证边界
 
