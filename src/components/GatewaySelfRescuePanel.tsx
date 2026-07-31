@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertCircle, CheckCircle2, FileText, HeartPulse, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { GatewayAiDiagnosticDisclosure } from './GatewayAiDiagnosticDisclosure';
+import { projectGatewaySelfRescuePresentation } from './gatewaySelfRescuePresentation';
 import {
   diagnoseGatewayRecovery,
   runOpenClawRepair,
@@ -14,6 +15,7 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 export interface GatewaySelfRescuePanelProps {
   connected?: boolean;
   busy?: boolean;
+  endpoint?: string;
   port?: string | number;
   progressMessage?: string | null;
   progressPercent?: number | null;
@@ -29,9 +31,19 @@ export interface GatewaySelfRescuePanelProps {
 
 type DoctorFixState = 'idle' | 'running' | 'success' | 'failed';
 
+function gatewayEndpointDisplay(endpoint: string | undefined): string | null {
+  if (!endpoint?.trim()) return null;
+  try {
+    return new URL(endpoint).host || null;
+  } catch {
+    return null;
+  }
+}
+
 export function GatewaySelfRescuePanel({
   connected = false,
   busy = false,
+  endpoint,
   port,
   progressMessage,
   progressPercent,
@@ -67,7 +79,7 @@ export function GatewaySelfRescuePanel({
 
   useEffect(() => {
     let active = true;
-    const diagnostic = doctorFixError || error || progressMessage;
+    const diagnostic = doctorFixError || error;
     if (!diagnostic) {
       setRecommendation(null);
       return () => { active = false; };
@@ -80,6 +92,13 @@ export function GatewaySelfRescuePanel({
 
   const doctorFixBusy = doctorFixState === 'running' || globalRepairing;
   const actionDisabled = busy || doctorFixBusy;
+  const recoveryError = doctorFixError || error || null;
+  const presentation = projectGatewaySelfRescuePresentation({
+    connected,
+    busy,
+    error: recoveryError,
+  });
+  const endpointLabel = gatewayEndpointDisplay(endpoint);
   const statusLabel = busy
     ? t('gatewaySelfRescue.statusBusy', '处理中')
     : connected
@@ -91,7 +110,7 @@ export function GatewaySelfRescuePanel({
       ? t('gatewaySelfRescue.doctorFixSuccess', '修复完成')
       : doctorFixState === 'failed'
         ? t('gatewaySelfRescue.doctorFixFailed', '修复失败')
-        : t('gatewaySelfRescue.doctorFix', '自动修复');
+        : t('gatewaySelfRescue.doctorFix', '运行官方修复');
 
   const runDoctorFix = async () => {
     if (actionDisabled) return;
@@ -130,6 +149,8 @@ export function GatewaySelfRescuePanel({
     }
   };
 
+  const showReconnect = Boolean(onReconnect) && presentation.showRecoveryActions;
+
   return (
     <div className={clsx(
       'overflow-hidden rounded-xl border border-aegis-border bg-aegis-bg-primary/80',
@@ -141,10 +162,14 @@ export function GatewaySelfRescuePanel({
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-bold text-aegis-text">
               <ShieldCheck size={15} className="text-aegis-primary" />
-              <span>{t('gatewaySelfRescue.title', 'Gateway 自救中心')}</span>
+              <span>{presentation.mode === 'healthy'
+                ? t('gatewaySelfRescue.titleHealthy', 'Gateway 控制')
+                : t('gatewaySelfRescue.title', 'Gateway 自救中心')}</span>
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-aegis-text-muted">
-              {t('gatewaySelfRescue.subtitle', '统一处理 Gateway 重连、官方修复和 AI 诊断。')}
+              {presentation.mode === 'healthy'
+                ? t('gatewaySelfRescue.subtitleHealthy', 'Gateway 当前可用。你可以按需重启或查看运行日志。')
+                : t('gatewaySelfRescue.subtitle', '统一处理 Gateway 重连、官方修复和 AI 诊断。')}
             </p>
           </div>
           <span className={clsx(
@@ -158,27 +183,33 @@ export function GatewaySelfRescuePanel({
         </div>
 
         <div className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1.5 text-[11px]">
-          {port != null && (
+          {endpointLabel && (
+            <>
+              <span className="text-aegis-text-muted">{t('gatewaySelfRescue.endpoint', '地址')}</span>
+              <span className="break-all font-mono text-aegis-text">{endpointLabel}</span>
+            </>
+          )}
+          {!endpointLabel && port != null && (
             <>
               <span className="text-aegis-text-muted">{t('gatewaySelfRescue.port', '端口')}</span>
-              <span className="font-mono text-aegis-text">127.0.0.1:{port}</span>
+              <span className="font-mono text-aegis-text">{port}</span>
             </>
           )}
           <span className="text-aegis-text-muted">{t('gatewaySelfRescue.status', '状态')}</span>
-          <span className={clsx(connected && !busy ? 'text-aegis-success' : busy ? 'text-aegis-warning' : 'text-red-300')}>
+          <span className={clsx(connected && !busy ? 'text-aegis-success' : busy ? 'text-aegis-warning' : 'text-aegis-danger')}>
             {statusLabel}
           </span>
-          {progressMessage && (
+          {presentation.showProgress && progressMessage && (
             <>
               <span className="text-aegis-text-muted">{t('gatewaySelfRescue.progress', '进度')}</span>
-              <span className="min-w-0 truncate text-aegis-warning" title={progressMessage}>
+              <span className="min-w-0 break-words text-aegis-warning">
                 {progressMessage}
               </span>
             </>
           )}
         </div>
 
-        {busy && (
+        {presentation.showProgress && (
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
             <div
               className="h-full rounded-full bg-aegis-warning transition-all duration-300"
@@ -189,7 +220,7 @@ export function GatewaySelfRescuePanel({
       </div>
 
       <div className="space-y-2 px-3.5 py-3">
-        {recommendation && (
+        {presentation.showRecoveryActions && recommendation && (
           <div className="flex items-center justify-between rounded-lg border border-aegis-border/60 bg-white/[0.02] px-3 py-2 text-[10.5px]">
             <span className="text-aegis-text-muted">{t('gatewaySelfRescue.recommendation', '建议操作')}</span>
             <span className="font-semibold text-aegis-warning">
@@ -201,12 +232,12 @@ export function GatewaySelfRescuePanel({
             </span>
           </div>
         )}
-        {doctorFixError && (
+        {recoveryError && (
           <div
             role="alert"
             className="rounded-lg border border-aegis-danger/25 bg-aegis-danger/[0.07] px-3 py-2 text-[10.5px] leading-relaxed text-red-300 whitespace-pre-wrap"
           >
-            {doctorFixError}
+            {recoveryError}
           </div>
         )}
         <button
@@ -224,8 +255,8 @@ export function GatewaySelfRescuePanel({
         </button>
 
         {(onReconnect || onOpenLogs) && (
-          <div className="grid grid-cols-2 gap-2">
-            {onReconnect && (
+          <div className={clsx('grid gap-2', showReconnect && onOpenLogs ? 'grid-cols-2' : 'grid-cols-1')}>
+            {showReconnect && (
               <button
                 onClick={onReconnect}
                 disabled={actionDisabled}
@@ -247,36 +278,32 @@ export function GatewaySelfRescuePanel({
           </div>
         )}
 
-        <button
-          onClick={() => void runDoctorFix()}
-          disabled={actionDisabled}
-          title={t('gatewaySelfRescue.doctorFixHint', '运行 openclaw update repair，修复 OpenClaw 环境、配置和插件状态。')}
-          className={clsx(
-            'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors',
-            doctorFixState === 'success' && 'border-aegis-success/30 bg-aegis-success/10 text-aegis-success',
-            doctorFixState === 'failed' && 'border-aegis-danger/30 bg-aegis-danger/10 text-aegis-danger',
-            doctorFixState === 'idle' && !busy && 'border-aegis-border bg-white/[0.03] text-aegis-text-secondary hover:border-aegis-warning/35 hover:bg-aegis-warning/8 hover:text-aegis-warning',
-            actionDisabled && doctorFixState !== 'success' && doctorFixState !== 'failed' && 'cursor-not-allowed border-aegis-border bg-white/[0.02] text-aegis-text-muted',
-          )}
-        >
-          {doctorFixState === 'success' ? (
-            <CheckCircle2 size={13} />
-          ) : doctorFixState === 'failed' ? (
-            <AlertCircle size={13} />
-          ) : (
-            <HeartPulse size={13} className={doctorFixBusy ? 'animate-pulse' : ''} />
-          )}
-          {doctorFixLabel}
-        </button>
-
-        <GatewayAiDiagnosticDisclosure
-          error={doctorFixError || error || progressMessage || t('gatewaySelfRescue.defaultAiContext', 'Gateway 需要诊断。')}
-          logs={logs}
-        />
-
-        <div className="rounded-lg border border-aegis-border/60 bg-white/[0.02] px-3 py-2 text-[10.5px] leading-relaxed text-aegis-text-muted">
-          {t('gatewaySelfRescue.hint', '先重连/重启；仍失败再运行自动修复；配置或日志不明朗时使用 AI 诊断。')}
-        </div>
+        {presentation.showRecoveryActions && (
+          <>
+            <button
+              onClick={() => void runDoctorFix()}
+              disabled={actionDisabled}
+              title={t('gatewaySelfRescue.doctorFixHint', '运行 openclaw doctor --fix，修复 OpenClaw 环境、配置和运行时问题。')}
+              className={clsx(
+                'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors',
+                doctorFixState === 'success' && 'border-aegis-success/30 bg-aegis-success/10 text-aegis-success',
+                doctorFixState === 'failed' && 'border-aegis-danger/30 bg-aegis-danger/10 text-aegis-danger',
+                doctorFixState === 'idle' && !busy && 'border-aegis-border bg-white/[0.03] text-aegis-text-secondary hover:border-aegis-warning/35 hover:bg-aegis-warning/8 hover:text-aegis-warning',
+                actionDisabled && doctorFixState !== 'success' && doctorFixState !== 'failed' && 'cursor-not-allowed border-aegis-border bg-white/[0.02] text-aegis-text-muted',
+              )}
+            >
+              {doctorFixState === 'success' ? <CheckCircle2 size={13} /> : doctorFixState === 'failed' ? <AlertCircle size={13} /> : <HeartPulse size={13} className={doctorFixBusy ? 'animate-pulse' : ''} />}
+              {doctorFixLabel}
+            </button>
+            <GatewayAiDiagnosticDisclosure
+              error={recoveryError || t('gatewaySelfRescue.defaultAiContext', 'Gateway 需要诊断。')}
+              logs={logs}
+            />
+            <div className="rounded-lg border border-aegis-border/60 bg-white/[0.02] px-3 py-2 text-[10.5px] leading-relaxed text-aegis-text-muted">
+              {t('gatewaySelfRescue.hint', '先重连/重启；仍失败再运行官方修复；配置或日志不明朗时使用 AI 诊断。')}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

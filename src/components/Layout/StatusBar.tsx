@@ -139,8 +139,7 @@ export function StatusBar() {
   const gatewayPanelTitle = connected
     ? t('statusBar.gatewayPanelRestartHint', '重启会重新拉起本地 Gateway，并刷新模型、会话和运行时状态。')
     : t('statusBar.gatewayPanelReconnectHint', '重新连接会先检测本地 Gateway，必要时自动启动或重启。');
-  const gatewayPanelMessage = gatewayMsg
-    || (reconnectBusy ? t('statusBar.gatewayBusy', '处理中') : gatewayPanelTitle);
+  const gatewayPanelError = gatewayProgress?.status === 'failed' ? gatewayMsg ?? undefined : undefined;
 
   const isDarkish = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
   const themeLabel = t(`theme.${resolvedTheme.replace('aegis-', '')}`, resolvedTheme.replace('aegis-', ''));
@@ -207,13 +206,14 @@ export function StatusBar() {
             variant="popover"
             connected={connected}
             busy={reconnectBusy}
+            endpoint={gatewayUrl}
             port={port}
-            progressMessage={gatewayPanelMessage}
+            progressMessage={gatewayProgressActive ? gatewayMsg : null}
             progressPercent={reconnectPct ?? (isBooting ? bootPct : null)}
             primaryActionLabel={gatewayActionLabel}
             onPrimaryAction={() => void handleRestart()}
             onOpenLogs={() => { window.location.hash = '#/logs'; }}
-            error={gatewayPanelMessage}
+            error={gatewayPanelError}
           />
         </div>,
         document.body,
