@@ -78,6 +78,7 @@ docs/
 - [协作系统设计](collaboration/openclaw-agent-collaboration-design.md)
 - [协作系统审计](collaboration/openclaw-agent-collaboration-audit.md)
 - [协作实施计划](collaboration/openclaw-agent-collaboration-implementation-plan.md)
+- [本机 System Service 协作启用归属修复验证](collaboration/local-system-service-collaboration-enablement-validation-2026-07-31.md)
 - [发布证据审计](collaboration/openclaw-collaboration-release-evidence-audit.md)
 - [Workflow Template 与 Run 边界 ADR](adr/0001-workflow-template-and-run-boundary.md)
 

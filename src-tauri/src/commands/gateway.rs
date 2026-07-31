@@ -3086,9 +3086,24 @@ async fn start_gateway_locked_with_policy(
                     .into(),
             );
         }
+        // JunQi can attach after an already-running official service. The
+        // authenticated endpoint proves the selected config, while this
+        // independent service inspection restores the durable lifecycle owner
+        // instead of misclassifying it as External.
+        let selected_service_running = if managed_pid.is_none()
+            && !matches!(recorded_mode, GatewayRuntimeMode::SystemService)
+        {
+            crate::commands::gateway_service::inspect_selected_native_gateway_service()
+                .await
+                .is_ok_and(crate::commands::gateway_service::is_running_selected_service)
+        } else {
+            false
+        };
         let reused_mode = if managed_pid.is_some() {
             GatewayRuntimeMode::ManagedChild
-        } else if matches!(recorded_mode, GatewayRuntimeMode::SystemService) {
+        } else if matches!(recorded_mode, GatewayRuntimeMode::SystemService)
+            || selected_service_running
+        {
             GatewayRuntimeMode::SystemService
         } else {
             GatewayRuntimeMode::External
@@ -3970,7 +3985,7 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
     };
 
     // If a real restart is in progress, report running=true so the frontend
-    // status poller does NOT see a down→up flap and trigger a competing
+    // status poller does NOT see a down-to-up flap and trigger a competing
     // start_gateway. The restart command owns the lifecycle right now.
     if state.runtime_snapshot()?.restarting {
         let token = read_gateway_token(&config_path);
