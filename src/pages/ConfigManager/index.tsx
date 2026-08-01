@@ -12,6 +12,7 @@ import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { getTemplateById } from './providerTemplates';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
+import { gateway } from '@/services/gateway';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import {
   summarizeOfficialProviderProbe,
@@ -34,6 +35,7 @@ import { readConfigNavigationIntent, type ConfigTab } from './configNavigation';
 import { migrateLegacyChannelBindings } from '@/services/channelConfig';
 import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
 import { smartMerge } from './configMerge';
+import { diffConfigPaths, planConfigReload } from '@/services/gateway/configReloadPlan';
 
 type Tab = ConfigTab;
 
@@ -192,7 +194,28 @@ export function ConfigManagerPage() {
       const chatStore = (await import('@/stores/chatStore')).useChatStore;
       chatStore.setState({ modelsLoading: true });
 
-      // Restart gateway after successful save
+      // Only restart when OpenClaw says this change needs it. reloadKind is
+      // per-path and only available from config.schema.lookup; an unknown or
+      // unavailable answer degrades to restart rather than skipping it.
+      const changedPaths = diffConfigPaths(originalConfig ?? {}, normalizedSavedConfig);
+      const reloadPlan = await planConfigReload(
+        changedPaths,
+        (path) => gateway.callPrivileged('config.schema.lookup', { path }),
+      );
+      if (reloadPlan.fallbackReason) {
+        debugWarn('app', '[Config] Reload semantics unavailable, restarting:', reloadPlan.fallbackReason);
+      }
+      debugLog('app', '[Config] Reload plan:', reloadPlan.kind, reloadPlan.decidingPaths);
+
+      if (reloadPlan.kind !== 'restart') {
+        // `hot` is applied by the Gateway itself; `none` needs nothing at all.
+        setError('');
+        setSaveSuccess(true);
+        window.dispatchEvent(new Event('aegis:config-saved'));
+        chatStore.setState({ modelsLoading: false });
+        return true;
+      }
+
       try {
         const restartResult = await gatewayLifecycle.restart('config-manager');
         if (restartResult.success) {

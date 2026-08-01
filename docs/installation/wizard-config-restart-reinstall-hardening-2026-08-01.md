@@ -63,9 +63,9 @@
 
 **验证**：Rust 侧新增用例断言 `install_openclaw_impl` 在 `ReinstallExisting` 与 `Relocate` 模式下先经过停止路径；前端断言重装编排包含停止步骤且停止失败会中止。Windows 真机需人工验收。
 
-### HA-02 · 每次保存配置都无条件重启 Gateway
+### HA-02 · 每次保存配置都无条件重启 Gateway（已修复）
 
-风险等级：高。这是最频繁触发的可用性损失。
+风险等级：高。状态：2026-08-02 已修复。
 
 **证据**：`src/pages/ConfigManager/index.tsx:195-200` 在保存成功后直接调用 `gatewayLifecycle.restart('config-manager')`，没有任何基于改动路径的判断。全仓检索 `reloadKind` 与 `config.schema.lookup` 命中为 0。
 
@@ -81,7 +81,28 @@
 
 **失败关闭**：`config.schema.lookup` 不可用或返回未知路径时，回落到「重启」这一保守行为，并记录回落原因。不得因为查不到重载语义就假定可以热加载。
 
-**验证**：单元测试覆盖三种聚合结果与回落分支；对照真实 Gateway 抓取若干典型路径（`gateway.port`、`agents.defaults.model`、`channels.*`）的实际 `reloadKind` 并记录。
+**实测证据**：已连接本机运行中的 OpenClaw `2026.7.1-2` Gateway，用 `openclaw gateway call config.schema.lookup` 采样十条代表性路径：
+
+| 配置路径 | reloadKind |
+| --- | --- |
+| `gateway.port` | `restart` |
+| `gateway.auth` | `restart` |
+| `gateway.bind` | `restart` |
+| `channels.telegram.botToken` | `restart` |
+| `agents.defaults.model` | `hot` |
+| `models.providers` | `hot` |
+| `agents.defaults.workspace` | `none` |
+| `session.dmScope` | `none` |
+| `tools.experimental.planTool` | `none` |
+| `skills.install.nodeManager` | `none` |
+
+**十条中有六条不需要重启**。改模型、改工作区、开关计划工具、改 DM 作用域、改包管理器、改 provider 目录，此前一律触发整体重启并中断全部进行中的会话。
+
+另有一项独立结论：`openclaw config schema` 的完整输出（2.5 MB）中 `reloadKind` 出现 **0 次**。该字段不在静态 schema 内，只能由 RPC 按路径实时计算，因此无法预先打包或缓存成表。
+
+**修复**：新增 `src/services/gateway/configReloadPlan.ts`。`diffConfigPaths` 产出本次实际变更的点分路径（数组整体比较，因为重载规划器按配置路径而非数组元素身份作答），`planConfigReload` 逐路径查询并取最强要求。配置页据此决定：`restart` 才重启，`hot` 与 `none` 直接完成保存。
+
+**验证**：新增 9 项测试，把上表实测值固化为夹具；覆盖强度聚合、整棵子树增删的叶子路径展开，以及三类回落分支（查询抛错、缺 `reloadKind`、取值不可识别）均降级为 `restart`。
 
 ### HA-03 · 重启后不重新验证 Gateway 身份（已修复）
 
@@ -137,8 +158,8 @@
 
 1. ~~**HA-05**：判据对齐~~ 已完成。
 2. ~~**HA-03**：身份校验提升为所有重启来源共用~~ 已完成。
-3. **HA-01**：重装前停止服务。改动集中在安装编排，但涉及平台服务，需 Windows 真机验收。
-4. **HA-02**：接入 `reloadKind`。收益最大但需要先对真实 Gateway 采样确认各路径语义。
+3. ~~**HA-02**：接入 `reloadKind`~~ 已完成，实测证据见该条。
+4. **HA-01**：重装前停止服务。改动集中在安装编排，但涉及平台服务，需 Windows 真机验收。
 5. **HA-04**：先补测试固定语义边界，真机验收后再决定是否改行为。
 6. **HA-06**：独立立项。
 
@@ -150,7 +171,7 @@
 
 ## 未验证边界
 
-- 全部外部契约结论来自 OpenClaw `2026.7.1-2` 随包文档的静态阅读。未连接真实 Gateway 调用过 `config.schema.lookup`、`update.run` 或 `wizard.*`，因此 `reloadKind` 在各具体路径上的实际取值均未取样。
+- HA-02 的 `reloadKind` 已对本机运行中的 Gateway 实测采样十条路径。其余外部契约结论（`update.run`、`wizard.*` 的返回结构）仍来自随包文档的静态阅读，未实际调用。采样只覆盖十条路径，不代表全部配置项。
 - 安装包 `src/` 仅含 `agents/`，运行时为打包产物，`packages/gateway-protocol` schema 不可读，故 `reloadKind` 的完整枚举与 `update.run` 的返回结构未从源码确认。
 - HA-01 描述的 Windows 文件锁定行为为平台通例推断，未在 Windows 真机复现重装竞态。
 - 未执行 `pnpm tauri build`，未在打包安装包上验证任何一条链路。
