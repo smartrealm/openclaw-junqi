@@ -16,7 +16,7 @@ import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
-import { coalesceSessionsByKey, createAgentSessionKey, isAgentMainSession } from '@/utils/sessionLifecycle';
+import { coalesceSessionsByKey, createAgentSessionKey, isAgentMainSession, resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPersona';
 import type { SkillPersona } from '@/types/skills';
@@ -342,6 +342,7 @@ function NewSessionPicker({
   setNewSessions,
   messagesPerSession,
   agents,
+  activeSessionKey,
   initialPersona,
   defaultPersonaFor,
   onClearPersona,
@@ -360,6 +361,8 @@ function NewSessionPicker({
   setNewSessions: React.Dispatch<React.SetStateAction<Session[]>>;
   messagesPerSession: Record<string, Array<{ role: string; content: string }>>;
   agents: AgentInfo[];
+  /** The session the user is looking at; seeds which agent a new session starts on. */
+  activeSessionKey: string;
   /** Persona carried in from a SkillsPage skill click. Wins over agent default. */
   initialPersona?: SkillPersona | null;
   /** Resolves the default persona for a given agent (read from localStorage). */
@@ -382,8 +385,20 @@ function NewSessionPicker({
       : hasMain
         ? agents
         : [{ id: 'main', name: mainDisplayName }, ...agents];
-  const [selectedAgentId, setSelectedAgentId] = useState(agentList[0]?.id ?? 'main');
+  // Seeded from the session in view rather than from list order: `agents` is a
+  // gateway-ordered list, so `agentList[0]` picked an arbitrary agent whenever
+  // the list had already loaded, and stayed stuck on the mount-time value
+  // because nothing re-synced it once the list arrived.
+  const seedAgentId = resolveNewSessionAgentId(activeSessionKey, agentList.map((a) => a.id));
+  const [selectedAgentId, setSelectedAgentId] = useState(seedAgentId);
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    // Re-seed on each open so a picker mounted before `agents.list` returned,
+    // or opened from a different session, still starts on the right agent.
+    if (open && !wasOpenRef.current) setSelectedAgentId(seedAgentId);
+    wasOpenRef.current = open;
+  }, [open, seedAgentId]);
   const agentDropdownRef = useRef<HTMLDivElement>(null);
   // User explicitly cleared the chip; resets when the picker is reopened or
   // when the agent changes, so a fresh default / new persona can re-appear.
@@ -1416,6 +1431,7 @@ export function ChatTabs() {
           setNewSessions={setNewSessions}
           messagesPerSession={messagesPerSession}
           agents={agents}
+          activeSessionKey={activeSessionKey}
           initialPersona={pendingPersona}
           defaultPersonaFor={getAgentDefaultPersona}
           onClearPersona={() => setPendingPersona(null)}

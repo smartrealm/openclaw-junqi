@@ -1253,6 +1253,7 @@
     "tabUnreadCount": "{{count}} unread replies",
     "nextSession": "Next session",
     "newSession": "New session",
+    "newSessionLabel": "New chat",
     "fullMessageUnavailable": "Full message unavailable",
     "sendFailed": "Send failed",
     "context": "Context",

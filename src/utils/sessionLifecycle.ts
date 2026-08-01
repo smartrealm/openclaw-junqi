@@ -190,6 +190,27 @@ export function createAgentSessionKey(agentId: string): string {
   return `agent:${normalizedAgentId}:desktop-${Date.now().toString(36)}-${randomKeySuffix()}`;
 }
 
+export const FALLBACK_NEW_SESSION_AGENT_ID = 'main';
+
+/**
+ * Which agent a new session should start on.
+ *
+ * There is no global "selected agent" anywhere in the app, so the only honest
+ * context is the session the user is currently looking at. Falls back to the
+ * main agent when that cannot be resolved, and never returns an agent the
+ * gateway did not report - a stale key must not create a session on an agent
+ * that no longer exists.
+ */
+export function resolveNewSessionAgentId(
+  activeSessionKey: string | null | undefined,
+  availableAgentIds: readonly string[] = [],
+): string {
+  const known = new Set(availableAgentIds.filter((id) => typeof id === 'string' && id.length > 0));
+  const active = /^agent:([^:]+):/i.exec(normalizeSessionKey(String(activeSessionKey ?? '')))?.[1];
+  if (active && (known.size === 0 || known.has(active))) return active;
+  return FALLBACK_NEW_SESSION_AGENT_ID;
+}
+
 export function __resetSessionLifecycleForTest(): void {
   deletedSessionIdentities.clear();
   fallbackKeySequence = 0;

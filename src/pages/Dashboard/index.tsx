@@ -18,6 +18,7 @@ import { SceneTransition } from '@/components/shared/SceneTransition';
 import { DashboardIcon } from '@/components/shared/DashboardIcon';
 import { Sparkline } from '@/components/shared/Sparkline';
 import { useChatStore, type Session } from '@/stores/chatStore';
+import { resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
 import { useAppStore } from '@/stores/app-store';
 import { useGatewayDataStore, refreshAll, ensureGroupFresh } from '@/stores/gatewayDataStore';
 import { sessionActivityTime, sortSessionsByActivity } from '@/components/Layout/sidebarUtils';
@@ -864,7 +865,13 @@ export function DashboardPage() {
             {isFeatureEnabled('chat') && (
               <QuickAction icon={MessageSquarePlus} label={t('chat.newSession', 'New session')}
                 glowColor={themeColorVar('primary', 0.08)} bgColor={themeColorVar('primary', 0.1)} iconColor={themeColorVar('primary')}
-                onClick={() => navigate('/chat?agent=main&new=1')} />
+                onClick={() => navigate(
+                  // Was hard-coded to main, which silently disagreed with the
+                  // chat tab picker for anyone working on another agent.
+                  `/chat?agent=${encodeURIComponent(
+                    resolveNewSessionAgentId(activeSessionKey, agents.map((a: any) => a?.id)),
+                  )}&new=1`,
+                )} />
             )}
             {isFeatureEnabled('agents') && (
               <QuickAction icon={Bot} label={t('nav.agents', 'Agents')}

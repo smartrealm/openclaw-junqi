@@ -9,6 +9,7 @@
  * real session record.
  */
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useChatStore, type Session } from '@/stores/chatStore';
 import { createAgentSessionKey } from '@/utils/sessionLifecycle';
@@ -19,6 +20,7 @@ export function makeAgentSessionKey(agentId: string): string {
 }
 
 export function useAgentScopedSession(): void {
+  const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const agentId = params.get('agent');
@@ -33,7 +35,7 @@ export function useAgentScopedSession(): void {
     const newKey = makeAgentSessionKey(agentId);
     const placeholder: Session = {
       key: newKey,
-      label: '新会话',
+      label: t('chat.newSessionLabel'),
       agentId,
       createdAt: Date.now(),
     };

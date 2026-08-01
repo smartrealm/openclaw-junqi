@@ -58,7 +58,11 @@ test('activity rows expose session, model, tokens, and exact activity time', () 
 });
 
 test('quick actions expose real product routes in addition to compaction', () => {
-  assert.match(dashboard, /navigate\('\/chat\?agent=main&new=1'\)/);
+  // The chat shortcut used to hard-code `agent=main`, disagreeing with the chat
+  // tab picker. Assert the route shape and the shared resolver, not one agent.
+  assert.match(dashboard, /\/chat\?agent=\$\{encodeURIComponent\(/);
+  assert.match(dashboard, /&new=1/);
+  assert.match(dashboard, /resolveNewSessionAgentId\(activeSessionKey/);
   assert.match(dashboard, /navigate\('\/agents'\)/);
   assert.match(dashboard, /navigate\('\/analytics'\)/);
   assert.match(dashboard, /navigate\('\/skills'\)/);
