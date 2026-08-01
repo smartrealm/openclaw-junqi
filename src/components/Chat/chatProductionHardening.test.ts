@@ -144,6 +144,19 @@ test('CHAT-07 persona never calls unsupported sessions.patch systemPrompt', () =
   assert.match(tabs, /applyPersonaToSessionDraft/);
 });
 
+test('agent status cards are available to every canonical Agent session', () => {
+  const tabs = source('src/components/Chat/ChatTabs.tsx');
+  const tooltip = tabs.slice(
+    tabs.indexOf('function AgentStatusTooltip'),
+    tabs.indexOf('// ═══════════════════════════════════════════════════════════\n// New Session Picker'),
+  );
+  assert.match(tabs, /data-agent-status-tab=\{isMainSession \? key : undefined\}/);
+  assert.match(tabs, /onMouseEnter=\{isMainSession \?/);
+  assert.match(tabs, /resolveAgentStatusSnapshot\(\{/);
+  assert.doesNotMatch(tooltip, /agent:main:main/);
+  assert.doesNotMatch(tooltip, /useGatewayDataStore/);
+});
+
 test('CHAT-08 Gateway sends user-authored text without private context injection', () => {
   const gateway = source('src/services/gateway/index.ts');
   assert.doesNotMatch(gateway, /injectDesktopContext|OPENCLAW_DESKTOP_CONTEXT|finalMessage/);

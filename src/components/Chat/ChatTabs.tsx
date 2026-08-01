@@ -22,6 +22,7 @@ import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPer
 import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
 import { applyPersonaToSessionDraft } from '@/utils/personaDraft';
+import { resolveAgentStatusSnapshot } from './agentStatus';
 import { useOptionalCollaborationChat } from './CollaborationChatProvider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -206,14 +207,15 @@ function sessionLabel(
 }
 
 // ═══════════════════════════════════════════════════════════
-// Agent Status Tooltip — hover card on main agent tab
+// Agent Status Tooltip — hover card on every agent's canonical session tab
 // ═══════════════════════════════════════════════════════════
 
-function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thinkingLevel }: {
+function AgentStatusTooltip({ visible, tokenUsage, connected, agentName, session, thinkingLevel }: {
   visible: boolean;
-  tokenUsage: any;
+  tokenUsage: ReturnType<typeof resolveAgentStatusSnapshot>['tokenUsage'];
   connected: boolean;
-  mainAgentName: string;
+  agentName: string;
+  session: Session;
   thinkingLevel: string | null;
 }) {
   const { t } = useTranslation();
@@ -223,24 +225,19 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
   const thinkingFallback = thinkingId.charAt(0).toUpperCase() + thinkingId.slice(1);
   const thinkingLabel = t(`titlebar.thinking.levels.${thinkingId}`, thinkingFallback);
 
-  const gatewaySessions = useGatewayDataStore((s) => s.sessions);
-  const mainSession = gatewaySessions.find((s) =>
-    (s.key || '').includes('agent:main:main')
-  );
-
   const contextTokens = tokenUsage?.contextTokens || 0;
-  const maxTokens = tokenUsage?.maxTokens || 200000;
+  const maxTokens = tokenUsage?.maxTokens || 0;
   const usagePct = maxTokens > 0 ? Math.round((contextTokens / maxTokens) * 100) : 0;
   const compactions = tokenUsage?.compactions || 0;
 
-  const model = mainSession?.model || '';
+  const model = session.model || '';
   const modelShort = model ? model.split('/').pop()! : '—';
 
-  const sessionStart = mainSession?.createdAt || mainSession?.updatedAt;
+  const sessionStart = session.createdAt || session.updatedAt;
   const sessionAge = sessionStart ? formatDuration(Date.now() - new Date(sessionStart).getTime()) : '—';
 
-  const compactAt = Math.round(maxTokens * 0.8);
-  const compactPct = maxTokens > 0 ? Math.round((contextTokens / compactAt) * 100) : 0;
+  const compactAt = maxTokens > 0 ? Math.round(maxTokens * 0.8) : null;
+  const compactPct = compactAt && compactAt > 0 ? Math.round((contextTokens / compactAt) * 100) : 0;
 
   const usageColor = usagePct > 70 ? themeHex('danger') : usagePct > 40 ? themeHex('warning') : themeHex('primary');
 
@@ -254,10 +251,10 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
           {/* Header */}
           <div className="flex items-center gap-3 p-4 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-aegis-primary/20 to-aegis-primary/5 border border-aegis-primary/25 flex items-center justify-center text-lg font-bold text-aegis-primary">
-              {mainAgentName.charAt(0)}
+              {agentName.charAt(0)}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-bold text-aegis-primary">{mainAgentName}</div>
+              <div className="text-sm font-bold text-aegis-primary">{agentName}</div>
               <div className="text-[9px] text-aegis-text-dim font-mono">{modelShort}</div>
             </div>
             <div className={clsx(
@@ -289,7 +286,7 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
                 <Zap size={10} /> {t('chat.contextUsage')}
               </span>
               <span className="text-[10px] font-semibold font-mono" style={{ color: usageColor }}>
-                {formatTokens(contextTokens)} / {formatTokens(maxTokens)}
+                {maxTokens > 0 ? `${formatTokens(contextTokens)} / ${formatTokens(maxTokens)}` : '—'}
               </span>
             </div>
             <div className="w-full h-[5px] rounded-full bg-[rgb(var(--aegis-overlay)/0.04)] overflow-hidden">
@@ -306,7 +303,7 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
               <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.tab.compact}</span>
               <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.compactsAt')}</span>
               <span className={clsx('text-[10px] font-bold font-mono', compactPct > 80 ? 'text-aegis-danger' : compactPct > 50 ? 'text-aegis-warning' : 'text-aegis-primary')}>
-                ~{formatTokens(compactAt)}
+                {compactAt === null ? '—' : `~${formatTokens(compactAt)}`}
               </span>
             </div>
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
@@ -845,6 +842,7 @@ export function ChatTabs() {
     connecting,
     tokenUsage,
     currentThinking,
+    sessionDefaults,
   } = useChatStore();
 
   // ── Drag-to-reorder sensors ──
@@ -984,43 +982,48 @@ export function ChatTabs() {
   const agents = useGatewayDataStore((s) => s.agents);
   const mainAgentName = agents.find((a) => a.id === 'main')?.name || t('agents.mainAgent');
 
-  // ── Tooltip (hover on main tab). Rendered in portal so it is not clipped by tab bar overflow-x-auto. ──
-  const [showTooltip, setShowTooltip] = useState(false);
-  const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number } | null>(null);
+  // ── Tooltip (hover on any agent's canonical session tab). Rendered in a
+  // portal so the tab strip cannot clip it. ──
+  const [tooltipTarget, setTooltipTarget] = useState<{ key: string; left: number; top: number } | null>(null);
   const tooltipTimeout = useRef<ReturnType<typeof setTimeout>>();
-  const mainTabRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const updateTooltipPosition = useCallback(() => {
-    if (!mainTabRef.current) return;
-    const rect = mainTabRef.current.getBoundingClientRect();
-    setTooltipPosition({ left: rect.left, top: rect.bottom + 8 });
+    setTooltipTarget((current) => {
+      if (!current) return null;
+      const element = Array.from(
+        scrollContainerRef.current?.querySelectorAll<HTMLElement>('[data-agent-status-tab]') ?? [],
+      ).find((candidate) => candidate.dataset.agentStatusTab === current.key);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return { key: current.key, left: rect.left, top: rect.bottom + 8 };
+    });
   }, []);
 
   useEffect(() => {
-    if (!showTooltip) {
-      setTooltipPosition(null);
-      return;
-    }
+    if (!tooltipTarget) return;
     updateTooltipPosition();
     const el = scrollContainerRef.current;
     if (el) {
       el.addEventListener('scroll', updateTooltipPosition);
       return () => el.removeEventListener('scroll', updateTooltipPosition);
     }
-  }, [showTooltip, updateTooltipPosition]);
+  }, [tooltipTarget, updateTooltipPosition]);
 
   useEffect(() => {
     const activeEl = scrollContainerRef.current?.querySelector<HTMLElement>('[data-active-session-tab="true"]');
     activeEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
   }, [activeSessionKey, openTabs]);
 
-  const handleMainTabEnter = useCallback(() => {
-    tooltipTimeout.current = setTimeout(() => setShowTooltip(true), 400);
+  const handleAgentStatusTabEnter = useCallback((key: string, target: HTMLDivElement) => {
+    const rect = target.getBoundingClientRect();
+    tooltipTimeout.current = setTimeout(() => {
+      setTooltipTarget({ key, left: rect.left, top: rect.bottom + 8 });
+    }, 400);
   }, []);
-  const handleMainTabLeave = useCallback(() => {
+  const handleAgentStatusTabLeave = useCallback(() => {
     if (tooltipTimeout.current) clearTimeout(tooltipTimeout.current);
-    setShowTooltip(false);
+    setTooltipTarget(null);
   }, []);
 
   // ── Status ──
@@ -1178,9 +1181,9 @@ export function ChatTabs() {
 	              key={key}
 	              className="group/tab relative shrink-0"
                   data-active-session-tab={isActive ? 'true' : undefined}
-	              ref={isMain ? mainTabRef : undefined}
-	              onMouseEnter={isMain ? handleMainTabEnter : undefined}
-              onMouseLeave={isMain ? handleMainTabLeave : undefined}
+	              data-agent-status-tab={isMainSession ? key : undefined}
+	              onMouseEnter={isMainSession ? (event) => handleAgentStatusTabEnter(key, event.currentTarget) : undefined}
+              onMouseLeave={isMainSession ? handleAgentStatusTabLeave : undefined}
               onContextMenu={(e) => handleTabContextMenu(e, key)}
             >
               {/* Tab button */}
@@ -1199,10 +1202,10 @@ export function ChatTabs() {
                     : 'text-aegis-text-dim border-transparent hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
                 )}
               >
-                {/* Tab icon: main session (agent:X:main) = Shield+dot; desktop session = FilePlus. Only main tab has tooltip. */}
+                {/* Canonical agent sessions share the same status affordance. */}
                 {isMainSession ? (
                   <>
-                    <div className={clsx('w-[6px] h-[6px] rounded-full shrink-0', statusDotClass)} title={isMain ? statusLabel : undefined} />
+                    <div className={clsx('w-[6px] h-[6px] rounded-full shrink-0', statusDotClass)} title={statusLabel} />
                     <Shield size={12} className={clsx('shrink-0', isActive ? 'text-aegis-primary' : 'text-aegis-text-dim')} />
                   </>
                 ) : (
@@ -1323,16 +1326,33 @@ export function ChatTabs() {
       )}
 
       {/* Tooltip rendered in portal so it is not clipped by overflow-x-auto */}
-      {showTooltip && tooltipPosition &&
+      {tooltipTarget &&
         createPortal(
-          <div style={{ position: 'fixed', left: tooltipPosition.left, top: tooltipPosition.top, zIndex: 9999 }}>
-            <AgentStatusTooltip
-              visible
-              tokenUsage={tokenUsage}
-              connected={connected}
-              mainAgentName={mainAgentName}
-              thinkingLevel={currentThinking}
-            />
+          <div style={{ position: 'fixed', left: tooltipTarget.left, top: tooltipTarget.top, zIndex: 9999 }}>
+            {(() => {
+              const session = sessions.find((candidate) => candidate.key === tooltipTarget.key);
+              if (!session) return null;
+              const { agentId } = parseSessionKey(session.key);
+              const agent = agents.find((candidate) => candidate.id === agentId);
+              const agentName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
+              const status = resolveAgentStatusSnapshot({
+                session,
+                activeSessionKey,
+                activeTokenUsage: tokenUsage,
+                activeThinkingLevel: currentThinking,
+                defaultContextTokens: sessionDefaults.contextTokens,
+              });
+              return (
+                <AgentStatusTooltip
+                  visible
+                  tokenUsage={status.tokenUsage}
+                  connected={connected}
+                  agentName={agentName}
+                  session={session}
+                  thinkingLevel={status.thinkingLevel}
+                />
+              );
+            })()}
           </div>,
           document.body,
         )}

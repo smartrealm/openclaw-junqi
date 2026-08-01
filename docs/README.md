@@ -91,6 +91,7 @@ docs/
 - [维护中心审计](quality/maintenance-center-audit.md)
 - [Dashboard 运行审计](quality/dashboard-operations-audit.md)
 - [Chat 生产加固审计](quality/chat-production-hardening-audit.md)
+- [会话 Agent 状态卡一致性记录](quality/chat-agent-status-tooltip-parity-2026-08-01.md)
 - [Chat 消息预览与 OpenClaw 对齐](quality/chat-message-preview-openclaw-parity-2026-07-30.md)
 - [Chat 响应追溯与人工审核](quality/chat-response-trace-and-human-review-2026-07-31.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界修复](quality/installation-dashboard-chat-provider-channel-runtime-boundary-remediation-2026-07-31.md)
