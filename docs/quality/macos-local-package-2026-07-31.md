@@ -83,3 +83,24 @@ APPLE_SIGNING_IDENTITY=- pnpm tauri build \
 - `codesign -dv` 显示 `Signature=adhoc`、`TeamIdentifier=not set`。
 
 本机制品未经过 Developer ID 签名、公证、stapling 或真实安装启动验收。GitHub 标签触发的 CI 发布由仓库工作流在其成功门禁后独立产生正式平台制品；不能将本机 DMG 视为该发布制品的替代品。
+
+## 1.5.4 本机重建
+
+日期：2026-08-01
+
+- 发布候选提交：`235ba08`。
+- 目标架构：`aarch64-apple-darwin`。
+- 应用版本：`1.5.4`。
+- 制品：`src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/JunQi Desktop_1.5.4_aarch64.dmg`。
+- SHA-256：`2d97222e83125e382b0baa36c42afb48ca6799531bf308a1a5f334ad3e8e3bf1`。
+- 使用 `src-tauri/tauri.no-updater-artifacts.conf.json` 禁用了需要私钥的 updater 制品，未改写正式发布配置。
+
+执行的校验：
+
+- `hdiutil verify` 通过。
+- 源 app 通过 `codesign --verify --deep --strict`。
+- `Info.plist` 版本为 `1.5.4`。
+- 可执行文件为 Mach-O `arm64`。
+- `codesign -dv` 显示 `Signature=adhoc`、`TeamIdentifier=not set`。
+
+本机制品未经过 Developer ID 签名、公证、stapling 或真实安装启动验收，不能替代 GitHub 发布工作流完成后产生的正式平台制品。
