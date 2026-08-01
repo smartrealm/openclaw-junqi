@@ -1,9 +1,9 @@
 # JunQi Desktop tagged release.
 #
 # The collaboration evidence workflow remains a stricter candidate pipeline.
-# This workflow preserves the established desktop distribution contract: a
-# version tag may publish only the exact, CI-approved commit already contained
-# in main, and every external action is pinned to a reviewed immutable SHA.
+# This workflow starts candidate installers for an immutable version tag. A
+# GitHub Release is published only after every installer and the matching main
+# CI run succeed. Every external action is pinned to a reviewed immutable SHA.
 
 name: Tagged Desktop Release
 
@@ -89,42 +89,6 @@ jobs:
             printf 'tag=%s\n' "$tag"
             printf 'version=%s\n' "$package_version"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Require successful CI for the exact tagged commit
-        timeout-minutes: 32
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          readonly deadline="$(( $(date +%s) + 1800 ))"
-          readonly api_path="/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?event=push&head_sha=${SOURCE_SHA}&per_page=100"
-
-          while true; do
-            response="$(gh api "$api_path")"
-            successful_url="$(jq -r --arg sha "$SOURCE_SHA" '
-              [.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status == "completed" and .conclusion == "success")]
-              | sort_by(.updated_at // .created_at // "") | last | .html_url // empty
-            ' <<<"$response")"
-            if [[ -n "$successful_url" ]]; then
-              echo "Verified CI for $SOURCE_SHA: $successful_url"
-              break
-            fi
-
-            failed_count="$(jq --arg sha "$SOURCE_SHA" '[.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status == "completed" and .conclusion != "success")] | length' <<<"$response")"
-            active_count="$(jq --arg sha "$SOURCE_SHA" '[.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status != "completed")] | length' <<<"$response")"
-            if [[ "$failed_count" -gt 0 && "$active_count" -eq 0 ]]; then
-              echo "::error::CI completed without success for tagged commit $SOURCE_SHA"
-              exit 1
-            fi
-            if [[ "$(date +%s)" -ge "$deadline" ]]; then
-              echo "::error::Timed out waiting for CI on tagged commit $SOURCE_SHA"
-              exit 1
-            fi
-            echo "Waiting for CI on $SOURCE_SHA; retrying in 15 seconds."
-            sleep 15
-          done
 
   build:
     name: Build ${{ matrix.name }}
@@ -213,6 +177,13 @@ jobs:
       - name: Fetch locked Rust dependencies
         run: node scripts/fetch-cargo-dependencies.mjs --target ${{ matrix.target }}
 
+      - name: Run native Windows Rust tests
+        if: runner.os == 'Windows'
+        working-directory: src-tauri
+        env:
+          CARGO_NET_OFFLINE: "true"
+        run: cargo test --locked --lib --target ${{ matrix.target }} --no-fail-fast
+
       - name: Build signed updater artifacts and installers
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
@@ -260,6 +231,42 @@ jobs:
         with:
           ref: ${{ needs.verify.outputs.source-sha }}
           persist-credentials: false
+
+      - name: Require successful CI for the exact tagged commit
+        timeout-minutes: 32
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.verify.outputs.source-sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          readonly deadline="$(( $(date +%s) + 1800 ))"
+          readonly api_path="/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?event=push&head_sha=${SOURCE_SHA}&per_page=100"
+
+          while true; do
+            response="$(gh api "$api_path")"
+            successful_url="$(jq -r --arg sha "$SOURCE_SHA" '
+              [.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status == "completed" and .conclusion == "success")]
+              | sort_by(.updated_at // .created_at // "") | last | .html_url // empty
+            ' <<<"$response")"
+            if [[ -n "$successful_url" ]]; then
+              echo "Verified CI for $SOURCE_SHA: $successful_url"
+              break
+            fi
+
+            failed_count="$(jq --arg sha "$SOURCE_SHA" '[.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status == "completed" and .conclusion != "success")] | length' <<<"$response")"
+            active_count="$(jq --arg sha "$SOURCE_SHA" '[.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status != "completed")] | length' <<<"$response")"
+            if [[ "$failed_count" -gt 0 && "$active_count" -eq 0 ]]; then
+              echo "::error::CI completed without success for tagged commit $SOURCE_SHA"
+              exit 1
+            fi
+            if [[ "$(date +%s)" -ge "$deadline" ]]; then
+              echo "::error::Timed out waiting for CI on tagged commit $SOURCE_SHA"
+              exit 1
+            fi
+            echo "Waiting for CI on $SOURCE_SHA; retrying in 15 seconds."
+            sleep 15
+          done
 
       - name: Setup Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -349,7 +356,7 @@ jobs:
             echo
             echo "| Stage | Result |"
             echo "|---|---|"
-            echo "| Four-platform build | $BUILD_RESULT |"
+            echo "| Five-target build | $BUILD_RESULT |"
             echo "| GitHub Release | $PUBLISH_RESULT |"
           } >> "$GITHUB_STEP_SUMMARY"
           [[ "$BUILD_RESULT" == success && "$PUBLISH_RESULT" == success ]]

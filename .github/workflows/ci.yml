@@ -1,17 +1,15 @@
 # ═══════════════════════════════════════════════════════════
 # JunQi Desktop — CI
 #
-# Runs on push to main/daxia and PRs targeting either integration branch. Five jobs:
+# Runs on push to main/daxia and PRs targeting either integration branch. Four jobs:
 #   1. rust        — cargo check + cargo test --lib (catches backend regressions)
 #   2. frontend    — pnpm install + actionlint + lint (catches type / style regressions)
 #   3. tests       — Desktop + collaboration plugin tests
 #   4. build       — Vite production build (catches bundler / asset regressions)
-#   5. windows     — native MSVC compile + Rust tests (catches Windows-only regressions)
 #
-# Linux jobs validate the shared code paths; Windows packaging belongs to the
-# signed tag workflow so a release does not build the same NSIS installer twice.
-# Direct daxia pushes skip the costly native Windows job; main and pull-request
-# validation still run it before a tagged release may proceed.
+# Linux jobs validate shared code paths. Windows-native Rust tests run inside
+# each tagged Windows installer build, where they validate the exact source and
+# target that produces the distributable package.
 # The single required check is the `ci` summary at the bottom.
 #
 # Cache strategy: pnpm via setup-node cache, cargo via Swatinemo cache with
@@ -191,66 +189,9 @@ jobs:
       - name: Vite production build
         run: pnpm build
 
-  windows:
-    name: Windows ${{ matrix.arch }} (compile + test)
-    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            target: x86_64-pc-windows-msvc
-          - arch: x86
-            target: i686-pc-windows-msvc
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          persist-credentials: false
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-        with:
-          version: 9.15.9
-
-      - name: Setup Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # pinned 1.96.0
-        with:
-          toolchain: 1.96.0
-          targets: ${{ matrix.target }}
-
-      - name: Cache cargo registry & build
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          workspaces: src-tauri -> target
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Fetch locked Rust dependencies
-        run: node scripts/fetch-cargo-dependencies.mjs --target ${{ matrix.target }}
-
-      - name: Compile all native targets
-        working-directory: src-tauri
-        env:
-          CARGO_NET_OFFLINE: "true"
-        run: cargo check --all-targets --target ${{ matrix.target }}
-
-      - name: Run native Windows Rust tests
-        working-directory: src-tauri
-        env:
-          CARGO_NET_OFFLINE: "true"
-        run: cargo test --lib --target ${{ matrix.target }} --no-fail-fast
-
   ci:
     name: ✅ CI Summary
-    needs: [rust, frontend, tests, build, windows]
+    needs: [rust, frontend, tests, build]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -259,14 +200,12 @@ jobs:
           if [ "${{ needs.rust.result }}" != "success" ] || \
              [ "${{ needs.frontend.result }}" != "success" ] || \
              [ "${{ needs.tests.result }}" != "success" ] || \
-             [ "${{ needs.build.result }}" != "success" ] || \
-             { [ "${{ needs.windows.result }}" != "success" ] && [ "${{ needs.windows.result }}" != "skipped" ]; }; then
+             [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::One or more jobs failed:"
             echo "  rust:      ${{ needs.rust.result }}"
             echo "  frontend:  ${{ needs.frontend.result }}"
             echo "  tests:     ${{ needs.tests.result }}"
             echo "  build:     ${{ needs.build.result }}"
-            echo "  windows:   ${{ needs.windows.result }}"
             exit 1
           fi
           echo "✅ All jobs passed"

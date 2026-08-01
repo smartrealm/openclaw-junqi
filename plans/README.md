@@ -65,3 +65,4 @@ plans/
 - [安装、仪表盘、聊天、模型与渠道运行时边界](quality/2026-07-31-installation-dashboard-chat-provider-channel-runtime-boundaries.md)
 - [语音唤醒工作台](quality/2026-07-31-voice-wake-workspace.md)
 - [业务引导平台](quality/2026-07-31-business-onboarding-platform.md)
+- [发布 CI 与安装包构建收敛](quality/2026-08-01-release-ci-build-convergence.md)

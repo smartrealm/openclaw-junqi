@@ -136,6 +136,7 @@ docs/
 - [macOS Apple Silicon 本地测试包验证](quality/macos-local-package-2026-07-31.md)
 - [Windows Cargo 离线预热验证](quality/windows-cargo-offline-prefetch-validation-2026-07-31.md)
 - [托管发布 Provider Catalog 构建验证](quality/hosted-release-provider-catalog-validation-2026-08-01.md)
+- [发布 CI 与安装包构建收敛](quality/release-ci-build-convergence-2026-08-01.md)
 
 ## 产品设计草案
 
