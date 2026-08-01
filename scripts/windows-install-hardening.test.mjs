@@ -148,11 +148,19 @@ test('hosted tagged builds reuse committed provider catalogs without a runner-lo
   assert.match(taggedRelease, /--config\s+src-tauri\/tauri\.hosted-release\.conf\.json/);
 });
 
-test('Windows CI compiles and tests both x64 and x86 targets', () => {
-  assert.match(ci, /target: x86_64-pc-windows-msvc/);
-  assert.match(ci, /target: i686-pc-windows-msvc/);
-  assert.match(ci, /cargo check --all-targets --target \$\{\{ matrix\.target \}\}/);
-  assert.match(ci, /cargo test --lib --target \$\{\{ matrix\.target \}\}/);
+// Windows-native Rust tests used to run in ci.yml. They now run inside each
+// tagged Windows installer build, against the exact source and target that
+// produces the distributable. Assert the coverage wherever it lives, and keep
+// asserting the targets so silently dropping an architecture still fails.
+test('Windows Rust tests run natively for every shipped Windows target', () => {
+  for (const target of ['x86_64-pc-windows-msvc', 'i686-pc-windows-msvc', 'aarch64-pc-windows-msvc']) {
+    assert.match(taggedRelease, new RegExp(`target: '${target.replace(/\./g, '\\.')}'`));
+  }
+  assert.match(taggedRelease, /- name: Run native Windows Rust tests\n\s+if: runner\.os == 'Windows'/);
+  assert.match(taggedRelease, /cargo test --locked --lib --target \$\{\{ matrix\.target \}\} --no-fail-fast/);
+  // ci.yml deliberately keeps only Linux jobs; a Windows matrix reappearing
+  // there without native tests would silently reintroduce untested targets.
+  assert.doesNotMatch(ci, /pc-windows-msvc/);
 });
 
 test('Cargo dependencies are prefetched before native Windows validation and release packaging', () => {
@@ -160,8 +168,9 @@ test('Cargo dependencies are prefetched before native Windows validation and rel
     assert.match(workflow, /Fetch locked Rust dependencies/);
     assert.match(workflow, /node scripts\/fetch-cargo-dependencies\.mjs --target/);
   }
-  assert.match(ci, /Run native Windows Rust tests[\s\S]*CARGO_NET_OFFLINE: "true"/);
-  assert.match(ci, /if: github\.event_name != 'push' \|\| github\.ref == 'refs\/heads\/main'/);
+  assert.match(taggedRelease, /Run native Windows Rust tests[\s\S]*CARGO_NET_OFFLINE: "true"/);
+  // The gate this used to assert belonged to ci.yml's `windows:` job, which no
+  // longer exists. Windows packaging must still stay out of ci.yml.
   assert.doesNotMatch(ci, /Build NSIS installer/);
   assert.match(release, /Build unsigned candidate[\s\S]*CARGO_NET_OFFLINE: "true"/);
   assert.match(taggedRelease, /Build signed updater artifacts and installers[\s\S]*CARGO_NET_OFFLINE: "true"/);
