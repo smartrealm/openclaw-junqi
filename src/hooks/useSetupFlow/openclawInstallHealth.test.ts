@@ -93,3 +93,25 @@ test('all three locales carry the defect copy', () => {
     }
   }
 });
+
+// HA-01: reinstall replaces the package tree the running service executes from.
+// OpenClaw's own update path hands off to a detached service rather than
+// rewriting a live tree, and a stop failure must abort instead of overwriting.
+test('reinstall and relocate stop the selected service before touching the tree', () => {
+  const install = readFileSync('src-tauri/src/commands/setup/openclaw.rs', 'utf8');
+  const service = readFileSync('src-tauri/src/commands/gateway_service.rs', 'utf8');
+
+  assert.match(install, /OpenclawInstallMode::ReinstallExisting \| OpenclawInstallMode::Relocate/);
+  assert.match(install, /stop_selected_native_service_for_reinstall\(\)/);
+  assert.match(install, /Refusing to reinstall while the Gateway service is running/);
+
+  // The stop must run before the package tree is inspected or replaced.
+  const stopIndex = install.indexOf('stop_selected_native_service_for_reinstall()');
+  const detectIndex = install.indexOf('crate::commands::system::detect_openclaw()');
+  assert.ok(stopIndex >= 0 && detectIndex > stopIndex);
+
+  // Ownership is authoritative for the stop; a foreign service is never touched.
+  assert.match(service, /fn stop_is_permitted_for_reinstall\(inspection: GatewayServiceInspection\) -> bool \{\n\s+inspection\.installed && belongs_to_selected_state\(inspection\.ownership\)/);
+  // Docker does not run from the host npm prefix, so it is a no-op, not a failure.
+  assert.match(service, /OpenClawRuntimeMode::Native\n\s+\) \{\n\s+return Ok\(false\);/);
+});

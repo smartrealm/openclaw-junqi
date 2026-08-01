@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   GatewayLifecycleCoordinator,
   type GatewayEnsureResult,
@@ -210,4 +211,58 @@ test('a failed restart does not reach the identity probe', async () => {
   }).restart('config-manager');
   assert.equal(result.success, false);
   assert.equal(probes, 0);
+});
+
+// HA-04: the coordinator has no Docker branch. That is not necessarily wrong -
+// the manager below it owns runtime selection - but it means the coordinator
+// must stay runtime-agnostic rather than growing Native-only assumptions.
+// These tests fix that boundary; changing the behaviour needs Docker hardware.
+test('the coordinator carries runtime failures through without reinterpreting them', async () => {
+  for (const error of [
+    'Docker daemon is not running',
+    'Gateway autostart requires the Native runtime',
+  ]) {
+    const result = await coordinator({
+      restart: async () => ({ success: false, error }),
+    }).restart('config-manager');
+    assert.equal(result.success, false);
+    // The runtime's own diagnostic must survive verbatim: rewriting it into a
+    // generic message is how a Docker failure ends up looking like a Native one.
+    assert.equal(result.error, error);
+  }
+});
+
+test('identity verification is asked for regardless of runtime', async () => {
+  // The probe resolves the selected runtime itself, so the coordinator must not
+  // skip it based on any local guess about which runtime is active.
+  let probes = 0;
+  await coordinator({
+    restart: async () => ({ success: true }),
+    verifySelectedIdentity: async () => { probes += 1; return true; },
+  }).restart('channel-config');
+  await coordinator({
+    restart: async () => ({ success: true, method: 'docker' }),
+    verifySelectedIdentity: async () => { probes += 1; return true; },
+  }).restart('config-manager');
+  assert.equal(probes, 2);
+});
+
+test('the coordinator holds no runtime-specific branching of its own', () => {
+  const source = readFileSync('src/services/gateway/GatewayLifecycleCoordinator.ts', 'utf8');
+  const code = source
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join('\n');
+  // No runtime name may steer control flow or be used as a display default.
+  assert.doesNotMatch(code, /docker/i);
+  assert.doesNotMatch(code, /['"`]native['"`]/i);
+});
+
+test('an unreported runtime mode is not rendered as Native', async () => {
+  const messages: string[] = [];
+  const c = coordinator({ ensureRunning: async () => ({ healthy: true }) });
+  c.subscribe((progress) => messages.push(progress.message));
+  await c.recover('startup');
+  assert.ok(messages.some((message) => message.includes('Gateway healthy')));
+  assert.ok(!messages.some((message) => /native/i.test(message)));
 });

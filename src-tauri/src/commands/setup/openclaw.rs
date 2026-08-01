@@ -932,6 +932,37 @@ async fn install_openclaw_impl_inner_scoped(
         .then(OpenclawRelocationRequest::capture)
         .transpose()?;
 
+    // Replacing a package tree the running service executes from is the shape
+    // OpenClaw's own `update.run` deliberately avoids. Stop first; a stop that
+    // fails must abort rather than overwrite files under a live process.
+    if matches!(
+        mode,
+        OpenclawInstallMode::ReinstallExisting | OpenclawInstallMode::Relocate
+    ) {
+        emit_keyed(
+            &app,
+            step,
+            "Stopping the running OpenClaw Gateway...",
+            "setup.openclaw.stopBeforeReinstall",
+            0.015,
+        );
+        let stopped =
+            crate::commands::gateway_service::stop_selected_native_service_for_reinstall()
+                .await
+                .map_err(|error| {
+                    format!("Refusing to reinstall while the Gateway service is running: {error}")
+                })?;
+        if stopped {
+            emit_keyed(
+                &app,
+                step,
+                "Stopped the selected Gateway service.",
+                "setup.openclaw.stoppedBeforeReinstall",
+                0.018,
+            );
+        }
+    }
+
     emit_keyed(
         &app,
         step,

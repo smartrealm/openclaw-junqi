@@ -191,7 +191,12 @@ export class GatewayLifecycleCoordinator {
           this.dependencies.migrationRetry.cancel();
           this.emit(
             request,
-            `Gateway healthy (${ensured.mode ?? 'native'}), reconnecting…`,
+            // An unreported mode is unknown, not Native. Naming the wrong
+            // runtime here is exactly the confusion the runtime boundary exists
+            // to prevent, and this string is what the user reads during setup.
+            ensured.mode
+              ? `Gateway healthy (${ensured.mode}), reconnecting…`
+              : 'Gateway healthy, reconnecting…',
             1,
             'gateway.progress.gatewayHealthy',
             undefined,

@@ -288,6 +288,38 @@ async fn selected_native_service_context(
     Ok((runtime, paths::desktop_dir(), paths::active_config_path()))
 }
 
+/// Stop the selected Native service before its package tree is replaced.
+///
+/// Reinstalling runs `npm install -g` over the very package the running service
+/// executes from. On Windows the live process locks those files, so the install
+/// can fail or leave a half-replaced tree that still passes a shallow validity
+/// check; on Unix the old inode survives until a later restart silently swaps
+/// in new code. OpenClaw itself avoids this shape - `update.run` hands off to a
+/// detached managed service rather than rewriting a live package tree.
+///
+/// Returns whether a service was actually stopped. Docker is not an error: its
+/// gateway does not run from the host npm prefix, so nothing needs stopping.
+pub(crate) async fn stop_selected_native_service_for_reinstall() -> Result<bool, String> {
+    if !matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Native
+    ) {
+        return Ok(false);
+    }
+    let Ok(runtime) = system::resolve_compatible_native_openclaw_runtime().await else {
+        // No usable runtime means no service of ours is running from it. A
+        // broken install is exactly the case a repair reinstall must handle.
+        return Ok(false);
+    };
+    stop_selected_gateway_service(
+        &runtime,
+        &paths::desktop_dir(),
+        &paths::active_config_path(),
+        None,
+    )
+    .await
+}
+
 /// Re-attest the official service that belongs to JunQi's selected Native
 /// state/config. A healthy endpoint alone cannot distinguish that service from
 /// an unrelated local Gateway that happens to use the same port.
@@ -803,6 +835,13 @@ pub(crate) async fn stop_selected_gateway_service_verified(
 /// Stop an installed selected service even when the platform status parser
 /// cannot classify its localized runtime state. Ownership and installation are
 /// authoritative for mutation; the caller separately verifies port release.
+/// Whether this service may be stopped on our behalf. Ownership plus an actual
+/// installation are the authoritative conditions; running state is deliberately
+/// excluded because localized platform status output cannot always be parsed.
+pub(crate) fn stop_is_permitted_for_reinstall(inspection: GatewayServiceInspection) -> bool {
+    inspection.installed && belongs_to_selected_state(inspection.ownership)
+}
+
 pub(crate) async fn stop_installed_selected_gateway_service_verified(
     runtime: &system::NativeOpenclawRuntime,
     state_dir: &Path,
@@ -810,7 +849,7 @@ pub(crate) async fn stop_installed_selected_gateway_service_verified(
     search_path: Option<&str>,
     inspection: GatewayServiceInspection,
 ) -> Result<bool, String> {
-    if !inspection.installed || !belongs_to_selected_state(inspection.ownership) {
+    if !stop_is_permitted_for_reinstall(inspection) {
         return Ok(false);
     }
     let identity = GatewayServiceIdentity::for_runtime(state_dir, config_path, runtime);
@@ -1013,6 +1052,48 @@ pub(crate) async fn reconcile_pending_gateway_service(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A reinstall replaces the package tree the service runs from. Only a
+    // service we own and that is installed may be stopped for that; a foreign
+    // or unverifiable service must be left alone even when it holds the port.
+    #[test]
+    fn only_an_owned_installed_service_is_stopped_before_reinstall() {
+        for ownership in [
+            GatewayServiceOwnership::SelectedState,
+            GatewayServiceOwnership::StaleRuntime,
+        ] {
+            assert!(
+                stop_is_permitted_for_reinstall(GatewayServiceInspection {
+                    ownership,
+                    installed: true,
+                    running: true,
+                }),
+                "owned service {ownership:?} should be stoppable"
+            );
+        }
+        for ownership in [
+            GatewayServiceOwnership::Foreign,
+            GatewayServiceOwnership::Unverifiable,
+            GatewayServiceOwnership::Absent,
+        ] {
+            assert!(
+                !stop_is_permitted_for_reinstall(GatewayServiceInspection {
+                    ownership,
+                    installed: true,
+                    running: true,
+                }),
+                "{ownership:?} must never be stopped by our reinstall"
+            );
+        }
+        assert!(
+            !stop_is_permitted_for_reinstall(GatewayServiceInspection {
+                ownership: GatewayServiceOwnership::SelectedState,
+                installed: false,
+                running: false,
+            }),
+            "an absent installation has nothing to stop"
+        );
+    }
 
     #[test]
     fn healthy_selected_service_is_a_durable_local_owner() {

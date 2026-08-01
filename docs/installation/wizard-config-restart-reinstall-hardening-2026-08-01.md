@@ -47,9 +47,9 @@
 
 按「不可用风险 / 落地成本」排序。每项标注证据、当前行为、目标行为与验证方式。
 
-### HA-01 · 重装 OpenClaw 前不停止正在运行的 Gateway
+### HA-01 · 重装 OpenClaw 前不停止正在运行的 Gateway（已修复，待真机验收）
 
-风险等级：高。这是本次审查中最可能造成不可用的一项。
+风险等级：高。状态：2026-08-02 代码已修复，Windows 真机未验收。
 
 **证据**：`reinstall_openclaw`（`src-tauri/src/commands/setup/openclaw.rs:729`）直接进入 `install_openclaw_impl`。在该文件中检索 `stop_gateway`、`shutdown`、`service`、`reconcile` 均无命中；前端编排 `useSetupInstallers.ts:164-205` 的顺序是「检测 → 安装/重装 → 校验」，中间没有任何停止步骤。
 
@@ -61,7 +61,11 @@
 
 **目标行为**：重装与重定位前，先按当前选定 runtime 停止 Gateway 服务，重装成功后再按原有归属重新拉起，并复用既有的 `inspect_selected_native_gateway_service` 做身份再认证。停止失败必须中止重装，而不是继续覆盖包树。
 
-**验证**：Rust 侧新增用例断言 `install_openclaw_impl` 在 `ReinstallExisting` 与 `Relocate` 模式下先经过停止路径；前端断言重装编排包含停止步骤且停止失败会中止。Windows 真机需人工验收。
+**修复**：`gateway_service` 新增 `stop_selected_native_service_for_reinstall`，`install_openclaw_impl_inner_scoped` 在 `ReinstallExisting` 与 `Relocate` 两种模式下、且在 `detect_openclaw` 之前调用。停止失败以「Refusing to reinstall while the Gateway service is running」中止，不再覆盖包树。
+
+停止许可条件抽为具名谓词 `stop_is_permitted_for_reinstall`：安装存在且归属为本机选定 state 才允许停止，Foreign、Unverifiable、Absent 一律不动。Docker 模式直接返回未停止而非报错——其 Gateway 不从宿主 npm prefix 运行，无需停止。
+
+**验证**：Rust 新增 1 项用例遍历五种归属断言许可边界；前端新增 1 项断言两种模式、停止早于探测、以及拒绝语句存在。Windows 文件锁定竞态仍未在真机复现。
 
 ### HA-02 · 每次保存配置都无条件重启 Gateway（已修复）
 
@@ -118,9 +122,9 @@
 
 **验证**：协调器新增 4 项测试，覆盖落到异己 Gateway、探针不可达、通过后仍成功、以及重启失败时不触发探针。
 
-### HA-04 · 重启链路没有 Docker 分支
+### HA-04 · 重启链路没有 Docker 分支（已固定边界并修掉一处 Native 默认值）
 
-风险等级：中高。
+风险等级：中高。状态：2026-08-02 已按方案固定语义边界。
 
 **证据**：`GatewayLifecycleCoordinator.ts` 全文检索 `docker` 命中为 0。
 
@@ -128,7 +132,11 @@
 
 **目标行为**：先补齐**测试与断言**明确当前语义边界——重启请求必须携带并校验当前选定 runtime，Docker 与 Native 各自的失败必须给出各自的可读诊断。在没有真机验证前，不改变现有行为，只把契约固定下来防止漂移。
 
-**验证**：为两种 runtime 各补一组协调器测试。Docker Desktop 冷启动需人工验收，本项在验收前标记为待验证。
+**修复**：按原方案只固定边界、不改重启行为，但过程中发现一处实际缺陷并修正：`GatewayLifecycleCoordinator.ts:194` 在 `ensured.mode` 缺失时把展示文案默认成 `native`，Docker Gateway 若未回报 mode 会被显示为 Native runtime。改为 mode 未知时不写运行时名称。
+
+新增 3 项协调器测试：运行时诊断原文必须透传不得改写为通用文案；身份校验对任何 runtime 都执行，不得按本地猜测跳过；协调器代码（剔除注释后）不得出现 `docker` 或以 `native` 作为字面默认值。
+
+**验证**：Docker Desktop 冷启动仍需人工验收，重启行为本身未改变。
 
 ### HA-05 · 重装成功判定依赖的校验面偏窄（已修复）
 
