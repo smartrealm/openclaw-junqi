@@ -58,6 +58,14 @@ type ProgressListener = (progress: GatewayLifecycleProgress) => void;
 type CoordinatorDependencies = {
   manager: GatewayLifecycleManager;
   migrationRetry: GatewayMigrationRetryCoordinator;
+  /**
+   * Re-attests that the restarted endpoint is the Gateway belonging to the
+   * selected runtime. A healthy port alone cannot tell it apart from another
+   * local Gateway that happens to bind the same port, so a restart that skips
+   * this check can report success while the client talks to a foreign process.
+   * Omitted only in tests that do not exercise the restart post-condition.
+   */
+  verifySelectedIdentity?: () => Promise<boolean>;
 };
 
 function errorMessage(value: unknown, fallback: string): string {
@@ -241,6 +249,8 @@ export class GatewayLifecycleCoordinator {
         return { success: false, superseded: true, action: request.action, source: request.source };
       }
       if (restarted.success) {
+        const identityFailure = await this.verifyRestartedIdentity(request);
+        if (identityFailure) return identityFailure;
         this.dependencies.migrationRetry.cancel();
         this.emit(
           request,
@@ -261,6 +271,29 @@ export class GatewayLifecycleCoordinator {
       this.emit(request, `Restart failed: ${message}`, 1, 'gateway.progress.restartFailed', { error: message }, 'failed');
       return { success: false, error: message, action: request.action, source: request.source };
     }
+  }
+
+  /**
+   * Returns a failure result when the restarted endpoint is not the selected
+   * Gateway, or null when the check passes or is not configured. A probe that
+   * throws is treated as unverified: an unreachable check must not upgrade to
+   * an implicit pass.
+   */
+  private async verifyRestartedIdentity(
+    request: GatewayLifecycleRequest,
+  ): Promise<GatewayLifecycleResult | null> {
+    const verify = this.dependencies.verifySelectedIdentity;
+    if (!verify) return null;
+    let verified = false;
+    try {
+      verified = await verify();
+    } catch {
+      verified = false;
+    }
+    if (verified) return null;
+    const message = 'Gateway restarted, but the endpoint does not match the selected runtime.';
+    this.emit(request, message, 1, 'gateway.progress.restartIdentityFailed', { error: message }, 'failed');
+    return { success: false, error: message, action: request.action, source: request.source };
   }
 
   private emitSuperseded(request: GatewayLifecycleRequest): void {
@@ -303,9 +336,13 @@ export class GatewayLifecycleCoordinator {
   }
 }
 
-export function createGatewayLifecycleCoordinator(manager: GatewayLifecycleManager): GatewayLifecycleCoordinator {
+export function createGatewayLifecycleCoordinator(
+  manager: GatewayLifecycleManager,
+  verifySelectedIdentity?: () => Promise<boolean>,
+): GatewayLifecycleCoordinator {
   return new GatewayLifecycleCoordinator({
     manager,
     migrationRetry: createGatewayMigrationRetryCoordinator(),
+    ...(verifySelectedIdentity ? { verifySelectedIdentity } : {}),
   });
 }

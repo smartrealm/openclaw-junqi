@@ -21,6 +21,7 @@ function coordinator(overrides: {
   restart?: () => Promise<GatewayRestartResult>;
   reconnect?: () => void;
   wait?: (delayMs: number) => Promise<boolean>;
+  verifySelectedIdentity?: () => Promise<boolean>;
 } = {}) {
   return new GatewayLifecycleCoordinator({
     manager: {
@@ -32,6 +33,9 @@ function coordinator(overrides: {
       wait: overrides.wait ?? (async () => true),
       cancel: () => false,
     },
+    ...(overrides.verifySelectedIdentity
+      ? { verifySelectedIdentity: overrides.verifySelectedIdentity }
+      : {}),
   });
 }
 
@@ -166,4 +170,44 @@ test('restart returns one structured failure and publishes terminal progress', a
     source: 'channels-center',
   });
   assert.equal(progress.at(-1), 'failed:gateway.progress.restartFailed');
+});
+
+// A healthy port cannot distinguish the selected Gateway from another local
+// process bound to the same port. Only the wizard used to check; every other
+// restart source reported success without re-attesting identity.
+test('a restart that lands on a foreign Gateway is not reported as success', async () => {
+  const result = await coordinator({
+    restart: async () => ({ success: true }),
+    verifySelectedIdentity: async () => false,
+  }).restart('config-manager');
+  assert.equal(result.success, false);
+  assert.match(String(result.error), /does not match the selected runtime/);
+});
+
+test('an unreachable identity probe counts as unverified, never as a pass', async () => {
+  const result = await coordinator({
+    restart: async () => ({ success: true }),
+    verifySelectedIdentity: async () => { throw new Error('probe unavailable'); },
+  }).restart('channel-config');
+  assert.equal(result.success, false);
+});
+
+test('a verified restart still succeeds', async () => {
+  let probes = 0;
+  const result = await coordinator({
+    restart: async () => ({ success: true }),
+    verifySelectedIdentity: async () => { probes += 1; return true; },
+  }).restart('config-manager');
+  assert.equal(result.success, true);
+  assert.equal(probes, 1);
+});
+
+test('a failed restart does not reach the identity probe', async () => {
+  let probes = 0;
+  const result = await coordinator({
+    restart: async () => ({ success: false, error: 'service missing' }),
+    verifySelectedIdentity: async () => { probes += 1; return true; },
+  }).restart('config-manager');
+  assert.equal(result.success, false);
+  assert.equal(probes, 0);
 });

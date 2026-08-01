@@ -23,6 +23,7 @@ import {
   isMissingGitDependencyError,
   SetupPrerequisiteError,
 } from "./helpers";
+import { describeOpenclawInstallFailure, requiresOpenclawRepair } from "./openclawInstallHealth";
 import type { InstallTarget, StepState, StepStatus } from "./types";
 
 type RunSetupOperation = <T>(
@@ -156,11 +157,7 @@ export function useSetupInstallers({
       const openclaw = await checkOpenclaw();
       setOpenclawStatus(openclaw);
       if (!isRunActive(runId)) return false;
-      const repairInvalidInstall = openclaw.binary_found && (
-        !openclaw.version_ok
-        || !openclaw.package_valid
-        || !openclaw.gateway_command_ok
-      );
+      const repairInvalidInstall = requiresOpenclawRepair(openclaw);
       const forceReinstall = reinstallRequestedRef.current || repairInvalidInstall;
       const forceRelocation = relocationRequestedRef.current || openclaw.relocation_required;
       if (!openclaw.installed || forceReinstall || forceRelocation) {
@@ -199,9 +196,10 @@ export function useSetupInstallers({
         const installed = await checkOpenclaw();
         setOpenclawStatus(installed);
         if (!isRunActive(runId)) return false;
-        if (!installed.installed) {
-          throw new Error(installed.error || t("setup.openclawInstallFailed", "OpenClaw 安装后校验失败"));
-        }
+        // Same criteria as the repair trigger: a tree that only half applied
+        // must not pass here and surface later as a gateway startup failure.
+        const installFailure = describeOpenclawInstallFailure(installed, t);
+        if (installFailure) throw new Error(installFailure);
         reinstallRequestedRef.current = false;
         relocationRequestedRef.current = false;
         patchStep("openclaw", "done", installed.version ?? undefined);

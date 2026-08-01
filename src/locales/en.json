@@ -3383,6 +3383,12 @@
     "npmInstallFailed": "The selected Node.js runtime does not provide a usable npm",
     "nodeInstallFailed": "Node.js validation failed after installation",
     "openclawInstallFailed": "OpenClaw validation failed after installation",
+    "openclawInstallIncomplete": "OpenClaw install did not fully apply",
+    "openclawDefect": {
+      "versionUnsupported": "Unsupported version",
+      "packageInvalid": "Incomplete package",
+      "gatewayCommandMissing": "gateway command unavailable"
+    },
     "checkingOpenclaw": "Checking OpenClaw...",
     "installingOpenclaw": "Installing OpenClaw...",
     "startingGateway": "Starting Gateway...",

@@ -3378,6 +3378,12 @@
     "npmInstallFailed": "所选 Node.js 未提供可用 npm",
     "nodeInstallFailed": "Node.js 安装后校验失败",
     "openclawInstallFailed": "OpenClaw 安装后校验失败",
+    "openclawInstallIncomplete": "OpenClaw 安装未完整生效",
+    "openclawDefect": {
+      "versionUnsupported": "版本不受支持",
+      "packageInvalid": "包内容不完整",
+      "gatewayCommandMissing": "gateway 命令不可用"
+    },
     "checkingOpenclaw": "正在检测 OpenClaw...",
     "installingOpenclaw": "正在安装 OpenClaw...",
     "startingGateway": "正在启动 Gateway...",

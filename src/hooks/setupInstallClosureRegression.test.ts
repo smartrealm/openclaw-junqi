@@ -45,9 +45,13 @@ test("BUG-INSTALL-02 a missing bundled npm uses the constrained runtime repair p
 
 test("BUG-INSTALL-03 damaged OpenClaw metadata cannot block its repair", () => {
   assert.match(setup, /required_node_requirement_for_openclaw_binary[\s\S]*?Err\(local_error\)[\s\S]*?target_openclaw_node_requirement/);
-  assert.match(flow, /repairInvalidInstall = openclaw\.binary_found/);
-  assert.match(flow, /!openclaw\.package_valid/);
-  assert.match(flow, /!openclaw\.gateway_command_ok/);
+  // The three checks now live in one shared predicate so the repair trigger and
+  // the post-install success gate cannot drift apart again.
+  assert.match(flow, /requiresOpenclawRepair\(openclaw\)/);
+  assert.match(flow, /status\.binary_found && openclawInstallDefects\(status\)\.length > 0/);
+  assert.match(flow, /!status\.version_ok/);
+  assert.match(flow, /!status\.package_valid/);
+  assert.match(flow, /!status\.gateway_command_ok/);
 });
 
 test("BUG-INSTALL-04 macOS dependency recovery stays inside the setup flow", () => {

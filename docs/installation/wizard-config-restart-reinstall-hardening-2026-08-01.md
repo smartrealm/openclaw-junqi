@@ -83,9 +83,9 @@
 
 **验证**：单元测试覆盖三种聚合结果与回落分支；对照真实 Gateway 抓取若干典型路径（`gateway.port`、`agents.defaults.model`、`channels.*`）的实际 `reloadKind` 并记录。
 
-### HA-03 · 重启后不重新验证 Gateway 身份
+### HA-03 · 重启后不重新验证 Gateway 身份（已修复）
 
-风险等级：中高。
+风险等级：中高。状态：2026-08-02 已修复。
 
 **证据**：`GatewayLifecycleCoordinator.ts:232-254` 在 `manager.restart()` 返回 `success` 后直接判定完成并进入重连，全过程没有调用 `probe_selected_gateway`，也没有调用近期新增的 `inspect_selected_native_gateway_service`。
 
@@ -93,7 +93,9 @@
 
 **目标行为**：`restart` 成功后统一执行选定 runtime 的身份再认证，未通过时以明确错误结束该次生命周期请求，而不是宣告成功。把 wizard 已有的校验提升为所有重启来源共用的后置条件。
 
-**验证**：协调器测试断言 `restart` 成功路径必然经过身份校验，且校验失败时返回失败而非成功。
+**修复**：`CoordinatorDependencies` 新增可选的 `verifySelectedIdentity`，`gatewayLifecycle` 注入 `probe_selected_gateway`。restart 成功后统一再认证，未通过时以 `gateway.progress.restartIdentityFailed` 结束并返回失败。探针抛错按未验证处理——不可达的检查不得升级为隐式通过。
+
+**验证**：协调器新增 4 项测试，覆盖落到异己 Gateway、探针不可达、通过后仍成功、以及重启失败时不触发探针。
 
 ### HA-04 · 重启链路没有 Docker 分支
 
@@ -107,9 +109,9 @@
 
 **验证**：为两种 runtime 各补一组协调器测试。Docker Desktop 冷启动需人工验收，本项在验收前标记为待验证。
 
-### HA-05 · 重装成功判定依赖的校验面偏窄
+### HA-05 · 重装成功判定依赖的校验面偏窄（已修复）
 
-风险等级：中。
+风险等级：中。状态：2026-08-02 已修复。
 
 **证据**：`useSetupInstallers.ts:202` 在安装后仅以 `installed.installed` 为真作为成功条件；而同文件 `:159-163` 判定「需要修复」时使用的是更严的三项组合：`version_ok`、`package_valid`、`gateway_command_ok`。
 
@@ -117,7 +119,9 @@
 
 **目标行为**：安装后的成功条件与修复触发条件对齐，使用同一组判据。任一项不满足时给出指向具体失败项的诊断。
 
-**验证**：前端测试断言两处使用同一判据集合。
+**修复**：新增 `src/hooks/useSetupFlow/openclawInstallHealth.ts`，`requiresOpenclawRepair` 与 `isOpenclawInstallUsable` 共用 `openclawInstallDefects` 的同一组判据。诊断由 `describeOpenclawInstallFailure` 指向具体失败项而非笼统的「安装失败」，三份 locale 补齐对应文案。
+
+**验证**：新增 8 项测试，其中一项遍历三个检查项断言「触发修复的条件必然阻断成功」，另一项断言编排两处都使用共享判据。
 
 ### HA-06 · 未使用官方托管交接做 OpenClaw 自更新
 
@@ -131,8 +135,8 @@
 
 ## 建议顺序
 
-1. **HA-05**：判据对齐，改动最小，立即降低误判概率。
-2. **HA-03**：把 wizard 已有的身份校验提升为所有重启来源共用，复用现成函数。
+1. ~~**HA-05**：判据对齐~~ 已完成。
+2. ~~**HA-03**：身份校验提升为所有重启来源共用~~ 已完成。
 3. **HA-01**：重装前停止服务。改动集中在安装编排，但涉及平台服务，需 Windows 真机验收。
 4. **HA-02**：接入 `reloadKind`。收益最大但需要先对真实 Gateway 采样确认各路径语义。
 5. **HA-04**：先补测试固定语义边界，真机验收后再决定是否改行为。
