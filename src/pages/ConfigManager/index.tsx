@@ -186,6 +186,10 @@ export function ConfigManagerPage() {
 
       // 4. Sync UI state from the actual saved config so in-memory state matches disk.
       const normalizedSavedConfig = normalizeConfig(toWrite);
+      // Captured before the state setters below: the reload plan needs the
+      // pre-save baseline, and relying on the stale closure value of
+      // `originalConfig` would break the moment this moves to a ref.
+      const reloadBaseline = originalConfig;
       setConfig(structuredClone(normalizedSavedConfig));
       setOriginalConfig(structuredClone(normalizedSavedConfig));
 
@@ -197,7 +201,7 @@ export function ConfigManagerPage() {
       // Only restart when OpenClaw says this change needs it. reloadKind is
       // per-path and only available from config.schema.lookup; an unknown or
       // unavailable answer degrades to restart rather than skipping it.
-      const changedPaths = diffConfigPaths(originalConfig ?? {}, normalizedSavedConfig);
+      const changedPaths = diffConfigPaths(reloadBaseline ?? {}, normalizedSavedConfig);
       const reloadPlan = await planConfigReload(
         changedPaths,
         (path) => gateway.callPrivileged('config.schema.lookup', { path }),

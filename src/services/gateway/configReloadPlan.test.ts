@@ -102,3 +102,25 @@ test('the config manager consults the plan before restarting', () => {
   assert.ok(planIndex >= 0 && restartIndex > planIndex);
   assert.match(source, /if \(reloadPlan\.kind !== 'restart'\)/);
 });
+
+// No baseline means every path reads as changed. That must stay safe: the plan
+// still asks per path, and any restart-kind path present forces a restart.
+test('an absent baseline does not weaken the decision', async () => {
+  const saved = { session: { dmScope: 'per-channel-peer' }, gateway: { port: 18789 } };
+  const paths = diffConfigPaths({}, saved);
+  assert.deepEqual(paths.sort(), ['gateway.port', 'session.dmScope']);
+  assert.equal((await planConfigReload(paths, sampledLookup)).kind, 'restart');
+
+  const hotOnly = diffConfigPaths({}, { agents: { defaults: { model: 'x' } } });
+  assert.deepEqual(hotOnly, ['agents.defaults.model']);
+  assert.equal((await planConfigReload(hotOnly, sampledLookup)).kind, 'hot');
+});
+
+test('the config manager captures the baseline before it overwrites it', () => {
+  const source = readFileSync('src/pages/ConfigManager/index.tsx', 'utf8');
+  const capture = source.indexOf('const reloadBaseline = originalConfig;');
+  const overwrite = source.indexOf('setOriginalConfig(structuredClone(normalizedSavedConfig))');
+  assert.ok(capture >= 0, 'baseline must be captured explicitly');
+  assert.ok(overwrite > capture, 'baseline must be captured before the state setter');
+  assert.match(source, /diffConfigPaths\(reloadBaseline \?\? \{\}/);
+});
