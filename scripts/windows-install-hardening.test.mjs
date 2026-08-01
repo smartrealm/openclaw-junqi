@@ -18,6 +18,10 @@ const tauri = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', im
 const noUpdaterArtifactsProfile = JSON.parse(
   readFileSync(new URL('../src-tauri/tauri.no-updater-artifacts.conf.json', import.meta.url), 'utf8'),
 );
+const hostedReleaseProfile = JSON.parse(
+  readFileSync(new URL('../src-tauri/tauri.hosted-release.conf.json', import.meta.url), 'utf8'),
+);
+const packageManifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
 const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 const taggedRelease = readFileSync(new URL('../.github/workflows/tag-release.yml', import.meta.url), 'utf8');
@@ -135,6 +139,13 @@ test('Windows release matrix builds and stages NSIS installers for x86, x64 and 
   assert.match(taggedRelease, /Validate signed release assets and generate updater manifest/);
   assert.doesNotMatch(taggedRelease, /asset_count|Expected 19 release assets/);
   assert.match(release, /if-no-files-found: error/);
+});
+
+test('hosted tagged builds reuse committed provider catalogs without a runner-local OpenClaw CLI', () => {
+  assert.match(packageManifest.scripts.build, /^npm run generate:provider-catalog && npm run build:shared$/);
+  assert.match(packageManifest.scripts['build:hosted-release'], /generate:provider-catalog -- --if-missing/);
+  assert.equal(hostedReleaseProfile.build?.beforeBuildCommand, 'npm run build:hosted-release');
+  assert.match(taggedRelease, /--config\s+src-tauri\/tauri\.hosted-release\.conf\.json/);
 });
 
 test('Windows CI compiles and tests both x64 and x86 targets', () => {

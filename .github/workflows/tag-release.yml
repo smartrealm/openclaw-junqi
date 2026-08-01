@@ -221,7 +221,9 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
           CARGO_NET_OFFLINE: "true"
         with:
-          args: --target ${{ matrix.target }} ${{ matrix.bundle_args }}
+          args: >-
+            --target ${{ matrix.target }} ${{ matrix.bundle_args }}
+            --config src-tauri/tauri.hosted-release.conf.json
 
       - name: Verify macOS disk image
         if: runner.os == 'macOS'

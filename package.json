@@ -1,6 +1,6 @@
 {
   "name": "junqi-desktop",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "private": true,
   "packageManager": "pnpm@9.15.9",
   "type": "module",
@@ -9,7 +9,9 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "build": "npm run generate:provider-catalog && npm run collab:bundle && tsc && vite build",
+    "build": "npm run generate:provider-catalog && npm run build:shared",
+    "build:shared": "npm run collab:bundle && tsc && vite build",
+    "build:hosted-release": "npm run generate:provider-catalog -- --if-missing && npm run build:shared",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "node --import ./test-setup.ts --import tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\" && node --test \"scripts/*.test.mjs\"",
