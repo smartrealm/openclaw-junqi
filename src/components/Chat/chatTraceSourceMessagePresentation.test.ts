@@ -24,20 +24,134 @@ test('prefers the normalized tool output over raw transport content', () => {
     kind: 'tool-output',
     text: '{"status":200,"text":"Actual result"}',
     structured: { status: 200, text: 'Actual result' },
+    raw: '{"status":200,"text":"Actual result"}',
+    rawIsTruncated: false,
+    containsUntrustedExternalContent: false,
   });
 });
 
-test('decodes nested JSON result strings without altering ordinary text fields', () => {
+test('unwraps a nested content block into its structured tool result', () => {
   const result = resolveTraceSourceRecordContent(message({
     role: 'toolResult',
     toolOutput: '[{"type":"text","text":"{\\"status\\":200,\\"text\\":\\"Actual result\\"}","note":"plain text"}]',
   }));
 
-  assert.deepEqual(result?.structured, [{
+  assert.deepEqual(result?.structured, { status: 200, text: 'Actual result' });
+});
+
+test('decodes an escaped transcript content array without rewriting ordinary text', () => {
+  const result = resolveTraceSourceRecordContent(message({
+    role: 'toolResult',
+    toolOutput: '[{\\"type\\":\\"text\\",\\"text\\":\\"{\\\\\\"status\\\\\\":200,\\\\\\"text\\\\\\":\\\\\\"Actual result\\\\\\"}\\"}]',
+  }));
+
+  assert.deepEqual(result?.structured, { status: 200, text: 'Actual result' });
+});
+
+test('keeps the original structured value for a source record and detects untrusted external content', () => {
+  const sourceValue = [{
     type: 'text',
-    text: { status: 200, text: 'Actual result' },
-    note: 'plain text',
-  }]);
+    text: JSON.stringify({
+      url: 'https://example.invalid/weather',
+      status: 200,
+      externalContent: { untrusted: true, source: 'web_fetch' },
+      text: 'External data',
+    }),
+  }];
+  const result = resolveTraceSourceRecordContent(message({
+    role: 'toolResult',
+    toolOutput: 'stale display projection',
+    toolOutputValue: sourceValue,
+  }));
+
+  assert.deepEqual(result?.structured, {
+    url: 'https://example.invalid/weather',
+    status: 200,
+    externalContent: { untrusted: true, source: 'web_fetch' },
+    text: 'External data',
+  });
+  assert.equal(result?.containsUntrustedExternalContent, true);
+  assert.equal(result?.raw, JSON.stringify(sourceValue, null, 2));
+});
+
+test('formats a delimited external JSON body while keeping transport metadata', () => {
+  const body = { current_condition: [{ temp_C: '33', humidity: '51' }] };
+  const result = resolveTraceSourceRecordContent(message({
+    role: 'toolResult',
+    toolOutputValue: {
+      url: 'https://example.invalid/weather',
+      status: 200,
+      externalContent: { untrusted: true, source: 'web_fetch' },
+      text: [
+        'SECURITY NOTICE: External data.',
+        '<<<EXTERNAL_UNTRUSTED_CONTENT id="fixture">>>',
+        'Source: Web Fetch',
+        '---',
+        JSON.stringify(body),
+        '<<<END_EXTERNAL_UNTRUSTED_CONTENT>>>',
+      ].join('\n'),
+    },
+  }));
+
+  assert.deepEqual(result?.structured, {
+    url: 'https://example.invalid/weather',
+    status: 200,
+    externalContent: { untrusted: true, source: 'web_fetch' },
+    text: body,
+  });
+  assert.match(result?.raw ?? '', /SECURITY NOTICE/);
+});
+
+test('keeps an incomplete external body readable when the upstream result is truncated', () => {
+  const result = resolveTraceSourceRecordContent(message({
+    role: 'toolResult',
+    toolOutputTruncated: true,
+    toolOutputValue: {
+      externalContent: { untrusted: true },
+      text: [
+        '<<<EXTERNAL_UNTRUSTED_CONTENT id="fixture">>>',
+        'Source: Web Fetch',
+        '---',
+        '{"partial": true',
+      ].join('\n'),
+    },
+  }));
+
+  assert.deepEqual(result?.structured, {
+    externalContent: { untrusted: true },
+    text: '{"partial": true',
+  });
+  assert.equal(result?.rawIsTruncated, true);
+});
+
+test('projects data from an unknown content block type without a tool-specific adapter', () => {
+  const result = resolveTraceSourceRecordContent(message({
+    role: 'toolResult',
+    toolOutputValue: [{
+      type: 'plugin_extension_result',
+      payload: { version: 2, entries: ['first', 'second'] },
+    }],
+  }));
+
+  assert.deepEqual(result?.structured, { version: 2, entries: ['first', 'second'] });
+});
+
+test('preserves an unknown content block without a conventional result field', () => {
+  const result = resolveTraceSourceRecordContent(message({
+    role: 'toolResult',
+    toolOutputValue: [{ type: 'plugin_extension_notice', severity: 'info', detail: 'Available' }],
+  }));
+
+  assert.deepEqual(result?.structured, { type: 'plugin_extension_notice', severity: 'info', detail: 'Available' });
+});
+
+test('leaves malformed serialized content as text instead of guessing a repair', () => {
+  const malformed = '[{\\"type\\":\\"text\\", this is not JSON]';
+  const result = resolveTraceSourceRecordContent(message({ role: 'toolResult', toolOutput: malformed }));
+
+  assert.equal(result?.structured, null);
+  assert.equal(result?.text, malformed);
+  assert.equal(result?.raw, malformed);
 });
 
 test('keeps ordinary messages in the markdown presentation path', () => {
@@ -45,6 +159,9 @@ test('keeps ordinary messages in the markdown presentation path', () => {
     kind: 'markdown',
     text: 'Gateway response.',
     structured: null,
+    raw: null,
+    rawIsTruncated: false,
+    containsUntrustedExternalContent: false,
   });
 });
 

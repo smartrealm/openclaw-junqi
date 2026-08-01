@@ -26,6 +26,7 @@ test('normalizes canonical OpenClaw identity and rich history metadata', () => {
   assert.equal(message.nativeMessageId, 'native-message-1');
   assert.equal(message.clientMessageId, 'client-message-1');
   assert.equal(message.toolOutput, '{"ok":true}');
+  assert.deepEqual(message.toolOutputValue, { ok: true });
   assert.equal(message.toolDurationMs, 42);
   assert.equal(message.toolCallId, 'tool-call-1');
 });
@@ -75,6 +76,7 @@ test('uses the structured tool result payload instead of serializing its content
   });
 
   assert.equal(message.toolOutput, 'Found the contract.');
+  assert.deepEqual(message.toolOutputValue, [{ type: 'toolResult', name: 'search_docs', result: 'Found the contract.' }]);
   const normalized = normalizeGatewayMessage(message);
   assert.equal(normalized.toolResults[0]?.name, 'search_docs');
   assert.equal(normalized.toolOutput, 'Found the contract.');
@@ -98,6 +100,7 @@ test('preserves structured tool result errors and truncation metadata through hi
   assert.equal(message.toolError, 'permission denied');
   assert.equal(message.toolOutputTruncated, true);
   assert.ok((message.toolOutputOriginalLength ?? 0) > (message.toolOutput?.length ?? 0));
+  assert.equal(message.toolOutputValue, message.toolOutput);
 });
 
 test('upgrades cached block content before chat consumers call string methods', () => {

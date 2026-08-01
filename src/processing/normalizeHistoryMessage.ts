@@ -107,6 +107,14 @@ export function normalizeHistoryMessage(raw: RawGatewayMessage): ChatMessage {
     ? projectToolOutput(explicitOutput, projectionOptions)
     : projectGatewayToolResultOutput(raw.content, projectionOptions)
       ?? (isToolResult ? projectToolOutput(raw.content, projectionOptions) : undefined);
+  const toolOutputValue = explicitOutput !== undefined
+    ? explicitOutput
+    : isToolResult
+      ? raw.content
+      : undefined;
+  const retainedToolOutputValue = outputProjection?.truncated
+    ? outputProjection.text
+    : toolOutputValue;
   const toolStatus = isToolResult
     ? normalizeToolExecutionStatus(raw.toolStatus ?? raw.status, raw.isError === true || hasStructuredToolError)
       ?? (raw.isError === true || hasStructuredToolError ? 'error' : 'done')
@@ -137,6 +145,7 @@ export function normalizeHistoryMessage(raw: RawGatewayMessage): ChatMessage {
     toolName: raw.toolName || raw.name,
     toolInput: raw.toolInput || raw.input,
     toolOutput: outputProjection?.text,
+    ...(retainedToolOutputValue !== undefined ? { toolOutputValue: retainedToolOutputValue } : {}),
     toolStatus,
     toolDurationMs: numberValue(
       raw.toolDurationMs ?? raw.durationMs ?? raw.duration_ms ?? raw.tool_duration_ms,
@@ -355,6 +364,7 @@ function historyProjectionFingerprint(message: ChatMessage): string {
     toolCallId: message.toolCallId,
     toolInput: message.toolInput,
     toolOutput: message.toolOutput,
+    toolOutputValue: message.toolOutputValue,
     toolError: message.toolError,
     toolOutputTruncated: message.toolOutputTruncated,
     toolOutputOriginalLength: message.toolOutputOriginalLength,
