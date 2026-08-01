@@ -79,7 +79,7 @@
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^5.5.0",
     "clsx": "^2.1.1",
-    "dompurify": "^3.4.11",
+    "dompurify": "^3.4.12",
     "framer-motion": "^11.15.0",
     "i18next": "^25.8.4",
     "lucide-react": "^0.469.0",
@@ -100,6 +100,11 @@
     "unified": "^11.0.5",
     "unist-util-visit": "^5.0.0",
     "zustand": "^5.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": ">=8.5.18"
+    }
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.1",
