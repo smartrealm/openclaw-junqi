@@ -110,6 +110,20 @@ export function ChatTraceSourceMessagePanel({
                 ) : (
                   <StructuredToolOutput value={content.structured} />
                 )}
+                {content.containsUntrustedExternalContent && (
+                  <p className="mt-3 text-[11px] leading-5 text-aegis-text-muted" role="note">
+                    {t('chat.trace.untrustedExternalContent')}
+                  </p>
+                )}
+                {content.raw && (
+                  <details className="mt-4 border-t border-aegis-border pt-3 text-[11px] text-aegis-text-muted">
+                    <summary className="cursor-pointer select-none text-aegis-text-secondary">{t('chat.trace.rawPayload')}</summary>
+                    {content.rawIsTruncated && (
+                      <p className="mt-2 leading-5">{t('chat.trace.rawPayloadTruncated')}</p>
+                    )}
+                    <pre className="mt-2 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3 font-mono text-[11px] leading-5">{content.raw}</pre>
+                  </details>
+                )}
               </section>
             ) : (
               <div className="markdown-body text-[14px] leading-relaxed">

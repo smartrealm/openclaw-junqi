@@ -328,6 +328,8 @@ export interface ChatMessage {
   toolName?: string;
   toolInput?: Record<string, unknown>;
   toolOutput?: string;
+  /** Original tool result value retained for non-destructive trace presentation. */
+  toolOutputValue?: unknown;
   toolStatus?: 'running' | 'done' | 'error';
   toolDurationMs?: number;
   toolCallId?: string;
@@ -743,6 +745,7 @@ const createRawHistoryPayload = (messages: ChatMessage[], sessionKey: string) =>
     toolName: msg.toolName,
     toolInput: msg.toolInput,
     toolOutput: msg.toolOutput,
+    toolOutputValue: msg.toolOutputValue,
     toolStatus: msg.toolStatus,
     toolDurationMs: msg.toolDurationMs,
     toolCallId: msg.toolCallId,

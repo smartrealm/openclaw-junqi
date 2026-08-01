@@ -1027,6 +1027,7 @@ export class ChatHandler {
           ...(output
             ? {
                 toolOutput: output.text,
+                toolOutputValue: output.truncated ? output.text : toolEvent.output,
                 toolOutputTruncated: output.truncated || undefined,
                 toolOutputOriginalLength: output.truncated ? output.originalLength : undefined,
               }
@@ -1060,6 +1061,7 @@ export class ChatHandler {
           ...(output
             ? {
                 toolOutput: output.text,
+                toolOutputValue: output.truncated ? output.text : toolEvent.output,
                 toolOutputTruncated: output.truncated || undefined,
                 toolOutputOriginalLength: output.truncated ? output.originalLength : undefined,
               }
@@ -1083,7 +1085,10 @@ export class ChatHandler {
             runId,
             toolName,
             ...(toolEvent.input ? { toolInput: toolEvent.input } : {}),
-            ...(output ? { toolOutput: output.text } : {}),
+            ...(output ? {
+              toolOutput: output.text,
+              toolOutputValue: output.truncated ? output.text : toolEvent.output,
+            } : {}),
             toolStatus: toolEvent.status,
             toolCallId,
             ...(toolEvent.error ? { toolError: toolEvent.error } : {}),

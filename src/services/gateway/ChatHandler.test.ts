@@ -810,6 +810,7 @@ test('session.tool renders the official late-subscriber tool lifecycle exactly o
   assert.equal(toolMessages[0]?.toolName, 'exec');
   assert.deepEqual(toolMessages[0]?.toolInput, { command: 'echo hi' });
   assert.equal(toolMessages[0]?.toolOutput, 'hi');
+  assert.equal(toolMessages[0]?.toolOutputValue, 'hi');
   assert.equal(toolMessages[0]?.toolStatus, 'done');
   assert.equal(useChatStore.getState().typingBySession[sessionKey], true);
   assert.deepEqual(reconciliationRequests, []);
@@ -873,6 +874,7 @@ test('agent item keeps tool identity, input, failed output, and source timing th
   assert.equal(tool?.toolDurationMs, 650);
   assert.equal(tool?.toolOutputTruncated, true);
   assert.ok((tool?.toolOutputOriginalLength ?? 0) > (tool?.toolOutput?.length ?? 0));
+  assert.equal(tool?.toolOutputValue, tool?.toolOutput);
 });
 
 test('session.tool uses the agent sequence fence and requests history on a live gap', async () => {
