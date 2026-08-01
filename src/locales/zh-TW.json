@@ -1,4 +1,20 @@
 {
+  "taskStatus": {
+      "todo": "待辦",
+      "pending": "排隊中",
+      "running": "執行中",
+      "input_required": "等待輸入",
+      "awaiting_review": "等待審閱",
+      "detached": "已分離",
+      "interrupted": "已中斷",
+      "done": "已完成",
+      "failed": "失敗",
+      "cancelled": "已取消",
+      "queued": "排隊中",
+      "idle": "閒置",
+      "stopped": "已停止",
+      "unknown": "未知"
+  },
   "app": {
     "name": "JunQi Desktop",
     "fullName": "JunQi Desktop — 浚啟桌面端",

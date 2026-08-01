@@ -138,21 +138,21 @@
 
 `src/pages/AgentWorkspace/index.tsx` 是 `main@10518b4` 刚刚重构过的文件，51 行硬编码是本次重构遗留的最大一处，与上一轮修复的 FIND-08 属于同一次改动的同类问题。
 
-### IMP-07 · 状态词汇仍有完整副本（FCA-04 未真正闭环）
+### IMP-07 · 状态文案存在三份独立词汇（已修复）
 
-优先级：中
+优先级：中。状态：2026-08-01 已修复。
 
-**证据**：`docs/quality/full-codebase-audit-2026-07-29.md` 把 FCA-04（统一状态词汇）列入「已闭环并有守护测试」。实际核对发现 `src/pages/ActivityCenter.tsx:64-77` 的 `STATUS_LABELS` 与 `src/pages/TimelinePage.tsx:48-62` 的 `statusLabel` 各自维护了一份**逐字相同**的状态标签表：
+**更正**：本条初稿写作「FCA-04 未真正闭环」，该判断有误。FCA-04 处理的是状态**指示器的色调语义**（`StatusDot` / `StatusIcon` / `StatusBadge`），已由 `src/components/shared/status/statusTone.ts` 收敛，结论成立。本条实际发现的是状态**文案词汇**，属于此前未被记录的另一个问题，与 FCA-04 无从属关系。
 
-```
-running: '运行中', input_required: '等待输入', awaiting_review: '等待审阅',
-failed: '失败', done: '已完成', cancelled: '已取消',
-interrupted: '已中断', detached: '已分离'
-```
+**证据**：三处各自维护状态文案，且已经漂移：
 
-两处都定义了各自的 `statusLabel` 函数，没有引用任何共享词汇模块。这同时构成 IMP-06 的一部分（硬编码文案）和重复定义。
+- `src/pages/ActivityCenter.tsx` 的 `STATUS_LABELS`，12 项硬编码中文，另有 5 项被 `lifecycle.*` 覆盖
+- `src/pages/TimelinePage.tsx` 的 `statusLabel`，12 项硬编码中文
+- locale 中的 `dynamicIsland.statuses`，10 项，已接入 i18n
 
-**目标**：抽出单一状态词汇模块并接入 i18n，同时更新 FCA-04 的状态描述——按 `AGENTS.md` 的要求，闭环声明必须以代码复核为准。
+三者互不相同：`running` 在前两处是「运行中」，在灵动岛是「执行中」；`pending` 分别是「等待运行」与「排队中」；`todo` 分别是「待开始」与「待办」。同一状态在不同界面显示不同文案。键集合也各不相同：`stopped` / `unknown` 只在 ActivityCenter，`queued` / `idle` 只在 TimelinePage。
+
+**修复**：新增 `src/utils/taskStatusLabels.ts` 作为唯一词汇来源，任务状态部分以权威联合类型 `AgentWorkspaceTaskStatus` 为准，会话活动状态单列——两者是不同的域，不能合并成一张表。三份 locale 新增 `taskStatus` 命名空间共 14 项。未识别的状态回落为原始值而非编造标签，使上游词汇变更暴露为未翻译字符串。
 
 ### IMP-08 · 1.5.1 发布重演了 Cargo.lock 遗漏
 

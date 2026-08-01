@@ -1,6 +1,12 @@
 packages:
   - 'packages/*'
 
+# postcss reaches us only through vite at build time and never ships in the
+# desktop bundle, but the sourceMappingURL path traversal is still worth closing.
+# vite 6.4.3 has not moved to the patched release yet.
+overrides:
+  postcss: '>=8.5.18'
+
 allowBuilds:
   '@google/genai': false
   esbuild: true

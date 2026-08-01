@@ -1,4 +1,20 @@
 {
+  "taskStatus": {
+      "todo": "Todo",
+      "pending": "Pending",
+      "running": "Running",
+      "input_required": "Needs input",
+      "awaiting_review": "Awaiting review",
+      "detached": "Detached",
+      "interrupted": "Interrupted",
+      "done": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "queued": "Queued",
+      "idle": "Idle",
+      "stopped": "Stopped",
+      "unknown": "Unknown"
+  },
   "app": {
     "name": "JunQi Desktop",
     "fullName": "JunQi Desktop — AI-Powered Desktop Assistant",

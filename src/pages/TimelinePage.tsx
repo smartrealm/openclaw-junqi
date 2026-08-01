@@ -16,6 +16,7 @@ import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { sessionExecutionState } from '@/utils/sessionPresentation';
 import { activitySessionMetrics, mergeActivitySessions } from '@/utils/activitySessions';
 import { createAgentRunTaskRoute } from '@/utils/agentTaskRoute';
+import { resolveStatusLabel } from '@/utils/taskStatusLabels';
 
 function workspaceStatus(status: AgentWorkspaceTask['status']): TimelineTask['status'] {
   if (status === 'running') return 'running';
@@ -45,23 +46,7 @@ function modelName(value: unknown): string | undefined {
   return value.trim().split('/').filter(Boolean).pop();
 }
 
-function statusLabel(status: TimelineTask['status']): string {
-  const labels: Record<string, string> = {
-    running: '运行中',
-    input_required: '等待输入',
-    awaiting_review: '等待审阅',
-    failed: '失败',
-    done: '已完成',
-    cancelled: '已取消',
-    interrupted: '已中断',
-    detached: '已分离',
-    pending: '等待运行',
-    todo: '待开始',
-    queued: '排队中',
-    idle: '已停止',
-  };
-  return labels[status] ?? status;
-}
+// Status wording lives in one shared vocabulary; see utils/taskStatusLabels.
 
 function latestUserPrompt(messages: Array<{ role?: string; content?: string; timestamp?: string }> | undefined): { text?: string; timestamp?: number } {
   if (!messages) return {};
@@ -80,6 +65,7 @@ function deriveTimelineTasks({
   sessionsUsage,
   messagesPerSession,
   agents,
+  t,
 }: {
   workspaceTasks: AgentWorkspaceTask[];
   workshopTasks: Array<{ id: string; title: string; assignedAgent?: string; status: string; createdAt: string }>;
@@ -88,6 +74,7 @@ function deriveTimelineTasks({
   sessionsUsage?: { sessions?: unknown[] } | null;
   messagesPerSession: Record<string, Array<{ role?: string; content?: string; timestamp?: string }> | undefined>;
   agents: Array<{ id: string; name?: string }>;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }): TimelineTask[] {
   const out: TimelineTask[] = [];
 
@@ -101,7 +88,7 @@ function deriveTimelineTasks({
       agent: task.agent,
       runtime: task.launchMode === 'worktree' ? '工作树' : '本地工作区',
       status: workspaceStatus(task.status),
-      statusLabel: statusLabel(workspaceStatus(task.status)),
+      statusLabel: resolveStatusLabel(workspaceStatus(task.status), t),
       createdAt: task.updatedAt || task.createdAt,
       durationMs,
       project: task.projectPath.split(/[\\/]/).pop() || task.projectPath,
@@ -119,7 +106,7 @@ function deriveTimelineTasks({
       title: task.title,
       agent: task.assignedAgent,
       status: task.status,
-      statusLabel: statusLabel(task.status),
+      statusLabel: resolveStatusLabel(task.status, t),
       createdAt: created,
       project: 'Workshop',
       href: '/workshop',
@@ -152,7 +139,7 @@ function deriveTimelineTasks({
       model: modelName(session.model),
       runtime,
       status,
-      statusLabel: statusLabel(status),
+      statusLabel: resolveStatusLabel(status, t),
       createdAt: activity,
       tokens: metrics.tokens,
       cost: metrics.cost,
@@ -183,7 +170,8 @@ export function TimelinePage() {
     sessionsUsage,
     messagesPerSession,
     agents,
-  }), [agents, chatSessions, gatewaySessions, messagesPerSession, sessionsUsage, workshopTasks, workspaceTasks]);
+    t,
+  }), [agents, chatSessions, gatewaySessions, messagesPerSession, sessionsUsage, t, workshopTasks, workspaceTasks]);
 
   return (
     <TimelineView

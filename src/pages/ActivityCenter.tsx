@@ -32,6 +32,7 @@ import { projectSessionActivity, type SessionActivity } from '@/utils/sessionPre
 import { formatTokens } from '@/utils/format';
 import { shortModelName, formatActivityTimeTitle } from '@/pages/Dashboard/dashboardData';
 import { activitySessionMetrics, mergeActivitySessions, type ActivitySessionRecord } from '@/utils/activitySessions';
+import { resolveStatusLabel } from '@/utils/taskStatusLabels';
 import { createAgentRunTaskRoute } from '@/utils/agentTaskRoute';
 
 type ActivityFilter = 'all' | 'running' | 'attention' | 'done' | 'failed';
@@ -58,26 +59,9 @@ interface ActivityEntry {
 interface ActivityLabels {
   mainSession: string;
   genericSession: string;
-  status: Record<string, string>;
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  running: '运行中',
-  input_required: '等待输入',
-  awaiting_review: '等待审阅',
-  failed: '失败',
-  done: '已完成',
-  cancelled: '已取消',
-  interrupted: '已中断',
-  detached: '已分离',
-  pending: '等待运行',
-  todo: '待开始',
-  stopped: '已停止',
-  unknown: '未开始',
-};
-
-function statusLabel(status: string, labels: Record<string, string> = STATUS_LABELS): string {
-  return labels[status] ?? status;
+  /** Only the derived "needs attention" state; plain statuses use the shared vocabulary. */
+  attention: string;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }
 
 function toLifecycle(status: string, attention: boolean): LifecycleState {
@@ -125,7 +109,7 @@ function workspaceEntry(task: AgentWorkspaceTask, labels: ActivityLabels): Activ
     runtime: task.launchMode === 'worktree' ? 'Worktree' : 'Local workspace',
     project: task.projectPath.split(/[\\/]/).pop() || task.projectPath,
     status: task.status,
-    statusLabel: statusLabel(task.status, labels.status),
+    statusLabel: resolveStatusLabel(task.status, labels.t),
     lifecycle: toLifecycle(task.status, attention),
     timestamp: task.attentionRequestedAt ?? task.updatedAt ?? task.createdAt,
     durationMs,
@@ -159,7 +143,7 @@ function sessionEntry(
     runtime: runtimeForSession(session),
     project: session.topic,
     status: normalizedStatus,
-    statusLabel: attention ? labels.status.attention : statusLabel(normalizedStatus, labels.status),
+    statusLabel: attention ? labels.attention : resolveStatusLabel(normalizedStatus, labels.t),
     lifecycle: toLifecycle(normalizedStatus, attention),
     timestamp,
     durationMs: metrics.durationMs,
@@ -215,14 +199,8 @@ export function ActivityCenterPage() {
   const labels = useMemo<ActivityLabels>(() => ({
     mainSession: t('dashboard.mainSession', 'Main Session'),
     genericSession: t('dashboard.session', 'Session'),
-    status: {
-      ...STATUS_LABELS,
-      running: t('lifecycle.running', 'Running'),
-      failed: t('lifecycle.failed', 'Failed'),
-      done: t('lifecycle.ended', 'Completed'),
-      stopped: t('lifecycle.idle', 'Idle'),
-      attention: t('lifecycle.attention', 'Needs attention'),
-    },
+    attention: t('lifecycle.attention', 'Needs attention'),
+    t,
   }), [t]);
 
   useEffect(() => {
