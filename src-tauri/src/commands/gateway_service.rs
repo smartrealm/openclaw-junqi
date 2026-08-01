@@ -231,14 +231,48 @@ pub(crate) struct GatewayServiceInspection {
 pub struct GatewayAutostartStatus {
     pub supported: bool,
     pub enabled: bool,
+    pub running: bool,
+    pub service_kind: GatewayAutostartServiceKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GatewayAutostartServiceKind {
+    MacosLaunchAgent,
+    WindowsScheduledTask,
+    NativeService,
+}
+
+fn gateway_autostart_service_kind_for_os(os: &str) -> GatewayAutostartServiceKind {
+    match os {
+        "macos" => GatewayAutostartServiceKind::MacosLaunchAgent,
+        "windows" => GatewayAutostartServiceKind::WindowsScheduledTask,
+        _ => GatewayAutostartServiceKind::NativeService,
+    }
+}
+
+fn gateway_autostart_service_kind() -> GatewayAutostartServiceKind {
+    gateway_autostart_service_kind_for_os(std::env::consts::OS)
+}
+
+fn unsupported_gateway_autostart_status() -> GatewayAutostartStatus {
+    GatewayAutostartStatus {
+        supported: false,
+        enabled: false,
+        running: false,
+        service_kind: gateway_autostart_service_kind(),
+    }
 }
 
 fn selected_service_autostart_status(
     inspection: GatewayServiceInspection,
 ) -> GatewayAutostartStatus {
+    let enabled = belongs_to_selected_state(inspection.ownership) && inspection.installed;
     GatewayAutostartStatus {
         supported: true,
-        enabled: belongs_to_selected_state(inspection.ownership) && inspection.installed,
+        enabled,
+        running: enabled && is_running_selected_service(inspection),
+        service_kind: gateway_autostart_service_kind(),
     }
 }
 
@@ -270,10 +304,7 @@ pub async fn gateway_autostart_status() -> Result<GatewayAutostartStatus, String
         paths::active_runtime_mode(),
         paths::OpenClawRuntimeMode::Native
     ) {
-        return Ok(GatewayAutostartStatus {
-            supported: false,
-            enabled: false,
-        });
+        return Ok(unsupported_gateway_autostart_status());
     }
     let (runtime, state_dir, config_path) = selected_native_service_context().await?;
     let identity = GatewayServiceIdentity::for_runtime(&state_dir, &config_path, &runtime);
@@ -313,10 +344,7 @@ pub async fn disable_gateway_autostart(
         paths::active_runtime_mode(),
         paths::OpenClawRuntimeMode::Native
     ) {
-        return Ok(GatewayAutostartStatus {
-            supported: false,
-            enabled: false,
-        });
+        return Ok(unsupported_gateway_autostart_status());
     }
     let (runtime, state_dir, config_path) = selected_native_service_context().await?;
     uninstall_selected_gateway_service(&runtime, &state_dir, &config_path, None).await?;
@@ -326,6 +354,8 @@ pub async fn disable_gateway_autostart(
     Ok(GatewayAutostartStatus {
         supported: true,
         enabled: false,
+        running: false,
+        service_kind: gateway_autostart_service_kind(),
     })
 }
 
@@ -1386,6 +1416,43 @@ mod tests {
         assert_eq!(
             classify_service_ownership(&status(None), &identity),
             GatewayServiceOwnership::Unverifiable,
+        );
+    }
+
+    #[test]
+    fn autostart_status_keeps_registration_and_runtime_state_distinct() {
+        let stopped = GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::SelectedState,
+            installed: true,
+            running: false,
+        };
+        let running = GatewayServiceInspection {
+            running: true,
+            ..stopped
+        };
+
+        let stopped_status = selected_service_autostart_status(stopped);
+        assert!(stopped_status.enabled);
+        assert!(!stopped_status.running);
+
+        let running_status = selected_service_autostart_status(running);
+        assert!(running_status.enabled);
+        assert!(running_status.running);
+    }
+
+    #[test]
+    fn autostart_service_kind_matches_platform_service_contracts() {
+        assert_eq!(
+            gateway_autostart_service_kind_for_os("macos"),
+            GatewayAutostartServiceKind::MacosLaunchAgent,
+        );
+        assert_eq!(
+            gateway_autostart_service_kind_for_os("windows"),
+            GatewayAutostartServiceKind::WindowsScheduledTask,
+        );
+        assert_eq!(
+            gateway_autostart_service_kind_for_os("linux"),
+            GatewayAutostartServiceKind::NativeService,
         );
     }
 }

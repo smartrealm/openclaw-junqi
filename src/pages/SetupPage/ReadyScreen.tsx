@@ -10,6 +10,7 @@ import { SetupShell, STEP_META } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
 import { type InstallMode } from "@/stores/setup-navigation";
 import { gatewayLifecycle } from "@/services/gateway/gatewayLifecycle";
+import { presentGatewayAutostart } from "@/components/settings/gatewayAutostartPresentation";
 
 export function GatewayAutostartPreference({
   installMode,
@@ -53,6 +54,7 @@ export function GatewayAutostartPreference({
     );
   }
   const enabled = status.enabled;
+  const presentation = presentGatewayAutostart(status, t);
 
   const toggleAutostart = async () => {
     if (busy) return;
@@ -96,19 +98,17 @@ export function GatewayAutostartPreference({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-aegis-text">
-              {t("setup.autostart.title", "要不要让 OpenClaw 开机自动运行?")}
+              {presentation.title}
             </span>
             {enabled && (
               <span className="inline-flex items-center gap-1 rounded-full border border-aegis-success/30 bg-aegis-success/10 px-2 py-0.5 text-[11px] font-medium text-aegis-success">
                 <Check size={11} strokeWidth={3} />
-                {t("setup.autostart.enabledBadge", "已开启")}
+                {presentation.badge}
               </span>
             )}
           </div>
           <p className="mt-1.5 text-xs leading-5 text-aegis-text-secondary">
-            {enabled
-              ? t("setup.autostart.enabledHint", "已设置为开机自动运行:以后电脑一开机,OpenClaw 就会自动在后台工作,不需要打开本应用。随时可以在这里关闭。")
-              : t("setup.autostart.hint", "开启后,电脑一开机 OpenClaw 就会自动在后台运行——不用打开本应用,你的消息渠道和定时任务也能照常工作。不开启也没关系:每次打开本应用时会自动启动它。")}
+            {presentation.description}
           </p>
           {busy && phase && (
             <p className="mt-2 flex items-center gap-1.5 text-xs text-aegis-text-muted">
@@ -129,9 +129,7 @@ export function GatewayAutostartPreference({
               : "bg-aegis-primary text-white hover:opacity-90",
           )}
         >
-          {enabled
-            ? t("setup.autostart.disable", "关闭")
-            : t("setup.autostart.enable", "开机自动运行")}
+          {presentation.action}
         </button>
       </div>
     </section>

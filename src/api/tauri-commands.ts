@@ -212,6 +212,8 @@ export const ensureGatewayRunning = () => invoke<EnsureResult>("ensure_gateway_r
 export interface GatewayAutostartStatus {
   supported: boolean;
   enabled: boolean;
+  running: boolean;
+  serviceKind: 'macos_launch_agent' | 'windows_scheduled_task' | 'native_service';
 }
 export const gatewayAutostartStatus = () => invoke<GatewayAutostartStatus>("gateway_autostart_status");
 export const handoffGatewayToOfficialService = () => (

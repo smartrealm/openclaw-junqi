@@ -9,6 +9,29 @@ installation boundaries, service ownership discovery, normal lifecycle actions,
 Wizard/autostart handoff, update and storage restore, Native/Docker switching,
 application exit, and uninstall cleanup.
 
+## Login Autostart Contract
+
+The Desktop autostart preference is a Native-runtime-only wrapper around the
+currently installed OpenClaw CLI's official `gateway install`, `status`, and
+`uninstall` commands. It is not a JunQi application-login preference.
+
+- macOS uses an OpenClaw LaunchAgent and starts after the current user signs
+  in. It does not mean the Gateway runs before any user has logged in.
+- Windows uses an OpenClaw Scheduled Task with a LogonTrigger and starts after
+  the configured user signs in. If Task Scheduler is unavailable, the upstream
+  CLI may use its documented Startup-folder fallback.
+- JunQi returns `enabled` only after it re-attests that the installed service
+  belongs to the selected state directory, configuration path, runtime, and
+  locale. It separately returns `running`, so the UI never represents a
+  registered-but-stopped service as already working.
+- Docker does not expose this preference. JunQi never silently converts a
+  Docker selection into a Native login service.
+
+The macOS status probe was verified on 2026-08-01 against OpenClaw 2026.7.1-2:
+the selected LaunchAgent was loaded and its runtime status was running. Windows
+has compile and command-contract coverage, but a Windows user-login cold-start
+test remains required before claiming target-machine validation.
+
 ## Evidence
 
 | Layer | Command | Result |

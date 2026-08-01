@@ -26,6 +26,7 @@ import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
 import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { presentGatewayAutostart } from './gatewayAutostartPresentation';
 
 type GatewayLifecycle = 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
 type GatewayRuntimeMode = 'none' | 'external' | 'system_service' | 'managed_child' | 'docker';
@@ -217,6 +218,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
       .slice(-5);
     return lifecycleEvents.length > 0 ? lifecycleEvents : logs.slice(-5);
   }, [logs]);
+  const autostartPresentation = autostart ? presentGatewayAutostart(autostart, t) : null;
 
   const Icon = lifecycleIcon(lifecycle);
   const tone = lifecycleTone(lifecycle);
@@ -288,13 +290,21 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
         <div className="mt-4 flex items-start gap-3 rounded-lg border border-aegis-border/35 bg-aegis-bg/35 p-3">
           <Power size={15} className="mt-0.5 shrink-0 text-aegis-primary" />
           <div className="min-w-0 flex-1">
-            <div className="text-[12px] font-semibold text-aegis-text">
-              {t('setup.autostart.title', '要不要让 OpenClaw 开机自动运行?')}
+            <div className="flex flex-wrap items-center gap-2 text-[12px] font-semibold text-aegis-text">
+              <span>{autostartPresentation?.title}</span>
+              {autostartPresentation?.badge && (
+                <span className={clsx(
+                  'rounded-full border px-1.5 py-0.5 text-[10px] font-medium',
+                  autostart.running
+                    ? 'border-aegis-success/30 bg-aegis-success/10 text-aegis-success'
+                    : 'border-aegis-warning/30 bg-aegis-warning/10 text-aegis-warning',
+                )}>
+                  {autostartPresentation.badge}
+                </span>
+              )}
             </div>
             <p className="mt-1 text-[11px] leading-5 text-aegis-text-dim">
-              {autostart.enabled
-                ? t('setup.autostart.enabledHint', '已设置为开机自动运行:以后电脑一开机,OpenClaw 就会自动在后台工作,不需要打开本应用。随时可以在这里关闭。')
-                : t('setup.autostart.hint', '开启后,电脑一开机 OpenClaw 就会自动在后台运行——不用打开本应用,你的消息渠道和定时任务也能照常工作。不开启也没关系:每次打开本应用时会自动启动它。')}
+              {autostartPresentation?.description}
             </p>
             {autostartError && <p className="mt-1 break-words text-[11px] text-aegis-danger">{autostartError}</p>}
           </div>
@@ -306,9 +316,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
           >
             {autostartBusy
               ? t('setup.autostart.switching', '正在切换 OpenClaw 的运行方式,请稍候…')
-              : autostart.enabled
-                ? t('setup.autostart.disable', '关闭')
-                : t('setup.autostart.enable', '开机自动运行')}
+              : autostartPresentation?.action}
           </button>
         </div>
       )}
