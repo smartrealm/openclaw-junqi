@@ -4,7 +4,7 @@ JunQi Desktop（浚启桌面）是一款基于 Tauri、React 和 OpenClaw 的桌
 
 它将 OpenClaw 的安装、Gateway 生命周期、智能体、会话、技能、渠道、终端、配置和运行诊断整合到一个跨平台桌面应用中。
 
-> 当前版本：`2.0.0`
+> 当前版本：`2.0.1`
 >
 > 当前仓库为开发仓库；自动化测试通过不等同于所有平台的真机验收完成。
 
@@ -52,7 +52,7 @@ pnpm build
 pnpm tauri build
 ```
 
-桌面安装包由 Tauri 构建。Windows 使用 NSIS，发布工作流按 x86、x64 和 ARM64 分架构构建。
+桌面安装包由 Tauri 构建。当前正式发布覆盖 macOS ARM64/x64 与 Windows x64；Windows 使用 NSIS。
 
 ## 验证
 

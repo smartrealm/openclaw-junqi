@@ -7,7 +7,7 @@ import {
   withoutDeletedSessions,
 } from '@/utils/sessionLifecycle';
 import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
-import { GatewayRpcError } from '@/services/gateway/Connection';
+import { listOpenClawSessionLifecycle } from '@/services/gateway/OpenClawSessionListClient';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -518,22 +518,20 @@ async function fetchSessions(): Promise<boolean> {
   const store = useGatewayDataStore.getState();
   store.setLoading('sessions', true);
   try {
-    let res: unknown;
-    try {
-      // Current OpenClaw hides archived rows by default. Request the complete
-      // lifecycle projection so the sidebar can render native archives.
-      res = await ticket.connection.request('sessions.list', { archived: 'all' });
-    } catch (error) {
-      const code = error instanceof GatewayRpcError ? error.code?.toUpperCase() : undefined;
-      const legacyArchivedFilter = (code === 'INVALID_PARAMS' || code === 'VALIDATION_ERROR')
-        && error instanceof GatewayRpcError
-        && /archived/i.test(error.message);
-      if (!legacyArchivedFilter) throw error;
-      res = await ticket.connection.request('sessions.list', {});
-    }
+    const responses = await listOpenClawSessionLifecycle(ticket.connection.request);
     if (!isCurrentGatewayRequest(ticket)) return false;
-    const sessionListSnapshot = parseOpenClawSessionListSnapshot(res);
-    const rawList = sessionListSnapshot.sessions as SessionInfo[];
+    const activeSnapshot = parseOpenClawSessionListSnapshot(responses.active);
+    const archivedSnapshot = responses.archived === undefined
+      ? undefined
+      : parseOpenClawSessionListSnapshot(responses.archived);
+    const sessionListSnapshot = {
+      sessions: coalesceSessionsByKey([
+        ...(activeSnapshot.sessions as SessionInfo[]),
+        ...((archivedSnapshot?.sessions as SessionInfo[] | undefined) ?? []),
+      ]),
+      complete: activeSnapshot.complete && (archivedSnapshot?.complete ?? true),
+    };
+    const rawList = sessionListSnapshot.sessions;
 
     // Merge: preserve event-enriched runningUpdatedAt that the server does not return.
     // IMPORTANT: polling must NEVER generate a new runningUpdatedAt timestamp by itself.

@@ -93,11 +93,15 @@ after(() => {
 });
 
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
+const wait = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
 async function waitForSocketCount(count: number): Promise<void> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
     if (MemoryWebSocket.instances.length === count) return;
-    await turn();
+    // Pairing retries use a timer. Yielding only to setImmediate can starve
+    // that timer on a loaded CI runner and make this resource-safety test flaky.
+    await wait(5);
   }
   assert.equal(MemoryWebSocket.instances.length, count);
 }

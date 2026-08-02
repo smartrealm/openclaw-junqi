@@ -128,10 +128,9 @@ test('Windows reads the selected OpenClaw token and stores device credentials in
   assert.match(cargo, /\[target\.'cfg\(windows\)'\.dependencies\][\s\S]*keyring\s*=\s*\{[^}]*"windows-native"/);
 });
 
-test('Windows release matrix builds and stages NSIS installers for x86, x64 and ARM64', () => {
+test('Windows release matrix builds and stages an NSIS installer for the supported x64 target', () => {
   assert.match(release, /name: Windows x64[\s\S]*target: 'x86_64-pc-windows-msvc'[\s\S]*--bundles nsis/);
-  assert.match(release, /name: Windows x86[\s\S]*target: 'i686-pc-windows-msvc'[\s\S]*--bundles nsis/);
-  assert.match(release, /name: Windows ARM64[\s\S]*target: 'aarch64-pc-windows-msvc'[\s\S]*--bundles nsis/);
+  assert.doesNotMatch(release, /i686-pc-windows-msvc|aarch64-pc-windows-msvc/);
   assert.match(release, /bundle\/nsis\|\.exe/);
   assert.doesNotMatch(release, /--bundles nsis,msi|bundle\/msi\|\.msi/);
   assert.match(taggedRelease, /--bundles nsis/);
@@ -148,14 +147,11 @@ test('hosted tagged builds reuse committed provider catalogs without a runner-lo
   assert.match(taggedRelease, /--config\s+src-tauri\/tauri\.hosted-release\.conf\.json/);
 });
 
-// Windows-native Rust tests used to run in ci.yml. They now run inside each
-// tagged Windows installer build, against the exact source and target that
-// produces the distributable. Assert the coverage wherever it lives, and keep
-// asserting the targets so silently dropping an architecture still fails.
-test('Windows Rust tests run natively for every shipped Windows target', () => {
-  for (const target of ['x86_64-pc-windows-msvc', 'i686-pc-windows-msvc', 'aarch64-pc-windows-msvc']) {
-    assert.match(taggedRelease, new RegExp(`target: '${target.replace(/\./g, '\\.')}'`));
-  }
+// Windows-native Rust tests run in the matching tagged installer build. Only
+// x64 is currently shipped because sherpa-onnx has no x86 or ARM64 libraries.
+test('Windows Rust tests run natively for the shipped Windows target', () => {
+  assert.match(taggedRelease, /target: 'x86_64-pc-windows-msvc'/);
+  assert.doesNotMatch(taggedRelease, /i686-pc-windows-msvc|aarch64-pc-windows-msvc/);
   assert.match(taggedRelease, /- name: Run native Windows Rust tests\n\s+if: runner\.os == 'Windows'/);
   assert.match(taggedRelease, /cargo test --locked --lib --target \$\{\{ matrix\.target \}\} --no-fail-fast/);
   // ci.yml deliberately keeps only Linux jobs; a Windows matrix reappearing

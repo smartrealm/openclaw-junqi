@@ -469,24 +469,6 @@ jobs:
             stage_prefix: windows-x86_64
             asset_specs: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis|.exe
-          - name: Windows x86
-            artifact_name: windows-i686
-            platform: windows-latest
-            target: 'i686-pc-windows-msvc'
-            rust_targets: 'i686-pc-windows-msvc'
-            bundle_args: '--bundles nsis'
-            stage_prefix: windows-i686
-            asset_specs: |
-              src-tauri/target/i686-pc-windows-msvc/release/bundle/nsis|.exe
-          - name: Windows ARM64
-            artifact_name: windows-arm64
-            platform: windows-11-arm
-            target: 'aarch64-pc-windows-msvc'
-            rust_targets: 'aarch64-pc-windows-msvc'
-            bundle_args: '--bundles nsis'
-            stage_prefix: windows-arm64
-            asset_specs: |
-              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis|.exe
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -1395,7 +1377,7 @@ jobs:
             echo ""
             echo "| Build matrix | Targets | Status |"
             echo "|--------------|---------|--------|"
-            echo "| Desktop installers | macOS ARM64/x64, Windows x86/x64/ARM64 | ${{ needs.build.result }} |"
+            echo "| Desktop installers | macOS ARM64/x64, Windows x64 | ${{ needs.build.result }} |"
             echo "| Release asset manifest | source/bundle/digest binding | ${{ needs.release-asset-manifest.result }} |"
             echo "| Quality evidence attestation | immutable subject attestation | ${{ needs.quality-evidence-attest.result }} |"
             echo "| Structural smoke attestation | immutable subject attestation | ${{ needs.gateway-structural-smoke-attest.result }} |"

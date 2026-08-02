@@ -1724,7 +1724,7 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
         package_valid,
         gateway_command_ok,
         relocation_required: paths::openclaw_relocation_required(),
-        version_beyond_verified_range: false,
+        version_beyond_verified_range,
         error: if installed {
             None
         } else {
