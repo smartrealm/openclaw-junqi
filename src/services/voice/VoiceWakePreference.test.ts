@@ -4,17 +4,20 @@ import {
   autoArmSessionKey,
   clearAutoArmSession,
   setAutoArmSession,
-  shouldAutoArmSession,
+  subscribeAutoArmPreference,
 } from './VoiceWakePreference';
 
-test('voice wake auto-arm preference is scoped to one session key', () => {
-  clearAutoArmSession();
-  setAutoArmSession('agent:primary:main');
+test('standby preference notifies the application runtime on enable and disable', () => {
+  localStorage.clear();
+  let notifications = 0;
+  const unsubscribe = subscribeAutoArmPreference(() => { notifications += 1; });
 
-  assert.equal(autoArmSessionKey(), 'agent:primary:main');
-  assert.equal(shouldAutoArmSession('agent:primary:main'), true);
-  assert.equal(shouldAutoArmSession('agent:other:main'), false);
-
+  setAutoArmSession('agent:main:main');
+  assert.equal(autoArmSessionKey(), 'agent:main:main');
   clearAutoArmSession();
   assert.equal(autoArmSessionKey(), null);
+  assert.equal(notifications, 2);
+
+  unsubscribe();
+  localStorage.clear();
 });

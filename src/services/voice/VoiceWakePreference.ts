@@ -4,6 +4,17 @@ interface StoredAutoArmPreference {
   sessionKey: string;
 }
 
+const listeners = new Set<() => void>();
+
+function publish(): void {
+  for (const listener of [...listeners]) listener();
+}
+
+export function subscribeAutoArmPreference(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
 export function autoArmSessionKey(): string | null {
   try {
     const raw = localStorage.getItem(AUTO_ARM_STORAGE_KEY);
@@ -21,10 +32,12 @@ export function setAutoArmSession(sessionKey: string): void {
   const normalized = sessionKey.trim();
   if (!normalized) return;
   localStorage.setItem(AUTO_ARM_STORAGE_KEY, JSON.stringify({ sessionKey: normalized }));
+  publish();
 }
 
 export function clearAutoArmSession(): void {
   localStorage.removeItem(AUTO_ARM_STORAGE_KEY);
+  publish();
 }
 
 export function shouldAutoArmSession(sessionKey: string): boolean {

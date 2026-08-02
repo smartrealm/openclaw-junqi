@@ -10,6 +10,7 @@ import { usePetStore } from '@/stores/petStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import type { DynamicIslandAction } from './DynamicIslandActions';
 import { voiceModeCoordinator } from '@/services/voice/VoiceModeCoordinator';
 import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
@@ -29,15 +30,6 @@ import {
   type DynamicIslandSnapshot,
 } from './model';
 
-type IslandAction =
-  | { type: 'open-task'; taskId: string }
-  | { type: 'open-session'; sessionKey: string }
-  | { type: 'open-focus' }
-  | { type: 'toggle-dnd' }
-  | { type: 'pomodoro-toggle' }
-  | { type: 'pomodoro-stop' }
-  | { type: 'voice-stop' }
-  | { type: 'hide' };
 
 export default function DynamicIslandRuntime() {
   const { t } = useTranslation();
@@ -235,7 +227,7 @@ export default function DynamicIslandRuntime() {
         window.location.hash = event.payload;
       }
     }),
-    subscribeTauriEvent<IslandAction>('dynamic-island:action', (event) => {
+    subscribeTauriEvent<DynamicIslandAction>('dynamic-island:action', (event) => {
       const action = event.payload;
       switch (action.type) {
         case 'open-task':

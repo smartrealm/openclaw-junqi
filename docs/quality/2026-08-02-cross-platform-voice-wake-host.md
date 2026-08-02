@@ -20,9 +20,9 @@ When a wake-word listener is armed, the existing workbench checkpoint and PTY sh
 
 Before the workbench writer becomes ready, a close request cannot create a checkpoint. It still prevents the native close long enough to read the listener status: an actively running wake-word listener hides the main window, while any unavailable, dictation, or failed status completes a normal destroy. Once the writer is ready, the regular checkpoint and PTY shutdown remain mandatory before this same decision.
 
-After a confirmed or discarded audio draft, the session-scoped automatic arm request is renewed. Native listener failures retry with a bounded exponential delay while the same authenticated session remains selected; a successful listener clears that retry count. Model configuration is written atomically. The React workspace receives typed detector data and callbacks from the composer hook; direct Tauri invocation is limited to the typed adapter.
+After a confirmed or discarded audio draft, the session-scoped automatic arm request is renewed. Native listener failures retry with a bounded exponential delay while the same authenticated session remains selected; a successful listener clears that retry count. Model configuration is written atomically. The application-root `JarvisVoiceRuntime` owns the typed native listener and callbacks; navigating away from chat cannot unmount it.
 
-Wake mode is not confined to the composer. Once selected, it presents a fixed full-window control surface above the desktop workspace for local listening, keyword detection, draft confirmation, model configuration, and recoverable errors. Escape and the visible stop controls release capture. The assistant pet and Dynamic Island remain separate auxiliary projections and receive only mode, phase, confirmation-needed, and error cues.
+Wake mode is not confined to the composer. Once selected, the application root presents a fixed full-window control surface above the desktop workspace for local listening, keyword detection, draft confirmation, and recoverable errors. Escape and the visible stop controls release capture. Model directory, declared wake phrases, and desktop standby are configured only through Settings `Jarvis`; the assistant pet and Dynamic Island remain separate auxiliary projections and receive only mode, phase, confirmation-needed, and error cues.
 
 When the main window is hidden for standby, a verified local wake result requests `show`, `unminimize`, and `setFocus` before the full-window surface is presented. Operating systems may reject focus stealing; that result does not cancel the already verified voice turn, but a failure to restore visibility is reported to the media debug scope. The behavior uses Tauri's common window API rather than a macOS-only activation path.
 
@@ -68,6 +68,12 @@ The installed OpenClaw Talk relay emits ordered `output.audio.delta` frames and 
 
 Interruption, relay replacement, close, and relay failure invalidate the queued generation before sending the native stop command. A frame that was waiting behind an interrupted frame cannot begin playback afterward. The native drain wait processes stop commands while waiting, so a recognized barge-in is not delayed by a long assistant reply.
 
+## Configuration And Auxiliary Controls
+
+Jarvis configuration is a desktop-level concern and is reachable through the Settings `Jarvis` tab. It owns the local model-directory selection, explicit Gateway trigger update, and the desktop standby switch. The selected model directory remains in native application data, the trigger list remains Gateway-owned, and the selected standby target is only a canonical OpenClaw session key. The page does not obtain microphone access, create a Talk session, or rewrite voice-wake routing. Changing standby publishes immediately to the root runtime, which re-evaluates the normal authenticated arming gate or releases the current capture. The conversation composer retains only a shortcut that controls its selected, attested session.
+
+The Dynamic Island auxiliary window closes itself through its native command before it emits the main-window preference action. This preserves immediate visual feedback even if a cross-window event is unavailable; the subsequent main-window action still persists the user preference and prevents reopening on later state updates.
+
 ## Automated Evidence
 
 - `pnpm exec tsc --noEmit` passed.
@@ -93,6 +99,8 @@ Interruption, relay replacement, close, and relay failure invalidate the queued 
 - On 2026-08-02, the native Talk projection regression verified that only the owning Talk session can publish and clear the shared `speaking` state consumed by the pet and Dynamic Island.
 - On 2026-08-02, `pnpm lint`, the complete `pnpm test` suite (2,242 frontend tests and 233 script tests), `pnpm build`, `cargo fmt -- --check`, `cargo check --lib`, and `cargo test --lib` passed. The Rust library suite reported 692 passed and 4 intentionally ignored tests; the existing `system.rs` unused-variable warning remains.
 - On 2026-08-02, the Talk output ordering regression verified that PCM deltas serialize, `output.audio.done` waits for native drain, and stopping a relay fences queued playback. The complete frontend lint/test/build suite and complete Rust library suite passed again; Rust reported 692 passed and 4 intentionally ignored tests, with the existing `system.rs` unused-variable warning.
+- On 2026-08-02, Dynamic Island close regression verified immediate local native hide before the main-window preference action. The Settings Jarvis tab passed TypeScript, module-boundary, Gateway trigger contract, model-label selection, locale JSON, complete frontend test, and production build validation.
+- On 2026-08-02, the Jarvis ownership remediation moved the native listener and full-window overlay to the application-root runtime, added Settings-owned desktop standby with a selected-session binding, and verified immediate preference publication with a behavior test. Target-platform microphone and login-start validation remains separately unverified.
 - Capability and locale JSON parsed successfully, and `git diff --check` passed.
 
 ## Unverified Boundaries
