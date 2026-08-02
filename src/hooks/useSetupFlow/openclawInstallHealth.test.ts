@@ -116,3 +116,25 @@ test('reinstall and relocate stop the selected service before touching the tree'
   // Docker does not run from the host npm prefix, so it is a no-op, not a failure.
   assert.match(service, /OpenClawRuntimeMode::Native\n\s+\) \{\n\s+return Ok\(false\);/);
 });
+
+// AUD-02: a version past the verified range stays usable, so the only thing
+// standing between the user and a confusing wizard failure is this notice.
+test('a version beyond the verified range is surfaced, not just recorded', () => {
+  const panel = readFileSync('src/components/setup/SetupFlowPanels.tsx', 'utf8');
+  assert.match(panel, /status\?\.version_beyond_verified_range && \(/);
+  assert.match(panel, /versionBeyondVerified/);
+  // The version row itself must also carry the warning tone, so the notice is
+  // not the only thing a user could scroll past.
+  assert.match(panel, /status\.version_beyond_verified_range \? "warn" : "neutral"/);
+});
+
+test('the Rust contract and the frontend type stay in step', () => {
+  const rust = readFileSync('src-tauri/src/commands/system.rs', 'utf8');
+  const api = readFileSync('src/api/tauri-commands.ts', 'utf8');
+  assert.match(rust, /pub version_beyond_verified_range: bool/);
+  assert.match(api, /version_beyond_verified_range: boolean/);
+  // The floor must match the peer range the collaboration plugin declares.
+  const collab = JSON.parse(readFileSync('packages/junqi-collab/package.json', 'utf8'));
+  assert.match(collab.peerDependencies.openclaw, /2026\.7\.1/);
+  assert.match(rust, /OPENCLAW_MIN_SUPPORTED_VERSION: \(u32, u32, u32\) = \(2026, 7, 1\)/);
+});
