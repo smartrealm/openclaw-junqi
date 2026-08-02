@@ -2,10 +2,11 @@ import type { ManagedFilePreview } from '@/utils/filePreviewCapabilities';
 import { resolveWorkspacePreview } from '@/workspace-files/services/previewResolver';
 import {
   createLocalManagedFilePreviewUrl,
+  readLocalManagedOfficePreview,
   readLocalManagedFileText,
 } from './managedFileRuntime';
 
-export type FilePreviewKind = ManagedFilePreview['kind'];
+export type FilePreviewKind = ManagedFilePreview['kind'] | 'office';
 export type LocalFilePreview = ManagedFilePreview;
 
 export interface ManagedTextReadResult {
@@ -26,6 +27,12 @@ export interface LocalFilePreviewBridge {
   managedFiles?: {
     read?: (path: string) => Promise<ManagedTextReadResult>;
     createPreview?: (path: string) => Promise<ManagedPreviewUrlResult>;
+    readOfficePreview?: (path: string, workspaceRoot: string) => Promise<{
+      success: boolean;
+      format?: 'spreadsheet' | 'presentation' | 'document' | null;
+      content?: string | null;
+      truncated?: boolean;
+    }>;
   };
   file?: {
     read?: (path: string) => Promise<{
@@ -38,6 +45,7 @@ const nativePreviewBridge: LocalFilePreviewBridge = {
   managedFiles: {
     read: readLocalManagedFileText,
     createPreview: createLocalManagedFilePreviewUrl,
+    readOfficePreview: readLocalManagedOfficePreview,
   },
 };
 
@@ -55,6 +63,7 @@ export class FilePreviewError extends Error {
 }
 
 export function getFilePreviewKind(fileName: string): FilePreviewKind | null {
+  if (/\.(?:xlsx|pptx|docx)$/i.test(fileName)) return 'office';
   const resolution = resolveWorkspacePreview({
     path: fileName,
     policy: 'managed-readonly',
@@ -150,10 +159,22 @@ async function createNativePreviewUrl(
 export async function loadLocalFilePreview(
   rawPath: string,
   fileName: string,
+  workspaceRoot: string | undefined,
   bridge: LocalFilePreviewBridge = nativePreviewBridge,
 ): Promise<LocalFilePreview> {
   const kind = getFilePreviewKind(fileName);
   if (!kind) throw new FilePreviewError('unsupported');
+
+  if (kind === 'office') {
+    if (!workspaceRoot) throw new FilePreviewError('unavailable');
+    const result = await bridge.managedFiles?.readOfficePreview?.(normalizePreviewPath(rawPath), workspaceRoot);
+    if (!result?.success || !result.content || !result.format) throw new FilePreviewError('unavailable');
+    return {
+      kind: 'text',
+      content: result.content,
+      truncated: result.truncated === true,
+    };
+  }
 
   if (kind === 'html' || kind === 'image' || kind === 'audio' || kind === 'video' || kind === 'pdf') {
     const url = await createNativePreviewUrl(rawPath, bridge);

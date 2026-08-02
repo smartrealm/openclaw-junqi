@@ -12,6 +12,7 @@ import {
 } from '@/stores/chatStore';
 import { useAppStore } from '@/stores/app-store';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
@@ -264,6 +265,7 @@ function ChatViewContent() {
   const activeAgentId = useChatStore(
     (s) => s.sessions.find((session) => session.key === activeSessionKey)?.agentId,
   );
+  const agents = useGatewayDataStore((s) => s.agents);
   const messageQueue = useChatStore((s) => s.messageQueue);
   const queueCount = (messageQueue[activeSessionKey] || []).length;
   const availableModels = useChatStore((s) => s.availableModels);
@@ -291,6 +293,11 @@ function ChatViewContent() {
     () => selectActiveExecutionPlan(responseGroups),
     [responseGroups],
   );
+  const workspaceForSession = useCallback((sessionKey: string) => {
+    const session = useChatStore.getState().sessions.find((candidate) => candidate.key === sessionKey);
+    const agentId = session?.agentId || sessionKey.split(':')[1] || 'main';
+    return agents.find((agent) => agent.id === agentId)?.workspace;
+  }, [agents]);
 
   // ── Virtuoso ref & scroll state ──
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -1067,7 +1074,7 @@ function ChatViewContent() {
       case 'file-output':
         return (
           <Suspense fallback={<ResultCardFallback block={block} />}>
-            <FileResultCard files={block.files} />
+            <FileResultCard files={block.files} workspaceRoot={workspaceForSession(responseSessionKey)} />
           </Suspense>
         );
 
@@ -1143,6 +1150,7 @@ function ChatViewContent() {
     messages,
     sidePanel.openMessagePreview,
     sidePanel.openResponseTrace,
+    workspaceForSession,
   ]);
 
   const renderGroup = useCallback((index: number, group: ResponseGroup) => {

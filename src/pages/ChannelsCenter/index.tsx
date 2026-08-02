@@ -821,7 +821,7 @@ export function ChannelsCenterPage() {
             <Settings2 size={15} />
             {t('channelsCenter.advancedConfig', 'Advanced config')}
           </button>
-          <button onClick={() => document.getElementById('available-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex items-center gap-2 px-3 h-8 rounded-md bg-aegis-primary text-white font-semibold text-[11px] hover:opacity-90">
+          <button data-tour="channels-add" onClick={() => document.getElementById('available-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex items-center gap-2 px-3 h-8 rounded-md bg-aegis-primary text-white font-semibold text-[11px] hover:opacity-90">
             <Plus size={14} />
             {t('channelsCenter.addChannels', 'Add channel')}
           </button>

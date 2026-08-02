@@ -162,6 +162,7 @@ pub fn run() {
             commands::managed_files::managed_file_exists,
             commands::managed_files::list_directory,
             commands::managed_files::read_file_text,
+            commands::office_preview::read_office_preview,
             commands::file_preview::create_file_preview_url,
             commands::openclaw_media_preview::create_openclaw_media_preview_url,
             commands::console::write_models_log,

@@ -546,6 +546,7 @@ function ProjectsView({
           </label>
           <button
             type="button"
+            data-tour="workspace-open-project"
             onClick={onBrowse}
             className="flex h-[42px] shrink-0 items-center justify-center gap-2 rounded-lg border border-aegis-border bg-aegis-surface-elevated px-4 text-[13px] font-semibold text-aegis-text shadow-sm transition-colors hover:bg-aegis-hover/45 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40"
           >

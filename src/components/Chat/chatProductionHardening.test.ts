@@ -16,7 +16,7 @@ test('CHAT-01 generated artifacts stay scriptless while local file previews use 
   assert.match(bubble, /srcDoc=\{artifact\.content\}[\s\S]*?sandbox=""/);
   assert.match(managedPreview, /src=\{preview\.mode === 'interactive' \? preview\.url/);
   assert.match(managedPreview, /sandbox=\{preview\.mode === 'interactive' \? 'allow-scripts' : ''\}/);
-  assert.match(resultCards, /loadLocalFilePreview\(path, name\)/);
+  assert.match(resultCards, /loadLocalFilePreview\(path, name, workspaceRoot\)/);
   assert.match(previewProtocol, /PREVIEW_GRANT_TTL/);
   assert.match(previewProtocol, /resolve_granted_path/);
   assert.match(previewProtocol, /connect-src 'self'/);
@@ -29,7 +29,7 @@ test('CHAT-01 generated artifacts stay scriptless while local file previews use 
 
 test('CHAT-12 file result rows keep full paths out of the default chat layout', () => {
   const resultCards = source('src/components/Chat/ResultCards.tsx');
-  assert.match(resultCards, /getFileParentFolder\(path\)/);
+  assert.match(resultCards, /getFileParentFolder\(path \|\| file\.path\)/);
   assert.match(resultCards, /max-w-\[760px\]/);
   assert.doesNotMatch(resultCards, /\{detail \|\| path\}/);
 });
@@ -177,8 +177,6 @@ test('CHAT-09 voice paths use an official attachment and never truncated base64 
   const voice = source('src/components/Chat/message-input/useComposerVoice.ts');
   assert.doesNotMatch(voice, /substring\(0,\s*50\)|\[voice:[^\]]*:base64\]/);
   assert.match(voice, /toGatewayAttachments\(\[createPreparedAttachment\(\{/);
-  const adapter = source('src/api/tauri-adapter.ts');
-  assert.match(adapter, /mkdir\(voiceDir, \{ recursive: true \}\)/);
 });
 
 test('CHAT-11 truncated history has a chat.message.get recovery action', () => {

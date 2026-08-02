@@ -41,6 +41,7 @@ docs/
 - [安装诊断链路审计](installation/install-diagnostics-audit.md)
 - [Wizard 流程与 Gateway 生命周期全量审查](installation/wizard-and-gateway-lifecycle-full-audit-2026-08-02.md)
 - [Wizard 配置、重启与 Gateway 重装链路加固方案](installation/wizard-config-restart-reinstall-hardening-2026-08-01.md)
+- [首次安装底部操作区响应式修复](installation/setup-footer-responsive-actions-2026-08-02.md)
 - [Setup runtime 与渠道兼容审计](installation/openclaw-setup-runtime-and-channel-audit-2026-07-27.md)
 - [中国大陆网络与安装源策略](installation/mainland-china-network-policy.md)
 
@@ -99,6 +100,7 @@ docs/
 - [OpenClaw 工作区记忆出口收敛](quality/openclaw-workspace-memory-convergence-2026-08-02.md)
 - [会话 Agent 状态卡一致性记录](quality/chat-agent-status-tooltip-parity-2026-08-01.md)
 - [Chat 消息预览与 OpenClaw 对齐](quality/chat-message-preview-openclaw-parity-2026-07-30.md)
+- [Chat 输出文件预览](quality/chat-output-file-preview-2026-08-02.md)
 - [Chat 响应追溯与人工审核](quality/chat-response-trace-and-human-review-2026-07-31.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界修复](quality/installation-dashboard-chat-provider-channel-runtime-boundary-remediation-2026-07-31.md)
 - [会话来源聚合审计](quality/session-origin-aggregation-audit.md)

@@ -413,6 +413,14 @@ export interface ManagedFilePreviewUrlResult {
   error: string | null;
 }
 
+export interface ManagedOfficePreviewResult {
+  success: boolean;
+  format: 'spreadsheet' | 'presentation' | 'document' | null;
+  content: string | null;
+  truncated: boolean;
+  error: string | null;
+}
+
 export const openManagedFile = (path: string) => (
   invoke<ManagedFileOpenResult>('managed_file_open', { path })
 );
@@ -424,6 +432,9 @@ export const managedFileExists = (path: string) => (
 );
 export const readManagedFileText = (path: string) => (
   invoke<ManagedFileTextResult>('read_file_text', { path })
+);
+export const readManagedOfficePreview = (path: string, workspaceRoot: string) => (
+  invoke<ManagedOfficePreviewResult>('read_office_preview', { path, workspaceRoot })
 );
 export const createManagedFilePreviewUrl = (path: string) => (
   invoke<ManagedFilePreviewUrlResult>('create_file_preview_url', { path })

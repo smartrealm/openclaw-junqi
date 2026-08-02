@@ -18,6 +18,7 @@ specs/
 - [Windows Native 安装](installation/2026-07-21-windows-native-install-bugfix.md)
 - [Windows OpenClaw Wizard](installation/2026-07-23-openclaw-windows-wizard-bugfix.md)
 - [Windows 首次安装](installation/2026-07-24-openclaw-windows-first-run-bugfix.md)
+- [首次安装底部操作区响应式修复](installation/2026-08-02-setup-footer-responsive-actions.md)
 - [Windows 卸载流程](installation/2026-07-26-windows-uninstall-flow-bugfix.md)
 - [Setup runtime 与渠道兼容](installation/2026-07-27-setup-runtime-and-channel-compatibility.md)
 
@@ -61,6 +62,7 @@ specs/
 - [Gateway AI 诊断](quality/2026-07-30-gateway-ai-diagnostics.md)
 - [终端与工作台 Chrome 一致性](quality/2026-07-30-terminal-workbench-chrome-convergence.md)
 - [Chat 消息预览与 OpenClaw 对齐](quality/2026-07-30-chat-message-preview-openclaw-parity.md)
+- [Chat 输出文件预览](quality/2026-08-02-chat-output-file-preview.md)
 - [Chat 响应追溯与人工审核](quality/2026-07-31-chat-response-trace-and-human-review.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界](quality/2026-07-31-installation-dashboard-chat-provider-channel-runtime-boundaries.md)
 - [语音唤醒工作台](quality/2026-07-31-voice-wake-workspace.md)
