@@ -22,6 +22,8 @@ After a confirmed or discarded audio draft, the session-scoped automatic arm req
 
 Wake mode is not confined to the composer. Once selected, it presents a fixed full-window control surface above the desktop workspace for local listening, keyword detection, draft confirmation, model configuration, and recoverable errors. Escape and the visible stop controls release capture. The assistant pet and Dynamic Island remain separate auxiliary projections and receive only mode, phase, confirmation-needed, and error cues.
 
+When the main window is hidden for standby, a verified local wake result requests `show`, `unminimize`, and `setFocus` before the full-window surface is presented. Operating systems may reject focus stealing; that result does not cancel the already verified voice turn, but a failure to restore visibility is reported to the media debug scope. The behavior uses Tauri's common window API rather than a macOS-only activation path.
+
 ## Jarvis Session Categories
 
 OpenClaw `v2026.7.1-2` separates channel group-session routing from a user-defined session organization bucket. JunQi does not fabricate a channel-style `:group:` session key for a wake word. When the local Sherpa detector returns a non-empty keyword, JunQi persists `sessions.patch({ key, category: "Jarvis: <keyword>" })` for the currently selected OpenClaw session. The Session Manager renders that category and provides a Jarvis filter, so sessions activated by the same recognized phrase can be identified as one Jarvis group without changing channel routing, sandbox policy, or session identity.
@@ -54,5 +56,6 @@ The event bridge validates the OpenClaw Talk envelope within `payload.talkEvent`
 
 - No model archive is bundled in this change.
 - No microphone, login-start, tray, sleep-resume, or package validation has been performed on Windows, CentOS, or Ubuntu.
+- No target-platform test has confirmed whether a background wake may claim focus under the local Windows, CentOS, Ubuntu, or macOS focus policy.
 - The local development machine is not evidence of target-platform behavior.
 - A real Talk relay session has not yet been exercised against a configured Gateway or on target operating systems.

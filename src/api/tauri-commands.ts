@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { presentVoiceWakeWindow } from '@/services/voice/VoiceWakeWindowPresenter';
 import type {
   ClearRuntimeIdentityParams,
   GatewayHelloObservation,
@@ -108,6 +110,10 @@ export const setVoiceWakeModelDirectory = async (directory: string): Promise<Voi
     'voice_wake_set_model_directory',
     await invoke<unknown>('voice_wake_set_model_directory', { directory }),
   )
+);
+
+export const presentCurrentWindowForVoiceWake = () => (
+  presentVoiceWakeWindow(getCurrentWindow())
 );
 
 export type RuntimeToolSource = 'system' | 'custom';

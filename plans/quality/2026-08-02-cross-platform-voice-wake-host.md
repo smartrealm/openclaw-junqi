@@ -11,6 +11,7 @@
 7. Added a fenced OpenClaw Talk catalog/session client and a validated, per-session ordered `talk.event` bridge for the `realtime/gateway-relay/agent-consult` contract.
 8. Preserved the native detector's recognized keyword and persistently categorized the selected OpenClaw session as `Jarvis: <keyword>` through the documented `sessions.patch.category` contract; no channel-style group session key is invented.
 9. Gated wake-listener startup and each keyword acceptance on the Gateway-owned trigger/routing snapshot, including live change events; cross-session Talk routing fails closed until the installed Talk contract can represent the trigger.
+10. Restored and unminimized the main window on a verified wake result before the existing full-window Jarvis surface appears; focus denial remains non-fatal because desktop focus policy is platform-owned.
 
 ## In Progress
 

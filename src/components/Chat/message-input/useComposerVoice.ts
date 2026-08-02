@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import {
   getVoiceWakeDetectorStatus,
   playTalkPcm,
+  presentCurrentWindowForVoiceWake,
   setVoiceWakeModelDirectory,
   stopTalkPlayback,
   type VoiceWakeDetectorStatus,
@@ -286,6 +287,9 @@ export function useComposerVoice({
             .catch((error) => debugError('gateway', '[ComposerVoice] Unable to categorize Jarvis session:', error));
         }
       }
+      void presentCurrentWindowForVoiceWake().catch((error) => {
+        debugError('media', '[ComposerVoice] Could not restore the wake window:', error);
+      });
       void talkConversationRef.current?.start(context.sessionKey);
       void talkConversationRef.current?.interrupt();
       void stopAssistant();
