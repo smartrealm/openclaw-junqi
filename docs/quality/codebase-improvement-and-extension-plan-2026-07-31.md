@@ -222,7 +222,8 @@
 
 优先级：中
 
-**官方依据**：`protocol.md` 的 `skills.search`、`skills.detail`、`skills.install`、`skills.upload.begin` / `chunk` / `commit`、`skills.install.allowUploadedArchives`、`skills.bins`
+**官方依据**：`protocol.md` 的 `skills.search`、`skills.detail`、`skills.securityVerdicts`、
+`skills.install`、`skills.upload.begin` / `chunk` / `commit`、`skills.install.allowUploadedArchives`、`skills.bins`
 
 **当前行为**：`src/services/openclawSkillsRuntime.ts` 已将 `skills.status`、`skills.search`、
 `skills.detail`、`skills.update` 与 `skills.install` 接入 Gateway；`SkillsPage` 的 Gateway
@@ -231,8 +232,12 @@ metadata、tags、channel 与 changelog，不再把下载量、星标、安装�
 外部链接猜测成数据。`/skill-hub` 仍是 JunQi 本地目录与项目符号链接工具，和 Gateway
 技能目录保持边界。
 
+已安装列表另外读取 `skills.securityVerdicts`；只把与 status `skillKey` 精确匹配的
+`slug`/`requestedSlug` 关联到技能，并在官方 `securityPassed` 明确为布尔值时显示结果。安全
+RPC 不可用时保留技能列表并显示非阻断提示，未知状态不被改写成通过或失败。
+
 **可拓展**：继续以 OpenClaw 官方协议、源码和 schema 为依据，优先评估只读的
-`skills.bins`、`skills.skillCard`、安全审计和提案协议；只有确认当前 Gateway 广告、权限和
+`skills.bins`、`skills.skillCard` 和提案协议；只有确认当前 Gateway 广告、权限和
 结果字段后才接入。`skills.upload.*` 是否替代本地 ZIP 流程仍需独立核对完整生命周期，不能
 把 JunQi 本地能力伪装成 Gateway 原生能力。
 

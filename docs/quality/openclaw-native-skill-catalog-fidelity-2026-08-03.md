@@ -9,6 +9,7 @@ schema 和 handler：
 - [技能协议 schema](https://raw.githubusercontent.com/openclaw/openclaw/main/packages/gateway-protocol/src/schema/agents-models-skills.ts)
 - [技能 Gateway handler](https://raw.githubusercontent.com/openclaw/openclaw/main/src/gateway/server-methods/skills.ts)
 - [技能 status source](https://raw.githubusercontent.com/openclaw/openclaw/main/src/skills/discovery/status.ts)
+- [ClawHub 安全判定 source](https://raw.githubusercontent.com/openclaw/openclaw/main/src/skills/security/clawhub-verdicts.ts)
 
 官方 schema 定义了 `skills.search` 的 `score`、`slug`、`displayName`、可选 `summary`、
 `version`、`updatedAt`，以及 `skills.detail` 的 `skill`、`latestVersion`、`metadata` 和
@@ -33,14 +34,18 @@ Gateway 技能目录已经使用原生 `skills.search/detail`，但页面模型�
 - `src/pages/SkillsPage/components.tsx` 展示检索分数、真实版本、更新时间、owner、官方
   metadata、tags、channel 和 latest changelog；安装命令与外部链接仅在调用方提供真实值
   时显示。
+- 已安装列表通过原生 `skills.securityVerdicts` 读取安全判定；只按 `slug` 或 `requestedSlug`
+  与 status `skillKey` 精确关联，只有官方 `securityPassed` 明确为布尔值时显示通过或未通过
+  图标。安全 RPC 失败以非阻断提示呈现，未返回或未匹配的技能不显示伪造结论。
 - README 清洗逻辑仍保留，以便未来官方返回可渲染内容时不把未清洗 HTML 直接插入 DOM。
 - `/skill-hub` 仍是 JunQi 本地目录和符号链接工具，不与 Gateway 技能目录混合。
 
 ## 边界
 
-本次不接入 `skills.bins`、`skills.skillCard`、技能提案或安全审计协议，也不把本地 SkillHub
-字段投影到 Gateway 页面。后续接入必须先核对官方 handler、权限、能力广告和错误返回；没有
-权威依据时保持不可用，不猜测字段或状态。
+本次不接入 `skills.bins`、`skills.skillCard` 或技能提案，也不把本地 SkillHub 字段投影到
+Gateway 页面。`skills.securityVerdicts` 仅覆盖已安装且有 ClawHub 链接的技能，不代表目录
+搜索项的安全结论。后续能力接入必须先核对官方 handler、权限、能力广告和错误返回；没有权威
+依据时保持不可用，不猜测字段或状态。
 
 ## 验证
 
@@ -51,6 +56,6 @@ Gateway 技能目录已经使用原生 `skills.search/detail`，但页面模型�
 
 ## 未验证边界
 
-尚未连接真实 Gateway 做目录搜索、详情读取或安装；网络、管理员配对、ClawHub 风险确认和
-安装后状态刷新仍需桌面真机验证。自动化结果不等价于 Windows、macOS、CentOS 或 Ubuntu
-上的真实运行结果。
+尚未连接真实 Gateway 做目录搜索、详情读取、安装或安全判定；网络、管理员配对、ClawHub
+风险确认和安装后状态刷新仍需桌面真机验证。自动化结果不等价于 Windows、macOS、CentOS
+或 Ubuntu 上的真实运行结果。

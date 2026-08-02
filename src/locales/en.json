@@ -2454,7 +2454,10 @@
     "systems": "Systems",
     "catalogFields": "Catalog fields",
     "channel": "Channel",
-    "viewExternal": "Open source page"
+    "viewExternal": "Open source page",
+    "securityPassed": "Security check passed",
+    "securityFailed": "Security check failed",
+    "securityUnavailable": "Security verdict unavailable"
   },
   "settingsTheme": {
     "dark": "Dark Mode",

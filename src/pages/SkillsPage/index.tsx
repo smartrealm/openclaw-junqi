@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Package, Puzzle, RefreshCw, Search } from 'lucide-react';
+import { Package, Puzzle, RefreshCw, Search, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
@@ -9,6 +9,7 @@ import {
   type OpenClawSkill,
   type OpenClawSkillDetail,
   type OpenClawSkillSearchResult,
+  type OpenClawSkillSecurityVerdict,
 } from '@/services/openclawSkillsRuntime';
 import {
   HubSkillRow,
@@ -30,7 +31,7 @@ function skillIcon() {
   return <Puzzle size={15} strokeWidth={1.75} aria-hidden="true" />;
 }
 
-function toMySkill(skill: OpenClawSkill): MySkill {
+function toMySkill(skill: OpenClawSkill, verdict?: OpenClawSkillSecurityVerdict): MySkill {
   return {
     slug: skill.key,
     name: skill.name,
@@ -39,7 +40,17 @@ function toMySkill(skill: OpenClawSkill): MySkill {
     version: skill.version ?? '',
     enabled: skill.enabled,
     source: skill.source,
+    ...(verdict ? {
+      security: {
+        passed: verdict.securityPassed,
+        decision: verdict.decision,
+      },
+    } : {}),
   };
+}
+
+function verdictForSkill(skill: OpenClawSkill, verdicts: OpenClawSkillSecurityVerdict[]): OpenClawSkillSecurityVerdict | undefined {
+  return verdicts.find((verdict) => verdict.slug === skill.key || verdict.requestedSlug === skill.key);
 }
 
 function toHubSkill(skill: OpenClawSkillSearchResult): HubSkill {
@@ -103,6 +114,7 @@ export function SkillsPage() {
   const [loadingInstalled, setLoadingInstalled] = useState(false);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [securityError, setSecurityError] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<SkillDetail | null>(null);
@@ -112,8 +124,16 @@ export function SkillsPage() {
   const loadInstalled = useCallback(async () => {
     if (!connected) return;
     setLoadingInstalled(true);
+    setSecurityError(null);
     try {
-      setInstalled((await openClawSkillsRuntime.list()).map(toMySkill));
+      const [skillsResult, verdictResult] = await Promise.allSettled([
+        openClawSkillsRuntime.list(),
+        openClawSkillsRuntime.securityVerdicts(),
+      ]);
+      if (skillsResult.status === 'rejected') throw skillsResult.reason;
+      const verdicts = verdictResult.status === 'fulfilled' ? verdictResult.value : [];
+      setSecurityError(verdictResult.status === 'rejected' ? operationError(verdictResult.reason) : null);
+      setInstalled(skillsResult.value.map((skill) => toMySkill(skill, verdictForSkill(skill, verdicts))));
     } finally {
       setLoadingInstalled(false);
     }
@@ -261,6 +281,15 @@ export function SkillsPage() {
                 {loadingInstalled ? <LoadingIndicator size={13} /> : <RefreshCw size={13} aria-hidden="true" />}
               </button>
             </div>
+            {securityError && (
+              <div className="mb-4 flex items-start gap-2 border-s-2 border-aegis-warning/60 bg-aegis-warning/[0.04] px-4 py-3 text-[12px] text-aegis-text-secondary">
+                <ShieldAlert size={14} className="mt-0.5 shrink-0 text-aegis-warning" aria-hidden="true" />
+                <div className="min-w-0">
+                  <p>{t('skillsExtra.securityUnavailable', 'Security verdict unavailable')}</p>
+                  <p className="mt-1 break-words text-[11px] text-aegis-text-dim">{securityError}</p>
+                </div>
+              </div>
+            )}
             {loadingInstalled ? (
               <div className="flex justify-center py-20"><LoadingIndicator size={22} className="text-aegis-text-dim" /></div>
             ) : installed.length === 0 ? (

@@ -2421,7 +2421,10 @@
     "systems": "系統",
     "catalogFields": "目錄欄位",
     "channel": "渠道",
-    "viewExternal": "開啟來源頁面"
+    "viewExternal": "開啟來源頁面",
+    "securityPassed": "安全檢查通過",
+    "securityFailed": "安全檢查未通過",
+    "securityUnavailable": "安全判定不可用"
   },
   "settingsTheme": {
     "dark": "深色模式",

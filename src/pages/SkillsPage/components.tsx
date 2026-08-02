@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
-import { X, Copy, ExternalLink, Download, MessageSquare, FileText, BadgeCheck, BookOpenText, CheckCircle2, Star } from 'lucide-react';
+import { X, Copy, ExternalLink, Download, MessageSquare, FileText, BadgeCheck, BookOpenText, CheckCircle2, ShieldAlert, ShieldCheck, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
@@ -24,6 +24,10 @@ export interface MySkill extends SkillPersonaFields {
   enabled: boolean;
   /** Raw source string from the gateway (e.g. "openclaw-bundled", "openclaw-managed", "openclaw-extra") */
   source: string;
+  security?: {
+    passed: boolean | null | undefined;
+    decision: string;
+  };
 }
 
 /** Map raw gateway source to a display group */
@@ -182,6 +186,24 @@ export function MySkillRow({ skill, onToggle, index = 0 }: {
         <div className="text-[10px] text-aegis-text-muted flex items-center gap-2 flex-wrap">
           <span className="truncate max-w-[260px]">{skill.description}</span>
           <SourceBadge source={skill.source} />
+          {skill.security?.passed === true && (
+            <span
+              className="inline-flex items-center text-aegis-success"
+              title={t('skillsExtra.securityPassed', 'Security check passed')}
+              aria-label={t('skillsExtra.securityPassed', 'Security check passed')}
+            >
+              <ShieldCheck size={12} aria-hidden="true" />
+            </span>
+          )}
+          {skill.security?.passed === false && (
+            <span
+              className="inline-flex items-center text-aegis-danger"
+              title={t('skillsExtra.securityFailed', 'Security check failed')}
+              aria-label={t('skillsExtra.securityFailed', 'Security check failed')}
+            >
+              <ShieldAlert size={12} aria-hidden="true" />
+            </span>
+          )}
         </div>
       </div>
 

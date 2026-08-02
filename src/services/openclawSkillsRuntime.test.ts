@@ -4,6 +4,7 @@ import {
   createOpenClawSkillsRuntime,
   normalizeOpenClawSkillDetail,
   normalizeOpenClawSkillSearch,
+  normalizeOpenClawSkillSecurityVerdicts,
   normalizeOpenClawSkills,
 } from './openclawSkillsRuntime';
 
@@ -104,6 +105,95 @@ test('preserves documented nullable native detail fields', () => {
   });
 });
 
+test('normalizes the native security verdict envelope without inventing verdicts', () => {
+  assert.deepEqual(normalizeOpenClawSkillSecurityVerdicts({
+    schema: 'openclaw.skills.security-verdicts.v1',
+    items: [
+      {
+        registry: 'https://clawhub.ai',
+        ok: true,
+        decision: 'allow',
+        reasons: ['verified'],
+        requestedSlug: 'weather',
+        requestedVersion: '1.2.0',
+        slug: 'weather',
+        version: '1.2.0',
+        displayName: 'Weather',
+        createdAt: 1,
+        checkedAt: 2,
+        securityStatus: 'clean',
+        securityPassed: true,
+      },
+      {
+        registry: 'https://clawhub.ai',
+        ok: false,
+        decision: 'review',
+        reasons: [],
+        requestedSlug: 'untrusted',
+        requestedVersion: 'latest',
+        slug: null,
+        version: null,
+        displayName: null,
+        publisherHandle: null,
+        publisherDisplayName: null,
+        createdAt: null,
+        checkedAt: null,
+        skillUrl: null,
+        securityAuditUrl: null,
+        securityStatus: null,
+        securityPassed: null,
+        error: { code: 'REVIEW_REQUIRED', message: 'Manual review required.' },
+      },
+      {
+        registry: 'https://clawhub.ai',
+        ok: true,
+        decision: 'bad',
+        reasons: [],
+        requestedSlug: 'malformed',
+        requestedVersion: '1.0.0',
+        securityPassed: 'true',
+      },
+    ],
+  }), [{
+    registry: 'https://clawhub.ai',
+    ok: true,
+    decision: 'allow',
+    reasons: ['verified'],
+    requestedSlug: 'weather',
+    requestedVersion: '1.2.0',
+    slug: 'weather',
+    version: '1.2.0',
+    displayName: 'Weather',
+    createdAt: 1,
+    checkedAt: 2,
+    securityStatus: 'clean',
+    securityPassed: true,
+  }, {
+    registry: 'https://clawhub.ai',
+    ok: false,
+    decision: 'review',
+    reasons: [],
+    requestedSlug: 'untrusted',
+    requestedVersion: 'latest',
+    slug: null,
+    version: null,
+    displayName: null,
+    publisherHandle: null,
+    publisherDisplayName: null,
+    createdAt: null,
+    checkedAt: null,
+    skillUrl: null,
+    securityAuditUrl: null,
+    securityStatus: null,
+    securityPassed: null,
+    error: { code: 'REVIEW_REQUIRED', message: 'Manual review required.' },
+  }]);
+  assert.deepEqual(normalizeOpenClawSkillSecurityVerdicts({
+    schema: 'unknown',
+    items: [],
+  }), []);
+});
+
 test('uses privileged Gateway calls for every skill mutation', async () => {
   const calls: Array<{ privileged: boolean; method: string; params: Record<string, unknown> }> = [];
   const runtime = createOpenClawSkillsRuntime({
@@ -120,10 +210,12 @@ test('uses privileged Gateway calls for every skill mutation', async () => {
   await runtime.setEnabled('weather', false);
   await runtime.installFromClawHub({ slug: 'weather', version: '1.0.0' });
   await runtime.search('weather', 20);
+  await runtime.securityVerdicts();
 
   assert.deepEqual(calls, [
     { privileged: true, method: 'skills.update', params: { skillKey: 'weather', enabled: false } },
     { privileged: true, method: 'skills.install', params: { source: 'clawhub', slug: 'weather', version: '1.0.0' } },
     { privileged: false, method: 'skills.search', params: { query: 'weather', limit: 20 } },
+    { privileged: false, method: 'skills.securityVerdicts', params: {} },
   ]);
 });

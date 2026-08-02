@@ -54,6 +54,30 @@ export interface OpenClawSkillDetail {
   } | null;
 }
 
+export interface OpenClawSkillSecurityVerdict {
+  registry: string;
+  ok: boolean;
+  decision: string;
+  reasons: string[];
+  requestedSlug: string;
+  requestedVersion: string;
+  slug?: string | null;
+  version?: string | null;
+  displayName?: string | null;
+  publisherHandle?: string | null;
+  publisherDisplayName?: string | null;
+  createdAt?: number | null;
+  checkedAt?: number | null;
+  skillUrl?: string | null;
+  securityAuditUrl?: string | null;
+  securityStatus?: string | null;
+  securityPassed?: boolean | null;
+  error?: {
+    code?: string;
+    message?: string;
+  };
+}
+
 export interface OpenClawSkillInstallRequest {
   slug: string;
   version?: string;
@@ -89,6 +113,11 @@ function optionalNumber(value: unknown): number | undefined {
 
 function optionalInteger(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
+}
+
+function optionalNullableInteger(value: unknown): number | null | undefined {
+  if (value === undefined || value === null) return value;
+  return optionalInteger(value);
 }
 
 function optionalNullableBoolean(value: unknown): boolean | null | undefined {
@@ -290,6 +319,79 @@ export function normalizeOpenClawSkillDetail(payload: unknown): OpenClawSkillDet
   };
 }
 
+function optionalFieldIsValid<T>(value: unknown, normalize: (candidate: unknown) => T | undefined): boolean {
+  return value === undefined || normalize(value) !== undefined;
+}
+
+function normalizeOpenClawSkillSecurityVerdict(value: unknown): OpenClawSkillSecurityVerdict | null {
+  const row = record(value);
+  if (!row) return null;
+  const registry = text(row.registry);
+  const decision = text(row.decision);
+  const reasons = stringArray(row.reasons);
+  const requestedSlug = text(row.requestedSlug);
+  const requestedVersion = text(row.requestedVersion);
+  if (!registry || typeof row.ok !== 'boolean' || !decision || !reasons || !requestedSlug || !requestedVersion) {
+    return null;
+  }
+  if (
+    !optionalFieldIsValid(row.slug, optionalNullableString)
+    || !optionalFieldIsValid(row.version, optionalNullableString)
+    || !optionalFieldIsValid(row.displayName, optionalNullableString)
+    || !optionalFieldIsValid(row.publisherHandle, optionalNullableString)
+    || !optionalFieldIsValid(row.publisherDisplayName, optionalNullableString)
+    || !optionalFieldIsValid(row.createdAt, optionalNullableInteger)
+    || !optionalFieldIsValid(row.checkedAt, optionalNullableInteger)
+    || !optionalFieldIsValid(row.skillUrl, optionalNullableString)
+    || !optionalFieldIsValid(row.securityAuditUrl, optionalNullableString)
+    || !optionalFieldIsValid(row.securityStatus, optionalNullableString)
+    || !optionalFieldIsValid(row.securityPassed, optionalNullableBoolean)
+  ) return null;
+
+  const errorValue = row.error;
+  const error = errorValue === undefined ? undefined : record(errorValue);
+  if (errorValue !== undefined && !error) return null;
+  if (error && (
+    (error.code !== undefined && typeof error.code !== 'string')
+    || (error.message !== undefined && typeof error.message !== 'string')
+  )) return null;
+
+  return {
+    registry,
+    ok: row.ok,
+    decision,
+    reasons,
+    requestedSlug,
+    requestedVersion,
+    ...(row.slug !== undefined ? { slug: optionalNullableString(row.slug) } : {}),
+    ...(row.version !== undefined ? { version: optionalNullableString(row.version) } : {}),
+    ...(row.displayName !== undefined ? { displayName: optionalNullableString(row.displayName) } : {}),
+    ...(row.publisherHandle !== undefined ? { publisherHandle: optionalNullableString(row.publisherHandle) } : {}),
+    ...(row.publisherDisplayName !== undefined ? { publisherDisplayName: optionalNullableString(row.publisherDisplayName) } : {}),
+    ...(row.createdAt !== undefined ? { createdAt: optionalNullableInteger(row.createdAt) } : {}),
+    ...(row.checkedAt !== undefined ? { checkedAt: optionalNullableInteger(row.checkedAt) } : {}),
+    ...(row.skillUrl !== undefined ? { skillUrl: optionalNullableString(row.skillUrl) } : {}),
+    ...(row.securityAuditUrl !== undefined ? { securityAuditUrl: optionalNullableString(row.securityAuditUrl) } : {}),
+    ...(row.securityStatus !== undefined ? { securityStatus: optionalNullableString(row.securityStatus) } : {}),
+    ...(row.securityPassed !== undefined ? { securityPassed: optionalNullableBoolean(row.securityPassed) } : {}),
+    ...(error ? {
+      error: {
+        ...(error.code !== undefined ? { code: error.code as string } : {}),
+        ...(error.message !== undefined ? { message: error.message as string } : {}),
+      },
+    } : {}),
+  };
+}
+
+export function normalizeOpenClawSkillSecurityVerdicts(payload: unknown): OpenClawSkillSecurityVerdict[] {
+  const root = record(payload);
+  if (root?.schema !== 'openclaw.skills.security-verdicts.v1' || !Array.isArray(root.items)) return [];
+  return root.items.flatMap((item) => {
+    const verdict = normalizeOpenClawSkillSecurityVerdict(item);
+    return verdict ? [verdict] : [];
+  });
+}
+
 function requiredIdentifier(value: string, label: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${label} is required.`);
@@ -334,6 +436,14 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
       return normalizeOpenClawSkillDetail(await client.call('skills.detail', {
         slug: requiredIdentifier(slug, 'Skill slug'),
       }));
+    },
+
+    async securityVerdicts(agentId?: string): Promise<OpenClawSkillSecurityVerdict[]> {
+      const normalizedAgentId = agentId?.trim();
+      return normalizeOpenClawSkillSecurityVerdicts(await client.call(
+        'skills.securityVerdicts',
+        normalizedAgentId ? { agentId: normalizedAgentId } : {},
+      ));
     },
 
     async installFromClawHub(request: OpenClawSkillInstallRequest): Promise<OpenClawSkillInstallResult> {
