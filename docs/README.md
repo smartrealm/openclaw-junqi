@@ -30,6 +30,7 @@ docs/
 
 - [Windows 安装阶段全量复审](installation/windows-installation-full-audit-2026-07-24.md)
 - [Windows Native 安装审计](installation/windows-native-install-audit.md)
+- [安装向导存储页导航可见性验证](installation/setup-storage-navigation-visibility-validation-2026-08-02.md)
 - [首次安装二次复审](installation/openclaw-setup-second-pass-audit.md)
 - [Windows 首次安装观测复审](installation/openclaw-windows-first-run-observation-audit.md)
 - [Windows Node 探测补充审计](installation/openclaw-windows-node-probe-audit.md)
@@ -92,6 +93,8 @@ docs/
 目录：[`quality/`](quality/)
 
 - [维护中心审计](quality/maintenance-center-audit.md)
+- [定时任务与 OpenClaw Agent 路由审计](quality/cron-openclaw-agent-routing-audit-2026-08-02.md)
+- [定时任务 OpenClaw Agent 路由验证](quality/cron-openclaw-agent-routing-validation-2026-08-02.md)
 - [Dashboard 运行审计](quality/dashboard-operations-audit.md)
 - [Chat 生产加固审计](quality/chat-production-hardening-audit.md)
 - [业务引导审计](quality/business-guide-audit-2026-08-02.md)

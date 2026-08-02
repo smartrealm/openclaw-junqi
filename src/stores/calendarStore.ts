@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import { gateway } from '@/services/gateway';
+import { buildCronAgentTurnAddParams } from '@/services/gateway/cronContract';
 import type { CalendarEvent, CalendarFilter, CalendarSettings } from '@/pages/Calendar/calendarTypes';
 import { DEFAULT_SETTINGS, DEFAULT_FILTER } from '@/pages/Calendar/calendarTypes';
 import { generateEventId, getLocalTimezone } from '@/pages/Calendar/calendarUtils';
@@ -51,22 +52,15 @@ async function createCronReminder(event: CalendarEvent): Promise<string | null> 
   const isRecurring = !!event.recurrence;
 
   try {
-    const result = await gateway.call('cron.add', {
-      job: {
-        name: `Calendar: ${event.title}`,
-        schedule: isRecurring
-          ? { kind: 'cron', expr: buildCronExpr(event), tz: getLocalTimezone() }
-          : { kind: 'at', at: reminderTime.toISOString() },
-        sessionTarget: 'isolated',
-        payload: {
-          kind: 'agentTurn',
-          message: buildReminderMessage(event),
-        },
-        delivery: { mode: 'none' },
-        deleteAfterRun: !isRecurring,
-        enabled: true,
-      },
-    });
+    const result = await gateway.call('cron.add', buildCronAgentTurnAddParams({
+      name: `Calendar: ${event.title}`,
+      schedule: isRecurring
+        ? { kind: 'cron', expr: buildCronExpr(event), tz: getLocalTimezone() }
+        : { kind: 'at', at: reminderTime.toISOString() },
+      message: buildReminderMessage(event),
+      deleteAfterRun: !isRecurring,
+      enabled: true,
+    }));
     return result?.id || result?.jobId || null;
   } catch (err) {
     debugError('app', '[Calendar] Failed to create cron reminder:', err);
@@ -122,7 +116,7 @@ function buildReminderMessage(event: CalendarEvent): string {
     : `Send this reminder to the user via ${event.deliveryChannel}. Use the message tool with channel="${event.deliveryChannel}".`;
 
   return [
-    `⏰ Calendar Reminder: ${event.title}`,
+    `Calendar Reminder: ${event.title}`,
     event.startTime
       ? `Time: ${event.startTime}${event.endTime ? ` – ${event.endTime}` : ''}`
       : 'All day event',

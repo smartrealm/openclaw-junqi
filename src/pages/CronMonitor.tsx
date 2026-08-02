@@ -6,15 +6,37 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
+import { buildCronAgentOptions, resolveCronAgentAvailability } from './cronAgentSelection';
 import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock } from 'lucide-react';
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
 import { gateway } from '@/services/gateway';
+import {
+  buildCronAgentTurnAddParams,
+  cronAgentUpdatePatch,
+  isCronAgentSelectionConfirmed,
+} from '@/services/gateway/cronContract';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshGroup, ensureGroupFresh } from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { dataColor, themeHex, themeAlpha } from '@/utils/theme-colors';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -23,6 +45,7 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 interface CronJob {
   id: string;
   name: string;
+  agentId?: string;
   schedule: any;
   enabled: boolean;
   nextRun: string | null;
@@ -62,6 +85,11 @@ interface RunEntry {
 
 /** Theme-aware job color palette — called at render time */
 const getJobColor = (idx: number): string => dataColor(idx);
+const DEFAULT_AGENT_SELECT_VALUE = 'default';
+const agentSelectValue = (agentId: string | undefined): string =>
+  agentId ? `agent:${agentId}` : DEFAULT_AGENT_SELECT_VALUE;
+const agentIdFromSelectValue = (value: string): string =>
+  value === DEFAULT_AGENT_SELECT_VALUE ? '' : value.slice('agent:'.length);
 
 const getJobIcon = (name: string): React.ReactNode => {
   const n = name.toLowerCase();
@@ -108,25 +136,25 @@ function getCronTemplates(t: (key: string) => string) {
       id: 'morning-briefing', icon: <Lightning size={14} weight="regular" />, colorIdx: 2,
       name: t('cronTemplates.morningName'),
       desc: t('cronTemplates.morningDesc'),
-      job: { name: 'Morning Briefing', schedule: { kind: 'cron', expr: '0 6 * * *', tz: 'UTC' }, payload: { kind: 'agentTurn', message: 'Good morning! Prepare a brief morning briefing: 1) Check the weather for my location, 2) Search for top news headlines today, 3) Check memory files for any upcoming tasks, reminders, or deadlines. Keep it concise and useful.' }, sessionTarget: 'isolated', enabled: true },
+      job: { name: 'Morning Briefing', schedule: { kind: 'cron' as const, expr: '0 6 * * *', tz: 'UTC' }, message: 'Good morning! Prepare a brief morning briefing: 1) Check the weather for my location, 2) Search for top news headlines today, 3) Check memory files for any upcoming tasks, reminders, or deadlines. Keep it concise and useful.', enabled: true },
     },
     {
       id: 'weekly-digest', icon: <Note size={14} weight="regular" />, colorIdx: 1,
       name: t('cronTemplates.weeklyName'),
       desc: t('cronTemplates.weeklyDesc'),
-      job: { name: 'Weekly Digest', schedule: { kind: 'cron', expr: '0 20 * * 5', tz: 'UTC' }, payload: { kind: 'agentTurn', message: 'Weekly review time. 1) Read through this week\'s memory files, 2) Summarize key events and decisions, 3) Update MEMORY.md with important info, 4) Clean up outdated entries.' }, sessionTarget: 'isolated', enabled: true },
+      job: { name: 'Weekly Digest', schedule: { kind: 'cron' as const, expr: '0 20 * * 5', tz: 'UTC' }, message: 'Weekly review time. 1) Read through this week\'s memory files, 2) Summarize key events and decisions, 3) Update MEMORY.md with important info, 4) Clean up outdated entries.', enabled: true },
     },
     {
       id: 'check-in', icon: <Brain size={14} strokeWidth={1.75} />, colorIdx: 3,
       name: t('cronTemplates.checkInName'),
       desc: t('cronTemplates.checkInDesc'),
-      job: { name: 'Check-In', schedule: { kind: 'every', everyMs: 28800000 }, payload: { kind: 'agentTurn', message: 'Time for a check-in. Review recent memory files and sessions for context. If there are pending tasks or anything worth following up on, reach out. If nothing needs attention, skip silently.' }, sessionTarget: 'isolated', enabled: true },
+      job: { name: 'Check-In', schedule: { kind: 'every' as const, everyMs: 28800000 }, message: 'Time for a check-in. Review recent memory files and sessions for context. If there are pending tasks or anything worth following up on, reach out. If nothing needs attention, skip silently.', enabled: true },
     },
     {
       id: 'system-health', icon: <MagnifyingGlass size={14} weight="regular" />, colorIdx: 5,
       name: t('cronTemplates.healthName'),
       desc: t('cronTemplates.healthDesc'),
-      job: { name: 'System Health Check', schedule: { kind: 'every', everyMs: 21600000 }, payload: { kind: 'agentTurn', message: 'Run a system health check: 1) Check disk space, 2) Check memory usage, 3) Check uptime, 4) Look for unusual processes. Report only if something needs attention.' }, sessionTarget: 'isolated', enabled: true },
+      job: { name: 'System Health Check', schedule: { kind: 'every' as const, everyMs: 21600000 }, message: 'Run a system health check: 1) Check disk space, 2) Check memory usage, 3) Check uptime, 4) Look for unusual processes. Report only if something needs attention.', enabled: true },
     },
   ];
 }
@@ -214,8 +242,11 @@ export function CronMonitorPage() {
 
   // ── State (jobs from central store) ──
   const storeJobs = useGatewayDataStore((s) => s.cronJobs) as CronJob[];
+  const agents = useGatewayDataStore((s) => s.agents);
   const jobs = storeJobs;
   const loading = useGatewayDataStore((s) => s.loading.cron);
+  const agentsLoading = useGatewayDataStore((s) => s.loading.agents);
+  const agentsError = useGatewayDataStore((s) => s.errors.agents);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<Record<string, 'ok' | 'error'>>({});
   const [templateResult, setTemplateResult] = useState<Record<string, 'ok' | 'error'>>({});
@@ -231,14 +262,19 @@ export function CronMonitorPage() {
   // form directly. After opening, the query is consumed so the dialog does
   // not re-trigger on subsequent renders.
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [createJob, setCreateJob] = useState({ name: '', cronExpr: '0 9 * * *', message: '' });
+  const [createJob, setCreateJob] = useState({ name: '', cronExpr: '0 9 * * *', message: '', agentId: '' });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [agentUpdateError, setAgentUpdateError] = useState<string | null>(null);
+  const [pendingAgentId, setPendingAgentId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedJobId = searchParams.get('job')?.trim() || null;
   useEffect(() => {
     if (!connected) return;
-    void ensureGroupFresh('cron');
+    void Promise.all([
+      ensureGroupFresh('agents'),
+      ensureGroupFresh('cron'),
+    ]);
   }, [connected]);
 
   useEffect(() => {
@@ -287,8 +323,32 @@ export function CronMonitorPage() {
 
   const activeCount = useMemo(() => jobs.filter(j => j.enabled && j.state?.lastStatus !== 'error').length, [jobs]);
   const selectedJob = useMemo(() => jobs.find(j => j.id === selectedJobId) || null, [jobs, selectedJobId]);
+  const agentName = useCallback((agentId: string | undefined) => {
+    if (!agentId) return t('cron.defaultAgent');
+    return agents.find((agent) => agent.id === agentId)?.name || agentId;
+  }, [agents, t]);
+  const selectedAgentValue = pendingAgentId ?? selectedJob?.agentId ?? '';
+  const agentAvailability = resolveCronAgentAvailability(agentsLoading, agentsError, agents);
+  const agentSelectionDisabled = agentAvailability === 'loading' || agentAvailability === 'error';
+  const selectedAgentOptions = useMemo(
+    () => buildCronAgentOptions(agents, selectedAgentValue),
+    [agents, selectedAgentValue],
+  );
+  const createAgentOptions = useMemo(
+    () => buildCronAgentOptions(agents, createJob.agentId),
+    [agents, createJob.agentId],
+  );
+  const retryAgents = useCallback(() => {
+    if (!connected) return;
+    void refreshGroup('agents');
+  }, [connected]);
 
-  // Sorted: errors → active (by next run) → paused | filtered by search
+  useEffect(() => {
+    setPendingAgentId(null);
+    setAgentUpdateError(null);
+  }, [selectedJobId, selectedJob?.agentId]);
+
+  // Sorted: errors, then active by next run, then paused; filtered by search
   const sortedJobs = useMemo(() => {
     let filtered = jobs;
     if (statusFilter !== 'all') {
@@ -317,7 +377,7 @@ export function CronMonitorPage() {
   const runsCacheLoaded = useRef(false);
 
   // ── Load all recent runs — batched (3 at a time) to avoid gateway overload ──
-  // Fix #1: uses jobsRef instead of jobs dependency → no rebuild every 30s
+  // Fix #1: uses jobsRef instead of jobs dependency, avoiding a rebuild every 30s
   const loadAllRuns = useCallback(async () => {
     const currentJobs = jobsRef.current;
     if (!connected || currentJobs.length === 0) return;
@@ -349,7 +409,7 @@ export function CronMonitorPage() {
   }, [connected]);
 
   // ── Load runs for a single job and merge into cache ──
-  // Fix #1: uses jobsRef → stable callback, no rebuild on poll
+  // Fix #1: uses jobsRef for a stable callback without rebuilds on polling
   const loadSingleJobRuns = useCallback(async (jobId: string) => {
     if (!connected) return;
     try {
@@ -430,12 +490,43 @@ export function CronMonitorPage() {
   const addTemplate = async (tpl: ReturnType<typeof getCronTemplates>[0]) => {
     setActionLoading(`tpl-${tpl.id}`);
     try {
-      await gateway.call('cron.add', { job: tpl.job }); await refreshGroup('cron');
+      await gateway.call('cron.add', buildCronAgentTurnAddParams({
+        ...tpl.job,
+        agentId: createJob.agentId,
+      }));
+      const refreshed = await refreshGroup('cron');
+      if (!refreshed) throw new Error(t('cron.createReadbackFailed'));
       setTemplateResult(p => ({ ...p, [tpl.id]: 'ok' }));
     } catch { setTemplateResult(p => ({ ...p, [tpl.id]: 'error' })); }
     finally {
       setActionLoading(null);
       setTimeout(() => setTemplateResult(p => { const n = { ...p }; delete n[tpl.id]; return n; }), 2500);
+    }
+  };
+
+  const updateJobAgent = async (jobId: string, agentId: string) => {
+    setPendingAgentId(agentId);
+    setActionLoading(`agent-${jobId}`);
+    setAgentUpdateError(null);
+    try {
+      await gateway.call('cron.update', {
+        jobId,
+        patch: cronAgentUpdatePatch(agentId),
+      });
+      const refreshed = await refreshGroup('cron');
+      const confirmed = refreshed
+        && isCronAgentSelectionConfirmed(
+          useGatewayDataStore.getState().cronJobs,
+          jobId,
+          agentId,
+        );
+      if (!confirmed) throw new Error(t('cron.agentReadbackFailed'));
+      setPendingAgentId(null);
+    } catch (error) {
+      setPendingAgentId(null);
+      setAgentUpdateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -573,6 +664,7 @@ export function CronMonitorPage() {
                       </div>
                       <div className="text-[10px] text-aegis-text-muted flex items-center gap-2 flex-wrap">
                         {formatSchedule(job.schedule)}
+                        <span>{agentName(job.agentId)}</span>
                         {isError && (
                           <span className="text-[9px] font-bold text-aegis-danger/50 bg-aegis-danger/[0.08] px-1.5 py-0.5 rounded">
                             {job.state?.lastError?.substring(0, 20) || 'error'}
@@ -659,6 +751,9 @@ export function CronMonitorPage() {
                     <div className="text-[15px] font-bold truncate">{selectedJob.name || selectedJob.id}</div>
                     <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                       <span className="text-[11px] text-aegis-text-muted">{formatSchedule(selectedJob.schedule)}</span>
+                      <span className="text-[11px] text-aegis-text-muted">
+                        {t('cron.agent')}: {agentName(selectedJob.agentId)}
+                      </span>
                       {/* Stagger badge — Gateway 2026.2.25+ */}
                       {(selectedJob.stagger || selectedJob.schedule?.stagger) && (
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded
@@ -714,6 +809,52 @@ export function CronMonitorPage() {
                       background: getDeliveryStatus(selectedJob) === 'delivered' ? tc.success : getDeliveryStatus(selectedJob) === 'failed' ? tc.danger : 'rgb(var(--aegis-overlay) / 0.2)',
                     }} />
                     {getDeliveryStatus(selectedJob) === 'delivered' ? t('cron.delivered') : getDeliveryStatus(selectedJob) === 'failed' ? t('cron.deliveryFailed') : t('cron.deliveryUnknown')}
+                  </div>
+                )}
+
+                <div className="mb-3 flex items-center gap-2 text-[10px] text-aegis-text-dim">
+                  <label htmlFor="cron-job-agent" className="shrink-0">{t('cron.agent')}</label>
+                  <Select
+                    value={agentSelectValue(selectedAgentValue)}
+                    onValueChange={(value) => { void updateJobAgent(selectedJob.id, agentIdFromSelectValue(value)); }}
+                    disabled={agentSelectionDisabled || actionLoading === `agent-${selectedJob.id}`}
+                  >
+                    <SelectTrigger
+                      id="cron-job-agent"
+                      aria-label={t('cron.agent')}
+                      className="h-8 min-w-0 flex-1 border-aegis-border bg-aegis-surface-solid px-2 text-[11px] text-aegis-text focus:ring-aegis-primary/40"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-aegis-border bg-aegis-card-solid text-aegis-text">
+                      <SelectItem value={DEFAULT_AGENT_SELECT_VALUE} className="text-[11px]">{t('cron.defaultAgent')}</SelectItem>
+                      {selectedAgentOptions.map((agent) => (
+                        <SelectItem key={agent.id} value={agentSelectValue(agent.id)} className="text-[11px]">
+                          {agent.unavailable ? t('cron.unavailableAgent', { id: agent.label }) : agent.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {agentAvailability === 'loading' && (
+                  <div className="mb-3 flex items-center gap-2 text-[10px] text-aegis-text-dim" role="status">
+                    <LoadingIndicator size={10} /> {t('cron.agentsLoading')}
+                  </div>
+                )}
+                {agentAvailability === 'empty' && (
+                  <div className="mb-3 text-[10px] text-aegis-text-dim">{t('cron.noAgents')}</div>
+                )}
+                {agentAvailability === 'error' && (
+                  <div className="mb-3 flex items-start justify-between gap-2 rounded-md border border-aegis-danger/20 bg-aegis-danger/[0.08] px-2.5 py-2 text-[10px] text-aegis-danger" role="alert">
+                    <span>{t('cron.agentsLoadFailed')}: {agentsError}</span>
+                    <button type="button" onClick={retryAgents} className="shrink-0 rounded px-1.5 py-0.5 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40">
+                      {t('common.retry')}
+                    </button>
+                  </div>
+                )}
+                {agentUpdateError && (
+                  <div className="mb-3 rounded-md border border-aegis-danger/20 bg-aegis-danger/[0.08] px-2.5 py-2 text-[10px] text-aegis-danger" role="alert">
+                    {t('cron.agentUpdateFailed')}: {agentUpdateError}
                   </div>
                 )}
 
@@ -783,7 +924,7 @@ export function CronMonitorPage() {
             )}
           </AnimatePresence>
 
-          {/* Activity Log — collapsed (5 items) with Show More → scrollable */}
+          {/* Activity Log is collapsed to 5 items; Show More makes it scrollable. */}
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-[rgb(var(--aegis-overlay)/0.06)]
               bg-aegis-bg-frosted backdrop-blur-sm">
@@ -855,166 +996,164 @@ export function CronMonitorPage() {
       </div>
 
       {/* ═══ Templates Modal ═══ */}
-      <AnimatePresence>
-        {showTemplates && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-            onClick={() => setShowTemplates(false)}>
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              onClick={e => e.stopPropagation()}
-              className="w-[560px] p-6 rounded-2xl border border-[rgb(var(--aegis-overlay)/0.1)] shadow-2xl"
-              style={{ background: 'var(--aegis-bg-frosted)', backdropFilter: 'blur(40px)' }}>
-              <h3 className="text-base font-extrabold mb-1">{t('cron.templatesTitle', 'Quick Templates')}</h3>
-              <p className="text-[11px] text-aegis-text-dim mb-5">{t('cron.templatesSubtitle', 'Add a pre-configured job with one click')}</p>
-              <div className="grid grid-cols-2 gap-3">
-                {cronTemplates.map(tpl => {
-                  const isAdded = templateResult[tpl.id] === 'ok';
-                  const isFailed = templateResult[tpl.id] === 'error';
-                  const isLoading = actionLoading === `tpl-${tpl.id}`;
-                  return (
-                    <div key={tpl.id} className="p-4 rounded-xl bg-[rgb(var(--aegis-overlay)/0.02)] border border-[rgb(var(--aegis-overlay)/0.06)]
-                      hover:border-[rgb(var(--aegis-overlay)/0.12)] transition-all">
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="w-9 h-9 rounded-lg flex items-center justify-center text-base border shrink-0"
-                          style={{ background: `${dataColor(tpl.colorIdx)}10`, borderColor: `${dataColor(tpl.colorIdx)}25` }}>
-                          {tpl.icon}
-                        </div>
-                        <div className="text-sm font-bold">{tpl.name}</div>
-                      </div>
-                      <div className="text-[10px] text-aegis-text-muted leading-relaxed mb-3">{tpl.desc}</div>
-                      <button onClick={() => addTemplate(tpl)} disabled={isLoading || isAdded}
-                        className={clsx(
-                          'w-full py-2 rounded-lg text-[11px] font-semibold border transition-all',
-                          isAdded ? 'bg-aegis-primary/10 border-aegis-primary/30 text-aegis-primary'
-                          : isFailed ? 'bg-aegis-danger/10 border-aegis-danger/30 text-aegis-danger'
-                          : 'bg-[rgb(var(--aegis-overlay)/0.03)] border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-accent hover:border-aegis-accent/30',
-                        )}>
-                        {isLoading ? '...' : isAdded ? t('cronDetail.added') : isFailed ? t('cronDetail.addError') : t('cronDetail.add')}
-                      </button>
-                    </div>
-                  );
-                })}
+      <Dialog open={showTemplates} onOpenChange={(open) => setShowTemplates(open)}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] w-[min(560px,calc(100vw-2rem))] max-w-none gap-0 overflow-y-auto border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-2xl">
+          <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
+            <DialogTitle className="text-base font-extrabold text-aegis-text">{t('cron.templatesTitle', 'Quick Templates')}</DialogTitle>
+            <DialogDescription className="text-[11px] text-aegis-text-dim">{t('cron.templatesSubtitle', 'Add a pre-configured job with one click')}</DialogDescription>
+          </DialogHeader>
+          <div className="p-5">
+            <div className="mb-3 flex items-center gap-2 text-[10px] text-aegis-text-dim">
+              <label htmlFor="cron-template-agent" className="shrink-0">{t('cron.agent')}</label>
+              <Select
+                value={agentSelectValue(createJob.agentId)}
+                onValueChange={(value) => setCreateJob((state) => ({ ...state, agentId: agentIdFromSelectValue(value) }))}
+                disabled={agentSelectionDisabled}
+              >
+                <SelectTrigger id="cron-template-agent" className="h-8 min-w-0 flex-1 border-aegis-border bg-aegis-surface-solid px-2 text-[11px] text-aegis-text focus:ring-aegis-primary/40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="border-aegis-border bg-aegis-card-solid text-aegis-text">
+                  <SelectItem value={DEFAULT_AGENT_SELECT_VALUE} className="text-[11px]">{t('cron.defaultAgent')}</SelectItem>
+                  {createAgentOptions.map((agent) => (
+                    <SelectItem key={agent.id} value={agentSelectValue(agent.id)} className="text-[11px]">
+                      {agent.unavailable ? t('cron.unavailableAgent', { id: agent.label }) : agent.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {agentAvailability === 'loading' && <div className="mb-4 flex items-center gap-2 text-[10px] text-aegis-text-dim" role="status"><LoadingIndicator size={10} /> {t('cron.agentsLoading')}</div>}
+            {agentAvailability === 'empty' && <div className="mb-4 text-[10px] text-aegis-text-dim">{t('cron.noAgents')}</div>}
+            {agentAvailability === 'error' && (
+              <div className="mb-4 flex items-start justify-between gap-2 rounded-md border border-aegis-danger/20 bg-aegis-danger/[0.08] px-2.5 py-2 text-[10px] text-aegis-danger" role="alert">
+                <span>{t('cron.agentsLoadFailed')}: {agentsError}</span>
+                <button type="button" onClick={retryAgents} className="shrink-0 rounded px-1.5 py-0.5 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40">{t('common.retry')}</button>
               </div>
-              <button onClick={() => setShowTemplates(false)}
-                className="mt-4 w-full py-2 rounded-xl text-[11px] text-aegis-text-muted hover:text-aegis-text-secondary transition-colors">
-                {t('common.close', 'Close')}
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            )}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {cronTemplates.map(tpl => {
+                const isAdded = templateResult[tpl.id] === 'ok';
+                const isFailed = templateResult[tpl.id] === 'error';
+                const isLoading = actionLoading === `tpl-${tpl.id}`;
+                return (
+                  <div key={tpl.id} className="p-4 rounded-xl bg-[rgb(var(--aegis-overlay)/0.02)] border border-[rgb(var(--aegis-overlay)/0.06)] hover:border-[rgb(var(--aegis-overlay)/0.12)] transition-colors">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center text-base border shrink-0" style={{ background: `${dataColor(tpl.colorIdx)}10`, borderColor: `${dataColor(tpl.colorIdx)}25` }}>{tpl.icon}</div>
+                      <div className="text-sm font-bold">{tpl.name}</div>
+                    </div>
+                    <div className="text-[10px] text-aegis-text-muted leading-relaxed mb-3">{tpl.desc}</div>
+                    <button onClick={() => addTemplate(tpl)} disabled={isLoading || isAdded} className={clsx(
+                      'w-full py-2 rounded-lg text-[11px] font-semibold border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 disabled:opacity-60',
+                      isAdded ? 'bg-aegis-primary/10 border-aegis-primary/30 text-aegis-primary'
+                      : isFailed ? 'bg-aegis-danger/10 border-aegis-danger/30 text-aegis-danger'
+                      : 'bg-[rgb(var(--aegis-overlay)/0.03)] border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-accent hover:border-aegis-accent/30',
+                    )}>
+                      {isLoading ? t('common.loading') : isAdded ? t('cronDetail.added') : isFailed ? t('cronDetail.addError') : t('cronDetail.add')}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <DialogFooter className="border-t border-aegis-border px-5 py-3">
+            <DialogClose className="w-full rounded-lg border border-aegis-border px-3 py-2 text-[11px] text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 sm:w-auto">
+              {t('common.close', 'Close')}
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Create Task Dialog (split-button quick-create entry) ── */}
-      <AnimatePresence>
-        {showCreateForm && (
-          <motion.div
-            key="create-cron"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-            onClick={() => !creating && setShowCreateForm(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 8 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 8 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-              onClick={e => e.stopPropagation()}
-              className="w-full max-w-md bg-aegis-card-solid border border-aegis-border rounded-2xl shadow-2xl overflow-hidden"
+      <Dialog
+        open={showCreateForm}
+        onOpenChange={(open) => {
+          if (!open && creating) return;
+          setShowCreateForm(open);
+        }}
+      >
+        <DialogContent
+          onEscapeKeyDown={(event) => { if (creating) event.preventDefault(); }}
+          onPointerDownOutside={(event) => { if (creating) event.preventDefault(); }}
+          className="max-h-[calc(100dvh-2rem)] w-[min(448px,calc(100vw-2rem))] max-w-none gap-0 overflow-y-auto border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-2xl"
+        >
+          <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
+            <DialogTitle className="text-sm font-bold text-aegis-text">{t('cron.createNewJob', '新建定时任务')}</DialogTitle>
+            <DialogDescription className="sr-only">{t('cron.createDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="p-5 flex flex-col gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">{t('cron.field.name', '任务名称')}</span>
+              <input autoFocus value={createJob.name} onChange={e => setCreateJob((state) => ({ ...state, name: e.target.value }))} placeholder={t('cron.placeholder.name', '例如：每日早报')} className="px-3 py-2 rounded-lg text-[12.5px] bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border text-aegis-text placeholder:text-aegis-text-muted focus:border-aegis-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40" />
+            </label>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="cron-create-agent" className="text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">{t('cron.agent')}</label>
+              <Select value={agentSelectValue(createJob.agentId)} onValueChange={(value) => setCreateJob((state) => ({ ...state, agentId: agentIdFromSelectValue(value) }))} disabled={agentSelectionDisabled}>
+                <SelectTrigger id="cron-create-agent" className="h-[38px] rounded-lg border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] px-3 text-[12.5px] text-aegis-text focus:ring-aegis-primary/40"><SelectValue /></SelectTrigger>
+                <SelectContent className="border-aegis-border bg-aegis-card-solid text-aegis-text">
+                  <SelectItem value={DEFAULT_AGENT_SELECT_VALUE} className="text-[12px]">{t('cron.defaultAgent')}</SelectItem>
+                  {createAgentOptions.map((agent) => (
+                    <SelectItem key={agent.id} value={agentSelectValue(agent.id)} className="text-[12px]">{agent.unavailable ? t('cron.unavailableAgent', { id: agent.label }) : agent.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {agentAvailability === 'loading' && <span className="flex items-center gap-2 text-[10px] text-aegis-text-dim" role="status"><LoadingIndicator size={10} /> {t('cron.agentsLoading')}</span>}
+              {agentAvailability === 'empty' && <span className="text-[10px] text-aegis-text-dim">{t('cron.noAgents')}</span>}
+              {agentAvailability === 'ready' && <span className="text-[10px] text-aegis-text-dim">{t('cron.agentHint')}</span>}
+              {agentAvailability === 'error' && (
+                <div className="flex items-start justify-between gap-2 rounded-md border border-aegis-danger/20 bg-aegis-danger/[0.08] px-2.5 py-2 text-[10px] text-aegis-danger" role="alert">
+                  <span>{t('cron.agentsLoadFailed')}: {agentsError}</span>
+                  <button type="button" onClick={retryAgents} className="shrink-0 rounded px-1.5 py-0.5 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40">{t('common.retry')}</button>
+                </div>
+              )}
+            </div>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">{t('cron.field.expr', 'Cron 表达式')}</span>
+              <input value={createJob.cronExpr} onChange={e => setCreateJob((state) => ({ ...state, cronExpr: e.target.value }))} placeholder="0 9 * * *" className="px-3 py-2 rounded-lg text-[12.5px] font-mono bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border text-aegis-text placeholder:text-aegis-text-muted focus:border-aegis-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">{t('cron.field.message', '执行消息')}</span>
+              <textarea value={createJob.message} onChange={e => setCreateJob((state) => ({ ...state, message: e.target.value }))} placeholder={t('cron.placeholder.message', '任务触发时发给 agent 的指令')} rows={3} className="px-3 py-2 rounded-lg text-[12.5px] bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border text-aegis-text placeholder:text-aegis-text-muted focus:border-aegis-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 resize-none" />
+            </label>
+            {createError && <div className="text-[11px] text-aegis-danger bg-aegis-danger/10 border border-aegis-danger/20 rounded-lg px-3 py-2" role="alert">{createError}</div>}
+          </div>
+          <DialogFooter className="border-t border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] px-5 py-3">
+            <DialogClose disabled={creating} className="px-3 py-1.5 rounded-lg text-[11.5px] text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text border border-aegis-border active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 disabled:opacity-50">{t('common.cancel', '取消')}</DialogClose>
+            <button
+              onClick={async () => {
+                if (!createJob.name.trim() || !createJob.message.trim()) {
+                  setCreateError(t('cron.error.required', '名称和消息不能为空'));
+                  return;
+                }
+                setCreating(true);
+                setCreateError(null);
+                try {
+                  await gateway.call('cron.add', buildCronAgentTurnAddParams({
+                    name: createJob.name,
+                    agentId: createJob.agentId,
+                    schedule: { kind: 'cron', expr: createJob.cronExpr.trim(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
+                    message: createJob.message,
+                    enabled: true,
+                  }));
+                  const refreshed = await refreshGroup('cron');
+                  if (!refreshed) throw new Error(t('cron.createReadbackFailed'));
+                  setShowCreateForm(false);
+                  setCreateJob({ name: '', cronExpr: '0 9 * * *', message: '', agentId: '' });
+                } catch (error) {
+                  setCreateError(error instanceof Error ? error.message : String(error));
+                } finally {
+                  setCreating(false);
+                }
+              }}
+              disabled={creating}
+              className="inline-flex min-w-[72px] items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[11.5px] font-semibold bg-aegis-accent text-aegis-btn-primary-text transition-[filter,transform] hover:brightness-110 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45 disabled:opacity-50"
             >
-              <div className="px-5 py-4 border-b border-aegis-border flex items-center justify-between">
-                <h3 className="text-sm font-bold text-aegis-text">
-                  {t('cron.createNewJob', '新建定时任务')}
-                </h3>
-                <button onClick={() => setShowCreateForm(false)} disabled={creating}
-                  className="p-1 rounded text-aegis-text-dim hover:text-aegis-text disabled:opacity-50">
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="p-5 flex flex-col gap-3">
-                <label className="flex flex-col gap-1">
-                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">
-                    {t('cron.field.name', '任务名称')}
-                  </span>
-                  <input
-                    value={createJob.name}
-                    onChange={e => setCreateJob((s) => ({ ...s, name: e.target.value }))}
-                    placeholder={t('cron.placeholder.name', '例如：每日早报')}
-                    className="px-3 py-2 rounded-lg text-[12.5px] bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border text-aegis-text placeholder:text-aegis-text-muted focus:border-aegis-accent/40 focus:outline-none"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">
-                    {t('cron.field.expr', 'Cron 表达式')}
-                  </span>
-                  <input
-                    value={createJob.cronExpr}
-                    onChange={e => setCreateJob((s) => ({ ...s, cronExpr: e.target.value }))}
-                    placeholder="0 9 * * *"
-                    className="px-3 py-2 rounded-lg text-[12.5px] font-mono bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border text-aegis-text placeholder:text-aegis-text-muted focus:border-aegis-accent/40 focus:outline-none"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">
-                    {t('cron.field.message', '执行消息')}
-                  </span>
-                  <textarea
-                    value={createJob.message}
-                    onChange={e => setCreateJob((s) => ({ ...s, message: e.target.value }))}
-                    placeholder={t('cron.placeholder.message', '任务触发时发给 agent 的指令')}
-                    rows={3}
-                    className="px-3 py-2 rounded-lg text-[12.5px] bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border text-aegis-text placeholder:text-aegis-text-muted focus:border-aegis-accent/40 focus:outline-none resize-none"
-                  />
-                </label>
-                {createError && (
-                  <div className="text-[11px] text-aegis-danger bg-aegis-danger/10 border border-aegis-danger/20 rounded-lg px-3 py-2">
-                    {createError}
-                  </div>
-                )}
-              </div>
-              <div className="px-5 py-3 border-t border-aegis-border flex items-center justify-end gap-2 bg-[rgb(var(--aegis-overlay)/0.02)]">
-                <button onClick={() => setShowCreateForm(false)} disabled={creating}
-                  className="px-3 py-1.5 rounded-lg text-[11.5px] text-aegis-text-muted hover:text-aegis-text border border-aegis-border disabled:opacity-50">
-                  {t('common.cancel', '取消')}
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!createJob.name.trim() || !createJob.message.trim()) {
-                      setCreateError(t('cron.error.required', '名称和消息不能为空'));
-                      return;
-                    }
-                    setCreating(true);
-                    setCreateError(null);
-                    try {
-                      await gateway.call('cron.add', {
-                        job: {
-                          name: createJob.name.trim(),
-                          schedule: { kind: 'cron', expr: createJob.cronExpr.trim(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
-                          sessionTarget: 'isolated',
-                          payload: { kind: 'agentTurn', message: createJob.message.trim() },
-                          delivery: { mode: 'none' },
-                          enabled: true,
-                        },
-                      });
-                      await refreshGroup('cron');
-                      setShowCreateForm(false);
-                      setCreateJob({ name: '', cronExpr: '0 9 * * *', message: '' });
-                    } catch (err: any) {
-                      setCreateError(err?.message || String(err));
-                    } finally {
-                      setCreating(false);
-                    }
-                  }}
-                  disabled={creating}
-                  className="px-3 py-1.5 rounded-lg text-[11.5px] font-semibold bg-aegis-accent text-aegis-btn-primary-text hover:brightness-110 disabled:opacity-50"
-                >
-                  {creating ? <LoadingIndicator size={11} className="inline" /> : null}
-                  {t('common.create', '创建')}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              {creating ? <LoadingIndicator size={11} className="inline" /> : null}
+              {t('common.create', '创建')}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Fix #7: keyframes moved to index.css — no more <style> recreation per render */}
     </div>

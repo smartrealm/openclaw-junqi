@@ -242,7 +242,7 @@ export function SetupShell({
       />
       <Stepper active={active} />
       <main className="flex min-h-0 flex-1 flex-col items-center overflow-auto px-3 py-4 sm:px-6 sm:py-8">
-        <section className={clsx("my-auto w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
+        <section className={clsx("w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
           <div className="mb-4 text-center sm:mb-6">
             <h1 className="text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>

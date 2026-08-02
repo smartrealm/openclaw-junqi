@@ -14,9 +14,9 @@ import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawCha
 // DESIGN:
 //   All pages READ from this store — nobody calls gateway directly.
 //   Smart polling fetches at 3 speeds:
-//     Fast  (10s)  → sessions.list         (who's running now?)
-//     Mid   (30s)  → agents.list + cron    (rarely change)
-//     Slow  (120s) → usage.cost + sessions.usage (heavy, slow-changing)
+//     Fast  (10s):  sessions.list         (who's running now?)
+//     Mid   (30s):  agents.list + cron    (rarely change)
+//     Slow  (120s): usage.cost + sessions.usage (heavy, slow-changing)
 //
 //   Gateway events (session.started, etc.) update the store
 //   in real-time without polling.
@@ -99,6 +99,7 @@ export interface SessionsUsage {
 export interface CronJob {
   id: string;
   name?: string;
+  agentId?: string;
   schedule?: any;
   enabled?: boolean;
   lastRun?: string;
@@ -109,14 +110,14 @@ export interface CronJob {
   [k: string]: any;
 }
 
-// ── task_id → session_key map (populated by 'task-session' events) ──
+// task_id to session_key map, populated by task-session events
 const taskToSession = new Map<string, string>();
 function taskIdToSessionKey(taskId: string): string | undefined {
   return taskToSession.get(taskId);
 }
 
 // ── Pending task-status buffer ────────────────────────────────────────────
-// task-status can arrive before task-session (which maps task_id → session_key).
+// task-status can arrive before task-session, which maps task_id to session_key.
 // We buffer the latest status per task_id and replay when task-session arrives,
 // instead of falling back to activeSessionKey (which would pollute the wrong session).
 const pendingTaskStatus = new Map<string, { status: string; ts: number }>();
@@ -235,16 +236,16 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   setSessions: (sessions) => {
     // Merge incoming sessions with existing ones, preserving event-driven fields
     // (runningUpdatedAt) that the polling API does not return. Without this,
-    // every 10s poll wipes the freshness stamp → isFreshRunning returns false →
-    // pet shows idle while an agent is actively working.
+    // Every 10s poll would wipe the freshness stamp, making isFreshRunning false
+    // and showing the pet as idle while an agent is actively working.
     const visibleSessions = coalesceSessionsByKey(withoutDeletedSessions(sessions));
     const existing = get().sessions;
     const existingByKey = new Map(existing.map((s) => [s.key, s]));
     const merged = visibleSessions.map((s) => {
       const prev = existingByKey.get(s.key);
       if (!prev) return s;
-      // Poll says running=false → drop freshness stamp (task ended).
-      // Poll says running=true but prev has no stamp → mint one now.
+      // A false running state drops the freshness stamp because the task ended.
+      // A true running state without an earlier stamp mints one now.
       const runningUpdatedAt = s.running === false
         ? undefined
         : (prev.runningUpdatedAt ?? (s.running ? Date.now() : undefined));
@@ -365,7 +366,8 @@ function isAgentInfo(value: unknown): value is AgentInfo {
 function isCronJob(value: unknown): value is CronJob {
   return isGatewayRecord(value)
     && typeof value.id === 'string'
-    && value.id.trim().length > 0;
+    && value.id.trim().length > 0
+    && (value.agentId === undefined || (typeof value.agentId === 'string' && value.agentId.trim().length > 0));
 }
 
 function gatewayCollectionOf<T>(
@@ -564,24 +566,26 @@ async function fetchSessions(): Promise<boolean> {
   }
 }
 
-async function fetchAgents() {
+async function fetchAgents(): Promise<boolean> {
   const ticket = beginGatewayRequest('agents');
-  if (!ticket) return;
+  if (!ticket) return false;
   const store = useGatewayDataStore.getState();
   store.setLoading('agents', true);
   try {
     const res = await ticket.connection.request('agents.list', {});
-    if (!isCurrentGatewayRequest(ticket)) return;
+    if (!isCurrentGatewayRequest(ticket)) return false;
     const list = parseGatewayAgentList(res);
     if (!list) {
       rejectGatewayResponse(store, 'agents', 'agents.list');
-      return;
+      return false;
     }
     store.setAgents(list);
+    return true;
   } catch (e: any) {
-    if (!isCurrentGatewayRequest(ticket)) return;
+    if (!isCurrentGatewayRequest(ticket)) return false;
     store.setError('agents', e?.message || String(e));
     store.setLoading('agents', false);
+    return false;
   }
 }
 
@@ -627,24 +631,26 @@ async function fetchUsage() {
   }
 }
 
-async function fetchCron() {
+async function fetchCron(): Promise<boolean> {
   const ticket = beginGatewayRequest('cron');
-  if (!ticket) return;
+  if (!ticket) return false;
   const store = useGatewayDataStore.getState();
   store.setLoading('cron', true);
   try {
     const res = await ticket.connection.request('cron.list', { includeDisabled: true });
-    if (!isCurrentGatewayRequest(ticket)) return;
+    if (!isCurrentGatewayRequest(ticket)) return false;
     const list = parseGatewayCronJobList(res);
     if (!list) {
       rejectGatewayResponse(store, 'cron', 'cron.list');
-      return;
+      return false;
     }
     store.setCronJobs(list);
+    return true;
   } catch (e: any) {
-    if (!isCurrentGatewayRequest(ticket)) return;
+    if (!isCurrentGatewayRequest(ticket)) return false;
     store.setError('cron', e?.message || String(e));
     store.setLoading('cron', false);
+    return false;
   }
 }
 
@@ -1027,7 +1033,7 @@ export function handleGatewayEvent(event: string, payload: any) {
 
     // ── Task status (from backend hook events: PostToolUse/Stop/Notification etc.) ──
     // Backend emits { task_id, status: 'running' | 'input_required' | ... }.
-    // We need to map task_id → session key. The map is populated by 'task-session'
+    // Map task_id to the session key. The map is populated by task-session
     // events which carry both fields. The running flag is what the AgentHub uses
     // to determine active vs idle vs input_required.
     case 'task-status': {
@@ -1051,7 +1057,7 @@ export function handleGatewayEvent(event: string, payload: any) {
       break;
     }
 
-    // ── task-session: build the task_id → session_key map ──
+    // task-session builds the task_id to session_key map.
     case 'task-session': {
       const taskId = payload?.task_id;
       const sessionId = payload?.session_id;

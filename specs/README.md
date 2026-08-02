@@ -72,3 +72,4 @@ specs/
 - [OpenClaw Gateway IPC 出口收敛](quality/2026-08-02-openclaw-gateway-ipc-boundary-convergence.md)
 - [OpenClaw 技能运行时出口收敛](quality/2026-08-02-openclaw-skills-runtime-convergence.md)
 - [OpenClaw 工作区记忆收敛](quality/2026-08-02-openclaw-workspace-memory-convergence.md)
+- [定时任务 OpenClaw Agent 路由](quality/2026-08-02-cron-openclaw-agent-routing.md)
