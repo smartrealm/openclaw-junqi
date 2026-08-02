@@ -51,6 +51,7 @@
 - A Gateway without the explicit realtime relay capability remains in the current confirmation-required voice-draft path; it is never presented as continuous Talk.
 - A Talk session remains explicitly bound to its selected session key because the installed `talk.session.create` contract does not accept `voiceWakeTrigger`.
 - A hidden standby window is restored after a verified wake result without adding a platform-specific window implementation.
+- A close request received before workbench persistence becomes ready still queries the native listener. It hides the main window only for a verified wake-word listener; otherwise it completes a normal destroy. Once persistence is ready, the existing checkpoint and PTY shutdown remain before that decision.
 - A rejected or failed Jarvis category update cannot forward pending PCM or WAV audio to Talk or ordinary chat, and the user receives a recoverable category error.
 - While the authenticated Talk relay is opening, a completed WAV capture waits for that result. A ready relay owns the PCM and suppresses the duplicate WAV; an unavailable relay leaves the existing confirmation-required WAV draft available. Each boundary retains the complete bounded native VAD turn during setup.
 - Windows Run and Linux Desktop Entry command encoders have executable unit tests for whitespace and format-reserved characters.

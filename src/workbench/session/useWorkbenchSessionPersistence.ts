@@ -5,6 +5,7 @@ import { WorkbenchSessionWriter } from './writer';
 import { useWorkbenchStore } from '../store/workbenchStore';
 import { stopAllWorkbenchPtys } from '../pty/workbenchPtyClient';
 import { checkpointAllLocalEditorDocuments } from '@/workspace-files/services/localEditorDocuments';
+import { shouldKeepVoiceWakeResident } from '@/services/voice/VoiceWakeResidencyPolicy';
 
 const LOCAL_PARTITION = 'local';
 const WRITE_DEBOUNCE_MS = 180;
@@ -46,20 +47,29 @@ export function useWorkbenchSessionPersistence(): void {
       const window = getCurrentWindow();
       return window.onCloseRequested((event) => {
         const writer = writerRef.current;
-        if (!writer?.isReady() || !useWorkbenchStore.getState().writerReady) return;
         event.preventDefault();
         if (closeCheckpointRef.current) return;
+        const finishWindowClose = async () => {
+          const status = await getVoiceWakeStatus().catch(() => null);
+          if (shouldKeepVoiceWakeResident(status)) {
+            await window.hide();
+            return;
+          }
+          await window.destroy();
+        };
+        if (!writer?.isReady() || !useWorkbenchStore.getState().writerReady) {
+          const close = finishWindowClose()
+            .catch(() => window.destroy().catch(() => undefined))
+            .finally(() => {
+              if (closeCheckpointRef.current === close) closeCheckpointRef.current = null;
+            });
+          closeCheckpointRef.current = close;
+          return;
+        }
         const checkpoint = checkpointAllLocalEditorDocuments()
           .then(() => writer.checkpoint(useWorkbenchStore.getState().sessionSnapshot()))
           .then(() => stopAllWorkbenchPtys())
-          .then(async () => {
-            const status = await getVoiceWakeStatus().catch(() => null);
-            if (status?.listening && status.mode === 'wake_word') {
-              await window.hide();
-              return;
-            }
-            await window.destroy();
-          })
+          .then(finishWindowClose)
           .catch(() => {
             useWorkbenchStore.getState().failHydration('Workbench shutdown checkpoint or PTY cleanup failed; close again to retry');
           })

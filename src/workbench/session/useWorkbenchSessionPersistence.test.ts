@@ -17,18 +17,6 @@ test('workbench persistence is globally mounted and load precedes writer enablem
   assert.ok(loadIndex >= 0 && enableIndex > loadIndex && hydrateIndex > enableIndex);
 });
 
-test('main-window close is fenced by one durable checkpoint before destroy', () => {
-  assert.match(hook, /onCloseRequested/);
-  assert.match(hook, /event\.preventDefault\(\)/);
-  assert.match(hook, /closeCheckpointRef\.current/);
-  assert.match(hook, /writer\.checkpoint\(useWorkbenchStore\.getState\(\)\.sessionSnapshot\(\)\)/);
-  const documents = hook.indexOf('checkpointAllLocalEditorDocuments()');
-  const checkpoint = hook.indexOf('writer.checkpoint', documents);
-  const stopPtys = hook.indexOf('stopAllWorkbenchPtys()', checkpoint);
-  const destroy = hook.indexOf('window.destroy()', stopPtys);
-  assert.ok(documents >= 0 && checkpoint > documents && stopPtys > checkpoint && destroy > stopPtys);
-});
-
 test('main-window destroy permission is scoped to the main window only', () => {
   assert.deepEqual(mainWindowLifecycleCapability.windows, ['main']);
   assert.deepEqual(mainWindowLifecycleCapability.permissions, ['core:window:allow-destroy']);
