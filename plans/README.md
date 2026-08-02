@@ -79,6 +79,7 @@ plans/
 - [OpenClaw 会话操作事件对齐](quality/2026-08-03-openclaw-session-operation.md)
 - [OpenClaw 原生会话压缩对齐](quality/2026-08-04-openclaw-native-session-compaction.md)
 - [OpenClaw 原生会话中止对齐](quality/2026-08-03-openclaw-native-session-abort.md)
+- [OpenClaw 原生会话预览对齐](quality/2026-08-03-openclaw-native-session-preview.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界](quality/2026-07-31-installation-dashboard-chat-provider-channel-runtime-boundaries.md)
 - [语音唤醒工作台](quality/2026-07-31-voice-wake-workspace.md)
 - [跨平台语音唤醒宿主](quality/2026-08-02-cross-platform-voice-wake-host.md)

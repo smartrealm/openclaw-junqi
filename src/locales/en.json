@@ -3960,6 +3960,9 @@
     "minutesAgo": "{{count}}m ago",
     "hoursAgo": "{{count}}h ago",
     "daysAgo": "{{count}}d ago",
+    "previewEmpty": "No recent messages",
+    "previewUnavailable": "Recent messages unavailable",
+    "previewError": "Recent messages could not be loaded",
     "searchPlaceholder": "Search by agent, model, session key...",
     "clearSearch": "Clear"
   },

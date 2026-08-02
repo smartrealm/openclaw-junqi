@@ -3952,6 +3952,9 @@
     "minutesAgo": "{{count}}分鐘前",
     "hoursAgo": "{{count}}小時前",
     "daysAgo": "{{count}}天前",
+    "previewEmpty": "暫無最近消息",
+    "previewUnavailable": "最近消息不可用",
+    "previewError": "最近消息載入失敗",
     "searchPlaceholder": "按智能體、模型、會話 key 搜索…",
     "clearSearch": "清除"
   },

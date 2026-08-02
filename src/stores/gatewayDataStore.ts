@@ -4,10 +4,20 @@ import {
   coalesceSessionsByKey,
   createLatestRequestGate,
   markSessionDeleted,
+  normalizeSessionKey,
   withoutDeletedSessions,
 } from '@/utils/sessionLifecycle';
 import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
 import { GatewayRpcError } from '@/services/gateway/Connection';
+import {
+  OPENCLAW_SESSIONS_PREVIEW_MAX_KEYS,
+  OPENCLAW_SESSIONS_PREVIEW_METHOD,
+  OpenClawSessionPreviewClient,
+  OpenClawSessionPreviewResponseError,
+  type OpenClawSessionPreviewEntry,
+} from '@/services/gateway/OpenClawSessionPreviewClient';
+
+export type { OpenClawSessionPreviewEntry } from '@/services/gateway/OpenClawSessionPreviewClient';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -177,6 +187,10 @@ export interface RunningSubAgent {
 interface GatewayDataState {
   // Data
   sessions: SessionInfo[];
+  sessionPreviews: Record<string, OpenClawSessionPreviewEntry>;
+  sessionPreviewsUpdatedAt: number;
+  sessionPreviewsLoading: boolean;
+  sessionPreviewsError: string | null;
   agents: AgentInfo[];
   costSummary: CostSummary | null;
   sessionsUsage: SessionsUsage | null;
@@ -218,6 +232,10 @@ interface GatewayDataState {
 
   // Setters (called by polling engine or event handler)
   setSessions: (sessions: SessionInfo[]) => void;
+  setSessionPreviews: (entries: readonly OpenClawSessionPreviewEntry[]) => void;
+  clearSessionPreviews: (keys?: readonly string[]) => void;
+  setSessionPreviewsLoading: (value: boolean) => void;
+  setSessionPreviewsError: (value: string | null) => void;
   setAgents: (agents: AgentInfo[]) => void;
   setCostSummary: (data: CostSummary) => void;
   setSessionsUsage: (data: SessionsUsage) => void;
@@ -241,6 +259,10 @@ interface GatewayDataState {
 export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   // Data
   sessions: [],
+  sessionPreviews: {},
+  sessionPreviewsUpdatedAt: 0,
+  sessionPreviewsLoading: false,
+  sessionPreviewsError: null,
   agents: [],
   costSummary: null,
   sessionsUsage: null,
@@ -279,13 +301,43 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
         : (prev.runningUpdatedAt ?? (s.running ? Date.now() : undefined));
       return { ...s, runningUpdatedAt };
     });
+    const sessionKeys = new Set(merged.map((session) => session.key));
+    const sessionPreviews = Object.fromEntries(
+      Object.entries(get().sessionPreviews).filter(([key]) => sessionKeys.has(key)),
+    );
     set({
       sessions: merged,
+      sessionPreviews,
       lastFetch: { ...get().lastFetch, sessions: Date.now() },
       loading: { ...get().loading, sessions: false },
       errors: { ...get().errors, sessions: null },
     });
   },
+
+  setSessionPreviews: (entries) => {
+    const sessionPreviews = { ...get().sessionPreviews };
+    for (const entry of entries) sessionPreviews[entry.key] = entry;
+    set({
+      sessionPreviews,
+      sessionPreviewsUpdatedAt: Date.now(),
+      sessionPreviewsLoading: false,
+      sessionPreviewsError: null,
+    });
+  },
+
+  clearSessionPreviews: (keys) => {
+    if (!keys) {
+      set({ sessionPreviews: {}, sessionPreviewsUpdatedAt: 0 });
+      return;
+    }
+    const sessionPreviews = { ...get().sessionPreviews };
+    for (const key of keys) delete sessionPreviews[normalizeSessionKey(key)];
+    set({ sessionPreviews });
+  },
+
+  setSessionPreviewsLoading: (value) => set({ sessionPreviewsLoading: value }),
+
+  setSessionPreviewsError: (value) => set({ sessionPreviewsError: value }),
 
   setAgents: (agents) =>
     set({
@@ -370,10 +422,19 @@ const DEFAULT_FRESHNESS_MS: Record<PollGroup, number> = {
   usage: SLOW_INTERVAL,
 };
 
+// These are bounded UI read parameters, while the 64-key batch size is the
+// current official sessions.preview handler limit.
+const SESSION_PREVIEW_LIMIT = 3;
+const SESSION_PREVIEW_MAX_CHARS = 160;
+const SESSION_PREVIEW_FRESHNESS_MS = 30_000;
+
 // Reference to gateway connection (set by startPolling)
 // Uses request() directly to avoid circular imports with gateway facade
 type GatewayRequestParams = Record<string, unknown>;
-type GatewayRequester = { request: (method: string, params: GatewayRequestParams) => Promise<unknown> };
+type GatewayRequester = {
+  request: (method: string, params: GatewayRequestParams) => Promise<unknown>;
+  hasAdvertisedMethod?: (method: string) => boolean | null;
+};
 
 function isGatewayRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -538,6 +599,21 @@ export function resolveGatewayConnectionStartedAt(
 
 let gw: GatewayRequester | null = null;
 const requestFence = createGatewayRequestFence<GatewayRequester>();
+const sessionPreviewRequestGate = createLatestRequestGate();
+
+interface SessionPreviewRequestTicket {
+  connection: GatewayRequester;
+  requestId: number;
+}
+
+function beginSessionPreviewRequest(): SessionPreviewRequestTicket | null {
+  if (!gw) return null;
+  return { connection: gw, requestId: sessionPreviewRequestGate.begin() };
+}
+
+function isCurrentSessionPreviewRequest(ticket: SessionPreviewRequestTicket): boolean {
+  return ticket.connection === gw && sessionPreviewRequestGate.isCurrent(ticket.requestId);
+}
 
 function beginGatewayRequest(group: GatewayDataGroup): GatewayRequestTicket<GatewayRequester> | null {
   return gw ? requestFence.begin(group, gw) : null;
@@ -771,6 +847,7 @@ export function startPolling(gateway: GatewayRequester) {
   if (gw && useGatewayDataStore.getState().polling) return;
 
   requestFence.invalidateAll();
+  sessionPreviewRequestGate.invalidate();
   gw = gateway;
   useGatewayDataStore.getState().setPolling(true);
   debugLog('datastore', '[DataStore] Polling started (sessions=10s, agents=30s, demand groups lazy)');
@@ -795,10 +872,14 @@ export function stopPolling() {
   if (costTimer) { clearInterval(costTimer); costTimer = null; }
   if (usageTimer) { clearInterval(usageTimer); usageTimer = null; }
   requestFence.invalidateAll();
+  sessionPreviewRequestGate.invalidate();
   gw = null;
   const store = useGatewayDataStore.getState();
   store.setPolling(false);
   for (const group of GATEWAY_DATA_GROUPS) store.setLoading(group, false);
+  store.clearSessionPreviews();
+  store.setSessionPreviewsLoading(false);
+  store.setSessionPreviewsError(null);
   // Clear running sub-agents on disconnect — presence-based detection is meaningless
   // without a live sessions.list feed. Without this, stale sub-agents keep the pet
   // in "working" state indefinitely after a gateway disconnect/reconnect cycle.
@@ -843,6 +924,105 @@ export async function ensureGroupFresh(group: PollGroup, maxAgeMs = DEFAULT_FRES
   const last = store.lastFetch[group] ?? 0;
   if (last > 0 && Date.now() - last < maxAgeMs) return;
   return fetchGroup(group);
+}
+
+function normalizeSessionPreviewKeys(keys: readonly string[]): string[] {
+  return [...new Set(keys.flatMap((key) => {
+    if (typeof key !== 'string') return [];
+    const normalized = normalizeSessionKey(key);
+    return normalized ? [normalized] : [];
+  }))];
+}
+
+function chunkSessionPreviewKeys(keys: readonly string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let index = 0; index < keys.length; index += OPENCLAW_SESSIONS_PREVIEW_MAX_KEYS) {
+    chunks.push(keys.slice(index, index + OPENCLAW_SESSIONS_PREVIEW_MAX_KEYS));
+  }
+  return chunks;
+}
+
+function sessionPreviewFailureCode(error: unknown): string {
+  return error instanceof OpenClawSessionPreviewResponseError
+    ? error.code
+    : 'OPENCLAW_SESSIONS_PREVIEW_FAILED';
+}
+
+/** Fetch bounded, read-only transcript previews from the connected Gateway. */
+export async function refreshSessionPreviews(keys: readonly string[]): Promise<boolean> {
+  const normalizedKeys = normalizeSessionPreviewKeys(keys);
+  const store = useGatewayDataStore.getState();
+  if (normalizedKeys.length === 0) {
+    sessionPreviewRequestGate.invalidate();
+    store.clearSessionPreviews();
+    store.setSessionPreviewsLoading(false);
+    store.setSessionPreviewsError(null);
+    return false;
+  }
+  if (!gw) return false;
+
+  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_SESSIONS_PREVIEW_METHOD);
+  if (advertised === false) {
+    sessionPreviewRequestGate.invalidate();
+    store.clearSessionPreviews(normalizedKeys);
+    store.setSessionPreviewsLoading(false);
+    store.setSessionPreviewsError('OPENCLAW_SESSIONS_PREVIEW_UNSUPPORTED');
+    return false;
+  }
+
+  const ticket = beginSessionPreviewRequest();
+  if (!ticket) return false;
+  store.clearSessionPreviews(normalizedKeys);
+  store.setSessionPreviewsLoading(true);
+  store.setSessionPreviewsError(null);
+
+  const client = new OpenClawSessionPreviewClient(
+    <T>(method: string, params: Record<string, unknown>) => (
+      ticket.connection.request(method, params) as Promise<T>
+    ),
+  );
+  try {
+    const entries: OpenClawSessionPreviewEntry[] = [];
+    for (const chunk of chunkSessionPreviewKeys(normalizedKeys)) {
+      const result = await client.preview({
+        keys: chunk,
+        limit: SESSION_PREVIEW_LIMIT,
+        maxChars: SESSION_PREVIEW_MAX_CHARS,
+      });
+      if (!isCurrentSessionPreviewRequest(ticket)) return false;
+      entries.push(...result.previews);
+    }
+    if (!isCurrentSessionPreviewRequest(ticket)) return false;
+    const activeKeys = new Set(useGatewayDataStore.getState().sessions.map((session) => session.key));
+    store.setSessionPreviews(entries.filter((entry) => activeKeys.has(entry.key)));
+    return true;
+  } catch (error) {
+    if (!isCurrentSessionPreviewRequest(ticket)) return false;
+    store.clearSessionPreviews(normalizedKeys);
+    store.setSessionPreviewsLoading(false);
+    store.setSessionPreviewsError(sessionPreviewFailureCode(error));
+    return false;
+  }
+}
+
+/** Fetch previews when the current session keys are absent or stale. */
+export async function ensureSessionPreviewsFresh(
+  keys: readonly string[],
+  maxAgeMs = SESSION_PREVIEW_FRESHNESS_MS,
+): Promise<boolean> {
+  const normalizedKeys = normalizeSessionPreviewKeys(keys);
+  if (normalizedKeys.length === 0) {
+    useGatewayDataStore.getState().clearSessionPreviews();
+    return false;
+  }
+  if (!gw) return false;
+  const store = useGatewayDataStore.getState();
+  if (store.sessionPreviewsLoading) return false;
+  const isFresh = store.sessionPreviewsUpdatedAt > 0
+    && Date.now() - store.sessionPreviewsUpdatedAt < maxAgeMs
+    && normalizedKeys.every((key) => Object.prototype.hasOwnProperty.call(store.sessionPreviews, key));
+  if (isFresh) return true;
+  return refreshSessionPreviews(normalizedKeys);
 }
 
 /**

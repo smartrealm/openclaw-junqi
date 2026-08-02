@@ -5,9 +5,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Users, RefreshCw, Zap, Clock, Bot, Activity, Search, Pencil, Trash2, Check, X } from 'lucide-react';
+import { Users, RefreshCw, Zap, Clock, Bot, Activity, Search, Pencil, Trash2, Check, X, MessageSquare } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
-import { useGatewayDataStore, refreshGroup } from '@/stores/gatewayDataStore';
+import {
+  ensureSessionPreviewsFresh,
+  refreshGroup,
+  refreshSessionPreviews,
+  useGatewayDataStore,
+} from '@/stores/gatewayDataStore';
 import { formatTokens } from '@/utils/format';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
@@ -16,7 +21,7 @@ import { isAgentMainSession } from '@/utils/sessionLifecycle';
 import { isSubagentSessionKey } from '@/utils/sessionPresentation';
 import { isJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
 import { showConfirm } from '@/components/shared/AlertDialog';
-import type { AgentInfo, SessionInfo } from '@/stores/gatewayDataStore';
+import type { AgentInfo, OpenClawSessionPreviewEntry, SessionInfo } from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import { IconButton } from '@/components/shared/button';
@@ -92,6 +97,15 @@ function shortModel(model?: string): string | undefined {
   return String(model).split('/').pop() || model;
 }
 
+function latestPreviewText(preview: OpenClawSessionPreviewEntry | undefined): string | null {
+  if (!preview || preview.status !== 'ok') return null;
+  for (let index = preview.items.length - 1; index >= 0; index -= 1) {
+    const text = preview.items[index]?.text.trim();
+    if (text) return text;
+  }
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════
 // SessionCard
 // ═══════════════════════════════════════════════════════════
@@ -99,9 +113,10 @@ function shortModel(model?: string): string | undefined {
 interface SessionCardProps {
   session: SessionInfo;
   agentNameById: Record<string, string>;
+  preview?: OpenClawSessionPreviewEntry;
 }
 
-function SessionCard({ session, agentNameById }: SessionCardProps) {
+function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
@@ -114,6 +129,7 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
   const agentId = getAgentId(session);
   const agentName = agentId ? (agentNameById[agentId] || agentId) : undefined;
   const pct = tokenPercent(session.contextTokens, session.maxTokens);
+  const previewText = latestPreviewText(preview);
 
   const displayName = getSessionDisplayLabel(session, {
     mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
@@ -357,6 +373,15 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
         )}
       </div>
 
+      {(previewText || preview?.status === 'empty') && (
+        <div className="flex min-h-7 items-start gap-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.02)] px-2 py-1.5 text-[10px] text-aegis-text-muted">
+          <MessageSquare size={11} className="mt-0.5 shrink-0 text-aegis-primary/70" aria-hidden="true" />
+          <span className="line-clamp-2 min-w-0 break-words">
+            {previewText || t('sessions.previewEmpty', 'No recent messages')}
+          </span>
+        </div>
+      )}
+
       {/* ── Row 3: token usage bar ── */}
       {session.maxTokens ? (
         <div className="space-y-1">
@@ -412,6 +437,29 @@ export function SessionManagerPage() {
   const sessions = useGatewayDataStore((s) => s.sessions);
   const agents = useGatewayDataStore((s) => s.agents) as AgentInfo[];
   const loading   = useGatewayDataStore((s) => s.loading.sessions);
+  const sessionPreviews = useGatewayDataStore((s) => s.sessionPreviews);
+  const previewLoading = useGatewayDataStore((s) => s.sessionPreviewsLoading);
+  const previewError = useGatewayDataStore((s) => s.sessionPreviewsError);
+
+  const sessionPreviewSignature = useMemo(
+    () => JSON.stringify(sessions.map((session) => ({
+      key: session.key,
+      sessionId: session.sessionId,
+      lastActive: session.lastActive,
+    }))),
+    [sessions],
+  );
+
+  useEffect(() => {
+    const keys = JSON.parse(sessionPreviewSignature) as Array<{ key: string }>;
+    void ensureSessionPreviewsFresh(keys.map((session) => session.key));
+  }, [sessionPreviewSignature]);
+
+  const handleRefresh = useCallback(async () => {
+    await refreshGroup('sessions');
+    const currentKeys = useGatewayDataStore.getState().sessions.map((session) => session.key);
+    await refreshSessionPreviews(currentKeys);
+  }, []);
 
   const agentNameById = useMemo(() => Object.fromEntries(agents.map((a) => [a.id, a.name || a.id])), [agents]);
 
@@ -455,6 +503,12 @@ export function SessionManagerPage() {
     jarvis:   sessions.filter((s) => isJarvisSessionCategory(s.category)).length,
   }), [sessions]);
 
+  const previewStatusMessage = previewError === 'OPENCLAW_SESSIONS_PREVIEW_UNSUPPORTED'
+    ? t('sessions.previewUnavailable', 'Recent messages unavailable')
+    : previewError
+      ? t('sessions.previewError', 'Recent messages could not be loaded')
+      : null;
+
   // ═══ RENDER ═══
   return (
     <PageTransition className="flex flex-col flex-1 min-h-0 p-6 gap-5">
@@ -481,16 +535,16 @@ export function SessionManagerPage() {
 
         {/* Refresh button */}
         <button
-          onClick={() => refreshGroup('sessions')}
-          disabled={loading}
+          onClick={() => void handleRefresh()}
+          disabled={loading || previewLoading}
           className={clsx(
             'flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[11px] font-semibold transition-colors',
             'border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text-secondary',
             'bg-[rgb(var(--aegis-overlay)/0.02)] hover:bg-[rgb(var(--aegis-overlay)/0.04)]',
-            loading && 'opacity-50 pointer-events-none',
+            (loading || previewLoading) && 'opacity-50 pointer-events-none',
           )}
         >
-          {loading ? (
+          {loading || previewLoading ? (
             <LoadingIndicator size={13} />
           ) : (
             <RefreshCw size={13} />
@@ -498,6 +552,12 @@ export function SessionManagerPage() {
           {t('sessions.refresh', 'Refresh')}
         </button>
       </div>
+
+      {previewStatusMessage && (
+        <p className="-mt-3 text-[10px] text-aegis-text-dim" role="status">
+          {previewStatusMessage}
+        </p>
+      )}
 
       {/* ── Filter bar ── */}
       <div className="flex items-center gap-1.5">
@@ -579,7 +639,12 @@ export function SessionManagerPage() {
         /* Sessions grid — 2 columns */
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 auto-rows-max overflow-y-auto pb-2">
           {filtered.map((session) => (
-            <SessionCard key={session.key} session={session} agentNameById={agentNameById} />
+            <SessionCard
+              key={session.key}
+              session={session}
+              agentNameById={agentNameById}
+              preview={sessionPreviews[session.key]}
+            />
           ))}
         </div>
       )}
