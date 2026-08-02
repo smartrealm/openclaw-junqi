@@ -45,6 +45,7 @@ import { ChatResponseTracePanel } from '@/components/Chat/ChatResponseTracePanel
 import { findTraceSourceMessage, projectChatResponseTrace } from '@/components/Chat/chatResponseTrace';
 import { ChatTraceSourceMessagePanel } from '@/components/Chat/ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from '@/components/Chat/useChatSidePanel';
+import { TaskExecutionRecoveryBanner } from '@/components/Chat/TaskExecutionRecoveryBanner';
 
 interface SeedFile {
   path: string;
@@ -96,6 +97,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   const [sendError, setSendError] = useState('');
   const [fallbackSessionKey] = useState(() => `quickchat:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`);
   const sessionKey = ownedSessionKey || fallbackSessionKey;
+  const sessionId = useChatStore((state) => state.sessions.find((session) => session.key === sessionKey)?.sessionId);
   const sidePanel = useChatSidePanel(sessionKey);
   const isTyping = useChatStore((state) => Boolean(state.typingBySession[sessionKey]));
   const queue = useChatStore((state) => state.messageQueue[sessionKey] ?? EMPTY_QUEUE);
@@ -208,8 +210,10 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       const attachments = toGatewayAttachments(prepared);
       await chatSendCoordinator.send({
         sessionKey: key,
+        sessionId,
         message: fullMessage,
         clientMessageId,
+        source: 'quick_chat',
         attachments: attachments.length ? attachments : undefined,
         displayAttachments: displayAttachments(prepared),
       });
@@ -221,7 +225,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       setSending(false);
       setTimeout(() => messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }), 30);
     }
-  }, [text, sending, connected, files, sessionKey, t]);
+  }, [text, sending, connected, files, sessionId, sessionKey, t]);
 
   const handleRetryQueuedMessage = useCallback(async () => {
     if (!failedQueuedMessage) return;
@@ -242,6 +246,12 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     }
   }, [sessionKey, t]);
 
+  const reconcileTask = useCallback(async () => {
+    if (!connected) return;
+    const result = await gateway.getHistory(sessionKey);
+    gateway.reconcileChatHistoryRunState(sessionKey, result);
+  }, [connected, sessionKey]);
+
   const handleStructuredChoice = useCallback(async (value: string) => {
     const message = value.trim();
     if (!message || sending || !connected) return;
@@ -251,8 +261,10 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     try {
       await chatSendCoordinator.send({
         sessionKey,
+        sessionId,
         message,
         clientMessageId: createClientMessageId(),
+        source: 'quick_chat',
       });
     } catch (error) {
       setSendError(t('pet.quickChat.sendError', {
@@ -261,7 +273,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     } finally {
       setSending(false);
     }
-  }, [connected, sending, sessionKey, t]);
+  }, [connected, sending, sessionId, sessionKey, t]);
 
   const renderQuickChatBlock = useCallback((block: RenderBlock) => {
     switch (block.type) {
@@ -458,6 +470,14 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
           ))}
         </div>
       )}
+
+      <TaskExecutionRecoveryBanner
+        sessionKey={sessionKey}
+        sessionId={sessionId}
+        connected={connected}
+        onReconcile={reconcileTask}
+        compact
+      />
 
       {/* Uses the same normalized response groups as the main chat. */}
       <div ref={messagesRef} className="flex-1 overflow-y-auto px-4 py-3 text-[13px] leading-relaxed">

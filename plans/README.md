@@ -65,6 +65,7 @@ plans/
 - [设置页面多语言完整性](quality/2026-07-30-settings-localization-completeness.md)
 - [全局专注上下文与任务简报](quality/2026-07-30-focus-context-and-task-briefs.md)
 - [Chat 执行计划](quality/2026-07-30-chat-execution-plan.md)
+- [ReAct 任务检查点与恢复](quality/2026-08-02-react-task-checkpoint-recovery.md)
 - [Gateway AI 诊断](quality/2026-07-30-gateway-ai-diagnostics.md)
 - [终端与工作台 Chrome 一致性](quality/2026-07-30-terminal-workbench-chrome-convergence.md)
 - [Chat 消息预览与 OpenClaw 对齐](quality/2026-07-30-chat-message-preview-openclaw-parity.md)

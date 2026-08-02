@@ -3,6 +3,8 @@ import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { useChatStore, type ChatMessage } from '@/stores/chatStore';
 import type { GatewayAttachment, QueuedChatMessage } from './types';
 import { sessionMutationGate } from './sessionMutationGate';
+import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
+import type { TaskExecutionSource } from '@/task-execution/types';
 
 interface ChatSendGateway {
   sendMessage: typeof gateway.sendMessage;
@@ -14,6 +16,9 @@ interface ChatSendState {
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
   typingBySession: Record<string, boolean>;
   enqueueMessage: (sessionKey: string, message: QueuedChatMessage) => void;
+  sessions?: Array<{ key: string; model?: string | null }>;
+  activeSessionKey?: string;
+  currentModel?: string | null;
 }
 
 export interface ChatSendRequest {
@@ -25,6 +30,9 @@ export interface ChatSendRequest {
   clientMessageId?: string;
   optimisticMessage?: Partial<ChatMessage> | false;
   queueIfBusy?: boolean;
+  delivery?: 'queue' | 'steer';
+  source?: TaskExecutionSource;
+  model?: string | null;
 }
 
 function errorMessage(error: unknown): string {
@@ -57,13 +65,16 @@ export class ChatSendCoordinator {
         : {}),
     };
 
-    const sessionCannotSend = state.typingBySession[request.sessionKey]
-      || sessionMutationGate.isBlocked(request.sessionKey);
-    if (request.queueIfBusy !== false && sessionCannotSend) {
+    const sessionCannotSend = request.delivery !== 'steer' && (
+      state.typingBySession[request.sessionKey]
+      || sessionMutationGate.isBlocked(request.sessionKey)
+    );
+    if (request.delivery !== 'steer' && request.queueIfBusy !== false && sessionCannotSend) {
       try {
         state.enqueueMessage(request.sessionKey, {
           id: clientMessageId,
           timestamp,
+          ...(request.source && request.source !== 'chat' ? { source: request.source } : {}),
           ...retryPayload,
         });
       } catch (error) {
@@ -137,11 +148,35 @@ export class ChatSendCoordinator {
     state.setIsTyping(true, request.sessionKey);
 
     try {
+      const observedModel = request.model
+        ?? state.sessions?.find((session) => session.key === request.sessionKey)?.model
+        ?? (state.activeSessionKey === request.sessionKey ? state.currentModel : null)
+        ?? null;
+      const supersededRunId = request.delivery === 'steer'
+        ? await taskExecutionCoordinator.prepareSteer({
+            sessionKey: request.sessionKey,
+            sessionId: request.sessionId,
+            runId: clientMessageId,
+            source: request.source ?? 'chat',
+            model: observedModel,
+          })
+        : (await taskExecutionCoordinator.beginRun({
+            sessionKey: request.sessionKey,
+            sessionId: request.sessionId,
+            runId: clientMessageId,
+            source: request.source ?? 'chat',
+            model: observedModel,
+          }), null);
       const result = await this.gatewayPort.sendMessage(
         request.message,
         request.attachments,
         request.sessionKey,
-        { clientMessageId, sessionId: request.sessionId },
+        {
+          clientMessageId,
+          sessionId: request.sessionId,
+          ...(request.delivery === 'steer' ? { delivery: 'steer' as const } : {}),
+          ...(supersededRunId ? { supersededRunId } : {}),
+        },
       ) as { queued?: boolean } | undefined;
       const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
       if (!deliveryUncertain) {
@@ -160,6 +195,18 @@ export class ChatSendCoordinator {
         retryPayload,
       });
       state.setIsTyping(false, request.sessionKey);
+      if (error instanceof Error && (
+        error.name === 'GatewayDisconnectedError'
+        || error.name === 'GatewayRpcError'
+        || error.message === 'Gateway is not connected'
+      )) {
+        await taskExecutionCoordinator.settleRun({
+          sessionKey: request.sessionKey,
+          sessionId: request.sessionId,
+          runId: clientMessageId,
+          terminalReason: 'error',
+        }).catch((settleError) => taskExecutionCoordinator.reportPersistenceFailure('settle rejected send checkpoint', settleError));
+      }
       throw error;
     }
   }

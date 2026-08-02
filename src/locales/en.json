@@ -1336,6 +1336,16 @@
     "saveAndRetry": "Save and retry",
     "retryDelivery": "Retry delivery",
     "historySyncFailed": "Conversation history could not be synchronized.",
+    "taskRecovery": {
+      "title": "Task state needs OpenClaw verification",
+      "detail": "Current state: {{status}}. Unresolved tool checks: {{tools}}. JunQi will not resume this run automatically.",
+      "reconcile": "Verify with OpenClaw",
+      "statusPending": "pending",
+      "statusRunning": "awaiting Gateway confirmation",
+      "statusCancelRequested": "stop requested",
+      "statusVerificationRequired": "verification required",
+      "statusUnknown": "unknown"
+    },
     "untrustedWorkshopCommandIgnored": "An untrusted text command was ignored. Use an authorized workspace action instead.",
     "deliveryNotConfirmed": "OpenClaw did not confirm this message. You can retry it safely.",
     "availableSessions": "Available Sessions",

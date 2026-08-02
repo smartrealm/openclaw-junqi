@@ -19,7 +19,7 @@ export interface ToolCallInfo {
   toolName: string;
   input?: Record<string, unknown>;
   output?: string;
-  status: 'running' | 'done' | 'error';
+  status: 'running' | 'done' | 'error' | 'cancelled' | 'verification_required';
   durationMs?: number;
   error?: string;
   outputTruncated?: boolean;
@@ -124,6 +124,14 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
           ) : tool.status === 'error' ? (
             <span className="w-3 h-3 flex items-center justify-center shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-danger" />
+            </span>
+          ) : tool.status === 'verification_required' ? (
+            <span className="w-3 h-3 flex items-center justify-center shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            </span>
+          ) : tool.status === 'cancelled' ? (
+            <span className="w-3 h-3 flex items-center justify-center shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-aegis-text-dim/50" />
             </span>
           ) : (
             <span className="w-3 h-3 flex items-center justify-center shrink-0">

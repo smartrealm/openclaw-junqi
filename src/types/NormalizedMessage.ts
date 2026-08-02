@@ -35,7 +35,7 @@ export interface NormalizedMessage {
   toolName?: string;
   toolInput?: Record<string, unknown>;
   toolOutput?: string;
-  toolStatus?: 'running' | 'done' | 'error';
+  toolStatus?: 'running' | 'done' | 'error' | 'cancelled' | 'verification_required';
   toolDurationMs?: number;
   toolError?: string;
   toolOutputTruncated?: boolean;

@@ -73,6 +73,7 @@ import { findTraceSourceMessage, projectChatResponseTrace } from './chatResponse
 import { ChatTraceSourceMessagePanel } from './ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from './useChatSidePanel';
 import { getToolLabelKey } from './toolCallPresentation';
+import { TaskExecutionRecoveryBanner } from './TaskExecutionRecoveryBanner';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -1340,6 +1341,13 @@ function ChatViewContent() {
           </div>
         </div>
       )}
+
+      <TaskExecutionRecoveryBanner
+        sessionKey={activeSessionKey}
+        sessionId={activeSessionId}
+        connected={connected}
+        onReconcile={handleRefresh}
+      />
 
       <CollaborationUnanchoredBanner anchoredRunIds={anchoredRunIds} />
       <CollaborationSessionDock />

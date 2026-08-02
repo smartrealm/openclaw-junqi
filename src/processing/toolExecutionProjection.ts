@@ -1,4 +1,4 @@
-export type ToolExecutionStatus = 'running' | 'done' | 'error';
+export type ToolExecutionStatus = 'running' | 'done' | 'error' | 'cancelled' | 'verification_required';
 
 export interface ToolOutputProjection {
   text: string;
@@ -93,6 +93,11 @@ export function normalizeToolExecutionStatus(
     case 'failure':
     case 'blocked':
       return 'error';
+    case 'cancelled':
+    case 'canceled':
+      return 'cancelled';
+    case 'verification_required':
+      return 'verification_required';
     default:
       return undefined;
   }

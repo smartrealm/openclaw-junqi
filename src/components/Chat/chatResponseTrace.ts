@@ -19,7 +19,7 @@ export type ChatResponseTraceNode =
       toolCallId?: string;
       input?: Record<string, unknown>;
       output?: string;
-      status: 'running' | 'done' | 'error';
+      status: 'running' | 'done' | 'error' | 'cancelled' | 'verification_required';
       durationMs?: number;
       error?: string;
       outputTruncated?: boolean;

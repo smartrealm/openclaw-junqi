@@ -18,6 +18,7 @@ import { parseButtons } from '@/utils/buttonParser';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
 import i18n from '@/i18n';
+import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import { readGatewayMessageIdentity } from './messageIdentity';
 import {
   type GatewayCallbacks,
@@ -920,6 +921,7 @@ export class ChatHandler {
     if (!this.runProjection.complete(lease)) return;
     this.rememberObservedRun(sessionKey, lease.runId);
     this.forceFlushStream(sessionKey);
+    this.markUnresolvedToolCards(sessionKey, lease.runId);
     this.clearActiveResponse(sessionKey, lease.runId);
     this.markTranscriptHandledByTerminal(sessionKey);
     useChatStore.getState().clearThinking(sessionKey);
@@ -931,6 +933,20 @@ export class ChatHandler {
       undefined,
       { state: 'aborted', runId: lease.runId, refreshHistory: true },
     );
+  }
+
+  /** An abort can race a side-effecting tool. Keep its UI state explicitly uncertain. */
+  private markUnresolvedToolCards(sessionKey: string, runId: string): void {
+    const store = useChatStore.getState();
+    const messages = store.getCachedMessages(sessionKey) || [];
+    const updated = messages.map((message) => (
+      message.role === 'tool' && message.runId === runId && message.toolStatus === 'running'
+        ? { ...message, toolStatus: 'verification_required' as const, responseState: 'aborted' as const }
+        : message
+    ));
+    if (updated.some((message, index) => message !== messages[index])) {
+      store.setMessages(updated, sessionKey);
+    }
   }
 
   private handleAssistantStream(payload: any) {
@@ -1022,6 +1038,22 @@ export class ChatHandler {
     const msgId = `tool-live-${runId}-${toolCallId}`;
     if (!this.beginRun(sessionKey, runId)) return;
     this.bindRunToSession(sessionKey, runId);
+    void taskExecutionCoordinator.recordToolEvent({
+      sessionKey,
+      runId,
+      toolCallId,
+      toolName,
+      phase,
+      ...(phase === 'result'
+        ? {
+            resultStatus: toolEvent.status === 'error'
+              ? 'error' as const
+              : toolEvent.status === 'cancelled'
+                ? 'cancelled' as const
+                : 'done' as const,
+          }
+        : {}),
+    }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('record tool checkpoint', error));
 
     const store = useChatStore.getState();
     const listFor = () => store.getCachedMessages(sessionKey) || [];

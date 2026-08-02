@@ -20,6 +20,7 @@ import {
   queuedChatMessageBytes,
 } from '@/services/chat/types';
 import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
+import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import {
   collectSessionIdentityTransitions,
   publishSessionIdentityTransitions,
@@ -269,7 +270,7 @@ export interface ChatMessage {
   toolOutput?: string;
   /** Original tool result value retained for non-destructive trace presentation. */
   toolOutputValue?: unknown;
-  toolStatus?: 'running' | 'done' | 'error';
+  toolStatus?: 'running' | 'done' | 'error' | 'cancelled' | 'verification_required';
   toolDurationMs?: number;
   toolCallId?: string;
   /** Gateway-provided execution error, separate from the display result. */
@@ -1878,6 +1879,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().updateMessage(sessionKey, next.id, { status: 'pending', deliveryError: undefined });
     get().setIsTyping(true, sessionKey);
     try {
+      const observedModel = useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.model
+        ?? (useChatStore.getState().activeSessionKey === sessionKey ? useChatStore.getState().currentModel : null)
+        ?? null;
+      await taskExecutionCoordinator.beginRun({
+        sessionKey,
+        sessionId: next.sessionId,
+        runId: next.id,
+        source: next.source ?? 'chat',
+        model: observedModel,
+      });
       const result = await gateway.sendMessage(next.text, next.attachments, sessionKey, {
         clientMessageId: next.id,
         sessionId: next.sessionId,
@@ -1913,6 +1924,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         retryPayload,
       });
       get().setIsTyping(false, sessionKey);
+      await taskExecutionCoordinator.settleRun({
+        sessionKey,
+        sessionId: next.sessionId,
+        runId: next.id,
+        terminalReason: 'error',
+      }).catch((settleError) => taskExecutionCoordinator.reportPersistenceFailure('settle queued send checkpoint', settleError));
     } finally {
       drainingQueueSessions.delete(sessionKey);
       // A cached terminal chat.send acknowledgement can settle typing before

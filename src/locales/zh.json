@@ -1334,6 +1334,16 @@
     "saveAndRetry": "保存并重试",
     "retryDelivery": "重试发送",
     "historySyncFailed": "无法同步会话历史记录。",
+    "taskRecovery": {
+      "title": "任务状态需要 OpenClaw 核验",
+      "detail": "当前状态：{{status}}。未闭合工具核验：{{tools}}。JunQi 不会自动恢复本次运行。",
+      "reconcile": "向 OpenClaw 核验",
+      "statusPending": "等待发送",
+      "statusRunning": "等待 Gateway 确认",
+      "statusCancelRequested": "已请求停止",
+      "statusVerificationRequired": "需要核验",
+      "statusUnknown": "未知"
+    },
     "untrustedWorkshopCommandIgnored": "已忽略不可信的文本命令，请改用经过授权的工作台操作。",
     "deliveryNotConfirmed": "OpenClaw 未确认收到此消息，您可以安全重试。",
     "availableSessions": "可用会话",

@@ -45,6 +45,12 @@ import type { GatewayAttachment } from '@/services/chat/types';
 import { SessionSettingsClient } from './SessionSettingsClient';
 import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
 import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
+import {
+  OpenClawTaskLedgerClient,
+  type OpenClawTaskListInput,
+} from './OpenClawTaskLedgerClient';
+import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
+import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 
 // Re-export types for consumers
 export type {
@@ -55,7 +61,12 @@ export type {
   GatewayRequestOptions,
 };
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
-export { GatewayConnectionFenceError, GatewayDisconnectedError, GatewayRpcError } from './Connection';
+export {
+  GatewayConnectionFenceError,
+  GatewayDisconnectedError,
+  GatewayRequestAbortedError,
+  GatewayRpcError,
+} from './Connection';
 
 export class GatewaySessionMutationRejectedError extends Error {
   readonly code = 'SESSION_MUTATION_REJECTED';
@@ -115,6 +126,34 @@ export interface GatewayAgentUpdateParams {
 export interface GatewayHistoryOptions {
   offset?: number;
   maxChars?: number;
+}
+
+function historyTaskObservation(response: unknown): {
+  sessionId: string | null;
+  hasActiveRun: boolean;
+  activeRunIds: string[];
+} | null {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return null;
+  const record = response as Record<string, unknown>;
+  const sessionInfo = record.sessionInfo;
+  if (!sessionInfo || typeof sessionInfo !== 'object' || Array.isArray(sessionInfo)) return null;
+  const info = sessionInfo as Record<string, unknown>;
+  if (typeof info.hasActiveRun !== 'boolean') return null;
+  const activeRunIds = Array.isArray(info.activeRunIds)
+    ? info.activeRunIds.flatMap((value) => typeof value === 'string' && value.trim() ? [value.trim()] : [])
+    : [];
+  const inFlight = record.inFlightRun;
+  if (inFlight && typeof inFlight === 'object' && !Array.isArray(inFlight)) {
+    const runId = (inFlight as Record<string, unknown>).runId;
+    if (typeof runId === 'string' && runId.trim() && !activeRunIds.includes(runId.trim())) {
+      activeRunIds.push(runId.trim());
+    }
+  }
+  return {
+    sessionId: typeof record.sessionId === 'string' && record.sessionId.trim() ? record.sessionId.trim() : null,
+    hasActiveRun: info.hasActiveRun,
+    activeRunIds,
+  };
 }
 
 // ── Create instances ──
@@ -533,6 +572,13 @@ const sessionOrganization = new OpenClawSessionOrganizationClient({
 const sessionLifecycle = new OpenClawSessionLifecycleClient(
   (method, params) => connection.request(method, params),
 );
+const taskLedger = new OpenClawTaskLedgerClient(
+  (method, params) => connection.request(method, params),
+  (method, params) => requestPrivileged(method, params),
+);
+const sessionSteer = new OpenClawSessionSteerClient(
+  (method, params) => connection.request(method, params),
+);
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
 });
@@ -614,6 +660,11 @@ export const gateway = {
     observation?: ChatSessionRunObservation,
   ) {
     chatHandler.reconcileHistoryRunState(sessionKey, response, observation);
+    const history = historyTaskObservation(response);
+    if (!history) return;
+    void taskExecutionCoordinator.reconcileHistory({ sessionKey, ...history }).catch((error) => {
+      taskExecutionCoordinator.reportPersistenceFailure('history reconciliation', error);
+    });
   },
   async synchronizeSessionTranscript(target: OpenClawTranscriptTarget | null) {
     if (!connection.isConnected()) return;
@@ -640,7 +691,12 @@ export const gateway = {
     message: string,
     attachments?: GatewayAttachment[],
     sessionKey = 'agent:main:main',
-    identity: { clientMessageId?: string; sessionId?: string } = {},
+    identity: {
+      clientMessageId?: string;
+      sessionId?: string;
+      delivery?: 'send' | 'steer';
+      supersededRunId?: string;
+    } = {},
   ) {
     const gwAttachments = attachments?.map((att) => {
       let rawBase64 = att.content || '';
@@ -656,10 +712,11 @@ export const gateway = {
     });
 
     const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
+    const isSteer = identity.delivery === 'steer';
     chatHandler.beginPendingSend(sessionKey, clientMessageId);
     let requestDispatched = false;
     try {
-      const result = await sessionCommandCoordinator.runMutation(sessionKey, async () => {
+      const dispatch = async () => {
         // The renderer owns the only visible, cancellable retry queue. Keeping a
         // second transport queue would acknowledge work that the UI cannot inspect.
         if (!connection.isConnected()) throw new GatewayDisconnectedError();
@@ -668,6 +725,14 @@ export const gateway = {
         await connection.ensureReasoningStream(sessionKey);
         if (!connection.isConnected()) throw new GatewayDisconnectedError();
         requestDispatched = true;
+        if (isSteer) {
+          return sessionSteer.steer({
+            key: sessionKey,
+            message,
+            idempotencyKey: clientMessageId,
+            ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
+          });
+        }
         return connection.request('chat.send', {
           sessionKey,
           ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
@@ -675,12 +740,32 @@ export const gateway = {
           idempotencyKey: clientMessageId,
           ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
         });
-      });
+      };
+      // sessions.steer is itself the OpenClaw interrupt-and-send control
+      // operation. It must not wait behind a long chat.send transport promise.
+      const dispatched = isSteer
+        ? await dispatch()
+        : await sessionCommandCoordinator.runMutation(sessionKey, dispatch);
+      const result = isSteer
+        ? (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).response
+        : dispatched;
       const acknowledgement = chatHandler.reconcileSendAcknowledgement(
         sessionKey,
         clientMessageId,
         result,
       );
+      if (
+        isSteer
+        && identity.supersededRunId
+        && (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).interruptedActiveRun === true
+      ) {
+        await taskExecutionCoordinator.settleRun({
+          sessionKey,
+          sessionId: identity.sessionId,
+          runId: identity.supersededRunId,
+          terminalReason: 'aborted',
+        }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('settle steered Run checkpoint', error));
+      }
       if (acknowledgement !== 'unknown') return result;
       if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
         return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
@@ -710,6 +795,9 @@ export const gateway = {
     return connection.request('sessions.describe', { key: sessionKey });
   },
   async getAgents() { return connection.request('agents.list', {}); },
+  async listTasks(input: OpenClawTaskListInput = {}) { return taskLedger.list(input); },
+  async getTask(taskId: string) { return taskLedger.get(taskId); },
+  async cancelTask(taskId: string, reason?: string) { return taskLedger.cancel(taskId, reason); },
   async createAgent(agent: GatewayAgentCreatePayload) { return agentManagement.create(agent); },
   async updateAgent(agentId: string, patch: GatewayAgentUpdateParams) {
     return requestPrivileged<{ ok: true; agentId: string }>('agents.update', { agentId, ...patch });
@@ -741,6 +829,9 @@ export const gateway = {
     // Abort is a control-plane request. Waiting behind a long-running
     // chat.send request makes it impossible to stop a response whose send
     // acknowledgement was lost or delayed.
+    await taskExecutionCoordinator.requestStop(sessionKey).catch((error) => {
+      taskExecutionCoordinator.reportPersistenceFailure('persist Stop checkpoint', error);
+    });
     const runId = chatHandler.abortRunId(sessionKey);
     const result = await connection.request('chat.abort', {
       sessionKey,

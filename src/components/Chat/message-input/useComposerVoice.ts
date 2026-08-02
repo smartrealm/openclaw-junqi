@@ -181,6 +181,8 @@ export function useComposerVoice({
         sessionKey,
         sessionId: activeSessionId,
         clientMessageId: createClientMessageId(),
+        source: 'jarvis',
+        delivery: 'steer',
         message: t('voice.voiceMessage', { seconds: durationSec }),
         attachments,
         optimisticMessage: { mediaUrl: previewUrl, mediaType: 'audio' },

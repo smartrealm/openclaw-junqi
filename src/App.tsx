@@ -58,6 +58,7 @@ import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import { readActiveOpenclawConfig } from '@/services/openclawConfigRuntime';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
@@ -694,6 +695,15 @@ export default function App() {
         );
       },
       onStreamEnd: (sessionKey, messageId, content, media, meta) => {
+        void taskExecutionCoordinator.settleRun({
+          sessionKey,
+          runId: meta?.runId,
+          terminalReason: meta?.state === 'aborted'
+            ? 'aborted'
+            : meta?.state === 'error'
+              ? 'error'
+              : 'final',
+        }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('settle Run checkpoint', error));
         if (sessionKey === useChatStore.getState().activeSessionKey) {
           voiceRuntime.finishStream(sessionKey, content, meta?.state ?? 'final', messageId, media?.mediaUrl);
         }

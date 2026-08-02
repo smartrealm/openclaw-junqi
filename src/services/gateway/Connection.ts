@@ -159,6 +159,7 @@ interface PendingRequest {
   resolve: (value: any) => void;
   reject: (reason: any) => void;
   timer: ReturnType<typeof setTimeout> | null;
+  abortCleanup: (() => void) | null;
 }
 
 export interface GatewayRequestOptions {
@@ -168,6 +169,8 @@ export interface GatewayRequestOptions {
    * a third-party device longer than the normal RPC timeout.
    */
   timeoutMs?: number | null;
+  /** Stops awaiting this RPC locally; the remote operation is unchanged. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -208,6 +211,15 @@ export class GatewayConnectionFenceError extends Error {
   ) {
     super('The Gateway connection changed before the fenced request completed');
     this.name = 'GatewayConnectionFenceError';
+  }
+}
+
+export class GatewayRequestAbortedError extends Error {
+  readonly code = 'GATEWAY_REQUEST_ABORTED';
+
+  constructor() {
+    super('Gateway request aborted locally');
+    this.name = 'GatewayRequestAbortedError';
   }
 }
 
@@ -509,12 +521,19 @@ export class GatewayConnection {
   }
 
   private rejectAllPending(error: GatewayTransportLifecycleError) {
-    const pending = [...this.pendingRequests.values()];
-    this.pendingRequests.clear();
-    for (const request of pending) {
-      if (request.timer) clearTimeout(request.timer);
+    const pending = [...this.pendingRequests.entries()];
+    for (const [id, request] of pending) {
+      this.clearPendingRequest(id, request);
       request.reject(error);
     }
+  }
+
+  private clearPendingRequest(id: string, request: PendingRequest): void {
+    if (request.timer) clearTimeout(request.timer);
+    request.timer = null;
+    request.abortCleanup?.();
+    request.abortCleanup = null;
+    if (this.pendingRequests.get(id) === request) this.pendingRequests.delete(id);
   }
 
   private isTryingToConnect(): boolean {
@@ -697,7 +716,7 @@ export class GatewayConnection {
 
     return new Promise((resolve, reject) => {
       const id = this.nextId();
-      this.registerCallback(id, { resolve, reject }, options);
+      if (!this.registerCallback(id, { resolve, reject }, options)) return;
       this.send({ type: 'req', id, method, params });
     });
   }
@@ -739,7 +758,7 @@ export class GatewayConnection {
         }
         reject(error);
       };
-      this.registerCallback(id, {
+      if (!this.registerCallback(id, {
         resolve: (value) => {
           if (!verifyFence()) {
             reject(new GatewayConnectionFenceError(expected, this.runtimeIdentityConnectionId));
@@ -748,13 +767,12 @@ export class GatewayConnection {
           resolve(value);
         },
         reject: rejectFenced,
-      }, options);
+      }, options)) return;
       try {
         socket.send(JSON.stringify({ type: 'req', id, method, params }));
       } catch (error) {
         const pending = this.pendingRequests.get(id);
-        if (pending?.timer) clearTimeout(pending.timer);
-        this.pendingRequests.delete(id);
+        if (pending) this.clearPendingRequest(id, pending);
         rejectFenced(error);
       }
     });
@@ -764,16 +782,40 @@ export class GatewayConnection {
     id: string,
     handlers: { resolve: (v: any) => void; reject: (e: any) => void },
     options?: GatewayRequestOptions,
-  ) {
+  ): boolean {
+    const pending: PendingRequest = {
+      ...handlers,
+      timer: null,
+      abortCleanup: null,
+    };
+    this.pendingRequests.set(id, pending);
+
+    const signal = options?.signal;
+    if (signal) {
+      const abort = () => {
+        if (this.pendingRequests.get(id) !== pending) return;
+        this.clearPendingRequest(id, pending);
+        handlers.reject(new GatewayRequestAbortedError());
+      };
+      pending.abortCleanup = () => signal.removeEventListener('abort', abort);
+      if (signal.aborted) {
+        abort();
+        return false;
+      }
+      signal.addEventListener('abort', abort, { once: true });
+    }
+
     const configuredTimeout = options?.timeoutMs;
     const timeoutMs = configuredTimeout === null
       ? null
       : Math.max(1000, configuredTimeout ?? 120_000);
-    const timer = timeoutMs === null ? null : setTimeout(() => {
-      this.pendingRequests.delete(id);
+    if (!this.pendingRequests.has(id)) return false;
+    pending.timer = timeoutMs === null ? null : setTimeout(() => {
+      if (this.pendingRequests.get(id) !== pending) return;
+      this.clearPendingRequest(id, pending);
       handlers.reject(`Request timeout (${timeoutMs}ms)`);
     }, timeoutMs);
-    this.pendingRequests.set(id, { ...handlers, timer });
+    return true;
   }
 
   send(msg: any) {
@@ -807,8 +849,7 @@ export class GatewayConnection {
       .on('res', (msg) => {
         const pending = this.pendingRequests.get(msg.id);
         if (!pending) return;
-        if (pending.timer) clearTimeout(pending.timer);
-        this.pendingRequests.delete(msg.id);
+        this.clearPendingRequest(msg.id, pending);
         if (msg.ok !== false) {
           pending.resolve(msg.payload ?? msg);
         } else {

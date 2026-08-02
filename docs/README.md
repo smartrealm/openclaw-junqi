@@ -104,6 +104,7 @@ docs/
 
 目录：[`quality/`](quality/)
 
+- [ReAct 任务中断与恢复审计](quality/react-task-checkpoint-recovery-audit-2026-08-02.md)
 - [维护中心审计](quality/maintenance-center-audit.md)
 - [定时任务与 OpenClaw Agent 路由审计](quality/cron-openclaw-agent-routing-audit-2026-08-02.md)
 - [定时任务 OpenClaw Agent 路由验证](quality/cron-openclaw-agent-routing-validation-2026-08-02.md)

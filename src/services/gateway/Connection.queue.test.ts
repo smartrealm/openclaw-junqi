@@ -4,6 +4,7 @@ import { CollaborationClient, CollaborationClientError } from '@/services/collab
 import {
   GatewayConnection,
   GatewayConnectionFenceError,
+  GatewayRequestAbortedError,
   GatewayRpcError,
 } from './Connection';
 import { GatewayTransportLifecycleError } from './GatewayTransportError';
@@ -57,6 +58,26 @@ describe('GatewayConnection request identity', () => {
         && error.actualConnectionId === 'connection-new',
     );
     assert.equal(sends, 0);
+    connection.disconnect();
+  });
+
+  it('uses AbortSignal to stop waiting locally without claiming remote cancellation', async () => {
+    const connection = new GatewayConnection() as any;
+    const sent: any[] = [];
+    connection.ws = {
+      readyState: WebSocket.OPEN,
+      send: (value: string) => { sent.push(JSON.parse(value)); },
+      close: () => undefined,
+    };
+    connection.connected = true;
+    const controller = new AbortController();
+    const request = connection.request('sessions.steer', { key: 'session', message: 'continue' }, {
+      signal: controller.signal,
+    });
+    assert.equal(sent.length, 1);
+    controller.abort();
+    await assert.rejects(request, (error: unknown) => error instanceof GatewayRequestAbortedError);
+    connection.handleMessage({ type: 'res', id: sent[0].id, ok: true, payload: { runId: 'run-1', status: 'started' } });
     connection.disconnect();
   });
 
