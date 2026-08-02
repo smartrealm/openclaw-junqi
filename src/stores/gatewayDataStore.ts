@@ -16,8 +16,20 @@ import {
   OpenClawSessionPreviewResponseError,
   type OpenClawSessionPreviewEntry,
 } from '@/services/gateway/OpenClawSessionPreviewClient';
+import {
+  OPENCLAW_TOOLS_EFFECTIVE_METHOD,
+  OpenClawToolsEffectiveClient,
+  OpenClawToolsEffectiveResponseError,
+  type OpenClawToolsEffectiveResult,
+} from '@/services/gateway/OpenClawToolsEffectiveClient';
 
 export type { OpenClawSessionPreviewEntry } from '@/services/gateway/OpenClawSessionPreviewClient';
+export type {
+  OpenClawToolsEffectiveEntry,
+  OpenClawToolsEffectiveGroup,
+  OpenClawToolsEffectiveNotice,
+  OpenClawToolsEffectiveResult,
+} from '@/services/gateway/OpenClawToolsEffectiveClient';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -191,6 +203,11 @@ interface GatewayDataState {
   sessionPreviewsUpdatedAt: number;
   sessionPreviewsLoading: boolean;
   sessionPreviewsError: string | null;
+  toolsEffective: Record<string, OpenClawToolsEffectiveResult>;
+  toolsEffectiveUpdatedAt: Record<string, number>;
+  toolsEffectiveLoading: boolean;
+  toolsEffectiveLoadingSessionKey: string | null;
+  toolsEffectiveError: string | null;
   agents: AgentInfo[];
   costSummary: CostSummary | null;
   sessionsUsage: SessionsUsage | null;
@@ -236,6 +253,10 @@ interface GatewayDataState {
   clearSessionPreviews: (keys?: readonly string[]) => void;
   setSessionPreviewsLoading: (value: boolean) => void;
   setSessionPreviewsError: (value: string | null) => void;
+  setToolsEffective: (sessionKey: string, result: OpenClawToolsEffectiveResult) => void;
+  clearToolsEffective: (sessionKey?: string) => void;
+  setToolsEffectiveLoading: (sessionKey: string | null) => void;
+  setToolsEffectiveError: (value: string | null) => void;
   setAgents: (agents: AgentInfo[]) => void;
   setCostSummary: (data: CostSummary) => void;
   setSessionsUsage: (data: SessionsUsage) => void;
@@ -263,6 +284,11 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   sessionPreviewsUpdatedAt: 0,
   sessionPreviewsLoading: false,
   sessionPreviewsError: null,
+  toolsEffective: {},
+  toolsEffectiveUpdatedAt: {},
+  toolsEffectiveLoading: false,
+  toolsEffectiveLoadingSessionKey: null,
+  toolsEffectiveError: null,
   agents: [],
   costSummary: null,
   sessionsUsage: null,
@@ -305,9 +331,22 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
     const sessionPreviews = Object.fromEntries(
       Object.entries(get().sessionPreviews).filter(([key]) => sessionKeys.has(key)),
     );
+    const toolsEffective = Object.fromEntries(
+      Object.entries(get().toolsEffective).filter(([key]) => sessionKeys.has(key)),
+    );
+    const toolsEffectiveUpdatedAt = Object.fromEntries(
+      Object.entries(get().toolsEffectiveUpdatedAt).filter(([key]) => sessionKeys.has(key)),
+    );
+    const loadingSessionKey = get().toolsEffectiveLoadingSessionKey;
+    const sessionToolsLoading = loadingSessionKey !== null && sessionKeys.has(loadingSessionKey);
     set({
       sessions: merged,
       sessionPreviews,
+      toolsEffective,
+      toolsEffectiveUpdatedAt,
+      ...(loadingSessionKey !== null && !sessionToolsLoading
+        ? { toolsEffectiveLoading: false, toolsEffectiveLoadingSessionKey: null }
+        : {}),
       lastFetch: { ...get().lastFetch, sessions: Date.now() },
       loading: { ...get().loading, sessions: false },
       errors: { ...get().errors, sessions: null },
@@ -338,6 +377,33 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   setSessionPreviewsLoading: (value) => set({ sessionPreviewsLoading: value }),
 
   setSessionPreviewsError: (value) => set({ sessionPreviewsError: value }),
+
+  setToolsEffective: (sessionKey, result) => set({
+    toolsEffective: { ...get().toolsEffective, [sessionKey]: result },
+    toolsEffectiveUpdatedAt: { ...get().toolsEffectiveUpdatedAt, [sessionKey]: Date.now() },
+    toolsEffectiveLoading: false,
+    toolsEffectiveLoadingSessionKey: null,
+    toolsEffectiveError: null,
+  }),
+
+  clearToolsEffective: (sessionKey) => {
+    if (!sessionKey) {
+      set({ toolsEffective: {}, toolsEffectiveUpdatedAt: {} });
+      return;
+    }
+    const toolsEffective = { ...get().toolsEffective };
+    const toolsEffectiveUpdatedAt = { ...get().toolsEffectiveUpdatedAt };
+    delete toolsEffective[normalizeSessionKey(sessionKey)];
+    delete toolsEffectiveUpdatedAt[normalizeSessionKey(sessionKey)];
+    set({ toolsEffective, toolsEffectiveUpdatedAt });
+  },
+
+  setToolsEffectiveLoading: (sessionKey) => set({
+    toolsEffectiveLoading: sessionKey !== null,
+    toolsEffectiveLoadingSessionKey: sessionKey,
+  }),
+
+  setToolsEffectiveError: (value) => set({ toolsEffectiveError: value }),
 
   setAgents: (agents) =>
     set({
@@ -427,6 +493,7 @@ const DEFAULT_FRESHNESS_MS: Record<PollGroup, number> = {
 const SESSION_PREVIEW_LIMIT = 3;
 const SESSION_PREVIEW_MAX_CHARS = 160;
 const SESSION_PREVIEW_FRESHNESS_MS = 30_000;
+const TOOLS_EFFECTIVE_FRESHNESS_MS = 30_000;
 
 // Reference to gateway connection (set by startPolling)
 // Uses request() directly to avoid circular imports with gateway facade
@@ -600,6 +667,7 @@ export function resolveGatewayConnectionStartedAt(
 let gw: GatewayRequester | null = null;
 const requestFence = createGatewayRequestFence<GatewayRequester>();
 const sessionPreviewRequestGate = createLatestRequestGate();
+const toolsEffectiveRequestGate = createLatestRequestGate();
 
 interface SessionPreviewRequestTicket {
   connection: GatewayRequester;
@@ -613,6 +681,27 @@ function beginSessionPreviewRequest(): SessionPreviewRequestTicket | null {
 
 function isCurrentSessionPreviewRequest(ticket: SessionPreviewRequestTicket): boolean {
   return ticket.connection === gw && sessionPreviewRequestGate.isCurrent(ticket.requestId);
+}
+
+interface ToolsEffectiveRequestTicket {
+  connection: GatewayRequester;
+  requestId: number;
+  sessionKey: string;
+}
+
+function beginToolsEffectiveRequest(sessionKey: string): ToolsEffectiveRequestTicket | null {
+  if (!gw) return null;
+  return {
+    connection: gw,
+    requestId: toolsEffectiveRequestGate.begin(),
+    sessionKey,
+  };
+}
+
+function isCurrentToolsEffectiveRequest(ticket: ToolsEffectiveRequestTicket): boolean {
+  return ticket.connection === gw
+    && toolsEffectiveRequestGate.isCurrent(ticket.requestId)
+    && useGatewayDataStore.getState().toolsEffectiveLoadingSessionKey === ticket.sessionKey;
 }
 
 function beginGatewayRequest(group: GatewayDataGroup): GatewayRequestTicket<GatewayRequester> | null {
@@ -848,6 +937,7 @@ export function startPolling(gateway: GatewayRequester) {
 
   requestFence.invalidateAll();
   sessionPreviewRequestGate.invalidate();
+  toolsEffectiveRequestGate.invalidate();
   gw = gateway;
   useGatewayDataStore.getState().setPolling(true);
   debugLog('datastore', '[DataStore] Polling started (sessions=10s, agents=30s, demand groups lazy)');
@@ -873,6 +963,7 @@ export function stopPolling() {
   if (usageTimer) { clearInterval(usageTimer); usageTimer = null; }
   requestFence.invalidateAll();
   sessionPreviewRequestGate.invalidate();
+  toolsEffectiveRequestGate.invalidate();
   gw = null;
   const store = useGatewayDataStore.getState();
   store.setPolling(false);
@@ -880,6 +971,9 @@ export function stopPolling() {
   store.clearSessionPreviews();
   store.setSessionPreviewsLoading(false);
   store.setSessionPreviewsError(null);
+  store.clearToolsEffective();
+  store.setToolsEffectiveLoading(null);
+  store.setToolsEffectiveError(null);
   // Clear running sub-agents on disconnect — presence-based detection is meaningless
   // without a live sessions.list feed. Without this, stale sub-agents keep the pet
   // in "working" state indefinitely after a gateway disconnect/reconnect cycle.
@@ -1023,6 +1117,97 @@ export async function ensureSessionPreviewsFresh(
     && normalizedKeys.every((key) => Object.prototype.hasOwnProperty.call(store.sessionPreviews, key));
   if (isFresh) return true;
   return refreshSessionPreviews(normalizedKeys);
+}
+
+function toolsEffectiveFailureCode(error: unknown): string {
+  return error instanceof OpenClawToolsEffectiveResponseError
+    ? error.code
+    : 'OPENCLAW_TOOLS_EFFECTIVE_FAILED';
+}
+
+/** Fetch the Gateway's server-derived effective tool inventory for one Session. */
+export async function refreshToolsEffective(
+  sessionKey: string,
+  agentId?: string,
+): Promise<boolean> {
+  const normalizedSessionKey = normalizeSessionKey(sessionKey);
+  const store = useGatewayDataStore.getState();
+  if (!normalizedSessionKey) {
+    toolsEffectiveRequestGate.invalidate();
+    store.clearToolsEffective();
+    store.setToolsEffectiveLoading(null);
+    store.setToolsEffectiveError(null);
+    return false;
+  }
+  if (!gw) return false;
+
+  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_TOOLS_EFFECTIVE_METHOD);
+  if (advertised === false) {
+    toolsEffectiveRequestGate.invalidate();
+    store.clearToolsEffective(normalizedSessionKey);
+    store.setToolsEffectiveLoading(null);
+    store.setToolsEffectiveError('OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED');
+    return false;
+  }
+
+  const ticket = beginToolsEffectiveRequest(normalizedSessionKey);
+  if (!ticket) return false;
+  store.clearToolsEffective(normalizedSessionKey);
+  store.setToolsEffectiveLoading(normalizedSessionKey);
+  store.setToolsEffectiveError(null);
+
+  const client = new OpenClawToolsEffectiveClient(
+    <T>(method: string, params: Record<string, unknown>) => (
+      ticket.connection.request(method, params) as Promise<T>
+    ),
+  );
+  try {
+    const result = await client.get({
+      sessionKey: normalizedSessionKey,
+      ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
+    });
+    if (!isCurrentToolsEffectiveRequest(ticket)) return false;
+    const active = useGatewayDataStore.getState().sessions.some(
+      (session) => session.key === normalizedSessionKey,
+    );
+    if (!active) {
+      store.clearToolsEffective(normalizedSessionKey);
+      store.setToolsEffectiveLoading(null);
+      return false;
+    }
+    store.setToolsEffective(normalizedSessionKey, result);
+    return true;
+  } catch (error) {
+    if (!isCurrentToolsEffectiveRequest(ticket)) return false;
+    store.clearToolsEffective(normalizedSessionKey);
+    store.setToolsEffectiveLoading(null);
+    store.setToolsEffectiveError(toolsEffectiveFailureCode(error));
+    return false;
+  }
+}
+
+/** Fetch effective tools only when the selected Session's snapshot is stale. */
+export async function ensureToolsEffectiveFresh(
+  sessionKey: string,
+  maxAgeMs = TOOLS_EFFECTIVE_FRESHNESS_MS,
+  agentId?: string,
+): Promise<boolean> {
+  const normalizedSessionKey = normalizeSessionKey(sessionKey);
+  if (!normalizedSessionKey) return false;
+  if (!gw) return false;
+  const store = useGatewayDataStore.getState();
+  if (store.toolsEffectiveLoading) {
+    return store.toolsEffectiveLoadingSessionKey === normalizedSessionKey;
+  }
+  const updatedAt = store.toolsEffectiveUpdatedAt[normalizedSessionKey] ?? 0;
+  if (
+    updatedAt > 0
+    && Date.now() - updatedAt < maxAgeMs
+    && Object.prototype.hasOwnProperty.call(store.toolsEffective, normalizedSessionKey)
+  ) {
+    return true;
+  }
+  return refreshToolsEffective(normalizedSessionKey, agentId);
 }
 
 /**

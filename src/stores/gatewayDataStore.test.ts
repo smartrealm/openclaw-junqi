@@ -9,7 +9,11 @@ import {
   parseGatewayCostSummary,
   parseGatewayCronJobList,
   parseGatewaySessionsUsage,
+  refreshToolsEffective,
   resolveGatewayConnectionStartedAt,
+  startPolling,
+  stopPolling,
+  useGatewayDataStore,
 } from './gatewayDataStore';
 
 const NOW = Date.UTC(2026, 6, 21, 12, 0, 0);
@@ -146,4 +150,43 @@ test('sessions.usage accepts official family rows without a concrete session id'
     aggregates: { byAgent: [] },
   };
   assert.deepEqual(parseGatewaySessionsUsage(usage), usage);
+});
+
+test('effective tool snapshots follow Session lifecycle and capability advertisement', async () => {
+  const store = useGatewayDataStore.getState();
+  store.setSessions([{ key: 'agent:main:main' }]);
+  store.setToolsEffective('agent:main:main', {
+    agentId: 'main',
+    profile: 'coding',
+    groups: [],
+  });
+  assert.ok(useGatewayDataStore.getState().toolsEffective['agent:main:main']);
+
+  store.setToolsEffectiveLoading('agent:main:main');
+  store.setSessions([]);
+  const afterDeletion = useGatewayDataStore.getState();
+  assert.equal(afterDeletion.toolsEffective['agent:main:main'], undefined);
+  assert.equal(afterDeletion.toolsEffectiveLoading, false);
+  assert.equal(afterDeletion.toolsEffectiveLoadingSessionKey, null);
+
+  const calls: string[] = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'tools.effective' ? false : true,
+    request: async (method: string) => {
+      calls.push(method);
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    assert.equal(await refreshToolsEffective('agent:main:main'), false);
+    assert.equal(useGatewayDataStore.getState().toolsEffectiveError, 'OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED');
+    assert.equal(calls.includes('tools.effective'), false);
+  } finally {
+    stopPolling();
+  }
 });

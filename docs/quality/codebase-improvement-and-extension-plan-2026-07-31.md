@@ -212,9 +212,9 @@
 
 **官方依据**：`protocol.md` 的 `tools.catalog`、`tools.effective`、`tools.invoke`
 
-**当前行为**：全仓仅在 `src/services/gateway/OpenClawPlanToolSettings.ts:63` 出现 `tools.experimental` 作为**配置路径字符串**，三个 tools RPC 一个都没调用。
+**当前行为**：`tools.effective` 已按 [OpenClaw 原生有效工具目录对齐](openclaw-native-tools-effective-alignment-2026-08-03.md) 接入 Config Manager Tools 页面，只读展示指定 Session 的 Gateway 结果；`tools.catalog` 和 `tools.invoke` 仍未调用。`src/services/gateway/OpenClawPlanToolSettings.ts:63` 的 `tools.experimental` 仍只是配置路径字符串，不能作为运行时有效工具目录。
 
-**可拓展**：`tools.effective` 返回当前 agent 实际生效的工具集。这直接回答用户的高频疑问——「这个 agent 现在到底能用哪些工具」。当前 JunQi 只能展示配置里写了什么，无法展示实际生效结果，两者在有 profile 覆盖或策略限制时并不一致。
+**可拓展**：`tools.effective` 返回当前 agent 实际生效的工具集。这直接回答用户的高频疑问——「这个 agent 现在到底能用哪些工具」。JunQi 现在已经展示该只读结果，但不本地推断权限；`tools.catalog` 仍可用于未来的全局目录审计，`tools.invoke` 则必须另行核对写操作、授权和副作用边界。
 
 这也与既有 `docs/quality/openclaw-config-authority-audit-2026-07-29.md` 的 BUG-OCA-02（Tools/provider/plugin 配置能力被整套硬编码）直接相关：`tools.catalog` 正是那条审计所缺的权威来源。
 
