@@ -25,7 +25,7 @@ import {
   type MediaInfo,
 } from './Connection';
 import {
-  classifyOpenClawChatAbortAcknowledgement,
+  classifyOpenClawSessionAbortAcknowledgement,
   classifyOpenClawChatSendAcknowledgement,
   OpenClawChatRunProjection,
   parseOpenClawInFlightRunSnapshot,
@@ -220,36 +220,35 @@ export class ChatHandler {
     return 'settled';
   }
 
-  /** Apply only the exact runs confirmed by OpenClaw's `chat.abort` result. */
-  reconcileAbortAcknowledgement(sessionKey: string, response: unknown): boolean {
+  /** Apply only the exact run confirmed by OpenClaw's native sessions.abort result. */
+  reconcileSessionAbortAcknowledgement(sessionKey: string, response: unknown): boolean {
     const normalizedSessionKey = sessionKey.trim();
     if (!normalizedSessionKey) return false;
-    const acknowledgement = classifyOpenClawChatAbortAcknowledgement(response);
+    const acknowledgement = classifyOpenClawSessionAbortAcknowledgement(response);
     if (acknowledgement.state !== 'aborted') {
-      if (acknowledgement.state === 'not_aborted') {
-        this.conn.callbacks?.onSessionRunReconciliationNeeded?.(normalizedSessionKey);
-      }
+      this.conn.callbacks?.onSessionRunReconciliationNeeded?.(normalizedSessionKey);
       return false;
     }
 
-    let settled = false;
-    for (const runId of acknowledgement.runIds) {
-      const active = this.runProjection.active(normalizedSessionKey);
-      if (active && active.runId !== runId) continue;
-      const pending = this.pendingSends.current(normalizedSessionKey);
-      if (!active && pending?.runId !== runId && !this.runProjection.hasActiveSession(normalizedSessionKey)) {
-        continue;
-      }
-      const lease = this.claimTerminal(normalizedSessionKey, runId);
-      if (!lease) continue;
-      const messageId = this.ensureActiveMessageId(normalizedSessionKey, runId);
-      const content = this.currentRunIdBySession.get(normalizedSessionKey) === runId
-        ? this.currentStreamContentBySession.get(normalizedSessionKey) || ''
-        : '';
-      this.finalizeAbortedResponse(normalizedSessionKey, messageId, content, lease);
-      settled = true;
+    const { runId } = acknowledgement;
+    const active = this.runProjection.active(normalizedSessionKey);
+    if (active && active.runId !== runId) {
+      this.conn.callbacks?.onSessionRunReconciliationNeeded?.(normalizedSessionKey);
+      return false;
     }
-    return settled;
+    const pending = this.pendingSends.current(normalizedSessionKey);
+    if (!active && pending?.runId !== runId && !this.runProjection.hasActiveSession(normalizedSessionKey)) {
+      this.conn.callbacks?.onSessionRunReconciliationNeeded?.(normalizedSessionKey);
+      return false;
+    }
+    const lease = this.claimTerminal(normalizedSessionKey, runId);
+    if (!lease) return false;
+    const messageId = this.ensureActiveMessageId(normalizedSessionKey, runId);
+    const content = this.currentRunIdBySession.get(normalizedSessionKey) === runId
+      ? this.currentStreamContentBySession.get(normalizedSessionKey) || ''
+      : '';
+    this.finalizeAbortedResponse(normalizedSessionKey, messageId, content, lease);
+    return true;
   }
 
   /** A closed socket cannot deliver its old frames, but its run may continue remotely. */

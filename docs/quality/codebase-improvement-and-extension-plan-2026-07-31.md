@@ -195,12 +195,13 @@
 
 **官方依据**：`protocol.md` 的 `sessions.compact`、`sessions.steer`、`sessions.abort`、`sessions.preview`、`sessions.resolve`；`docs/concepts/queue-steering.md`、`docs/concepts/compaction.md`
 
-**审计时行为**：JunQi 只能观察压缩，按钮曾通过 `chat.send` 发送 `/compact`，不能调用原生会话维护 RPC。该缺口已由 [OpenClaw 原生会话压缩对齐](openclaw-native-session-compaction-alignment-2026-08-04.md) 修复。`sessions.steer` 的语音抢话路径已经存在，仍需单独核对当前官方 handler 和真实 Gateway 响应。
+**审计时行为**：JunQi 只能观察压缩，按钮曾通过 `chat.send` 发送 `/compact`，不能调用原生会话维护 RPC。压缩缺口已由 [OpenClaw 原生会话压缩对齐](openclaw-native-session-compaction-alignment-2026-08-04.md) 修复；Stop 也已由 [OpenClaw 原生会话中止对齐](openclaw-native-session-abort-alignment-2026-08-03.md) 切换到 `sessions.abort`。`sessions.steer` 的语音抢话路径已经存在，仍需按当前官方 handler 和真实 Gateway 响应持续核对。
 
 **可拓展**：
 
 - 用户可以通过 Dashboard 或命令面板主动触发 OpenClaw 原生压缩，而不是依赖文本指令路径
 - `sessions.steer` 允许在排队任务执行前调整方向，JunQi 已用于 Jarvis 语音抢话，普通文本路径仍需要按官方 queue mode 继续复核
+- `sessions.abort` 为 Stop 提供当前 Run 的原生中止确认；普通请求省略 `clearQueued` 以保留 Gateway 队列
 - `sessions.preview` 与 `sessions.resolve` 可用于发送前确认目标会话
 
 **边界**：压缩会改变模型可见上下文，且官方 `sessions.compact` 要求 `operator.admin`。触发入口必须保留已有管理员授权边界，不把 no-op 或授权失败当作成功；memory flush、degraded 情形和活动运行冲突由 Gateway 负责。

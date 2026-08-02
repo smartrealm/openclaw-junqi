@@ -55,6 +55,7 @@ import {
 } from './OpenClawAuditClient';
 import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
 import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
+import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 
 // Re-export types for consumers
@@ -588,6 +589,9 @@ const taskLedger = new OpenClawTaskLedgerClient(
 const sessionSteer = new OpenClawSessionSteerClient(
   (method, params) => connection.request(method, params),
 );
+const sessionAbort = new OpenClawSessionAbortClient(
+  (method, params) => connection.request(method, params),
+);
 const sessionCompaction = new OpenClawSessionCompactionClient(
   (method, params) => requestPrivileged(method, params),
 );
@@ -846,11 +850,11 @@ export const gateway = {
       taskExecutionCoordinator.reportPersistenceFailure('persist Stop checkpoint', error);
     });
     const runId = chatHandler.abortRunId(sessionKey);
-    const result = await connection.request('chat.abort', {
-      sessionKey,
+    const result = await sessionAbort.abort({
+      key: sessionKey,
       ...(runId ? { runId } : {}),
     });
-    return chatHandler.reconcileAbortAcknowledgement(sessionKey, result);
+    return chatHandler.reconcileSessionAbortAcknowledgement(sessionKey, result);
   },
   async compactSession(sessionKey = 'agent:main:main') {
     const key = sessionKey.trim();

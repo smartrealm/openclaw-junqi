@@ -14,8 +14,8 @@ LiveKit Agents 可作为语音会话监督、打断语义、回合检测、测�
 
 ## 依据
 
-- 安装版本：`pnpm-lock.yaml` 锁定 `openclaw@2026.7.1-2`。
-- `src/services/gateway/index.ts` 以 `chat.send` 的 `idempotencyKey` 作为 Chat Run 身份；`abortChat` 按已知 `runId` 调用官方 `chat.abort`。
+- 当前复现环境：`pnpm-lock.yaml` 锁定 `openclaw@2026.7.1-2`；该版本只界定本次运行验证范围，不作为能力开关或字段契约。
+- `src/services/gateway/index.ts` 以 `chat.send` 的 `idempotencyKey` 作为 Chat Run 身份；`abortChat` 按已知 `runId` 调用官方 `sessions.abort`。能力依据是 OpenClaw 官方文档、schema 和 handler。
 - `src/services/gateway/ChatHandler.ts` 只在 Gateway 确认中断后结算该 Run，并触发 `refreshHistory`；`src/App.tsx` 读取持久 transcript 进行重协调。
 - 安装包 `docs/web/control-ui.md` 说明中断会保留可展示的部分输出，并将其及中断元数据写入 transcript。
 - 安装包 `dist/session-transcript-repair-*.js` 的 `repairToolUseResultPairing` 对 `stopReason: "aborted" | "error"` 不合成结果；`dist/openai-transport-stream-*.js` 仅在模型策略允许合成结果时，针对可重放载荷补齐。
@@ -49,7 +49,7 @@ LiveKit Agents 可作为语音会话监督、打断语义、回合检测、测�
 
 ### RTCR-03 高风险：Stop 不持久记录恢复决策
 
-现有 Stop 清空本地队列并调用 `chat.abort`。尽管 ChatHandler 会在确认后刷新历史，但没有保存停止请求、目标 runId、Gateway 身份、转录读回结果、未结工具调用清单、核验结论或恢复入口。因此无法安全地在冷启动后继续、切换模型或展示残余风险。
+现有 Stop 清空本地队列并调用控制面。尽管 ChatHandler 会在确认后刷新历史，但没有保存停止请求、目标 runId、Gateway 身份、转录读回结果、未结工具调用清单、核验结论或恢复入口。因此无法安全地在冷启动后继续、切换模型或展示残余风险。
 
 **2026-08-03 状态**：Stop intent、Run terminal reason、history observation、session identity 和模型身份已持久化；Chat/Quick Chat 页面显示只读恢复提示并把“核验”动作接回官方 `chat.history`。客户端没有自动 resume decision，因为 OpenClaw 当前契约没有提供可验证的通用恢复/副作用查询接口。
 
@@ -68,7 +68,7 @@ LiveKit 的 AgentSession、Server、WebRTC 和独立 STT/LLM/TTS 工具链会与
 - 一个可恢复 Task 绑定一个 OpenClaw `sessionKey` 和 Gateway runtime identity；Task 的每次 Run 绑定唯一 `runId` 与 Chat `idempotencyKey`。
 - Task Graph 是持久状态机，不是 UI 图。节点包括 user turn、model turn、tool invocation 和 tool reconciliation；边可在 OpenClaw 工具事件和权威 history 读取后追加。恢复提示是只读投影，不是新的 OpenClaw 状态机。
 - Checkpoint 只保存恢复所需的元数据、节点 revision、OpenClaw 引用、状态摘要和可验证指纹；不复制 token、原始音频、密钥或猜测性的工具结果。
-- Stop 顺序固定为：持久写入 stop intent 与 checkpoint，停止本地语音输出，调用 `chat.abort`，读取权威 transcript，给未结工具节点标记为 cancelled、rolled_back 或 verification_required，最后提交 checkpoint。
+- Stop 顺序固定为：持久写入 stop intent 与 checkpoint，停止本地语音输出，调用官方 `sessions.abort`，读取权威 transcript，给未结工具节点标记为 cancelled、rolled_back 或 verification_required，最后提交 checkpoint。
 - Resume 只从匹配的 Gateway identity、`sessionKey` 和 session identity 加载 checkpoint，并先读取 OpenClaw history。session identity 轮换会创建新的 Task checkpoint；模型身份按 Run 记录，未验证的工具节点不能被带入新模型上下文作为完成事实。
 - 副作用工具不能由 JunQi 自动重试。恢复前必须由 OpenClaw 可验证的结果、工具幂等键或显式人工决策关闭不确定性。
 - 并发只允许图上无依赖且资源键不冲突的节点；同一 OpenClaw session 保持一个活动 Chat Run，跨 Session 的任务并发遵守独立 Gateway identity、运行时和资源锁。
@@ -96,7 +96,7 @@ LiveKit 的 AgentSession、Server、WebRTC 和独立 STT/LLM/TTS 工具链会与
 1. `src/task-execution/` 定义 Task、Run、Node、checkpoint revision、运行时绑定和跨 WebView generation 冲突合并。
 2. checkpoint 使用现有 Tauri `workbench_session` 原子写、备份与 generation CAS，存储在应用数据目录；不写入 OpenClaw transcript、前端持久存储、原始音频、密钥或工具原始载荷。
 3. `ChatSendCoordinator` 在 `chat.send` 前写入 Run checkpoint；Quick Chat 和 Jarvis 语音写入各自来源。
-4. `gateway.abortChat` 在 `chat.abort` 前写入 cancel intent；Gateway 确认终态后由 `App.tsx` 结算 Run。
+4. `gateway.abortChat` 在 `sessions.abort` 前写入 cancel intent；只有 Gateway 返回精确 `abortedRunId` 时由 `App.tsx` 结算 Run，否则保留 reconciliation。
 5. Gateway tool lifecycle 事件被记录为 Task Node。Abort 时仍未得到结果的工具节点与工具卡均转为 `verification_required`，不自动重试或伪造结果。
 
 6. `chat.history` 的 `sessionId`、活动 Run 信息被写入匹配 Task 的核验 checkpoint。此记录只确认 Gateway 已被读取，不把无活动 Run 推断为工具成功、回滚或可重试。
@@ -104,7 +104,7 @@ LiveKit 的 AgentSession、Server、WebRTC 和独立 STT/LLM/TTS 工具链会与
 8. Gateway adapter 已以严格解码形式提供原生 `tasks.list`、`tasks.get` 与 `tasks.cancel`。该账本用于背景任务，不替代 Chat transcript；取消走 `operator.write` 的 privileged lane。
 
 9. 已按 OpenClaw 官方 `sessions.steer` schema 与 Gateway handler 接入语音抢话路径。请求只发送官方支持的 `key`、`message`、可选附件和 `idempotencyKey`；JunQi 先持久化旧 Run 的 cancel intent 与新 Run 的发送 intent，只有响应中的 `interruptedActiveRun: true` 才结算旧 Run。普通文本仍保留本地可见队列。
-10. Gateway transport 支持 `AbortSignal`，其语义仅是停止 renderer 对 RPC 的等待并清理本地 pending request，不改变远端执行状态；远端中断仍依赖 `sessions.steer` 或 `chat.abort` 的官方确认。
+10. Gateway transport 支持 `AbortSignal`，其语义仅是停止 renderer 对 RPC 的等待并清理本地 pending request，不改变远端执行状态；远端中断依赖 `sessions.steer` 或 `sessions.abort` 的官方确认。
 11. checkpoint schema 已修复可选工具字段校验：`user_turn`、`model_turn` 不再因缺少 `effectKey` 被拒绝；旧 checkpoint 的历史、运行时和恢复字段会在读入时规范化。`effectKey` 仅是 JunQi 本地工具关联标识，不是 OpenClaw 工具幂等键。
 12. Task checkpoint 现在持久化最小图边：发送意图的 `user_turn -> model_turn`、OpenClaw tool event 的 `model_turn -> tool_invocation`，以及 steer 的 `supersedes` 关系。边携带证据来源，只表达已观察到的顺序或本地意图；不同工具节点没有被客户端强行串行化。
 

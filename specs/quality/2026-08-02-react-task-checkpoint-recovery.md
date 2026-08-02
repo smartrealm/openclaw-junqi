@@ -13,7 +13,7 @@
 3. Task Graph 与 Graph Projection 分离。Graph 是持久状态机；界面只读投影，不能直接改变节点状态。
 4. Graph 边只能来自 JunQi 本地发送意图或 OpenClaw 已收到的事件顺序；边必须带证据来源。缺少上游依赖或资源键时，不能由客户端补造依赖关系；独立 tool 节点可以并发记录。
 5. 节点状态至少包含 `pending`、`running`、`succeeded`、`cancel_requested`、`cancelled`、`rolled_back`、`verification_required`、`failed` 和 `blocked`。
-6. Stop 必须先持久化 stop intent 与一致 checkpoint，再执行本地输出中断和 `chat.abort`。
+6. Stop 必须先持久化 stop intent 与一致 checkpoint，再执行本地输出中断和官方 `sessions.abort`。
 7. 只有 Gateway 确认中断或权威 history 确认终态后，Task Run 才能从 `cancel_requested` 转入终态。
 8. 工具调用已出现但没有权威结果时，必须进入 `verification_required` 或经 OpenClaw 回滚确认的 `rolled_back`；不得由客户端伪造 Tool Result。
 9. Resume 先校验 Gateway identity、session identity 和 history，再加载最后一致 checkpoint。身份不匹配时阻止恢复并保留诊断。
@@ -43,6 +43,10 @@
 2026-08-02 已实现 Task Run、Node、最小 Graph Edge checkpoint、Run 前持久化、Stop 前 cancel intent、Gateway 终态结算、工具 `verification_required` 状态、按 Run/Node/Edge 的跨 WebView 合并，以及 `chat.history` 的持久核验时间与活动 Run 观察。该 history 核验不推断工具结果。Gateway adapter 还提供了严格解码的原生 `tasks.list/get/cancel` 账本接口，后台 Task 不会替代 Chat transcript。
 
 2026-08-03 继续实现了以下有官方依据或客户端持久化边界的行为：
+
+- Stop 已从 JunQi 直接调用的 `chat.abort` 对齐到官方 `sessions.abort`。普通 Stop
+  省略 `clearQueued`，只在精确 `abortedRunId` 确认后结算本地 Run；`no-active-run`
+  或缺少精确 ID 时进入 history/session reconciliation。
 
 - `sessions.steer` 按官方 schema/handler 接入 Jarvis 语音抢话；旧 Run 在官方 `interruptedActiveRun` 确认前只保持 `cancel_requested`，新 Run 作为发送意图持久化，未确认的网络结果不会被标记为成功。
 - Gateway transport 的 `AbortSignal` 只切断客户端等待，不伪造远端取消；远端状态仍由 OpenClaw 控制面和 history 负责核验。

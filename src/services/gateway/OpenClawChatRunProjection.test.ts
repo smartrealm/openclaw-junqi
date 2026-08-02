@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  classifyOpenClawChatAbortAcknowledgement,
+  classifyOpenClawSessionAbortAcknowledgement,
   classifyOpenClawChatSendAcknowledgement,
   OpenClawChatRunProjection,
   parseOpenClawInFlightRunSnapshot,
@@ -33,18 +33,38 @@ test('classifies all OpenClaw chat.send acknowledgement states without trusting 
   );
 });
 
-test('classifies chat.abort only from the official confirmation fields', () => {
+test('classifies sessions.abort only from the official confirmation fields', () => {
   assert.deepEqual(
-    classifyOpenClawChatAbortAcknowledgement({ ok: true, aborted: true, runIds: [' run-a ', 'run-a'] }),
-    { state: 'aborted', runIds: ['run-a'] },
+    classifyOpenClawSessionAbortAcknowledgement({
+      ok: true,
+      status: 'aborted',
+      abortedRunId: ' run-a ',
+    }),
+    { state: 'aborted', runId: 'run-a' },
   );
   assert.deepEqual(
-    classifyOpenClawChatAbortAcknowledgement({ ok: true, aborted: false, runIds: [] }),
-    { state: 'not_aborted', runIds: [] },
+    classifyOpenClawSessionAbortAcknowledgement({
+      ok: true,
+      status: 'no-active-run',
+      abortedRunId: null,
+    }),
+    { state: 'not_aborted' },
   );
   assert.deepEqual(
-    classifyOpenClawChatAbortAcknowledgement({ ok: true, aborted: true }),
-    { state: 'unknown', runIds: [] },
+    classifyOpenClawSessionAbortAcknowledgement({
+      ok: true,
+      status: 'aborted',
+      abortedRunId: null,
+    }),
+    { state: 'unknown' },
+  );
+  assert.deepEqual(
+    classifyOpenClawSessionAbortAcknowledgement({
+      ok: true,
+      status: 'no-active-run',
+      abortedRunId: 'run-a',
+    }),
+    { state: 'unknown' },
   );
 });
 

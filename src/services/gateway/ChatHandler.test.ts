@@ -291,7 +291,7 @@ test('agent replace=true supersedes a non-prefix draft in the same response', as
   assert.equal(streamEnds[0].content, 'Corrected answer.');
 });
 
-test('chat.abort settles only run ids explicitly confirmed by OpenClaw', async () => {
+test('sessions.abort settles only the exact run explicitly confirmed by OpenClaw', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();
   resetChatStore();
@@ -312,14 +312,14 @@ test('chat.abort settles only run ids explicitly confirmed by OpenClaw', async (
     sessionKey, runId, state: 'delta', message: { content: 'Partial answer.' },
   } });
 
-  assert.equal(handler.reconcileAbortAcknowledgement(
+  assert.equal(handler.reconcileSessionAbortAcknowledgement(
     sessionKey,
-    { ok: true, aborted: false, runIds: [] },
+    { ok: true, status: 'no-active-run', abortedRunId: null },
   ), false);
   assert.equal(streamEnds.length, 0);
-  assert.equal(handler.reconcileAbortAcknowledgement(
+  assert.equal(handler.reconcileSessionAbortAcknowledgement(
     sessionKey,
-    { ok: true, aborted: true, runIds: [runId] },
+    { ok: true, status: 'aborted', abortedRunId: runId },
   ), true);
   assert.equal(streamEnds.length, 1);
   assert.equal(streamEnds[0].meta?.state, 'aborted');
@@ -460,7 +460,7 @@ test('history confirms an uncertain send only from its exact idempotency identit
   assert.equal(useChatStore.getState().getCachedMessages(sessionKey)[0]?.status, 'sent');
 });
 
-test('an exact abort acknowledgement settles a send before chat.send acknowledgement', async () => {
+test('an exact sessions.abort acknowledgement settles a send before chat.send acknowledgement', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();
   resetChatStore();
@@ -486,9 +486,9 @@ test('an exact abort acknowledgement settles a send before chat.send acknowledge
   } as any);
   handler.beginPendingSend(sessionKey, runId);
 
-  assert.equal(handler.reconcileAbortAcknowledgement(
+  assert.equal(handler.reconcileSessionAbortAcknowledgement(
     sessionKey,
-    { ok: true, aborted: true, runIds: [runId] },
+    { ok: true, status: 'aborted', abortedRunId: runId },
   ), true);
   assert.equal(streamEnds[0]?.meta?.state, 'aborted');
   assert.equal(useChatStore.getState().getCachedMessages(sessionKey)[0]?.status, 'sent');

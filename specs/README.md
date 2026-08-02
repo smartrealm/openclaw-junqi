@@ -79,6 +79,7 @@ specs/
 - [OpenClaw 会话用量范围对齐](quality/2026-08-03-openclaw-sessions-usage-range.md)
 - [OpenClaw 会话操作事件对齐](quality/2026-08-03-openclaw-session-operation.md)
 - [OpenClaw 原生会话压缩对齐](quality/2026-08-04-openclaw-native-session-compaction.md)
+- [OpenClaw 原生会话中止对齐](quality/2026-08-03-openclaw-native-session-abort.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界](quality/2026-07-31-installation-dashboard-chat-provider-channel-runtime-boundaries.md)
 - [语音唤醒工作台](quality/2026-07-31-voice-wake-workspace.md)
 - [业务引导平台](quality/2026-07-31-business-onboarding-platform.md)
