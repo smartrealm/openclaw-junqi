@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { VoiceWakeAcceptanceGate } from './VoiceWakeAcceptanceGate';
+import { MAX_VOICE_WAKE_PCM_FRAMES } from './VoiceWakeAudioLimits';
 
 test('wake acceptance buffers current-turn audio and releases it in arrival order', () => {
   const gate = new VoiceWakeAcceptanceGate();
@@ -27,4 +28,17 @@ test('a rejected category update discards retained PCM and fallback audio', () =
 
   gate.reject();
   assert.deepEqual(gate.accept(), { pcmFrames: [], capture: null });
+});
+
+test('wake acceptance retains a complete bounded native utterance while Gateway confirms', () => {
+  const gate = new VoiceWakeAcceptanceGate();
+  gate.begin();
+  for (let index = 0; index < MAX_VOICE_WAKE_PCM_FRAMES + 1; index += 1) {
+    gate.retainPcm({ data: String(index), sampleRateHz: 24_000, channels: 1 });
+  }
+
+  const { pcmFrames } = gate.accept();
+  assert.equal(pcmFrames.length, MAX_VOICE_WAKE_PCM_FRAMES);
+  assert.equal(pcmFrames[0]?.data, '0');
+  assert.equal(pcmFrames.at(-1)?.data, String(MAX_VOICE_WAKE_PCM_FRAMES - 1));
 });

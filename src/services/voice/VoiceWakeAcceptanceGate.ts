@@ -1,3 +1,5 @@
+import { MAX_VOICE_WAKE_PCM_FRAMES } from './VoiceWakeAudioLimits';
+
 export interface VoiceWakePcmFrame {
   data: string;
   sampleRateHz: number;
@@ -13,8 +15,6 @@ export interface AcceptedVoiceWakeAudio {
   pcmFrames: VoiceWakePcmFrame[];
   capture: VoiceWakeCapturedAudio | null;
 }
-
-const MAX_PENDING_PCM_FRAMES = 50;
 
 /** Holds one wake turn's audio until a required Gateway-side mutation confirms. */
 export class VoiceWakeAcceptanceGate {
@@ -34,7 +34,7 @@ export class VoiceWakeAcceptanceGate {
 
   retainPcm(frame: VoiceWakePcmFrame): boolean {
     if (!this.pending) return false;
-    if (this.pcmFrames.length < MAX_PENDING_PCM_FRAMES) this.pcmFrames.push(frame);
+    if (this.pcmFrames.length < MAX_VOICE_WAKE_PCM_FRAMES) this.pcmFrames.push(frame);
     return true;
   }
 

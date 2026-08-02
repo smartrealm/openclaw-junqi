@@ -99,13 +99,76 @@ test('Talk conversation retains bounded PCM while the relay session is connectin
     stopOutput: () => undefined,
   });
   const start = coordinator.start('agent:main:main');
+  // Capture can begin in the same event turn as a verified keyword. It must
+  // survive the output cleanup that runs before relay creation.
+  coordinator.appendPcm({ data: 'opening', sampleRateHz: 24_000, channels: 1 });
   await new Promise((resolve) => setImmediate(resolve));
   assert.ok(resolveSession);
-  coordinator.appendPcm({ data: 'opening', sampleRateHz: 24_000, channels: 1 });
   resolveSession({ sessionId: 'talk-1', provider: 'relay' });
   await start;
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(appended, ['opening']);
+});
+
+test('Talk opening can be awaited before choosing the WAV fallback path', async () => {
+  let resolveSession: ((value: { sessionId: string; provider: string }) => void) | undefined;
+  const coordinator = new TalkConversationCoordinator({
+    client: {
+      createRealtimeRelay: () => new Promise((resolve) => { resolveSession = resolve; }),
+      appendAudio: async () => undefined,
+      cancelOutput: async () => undefined,
+      close: async () => undefined,
+      subscribe: () => () => undefined,
+    },
+    captureConnectionId: () => 'connection-a',
+    isConnectionCurrent: () => true,
+    interruptLocalOutput: () => undefined,
+    playOutput: () => undefined,
+    stopOutput: () => undefined,
+  });
+  const opening = coordinator.start('agent:main:main');
+  const waiting = coordinator.waitForOpening();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(resolveSession);
+  resolveSession({ sessionId: 'talk-1', provider: 'relay' });
+
+  assert.equal((await waiting)?.sessionId, 'talk-1');
+  assert.equal((await opening).sessionId, 'talk-1');
+});
+
+test('stopping an opening relay discards its buffered PCM before any later session', async () => {
+  let resolveSession: ((value: { sessionId: string; provider: string }) => void) | undefined;
+  const appended: string[] = [];
+  let createCount = 0;
+  const coordinator = new TalkConversationCoordinator({
+    client: {
+      createRealtimeRelay: () => {
+        createCount += 1;
+        if (createCount === 1) return new Promise((resolve) => { resolveSession = resolve; });
+        return Promise.resolve({ sessionId: 'talk-new', provider: 'relay' });
+      },
+      appendAudio: async (_sessionId, audioBase64) => { appended.push(audioBase64); },
+      cancelOutput: async () => undefined,
+      close: async () => undefined,
+      subscribe: () => () => undefined,
+    },
+    captureConnectionId: () => 'connection-a',
+    isConnectionCurrent: () => true,
+    interruptLocalOutput: () => undefined,
+    playOutput: () => undefined,
+    stopOutput: () => undefined,
+  });
+  const first = coordinator.start('agent:main:main');
+  coordinator.appendPcm({ data: 'discard-me', sampleRateHz: 24_000, channels: 1 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(resolveSession);
+  await coordinator.stop();
+  resolveSession({ sessionId: 'talk-old', provider: 'relay' });
+  await first;
+
+  await coordinator.start('agent:main:main');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(appended, []);
 });
 
 test('a stale Talk session creation cannot replace a newer trigger', async () => {

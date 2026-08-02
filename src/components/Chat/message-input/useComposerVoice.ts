@@ -245,7 +245,14 @@ export function useComposerVoice({
     onCaptureFallback: async (wavDataUrl) => {
       const context = currentContextRef.current;
       if (!context) return;
-      if (talkConversationRef.current?.getSnapshot().sessionId) {
+      const talkConversation = talkConversationRef.current;
+      if (talkConversation?.getSnapshot().phase === 'connecting') {
+        await talkConversation.waitForOpening();
+      }
+      if (!isCurrentVoiceContext(context) || !voiceModeCoordinator.ownsTurn(activeTurnRef.current, context)) {
+        return;
+      }
+      if (talkConversation?.getSnapshot().sessionId) {
         voiceModeCoordinator.resumeListening(activeTurnRef.current, context);
         return;
       }

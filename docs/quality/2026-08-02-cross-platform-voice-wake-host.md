@@ -50,6 +50,8 @@ JunQi now has a fenced client for the installed OpenClaw `talk.catalog` and `tal
 
 The event bridge validates the OpenClaw Talk envelope within `payload.talkEvent` and retains the highest sequence number per Talk session. Malformed Talk envelopes are consumed without falling through to chat handling; duplicate or stale event sequences are discarded. The native worker now emits PCM16/24000Hz/mono frames only after a VAD or verified keyword trigger, while preserving WAV only for the confirmation-required fallback. Gateway PCM output is queued through a Rust-owned Rodio/CPAL playback thread; it does not use Web Speech. The Talk relay is created on a keyword trigger rather than when the listener arms, so idle standby cannot consume its Gateway session TTL; early PCM is bounded and retained while that session connects.
 
+The WAV fallback waits for an in-flight Talk relay creation before choosing its path. If the relay becomes ready, it has already received the retained PCM and the WAV is discarded as a duplicate; if relay creation fails, the WAV remains the existing confirmation-required draft. Both the category-confirmation and relay-creation boundaries retain up to one native VAD turn (15 seconds at the worker's 20 ms poll cadence), rather than dropping the beginning of a valid user utterance during normal Gateway latency.
+
 ## Automated Evidence
 
 - `pnpm exec tsc --noEmit` passed.
@@ -68,6 +70,7 @@ The event bridge validates the OpenClaw Talk envelope within `payload.talkEvent`
 - On 2026-08-02, `cargo test --manifest-path src-tauri/vendor/auto-launch/Cargo.toml` passed 3 portable command-serialization tests. `cargo fmt -- --check`, `cargo check --lib`, and the complete `cargo test --lib` suite also passed; the library suite reported 692 passed and 4 ignored tests.
 - On 2026-08-02, `pnpm lint`, the complete `pnpm test` suite, `pnpm build`, and `git diff --check` passed after the login-start serialization repair. Rust still reports the pre-existing unused `version_beyond_verified_range` variable in `system.rs`.
 - On 2026-08-02, the wake-category acceptance gate tests passed with the voice coordinator, wake-audit, and composer-voice suites (31 tests). The TypeScript check, production build, Rust format/check, and complete Rust library suite passed; the library suite reported 692 passed and 4 ignored tests.
+- On 2026-08-02, the Talk relay regression suite covered PCM arriving in the same event turn as relay setup, WAV fallback waiting for relay creation, and an explicit stop discarding retained PCM before a later relay. The complete frontend lint/test suite, production build, Rust format/check, and Rust library suite passed; the library suite reported 692 passed and 4 ignored tests.
 - Capability and locale JSON parsed successfully, and `git diff --check` passed.
 
 ## Unverified Boundaries

@@ -19,6 +19,7 @@
 15. Rejected wake keywords now suppress both WAV fallback and any in-flight PCM frames before the Talk relay queue, closing the native stop-request race.
 16. Bound model keyword labels to OpenClaw's installed 64 UTF-16-code-unit trigger limit before a model may be selected or synchronized.
 17. Gate wake acceptance on the documented `sessions.patch.category` confirmation, retaining only bounded current-turn audio until the Jarvis group assignment is durable.
+18. Delay WAV fallback until an in-flight Talk relay reports ready or unavailable, preventing duplicate Talk and attachment delivery; retain a complete bounded VAD turn across the category and relay setup boundaries.
 
 ## Current Remediation (Completed)
 

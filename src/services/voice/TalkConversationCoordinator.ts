@@ -1,5 +1,6 @@
 import type { TalkGatewayEvent } from '@/services/gateway/talkEventBridge';
 import type { TalkGatewayClient } from '@/services/gateway/TalkGatewayClient';
+import { MAX_VOICE_WAKE_PCM_FRAMES } from './VoiceWakeAudioLimits';
 
 export type TalkConversationPhase = 'idle' | 'connecting' | 'listening' | 'speaking' | 'error';
 
@@ -30,6 +31,7 @@ export class TalkConversationCoordinator {
   private unsubscribeEvents: (() => void) | null = null;
   private appendQueue: Promise<void> = Promise.resolve();
   private pendingFrames: Array<{ data: string; sampleRateHz: number; channels: number }> = [];
+  private opening: Promise<TalkConversationSnapshot> | null = null;
   private generation = 0;
   private readonly listeners = new Set<Listener>();
   private readonly now: () => number;
@@ -58,13 +60,32 @@ export class TalkConversationCoordinator {
     );
   }
 
-  async start(sessionKey: string): Promise<TalkConversationSnapshot> {
+  start(sessionKey: string): Promise<TalkConversationSnapshot> {
+    // A replacement turn owns a fresh input queue. Frames can arrive before
+    // the asynchronous cleanup below has reached the connecting state.
+    this.pendingFrames = [];
+    const opening = this.open(sessionKey);
+    this.opening = opening;
+    void opening.then(
+      () => { if (this.opening === opening) this.opening = null; },
+      () => { if (this.opening === opening) this.opening = null; },
+    );
+    return opening;
+  }
+
+  /** Resolves the relay setup already in progress, if there is one. */
+  waitForOpening(): Promise<TalkConversationSnapshot | null> {
+    return this.opening ?? Promise.resolve(null);
+  }
+
+  private async open(sessionKey: string): Promise<TalkConversationSnapshot> {
     if (this.sessionKey) this.dependencies.interruptLocalOutput(this.sessionKey);
     await Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
-    await this.stop();
+    await this.stop({ retainPendingFrames: true });
     const generation = ++this.generation;
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId || !sessionKey.trim()) {
+      this.pendingFrames = [];
       this.set({ ...INITIAL, phase: 'error', error: 'No attested Gateway connection is available for Talk' });
       return this.snapshot;
     }
@@ -73,7 +94,10 @@ export class TalkConversationCoordinator {
       const session = await this.dependencies.client.createRealtimeRelay(sessionKey);
       if (generation !== this.generation || !this.dependencies.isConnectionCurrent(connectionId)) {
         await this.dependencies.client.close(session.sessionId).catch(() => undefined);
-        if (generation !== this.generation) return this.snapshot;
+        if (generation !== this.generation) {
+          if (this.snapshot.phase === 'idle') this.pendingFrames = [];
+          return this.snapshot;
+        }
         throw new Error('Gateway connection changed while creating the Talk session');
       }
       this.sessionKey = sessionKey;
@@ -81,8 +105,9 @@ export class TalkConversationCoordinator {
       this.set({ phase: 'listening', sessionId: session.sessionId, connectionId, error: null });
       const pendingFrames = this.pendingFrames;
       this.pendingFrames = [];
-      for (const frame of pendingFrames) this.appendPcm(frame);
+      for (const frame of pendingFrames) this.enqueuePcm(frame);
     } catch (error) {
+      this.pendingFrames = [];
       this.set({ ...INITIAL, phase: 'error', error: error instanceof Error ? error.message : String(error) });
     }
     return this.snapshot;
@@ -90,10 +115,14 @@ export class TalkConversationCoordinator {
 
   appendPcm(frame: { data: string; sampleRateHz: number; channels: number }): void {
     if (frame.sampleRateHz !== 24_000 || frame.channels !== 1 || !frame.data) return;
-    if (this.snapshot.phase === 'connecting') {
-      if (this.pendingFrames.length < 50) this.pendingFrames.push(frame);
+    if (this.opening || this.snapshot.phase === 'connecting') {
+      if (this.pendingFrames.length < MAX_VOICE_WAKE_PCM_FRAMES) this.pendingFrames.push(frame);
       return;
     }
+    this.enqueuePcm(frame);
+  }
+
+  private enqueuePcm(frame: { data: string; sampleRateHz: number; channels: number }): void {
     if (!this.ownsSession()) return;
     const sessionId = this.snapshot.sessionId;
     if (!sessionId) return;
@@ -122,7 +151,7 @@ export class TalkConversationCoordinator {
     });
   }
 
-  async stop(): Promise<void> {
+  async stop(options: { retainPendingFrames?: boolean } = {}): Promise<void> {
     this.generation += 1;
     const sessionId = this.snapshot.sessionId;
     const ownsSession = this.ownsSession();
@@ -130,7 +159,7 @@ export class TalkConversationCoordinator {
     this.unsubscribeEvents = null;
     this.sessionKey = null;
     this.appendQueue = Promise.resolve();
-    this.pendingFrames = [];
+    if (!options.retainPendingFrames) this.pendingFrames = [];
     await Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
     this.set(INITIAL);
     if (sessionId && ownsSession) await this.dependencies.client.close(sessionId).catch(() => undefined);
