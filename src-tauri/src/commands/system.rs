@@ -625,6 +625,10 @@ pub struct OpenclawStatus {
     pub package_valid: bool,
     pub gateway_command_ok: bool,
     pub relocation_required: bool,
+    /// Set when the installed version is newer than the range this JunQi build
+    /// was verified against. Usable, but the user needs to know before a wizard
+    /// or protocol failure sends them looking in the wrong place.
+    pub version_beyond_verified_range: bool,
     pub error: Option<String>,
 }
 
@@ -1570,6 +1574,7 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
             package_valid: false,
             gateway_command_ok: false,
             relocation_required: paths::openclaw_relocation_required(),
+            version_beyond_verified_range: false,
             error: Some(error),
         };
     }
@@ -1584,6 +1589,7 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
             package_valid: false,
             gateway_command_ok: false,
             relocation_required: paths::openclaw_relocation_required(),
+            version_beyond_verified_range: false,
             error: Some(error),
         };
     }
@@ -1602,6 +1608,7 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
                 package_valid: false,
                 gateway_command_ok: false,
                 relocation_required,
+                version_beyond_verified_range: false,
                 error: Some(
                     if relocation_required {
                         "OpenClaw needs to be installed in the selected npm location before it can run"
@@ -1619,6 +1626,39 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
     status
 }
 
+/// The OpenClaw range this desktop build is verified against.
+///
+/// `packages/junqi-collab/package.json` already declares `>=2026.7.1 <2027.0.0`
+/// as its peer range. Install validation used to accept any parsable version,
+/// so the two halves of the product disagreed and a user who upgraded OpenClaw
+/// got no signal until the wizard failed for reasons that looked unrelated.
+pub(crate) const OPENCLAW_MIN_SUPPORTED_VERSION: (u32, u32, u32) = (2026, 7, 1);
+pub(crate) const OPENCLAW_VERIFIED_BELOW_MAJOR: u32 = 2027;
+
+/// Leading numeric triple of an OpenClaw version. Suffixes such as `-2` are
+/// revisions of the same contract and are deliberately ignored.
+pub(crate) fn parse_openclaw_version_triple(version: &str) -> Option<(u32, u32, u32)> {
+    let core = version.trim().trim_start_matches('v');
+    let core = core.split(['-', '+']).next()?;
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse::<u32>().ok()?;
+    let minor = parts.next().unwrap_or("0").parse::<u32>().ok()?;
+    let patch = parts.next().unwrap_or("0").parse::<u32>().ok()?;
+    Some((major, minor, patch))
+}
+
+/// Below the floor the contract is known not to hold, so this blocks. Above the
+/// ceiling it only warns: refusing a normally upgraded OpenClaw would leave the
+/// user with no working desktop at all, which is worse than an untested pairing.
+pub(crate) fn openclaw_version_support(version: Option<&str>) -> (bool, bool) {
+    let Some(parsed) = version.and_then(parse_openclaw_version_triple) else {
+        return (false, false);
+    };
+    let supported = parsed >= OPENCLAW_MIN_SUPPORTED_VERSION;
+    let beyond = parsed.0 >= OPENCLAW_VERIFIED_BELOW_MAJOR;
+    (supported, beyond)
+}
+
 pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) -> OpenclawStatus {
     let path_string = path_for_display(path);
     let package_version = read_openclaw_pkg_version(path);
@@ -1629,7 +1669,7 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
     // The actual launcher contract is validated structurally, then runtime
     // commands resolve the package's `openclaw.mjs` entry through Node.
     let version = package_version;
-    let version_ok = version.is_some();
+    let (version_ok, version_beyond_verified_range) = openclaw_version_support(version.as_deref());
     let entry_smoke_ok = if package_valid {
         // An unchanged payload that already passed the smoke probe stays
         // verified without re-running Node. This is the load-bearing guard
@@ -1653,6 +1693,14 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
     let mut errors = Vec::new();
     if version.is_none() {
         errors.push("OpenClaw package version is missing or invalid".to_string());
+    } else if !version_ok {
+        errors.push(format!(
+            "OpenClaw {} is older than the minimum supported {}.{}.{}; update OpenClaw",
+            version.as_deref().unwrap_or("(unknown)"),
+            OPENCLAW_MIN_SUPPORTED_VERSION.0,
+            OPENCLAW_MIN_SUPPORTED_VERSION.1,
+            OPENCLAW_MIN_SUPPORTED_VERSION.2,
+        ));
     }
     if !package_valid {
         errors.push(
@@ -1676,6 +1724,7 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
         package_valid,
         gateway_command_ok,
         relocation_required: paths::openclaw_relocation_required(),
+        version_beyond_verified_range: false,
         error: if installed {
             None
         } else {
@@ -2303,6 +2352,44 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 
 #[cfg(test)]
 mod tests {
+    use super::{openclaw_version_support, parse_openclaw_version_triple};
+
+    // AUD-02: install validation accepted any parsable version while the collab
+    // plugin declared >=2026.7.1 <2027.0.0. The two halves must agree.
+    #[test]
+    fn openclaw_version_support_matches_the_declared_peer_range() {
+        assert_eq!(openclaw_version_support(Some("2026.7.1")), (true, false));
+        // A revision suffix is the same contract, not a different version.
+        assert_eq!(openclaw_version_support(Some("2026.7.1-2")), (true, false));
+        assert_eq!(openclaw_version_support(Some("v2026.8.0")), (true, false));
+        // Below the floor the contract is known not to hold.
+        assert_eq!(openclaw_version_support(Some("2026.7.0")), (false, false));
+        assert_eq!(openclaw_version_support(Some("2025.12.31")), (false, false));
+        // Above the ceiling stays usable and only raises the flag: refusing a
+        // normally upgraded OpenClaw would leave no working desktop at all.
+        assert_eq!(openclaw_version_support(Some("2027.1.0")), (true, true));
+        // Unparsable is not silently treated as supported.
+        assert_eq!(
+            openclaw_version_support(Some("not-a-version")),
+            (false, false)
+        );
+        assert_eq!(openclaw_version_support(None), (false, false));
+    }
+
+    #[test]
+    fn openclaw_version_triple_ignores_revision_and_build_suffixes() {
+        assert_eq!(
+            parse_openclaw_version_triple("2026.7.1-2"),
+            Some((2026, 7, 1))
+        );
+        assert_eq!(
+            parse_openclaw_version_triple("v2026.7.1+build"),
+            Some((2026, 7, 1))
+        );
+        assert_eq!(parse_openclaw_version_triple("2026.7"), Some((2026, 7, 0)));
+        assert_eq!(parse_openclaw_version_triple(""), None);
+    }
+
     use super::{
         native_openclaw_runtime, native_openclaw_runtime_from_gateway_service_launch_contract,
         node_requirement_for_openclaw_binary, normalize_npm_prefix, npm_cli_for_node,

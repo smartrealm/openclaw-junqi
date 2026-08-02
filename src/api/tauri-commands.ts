@@ -34,6 +34,8 @@ export interface OpenclawStatus {
   package_valid: boolean;
   gateway_command_ok: boolean;
   relocation_required: boolean;
+  /** Newer than the range this JunQi build was verified against; usable, but flagged. */
+  version_beyond_verified_range: boolean;
   error: string | null;
 }
 export interface DockerStatus { available: boolean; version: string | null; daemon_running: boolean; unsupported_reason: string | null; image_available: boolean; }

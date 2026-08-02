@@ -534,7 +534,11 @@ test('BUG-IW-04 wizard presentation stays within the installed strict schema', (
   const wizard = screen('WizardScreen');
   assert.doesNotMatch(wizard, /presentedStep\.externalUrl|presentedStep\.deviceCode/);
   assert.doesNotMatch(wizardClient, /externalUrl|deviceCode|\[key: string\]/);
-  assert.match(wizardClient, /raw\.type !== 'note'/);
+  // The step type set stays closed; only its expression moved to a constant.
+  assert.match(wizardClient, /WIZARD_STEP_TYPES = \[/);
+  assert.match(wizardClient, /WIZARD_STEP_TYPES as readonly string\[\]\)\.includes\(raw\.type\)/);
+  // Unknown keys are dropped by projection rather than reaching the UI.
+  assert.match(wizardClient, /for \(const key of WIZARD_STEP_KEYS\)/);
   assert.match(setupPage, /async function openWizardExternalUrl/);
   assert.match(setupPage, /@tauri-apps\/plugin-shell/);
 });
@@ -562,8 +566,10 @@ test('BUG-ONB-41 channel authorization remains vendor-neutral and schema-bound',
 
   assert.doesNotMatch(qr, /dingtalk|feishu|lark/i);
   assert.match(qr, /extractOpenClawWizardQrUrl\(message\)/);
-  assert.match(wizardService, /raw\.type !== 'note'/);
-  assert.match(wizardService, /Object\.keys\(raw\)\.some/);
+  // Schema-bound still holds: the type set is closed and unknown keys are
+  // projected away instead of being forwarded as supported contract.
+  assert.match(wizardService, /WIZARD_STEP_TYPES as readonly string\[\]\)\.includes\(raw\.type\)/);
+  assert.match(wizardService, /for \(const key of WIZARD_STEP_KEYS\)/);
   assert.match(setupPage, /\{messageRenderedInBody && \(/);
   assert.match(setupPage, /presentedStep\.message/);
 });

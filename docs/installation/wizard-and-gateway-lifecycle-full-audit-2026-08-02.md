@@ -49,9 +49,9 @@
 
 ## 发现
 
-### AUD-01 · wizard 协议解析对上游演进零容忍
+### AUD-01 · wizard 协议解析对上游演进零容忍（已修复）
 
-风险等级：高。这是本次审查中最可能造成整体不可用的一项。
+风险等级：高。状态：2026-08-02 已修复。
 
 **证据**：`src/services/openclawWizard.ts` 在两个层级都对未知字段抛错或整体拒绝。
 
@@ -94,9 +94,15 @@ if (unknown) throw new Error(`${context} has an unknown field \`${unknown}\`.`);
 - 未知的 `type` 不再静默整步拒绝，而是产生一个明确的「当前 JunQi 版本不支持该配置步骤，请升级桌面端」的终端错误，携带步骤 `id` 与 `type` 以便定位。当前把它呈现为「响应缺少下一步」是把版本问题误报成协议问题；
 - 保留对已知字段的严格取值校验，不放宽 `status`、`executor` 等参与决策的枚举。
 
-### AUD-02 · 安装校验不对 OpenClaw 版本设任何边界
+**修复**：`assertExactWizardKeys` 改为 `warnOnUnknownWizardKeys`，未知信封字段只记录调试日志不再抛错。`normalizeWizardStep` 改为返回判别式结果：未知键被**投影丢弃**而非拒绝整步，未知 `type` 返回 `unsupported-type` 并由调用方抛出携带步骤 `id` 与 `type` 的「请升级 JunQi Desktop」错误。已知字段的取值校验一律保留。
 
-风险等级：高。与 AUD-01 叠加后放大。
+投影而非透传是刻意的：未知字段不会到达 UI，因此「不得渲染安装版本没有的协议特性」这条既有约束仍然成立，只是不再以整条链路不可用为代价。
+
+**验证**：新增 6 项兼容性用例覆盖信封新增字段、步骤新增字段、未知类型、真正畸形负载、已知字段取值仍严格、非法 `status` 仍拒绝。同时更新 5 处断言旧严格语义的既有测试——其中 `BUG-IW-04` 与 `BUG-ONB-41` 改为断言「类型集合封闭」与「未知键被投影丢弃」这两条真实约束，原意得以保留。
+
+### AUD-02 · 安装校验不对 OpenClaw 版本设任何边界（已修复）
+
+风险等级：高。状态：2026-08-02 已修复。
 
 **证据**：`src-tauri/src/commands/system.rs:1632`：
 
@@ -111,6 +117,14 @@ let version_ok = version.is_some();
 **问题**：同一产品内两套版本立场不一致。插件侧承认存在兼容区间，安装校验侧却接受任意版本。用户通过 `npm i -g openclaw@latest`、系统包管理器或 OpenClaw 自更新拿到一个更新的大版本时，JunQi 不会给出任何提示，而 AUD-01 的解析器会在 wizard 环节直接失败。故障表现与根因（版本不匹配）之间没有任何提示链路。
 
 **目标行为**：把 collab 插件已声明的兼容区间提升为安装校验的一等判据。版本低于下界拒绝并提示升级 OpenClaw；高于上界不阻断使用，但需要在设置与安装诊断中明确标注「该 OpenClaw 版本超出本 JunQi 版本的已验证范围」，使 wizard 失败时用户能立刻定位。
+
+**修复**：`system.rs` 新增 `OPENCLAW_MIN_SUPPORTED_VERSION`（2026.7.1）与 `OPENCLAW_VERIFIED_BELOW_MAJOR`（2027），`openclaw_version_support` 返回「是否受支持」与「是否超出已验证范围」两个判定。`version_ok` 不再等价于「版本号可解析」，低于下界会给出指向升级 OpenClaw 的具体错误。`OpenclawStatus` 新增 `version_beyond_verified_range` 并同步到前端类型。
+
+上界只告警不阻断：拒绝一个正常升级的 OpenClaw 会让用户彻底失去可用的桌面端，比未验证组合更糟。版本后缀（如 `2026.7.1-2`）视为同一契约的修订，不参与比较。
+
+**验证**：新增 2 项 Rust 用例覆盖下界、上界、后缀忽略、无法解析不被静默当作受支持。
+
+**未落地部分**：`version_beyond_verified_range` 目前只在契约层产生，设置页与安装诊断的展示尚未接入。
 
 ### AUD-03 · 五个生命周期 command 无调用方，其中包含全部停止入口
 

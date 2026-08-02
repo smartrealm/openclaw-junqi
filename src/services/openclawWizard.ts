@@ -1,3 +1,5 @@
+import { debugWarn } from '@/utils/debugLog';
+
 export type OpenClawWizardStepType =
   | 'note'
   | 'select'
@@ -66,30 +68,64 @@ function isWizardOption(value: unknown): value is OpenClawWizardOption {
     && (option.hint === undefined || typeof option.hint === 'string');
 }
 
-function normalizeWizardStep(value: unknown): OpenClawWizardStep | null {
-  if (!value || typeof value !== 'object') return null;
+const WIZARD_STEP_TYPES = [
+  'note', 'select', 'text', 'confirm', 'multiselect', 'progress', 'action',
+] as const;
+
+const WIZARD_STEP_KEYS = [
+  'id', 'type', 'title', 'message', 'format', 'options', 'initialValue',
+  'placeholder', 'sensitive', 'executor',
+] as const;
+
+/**
+ * Why the step could not be used, so the caller can say something true.
+ *
+ * `unsupported-type` is deliberately separate from `invalid`: an onboarding
+ * step this JunQi build has never heard of means the desktop app is behind the
+ * gateway, which is a different user action than a malformed payload.
+ */
+type WizardStepRejection =
+  | { reason: 'invalid' }
+  | { reason: 'unsupported-type'; id: string; type: string };
+
+type WizardStepParse =
+  | { ok: true; step: OpenClawWizardStep }
+  | ({ ok: false } & WizardStepRejection);
+
+/**
+ * Forward compatible on purpose. OpenClaw ships onboarding changes on its own
+ * cadence, so a field we have never seen must not be able to take the wizard
+ * down: unknown keys are dropped rather than rejected, and only the fields
+ * JunQi actually reads are validated. Known fields keep their strict value
+ * checks - `format`, `executor` and the option shape all steer behaviour, and
+ * relaxing those would turn protocol drift into silent misinterpretation.
+ */
+function normalizeWizardStep(value: unknown): WizardStepParse {
+  if (!value || typeof value !== 'object') return { ok: false, reason: 'invalid' };
   const raw = value as Record<string, unknown>;
-  const allowedKeys = new Set([
-    'id', 'type', 'title', 'message', 'format', 'options', 'initialValue',
-    'placeholder', 'sensitive', 'executor',
-  ]);
-  if (Object.keys(raw).some((key) => !allowedKeys.has(key))) return null;
-  if (typeof raw.id !== 'string' || !raw.id.trim()) return null;
-  if (raw.type !== 'note'
-    && raw.type !== 'select'
-    && raw.type !== 'text'
-    && raw.type !== 'confirm'
-    && raw.type !== 'multiselect'
-    && raw.type !== 'progress'
-    && raw.type !== 'action') return null;
-  if (raw.title !== undefined && typeof raw.title !== 'string') return null;
-  if (raw.message !== undefined && typeof raw.message !== 'string') return null;
-  if (raw.format !== undefined && raw.format !== 'plain') return null;
-  if (raw.options !== undefined && (!Array.isArray(raw.options) || !raw.options.every(isWizardOption))) return null;
-  if (raw.placeholder !== undefined && typeof raw.placeholder !== 'string') return null;
-  if (raw.sensitive !== undefined && typeof raw.sensitive !== 'boolean') return null;
-  if (raw.executor !== undefined && raw.executor !== 'gateway' && raw.executor !== 'client') return null;
-  return raw as unknown as OpenClawWizardStep;
+  if (typeof raw.id !== 'string' || !raw.id.trim()) return { ok: false, reason: 'invalid' };
+  if (typeof raw.type !== 'string') return { ok: false, reason: 'invalid' };
+  if (!(WIZARD_STEP_TYPES as readonly string[]).includes(raw.type)) {
+    return { ok: false, reason: 'unsupported-type', id: raw.id, type: raw.type };
+  }
+  if (raw.title !== undefined && typeof raw.title !== 'string') return { ok: false, reason: 'invalid' };
+  if (raw.message !== undefined && typeof raw.message !== 'string') return { ok: false, reason: 'invalid' };
+  if (raw.format !== undefined && raw.format !== 'plain') return { ok: false, reason: 'invalid' };
+  if (raw.options !== undefined && (!Array.isArray(raw.options) || !raw.options.every(isWizardOption))) {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (raw.placeholder !== undefined && typeof raw.placeholder !== 'string') return { ok: false, reason: 'invalid' };
+  if (raw.sensitive !== undefined && typeof raw.sensitive !== 'boolean') return { ok: false, reason: 'invalid' };
+  if (raw.executor !== undefined && raw.executor !== 'gateway' && raw.executor !== 'client') {
+    return { ok: false, reason: 'invalid' };
+  }
+  // Project to the known shape: unknown fields are ignored, never forwarded to
+  // the UI where they could be mistaken for contract we support.
+  const step: Record<string, unknown> = {};
+  for (const key of WIZARD_STEP_KEYS) {
+    if (raw[key] !== undefined) step[key] = raw[key];
+  }
+  return { ok: true, step: step as unknown as OpenClawWizardStep };
 }
 
 export interface OpenClawWizardRequestOptions {
@@ -152,14 +188,25 @@ export function createBrowserOpenClawWizardSessionStore(): OpenClawWizardSession
   };
 }
 
-function assertExactWizardKeys(
+/**
+ * Additive protocol changes must not break onboarding.
+ *
+ * This used to throw on any field outside the allowlist, so a single new key in
+ * a gateway response made first-run setup impossible. Unknown keys are now
+ * ignored - every field JunQi acts on is still validated individually below,
+ * which is where misinterpretation could actually occur.
+ */
+function warnOnUnknownWizardKeys(
   result: Record<string, unknown>,
   allowedKeys: readonly string[],
   context: string,
 ): void {
   const allowed = new Set(allowedKeys);
-  const unknown = Object.keys(result).find((key) => !allowed.has(key));
-  if (unknown) throw new Error(`${context} has an unknown field \`${unknown}\`.`);
+  const unknown = Object.keys(result).filter((key) => !allowed.has(key));
+  if (unknown.length === 0) return;
+  // Surfaced for diagnosis only: a newer gateway is expected to carry fields
+  // this build does not read yet.
+  debugWarn('gateway', `${context} carries fields this build ignores:`, unknown.join(', '));
 }
 
 function assertWizardResultFields(
@@ -171,7 +218,7 @@ function assertWizardResultFields(
     throw new Error(`OpenClaw returned an invalid ${context}.`);
   }
   const result = value as Record<string, unknown>;
-  assertExactWizardKeys(result, allowedKeys, `OpenClaw ${context}`);
+  warnOnUnknownWizardKeys(result, allowedKeys, `OpenClaw ${context}`);
   if (typeof result.done !== 'boolean') {
     throw new Error('OpenClaw wizard response is missing `done`.');
   }
@@ -189,11 +236,15 @@ function assertWizardResultFields(
   // They are valid official Wizard outcomes and must reach the recovery
   // state machine instead of being misclassified as malformed Gateway data.
   if (!isTerminalWizardResult(value as OpenClawWizardResult)) {
-    const step = normalizeWizardStep(result.step);
-    if (!step) {
-      throw new Error('OpenClaw wizard response is missing the next step.');
+    const parsed = normalizeWizardStep(result.step);
+    if (!parsed.ok) {
+      // Naming the cause matters: reporting an unsupported step as "missing"
+      // sends the user after the Gateway when the fix is upgrading JunQi.
+      throw new Error(parsed.reason === 'unsupported-type'
+        ? `This JunQi build does not support the OpenClaw onboarding step \`${parsed.id}\` of type \`${parsed.type}\`. Update JunQi Desktop to continue setup.`
+        : 'OpenClaw wizard response is missing the next step.');
     }
-    return { ...value as OpenClawWizardResult, step };
+    return { ...value as OpenClawWizardResult, step: parsed.step };
   }
   return value as OpenClawWizardResult;
 }
@@ -224,7 +275,7 @@ function assertWizardStatusResult(value: unknown): Pick<OpenClawWizardResult, 's
     throw new Error('OpenClaw returned an invalid wizard status response.');
   }
   const result = value as Record<string, unknown>;
-  assertExactWizardKeys(result, ['status', 'error'], 'OpenClaw wizard status response');
+  warnOnUnknownWizardKeys(result, ['status', 'error'], 'OpenClaw wizard status response');
   if (result.status !== 'running'
     && result.status !== 'done'
     && result.status !== 'cancelled'
@@ -266,7 +317,7 @@ function assertWizardCancelStatus(value: unknown): 'cancelled' {
     throw new Error('OpenClaw returned an invalid wizard cancellation response.');
   }
   const result = value as Record<string, unknown>;
-  assertExactWizardKeys(result, ['status', 'error'], 'OpenClaw wizard cancellation response');
+  warnOnUnknownWizardKeys(result, ['status', 'error'], 'OpenClaw wizard cancellation response');
   if (result.error !== undefined && typeof result.error !== 'string') {
     throw new Error('OpenClaw wizard cancellation response has an invalid `error`.');
   }

@@ -337,11 +337,14 @@ test('wizard client preserves Gateway option identity from the installed schema'
   assert.equal(result.step?.format, 'plain');
 });
 
-test('wizard client rejects fields and step types outside the installed schema', async () => {
+// Original intent: JunQi must never render protocol features the installed
+// OpenClaw does not have (the reverted OAuth device-code extension). That still
+// holds - unknown fields are dropped before the step reaches the UI - but a new
+// field no longer takes onboarding down with it. See AUD-01.
+test('fields outside the installed schema never reach the UI', async () => {
   for (const step of [
     { id: 'external', type: 'note', externalUrl: 'https://auth.example/device' },
     { id: 'device', type: 'note', deviceCode: { code: 'ABCD-1234' } },
-    { id: 'future', type: 'browser-approval', format: 'markdown' },
   ]) {
     const client = new OpenClawWizardClient(async () => ({
       sessionId: 'session-invalid',
@@ -349,8 +352,21 @@ test('wizard client rejects fields and step types outside the installed schema',
       status: 'running',
       step,
     }));
-    await assert.rejects(() => client.start(), /missing the next step/);
+    const result = await client.start();
+    assert.equal(result.step?.id, step.id);
+    assert.equal((result.step as unknown as Record<string, unknown>).externalUrl, undefined);
+    assert.equal((result.step as unknown as Record<string, unknown>).deviceCode, undefined);
   }
+});
+
+test('a step type outside the installed schema names itself', async () => {
+  const client = new OpenClawWizardClient(async () => ({
+    sessionId: 'session-invalid',
+    done: false,
+    status: 'running',
+    step: { id: 'future', type: 'browser-approval', format: 'markdown' },
+  }));
+  await assert.rejects(() => client.start(), /does not support/i);
 });
 
 test('wizard client rejects malformed gateway responses', async () => {
@@ -365,6 +381,8 @@ test('wizard start requires its exact installed result shape', async () => {
   }));
   await assert.rejects(() => missingSession.start(), /invalid `sessionId`/);
 
+  // An additive envelope field is tolerated: rejecting it made a single
+  // upstream addition enough to block first-run setup entirely.
   const extraField = new OpenClawWizardClient(async () => ({
     sessionId: 'session-extra',
     done: false,
@@ -372,7 +390,9 @@ test('wizard start requires its exact installed result shape', async () => {
     step: { id: 'provider', type: 'select' },
     future: true,
   }));
-  await assert.rejects(() => extraField.start(), /unknown field `future`/);
+  const tolerated = await extraField.start();
+  assert.equal(tolerated.sessionId, 'session-extra');
+  assert.equal(tolerated.step?.id, 'provider');
 });
 
 test('wizard next rejects start-only fields', async () => {
@@ -389,11 +409,14 @@ test('wizard next rejects start-only fields', async () => {
   });
 
   await client.start();
-  await assert.rejects(() => client.next('provider', 'openai'), /unknown field `sessionId`/);
-  assert.equal(client.activeSessionId, 'session-next-shape');
+  // The additive field is tolerated, but it must not be mistaken for a session
+  // handle: the client keeps the id `wizard.start` gave it.
+  await client.next('provider', 'openai');
+  assert.equal(client.activeSessionId, null, 'a terminal next clears the session');
+  assert.notEqual(client.activeSessionId, 'not-allowed');
 });
 
-test('wizard status and cancellation reject unknown result fields', async () => {
+test('wizard status and cancellation tolerate additive result fields', async () => {
   const statusClient = new OpenClawWizardClient(async (method) => {
     if (method === 'wizard.start') {
       return {
@@ -406,8 +429,10 @@ test('wizard status and cancellation reject unknown result fields', async () => 
     return { status: 'done', extra: true };
   });
   await statusClient.start();
-  await assert.rejects(() => statusClient.resume(), /unknown field `extra`/);
-  assert.equal(statusClient.activeSessionId, 'session-status-shape');
+  // The extra field is ignored, and the reported terminal `done` status is still
+  // honoured: the session is released rather than left dangling.
+  await statusClient.resume();
+  assert.equal(statusClient.activeSessionId, null);
 
   const cancelClient = new OpenClawWizardClient(async (method) => {
     if (method === 'wizard.start') {
@@ -421,8 +446,8 @@ test('wizard status and cancellation reject unknown result fields', async () => 
     return { status: 'cancelled', extra: true };
   });
   await cancelClient.start();
-  await assert.rejects(() => cancelClient.cancel(), /unknown field `extra`/);
-  assert.equal(cancelClient.activeSessionId, 'session-cancel-shape');
+  await cancelClient.cancel();
+  assert.equal(cancelClient.activeSessionId, null);
 });
 
 test('recognizes only recoverable wizard session loss errors', () => {

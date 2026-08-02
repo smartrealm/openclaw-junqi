@@ -22,6 +22,7 @@ function status(overrides: Partial<OpenclawStatus> = {}): OpenclawStatus {
     package_valid: true,
     gateway_command_ok: true,
     relocation_required: false,
+    version_beyond_verified_range: false,
     error: null,
     ...overrides,
   };
