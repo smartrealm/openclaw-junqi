@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { bytesToBase64, voiceSessionDirectory } from '@/api/tauri-adapter';
+import { bytesToBase64, voiceSessionDirectory } from '@/services/chat/voiceStoragePath';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -62,16 +62,16 @@ test('BUG-08 chunked base64 encoding handles large audio buffers', () => {
   const bytes = Uint8Array.from({ length: 180_000 }, (_, index) => index % 251);
   const expected = Buffer.from(bytes).toString('base64');
   assert.equal(bytesToBase64(bytes), expected);
-  const adapter = read('../../api/tauri-adapter.ts');
-  assert.match(adapter, /mkdir\(voiceDir, \{ recursive: true \}\)/);
-  assert.doesNotMatch(adapter, /invoke\("open_folder", \{ path: voiceDir \}\)/);
+  const files = read('../../services/chat/voiceFileRuntime.ts');
+  assert.match(files, /await mkdir\(directory, \{ recursive: true \}\)/);
+  assert.doesNotMatch(files, /open_folder/);
 });
 
 test('BUG-09 manual recorder exposes native fallback and deterministic stop', () => {
   const recorder = read('../../components/Chat/VoiceRecorder.tsx');
   const native = read('../../../src-tauri/src/commands/voice.rs');
-  assert.match(recorder, /voice\?\.startRecording/);
-  assert.match(recorder, /voice\?\.stopRecording/);
+  assert.match(recorder, /voiceFileRuntime\.startRecording\(\)/);
+  assert.match(recorder, /voiceFileRuntime\.stopRecording\(\)/);
   assert.match(native, /recv_timeout\(Duration::from_secs\(3\)\)/);
   assert.match(native, /worker\n\s*\.join\(\)/);
   assert.doesNotMatch(native, /sleep\(std::time::Duration::from_millis\(200\)\)/);
@@ -133,7 +133,7 @@ test('BUG-20 Quick Chat ownership never writes main tab state', () => {
 
 test('BUG-21 voice sends portable attachments and cleanup scopes the directory', () => {
   const composerVoice = read('../../components/Chat/message-input/useComposerVoice.ts');
-  const adapter = read('../../api/tauri-adapter.ts');
+  const files = read('../../services/chat/voiceFileRuntime.ts');
   assert.match(composerVoice, /toGatewayAttachments\(\[createPreparedAttachment\(\{[\s\S]*fileName,[\s\S]*mimeType,[\s\S]*base64,/);
   assert.doesNotMatch(composerVoice, /\[voice\] \$\{savedPath\}/);
   const hostilePath = voiceSessionDirectory('/app/data/', 'agent:main/../../main');
@@ -144,7 +144,7 @@ test('BUG-21 voice sends portable attachments and cleanup scopes the directory',
   const exactChunkPath = voiceSessionDirectory('/app/data/', 'a'.repeat(90));
   const extendedPath = voiceSessionDirectory('/app/data/', `${'a'.repeat(90)}b`);
   assert.equal(extendedPath.startsWith(`${exactChunkPath}/`), false);
-  assert.match(adapter, /cleanupSession:[\s\S]*remove\(voiceDir, \{ recursive: true \}\)/);
+  assert.match(files, /async cleanupSession[\s\S]*remove\(directory, \{ recursive: true \}\)/);
 });
 
 test('BUG-23 remote output is visible to controls, status surfaces, and native feedback suppression', () => {

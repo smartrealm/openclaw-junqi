@@ -1,20 +1,58 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-interface BusinessGuideState {
-  dismissed: boolean;
+export interface BusinessGuidePersistedState {
+  welcomeDismissed: boolean;
+}
+
+interface BusinessGuideState extends BusinessGuidePersistedState {
   tourOpen: boolean;
-  tourSeen: boolean;
-  dismiss: () => void;
-  reopen: () => void;
+  dismissWelcome: () => void;
+  openTour: () => void;
   closeTour: () => void;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+/**
+ * Version 2 stored the obsolete dismissed/tourSeen pair. Either field means
+ * the welcome was already handled, so a migration must never reopen it.
+ */
+export function migrateBusinessGuidePersistedState(
+  persistedState: unknown,
+  version: number,
+): BusinessGuidePersistedState {
+  const persisted = asRecord(persistedState);
+  const legacySeen = version <= 2
+    && (persisted.dismissed === true || persisted.tourSeen === true);
+
+  return {
+    welcomeDismissed: persisted.welcomeDismissed === true || legacySeen,
+  };
+}
+
 export const useBusinessGuideStore = create<BusinessGuideState>()(persist(
-  (set) => ({ dismissed: false, tourOpen: true, tourSeen: false, dismiss: () => set({ dismissed: true, tourOpen: false, tourSeen: true }), reopen: () => set({ dismissed: false, tourOpen: true, tourSeen: true }), closeTour: () => set({ tourOpen: false, tourSeen: true }) }),
-  { name: 'junqi:business-guide:v1', version: 2, storage: createJSONStorage(() => localStorage), merge: (persisted, current) => {
-    const saved = persisted as Partial<BusinessGuideState> | undefined;
-    const tourSeen = saved?.tourSeen === true || saved?.dismissed === true;
-    return { ...current, dismissed: saved?.dismissed === true, tourSeen, tourOpen: !tourSeen };
-  }, partialize: (state) => ({ dismissed: state.dismissed, tourSeen: state.tourSeen }) },
+  (set) => ({
+    welcomeDismissed: false,
+    tourOpen: false,
+    dismissWelcome: () => set({ welcomeDismissed: true, tourOpen: false }),
+    openTour: () => set({ tourOpen: true }),
+    closeTour: () => set({ tourOpen: false }),
+  }),
+  {
+    name: 'junqi:business-guide:v1',
+    version: 3,
+    storage: createJSONStorage(() => localStorage),
+    migrate: migrateBusinessGuidePersistedState,
+    merge: (persisted, current) => ({
+      ...current,
+      ...migrateBusinessGuidePersistedState(persisted, 3),
+      tourOpen: false,
+    }),
+    partialize: (state) => ({ welcomeDismissed: state.welcomeDismissed }),
+  },
 ));
