@@ -34,6 +34,7 @@ test('Talk conversation serializes PCM frames on its attested session', async ()
     });
   }
   assert.equal(coordinator.getSnapshot().phase, 'speaking');
+  assert.equal(coordinator.getSnapshot().sessionKey, 'agent:main:main');
 });
 
 test('Talk interruption stops local output before requesting Gateway cancellation', async () => {
@@ -57,14 +58,14 @@ test('Talk interruption stops local output before requesting Gateway cancellatio
   assert.deepEqual(calls, ['local', 'gateway']);
 });
 
-test('Talk replacement clears native output before closing the prior relay', async () => {
+test('Talk replacement cancels Gateway output after local stop and before closing the prior relay', async () => {
   const calls: string[] = [];
   let count = 0;
   const coordinator = new TalkConversationCoordinator({
     client: {
       createRealtimeRelay: async () => ({ sessionId: `talk-${++count}`, provider: 'relay' }),
       appendAudio: async () => undefined,
-      cancelOutput: async () => undefined,
+      cancelOutput: async (sessionId) => { calls.push(`cancel:${sessionId}`); },
       close: async (sessionId) => { calls.push(`close:${sessionId}`); },
       subscribe: () => () => undefined,
     },
@@ -77,8 +78,10 @@ test('Talk replacement clears native output before closing the prior relay', asy
   await coordinator.start('agent:main:main');
   calls.length = 0;
   await coordinator.start('agent:main:main');
-  assert.deepEqual(calls.slice(0, 3), ['local', 'output', 'output']);
-  assert.equal(calls.includes('close:talk-1'), true);
+  assert.ok(calls.indexOf('local') >= 0);
+  assert.ok(calls.indexOf('output') > calls.indexOf('local'));
+  assert.ok(calls.indexOf('cancel:talk-1') > calls.indexOf('output'));
+  assert.ok(calls.indexOf('close:talk-1') > calls.indexOf('cancel:talk-1'));
 });
 
 test('Talk conversation retains bounded PCM while the relay session is connecting', async () => {

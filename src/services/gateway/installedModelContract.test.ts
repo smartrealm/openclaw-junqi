@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
+import { dirname, sep } from 'node:path';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 interface RuntimeConfigSchema {
@@ -7,7 +10,10 @@ interface RuntimeConfigSchema {
 }
 
 test('pinned OpenClaw schema rejects the unsupported modelPolicy field', async () => {
-  const dist = new URL('../../../node_modules/.pnpm/openclaw@2026.7.1/node_modules/openclaw/dist/', import.meta.url);
+  const pluginRequire = createRequire(
+    new URL('../../../packages/junqi-collab/package.json', import.meta.url),
+  );
+  const dist = pathToFileURL(`${dirname(pluginRequire.resolve('openclaw'))}${sep}`);
   const schemaFile = readdirSync(dist).find((name) => /^zod-schema-[^.].*\.js$/.test(name));
   assert.ok(schemaFile, 'the pinned OpenClaw config schema bundle must exist');
 

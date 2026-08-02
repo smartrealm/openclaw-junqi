@@ -490,3 +490,23 @@ test('BUG-23 local runtime cleanup releases ownership without stopping other win
     useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
   }
 });
+
+test('native Talk playback projects speaking only for its owning session', () => {
+  const runtime = new VoiceRuntime({ subscribeControl: () => () => undefined });
+  useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
+
+  try {
+    runtime.setNativeTalkOutput('agent:main:main', true);
+    assert.equal(useVoiceStore.getState().phase, 'speaking');
+    assert.equal(useVoiceStore.getState().sessionKey, 'agent:main:main');
+
+    runtime.setNativeTalkOutput('agent:other:main', false);
+    assert.equal(useVoiceStore.getState().phase, 'speaking');
+
+    runtime.setNativeTalkOutput('agent:main:main', false);
+    assert.equal(useVoiceStore.getState().phase, 'idle');
+  } finally {
+    runtime.dispose();
+    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
+  }
+});

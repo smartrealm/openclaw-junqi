@@ -22,6 +22,7 @@
 18. Delay WAV fallback until an in-flight Talk relay reports ready or unavailable, preventing duplicate Talk and attachment delivery; retain a complete bounded VAD turn across the category and relay setup boundaries.
 19. Preserve an already verified wake-word listener when a close request arrives before workbench persistence is ready, without relaxing the normal checkpoint and PTY shutdown path.
 20. Expose the selected model's declared wake labels in the full-window Jarvis surface, saving only a non-empty model-backed subset through the fenced Gateway trigger contract.
+21. Preserve a verified KWS phrase as the barge-in signal during assistant output, while retaining VAD/browser feedback suppression; cancel old Gateway Talk output after local stop and before closing its replaced relay session.
 
 ## Current Remediation (Completed)
 

@@ -7,6 +7,7 @@ export type TalkConversationPhase = 'idle' | 'connecting' | 'listening' | 'speak
 export interface TalkConversationSnapshot {
   phase: TalkConversationPhase;
   sessionId: string | null;
+  sessionKey: string | null;
   connectionId: string | null;
   error: string | null;
 }
@@ -23,7 +24,9 @@ export interface TalkConversationDependencies {
 
 type Listener = (snapshot: TalkConversationSnapshot) => void;
 
-const INITIAL: TalkConversationSnapshot = { phase: 'idle', sessionId: null, connectionId: null, error: null };
+const INITIAL: TalkConversationSnapshot = {
+  phase: 'idle', sessionId: null, sessionKey: null, connectionId: null, error: null,
+};
 
 export class TalkConversationCoordinator {
   private snapshot = INITIAL;
@@ -79,8 +82,7 @@ export class TalkConversationCoordinator {
   }
 
   private async open(sessionKey: string): Promise<TalkConversationSnapshot> {
-    if (this.sessionKey) this.dependencies.interruptLocalOutput(this.sessionKey);
-    await Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
+    await this.interruptPriorOutput();
     await this.stop({ retainPendingFrames: true });
     const generation = ++this.generation;
     const connectionId = this.dependencies.captureConnectionId();
@@ -89,7 +91,7 @@ export class TalkConversationCoordinator {
       this.set({ ...INITIAL, phase: 'error', error: 'No attested Gateway connection is available for Talk' });
       return this.snapshot;
     }
-    this.set({ phase: 'connecting', sessionId: null, connectionId, error: null });
+    this.set({ phase: 'connecting', sessionId: null, sessionKey, connectionId, error: null });
     try {
       const session = await this.dependencies.client.createRealtimeRelay(sessionKey);
       if (generation !== this.generation || !this.dependencies.isConnectionCurrent(connectionId)) {
@@ -102,7 +104,7 @@ export class TalkConversationCoordinator {
       }
       this.sessionKey = sessionKey;
       this.unsubscribeEvents = this.dependencies.client.subscribe((event) => this.handleEvent(event));
-      this.set({ phase: 'listening', sessionId: session.sessionId, connectionId, error: null });
+      this.set({ phase: 'listening', sessionId: session.sessionId, sessionKey, connectionId, error: null });
       const pendingFrames = this.pendingFrames;
       this.pendingFrames = [];
       for (const frame of pendingFrames) this.enqueuePcm(frame);
@@ -149,6 +151,17 @@ export class TalkConversationCoordinator {
         this.set({ ...this.snapshot, phase: 'error', error: error instanceof Error ? error.message : String(error) });
       }
     });
+  }
+
+  /** Stops the audible old turn before fencing it at the selected Gateway. */
+  private async interruptPriorOutput(): Promise<void> {
+    const { sessionId } = this.snapshot;
+    const sessionKey = this.sessionKey;
+    const ownsSession = this.ownsSession();
+    if (sessionKey) this.dependencies.interruptLocalOutput(sessionKey);
+    await Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
+    if (!sessionId || !ownsSession) return;
+    await this.dependencies.client.cancelOutput(sessionId).catch(() => undefined);
   }
 
   async stop(options: { retainPendingFrames?: boolean } = {}): Promise<void> {

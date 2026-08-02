@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { bytesToBase64, voiceSessionDirectory } from '@/api/tauri-adapter';
+import { shouldAcceptVoiceWakeDuringOutput } from './VoiceWakeBargeInPolicy';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -86,13 +87,9 @@ test('BUG-15 native recorder holds one slot across replacement and installation'
   assert.match(native, /\*recorder_slot = Some\(rec\)/);
 });
 
-test('BUG-16 native VAD suppresses assistant playback feedback', () => {
-  const wake = read('../../hooks/useVoiceWake.ts');
-  assert.match(wake, /isVoiceOutputActive/);
-  assert.match(wake, /voice\.remoteOutput !== null/);
-  assert.match(wake, /suppressNativeCaptureRef\.current = isVoiceOutputActive/);
-  assert.match(wake, /if \(suppressNativeCaptureRef\.current\) \{[\s\S]*return;/);
-  assert.match(wake, /voiceRuntime\.interruptAll\(\);\s+setError\(null\)/);
+test('BUG-16 preserves KWS barge-in while suppressing unverified feedback', () => {
+  assert.equal(shouldAcceptVoiceWakeDuringOutput('Jarvis', true), true);
+  assert.equal(shouldAcceptVoiceWakeDuringOutput(null, true), false);
 });
 
 test('BUG-17 Gateway message ids own voice stream segments', () => {

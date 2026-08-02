@@ -90,6 +90,7 @@ export class VoiceRuntime {
   private readonly unsubscribeControl: () => void;
   private latestGlobalClaim: VoiceGlobalClaim | null = null;
   private ownedGlobalClaim: VoiceGlobalClaim | null = null;
+  private nativeTalkSessionKey: string | null = null;
   private claimSequence = 0;
 
   constructor(options: VoiceRuntimeOptions = {}) {
@@ -267,6 +268,22 @@ export class VoiceRuntime {
   setError(error: unknown, sessionKey: string | null = null) {
     const message = error instanceof Error ? error.message : String(error || 'Voice runtime error');
     this.setPhase('error', { sessionKey, startedAt: null, lastError: message });
+  }
+
+  /** Reflects native Gateway-relay playback without exposing its audio payload. */
+  setNativeTalkOutput(sessionKey: string, speaking: boolean) {
+    if (!sessionKey) return;
+    if (speaking) {
+      this.nativeTalkSessionKey = sessionKey;
+      this.setPhase('speaking', { sessionKey, startedAt: Date.now(), lastError: null });
+      return;
+    }
+    if (this.nativeTalkSessionKey !== sessionKey) return;
+    this.nativeTalkSessionKey = null;
+    const current = useVoiceStore.getState();
+    if (current.sessionKey === sessionKey && current.phase === 'speaking' && !this.hasLocalOutput()) {
+      this.setPhase('idle', { sessionKey, startedAt: null, lastError: null });
+    }
   }
 
   consumeStream(sessionKey: string, content: string, runId?: string | null, mediaUrl?: string) {

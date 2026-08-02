@@ -128,6 +128,19 @@ export function useComposerVoice({
     talkConversationRef.current.getSnapshot,
     talkConversationRef.current.getSnapshot,
   );
+  const projectedTalkOutputSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const sessionKey = talkConversation.sessionKey;
+    const projected = projectedTalkOutputSessionRef.current;
+    if (projected && (projected !== sessionKey || talkConversation.phase !== 'speaking')) {
+      voiceRuntime.setNativeTalkOutput(projected, false);
+      projectedTalkOutputSessionRef.current = null;
+    }
+    if (sessionKey && talkConversation.phase === 'speaking') {
+      voiceRuntime.setNativeTalkOutput(sessionKey, true);
+      projectedTalkOutputSessionRef.current = sessionKey;
+    }
+  }, [talkConversation.phase, talkConversation.sessionKey]);
   const currentContextRef = useRef<VoiceModeContext | null>(null);
   const connectionId = gateway.captureConnectionId();
   currentContextRef.current = connectionId && activeSessionKey
@@ -304,7 +317,6 @@ export function useComposerVoice({
           debugError('media', '[ComposerVoice] Could not restore the wake window:', error);
         });
         void talkConversationRef.current?.start(context.sessionKey);
-        void talkConversationRef.current?.interrupt();
         void stopAssistant();
         return true;
       };
@@ -690,6 +702,8 @@ export function useComposerVoice({
     const context = currentContextRef.current;
     activeTurnRef.current = null;
     pendingAudioCapturesRef.current.clear();
+    const projectedTalkSession = projectedTalkOutputSessionRef.current;
+    if (projectedTalkSession) voiceRuntime.setNativeTalkOutput(projectedTalkSession, false);
     void talkConversationRef.current?.stop();
     void stopVoiceWakeRef.current();
     void voiceModeCoordinator.stopOwnedTurnAndReleaseCapture(turnId, context);

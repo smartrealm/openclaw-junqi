@@ -12,6 +12,7 @@ import {
   VoiceWakeAcceptanceGate,
   type VoiceWakePcmFrame,
 } from '@/services/voice/VoiceWakeAcceptanceGate';
+import { shouldAcceptVoiceWakeDuringOutput } from '@/services/voice/VoiceWakeBargeInPolicy';
 import { useVoiceStore } from '@/stores/voiceStore';
 
 export type WakePhase = 'idle' | 'listening' | 'wake_detected' | 'transcribing' | 'error';
@@ -200,6 +201,7 @@ export function useVoiceWake({
         if (!result?.isFinal) continue;
         const transcript = (result[0]?.transcript || '').trim();
         if (!transcript) continue;
+        if (!shouldAcceptVoiceWakeDuringOutput(null, isVoiceOutputActive())) continue;
         updatePhase('transcribing');
         const callbacks = callbacksRef.current;
         callbacks.onWakeDetected?.(null);
@@ -314,12 +316,15 @@ export function useVoiceWake({
       const payload = isRecord(event.payload) ? event.payload : {};
       const st = payload.state;
       if (st === 'wake_detected') {
-        suppressNativeCaptureRef.current = isVoiceOutputActive();
-        if (suppressNativeCaptureRef.current) return;
-        updatePhase('wake_detected');
         const trigger = typeof payload.trigger === 'string' && payload.trigger.trim().length > 0
           ? payload.trigger.trim()
           : null;
+        suppressNativeCaptureRef.current = !shouldAcceptVoiceWakeDuringOutput(
+          trigger,
+          isVoiceOutputActive(),
+        );
+        if (suppressNativeCaptureRef.current) return;
+        updatePhase('wake_detected');
         const completeCapture = (wavDataUrl: string, ownerSessionKey: string | null | undefined) => {
           captureQueueRef.current.push({
             wavDataUrl,
