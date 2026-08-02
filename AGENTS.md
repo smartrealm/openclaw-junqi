@@ -92,6 +92,7 @@ cargo test --lib
 ## 测试与验证
 
 - Bug 修复必须有能在修复前失败的回归测试。优先测试行为和跨边界契约，不只做源码字符串匹配。
+- 守护测试断言契约，不断言实现的书写形式。禁止断言具体表达式文本、变量名或函数定义在文件中的偏移；确需跨语言守护时，断言可执行的语义（导出的谓词、注册表、协议字段），并按语法边界而非相邻定义名截取代码范围。判据一旦被抽取或重命名即失效的断言，说明它守的是写法而不是行为。
 - 先运行最小相关测试，再根据影响范围运行完整 TypeScript、Rust、脚本和构建验证。
 - 修改 Tauri command 时同时验证 command 注册、Rust 签名、前端 wrapper、调用方和序列化字段。
 - 修改 generated collaboration bundle 的来源后运行 `pnpm collab:bundle`，并确认生成的前端 metadata 与 `src-tauri/resources/collaboration` 一致。

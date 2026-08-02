@@ -140,9 +140,9 @@ let version_ok = version.is_some();
 
 **目标行为**：二选一，不要维持现状。要么补上停止入口（推荐，`stop_gateway` 与 `stop_docker_gateway` 已实现，仅缺 UI 与 runtime 分派），要么从注册表摘除并删除实现。`restart_local_gateway`、`docker_gateway_status`、`get_gateway_lifecycle` 三个需要单独判断是历史残留还是待接入能力。
 
-### AUD-04 · 生命周期回归测试断言 Rust 源码字符串位置
+### AUD-04 · 生命周期回归测试断言 Rust 源码字符串位置（已修复）
 
-风险等级：中。
+风险等级：中。状态：2026-08-02 已修复。
 
 **证据**：`src/services/gateway/gatewayRecoveryRegression.test.ts` 中形如：
 
@@ -157,7 +157,15 @@ gateway.indexOf('pub async fn restart_local_gateway'),
 
 **目标行为**：把这些断言改为对行为契约的断言。对纯 Rust 逻辑，用 `#[cfg(test)]` 单元测试覆盖；确需跨语言守护的顺序约束，断言可执行的语义而非源码偏移。
 
-**建议同时立约定**：在 `AGENTS.md` 的测试章节写明「守护测试断言行为与跨边界契约，不断言实现源码字符串」，避免第五次重复。
+**更正**：本条初稿把这些 `indexOf` 描述为「断言定义顺序」，不准确。它们实际是用来**切出函数体**做作用域限定，结束边界取自相邻函数名。真正的脆弱点是这个边界——插入或重排函数会静默改变被断言的范围。
+
+**修复**：新增 `rustFnBody`，按花括号配平提取单个函数体，不再依赖相邻定义名。12 处切片全部改用它。
+
+改造过程中暴露了一个此前被掩盖的问题：`BUG-GSO-01`、`BUG-GSO-02`、`BUG-GSO-08` 三条断言名义上作用于 `start_gateway`，但旧切片一直延伸到 `stop_gateway`，**实际跨越了多个函数**。被守护的启动策略真正位于 `start_gateway_locked_with_policy`，公开入口只是薄封装。三条断言已对准真正承载逻辑的函数。
+
+**验证**：提取器本身新增自测，覆盖嵌套花括号、相邻函数隔离、`pub` / `pub(crate)` / 私有三种可见性、找不到与括号不配平两种错误。
+
+**已立约定**：`AGENTS.md` 测试章节补充「守护测试断言契约，不断言实现的书写形式」，并明确禁止断言表达式文本、变量名与定义偏移，要求按语法边界截取范围。
 
 ### AUD-05 · Native 与 Docker 的生命周期操作面不对等
 

@@ -7,6 +7,36 @@ function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
+
+/**
+ * One Rust function body, delimited by brace balance rather than by whatever
+ * function happens to be defined next.
+ *
+ * These assertions used to slice from `pub async fn a` to `pub async fn b`.
+ * That silently changed scope whenever a function was inserted or reordered:
+ * the slice could swallow a neighbour and let a `doesNotMatch` fail for
+ * unrelated code, or match the wrong body entirely. The guarded behaviour never
+ * depended on definition order, so the delimiter should not either.
+ */
+function rustFnBody(fileSource: string, name: string): string {
+  const start = [`pub async fn ${name}`, `pub(crate) async fn ${name}`, `\nasync fn ${name}`]
+    .map((signature) => fileSource.indexOf(signature))
+    .find((index) => index >= 0) ?? -1;
+  if (start < 0) throw new Error(`Rust function \`${name}\` not found`);
+  const open = fileSource.indexOf('{', start);
+  if (open < 0) throw new Error(`Rust function \`${name}\` has no body`);
+  let depth = 0;
+  for (let index = open; index < fileSource.length; index += 1) {
+    const ch = fileSource[index];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return fileSource.slice(start, index + 1);
+    }
+  }
+  throw new Error(`Rust function \`${name}\` body is unbalanced`);
+}
+
 // useSetupFlow is a directory of hook modules; assert against all of them.
 function sourceDirTs(dir: string): string {
   const base = resolve(process.cwd(), dir);
@@ -44,14 +74,8 @@ test('BUG-GL01 all lifecycle writers share the operation gate', () => {
   const ensure = source('src-tauri/src/commands/ensure.rs');
   const docker = source('src-tauri/src/commands/docker.rs');
   const gatewayService = source('src-tauri/src/commands/gateway_service.rs');
-  const enableAutostart = gatewayService.slice(
-    gatewayService.indexOf('pub async fn enable_gateway_autostart'),
-    gatewayService.indexOf('pub async fn disable_gateway_autostart'),
-  );
-  const disableAutostart = gatewayService.slice(
-    gatewayService.indexOf('pub async fn disable_gateway_autostart'),
-    gatewayService.indexOf('/// The complete identity'),
-  );
+  const enableAutostart = rustFnBody(gatewayService, 'enable_gateway_autostart');
+  const disableAutostart = rustFnBody(gatewayService, 'disable_gateway_autostart');
   assert.match(gateway, /pub async fn start_gateway[\s\S]*operation_gate\.lock_owned\(\)\.await/);
   assert.match(gateway, /pub async fn restart_gateway[\s\S]*operation_gate/);
   assert.match(gateway, /pub async fn stop_gateway[\s\S]*operation_gate\.lock_owned\(\)\.await/);
@@ -214,10 +238,7 @@ test('BUG-GW-02 lifecycle ownership decisions authenticate the selected state di
 
 test('BUG-GSO-04 service restart uses the official command and native readiness budget', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
-  const restart = gateway.slice(
-    gateway.indexOf('pub async fn restart_gateway'),
-    gateway.indexOf('pub async fn restart_local_gateway'),
-  );
+  const restart = rustFnBody(gateway, 'restart_gateway');
 
   assert.match(restart, /cmd\.args\(\["gateway", "restart"\]\)/);
   assert.doesNotMatch(restart, /\["gateway", "--port", &port\.to_string\(\), "restart"\]/);
@@ -242,10 +263,10 @@ test('BUG-WIN-CWD-01 managed Gateway uses stable non-root cwd', () => {
 test('BUG-GSO-01 offline service discovery is authoritative and fail-closed', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const service = source('src-tauri/src/commands/gateway_service.rs');
-  const start = gateway.slice(
-    gateway.indexOf('pub async fn start_gateway'),
-    gateway.indexOf('pub async fn stop_gateway'),
-  );
+  // The startup policy lives in start_gateway_locked_with_policy; the public
+  // entry points are thin wrappers. The old slice spanned several functions and
+  // hid which one actually carried the guarded ordering.
+  const start = rustFnBody(gateway, 'start_gateway_locked_with_policy');
 
   assert.match(service, /OPENCLAW_STATE_DIR/);
   assert.match(service, /paths_refer_to_same_location/);
@@ -259,10 +280,7 @@ test('BUG-GSO-01 offline service discovery is authoritative and fail-closed', ()
 
 test('BUG-GSO-02 an installed selected service remains the normal startup owner', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
-  const start = gateway.slice(
-    gateway.indexOf('pub async fn start_gateway'),
-    gateway.indexOf('pub async fn stop_gateway'),
-  );
+  const start = rustFnBody(gateway, 'start_gateway_locked_with_policy');
 
   assert.match(start, /start_installed_gateway_service\([\s\S]*service_inspection/);
   assert.ok(start.indexOf('service_inspection =') < start.indexOf('is_port_available(port)'));
@@ -314,10 +332,7 @@ test('BUG-GSC04 Rust canonical state has one atomic writer', () => {
 
 test('BUG-GSC08 gateway observation is read-only while lifecycle ownership is busy', () => {
   const gatewayCommand = source('src-tauri/src/commands/gateway.rs');
-  const status = gatewayCommand.slice(
-    gatewayCommand.indexOf('pub async fn gateway_status'),
-    gatewayCommand.indexOf('pub async fn probe_gateway_port'),
-  );
+  const status = rustFnBody(gatewayCommand, 'gateway_status');
   assert.match(status, /try_lock_owned\(\)\.ok\(\)/);
   assert.match(status, /let can_reconcile = _observation_guard\.is_some\(\)/);
   assert.match(status, /GatewayObservation::ManagedChildUnready/);
@@ -376,7 +391,7 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
 
 test('BUG-ST03 storage migration waits for a free gateway port before copying', () => {
   const storage = source('src-tauri/src/commands/storage.rs');
-  const configure = storage.slice(storage.indexOf('pub async fn configure_storage'));
+  const configure = rustFnBody(storage, 'configure_storage');
   const migration = configure.slice(configure.indexOf('let rollback = StorageRollbackContext'));
   const stop = migration.indexOf('stop_all_locked_with_compensation(');
   const waitForPort = migration.indexOf('wait_for_port_free(');
@@ -423,10 +438,7 @@ test('BUG-ST04 storage progress is localized by stable keys in every locale', ()
 
 test('BUG-GSO-03 selected service restart failures are fail-closed', () => {
   const rust = source('src-tauri/src/commands/gateway.rs');
-  const restart = rust.slice(
-    rust.indexOf('pub async fn restart_gateway'),
-    rust.indexOf('pub async fn restart_local_gateway'),
-  );
+  const restart = rustFnBody(rust, 'restart_gateway');
   const selectedServiceRestart = restart.slice(restart.indexOf('let context = service_identity.command_context'));
 
   assert.match(rust, /async fn restart_managed_gateway_without_service/);
@@ -504,10 +516,7 @@ test('BUG-GSO-07 successful pending service recovery disarms the start failure g
 
 test('BUG-GSO-08 authenticated managed child reuse preserves child ownership', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
-  const start = gateway.slice(
-    gateway.indexOf('pub(crate) async fn start_gateway_locked'),
-    gateway.indexOf('pub async fn stop_gateway'),
-  );
+  const start = rustFnBody(gateway, 'start_gateway_locked_with_policy');
 
   assert.match(start, /inspect_gateway_owner\(&state\)/);
   assert.match(start, /managed_pid\.is_some\(\)[\s\S]*GatewayRuntimeMode::ManagedChild/);
@@ -554,10 +563,7 @@ test('BUG-GSO-10 Native to Docker handoff fails closed on service ownership', ()
 
 test('BUG-GL12 restart fully terminates the managed child before restarting the service', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
-  const restart = gateway.slice(
-    gateway.indexOf('pub async fn restart_gateway'),
-    gateway.indexOf('pub async fn restart_local_gateway'),
-  );
+  const restart = rustFnBody(gateway, 'restart_gateway');
 
   assert.match(restart, /terminate_owned_gateway\(&mut old\)\.await/);
   assert.match(restart, /wait_for_port_free\(port, 30_000\)\.await/);
@@ -735,10 +741,7 @@ test('Windows recovery terminates the owned process tree before a new Gateway st
 
 test('BUG-GSO-06 explicit Gateway stop handles both managed and selected-service owners', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
-  const stop = gateway.slice(
-    gateway.indexOf('pub async fn stop_gateway'),
-    gateway.indexOf('pub async fn gateway_status'),
-  );
+  const stop = rustFnBody(gateway, 'stop_gateway');
 
   assert.match(stop, /terminate_owned_gateway\(&mut child\)\.await/);
   assert.match(stop, /stop_installed_selected_gateway_service_verified/);
@@ -767,10 +770,7 @@ test('BUG-WSR-09 local diagnostic output crosses IPC only after bounded sanitiza
 
 test('BUG-WSR-13 a failed owned-port release aborts restart instead of launching another Gateway', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
-  const restart = gateway.slice(
-    gateway.indexOf('pub async fn restart_gateway'),
-    gateway.indexOf('pub async fn restart_local_gateway'),
-  );
+  const restart = rustFnBody(gateway, 'restart_gateway');
   const start = gateway.slice(
     gateway.indexOf('pub(crate) async fn start_gateway_locked'),
     gateway.indexOf('pub async fn stop_gateway'),
@@ -796,4 +796,35 @@ test('native recovery resolves the actual npm installation instead of profile-di
   assert.match(search, /configured_npm_prefix/);
   assert.match(paths, /npm_bin_dir_for_prefix/);
   assert.doesNotMatch(search, /AppData|ProgramFiles|homebrew/);
+});
+
+// The extractor is load-bearing for every scoped assertion above, so it needs
+// its own coverage: a silently wrong slice would make those assertions pass or
+// fail for reasons unrelated to the behaviour they guard.
+test('rustFnBody scopes to one function regardless of neighbours', () => {
+  const fixture = [
+    'pub async fn alpha(a: u8) -> u8 {',
+    '    if a > 0 { return 1; }',
+    '    0',
+    '}',
+    '',
+    'pub(crate) async fn beta() -> u8 {',
+    '    2',
+    '}',
+    '',
+    'async fn gamma() -> u8 { 3 }',
+  ].join('\n');
+
+  const alpha = rustFnBody(fixture, 'alpha');
+  assert.match(alpha, /return 1;/);
+  // Nested braces do not end the body early, and the neighbour is excluded.
+  assert.doesNotMatch(alpha, /beta/);
+  assert.ok(alpha.trimEnd().endsWith('}'));
+
+  assert.match(rustFnBody(fixture, 'beta'), /2/);
+  assert.doesNotMatch(rustFnBody(fixture, 'beta'), /gamma/);
+  assert.match(rustFnBody(fixture, 'gamma'), /3/);
+
+  assert.throws(() => rustFnBody(fixture, 'missing'), /not found/);
+  assert.throws(() => rustFnBody('pub async fn broken() {', 'broken'), /unbalanced/);
 });
