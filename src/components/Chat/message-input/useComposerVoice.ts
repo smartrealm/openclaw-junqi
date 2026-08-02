@@ -14,6 +14,7 @@ import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { useChatStore } from '@/stores/chatStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { debugError } from '@/utils/debugLog';
+import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
 
 function estimateWavDuration(base64: string): number {
   try {
@@ -107,7 +108,7 @@ export function useComposerVoice({
     try {
       const extension = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'webm';
       const fileName = `voice-${Date.now()}.${extension}`;
-      await window.aegis?.voice?.save?.(fileName, base64, sessionKey).catch(() => null);
+      await voiceFileRuntime.save(sessionKey, fileName, base64);
       const attachments = toGatewayAttachments([createPreparedAttachment({
         fileName,
         mimeType,

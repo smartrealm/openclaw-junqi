@@ -85,7 +85,7 @@ import {
 } from './terminalPtyHandoff';
 import { combineUnlisteners, hasTauriEventBridge, subscribeTauriEvent, subscribeTauriEventReady } from '@/utils/tauriEvents';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { PERSISTENT_NOTIFICATIONS_CHANGED_EVENT } from '@/hooks/usePersistentNotifications';
+import { usePersistentNotificationPublisher } from '@/hooks/usePersistentNotificationPublisher';
 import { Code2, Plus, Terminal as TerminalIcon, X, SplitSquareHorizontal, SplitSquareVertical, RotateCcw } from "lucide-react";
 import { useI18n } from "./i18n-fallback";
 import { PaneStatusBar } from "./PaneStatusBar";
@@ -1452,6 +1452,10 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
   ) {
     const { t } = useI18n();
     const addToast = useNotificationStore((state) => state.addToast);
+    const {
+      publish: publishPersistentNotification,
+      markRead: markPersistentNotificationRead,
+    } = usePersistentNotificationPublisher();
     const isRemoteWorkspace = Boolean(sshHost?.trim());
     const initialStateRef = useRef<{ shells: ShellSession[]; activeShellId: string | null; nextIndex: number } | null>(null);
     if (!initialStateRef.current) {
@@ -2511,7 +2515,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                     && activeShellIdRef.current === shell.id
                     && document.visibilityState === 'visible'
                     && document.hasFocus();
-                  void invoke<{ id: string }>('push_notification', {
+                  void publishPersistentNotification({
                     level: notification.level,
                     agent: notification.agent,
                     title: notification.title,
@@ -2521,13 +2525,12 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                     .then(async (created) => {
                       if (visible && created?.id) {
                         try {
-                          await invoke('mark_notification_read', { id: created.id });
+                          await markPersistentNotificationRead(created.id);
                         } catch {
                           // The notification itself is durable even if the
                           // visibility read-state write races a shutdown.
                         }
                       }
-                      window.dispatchEvent(new Event(PERSISTENT_NOTIFICATIONS_CHANGED_EVENT));
                     })
                     .catch((error) => debugError('terminal', 'persist terminal notification failed:', error));
                 }}

@@ -4,62 +4,14 @@
 // ═══════════════════════════════════════════════════════════
 
 import { gateway } from './index';
-import { startDockerGateway } from '@/api/tauri-commands';
-import type { ConnectionTarget, GatewayStartResult } from './types';
-import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import {
-  getGatewayDeviceCredentialForUrl,
-  migrateLegacyGatewayCredential,
-  resolveGatewayCredentialRuntimeKey,
-} from './credentialProvider';
+  startDockerGateway,
+  startGateway,
+} from '@/api/tauri-commands';
+import type { GatewayStartResult } from './types';
+import { resolveGatewayConnectionTarget as resolveConnectionTarget } from './GatewayConnectionTargetResolver';
 
-const DEFAULT_URL = defaultGatewayWsUrl();
-
-/** Resolve the WebSocket URL and token from config + user settings. */
-export async function resolveConnectionTarget(): Promise<ConnectionTarget> {
-  const userUrl = getGatewayUrlSetting();
-
-  let wsUrl = userUrl || DEFAULT_URL;
-  let bootstrapToken = '';
-  let configuredDeviceToken = '';
-
-  if (window.aegis?.config) {
-    try {
-      const config = await window.aegis.config.get();
-      const configUrl = config.gatewayUrl || config.gatewayWsUrl || DEFAULT_URL;
-      wsUrl = userUrl || configUrl;
-      // New desktop adapters expose the shared config token separately. The
-      // gatewayToken fallback keeps older preload/test adapters compatible.
-      bootstrapToken = typeof config.gatewayBootstrapToken === 'string'
-        ? config.gatewayBootstrapToken
-        : (config.gatewayToken || '');
-      configuredDeviceToken = config.gatewayDeviceToken || '';
-    } catch {}
-  }
-
-  const runtimeKey = resolveGatewayCredentialRuntimeKey(wsUrl);
-  let credential = await migrateLegacyGatewayCredential(runtimeKey);
-  if (!credential.token) {
-    credential = await getGatewayDeviceCredentialForUrl(wsUrl);
-  }
-  const deviceToken = credential.token || configuredDeviceToken;
-
-  const httpUrl = wsUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
-  return { wsUrl, token: bootstrapToken, deviceToken, httpUrl };
-}
-
-function getGatewayUrlSetting(): string {
-  try {
-    const direct = localStorage.getItem('aegis-gateway-url')?.trim();
-    if (direct) return direct;
-    const config = JSON.parse(localStorage.getItem('aegis-config') || '{}');
-    return typeof config.gatewayUrl === 'string'
-      ? config.gatewayUrl.trim()
-      : (typeof config.gatewayWsUrl === 'string' ? config.gatewayWsUrl.trim() : '');
-  } catch {
-    return '';
-  }
-}
+export { resolveConnectionTarget };
 
 /** Execute a CONNECT action: resolve target + open WebSocket. */
 export async function executeConnect(
@@ -78,14 +30,11 @@ export async function executeConnect(
   gateway.connect(target.wsUrl, target.token, target.deviceToken);
 }
 
-/** Execute a START action: call gateway.start() via Tauri. */
+/** Execute a START action against the currently selected OpenClaw runtime. */
 export async function executeStart(): Promise<GatewayStartResult> {
-  if (!window.aegis?.gateway?.start) {
-    return { success: false, error: 'Gateway start not available' };
-  }
   try {
-    const result = await window.aegis.gateway.start();
-    return result;
+    const result = await startGateway();
+    return { ...result, success: true };
   } catch (error) {
     return {
       success: false,

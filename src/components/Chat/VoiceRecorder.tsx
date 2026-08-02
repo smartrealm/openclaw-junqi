@@ -6,6 +6,7 @@ import { getDirection } from '@/i18n';
 import clsx from 'clsx';
 import { debugError } from '@/utils/debugLog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
 
 // ═══════════════════════════════════════════════════════════
 // VoiceRecorder — capture a portable audio payload in the WebView or native host.
@@ -49,10 +50,8 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
 
   const stopNativeCapture = useCallback(() => {
     if (nativeStopPromiseRef.current) return nativeStopPromiseRef.current;
-    const stop = window.aegis?.voice?.stopRecording;
-    if (typeof stop !== 'function') return Promise.resolve();
     const pending = Promise.resolve()
-      .then(() => stop())
+      .then(() => voiceFileRuntime.stopRecording())
       .then(() => undefined, () => undefined);
     nativeStopPromiseRef.current = pending;
     void pending.finally(() => {
@@ -335,10 +334,9 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
       // WKWebView and locked-down desktop shells may expose neither
       // getUserMedia nor MediaRecorder. Use the native cpal recorder when the
       // bridge provides it, while keeping the same send callback contract.
-      const nativeStart = window.aegis?.voice?.startRecording;
-      if (typeof nativeStart === 'function') {
+      {
         try {
-          const result = await nativeStart();
+          const result = await voiceFileRuntime.startRecording();
           if (!isCurrentAttempt()) {
             if (result?.success) await stopNativeCapture();
             return;
@@ -403,7 +401,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
     setSaving(true);
     try {
       if (backendRef.current === 'native') {
-        const result = await window.aegis?.voice?.stopRecording?.();
+        const result = await voiceFileRuntime.stopRecording();
         backendRef.current = null;
         setNativeBackend(false);
         setRecording(false);

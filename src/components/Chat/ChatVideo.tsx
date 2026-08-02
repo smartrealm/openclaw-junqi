@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { debugError, debugLog } from '@/utils/debugLog';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { saveChatMedia } from '@/services/chat/mediaSaveRuntime';
 
 // ═══════════════════════════════════════════════════════════
 // ChatVideo — Video display with controls, save, and fullscreen
@@ -63,7 +64,7 @@ function extractFilename(src: string, alt?: string): string {
 // ── Save video via Electron IPC ──
 async function saveVideo(src: string, suggestedName: string): Promise<void> {
   try {
-    const result = await (window.aegis as any)?.video?.save?.(src, suggestedName);
+    const result = await saveChatMedia(src, suggestedName);
     if (result?.success) {
       debugLog('media', '[ChatVideo] Saved to:', result.path);
     } else {

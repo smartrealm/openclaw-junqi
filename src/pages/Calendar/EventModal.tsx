@@ -10,7 +10,7 @@ import { useCalendarStore } from '@/stores/calendarStore';
 import { toDateStr } from './calendarUtils';
 import { ALL_CATEGORIES, REMINDER_PRESETS } from './calendarTypes';
 import type { CalendarEvent, EventCategory, RecurrenceFreq, DeliveryChannel } from './calendarTypes';
-import { runtimeChannelIds, type ChannelsRuntimeSnapshot } from '@/services/openclawChannelRuntime';
+import { loadOfficialChannelStatus, runtimeChannelIds } from '@/services/openclawChannelRuntime';
 
 interface EventModalProps {
   onClose: () => void;
@@ -74,9 +74,9 @@ export function EventModal({ onClose, initialDate, editEvent }: EventModalProps)
 
   useEffect(() => {
     let cancelled = false;
-    window.aegis.channelRuntime.status(undefined, false)
+    loadOfficialChannelStatus(undefined, false)
       .then((snapshot) => {
-        if (!cancelled) setRuntimeChannels(runtimeChannelIds(snapshot as ChannelsRuntimeSnapshot));
+        if (!cancelled) setRuntimeChannels(runtimeChannelIds(snapshot));
       })
       .catch(() => { if (!cancelled) setRuntimeChannels([]); });
     return () => { cancelled = true; };

@@ -16,6 +16,11 @@ import {
   resolveLocalFileReference,
   type LocalFilePreview,
 } from '@/services/chat/filePreview';
+import {
+  localManagedFileExists,
+  openLocalManagedFile,
+  revealLocalManagedFile,
+} from '@/services/chat/managedFileRuntime';
 import { debugError, debugWarn } from '@/utils/debugLog';
 import { ManagedFilePreview } from '@/components/FileExplorer/ManagedFilePreview';
 
@@ -54,12 +59,8 @@ async function resolveExistingFilePath(path: string): Promise<string> {
   const candidate = resolveWorkspacePath(path);
   if (!candidate) return candidate;
 
-  const existsApi = window.aegis?.managedFiles?.exists;
-  if (typeof existsApi !== 'function') return candidate;
-
   try {
-    const result = await existsApi(candidate);
-    if (result?.success && result.exists) return candidate;
+    if (await localManagedFileExists(candidate)) return candidate;
   } catch {
     // keep original candidate when existence check fails
   }
@@ -98,16 +99,7 @@ function FileRow({ file }: { file: FileRef }) {
   const handleOpen = async () => {
     try {
       const openPath = await resolveExistingFilePath(path);
-      // Tauri: use plugin-shell open (system default handler)
-      try {
-        const { open } = await import('@tauri-apps/plugin-shell');
-        await open(openPath);
-        return;
-      } catch { /* not Tauri or blocked — fall through */ }
-      const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
-      if (openManagedPath) { await openManagedPath(openPath); return; }
-      const url = openPath.startsWith('file://') ? openPath : `file://${openPath}`;
-      window.open(url, '_blank');
+      if (!await openLocalManagedFile(openPath)) throw new Error('Managed file open failed');
     } catch (err) {
       debugError('media', '[FileResultCard] open file failed:', err);
       addToast('info', t('resultCards.open'), t('errors.occurred'));
@@ -145,14 +137,7 @@ function FileRow({ file }: { file: FileRef }) {
   const handleReveal = async () => {
     try {
       const revealPath = await resolveExistingFilePath(path);
-      // Tauri: macOS `open -R` reveals in Finder
-      try {
-        const { Command } = await import('@tauri-apps/plugin-shell');
-        await Command.create('open', ['-R', revealPath]).execute();
-        return;
-      } catch { /* fall through */ }
-      const revealManagedPath = window.aegis?.managedFiles?.reveal || window.aegis?.uploads?.reveal;
-      await revealManagedPath?.(revealPath);
+      if (!await revealLocalManagedFile(revealPath)) throw new Error('Managed file reveal failed');
     } catch (err) {
       debugError('media', '[FileResultCard] reveal file failed:', err);
     }
@@ -171,8 +156,7 @@ function FileRow({ file }: { file: FileRef }) {
   const handleOpenMarkdownLink = useCallback(async (href: string) => {
     const resolved = resolveLocalFileReference(href, path, file.workspaceRoot);
     if (!resolved) return;
-    const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
-    if (openManagedPath) await openManagedPath(resolved);
+    await openLocalManagedFile(resolved);
   }, [file.workspaceRoot, path]);
 
   const resolveMarkdownImage = useCallback(

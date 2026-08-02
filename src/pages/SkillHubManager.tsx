@@ -13,7 +13,6 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useEffect, useMemo, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import {
   Blocks, FolderOpen, Trash2, Plus, AlertTriangle,
@@ -21,50 +20,23 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import {
+  clearSkillHub,
+  deleteSkillHubSkill,
+  installSkillHubSkill,
+  listSkillHubInstallationsFor,
+  loadSkillHubState,
+  setSkillHubPath,
+  uninstallSkillHubSkill,
+  type SkillHubConfig,
+  type SkillHubConflict,
+  type SkillHubInstallation,
+  type SkillHubSkill,
+} from '@/services/skillHubRuntime';
 
-interface SkillHubConfig {
-  hubProjectId?: string | null;
-  hubPath?: string | null;
-  createdAt?: number | null;
-}
-
-interface Skill {
-  name: string;
-  displayName?: string;
-  description?: string;
-  path: string;
-  hasError?: string;
-}
-
-interface SkillInstallation {
-  skillName: string;
-  projectId: string;
-  agent: string;
-  installedAt: number;
-  linkPath: string;
-  targetPath: string;
-  health?: string;
-}
-
-interface SkillConflict {
-  existingKind: string;
-  existingTarget?: string | null;
-  linkPath: string;
-}
-
-interface InstallResult {
-  ok: boolean;
-  conflict?: SkillConflict | null;
-  alreadyInstalled?: boolean;
-  skipped?: boolean;
-  cancelled?: boolean;
-  installation?: SkillInstallation | null;
-}
-
-interface DeleteResult {
-  ok: boolean;
-  removedLinks: number;
-}
+type Skill = SkillHubSkill;
+type SkillInstallation = SkillHubInstallation;
+type SkillConflict = SkillHubConflict;
 
 function healthColor(h: string | undefined): string {
   switch (h) {
@@ -111,15 +83,11 @@ export function SkillHubManager() {
     setLoading(true);
     setError(null);
     try {
-      const [cfg, list, ins] = await Promise.all([
-        invoke<SkillHubConfig>('get_skill_hub_config'),
-        invoke<Skill[]>('list_skills'),
-        invoke<SkillInstallation[]>('list_skill_installations', { skillName: null }),
-      ]);
-      setConfig(cfg);
-      setHubInput(cfg.hubPath ?? '');
-      setSkills(list);
-      setInstallations(ins);
+      const state = await loadSkillHubState();
+      setConfig(state.config);
+      setHubInput(state.config.hubPath ?? '');
+      setSkills(state.skills);
+      setInstallations(state.installations);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -146,7 +114,7 @@ export function SkillHubManager() {
     setPending(true);
     setError(null);
     try {
-      await invoke('set_skill_hub_path', { path: hubInput.trim() });
+      await setSkillHubPath(hubInput.trim());
       await refresh();
     } catch (e) {
       setError(String(e));
@@ -159,7 +127,7 @@ export function SkillHubManager() {
     setPending(true);
     setError(null);
     try {
-      await invoke('clear_skill_hub');
+      await clearSkillHub();
       await refresh();
     } catch (e) {
       setError(String(e));
@@ -181,7 +149,7 @@ export function SkillHubManager() {
     setPending(true);
     setError(null);
     try {
-      const res = await invoke<InstallResult>('install_skill', {
+      const res = await installSkillHubSkill({
         skillName: skill.name,
         skillPath: skill.path,
         projectId: projectId.trim(),
@@ -198,7 +166,7 @@ export function SkillHubManager() {
       }
       await refresh();
       if (refreshManage) {
-        const next = await invoke<SkillInstallation[]>('list_skill_installations', { skillName: skill.name });
+        const next = await listSkillHubInstallationsFor(skill.name);
         setManageInstallations(next);
       }
     } catch (e) {
@@ -219,10 +187,7 @@ export function SkillHubManager() {
     setPending(true);
     setError(null);
     try {
-      await invoke<DeleteResult>('delete_skill', {
-        skillName: skill.name,
-        skillPath: skill.path,
-      });
+      await deleteSkillHubSkill(skill.name, skill.path);
       await refresh();
     } catch (e) {
       setError(String(e));
@@ -236,7 +201,7 @@ export function SkillHubManager() {
     setManageProject('');
     setManageAgent('claude');
     try {
-      const ins = await invoke<SkillInstallation[]>('list_skill_installations', { skillName: skill.name });
+      const ins = await listSkillHubInstallationsFor(skill.name);
       setManageInstallations(ins);
     } catch { setManageInstallations([]); }
   };
@@ -254,7 +219,7 @@ export function SkillHubManager() {
     setPending(true);
     setError(null);
     try {
-      const result = await invoke<InstallResult>('install_skill', {
+      const result = await installSkillHubSkill({
         skillName: pendingConflict.skill.name,
         skillPath: pendingConflict.skill.path,
         projectId: pendingConflict.projectId,
@@ -267,7 +232,7 @@ export function SkillHubManager() {
       }
       await refresh();
       if (pendingConflict.refreshManage) {
-        const next = await invoke<SkillInstallation[]>('list_skill_installations', { skillName: pendingConflict.skill.name });
+        const next = await listSkillHubInstallationsFor(pendingConflict.skill.name);
         setManageInstallations(next);
       }
     } catch (reason) {
@@ -280,13 +245,13 @@ export function SkillHubManager() {
   const handleManageRemove = async (ins: SkillInstallation) => {
     setPending(true);
     try {
-      await invoke('uninstall_skill', {
+      await uninstallSkillHubSkill({
         skillName: ins.skillName,
         projectId: ins.projectId,
         agent: ins.agent,
       });
       await refresh();
-      const updated = await invoke<SkillInstallation[]>('list_skill_installations', { skillName: ins.skillName });
+      const updated = await listSkillHubInstallationsFor(ins.skillName);
       setManageInstallations(updated);
     } catch (e) { setError(String(e)); }
     finally { setPending(false); }

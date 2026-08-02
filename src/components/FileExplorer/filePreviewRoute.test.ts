@@ -37,9 +37,9 @@ test('root filesystem routes still accept descendants', () => {
 
 test('terminal file opening and file-manager routing use the shared preview route', () => {
   const terminal = readFileSync(new URL('../../pages/TerminalPage/index.tsx', import.meta.url), 'utf8');
-  const fileManager = readFileSync(new URL('../../pages/FileManager.tsx', import.meta.url), 'utf8');
+  const fileManager = readFileSync(new URL('../../pages/file-manager/WorkspaceFileManager.tsx', import.meta.url), 'utf8');
   assert.match(terminal, /navigate\(createFilePreviewRoute\(root, filePath\)\)/);
   assert.match(terminal, /<TerminalWorkspaceFiles[\s\S]*onFileOpen=\{\(entry\) => onOpenFile\(entry\.path\)\}/);
-  assert.match(fileManager, /parseFilePreviewRoute\(new URLSearchParams\(fileRouteKey\)\)/);
-  assert.match(fileManager, /if \(route\.file\) openTreeFile\(route\.file\.path, route\.file\.name\)/);
+  assert.match(fileManager, /parseFilePreviewRoute\(new URLSearchParams\(routeKey\)\)/);
+  assert.match(fileManager, /if \(route\.file\) openFile\(route\.file\.path, route\.file\.name\)/);
 });

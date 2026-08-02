@@ -7,6 +7,7 @@ import clsx from 'clsx';
 import { debugError } from '@/utils/debugLog';
 import { Icon } from '@/components/shared/icons';
 import { fileExtension, workspaceFileKind } from '@/workspace-files/domain/fileKinds';
+import { openLocalManagedFile } from '@/services/chat/managedFileRuntime';
 
 const CodeBlock = lazy(() => import('./CodeBlock').then((module) => ({ default: module.CodeBlock })));
 const ChatImage = lazy(() => import('./ChatImage').then((module) => ({ default: module.ChatImage })));
@@ -126,13 +127,7 @@ function FileCard({
 
   const handleOpen = async () => {
     try {
-      const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
-      if (openManagedPath) {
-        await openManagedPath(path);
-        return;
-      }
-      const url = path.startsWith('file://') ? path : `file://${path}`;
-      window.open(url, '_blank');
+      if (!await openLocalManagedFile(path)) throw new Error('Managed file open failed');
     } catch (error) {
       debugError('media', '[ChatMarkdownRenderer] Failed to open file path:', error);
     }
@@ -255,9 +250,8 @@ const markdownComponents: Components = {
         onClick={async (event) => {
           event.preventDefault();
           if (!linkHref) return;
-          const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
-          if (isLocalFilePath(linkHref) && openManagedPath) {
-            await openManagedPath(linkHref);
+          if (isLocalFilePath(linkHref)) {
+            await openLocalManagedFile(linkHref);
             return;
           }
           await openExternalHref(linkHref);

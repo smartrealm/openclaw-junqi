@@ -1,15 +1,12 @@
+import {
+  createOpenClawMediaPreviewUrl,
+  type OpenClawMediaPreviewResult,
+} from '@/api/tauri-commands';
+
 export const OPENCLAW_MEDIA_SOURCE_PREFIX = 'aegis-media:';
 
-export interface OpenClawMediaPreviewResult {
-  success: boolean;
-  url?: string | null;
-  error?: string | null;
-}
-
-export interface OpenClawMediaPreviewBridge {
-  openclawMedia?: {
-    createPreview?: (path: string) => Promise<OpenClawMediaPreviewResult>;
-  };
+export interface OpenClawMediaPreviewReader {
+  createPreview: (path: string) => Promise<OpenClawMediaPreviewResult>;
 }
 
 export function openClawMediaPath(source: string): string | null {
@@ -18,10 +15,9 @@ export function openClawMediaPath(source: string): string | null {
   return path || null;
 }
 
-function defaultBridge(): OpenClawMediaPreviewBridge | undefined {
-  if (typeof window === 'undefined') return undefined;
-  return window.aegis;
-}
+const nativePreviewReader: OpenClawMediaPreviewReader = {
+  createPreview: createOpenClawMediaPreviewUrl,
+};
 
 /**
  * Resolves an OpenClaw transcript MediaPath through the native, state-scoped
@@ -29,14 +25,13 @@ function defaultBridge(): OpenClawMediaPreviewBridge | undefined {
  */
 export async function resolveOpenClawMediaPreviewUrl(
   source: string,
-  bridge: OpenClawMediaPreviewBridge | undefined = defaultBridge(),
+  reader: OpenClawMediaPreviewReader = nativePreviewReader,
 ): Promise<string | null> {
   const path = openClawMediaPath(source);
-  const createPreview = bridge?.openclawMedia?.createPreview;
-  if (!path || !createPreview) return null;
+  if (!path) return null;
 
   try {
-    const result = await createPreview(path);
+    const result = await reader.createPreview(path);
     return result.success && typeof result.url === 'string' && result.url.length > 0
       ? result.url
       : null;

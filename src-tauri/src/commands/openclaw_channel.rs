@@ -45,7 +45,6 @@ pub struct OfficialChannelCatalog {
 #[serde(rename_all = "camelCase")]
 pub struct OfficialChannelPluginInstallResult {
     channel: String,
-    npm_spec: String,
     already_installed: bool,
     installed: bool,
 }
@@ -83,6 +82,24 @@ fn catalog_entry_is_installed(payload: &Value, channel: &str) -> bool {
         == Some(true)
 }
 
+/// The renderer receives capability, never package selection. Rust remains the
+/// sole authority for which channel id maps to which reviewed npm package.
+fn catalog_payload_with_managed_install_capability(payload: &Value) -> Value {
+    let mut catalog = payload.clone();
+    let Some(chat) = catalog.get_mut("chat").and_then(Value::as_object_mut) else {
+        return catalog;
+    };
+    for (channel, entry) in chat {
+        let Some(entry) = entry.as_object_mut() else {
+            continue;
+        };
+        if managed_external_channel_plugin(channel).is_some() {
+            entry.insert("managedInstall".to_string(), Value::Bool(true));
+        }
+    }
+    catalog
+}
+
 /// Install one JunQi-managed external channel plugin through OpenClaw.
 ///
 /// This intentionally does not call a package's ad-hoc `npx` installer:
@@ -105,7 +122,6 @@ pub async fn install_openclaw_channel_plugin(
     if catalog_entry_is_installed(&initial_catalog, plugin.channel_id) {
         return Ok(OfficialChannelPluginInstallResult {
             channel: plugin.channel_id.to_string(),
-            npm_spec: plugin.npm_spec.to_string(),
             already_installed: true,
             installed: true,
         });
@@ -131,7 +147,6 @@ pub async fn install_openclaw_channel_plugin(
 
     Ok(OfficialChannelPluginInstallResult {
         channel: plugin.channel_id.to_string(),
-        npm_spec: plugin.npm_spec.to_string(),
         already_installed: false,
         installed: true,
     })
@@ -149,7 +164,10 @@ pub async fn get_openclaw_channel_catalog() -> Result<OfficialChannelCatalog, St
     };
     Ok(OfficialChannelCatalog {
         version,
-        chat: payload.get("chat").cloned().unwrap_or_else(|| json!({})),
+        chat: catalog_payload_with_managed_install_capability(&payload)
+            .get("chat")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
     })
 }
 
@@ -250,6 +268,43 @@ mod tests {
         assert_eq!(dingtalk.npm_spec, "@dingtalk-real-ai/dingtalk-connector");
         assert!(managed_external_channel_plugin("future-channel").is_none());
         assert!(managed_external_channel_plugin("dingtalk-connector;whoami").is_none());
+    }
+
+    #[test]
+    fn catalog_exposes_managed_install_capability_without_exposing_package_selection() {
+        let catalog = catalog_payload_with_managed_install_capability(&json!({
+            "chat": {
+                "dingtalk-connector": { "installed": false },
+                "telegram": { "installed": false }
+            }
+        }));
+        assert_eq!(
+            catalog["chat"]["dingtalk-connector"]["managedInstall"],
+            Value::Bool(true)
+        );
+        assert!(catalog["chat"]["telegram"].get("managedInstall").is_none());
+        assert!(
+            catalog
+                .to_string()
+                .contains("@dingtalk-real-ai/dingtalk-connector")
+                == false
+        );
+    }
+
+    #[test]
+    fn install_result_exposes_channel_state_without_the_selected_npm_package() {
+        let result = OfficialChannelPluginInstallResult {
+            channel: "dingtalk-connector".to_string(),
+            already_installed: false,
+            installed: true,
+        };
+        let payload = serde_json::to_value(result).expect("install result serializes");
+        assert_eq!(
+            payload["channel"],
+            Value::String("dingtalk-connector".to_string())
+        );
+        assert_eq!(payload["installed"], Value::Bool(true));
+        assert!(payload.get("npmSpec").is_none());
     }
 
     #[test]

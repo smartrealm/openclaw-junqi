@@ -9,8 +9,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
-
-interface WindowSource { id: string; name: string; thumbnail: string; }
+import { screenshotRuntime, type ScreenshotWindowSource } from '@/services/chat/screenshotRuntime';
 
 interface ScreenshotPickerProps { open: boolean; onClose: () => void; onCapture: (dataUrl: string) => void; }
 
@@ -18,7 +17,7 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
   const { t } = useTranslation();
   const { language } = useSettingsStore();
   const dir = getDirection(language);
-  const [windows, setWindows] = useState<WindowSource[]>([]);
+  const [windows, setWindows] = useState<ScreenshotWindowSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [capturing, setCapturing] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -42,12 +41,8 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
   const [interacting, setInteracting] = useState(false);
 
   const tryInteractive = async (generation = ++operationGeneration.current) => {
-    const api = (window.aegis?.screenshot as any)?.captureInteractive as
-      | (() => Promise<{ success: boolean; data?: string; cancelled?: boolean; tccDenied?: boolean }>)
-      | undefined;
-    if (!api) return;
     setInteracting(true);
-    const result = await api();
+    const result = await screenshotRuntime.captureInteractive();
     if (operationGeneration.current !== generation) return;
     setInteracting(false);
     if (result?.success && result.data) { onCapture(result.data); onClose(); return; }
@@ -56,10 +51,9 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
 
   const loadWindows = async (generation: number) => {
     try {
-      const sources = await (window.aegis?.screenshot as any)?.getSources?.()
-        || await window.aegis?.screenshot.getWindows() || null;
+      const sources = await screenshotRuntime.listWindows();
       if (operationGeneration.current !== generation) return;
-      if (Array.isArray(sources)) setWindows(sources.filter((w: WindowSource) => w.name));
+      setWindows(sources);
     } catch {} finally {
       if (operationGeneration.current === generation) setLoading(false);
     }
@@ -69,7 +63,7 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
     const generation = ++operationGeneration.current;
     setCapturing('screen');
     try {
-      const r: any = await window.aegis?.screenshot.capture?.();
+      const r = await screenshotRuntime.captureFullscreen();
       if (operationGeneration.current !== generation) return;
       if (r?.success && r.data) { onCapture(r.data); onClose(); return; }
       if (r?.tccDenied) setPermissionDenied(true);
@@ -82,9 +76,9 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
     const generation = ++operationGeneration.current;
     setCapturing(id);
     try {
-      const r: any = await window.aegis?.screenshot.captureWindow(id);
+      const r = await screenshotRuntime.captureWindow(id);
       if (operationGeneration.current !== generation) return;
-      if (r?.success && r.data) { onCapture(r.data); onClose(); }
+      if (r.success && r.data) { onCapture(r.data); onClose(); }
     } catch {} finally {
       if (operationGeneration.current === generation) setCapturing(null);
     }

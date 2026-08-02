@@ -4,7 +4,6 @@ import {
   buildChannelSetupCommand,
   channelLinkMode,
   isOpenClawChannelIdentifier,
-  managedExternalChannelPlugin,
   normalizeOfficialChannelCapability,
   normalizeOfficialChannelCatalog,
   redactChannelSecrets,
@@ -72,13 +71,15 @@ describe('openclawChannelRuntime', () => {
     assert.equal(isOpenClawChannelIdentifier('account;delete'), false);
   });
 
-  test('labels only the reviewed DingTalk package as a managed external plugin', () => {
-    assert.deepEqual(managedExternalChannelPlugin('dingtalk-connector'), {
-      channelId: 'dingtalk-connector',
-      npmSpec: '@dingtalk-real-ai/dingtalk-connector',
+  test('reads managed installation authority only from the native catalog payload', () => {
+    const catalog = normalizeOfficialChannelCatalog({
+      chat: {
+        'runtime-managed': { installed: false, managedInstall: true },
+        'runtime-setup-only': { installed: false },
+      },
     });
-    assert.equal(managedExternalChannelPlugin('telegram'), null);
-    assert.equal(managedExternalChannelPlugin('dingtalk-connector;whoami'), null);
+    assert.equal(catalog.entries.find((entry) => entry.id === 'runtime-managed')?.managedInstall, true);
+    assert.equal(catalog.entries.find((entry) => entry.id === 'runtime-setup-only')?.managedInstall, false);
   });
 
   test('recursively redacts nested channel credentials', () => {

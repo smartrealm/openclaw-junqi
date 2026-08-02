@@ -6,7 +6,7 @@ const previewPane = readFileSync(new URL("./FilePreviewPane.tsx", import.meta.ur
 const documentHook = readFileSync(new URL("./useWorkspaceFileDocument.ts", import.meta.url), "utf8");
 const capabilities = readFileSync(new URL("./fileViewerCapabilities.ts", import.meta.url), "utf8");
 const explorer = readFileSync(new URL("./FileExplorer.tsx", import.meta.url), "utf8");
-const fileManager = readFileSync(new URL("../../pages/FileManager.tsx", import.meta.url), "utf8");
+const fileManager = readFileSync(new URL("../../pages/file-manager/WorkspaceFileManager.tsx", import.meta.url), "utf8");
 
 test("BUG-FILE-STALE-01 an open file follows the file on disk", () => {
   // The pane loaded once and never looked again: an agent writing to the
@@ -45,7 +45,7 @@ test("BUG-FILE-STALE-02 a tab whose file disappeared is taken down", () => {
 
   // FileManager remains the legacy FileViewer host and closes missing tabs.
   // The new AI workspace owns documents through EditorDocumentManager instead.
-  assert.match(fileManager, /onFileMissing=\{closeTreeTab\}/);
+  assert.match(fileManager, /onFileMissing=\{closeTab\}/);
   const documentManager = readFileSync(
     new URL("../../workspace-files/services/editorDocumentManager.ts", import.meta.url),
     "utf8",

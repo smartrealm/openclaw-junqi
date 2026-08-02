@@ -6,6 +6,7 @@ import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersisten
 import { useAgentWorkspaceTaskEvents } from '@/hooks/useAgentWorkspaceTaskEvents';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkbenchSessionPersistence } from '@/workbench/session/useWorkbenchSessionPersistence';
+import { projectChatNotification } from '@/services/gateway/chatNotificationProjection';
 
 const AppRoutes = lazy(() => import('@/AppRoutes'));
 const PetRuntime = lazy(() => import('@/pet/PetRuntime'));
@@ -28,7 +29,16 @@ import {
 import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { openSelectedGatewayControlUi } from '@/services/gateway/GatewayControlUi';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
+import {
+  resolveGatewayConnectionTarget,
+  storeGatewayConnectionDeviceCredential,
+} from '@/services/gateway/GatewayConnectionTargetResolver';
+import {
+  loadGatewayProcessLogs,
+  observeSelectedGatewayProcess,
+} from '@/services/gateway/gatewayProcessObservation';
 import {
   gatewayProgress,
   type GatewayRecoveryProgress,
@@ -48,6 +58,7 @@ import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { readActiveOpenclawConfig } from '@/services/openclawConfigRuntime';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
@@ -67,7 +78,12 @@ function LazyPetRuntimeHost() {
   );
 }
 
-async function notifyLazy(options: { type: 'message' | 'task_complete' | 'info' | 'error'; title: string; body: string }) {
+async function notifyLazy(options: {
+  type: 'message' | 'task_complete' | 'info' | 'error';
+  title: string;
+  body: string;
+  dedupeKey?: string;
+}) {
   const mod = await import('@/services/notifications');
   mod.notifications.notify(options);
 }
@@ -382,8 +398,7 @@ export default function App() {
       new GatewayModelsListLoader((m, p) => gateway.call(m, p)),
       new ConfigGetLoader((m, p) => gateway.call(m, p)),
       new FileReadLoader(async () => {
-        if (!window.aegis?.config?.read) return null;
-        const { data } = await window.aegis.config.read();
+        const { data } = await readActiveOpenclawConfig();
         return { data };
       }),
       new AgentsSessionLoader(() => gateway.getSessions(), () => gateway.getAgents()),
@@ -391,13 +406,11 @@ export default function App() {
 
     const models = await chain.load(ctx);
     try {
-      if (window.aegis?.config?.read) {
-        const { data } = await window.aegis.config.read();
-        const profiles = Object.keys(data?.auth?.profiles ?? {}).length;
-        const providers = Object.keys(data?.models?.providers ?? {}).length;
-        const modelDefs = Object.keys(data?.agents?.defaults?.models ?? {}).length;
-        localStorage.setItem('aegis-provider-health', JSON.stringify({ profiles, providers, modelDefs, loadedModels: models.length }));
-      }
+      const { data } = await readActiveOpenclawConfig();
+      const profiles = Object.keys(data?.auth?.profiles ?? {}).length;
+      const providers = Object.keys(data?.models?.providers ?? {}).length;
+      const modelDefs = Object.keys(data?.agents?.defaults?.models ?? {}).length;
+      localStorage.setItem('aegis-provider-health', JSON.stringify({ profiles, providers, modelDefs, loadedModels: models.length }));
     } catch {}
     setAvailableModels(models);
   }, [setAvailableModels]);
@@ -488,7 +501,7 @@ export default function App() {
   }, []);
 
   const restartGatewayFromBoot = useCallback(async (diagnostic?: string, source = 'app-recovery') => {
-    if (!window.aegis?.gateway?.retry) {
+    if (!hasTauriEventBridge()) {
       const message = 'Gateway restart is unavailable in this runtime.';
       emitGatewayProgress(gatewayProgress.restartUnavailable());
       setGatewayBootError(message);
@@ -510,10 +523,8 @@ export default function App() {
       emitGatewayProgress(gatewayProgress.restartFailed(message));
       setGatewayBootError(message);
       openControlUiAfterRecoveryRef.current = false;
-      const logs = await window.aegis.gateway.getLogs?.(80);
-      if (logs) {
-        setGatewayBootLogs(formatGatewayLogs(logs));
-      }
+      const logs = await loadGatewayProcessLogs(80);
+      setGatewayBootLogs(formatGatewayLogs(logs));
       return false;
     }
   }, [addBootRecoveryLog, emitGatewayProgress]);
@@ -537,7 +548,7 @@ export default function App() {
       return;
     }
     if (!coldStartRecoveryActive || coldStartRecoveryCompletedRef.current || bootRecoveryStartedRef.current) return;
-    if (!window.aegis?.gateway?.retry) return; // not under Tauri — nothing to restart
+    if (!hasTauriEventBridge()) return; // Browser previews do not own a Gateway runtime.
     bootRecoveryStartedRef.current = true;
 
     let cancelled = false;
@@ -569,17 +580,17 @@ export default function App() {
       if (useChatStore.getState().connected) return;
       addBootRecoveryLog('Checking local Gateway status before recovery…');
       try {
-        const status = await window.aegis?.gateway?.getStatus?.();
+        const status = await observeSelectedGatewayProcess();
         if (cancelled || useChatStore.getState().connected) return;
-        if (status?.running && !status.error) {
+        if (status.ready) {
           cancelGatewayMigrationRetry();
           addBootRecoveryLog('Gateway process is running; reconnecting WebSocket quietly…');
           emitGatewayProgress(gatewayProgress.processDetected());
           try { gatewayManager.reconnect(); } catch {}
           return;
         }
-        addBootRecoveryLog(`Gateway status is not ready: ${status?.error ?? 'not running'}`);
-        await startGatewayRecovery(status?.error ?? 'not running');
+        addBootRecoveryLog(`Gateway status is not ready: ${status.error ?? 'not running'}`);
+        await startGatewayRecovery(status.error ?? 'not running');
         return;
       } catch (err) {
         if (cancelled || useChatStore.getState().connected) return;
@@ -661,15 +672,9 @@ export default function App() {
         if (sessionKey !== currentSessionKey) {
           incrementSessionUnread(sessionKey);
         }
-        // Notify when app is minimized/background OR user is on a different page
-        const isOnChat = window.location.hash === '#/chat' || window.location.hash.startsWith('#/chat?');
-        if (!document.hasFocus() || !isOnChat) {
-          void notifyLazy({
-            type: 'message',
-            title: t('notifications.newMessage'),
-            body: msg.content.substring(0, 120),
-          });
-        }
+        // This generic callback can mirror either an active stream or durable
+        // transcript. It updates chat state only; notification publication is
+        // restricted to the identity-bearing stream/transcript projections.
       },
       onStreamChunk: (sessionKey, messageId, content, media, runId) => {
         if (sessionKey === useChatStore.getState().activeSessionKey) {
@@ -716,13 +721,24 @@ export default function App() {
         if (meta?.refreshHistory && historyLoader) refreshDurableTranscript(sessionKey);
         // Refresh session metadata (token usage, model) after a stream completes.
         void loadSessions();
-        // Notify (sound + toast) when app is minimized/background OR user is on a different page
+        // Notify when app is minimized/background OR user is on a different page.
         const isOnChat = window.location.hash === '#/chat' || window.location.hash.startsWith('#/chat?');
-        if (!document.hasFocus() || !isOnChat) {
+        const notification = projectChatNotification({
+          source: 'stream-final',
+          sessionKey,
+          role: 'assistant',
+          text: content,
+          runId: meta?.runId,
+          nativeMessageId: messageId,
+        });
+        if ((!document.hasFocus() || !isOnChat) && notification) {
           void notifyLazy({
-            type: 'task_complete',
-            title: t('notifications.replyComplete'),
-            body: content.substring(0, 120),
+            type: notification.kind,
+            title: notification.kind === 'task_complete'
+              ? t('notifications.replyComplete')
+              : t('notifications.newMessage'),
+            body: notification.body,
+            dedupeKey: notification.dedupeKey,
           });
         }
       },
@@ -760,13 +776,25 @@ export default function App() {
         }
         const isOnChat = window.location.hash === '#/chat'
           || window.location.hash.startsWith('#/chat?');
-        if (!document.hasFocus() || !isOnChat || notice.sessionKey !== currentSessionKey) {
+        const notification = projectChatNotification({
+          source: 'transcript',
+          sessionKey: notice.sessionKey,
+          role: notice.role,
+          text: notice.text,
+          runId: notice.runId,
+          clientMessageId: notice.clientMessageId,
+          nativeMessageId: notice.nativeMessageId,
+          messageSeq: notice.messageSeq,
+          liveProjected: notice.liveProjected,
+        });
+        if ((!document.hasFocus() || !isOnChat || notice.sessionKey !== currentSessionKey) && notification) {
           void notifyLazy({
-            type: notice.role === 'assistant' ? 'task_complete' : 'message',
-            title: notice.role === 'assistant'
+            type: notification.kind,
+            title: notification.kind === 'task_complete'
               ? t('notifications.replyComplete')
               : t('notifications.newMessage'),
-            body: notice.text.substring(0, 120),
+            body: notification.body,
+            dedupeKey: notification.dedupeKey,
           });
         }
       },
@@ -954,18 +982,15 @@ export default function App() {
         setGatewayBootLogs(undefined);
         if (openControlUiAfterRecoveryRef.current) {
           openControlUiAfterRecoveryRef.current = false;
-          const openingControlUi = window.aegis?.consoleUi?.open();
-          if (openingControlUi) {
-            void openingControlUi.then((result) => {
-              if (!result.success) {
-                void addToastLazy(
-                  'error',
-                  t('settings.controlUi', 'Control UI'),
-                  t('offline.controlUiUnavailable', '暂时无法打开 Control UI，请完成 Gateway 恢复后重试。'),
-                );
-              }
-            }).catch(() => undefined);
-          }
+          void openSelectedGatewayControlUi().then((result) => {
+            if (!result.success) {
+              void addToastLazy(
+                'error',
+                t('settings.controlUi', 'Control UI'),
+                t('offline.controlUiUnavailable', '暂时无法打开 Control UI，请完成 Gateway 恢复后重试。'),
+              );
+            }
+          });
         }
       }
     });
@@ -1062,10 +1087,8 @@ export default function App() {
   // ── Pairing Handlers ──
   const handlePairingComplete = useCallback(async (token: string) => {
     debugLog('gateway', '[App] [pairing] Pairing complete - reconnecting with new token');
-    // Save token to config via IPC
-    if (window.aegis?.pairing?.saveToken) {
-      await window.aegis.pairing.saveToken(token);
-    }
+    const target = await resolveGatewayConnectionTarget();
+    await storeGatewayConnectionDeviceCredential(target.wsUrl, token);
     // Reconnect gateway with new token
     gatewayManager.reconnectWithToken(token);
     setPairingIssue(null);

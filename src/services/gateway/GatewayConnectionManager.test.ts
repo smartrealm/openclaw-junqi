@@ -5,27 +5,13 @@ import { GatewayState, type GatewayStateSnapshot } from './types';
 
 type DeferredStart = (result: { success: boolean; error?: string }) => void;
 
-function installGatewayBridge(overrides: Record<string, unknown> = {}): () => void {
-  const host = window as any;
-  const previous = host.aegis;
-  host.aegis = {
-    gateway: {
-      onStatusChanged: () => () => {},
-      ...overrides,
-    },
-  };
-  return () => {
-    host.aegis = previous;
-  };
-}
-
 test('BUG-GSC09 ensure rejection commits a visible error instead of retrying forever', async () => {
-  const restore = installGatewayBridge({
-    ensureRunning: async () => {
-      throw new Error('native ensure failed');
-    },
+  const manager = new GatewayConnectionManager(undefined, {
+    observe: async () => ({ running: false, processAlive: false, ready: false, retrying: false, error: null, logs: { stdout: '', stderr: '' } }),
+    subscribe: () => () => {},
+    ensure: async () => { throw new Error('native ensure failed'); },
+    restart: async () => ({ success: true }),
   });
-  const manager = new GatewayConnectionManager();
   const snapshots: GatewayStateSnapshot[] = [];
   try {
     manager.init();
@@ -40,16 +26,16 @@ test('BUG-GSC09 ensure rejection commits a visible error instead of retrying for
     assert.match(snapshots.at(-1)?.error ?? '', /native ensure failed/);
   } finally {
     manager.destroy();
-    restore();
   }
 });
 
 test('BUG-GSC09 superseded setup start rejects and a later start can run', async () => {
   const starts: DeferredStart[] = [];
-  const restore = installGatewayBridge({
+  const manager = new GatewayConnectionManager({
+    connect: async () => undefined,
     start: () => new Promise((resolve) => starts.push(resolve)),
+    startDocker: async () => ({ success: true }),
   });
-  const manager = new GatewayConnectionManager();
   try {
     manager.init();
     const first = manager.startForSetup();
@@ -65,6 +51,5 @@ test('BUG-GSC09 superseded setup start rejects and a later start can run', async
     await assert.rejects(second, /second start reached native bridge/);
   } finally {
     manager.destroy();
-    restore();
   }
 });

@@ -84,6 +84,7 @@ import {
 } from './providerModelMutations';
 import {
   loadOfficialProviderCatalog,
+  loadOfficialProviderAuthProfiles,
   providerCatalogModels as filterOfficialProviderModels,
   type ProviderProbeRequest,
   type ProviderProbeSummary,
@@ -753,12 +754,6 @@ export function applyProviderAddition(
     preferProviderConfig: storeSecretInProviderConfig,
   });
 
-  if (key && tmpl?.envKey && !storeSecretInProviderConfig) {
-    window.aegis?.agentAuth?.syncMain?.([
-      { provider: providerId, profileKey: normalizedProfileKey, apiKey: key, mode: normalizedProfile.mode ?? (normalizedProfile as any).type ?? 'api_key' },
-    ]);
-  }
-
   if (storeSecretInProviderConfig) {
     const providerApiKeyRef = providerConfig?.apiKey
       ?? (key ? `\${${providerApiKeyEnvKey}}` : currentProviderCfg.apiKey);
@@ -1266,9 +1261,9 @@ function ProfileRow({
       setOfficialAuthReady(false);
       return;
     }
-    window.aegis.providerRuntime.authProfiles(providerId)
-      .then((result) => {
-        if (!cancelled) setOfficialAuthReady(result.profiles.some((candidate) => candidate.id === profileKey));
+    loadOfficialProviderAuthProfiles(providerId)
+      .then((profiles) => {
+        if (!cancelled) setOfficialAuthReady(profiles.some((candidate) => candidate.id === profileKey));
       })
       .catch(() => { if (!cancelled) setOfficialAuthReady(false); });
     return () => { cancelled = true; };
@@ -2358,8 +2353,7 @@ function ConfigureStep({
     setLoadingOfficialAuth(true);
     setOfficialAuthError('');
     try {
-      const result = await window.aegis.providerRuntime.authProfiles(effectiveProviderId);
-      setOfficialAuthProfiles(Array.isArray(result.profiles) ? result.profiles : []);
+      setOfficialAuthProfiles(await loadOfficialProviderAuthProfiles(effectiveProviderId));
     } catch (error: any) {
       setOfficialAuthProfiles([]);
       setOfficialAuthError(error?.message || String(error));

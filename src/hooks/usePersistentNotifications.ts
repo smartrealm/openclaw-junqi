@@ -1,25 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { NotificationOperationGate } from './notificationOperationGate';
+import {
+  PERSISTENT_NOTIFICATIONS_CHANGED_EVENT,
+  persistentNotificationRepository,
+  type PersistentNotificationItem,
+  type PersistentNotificationResult,
+} from '@/services/persistentNotifications';
 
-export const PERSISTENT_NOTIFICATIONS_CHANGED_EVENT = 'junqi:notifications-changed';
+export { PERSISTENT_NOTIFICATIONS_CHANGED_EVENT };
 
-export interface PersistentNotificationItem {
-  id: string;
-  level: string;
-  title: string;
-  body: string;
-  bodyZh: string | null;
-  agent?: string | null;
-  url: string | null;
-  createdAt: string;
-  isRead: boolean;
-}
-
-export interface PersistentNotificationResult {
-  notifications: PersistentNotificationItem[];
-  unreadCount: number;
-}
+export type { PersistentNotificationItem, PersistentNotificationResult };
 
 export function withNotificationRead(
   result: PersistentNotificationResult | null,
@@ -101,7 +91,7 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
     setLoading(true);
     setError(null);
     try {
-      const next = await invoke<PersistentNotificationResult>('get_notifications');
+      const next = await persistentNotificationRepository.list();
       if (mountedRef.current && operationGateRef.current.canCommitRefresh(generation)) setResult(next);
     } catch (cause) {
       if (mountedRef.current && operationGateRef.current.canCommitRefresh(generation)) setError(String(cause));
@@ -131,8 +121,7 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
   }, [pollIntervalMs, refresh]);
 
   const runMutation = useCallback(async (
-    command: string,
-    args: Record<string, unknown> | undefined,
+    operation: () => Promise<void>,
     optimisticUpdate: () => void,
   ) => {
     operationGateRef.current.beginMutation();
@@ -141,7 +130,7 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
     optimisticUpdate();
     let succeeded = false;
     try {
-      await invoke(command, args);
+      await operation();
       succeeded = true;
     } catch (cause) {
       mutationErrorRef.current = String(cause);
@@ -158,16 +147,14 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
 
   const markRead = useCallback(async (id: string) => {
     await runMutation(
-      'mark_notification_read',
-      { id },
+      () => persistentNotificationRepository.markRead(id),
       () => setResult((current) => withNotificationRead(current, id)),
     );
   }, [runMutation]);
 
   const markAllRead = useCallback(async () => {
     await runMutation(
-      'mark_all_notifications_read',
-      undefined,
+      () => persistentNotificationRepository.markReadMany(),
       () => setResult((current) => withAllNotificationsRead(current)),
     );
   }, [runMutation]);
@@ -176,16 +163,14 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
     const selected = [...new Set(ids.filter(Boolean))];
     if (selected.length === 0) return;
     await runMutation(
-      'mark_all_notifications_read',
-      { ids: selected },
+      () => persistentNotificationRepository.markReadMany(selected),
       () => setResult((current) => withNotificationsRead(current, selected)),
     );
   }, [runMutation]);
 
   const clear = useCallback(async () => {
     await runMutation(
-      'clear_notifications',
-      undefined,
+      () => persistentNotificationRepository.clear(),
       () => setResult({ notifications: [], unreadCount: 0 }),
     );
   }, [runMutation]);
@@ -194,8 +179,7 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
     const selected = [...new Set(ids.filter(Boolean))];
     if (selected.length === 0) return;
     await runMutation(
-      'clear_notifications',
-      { ids: selected },
+      () => persistentNotificationRepository.clear(selected),
       () => setResult((current) => withoutNotifications(current, selected)),
     );
   }, [runMutation]);

@@ -6,7 +6,9 @@
 
 ## 结论
 
-工作台、智能体工作区和文件管理器目录模式已经共用 `FileViewer`。仍然各自为阵的是托管输出/上传文件与聊天文件结果：两者读取相同的本地文件，却分别维护格式集合、加载状态和 Markdown/媒体/HTML 渲染。终端文件树则绕过应用内预览，直接交给系统默认应用。
+工作台、智能体工作区和文件管理器目录模式共用 `FileViewer`。终端文件树通过受根目录约束的路由进入同一预览器。聊天文件结果仍保持只读预览，不冒充可编辑工作区文档。
+
+2026-08-02 复核确认：Rust 只注册了受限的打开、显示、存在检查、目录读取、文本读取和 scoped preview command，并没有上传/输出索引、删除、另存为或会话清理 command。此前文件管理页以空 `uploads` 兼容对象和参数不匹配的 `managedFiles.list` 伪装这些能力，现已删除该入口，不再向用户展示不可执行操作。
 
 记忆详情、聊天正文和生成式 artifact 是领域内容，不是可定位、可保存的工作区文件。它们不能伪装成 `FileViewer` 文档；其中 Markdown 可以复用安全渲染器，HTML artifact 必须继续使用无脚本 sandbox。
 
@@ -57,7 +59,7 @@ CodeMirror 上游要求 `.cm-scroller` 横向 flex、gutter 不收缩，但应�
 ## 统一边界
 
 - 可编辑工作区文件：继续使用 `FileViewer`、typed Tauri IPC 和保存冲突保护。
-- 只读托管文件：复用统一加载联合类型和 `ManagedFilePreview`，不赋予编辑/保存语义。
+- 无 Rust 索引契约的托管上传/输出：不提供列表、删除、另存为或清理入口。未来必须先定义受目录边界、会话归属、保留策略和 command 返回类型的 Rust 契约。
 - HTML 文件：只允许短期 scoped URL 的 `allow-scripts`，静态 fallback 保持空 sandbox。
 - 生成式 HTML/SVG artifact：不是本地文件，继续使用空 sandbox。
 - 记忆详情和聊天正文：不是文件预览，不增加文件工具栏或保存状态。
@@ -72,10 +74,9 @@ CodeMirror 上游要求 `.cm-scroller` 横向 flex、gutter 不收缩，但应�
 
 ## 实施结果
 
-- 新增 `ManagedFilePreview`，托管输出、上传文件和聊天文件结果共用 HTML、Markdown、text、image、audio、video 与 PDF 渲染分支。
-- `loadLocalFilePreview` 成为托管文件唯一加载入口；格式集合、scoped URL 和文本 fallback 不再由页面重复维护。
+- 聊天文件结果保持只读 `ManagedFilePreview` 与 `loadLocalFilePreview`，格式集合、scoped URL 和文本 fallback 不由聊天页面重复维护。
 - 删除 `ResultMarkdownPreview` 与 `FileMarkdownPreview`；Markdown 统一复用 `MarkdownPreview`，并支持根目录约束下的相对图片和本地链接。
-- 文件管理器把三组 effect 收敛为路径绑定的 `loading/ready/failed` 状态，快速切换文件不会闪现上一文件内容。
+- 文件管理器移除无后端契约的托管索引状态，拆为页面壳与 `WorkspaceFileManager`；工作区树、标签、重命名、删除、保存保护和终端联动只保留一条真实 IPC 路径。
 - HTML 交互预览继续使用短期 scoped URL 与 `allow-scripts`；静态 fallback 和生成式 artifact 保持空 sandbox。
 - 聊天文件结果补齐 PDF、音频和视频，与文件管理器使用相同的可预览判断。
 - 终端文件树通过 `view=tree&path=...&file=...` 进入文件管理器，共享 `FileViewer`；路由拒绝根目录之外的目标文件。

@@ -193,7 +193,8 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     try {
       const clientMessageId = createClientMessageId();
       const prepared = await Promise.all(files.filter((file) => !file.isDir).map(async (seed) => {
-        const file = await window.aegis?.file?.read(seed.path);
+        const { desktopFileRuntime } = await import('@/services/chat/desktopFileRuntime');
+        const file = await desktopFileRuntime.readAttachment(seed.path);
         if (!file) throw new Error(`Unable to read ${seed.name}`);
         return createPreparedAttachment({
           fileName: file.name,

@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, BookOpenText, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, type LucideIcon } from 'lucide-react';
+import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -378,7 +378,9 @@ function WorkbenchPanel() {
   const sendingBySession = useChatStore((st) => st.sendingBySession);
   const [nowMs, setNowMs] = useState(Date.now());
   const [backgroundUserOpen, setBackgroundUserOpen] = useState(false);
+  const [archivedOpen, setArchivedOpen] = useState(false);
   const [preferredBucket, setPreferredBucket] = useState<SessionBucketKey>(readPreferredSessionBucket);
+  const setSessionArchived = useChatStore((state) => state.setSessionArchived);
 
   // Per-session first user message, keyed for O(1) lookups during render.
   // Without this we'd have to walk messagesPerSession on every session row.
@@ -400,6 +402,10 @@ function WorkbenchPanel() {
     [cronJobs, sessions],
   );
   const visibleSessions = presentation.conversations;
+  const archivedSessions = useMemo(
+    () => sortSessionsByActivity(sessions.filter((session) => session.archived)),
+    [sessions],
+  );
   const activityProjection = useMemo(() => projectSessionActivity({
     sessions: sessions.filter((session) => !session.archived),
     activeSessionKey: activeKey,
@@ -597,6 +603,48 @@ function WorkbenchPanel() {
             </div>
           );
         })}
+
+        {archivedSessions.length > 0 && (
+          <div className="mt-2 border-t border-aegis-border/70 pt-2">
+            <button
+              type="button"
+              onClick={() => setArchivedOpen((current) => !current)}
+              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] font-semibold text-aegis-text-dim transition-colors hover:text-aegis-text-secondary"
+              aria-expanded={archivedOpen}
+            >
+              {archivedOpen ? <ChevronDown size={11} className="opacity-60" /> : <ChevronRight size={11} className="opacity-60" />}
+              <ArchiveRestore size={12} className="opacity-70" />
+              <span className="min-w-0 flex-1 truncate">{t('sidebar.archivedSessions')}</span>
+              <span className="font-mono text-[10.5px] text-aegis-text-dim/70">{archivedSessions.length}</span>
+            </button>
+            {archivedOpen && archivedSessions.map((session) => (
+              <div key={session.key} className="group/archived-session flex items-center gap-1 px-2 py-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSessionArchived(session.key, false);
+                    cleanupEmptyActiveSession(session.key);
+                    useChatStore.getState().openTab(session.key);
+                    navigate('/chat');
+                  }}
+                  className="min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:bg-aegis-hover/35 hover:text-aegis-text-secondary"
+                  title={sessionTitle(session, firstUserByKey[session.key])}
+                >
+                  {sessionTitle(session, firstUserByKey[session.key])}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSessionArchived(session.key, false)}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-aegis-text-dim opacity-0 transition-opacity hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:opacity-100 group-hover/archived-session:opacity-100"
+                  title={t('sidebar.restoreSession')}
+                  aria-label={t('sidebar.restoreSession')}
+                >
+                  <ArchiveRestore size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {backgroundTotal > 0 && (

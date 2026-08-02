@@ -44,17 +44,27 @@ test('assistant Markdown typography scales with the available viewport', () => {
 
 test('CHAT-14 persisted OpenClaw media uses a state-scoped preview bridge', () => {
   const image = source('src/components/Chat/ChatImage.tsx');
-  const adapter = source('src/api/tauri-adapter.ts');
+  const mediaPreview = source('src/services/chat/openclawMediaPreview.ts');
+  const commands = source('src/api/tauri-commands.ts');
   const previewCommand = source('src-tauri/src/commands/openclaw_media_preview.rs');
   assert.match(image, /resolveOpenClawMediaPreviewUrl\(src\)/);
-  assert.match(image, /if \(window\.aegis\?\.openclawMedia\)/);
-  assert.match(adapter, /create_openclaw_media_preview_url/);
-  assert.match(adapter, /junqi-preview:/);
+  assert.doesNotMatch(image, /window\.aegis\?\.openclawMedia/);
+  assert.match(mediaPreview, /createOpenClawMediaPreviewUrl/);
+  assert.match(commands, /create_openclaw_media_preview_url/);
   assert.match(previewCommand, /media_state_dirs_for_preview/);
   assert.match(previewCommand, /create_exact_preview_url_for_file/);
   assert.match(previewCommand, /outside the active OpenClaw media directory/);
   const config = JSON.parse(source('src-tauri/tauri.conf.json'));
   assert.match(config.app.security.csp, /connect-src[^;]*junqi-preview/);
+});
+
+test('CHAT-17 native file actions never fall back to the retired uploads bridge', () => {
+  const resultCards = source('src/components/Chat/ResultCards.tsx');
+  const markdown = source('src/components/Chat/ChatMarkdownRenderer.tsx');
+  const gateway = source('src/services/gateway/index.ts');
+  assert.doesNotMatch(resultCards, /uploads\?\.(?:open|reveal)/);
+  assert.doesNotMatch(markdown, /uploads\?\.open/);
+  assert.doesNotMatch(gateway, /uploads\?\.cleanupSession/);
 });
 
 test('CHAT-03 composer state and prepared attachments are keyed by session', () => {

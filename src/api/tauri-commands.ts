@@ -19,6 +19,7 @@ import type {
   CollaborationBootstrapResult,
   CollaborationBootstrapStatus,
 } from '@/types/collaborationBootstrap';
+import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
 
 export type RuntimeToolSource = 'system' | 'custom';
 export interface NodeStatus { available: boolean; version: string | null; path: string | null; source: RuntimeToolSource | null; }
@@ -60,6 +61,25 @@ export interface GatewayConfigInfo {
   runtime_mode: GatewayRuntimeMode;
   credential_scope: string;
 }
+export interface GatewayProcessStatus {
+  running: boolean;
+  port: number;
+  pid: number | null;
+  token: string | null;
+}
+export interface BrokenGatewayPlugin {
+  id: string;
+  version: string | null;
+  reason: string;
+  detail: string | null;
+}
+export interface PluginHealOutcome {
+  id: string;
+  healed: boolean;
+  attempted: string[];
+  error: string | null;
+}
+export type GatewayRecoveryRecommendation = 'retry' | 'repair' | 'inspect_config' | 'select_storage';
 export interface TerminalIntegrationStatus {
   requested: boolean;
   enabled: boolean;
@@ -99,6 +119,130 @@ export interface OpenclawUpdateResult {
   npmRegistryKind: 'official' | 'chinaMirror' | null;
   error: string | null;
 }
+
+export interface PersistentNotificationItem {
+  id: string;
+  level: string;
+  title: string;
+  body: string;
+  bodyZh: string | null;
+  agent?: string | null;
+  dedupeKey?: string | null;
+  url: string | null;
+  createdAt: string;
+  isRead: boolean;
+}
+
+export interface PersistentNotificationResult {
+  notifications: PersistentNotificationItem[];
+  unreadCount: number;
+}
+
+export interface PersistentNotificationPushResult {
+  item: PersistentNotificationItem;
+  inserted: boolean;
+}
+
+export interface PersistentNotificationInput {
+  level: string;
+  title: string;
+  body: string;
+  url?: string | null;
+  agent?: string | null;
+  dedupeKey?: string | null;
+}
+
+export const getPersistentNotifications = () => (
+  invoke<PersistentNotificationResult>('get_notifications')
+);
+export const pushPersistentNotification = (notification: PersistentNotificationInput) => (
+  invoke<PersistentNotificationPushResult>('push_notification', {
+    level: notification.level,
+    title: notification.title,
+    body: notification.body,
+    url: notification.url ?? null,
+    agent: notification.agent ?? null,
+    dedupeKey: notification.dedupeKey ?? null,
+  })
+);
+export const markPersistentNotificationRead = (id: string) => (
+  invoke<void>('mark_notification_read', { id })
+);
+export const markPersistentNotificationsRead = (ids?: readonly string[]) => (
+  invoke<void>('mark_all_notifications_read', ids ? { ids: [...ids] } : {})
+);
+export const clearPersistentNotifications = (ids?: readonly string[]) => (
+  invoke<void>('clear_notifications', ids ? { ids: [...ids] } : {})
+);
+
+export interface SkillHubConfig {
+  hubProjectId?: string | null;
+  hubPath?: string | null;
+  createdAt?: number | null;
+}
+
+export interface SkillHubSkill {
+  name: string;
+  displayName?: string;
+  description?: string;
+  path: string;
+  hasError?: string;
+}
+
+export interface SkillHubInstallation {
+  skillName: string;
+  projectId: string;
+  agent: string;
+  installedAt: number;
+  linkPath: string;
+  targetPath: string;
+  health?: string;
+}
+
+export interface SkillHubConflict {
+  existingKind: string;
+  existingTarget?: string | null;
+  linkPath: string;
+}
+
+export interface SkillHubInstallResult {
+  ok: boolean;
+  conflict?: SkillHubConflict | null;
+  alreadyInstalled?: boolean;
+  skipped?: boolean;
+  cancelled?: boolean;
+  installation?: SkillHubInstallation | null;
+}
+
+export interface SkillHubDeleteResult {
+  ok: boolean;
+  removedLinks: number;
+}
+
+export type SkillHubInstallStrategy = 'detect' | 'skip' | 'overwrite' | 'cancel';
+
+export const getSkillHubConfig = () => invoke<SkillHubConfig>('get_skill_hub_config');
+export const setSkillHubPath = (path: string) => invoke('set_skill_hub_path', { path });
+export const clearSkillHub = () => invoke<void>('clear_skill_hub');
+export const listSkillHubSkills = () => invoke<SkillHubSkill[]>('list_skills');
+export const listSkillHubInstallations = (skillName?: string) => (
+  invoke<SkillHubInstallation[]>('list_skill_installations', { skillName: skillName ?? null })
+);
+export const installSkillHubSkill = (input: {
+  skillName: string;
+  skillPath: string;
+  projectId: string;
+  agent: 'claude' | 'codex';
+  strategy: SkillHubInstallStrategy;
+}) => invoke<SkillHubInstallResult>('install_skill', input);
+export const uninstallSkillHubSkill = (input: {
+  skillName: string;
+  projectId: string;
+  agent: string;
+}) => invoke<void>('uninstall_skill', input);
+export const deleteSkillHubSkill = (skillName: string, skillPath: string) => (
+  invoke<SkillHubDeleteResult>('delete_skill', { skillName, skillPath })
+);
 
 export interface CollaborationMaintenanceOwner {
   owner: string;
@@ -140,6 +284,10 @@ export const checkGit = () => invoke<GitStatus>("check_git");
 export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");
 export const checkOpenclawUpdate = () => invoke<OpenclawUpdateStatus>("check_openclaw_update");
 export const updateOpenclaw = () => invoke<OpenclawUpdateResult>("update_openclaw");
+export const repairOpenclaw = () => invoke<boolean>('repair_openclaw');
+export const diagnoseGatewayRecovery = (error: string) => (
+  invoke<GatewayRecoveryRecommendation>('diagnose_gateway_recovery', { error })
+);
 /** Durable per-installation owner used to recover a persisted collaboration lease. */
 export const getCollaborationMaintenanceOwner = (legacyOwner?: string) => invoke<CollaborationMaintenanceOwner>(
   "get_collaboration_maintenance_owner",
@@ -170,12 +318,246 @@ export const applyTerminalIntegration = () => invoke<TerminalIntegrationStatus>(
 export const startGateway = (port?: number) => (
   port == null ? invoke<GatewayStatus>("start_gateway") : invoke<GatewayStatus>("start_gateway", { port })
 );
+export const restartGateway = (port?: number) => (
+  port == null ? invoke<GatewayStatus>('restart_gateway', {}) : invoke<GatewayStatus>('restart_gateway', { port })
+);
 export const checkDocker = () => invoke<DockerStatus>("check_docker");
 export const pullOpenclawImage = (tag?: string, operationId?: string) => (
   invoke<string>("pull_openclaw_image", { tag, operationId })
 );
 export const startDockerGateway = (port?: number, tag?: string) => invoke<GatewayStatus>("start_docker_gateway", { port, tag });
 export const detectGatewayConfig = () => invoke<GatewayConfigInfo>("detect_gateway_config");
+/** Resolve the selected runtime credential through OpenClaw without exposing its config form. */
+export const getGatewayToken = () => invoke<string>('get_gateway_token');
+/** Compatibility-only migration source for pre-credential-provider Gateway tokens. */
+export const getLegacyGatewayCredential = (endpoint: string, scope?: string) => (
+  invoke<string | null>('get_legacy_gateway_credential', { endpoint, scope: scope ?? null })
+);
+export const deleteLegacyGatewayCredential = (endpoint: string, scope?: string) => (
+  invoke<void>('delete_legacy_gateway_credential', { endpoint, scope: scope ?? null })
+);
+
+/** Probe a concrete Gateway port for compatibility surfaces such as Control UI. */
+export const probeGatewayPort = (port?: number) => (
+  port === undefined
+    ? invoke<boolean>('probe_gateway_port', {})
+    : invoke<boolean>('probe_gateway_port', { port })
+);
+export const openGatewayControlUi = () => invoke<void>('open_control_ui');
+
+export interface GatewayRescueTarget {
+  providerId: string;
+  modelId: string;
+  modelRef: string;
+  source: 'primary' | 'configured';
+}
+
+export interface GatewayRescueMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface GatewayRescueContext {
+  error: string;
+  logs?: string;
+}
+
+export interface GatewayRescueChatRequest {
+  modelRef: string;
+  messages: GatewayRescueMessage[];
+  context: GatewayRescueContext;
+}
+
+export interface GatewayRescueChatResponse {
+  text: string;
+}
+
+export const listGatewayRescueTargets = () => (
+  invoke<GatewayRescueTarget[]>('list_gateway_rescue_targets')
+);
+export const gatewayRescueChat = (req: GatewayRescueChatRequest) => (
+  invoke<GatewayRescueChatResponse>('gateway_rescue_chat', { req })
+);
+
+export interface OpenClawMediaPreviewResult {
+  success: boolean;
+  url?: string | null;
+  error?: string | null;
+}
+
+/** Creates a state-directory-scoped preview URL for a persisted OpenClaw attachment. */
+export const createOpenClawMediaPreviewUrl = (path: string) => (
+  invoke<OpenClawMediaPreviewResult>('create_openclaw_media_preview_url', { path })
+);
+
+export interface ManagedFileOpenResult {
+  success: boolean;
+}
+
+export interface ManagedFileExistsResult {
+  success: boolean;
+  exists: boolean;
+}
+
+export interface ManagedFileTextResult {
+  success: boolean;
+  content: string | null;
+  byte_size: number;
+  truncated: boolean;
+  error: string | null;
+}
+
+export interface ManagedFilePreviewUrlResult {
+  success: boolean;
+  url: string | null;
+  error: string | null;
+}
+
+export const openManagedFile = (path: string) => (
+  invoke<ManagedFileOpenResult>('managed_file_open', { path })
+);
+export const revealManagedFile = (path: string) => (
+  invoke<ManagedFileOpenResult>('managed_file_reveal', { path })
+);
+export const managedFileExists = (path: string) => (
+  invoke<ManagedFileExistsResult>('managed_file_exists', { path })
+);
+export const readManagedFileText = (path: string) => (
+  invoke<ManagedFileTextResult>('read_file_text', { path })
+);
+export const createManagedFilePreviewUrl = (path: string) => (
+  invoke<ManagedFilePreviewUrlResult>('create_file_preview_url', { path })
+);
+
+export interface ScreenshotCapturePayload {
+  success: boolean;
+  data?: string;
+}
+
+export interface ScreenshotWindowSource {
+  id: string;
+  name: string;
+  thumbnail: string;
+}
+
+export const captureInteractiveScreenshot = () => (
+  invoke<ScreenshotCapturePayload>('screenshot_interactive')
+);
+export const captureFullscreenScreenshot = () => (
+  invoke<ScreenshotCapturePayload>('screenshot_fullscreen')
+);
+export const listScreenshotWindows = () => (
+  invoke<ScreenshotWindowSource[]>('screenshot_list_windows')
+);
+export const captureScreenshotWindow = (id: string) => (
+  invoke<ScreenshotCapturePayload>('screenshot_capture_window', { id })
+);
+
+export type SharePackageKind = 'agent' | 'skill';
+export interface SharePackageFile { path: string; size: number; executable: boolean; sensitive: boolean; }
+export interface SharePackageSourceEntry extends Omit<SharePackageFile, 'executable'> { kind: 'file' | 'directory'; recommended: boolean; excludedReason?: string; }
+export interface SharePackageSourceScan { root: string; entries: SharePackageSourceEntry[]; omittedDirectories: string[]; }
+export interface SharePackageManifest { format: string; version: number; kind: SharePackageKind; name: string; createdAt: number; metadata: Record<string, unknown>; files: SharePackageFile[]; }
+export interface SharePackageExportRequest { kind: SharePackageKind; name: string; root: string; destination: string; selectedPaths: string[]; includeSensitive: boolean; metadata: Record<string, unknown>; }
+export interface SharePackageExportResult { destination: string; fileCount: number; totalBytes: number; }
+export interface SharePackageInspectResult { packagePath: string; manifest: SharePackageManifest; }
+export interface SharePackageImportPreviewRequest { sourcePath: string; targetParent: string; targetName: string; selectedPaths: string[]; }
+export interface SharePackageImportPreview { targetPath: string; selectedFiles: SharePackageFile[]; conflicts: Array<{ path: string; existingKind: 'file' | 'directory' | 'symlink' }>; }
+export interface SharePackageImportRequest extends SharePackageImportPreviewRequest { conflictStrategy: 'error' | 'skip' | 'overwrite'; }
+export interface SharePackageImportResult { targetPath: string; importedFiles: number; skippedFiles: number; }
+export const scanSharePackageSource = (root: string) => invoke<SharePackageSourceScan>('scan_share_package_source', { root });
+export const exportSharePackage = (request: SharePackageExportRequest) => invoke<SharePackageExportResult>('export_share_package', { request });
+export const inspectSharePackage = (sourcePath: string) => invoke<SharePackageInspectResult>('inspect_share_package', { sourcePath });
+export const previewSharePackageImport = (request: SharePackageImportPreviewRequest) => invoke<SharePackageImportPreview>('preview_share_package_import', { request });
+export const importSharePackage = (request: SharePackageImportRequest) => invoke<SharePackageImportResult>('import_share_package', { request });
+
+export interface VoiceRecordingStartResult { success: boolean; error?: string; }
+export interface VoiceRecordingStopResult { success: boolean; data?: string; duration?: number; error?: string; }
+export const startVoiceRecording = () => invoke<VoiceRecordingStartResult>('voice_start_recording');
+export const stopVoiceRecording = () => invoke<VoiceRecordingStopResult>('voice_stop_recording');
+
+export interface ActiveOpenClawModelProbe {
+  ready: boolean;
+  model: string | null;
+  detail: string | null;
+}
+
+/** Selected-runtime OpenClaw configuration file contract. */
+export interface OpenclawConfigReadResult {
+  data: GatewayRuntimeConfig;
+  path: string;
+  exists: boolean;
+  revision: string;
+}
+
+export interface OpenclawConfigValidationResult {
+  valid: boolean;
+  path: string;
+  exists: boolean;
+  error?: string;
+}
+
+export interface OpenclawConfigWriteResult {
+  revision: string;
+}
+
+export const readOpenclawConfig = () => invoke<OpenclawConfigReadResult>('read_config');
+export const validateOpenclawConfig = () => (
+  invoke<OpenclawConfigValidationResult>('validate_openclaw_config')
+);
+export const parseOpenclawConfigText = (raw: string) => (
+  invoke<GatewayRuntimeConfig>('parse_openclaw_config_text', { raw })
+);
+export const writeOpenclawConfig = (
+  data: GatewayRuntimeConfig,
+  expectedRevision?: string,
+) => invoke<OpenclawConfigWriteResult>('write_config', {
+  json: JSON.stringify(data, null, 2),
+  expectedRevision: expectedRevision ?? null,
+});
+
+/** OpenClaw-owned provider metadata remains opaque until its service parser validates it. */
+export const getOpenclawProviderCatalog = (provider?: string) => (
+  invoke<unknown>('get_openclaw_provider_catalog', { provider: provider ?? null })
+);
+export const getOpenclawConfigSchema = () => invoke<unknown>('get_openclaw_config_schema');
+export const getOpenclawAuthProfiles = (provider?: string) => (
+  invoke<unknown>('get_openclaw_auth_profiles', { provider: provider ?? null })
+);
+export const probeOpenclawProvider = (
+  config: unknown,
+  provider: string,
+  profileKey?: string,
+) => invoke<unknown>('probe_openclaw_provider', {
+  json: JSON.stringify(config),
+  provider,
+  profileKey: profileKey ?? null,
+});
+export const probeActiveOpenclawModel = () => (
+  invoke<ActiveOpenClawModelProbe>('probe_active_openclaw_model')
+);
+
+/** OpenClaw-owned channel metadata remains opaque until its service parser validates it. */
+export const getOpenclawChannelCatalog = () => invoke<unknown>('get_openclaw_channel_catalog');
+export const installOpenclawChannelPlugin = (channel: string) => (
+  invoke<unknown>('install_openclaw_channel_plugin', { channel })
+);
+export const getOpenclawChannelCapabilities = (channel: string) => (
+  invoke<unknown>('get_openclaw_channel_capabilities', { channel })
+);
+export const getOpenclawChannelStatus = (channel?: string, probe = false) => (
+  invoke<unknown>('get_openclaw_channel_status', { channel: channel ?? null, probe })
+);
+export const getOpenclawChannelLogs = (channel?: string, lines = 200) => (
+  invoke<unknown>('get_openclaw_channel_logs', { channel: channel ?? null, lines })
+);
+export const listBrokenGatewayPlugins = (error?: string) => (
+  invoke<BrokenGatewayPlugin[]>('list_broken_gateway_plugins', { error: error ?? null })
+);
+export const healOpenclawPlugin = (id: string, reason?: string) => (
+  invoke<PluginHealOutcome>('heal_openclaw_plugin', { id, reason: reason ?? null })
+);
+export const disableOpenclawPlugin = (id: string) => invoke<void>('disable_openclaw_plugin', { id });
 export const setActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
   invoke<void>("set_active_gateway_runtime", { mode })
 );
@@ -213,6 +595,16 @@ export const ensureGatewayRunning = () => invoke<EnsureResult>("ensure_gateway_r
  */
 export const stopGateway = () => invoke<string>("stop_gateway");
 
+/** Probe the selected runtime's authenticated Gateway, never an arbitrary listener. */
+export const probeSelectedGateway = (port?: number) => (
+  port === undefined
+    ? invoke<boolean>('probe_selected_gateway', {})
+    : invoke<boolean>('probe_selected_gateway', { port })
+);
+
+/** Return the JunQi-managed process status used during setup polling. */
+export const getGatewayProcessStatus = () => invoke<GatewayProcessStatus>('gateway_status');
+
 /**
  * Gateway 开机自启（系统服务）状态 — see src-tauri/src/commands/gateway_service.rs
  * 仅 Native 运行时 supported；enabled 表示服务已注册并被系统加载。
@@ -223,6 +615,19 @@ export interface GatewayAutostartStatus {
   running: boolean;
   serviceKind: 'macos_launch_agent' | 'windows_scheduled_task' | 'native_service';
 }
+
+export type GatewayLifecycleState = 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
+export type GatewaySupervisorRuntimeMode = 'none' | 'external' | 'system_service' | 'managed_child' | 'docker';
+export interface GatewayRuntimeSnapshot {
+  lifecycle: GatewayLifecycleState;
+  mode: GatewaySupervisorRuntimeMode;
+  restarting: boolean;
+  port: number;
+  managed_pid: number | null;
+}
+export const getGatewayRuntimeSnapshot = () => (
+  invoke<GatewayRuntimeSnapshot>('get_gateway_runtime_snapshot')
+);
 export const gatewayAutostartStatus = () => invoke<GatewayAutostartStatus>("gateway_autostart_status");
 export const handoffGatewayToOfficialService = () => (
   invoke<boolean>("handoff_gateway_to_official_service")

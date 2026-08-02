@@ -5,6 +5,7 @@ import { createPreparedAttachment, validatePreparedAttachments } from '@/service
 import type { PreparedAttachment } from '@/services/chat/types';
 import { useChatStore } from '@/stores/chatStore';
 import { debugError } from '@/utils/debugLog';
+import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
 
 const EMPTY_PATHS: string[] = [];
 const EMPTY_ATTACHMENTS: PreparedAttachment[] = [];
@@ -53,7 +54,7 @@ export function useComposerAttachments(
     const paths = [...draftPaths];
     useChatStore.getState().setDraftAttachments(sessionKey, []);
     void Promise.all(paths.map(async (path) => {
-      const file = await window.aegis?.file?.read(path);
+      const file = await desktopFileRuntime.readAttachment(path);
       if (!file) throw new Error(t('input.attachmentReadFailed', { path }));
       return createPreparedAttachment({
         fileName: file.name,
@@ -74,10 +75,10 @@ export function useComposerAttachments(
   const selectFiles = useCallback(async () => {
     const sessionKey = activeSessionKey;
     try {
-      const result = await window.aegis?.file.openDialog();
-      if (result?.canceled || !result?.filePaths?.length) return;
-      const additions = await Promise.all(result.filePaths.map(async (filePath) => {
-        const file = await window.aegis.file.read(filePath);
+      const paths = await desktopFileRuntime.selectFiles();
+      if (!paths.length) return;
+      const additions = await Promise.all(paths.map(async (filePath) => {
+        const file = await desktopFileRuntime.readAttachment(filePath);
         if (!file) throw new Error(t('input.attachmentReadFailed', { path: filePath }));
         return createPreparedAttachment({
           fileName: file.name,

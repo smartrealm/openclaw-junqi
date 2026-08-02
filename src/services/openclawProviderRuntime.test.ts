@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createOfficialProviderCatalogLoader,
+  normalizeOfficialProviderAuthProfiles,
+  normalizeOfficialProviderCatalog,
   providerCatalogModels,
   summarizeOfficialProviderProbe,
 } from './openclawProviderRuntime';
@@ -46,6 +48,31 @@ test('BUG-MP-04 filters the runtime catalog by canonical provider prefix', () =>
     ],
   }, 'OpenAI');
   assert.deepEqual(rows.map((row) => row.key), ['openai/gpt-5.6']);
+});
+
+test('normalizes only valid official provider catalog rows', () => {
+  const catalog = normalizeOfficialProviderCatalog({
+    version: '2026.8.2',
+    models: [
+      { key: 'openai/gpt', name: 'GPT', contextWindow: 128000, tags: ['reasoning', 7] },
+      { key: 'missing-name' },
+      null,
+    ],
+  });
+  assert.deepEqual(catalog, {
+    version: '2026.8.2',
+    models: [{ key: 'openai/gpt', name: 'GPT', contextWindow: 128000, tags: ['reasoning'] }],
+  });
+});
+
+test('normalizes only complete official provider authentication profiles', () => {
+  assert.deepEqual(normalizeOfficialProviderAuthProfiles({
+    profiles: [
+      { id: 'openai:default', provider: 'openai', type: 'oauth', label: 'Primary' },
+      { id: 'missing-provider', type: 'oauth' },
+      { id: 'missing-type', provider: 'openai' },
+    ],
+  }), [{ id: 'openai:default', provider: 'openai', type: 'oauth', label: 'Primary' }]);
 });
 
 test('PROV-01 always reads the catalog from the current runtime', async () => {

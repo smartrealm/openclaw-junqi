@@ -52,9 +52,81 @@ export function createOfficialProviderCatalogLoader(
  * models authorize a later one, so callers intentionally receive a fresh
  * runtime snapshot for each request.
  */
+export function normalizeOfficialProviderCatalog(payload: unknown): OfficialProviderCatalog {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { models: [] };
+  const root = payload as Record<string, unknown>;
+  const models = Array.isArray(root.models) ? root.models.flatMap((model) => {
+    if (!model || typeof model !== 'object' || Array.isArray(model)) return [];
+    const row = model as Record<string, unknown>;
+    if (typeof row.key !== 'string' || !row.key.trim()) return [];
+    if (typeof row.name !== 'string' || !row.name.trim()) return [];
+    return [{
+      key: row.key,
+      name: row.name,
+      ...(typeof row.input === 'string' ? { input: row.input } : {}),
+      ...(typeof row.contextWindow === 'number' && Number.isFinite(row.contextWindow)
+        ? { contextWindow: row.contextWindow }
+        : {}),
+      ...(typeof row.local === 'boolean' ? { local: row.local } : {}),
+      ...(typeof row.available === 'boolean' ? { available: row.available } : {}),
+      ...(Array.isArray(row.tags)
+        ? { tags: row.tags.filter((tag): tag is string => typeof tag === 'string') }
+        : {}),
+      ...(typeof row.missing === 'boolean' ? { missing: row.missing } : {}),
+    }];
+  }) : [];
+  return {
+    ...(typeof root.version === 'string' && root.version.trim() ? { version: root.version } : {}),
+    models,
+  };
+}
+
 export const loadOfficialProviderCatalog = createOfficialProviderCatalogLoader(
-  () => window.aegis.providerRuntime.catalog(),
+  async () => normalizeOfficialProviderCatalog(await getOpenclawProviderCatalog()),
 );
+
+export interface OfficialProviderAuthProfile {
+  id: string;
+  provider: string;
+  type: string;
+  label?: string;
+}
+
+export function normalizeOfficialProviderAuthProfiles(payload: unknown): OfficialProviderAuthProfile[] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
+  const profiles = (payload as Record<string, unknown>).profiles;
+  if (!Array.isArray(profiles)) return [];
+  return profiles.flatMap((profile) => {
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return [];
+    const row = profile as Record<string, unknown>;
+    if (typeof row.id !== 'string' || !row.id.trim()) return [];
+    if (typeof row.provider !== 'string' || !row.provider.trim()) return [];
+    if (typeof row.type !== 'string' || !row.type.trim()) return [];
+    return [{
+      id: row.id,
+      provider: row.provider,
+      type: row.type,
+      ...(typeof row.label === 'string' && row.label.trim() ? { label: row.label } : {}),
+    }];
+  });
+}
+
+export async function loadOfficialProviderAuthProfiles(
+  provider?: string,
+): Promise<OfficialProviderAuthProfile[]> {
+  return normalizeOfficialProviderAuthProfiles(await getOpenclawAuthProfiles(provider));
+}
+
+export async function probeOfficialProviderCandidate(
+  config: unknown,
+  request: ProviderProbeRequest,
+): Promise<ProviderProbeSummary> {
+  return summarizeOfficialProviderProbe(await probeOpenclawProvider(
+    config,
+    request.providerId,
+    request.profileKey,
+  ));
+}
 
 const PROBE_STATUSES = new Set<OfficialProbeStatus>([
   'ok',
@@ -129,3 +201,8 @@ export function providerCatalogModels(
     typeof model?.key === 'string' && model.key.toLowerCase().startsWith(prefix)
   ));
 }
+import {
+  getOpenclawAuthProfiles,
+  getOpenclawProviderCatalog,
+  probeOpenclawProvider,
+} from '@/api/tauri-commands';

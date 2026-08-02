@@ -41,6 +41,7 @@ const MAIN_SESSION = 'agent:main:main';
 const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
 const OPEN_TABS_PREFS_KEY = 'aegis-open-tabs';
 const SESSION_PIN_PREFS_KEY = 'aegis:session-pin-prefs';
+const SESSION_ARCHIVE_PREFS_KEY = 'aegis:session-archive-prefs';
 const drainingQueueSessions = new Set<string>();
 
 function outboundPayloadFromQueue(message: QueuedChatMessage): OutboundChatPayload {
@@ -62,9 +63,9 @@ function persistOpenTabs(tabs: string[]): void {
   }
 }
 
-function readSessionPinPrefs(): Record<string, boolean> {
+function readSessionBooleanPrefs(storageKey: string): Record<string, boolean> {
   try {
-    const raw = localStorage.getItem(SESSION_PIN_PREFS_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
@@ -78,21 +79,21 @@ function readSessionPinPrefs(): Record<string, boolean> {
   }
 }
 
-function persistSessionPin(sessionKey: string, pinned: boolean): void {
+function persistSessionBooleanPref(storageKey: string, sessionKey: string, value: boolean): void {
   try {
-    const prefs = readSessionPinPrefs();
-    prefs[sessionKey] = pinned;
-    localStorage.setItem(SESSION_PIN_PREFS_KEY, JSON.stringify(prefs));
+    const prefs = readSessionBooleanPrefs(storageKey);
+    prefs[sessionKey] = value;
+    localStorage.setItem(storageKey, JSON.stringify(prefs));
   } catch {
     // ignore persistence errors
   }
 }
 
-function clearSessionPinPref(sessionKey: string): void {
+function clearSessionBooleanPref(storageKey: string, sessionKey: string): void {
   try {
-    const prefs = readSessionPinPrefs();
+    const prefs = readSessionBooleanPrefs(storageKey);
     delete prefs[sessionKey];
-    localStorage.setItem(SESSION_PIN_PREFS_KEY, JSON.stringify(prefs));
+    localStorage.setItem(storageKey, JSON.stringify(prefs));
   } catch {
     // ignore persistence errors
   }
@@ -518,6 +519,8 @@ interface ChatState {
    *  of the default sidebar view; a "Show archived (N)" toggle at the
    *  bottom of the sidebar exposes them. Pure local state. */
   setSessionArchived: (key: string, archived: boolean) => void;
+  /** Local-only explicit unread marker. Gateway does not persist reader state. */
+  markSessionUnread: (key: string) => void;
   setActiveSession: (key: string) => void;
   incrementSessionUnread: (key: string, amount?: number) => void;
   markSessionCompleted: (key: string) => void;
@@ -1284,7 +1287,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } = stateBeforeMerge;
     const defs = defaults ?? prev;
     const visibleIncomingSessions = coalesceSessionsByKey(withoutDeletedSessions(sessions));
-    const persistedPins = readSessionPinPrefs();
+    const persistedPins = readSessionBooleanPrefs(SESSION_PIN_PREFS_KEY);
+    const persistedArchives = readSessionBooleanPrefs(SESSION_ARCHIVE_PREFS_KEY);
     const previousByKey = new Map(previousSessions.map((session) => [session.key, session]));
     const identityTransitions = collectSessionIdentityTransitions(
       previousSessions,
@@ -1313,7 +1317,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ?? (Object.prototype.hasOwnProperty.call(persistedPins, session.key)
             ? persistedPins[session.key]
             : session.pinned),
-        archived: previous?.archived ?? session.archived,
+        archived: previous?.archived
+          ?? (Object.prototype.hasOwnProperty.call(persistedArchives, session.key)
+            ? persistedArchives[session.key]
+            : session.archived),
         topic: hasCachedMessages
           ? resolveAndPersistSessionTopic(session.key, hydratedTopic, cachedMessages, session.lastMessage)
           : resolveAndPersistSessionTopic(session.key, hydratedTopic, [], session.lastMessage),
@@ -1508,13 +1515,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
   togglePinSession: (key) => set((state) => ({
     sessions: updateSession(state.sessions, key, (session) => {
       const pinned = !session.pinned;
-      persistSessionPin(key, pinned);
+      persistSessionBooleanPref(SESSION_PIN_PREFS_KEY, key, pinned);
       return { ...session, pinned };
     }),
   })),
 
-  setSessionArchived: (key, archived) => set((state) => ({
-    sessions: updateSession(state.sessions, key, (s) => ({ ...s, archived })),
+  setSessionArchived: (key, archived) => set((state) => {
+    persistSessionBooleanPref(SESSION_ARCHIVE_PREFS_KEY, key, archived);
+    return { sessions: updateSession(state.sessions, key, (session) => ({ ...session, archived })) };
+  }),
+
+  markSessionUnread: (key) => set((state) => ({
+    sessions: updateSession(state.sessions, key, (session) => ({
+      ...session,
+      unread: Math.max(1, session.unread ?? 0),
+      hasPendingCompletion: false,
+    })),
   })),
 
   // ── Pending file attachments (drag-drop → new session) ─────
@@ -1642,7 +1658,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   removeSession: (key) => set((state) => {
     if (isAgentMainSession(key)) return state;
-    clearSessionPinPref(key);
+    clearSessionBooleanPref(SESSION_PIN_PREFS_KEY, key);
+    clearSessionBooleanPref(SESSION_ARCHIVE_PREFS_KEY, key);
     const newTabs = state.openTabs.filter((t) => t !== key);
     if (newTabs.length === 0) newTabs.push(MAIN_SESSION);
     persistOpenTabs(newTabs);

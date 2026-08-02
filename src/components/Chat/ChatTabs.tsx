@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
+import { Archive, Mail, Pin, PinOff, Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
 import { IconButton } from '@/components/shared/button/Button';
 import { useTranslation } from 'react-i18next';
@@ -843,6 +843,9 @@ export function ChatTabs() {
     tokenUsage,
     currentThinking,
     sessionDefaults,
+    togglePinSession,
+    setSessionArchived,
+    markSessionUnread,
   } = useChatStore();
 
   // ── Drag-to-reorder sensors ──
@@ -1101,6 +1104,20 @@ export function ChatTabs() {
       }
     );
   }, [ctxMenu, t]);
+
+  const applyLocalSessionViewAction = useCallback((action: 'pin' | 'unread' | 'archive') => {
+    if (!ctxMenu) return;
+    const key = ctxMenu.key;
+    const session = sessions.find((candidate) => candidate.key === key);
+    if (!session) return;
+    if (action === 'pin') togglePinSession(key);
+    if (action === 'unread') markSessionUnread(key);
+    if (action === 'archive') {
+      setSessionArchived(key, !session.archived);
+      if (!session.archived) closeTab(key);
+    }
+    setCtxMenu(null);
+  }, [closeTab, ctxMenu, markSessionUnread, sessions, setSessionArchived, togglePinSession]);
 
   const startRename = useCallback((key: string, currentLabel: string) => {
     setEditingKey(key);
@@ -1361,6 +1378,7 @@ export function ChatTabs() {
       {ctxMenu && (() => {
         const { isMainSession } = parseSessionKey(ctxMenu.key);
         const isMainTab = ctxMenu.key === MAIN_SESSION;
+        const session = sessions.find((candidate) => candidate.key === ctxMenu.key);
         return createPortal(
           <div
             ref={ctxMenuRef}
@@ -1385,6 +1403,32 @@ export function ChatTabs() {
               <Pencil size={13} className="opacity-60" />
               {t('chat.renameSession')}
             </button>
+            {!isMainSession && session && (
+              <>
+                <button
+                  onClick={() => applyLocalSessionViewAction('pin')}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+                >
+                  {session.pinned ? <PinOff size={13} className="opacity-60" /> : <Pin size={13} className="opacity-60" />}
+                  {session.pinned ? t('chat.unpinSession') : t('chat.pinSession')}
+                </button>
+                <button
+                  onClick={() => applyLocalSessionViewAction('unread')}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+                >
+                  <Mail size={13} className="opacity-60" />
+                  {t('chat.markSessionUnread')}
+                </button>
+                <button
+                  onClick={() => applyLocalSessionViewAction('archive')}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+                >
+                  <Archive size={13} className="opacity-60" />
+                  {session.archived ? t('chat.restoreSession') : t('chat.archiveSession')}
+                </button>
+                <div className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
+              </>
+            )}
             {/* Close tab — not for agent:main:main (always pinned) */}
             {!isMainTab && (
               <button

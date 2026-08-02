@@ -68,9 +68,9 @@ function confirmedPatchResult(result: unknown, sessionKey: string): SessionPatch
 }
 
 /**
- * Routes each sessions.patch field through the least privileged connection
- * accepted by OpenClaw 2026.7.1. Runtime overrides require operator.admin;
- * user-facing organization fields such as label remain operator.write.
+ * `sessions.patch` is an OpenClaw control-plane mutation. Route every field
+ * through the short-lived operator.admin connection so the runtime's
+ * method-level authorization remains valid across supported versions.
  */
 export class SessionSettingsClient {
   constructor(private readonly deps: SessionSettingsClientDeps) {}
@@ -96,6 +96,6 @@ export class SessionSettingsClient {
   }
 
   setLabel(sessionKey: string, label: string | null): Promise<SessionPatchResult> {
-    return this.patch(sessionKey, { label }, false);
+    return this.patch(sessionKey, { label }, true);
   }
 }

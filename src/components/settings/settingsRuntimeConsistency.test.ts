@@ -12,15 +12,18 @@ test('settings tabs use one URL state and suppress repeated card entry motion', 
   assert.match(settings, /<GlassCardEnterMotionScope enabled=\{false\}>/);
 });
 
-test('storage inventory loads only when its settings tab is active', () => {
+test('storage settings expose only runtime-backed panels', () => {
   const settings = source('../../pages/SettingsPage.tsx');
-  const effect = settings.slice(
-    settings.indexOf('if (activeTab !== \'storage\') return;'),
-    settings.indexOf('const handleLanguageChange'),
+  const storageTab = settings.slice(
+    settings.indexOf("{activeTab === 'storage' && ("),
+    settings.indexOf("{activeTab === 'about' && ("),
   );
 
-  assert.match(effect, /refreshManagedIndexInfo\(\)/);
-  assert.match(effect, /\[activeTab, refreshManagedIndexInfo\]/);
+  assert.match(storageTab, /<GatewayLifecyclePanel variant="full" \/>/);
+  assert.match(storageTab, /<ManagedRuntimeSettingsPanel \/>/);
+  assert.match(storageTab, /<NpmCacheSettingsPanel \/>/);
+  assert.match(storageTab, /<GatewayLogPanel \/>/);
+  assert.doesNotMatch(settings, /refreshManagedIndexInfo/);
 });
 
 test('settings do not expose unimplemented wake-word credentials', () => {

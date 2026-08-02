@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import {
   Activity,
@@ -19,8 +18,11 @@ import {
   enableGatewayAutostart,
   gatewayAutostartStatus,
   getGatewayLogs,
+  getGatewayRuntimeSnapshot,
   handoffGatewayToOfficialService,
   type GatewayAutostartStatus,
+  type GatewayLifecycleState,
+  type GatewaySupervisorRuntimeMode,
   type LogEntry,
 } from '@/api/tauri-commands';
 import clsx from 'clsx';
@@ -30,16 +32,8 @@ import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { presentGatewayAutostart } from './gatewayAutostartPresentation';
 
-type GatewayLifecycle = 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
-type GatewayRuntimeMode = 'none' | 'external' | 'system_service' | 'managed_child' | 'docker';
+type GatewayLifecycle = GatewayLifecycleState;
 type PanelVariant = 'compact' | 'full';
-
-interface GatewayRuntimeSnapshot {
-  lifecycle: GatewayLifecycle;
-  mode: GatewayRuntimeMode;
-  port: number;
-  managed_pid: number | null;
-}
 
 interface ProgressEvent {
   step?: string;
@@ -83,7 +77,7 @@ function lifecycleLabel(t: ReturnType<typeof useTranslation>['t'], lifecycle: Ga
   return t(`gateway.lifecycle.${lifecycle}`);
 }
 
-function runtimeModeLabel(t: ReturnType<typeof useTranslation>['t'], mode: GatewayRuntimeMode): string {
+function runtimeModeLabel(t: ReturnType<typeof useTranslation>['t'], mode: GatewaySupervisorRuntimeMode): string {
   return t(`gateway.runtimeMode.${mode}`);
 }
 
@@ -113,7 +107,7 @@ function statusDotClass(tone: ReturnType<typeof lifecycleTone>): string {
 export function GatewayLifecyclePanel({ variant = 'compact', className }: GatewayLifecyclePanelProps) {
   const { t } = useTranslation();
   const [lifecycle, setLifecycle] = useState<GatewayLifecycle>('stopped');
-  const [runtimeMode, setRuntimeMode] = useState<GatewayRuntimeMode>('none');
+  const [runtimeMode, setRuntimeMode] = useState<GatewaySupervisorRuntimeMode>('none');
   const [runtimePort, setRuntimePort] = useState(DEFAULT_GATEWAY_PORT);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [latestProgress, setLatestProgress] = useState<string | null>(null);
@@ -127,7 +121,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
     setLoading(true);
     try {
       const [snapshot, nextLogs, nextAutostart] = await Promise.all([
-        invoke<GatewayRuntimeSnapshot>('get_gateway_runtime_snapshot').catch(() => null),
+        getGatewayRuntimeSnapshot().catch(() => null),
         getGatewayLogs(variant === 'full' ? 12 : 4).catch(() => []),
         variant === 'full' ? gatewayAutostartStatus().catch(() => null) : Promise.resolve(null),
       ]);

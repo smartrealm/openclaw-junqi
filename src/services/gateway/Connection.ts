@@ -23,6 +23,8 @@ import {
   invalidateGatewayRuntimeIdentity,
   observeGatewayHello,
 } from './runtimeIdentity';
+import { storeGatewayConnectionDeviceCredential } from './GatewayConnectionTargetResolver';
+import { signGatewayDeviceChallenge } from './deviceAuthentication';
 
 // OpenClaw 2026.5.x introduced a newer WS protocol while older installs still
 // negotiate protocol 3. Advertise a compatible range so Desktop can connect to
@@ -45,6 +47,8 @@ export interface GatewayConnectionOptions {
   scopes?: readonly GatewayOperatorScope[];
   /** A one-operation connection that must not own global polling or runtime identity. */
   transient?: boolean;
+  /** Persists a rotated device token after a non-transient hello handshake. */
+  persistDeviceCredential?: (gatewayUrl: string, token: string) => Promise<unknown>;
 }
 
 // ── Platform Detection (cross-platform) ──
@@ -106,6 +110,8 @@ export interface GatewayTranscriptMessageNotice {
   sessionKey: string;
   role: string;
   text: string;
+  /** OpenClaw run identity carried by the durable event when available. */
+  runId?: string;
   nativeMessageId?: string;
   clientMessageId?: string;
   messageSeq?: number;
@@ -258,6 +264,7 @@ export class GatewayConnection {
   /** Explicit/shared Gateway token. Device credentials are stored separately. */
   token = '';
   deviceToken = '';
+  private readonly persistDeviceCredential: (gatewayUrl: string, token: string) => Promise<unknown>;
 
   // ── Event callback (set by ChatHandler) ──
   /** Called for every incoming non-response event from the WebSocket. */
@@ -266,6 +273,7 @@ export class GatewayConnection {
   constructor(options: GatewayConnectionOptions = {}) {
     this.requestedScopes = [...new Set(options.scopes?.length ? options.scopes : DAILY_OPERATOR_SCOPES)];
     this.transient = options.transient === true;
+    this.persistDeviceCredential = options.persistDeviceCredential ?? storeGatewayConnectionDeviceCredential;
     // Register message handlers once — they never change and MessageRouter
     // uses set() semantics, so calling this in connect() would be a no-op,
     // but initializing here is the correct ownership model.
@@ -549,9 +557,10 @@ export class GatewayConnection {
                 debugWarn('gateway', '[GW] Runtime identity attestation failed:', error);
             });
           }
-          if (!this.transient && auth?.deviceToken && window.aegis?.pairing?.saveToken) {
+          if (!this.transient && auth?.deviceToken) {
             this.deviceToken = auth.deviceToken;
-            window.aegis.pairing.saveToken(auth.deviceToken, this.url).catch(() => {});
+            void this.persistDeviceCredential(this.url, auth.deviceToken)
+              .catch(() => {});
           }
           this.connected = true;
           this.connecting = false;
@@ -617,8 +626,8 @@ export class GatewayConnection {
     const authDeviceToken = sharedToken ? '' : storedDeviceToken;
     let device: any = undefined;
     try {
-      if (window.aegis?.device?.sign && this.challengeNonce) {
-        const signed = await window.aegis.device.sign({
+      if (this.challengeNonce) {
+        const signed = await signGatewayDeviceChallenge({
           nonce: this.challengeNonce,
           clientId,
           clientMode,

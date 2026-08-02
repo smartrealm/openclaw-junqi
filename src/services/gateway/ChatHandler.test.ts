@@ -1312,6 +1312,193 @@ test('durable session.message events refresh once per OpenClaw message sequence'
   assert.deepEqual(refreshed, [sessionKey]);
 });
 
+test('durable session.message forwards its event run id for cross-path notification identity', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const notices: Array<{ sessionKey: string; runId?: string; nativeMessageId?: string }> = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onTranscriptMessage: (notice: { sessionKey: string; runId?: string; nativeMessageId?: string }) => {
+        notices.push(notice);
+      },
+    },
+  } as any);
+
+  handler.handleEvent({ event: 'session.message', payload: {
+    sessionKey: 'agent:main:notification-identity',
+    runId: 'run-notification-identity',
+    messageSeq: 1,
+    message: {
+      role: 'assistant',
+      content: 'Durable reply.',
+      __openclaw: { id: 'native-message-identity' },
+    },
+  } });
+
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0]?.sessionKey, 'agent:main:notification-identity');
+  assert.equal(notices[0]?.runId, 'run-notification-identity');
+  assert.equal(notices[0]?.nativeMessageId, 'native-message-identity');
+});
+
+test('durable session.message recognizes a completed live run despite a different message identity', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const notices: Array<{ liveProjected: boolean }> = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onTranscriptMessage: (notice: { liveProjected: boolean }) => notices.push(notice),
+    },
+  } as any);
+  const sessionKey = 'agent:main:live-projected-notification';
+  const runId = 'run-live-projected-notification';
+
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey,
+    runId,
+    state: 'delta',
+    message: { content: 'Live response.' },
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey,
+    runId,
+    state: 'final',
+    message: { content: 'Live response.' },
+  } });
+  handler.handleEvent({ event: 'session.message', payload: {
+    sessionKey,
+    runId,
+    messageSeq: 1,
+    message: {
+      role: 'assistant',
+      content: 'Live response.',
+      idempotencyKey: 'different-client-message-id',
+      __openclaw: { id: 'different-native-message-id' },
+    },
+  } });
+
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0]?.liveProjected, true);
+});
+
+test('durable session.message without a run id recognizes its immediate live terminal mirror', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const notices: Array<{ liveProjected: boolean }> = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onTranscriptMessage: (notice: { liveProjected: boolean }) => notices.push(notice),
+    },
+  } as any);
+  const sessionKey = 'agent:main:terminal-mirror-without-run-id';
+
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey,
+    runId: 'stream-run-id',
+    state: 'delta',
+    message: { content: 'Durable mirror response.' },
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey,
+    runId: 'stream-run-id',
+    state: 'final',
+    message: { content: 'Durable mirror response.' },
+  } });
+  handler.handleEvent({ event: 'session.message', payload: {
+    sessionKey,
+    messageSeq: 1,
+    message: {
+      role: 'assistant',
+      content: 'Durable mirror response.',
+      __openclaw: { id: 'durable-native-id' },
+    },
+  } });
+
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0]?.liveProjected, true);
+});
+
+test('a transcript-only reply remains eligible for notification without a live terminal mirror', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const notices: Array<{ liveProjected: boolean }> = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onTranscriptMessage: (notice: { liveProjected: boolean }) => notices.push(notice),
+    },
+  } as any);
+
+  handler.handleEvent({ event: 'session.message', payload: {
+    sessionKey: 'agent:main:transcript-only-notification',
+    messageSeq: 1,
+    message: {
+      role: 'assistant',
+      content: 'Recovered transcript response.',
+      __openclaw: { id: 'durable-native-id' },
+    },
+  } });
+
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0]?.liveProjected, false);
+});
+
+test('a same-text terminal reply from another session does not suppress transcript notification', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const notices: Array<{ sessionKey: string; liveProjected: boolean }> = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onTranscriptMessage: (notice: { sessionKey: string; liveProjected: boolean }) => notices.push(notice),
+    },
+  } as any);
+
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey: 'agent:main:first-session',
+    runId: 'first-run-id',
+    state: 'delta',
+    message: { content: 'Matching text must stay isolated.' },
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey: 'agent:main:first-session',
+    runId: 'first-run-id',
+    state: 'final',
+    message: { content: 'Matching text must stay isolated.' },
+  } });
+  handler.handleEvent({ event: 'session.message', payload: {
+    sessionKey: 'agent:main:second-session',
+    messageSeq: 1,
+    message: {
+      role: 'assistant',
+      content: 'Matching text must stay isolated.',
+      __openclaw: { id: 'second-native-id' },
+    },
+  } });
+
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0]?.sessionKey, 'agent:main:second-session');
+  assert.equal(notices[0]?.liveProjected, false);
+});
+
 test('an assistant session.message settled snapshot closes the matching live run', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();

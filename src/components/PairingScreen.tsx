@@ -44,8 +44,6 @@ export function PairingScreen({ issue, onPaired, onCancel }: PairingScreenProps)
     if (!token || submitting) return;
     setSubmitting(true);
     try {
-      const result = await window.aegis?.pairing?.saveToken(token);
-      if (result && !result.success) return;
       onPaired(token);
     } finally {
       setSubmitting(false);

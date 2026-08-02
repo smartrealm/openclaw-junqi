@@ -11,16 +11,14 @@ test('extracts only explicit OpenClaw transcript media sources', () => {
   assert.equal(openClawMediaPath('aegis-media:   '), null);
 });
 
-test('uses the scoped native preview bridge for persisted OpenClaw media', async () => {
+test('uses the scoped native preview reader for persisted OpenClaw media', async () => {
   const requested: string[] = [];
   const url = await resolveOpenClawMediaPreviewUrl(
     'aegis-media:/Users/test/.openclaw/media/inbound/screenshot.png',
     {
-      openclawMedia: {
-        createPreview: async (path) => {
-          requested.push(path);
-          return { success: true, url: 'junqi-preview://localhost/token/screenshot.png' };
-        },
+      createPreview: async (path) => {
+        requested.push(path);
+        return { success: true, url: 'junqi-preview://localhost/token/screenshot.png' };
       },
     },
   );
@@ -31,9 +29,7 @@ test('uses the scoped native preview bridge for persisted OpenClaw media', async
 
 test('does not turn an unavailable native preview into a filesystem fallback', async () => {
   const url = await resolveOpenClawMediaPreviewUrl('aegis-media:/Users/test/.openclaw/media/inbound/missing.png', {
-    openclawMedia: {
-      createPreview: async () => ({ success: false, error: 'not available' }),
-    },
+    createPreview: async () => ({ success: false, error: 'not available' }),
   });
   assert.equal(url, null);
 });
