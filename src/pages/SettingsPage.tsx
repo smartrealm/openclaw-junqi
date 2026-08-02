@@ -8,12 +8,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, PawPrint, Info, Clock, Palette, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, PawPrint, Info, Clock, Palette, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2, Radio,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard, GlassCardEnterMotionScope } from '@/components/shared/GlassCard';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import { OpenClawUpdatePanel } from '@/components/shared/OpenClawUpdatePanel';
 import { StatusDot } from '@/components/shared/badge';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -46,7 +47,9 @@ import { NpmCacheSettingsPanel } from '@/components/settings/NpmCacheSettingsPan
 import { ManagedRuntimeSettingsPanel } from '@/components/settings/ManagedRuntimeSettingsPanel';
 import { FontPanel } from '@/components/settings/FontPanel';
 import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
+import { JarvisVoiceSettingsPanel } from '@/components/settings/JarvisVoiceSettingsPanel';
 import { StructuredPlanSettingsPanel } from '@/components/settings/StructuredPlanSettingsPanel';
+import { useJarvisVoiceSettings } from '@/hooks/useJarvisVoiceSettings';
 import { useOpenClawPlanToolSetting } from '@/hooks/useOpenClawPlanToolSetting';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
@@ -54,8 +57,8 @@ import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
-type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'pet' | 'connect' | 'storage' | 'maintenance' | 'about';
-const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'pet', 'connect', 'storage', 'maintenance', 'about'];
+type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'jarvis' | 'pet' | 'connect' | 'storage' | 'maintenance' | 'about';
+const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'jarvis', 'pet', 'connect', 'storage', 'maintenance', 'about'];
 
 export function SettingsPageFull() {
   const { t, i18n } = useTranslation();
@@ -202,6 +205,7 @@ export function SettingsPageFull() {
   const activeTab: SettingsTab = SETTINGS_TABS.includes(requestedTab as SettingsTab)
     ? requestedTab as SettingsTab
     : 'appearance';
+  const jarvisVoiceSettings = useJarvisVoiceSettings(activeTab === 'jarvis');
   const structuredPlans = useOpenClawPlanToolSetting(activeTab === 'connect' && connected);
 
   useEffect(() => {
@@ -408,6 +412,7 @@ export function SettingsPageFull() {
           ['appearance', t('settings.tab.appearance'), Sun],
           ['terminal', t('settings.tab.terminal'), TerminalSquare],
           ['notify', t('settings.tab.notify'), Bell],
+          ['jarvis', t('settings.tab.jarvis'), Radio],
           ['pet', t('settings.tab.pet'), PawPrint],
           ['connect', t('settings.tab.connect'), Wifi],
           ['storage', t('settings.tab.storage'), HardDrive],
@@ -416,20 +421,29 @@ export function SettingsPageFull() {
         ] as const).map(([key, label, Icon]) => (
           <button key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => selectTab(key)}
             className={clsx(
-              'flex items-center gap-1.5 px-3.5 py-2 rounded-t-lg text-[13px] font-medium transition-colors border-b-2 -mb-[1px] whitespace-nowrap',
+              'relative isolate flex items-center gap-1.5 px-3.5 py-2 rounded-t-lg text-[13px] font-medium -mb-[1px] whitespace-nowrap',
+              'transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98]',
               activeTab === key
-                ? 'text-aegis-primary border-aegis-primary bg-aegis-primary/[0.06]'
-                : 'text-aegis-text-muted border-transparent hover:text-aegis-text hover:border-aegis-border'
+                ? 'text-aegis-primary'
+                : 'text-aegis-text-muted hover:text-aegis-text'
             )}>
+            {activeTab === key && (
+              <ActiveTabIndicator
+                layoutId="settings-active-tab"
+                className="inset-0 -z-10 rounded-t-lg border-b-2 border-aegis-primary bg-aegis-primary/[0.06]"
+              />
+            )}
             <Icon size={14} />
             {label}
           </button>
         ))}
       </div>
       <GlassCardEnterMotionScope enabled={false}>
-      <div className="space-y-6">
+      <AnimatedTabPanel transitionKey={activeTab} className="space-y-6">
 
       {activeTab === 'terminal' && <TerminalSettingsPanel />}
+
+      {activeTab === 'jarvis' && <JarvisVoiceSettingsPanel settings={jarvisVoiceSettings} />}
 
       {activeTab === 'maintenance' && (
         <MaintenanceCenter
@@ -747,14 +761,14 @@ export function SettingsPageFull() {
           <SettingsSwitch checked={petEnabled} onCheckedChange={setPetEnabled} label={t('pet.settings.enabled')} />
         </div>
 
-        {/* Toggle the pet window: shown → hide (close_pet_window), hidden → recall (open_pet_window). */}
+        {/* Toggle the pet window between visible and hidden states. */}
         <div className="flex items-center justify-between mt-4">
           <div>
             <div className="text-[13px] text-aegis-text">
               {petVisible ? t('pet.settings.hidePet', '隐藏萌宠') : t('pet.settings.showPet', '显示萌宠')}
             </div>
             <div className="text-[11px] text-aegis-text-dim">
-              {petVisible ? t('pet.settings.hidePetHint', '点击隐藏(也可托盘图标 / ⌘⇧H)') : t('pet.settings.showPetHint', '隐藏后一键唤回(也可托盘图标 / ⌘⇧H)')}
+              {petVisible ? t('pet.settings.hidePetHint', '点击隐藏，也可使用托盘图标或快捷键') : t('pet.settings.showPetHint', '隐藏后可一键唤回，也可使用托盘图标或快捷键')}
             </div>
           </div>
           <button
@@ -1237,7 +1251,7 @@ export function SettingsPageFull() {
         </>
       )}
 
-      </div>
+      </AnimatedTabPanel>
       </GlassCardEnterMotionScope>
     </PageTransition>
   );

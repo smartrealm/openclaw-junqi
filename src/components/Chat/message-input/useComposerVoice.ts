@@ -1,15 +1,11 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject, type SetStateAction } from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
-import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart';
 import { useTranslation } from 'react-i18next';
 import {
   getVoiceWakeDetectorStatus,
   finishTalkPlayback,
   playTalkPcm,
   presentCurrentWindowForVoiceWake,
-  setVoiceWakeModelDirectory,
   stopTalkPlayback,
-  type VoiceWakeDetectorStatus,
 } from '@/api/tauri-commands';
 import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
@@ -23,18 +19,10 @@ import {
   type VoiceModeContext,
 } from '@/services/voice/VoiceModeCoordinator';
 import { decideVoiceWakeRoute, hasCompatibleVoiceWakeTrigger } from '@/services/voice/VoiceWakeRoutePolicy';
-import {
-  resolveModelWakeKeywordSelection,
-  selectedModelWakeKeywords,
-} from '@/services/voice/VoiceWakeKeywordSelection';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { TalkConversationCoordinator } from '@/services/voice/TalkConversationCoordinator';
 import { createJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
-import {
-  clearAutoArmSession,
-  setAutoArmSession,
-  shouldAutoArmSession,
-} from '@/services/voice/VoiceWakePreference';
+import { shouldAutoArmSession, subscribeAutoArmPreference } from '@/services/voice/VoiceWakePreference';
 import { useChatStore } from '@/stores/chatStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { debugError } from '@/utils/debugLog';
@@ -97,12 +85,6 @@ export function useComposerVoice({
   const [recording, setRecording] = useState(false);
   const [autoArmEnabled, setAutoArmEnabledState] = useState(() => shouldAutoArmSession(activeSessionKey));
   const [autoArmRevision, setAutoArmRevision] = useState(0);
-  const [detector, setDetector] = useState<VoiceWakeDetectorStatus | null>(null);
-  const [detectorError, setDetectorError] = useState<string | null>(null);
-  const [configuringDetector, setConfiguringDetector] = useState(false);
-  const [syncingWakeTriggers, setSyncingWakeTriggers] = useState(false);
-  const [gatewayWakeTriggers, setGatewayWakeTriggers] = useState<string[]>([]);
-  const [launchOnLogin, setLaunchOnLogin] = useState(false);
   const voiceMode = useVoiceMode();
   const activeTurnRef = useRef<string | null>(null);
   const autoArmAttemptRef = useRef<string | null>(null);
@@ -164,43 +146,15 @@ export function useComposerVoice({
     setAutoArmRevision((revision) => revision + 1);
   }, []);
 
-  useEffect(() => {
-    let active = true;
-    void getVoiceWakeDetectorStatus()
-      .then((status) => {
-        if (active) {
-          setDetector(status);
-          setDetectorError(null);
-        }
-      })
-      .catch((error) => {
-        if (active) setDetectorError(error instanceof Error ? error.message : String(error));
-      });
-    return () => { active = false; };
-  }, []);
-
   useEffect(() => voiceWakeGatewayClient.subscribe((event) => {
     const current = wakeConfigurationRef.current;
     if (!current) return;
     if (event.type === 'triggers') {
       wakeConfigurationRef.current = { ...current, triggers: event.snapshot };
-      setGatewayWakeTriggers(event.snapshot.triggers);
       return;
     }
     wakeConfigurationRef.current = { ...current, routing: event.config };
   }), []);
-
-  useEffect(() => {
-    let active = true;
-    void isAutostartEnabled()
-      .then((enabled) => {
-        if (active) setLaunchOnLogin(enabled);
-      })
-      .catch((error) => {
-        if (active) setDetectorError(error instanceof Error ? error.message : String(error));
-      });
-    return () => { active = false; };
-  }, []);
 
   const sendVoice = useCallback(async (
     base64: string,
@@ -420,10 +374,7 @@ export function useComposerVoice({
         const detector = await getVoiceWakeDetectorStatus();
         detectorAvailable = detector.available;
         detectorKeywords = detector.keywords;
-        setDetector(detector);
-        setDetectorError(null);
       } catch (error) {
-        setDetectorError(error instanceof Error ? error.message : String(error));
         const snapshot = voiceModeCoordinator.start({
           mode: 'wake_word',
           context,
@@ -445,7 +396,6 @@ export function useComposerVoice({
         const configuration = await voiceWakeGatewayClient.getConfiguration();
         if (!isCurrentVoiceContext(context)) return;
         wakeConfigurationRef.current = configuration;
-        setGatewayWakeTriggers(configuration.triggers.triggers);
         if (!hasCompatibleVoiceWakeTrigger(detectorKeywords, configuration)) {
           const snapshot = voiceModeCoordinator.start({
             mode: 'wake_word',
@@ -458,7 +408,6 @@ export function useComposerVoice({
         }
       } catch (error) {
         if (!isCurrentVoiceContext(context)) return;
-        setDetectorError(error instanceof Error ? error.message : String(error));
         const snapshot = voiceModeCoordinator.start({
           mode: 'wake_word',
           context,
@@ -490,74 +439,12 @@ export function useComposerVoice({
     setAutoArmEnabledState(shouldAutoArmSession(activeSessionKey));
   }, [activeSessionKey]);
 
-  const setAutoArmEnabled = useCallback((enabled: boolean) => {
-    if (enabled) setAutoArmSession(activeSessionKey);
-    else clearAutoArmSession();
-    setAutoArmEnabledState(enabled);
-  }, [activeSessionKey]);
-
-  const configureWakeDetector = useCallback(async () => {
-    if (configuringDetector) return;
-    const directory = await open({
-      directory: true,
-      multiple: false,
-      title: t('input.voiceWakeChooseModelDirectory'),
-    });
-    if (typeof directory !== 'string') return;
-    setConfiguringDetector(true);
-    setDetectorError(null);
-    try {
-      const status = await setVoiceWakeModelDirectory(directory);
-      setDetector(status);
-      if (status.available && autoArmEnabled) requestAutoArmRetry();
-    } catch (error) {
-      setDetectorError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setConfiguringDetector(false);
-    }
-  }, [autoArmEnabled, configuringDetector, requestAutoArmRetry, t]);
-
-  const saveWakeTriggers = useCallback(async (requestedKeywords: readonly string[]): Promise<boolean> => {
-    if (syncingWakeTriggers || !detector?.available) return false;
-    const triggers = resolveModelWakeKeywordSelection(detector.keywords, requestedKeywords);
-    if (!triggers) {
-      setDetectorError(t('input.voiceWakePhraseSelectionInvalid'));
-      return false;
-    }
-    setSyncingWakeTriggers(true);
-    setDetectorError(null);
-    try {
-      const snapshot = await voiceWakeGatewayClient.setTriggers(triggers);
-      setGatewayWakeTriggers(snapshot.triggers);
-      const current = wakeConfigurationRef.current;
-      if (current) wakeConfigurationRef.current = { ...current, triggers: snapshot };
-      requestWakeWord();
-      return true;
-    } catch (error) {
-      setDetectorError(error instanceof Error ? error.message : String(error));
-      return false;
-    } finally {
-      setSyncingWakeTriggers(false);
-    }
-  }, [detector, requestWakeWord, syncingWakeTriggers, t]);
-
-  const syncWakeTriggers = useCallback(async () => {
-    if (!detector?.available) return;
-    await saveWakeTriggers(detector.keywords);
-  }, [detector, saveWakeTriggers]);
-
-  const toggleLaunchOnLogin = useCallback(async () => {
-    try {
-      if (launchOnLogin) await disableAutostart();
-      else await enableAutostart();
-      const enabled = !launchOnLogin;
-      setLaunchOnLogin(enabled);
-      setAutoArmEnabled(enabled);
-      if (enabled) requestAutoArmRetry();
-    } catch (error) {
-      setDetectorError(error instanceof Error ? error.message : String(error));
-    }
-  }, [launchOnLogin, requestAutoArmRetry, setAutoArmEnabled]);
+  useEffect(() => subscribeAutoArmPreference(() => {
+    const shouldArm = shouldAutoArmSession(activeSessionKey);
+    setAutoArmEnabledState(shouldArm);
+    if (shouldArm) requestAutoArmRetry();
+    else void stopVoiceMode();
+  }), [activeSessionKey, requestAutoArmRetry, stopVoiceMode]);
 
   useEffect(() => {
     if (
@@ -732,11 +619,6 @@ export function useComposerVoice({
   const status = voiceWake.phase === 'transcribing' || voiceWake.phase === 'wake_detected'
     ? t('input.dictationProcessing')
     : t('input.dictationListening');
-  const selectedWakeKeywords = selectedModelWakeKeywords(
-    detector?.keywords ?? [],
-    gatewayWakeTriggers,
-  );
-
   return {
     recording,
     setRecording,
@@ -749,19 +631,6 @@ export function useComposerVoice({
     toggleDictation,
     startDictation: () => { void startDictation(); },
     requestWakeWord,
-    autoArmEnabled,
-    setAutoArmEnabled,
-    detector,
-    detectorError,
-    configuringDetector,
-    syncingWakeTriggers,
-    modelWakeKeywords: detector?.keywords ?? [],
-    selectedWakeKeywords,
-    launchOnLogin,
-    configureWakeDetector,
-    syncWakeTriggers,
-    saveWakeTriggers,
-    toggleLaunchOnLogin,
     stopVoiceMode: () => { void stopVoiceMode(); },
     confirmVoiceDraft: () => { void confirmVoiceDraft(); },
     discardVoiceDraft,

@@ -4,7 +4,7 @@ import { useBusinessGuideActivation } from '@/hooks/useBusinessGuideActivation';
 import { useBusinessGuideStore } from '@/stores/businessGuideStore';
 import { WorkspaceChromeIconButton } from '@/components/Layout/WorkspaceChrome';
 
-/** The single, global recovery entry after the first-run welcome is closed. */
+/** The global recovery entry sits immediately before the notification control. */
 export function BusinessGuideTrigger() {
   const { t } = useTranslation();
   const active = useBusinessGuideActivation();
@@ -15,7 +15,7 @@ export function BusinessGuideTrigger() {
   return (
     <WorkspaceChromeIconButton
       label={t('businessGuide.reopen')}
-      onClick={openTour}
+      onClick={() => openTour()}
     >
       <Compass size={16} />
     </WorkspaceChromeIconButton>

@@ -4,6 +4,8 @@ import { Package, Puzzle, RefreshCw, Search } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
+import { PageTransition } from '@/components/shared/PageTransition';
 import {
   openClawSkillsRuntime,
   type OpenClawSkill,
@@ -218,26 +220,35 @@ export function SkillsPage() {
   ], [installed.length, t]);
 
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden">
+    <PageTransition className="flex-1 overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-[900px] px-9 py-8 pb-16">
         <header className="mb-6 flex items-center gap-3">
           <Puzzle size={20} className="text-aegis-primary" aria-hidden="true" />
           <h1 className="text-[21px] font-bold">{t('skills.title')}</h1>
         </header>
 
-        <nav className="mb-7 inline-flex gap-0.5 rounded-xl border border-[rgb(var(--aegis-overlay)/0.05)] p-[3px]" aria-label={t('skills.title')}>
+        <nav className="mb-7 inline-flex gap-0.5 rounded-xl border border-[rgb(var(--aegis-overlay)/0.05)] p-[3px]" role="tablist" aria-label={t('skills.title')}>
           {tabItems.map((tab) => (
             <button
               key={tab.id}
               type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
-                'flex items-center gap-2 rounded-[9px] px-5 py-2.5 text-[13px] font-medium transition-colors',
+                'relative isolate flex items-center gap-2 rounded-[9px] px-5 py-2.5 text-[13px] font-medium',
+                'transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98]',
                 activeTab === tab.id
-                  ? 'bg-aegis-primary/[0.08] font-semibold text-aegis-primary'
+                  ? 'font-semibold text-aegis-primary'
                   : 'text-aegis-text-muted hover:text-aegis-text-secondary',
               )}
             >
+              {activeTab === tab.id && (
+                <ActiveTabIndicator
+                  layoutId="skills-active-tab"
+                  className="inset-0 -z-10 rounded-[9px] bg-aegis-primary/[0.08]"
+                />
+              )}
               <tab.icon size={14} aria-hidden="true" />
               {tab.label}
               {tab.count !== undefined && (
@@ -249,6 +260,7 @@ export function SkillsPage() {
           ))}
         </nav>
 
+        <AnimatedTabPanel transitionKey={activeTab}>
         {activeTab === 'installed' && (
           <section>
             <div className="mb-4 flex items-center justify-between gap-4">
@@ -316,6 +328,7 @@ export function SkillsPage() {
             )}
           </section>
         )}
+        </AnimatedTabPanel>
       </div>
 
       <SkillDetailPanel
@@ -333,6 +346,6 @@ export function SkillsPage() {
         errorText={installError}
         externalUrl={detail ? `https://clawhub.ai/skills/${encodeURIComponent(detail.slug)}` : undefined}
       />
-    </div>
+    </PageTransition>
   );
 }

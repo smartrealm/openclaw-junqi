@@ -7,8 +7,9 @@ export interface BusinessGuidePersistedState {
 
 interface BusinessGuideState extends BusinessGuidePersistedState {
   tourOpen: boolean;
+  tourStartIndex: number;
   dismissWelcome: () => void;
-  openTour: () => void;
+  openTour: (startIndex?: number) => void;
   closeTour: () => void;
 }
 
@@ -39,9 +40,10 @@ export const useBusinessGuideStore = create<BusinessGuideState>()(persist(
   (set) => ({
     welcomeDismissed: false,
     tourOpen: false,
+    tourStartIndex: 0,
     dismissWelcome: () => set({ welcomeDismissed: true, tourOpen: false }),
-    openTour: () => set({ tourOpen: true }),
-    closeTour: () => set({ tourOpen: false }),
+    openTour: (startIndex = 0) => set({ tourOpen: true, tourStartIndex: Math.max(0, startIndex) }),
+    closeTour: () => set({ tourOpen: false, tourStartIndex: 0 }),
   }),
   {
     name: 'junqi:business-guide:v1',
@@ -52,6 +54,7 @@ export const useBusinessGuideStore = create<BusinessGuideState>()(persist(
       ...current,
       ...migrateBusinessGuidePersistedState(persisted, 3),
       tourOpen: false,
+      tourStartIndex: 0,
     }),
     partialize: (state) => ({ welcomeDismissed: state.welcomeDismissed }),
   },

@@ -36,16 +36,7 @@ import {
 } from './model';
 import './dynamic-island.css';
 import { useTheme } from '@/theme/useTheme';
-
-type IslandAction =
-  | { type: 'open-task'; taskId: string }
-  | { type: 'open-session'; sessionKey: string }
-  | { type: 'open-focus' }
-  | { type: 'toggle-dnd' }
-  | { type: 'pomodoro-toggle' }
-  | { type: 'pomodoro-stop' }
-  | { type: 'voice-stop' }
-  | { type: 'hide' };
+import { hideDynamicIsland, type DynamicIslandAction } from './DynamicIslandActions';
 
 const COLLAPSE_DELAY_MS = 5_200;
 const HOVER_EXPAND_DELAY_MS = 140;
@@ -175,7 +166,7 @@ export default function DynamicIsland() {
     return () => window.clearInterval(timer);
   }, [snapshot.pomodoro.paused, snapshot.pomodoro.running, snapshot.sessionActivities.length]);
 
-  const action = useCallback((payload: IslandAction) => {
+  const action = useCallback((payload: DynamicIslandAction) => {
     void emitTauriEvent('dynamic-island:action', payload).catch(() => undefined);
   }, []);
 
@@ -315,7 +306,14 @@ export default function DynamicIsland() {
               </div>
               <div className="junqi-island-window-actions">
                 <button type="button" onClick={() => setIslandExpanded(false)} title={t('dynamicIsland.collapse')}><ChevronUp size={15} /></button>
-                <button type="button" onClick={() => action({ type: 'hide' })} title={t('dynamicIsland.hide')}><X size={15} /></button>
+                <button
+                  type="button"
+                  onClick={() => hideDynamicIsland(
+                    () => invoke('close_dynamic_island'),
+                    action,
+                  )}
+                  title={t('dynamicIsland.hide')}
+                ><X size={15} /></button>
               </div>
             </header>
 

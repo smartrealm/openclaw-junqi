@@ -48,3 +48,14 @@ test('TopBar and notification service use the persistent notification contract',
   assert.match(topBar, /if \(!target\) \{\s+if \(terminalChrome\) setPanelOpen\(false\);\s+return;/);
   assert.match(topBar, /<TerminalNotificationPanel/);
 });
+
+test('the guide recovery control is immediately left of the notification control', () => {
+  const topBar = readFileSync(new URL('./TopBar.tsx', import.meta.url), 'utf8');
+  const guideIndex = topBar.indexOf('<BusinessGuideTrigger />');
+  const notificationIndex = topBar.indexOf('<div ref={notifRef}');
+
+  assert.ok(guideIndex >= 0);
+  assert.ok(notificationIndex > guideIndex);
+  assert.equal(topBar.slice(guideIndex, notificationIndex).includes('ml-auto'), false);
+  assert.match(topBar, /flex shrink-0 items-center gap-1', !terminalChrome && 'ml-auto'/);
+});
