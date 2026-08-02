@@ -3292,6 +3292,14 @@
       "switching": "正在切換 OpenClaw 的運行方式，請稍候…",
       "handoffFailed": "Gateway 服務已安裝，但未能接管當前運行實例。"
     },
+    "appAutostart": {
+      "title": "JunQi Desktop 登入後啟動",
+      "disabledHint": "開啟後，JunQi Desktop 會在目前使用者登入時啟動。OpenClaw 的背景運行由上方設定獨立控制。",
+      "enabledHint": "JunQi Desktop 已設為在目前使用者登入後自動啟動。",
+      "enable": "登入後啟動 JunQi Desktop",
+      "disable": "關閉 JunQi Desktop 自動啟動",
+      "enabledBadge": "已啟用"
+    },
     "petReadyHint": "可以進入儀表盤了",
     "enterDashboard": "進入儀表盤",
     "verifyingDashboardEntry": "正在驗證 Gateway…",

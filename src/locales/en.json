@@ -3330,6 +3330,14 @@
       "switching": "Switching how OpenClaw runs, one moment…",
       "handoffFailed": "The Gateway service was installed but could not take over the current running instance."
     },
+    "appAutostart": {
+      "title": "Start JunQi Desktop after sign-in",
+      "disabledHint": "When enabled, JunQi Desktop starts after the current user signs in. The OpenClaw background service is controlled separately above.",
+      "enabledHint": "JunQi Desktop is set to start automatically after the current user signs in.",
+      "enable": "Start JunQi Desktop after sign-in",
+      "disable": "Turn off JunQi Desktop autostart",
+      "enabledBadge": "Enabled"
+    },
     "petReadyHint": "You can enter the dashboard now.",
     "enterDashboard": "Enter dashboard",
     "verifyingDashboardEntry": "Verifying Gateway…",

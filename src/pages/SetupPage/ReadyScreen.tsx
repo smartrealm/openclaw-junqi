@@ -4,13 +4,15 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
-import type { GatewayAutostartStatus } from "@/api/tauri-commands";
-import { disableGatewayAutostart, enableGatewayAutostart, gatewayAutostartStatus, handoffGatewayToOfficialService } from "@/api/tauri-commands";
+import type { AppAutostartStatus, GatewayAutostartStatus } from "@/api/tauri-commands";
+import { appAutostartStatus, disableAppAutostart, disableGatewayAutostart, enableAppAutostart, enableGatewayAutostart, gatewayAutostartStatus, handoffGatewayToOfficialService } from "@/api/tauri-commands";
 import { SetupShell, STEP_META } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
 import { type InstallMode } from "@/stores/setup-navigation";
 import { gatewayLifecycle } from "@/services/gateway/gatewayLifecycle";
 import { presentGatewayAutostart } from "@/components/settings/gatewayAutostartPresentation";
+import { presentAppAutostart } from "@/components/settings/appAutostartPresentation";
+import { SettingsSwitch } from "@/components/settings/SettingsSwitch";
 
 export function GatewayAutostartPreference({
   installMode,
@@ -42,15 +44,12 @@ export function GatewayAutostartPreference({
   if (installMode !== "native" || status === null || status?.supported === false) return null;
   if (status === undefined) {
     return (
-      <section className="w-full border-t border-aegis-border pt-5 text-left" aria-busy="true">
-        <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-aegis-text-dim">
-          {t("setup.runtimePreferences", "运行偏好")}
-        </div>
+      <div className="py-1 text-left" aria-busy="true">
         <div className="flex items-center gap-3 py-1">
           <span className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-aegis-surface" />
           <span className="h-3 w-36 animate-pulse rounded bg-aegis-surface" />
         </div>
-      </section>
+      </div>
     );
   }
   const enabled = status.enabled;
@@ -84,10 +83,7 @@ export function GatewayAutostartPreference({
   };
 
   return (
-    <section className="w-full border-t border-aegis-border pt-5 text-left">
-      <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-aegis-text-dim">
-        {t("setup.runtimePreferences", "运行偏好")}
-      </div>
+    <div className="py-1 text-left">
       <div className="flex items-start gap-3 py-1">
         <span className={clsx(
           "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
@@ -132,14 +128,122 @@ export function GatewayAutostartPreference({
           {presentation.action}
         </button>
       </div>
+    </div>
+  );
+}
+
+export function AppAutostartPreference({
+  onOperationStateChange,
+}: {
+  onOperationStateChange: (busy: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<AppAutostartStatus | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void appAutostartStatus()
+      .then((next) => { if (!cancelled) setStatus(next); })
+      .catch((cause) => {
+        if (!cancelled) {
+          setStatus(null);
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    onOperationStateChange(busy);
+    return () => onOperationStateChange(false);
+  }, [busy, onOperationStateChange]);
+
+  if (status === undefined) {
+    return (
+      <div className="flex items-center gap-3 border-t border-aegis-border py-4 text-left" aria-busy="true">
+        <span className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-aegis-surface" />
+        <span className="h-3 w-36 animate-pulse rounded bg-aegis-surface" />
+      </div>
+    );
+  }
+
+  const enabled = status?.enabled ?? false;
+  const presentation = presentAppAutostart({ enabled }, t);
+  const toggleAutostart = async (nextEnabled: boolean) => {
+    if (busy || nextEnabled === enabled) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(nextEnabled ? await enableAppAutostart() : await disableAppAutostart());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-start gap-3 border-t border-aegis-border py-4 text-left">
+      <span className={clsx(
+        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+        enabled ? "bg-aegis-success/15 text-aegis-success" : "bg-aegis-primary/15 text-aegis-primary",
+      )}>
+        <Power size={18} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-aegis-text">{presentation.title}</span>
+          {presentation.badge && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-aegis-success/30 bg-aegis-success/10 px-2 py-0.5 text-[11px] font-medium text-aegis-success">
+              <Check size={11} strokeWidth={3} />
+              {presentation.badge}
+            </span>
+          )}
+        </div>
+        <p className="mt-1.5 text-xs leading-5 text-aegis-text-secondary">{presentation.description}</p>
+        {error && <p className="mt-2 break-all text-xs text-aegis-danger">{error}</p>}
+      </div>
+      <SettingsSwitch
+        checked={enabled}
+        disabled={busy}
+        label={presentation.action}
+        onCheckedChange={(nextEnabled) => { void toggleAutostart(nextEnabled); }}
+      />
+    </div>
+  );
+}
+
+function AutostartPreferences({
+  installMode,
+  onGatewayOperationStateChange,
+  onAppOperationStateChange,
+}: {
+  installMode: InstallMode;
+  onGatewayOperationStateChange: (busy: boolean) => void;
+  onAppOperationStateChange: (busy: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <section className="w-full border-t border-aegis-border pt-5 text-left">
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-aegis-text-dim">
+        {t("setup.runtimePreferences", "运行偏好")}
+      </div>
+      <GatewayAutostartPreference
+        installMode={installMode}
+        onOperationStateChange={onGatewayOperationStateChange}
+      />
+      <AppAutostartPreference onOperationStateChange={onAppOperationStateChange} />
     </section>
   );
 }
 
 export function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const [autostartBusy, setAutostartBusy] = useState(false);
-  const blockNavigation = autostartBusy || flow.enteringDashboard;
+  const [gatewayAutostartBusy, setGatewayAutostartBusy] = useState(false);
+  const [appAutostartBusy, setAppAutostartBusy] = useState(false);
+  const blockNavigation = gatewayAutostartBusy || appAutostartBusy || flow.enteringDashboard;
   const settledCount = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || settledCount || 1;
 
@@ -198,9 +302,10 @@ export function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] 
             {flow.dashboardEntryError}
           </p>
         )}
-        <GatewayAutostartPreference
+        <AutostartPreferences
           installMode={flow.installMode}
-          onOperationStateChange={setAutostartBusy}
+          onGatewayOperationStateChange={setGatewayAutostartBusy}
+          onAppOperationStateChange={setAppAutostartBusy}
         />
       </div>
     </SetupShell>
