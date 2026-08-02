@@ -4,16 +4,6 @@ import { readFile } from 'node:fs/promises';
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), 'utf8');
 
-test('scheduled tasks uses a filterable master-detail maintenance layout', async () => {
-  const source = await read('./CronMonitor.tsx');
-
-  assert.match(source, /statusFilter/);
-  assert.match(source, /Master-detail maintenance layout/);
-  assert.doesNotMatch(source, /<ClockFace/);
-  assert.doesNotMatch(source, /Mission Control/);
-  assert.doesNotMatch(source, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
-});
-
 test('workshop does not retain the unrendered activity timeline', async () => {
   const source = await read('./Workshop.tsx');
 

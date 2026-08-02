@@ -81,7 +81,8 @@ test('Gateway connection start time survives polling restarts only while connect
 test('Gateway polling decoders reject malformed responses instead of inventing empty data', () => {
   assert.deepEqual(parseGatewayAgentList({ agents: [{ id: 'main' }] }), [{ id: 'main' }]);
   assert.equal(parseGatewayAgentList({ agents: [{ name: 'missing-id' }] }), null);
-  assert.deepEqual(parseGatewayCronJobList([{ id: 'daily' }]), [{ id: 'daily' }]);
+  assert.deepEqual(parseGatewayCronJobList([{ id: 'daily', agentId: 'ops' }]), [{ id: 'daily', agentId: 'ops' }]);
+  assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', agentId: '' }] }), null);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: '' }] }), null);
 
   const metrics = {
