@@ -2856,14 +2856,6 @@ pub async fn handoff_gateway_to_official_service(
 /// lifecycle requests use `restart_gateway`; keeping this registered preserves
 /// compatibility without creating a second restart implementation.
 #[tauri::command]
-pub async fn restart_local_gateway(
-    app: AppHandle,
-    state: State<'_, GatewayProcess>,
-) -> Result<GatewayStatus, String> {
-    restart_gateway(app, state, None).await
-}
-
-#[tauri::command]
 pub async fn start_gateway(
     app: AppHandle,
     state: State<'_, GatewayProcess>,

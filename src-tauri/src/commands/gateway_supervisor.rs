@@ -101,13 +101,6 @@ pub fn terminate_owned_gateway_now(child: &mut tokio::process::Child) {
 }
 
 /// Tauri command: return the current lifecycle state for the frontend.
-#[tauri::command]
-pub async fn get_gateway_lifecycle(
-    state: tauri::State<'_, GatewayProcess>,
-) -> Result<GatewayLifecycle, String> {
-    state.runtime_snapshot().map(|snapshot| snapshot.lifecycle)
-}
-
 #[derive(serde::Serialize)]
 pub struct GatewayRuntimeSnapshot {
     lifecycle: GatewayLifecycle,

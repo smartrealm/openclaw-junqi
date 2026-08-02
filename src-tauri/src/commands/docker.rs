@@ -2419,8 +2419,10 @@ pub(crate) async fn remove_selected_container_for_uninstall() -> Result<bool, St
 }
 
 /// Check if the Docker container is running.
-#[tauri::command]
-pub async fn docker_gateway_status(port: Option<u16>) -> Result<GatewayStatus, String> {
+/// Container-level Docker Gateway state. Used by `ensure_gateway_running`; it is
+/// deliberately not a Tauri command - no surface consumed it, and an unused IPC
+/// entry point is surface the WebView does not need.
+pub(crate) async fn docker_gateway_status(port: Option<u16>) -> Result<GatewayStatus, String> {
     let port = port.unwrap_or_else(docker_gateway_configured_port);
     let docker_bin = match resolve_docker_bin().await {
         Ok(bin) => bin,

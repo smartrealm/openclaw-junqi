@@ -148,7 +148,19 @@ let version_ok = version.is_some();
 
 **验证**：新增 4 项守护测试，覆盖入口存在、不得使用运行时特定命令、两段式确认与失败展示、以及两个 stop command 保持注册。
 
-`restart_local_gateway`、`docker_gateway_status`、`get_gateway_lifecycle` 仍无调用方，本轮未处理。
+**其余三个的处置**：逐个判断来源后分别处理，不一刀切。
+
+| Command | 判断 | 处置 |
+| --- | --- | --- |
+| `restart_local_gateway` | `restart_gateway(.., None)` 的纯别名，且名字有误导性——叫 local 却同样分派 Docker | 删除实现并摘除注册 |
+| `get_gateway_lifecycle` | 返回 `runtime_snapshot().lifecycle`，是已在用的 `get_gateway_runtime_snapshot` 的真子集 | 删除实现并摘除注册 |
+| `docker_gateway_status` | **不是残留**：`ensure_gateway_running` 依赖它做容器级探测，与端口探测的 `gateway_status` 不重叠 | 保留实现，降为 `pub(crate)`，只摘除 command 注册 |
+
+第三个是本轮最需要区分的一项。它无前端调用方，但在 Rust 内部是活代码；直接删除会破坏 Docker 路径的 ensure 逻辑。注册与实现是两件事，只有前者是暴露给 WebView 的 IPC 面。
+
+生命周期相关注册 command 由 43 个降至 40 个。
+
+**验证**：新增 3 项测试，断言三者不再注册、`docker_gateway_status` 保留实现且失去 command 包装、两个别名被真正删除而非仅取消注册，并确认其替代品仍在。
 
 ### AUD-04 · 生命周期回归测试断言 Rust 源码字符串位置（已修复）
 

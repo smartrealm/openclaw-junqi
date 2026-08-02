@@ -59,7 +59,6 @@ pub fn run() {
             // Gateway
             commands::gateway::start_gateway,
             commands::gateway::restart_gateway,
-            commands::gateway::restart_local_gateway,
             commands::gateway::stop_gateway,
             commands::gateway::gateway_status,
             commands::gateway::probe_gateway_port,
@@ -85,7 +84,6 @@ pub fn run() {
             commands::storage::update_npm_cache_directory,
             commands::terminal_integration::apply_terminal_integration,
             commands::terminal_integration::get_terminal_integration_status,
-            commands::gateway_supervisor::get_gateway_lifecycle,
             commands::gateway_supervisor::get_gateway_runtime_snapshot,
             commands::runtime_identity::resolve_gateway_runtime_identity,
             commands::runtime_identity::get_gateway_runtime_identity,
@@ -193,7 +191,6 @@ pub fn run() {
             commands::docker::pull_openclaw_image,
             commands::docker::start_docker_gateway,
             commands::docker::stop_docker_gateway,
-            commands::docker::docker_gateway_status,
             // Desktop Pet (companion)
             commands::pet::emit_pet_state,
             commands::pet_backdrop::get_pet_backdrop_reading,

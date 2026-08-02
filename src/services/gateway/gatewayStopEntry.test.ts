@@ -38,3 +38,32 @@ test('the stop commands stay registered', () => {
     assert.ok(lib.includes(command), `${command} must remain registered`);
   }
 });
+
+// AUD-03 second half: three lifecycle commands had no consumer at all.
+// Registration is IPC surface exposed to the WebView, so an entry point nobody
+// calls is cost without benefit.
+test('lifecycle commands with no consumer are no longer registered', () => {
+  for (const command of ['restart_local_gateway', 'get_gateway_lifecycle', 'docker_gateway_status']) {
+    assert.ok(!lib.includes(`${command},`), `${command} must not be registered`);
+  }
+});
+
+test('a still-used helper keeps its implementation but loses its command wrapper', () => {
+  const docker = readFileSync('src-tauri/src/commands/docker.rs', 'utf8');
+  const ensure = readFileSync('src-tauri/src/commands/ensure.rs', 'utf8');
+  // docker_gateway_status is live code: ensure_gateway_running depends on it.
+  assert.match(ensure, /docker_gateway_status\(Some\(port\)\)/);
+  assert.match(docker, /pub\(crate\) async fn docker_gateway_status/);
+  assert.doesNotMatch(docker, /#\[tauri::command\]\npub async fn docker_gateway_status/);
+});
+
+test('the two pure aliases are gone rather than merely unregistered', () => {
+  const gateway = readFileSync('src-tauri/src/commands/gateway.rs', 'utf8');
+  const supervisor = readFileSync('src-tauri/src/commands/gateway_supervisor.rs', 'utf8');
+  assert.doesNotMatch(gateway, /fn restart_local_gateway/);
+  assert.doesNotMatch(supervisor, /fn get_gateway_lifecycle/);
+  // Their replacements stay: restart_gateway takes the same optional port, and
+  // the runtime snapshot already carries the lifecycle field.
+  assert.match(gateway, /pub async fn restart_gateway/);
+  assert.match(supervisor, /pub async fn get_gateway_runtime_snapshot/);
+});
