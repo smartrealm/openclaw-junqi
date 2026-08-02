@@ -9,6 +9,9 @@ enum PlaybackCommand {
         samples: Vec<i16>,
         response: mpsc::SyncSender<Result<(), String>>,
     },
+    Finish {
+        response: mpsc::SyncSender<Result<(), String>>,
+    },
     Stop,
 }
 
@@ -39,6 +42,10 @@ fn start_playback_worker() -> mpsc::Sender<PlaybackCommand> {
                             let _ = response
                                 .send(Err(format!("Talk output device unavailable: {error}")));
                         }
+                        PlaybackCommand::Finish { response } => {
+                            let _ = response
+                                .send(Err(format!("Talk output device unavailable: {error}")));
+                        }
                         PlaybackCommand::Stop => return,
                     }
                 }
@@ -54,6 +61,10 @@ fn start_playback_worker() -> mpsc::Sender<PlaybackCommand> {
                             let _ = response
                                 .send(Err(format!("Talk output queue unavailable: {error}")));
                         }
+                        PlaybackCommand::Finish { response } => {
+                            let _ = response
+                                .send(Err(format!("Talk output queue unavailable: {error}")));
+                        }
                         PlaybackCommand::Stop => return,
                     }
                 }
@@ -66,6 +77,45 @@ fn start_playback_worker() -> mpsc::Sender<PlaybackCommand> {
                 PlaybackCommand::Append { samples, response } => {
                     sink.append(SamplesBuffer::new(1, 24_000, samples));
                     let _ = response.send(Ok(()));
+                }
+                PlaybackCommand::Finish { response } => {
+                    let mut completion = Some(response);
+                    loop {
+                        if sink.empty() {
+                            if let Some(response) = completion.take() {
+                                let _ = response.send(Ok(()));
+                            }
+                            break;
+                        }
+                        match rx.recv_timeout(Duration::from_millis(20)) {
+                            Ok(PlaybackCommand::Append { samples, response }) => {
+                                sink.append(SamplesBuffer::new(1, 24_000, samples));
+                                let _ = response.send(Ok(()));
+                            }
+                            Ok(PlaybackCommand::Finish { response }) => {
+                                let _ = response
+                                    .send(Err("Talk output is already draining".to_string()));
+                            }
+                            Ok(PlaybackCommand::Stop) => {
+                                sink.stop();
+                                if let Some(response) = completion.take() {
+                                    let _ =
+                                        response.send(Err("Talk output interrupted".to_string()));
+                                }
+                                return;
+                            }
+                            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                if let Some(response) = completion.take() {
+                                    let _ =
+                                        response
+                                            .send(Err("Talk output worker stopped unexpectedly"
+                                                .to_string()));
+                                }
+                                return;
+                            }
+                        }
+                    }
                 }
                 PlaybackCommand::Stop => {
                     sink.stop();
@@ -121,6 +171,20 @@ pub fn voice_talk_stop_playback() -> Result<(), String> {
         let _ = sender.send(PlaybackCommand::Stop);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn voice_talk_finish_playback() -> Result<(), String> {
+    let sender = playback_sender()?;
+    let (response_tx, response_rx) = mpsc::sync_channel(1);
+    sender
+        .send(PlaybackCommand::Finish {
+            response: response_tx,
+        })
+        .map_err(|_| "Talk output worker stopped unexpectedly".to_string())?;
+    response_rx
+        .recv_timeout(Duration::from_secs(90))
+        .map_err(|_| "Talk output worker did not drain before timeout".to_string())?
 }
 
 #[cfg(test)]

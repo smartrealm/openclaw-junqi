@@ -23,6 +23,7 @@
 19. Preserve an already verified wake-word listener when a close request arrives before workbench persistence is ready, without relaxing the normal checkpoint and PTY shutdown path.
 20. Expose the selected model's declared wake labels in the full-window Jarvis surface, saving only a non-empty model-backed subset through the fenced Gateway trigger contract.
 21. Preserve a verified KWS phrase as the barge-in signal during assistant output, while retaining VAD/browser feedback suppression; cancel old Gateway Talk output after local stop and before closing its replaced relay session.
+22. Serialize Gateway Talk PCM deltas at the Tauri boundary, wait for the native sink to drain after `output.audio.done`, and make cancellation fence queued frames before stopping the sink.
 
 ## Current Remediation (Completed)
 

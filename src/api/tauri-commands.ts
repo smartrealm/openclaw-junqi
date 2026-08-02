@@ -112,6 +112,8 @@ export const playTalkPcm = (audioBase64: string) => invoke<void>('voice_talk_pla
 
 export const stopTalkPlayback = () => invoke<void>('voice_talk_stop_playback');
 
+export const finishTalkPlayback = () => invoke<void>('voice_talk_finish_playback');
+
 export const getVoiceWakeDetectorStatus = async (): Promise<VoiceWakeDetectorStatus> => (
   parseVoiceWakeDetectorStatus(
     'voice_wake_detector_status',

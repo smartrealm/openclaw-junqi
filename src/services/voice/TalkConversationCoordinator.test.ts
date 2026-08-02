@@ -18,6 +18,7 @@ test('Talk conversation serializes PCM frames on its attested session', async ()
     isConnectionCurrent: () => true,
     interruptLocalOutput: () => undefined,
     playOutput: () => undefined,
+    finishOutput: () => undefined,
     stopOutput: () => undefined,
     now: () => 100,
   });
@@ -51,6 +52,7 @@ test('Talk interruption stops local output before requesting Gateway cancellatio
     isConnectionCurrent: () => true,
     interruptLocalOutput: () => { calls.push('local'); },
     playOutput: () => undefined,
+    finishOutput: () => undefined,
     stopOutput: () => undefined,
   });
   await coordinator.start('agent:main:main');
@@ -73,6 +75,7 @@ test('Talk replacement cancels Gateway output after local stop and before closin
     isConnectionCurrent: () => true,
     interruptLocalOutput: () => { calls.push('local'); },
     playOutput: () => undefined,
+    finishOutput: () => undefined,
     stopOutput: () => { calls.push('output'); },
   });
   await coordinator.start('agent:main:main');
@@ -99,6 +102,7 @@ test('Talk conversation retains bounded PCM while the relay session is connectin
     isConnectionCurrent: () => true,
     interruptLocalOutput: () => undefined,
     playOutput: () => undefined,
+    finishOutput: () => undefined,
     stopOutput: () => undefined,
   });
   const start = coordinator.start('agent:main:main');
@@ -127,6 +131,7 @@ test('Talk opening can be awaited before choosing the WAV fallback path', async 
     isConnectionCurrent: () => true,
     interruptLocalOutput: () => undefined,
     playOutput: () => undefined,
+    finishOutput: () => undefined,
     stopOutput: () => undefined,
   });
   const opening = coordinator.start('agent:main:main');
@@ -159,6 +164,7 @@ test('stopping an opening relay discards its buffered PCM before any later sessi
     isConnectionCurrent: () => true,
     interruptLocalOutput: () => undefined,
     playOutput: () => undefined,
+    finishOutput: () => undefined,
     stopOutput: () => undefined,
   });
   const first = coordinator.start('agent:main:main');
@@ -189,6 +195,7 @@ test('a stale Talk session creation cannot replace a newer trigger', async () =>
     isConnectionCurrent: () => true,
     interruptLocalOutput: () => undefined,
     playOutput: () => undefined,
+    finishOutput: () => undefined,
     stopOutput: () => undefined,
   });
   const first = coordinator.start('agent:main:main');
@@ -201,4 +208,101 @@ test('a stale Talk session creation cannot replace a newer trigger', async () =>
   await first;
   assert.equal(coordinator.getSnapshot().sessionId, 'talk-new');
   assert.deepEqual(closed, ['talk-old']);
+});
+
+test('Talk output serializes PCM playback and waits for the native queue to drain', async () => {
+  const calls: string[] = [];
+  const listeners = new Set<(event: TalkGatewayEvent) => void>();
+  const resolvers = new Map<string, () => void>();
+  const coordinator = new TalkConversationCoordinator({
+    client: {
+      createRealtimeRelay: async () => ({ sessionId: 'talk-1', provider: 'relay' }),
+      appendAudio: async () => undefined,
+      cancelOutput: async () => undefined,
+      close: async () => undefined,
+      subscribe: (next) => { listeners.add(next); return () => listeners.delete(next); },
+    },
+    captureConnectionId: () => 'connection-a',
+    isConnectionCurrent: () => true,
+    interruptLocalOutput: () => undefined,
+    playOutput: (audioBase64) => new Promise<void>((resolve) => {
+      calls.push(audioBase64);
+      resolvers.set(audioBase64, resolve);
+    }),
+    finishOutput: () => { calls.push('finish'); },
+    stopOutput: () => undefined,
+  });
+  const emit = (event: TalkGatewayEvent) => {
+    for (const listener of listeners) listener(event);
+  };
+  const outputEvent = (type: TalkGatewayEvent['type'], audioBase64: string | null): TalkGatewayEvent => ({
+    id: `event-${type}`, sessionId: 'talk-1', type, seq: 1, turnId: null,
+    mode: 'realtime', transport: 'gateway-relay', brain: 'agent-consult', payload: {}, audioBase64, relayType: null,
+  });
+
+  await coordinator.start('agent:main:main');
+  emit(outputEvent('output.audio.delta', 'first'));
+  emit(outputEvent('output.audio.delta', 'second'));
+  emit(outputEvent('output.audio.done', null));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ['first']);
+  assert.equal(coordinator.getSnapshot().phase, 'speaking');
+
+  const first = resolvers.get('first');
+  assert.ok(first);
+  first();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ['first', 'second']);
+
+  const second = resolvers.get('second');
+  assert.ok(second);
+  second();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ['first', 'second', 'finish']);
+  assert.equal(coordinator.getSnapshot().phase, 'listening');
+});
+
+test('stopping Talk output fences PCM that was queued behind an interrupted frame', async () => {
+  const calls: string[] = [];
+  const listeners = new Set<(event: TalkGatewayEvent) => void>();
+  let resolveFirst: (() => void) | undefined;
+  const coordinator = new TalkConversationCoordinator({
+    client: {
+      createRealtimeRelay: async () => ({ sessionId: 'talk-1', provider: 'relay' }),
+      appendAudio: async () => undefined,
+      cancelOutput: async () => undefined,
+      close: async () => undefined,
+      subscribe: (next) => { listeners.add(next); return () => listeners.delete(next); },
+    },
+    captureConnectionId: () => 'connection-a',
+    isConnectionCurrent: () => true,
+    interruptLocalOutput: () => undefined,
+    playOutput: (audioBase64) => new Promise<void>((resolve) => {
+      calls.push(audioBase64);
+      if (audioBase64 === 'first') resolveFirst = resolve;
+    }),
+    finishOutput: () => { calls.push('finish'); },
+    stopOutput: () => { calls.push('stop'); },
+  });
+  const emit = (audioBase64: string) => {
+    for (const listener of listeners) {
+      listener({
+        id: `event-${audioBase64}`, sessionId: 'talk-1', type: 'output.audio.delta', seq: 1,
+        turnId: null, mode: 'realtime', transport: 'gateway-relay', brain: 'agent-consult', payload: {},
+        audioBase64, relayType: null,
+      });
+    }
+  };
+
+  await coordinator.start('agent:main:main');
+  calls.length = 0;
+  emit('first');
+  emit('second');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ['first']);
+  await coordinator.stop();
+  assert.ok(resolveFirst);
+  resolveFirst();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ['first', 'stop']);
 });

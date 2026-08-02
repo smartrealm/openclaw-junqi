@@ -18,6 +18,7 @@ export interface TalkConversationDependencies {
   isConnectionCurrent: (connectionId: string) => boolean;
   interruptLocalOutput: (sessionKey: string) => void;
   playOutput: (audioBase64: string) => void | Promise<void>;
+  finishOutput: () => void | Promise<void>;
   stopOutput: () => void | Promise<void>;
   now?: () => number;
 }
@@ -33,6 +34,9 @@ export class TalkConversationCoordinator {
   private sessionKey: string | null = null;
   private unsubscribeEvents: (() => void) | null = null;
   private appendQueue: Promise<void> = Promise.resolve();
+  private playbackQueue: Promise<void> = Promise.resolve();
+  private playbackGeneration = 0;
+  private playbackSessionId: string | null = null;
   private pendingFrames: Array<{ data: string; sampleRateHz: number; channels: number }> = [];
   private opening: Promise<TalkConversationSnapshot> | null = null;
   private generation = 0;
@@ -145,7 +149,7 @@ export class TalkConversationCoordinator {
     const sessionKey = this.sessionKey;
     if (!sessionId || !sessionKey || !this.ownsSession()) return;
     this.dependencies.interruptLocalOutput(sessionKey);
-    await Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
+    await this.stopNativeOutput();
     await this.dependencies.client.cancelOutput(sessionId).catch((error) => {
       if (this.snapshot.sessionId === sessionId) {
         this.set({ ...this.snapshot, phase: 'error', error: error instanceof Error ? error.message : String(error) });
@@ -159,7 +163,7 @@ export class TalkConversationCoordinator {
     const sessionKey = this.sessionKey;
     const ownsSession = this.ownsSession();
     if (sessionKey) this.dependencies.interruptLocalOutput(sessionKey);
-    await Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
+    await this.stopNativeOutput();
     if (!sessionId || !ownsSession) return;
     await this.dependencies.client.cancelOutput(sessionId).catch(() => undefined);
   }
@@ -173,7 +177,7 @@ export class TalkConversationCoordinator {
     this.sessionKey = null;
     this.appendQueue = Promise.resolve();
     if (!options.retainPendingFrames) this.pendingFrames = [];
-    await Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
+    await this.stopNativeOutput();
     this.set(INITIAL);
     if (sessionId && ownsSession) await this.dependencies.client.close(sessionId).catch(() => undefined);
   }
@@ -182,19 +186,61 @@ export class TalkConversationCoordinator {
     if (event.sessionId !== this.snapshot.sessionId || !this.ownsSession()) return;
     if (event.type === 'output.audio.started' || event.type === 'output.audio.delta') {
       this.set({ ...this.snapshot, phase: 'speaking', error: null });
-      if (event.audioBase64) {
-        void Promise.resolve(this.dependencies.playOutput(event.audioBase64)).catch((error) => {
-          if (this.snapshot.sessionId === event.sessionId) {
-            this.set({ ...this.snapshot, phase: 'error', error: error instanceof Error ? error.message : String(error) });
-          }
-        });
-      }
-    } else if (event.type === 'output.audio.done' || event.type === 'turn.cancelled') {
-      void Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
+      if (event.audioBase64) this.enqueueOutput(event.sessionId, event.audioBase64);
+    } else if (event.type === 'output.audio.done') {
+      this.finishOutput(event.sessionId);
+    } else if (event.type === 'turn.cancelled') {
+      void this.stopNativeOutput();
       this.set({ ...this.snapshot, phase: 'listening', error: null });
     } else if (event.type === 'session.error' || event.type === 'session.closed') {
-      void Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
+      void this.stopNativeOutput();
       this.set({ ...INITIAL, phase: 'error', error: `Talk session ${event.type}` });
+    }
+  }
+
+  private enqueueOutput(sessionId: string, audioBase64: string): void {
+    const playbackGeneration = this.playbackGeneration;
+    this.playbackSessionId = sessionId;
+    this.playbackQueue = this.playbackQueue
+      .then(async () => {
+        if (playbackGeneration !== this.playbackGeneration
+          || this.snapshot.sessionId !== sessionId
+          || !this.ownsSession()) return;
+        await this.dependencies.playOutput(audioBase64);
+      })
+      .catch((error) => this.handlePlaybackError(sessionId, playbackGeneration, error));
+  }
+
+  private finishOutput(sessionId: string): void {
+    if (this.playbackSessionId !== sessionId) {
+      this.set({ ...this.snapshot, phase: 'listening', error: null });
+      return;
+    }
+    const playbackGeneration = this.playbackGeneration;
+    this.playbackQueue = this.playbackQueue
+      .then(async () => {
+        if (playbackGeneration !== this.playbackGeneration
+          || this.snapshot.sessionId !== sessionId
+          || !this.ownsSession()) return;
+        await this.dependencies.finishOutput();
+        if (playbackGeneration === this.playbackGeneration && this.snapshot.sessionId === sessionId) {
+          this.playbackSessionId = null;
+          this.set({ ...this.snapshot, phase: 'listening', error: null });
+        }
+      })
+      .catch((error) => this.handlePlaybackError(sessionId, playbackGeneration, error));
+  }
+
+  private async stopNativeOutput(): Promise<void> {
+    this.playbackGeneration += 1;
+    this.playbackSessionId = null;
+    this.playbackQueue = Promise.resolve();
+    await Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
+  }
+
+  private handlePlaybackError(sessionId: string, playbackGeneration: number, error: unknown): void {
+    if (playbackGeneration === this.playbackGeneration && this.snapshot.sessionId === sessionId) {
+      this.set({ ...this.snapshot, phase: 'error', error: error instanceof Error ? error.message : String(error) });
     }
   }
 }

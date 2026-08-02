@@ -62,6 +62,12 @@ A recognized native KWS phrase is the explicit barge-in signal, so JunQi accepts
 
 Talk's native PCM output publishes only its active session key and `speaking` state to the existing local voice runtime. The full-window surface retains its more detailed connecting/listening/speaking state; the Dynamic Island and pet consume the ordinary non-sensitive voice projection and therefore change to speaking while native Talk audio plays. Neither projection receives relay audio, transcript, or credentials.
 
+## Talk Output Ordering
+
+The installed OpenClaw Talk relay emits ordered `output.audio.delta` frames and then `output.audio.done`. JunQi serializes every accepted PCM16 frame for one attested session before it crosses Tauri IPC. The native playback worker appends those frames to one Rodio sink. The done event does not stop that sink: it waits until the sink has consumed its queued audio, then transitions the full-window surface and its projections from speaking to listening.
+
+Interruption, relay replacement, close, and relay failure invalidate the queued generation before sending the native stop command. A frame that was waiting behind an interrupted frame cannot begin playback afterward. The native drain wait processes stop commands while waiting, so a recognized barge-in is not delayed by a long assistant reply.
+
 ## Automated Evidence
 
 - `pnpm exec tsc --noEmit` passed.
@@ -86,6 +92,7 @@ Talk's native PCM output publishes only its active session key and `speaking` st
 - On 2026-08-02, barge-in policy tests verified that a declared KWS phrase is accepted during assistant output while unverified VAD/browser input remains suppressed. The Talk coordinator regression verifies local playback stop, Gateway cancellation, and old-relay close in that order when a new wake replaces an active relay.
 - On 2026-08-02, the native Talk projection regression verified that only the owning Talk session can publish and clear the shared `speaking` state consumed by the pet and Dynamic Island.
 - On 2026-08-02, `pnpm lint`, the complete `pnpm test` suite (2,242 frontend tests and 233 script tests), `pnpm build`, `cargo fmt -- --check`, `cargo check --lib`, and `cargo test --lib` passed. The Rust library suite reported 692 passed and 4 intentionally ignored tests; the existing `system.rs` unused-variable warning remains.
+- On 2026-08-02, the Talk output ordering regression verified that PCM deltas serialize, `output.audio.done` waits for native drain, and stopping a relay fences queued playback. The complete frontend lint/test/build suite and complete Rust library suite passed again; Rust reported 692 passed and 4 intentionally ignored tests, with the existing `system.rs` unused-variable warning.
 - Capability and locale JSON parsed successfully, and `git diff --check` passed.
 
 ## Unverified Boundaries

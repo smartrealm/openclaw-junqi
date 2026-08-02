@@ -4,6 +4,7 @@ import { disable as disableAutostart, enable as enableAutostart, isEnabled as is
 import { useTranslation } from 'react-i18next';
 import {
   getVoiceWakeDetectorStatus,
+  finishTalkPlayback,
   playTalkPcm,
   presentCurrentWindowForVoiceWake,
   setVoiceWakeModelDirectory,
@@ -120,6 +121,7 @@ export function useComposerVoice({
       isConnectionCurrent: (candidate) => gateway.isConnectionCurrent(candidate),
       interruptLocalOutput: (sessionKey) => voiceRuntime.interruptGlobally(sessionKey),
       playOutput: playTalkPcm,
+      finishOutput: finishTalkPlayback,
       stopOutput: stopTalkPlayback,
     });
   }
