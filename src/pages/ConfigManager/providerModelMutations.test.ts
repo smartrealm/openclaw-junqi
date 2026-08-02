@@ -442,6 +442,33 @@ test('disabling the only image-capable model clears image primary', () => {
   assert.equal(next.agents?.defaults?.imageModel, undefined);
 });
 
+test('model pricing is written only to the provider model definition', () => {
+  const next = updateProviderModel({
+    config: {
+      models: { providers: { vllm: { models: [{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }] } } },
+      agents: { defaults: { models: { 'vllm/gpt-5.6-sol': { alias: 'sol' } } } },
+    },
+    providerId: 'vllm',
+    modelRef: 'vllm/gpt-5.6-sol',
+    providerPatch: {
+      cost: {
+        input: 5,
+        output: 30,
+        cacheRead: 0.5,
+        cacheWrite: 6.25,
+      },
+    },
+  });
+
+  assert.deepEqual(next.models?.providers?.vllm.models?.[0]?.cost, {
+    input: 5,
+    output: 30,
+    cacheRead: 0.5,
+    cacheWrite: 6.25,
+  });
+  assert.deepEqual(next.agents?.defaults?.models?.['vllm/gpt-5.6-sol'], { alias: 'sol' });
+});
+
 test('BUG-MP-06 writes advanced fields only to the provider model definition', () => {
   const next = updateProviderModel({
     config: {

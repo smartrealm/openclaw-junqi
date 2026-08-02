@@ -238,6 +238,7 @@ test('normalizeModelsProvidersForRuntime preserves schema fields and strips lega
             input: ['audio', 'video'],
             contextWindow: 128_000,
             maxTokens: 8_192,
+            cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 },
             compat: { supportsTools: true },
             supportsImage: false,
             modalities: { input: ['audio', 'video'] },
@@ -261,6 +262,7 @@ test('normalizeModelsProvidersForRuntime preserves schema fields and strips lega
       input: ['audio', 'video'],
       contextWindow: 128_000,
       maxTokens: 8_192,
+      cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 },
       compat: { supportsTools: true },
     },
   ]);
