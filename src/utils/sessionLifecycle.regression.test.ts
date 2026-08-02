@@ -17,7 +17,7 @@ import {
 } from '@/utils/sessionDelete';
 import { __setSessionRenameDepsForTest, applySessionRename } from '@/utils/sessionRename';
 import { __setSessionResetDepsForTest, resetSessionEverywhere } from '@/utils/sessionReset';
-import { projectSessionOrganization } from '@/services/chat/sessionOrganization';
+import { projectSessionOrganization, setSessionOrganizationFlag } from '@/services/chat/sessionOrganization';
 
 const MAIN_KEY = 'agent:main:main';
 const SESSION_KEY = 'agent:worker:desktop-lifecycle-regression';
@@ -282,24 +282,23 @@ describe('session lifecycle regression fixes', () => {
     assert.doesNotMatch(source, /window\.history\.replaceState|appliedRef/);
   });
 
-  test('BUG-08 pinned sessions survive a store reload and deletion clears identity-bound organization state', () => {
+  test('BUG-08 native pin snapshots survive reload and deletion clears legacy identity-bound organization state', () => {
     seedSession(MAIN_KEY);
     useChatStore.getState().setSessionIdentity(SESSION_KEY, 'worker-session-id');
-    useChatStore.getState().togglePinSession(SESSION_KEY);
+    setSessionOrganizationFlag({ key: SESSION_KEY, sessionId: 'worker-session-id' }, 'pinned', true);
     assert.equal(projectSessionOrganization({ key: SESSION_KEY, sessionId: 'worker-session-id' }).pinned, true);
 
     useChatStore.setState({ sessions: [] });
     useChatStore.getState().setSessions([
       { key: MAIN_KEY, label: 'Main' },
-      { key: SESSION_KEY, label: 'Worker', sessionId: 'worker-session-id' },
+      { key: SESSION_KEY, label: 'Worker', sessionId: 'worker-session-id', pinned: true },
     ]);
     assert.equal(useChatStore.getState().sessions.find((session) => session.key === SESSION_KEY)?.pinned, true);
 
-    useChatStore.getState().togglePinSession(SESSION_KEY);
     useChatStore.setState({ sessions: [] });
     useChatStore.getState().setSessions([
       { key: MAIN_KEY, label: 'Main' },
-      { key: SESSION_KEY, label: 'Worker', sessionId: 'worker-session-id' },
+      { key: SESSION_KEY, label: 'Worker', sessionId: 'worker-session-id', pinned: false },
     ]);
     assert.equal(useChatStore.getState().sessions.find((session) => session.key === SESSION_KEY)?.pinned, false);
 
