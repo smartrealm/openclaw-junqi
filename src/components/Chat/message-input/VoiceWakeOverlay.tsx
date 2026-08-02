@@ -27,6 +27,7 @@ function phaseCopy(snapshot: VoiceModeSnapshot, talkPhase: TalkConversationPhase
   if (talkPhase === 'speaking') return t('input.voiceWorkspaceSpeaking');
   if (talkPhase === 'connecting') return t('input.voiceWorkspaceThinking');
   if (snapshot.error === 'wake_detector_unavailable') return t('input.voiceWakeUnavailable');
+  if (snapshot.error === 'wake_trigger_model_mismatch') return t('input.voiceWakeTriggerModelMismatch');
   if (snapshot.error === 'gateway_unavailable') return t('input.voiceGatewayUnavailable');
   if (snapshot.error === 'target_changed') return t('input.voiceTargetChanged');
   if (snapshot.error === 'capture_failed') return t('input.voiceCaptureFailed');
@@ -75,7 +76,8 @@ export function VoiceWakeOverlay({
     ? snapshot.draft.text
     : snapshot.draft ? t('input.voiceAudioDraft') : null;
   const ready = snapshot.phase === 'ready_to_send' && snapshot.draft !== null && snapshot.error === null;
-  const unavailable = snapshot.error === 'wake_detector_unavailable';
+  const unavailable = snapshot.error === 'wake_detector_unavailable'
+    || snapshot.error === 'wake_trigger_model_mismatch';
   const failed = snapshot.phase === 'error' || unavailable;
 
   return (

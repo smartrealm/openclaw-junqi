@@ -34,6 +34,7 @@ export interface VoiceWakeDetectorStatus {
   available: boolean;
   modelId: string | null;
   directory: string | null;
+  keywords: string[];
   reason: string | null;
 }
 
@@ -45,6 +46,18 @@ function optionalString(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'string') throw new Error('invalid optional string');
   return value;
+}
+
+function nonEmptyStringArray(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 32) throw new Error('invalid string array');
+  const result: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string' || entry.trim().length === 0 || entry.length > 128) {
+      throw new Error('invalid string array entry');
+    }
+    result.push(entry);
+  }
+  return result;
 }
 
 function parseVoiceWakeStatus(command: string, value: unknown): VoiceWakeStatus {
@@ -65,6 +78,7 @@ function parseVoiceWakeDetectorStatus(command: string, value: unknown): VoiceWak
       available: record.available,
       modelId: optionalString(record.modelId),
       directory: optionalString(record.directory),
+      keywords: nonEmptyStringArray(record.keywords),
       reason: optionalString(record.reason),
     };
   } catch {

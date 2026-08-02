@@ -7,6 +7,15 @@ import {
 
 export type VoiceWakeRouteDisposition = 'accepted' | 'unknown_trigger' | 'target_changed';
 
+export function hasCompatibleVoiceWakeTrigger(
+  modelKeywords: readonly string[],
+  configuration: VoiceWakeGatewayConfiguration,
+): boolean {
+  return modelKeywords.some((keyword) => (
+    includesVoiceWakeTrigger(configuration.triggers.triggers, keyword)
+  ));
+}
+
 function targetsSession(target: VoiceWakeRouteTarget, sessionKey: string): boolean {
   if ('mode' in target) return true;
   if ('sessionKey' in target) return target.sessionKey === sessionKey;

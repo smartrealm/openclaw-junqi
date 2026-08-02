@@ -12,7 +12,7 @@ The local detector requires the extracted official bilingual model directory wit
 - `tokens.txt`
 - `keywords.txt`
 
-`keywords.txt` is intentionally not generated from guessed text. It must be produced with the model's official tokenization procedure and reviewed with the selected wake phrase.
+`keywords.txt` is intentionally not generated from guessed text. It must be produced with the model's official tokenization procedure and reviewed with the selected wake phrase. For the selected `phone+ppinyin` model, JunQi reads only the official `@original_phrase` labels from that file; a missing label makes the model unavailable.
 
 ## Residency
 
@@ -31,6 +31,8 @@ OpenClaw `v2026.7.1-2` separates channel group-session routing from a user-defin
 OpenClaw voice-wake routing can target `current`, an agent, or a canonical session key, but `talk.session.create` has no `voiceWakeTrigger` parameter. Continuous Talk therefore stays bound to the resolved selected session; it does not claim that Gateway automatically routes Talk audio by keyword. The local model's `keywords.txt` remains externally generated through the selected model's documented tokenization process. JunQi does not write or infer that asset.
 
 Before a wake listener starts, JunQi reads both `voicewake.get` and `voicewake.routing.get` from the selected authenticated Gateway and retains the resulting configuration only for that live connection. Gateway `voicewake.changed` and `voicewake.routing.changed` updates replace the matching in-memory portion. A local KWS result that is absent from the Gateway trigger list is discarded without forwarding audio. A route that resolves outside the selected session is stopped with `target_changed` rather than silently delivering Talk to a different chat; full cross-session Talk handoff remains pending because its installed contract has no wake-trigger field.
+
+Arming also requires at least one Gateway trigger to exactly match a label actually present in the selected local model. A mismatch is shown as `wake_trigger_model_mismatch`, leaves capture stopped, and offers the existing model-directory selection control. JunQi does not translate arbitrary user text into pinyin or phoneme tokens: the upstream model requires `phone+ppinyin`, `en.phone`, and an `@original_phrase` marker, so unverified local rewriting would make a custom wake word appear configured while the detector could not reliably recognize it.
 
 ## Talk Relay Boundary
 
@@ -55,6 +57,7 @@ The event bridge validates the OpenClaw Talk envelope within `payload.talkEvent`
 ## Unverified Boundaries
 
 - No model archive is bundled in this change.
+- JunQi does not yet provide an in-app keyword token generator; a custom phrase still requires a model package generated using the upstream tokenizer before it can be selected and matched to Gateway configuration.
 - No microphone, login-start, tray, sleep-resume, or package validation has been performed on Windows, CentOS, or Ubuntu.
 - No target-platform test has confirmed whether a background wake may claim focus under the local Windows, CentOS, Ubuntu, or macOS focus policy.
 - The local development machine is not evidence of target-platform behavior.

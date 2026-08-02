@@ -21,7 +21,7 @@ import {
   voiceModeCoordinator,
   type VoiceModeContext,
 } from '@/services/voice/VoiceModeCoordinator';
-import { decideVoiceWakeRoute } from '@/services/voice/VoiceWakeRoutePolicy';
+import { decideVoiceWakeRoute, hasCompatibleVoiceWakeTrigger } from '@/services/voice/VoiceWakeRoutePolicy';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { TalkConversationCoordinator } from '@/services/voice/TalkConversationCoordinator';
 import { createJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
@@ -377,9 +377,11 @@ export function useComposerVoice({
       }
 
       let detectorAvailable = false;
+      let detectorKeywords: string[] = [];
       try {
         const detector = await getVoiceWakeDetectorStatus();
         detectorAvailable = detector.available;
+        detectorKeywords = detector.keywords;
         setDetector(detector);
         setDetectorError(null);
       } catch (error) {
@@ -405,6 +407,16 @@ export function useComposerVoice({
         const configuration = await voiceWakeGatewayClient.getConfiguration();
         if (!isCurrentVoiceContext(context)) return;
         wakeConfigurationRef.current = configuration;
+        if (!hasCompatibleVoiceWakeTrigger(detectorKeywords, configuration)) {
+          const snapshot = voiceModeCoordinator.start({
+            mode: 'wake_word',
+            context,
+            wakeDetectorAvailable: true,
+          });
+          activeTurnRef.current = snapshot.turnId;
+          voiceModeCoordinator.reportUnavailable(snapshot.turnId, context, 'wake_trigger_model_mismatch');
+          return;
+        }
       } catch (error) {
         if (!isCurrentVoiceContext(context)) return;
         setDetectorError(error instanceof Error ? error.message : String(error));

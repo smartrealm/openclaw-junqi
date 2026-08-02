@@ -25,6 +25,7 @@ pub struct WakeDetectorStatus {
     pub available: bool,
     pub model_id: Option<String>,
     pub directory: Option<String>,
+    pub keywords: Vec<String>,
     pub reason: Option<String>,
 }
 
@@ -87,24 +88,24 @@ pub fn detector_status(app: &AppHandle) -> WakeDetectorStatus {
         return unavailable("unsupported_model");
     }
     match validate_model_directory(&stored.directory) {
-        Ok(()) => match WakeKeywordSpotter::create(&stored.directory) {
-            Ok(_) => WakeDetectorStatus {
-                available: true,
-                model_id: Some(stored.model_id),
-                directory: Some(stored.directory.to_string_lossy().into_owned()),
-                reason: None,
+        Ok(()) => match read_keyword_labels(&stored.directory) {
+            Ok(keywords) => match WakeKeywordSpotter::create(&stored.directory) {
+                Ok(_) => WakeDetectorStatus {
+                    available: true,
+                    model_id: Some(stored.model_id),
+                    directory: Some(stored.directory.to_string_lossy().into_owned()),
+                    keywords,
+                    reason: None,
+                },
+                Err(_) => unavailable_for_model(&stored, "detector_initialization_failed"),
             },
-            Err(_) => WakeDetectorStatus {
-                available: false,
-                model_id: Some(stored.model_id),
-                directory: Some(stored.directory.to_string_lossy().into_owned()),
-                reason: Some("detector_initialization_failed".to_string()),
-            },
+            Err(reason) => unavailable_for_model(&stored, &reason),
         },
         Err(reason) => WakeDetectorStatus {
             available: false,
             model_id: Some(stored.model_id),
             directory: Some(stored.directory.to_string_lossy().into_owned()),
+            keywords: Vec::new(),
             reason: Some(reason),
         },
     }
@@ -135,6 +136,7 @@ pub fn voice_wake_set_model_directory(
 ) -> Result<WakeDetectorStatus, String> {
     let directory = PathBuf::from(directory);
     validate_model_directory(&directory)?;
+    read_keyword_labels(&directory)?;
     WakeKeywordSpotter::create(&directory)?;
     let settings = StoredWakeModel {
         model_id: MODEL_ID.to_string(),
@@ -150,6 +152,17 @@ fn unavailable(reason: &str) -> WakeDetectorStatus {
         available: false,
         model_id: None,
         directory: None,
+        keywords: Vec::new(),
+        reason: Some(reason.to_string()),
+    }
+}
+
+fn unavailable_for_model(stored: &StoredWakeModel, reason: &str) -> WakeDetectorStatus {
+    WakeDetectorStatus {
+        available: false,
+        model_id: Some(stored.model_id.clone()),
+        directory: Some(stored.directory.to_string_lossy().into_owned()),
+        keywords: Vec::new(),
         reason: Some(reason.to_string()),
     }
 }
@@ -204,6 +217,37 @@ fn validate_model_directory(directory: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn read_keyword_labels(directory: &Path) -> Result<Vec<String>, String> {
+    let raw = fs::read_to_string(directory.join(KEYWORDS_FILE))
+        .map_err(|_| "model_keywords_unreadable".to_string())?;
+    parse_keyword_labels(&raw)
+}
+
+fn parse_keyword_labels(raw: &str) -> Result<Vec<String>, String> {
+    let mut keywords = Vec::new();
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let label = line
+            .split_whitespace()
+            .find_map(|token| token.strip_prefix('@'))
+            .filter(|label| !label.trim().is_empty())
+            .ok_or_else(|| "model_keywords_missing_label".to_string())?;
+        if label.chars().count() > 128 {
+            return Err("model_keywords_label_too_long".to_string());
+        }
+        if !keywords.iter().any(|candidate| candidate == label) {
+            keywords.push(label.to_string());
+        }
+    }
+    if keywords.is_empty() {
+        return Err("model_keywords_empty".to_string());
+    }
+    Ok(keywords)
+}
+
 fn path_string(path: PathBuf) -> Result<String, String> {
     path.into_os_string()
         .into_string()
@@ -212,7 +256,10 @@ fn path_string(path: PathBuf) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_model_directory, write_settings, StoredWakeModel, WakeKeywordSpotter};
+    use super::{
+        parse_keyword_labels, validate_model_directory, write_settings, StoredWakeModel,
+        WakeKeywordSpotter,
+    };
     use std::fs;
     use std::path::Path;
 
@@ -235,6 +282,19 @@ mod tests {
             "model_asset_missing:keywords.txt"
         );
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn model_keyword_labels_require_the_official_original_phrase_marker() {
+        assert_eq!(
+            parse_keyword_labels("j a r v i s @JARVIS\nn ǐ h ǎo @你好\n")
+                .expect("parse official keyword labels"),
+            vec!["JARVIS", "你好"]
+        );
+        assert_eq!(
+            parse_keyword_labels("j a r v i s\n").expect_err("marker is required"),
+            "model_keywords_missing_label"
+        );
     }
 
     #[test]

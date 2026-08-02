@@ -26,6 +26,9 @@ function phaseCopy(snapshot: VoiceModeSnapshot, t: TFunction): string {
   if (snapshot.error === 'wake_detector_unavailable') {
     return t('input.voiceWakeUnavailable');
   }
+  if (snapshot.error === 'wake_trigger_model_mismatch') {
+    return t('input.voiceWakeTriggerModelMismatch');
+  }
   if (snapshot.error === 'gateway_unavailable') {
     return t('input.voiceGatewayUnavailable');
   }
@@ -155,7 +158,7 @@ export function VoiceWorkspace({
         <div className="min-w-0">
           <p className="hidden text-[12px] font-medium text-aegis-text sm:block">{phaseCopy(snapshot, t)}</p>
           <p className="mt-0.5 text-[11px] text-aegis-text-muted">{t('input.voiceWorkspaceLocalOnly')}</p>
-          {snapshot.error === 'wake_detector_unavailable' && (
+          {(snapshot.error === 'wake_detector_unavailable' || snapshot.error === 'wake_trigger_model_mismatch') && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
                 type="button"

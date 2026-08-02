@@ -1553,6 +1553,7 @@
     "voiceModeDictation": "听写",
     "voiceModeWake": "唤醒",
     "voiceWakeUnavailable": "唤醒词需要经过验证的本地检测器",
+    "voiceWakeTriggerModelMismatch": "本地模型不包含 Gateway 配置的唤醒词",
     "voiceWakeConfigureModel": "选择唤醒模型目录",
     "voiceWakeChooseModelDirectory": "选择 Sherpa 唤醒模型目录",
     "voiceWakeCheckingModel": "正在检查模型",

@@ -15,6 +15,7 @@
 
 - Dictation continues to use VAD.
 - Wake-word mode starts only when the user has selected a local model directory containing the fixed Sherpa model files, `tokens.txt`, and a generated `keywords.txt`.
+- The selected `phone+ppinyin` model must expose at least one official `@original_phrase` keyword label that exactly matches a configured Gateway trigger before wake-word mode can arm.
 - In wake-word mode, only a non-empty Sherpa keyword result emits `wake_detected`; VAD begins post-keyword capture and produces the existing confirmation-required WAV draft.
 - The native event includes the non-empty recognized keyword. JunQi persists the selected session under the OpenClaw `category` `Jarvis: <keyword>`; it does not synthesize a channel-group session key from that keyword.
 - Wake mode starts only after the selected authenticated Gateway supplies a valid trigger and routing snapshot. While armed, a local keyword must remain in the Gateway trigger set, and a resolved route must still match the selected session; otherwise captured audio is discarded and no chat request is made.
@@ -41,6 +42,7 @@
 - Missing or empty model assets keep wake-word mode unavailable.
 - A selected model directory is persisted in JunQi application data and must pass both asset validation and Sherpa detector creation before it is reported available.
 - A wake listener cannot be activated by VAD alone.
+- A model whose labels have no intersection with the selected Gateway trigger list remains unavailable and does not capture audio.
 - Existing dictation, session ownership, draft confirmation, and Gateway connection fences remain in force.
 - A Gateway without the explicit realtime relay capability remains in the current confirmation-required voice-draft path; it is never presented as continuous Talk.
 - A Talk session remains explicitly bound to its selected session key because the installed `talk.session.create` contract does not accept `voiceWakeTrigger`.

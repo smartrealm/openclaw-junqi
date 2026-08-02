@@ -13,6 +13,7 @@ export type VoiceInputPhase =
 export type VoiceModeErrorCode =
   | 'gateway_unavailable'
   | 'wake_detector_unavailable'
+  | 'wake_trigger_model_mismatch'
   | 'target_changed'
   | 'capture_failed';
 
