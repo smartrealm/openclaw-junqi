@@ -23,6 +23,14 @@
 
 模型详情和别名编辑仍由提供商配置内的 `ProviderModelEditor` 负责。
 
+## 模型定价维护补充
+
+OpenClaw 2026.7.1-2 的运行时 schema 允许在 `models.providers.<provider>.models[]` 中维护 `cost`，平面单价字段为 `input`、`output`、`cacheRead` 和 `cacheWrite`，单位是美元每百万 Token。提供方展开后的模型编辑器增加独立的可视化定价区域，支持输入零值和小数、应用修改以及清除平面定价；非法负数和非有限值在表单内阻止提交。定价只写入 provider model，不复制到 `agents.defaults.models`。
+
+该金额供 OpenClaw 根据 transcript usage 做本地估算，不代表供应商正式账单。若模型已经配置 `tieredPricing`，修改平面定价时保留该字段；高级 JSON 编辑器不再重复展示 `cost`，避免两个入口产生覆盖竞争。
+
+本机 `vllm/gpt-5.6-sol` 的平面定价依据 Sub2API 当前价格目录换算为每百万 Token：输入 5、输出 30、缓存读取 0.5、缓存写入 6.25。其他模型没有足够可靠的实例级价格依据时不写入猜测值。
+
 ## 验证
 
 - `ConfiguredModelDirectory.test.ts` 覆盖提供商分组、组内排序、异常模型引用保留及三语言目录文案契约。
@@ -30,4 +38,7 @@
 - `pnpm lint` 通过，其中模块边界检查覆盖 738 个文件，四处桌面版本一致为 1.5.7。
 - `pnpm build` 通过，Vite 完成 9080 个模块转换。
 - 三个语言文件 JSON 校验、修改文件完整符号扫描和 `git diff --check` 通过。
+- 本次定价入口增量验证：模型目录、提供方设计、模型 mutation、运行时规范化和定价解析共 44 项定向测试通过；完整前端测试 911 项、脚本测试 233 项通过。
+- `pnpm lint` 和 `pnpm build` 通过；Vite 完成 9086 个模块转换，模块边界检查覆盖 744 个文件。
+- 本机 OpenClaw 配置通过 CLI dry-run、实际 patch 和 `openclaw config validate`；usage cache 完成刷新后，14 天汇总得到 12 个非零估价日期、总估价约 20.322743 美元，仍有 315 条其他模型调用缺少价格。
 - 亮色、暗色、窄窗口和键盘焦点的真实 Tauri 视觉验收仍待执行。

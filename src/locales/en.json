@@ -422,7 +422,7 @@
     "runHeartbeat": "Run Heartbeat",
     "sessionSummary": "Session Summary",
     "sessions": "Sessions",
-    "setupProviderAction": "Go to Config →",
+    "setupProviderAction": "Go to Config",
     "setupProviderBanner": "No AI provider configured. Set up a provider to start chatting.",
     "sub": "Sub",
     "subtitle": "Command center — Everything in one place",
@@ -625,7 +625,7 @@
   },
   "workshop": {
     "title": "Workshop",
-    "subtitle": "Task Management — Queue → In Progress → Done",
+    "subtitle": "Task Management: Queue, In Progress, Done",
     "addTask": "New Task",
     "queue": "Queue",
     "inProgress": "In Progress",
@@ -925,7 +925,7 @@
     "unknownError": "Unknown error",
     "deleteFailed": "Delete failed",
     "screenRecordPermission": "Screen recording permission required",
-    "screenRecordHint": "Open System Settings → Privacy & Security → Screen Recording,",
+    "screenRecordHint": "Open System Settings, then Privacy & Security, then Screen Recording,",
     "enterPrompt": "Enter prompt…",
     "minuteShort": "min"
   },
@@ -1113,7 +1113,7 @@
     "cache": "Cache",
     "cacheRead": "Cache Read",
     "cacheWrite": "Cache Write",
-    "cacheReadShort": "Cache ↓",
+    "cacheReadShort": "Cache Read",
     "totalTokens": "Total Tokens",
     "cost": "Cost",
     "byModel": "By Model",
@@ -1136,7 +1136,7 @@
     "cacheCost": "Cache Cost",
     "otherCost": "Other Cost",
     "copyTitle": "Full Analytics Report",
-    "copyPeriod": "Period: {{start}} → {{end}} ({{days}} days)",
+    "copyPeriod": "Period: {{start}} to {{end}} ({{days}} days)",
     "copyTotalCost": "Total Cost:     {{value}}",
     "copyTotalTokens": "Total Tokens:   {{value}}",
     "copyInput": "  Input:        {{tokens}} ({{cost}})",
@@ -1598,8 +1598,8 @@
       "itemCount": "{{count}} items",
       "noMentionSources": "No available skills or files. Check the Gateway connection.",
       "noMatches": "No matches",
-      "navigate": "↑↓ Navigate",
-      "select": "↵ Select",
+      "navigate": "Up/Down Navigate",
+      "select": "Press Enter to Select",
       "close": "Esc Close",
       "chooseArgument": "Choose…"
     },
@@ -1622,7 +1622,7 @@
     "loading": "Loading windows...",
     "noWindows": "No open windows",
     "permissionRequired": "Screen recording permission required",
-    "permissionHint": "Open System Settings → Privacy & Security → Screen Recording, enable JunQi Desktop then retry."
+    "permissionHint": "Open System Settings, then Privacy & Security, then Screen Recording; enable JunQi Desktop and retry."
   },
   "voice": {
     "cancel": "Cancel",
@@ -2660,7 +2660,7 @@
     "noModelsConfigured": "No models configured",
     "noModelsConfiguredHint": "No models configured. Add providers in Config Manager.",
     "setupProvider": "Setup Provider",
-    "setupProviderShort": "Setup →",
+    "setupProviderShort": "Setup",
     "diffAdded": "Added",
     "diffRemoved": "Removed",
     "diffChanged": "Changed",
@@ -2788,7 +2788,7 @@
     "secrets": "Secrets",
     "saving": "Saving...",
     "reviewAndSave": "Review & Save",
-    "back": "← Back",
+    "back": "Back",
     "noProvidersFound": "No matching providers found",
     "configureProvider": "Configure {{name}}",
     "manageProvidersDesc": "Manage providers, models, and API keys",
@@ -2826,7 +2826,19 @@
     "providerCredentialUnverified": "Credential not verified",
     "providerCredentialReference": "Credential reference configured",
     "providerCredentialRuntime": "Runtime credential configured",
-    "providersRuntimeSuppliedNote": "{{count}} providers use runtime-managed credentials."
+    "providersRuntimeSuppliedNote": "{{count}} providers use runtime-managed credentials.",
+    "modelCostTitle": "Model pricing",
+    "modelCostHint": "USD per 1 million tokens. Used by OpenClaw for local cost estimates, not as a provider invoice.",
+    "applyModelCost": "Apply pricing",
+    "clearModelCost": "Clear pricing",
+    "modelCostInvalid": "Enter a number greater than or equal to zero.",
+    "modelCostRequired": "Enter all four prices, including zero where applicable.",
+    "modelCostFields": {
+      "input": "Input",
+      "output": "Output",
+      "cacheRead": "Cache read",
+      "cacheWrite": "Cache write"
+    }
   },
   "calendar": {
     "title": "Calendar",
@@ -2932,7 +2944,7 @@
     },
     "providers": {
       "title": "Secret Providers",
-      "subtitle": "Configured sources for secret resolution (read-only — edit via Advanced → Raw JSON)",
+      "subtitle": "Configured sources for secret resolution (read-only; edit via Advanced, Raw JSON)",
       "emptyTitle": "No secret providers configured",
       "emptyHintPrefix": "Add providers under",
       "emptyHintSuffix": "in the Advanced tab"
@@ -3618,10 +3630,10 @@
     "hint": {
       "idle": "Double-click to open · drag to move",
       "moving": "Moving…",
-      "tip1": "Double-click → open main window",
-      "tip2": "Press & drag → move",
-      "tip3": "Tray icon → show/hide",
-      "tip4": "Right-click → menu / Pomodoro",
+      "tip1": "Double-click to open main window",
+      "tip2": "Press and drag to move",
+      "tip3": "Use the tray icon to show or hide",
+      "tip4": "Right-click for menu or Pomodoro",
       "drag": "Ready to receive…",
       "overdrag": "Drop it, I'm ready!",
       "overdrag.image": "Ooh, pictures!",
@@ -3882,7 +3894,7 @@
   "sidebar.background.status.failed": "Failed",
   "sidebar.background.status.stopped": "Stopped",
   "sidebar.background.delegatedBy": "Delegated by {{name}}",
-  "sidebar.background.delegationRoute": "{{parent}} → {{worker}}",
+  "sidebar.background.delegationRoute": "{{parent}} to {{worker}}",
   "sidebar.userSessions": "User sessions",
   "sidebar.archivedSessions": "Local archive",
   "sidebar.restoreSession": "Restore session",

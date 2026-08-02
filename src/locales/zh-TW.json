@@ -421,7 +421,7 @@
     "runHeartbeat": "運行心跳檢查",
     "sessionSummary": "會話摘要",
     "sessions": "會話",
-    "setupProviderAction": "前往配置 →",
+    "setupProviderAction": "前往配置",
     "setupProviderBanner": "尚未配置 AI 提供方，請先配置提供方以開始使用。",
     "sub": "子",
     "subtitle": "一站式控制面板",
@@ -596,7 +596,7 @@
   },
   "workshop": {
     "title": "工作臺",
-    "subtitle": "任務流轉：隊列 → 進行中 → 已完成",
+    "subtitle": "任務流轉：隊列、進行中、已完成",
     "addTask": "新建任務",
     "queue": "隊列",
     "inProgress": "進行中",
@@ -897,7 +897,7 @@
     "unknownError": "未知錯誤",
     "deleteFailed": "刪除失敗",
     "screenRecordPermission": "需要屏幕錄製權限",
-    "screenRecordHint": "打開 系統設置 → 隱私與安全性 → 屏幕錄製，",
+    "screenRecordHint": "打開系統設置，然後進入隱私與安全性、屏幕錄製，",
     "enterPrompt": "輸入 Prompt…",
     "minuteShort": "分鐘"
   },
@@ -1085,7 +1085,7 @@
     "cache": "緩存",
     "cacheRead": "緩存讀取",
     "cacheWrite": "緩存寫入",
-    "cacheReadShort": "緩存 ↓",
+    "cacheReadShort": "緩存 讀取",
     "totalTokens": "Token 總量",
     "cost": "成本",
     "byModel": "按模型",
@@ -1107,7 +1107,7 @@
     "cacheCost": "緩存成本",
     "otherCost": "其他成本",
     "copyTitle": "統計報告",
-    "copyPeriod": "週期：{{start}} → {{end}}（{{days}} 天）",
+    "copyPeriod": "週期：{{start}} 至 {{end}}（{{days}} 天）",
     "copyTotalCost": "總成本：{{value}}",
     "copyTotalTokens": "Token 總量：{{value}}",
     "copyInput": "  輸入：{{tokens}}（{{cost}}）",
@@ -1565,8 +1565,8 @@
       "itemCount": "{{count}} 項",
       "noMentionSources": "暫無可用的技能或檔案，請檢查 Gateway 連線。",
       "noMatches": "無符合項目",
-      "navigate": "↑↓ 導航",
-      "select": "↵ 選擇",
+      "navigate": "上/下導航",
+      "select": "按 Enter 選擇",
       "close": "Esc 關閉",
       "chooseArgument": "選擇…"
     },
@@ -1589,7 +1589,7 @@
     "loading": "正在加載窗口列表…",
     "noWindows": "沒有可用窗口",
     "permissionRequired": "需要屏幕錄製權限",
-    "permissionHint": "打開 系統設置 → 隱私與安全性 → 屏幕錄製，啟用 JunQi Desktop 後重新截圖。"
+    "permissionHint": "打開系統設置，然後進入隱私與安全性、屏幕錄製，啟用 JunQi Desktop 後重新截圖。"
   },
   "voice": {
     "cancel": "取消",
@@ -2648,7 +2648,7 @@
     "noModelsConfigured": "尚未配置模型",
     "noModelsConfiguredHint": "尚未配置模型。請在「配置管理」中添加提供方。",
     "setupProvider": "配置提供方",
-    "setupProviderShort": "去配置 →",
+    "setupProviderShort": "去配置",
     "models": "模型",
     "currentModel": "目前模型",
     "aliases": "別名",
@@ -2750,7 +2750,7 @@
     "secrets": "機密信息",
     "saving": "保存中…",
     "reviewAndSave": "檢查並保存",
-    "back": "← 返回",
+    "back": "返回",
     "noProvidersFound": "未找到匹配的提供方",
     "configureProvider": "配置 {{name}}",
     "manageProvidersDesc": "管理提供方、模型和 API Key",
@@ -2788,7 +2788,19 @@
     "providerCredentialUnverified": "憑據未確認",
     "providerCredentialReference": "憑據引用已配置",
     "providerCredentialRuntime": "運行時憑據已配置",
-    "providersRuntimeSuppliedNote": "{{count}} 個提供方使用運行時託管憑據。"
+    "providersRuntimeSuppliedNote": "{{count}} 個提供方使用運行時託管憑據。",
+    "modelCostTitle": "模型定價",
+    "modelCostHint": "單位為美元每百萬 Token。OpenClaw 使用這些單價進行本地費用估算，不代表供應商賬單。",
+    "applyModelCost": "應用定價",
+    "clearModelCost": "清除定價",
+    "modelCostInvalid": "請輸入大於或等於零的數字。",
+    "modelCostRequired": "請填寫全部四項單價，無費用的項目請填寫零。",
+    "modelCostFields": {
+      "input": "輸入",
+      "output": "輸出",
+      "cacheRead": "緩存讀取",
+      "cacheWrite": "緩存寫入"
+    }
   },
   "calendar": {
     "title": "日曆",
@@ -2894,7 +2906,7 @@
     },
     "providers": {
       "title": "密鑰提供方",
-      "subtitle": "用於解析密鑰引用的來源（只讀 — 請在 高級 → Raw JSON 中編輯）",
+      "subtitle": "用於解析密鑰引用的來源（只讀；請在高級、Raw JSON 中編輯）",
       "emptyTitle": "未配置任何密鑰提供方",
       "emptyHintPrefix": "請在",
       "emptyHintSuffix": "中添加提供方（高級標籤頁）"
@@ -3580,10 +3592,10 @@
     "hint": {
       "idle": "雙擊打開 · 按住拖動",
       "moving": "移動中…",
-      "tip1": "雙擊 → 打開主窗口",
-      "tip2": "按住拖動 → 移動位置",
-      "tip3": "托盤圖標 → 顯示/隱藏",
-      "tip4": "右鍵 → 菜單 / 番茄控制",
+      "tip1": "雙擊打開主窗口",
+      "tip2": "按住拖動以移動位置",
+      "tip3": "通過托盤圖標顯示或隱藏",
+      "tip4": "右鍵打開菜單或番茄控制",
       "drag": "準備好接收…",
       "overdrag": "放下就開吃!",
       "overdrag.image": "看到圖片啦!",
@@ -3874,7 +3886,7 @@
   "sidebar.background.status.failed": "失敗",
   "sidebar.background.status.stopped": "已停止",
   "sidebar.background.delegatedBy": "{{name}} 委派",
-  "sidebar.background.delegationRoute": "{{parent}} → {{worker}}",
+  "sidebar.background.delegationRoute": "{{parent}} 至 {{worker}}",
   "sidebar.userSessions": "用戶會話",
   "sidebar.archivedSessions": "本機封存",
   "sidebar.restoreSession": "還原會話",
