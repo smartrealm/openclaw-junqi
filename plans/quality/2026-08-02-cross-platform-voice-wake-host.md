@@ -15,6 +15,7 @@
 11. Parsed the selected Sherpa model's official keyword labels and blocked arming unless at least one label matches a Gateway-owned trigger; arbitrary text is never written into `keywords.txt`.
 12. Added an explicit mismatch recovery action that synchronizes only declared local model labels through `voicewake.set`, preserves Gateway routing, and retries the fenced arm sequence.
 13. Marked the official-model detector regression as explicitly fixture-gated so ordinary test output cannot imply a real keyword detection occurred without the upstream model and WAV asset.
+14. Ran the fixture-gated official bilingual model test against its upstream `zh_3.wav` on the local macOS build; target-platform microphone and Gateway validation remain separate work.
 
 ## In Progress
 
