@@ -14,6 +14,7 @@
 10. Restored and unminimized the main window on a verified wake result before the existing full-window Jarvis surface appears; focus denial remains non-fatal because desktop focus policy is platform-owned.
 11. Parsed the selected Sherpa model's official keyword labels and blocked arming unless at least one label matches a Gateway-owned trigger; arbitrary text is never written into `keywords.txt`.
 12. Added an explicit mismatch recovery action that synchronizes only declared local model labels through `voicewake.set`, preserves Gateway routing, and retries the fenced arm sequence.
+13. Marked the official-model detector regression as explicitly fixture-gated so ordinary test output cannot imply a real keyword detection occurred without the upstream model and WAV asset.
 
 ## In Progress
 

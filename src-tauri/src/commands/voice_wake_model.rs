@@ -301,10 +301,10 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires JUNQI_WAKE_MODEL_DIR to point at the official Sherpa model fixture"]
     fn official_model_fixture_detects_a_keyword_when_supplied() {
-        let Ok(directory) = std::env::var("JUNQI_WAKE_MODEL_DIR") else {
-            return;
-        };
+        let directory = std::env::var("JUNQI_WAKE_MODEL_DIR")
+            .expect("JUNQI_WAKE_MODEL_DIR must point at the official Sherpa model fixture");
         let directory = Path::new(&directory);
         let mut detector = WakeKeywordSpotter::create(directory)
             .expect("official model fixture creates a keyword detector");

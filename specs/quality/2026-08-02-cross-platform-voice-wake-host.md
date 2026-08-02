@@ -41,6 +41,7 @@
 
 - Missing or empty model assets keep wake-word mode unavailable.
 - A selected model directory is persisted in JunQi application data and must pass both asset validation and Sherpa detector creation before it is reported available.
+- The official-model audio fixture test is an explicit opt-in check that requires `JUNQI_WAKE_MODEL_DIR`; an environment without that fixture must report the test as ignored rather than passing without detection.
 - A wake listener cannot be activated by VAD alone.
 - A model whose labels have no intersection with the selected Gateway trigger list remains unavailable and does not capture audio.
 - On an explicit user command, JunQi may replace only the selected Gateway's trigger list with the labels declared by the selected local model. It must not mutate voice-wake routing as part of that operation and must re-read the normal arm preconditions afterwards.

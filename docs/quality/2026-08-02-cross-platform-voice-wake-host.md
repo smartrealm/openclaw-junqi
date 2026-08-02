@@ -47,13 +47,13 @@ The event bridge validates the OpenClaw Talk envelope within `payload.talkEvent`
 - `pnpm exec tsc --noEmit` passed.
 - `cd src-tauri && cargo fmt -- --check && cargo check --lib` passed. The existing `system.rs` unused-variable warning remains.
 - `cd src-tauri && cargo test --lib voice_wake` passed with 7 tests, including missing model assets and a stereo callback-boundary regression.
-- `JUNQI_WAKE_MODEL_DIR=<official fixture> cargo test --manifest-path src-tauri/Cargo.toml --lib official_model_fixture_detects_a_keyword_when_supplied` passed with the upstream bilingual model and its `zh_3.wav` fixture.
+- `official_model_fixture_detects_a_keyword_when_supplied` is explicitly ignored in ordinary library runs because the official model fixture is not bundled. It must be invoked with `JUNQI_WAKE_MODEL_DIR=<official fixture>` before claiming a real KWS detection result.
 - Frontend voice, session-fence, and auto-arm preference tests passed: 15 tests.
 - `pnpm build` passed, including the collaboration package contract, plugin bundle, TypeScript compilation, and Vite production build.
 - The test command recursively discovers TypeScript and TSX tests under `src`; this includes `voiceAuditRegression.test.ts`, which previously was not covered by the shell glob.
 - The updated regression suite verifies large-audio encoding and portable session-directory isolation through exported behavior. Native recorder lifecycle and VAD worker lifecycle remain covered by Rust library tests.
 - Runtime microphone stream errors now terminate the native listener, emit its existing error event, and mark native listening as stopped; the regression test covers that transition.
-- The complete Rust library suite passed with 691 tests passed and 3 intentionally ignored tests.
+- The complete Rust library suite passed with 691 tests passed and 4 intentionally ignored tests. The fourth ignored test is the official-model fixture check described above, not a passing no-op.
 - Capability and locale JSON parsed successfully, and `git diff --check` passed.
 
 ## Unverified Boundaries
