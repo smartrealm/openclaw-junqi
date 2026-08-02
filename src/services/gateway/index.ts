@@ -54,6 +54,7 @@ import {
   type OpenClawAuditListInput,
 } from './OpenClawAuditClient';
 import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
+import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 
 // Re-export types for consumers
@@ -587,6 +588,9 @@ const taskLedger = new OpenClawTaskLedgerClient(
 const sessionSteer = new OpenClawSessionSteerClient(
   (method, params) => connection.request(method, params),
 );
+const sessionCompaction = new OpenClawSessionCompactionClient(
+  (method, params) => requestPrivileged(method, params),
+);
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
 });
@@ -849,13 +853,11 @@ export const gateway = {
     return chatHandler.reconcileAbortAcknowledgement(sessionKey, result);
   },
   async compactSession(sessionKey = 'agent:main:main') {
+    const key = sessionKey.trim();
+    if (!key) throw new Error('A session key is required for OpenClaw compaction');
     return sessionCommandCoordinator.runMutation(
-      sessionKey,
-      () => connection.request('chat.send', {
-        sessionKey,
-        message: '/compact',
-        idempotencyKey: `aegis-compact-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      }),
+      key,
+      () => sessionCompaction.compact({ key }),
     );
   },
 

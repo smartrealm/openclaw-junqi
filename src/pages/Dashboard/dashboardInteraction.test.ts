@@ -8,11 +8,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const dashboard = fs.readFileSync(path.join(here, 'index.tsx'), 'utf8');
 const components = fs.readFileSync(path.join(here, 'components.tsx'), 'utf8');
 const gateway = fs.readFileSync(path.join(here, '../../services/gateway/index.ts'), 'utf8');
+const compactionClient = fs.readFileSync(path.join(here, '../../services/gateway/OpenClawSessionCompactionClient.ts'), 'utf8');
 const gatewayStore = fs.readFileSync(path.join(here, '../../stores/gatewayDataStore.ts'), 'utf8');
 
 test('dashboard compaction calls the canonical Gateway operation with real feedback', () => {
   assert.match(gateway, /async compactSession\(sessionKey/);
-  assert.match(gateway, /message: '\/compact'/);
+  assert.match(compactionClient, /sessions\.compact/);
+  assert.doesNotMatch(gateway, /message: '\/compact'/);
   assert.match(dashboard, /await gateway\.compactSession\(sessionKey\)/);
   assert.doesNotMatch(dashboard, /aegis:compress-session/);
 });

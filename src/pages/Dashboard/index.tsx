@@ -226,12 +226,30 @@ export function DashboardPage() {
     setQuickActionLoading(action);
     const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
     try {
-      await gateway.compactSession(sessionKey);
-      useNotificationStore.getState().addToast(
-        'task_complete',
-        t('dashboard.compactQueuedTitle', 'Compaction requested'),
-        t('dashboard.compactQueuedBody', 'OpenClaw is compacting the current session context.'),
-      );
+      const result = await gateway.compactSession(sessionKey);
+      if (!result.ok) {
+        useNotificationStore.getState().addToast(
+          'error',
+          t('dashboard.compactFailedTitle', 'Compaction failed'),
+          t('dashboard.compactFailedBody', 'OpenClaw did not complete compaction: {{reason}}', {
+            reason: result.reason?.trim() || t('dashboard.compactFailureReason', 'No failure reason was reported.'),
+          }),
+        );
+      } else if (result.compacted) {
+        useNotificationStore.getState().addToast(
+          'task_complete',
+          t('dashboard.compactCompletedTitle', 'Compaction completed'),
+          t('dashboard.compactCompletedBody', 'OpenClaw compacted the current session context.'),
+        );
+      } else {
+        useNotificationStore.getState().addToast(
+          'info',
+          t('dashboard.compactNoopTitle', 'No compaction performed'),
+          t('dashboard.compactNoopBody', 'OpenClaw did not compact this session: {{reason}}', {
+            reason: result.reason?.trim() || t('dashboard.compactNoopReason', 'No transcript was available.'),
+          }),
+        );
+      }
     } catch (error) {
       useNotificationStore.getState().addToast(
         'error',

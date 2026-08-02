@@ -195,15 +195,15 @@
 
 **官方依据**：`protocol.md` 的 `sessions.compact`、`sessions.steer`、`sessions.abort`、`sessions.preview`、`sessions.resolve`；`docs/concepts/queue-steering.md`、`docs/concepts/compaction.md`
 
-**当前行为**：JunQi 只能**观察**压缩，不能**触发**压缩。`src/services/gateway/ChatHandler.ts:1257-1263` 从 agent 事件流里拦截 `stream === 'compaction'` 并插入分隔符，全仓没有任何 `sessions.compact` 调用。`sessions.steer`（队列引导）同样未使用。
+**审计时行为**：JunQi 只能观察压缩，按钮曾通过 `chat.send` 发送 `/compact`，不能调用原生会话维护 RPC。该缺口已由 [OpenClaw 原生会话压缩对齐](openclaw-native-session-compaction-alignment-2026-08-04.md) 修复。`sessions.steer` 的语音抢话路径已经存在，仍需单独核对当前官方 handler 和真实 Gateway 响应。
 
 **可拓展**：
 
-- 用户在上下文接近上限时可以主动触发压缩，而不是等待自动压缩打断当前工作
-- `sessions.steer` 允许在排队任务执行前调整方向，这是 OpenClaw 的一等能力，当前 JunQi 完全没有对应入口
+- 用户可以通过 Dashboard 或命令面板主动触发 OpenClaw 原生压缩，而不是依赖文本指令路径
+- `sessions.steer` 允许在排队任务执行前调整方向，JunQi 已用于 Jarvis 语音抢话，普通文本路径仍需要按官方 queue mode 继续复核
 - `sessions.preview` 与 `sessions.resolve` 可用于发送前确认目标会话
 
-**边界**：压缩会不可逆地改变上下文。触发入口必须有明确确认，且遵循 `docs/concepts/compaction.md` 中 `notifyUser` 的语义，包括 degraded 情形的提示。
+**边界**：压缩会改变模型可见上下文，且官方 `sessions.compact` 要求 `operator.admin`。触发入口必须保留已有管理员授权边界，不把 no-op 或授权失败当作成功；memory flush、degraded 情形和活动运行冲突由 Gateway 负责。
 
 ### EXT-C · 工具目录与工具可见性
 

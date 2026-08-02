@@ -88,11 +88,23 @@ export function CommandPalette() {
     }},
     { id: 'act-compact', icon: RefreshCw, name: t('palette.compactContext'), keywords: ['compact', 'ضغط', 'context'], action: () => {
       const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
-      void gateway.compactSession(sessionKey).then(() => {
+      void gateway.compactSession(sessionKey).then((result) => {
         useNotificationStore.getState().addToast(
-          'task_complete',
-          t('dashboard.compactQueuedTitle', 'Compaction requested'),
-          t('dashboard.compactQueuedBody', 'OpenClaw is compacting the current session context.'),
+          !result.ok ? 'error' : result.compacted ? 'task_complete' : 'info',
+          !result.ok
+            ? t('dashboard.compactFailedTitle', 'Compaction failed')
+            : result.compacted
+            ? t('dashboard.compactCompletedTitle', 'Compaction completed')
+            : t('dashboard.compactNoopTitle', 'No compaction performed'),
+          !result.ok
+            ? t('dashboard.compactFailedBody', 'OpenClaw did not complete compaction: {{reason}}', {
+              reason: result.reason?.trim() || t('dashboard.compactFailureReason', 'No failure reason was reported.'),
+            })
+            : result.compacted
+            ? t('dashboard.compactCompletedBody', 'OpenClaw compacted the current session context.')
+            : t('dashboard.compactNoopBody', 'OpenClaw did not compact this session: {{reason}}', {
+              reason: result.reason?.trim() || t('dashboard.compactNoopReason', 'No transcript was available.'),
+            }),
         );
       }).catch((error) => {
         useNotificationStore.getState().addToast(
