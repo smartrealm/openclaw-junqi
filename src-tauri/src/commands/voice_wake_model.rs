@@ -317,9 +317,15 @@ mod tests {
             .collect::<Vec<_>>();
         samples.extend(std::iter::repeat_n(0.0, (sample_rate / 2) as usize));
 
-        assert!(detector
+        let detected = detector
             .accept_waveform_and_detect(sample_rate, &samples)
-            .is_some());
+            .expect("official fixture must detect a configured keyword");
+        let configured = super::read_keyword_labels(directory)
+            .expect("official fixture has configured keyword labels");
+        assert!(
+            configured.iter().any(|keyword| keyword == &detected),
+            "detected keyword must be one of the configured labels: {detected}"
+        );
     }
 
     #[test]
