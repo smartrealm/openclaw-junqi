@@ -696,6 +696,7 @@ export const gateway = {
     connection.disconnect();
   },
   getStatus() { return connection.getStatus(); },
+  hasAdvertisedMethod(method: string) { return connection.hasAdvertisedMethod(method); },
   getLastError() { return connection.getLastError(); },
   captureConnectionId() { return connection.getAttestedConnectionId(); },
   isConnectionCurrent(connectionId: string) {

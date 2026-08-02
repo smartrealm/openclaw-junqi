@@ -3,6 +3,7 @@ import { gateway } from '@/services/gateway';
 export interface OpenClawSkillGatewayClient {
   call(method: string, params?: Record<string, unknown>): Promise<unknown>;
   callPrivileged(method: string, params?: Record<string, unknown>): Promise<unknown>;
+  hasAdvertisedMethod?(method: string): boolean | null;
 }
 
 export interface OpenClawSkill {
@@ -93,6 +94,29 @@ export interface OpenClawSkillInstallResult {
   targetDir?: string;
   message?: string;
   warning?: string;
+  sha256?: string;
+}
+
+// OpenClaw's upload handler accepts archives up to 256 MiB and decoded chunks
+// up to 4 MiB. JunQi uses a smaller client chunk to stay below that protocol
+// boundary across desktop WebView implementations.
+export const MAX_SKILL_ARCHIVE_BYTES = 256 * 1024 * 1024;
+export const SKILL_ARCHIVE_CHUNK_BYTES = 3 * 1024 * 1024;
+
+export type SkillArchiveUploadPhase = 'starting' | 'uploading' | 'committing' | 'installing';
+
+export interface SkillArchiveUploadProgress {
+  phase: SkillArchiveUploadPhase;
+  completedBytes: number;
+  totalBytes: number;
+}
+
+export interface OpenClawSkillArchiveInstallRequest {
+  slug: string;
+  bytes: Uint8Array;
+  force?: boolean;
+  agentId?: string;
+  onProgress?: (progress: SkillArchiveUploadProgress) => void;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -406,8 +430,101 @@ function normalizedSearchLimit(limit?: number): number | undefined {
   return limit;
 }
 
+const SKILL_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
+const UPLOAD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function requiredSkillSlug(value: string): string {
+  const normalized = value.trim();
+  if (
+    !normalized
+    || normalized.includes('/')
+    || normalized.includes('\\')
+    || normalized.includes('..')
+    || !SKILL_SLUG_PATTERN.test(normalized)
+    || [...normalized].some((character) => character.charCodeAt(0) > 127)
+  ) {
+    throw new Error('Skill slug is invalid. Use letters, numbers, and hyphens only.');
+  }
+  return normalized;
+}
+
+function normalizedSha256(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  return SHA256_PATTERN.test(normalized) ? normalized : undefined;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof globalThis.btoa !== 'function') {
+    throw new Error('This runtime cannot encode skill archives.');
+  }
+  let binary = '';
+  const blockSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += blockSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + blockSize, bytes.length)));
+  }
+  return globalThis.btoa(binary);
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('This runtime cannot verify skill archive hashes.');
+  }
+  const input = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(input).set(bytes);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', input);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+interface OpenClawSkillUploadResult {
+  uploadId: string;
+  receivedBytes: number;
+  expiresAt: number;
+  sha256?: string;
+}
+
+function requiredUploadResult(payload: unknown, operation: string): OpenClawSkillUploadResult {
+  const value = record(payload);
+  const uploadId = text(value?.uploadId);
+  const receivedBytes = value?.receivedBytes;
+  const expiresAt = value?.expiresAt;
+  if (
+    !uploadId
+    || !UPLOAD_ID_PATTERN.test(uploadId)
+    || typeof receivedBytes !== 'number'
+    || !Number.isSafeInteger(receivedBytes)
+    || receivedBytes < 0
+    || typeof expiresAt !== 'number'
+    || !Number.isFinite(expiresAt)
+  ) {
+    throw new Error(`OpenClaw returned an invalid ${operation} upload response.`);
+  }
+  const hash = value?.sha256;
+  if (hash !== undefined && !normalizedSha256(hash)) {
+    throw new Error(`OpenClaw returned an invalid ${operation} upload hash.`);
+  }
+  return {
+    uploadId,
+    receivedBytes,
+    expiresAt,
+    ...(hash !== undefined ? { sha256: normalizedSha256(hash)! } : {}),
+  };
+}
+
 export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) {
   return {
+    archiveUploadCapability(): boolean | null {
+      const methods = [
+        'skills.upload.begin',
+        'skills.upload.chunk',
+        'skills.upload.commit',
+      ].map((method) => client.hasAdvertisedMethod?.(method) ?? null);
+      if (methods.some((supported) => supported === false)) return false;
+      if (methods.some((supported) => supported === null)) return null;
+      return true;
+    },
+
     async list(agentId?: string): Promise<OpenClawSkill[]> {
       const normalizedAgentId = agentId?.trim();
       return normalizeOpenClawSkills(await client.call(
@@ -465,6 +582,96 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
         ...(text(result.targetDir) ? { targetDir: text(result.targetDir) } : {}),
         ...(text(result.message) ? { message: text(result.message) } : {}),
         ...(text(result.warning) ? { warning: text(result.warning) } : {}),
+      };
+    },
+
+    async installArchive(request: OpenClawSkillArchiveInstallRequest): Promise<OpenClawSkillInstallResult> {
+      const slug = requiredSkillSlug(request.slug);
+      if (
+        !(request.bytes instanceof Uint8Array)
+        || request.bytes.length < 1
+        || request.bytes.length > MAX_SKILL_ARCHIVE_BYTES
+      ) {
+        throw new Error(`Skill archive must be between 1 byte and ${MAX_SKILL_ARCHIVE_BYTES} bytes.`);
+      }
+
+      const digest = await sha256Hex(request.bytes);
+      const force = request.force === true;
+      const idempotencyKey = `junqi-skill-upload:${slug}:${digest}:${force ? 'force' : 'safe'}`;
+      const progress = (phase: SkillArchiveUploadPhase, completedBytes: number) => {
+        request.onProgress?.({ phase, completedBytes, totalBytes: request.bytes.length });
+      };
+
+      progress('starting', 0);
+      const begin = requiredUploadResult(await client.callPrivileged('skills.upload.begin', {
+        kind: 'skill-archive',
+        slug,
+        sizeBytes: request.bytes.length,
+        sha256: digest,
+        ...(force ? { force: true } : {}),
+        idempotencyKey,
+      }), 'begin');
+      if (begin.receivedBytes > request.bytes.length) {
+        throw new Error('OpenClaw returned an upload offset beyond the archive size.');
+      }
+
+      let receivedBytes = begin.receivedBytes;
+      if (receivedBytes > 0) progress('uploading', receivedBytes);
+      while (receivedBytes < request.bytes.length) {
+        const nextOffset = Math.min(receivedBytes + SKILL_ARCHIVE_CHUNK_BYTES, request.bytes.length);
+        const response = requiredUploadResult(await client.callPrivileged('skills.upload.chunk', {
+          uploadId: begin.uploadId,
+          offset: receivedBytes,
+          dataBase64: bytesToBase64(request.bytes.subarray(receivedBytes, nextOffset)),
+        }), 'chunk');
+        if (response.uploadId !== begin.uploadId || response.receivedBytes !== nextOffset) {
+          throw new Error('OpenClaw returned an unexpected upload offset.');
+        }
+        receivedBytes = nextOffset;
+        progress('uploading', receivedBytes);
+      }
+
+      progress('committing', receivedBytes);
+      const committed = requiredUploadResult(await client.callPrivileged('skills.upload.commit', {
+        uploadId: begin.uploadId,
+        sha256: digest,
+      }), 'commit');
+      if (
+        committed.uploadId !== begin.uploadId
+        || committed.receivedBytes !== request.bytes.length
+        || committed.sha256 !== digest
+      ) {
+        throw new Error('OpenClaw did not confirm the complete skill archive.');
+      }
+
+      progress('installing', request.bytes.length);
+      const result = record(await client.callPrivileged('skills.install', {
+        source: 'upload',
+        uploadId: begin.uploadId,
+        slug,
+        ...(force ? { force: true } : {}),
+        sha256: digest,
+        ...(text(request.agentId) ? { agentId: text(request.agentId) } : {}),
+      }));
+      if (!result || result.ok !== true) {
+        throw new Error(text(result?.error) ?? text(result?.message) ?? 'OpenClaw did not confirm skill archive installation.');
+      }
+
+      const reportedSlug = result.slug;
+      if (reportedSlug !== undefined && (typeof reportedSlug !== 'string' || reportedSlug.trim() !== slug)) {
+        throw new Error('OpenClaw returned a different installed skill slug.');
+      }
+      const installedHash = result.sha256 === undefined ? undefined : normalizedSha256(result.sha256);
+      if (result.sha256 !== undefined && (!installedHash || installedHash !== digest)) {
+        throw new Error('OpenClaw returned a different installed skill archive hash.');
+      }
+      return {
+        ok: true,
+        ...(text(result.slug) ? { slug: text(result.slug) } : {}),
+        ...(text(result.targetDir) ? { targetDir: text(result.targetDir) } : {}),
+        ...(text(result.message) ? { message: text(result.message) } : {}),
+        ...(text(result.warning) ? { warning: text(result.warning) } : {}),
+        ...(installedHash ? { sha256: installedHash } : {}),
       };
     },
   };

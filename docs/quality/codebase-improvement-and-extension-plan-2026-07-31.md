@@ -226,7 +226,7 @@
 `skills.install`、`skills.upload.begin` / `chunk` / `commit`、`skills.install.allowUploadedArchives`、`skills.bins`
 
 **当前行为**：`src/services/openclawSkillsRuntime.ts` 已将 `skills.status`、`skills.search`、
-`skills.detail`、`skills.update` 与 `skills.install` 接入 Gateway；`SkillsPage` 的 Gateway
+`skills.detail`、`skills.update`、`skills.install` 与官方技能归档上传生命周期接入 Gateway；`SkillsPage` 的 Gateway
 目录使用这些原生结果；status 只接受官方必需状态字段，不用默认值掩盖缺失状态。技能详情已按官方 schema 只展示真实的 score、版本、时间、owner、
 metadata、tags、channel 与 changelog，不再把下载量、星标、安装量、README、版本历史或
 外部链接猜测成数据。`/skill-hub` 仍是 JunQi 本地目录与项目符号链接工具，和 Gateway
@@ -238,8 +238,7 @@ RPC 不可用时保留技能列表并显示非阻断提示，未知状态不被�
 
 **可拓展**：继续以 OpenClaw 官方协议、源码和 schema 为依据，优先评估只读的
 `skills.bins`、`skills.skillCard` 和提案协议；只有确认当前 Gateway 广告、权限和
-结果字段后才接入。`skills.upload.*` 是否替代本地 ZIP 流程仍需独立核对完整生命周期，不能
-把 JunQi 本地能力伪装成 Gateway 原生能力。
+结果字段后才接入。归档上传已按独立规格接入，仍不覆盖官方未提供的取消、删除或本地回退。
 
 **边界**：这是一次协议迁移，涉及既有用户的本地安装记录。必须先确认官方协议能表达当前所有安装来源，否则会丢失能力。属于需要 spec 与 plan 三层记录的改动。
 

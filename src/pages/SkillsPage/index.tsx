@@ -20,6 +20,7 @@ import {
   type MySkill,
   type SkillDetail,
 } from './components';
+import { SkillArchiveUploadPanel } from './SkillArchiveUploadPanel';
 
 type SkillsTab = 'installed' | 'catalog';
 
@@ -107,6 +108,7 @@ function SkillsList({ skills, onToggle }: {
 export function SkillsPage() {
   const { t } = useTranslation();
   const connected = useChatStore((state) => state.connected);
+  const archiveUploadCapability = openClawSkillsRuntime.archiveUploadCapability();
   const [activeTab, setActiveTab] = useState<SkillsTab>('installed');
   const [installed, setInstalled] = useState<MySkill[]>([]);
   const [catalog, setCatalog] = useState<HubSkill[]>([]);
@@ -281,6 +283,9 @@ export function SkillsPage() {
                 {loadingInstalled ? <LoadingIndicator size={13} /> : <RefreshCw size={13} aria-hidden="true" />}
               </button>
             </div>
+            {archiveUploadCapability !== false && (
+              <SkillArchiveUploadPanel connected={connected} onInstalled={loadInstalled} />
+            )}
             {securityError && (
               <div className="mb-4 flex items-start gap-2 border-s-2 border-aegis-warning/60 bg-aegis-warning/[0.04] px-4 py-3 text-[12px] text-aegis-text-secondary">
                 <ShieldAlert size={14} className="mt-0.5 shrink-0 text-aegis-warning" aria-hidden="true" />
