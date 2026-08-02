@@ -6,6 +6,7 @@ import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
 import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import { gateway, isGatewayChatSendDeliveryUncertain } from '@/services/gateway';
+import { SessionOrganizationProtocolUnsupportedError } from '@/services/gateway/OpenClawSessionOrganizationClient';
 import type {
   OutboundChatPayload,
   PreparedAttachment,
@@ -195,7 +196,17 @@ const clearSessionAttentionState = (session: Session): Session => ({
 });
 
 function persistSessionAsRead(session: Session | undefined): void {
-  if (session) setSessionOrganizationFlag(session, 'unread', false);
+  if (!session) return;
+  // Clear the desktop projection immediately. The native write below keeps
+  // current Gateways in sync, while legacy identity-bound state remains correct.
+  setSessionOrganizationFlag(session, 'unread', false);
+  void gateway.setSessionUnread(false, session.key).catch((error: unknown) => {
+    if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) return;
+  });
+}
+
+function unreadCount(value: number | boolean | undefined): number {
+  return typeof value === 'boolean' ? (value ? 1 : 0) : value ?? 0;
 }
 
 const updateSession = (
@@ -329,6 +340,8 @@ export interface Session {
   // User-controlled lifecycle flags (SPEC: archive + pin)
   pinned?: boolean;
   archived?: boolean;
+  /** OpenClaw's persisted organization bucket. */
+  category?: string | null;
   /** Desktop organization metadata, keyed by the Gateway session identity. */
   groupId?: string;
 }
@@ -435,21 +448,17 @@ interface ChatState {
   setSessionModel: (key: string, model: string | null) => void;
   /** Update a single session's thinking level locally after sessions.patch succeeds. */
   setSessionThinking: (key: string, level: string | null) => void;
-  /** Pin/unpin a session. Pinned sessions surface at the top of the
-   *  sidebar above the active/recent sections. Pure local state — no
-   *  backend round-trip. */
-  togglePinSession: (key: string) => void;
-  /** Archive/restore a session. Archived sessions are filtered out
-   *  of the default sidebar view; a "Show archived (N)" toggle at the
-   *  bottom of the sidebar exposes them. Pure local state. */
-  setSessionArchived: (key: string, archived: boolean) => void;
-  /** Local-only explicit unread marker. Gateway does not persist reader state. */
-  markSessionUnread: (key: string) => void;
+  /** Pin/unpin through the native Gateway protocol, with a legacy fallback. */
+  togglePinSession: (key: string) => Promise<void>;
+  /** Archive/restore through the native Gateway protocol, with a legacy fallback. */
+  setSessionArchived: (key: string, archived: boolean) => Promise<void>;
+  markSessionUnread: (key: string) => Promise<void>;
   sessionGroups: SessionGroup[];
-  createSessionGroup: (label: string) => SessionGroup | null;
-  renameSessionGroup: (groupId: string, label: string) => SessionGroup | null;
-  deleteSessionGroup: (groupId: string) => void;
-  moveSessionToGroup: (key: string, groupId: string | null) => void;
+  refreshSessionGroups: () => Promise<void>;
+  createSessionGroup: (label: string) => Promise<SessionGroup | null>;
+  renameSessionGroup: (groupId: string, label: string) => Promise<SessionGroup | null>;
+  deleteSessionGroup: (groupId: string) => Promise<void>;
+  moveSessionToGroup: (key: string, groupId: string | null) => Promise<void>;
   setActiveSession: (key: string) => void;
   incrementSessionUnread: (key: string, amount?: number) => void;
   markSessionCompleted: (key: string) => void;
@@ -1240,19 +1249,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // User mutations are only applied locally after `sessions.patch`
         // confirms them, so no client-side shadow value is needed here.
         label: typeof session.label === 'string' ? session.label : '',
-        // Gateway owns lifecycle identity and labels; desktop organization is
-        // stored separately and never fakes a Gateway mutation.
-        pinned: organization.pinned || session.pinned === true,
-        archived: organization.archived || session.archived === true,
-        ...(organization.groupId ? { groupId: organization.groupId } : {}),
+        // Current Gateways own organization fields. The desktop repository is
+        // only a fallback for a Gateway that explicitly lacks this protocol.
+        pinned: typeof session.pinned === 'boolean' ? session.pinned : organization.pinned,
+        archived: typeof session.archived === 'boolean' ? session.archived : organization.archived,
+        ...(typeof session.category === 'string' && session.category.trim()
+          ? { groupId: session.category.trim() }
+          : organization.groupId ? { groupId: organization.groupId } : {}),
         topic: hasCachedMessages
           ? resolveAndPersistSessionTopic({ ...session, topic: hydratedTopic }, cachedMessages, session.lastMessage)
           : resolveAndPersistSessionTopic({ ...session, topic: hydratedTopic }, [], session.lastMessage),
         unread: Math.max(
           organization.unread ? 1 : 0,
           changedIdentityKeys.has(session.key)
-            ? session.unread ?? 0
-            : previous?.unread ?? session.unread ?? 0,
+            ? unreadCount(session.unread)
+            : unreadCount(previous?.unread ?? session.unread),
         ),
         hasPendingCompletion: changedIdentityKeys.has(session.key)
           ? session.hasPendingCompletion ?? false
@@ -1277,7 +1288,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         })
       : [];
     const active = nextSessions.find((s) => s.key === activeSessionKey);
-    if (active) setSessionOrganizationFlag(active, 'unread', false);
+    if (active) persistSessionAsRead(active);
     const titleBar = titleBarStateFromSession(active, defs);
     set({
       ...transcriptReset,
@@ -1353,13 +1364,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   incrementSessionUnread: (key, amount = 1) => set((state) => {
     if (key === state.activeSessionKey) {
       const session = state.sessions.find((candidate) => candidate.key === key);
-      if (session) setSessionOrganizationFlag(session, 'unread', false);
+      if (session) persistSessionAsRead(session);
       return { sessions: updateSession(state.sessions, key, clearSessionAttentionState) };
     }
     return {
       sessions: updateSession(state.sessions, key, (session) => ({
         ...session,
-        unread: Math.max(0, (session.unread ?? 0) + amount),
+        unread: Math.max(0, unreadCount(session.unread) + amount),
       })),
     };
   }),
@@ -1378,7 +1389,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   clearSessionAttention: (key) => set((state) => {
     const session = state.sessions.find((candidate) => candidate.key === key);
-    if (session) setSessionOrganizationFlag(session, 'unread', false);
+    if (session) persistSessionAsRead(session);
     return { sessions: updateSession(state.sessions, key, clearSessionAttentionState) };
   }),
 
@@ -1448,63 +1459,132 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
   )),
 
-  togglePinSession: (key) => set((state) => ({
-    sessions: updateSession(state.sessions, key, (session) => {
-      const pinned = !session.pinned;
+  togglePinSession: async (key) => {
+    const session = get().sessions.find((candidate) => candidate.key === key);
+    if (!session) return;
+    const pinned = !session.pinned;
+    try {
+      await gateway.setSessionPinned(pinned, key);
+    } catch (error) {
+      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
       setSessionOrganizationFlag(session, 'pinned', pinned);
-      return { ...session, pinned };
-    }),
-  })),
+    }
+    set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, pinned })) }));
+  },
 
-  setSessionArchived: (key, archived) => set((state) => {
-    return {
-      sessions: updateSession(state.sessions, key, (session) => {
-        setSessionOrganizationFlag(session, 'archived', archived);
-        return { ...session, archived };
-      }),
-    };
-  }),
+  setSessionArchived: async (key, archived) => {
+    const session = get().sessions.find((candidate) => candidate.key === key);
+    if (!session) return;
+    try {
+      await gateway.setSessionArchived(archived, key);
+    } catch (error) {
+      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
+      setSessionOrganizationFlag(session, 'archived', archived);
+    }
+    set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, archived })) }));
+  },
 
-  markSessionUnread: (key) => set((state) => ({
-    sessions: updateSession(state.sessions, key, (session) => {
+  markSessionUnread: async (key) => {
+    const session = get().sessions.find((candidate) => candidate.key === key);
+    if (!session) return;
+    try {
+      await gateway.setSessionUnread(true, key);
+    } catch (error) {
+      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
       setSessionOrganizationFlag(session, 'unread', true);
-      return {
-        ...session,
-        unread: Math.max(1, session.unread ?? 0),
-        hasPendingCompletion: false,
-      };
-    }),
-  })),
-
-  createSessionGroup: (label) => {
-    const group = createSessionOrganizationGroup(label);
-    if (group) set({ sessionGroups: getSessionOrganizationGroups() });
-    return group;
-  },
-
-  renameSessionGroup: (groupId, label) => {
-    const group = renameSessionOrganizationGroup(groupId, label);
-    if (group) set({ sessionGroups: getSessionOrganizationGroups() });
-    return group;
-  },
-
-  deleteSessionGroup: (groupId) => {
-    deleteSessionOrganizationGroup(groupId);
+    }
     set((state) => ({
-      sessionGroups: getSessionOrganizationGroups(),
-      sessions: state.sessions.map((session) => (
-        session.groupId === groupId ? { ...session, groupId: undefined } : session
-      )),
+      sessions: updateSession(state.sessions, key, (item) => ({
+        ...item,
+        unread: Math.max(1, unreadCount(item.unread)),
+        hasPendingCompletion: false,
+      })),
     }));
   },
 
-  moveSessionToGroup: (key, groupId) => set((state) => ({
-    sessions: updateSession(state.sessions, key, (session) => {
-      const organization = setSessionOrganizationGroup(session, groupId);
-      return { ...session, ...(organization.groupId ? { groupId: organization.groupId } : { groupId: undefined }) };
-    }),
-    sessionGroups: getSessionOrganizationGroups(),
-  })),
+  refreshSessionGroups: async () => {
+    try {
+      const groups = await gateway.listSessionGroups();
+      set({ sessionGroups: groups.map((group, index) => ({ ...group, createdAt: index })) });
+    } catch (error) {
+      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
+      set({ sessionGroups: getSessionOrganizationGroups() });
+    }
+  },
+
+  createSessionGroup: async (label) => {
+    const normalized = label.trim();
+    if (!normalized) return null;
+    try {
+      await gateway.createSessionGroup(normalized);
+      const group = { id: normalized, label: normalized, createdAt: get().sessionGroups.length };
+      set((state) => ({
+        sessionGroups: state.sessionGroups.some((item) => item.id === group.id)
+          ? state.sessionGroups
+          : [...state.sessionGroups, group],
+      }));
+      return group;
+    } catch (error) {
+      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
+      const group = createSessionOrganizationGroup(normalized);
+      if (group) set({ sessionGroups: getSessionOrganizationGroups() });
+      return group;
+    }
+  },
+
+  renameSessionGroup: async (groupId, label) => {
+    const normalized = label.trim();
+    if (!normalized) return null;
+    try {
+      await gateway.renameSessionGroup(groupId, normalized);
+      const group = { id: normalized, label: normalized, createdAt: 0 };
+      set((state) => ({
+        sessionGroups: state.sessionGroups.map((item) => item.id === groupId ? { ...item, ...group, createdAt: item.createdAt } : item),
+        sessions: state.sessions.map((session) => session.groupId === groupId ? { ...session, groupId: normalized, category: normalized } : session),
+      }));
+      return group;
+    } catch (error) {
+      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
+      const group = renameSessionOrganizationGroup(groupId, normalized);
+      if (group) set({ sessionGroups: getSessionOrganizationGroups() });
+      return group;
+    }
+  },
+
+  deleteSessionGroup: async (groupId) => {
+    try {
+      await gateway.deleteSessionGroup(groupId);
+      set((state) => ({
+        sessionGroups: state.sessionGroups.filter((group) => group.id !== groupId),
+        sessions: state.sessions.map((session) => session.groupId === groupId ? { ...session, groupId: undefined, category: null } : session),
+      }));
+    } catch (error) {
+      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
+      deleteSessionOrganizationGroup(groupId);
+      set((state) => ({
+        sessionGroups: getSessionOrganizationGroups(),
+        sessions: state.sessions.map((session) => session.groupId === groupId ? { ...session, groupId: undefined } : session),
+      }));
+    }
+  },
+
+  moveSessionToGroup: async (key, groupId) => {
+    const session = get().sessions.find((candidate) => candidate.key === key);
+    if (!session) return;
+    try {
+      await gateway.setSessionCategory(groupId, key);
+    } catch (error) {
+      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
+      setSessionOrganizationGroup(session, groupId);
+    }
+    set((state) => ({
+      sessions: updateSession(state.sessions, key, (item) => ({
+        ...item,
+        ...(groupId ? { groupId, category: groupId } : { groupId: undefined, category: null }),
+      })),
+      sessionGroups: get().sessionGroups,
+    }));
+  },
 
   // ── Pending file attachments (drag-drop → new session) ─────
   // ChatPage drains this on mount; if a new drag-drop happens while

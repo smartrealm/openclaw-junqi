@@ -956,7 +956,7 @@ export function DashboardPage() {
                   avatarColor={isMain ? themeColorVar('primary') : themeColorVar('accent')}
                   icon={isMain ? Shield : Bot}
                   pinned={Boolean(merged.pinned)}
-                  onPinToggle={() => useChatStore.getState().togglePinSession(key)}
+                  onPinToggle={() => { void useChatStore.getState().togglePinSession(key); }}
                   onClick={() => { useChatStore.getState().openTab(key); navigate('/chat'); }}
                 />
               );

@@ -2,9 +2,8 @@
 
 ## 依据
 
-- 本地 OpenClaw 源码版本 `2026.6.10`，提交 `2031362f51e`。
-- `src/gateway/methods/core-descriptors.ts`：会话方法与权限。
-- `packages/gateway-protocol/src/schema/sessions.ts`：`sessions.create` 与 `sessions.patch` 参数契约。
+- 本地 OpenClaw 源码检出版本 `2026.6.10`，提交 `2031362f51e`，仅作为旧协议兼容样本。
+- 官方当前 `packages/gateway-protocol/src/schema/sessions.ts`：会话方法、`sessions.patch` 组织字段及 `sessions.groups.*` 契约。
 - OpenClaw Web UI 会话菜单：置顶、标记未读、重命名、分叉、移动分组、归档、删除。
 
 ## 当前行为
@@ -16,7 +15,7 @@
 1. 新建和分叉必须调用 `sessions.create`，仅在返回 `{ ok: true, key, sessionId, entry }` 后向界面提交会话。
 2. 重命名必须调用 `sessions.patch`；重置、删除必须调用其对应管理员权限方法。失败不得修改本地生命周期状态。
 3. 普通分叉使用 `sessions.create({ parentSessionKey })`；压缩检查点分叉仅在已选择 checkpoint 后调用 `sessions.compaction.branch`，两种语义不得混用。
-4. 置顶、显式未读、归档、推导标题和用户分组为桌面组织元数据，按 `session key + sessionId` 绑定；Gateway 当前协议未提供对应字段时，界面不得宣称其已写入 Gateway。
+4. 置顶、显式未读、归档和用户分组优先写入 Gateway 原生字段；仅当 Gateway 明确返回未知方法或未知组织字段时，降级为按 `session key + sessionId` 绑定的桌面元数据。推导标题始终是桌面展示元数据。
 5. 侧栏行和标签页右键必须复用同一会话操作菜单与能力判断。
 6. 侧栏顺序为置顶会话、命名分组、未分组时间桶、归档会话；删除分组只能解除归属，不得删除会话。
 7. 主会话不可删除或关闭标签，但可使用不破坏生命周期的组织操作、重命名、分叉与重置。
@@ -32,5 +31,5 @@
 
 ## 未验证边界
 
-- OpenClaw 当前安装版本的 Gateway schema 未声明 pin、unread、archive、groupId 写字段；未来上游增加这些字段后，需要通过版本门控迁移到远端持久化。
-- 官方 Web UI 截图的精确前端实现不在当前本地源码检出中；本规格以截图所示产品能力及当前安装协议共同约束实现。
+- 已存在的旧 Gateway 可能不支持当前原生会话组织协议；兼容判断必须基于实际 RPC 响应，不能以版本门控替代。
+- 官方 Web UI 的精确实现不在当前本地源码检出中；本规格以官方协议和产品能力共同约束实现。

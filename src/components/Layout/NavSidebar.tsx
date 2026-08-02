@@ -363,6 +363,15 @@ function SessionGroupHeader({ group, count }: { group: SessionGroup; count: numb
   const deleteSessionGroup = useChatStore((state) => state.deleteSessionGroup);
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(group.label);
+  const runGroupAction = (action: () => Promise<unknown>) => {
+    void action().catch((error: unknown) => {
+      useNotificationStore.getState().addToast(
+        'error',
+        t('chat.sessionActions'),
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+  };
 
   if (editing) {
     return (
@@ -373,7 +382,7 @@ function SessionGroupHeader({ group, count }: { group: SessionGroup; count: numb
           onChange={(event) => setLabel(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
-              renameSessionGroup(group.id, label);
+              runGroupAction(() => renameSessionGroup(group.id, label));
               setEditing(false);
             }
             if (event.key === 'Escape') {
@@ -386,7 +395,7 @@ function SessionGroupHeader({ group, count }: { group: SessionGroup; count: numb
         />
         <button
           type="button"
-          onClick={() => { renameSessionGroup(group.id, label); setEditing(false); }}
+          onClick={() => { runGroupAction(() => renameSessionGroup(group.id, label)); setEditing(false); }}
           className="flex h-6 w-6 items-center justify-center rounded text-aegis-primary hover:bg-aegis-primary/10"
           title={t('common.save')}
           aria-label={t('common.save')}
@@ -425,7 +434,7 @@ function SessionGroupHeader({ group, count }: { group: SessionGroup; count: numb
         onClick={() => showConfirm(
           t('chat.deleteSessionGroup'),
           t('chat.deleteSessionGroupConfirm'),
-          () => { deleteSessionGroup(group.id); },
+          () => { runGroupAction(() => deleteSessionGroup(group.id)); },
         )}
         className="flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-aegis-danger/10 hover:text-aegis-danger group-hover/session-group:opacity-100 focus-visible:opacity-100"
         title={t('chat.deleteSessionGroup')}
@@ -455,6 +464,13 @@ function WorkbenchPanel() {
   const [preferredBucket, setPreferredBucket] = useState<SessionBucketKey>(readPreferredSessionBucket);
   const setSessionArchived = useChatStore((state) => state.setSessionArchived);
   const sessionGroups = useChatStore((state) => state.sessionGroups);
+  const refreshSessionGroups = useChatStore((state) => state.refreshSessionGroups);
+
+  useEffect(() => {
+    void refreshSessionGroups().catch(() => {
+      // The store retains its identity-bound desktop fallback for legacy Gateway versions.
+    });
+  }, [refreshSessionGroups]);
 
   // Per-session first user message, keyed for O(1) lookups during render.
   // Without this we'd have to walk messagesPerSession on every session row.
@@ -724,9 +740,12 @@ function WorkbenchPanel() {
                 <button
                   type="button"
                   onClick={() => {
-                    setSessionArchived(session.key, false);
-                    useChatStore.getState().openTab(session.key);
-                    navigate('/chat');
+                    void setSessionArchived(session.key, false).then(() => {
+                      useChatStore.getState().openTab(session.key);
+                      navigate('/chat');
+                    }).catch((error: unknown) => {
+                      useNotificationStore.getState().addToast('error', t('chat.sessionActions'), error instanceof Error ? error.message : String(error));
+                    });
                   }}
                   className="min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:bg-aegis-hover/35 hover:text-aegis-text-secondary"
                   title={sessionTitle(session, firstUserByKey[session.key])}
@@ -735,7 +754,9 @@ function WorkbenchPanel() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSessionArchived(session.key, false)}
+                  onClick={() => void setSessionArchived(session.key, false).catch((error: unknown) => {
+                    useNotificationStore.getState().addToast('error', t('chat.sessionActions'), error instanceof Error ? error.message : String(error));
+                  })}
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-aegis-text-dim opacity-0 transition-opacity hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:opacity-100 group-hover/archived-session:opacity-100"
                   title={t('sidebar.restoreSession')}
                   aria-label={t('sidebar.restoreSession')}

@@ -84,9 +84,14 @@ export function SessionActionsMenu({
   const [newGroupLabel, setNewGroupLabel] = useState('');
   const isMainSession = isAgentMainSession(session.key);
 
-  const finish = (action: () => void) => {
-    action();
-    onDismiss();
+  const finish = (action: () => Promise<void>) => {
+    void action().then(onDismiss).catch((error: unknown) => {
+      useNotificationStore.getState().addToast(
+        'error',
+        t('chat.sessionActions'),
+        error instanceof Error ? error.message : String(error),
+      );
+    });
   };
 
   const forkSession = async () => {
@@ -102,17 +107,25 @@ export function SessionActionsMenu({
     }
   };
 
-  const createGroup = () => {
-    const group = createSessionGroup(newGroupLabel);
-    if (!group) return;
-    moveSessionToGroup(session.key, group.id);
-    setNewGroupLabel('');
-    onDismiss();
+  const createGroup = async () => {
+    try {
+      const group = await createSessionGroup(newGroupLabel);
+      if (!group) return;
+      await moveSessionToGroup(session.key, group.id);
+      setNewGroupLabel('');
+      onDismiss();
+    } catch (error) {
+      useNotificationStore.getState().addToast(
+        'error',
+        t('chat.createSessionGroup'),
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   };
 
   return (
     <div className={clsx('min-w-[204px] rounded-lg border border-aegis-menu-border bg-aegis-menu-bg py-1 text-[12px] shadow-[var(--aegis-menu-shadow)]', className)}>
-      <MenuButton onClick={() => finish(onRequestRename)}>
+      <MenuButton onClick={() => { onRequestRename(); onDismiss(); }}>
         <Pencil size={13} aria-hidden="true" />
         {t('chat.renameSession')}
       </MenuButton>
@@ -153,7 +166,7 @@ export function SessionActionsMenu({
                   value={newGroupLabel}
                   onChange={(event) => setNewGroupLabel(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') createGroup();
+                    if (event.key === 'Enter') void createGroup();
                     if (event.key === 'Escape') setNewGroupLabel('');
                   }}
                   placeholder={t('chat.newSessionGroupPlaceholder')}
@@ -161,7 +174,7 @@ export function SessionActionsMenu({
                 />
                 <button
                   type="button"
-                  onClick={createGroup}
+                  onClick={() => void createGroup()}
                   disabled={!newGroupLabel.trim()}
                   className="flex h-7 w-7 items-center justify-center rounded border border-aegis-border text-aegis-text-muted hover:border-aegis-primary hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label={t('chat.createSessionGroup')}
@@ -172,8 +185,8 @@ export function SessionActionsMenu({
               </div>
             </div>
           )}
-          <MenuButton onClick={() => finish(() => {
-            setSessionArchived(session.key, !session.archived);
+          <MenuButton onClick={() => finish(async () => {
+            await setSessionArchived(session.key, !session.archived);
             if (!session.archived) onCloseTab?.();
           })}>
             <Archive size={13} aria-hidden="true" />
@@ -183,16 +196,17 @@ export function SessionActionsMenu({
       </>
 
       {onCloseTab && !isMainSession && (
-        <MenuButton onClick={() => finish(onCloseTab)}>
+        <MenuButton onClick={() => { onCloseTab(); onDismiss(); }}>
           <X size={13} aria-hidden="true" />
           {t('chat.closeTab')}
         </MenuButton>
       )}
-      <MenuButton onClick={() => finish(() => {
+      <MenuButton onClick={() => {
         showConfirm(t('chat.resetSession'), t('chat.resetSessionConfirm'), async () => {
           await resetSessionEverywhere(session.key);
         });
-      })}>
+        onDismiss();
+      }}>
         <RefreshCw size={13} aria-hidden="true" />
         {t('chat.resetSession')}
       </MenuButton>
@@ -201,11 +215,12 @@ export function SessionActionsMenu({
           <div className="my-1 border-t border-aegis-border/70" />
           <MenuButton
             danger
-            onClick={() => finish(() => {
+            onClick={() => {
               showConfirm(t('chat.deleteSession'), t('chat.deleteSessionConfirm'), async () => {
                 await deleteSessionEverywhere(session.key);
               });
-            })}
+              onDismiss();
+            }}
           >
             <Trash2 size={13} aria-hidden="true" />
             {t('chat.deleteSession')}

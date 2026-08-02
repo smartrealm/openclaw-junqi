@@ -38,6 +38,7 @@ import type { GatewayAuthorizationIssue } from './messageRouter';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
 import type { GatewayAttachment } from '@/services/chat/types';
 import { SessionSettingsClient } from './SessionSettingsClient';
+import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
 import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
 
 // Re-export types for consumers
@@ -507,6 +508,10 @@ const sessionSettings = new SessionSettingsClient({
   request: (method, params) => connection.request(method, params),
   requestPrivileged: (method, params) => requestPrivileged(method, params),
 });
+const sessionOrganization = new OpenClawSessionOrganizationClient({
+  runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+});
 const sessionLifecycle = new OpenClawSessionLifecycleClient(
   (method, params) => connection.request(method, params),
 );
@@ -811,6 +816,30 @@ export const gateway = {
   },
   async setSessionLabel(label: string | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setLabel(sessionKey, label);
+  },
+  async setSessionPinned(pinned: boolean, sessionKey: string) {
+    return sessionOrganization.setPinned(sessionKey, pinned);
+  },
+  async setSessionUnread(unread: boolean, sessionKey: string) {
+    return sessionOrganization.setUnread(sessionKey, unread);
+  },
+  async setSessionArchived(archived: boolean, sessionKey: string) {
+    return sessionOrganization.setArchived(sessionKey, archived);
+  },
+  async setSessionCategory(category: string | null, sessionKey: string) {
+    return sessionOrganization.setCategory(sessionKey, category);
+  },
+  async listSessionGroups() {
+    return sessionOrganization.listGroups();
+  },
+  async createSessionGroup(label: string) {
+    return sessionOrganization.putGroup(label);
+  },
+  async renameSessionGroup(from: string, to: string) {
+    return sessionOrganization.renameGroup(from, to);
+  },
+  async deleteSessionGroup(label: string) {
+    return sessionOrganization.deleteGroup(label);
   },
   async updateAgentParams(agentId: string, params: Record<string, any>) {
     return requestPrivileged('agents.update', { agentId, params });
