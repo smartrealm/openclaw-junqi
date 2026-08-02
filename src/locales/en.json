@@ -1,4 +1,9 @@
 {
+  "gatewayLifecycle": {
+    "stop": "Stop Gateway",
+    "stopConfirm": "Stop now? Active sessions will be interrupted",
+    "stopFailed": "Failed to stop Gateway"
+  },
   "taskStatus": {
       "todo": "Todo",
       "pending": "Pending",

@@ -11,8 +11,10 @@ import {
   Power,
   RefreshCw,
   ServerCog,
+  Square,
 } from 'lucide-react';
 import {
+  stopGateway,
   disableGatewayAutostart,
   enableGatewayAutostart,
   gatewayAutostartStatus,
@@ -187,6 +189,39 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
     };
   }, [refresh, t]);
 
+  // Stopping is destructive to running sessions, so it takes a deliberate
+  // second click rather than firing on the first.
+  const [stopArmed, setStopArmed] = useState(false);
+  const [stopBusy, setStopBusy] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!stopArmed) return;
+    const timer = window.setTimeout(() => setStopArmed(false), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [stopArmed]);
+
+  const stopSelectedGateway = useCallback(async () => {
+    if (stopBusy) return;
+    if (!stopArmed) {
+      setStopArmed(true);
+      return;
+    }
+    setStopArmed(false);
+    setStopBusy(true);
+    setStopError(null);
+    try {
+      // `stop_gateway` resolves the selected runtime itself; picking a
+      // runtime-specific command here could act on the one the user did not select.
+      await stopGateway();
+      await refresh();
+    } catch (cause) {
+      setStopError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setStopBusy(false);
+    }
+  }, [refresh, stopArmed, stopBusy]);
+
   const toggleAutostart = useCallback(async () => {
     if (!autostart || !autostart.supported || autostartBusy) return;
     setAutostartBusy(true);
@@ -265,15 +300,36 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
           </div>
         </div>
         {isFull && (
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-aegis-border/40 px-3 py-1.5 text-[11px] text-aegis-text-dim transition-colors hover:text-aegis-text disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-            {t('settings.refresh', 'Refresh')}
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void stopSelectedGateway()}
+              disabled={stopBusy || lifecycle === 'stopped'}
+              aria-label={t('gatewayLifecycle.stop', '停止 Gateway')}
+              className={clsx(
+                'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] transition-colors disabled:opacity-50',
+                stopArmed
+                  ? 'border-aegis-danger/45 bg-aegis-danger/10 text-aegis-danger'
+                  : 'border-aegis-border/40 text-aegis-text-dim hover:text-aegis-text',
+              )}
+            >
+              {stopBusy
+                ? <LoadingIndicator size={12} />
+                : <Square size={12} />}
+              {stopArmed
+                ? t('gatewayLifecycle.stopConfirm', '确认停止？进行中的会话会中断')
+                : t('gatewayLifecycle.stop', '停止 Gateway')}
+            </button>
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-aegis-border/40 px-3 py-1.5 text-[11px] text-aegis-text-dim transition-colors hover:text-aegis-text disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+              {t('settings.refresh', 'Refresh')}
+            </button>
+          </div>
         )}
       </div>
 
@@ -346,6 +402,14 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
             );
           })}
         </div>
+      )}
+
+      {stopError && (
+        // A failed stop must not be silent: the Gateway is still running and
+        // the user needs the reason, not just an unchanged button.
+        <p className="mt-3 break-words text-[11px] leading-5 text-aegis-danger">
+          {t('gatewayLifecycle.stopFailed', '停止 Gateway 失败')}: {stopError}
+        </p>
       )}
 
       {showActivity && recentEvents.length > 0 && (

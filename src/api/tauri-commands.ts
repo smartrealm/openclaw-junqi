@@ -206,6 +206,12 @@ export interface EnsureResult {
  * It never silently switches between Native and Docker.
  */
 export const ensureGatewayRunning = () => invoke<EnsureResult>("ensure_gateway_running");
+/**
+ * Stops the Gateway of the currently selected runtime. `stop_gateway` dispatches
+ * to Docker itself, so callers must not pick a runtime-specific command and risk
+ * acting on the runtime the user did not select.
+ */
+export const stopGateway = () => invoke<string>("stop_gateway");
 
 /**
  * Gateway 开机自启（系统服务）状态 — see src-tauri/src/commands/gateway_service.rs

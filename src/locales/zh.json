@@ -1,4 +1,9 @@
 {
+  "gatewayLifecycle": {
+    "stop": "停止 Gateway",
+    "stopConfirm": "确认停止？进行中的会话会中断",
+    "stopFailed": "停止 Gateway 失败"
+  },
   "taskStatus": {
       "todo": "待办",
       "pending": "排队中",

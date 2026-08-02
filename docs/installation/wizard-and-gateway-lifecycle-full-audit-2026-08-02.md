@@ -126,9 +126,9 @@ let version_ok = version.is_some();
 
 **展示接入**：`SetupFlowPanels` 的运行信息面板在超出验证范围时把版本行改为警告色，并给出「仍可使用，若向导或连接异常请优先考虑版本兼容」的说明。原「版本可读取」勾选项改为「版本受支持」——`version_ok` 的语义已从可解析变为在支持区间内，标签必须随之更正。
 
-### AUD-03 · 五个生命周期 command 无调用方，其中包含全部停止入口
+### AUD-03 · 五个生命周期 command 无调用方，其中包含全部停止入口（已修复）
 
-风险等级：中高。
+风险等级：中高。状态：2026-08-02 已修复。
 
 **证据**：见上文清点。`stop_gateway`、`stop_docker_gateway`、`restart_local_gateway`、`docker_gateway_status`、`get_gateway_lifecycle` 均无运行期调用方。
 
@@ -139,6 +139,16 @@ let version_ok = version.is_some();
 **边界面**：这五个 command 仍在 `generate_handler!` 中注册，构成对 WebView 暴露但无人使用的 IPC 面。这与既有 `docs/quality/codebase-improvement-and-extension-plan-2026-07-31.md` 的 IMP-04 是同一问题域。
 
 **目标行为**：二选一，不要维持现状。要么补上停止入口（推荐，`stop_gateway` 与 `stop_docker_gateway` 已实现，仅缺 UI 与 runtime 分派），要么从注册表摘除并删除实现。`restart_local_gateway`、`docker_gateway_status`、`get_gateway_lifecycle` 三个需要单独判断是历史残留还是待接入能力。
+
+**修复**：按推荐方案补入口。`GatewayLifecyclePanel` 新增停止按钮，调用新增的 `stopGateway` 包装。
+
+不需要前端 runtime 分派：`stop_gateway` 自身已按 `active_runtime_mode()` 分派到 `stop_docker_gateway_locked`，UI 若自行选择运行时特定命令，反而可能作用到用户未选中的 runtime。
+
+停止会中断进行中的会话，因此采用两段式确认：首次点击进入待确认态（5 秒后自动撤销），再次点击才执行。失败时显示具体原因——停止失败意味着 Gateway 仍在运行，静默会造成误解。
+
+**验证**：新增 4 项守护测试，覆盖入口存在、不得使用运行时特定命令、两段式确认与失败展示、以及两个 stop command 保持注册。
+
+`restart_local_gateway`、`docker_gateway_status`、`get_gateway_lifecycle` 仍无调用方，本轮未处理。
 
 ### AUD-04 · 生命周期回归测试断言 Rust 源码字符串位置（已修复）
 
@@ -167,9 +177,9 @@ gateway.indexOf('pub async fn restart_local_gateway'),
 
 **已立约定**：`AGENTS.md` 测试章节补充「守护测试断言契约，不断言实现的书写形式」，并明确禁止断言表达式文本、变量名与定义偏移，要求按语法边界截取范围。
 
-### AUD-05 · Native 与 Docker 的生命周期操作面不对等
+### AUD-05 · Native 与 Docker 的生命周期操作面不对等（边界已固定，结论有更正）
 
-风险等级：中。
+风险等级：中。状态：2026-08-02 已按方案固定边界。
 
 **证据**：按操作分类统计两个模块的函数定义：
 
@@ -185,7 +195,11 @@ Docker 侧没有 restart、没有 handoff、没有 probe。`ensure_gateway_runni
 
 **问题**：不对等本身未必是缺陷——Docker 的重启可以由容器编排承担，探测语义也可能不同。但当前**没有任何测试或文档固定这个边界**，因此无法判断「Docker 没有 restart」是有意设计还是遗漏。上一轮 HA-04 已为前端协调器补了 runtime 无关性断言，Rust 侧尚无对应约束。
 
-**目标行为**：先用测试与文档固定当前语义——Docker 路径下 restart 请求由谁承接、失败诊断是否可读、handoff 与 probe 在 Docker 下是否有等价概念。在 Docker Desktop 真机验收前不改变行为。
+**更正**：上表按函数名逐文件统计，据此得出「Docker 侧没有 restart」**不成立**。`restart_gateway` 确有 Docker 分支，只是分派写在 `gateway.rs` 内（重建容器并写入 `GatewayRuntimeMode::Docker` 状态），不在 `docker.rs`。`stop_gateway` 同理。按文件归属统计会漏掉这类同文件内分派，这是该统计方法的局限。
+
+**修复**：按原方案只固定边界、不改行为。新增 4 项测试断言：`restart_gateway`、`stop_gateway`、`ensure_gateway_running` 三个生命周期变更入口都必须先读 `active_runtime_mode()`；restart 与 stop 各自携带 Docker 分支；Docker 分支的状态转移必须自报运行时，不得复用 Native 措辞；`handoff` 保持 Native 专属。
+
+**仍未验证**：Docker Desktop 冷启动未真机验收，重启行为本身未改变。
 
 ## 建议顺序
 
