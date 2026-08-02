@@ -9,8 +9,11 @@ import {
   parseGatewayCostSummary,
   parseGatewayCronJobList,
   parseGatewaySessionsUsage,
+  refreshSessionArtifacts,
   refreshToolsCatalog,
   refreshToolsEffective,
+  resolveOpenClawArtifactDownloadUrl,
+  saveSessionArtifact,
   resolveGatewayConnectionStartedAt,
   startPolling,
   stopPolling,
@@ -260,6 +263,137 @@ test('refreshToolsCatalog commits only the current Gateway result for the select
     assert.deepEqual(calls.find((call) => call.method === 'tools.catalog'), {
       method: 'tools.catalog',
       params: { agentId: 'main', includePlugins: true },
+    });
+  } finally {
+    stopPolling();
+  }
+});
+
+test('session artifacts follow Session lifecycle and capability advertisement', async () => {
+  const store = useGatewayDataStore.getState();
+  store.setSessions([{ key: 'agent:main:main' }]);
+  store.setSessionArtifacts('agent:main:main', []);
+  store.setSessionArtifactsLoading('agent:main:main');
+  store.setSessions([]);
+  const afterDeletion = useGatewayDataStore.getState();
+  assert.equal(afterDeletion.sessionArtifacts['agent:main:main'], undefined);
+  assert.equal(afterDeletion.sessionArtifactsLoading, false);
+  assert.equal(afterDeletion.sessionArtifactsLoadingKey, null);
+
+  const calls: string[] = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'artifacts.download' ? true : false,
+    request: async (method: string) => {
+      calls.push(method);
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    assert.equal(await refreshSessionArtifacts('agent:main:main'), false);
+    assert.equal(useGatewayDataStore.getState().sessionArtifactsError, 'OPENCLAW_ARTIFACTS_UNSUPPORTED');
+    assert.equal(calls.includes('artifacts.list'), false);
+    assert.equal((await saveSessionArtifact('agent:main:main', 'artifact-1')).success, false);
+  } finally {
+    stopPolling();
+  }
+});
+
+test('artifact download URLs stay bound to the selected Gateway', () => {
+  assert.equal(
+    resolveOpenClawArtifactDownloadUrl('https://gateway.example/artifact-1', 'http://127.0.0.1:18789'),
+    'https://gateway.example/artifact-1',
+  );
+  assert.equal(
+    resolveOpenClawArtifactDownloadUrl('/api/media/artifact-1', 'http://127.0.0.1:18789'),
+    'http://127.0.0.1:18789/api/media/artifact-1',
+  );
+  assert.equal(resolveOpenClawArtifactDownloadUrl('/api/media/artifact-1'), null);
+  assert.equal(resolveOpenClawArtifactDownloadUrl('/media/artifact-1', 'http://127.0.0.1:18789'), null);
+  assert.equal(
+    resolveOpenClawArtifactDownloadUrl('data:text/plain;base64,aGVsbG8=', 'http://127.0.0.1:18789'),
+    'data:text/plain;base64,aGVsbG8=',
+  );
+});
+
+test('session artifacts are not discarded before the first authoritative session snapshot', async () => {
+  const store = useGatewayDataStore.getState();
+  store.setSessions([]);
+  useGatewayDataStore.setState({
+    lastFetch: { ...store.lastFetch, sessions: 0 },
+  });
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'artifacts.list' ? true : null,
+    request: async (method: string) => {
+      if (method === 'sessions.list') return new Promise<never>(() => {});
+      if (method === 'agents.list') return { agents: [] };
+      if (method === 'artifacts.list') {
+        return {
+          artifacts: [{
+            id: 'artifact-cold-start',
+            type: 'file',
+            title: 'cold-start.txt',
+            download: { mode: 'unsupported' },
+          }],
+        };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    assert.equal(await refreshSessionArtifacts('agent:main:main'), true);
+    assert.ok(useGatewayDataStore.getState().sessionArtifacts['agent:main:main']);
+  } finally {
+    stopPolling();
+  }
+});
+
+test('refreshSessionArtifacts commits only a current Gateway result for an active Session', async () => {
+  const store = useGatewayDataStore.getState();
+  store.setSessions([{ key: 'agent:main:main' }]);
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'artifacts.list' ? true : null,
+    request: async (method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params });
+      if (method === 'sessions.list') return { sessions: [{ key: 'agent:main:main' }], hasMore: false };
+      if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      if (method === 'artifacts.list') {
+        return {
+          artifacts: [{
+            id: 'artifact-1',
+            type: 'file',
+            title: 'report.txt',
+            sessionKey: 'agent:main:main',
+            download: { mode: 'unsupported' },
+          }],
+        };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    assert.equal(await refreshSessionArtifacts('agent:main:main', 'main'), true);
+    assert.deepEqual(useGatewayDataStore.getState().sessionArtifacts['agent:main:main'], [{
+      id: 'artifact-1',
+      type: 'file',
+      title: 'report.txt',
+      sessionKey: 'agent:main:main',
+      download: { mode: 'unsupported' },
+    }]);
+    assert.deepEqual(calls.find((call) => call.method === 'artifacts.list'), {
+      method: 'artifacts.list',
+      params: { sessionKey: 'agent:main:main', agentId: 'main' },
     });
   } finally {
     stopPolling();

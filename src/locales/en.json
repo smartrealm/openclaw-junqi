@@ -1330,6 +1330,18 @@
     "workspaceNoResults": "No match",
     "workspacePick": "Choose folder…",
     "exportMarkdown": "Export as Markdown",
+    "artifacts": {
+      "open": "Open session artifacts",
+      "title": "Session artifacts",
+      "refresh": "Refresh session artifacts",
+      "loading": "Loading session artifacts...",
+      "empty": "No artifacts were reported for this session.",
+      "unavailable": "This OpenClaw Gateway does not advertise session artifacts.",
+      "error": "The Gateway did not return a valid artifact list.",
+      "save": "Save artifact",
+      "unsupported": "This artifact cannot be downloaded by the Gateway.",
+      "saveFailed": "The artifact could not be saved."
+    },
     "loadingHistory": "Loading chat history...",
     "newMessages": "New messages",
     "copy": "Copy",

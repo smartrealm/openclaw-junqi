@@ -1299,6 +1299,18 @@
     "workspaceNoResults": "找不到符合項目",
     "workspacePick": "選擇資料夾…",
     "exportMarkdown": "匯出為 Markdown",
+    "artifacts": {
+      "open": "開啟會話產物",
+      "title": "會話產物",
+      "refresh": "重新整理會話產物",
+      "loading": "正在載入會話產物…",
+      "empty": "此會話沒有回傳產物。",
+      "unavailable": "目前 OpenClaw Gateway 未廣告會話產物能力。",
+      "error": "Gateway 未回傳有效的產物清單。",
+      "save": "儲存產物",
+      "unsupported": "Gateway 不支援下載此產物。",
+      "saveFailed": "產物儲存失敗。"
+    },
     "loadingHistory": "正在加載歷史記錄…",
     "newMessages": "新消息",
     "copy": "複製",

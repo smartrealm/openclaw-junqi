@@ -169,6 +169,7 @@ docs/
 - [OpenClaw 原生会话预览对齐](quality/openclaw-native-session-preview-alignment-2026-08-03.md)
 - [OpenClaw 原生有效工具目录对齐](quality/openclaw-native-tools-effective-alignment-2026-08-03.md)
 - [OpenClaw 原生工具目录对齐](quality/openclaw-native-tools-catalog-alignment-2026-08-03.md)
+- [OpenClaw 原生产物协议对齐](quality/openclaw-native-artifacts-alignment-2026-08-03.md)
 - [全局改进与功能拓展计划](quality/codebase-improvement-and-extension-plan-2026-07-31.md)
 - [仪表盘首次主题切换验证](quality/dashboard-first-theme-switch-validation-2026-07-30.md)
 - [Gateway AI 诊断与 OpenClaw 运行时验证](quality/gateway-ai-diagnostics-openclaw-runtime-validation-2026-07-30.md)

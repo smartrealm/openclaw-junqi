@@ -236,9 +236,9 @@
 
 **官方依据**：`protocol.md` 的 `artifacts.list`、`artifacts.get`、`artifacts.download`
 
-**当前行为**：JunQi 的产物能力建立在解析 `<openclaw_artifact>` XML 标签之上（`ArtifactCard`、`artifactPreview`），三个 `artifacts.*` RPC 引用为 0。
+**当前行为**：JunQi 的消息内联产物仍由 `<openclaw_artifact>` XML 标签投影；三个原生 RPC 已按 [OpenClaw 原生产物协议对齐](openclaw-native-artifacts-alignment-2026-08-03.md) 接入 Chat 会话顶部的只读产物面板。XML transcript 投影与 Gateway artifact 摘要保持独立。
 
-**可拓展**：官方协议提供产物的列举与下载，不依赖标签出现在当前 transcript 中。这意味着历史产物可以被检索，而不是只能在产生它的那条消息里看到。
+**可拓展**：官方协议提供按 session、run 或 task 范围的产物列举与下载，不依赖标签出现在当前 transcript 中。当前 JunQi 首先使用真实 session scope，保留 run/task scope 作为客户端后续扩展边界；不把 XML、本地文件或 URL 猜测成原生产物。
 
 ### EXT-F · Memory 的官方来源
 
@@ -289,7 +289,7 @@
 
 10. EXT-A 的审批协议（涉及 `operator.approvals` 权限提升）
 11. EXT-D 技能协议迁移（涉及既有安装记录）
-12. EXT-E 产物协议
+12. EXT-E 产物协议（当前 session scope 已接入；run/task scope 待真实场景验证）
 13. EXT-F Memory 只读接入
 14. IMP-02 大文件拆分，只在其他任务顺带触及时进行
 

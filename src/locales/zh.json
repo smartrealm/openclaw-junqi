@@ -1328,6 +1328,18 @@
     "workspaceNoResults": "未找到匹配项",
     "workspacePick": "选择文件夹…",
     "exportMarkdown": "导出为 Markdown",
+    "artifacts": {
+      "open": "打开会话产物",
+      "title": "会话产物",
+      "refresh": "刷新会话产物",
+      "loading": "正在加载会话产物…",
+      "empty": "此会话没有返回产物。",
+      "unavailable": "当前 OpenClaw Gateway 未广告会话产物能力。",
+      "error": "Gateway 未返回有效的产物列表。",
+      "save": "保存产物",
+      "unsupported": "Gateway 不支持下载此产物。",
+      "saveFailed": "产物保存失败。"
+    },
     "loadingHistory": "正在加载历史记录…",
     "newMessages": "新消息",
     "copy": "复制",

@@ -28,6 +28,15 @@ import {
   OpenClawToolsCatalogResponseError,
   type OpenClawToolsCatalogResult,
 } from '@/services/gateway/OpenClawToolsCatalogClient';
+import {
+  OPENCLAW_ARTIFACTS_DOWNLOAD_METHOD,
+  OPENCLAW_ARTIFACTS_LIST_METHOD,
+  OpenClawArtifactsClient,
+  OpenClawArtifactsResponseError,
+  type OpenClawArtifactSummary,
+  type OpenClawArtifactsDownloadResult,
+} from '@/services/gateway/OpenClawArtifactsClient';
+import { saveChatMedia } from '@/services/chat/mediaSaveRuntime';
 
 export type { OpenClawSessionPreviewEntry } from '@/services/gateway/OpenClawSessionPreviewClient';
 export type {
@@ -43,6 +52,13 @@ export type {
   OpenClawToolsCatalogProfileId,
   OpenClawToolsCatalogResult,
 } from '@/services/gateway/OpenClawToolsCatalogClient';
+export type {
+  OpenClawArtifactDownloadMode,
+  OpenClawArtifactSummary,
+  OpenClawArtifactsDownloadResult,
+  OpenClawArtifactsGetResult,
+  OpenClawArtifactsListResult,
+} from '@/services/gateway/OpenClawArtifactsClient';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -226,6 +242,11 @@ interface GatewayDataState {
   toolsCatalogLoading: boolean;
   toolsCatalogLoadingAgentId: string | null;
   toolsCatalogError: string | null;
+  sessionArtifacts: Record<string, readonly OpenClawArtifactSummary[]>;
+  sessionArtifactsUpdatedAt: Record<string, number>;
+  sessionArtifactsLoading: boolean;
+  sessionArtifactsLoadingKey: string | null;
+  sessionArtifactsError: string | null;
   agents: AgentInfo[];
   costSummary: CostSummary | null;
   sessionsUsage: SessionsUsage | null;
@@ -279,6 +300,10 @@ interface GatewayDataState {
   clearToolsCatalog: (agentId?: string) => void;
   setToolsCatalogLoading: (agentId: string | null) => void;
   setToolsCatalogError: (value: string | null) => void;
+  setSessionArtifacts: (sessionKey: string, artifacts: readonly OpenClawArtifactSummary[]) => void;
+  clearSessionArtifacts: (sessionKey?: string) => void;
+  setSessionArtifactsLoading: (sessionKey: string | null) => void;
+  setSessionArtifactsError: (value: string | null) => void;
   setAgents: (agents: AgentInfo[]) => void;
   setCostSummary: (data: CostSummary) => void;
   setSessionsUsage: (data: SessionsUsage) => void;
@@ -316,6 +341,11 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   toolsCatalogLoading: false,
   toolsCatalogLoadingAgentId: null,
   toolsCatalogError: null,
+  sessionArtifacts: {},
+  sessionArtifactsUpdatedAt: {},
+  sessionArtifactsLoading: false,
+  sessionArtifactsLoadingKey: null,
+  sessionArtifactsError: null,
   agents: [],
   costSummary: null,
   sessionsUsage: null,
@@ -364,15 +394,28 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
     const toolsEffectiveUpdatedAt = Object.fromEntries(
       Object.entries(get().toolsEffectiveUpdatedAt).filter(([key]) => sessionKeys.has(key)),
     );
+    const sessionArtifacts = Object.fromEntries(
+      Object.entries(get().sessionArtifacts).filter(([key]) => sessionKeys.has(key)),
+    );
+    const sessionArtifactsUpdatedAt = Object.fromEntries(
+      Object.entries(get().sessionArtifactsUpdatedAt).filter(([key]) => sessionKeys.has(key)),
+    );
     const loadingSessionKey = get().toolsEffectiveLoadingSessionKey;
     const sessionToolsLoading = loadingSessionKey !== null && sessionKeys.has(loadingSessionKey);
+    const loadingArtifactsKey = get().sessionArtifactsLoadingKey;
+    const sessionArtifactsLoading = loadingArtifactsKey !== null && sessionKeys.has(loadingArtifactsKey);
     set({
       sessions: merged,
       sessionPreviews,
       toolsEffective,
       toolsEffectiveUpdatedAt,
+      sessionArtifacts,
+      sessionArtifactsUpdatedAt,
       ...(loadingSessionKey !== null && !sessionToolsLoading
         ? { toolsEffectiveLoading: false, toolsEffectiveLoadingSessionKey: null }
+        : {}),
+      ...(loadingArtifactsKey !== null && !sessionArtifactsLoading
+        ? { sessionArtifactsLoading: false, sessionArtifactsLoadingKey: null }
         : {}),
       lastFetch: { ...get().lastFetch, sessions: Date.now() },
       loading: { ...get().loading, sessions: false },
@@ -459,6 +502,34 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   }),
 
   setToolsCatalogError: (value) => set({ toolsCatalogError: value }),
+
+  setSessionArtifacts: (sessionKey, artifacts) => set({
+    sessionArtifacts: { ...get().sessionArtifacts, [sessionKey]: artifacts },
+    sessionArtifactsUpdatedAt: { ...get().sessionArtifactsUpdatedAt, [sessionKey]: Date.now() },
+    sessionArtifactsLoading: false,
+    sessionArtifactsLoadingKey: null,
+    sessionArtifactsError: null,
+  }),
+
+  clearSessionArtifacts: (sessionKey) => {
+    if (!sessionKey) {
+      set({ sessionArtifacts: {}, sessionArtifactsUpdatedAt: {} });
+      return;
+    }
+    const normalizedSessionKey = normalizeSessionKey(sessionKey);
+    const sessionArtifacts = { ...get().sessionArtifacts };
+    const sessionArtifactsUpdatedAt = { ...get().sessionArtifactsUpdatedAt };
+    delete sessionArtifacts[normalizedSessionKey];
+    delete sessionArtifactsUpdatedAt[normalizedSessionKey];
+    set({ sessionArtifacts, sessionArtifactsUpdatedAt });
+  },
+
+  setSessionArtifactsLoading: (sessionKey) => set({
+    sessionArtifactsLoading: sessionKey !== null,
+    sessionArtifactsLoadingKey: sessionKey,
+  }),
+
+  setSessionArtifactsError: (value) => set({ sessionArtifactsError: value }),
 
   setAgents: (agents) =>
     set({
@@ -560,6 +631,7 @@ const SESSION_PREVIEW_MAX_CHARS = 160;
 const SESSION_PREVIEW_FRESHNESS_MS = 30_000;
 const TOOLS_EFFECTIVE_FRESHNESS_MS = 30_000;
 const TOOLS_CATALOG_FRESHNESS_MS = 30_000;
+const SESSION_ARTIFACTS_FRESHNESS_MS = 30_000;
 
 // Reference to gateway connection (set by startPolling)
 // Uses request() directly to avoid circular imports with gateway facade
@@ -567,6 +639,7 @@ type GatewayRequestParams = Record<string, unknown>;
 type GatewayRequester = {
   request: (method: string, params: GatewayRequestParams) => Promise<unknown>;
   hasAdvertisedMethod?: (method: string) => boolean | null;
+  getHttpBaseUrl?: () => string;
 };
 
 function isGatewayRecord(value: unknown): value is Record<string, unknown> {
@@ -735,6 +808,7 @@ const requestFence = createGatewayRequestFence<GatewayRequester>();
 const sessionPreviewRequestGate = createLatestRequestGate();
 const toolsEffectiveRequestGate = createLatestRequestGate();
 const toolsCatalogRequestGate = createLatestRequestGate();
+const sessionArtifactsRequestGate = createLatestRequestGate();
 
 interface SessionPreviewRequestTicket {
   connection: GatewayRequester;
@@ -790,6 +864,27 @@ function isCurrentToolsCatalogRequest(ticket: ToolsCatalogRequestTicket): boolea
   return ticket.connection === gw
     && toolsCatalogRequestGate.isCurrent(ticket.requestId)
     && useGatewayDataStore.getState().toolsCatalogLoadingAgentId === ticket.agentId;
+}
+
+interface SessionArtifactsRequestTicket {
+  connection: GatewayRequester;
+  requestId: number;
+  sessionKey: string;
+}
+
+function beginSessionArtifactsRequest(sessionKey: string): SessionArtifactsRequestTicket | null {
+  if (!gw) return null;
+  return {
+    connection: gw,
+    requestId: sessionArtifactsRequestGate.begin(),
+    sessionKey,
+  };
+}
+
+function isCurrentSessionArtifactsRequest(ticket: SessionArtifactsRequestTicket): boolean {
+  return ticket.connection === gw
+    && sessionArtifactsRequestGate.isCurrent(ticket.requestId)
+    && useGatewayDataStore.getState().sessionArtifactsLoadingKey === ticket.sessionKey;
 }
 
 function beginGatewayRequest(group: GatewayDataGroup): GatewayRequestTicket<GatewayRequester> | null {
@@ -1027,6 +1122,7 @@ export function startPolling(gateway: GatewayRequester) {
   sessionPreviewRequestGate.invalidate();
   toolsEffectiveRequestGate.invalidate();
   toolsCatalogRequestGate.invalidate();
+  sessionArtifactsRequestGate.invalidate();
   gw = gateway;
   useGatewayDataStore.getState().setPolling(true);
   debugLog('datastore', '[DataStore] Polling started (sessions=10s, agents=30s, demand groups lazy)');
@@ -1054,6 +1150,7 @@ export function stopPolling() {
   sessionPreviewRequestGate.invalidate();
   toolsEffectiveRequestGate.invalidate();
   toolsCatalogRequestGate.invalidate();
+  sessionArtifactsRequestGate.invalidate();
   gw = null;
   const store = useGatewayDataStore.getState();
   store.setPolling(false);
@@ -1067,6 +1164,9 @@ export function stopPolling() {
   store.clearToolsCatalog();
   store.setToolsCatalogLoading(null);
   store.setToolsCatalogError(null);
+  store.clearSessionArtifacts();
+  store.setSessionArtifactsLoading(null);
+  store.setSessionArtifactsError(null);
   // Clear running sub-agents on disconnect — presence-based detection is meaningless
   // without a live sessions.list feed. Without this, stale sub-agents keep the pet
   // in "working" state indefinitely after a gateway disconnect/reconnect cycle.
@@ -1307,6 +1407,190 @@ function toolsCatalogFailureCode(error: unknown): string {
   return error instanceof OpenClawToolsCatalogResponseError
     ? error.code
     : 'OPENCLAW_TOOLS_CATALOG_FAILED';
+}
+
+function sessionArtifactsFailureCode(error: unknown): string {
+  return error instanceof OpenClawArtifactsResponseError
+    ? error.code
+    : 'OPENCLAW_ARTIFACTS_FAILED';
+}
+
+export interface OpenClawArtifactSaveResult {
+  readonly success: boolean;
+  readonly canceled?: boolean;
+  readonly path?: string;
+  readonly errorCode?: string;
+}
+
+function artifactSaveName(artifact: OpenClawArtifactSummary): string {
+  const title = artifact.title.trim();
+  const safeTitle = title.replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_').trim();
+  return safeTitle || `artifact-${artifact.id}`;
+}
+
+/**
+ * Resolve only the URL forms OpenClaw's artifact handler can advertise as safe.
+ * Relative API paths must stay bound to the currently selected Gateway.
+ */
+export function resolveOpenClawArtifactDownloadUrl(
+  source: string,
+  gatewayHttpBaseUrl?: string,
+): string | null {
+  const normalized = typeof source === 'string' ? source.trim() : '';
+  if (!normalized) return null;
+  if (/^data:[^;]+;base64,/i.test(normalized)) return normalized;
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  if (!normalized.startsWith('/api/')) return null;
+  if (!gatewayHttpBaseUrl?.trim()) return null;
+  try {
+    const base = new URL(gatewayHttpBaseUrl.trim());
+    if (base.protocol !== 'http:' && base.protocol !== 'https:') return null;
+    return new URL(normalized, `${base.origin}/`).toString();
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch the Gateway's session-scoped artifact summaries. */
+export async function refreshSessionArtifacts(
+  sessionKey: string,
+  agentId?: string,
+): Promise<boolean> {
+  const normalizedSessionKey = normalizeSessionKey(sessionKey);
+  const store = useGatewayDataStore.getState();
+  if (!normalizedSessionKey) {
+    sessionArtifactsRequestGate.invalidate();
+    store.clearSessionArtifacts();
+    store.setSessionArtifactsLoading(null);
+    store.setSessionArtifactsError(null);
+    return false;
+  }
+  if (!gw) return false;
+
+  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_ARTIFACTS_LIST_METHOD);
+  if (advertised === false) {
+    sessionArtifactsRequestGate.invalidate();
+    store.clearSessionArtifacts(normalizedSessionKey);
+    store.setSessionArtifactsLoading(null);
+    store.setSessionArtifactsError('OPENCLAW_ARTIFACTS_UNSUPPORTED');
+    return false;
+  }
+
+  const ticket = beginSessionArtifactsRequest(normalizedSessionKey);
+  if (!ticket) return false;
+  store.clearSessionArtifacts(normalizedSessionKey);
+  store.setSessionArtifactsLoading(normalizedSessionKey);
+  store.setSessionArtifactsError(null);
+
+  const client = new OpenClawArtifactsClient(
+    <T>(method: string, params: Record<string, unknown>) => (
+      ticket.connection.request(method, params) as Promise<T>
+    ),
+  );
+  try {
+    const result = await client.list({
+      sessionKey: normalizedSessionKey,
+      ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
+    });
+    if (!isCurrentSessionArtifactsRequest(ticket)) return false;
+    const currentState = useGatewayDataStore.getState();
+    const sessionsSnapshotReady = currentState.lastFetch.sessions > 0;
+    const active = currentState.sessions.some(
+      (session) => session.key === normalizedSessionKey,
+    ) || !sessionsSnapshotReady;
+    if (!active) {
+      store.clearSessionArtifacts(normalizedSessionKey);
+      store.setSessionArtifactsLoading(null);
+      return false;
+    }
+    store.setSessionArtifacts(normalizedSessionKey, result.artifacts);
+    return true;
+  } catch (error) {
+    if (!isCurrentSessionArtifactsRequest(ticket)) return false;
+    store.clearSessionArtifacts(normalizedSessionKey);
+    store.setSessionArtifactsLoading(null);
+    store.setSessionArtifactsError(sessionArtifactsFailureCode(error));
+    return false;
+  }
+}
+
+/** Fetch session artifacts only when the local summary is stale. */
+export async function ensureSessionArtifactsFresh(
+  sessionKey: string,
+  maxAgeMs = SESSION_ARTIFACTS_FRESHNESS_MS,
+  agentId?: string,
+): Promise<boolean> {
+  const normalizedSessionKey = normalizeSessionKey(sessionKey);
+  if (!normalizedSessionKey || !gw) return false;
+  const store = useGatewayDataStore.getState();
+  if (store.sessionArtifactsLoading) {
+    return store.sessionArtifactsLoadingKey === normalizedSessionKey;
+  }
+  const updatedAt = store.sessionArtifactsUpdatedAt[normalizedSessionKey] ?? 0;
+  if (
+    updatedAt > 0
+    && Date.now() - updatedAt < maxAgeMs
+    && Object.prototype.hasOwnProperty.call(store.sessionArtifacts, normalizedSessionKey)
+  ) {
+    return true;
+  }
+  return refreshSessionArtifacts(normalizedSessionKey, agentId);
+}
+
+/** Save one Gateway-confirmed artifact through the desktop file boundary. */
+export async function saveSessionArtifact(
+  sessionKey: string,
+  artifactId: string,
+  agentId?: string,
+): Promise<OpenClawArtifactSaveResult> {
+  const normalizedSessionKey = normalizeSessionKey(sessionKey);
+  const normalizedArtifactId = typeof artifactId === 'string' ? artifactId.trim() : '';
+  if (!normalizedSessionKey || !normalizedArtifactId || !gw) {
+    return { success: false, errorCode: 'OPENCLAW_ARTIFACT_SAVE_UNAVAILABLE' };
+  }
+  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_ARTIFACTS_DOWNLOAD_METHOD);
+  if (advertised === false) {
+    return { success: false, errorCode: 'OPENCLAW_ARTIFACT_DOWNLOAD_UNSUPPORTED' };
+  }
+  const connection = gw;
+  const client = new OpenClawArtifactsClient(
+    <T>(method: string, params: Record<string, unknown>) => (
+      connection.request(method, params) as Promise<T>
+    ),
+  );
+  let result: OpenClawArtifactsDownloadResult;
+  try {
+    result = await client.download({
+      sessionKey: normalizedSessionKey,
+      artifactId: normalizedArtifactId,
+      ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
+    });
+  } catch (error) {
+    return { success: false, errorCode: sessionArtifactsFailureCode(error) };
+  }
+  if (result.artifact.id !== normalizedArtifactId) {
+    return { success: false, errorCode: 'OPENCLAW_ARTIFACT_RESPONSE_MISMATCH' };
+  }
+  let source: string | undefined;
+  if (result.artifact.download.mode === 'bytes') {
+    if (result.encoding !== 'base64' || typeof result.data !== 'string') {
+      return { success: false, errorCode: 'OPENCLAW_ARTIFACT_DOWNLOAD_INVALID' };
+    }
+    source = `data:${result.artifact.mimeType ?? 'application/octet-stream'};base64,${result.data}`;
+  } else if (result.artifact.download.mode === 'url') {
+    source = result.url;
+    if (!source) return { success: false, errorCode: 'OPENCLAW_ARTIFACT_DOWNLOAD_INVALID' };
+  } else {
+    return { success: false, errorCode: 'OPENCLAW_ARTIFACT_DOWNLOAD_UNSUPPORTED' };
+  }
+  if (!source) return { success: false, errorCode: 'OPENCLAW_ARTIFACT_DOWNLOAD_INVALID' };
+  const resolvedSource = resolveOpenClawArtifactDownloadUrl(source, connection.getHttpBaseUrl?.());
+  if (!resolvedSource) return { success: false, errorCode: 'OPENCLAW_ARTIFACT_DOWNLOAD_INVALID' };
+
+  const saved = await saveChatMedia(resolvedSource, artifactSaveName(result.artifact));
+  if (saved.success) return { success: true, ...(saved.path ? { path: saved.path } : {}) };
+  if (saved.canceled) return { success: false, canceled: true, errorCode: 'OPENCLAW_ARTIFACT_SAVE_CANCELED' };
+  return { success: false, errorCode: 'OPENCLAW_ARTIFACT_SAVE_FAILED' };
 }
 
 /** Fetch the Gateway's agent-scoped core/plugin tool catalog. */
