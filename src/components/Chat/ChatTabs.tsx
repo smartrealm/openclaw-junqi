@@ -27,6 +27,7 @@ import { resolveAgentStatusSnapshot } from './agentStatus';
 import { useOptionalCollaborationChat } from './CollaborationChatProvider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SessionActionsMenu } from './session-actions/SessionActionsMenu';
+import { ActiveTabIndicator } from '@/components/shared/TabMotion';
 
 // ═══════════════════════════════════════════════════════════
 // ChatTabs — Browser-style tab bar
@@ -327,7 +328,7 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, agentName, session
 
 // ═══════════════════════════════════════════════════════════
 // New Session Picker — dropdown from + button
-// Supports: choose agent → open main session OR new desktop session; open existing session
+// Supports choosing an agent to open its main or new desktop session, and opening an existing session.
 // ═══════════════════════════════════════════════════════════
 
 function NewSessionPicker({
@@ -1183,14 +1184,20 @@ export function ChatTabs() {
                 onClick={() => isActive ? undefined : setActiveSession(key)}
                 onAuxClick={(e) => !isMain && handleTabAuxClick(e, key)}
                 className={clsx(
-                  'flex items-center gap-1.5 h-[38px] pl-3 text-[12px] font-medium transition-colors select-none relative',
-                  'border-b-2 focus-visible:outline-none',
+                  'isolate flex items-center gap-1.5 h-[38px] pl-3 text-[12px] font-medium select-none relative',
+                  'transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none active:scale-[0.985]',
                   isMain ? 'pr-3' : 'pr-10',
                   isActive
-                    ? 'text-aegis-text border-aegis-primary bg-[rgb(var(--aegis-overlay)/0.04)]'
-                    : 'text-aegis-text-dim border-transparent hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
+                    ? 'text-aegis-text'
+                    : 'text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
                 )}
               >
+                {isActive && (
+                  <ActiveTabIndicator
+                    layoutId="chat-active-session-tab"
+                    className="inset-0 -z-10 border-b-2 border-aegis-primary bg-[rgb(var(--aegis-overlay)/0.04)]"
+                  />
+                )}
                 {/* Canonical agent sessions share the same status affordance. */}
                 {isMainSession ? (
                   <>
