@@ -22,6 +22,7 @@
 - The window hides after the existing checkpoint only while the real wake-word listener is armed. Tray Quit remains an explicit exit.
 - A verified wake result restores and unminimizes the main window before its full-window control surface is used. A platform focus denial must not discard the verified voice turn; a visibility restoration failure must remain diagnosable.
 - The login-start choice starts JunQi on macOS, Windows, and Linux with the main window hidden. It restores only the explicitly saved session key after its Gateway connection is authenticated; it does not persist a connection ID, credential, audio, or guessed target.
+- Login-start serialization must preserve the current executable path and every `--voice-resident` argument on Windows and Linux even when either contains spaces or characters reserved by the target startup format. A startup-format failure must surface as the existing autostart enable error; it must not select a different runtime or scheduler.
 
 ## Talk Relay Extension
 
@@ -49,3 +50,4 @@
 - A Gateway without the explicit realtime relay capability remains in the current confirmation-required voice-draft path; it is never presented as continuous Talk.
 - A Talk session remains explicitly bound to its selected session key because the installed `talk.session.create` contract does not accept `voiceWakeTrigger`.
 - A hidden standby window is restored after a verified wake result without adding a platform-specific window implementation.
+- Windows Run and Linux Desktop Entry command encoders have executable unit tests for whitespace and format-reserved characters.

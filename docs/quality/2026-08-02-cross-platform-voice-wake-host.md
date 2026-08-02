@@ -24,6 +24,12 @@ Wake mode is not confined to the composer. Once selected, it presents a fixed fu
 
 When the main window is hidden for standby, a verified local wake result requests `show`, `unminimize`, and `setFocus` before the full-window surface is presented. Operating systems may reject focus stealing; that result does not cancel the already verified voice turn, but a failure to restore visibility is reported to the media debug scope. The behavior uses Tauri's common window API rather than a macOS-only activation path.
 
+## Login-Start Audit
+
+The voice login-start switch is distinct from the OpenClaw Gateway service autostart switch. It uses the installed `tauri-plugin-autostart 2.5.1` API to add `--voice-resident`, while JunQi restores only the separately selected session after Gateway authentication. The selected plugin delegates Windows Run and Linux Desktop Entry creation to `auto-launch 0.5.0`. Its installed source concatenates the executable path and arguments without Windows quoting and writes Linux `Exec` without Desktop Entry quoting. That cannot represent an application path with spaces and is therefore a cross-platform wake-residency defect.
+
+The remediation keeps the Tauri plugin API and uses an application-scoped `auto-launch 0.5.0` source patch. Windows values quote every command-line argument according to Windows parsing rules. Linux values quote whole `Exec` arguments that contain a reserved character, then escape only double quote, backtick, dollar sign, and backslash inside that quoted argument, as required by the Freedesktop Desktop Entry `Exec` specification. The Linux path uses an absolute `XDG_CONFIG_HOME` when present and otherwise the user's `.config` directory. The existing first-run flow preview concerns Gateway service ownership, not this per-user JunQi login item, so it has no behavior change to render.
+
 ## Jarvis Session Categories
 
 OpenClaw `v2026.7.1-2` separates channel group-session routing from a user-defined session organization bucket. JunQi does not fabricate a channel-style `:group:` session key for a wake word. When the local Sherpa detector returns a non-empty keyword, JunQi persists `sessions.patch({ key, category: "Jarvis: <keyword>" })` for the currently selected OpenClaw session. The Session Manager renders that category and provides a Jarvis filter, so sessions activated by the same recognized phrase can be identified as one Jarvis group without changing channel routing, sandbox policy, or session identity.
@@ -56,6 +62,9 @@ The event bridge validates the OpenClaw Talk envelope within `payload.talkEvent`
 - The updated regression suite verifies large-audio encoding and portable session-directory isolation through exported behavior. Native recorder lifecycle and VAD worker lifecycle remain covered by Rust library tests.
 - Runtime microphone stream errors now terminate the native listener, emit its existing error event, and mark native listening as stopped; the regression test covers that transition.
 - The complete Rust library suite passed with 692 tests passed and 4 intentionally ignored tests. The fourth ignored test is the official-model fixture check described above, not a passing no-op.
+- The login-start repair requires executable unit coverage for Windows command-line quoting and Linux Desktop Entry `Exec` serialization. Source-text assertions are not sufficient evidence for this behavior.
+- On 2026-08-02, `cargo test --manifest-path src-tauri/vendor/auto-launch/Cargo.toml` passed 3 portable command-serialization tests. `cargo fmt -- --check`, `cargo check --lib`, and the complete `cargo test --lib` suite also passed; the library suite reported 692 passed and 4 ignored tests.
+- On 2026-08-02, `pnpm lint`, the complete `pnpm test` suite, `pnpm build`, and `git diff --check` passed after the login-start serialization repair. Rust still reports the pre-existing unused `version_beyond_verified_range` variable in `system.rs`.
 - Capability and locale JSON parsed successfully, and `git diff --check` passed.
 
 ## Unverified Boundaries
@@ -63,6 +72,7 @@ The event bridge validates the OpenClaw Talk envelope within `payload.talkEvent`
 - No model archive is bundled in this change.
 - JunQi does not yet provide an in-app keyword token generator; a custom phrase still requires a model package generated using the upstream tokenizer before it can be selected and matched to Gateway configuration.
 - No microphone, login-start, tray, sleep-resume, or package validation has been performed on Windows, CentOS, or Ubuntu.
+- No target-platform test has registered or executed the repaired Windows Run value or Linux Desktop Entry. Unit tests can prove the serialized value, but Windows sign-in and each supported Linux desktop session remain target-platform validation work.
 - No target-platform test has confirmed whether a background wake may claim focus under the local Windows, CentOS, Ubuntu, or macOS focus policy.
 - The local development machine is not evidence of target-platform behavior.
 - A real Talk relay session has not yet been exercised against a configured Gateway or on target operating systems.

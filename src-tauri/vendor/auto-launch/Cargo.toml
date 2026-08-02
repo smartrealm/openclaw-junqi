@@ -1,0 +1,15 @@
+[package]
+name = "auto-launch"
+version = "0.5.0"
+edition = "2021"
+license = "MIT"
+description = "Application-scoped auto-launch patch for JunQi Desktop"
+
+[dependencies]
+thiserror = "1"
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+dirs = "4"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.10"

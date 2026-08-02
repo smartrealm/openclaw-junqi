@@ -19,6 +19,13 @@
 15. Rejected wake keywords now suppress both WAV fallback and any in-flight PCM frames before the Talk relay queue, closing the native stop-request race.
 16. Bound model keyword labels to OpenClaw's installed 64 UTF-16-code-unit trigger limit before a model may be selected or synchronized.
 
+## Current Remediation (Completed)
+
+1. Audit the complete Jarvis capture, Talk, session category, closing, tray, login-start, Tauri IPC, installed OpenClaw, and installed autostart dependency chains before changing code.
+2. Keep Gateway autostart separate from JunQi voice residency and preserve the selected OpenClaw runtime.
+3. Patch only the application-scoped `auto-launch 0.5.0` dependency for Windows command-line quoting and Linux Desktop Entry `Exec` serialization, with portable behavior tests.
+4. Re-ran the local dependency tests, TypeScript, Rust, full frontend, build, and diff validation; target-platform sign-in remains required.
+
 ## In Progress
 
 1. Completed: native capture emits bounded PCM16/24000Hz/mono chunks after a verified trigger; WAV remains only for the confirmation-required fallback path.

@@ -15,3 +15,4 @@ agent icon artwork from the local Kooky reference project.
 
 - sherpa-onnx 1.13.4: Apache License 2.0.
 - tauri-plugin-autostart 2.5.1: Apache License 2.0 or MIT License.
+- auto-launch 0.5.0: application-scoped command-serialization patch; MIT License.
