@@ -30,6 +30,7 @@ function phaseCopy(snapshot: VoiceModeSnapshot, talkPhase: TalkConversationPhase
   if (talkPhase === 'connecting') return t('input.voiceWorkspaceThinking');
   if (snapshot.error === 'wake_detector_unavailable') return t('input.voiceWakeUnavailable');
   if (snapshot.error === 'wake_trigger_model_mismatch') return t('input.voiceWakeTriggerModelMismatch');
+  if (snapshot.error === 'session_category_unavailable') return t('input.voiceSessionCategoryUnavailable');
   if (snapshot.error === 'gateway_unavailable') return t('input.voiceGatewayUnavailable');
   if (snapshot.error === 'target_changed') return t('input.voiceTargetChanged');
   if (snapshot.error === 'capture_failed') return t('input.voiceCaptureFailed');

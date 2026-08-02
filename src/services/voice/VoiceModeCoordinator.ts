@@ -14,6 +14,7 @@ export type VoiceModeErrorCode =
   | 'gateway_unavailable'
   | 'wake_detector_unavailable'
   | 'wake_trigger_model_mismatch'
+  | 'session_category_unavailable'
   | 'target_changed'
   | 'capture_failed';
 

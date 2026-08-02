@@ -281,20 +281,28 @@ export function useComposerVoice({
           return false;
         }
       }
-      if (trigger) {
-        const category = createJarvisSessionCategory(trigger);
-        if (category) {
-          void gateway.setSessionCategory(category, context.sessionKey)
-            .catch((error) => debugError('gateway', '[ComposerVoice] Unable to categorize Jarvis session:', error));
+      const acceptWake = (): boolean => {
+        if (!isCurrentVoiceContext(context) || !voiceModeCoordinator.ownsTurn(activeTurnRef.current, context)) {
+          return false;
         }
-      }
-      void presentCurrentWindowForVoiceWake().catch((error) => {
-        debugError('media', '[ComposerVoice] Could not restore the wake window:', error);
-      });
-      void talkConversationRef.current?.start(context.sessionKey);
-      void talkConversationRef.current?.interrupt();
-      void stopAssistant();
-      return true;
+        void presentCurrentWindowForVoiceWake().catch((error) => {
+          debugError('media', '[ComposerVoice] Could not restore the wake window:', error);
+        });
+        void talkConversationRef.current?.start(context.sessionKey);
+        void talkConversationRef.current?.interrupt();
+        void stopAssistant();
+        return true;
+      };
+      const category = trigger ? createJarvisSessionCategory(trigger) : null;
+      if (!category) return acceptWake();
+      return gateway.setSessionCategory(category, context.sessionKey)
+        .then(() => acceptWake())
+        .catch((error) => {
+          debugError('gateway', '[ComposerVoice] Unable to categorize Jarvis session:', error);
+          voiceModeCoordinator.reportUnavailable(activeTurnRef.current, context, 'session_category_unavailable');
+          void stopVoiceWakeRef.current();
+          return false;
+        });
     },
     onPcmAudio: (frame) => {
       const context = currentContextRef.current;

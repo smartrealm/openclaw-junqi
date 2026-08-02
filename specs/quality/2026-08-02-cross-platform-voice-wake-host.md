@@ -18,6 +18,7 @@
 - The selected `phone+ppinyin` model must expose at least one official `@original_phrase` keyword label, no longer than the installed Gateway's 64 UTF-16-code-unit trigger limit, that exactly matches a configured Gateway trigger before wake-word mode can arm.
 - In wake-word mode, only a non-empty Sherpa keyword result emits `wake_detected`; VAD begins post-keyword capture and produces the existing confirmation-required WAV draft.
 - The native event includes the non-empty recognized keyword. JunQi persists the selected session under the OpenClaw `category` `Jarvis: <keyword>`; it does not synthesize a channel-group session key from that keyword.
+- A recognized wake keyword is not accepted for Talk or fallback capture until its `sessions.patch.category` response confirms the selected session's Jarvis category. Audio arriving during that bounded confirmation is retained only in memory for the current turn; a failed or stale category mutation discards it and stops the turn with a visible error.
 - Wake mode starts only after the selected authenticated Gateway supplies a valid trigger and routing snapshot. While armed, a local keyword must remain in the Gateway trigger set, and a resolved route must still match the selected session; otherwise WAV fallback and in-flight PCM audio are discarded and no chat request is made.
 - The window hides after the existing checkpoint only while the real wake-word listener is armed. Tray Quit remains an explicit exit.
 - A verified wake result restores and unminimizes the main window before its full-window control surface is used. A platform focus denial must not discard the verified voice turn; a visibility restoration failure must remain diagnosable.
@@ -50,4 +51,5 @@
 - A Gateway without the explicit realtime relay capability remains in the current confirmation-required voice-draft path; it is never presented as continuous Talk.
 - A Talk session remains explicitly bound to its selected session key because the installed `talk.session.create` contract does not accept `voiceWakeTrigger`.
 - A hidden standby window is restored after a verified wake result without adding a platform-specific window implementation.
+- A rejected or failed Jarvis category update cannot forward pending PCM or WAV audio to Talk or ordinary chat, and the user receives a recoverable category error.
 - Windows Run and Linux Desktop Entry command encoders have executable unit tests for whitespace and format-reserved characters.
