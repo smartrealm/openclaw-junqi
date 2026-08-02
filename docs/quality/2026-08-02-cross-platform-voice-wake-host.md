@@ -34,6 +34,8 @@ Before a wake listener starts, JunQi reads both `voicewake.get` and `voicewake.r
 
 Arming also requires at least one Gateway trigger to exactly match a label actually present in the selected local model. A mismatch is shown as `wake_trigger_model_mismatch`, leaves capture stopped, and offers the existing model-directory selection control. JunQi does not translate arbitrary user text into pinyin or phoneme tokens: the upstream model requires `phone+ppinyin`, `en.phone`, and an `@original_phrase` marker, so unverified local rewriting would make a custom wake word appear configured while the detector could not reliably recognize it.
 
+When this mismatch is visible, the user can explicitly choose `Use local model wake phrases`. JunQi sends only `voicewake.set({ triggers: modelKeywords })` to the selected authenticated Gateway, waits for the fenced response, and then retries the normal arm sequence. It intentionally does not call `voicewake.routing.set`, so existing Gateway routes and their target sessions remain unchanged. The model keyword file remains the source of this explicit synchronization; JunQi never accepts a free-form phrase and claims it is tokenized.
+
 ## Talk Relay Boundary
 
 JunQi now has a fenced client for the installed OpenClaw `talk.catalog` and `talk.session.*` protocol, plus a strict `talk.event` bridge. The client rejects a missing or unready catalog and only creates the documented `realtime/gateway-relay/agent-consult` session shape after the catalog explicitly advertises PCM16 input and barge-in support. It binds every request to the attested Gateway connection and rejects a response if that connection changed.

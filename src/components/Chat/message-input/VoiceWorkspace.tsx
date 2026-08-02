@@ -1,4 +1,4 @@
-import { AudioLines, FolderOpen, Mic, Radio, Send, Square, Trash2, TriangleAlert } from 'lucide-react';
+import { AudioLines, FolderOpen, Mic, Radio, RefreshCw, Send, Square, Trash2, TriangleAlert } from 'lucide-react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
@@ -17,8 +17,10 @@ interface VoiceWorkspaceProps {
   detector: VoiceWakeDetectorStatus | null;
   detectorError: string | null;
   configuringDetector: boolean;
+  syncingWakeTriggers: boolean;
   launchOnLogin: boolean;
   onConfigureDetector: () => void;
+  onSyncWakeTriggers: () => void;
   onToggleLaunchOnLogin: () => void;
 }
 
@@ -67,8 +69,10 @@ export function VoiceWorkspace({
   detector,
   detectorError,
   configuringDetector,
+  syncingWakeTriggers,
   launchOnLogin,
   onConfigureDetector,
+  onSyncWakeTriggers,
   onToggleLaunchOnLogin,
 }: VoiceWorkspaceProps) {
   const { t } = useTranslation();
@@ -172,6 +176,17 @@ export function VoiceWorkspace({
               <span className="text-[10px] text-aegis-text-muted">
                 {detector?.available ? t('input.voiceWakeModelReady') : t('input.voiceWakeModelRequired')}
               </span>
+              {snapshot.error === 'wake_trigger_model_mismatch' && (
+                <button
+                  type="button"
+                  onClick={onSyncWakeTriggers}
+                  disabled={!detector?.available || syncingWakeTriggers}
+                  className="inline-flex h-7 items-center gap-1.5 border border-aegis-primary/35 px-2 text-[11px] font-medium text-aegis-primary transition-colors hover:bg-aegis-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-40"
+                >
+                  <RefreshCw size={13} className={clsx(syncingWakeTriggers && 'animate-spin motion-reduce:animate-none')} />
+                  {t('input.voiceWakeSyncTriggers')}
+                </button>
+              )}
               {detectorError && <span className="text-[10px] text-aegis-danger">{detectorError}</span>}
             </div>
           )}

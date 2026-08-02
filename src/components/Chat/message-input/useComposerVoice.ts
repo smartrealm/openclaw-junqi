@@ -95,6 +95,7 @@ export function useComposerVoice({
   const [detector, setDetector] = useState<VoiceWakeDetectorStatus | null>(null);
   const [detectorError, setDetectorError] = useState<string | null>(null);
   const [configuringDetector, setConfiguringDetector] = useState(false);
+  const [syncingWakeTriggers, setSyncingWakeTriggers] = useState(false);
   const [launchOnLogin, setLaunchOnLogin] = useState(false);
   const voiceMode = useVoiceMode();
   const activeTurnRef = useRef<string | null>(null);
@@ -478,6 +479,20 @@ export function useComposerVoice({
     }
   }, [autoArmEnabled, configuringDetector, requestAutoArmRetry, t]);
 
+  const syncWakeTriggers = useCallback(async () => {
+    if (syncingWakeTriggers || !detector?.available || detector.keywords.length === 0) return;
+    setSyncingWakeTriggers(true);
+    setDetectorError(null);
+    try {
+      await voiceWakeGatewayClient.setTriggers(detector.keywords);
+      requestWakeWord();
+    } catch (error) {
+      setDetectorError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSyncingWakeTriggers(false);
+    }
+  }, [detector, requestWakeWord, syncingWakeTriggers]);
+
   const toggleLaunchOnLogin = useCallback(async () => {
     try {
       if (launchOnLogin) await disableAutostart();
@@ -680,8 +695,10 @@ export function useComposerVoice({
     detector,
     detectorError,
     configuringDetector,
+    syncingWakeTriggers,
     launchOnLogin,
     configureWakeDetector,
+    syncWakeTriggers,
     toggleLaunchOnLogin,
     stopVoiceMode: () => { void stopVoiceMode(); },
     confirmVoiceDraft: () => { void confirmVoiceDraft(); },

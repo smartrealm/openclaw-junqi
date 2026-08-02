@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Check, FolderOpen, Radio, Square, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Check, FolderOpen, Radio, RefreshCw, Square, Trash2, TriangleAlert, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
@@ -13,8 +13,10 @@ interface VoiceWakeOverlayProps {
   detector: VoiceWakeDetectorStatus | null;
   detectorError: string | null;
   configuringDetector: boolean;
+  syncingWakeTriggers: boolean;
   onStop: () => void;
   onConfigureDetector: () => void;
+  onSyncWakeTriggers: () => void;
   onConfirmDraft: () => void;
   onDiscardDraft: () => void;
 }
@@ -48,8 +50,10 @@ export function VoiceWakeOverlay({
   detector,
   detectorError,
   configuringDetector,
+  syncingWakeTriggers,
   onStop,
   onConfigureDetector,
+  onSyncWakeTriggers,
   onConfirmDraft,
   onDiscardDraft,
 }: VoiceWakeOverlayProps) {
@@ -140,6 +144,17 @@ export function VoiceWakeOverlay({
               <p className="mt-3 text-[11px] leading-5 text-aegis-text-muted">
                 {detector?.available ? t('input.voiceWakeModelReady') : t('input.voiceWakeModelRequired')}
               </p>
+              {snapshot.error === 'wake_trigger_model_mismatch' && (
+                <button
+                  type="button"
+                  onClick={onSyncWakeTriggers}
+                  disabled={!detector?.available || syncingWakeTriggers}
+                  className="mt-3 inline-flex h-9 items-center gap-2 border border-aegis-primary/45 bg-aegis-primary/[0.08] px-3 text-[12px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/[0.14] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-40"
+                >
+                  <RefreshCw size={15} className={clsx(syncingWakeTriggers && 'animate-spin motion-reduce:animate-none')} />
+                  {t('input.voiceWakeSyncTriggers')}
+                </button>
+              )}
               {detectorError && <p className="mt-2 text-[11px] leading-5 text-aegis-danger">{detectorError}</p>}
             </div>
           )}

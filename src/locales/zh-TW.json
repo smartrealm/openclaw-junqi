@@ -1523,6 +1523,7 @@
     "voiceModeWake": "喚醒",
     "voiceWakeUnavailable": "喚醒詞需要經過驗證的本機偵測器",
     "voiceWakeTriggerModelMismatch": "本機模型不包含 Gateway 設定的喚醒詞",
+    "voiceWakeSyncTriggers": "使用本機模型喚醒詞",
     "voiceWakeConfigureModel": "選擇喚醒模型目錄",
     "voiceWakeChooseModelDirectory": "選擇 Sherpa 喚醒模型目錄",
     "voiceWakeCheckingModel": "正在檢查模型",

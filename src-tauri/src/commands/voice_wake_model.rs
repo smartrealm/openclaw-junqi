@@ -240,6 +240,9 @@ fn parse_keyword_labels(raw: &str) -> Result<Vec<String>, String> {
         }
         if !keywords.iter().any(|candidate| candidate == label) {
             keywords.push(label.to_string());
+            if keywords.len() > 32 {
+                return Err("model_keywords_too_many".to_string());
+            }
         }
     }
     if keywords.is_empty() {

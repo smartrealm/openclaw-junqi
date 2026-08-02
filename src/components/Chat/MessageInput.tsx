@@ -106,8 +106,10 @@ export function MessageInput() {
           detector={voice.detector}
           detectorError={voice.detectorError}
           configuringDetector={voice.configuringDetector}
+          syncingWakeTriggers={voice.syncingWakeTriggers}
           launchOnLogin={voice.launchOnLogin}
           onConfigureDetector={() => { void voice.configureWakeDetector(); }}
+          onSyncWakeTriggers={() => { void voice.syncWakeTriggers(); }}
           onToggleLaunchOnLogin={() => { void voice.toggleLaunchOnLogin(); }}
         />
       )}
@@ -118,8 +120,10 @@ export function MessageInput() {
           detector={voice.detector}
           detectorError={voice.detectorError}
           configuringDetector={voice.configuringDetector}
+          syncingWakeTriggers={voice.syncingWakeTriggers}
           onStop={voice.stopVoiceMode}
           onConfigureDetector={() => { void voice.configureWakeDetector(); }}
+          onSyncWakeTriggers={() => { void voice.syncWakeTriggers(); }}
           onConfirmDraft={voice.confirmVoiceDraft}
           onDiscardDraft={voice.discardVoiceDraft}
         />

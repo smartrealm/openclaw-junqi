@@ -43,6 +43,7 @@
 - A selected model directory is persisted in JunQi application data and must pass both asset validation and Sherpa detector creation before it is reported available.
 - A wake listener cannot be activated by VAD alone.
 - A model whose labels have no intersection with the selected Gateway trigger list remains unavailable and does not capture audio.
+- On an explicit user command, JunQi may replace only the selected Gateway's trigger list with the labels declared by the selected local model. It must not mutate voice-wake routing as part of that operation and must re-read the normal arm preconditions afterwards.
 - Existing dictation, session ownership, draft confirmation, and Gateway connection fences remain in force.
 - A Gateway without the explicit realtime relay capability remains in the current confirmation-required voice-draft path; it is never presented as continuous Talk.
 - A Talk session remains explicitly bound to its selected session key because the installed `talk.session.create` contract does not accept `voiceWakeTrigger`.

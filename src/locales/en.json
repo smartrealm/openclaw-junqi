@@ -1556,6 +1556,7 @@
     "voiceModeWake": "Wake",
     "voiceWakeUnavailable": "Wake word needs a verified local detector",
     "voiceWakeTriggerModelMismatch": "The local model does not contain a Gateway wake phrase",
+    "voiceWakeSyncTriggers": "Use local model wake phrases",
     "voiceWakeConfigureModel": "Choose wake model directory",
     "voiceWakeChooseModelDirectory": "Choose Sherpa wake model directory",
     "voiceWakeCheckingModel": "Checking model",
