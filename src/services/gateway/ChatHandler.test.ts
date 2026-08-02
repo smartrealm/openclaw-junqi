@@ -126,6 +126,60 @@ test('chat.final replaces a longer streamed draft with OpenClaw canonical text',
   assert.equal(streamEnds[0].meta?.runId, runId);
 });
 
+test('session.operation forwards only the official compact operation projection', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const operations: Array<{
+    operationId: string;
+    operation: string;
+    phase: string;
+    sessionKey: string;
+    ts: number;
+    completed?: boolean;
+  }> = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onSessionOperation: (operation: {
+        operationId: string;
+        operation: string;
+        phase: string;
+        sessionKey: string;
+        ts: number;
+        completed?: boolean;
+      }) => operations.push(operation),
+    },
+  } as any);
+
+  handler.handleEvent({ event: 'session.operation', payload: {
+    operationId: 'operation-forwarded',
+    operation: 'compact',
+    phase: 'end',
+    sessionKey: 'agent:main:operation-forwarded',
+    ts: 10,
+    completed: true,
+  } });
+  handler.handleEvent({ event: 'session.operation', payload: {
+    operationId: 'operation-invalid',
+    operation: 'reset',
+    phase: 'end',
+    sessionKey: 'agent:main:operation-forwarded',
+    ts: 11,
+  } });
+
+  assert.deepEqual(operations, [{
+    operationId: 'operation-forwarded',
+    operation: 'compact',
+    phase: 'end',
+    sessionKey: 'agent:main:operation-forwarded',
+    ts: 10,
+    completed: true,
+  }]);
+});
+
 test('a final event sharing the last delta sequence still settles the run', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();

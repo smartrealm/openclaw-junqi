@@ -25,6 +25,7 @@ import {
 } from './runtimeIdentity';
 import { storeGatewayConnectionDeviceCredential } from './GatewayConnectionTargetResolver';
 import { signGatewayDeviceChallenge } from './deviceAuthentication';
+import type { OpenClawSessionOperationEvent } from './sessionOperation';
 
 // OpenClaw 2026.5.x introduced a newer WS protocol while older installs still
 // negotiate protocol 3. Advertise a compatible range so Desktop can connect to
@@ -133,6 +134,8 @@ export interface GatewayCallbacks {
   onTranscriptChanged?: (sessionKey: string) => void;
   /** Typed durable message notice for unread and notification projection only. */
   onTranscriptMessage?: (notice: GatewayTranscriptMessageNotice) => void;
+  /** Official in-flight session operation event for the selected transcript. */
+  onSessionOperation?: (operation: OpenClawSessionOperationEvent) => void;
   onStatusChange: (status: { connected: boolean; connecting: boolean; error?: string }) => void;
   onRetryState?: (state: GatewayRetryState) => void;
   /** Structured authorization failure from the Gateway protocol. */

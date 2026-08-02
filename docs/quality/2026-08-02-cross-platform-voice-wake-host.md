@@ -36,7 +36,7 @@ The remediation keeps the Tauri plugin API and uses an application-scoped `auto-
 
 ## Jarvis Session Categories
 
-OpenClaw `v2026.7.1-2` separates channel group-session routing from a user-defined session organization bucket. JunQi does not fabricate a channel-style `:group:` session key for a wake word. When the local Sherpa detector returns a non-empty keyword, JunQi persists `sessions.patch({ key, category: "Jarvis: <keyword>" })` for the currently selected OpenClaw session. The Session Manager renders that category and provides a Jarvis filter, so sessions activated by the same recognized phrase can be identified as one Jarvis group without changing channel routing, sandbox policy, or session identity.
+OpenClaw 官方将渠道群组路由与用户定义的 session organization bucket 分开。JunQi 不为唤醒词捏造渠道式 `:group:` session key。当本地 Sherpa detector 返回非空关键词时，JunQi 会把 Gateway 官方支持的 `sessions.patch({ key, category: "Jarvis: <keyword>" })` 应用于当前选中的 OpenClaw session。Session Manager 展示该 category 并提供 Jarvis 筛选，因此同一识别短语激活的会话可以归入一个桌面分组，同时不改变渠道路由、sandbox policy 或 session identity。
 
 The category mutation is part of wake acceptance, not a best-effort annotation. Until its authenticated response confirms the selected session, JunQi retains only the current turn's bounded in-memory PCM or fallback WAV. A category failure, target switch, or connection change discards the buffered audio, stops the turn, and shows a recoverable category error. This prevents a conversation from proceeding as a Jarvis wake turn when its promised group assignment did not persist.
 

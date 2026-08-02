@@ -175,7 +175,7 @@
 
 ## B. 功能拓展计划
 
-以下全部基于 OpenClaw `2026.7.1-2` 已提供的官方能力，不含推测性设计。
+以下是审计时基于 OpenClaw `2026.7.1-2` 已提供能力整理的候选项，不含推测性设计；当前实现必须重新核对官方主线文档、源码、schema 和 handler。
 
 **总体缺口**：`docs/gateway/protocol.md` 中出现的 RPC 与事件标识共 221 个，JunQi 引用 49 个，未使用 172 个。其中相当一部分（node 配对、device 配对、`doctor.memory.*` 的修复类操作、`connect.params.*` 握手字段、`policy.*` 策略字段）对桌面 operator 客户端不适用。以下只列真正适用且有明确产品价值的部分。
 
@@ -255,9 +255,9 @@
 
 优先级：中
 
-`session.operation`、`session.ready`、`session.replaced` 三个事件 JunQi 均未处理。`session.operation` 的价值已在追溯分析文档中说明；`session.replaced` 关系到会话被替换时的前端状态一致性，当前没有对应处理意味着这种情况下的行为是未定义的。
+审计时 `session.operation`、`session.ready`、`session.replaced` 三个标识未在 JunQi 的通用 ChatHandler 中处理。当前 `session.operation` 已按官方 schema 接入本地压缩事件投影，具体见 [会话操作事件对齐](openclaw-session-operation-alignment-2026-08-03.md)。官方当前文档把 `session.ready` 与 `session.replaced` 定义为 managed-room `talk.session.join` 的 Talk 事件；JunQi 当前只创建 gateway-relay Talk session，不调用 managed-room join，因此不把这两个事件伪装成普通会话生命周期。
 
-**待验证**：随包文档对这三个事件只有一行描述，未给出 payload 结构。接入前需要真实 Gateway 抓包或从 `packages/gateway-protocol` schema 确认字段。
+**待验证**：如果未来接入官方 managed-room Talk，必须先取得其事件 payload 和连接所有权证据，再单独设计 join/replacement 状态；`session.operation` 的字段已由官方当前 schema 确认，不再属于待验证项。
 
 ### EXT-H · 任务与定时的完整视图
 
@@ -302,8 +302,8 @@
 
 ## 未验证边界
 
-- 全部外部契约结论来自 OpenClaw `2026.7.1-2` 随包文档的静态阅读。未连接真实 Gateway 调用过任何一个本文提到的 RPC，未取得响应体样本。
-- 安装包的 `src/` 目录仅含 `agents/`，运行时为打包产物；`packages/gateway-protocol` schema 在本机安装中不可读。因此 `AuditEvent`、`session.operation`、`tools.effective`、`artifacts.*` 的精确字段名与可选性均未从源码确认。
+- 本文是历史审计，外部契约结论主要来自当时的 OpenClaw `2026.7.1-2` 随包文档；新增或修改集成必须以 OpenClaw 当前官方文档、源码、schema 和 handler 为准，安装版本只记录复现范围。
+- 当时安装包的 `src/` 目录仅含 `agents/`，运行时为打包产物；因此历史审计没有确认 `AuditEvent`、`session.operation`、`tools.effective`、`artifacts.*` 的精确字段。当前 `session.operation` 已在独立对齐记录中由官方主线 schema 确认。
 - 172 个未使用 RPC 的「不适用」判断基于文档描述与 JunQi 产品形态推断，未逐个验证。
 - 测试覆盖缺口的判定基于「同名测试文件」与「文件名在测试正文中出现」两个信号。通过间接依赖被覆盖的文件可能被误判为无覆盖，159 这个数字是上界。
 - 61 个大文件仅按结构阅读，未逐行通读，不排除其中存在本文未发现的缺陷。

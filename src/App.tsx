@@ -64,6 +64,10 @@ import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
+import {
+  describeOpenClawSessionOperation,
+  type OpenClawSessionOperationEvent,
+} from '@/services/gateway/sessionOperation';
 
 function ThemeRuntime() {
   useTheme();
@@ -778,6 +782,20 @@ export default function App() {
       },
       onTranscriptChanged: (sessionKey) => {
         refreshDurableTranscript(sessionKey);
+      },
+      onSessionOperation: (operation: OpenClawSessionOperationEvent) => {
+        if (isSessionDeleted(operation.sessionKey)) return;
+        const presentation = describeOpenClawSessionOperation(operation, (key, options) => (
+          options ? t(key, options) : t(key)
+        ));
+        addMessage({
+          id: `session-operation-${operation.operationId}-${operation.phase}`,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(operation.ts).toISOString(),
+          responseState: 'final',
+          sessionEvents: [presentation],
+        }, operation.sessionKey);
       },
       onTranscriptMessage: (notice) => {
         if (notice.liveProjected || isSessionDeleted(notice.sessionKey)) return;

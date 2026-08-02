@@ -37,6 +37,7 @@ import {
   OpenClawPendingChatSendRegistry,
   type OpenClawPendingChatSendPhase,
 } from './OpenClawPendingChatSend';
+import { parseOpenClawSessionOperationEvent } from './sessionOperation';
 
 // ── Workshop Command Parser ──
 // Parses [[workshop:action ...]] commands from agent messages
@@ -1240,6 +1241,22 @@ export class ChatHandler {
       debugWarn('gateway', '[GW] Ignoring malformed OpenClaw session.tool event');
       return;
     }
+
+    if (event === 'session.operation') {
+      const operation = parseOpenClawSessionOperationEvent(p);
+      if (!operation) {
+        debugWarn('gateway', '[GW] Ignoring malformed OpenClaw session.operation event');
+        return;
+      }
+      const operationSessionKey = this.resolveSessionKey(operation.sessionKey);
+      if (!operationSessionKey || isIsolatedExecutionSessionKey(operationSessionKey)) return;
+      this.conn.callbacks?.onSessionOperation?.({
+        ...operation,
+        sessionKey: operationSessionKey,
+      });
+      return;
+    }
+
     const sessionKey = this.resolveSessionKey(p.sessionKey, p.runId);
 
     if (event === 'agent' || event === 'chat' || event === 'session.tool') {
@@ -1258,7 +1275,7 @@ export class ChatHandler {
     }
 
     if (event === 'session.tool') {
-      // v2026.7.1 contract: the event payload is the agent tool payload itself
+      // The official contract carries the agent tool payload itself
       // (`runId`, `seq`, `stream`, `ts`, `data`) plus a session snapshot. Do
       // not unwrap or translate fields that the Gateway did not send.
       if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;

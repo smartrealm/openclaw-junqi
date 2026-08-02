@@ -13,4 +13,4 @@
 
 - 不新增 `/compact` 触发入口；手动压缩已有 Gateway facade，但不属于本项追溯修复。
 - 不修改 OpenClaw 配置或压缩 provider。
-- 不把缺乏官方 schema 的 `session.operation` 当成 compaction 事件。
+- 不把 `session.operation` 当作 transcript compaction block；该官方 in-flight operation 事件由独立对齐记录负责本地状态投影。

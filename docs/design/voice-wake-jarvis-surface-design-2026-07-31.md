@@ -14,7 +14,7 @@ JunQi 已有可复用的语音播放、聊天附件、Dynamic Island、萌宠状
 
 ## 2. 审计范围与证据口径
 
-本次读取的版本契约为桌面应用 `1.4.21`、锁定的 OpenClaw `2026.7.1` 与协作包 `0.4.0/schema 13`。源码和本地文档是当前行为依据；OpenClaw 上游 `v2026.7.1` 文档仅用于该安装版本的外部协议依据。
+本次设计记录的是桌面应用 `1.4.21` 的历史审计。OpenClaw 的功能契约以当前官方文档、源码和协议 schema 为准；本机安装版本只用于复现当时运行环境，不作为能力开关或实现分支。
 
 审计开始时本机没有 `node_modules`，当时没有重新运行 TypeScript、Rust、插件或打包测试。后续实现的本机自动化证据和仍未执行的真实验收见第 10 节；两者均不等同于真机或正式发布验证。
 
@@ -82,11 +82,11 @@ JunQi 已有可复用的语音播放、聊天附件、Dynamic Island、萌宠状
 
 ## 4. 外部协议与技术选择
 
-OpenClaw `v2026.7.1` 将触发词和路由放在 Gateway：`voicewake.get/set` 管理全局 trigger list，`voicewake.routing.get/set` 管理 current、agent 或 session key 目标，并广播配置变化事件。Desktop 必须使用能力探测、严格 decoder、结构化错误分支和当前 Gateway 的 session lookup，而不是根据缓存的可见聊天页猜测目标。参考：[OpenClaw voice wake contract](https://raw.githubusercontent.com/openclaw/openclaw/v2026.7.1/docs/nodes/voicewake.md) 和 [Gateway protocol](https://raw.githubusercontent.com/openclaw/openclaw/v2026.7.1/docs/gateway/protocol.md)。
+OpenClaw 官方将触发词和路由放在 Gateway：`voicewake.get/set` 管理全局 trigger list，`voicewake.routing.get/set` 管理 current、agent 或 session key 目标，并广播配置变化事件。Desktop 必须使用能力探测、严格 decoder、结构化错误分支和当前 Gateway 的 session lookup，而不是根据缓存的可见聊天页猜测目标。参考：[OpenClaw voice wake contract](https://github.com/openclaw/openclaw/blob/main/docs/nodes/voicewake.md) 和 [Gateway protocol](https://github.com/openclaw/openclaw/blob/main/docs/gateway/protocol.md)。
 
-音频应继续作为普通聊天附件进入 OpenClaw 的 media understanding。上游会将音频处理为 transcript，并经正常回复链路处理失败，这比桌面端伪造消息或自建一条不一致 ASR 管线更符合现有业务边界。参考：[OpenClaw audio processing](https://raw.githubusercontent.com/openclaw/openclaw/v2026.7.1/docs/nodes/audio.md)。
+音频应继续作为普通聊天附件进入 OpenClaw 的 media understanding。上游会将音频处理为 transcript，并经正常回复链路处理失败，这比桌面端伪造消息或自建一条不一致 ASR 管线更符合现有业务边界。参考：[OpenClaw audio processing](https://github.com/openclaw/openclaw/blob/main/docs/nodes/audio.md)。
 
-上游 macOS Voice Overlay 的单一 `VoiceSessionCoordinator`、session UUID、陈旧回调丢弃、统一发送和 overlay 只渲染/转发 intent 的模式可以复用；但上游 macOS voice wake 需要 macOS 26，JunQi 当前桌面兼容面不能把它当作所有 macOS 的直接实现前提。参考：[OpenClaw voice overlay](https://raw.githubusercontent.com/openclaw/openclaw/v2026.7.1/docs/platforms/mac/voice-overlay.md) 和 [OpenClaw macOS voice wake](https://raw.githubusercontent.com/openclaw/openclaw/v2026.7.1/docs/platforms/mac/voicewake.md)。
+上游 macOS Voice Overlay 的单一 `VoiceSessionCoordinator`、session UUID、陈旧回调丢弃、统一发送和 overlay 只渲染/转发 intent 的模式可以复用；但上游 macOS voice wake 有平台前提，JunQi 当前桌面兼容面不能把它当作所有 macOS、Windows 或 Linux 的直接实现前提。参考：[OpenClaw voice overlay](https://github.com/openclaw/openclaw/blob/main/docs/platforms/mac/voice-overlay.md) 和 [OpenClaw macOS voice wake](https://github.com/openclaw/openclaw/blob/main/docs/platforms/mac/voicewake.md)。
 
 本地检测引擎的选择如下：
 
