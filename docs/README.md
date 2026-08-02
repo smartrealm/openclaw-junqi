@@ -39,6 +39,7 @@ docs/
 - [安装与 Wizard 第六轮审计](installation/openclaw-install-wizard-sixth-pass-audit-2026-07-29.md)
 - [Windows 卸载流程复审](installation/windows-uninstall-flow-audit-2026-07-26.md)
 - [安装诊断链路审计](installation/install-diagnostics-audit.md)
+- [Wizard 流程与 Gateway 生命周期全量审查](installation/wizard-and-gateway-lifecycle-full-audit-2026-08-02.md)
 - [Wizard 配置、重启与 Gateway 重装链路加固方案](installation/wizard-config-restart-reinstall-hardening-2026-08-01.md)
 - [Setup runtime 与渠道兼容审计](installation/openclaw-setup-runtime-and-channel-audit-2026-07-27.md)
 - [中国大陆网络与安装源策略](installation/mainland-china-network-policy.md)
