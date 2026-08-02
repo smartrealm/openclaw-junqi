@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { AlertCircle, Copy, ExternalLink, Eye, EyeOff, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, MoreHorizontal, RefreshCw, Sparkles, Layers, type LucideIcon } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronUp, Copy, ExternalLink, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, MoreHorizontal, RefreshCw, Sparkles, Layers, type LucideIcon } from 'lucide-react';
 import { ArrowsClockwise } from '@phosphor-icons/react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -9,6 +9,7 @@ import { IconButton } from '@/components/shared/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getFileName, getFileParentFolder } from '@/services/chat/filePresentation';
+import { resolveOutputFilePath } from '@/services/chat/fileOutputPath';
 import {
   getFilePreviewKind,
   loadLocalFilePreview,
@@ -24,39 +25,8 @@ import {
 import { debugError, debugWarn } from '@/utils/debugLog';
 import { ManagedFilePreview } from '@/components/FileExplorer/ManagedFilePreview';
 
-function isLocalFilePath(value?: string) {
-  if (!value) return false;
-  const v = value.trim();
-  if (!v) return false;
-  return v.startsWith('/') || v.startsWith('~/') || /^[A-Za-z]:[\\/]/.test(v) || v.startsWith('file://');
-}
-
-function resolveWorkspacePath(rawPath: string): string {
-  const cleaned = rawPath
-    .trim()
-    .replace(/^`+|`+$/g, '')
-    .replace(/^["']+|["']+$/g, '')
-    .replace(/^<+|>+$/g, '')
-    .replace(/[，。；;:：]+$/g, '')
-    .trim();
-  if (isLocalFilePath(cleaned)) return cleaned;
-  return cleaned.replace(/\/+$/, '');
-}
-
-function resolveFilePath(file: FileRef): string {
-  const directPath = resolveWorkspacePath(file.path || '');
-  if (directPath && isLocalFilePath(directPath)) return directPath;
-  if (file.workspaceRoot && file.relativePath) {
-    const root = file.workspaceRoot.replace(/[\\/]+$/, '');
-    const rel = resolveWorkspacePath(file.relativePath).replace(/^[/\\]+/, '');
-    const joined = `${root}/${rel}`;
-    if (isLocalFilePath(joined)) return joined;
-  }
-  return directPath;
-}
-
 async function resolveExistingFilePath(path: string): Promise<string> {
-  const candidate = resolveWorkspacePath(path);
+  const candidate = path.trim();
   if (!candidate) return candidate;
 
   try {
@@ -75,14 +45,14 @@ function getFileIconByExt(ext: string): LucideIcon {
   return FileText; // doc/docx/rtf/txt/pdf/...
 }
 
-function FileRow({ file }: { file: FileRef }) {
+function FileRow({ file, workspaceRoot }: { file: FileRef; workspaceRoot?: string }) {
   const { t } = useTranslation();
   const addToast = useNotificationStore((s) => s.addToast);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [preview, setPreview] = useState<LocalFilePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
-  const path = resolveFilePath(file);
+  const path = resolveOutputFilePath(file, workspaceRoot);
   const name = getFileName(file.path);
   const detail = [
     file.meta,
@@ -91,13 +61,14 @@ function FileRow({ file }: { file: FileRef }) {
   ]
     .filter(Boolean)
     .join(' · ');
-  const compactDetail = detail || getFileParentFolder(path);
+  const compactDetail = detail || getFileParentFolder(path || file.path);
 
   const ext = (name.split('.').pop() || '').toLowerCase();
   const isPreviewable = getFilePreviewKind(name) !== null;
 
   const handleOpen = async () => {
     try {
+      if (!path) throw new Error('Output file location is unavailable');
       const openPath = await resolveExistingFilePath(path);
       if (!await openLocalManagedFile(openPath)) throw new Error('Managed file open failed');
     } catch (err) {
@@ -110,7 +81,8 @@ function FileRow({ file }: { file: FileRef }) {
     setPreviewLoading(true);
     setPreviewError(false);
     try {
-      setPreview(await loadLocalFilePreview(path, name));
+      if (!path) throw new Error('Output file location is unavailable');
+      setPreview(await loadLocalFilePreview(path, name, workspaceRoot));
     } catch (err) {
       debugError('media', '[FileResultCard] preview failed:', err);
       setPreview(null);
@@ -136,6 +108,7 @@ function FileRow({ file }: { file: FileRef }) {
 
   const handleReveal = async () => {
     try {
+      if (!path) throw new Error('Output file location is unavailable');
       const revealPath = await resolveExistingFilePath(path);
       if (!await revealLocalManagedFile(revealPath)) throw new Error('Managed file reveal failed');
     } catch (err) {
@@ -145,8 +118,8 @@ function FileRow({ file }: { file: FileRef }) {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(path);
-      addToast('info', t('fileManager.copyPathDone'), path);
+      await navigator.clipboard.writeText(path || file.path);
+      addToast('info', t('fileManager.copyPathDone'), path || file.path);
     } catch (err) {
       debugWarn('media', '[FileResultCard] copy path failed:', err);
       addToast('info', t('resultCards.path'), t('errors.occurred'));
@@ -154,14 +127,17 @@ function FileRow({ file }: { file: FileRef }) {
   };
 
   const handleOpenMarkdownLink = useCallback(async (href: string) => {
-    const resolved = resolveLocalFileReference(href, path, file.workspaceRoot);
+    if (!path) return;
+    const resolved = resolveLocalFileReference(href, path, workspaceRoot);
     if (!resolved) return;
     await openLocalManagedFile(resolved);
-  }, [file.workspaceRoot, path]);
+  }, [path, workspaceRoot]);
 
   const resolveMarkdownImage = useCallback(
-    (source: string) => loadLocalMarkdownImage(source, path, file.workspaceRoot),
-    [file.workspaceRoot, path],
+    (source: string) => path
+      ? loadLocalMarkdownImage(source, path, workspaceRoot)
+      : Promise.resolve(null),
+    [path, workspaceRoot],
   );
 
   const renderPreview = () => {
@@ -210,9 +186,21 @@ function FileRow({ file }: { file: FileRef }) {
 
   return (
     <div className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)]">
-      <div className="flex min-h-9 items-center gap-2 px-2.5 py-1.5">
+      <div
+        className={clsx('flex min-h-9 items-center gap-2 px-2.5 py-1.5', isPreviewable && path && 'cursor-pointer')}
+        onClick={isPreviewable && path ? handlePreview : undefined}
+        onKeyDown={isPreviewable && path ? (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            handlePreview();
+          }
+        } : undefined}
+        role={isPreviewable && path ? 'button' : undefined}
+        tabIndex={isPreviewable && path ? 0 : undefined}
+        aria-expanded={isPreviewable && path ? previewOpen : undefined}
+      >
         {(() => { const Ic = getFileIconByExt(ext); return <Ic size={16} className="shrink-0 text-aegis-primary/80" />; })()}
-        <div className="flex min-w-0 flex-1 items-baseline gap-1.5" title={path}>
+        <div className="flex min-w-0 flex-1 items-baseline gap-1.5" title={path || file.path}>
           <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-aegis-text">{name}</span>
           {compactDetail && (
             <span className="hidden max-w-[42%] shrink-0 truncate text-[10px] text-aegis-text-dim sm:inline">
@@ -229,9 +217,9 @@ function FileRow({ file }: { file: FileRef }) {
                   size="xs"
                   variant={previewOpen ? 'soft' : 'ghost'}
                   tone="primary"
-                  onClick={handlePreview}
+                  onClick={(event) => { event.stopPropagation(); handlePreview(); }}
                 >
-                  {previewOpen ? <EyeOff size={13} /> : <Eye size={13} />}
+                  {previewOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                 </IconButton>
               </TooltipTrigger>
               <TooltipContent>{previewOpen ? t('resultCards.hidePreview') : t('resultCards.preview')}</TooltipContent>
@@ -244,6 +232,7 @@ function FileRow({ file }: { file: FileRef }) {
                 title={t('resultCards.moreFileActions')}
                 size="xs"
                 variant="ghost"
+                onClick={(event) => event.stopPropagation()}
               >
                 <MoreHorizontal size={14} />
               </IconButton>
@@ -274,7 +263,7 @@ function FileRow({ file }: { file: FileRef }) {
   );
 }
 
-export function FileResultCard({ files }: { files: FileRef[] }) {
+export function FileResultCard({ files, workspaceRoot }: { files: FileRef[]; workspaceRoot?: string }) {
   const { t } = useTranslation();
   if (files.length === 0) return null;
   return (
@@ -286,7 +275,7 @@ export function FileResultCard({ files }: { files: FileRef[] }) {
           <span className="text-[10px] text-aegis-text-dim">{files.length}</span>
         </div>
         <div className="space-y-1">
-          {files.map((file, index) => <FileRow key={`${file.path}-${index}`} file={file} />)}
+          {files.map((file, index) => <FileRow key={`${file.path}-${index}`} file={file} workspaceRoot={workspaceRoot} />)}
         </div>
       </section>
     </div>

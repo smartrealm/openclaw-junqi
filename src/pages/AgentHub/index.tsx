@@ -1370,7 +1370,7 @@ export function AgentHubPage() {
                     <div className="text-[11px] text-aegis-text-muted uppercase tracking-wider font-semibold">
                       {t('agents.registeredAgents', 'Registered Agents')}{registeredAgents.length > 0 && <span className="text-aegis-text-dim ms-2">— {registeredAgents.length}</span>}
                     </div>
-                    <button onClick={() => {
+                    <button data-tour="agents-add" onClick={() => {
                       setShowAddForm((v) => {
                         const next = !v;
                         if (next) {

@@ -3685,6 +3685,7 @@ export function ProvidersTab({
               </p>
               <p className="text-xs text-aegis-text-muted">{t('config.addFirstProvider')}</p>
               <button
+                data-tour="providers-add"
                 onClick={() => openModal()}
                 className={clsx(
                   'mt-2 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold',
@@ -3746,6 +3747,7 @@ export function ProvidersTab({
 
               {/* Add row */}
               <button
+                data-tour="providers-add"
                 onClick={() => openModal()}
                 className={clsx(
                   'w-full flex items-center justify-center gap-2 p-4 mt-1',

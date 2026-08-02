@@ -1471,6 +1471,7 @@ export function ChatTabs() {
             <button
               type="button"
               onClick={() => window.dispatchEvent(new Event('aegis:open-new-session-picker'))}
+              data-tour="chat-new-session"
               className={clsx(
                 'h-full w-9 flex items-center justify-center border-l border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
                 'text-aegis-text-muted hover:text-aegis-primary hover:bg-aegis-primary/[0.06]',

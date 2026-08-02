@@ -2,6 +2,7 @@ import {
   createManagedFilePreviewUrl,
   managedFileExists,
   openManagedFile,
+  readManagedOfficePreview,
   readManagedFileText,
   revealManagedFile,
 } from '@/api/tauri-commands';
@@ -17,6 +18,14 @@ export interface ManagedFileTextRead {
 export interface ManagedFilePreviewUrl {
   success: boolean;
   url?: string | null;
+  error?: string | null;
+}
+
+export interface ManagedOfficePreview {
+  success: boolean;
+  format?: 'spreadsheet' | 'presentation' | 'document' | null;
+  content?: string | null;
+  truncated?: boolean;
   error?: string | null;
 }
 
@@ -44,6 +53,10 @@ export async function readLocalManagedFileText(path: string): Promise<ManagedFil
     truncated: result.truncated,
     error: result.error,
   };
+}
+
+export async function readLocalManagedOfficePreview(path: string, workspaceRoot: string): Promise<ManagedOfficePreview> {
+  return readManagedOfficePreview(path, workspaceRoot);
 }
 
 export async function createLocalManagedFilePreviewUrl(path: string): Promise<ManagedFilePreviewUrl> {

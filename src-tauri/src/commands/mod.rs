@@ -39,6 +39,7 @@ pub mod node_runtime;
 pub mod notification;
 pub mod npm_registry;
 pub mod oauth;
+pub mod office_preview;
 pub mod openclaw_channel;
 pub(crate) mod openclaw_cli;
 pub mod openclaw_media_preview;

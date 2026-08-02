@@ -267,8 +267,8 @@ export function SetupShell({
       </main>
       {showActions && (
         <footer className="shrink-0 border-t border-aegis-border/60 bg-aegis-bg/95 px-3 py-3 backdrop-blur sm:px-6">
-          <div className={clsx("mx-auto flex w-full flex-wrap items-center justify-between gap-3", wide ? "max-w-5xl" : "max-w-3xl")}>
-            <div className="flex min-w-[112px] justify-start">
+          <div data-setup-footer-layout="responsive" className={clsx("mx-auto grid w-full grid-cols-1 gap-3 sm:grid-cols-[minmax(112px,1fr)_minmax(0,auto)] sm:items-center", wide ? "max-w-5xl" : "max-w-3xl")}>
+            <div data-setup-footer-previous className="flex min-w-0 justify-start">
               {previousAction && (
               <button
                 type="button"
@@ -281,13 +281,13 @@ export function SetupShell({
               </button>
               )}
             </div>
-            <div className="flex min-w-[122px] flex-1 flex-wrap items-center justify-end gap-2">
+            <div data-setup-footer-actions className="flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
               {secondaryAction && (
                 <button
                   type="button"
                   onClick={secondaryAction.onClick}
                   disabled={secondaryAction.disabled || secondaryAction.loading}
-                  className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[14px] font-bold text-aegis-text-secondary transition hover:bg-aegis-surface disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[14px] font-bold text-aegis-text-secondary transition hover:bg-aegis-surface disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
                 >
                   {secondaryAction.loading && <RefreshCw size={14} className="animate-spin" />}
                   {secondaryAction.label}
@@ -295,10 +295,11 @@ export function SetupShell({
               )}
               {nextAction ? (
               <button
+                data-setup-footer-primary
                 type="button"
                 onClick={nextAction.onClick}
                 disabled={nextAction.disabled || nextAction.loading}
-                className="inline-flex min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition shadow-lg hover:bg-aegis-primary-hover disabled:cursor-not-allowed disabled:opacity-55"
+                className="inline-flex w-full min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition shadow-lg hover:bg-aegis-primary-hover disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
               >
                 {nextAction.loading && <RefreshCw size={15} className="animate-spin" />}
                 {nextAction.label}

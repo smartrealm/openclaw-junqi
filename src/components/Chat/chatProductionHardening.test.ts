@@ -16,7 +16,7 @@ test('CHAT-01 generated artifacts stay scriptless while local file previews use 
   assert.match(bubble, /srcDoc=\{artifact\.content\}[\s\S]*?sandbox=""/);
   assert.match(managedPreview, /src=\{preview\.mode === 'interactive' \? preview\.url/);
   assert.match(managedPreview, /sandbox=\{preview\.mode === 'interactive' \? 'allow-scripts' : ''\}/);
-  assert.match(resultCards, /loadLocalFilePreview\(path, name\)/);
+  assert.match(resultCards, /loadLocalFilePreview\(path, name, workspaceRoot\)/);
   assert.match(previewProtocol, /PREVIEW_GRANT_TTL/);
   assert.match(previewProtocol, /resolve_granted_path/);
   assert.match(previewProtocol, /connect-src 'self'/);
@@ -29,7 +29,7 @@ test('CHAT-01 generated artifacts stay scriptless while local file previews use 
 
 test('CHAT-12 file result rows keep full paths out of the default chat layout', () => {
   const resultCards = source('src/components/Chat/ResultCards.tsx');
-  assert.match(resultCards, /getFileParentFolder\(path\)/);
+  assert.match(resultCards, /getFileParentFolder\(path \|\| file\.path\)/);
   assert.match(resultCards, /max-w-\[760px\]/);
   assert.doesNotMatch(resultCards, /\{detail \|\| path\}/);
 });

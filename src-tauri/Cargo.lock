@@ -2555,6 +2555,7 @@ dependencies = [
  "parking_lot",
  "portable-pty",
  "qrcode",
+ "quick-xml",
  "rand 0.8.7",
  "reqwest 0.12.28",
  "serde",

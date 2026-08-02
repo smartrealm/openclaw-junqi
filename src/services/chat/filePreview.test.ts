@@ -16,12 +16,33 @@ test('CHAT-12 classifies only formats with a real inline renderer', () => {
   assert.equal(getFilePreviewKind('recording.m4a'), 'audio');
   assert.equal(getFilePreviewKind('movie.mp4'), 'video');
   assert.equal(getFilePreviewKind('report.pdf'), 'pdf');
+  assert.equal(getFilePreviewKind('budget.xlsx'), 'office');
+  assert.equal(getFilePreviewKind('deck.pptx'), 'office');
+  assert.equal(getFilePreviewKind('brief.docx'), 'office');
   assert.equal(getFilePreviewKind('Dockerfile'), 'text');
-  assert.equal(getFilePreviewKind('slides.pptx'), null);
+  assert.equal(getFilePreviewKind('slides.ppt'), null);
+});
+
+test('CHAT-18 previews OOXML files through the managed read-only bridge', async () => {
+  const preview = await loadLocalFilePreview('/workspace/budget.xlsx', 'budget.xlsx', '/workspace', {
+    managedFiles: {
+      readOfficePreview: async (path, workspaceRoot) => ({
+        success: path === '/workspace/budget.xlsx' && workspaceRoot === '/workspace',
+        format: 'spreadsheet',
+        content: 'Month\tRevenue\nJanuary\t100',
+        truncated: false,
+      }),
+    },
+  });
+  assert.deepEqual(preview, {
+    kind: 'text',
+    content: 'Month\tRevenue\nJanuary\t100',
+    truncated: false,
+  });
 });
 
 test('CHAT-12 HTML previews prefer the native scoped URL so sibling assets keep working', async () => {
-  const preview = await loadLocalFilePreview('/Users/wei/Desktop/course/index.html', 'index.html', {
+  const preview = await loadLocalFilePreview('/Users/wei/Desktop/course/index.html', 'index.html', undefined, {
     managedFiles: {
       createPreview: async (path) => ({
         success: path.endsWith('/index.html'),
@@ -60,7 +81,7 @@ test('CHAT-12 text previews use the managed native reader before the scoped raw-
 
 test('CHAT-12 static fallback and legacy raw reads preserve UTF-8 text', async () => {
   assert.equal(decodeBase64Utf8('5L2g5aW9'), '你好');
-  const preview = await loadLocalFilePreview('/tmp/demo.html', 'demo.html', {
+  const preview = await loadLocalFilePreview('/tmp/demo.html', 'demo.html', undefined, {
     file: {
       read: async () => ({ base64: 'PGgxPuS9oOWlvTwvaDE+' }),
     },
@@ -75,7 +96,7 @@ test('CHAT-12 static fallback and legacy raw reads preserve UTF-8 text', async (
 });
 
 test('FILE-01 binary previews use the scoped native URL instead of a raw file read', async () => {
-  const preview = await loadLocalFilePreview('/Users/wei/Desktop/report.pdf', 'report.pdf', {
+  const preview = await loadLocalFilePreview('/Users/wei/Desktop/report.pdf', 'report.pdf', undefined, {
     managedFiles: {
       createPreview: async (path) => ({
         success: path.endsWith('/report.pdf'),
