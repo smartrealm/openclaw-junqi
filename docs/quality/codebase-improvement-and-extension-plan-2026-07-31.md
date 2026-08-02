@@ -226,7 +226,7 @@
 
 **当前行为**：`src/services/openclawSkillsRuntime.ts` 已将 `skills.status`、`skills.search`、
 `skills.detail`、`skills.update` 与 `skills.install` 接入 Gateway；`SkillsPage` 的 Gateway
-目录使用这些原生结果。技能详情已按官方 schema 只展示真实的 score、版本、时间、owner、
+目录使用这些原生结果；status 只接受官方必需状态字段，不用默认值掩盖缺失状态。技能详情已按官方 schema 只展示真实的 score、版本、时间、owner、
 metadata、tags、channel 与 changelog，不再把下载量、星标、安装量、README、版本历史或
 外部链接猜测成数据。`/skill-hub` 仍是 JunQi 本地目录与项目符号链接工具，和 Gateway
 技能目录保持边界。

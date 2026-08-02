@@ -10,8 +10,11 @@ import {
 test('normalizes OpenClaw skill status without accepting malformed entries', () => {
   assert.deepEqual(normalizeOpenClawSkills({
     skills: [
-      { skillKey: 'weather', displayName: 'Weather', description: 'Forecast', enabled: true, eligible: true, userInvocable: true, source: 'openclaw-managed', baseDir: '/skills/weather', version: '1.2.0' },
+      { skillKey: 'weather', name: 'Weather', description: 'Forecast', disabled: false, eligible: true, userInvocable: true, source: 'openclaw-managed', baseDir: '/skills/weather', clawhub: { status: 'linked', valid: true, installedVersion: '1.2.0' } },
+      { skillKey: 'disabled', name: 'Disabled', description: '', disabled: true, eligible: false, userInvocable: false, source: 'openclaw-managed' },
       { skillKey: '' },
+      { skillKey: 'missing-flags', name: 'Missing flags', description: 'Invalid', source: 'openclaw-managed' },
+      { skillKey: 'invalid-description', name: 'Invalid description', description: 42, disabled: false, eligible: true, userInvocable: true, source: 'openclaw-managed' },
       null,
     ],
   }), [{
@@ -24,6 +27,14 @@ test('normalizes OpenClaw skill status without accepting malformed entries', () 
     source: 'openclaw-managed',
     baseDir: '/skills/weather',
     version: '1.2.0',
+  }, {
+    key: 'disabled',
+    name: 'Disabled',
+    description: '',
+    enabled: false,
+    eligible: false,
+    userInvocable: false,
+    source: 'openclaw-managed',
   }]);
 });
 

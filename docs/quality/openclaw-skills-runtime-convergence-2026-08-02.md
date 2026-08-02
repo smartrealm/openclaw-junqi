@@ -24,7 +24,9 @@ Tauri adapter 中固定返回失败或空结果，但页面仍向用户显示导
 ## 当前实现
 
 - `src/services/openclawSkillsRuntime.ts` 是 Gateway 技能域唯一运行时出口。它校验输入、
-  解析当前协议的 status/search/detail 返回，并让所有变更经 `callPrivileged` 发出。
+  严格解析当前协议的 status/search/detail 返回，并让所有变更经 `callPrivileged` 发出。
+  status 的名称、描述、source、disabled、eligible 与 userInvocable 缺失或类型错误时不再
+  用默认值补齐；技能版本只从官方 status 的 `clawhub.installedVersion` 读取。
 - `src/stores/skillsStore.ts` 复用该服务，供侧栏、Agent 页面和会话输入使用。
 - `src/pages/SkillsPage/index.tsx` 缩分为已安装技能和 Gateway 目录两个视图，只提供
   OpenClaw 已声明的启停、搜索、详情和安装能力。

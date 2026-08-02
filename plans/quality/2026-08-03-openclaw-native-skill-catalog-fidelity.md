@@ -3,8 +3,8 @@
 ## 实施顺序
 
 1. 以 OpenClaw 官方 protocol、schema 和 handler 核对 `skills.search/detail` 字段与权限。
-2. 收紧 `src/services/openclawSkillsRuntime.ts` 的归一化器，拒绝非法必需字段并保留官方
-   可选字段。
+2. 收紧 `src/services/openclawSkillsRuntime.ts` 的 status/search/detail 归一化器，拒绝非法
+   必需字段并保留官方可选字段。
 3. 更新 `src/pages/SkillsPage/index.tsx` 与 `components.tsx`，移除伪造 marketplace 字段，
    只渲染真实搜索分数、时间、版本、owner、metadata 和 changelog。
 4. 更新三种 locale、运行时测试、页面边界测试与 `docs/`、`specs/` 记录。

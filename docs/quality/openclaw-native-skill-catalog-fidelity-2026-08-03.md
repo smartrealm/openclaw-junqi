@@ -8,6 +8,7 @@ schema 和 handler：
 - [Gateway protocol](https://github.com/openclaw/openclaw/blob/main/docs/gateway/protocol.md)
 - [技能协议 schema](https://raw.githubusercontent.com/openclaw/openclaw/main/packages/gateway-protocol/src/schema/agents-models-skills.ts)
 - [技能 Gateway handler](https://raw.githubusercontent.com/openclaw/openclaw/main/src/gateway/server-methods/skills.ts)
+- [技能 status source](https://raw.githubusercontent.com/openclaw/openclaw/main/src/skills/discovery/status.ts)
 
 官方 schema 定义了 `skills.search` 的 `score`、`slug`、`displayName`、可选 `summary`、
 `version`、`updatedAt`，以及 `skills.detail` 的 `skill`、`latestVersion`、`metadata` 和
@@ -24,7 +25,9 @@ Gateway 技能目录已经使用原生 `skills.search/detail`，但页面模型�
 ## 当前行为
 
 - `src/services/openclawSkillsRuntime.ts` 严格校验 search/detail 的官方字段；缺少必需字段或
-  字段类型错误时丢弃该结果，不生成默认数值。
+  字段类型错误时丢弃该结果，不生成默认数值。`skills.status` 同样要求官方
+  `SkillStatusEntry` 的名称、描述、source、disabled、eligible 和 userInvocable；版本只
+  从官方 `clawhub.installedVersion` 读取。
 - `src/pages/SkillsPage/index.tsx` 只把 Gateway 返回的字段映射为 UI 模型。详情请求失败时
   保留搜索结果，不补空 README、空版本记录或伪造来源链接。
 - `src/pages/SkillsPage/components.tsx` 展示检索分数、真实版本、更新时间、owner、官方

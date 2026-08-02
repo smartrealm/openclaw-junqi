@@ -91,10 +91,6 @@ function optionalInteger(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
 }
 
-function optionalBoolean(value: unknown): boolean | undefined {
-  return typeof value === 'boolean' ? value : undefined;
-}
-
 function optionalNullableBoolean(value: unknown): boolean | null | undefined {
   if (value === undefined || value === null) return value;
   return typeof value === 'boolean' ? value : undefined;
@@ -133,11 +129,9 @@ function skillRows(payload: unknown): unknown[] {
   return Array.isArray(root.entries) ? root.entries : [];
 }
 
-function skillVersion(row: UnknownRecord): string | undefined {
-  const direct = text(row.version) ?? text(row.installedVersion) ?? text(row.currentVersion);
-  if (direct) return direct;
-  const metadata = record(row.meta);
-  return metadata ? text(metadata.version) : undefined;
+function skillInstalledVersion(row: UnknownRecord): string | undefined {
+  const clawhub = record(row.clawhub);
+  return clawhub ? text(clawhub.installedVersion) : undefined;
 }
 
 export function normalizeOpenClawSkills(payload: unknown): OpenClawSkill[] {
@@ -145,18 +139,33 @@ export function normalizeOpenClawSkills(payload: unknown): OpenClawSkill[] {
   for (const raw of skillRows(payload)) {
     const row = record(raw);
     if (!row) continue;
-    const key = text(row.skillKey) ?? text(row.slug) ?? text(row.name);
-    if (!key) continue;
+    const key = text(row.skillKey);
+    const name = text(row.name);
+    const description = row.description;
+    const source = text(row.source);
+    const disabled = row.disabled;
+    const eligible = row.eligible;
+    const userInvocable = row.userInvocable;
+    const version = skillInstalledVersion(row);
+    if (
+      !key
+      || !name
+      || typeof description !== 'string'
+      || !source
+      || typeof disabled !== 'boolean'
+      || typeof eligible !== 'boolean'
+      || typeof userInvocable !== 'boolean'
+    ) continue;
     unique.set(key, {
       key,
-      name: text(row.displayName) ?? text(row.name) ?? key,
-      description: text(row.description) ?? text(row.summary) ?? '',
-      enabled: optionalBoolean(row.disabled) !== true && optionalBoolean(row.enabled) !== false,
-      eligible: optionalBoolean(row.eligible) !== false,
-      userInvocable: optionalBoolean(row.userInvocable) === true,
-      source: text(row.source) ?? 'unknown',
+      name,
+      description,
+      enabled: !disabled,
+      eligible,
+      userInvocable,
+      source,
       ...(text(row.baseDir) ? { baseDir: text(row.baseDir) } : {}),
-      ...(skillVersion(row) ? { version: skillVersion(row) } : {}),
+      ...(version ? { version } : {}),
     });
   }
   return [...unique.values()];

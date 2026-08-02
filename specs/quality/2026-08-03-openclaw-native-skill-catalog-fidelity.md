@@ -12,11 +12,13 @@ JunQi 的 Gateway 技能目录必须忠实呈现 OpenClaw 原生 `skills.search`
    作为硬编码能力开关。
 2. `skills.search` 结果必须有有效的 `score`、`slug` 和 `displayName`；可选字段只在类型正确
    时保留。
-3. `skills.detail.skill` 必须有 `slug`、`displayName`、`createdAt` 和 `updatedAt`；
+3. `skills.status` 必须有官方 status entry 的 `skillKey`、`name`、`description`、`source`、
+   `disabled`、`eligible` 和 `userInvocable`；缺失字段不得转换成默认启用或默认可用。
+4. `skills.detail.skill` 必须有 `slug`、`displayName`、`createdAt` 和 `updatedAt`；
    `latestVersion`、`metadata`、`owner` 等可选结构不得用空对象或假值补齐。
-4. 页面只展示实际字段。未知值显示为空缺状态或不显示，不得显示 `0`、空版本历史或猜测
+5. 页面只展示实际字段。未知值显示为空缺状态或不显示，不得显示 `0`、空版本历史或猜测
    的 ClawHub URL。
-5. `skills.install` 仍通过受保护的 Gateway 管理员出口执行；本次不改变安装权限和风险确认。
+6. `skills.install` 仍通过受保护的 Gateway 管理员出口执行；本次不改变安装权限和风险确认。
 
 ## 验收条件
 
