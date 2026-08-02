@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
-import { X, Copy, ExternalLink, Download, MessageSquare, FileText, Key, Settings2, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star } from 'lucide-react';
+import { X, Copy, ExternalLink, Download, MessageSquare, FileText, BadgeCheck, BookOpenText, CheckCircle2, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
@@ -38,30 +38,39 @@ export interface HubSkill extends SkillPersonaFields {
   name: string;
   emoji: React.ReactNode;
   summary: string;
-  owner: string;
-  ownerAvatar: string;
-  stars: number;
-  downloads: number;
-  installs: number;
-  version: string;
+  score: number;
+  owner?: string;
+  ownerAvatar?: string;
+  version?: string;
+  updatedAt?: number;
   badge?: 'official' | 'featured';
-  /** Direct URL to the skill's page on its source hub (used as externalUrl in the detail panel). */
   homepage?: string;
 }
 
 export interface SkillDetail extends HubSkill {
-  readme: string;
-  requirements: { env: string[]; bin: string[] };
-  versions: Array<{ version: string; date: string; changelog: string; latest: boolean }>;
+  readme?: string;
+  createdAt?: number;
+  latestVersion?: {
+    version: string;
+    createdAt: number;
+    changelog?: string;
+  };
+  metadata?: {
+    os?: string[] | null;
+    systems?: string[] | null;
+  };
+  tags?: Record<string, string>;
+  channel?: string | null;
 }
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════
 
-function formatNum(n: number): string {
-  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-  return String(n);
+function formatDate(timestamp: number | undefined): string | null {
+  if (timestamp === undefined) return null;
+  const date = new Date(timestamp);
+  return Number.isFinite(date.getTime()) ? date.toLocaleDateString() : null;
 }
 
 /**
@@ -231,6 +240,7 @@ export function MySkillRow({ skill, onToggle, index = 0 }: {
 // ═══════════════════════════════════════════════════════════
 
 export function HubSkillRow({ skill, onClick }: { skill: HubSkill; onClick: () => void }) {
+  const { t } = useTranslation();
   return (
     <div
       onClick={onClick}
@@ -249,9 +259,9 @@ export function HubSkillRow({ skill, onClick }: { skill: HubSkill; onClick: () =
         <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
           <span className="text-[13px] font-semibold">{skill.name}</span>
           <HubBadge badge={skill.badge} />
-          {skill.ownerAvatar && (
+          {skill.owner && (
             <span className="flex items-center gap-1 text-[10.5px] text-aegis-text-dim">
-              <img src={skill.ownerAvatar} alt="" className="w-[13px] h-[13px] rounded-full" loading="lazy" />
+              {skill.ownerAvatar && <img src={skill.ownerAvatar} alt="" className="w-[13px] h-[13px] rounded-full" loading="lazy" />}
               {skill.owner}
             </span>
           )}
@@ -261,10 +271,10 @@ export function HubSkillRow({ skill, onClick }: { skill: HubSkill; onClick: () =
 
       {/* Stats */}
       <div className="flex items-center gap-3.5 shrink-0 text-[11px] text-aegis-text-dim">
-        <span className="flex items-center gap-1 min-w-[56px]">
-          <Download size={11} /> {formatNum(skill.downloads)}
+        <span className="text-[10px] font-mono" title={t('skillsExtra.score', 'Search score')}>
+          {skill.score.toFixed(2)}
         </span>
-        <span className="text-[10px] font-mono">{skill.version ? `v${skill.version}` : '—'}</span>
+        {skill.version && <span className="text-[10px] font-mono">v{skill.version}</span>}
       </div>
     </div>
   );
@@ -296,7 +306,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
   errorLabel?: string;
   externalUrl?: string;
   externalLabel?: string;
-  /** Override the CLI command shown in the code block (defaults to "clawhub install {slug}"). */
+  /** Optional runtime-provided command shown in the code block. */
   installCmd?: string;
   errorText?: string;
   secondaryActionLabel?: string;
@@ -308,12 +318,16 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
 }) {
   const { t } = useTranslation();
   const isRed = accentColor === 'red';
-  const [activePane, setActivePane] = useState<'overview' | 'readme' | 'versions'>('overview');
+  const [activePane, setActivePane] = useState<'overview' | 'readme' | 'version'>('overview');
   useEffect(() => {
     setActivePane('overview');
   }, [skill?.slug]);
   const hasReadme = Boolean(skill?.readme);
-  const hasVersions = Boolean(skill?.versions.length);
+  const hasLatestVersion = Boolean(skill?.latestVersion);
+  const updatedAt = formatDate(skill?.updatedAt);
+  const latestVersionCreatedAt = formatDate(skill?.latestVersion?.createdAt);
+  const hasMetadata = Boolean(skill?.metadata?.os?.length || skill?.metadata?.systems?.length);
+  const hasCatalogFields = Boolean(skill?.channel || Object.keys(skill?.tags ?? {}).length > 0);
   const safeReadme = useMemo(
     () => DOMPurify.sanitize(skill?.readme ?? ''),
     [skill?.readme],
@@ -375,9 +389,9 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               </div>
               <div className="flex items-center gap-1" role="tablist" aria-label={t('skills.skillDetails', 'Skill details')}>
                 {([
-                  { id: 'overview' as const, label: 'Overview', visible: true },
-                  { id: 'readme' as const, label: 'Readme', visible: hasReadme },
-                  { id: 'versions' as const, label: 'Versions', visible: hasVersions },
+                  { id: 'overview' as const, label: t('skills.overview', 'Overview'), visible: true },
+                  { id: 'readme' as const, label: t('skills.readme', 'Readme'), visible: hasReadme },
+                  { id: 'version' as const, label: t('skills.latestVersion', 'Latest version'), visible: hasLatestVersion },
                 ]).filter((tab) => tab.visible).map((tab) => (
                   <button
                     key={tab.id}
@@ -401,21 +415,21 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             <div className="min-h-0 flex-1 overflow-y-auto">
             {activePane === 'overview' && <>
             <div className="px-4 py-4">
-              {skill.ownerAvatar && (
+              {skill.owner && (
                 <div className="mb-2 flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted">
-                  <img src={skill.ownerAvatar} alt="" className="size-4 rounded-full" />
+                  {skill.ownerAvatar && <img src={skill.ownerAvatar} alt="" className="size-4 rounded-full" />}
                   <span className="truncate">{skill.owner}</span>
                 </div>
               )}
               <p className="max-w-[48ch] text-[12px] leading-5 text-aegis-text-secondary">{skill.summary}</p>
             </div>
 
-            {/* Stats */}
+            {/* Facts from the native catalog response. */}
             <div className="grid grid-cols-3 divide-x divide-[rgb(var(--aegis-overlay)/0.06)] border-y border-[rgb(var(--aegis-overlay)/0.08)]">
               {[
-                { value: formatNum(skill.downloads), label: t('skillsExtra.downloads', 'Downloads') },
-                { value: String(skill.stars), label: t('skillsExtra.stars', 'Stars') },
-                { value: formatNum(skill.installs), label: t('skillsExtra.installs') },
+                { value: skill.score.toFixed(2), label: t('skillsExtra.score', 'Search score') },
+                ...(skill.version ? [{ value: `v${skill.version}`, label: t('skillsExtra.version', 'Version') }] : []),
+                ...(updatedAt ? [{ value: updatedAt, label: t('skillsExtra.updated', 'Updated') }] : []),
               ].map(s => (
                 <div key={s.label} className="py-2.5 text-center">
                   <div className="text-[15px] font-semibold tabular-nums">{s.value}</div>
@@ -424,21 +438,22 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               ))}
             </div>
 
-            {/* Install command */}
-            <div className="border-b border-[rgb(var(--aegis-overlay)/0.08)] px-4 py-3">
-              <div className="flex items-center gap-2 border-s-2 border-aegis-primary/50 bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2 font-mono text-[11px] text-aegis-primary">
-                <code className="flex-1 truncate">{installCmd ?? `openclaw skills install ${skill.slug}`}</code>
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard.writeText(installCmd ?? `openclaw skills install ${skill.slug}`)}
-                  title={t('common.copy', 'Copy')}
-                  aria-label={t('common.copy', 'Copy')}
-                  className="text-aegis-text-dim hover:text-aegis-primary transition-colors shrink-0"
-                >
-                  <Copy size={13} />
-                </button>
+            {installCmd && (
+              <div className="border-b border-[rgb(var(--aegis-overlay)/0.08)] px-4 py-3">
+                <div className="flex items-center gap-2 border-s-2 border-aegis-primary/50 bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2 font-mono text-[11px] text-aegis-primary">
+                  <code className="flex-1 truncate">{installCmd}</code>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(installCmd)}
+                    title={t('common.copy', 'Copy')}
+                    aria-label={t('common.copy', 'Copy')}
+                    className="text-aegis-text-dim hover:text-aegis-primary transition-colors shrink-0"
+                  >
+                    <Copy size={13} />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {installState === 'error' && errorText && (
               <div className="mx-4 mt-3 border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[11.5px] leading-relaxed text-aegis-text-secondary">
@@ -446,21 +461,40 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               </div>
             )}
 
-            {(skill.requirements.env.length > 0 || skill.requirements.bin.length > 0) && (
+            {hasMetadata && (
               <div className="px-4 py-4">
                 <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
-                  <Wrench size={13} aria-hidden="true" />
-                  {t('skillsExtra.requirements')}
+                  {t('skillsExtra.metadata', 'Gateway metadata')}
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
-                  {skill.requirements.env.map(e => (
-                    <span key={e} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
-                      <Key size={12} strokeWidth={1.75} /> {e}
+                  {skill.metadata?.os?.map(value => (
+                    <span key={`os:${value}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
+                      {t('skillsExtra.os', 'OS')}: {value}
                     </span>
                   ))}
-                  {skill.requirements.bin.map(b => (
-                    <span key={b} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
-                      <Settings2 size={12} strokeWidth={1.75} /> {b}
+                  {skill.metadata?.systems?.map(value => (
+                    <span key={`system:${value}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
+                      {t('skillsExtra.systems', 'Systems')}: {value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {hasCatalogFields && (
+              <div className="border-t border-[rgb(var(--aegis-overlay)/0.08)] px-4 py-4">
+                <h3 className="mb-2 text-[11px] font-semibold text-aegis-text-muted">
+                  {t('skillsExtra.catalogFields', 'Catalog fields')}
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {skill.channel && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-aegis-primary/10 bg-aegis-primary/[0.06] px-2 py-1 text-[10.5px] font-mono text-aegis-primary">
+                      {t('skillsExtra.channel', 'Channel')}: {skill.channel}
+                    </span>
+                  )}
+                  {Object.entries(skill.tags ?? {}).map(([key, value]) => (
+                    <span key={`tag:${key}`} className="inline-flex items-center gap-1 rounded-md border border-aegis-primary/10 bg-aegis-primary/[0.06] px-2 py-1 text-[10.5px] font-mono text-aegis-primary">
+                      {key}: {value}
                     </span>
                   ))}
                 </div>
@@ -481,21 +515,18 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               </div>
             )}
 
-            {activePane === 'versions' && skill.versions.length > 0 && (
+            {activePane === 'version' && skill.latestVersion && (
               <div className="px-4 py-4">
                 <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
-                  <FileText size={14} strokeWidth={1.75} /> {t('skills.versions', 'Versions')}
+                  <FileText size={14} strokeWidth={1.75} /> {t('skills.latestVersion', 'Latest version')}
                 </h3>
-                <ul className="space-y-0">
-                  {skill.versions.map(v => (
-                    <li key={v.version} className="flex items-center gap-2 border-b border-[rgb(var(--aegis-overlay)/0.06)] py-2.5 text-[11.5px] last:border-0">
-                      <span className="rounded bg-aegis-primary/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-aegis-primary">v{v.version}</span>
-                      {v.latest && <span className="rounded bg-aegis-success px-1.5 py-0.5 text-[9px] font-bold text-aegis-btn-primary-text">latest</span>}
-                      <span className="min-w-0 flex-1 truncate text-aegis-text-secondary">{v.changelog}</span>
-                      <span className="shrink-0 text-[10px] text-aegis-text-dim">{v.date}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="flex items-center gap-2 border-b border-[rgb(var(--aegis-overlay)/0.06)] py-2.5 text-[11.5px]">
+                  <span className="rounded bg-aegis-primary/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-aegis-primary">v{skill.latestVersion.version}</span>
+                  {skill.latestVersion.changelog && (
+                    <span className="min-w-0 flex-1 text-aegis-text-secondary">{skill.latestVersion.changelog}</span>
+                  )}
+                  {latestVersionCreatedAt && <span className="shrink-0 text-[10px] text-aegis-text-dim">{latestVersionCreatedAt}</span>}
+                </div>
               </div>
             )}
             </div>
@@ -546,15 +577,17 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                     <MessageSquare size={14} />
                   </button>
               )}
-              <button
-                type="button"
-                onClick={() => window.open(externalUrl ?? `https://clawhub.ai/skills/${skill.slug}`, '_blank')}
-                title={externalLabel ?? t('skillsExtra.viewOnClawHub', 'View on ClawHub')}
-                aria-label={externalLabel ?? t('skillsExtra.viewOnClawHub', 'View on ClawHub')}
-                className="grid size-9 shrink-0 place-items-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.06] hover:text-aegis-primary"
-              >
-                <ExternalLink size={14} />
-              </button>
+              {externalUrl && (
+                <button
+                  type="button"
+                  onClick={() => window.open(externalUrl, '_blank')}
+                  title={externalLabel ?? t('skillsExtra.viewExternal', 'Open source page')}
+                  aria-label={externalLabel ?? t('skillsExtra.viewExternal', 'Open source page')}
+                  className="grid size-9 shrink-0 place-items-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.06] hover:text-aegis-primary"
+                >
+                  <ExternalLink size={14} />
+                </button>
+              )}
               </div>
               {installState === 'done' && doneHint && <p className="mt-2 text-center text-[10px] text-aegis-text-dim">{doneHint}</p>}
               {installState === 'error' && secondaryActionLabel && onSecondaryAction && (

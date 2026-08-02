@@ -229,7 +229,9 @@
     "importSharePackage": "導入分享包",
     "addLocalSkill": "新增本地 Skill",
     "skillDetails": "技能詳情",
+    "overview": "概覽",
     "readme": "說明文件",
+    "latestVersion": "最新版本",
     "versions": "版本記錄",
     "importLocal": "導入本地技能",
     "importFromFolder": "選擇文件夾",
@@ -2411,7 +2413,15 @@
     "version": "版本",
     "downloads": "下載量",
     "stars": "收藏",
-    "viewOnClawHub": "在 ClawHub 查看"
+    "viewOnClawHub": "在 ClawHub 查看",
+    "score": "搜尋分數",
+    "updated": "更新時間",
+    "metadata": "Gateway 元資料",
+    "os": "作業系統",
+    "systems": "系統",
+    "catalogFields": "目錄欄位",
+    "channel": "渠道",
+    "viewExternal": "開啟來源頁面"
   },
   "settingsTheme": {
     "dark": "深色模式",

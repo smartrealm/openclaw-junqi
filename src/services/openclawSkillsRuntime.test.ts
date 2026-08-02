@@ -32,15 +32,64 @@ test('normalizes only documented Gateway catalog fields', () => {
     results: [
       { score: 0.9, slug: 'weather', displayName: 'Weather', summary: 'Forecast', version: '1.0.0', updatedAt: 1 },
       { score: 1, slug: 'missing-name' },
+      { slug: 'missing-score', displayName: 'Missing score' },
+      { score: '0.5', slug: 'invalid-score', displayName: 'Invalid score' },
     ],
   }), [{ score: 0.9, slug: 'weather', displayName: 'Weather', summary: 'Forecast', version: '1.0.0', updatedAt: 1 }]);
   assert.deepEqual(normalizeOpenClawSkillDetail({
-    skill: { slug: 'weather', displayName: 'Weather', summary: 'Forecast', isOfficial: true, createdAt: 1, updatedAt: 2 },
-    latestVersion: { version: '1.1.0' },
-    owner: { displayName: 'OpenClaw', official: true },
+    skill: {
+      slug: 'weather',
+      displayName: 'Weather',
+      summary: 'Forecast',
+      isOfficial: true,
+      tags: { category: 'utility' },
+      channel: 'stable',
+      createdAt: 1,
+      updatedAt: 2,
+    },
+    latestVersion: { version: '1.1.0', createdAt: 3, changelog: 'Improved forecasts' },
+    metadata: { os: ['darwin', 'linux'], systems: ['node'] },
+    owner: { displayName: 'OpenClaw', official: true, channel: 'clawhub' },
   }), {
-    slug: 'weather', displayName: 'Weather', summary: 'Forecast', version: '1.1.0', createdAt: 1, updatedAt: 2,
-    official: true, owner: { displayName: 'OpenClaw', official: true },
+    slug: 'weather',
+    displayName: 'Weather',
+    summary: 'Forecast',
+    tags: { category: 'utility' },
+    channel: 'stable',
+    isOfficial: true,
+    createdAt: 1,
+    updatedAt: 2,
+    latestVersion: { version: '1.1.0', createdAt: 3, changelog: 'Improved forecasts' },
+    metadata: { os: ['darwin', 'linux'], systems: ['node'] },
+    owner: { displayName: 'OpenClaw', official: true, channel: 'clawhub' },
+  });
+});
+
+test('rejects malformed native skill detail fields instead of inventing defaults', () => {
+  assert.equal(normalizeOpenClawSkillDetail({
+    skill: { slug: 'weather', displayName: 'Weather', createdAt: 1, updatedAt: 2, isOfficial: 'yes' },
+  }), null);
+  assert.equal(normalizeOpenClawSkillDetail({
+    skill: { slug: 'weather', displayName: 'Weather', createdAt: 1, updatedAt: 2 },
+    latestVersion: { version: '1.0.0' },
+  }), null);
+});
+
+test('preserves documented nullable native detail fields', () => {
+  assert.deepEqual(normalizeOpenClawSkillDetail({
+    skill: { slug: 'weather', displayName: 'Weather', createdAt: 1, updatedAt: 2, isOfficial: null },
+    latestVersion: null,
+    metadata: null,
+    owner: null,
+  }), {
+    slug: 'weather',
+    displayName: 'Weather',
+    isOfficial: null,
+    createdAt: 1,
+    updatedAt: 2,
+    latestVersion: null,
+    metadata: null,
+    owner: null,
   });
 });
 

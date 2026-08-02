@@ -48,12 +48,9 @@ function toHubSkill(skill: OpenClawSkillSearchResult): HubSkill {
     name: skill.displayName,
     emoji: skillIcon(),
     summary: skill.summary ?? '',
-    owner: '',
-    ownerAvatar: '',
-    stars: 0,
-    downloads: 0,
-    installs: 0,
-    version: skill.version ?? '',
+    score: skill.score,
+    ...(skill.version ? { version: skill.version } : {}),
+    ...(skill.updatedAt !== undefined ? { updatedAt: skill.updatedAt } : {}),
   };
 }
 
@@ -61,18 +58,20 @@ function toSkillDetail(
   searchResult: OpenClawSkillSearchResult,
   detail: OpenClawSkillDetail | null,
 ): SkillDetail {
-  const latest = detail?.version ?? searchResult.version ?? '';
+  const ownerName = detail?.owner?.displayName ?? detail?.owner?.handle;
   return {
     ...toHubSkill(searchResult),
     name: detail?.displayName ?? searchResult.displayName,
     summary: detail?.summary ?? searchResult.summary ?? '',
-    version: latest,
-    badge: detail?.official ? 'official' : undefined,
-    owner: detail?.owner?.displayName ?? detail?.owner?.handle ?? '',
-    ownerAvatar: detail?.owner?.image ?? '',
-    readme: '',
-    requirements: { env: [], bin: [] },
-    versions: latest ? [{ version: latest, date: '', changelog: '', latest: true }] : [],
+    ...(detail?.isOfficial === true ? { badge: 'official' as const } : {}),
+    ...(ownerName ? { owner: ownerName } : {}),
+    ...(detail?.owner?.image ? { ownerAvatar: detail.owner.image } : {}),
+    ...(detail?.createdAt !== undefined ? { createdAt: detail.createdAt } : {}),
+    ...(detail?.updatedAt !== undefined ? { updatedAt: detail.updatedAt } : {}),
+    ...(detail?.latestVersion ? { latestVersion: detail.latestVersion } : {}),
+    ...(detail?.metadata ? { metadata: detail.metadata } : {}),
+    ...(detail?.tags ? { tags: detail.tags } : {}),
+    ...(detail?.channel !== undefined ? { channel: detail.channel } : {}),
   };
 }
 
@@ -170,20 +169,16 @@ export function SkillsPage() {
     try {
       const response = await openClawSkillsRuntime.detail(slug);
       setDetail(toSkillDetail({
-        score: 0,
+        score: searchResult.score,
         slug: searchResult.slug,
         displayName: searchResult.name,
         summary: searchResult.summary,
-        version: searchResult.version,
+        ...(searchResult.version ? { version: searchResult.version } : {}),
+        ...(searchResult.updatedAt !== undefined ? { updatedAt: searchResult.updatedAt } : {}),
       }, response));
     } catch (error) {
       setInstallError(operationError(error));
-      setDetail({
-        ...searchResult,
-        readme: '',
-        requirements: { env: [], bin: [] },
-        versions: [],
-      });
+      setDetail({ ...searchResult });
     } finally {
       setDetailLoading(false);
     }
@@ -195,7 +190,7 @@ export function SkillsPage() {
     try {
       await openClawSkillsRuntime.installFromClawHub({
         slug,
-        version: detail?.version || undefined,
+        version: detail?.latestVersion?.version || detail?.version || undefined,
       });
       setInstallState('done');
       await loadInstalled();
@@ -203,7 +198,7 @@ export function SkillsPage() {
       setInstallError(operationError(error));
       setInstallState('error');
     }
-  }, [detail?.version, loadInstalled]);
+  }, [detail?.latestVersion?.version, detail?.version, loadInstalled]);
 
   const closeDetail = useCallback(() => {
     setDetailOpen(false);
@@ -331,7 +326,6 @@ export function SkillsPage() {
         doneHint={t('skills.hubInstallDoneHint')}
         errorLabel={t('skills.hubInstallError')}
         errorText={installError}
-        externalUrl={detail ? `https://clawhub.ai/skills/${encodeURIComponent(detail.slug)}` : undefined}
       />
     </div>
   );

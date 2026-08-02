@@ -250,7 +250,9 @@
     "importSharePackage": "Import package",
     "addLocalSkill": "Add local skill",
     "skillDetails": "Skill details",
+    "overview": "Overview",
     "readme": "Readme",
+    "latestVersion": "Latest version",
     "versions": "Versions",
     "importLocal": "Import Local",
     "importFromFolder": "From Folder",
@@ -2444,7 +2446,15 @@
     "version": "Version",
     "downloads": "Downloads",
     "stars": "Stars",
-    "viewOnClawHub": "View on ClawHub"
+    "viewOnClawHub": "View on ClawHub",
+    "score": "Search score",
+    "updated": "Updated",
+    "metadata": "Gateway metadata",
+    "os": "OS",
+    "systems": "Systems",
+    "catalogFields": "Catalog fields",
+    "channel": "Channel",
+    "viewExternal": "Open source page"
   },
   "settingsTheme": {
     "dark": "Dark Mode",

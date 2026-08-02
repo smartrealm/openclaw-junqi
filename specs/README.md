@@ -86,6 +86,7 @@ specs/
 - [OpenClaw 原生产物协议对齐](quality/2026-08-03-openclaw-native-artifacts.md)
 - [OpenClaw 原生记忆检索对齐](quality/2026-08-03-openclaw-native-memory-search.md)
 - [OpenClaw 原生会话检索对齐](quality/2026-08-03-openclaw-native-session-search.md)
+- [OpenClaw 原生技能目录字段对齐](quality/2026-08-03-openclaw-native-skill-catalog-fidelity.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界](quality/2026-07-31-installation-dashboard-chat-provider-channel-runtime-boundaries.md)
 - [语音唤醒工作台](quality/2026-07-31-voice-wake-workspace.md)
 - [业务引导平台](quality/2026-07-31-business-onboarding-platform.md)

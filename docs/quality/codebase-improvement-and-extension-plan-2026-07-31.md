@@ -224,9 +224,17 @@
 
 **官方依据**：`protocol.md` 的 `skills.search`、`skills.detail`、`skills.install`、`skills.upload.begin` / `chunk` / `commit`、`skills.install.allowUploadedArchives`、`skills.bins`
 
-**当前行为**：JunQi 有 `src/pages/SkillsPage/`（2101 行）与 `SkillHubManager.tsx`，但代码中 129 处 `skills.` 引用**全部是 i18n key**，没有一处是官方 RPC。技能安装走 `src-tauri/src/commands/skills.rs` 的本地 `installations.json` 与自建的 ClawHub / SkillsHub 集成。
+**当前行为**：`src/services/openclawSkillsRuntime.ts` 已将 `skills.status`、`skills.search`、
+`skills.detail`、`skills.update` 与 `skills.install` 接入 Gateway；`SkillsPage` 的 Gateway
+目录使用这些原生结果。技能详情已按官方 schema 只展示真实的 score、版本、时间、owner、
+metadata、tags、channel 与 changelog，不再把下载量、星标、安装量、README、版本历史或
+外部链接猜测成数据。`/skill-hub` 仍是 JunQi 本地目录与项目符号链接工具，和 Gateway
+技能目录保持边界。
 
-**可拓展**：改用官方 `skills.*` 协议后，技能安装状态与 Gateway 保持一致，不再需要 JunQi 侧维护第二份安装账本。`skills.upload.*` 的分块上传还能替代当前的本地 zip 导入路径。
+**可拓展**：继续以 OpenClaw 官方协议、源码和 schema 为依据，优先评估只读的
+`skills.bins`、`skills.skillCard`、安全审计和提案协议；只有确认当前 Gateway 广告、权限和
+结果字段后才接入。`skills.upload.*` 是否替代本地 ZIP 流程仍需独立核对完整生命周期，不能
+把 JunQi 本地能力伪装成 Gateway 原生能力。
 
 **边界**：这是一次协议迁移，涉及既有用户的本地安装记录。必须先确认官方协议能表达当前所有安装来源，否则会丢失能力。属于需要 spec 与 plan 三层记录的改动。
 

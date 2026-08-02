@@ -30,16 +30,28 @@ export interface OpenClawSkillDetail {
   slug: string;
   displayName: string;
   summary?: string;
-  version?: string;
-  updatedAt?: number;
-  createdAt?: number;
-  official: boolean;
+  tags?: Record<string, string>;
+  channel?: string | null;
+  isOfficial?: boolean | null;
+  createdAt: number;
+  updatedAt: number;
+  latestVersion?: {
+    version: string;
+    createdAt: number;
+    changelog?: string;
+  } | null;
+  metadata?: {
+    os?: string[] | null;
+    systems?: string[] | null;
+  } | null;
   owner?: {
-    handle?: string;
-    displayName?: string;
-    image?: string;
-    official: boolean;
-  };
+    handle?: string | null;
+    displayName?: string | null;
+    image?: string | null;
+    official?: boolean | null;
+    channel?: string | null;
+    isOfficial?: boolean | null;
+  } | null;
 }
 
 export interface OpenClawSkillInstallRequest {
@@ -75,8 +87,41 @@ function optionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function optionalInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
+}
+
 function optionalBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function optionalNullableBoolean(value: unknown): boolean | null | undefined {
+  if (value === undefined || value === null) return value;
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function optionalNullableString(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return value;
+  return typeof value === 'string' ? value : undefined;
+}
+
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  const source = record(value);
+  if (!source) return undefined;
+  const entries = Object.entries(source);
+  if (entries.some(([key, item]) => !key.trim() || typeof item !== 'string')) return undefined;
+  return Object.fromEntries(entries.map(([key, item]) => [key, item as string]));
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) return undefined;
+  return [...value];
+}
+
+function optionalNullableStringArray(value: unknown): string[] | null | undefined {
+  if (value === undefined || value === null) return value;
+  return stringArray(value);
 }
 
 function skillRows(payload: unknown): unknown[] {
@@ -124,14 +169,26 @@ export function normalizeOpenClawSkillSearch(payload: unknown): OpenClawSkillSea
     const row = record(raw);
     const slug = row ? text(row.slug) : undefined;
     const displayName = row ? text(row.displayName) : undefined;
-    if (!row || !slug || !displayName) return [];
+    const score = row ? optionalNumber(row.score) : undefined;
+    const summary = row?.summary;
+    const version = row?.version;
+    const updatedAt = row ? optionalInteger(row.updatedAt) : undefined;
+    if (
+      !row
+      || !slug
+      || !displayName
+      || score === undefined
+      || (summary !== undefined && typeof summary !== 'string')
+      || (version !== undefined && !text(version))
+      || (updatedAt === undefined && row.updatedAt !== undefined)
+    ) return [];
     return [{
-      score: optionalNumber(row.score) ?? 0,
+      score,
       slug,
       displayName,
-      ...(text(row.summary) ? { summary: text(row.summary) } : {}),
-      ...(text(row.version) ? { version: text(row.version) } : {}),
-      ...(optionalNumber(row.updatedAt) !== undefined ? { updatedAt: optionalNumber(row.updatedAt) } : {}),
+      ...(summary !== undefined ? { summary } : {}),
+      ...(version !== undefined ? { version: text(version)! } : {}),
+      ...(updatedAt !== undefined ? { updatedAt } : {}),
     }];
   });
 }
@@ -142,23 +199,83 @@ export function normalizeOpenClawSkillDetail(payload: unknown): OpenClawSkillDet
   if (!skill) return null;
   const slug = text(skill.slug);
   const displayName = text(skill.displayName);
-  if (!slug || !displayName) return null;
-  const latestVersion = root ? record(root.latestVersion) : null;
-  const owner = root ? record(root.owner) : null;
+  const createdAt = optionalInteger(skill.createdAt);
+  const updatedAt = optionalInteger(skill.updatedAt);
+  if (
+    !slug
+    || !displayName
+    || createdAt === undefined
+    || updatedAt === undefined
+    || (skill.summary !== undefined && typeof skill.summary !== 'string')
+    || (skill.channel !== undefined && skill.channel !== null && typeof skill.channel !== 'string')
+    || (skill.isOfficial !== undefined && skill.isOfficial !== null && typeof skill.isOfficial !== 'boolean')
+  ) return null;
+
+  const tags = stringRecord(skill.tags);
+  if (skill.tags !== undefined && !tags) return null;
+
+  const latestVersionValue = root?.latestVersion;
+  const latestVersion = latestVersionValue === undefined || latestVersionValue === null
+    ? latestVersionValue
+    : record(latestVersionValue);
+  if (latestVersionValue !== undefined && latestVersionValue !== null && !latestVersion) return null;
+  const latestVersionName = latestVersion ? text(latestVersion.version) : undefined;
+  const latestVersionCreatedAt = latestVersion ? optionalInteger(latestVersion.createdAt) : undefined;
+  if (latestVersion && (!latestVersionName || latestVersionCreatedAt === undefined)) return null;
+  if (latestVersion && latestVersion.changelog !== undefined && typeof latestVersion.changelog !== 'string') return null;
+
+  const metadataValue = root?.metadata;
+  const metadata = metadataValue === undefined || metadataValue === null ? metadataValue : record(metadataValue);
+  if (metadataValue !== undefined && metadataValue !== null && !metadata) return null;
+  const os = metadata ? optionalNullableStringArray(metadata.os) : undefined;
+  const systems = metadata ? optionalNullableStringArray(metadata.systems) : undefined;
+  if (metadata && ((metadata.os !== undefined && os === undefined) || (metadata.systems !== undefined && systems === undefined))) return null;
+
+  const ownerValue = root?.owner;
+  const owner = ownerValue === undefined || ownerValue === null ? ownerValue : record(ownerValue);
+  if (ownerValue !== undefined && ownerValue !== null && !owner) return null;
+  if (owner && (
+    (owner.handle !== undefined && owner.handle !== null && !text(owner.handle))
+    || (owner.displayName !== undefined && owner.displayName !== null && !text(owner.displayName))
+    || (owner.image !== undefined && owner.image !== null && typeof owner.image !== 'string')
+    || (owner.official !== undefined && owner.official !== null && typeof owner.official !== 'boolean')
+    || (owner.isOfficial !== undefined && owner.isOfficial !== null && typeof owner.isOfficial !== 'boolean')
+    || (owner.channel !== undefined && owner.channel !== null && typeof owner.channel !== 'string')
+  )) return null;
+
+  const isOfficial = optionalNullableBoolean(skill.isOfficial);
+  const ownerOfficial = owner ? optionalNullableBoolean(owner.official) : undefined;
+  const ownerIsOfficial = owner ? optionalNullableBoolean(owner.isOfficial) : undefined;
   return {
     slug,
     displayName,
-    ...(text(skill.summary) ? { summary: text(skill.summary) } : {}),
-    ...(text(latestVersion?.version) ? { version: text(latestVersion?.version) } : {}),
-    ...(optionalNumber(skill.updatedAt) !== undefined ? { updatedAt: optionalNumber(skill.updatedAt) } : {}),
-    ...(optionalNumber(skill.createdAt) !== undefined ? { createdAt: optionalNumber(skill.createdAt) } : {}),
-    official: optionalBoolean(skill.isOfficial) === true,
-    ...(owner ? {
+    ...(skill.summary !== undefined ? { summary: skill.summary as string } : {}),
+    ...(tags ? { tags } : {}),
+    ...(skill.channel !== undefined ? { channel: optionalNullableString(skill.channel) } : {}),
+    ...(isOfficial !== undefined ? { isOfficial } : {}),
+    createdAt,
+    updatedAt,
+    ...(latestVersion === null ? { latestVersion: null } : latestVersion && latestVersionName && latestVersionCreatedAt !== undefined ? {
+      latestVersion: {
+        version: latestVersionName,
+        createdAt: latestVersionCreatedAt,
+        ...(latestVersion.changelog !== undefined ? { changelog: latestVersion.changelog as string } : {}),
+      },
+    } : {}),
+    ...(metadata === null ? { metadata: null } : metadata !== undefined ? {
+      metadata: {
+        ...(os !== undefined ? { os } : {}),
+        ...(systems !== undefined ? { systems } : {}),
+      },
+    } : {}),
+    ...(owner === null ? { owner: null } : owner ? {
       owner: {
-        ...(text(owner.handle) ? { handle: text(owner.handle) } : {}),
-        ...(text(owner.displayName) ? { displayName: text(owner.displayName) } : {}),
-        ...(text(owner.image) ? { image: text(owner.image) } : {}),
-        official: optionalBoolean(owner.official) === true || optionalBoolean(owner.isOfficial) === true,
+        ...(owner.handle !== undefined ? { handle: owner.handle === null ? null : text(owner.handle)! } : {}),
+        ...(owner.displayName !== undefined ? { displayName: owner.displayName === null ? null : text(owner.displayName)! } : {}),
+        ...(owner.image !== undefined ? { image: owner.image === null ? null : owner.image as string } : {}),
+        ...(ownerOfficial !== undefined ? { official: ownerOfficial } : {}),
+        ...(owner.channel !== undefined ? { channel: owner.channel === null ? null : owner.channel as string } : {}),
+        ...(ownerIsOfficial !== undefined ? { isOfficial: ownerIsOfficial } : {}),
       },
     } : {}),
   };
