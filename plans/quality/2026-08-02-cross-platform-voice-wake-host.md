@@ -7,6 +7,7 @@
 3. Split native capture into dictation VAD and wake-word KWS paths.
 4. Added the voice workspace model selector, explicit session-scoped login restore, and close-to-tray behavior while armed.
 5. Renewed automatic arming after each completed draft, added bounded retry after native listener errors, moved voice-workspace IPC ownership to the composer hook, and made model settings writes atomic.
+6. Replaced the Wake mode composer-only presentation with a full-window control surface while preserving the existing pet and Dynamic Island projections.
 
 ## Validation
 

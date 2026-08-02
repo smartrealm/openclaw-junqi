@@ -20,6 +20,8 @@ When a wake-word listener is armed, the existing workbench checkpoint and PTY sh
 
 After a confirmed or discarded audio draft, the session-scoped automatic arm request is renewed. Native listener failures retry with a bounded exponential delay while the same authenticated session remains selected; a successful listener clears that retry count. Model configuration is written atomically. The React workspace receives typed detector data and callbacks from the composer hook; direct Tauri invocation is limited to the typed adapter.
 
+Wake mode is not confined to the composer. Once selected, it presents a fixed full-window control surface above the desktop workspace for local listening, keyword detection, draft confirmation, model configuration, and recoverable errors. Escape and the visible stop controls release capture. The assistant pet and Dynamic Island remain separate auxiliary projections and receive only mode, phase, confirmation-needed, and error cues.
+
 ## Automated Evidence
 
 - `pnpm exec tsc --noEmit` passed.

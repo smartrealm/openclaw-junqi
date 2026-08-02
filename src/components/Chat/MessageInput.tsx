@@ -9,6 +9,7 @@ import { ComposerVoiceRecorder } from './message-input/ComposerVoiceRecorder';
 import { MessageQueuePanel } from './message-input/MessageQueuePanel';
 import { VoiceStatusBanner } from './message-input/VoiceStatusBanner';
 import { VoiceWorkspace } from './message-input/VoiceWorkspace';
+import { VoiceWakeOverlay } from './message-input/VoiceWakeOverlay';
 import { useComposerAttachments } from './message-input/useComposerAttachments';
 import { useComposerInterruption } from './message-input/useComposerInterruption';
 import { useComposerMenu } from './message-input/useComposerMenu';
@@ -92,7 +93,7 @@ export function MessageInput() {
         onRemove={attachments.removeFile}
       />
       <MessageQueuePanel sessionKey={activeSessionKey} dir={dir} />
-      {!voice.recording && (
+      {!voice.recording && voice.voiceMode.mode !== 'wake_word' && (
         <VoiceWorkspace
           snapshot={voice.voiceMode}
           connected={connected && !historyLoading}
@@ -108,6 +109,18 @@ export function MessageInput() {
           launchOnLogin={voice.launchOnLogin}
           onConfigureDetector={() => { void voice.configureWakeDetector(); }}
           onToggleLaunchOnLogin={() => { void voice.toggleLaunchOnLogin(); }}
+        />
+      )}
+      {!voice.recording && (
+        <VoiceWakeOverlay
+          snapshot={voice.voiceMode}
+          detector={voice.detector}
+          detectorError={voice.detectorError}
+          configuringDetector={voice.configuringDetector}
+          onStop={voice.stopVoiceMode}
+          onConfigureDetector={() => { void voice.configureWakeDetector(); }}
+          onConfirmDraft={voice.confirmVoiceDraft}
+          onDiscardDraft={voice.discardVoiceDraft}
         />
       )}
       {!voice.recording && voice.voiceMode.mode === 'off' && voice.voiceMode.phase === 'off' && voice.voiceMode.draft === null && (
