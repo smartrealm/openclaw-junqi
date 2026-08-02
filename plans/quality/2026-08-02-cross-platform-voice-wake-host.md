@@ -21,6 +21,7 @@
 17. Gate wake acceptance on the documented `sessions.patch.category` confirmation, retaining only bounded current-turn audio until the Jarvis group assignment is durable.
 18. Delay WAV fallback until an in-flight Talk relay reports ready or unavailable, preventing duplicate Talk and attachment delivery; retain a complete bounded VAD turn across the category and relay setup boundaries.
 19. Preserve an already verified wake-word listener when a close request arrives before workbench persistence is ready, without relaxing the normal checkpoint and PTY shutdown path.
+20. Expose the selected model's declared wake labels in the full-window Jarvis surface, saving only a non-empty model-backed subset through the fenced Gateway trigger contract.
 
 ## Current Remediation (Completed)
 

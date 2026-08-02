@@ -121,9 +121,12 @@ export function MessageInput() {
           detectorError={voice.detectorError}
           configuringDetector={voice.configuringDetector}
           syncingWakeTriggers={voice.syncingWakeTriggers}
+          modelWakeKeywords={voice.modelWakeKeywords}
+          selectedWakeKeywords={voice.selectedWakeKeywords}
           onStop={voice.stopVoiceMode}
           onConfigureDetector={() => { void voice.configureWakeDetector(); }}
           onSyncWakeTriggers={() => { void voice.syncWakeTriggers(); }}
+          onSaveWakeTriggers={voice.saveWakeTriggers}
           onConfirmDraft={voice.confirmVoiceDraft}
           onDiscardDraft={voice.discardVoiceDraft}
         />

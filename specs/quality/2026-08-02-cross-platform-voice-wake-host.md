@@ -16,6 +16,7 @@
 - Dictation continues to use VAD.
 - Wake-word mode starts only when the user has selected a local model directory containing the fixed Sherpa model files, `tokens.txt`, and a generated `keywords.txt`.
 - The selected `phone+ppinyin` model must expose at least one official `@original_phrase` keyword label, no longer than the installed Gateway's 64 UTF-16-code-unit trigger limit, that exactly matches a configured Gateway trigger before wake-word mode can arm.
+- The full-window Jarvis surface may select one or more labels declared by the selected local model and save only those labels through `voicewake.set`. Free-form text is not presented as a local wake phrase because the selected model requires an externally generated official keyword file.
 - In wake-word mode, only a non-empty Sherpa keyword result emits `wake_detected`; VAD begins post-keyword capture and produces the existing confirmation-required WAV draft.
 - The native event includes the non-empty recognized keyword. JunQi persists the selected session under the OpenClaw `category` `Jarvis: <keyword>`; it does not synthesize a channel-group session key from that keyword.
 - A recognized wake keyword is not accepted for Talk or fallback capture until its `sessions.patch.category` response confirms the selected session's Jarvis category. Audio arriving during that bounded confirmation is retained only in memory for the current turn; a failed or stale category mutation discards it and stops the turn with a visible error.

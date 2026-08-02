@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Check, FolderOpen, Radio, RefreshCw, Square, Trash2, TriangleAlert, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Check, FolderOpen, Radio, RefreshCw, SlidersHorizontal, Square, Trash2, TriangleAlert, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
@@ -14,9 +14,12 @@ interface VoiceWakeOverlayProps {
   detectorError: string | null;
   configuringDetector: boolean;
   syncingWakeTriggers: boolean;
+  modelWakeKeywords: string[];
+  selectedWakeKeywords: string[];
   onStop: () => void;
   onConfigureDetector: () => void;
   onSyncWakeTriggers: () => void;
+  onSaveWakeTriggers: (keywords: string[]) => Promise<boolean>;
   onConfirmDraft: () => void;
   onDiscardDraft: () => void;
 }
@@ -52,13 +55,18 @@ export function VoiceWakeOverlay({
   detectorError,
   configuringDetector,
   syncingWakeTriggers,
+  modelWakeKeywords,
+  selectedWakeKeywords,
   onStop,
   onConfigureDetector,
   onSyncWakeTriggers,
+  onSaveWakeTriggers,
   onConfirmDraft,
   onDiscardDraft,
 }: VoiceWakeOverlayProps) {
   const { t } = useTranslation();
+  const [editingPhrases, setEditingPhrases] = useState(false);
+  const [draftPhrases, setDraftPhrases] = useState<string[]>([]);
   const visible = shouldShowVoiceWakeOverlay(snapshot);
 
   useEffect(() => {
@@ -84,6 +92,22 @@ export function VoiceWakeOverlay({
   const unavailable = snapshot.error === 'wake_detector_unavailable'
     || snapshot.error === 'wake_trigger_model_mismatch';
   const failed = snapshot.phase === 'error' || unavailable;
+  const canEditPhrases = detector?.available === true
+    && snapshot.phase !== 'triggered'
+    && snapshot.phase !== 'transcribing'
+    && snapshot.phase !== 'ready_to_send';
+  const openPhraseEditor = () => {
+    setDraftPhrases(selectedWakeKeywords);
+    setEditingPhrases(true);
+  };
+  const togglePhrase = (keyword: string) => {
+    setDraftPhrases((current) => current.includes(keyword)
+      ? current.filter((candidate) => candidate !== keyword)
+      : [...current, keyword]);
+  };
+  const savePhrases = async () => {
+    if (await onSaveWakeTriggers(draftPhrases)) setEditingPhrases(false);
+  };
 
   return (
     <section
@@ -100,15 +124,28 @@ export function VoiceWakeOverlay({
             {t('input.voiceWorkspaceLocalOnly')}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={onStop}
-          className="grid size-9 place-items-center border border-[rgb(var(--aegis-overlay)/0.12)] text-aegis-text-muted transition-colors hover:border-aegis-danger/50 hover:bg-aegis-danger/[0.08] hover:text-aegis-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
-          title={t('input.voiceWorkspaceStop')}
-          aria-label={t('input.voiceWorkspaceStop')}
-        >
-          <X size={17} />
-        </button>
+        <div className="flex items-center gap-2">
+          {canEditPhrases && (
+            <button
+              type="button"
+              onClick={openPhraseEditor}
+              className="grid size-9 place-items-center border border-[rgb(var(--aegis-overlay)/0.12)] text-aegis-text-muted transition-colors hover:border-aegis-primary/50 hover:bg-aegis-primary/[0.08] hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+              title={t('input.voiceWakePhrases')}
+              aria-label={t('input.voiceWakePhrases')}
+            >
+              <SlidersHorizontal size={17} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onStop}
+            className="grid size-9 place-items-center border border-[rgb(var(--aegis-overlay)/0.12)] text-aegis-text-muted transition-colors hover:border-aegis-danger/50 hover:bg-aegis-danger/[0.08] hover:text-aegis-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+            title={t('input.voiceWorkspaceStop')}
+            aria-label={t('input.voiceWorkspaceStop')}
+          >
+            <X size={17} />
+          </button>
+        </div>
       </div>
 
       <div className="grid flex-1 place-items-center py-8">
@@ -130,6 +167,54 @@ export function VoiceWakeOverlay({
           <p className="mx-auto mt-3 max-w-md text-[13px] leading-6 text-aegis-text-muted">
             {ready ? t('input.voiceWorkspaceLocalOnly') : t('input.voiceWorkspacePreparing')}
           </p>
+
+          {editingPhrases && (
+            <section className="mx-auto mt-7 max-w-xl border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.025)] p-4 text-start" aria-label={t('input.voiceWakePhrases')}>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[12px] font-semibold text-aegis-text">{t('input.voiceWakePhrases')}</h3>
+                <button
+                  type="button"
+                  onClick={() => setEditingPhrases(false)}
+                  className="grid size-7 place-items-center text-aegis-text-muted transition-colors hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                  title={t('common.cancel')}
+                  aria-label={t('common.cancel')}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {modelWakeKeywords.map((keyword) => (
+                  <label key={keyword} className="flex min-w-0 items-center gap-2 border border-[rgb(var(--aegis-overlay)/0.1)] px-3 py-2 text-[12px] text-aegis-text-secondary">
+                    <input
+                      type="checkbox"
+                      checked={draftPhrases.includes(keyword)}
+                      onChange={() => togglePhrase(keyword)}
+                      className="size-3.5 shrink-0 accent-[rgb(var(--aegis-primary))]"
+                    />
+                    <span className="truncate">{keyword}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingPhrases(false)}
+                  className="h-9 border border-[rgb(var(--aegis-overlay)/0.14)] px-3 text-[12px] font-semibold text-aegis-text-secondary transition-colors hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void savePhrases(); }}
+                  disabled={draftPhrases.length === 0 || syncingWakeTriggers}
+                  className="inline-flex h-9 items-center gap-2 bg-aegis-primary px-3 text-[12px] font-semibold text-white transition-colors hover:bg-aegis-primary/85 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-40"
+                >
+                  <Check size={15} />
+                  {t('input.voiceWakeSavePhrases')}
+                </button>
+              </div>
+            </section>
+          )}
 
           {unavailable && (
             <div className="mx-auto mt-7 max-w-md border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.025)] p-4 text-start">

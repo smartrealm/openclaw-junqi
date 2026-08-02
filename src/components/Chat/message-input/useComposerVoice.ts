@@ -22,6 +22,10 @@ import {
   type VoiceModeContext,
 } from '@/services/voice/VoiceModeCoordinator';
 import { decideVoiceWakeRoute, hasCompatibleVoiceWakeTrigger } from '@/services/voice/VoiceWakeRoutePolicy';
+import {
+  resolveModelWakeKeywordSelection,
+  selectedModelWakeKeywords,
+} from '@/services/voice/VoiceWakeKeywordSelection';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { TalkConversationCoordinator } from '@/services/voice/TalkConversationCoordinator';
 import { createJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
@@ -96,6 +100,7 @@ export function useComposerVoice({
   const [detectorError, setDetectorError] = useState<string | null>(null);
   const [configuringDetector, setConfiguringDetector] = useState(false);
   const [syncingWakeTriggers, setSyncingWakeTriggers] = useState(false);
+  const [gatewayWakeTriggers, setGatewayWakeTriggers] = useState<string[]>([]);
   const [launchOnLogin, setLaunchOnLogin] = useState(false);
   const voiceMode = useVoiceMode();
   const activeTurnRef = useRef<string | null>(null);
@@ -162,9 +167,12 @@ export function useComposerVoice({
   useEffect(() => voiceWakeGatewayClient.subscribe((event) => {
     const current = wakeConfigurationRef.current;
     if (!current) return;
-    wakeConfigurationRef.current = event.type === 'triggers'
-      ? { ...current, triggers: event.snapshot }
-      : { ...current, routing: event.config };
+    if (event.type === 'triggers') {
+      wakeConfigurationRef.current = { ...current, triggers: event.snapshot };
+      setGatewayWakeTriggers(event.snapshot.triggers);
+      return;
+    }
+    wakeConfigurationRef.current = { ...current, routing: event.config };
   }), []);
 
   useEffect(() => {
@@ -423,6 +431,7 @@ export function useComposerVoice({
         const configuration = await voiceWakeGatewayClient.getConfiguration();
         if (!isCurrentVoiceContext(context)) return;
         wakeConfigurationRef.current = configuration;
+        setGatewayWakeTriggers(configuration.triggers.triggers);
         if (!hasCompatibleVoiceWakeTrigger(detectorKeywords, configuration)) {
           const snapshot = voiceModeCoordinator.start({
             mode: 'wake_word',
@@ -494,19 +503,34 @@ export function useComposerVoice({
     }
   }, [autoArmEnabled, configuringDetector, requestAutoArmRetry, t]);
 
-  const syncWakeTriggers = useCallback(async () => {
-    if (syncingWakeTriggers || !detector?.available || detector.keywords.length === 0) return;
+  const saveWakeTriggers = useCallback(async (requestedKeywords: readonly string[]): Promise<boolean> => {
+    if (syncingWakeTriggers || !detector?.available) return false;
+    const triggers = resolveModelWakeKeywordSelection(detector.keywords, requestedKeywords);
+    if (!triggers) {
+      setDetectorError(t('input.voiceWakePhraseSelectionInvalid'));
+      return false;
+    }
     setSyncingWakeTriggers(true);
     setDetectorError(null);
     try {
-      await voiceWakeGatewayClient.setTriggers(detector.keywords);
+      const snapshot = await voiceWakeGatewayClient.setTriggers(triggers);
+      setGatewayWakeTriggers(snapshot.triggers);
+      const current = wakeConfigurationRef.current;
+      if (current) wakeConfigurationRef.current = { ...current, triggers: snapshot };
       requestWakeWord();
+      return true;
     } catch (error) {
       setDetectorError(error instanceof Error ? error.message : String(error));
+      return false;
     } finally {
       setSyncingWakeTriggers(false);
     }
-  }, [detector, requestWakeWord, syncingWakeTriggers]);
+  }, [detector, requestWakeWord, syncingWakeTriggers, t]);
+
+  const syncWakeTriggers = useCallback(async () => {
+    if (!detector?.available) return;
+    await saveWakeTriggers(detector.keywords);
+  }, [detector, saveWakeTriggers]);
 
   const toggleLaunchOnLogin = useCallback(async () => {
     try {
@@ -692,6 +716,10 @@ export function useComposerVoice({
   const status = voiceWake.phase === 'transcribing' || voiceWake.phase === 'wake_detected'
     ? t('input.dictationProcessing')
     : t('input.dictationListening');
+  const selectedWakeKeywords = selectedModelWakeKeywords(
+    detector?.keywords ?? [],
+    gatewayWakeTriggers,
+  );
 
   return {
     recording,
@@ -711,9 +739,12 @@ export function useComposerVoice({
     detectorError,
     configuringDetector,
     syncingWakeTriggers,
+    modelWakeKeywords: detector?.keywords ?? [],
+    selectedWakeKeywords,
     launchOnLogin,
     configureWakeDetector,
     syncWakeTriggers,
+    saveWakeTriggers,
     toggleLaunchOnLogin,
     stopVoiceMode: () => { void stopVoiceMode(); },
     confirmVoiceDraft: () => { void confirmVoiceDraft(); },

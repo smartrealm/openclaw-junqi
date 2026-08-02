@@ -46,6 +46,8 @@ Arming also requires at least one Gateway trigger to exactly match a label actua
 
 When this mismatch is visible, the user can explicitly choose `Use local model wake phrases`. JunQi sends only `voicewake.set({ triggers: modelKeywords })` to the selected authenticated Gateway, waits for the fenced response, and then retries the normal arm sequence. It intentionally does not call `voicewake.routing.set`, so existing Gateway routes and their target sessions remain unchanged. The model keyword file remains the source of this explicit synchronization; JunQi never accepts a free-form phrase and claims it is tokenized.
 
+The full-window Jarvis surface also lets the user select a non-empty subset of labels declared by the chosen local model. The selection is normalized against those exact labels before one fenced `voicewake.set` request; the Gateway response becomes the new live trigger snapshot and re-arms through the normal configuration gate. This makes supported custom model phrases selectable without claiming that arbitrary text has been tokenized locally.
+
 ## Talk Relay Boundary
 
 JunQi now has a fenced client for the installed OpenClaw `talk.catalog` and `talk.session.*` protocol, plus a strict `talk.event` bridge. The client rejects a missing or unready catalog and only creates the documented `realtime/gateway-relay/agent-consult` session shape after the catalog explicitly advertises PCM16 input and barge-in support. It binds every request to the attested Gateway connection and rejects a response if that connection changed.
@@ -74,6 +76,7 @@ The WAV fallback waits for an in-flight Talk relay creation before choosing its 
 - On 2026-08-02, the wake-category acceptance gate tests passed with the voice coordinator, wake-audit, and composer-voice suites (31 tests). The TypeScript check, production build, Rust format/check, and complete Rust library suite passed; the library suite reported 692 passed and 4 ignored tests.
 - On 2026-08-02, the Talk relay regression suite covered PCM arriving in the same event turn as relay setup, WAV fallback waiting for relay creation, and an explicit stop discarding retained PCM before a later relay. The complete frontend lint/test suite, production build, Rust format/check, and Rust library suite passed; the library suite reported 692 passed and 4 ignored tests.
 - On 2026-08-02, the voice-residency policy test verified that only a real native wake-word listener may keep the application resident; dictation, stopped listeners, and unavailable status do not change normal close behavior. The complete frontend lint/test suite, production build, Rust format/check, and Rust library suite passed; the library suite reported 692 passed and 4 ignored tests.
+- On 2026-08-02, model-backed wake phrase selection tests verified exact declared-label preservation across Gateway normalization and rejected empty, duplicate, or undeclared selections. The complete frontend lint/test suite, production build, Rust format/check, and Rust library suite passed; the library suite reported 692 passed and 4 ignored tests.
 - Capability and locale JSON parsed successfully, and `git diff --check` passed.
 
 ## Unverified Boundaries
