@@ -12,7 +12,7 @@ The local detector requires the extracted official bilingual model directory wit
 - `tokens.txt`
 - `keywords.txt`
 
-`keywords.txt` is intentionally not generated from guessed text. It must be produced with the model's official tokenization procedure and reviewed with the selected wake phrase. For the selected `phone+ppinyin` model, JunQi reads only the official `@original_phrase` labels from that file; a missing label makes the model unavailable.
+`keywords.txt` is intentionally not generated from guessed text. It must be produced with the model's official tokenization procedure and reviewed with the selected wake phrase. For the selected `phone+ppinyin` model, JunQi reads only the official `@original_phrase` labels from that file; a missing label makes the model unavailable. Labels must not exceed OpenClaw's installed 64 UTF-16-code-unit trigger limit, so a model that cannot be synchronized to the selected Gateway is rejected before it can arm.
 
 ## Residency
 

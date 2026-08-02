@@ -11,6 +11,9 @@ const DECODER_FILE: &str = "decoder-epoch-13-avg-2-chunk-16-left-64.onnx";
 const JOINER_FILE: &str = "joiner-epoch-13-avg-2-chunk-16-left-64.int8.onnx";
 const TOKENS_FILE: &str = "tokens.txt";
 const KEYWORDS_FILE: &str = "keywords.txt";
+// OpenClaw v2026.7.1-2 validates voice-wake triggers with JavaScript's
+// UTF-16 `String.length`, capped at 64 code units.
+const MAX_GATEWAY_TRIGGER_UTF16_CODE_UNITS: usize = 64;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -235,7 +238,7 @@ fn parse_keyword_labels(raw: &str) -> Result<Vec<String>, String> {
             .find_map(|token| token.strip_prefix('@'))
             .filter(|label| !label.trim().is_empty())
             .ok_or_else(|| "model_keywords_missing_label".to_string())?;
-        if label.chars().count() > 128 {
+        if label.encode_utf16().count() > MAX_GATEWAY_TRIGGER_UTF16_CODE_UNITS {
             return Err("model_keywords_label_too_long".to_string());
         }
         if !keywords.iter().any(|candidate| candidate == label) {
@@ -297,6 +300,26 @@ mod tests {
         assert_eq!(
             parse_keyword_labels("j a r v i s\n").expect_err("marker is required"),
             "model_keywords_missing_label"
+        );
+    }
+
+    #[test]
+    fn model_keyword_labels_match_the_gateway_utf16_trigger_limit() {
+        let maximum = "a".repeat(64);
+        assert_eq!(
+            parse_keyword_labels(&format!("a @{}\n", maximum))
+                .expect("64 UTF-16 code units are accepted"),
+            vec![maximum]
+        );
+        assert_eq!(
+            parse_keyword_labels(&format!("a @{}\n", "a".repeat(65)))
+                .expect_err("a label beyond the Gateway limit is rejected"),
+            "model_keywords_label_too_long"
+        );
+        assert_eq!(
+            parse_keyword_labels(&format!("a @{}\n", "𐐀".repeat(33)))
+                .expect_err("the length is measured as JavaScript UTF-16 code units"),
+            "model_keywords_label_too_long"
         );
     }
 
