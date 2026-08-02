@@ -51,6 +51,11 @@ pub fn run() {
         // Remembers window size/position across launches (auto-restores on start,
         // auto-saves on exit). First-launch sizing is handled in setup() below.
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .arg("--voice-resident")
+                .build(),
+        )
         .manage(GatewayProcess::new())
         .manage(RuntimeIdentityState::new())
         .manage(CollaborationControlState::new())
@@ -142,6 +147,8 @@ pub fn run() {
             commands::voice_wake::voice_wake_start,
             commands::voice_wake::voice_wake_stop,
             commands::voice_wake::voice_wake_status,
+            commands::voice_wake_model::voice_wake_detector_status,
+            commands::voice_wake_model::voice_wake_set_model_directory,
             // Setup
             commands::setup::install_node,
             commands::setup::cancel_setup_operation,
@@ -381,6 +388,11 @@ pub fn run() {
             commands::workbench_session::save_workbench_session,
         ])
         .setup(|app| {
+            if std::env::args().any(|arg| arg == "--voice-resident") {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
             // A location reconfiguration can own a platform service (notably a
             // Windows Scheduled Task), so recover it only after Tauri has
             // constructed the managed Gateway state and service APIs. The

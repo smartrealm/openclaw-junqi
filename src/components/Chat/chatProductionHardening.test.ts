@@ -177,8 +177,8 @@ test('CHAT-09 voice paths use an official attachment and never truncated base64 
   const voice = source('src/components/Chat/message-input/useComposerVoice.ts');
   assert.doesNotMatch(voice, /substring\(0,\s*50\)|\[voice:[^\]]*:base64\]/);
   assert.match(voice, /toGatewayAttachments\(\[createPreparedAttachment\(\{/);
-  const adapter = source('src/api/tauri-adapter.ts');
-  assert.match(adapter, /mkdir\(voiceDir, \{ recursive: true \}\)/);
+  const voiceFiles = source('src/services/chat/voiceFileRuntime.ts');
+  assert.match(voiceFiles, /mkdir\(directory, \{ recursive: true \}\)/);
 });
 
 test('CHAT-11 truncated history has a chat.message.get recovery action', () => {

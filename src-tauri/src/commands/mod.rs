@@ -83,6 +83,7 @@ pub(crate) mod uninstall;
 pub mod usage;
 pub mod voice;
 pub mod voice_wake;
+pub mod voice_wake_model;
 pub mod workbench_provider;
 pub mod workbench_pty;
 pub mod workbench_session;

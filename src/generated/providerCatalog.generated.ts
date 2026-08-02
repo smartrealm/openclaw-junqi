@@ -6,7 +6,7 @@ export type GeneratedProviderCatalogModel = {
 
 export const GENERATED_PROVIDER_CATALOG_META = {
   "source": "openclaw-cli",
-  "version": "OpenClaw 2026.7.1 (2d2ddc4)"
+  "version": "OpenClaw 2026.7.1-2 (0790d9f)"
 } as const;
 
 export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalogModel[]> = {

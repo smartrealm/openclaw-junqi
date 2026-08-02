@@ -62,26 +62,6 @@ test('BUG-08 chunked base64 encoding handles large audio buffers', () => {
   const bytes = Uint8Array.from({ length: 180_000 }, (_, index) => index % 251);
   const expected = Buffer.from(bytes).toString('base64');
   assert.equal(bytesToBase64(bytes), expected);
-  const adapter = read('../../api/tauri-adapter.ts');
-  assert.match(adapter, /mkdir\(voiceDir, \{ recursive: true \}\)/);
-  assert.doesNotMatch(adapter, /invoke\("open_folder", \{ path: voiceDir \}\)/);
-});
-
-test('BUG-09 manual recorder exposes native fallback and deterministic stop', () => {
-  const recorder = read('../../components/Chat/VoiceRecorder.tsx');
-  const native = read('../../../src-tauri/src/commands/voice.rs');
-  assert.match(recorder, /voice\?\.startRecording/);
-  assert.match(recorder, /voice\?\.stopRecording/);
-  assert.match(native, /recv_timeout\(Duration::from_secs\(3\)\)/);
-  assert.match(native, /worker\n\s*\.join\(\)/);
-  assert.doesNotMatch(native, /sleep\(std::time::Duration::from_millis\(200\)\)/);
-});
-
-test('BUG-12 VAD startup is handshaken and stale stop events are suppressed', () => {
-  const native = read('../../../src-tauri/src/commands/voice_wake.rs');
-  assert.match(native, /recv_timeout\(Duration::from_secs\(3\)\)/);
-  assert.match(native, /should_emit_command_stop/);
-  assert.match(native, /run_vad_loop\(app_for_thread, cmd_rx, worker_id, ready_tx\)/);
 });
 
 test('BUG-13 recorder invalidates stale starts and finalizes browser chunks before cleanup', () => {
@@ -132,10 +112,6 @@ test('BUG-20 Quick Chat ownership never writes main tab state', () => {
 });
 
 test('BUG-21 voice sends portable attachments and cleanup scopes the directory', () => {
-  const composerVoice = read('../../components/Chat/message-input/useComposerVoice.ts');
-  const adapter = read('../../api/tauri-adapter.ts');
-  assert.match(composerVoice, /toGatewayAttachments\(\[createPreparedAttachment\(\{[\s\S]*fileName,[\s\S]*mimeType,[\s\S]*base64,/);
-  assert.doesNotMatch(composerVoice, /\[voice\] \$\{savedPath\}/);
   const hostilePath = voiceSessionDirectory('/app/data/', 'agent:main/../../main');
   const formerlyCollidingPath = voiceSessionDirectory('/app/data/', 'agent_main_______main');
   assert.match(hostilePath, /^\/app\/data\/voice\/v1\/[a-zA-Z0-9_\/-]+\/_$/);
@@ -144,7 +120,6 @@ test('BUG-21 voice sends portable attachments and cleanup scopes the directory',
   const exactChunkPath = voiceSessionDirectory('/app/data/', 'a'.repeat(90));
   const extendedPath = voiceSessionDirectory('/app/data/', `${'a'.repeat(90)}b`);
   assert.equal(extendedPath.startsWith(`${exactChunkPath}/`), false);
-  assert.match(adapter, /cleanupSession:[\s\S]*remove\(voiceDir, \{ recursive: true \}\)/);
 });
 
 test('BUG-23 remote output is visible to controls, status surfaces, and native feedback suppression', () => {

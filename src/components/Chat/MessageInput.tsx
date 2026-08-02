@@ -101,6 +101,13 @@ export function MessageInput() {
           onStop={voice.stopVoiceMode}
           onConfirmDraft={voice.confirmVoiceDraft}
           onDiscardDraft={voice.discardVoiceDraft}
+          autoArmEnabled={voice.autoArmEnabled}
+          detector={voice.detector}
+          detectorError={voice.detectorError}
+          configuringDetector={voice.configuringDetector}
+          launchOnLogin={voice.launchOnLogin}
+          onConfigureDetector={() => { void voice.configureWakeDetector(); }}
+          onToggleLaunchOnLogin={() => { void voice.toggleLaunchOnLogin(); }}
         />
       )}
       {!voice.recording && voice.voiceMode.mode === 'off' && voice.voiceMode.phase === 'off' && voice.voiceMode.draft === null && (

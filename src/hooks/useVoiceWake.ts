@@ -5,12 +5,13 @@
 // or to a future provider adapter instead.
 
 import { useEffect, useCallback, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { startVoiceWake, stopVoiceWake, type VoiceWakeCaptureMode } from '@/api/tauri-commands';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { useVoiceStore } from '@/stores/voiceStore';
 
 export type WakePhase = 'idle' | 'listening' | 'wake_detected' | 'transcribing' | 'error';
+export type { VoiceWakeCaptureMode } from '@/api/tauri-commands';
 
 export interface VoiceWakeOptions {
   /** Called with the transcribed text so the caller can fill the chat input. */
@@ -109,13 +110,13 @@ export function useVoiceWake({
     }
   }, [updatePhase]);
 
-  const startNativeVAD = useCallback(async () => {
+  const startNativeVAD = useCallback(async (mode: VoiceWakeCaptureMode) => {
     if (nativeVADRef.current || stoppedRef.current) return;
     nativeVADRef.current = true;
     try {
-      await invoke('voice_wake_start');
+      await startVoiceWake(mode);
       if (stoppedRef.current) {
-        await invoke('voice_wake_stop').catch(() => undefined);
+        await stopVoiceWake().catch(() => undefined);
         nativeVADRef.current = false;
         return;
       }
@@ -170,7 +171,7 @@ export function useVoiceWake({
       // enabled with no input path.
       recognitionRef.current = null;
       try { rec.stop(); } catch {}
-      void startNativeVAD();
+      void startNativeVAD('dictation');
     };
     rec.onend = () => {
       if (recognitionRef.current !== rec) return;
@@ -195,19 +196,19 @@ export function useVoiceWake({
         setError(String(error));
         updatePhase('error');
         voiceRuntime.setError(error, callbacksRef.current.sessionKey);
-        void startNativeVAD();
+        void startNativeVAD('dictation');
       }
     }
   }, [lang, startNativeVAD, updatePhase]);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (mode: VoiceWakeCaptureMode = 'dictation') => {
     if (!stoppedRef.current && (recognitionRef.current || nativeVADRef.current)) return;
     voiceRuntime.interruptAll();
     setError(null);
     stoppedRef.current = false;
     captureQueueRef.current = [];
     suppressNativeCaptureRef.current = false;
-    const Ctor = getSpeechRecognition();
+    const Ctor = mode === 'dictation' ? getSpeechRecognition() : null;
     if (Ctor) {
       nativeVADRef.current = false;
       setEnabled(true);
@@ -215,7 +216,7 @@ export function useVoiceWake({
       startBrowserRecognition();
       return;
     }
-    await startNativeVAD();
+    await startNativeVAD(mode);
   }, [startBrowserRecognition, startNativeVAD, updatePhase]);
 
   const stop = useCallback(async () => {
@@ -227,7 +228,7 @@ export function useVoiceWake({
       restartTimerRef.current = null;
     }
     if (nativeVADRef.current) {
-      try { await invoke('voice_wake_stop'); } catch {}
+      try { await stopVoiceWake(); } catch {}
     }
     nativeVADRef.current = false;
     const recognition = recognitionRef.current;
@@ -246,7 +247,7 @@ export function useVoiceWake({
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     if (recognition) { try { recognition.stop(); } catch {} }
-    if (nativeVADRef.current) void invoke('voice_wake_stop').catch(() => undefined);
+    if (nativeVADRef.current) void stopVoiceWake().catch(() => undefined);
     nativeVADRef.current = false;
     voiceRuntime.setIdle(callbacksRef.current.sessionKey);
   }, []);

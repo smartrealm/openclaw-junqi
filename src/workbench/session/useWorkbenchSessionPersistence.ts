@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { getVoiceWakeStatus } from '@/api/tauri-commands';
 import { loadWorkbenchSession, saveWorkbenchSession } from './storage';
 import { WorkbenchSessionWriter } from './writer';
 import { useWorkbenchStore } from '../store/workbenchStore';
@@ -51,7 +52,14 @@ export function useWorkbenchSessionPersistence(): void {
         const checkpoint = checkpointAllLocalEditorDocuments()
           .then(() => writer.checkpoint(useWorkbenchStore.getState().sessionSnapshot()))
           .then(() => stopAllWorkbenchPtys())
-          .then(() => window.destroy())
+          .then(async () => {
+            const status = await getVoiceWakeStatus().catch(() => null);
+            if (status?.listening && status.mode === 'wake_word') {
+              await window.hide();
+              return;
+            }
+            await window.destroy();
+          })
           .catch(() => {
             useWorkbenchStore.getState().failHydration('Workbench shutdown checkpoint or PTY cleanup failed; close again to retry');
           })

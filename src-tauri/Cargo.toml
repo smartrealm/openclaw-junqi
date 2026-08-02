@@ -41,6 +41,7 @@ portable-pty = "0.8"
 flume = "0.11"
 cpal = "0.15"
 hound = "3.5"
+sherpa-onnx = "1.13.4"
 sysinfo = "0.33"
 trash = "5"
 uuid = { version = "1", features = ["v4"] }
@@ -68,6 +69,9 @@ keyring = { version = "3.6.3", default-features = false, features = ["windows-na
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-autostart = "2.5.1"
 
 [profile.release]
 codegen-units = 1

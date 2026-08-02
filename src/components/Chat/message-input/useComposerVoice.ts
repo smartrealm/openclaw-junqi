@@ -1,16 +1,28 @@
 import { useCallback, useEffect, useRef, useState, type RefObject, type SetStateAction } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
+import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart';
 import { useTranslation } from 'react-i18next';
+import {
+  getVoiceWakeDetectorStatus,
+  setVoiceWakeModelDirectory,
+  type VoiceWakeDetectorStatus,
+} from '@/api/tauri-commands';
 import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { AttachmentValidationError, createPreparedAttachment, toGatewayAttachments } from '@/services/chat/attachments';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
-import { gateway, voiceWakeGatewayClient } from '@/services/gateway';
+import { gateway } from '@/services/gateway';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import {
   voiceModeCoordinator,
   type VoiceModeContext,
 } from '@/services/voice/VoiceModeCoordinator';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import {
+  clearAutoArmSession,
+  setAutoArmSession,
+  shouldAutoArmSession,
+} from '@/services/voice/VoiceWakePreference';
 import { useChatStore } from '@/stores/chatStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { debugError } from '@/utils/debugLog';
@@ -71,8 +83,16 @@ export function useComposerVoice({
 }: UseComposerVoiceOptions) {
   const { t } = useTranslation();
   const [recording, setRecording] = useState(false);
+  const [autoArmEnabled, setAutoArmEnabledState] = useState(() => shouldAutoArmSession(activeSessionKey));
+  const [autoArmRevision, setAutoArmRevision] = useState(0);
+  const [detector, setDetector] = useState<VoiceWakeDetectorStatus | null>(null);
+  const [detectorError, setDetectorError] = useState<string | null>(null);
+  const [configuringDetector, setConfiguringDetector] = useState(false);
+  const [launchOnLogin, setLaunchOnLogin] = useState(false);
   const voiceMode = useVoiceMode();
   const activeTurnRef = useRef<string | null>(null);
+  const autoArmAttemptRef = useRef<string | null>(null);
+  const autoArmRecoveryAttemptsRef = useRef(0);
   const pendingAudioCapturesRef = useRef(new Map<string, {
     wavDataUrl: string;
     durationSec: number;
@@ -93,6 +113,38 @@ export function useComposerVoice({
     (context: VoiceModeContext) => isAttestedVoiceContext(currentContextRef.current, context),
     [],
   );
+
+  const requestAutoArmRetry = useCallback(() => {
+    autoArmAttemptRef.current = null;
+    setAutoArmRevision((revision) => revision + 1);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getVoiceWakeDetectorStatus()
+      .then((status) => {
+        if (active) {
+          setDetector(status);
+          setDetectorError(null);
+        }
+      })
+      .catch((error) => {
+        if (active) setDetectorError(error instanceof Error ? error.message : String(error));
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void isAutostartEnabled()
+      .then((enabled) => {
+        if (active) setLaunchOnLogin(enabled);
+      })
+      .catch((error) => {
+        if (active) setDetectorError(error instanceof Error ? error.message : String(error));
+      });
+    return () => { active = false; };
+  }, []);
 
   const sendVoice = useCallback(async (
     base64: string,
@@ -257,17 +309,144 @@ export function useComposerVoice({
         return;
       }
 
+      let detectorAvailable = false;
+      try {
+        const detector = await getVoiceWakeDetectorStatus();
+        detectorAvailable = detector.available;
+        setDetector(detector);
+        setDetectorError(null);
+      } catch (error) {
+        setDetectorError(error instanceof Error ? error.message : String(error));
+        voiceModeCoordinator.start({
+          mode: 'wake_word',
+          context,
+          wakeDetectorAvailable: false,
+        });
+        activeTurnRef.current = null;
+        return;
+      }
       const snapshot = voiceModeCoordinator.start({
         mode: 'wake_word',
         context,
-        wakeDetectorAvailable: false,
+        wakeDetectorAvailable: detectorAvailable,
       });
       activeTurnRef.current = snapshot.turnId;
-      void voiceWakeGatewayClient.getConfiguration().catch(() => {
-        voiceModeCoordinator.reportUnavailable(snapshot.turnId, context, 'gateway_unavailable');
-      });
+      if (!detectorAvailable) return;
+      await voiceWake.start('wake_word');
+      if (
+        !isCurrentVoiceContext(context)
+        || !voiceModeCoordinator.ownsTurn(snapshot.turnId, context)
+      ) {
+        activeTurnRef.current = null;
+        await voiceWake.stop();
+        await voiceModeCoordinator.stopOwnedTurnAndReleaseCapture(snapshot.turnId, context);
+      }
     })();
-  }, [activeSessionKey, closeMenu, voiceWake.enabled, voiceWake.stop]);
+  }, [activeSessionKey, closeMenu, isCurrentVoiceContext, voiceWake.enabled, voiceWake.start, voiceWake.stop]);
+
+  useEffect(() => {
+    setAutoArmEnabledState(shouldAutoArmSession(activeSessionKey));
+  }, [activeSessionKey]);
+
+  const setAutoArmEnabled = useCallback((enabled: boolean) => {
+    if (enabled) setAutoArmSession(activeSessionKey);
+    else clearAutoArmSession();
+    setAutoArmEnabledState(enabled);
+  }, [activeSessionKey]);
+
+  const configureWakeDetector = useCallback(async () => {
+    if (configuringDetector) return;
+    const directory = await open({
+      directory: true,
+      multiple: false,
+      title: t('input.voiceWakeChooseModelDirectory'),
+    });
+    if (typeof directory !== 'string') return;
+    setConfiguringDetector(true);
+    setDetectorError(null);
+    try {
+      const status = await setVoiceWakeModelDirectory(directory);
+      setDetector(status);
+      if (status.available && autoArmEnabled) requestAutoArmRetry();
+    } catch (error) {
+      setDetectorError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setConfiguringDetector(false);
+    }
+  }, [autoArmEnabled, configuringDetector, requestAutoArmRetry, t]);
+
+  const toggleLaunchOnLogin = useCallback(async () => {
+    try {
+      if (launchOnLogin) await disableAutostart();
+      else await enableAutostart();
+      const enabled = !launchOnLogin;
+      setLaunchOnLogin(enabled);
+      setAutoArmEnabled(enabled);
+      if (enabled) requestAutoArmRetry();
+    } catch (error) {
+      setDetectorError(error instanceof Error ? error.message : String(error));
+    }
+  }, [launchOnLogin, requestAutoArmRetry, setAutoArmEnabled]);
+
+  useEffect(() => {
+    if (
+      !connected
+      || historyLoading
+      || !connectionId
+      || !autoArmEnabled
+      || !shouldAutoArmSession(activeSessionKey)
+      || voiceWake.enabled
+      || voiceMode.mode !== 'off'
+    ) {
+      return;
+    }
+    const attempt = `${connectionId}:${activeSessionKey}`;
+    if (autoArmAttemptRef.current === attempt) return;
+    autoArmAttemptRef.current = attempt;
+    requestWakeWord();
+  }, [
+    activeSessionKey,
+    autoArmEnabled,
+    autoArmRevision,
+    connected,
+    connectionId,
+    historyLoading,
+    requestWakeWord,
+    voiceMode.mode,
+    voiceWake.enabled,
+  ]);
+
+  useEffect(() => {
+    if (voiceWake.enabled) autoArmRecoveryAttemptsRef.current = 0;
+  }, [voiceWake.enabled]);
+
+  useEffect(() => {
+    if (
+      !voiceWake.error
+      || !connected
+      || historyLoading
+      || !connectionId
+      || !autoArmEnabled
+      || !shouldAutoArmSession(activeSessionKey)
+    ) {
+      return;
+    }
+    const attempt = autoArmRecoveryAttemptsRef.current;
+    autoArmRecoveryAttemptsRef.current += 1;
+    const timer = window.setTimeout(() => {
+      void voiceModeCoordinator.stopAndReleaseCapture();
+      requestAutoArmRetry();
+    }, Math.min(30_000, 1_000 * (2 ** attempt)));
+    return () => window.clearTimeout(timer);
+  }, [
+    activeSessionKey,
+    autoArmEnabled,
+    connected,
+    connectionId,
+    historyLoading,
+    requestAutoArmRetry,
+    voiceWake.error,
+  ]);
 
   const confirmVoiceDraft = useCallback(async () => {
     const context = currentContextRef.current;
@@ -308,7 +487,8 @@ export function useComposerVoice({
     activeTurnRef.current = null;
     void voiceModeCoordinator.stopAndReleaseCapture();
     await sendVoice(base64, 'audio/wav', capture.durationSec, capture.wavDataUrl);
-  }, [isCurrentVoiceContext, sendVoice, setText, textareaRef]);
+    requestAutoArmRetry();
+  }, [isCurrentVoiceContext, requestAutoArmRetry, sendVoice, setText, textareaRef]);
 
   const discardVoiceDraft = useCallback(() => {
     const context = currentContextRef.current;
@@ -317,8 +497,9 @@ export function useComposerVoice({
       if (draft?.kind === 'audio') pendingAudioCapturesRef.current.delete(draft.captureId);
       activeTurnRef.current = null;
       void voiceModeCoordinator.stopAndReleaseCapture();
+      requestAutoArmRetry();
     }
-  }, []);
+  }, [requestAutoArmRetry]);
 
   useEffect(() => {
     const snapshot = voiceModeCoordinator.getSnapshot();
@@ -356,13 +537,6 @@ export function useComposerVoice({
 
   useEffect(() => voiceModeCoordinator.subscribeCaptureStop(() => voiceWake.stop()), [voiceWake.stop]);
 
-  useEffect(() => voiceWakeGatewayClient.subscribe(() => {
-    const snapshot = voiceModeCoordinator.getSnapshot();
-    const context = currentContextRef.current;
-    if (snapshot.mode !== 'wake_word' || !snapshot.turnId || !context) return;
-    voiceModeCoordinator.reportUnavailable(snapshot.turnId, context, 'wake_detector_unavailable');
-  }), []);
-
   const startRecording = useCallback(() => {
     void (async () => {
       closeMenu();
@@ -394,6 +568,14 @@ export function useComposerVoice({
     toggleDictation,
     startDictation: () => { void startDictation(); },
     requestWakeWord,
+    autoArmEnabled,
+    setAutoArmEnabled,
+    detector,
+    detectorError,
+    configuringDetector,
+    launchOnLogin,
+    configureWakeDetector,
+    toggleLaunchOnLogin,
     stopVoiceMode: () => { void stopVoiceMode(); },
     confirmVoiceDraft: () => { void confirmVoiceDraft(); },
     discardVoiceDraft,
