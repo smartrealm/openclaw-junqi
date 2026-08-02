@@ -88,14 +88,40 @@ export interface CostSummary {
 }
 
 export interface SessionsUsage {
-  sessions?: any[];
-  totals?: any;
-  aggregates?: {
-    byAgent?: any[];
-    byModel?: any[];
-    [k: string]: any;
-  };
+  updatedAt: number;
+  startDate: string;
+  endDate: string;
+  sessions: any[];
+  totals: CostUsageTotals;
+  aggregates: Record<string, any>;
+  cacheStatus?: Record<string, any>;
   [k: string]: any;
+}
+
+export interface CostUsageTotals {
+  totalCost: number;
+  inputCost: number;
+  outputCost: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cacheReadCost: number;
+  cacheWriteCost: number;
+  totalTokens: number;
+  missingCostEntries: number;
+  [k: string]: any;
+}
+
+export type SessionsUsageRange = '7d' | '30d' | '90d' | '1y' | 'all';
+
+export interface SessionsUsageQuery {
+  range?: SessionsUsageRange;
+  startDate?: string;
+  endDate?: string;
+  mode?: 'utc' | 'gateway' | 'specific';
+  utcOffset?: string;
+  timeZone?: string;
 }
 
 export interface CronJob {
@@ -398,7 +424,7 @@ const COST_METRIC_KEYS = [
 ] as const;
 
 function hasCostMetrics(value: Record<string, unknown>): boolean {
-  return COST_METRIC_KEYS.every((key) => typeof value[key] === 'number');
+  return COST_METRIC_KEYS.every((key) => typeof value[key] === 'number' && Number.isFinite(value[key]));
 }
 
 function isDailyEntry(value: unknown): value is DailyEntry {
@@ -418,10 +444,30 @@ function isCostSummary(value: unknown): value is CostSummary {
   return value.daily.every(isDailyEntry);
 }
 
+function isDateLabel(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isSessionUsageRow(value: unknown): boolean {
+  if (!isGatewayRecord(value) || typeof value.key !== 'string' || value.key.trim().length === 0) return false;
+  if (value.sessionId !== undefined
+    && (typeof value.sessionId !== 'string' || value.sessionId.trim().length === 0)) return false;
+  if (value.updatedAt !== undefined
+    && (typeof value.updatedAt !== 'number' || !Number.isFinite(value.updatedAt))) return false;
+  return value.usage === null || isGatewayRecord(value.usage);
+}
+
 function isSessionsUsage(value: unknown): value is SessionsUsage {
-  if (!isGatewayRecord(value)) return false;
-  if (value.sessions !== undefined && !Array.isArray(value.sessions)) return false;
-  return value.aggregates === undefined || isGatewayRecord(value.aggregates);
+  return isGatewayRecord(value)
+    && typeof value.updatedAt === 'number'
+    && Number.isFinite(value.updatedAt)
+    && isDateLabel(value.startDate)
+    && isDateLabel(value.endDate)
+    && Array.isArray(value.sessions)
+    && value.sessions.every(isSessionUsageRow)
+    && isGatewayRecord(value.totals)
+    && hasCostMetrics(value.totals)
+    && isGatewayRecord(value.aggregates);
 }
 
 export function parseGatewayAgentList(response: unknown): AgentInfo[] | null {
@@ -815,10 +861,20 @@ export async function fetchFullCost(days = 365): Promise<CostSummary | null> {
 /**
  * Fetch heavy usage data on-demand (for FullAnalytics).
  */
-export async function fetchFullUsage(limit = 2000): Promise<SessionsUsage | null> {
+export function buildSessionsUsageRequest(
+  limit: number,
+  query: SessionsUsageQuery = {},
+): Record<string, unknown> {
+  return { limit, agentScope: 'all', ...query };
+}
+
+export async function fetchFullUsage(
+  limit = 2000,
+  query: SessionsUsageQuery = {},
+): Promise<SessionsUsage | null> {
   if (!gw) return null;
   try {
-    return parseGatewaySessionsUsage(await gw.request('sessions.usage', { limit, agentScope: 'all' }));
+    return parseGatewaySessionsUsage(await gw.request('sessions.usage', buildSessionsUsageRequest(limit, query)));
   } catch {
     return null;
   }

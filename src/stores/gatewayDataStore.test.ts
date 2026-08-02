@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   GATEWAY_DATA_GROUPS,
+  buildSessionsUsageRequest,
   createGatewayRequestFence,
   isRunningSubagentSession,
   parseGatewayAgentList,
@@ -12,6 +13,19 @@ import {
 } from './gatewayDataStore';
 
 const NOW = Date.UTC(2026, 6, 21, 12, 0, 0);
+const METRICS = {
+  totalCost: 1,
+  inputCost: 0.2,
+  outputCost: 0.8,
+  input: 10,
+  output: 20,
+  cacheRead: 1,
+  cacheWrite: 2,
+  cacheReadCost: 0.01,
+  cacheWriteCost: 0.02,
+  totalTokens: 33,
+  missingCostEntries: 0,
+};
 
 test('sub-agent activity follows explicit OpenClaw run fields before timestamp compatibility fallback', () => {
   assert.equal(isRunningSubagentSession({ key: 'agent:writer:subagent:a', hasActiveRun: true }, NOW), true);
@@ -85,25 +99,51 @@ test('Gateway polling decoders reject malformed responses instead of inventing e
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', agentId: '' }] }), null);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: '' }] }), null);
 
-  const metrics = {
-    totalCost: 1,
-    inputCost: 0.2,
-    outputCost: 0.8,
-    input: 10,
-    output: 20,
-    cacheRead: 1,
-    cacheWrite: 2,
-    cacheReadCost: 0.01,
-    cacheWriteCost: 0.02,
-    totalTokens: 33,
-    missingCostEntries: 0,
-  };
-  const cost = { days: 30, daily: [{ date: '2026-07-31', ...metrics }], totals: metrics };
+  const cost = { days: 30, daily: [{ date: '2026-07-31', ...METRICS }], totals: METRICS };
   assert.deepEqual(parseGatewayCostSummary(cost), cost);
   assert.equal(parseGatewayCostSummary({ days: 30, daily: [], totals: {} }), null);
-  assert.deepEqual(parseGatewaySessionsUsage({ sessions: [], aggregates: { byAgent: [] } }), {
+  const usage = {
+    updatedAt: NOW,
+    startDate: '2026-07-01',
+    endDate: '2026-07-31',
     sessions: [],
+    totals: METRICS,
     aggregates: { byAgent: [] },
-  });
+  };
+  assert.deepEqual(parseGatewaySessionsUsage(usage), usage);
+  assert.equal(parseGatewaySessionsUsage({ sessions: [], aggregates: { byAgent: [] } }), null);
   assert.equal(parseGatewaySessionsUsage({ sessions: {} }), null);
+});
+
+test('sessions.usage requests keep the official date range beside the all-agent scope', () => {
+  assert.deepEqual(buildSessionsUsageRequest(2000, { range: 'all' }), {
+    limit: 2000,
+    agentScope: 'all',
+    range: 'all',
+  });
+  assert.deepEqual(buildSessionsUsageRequest(200, {
+    startDate: '2026-07-01',
+    endDate: '2026-07-31',
+    mode: 'specific',
+    timeZone: 'Asia/Shanghai',
+  }), {
+    limit: 200,
+    agentScope: 'all',
+    startDate: '2026-07-01',
+    endDate: '2026-07-31',
+    mode: 'specific',
+    timeZone: 'Asia/Shanghai',
+  });
+});
+
+test('sessions.usage accepts official family rows without a concrete session id', () => {
+  const usage = {
+    updatedAt: NOW,
+    startDate: '2026-07-01',
+    endDate: '2026-07-31',
+    sessions: [{ key: 'agent:main:family', scope: 'family', usage: null }],
+    totals: METRICS,
+    aggregates: { byAgent: [] },
+  };
+  assert.deepEqual(parseGatewaySessionsUsage(usage), usage);
 });

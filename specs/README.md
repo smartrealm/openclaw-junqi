@@ -76,6 +76,7 @@ specs/
 - [OpenClaw 审计账本对齐](quality/2026-08-03-openclaw-audit-ledger.md)
 - [OpenClaw 压缩事件追溯](quality/2026-08-03-openclaw-compaction-trace.md)
 - [OpenClaw Talk 能力目录对齐](quality/2026-08-03-openclaw-talk-catalog.md)
+- [OpenClaw 会话用量范围对齐](quality/2026-08-03-openclaw-sessions-usage-range.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界](quality/2026-07-31-installation-dashboard-chat-provider-channel-runtime-boundaries.md)
 - [语音唤醒工作台](quality/2026-07-31-voice-wake-workspace.md)
 - [业务引导平台](quality/2026-07-31-business-onboarding-platform.md)
