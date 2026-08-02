@@ -55,7 +55,7 @@ The event bridge validates the OpenClaw Talk envelope within `payload.talkEvent`
 - The test command recursively discovers TypeScript and TSX tests under `src`; this includes `voiceAuditRegression.test.ts`, which previously was not covered by the shell glob.
 - The updated regression suite verifies large-audio encoding and portable session-directory isolation through exported behavior. Native recorder lifecycle and VAD worker lifecycle remain covered by Rust library tests.
 - Runtime microphone stream errors now terminate the native listener, emit its existing error event, and mark native listening as stopped; the regression test covers that transition.
-- The complete Rust library suite passed with 691 tests passed and 4 intentionally ignored tests. The fourth ignored test is the official-model fixture check described above, not a passing no-op.
+- The complete Rust library suite passed with 692 tests passed and 4 intentionally ignored tests. The fourth ignored test is the official-model fixture check described above, not a passing no-op.
 - Capability and locale JSON parsed successfully, and `git diff --check` passed.
 
 ## Unverified Boundaries
