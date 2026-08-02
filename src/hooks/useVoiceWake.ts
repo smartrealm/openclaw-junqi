@@ -284,6 +284,9 @@ export function useVoiceWake({
         && Number.isInteger(payload.sampleRateHz)
         && Number.isInteger(payload.channels)
       ) {
+        // A rejected keyword can still have callback frames in flight while
+        // the native stop request reaches the capture worker.
+        if (suppressNativeCaptureRef.current) return;
         void callbacksRef.current.onPcmAudio?.({
           data: payload.data,
           sampleRateHz: payload.sampleRateHz,

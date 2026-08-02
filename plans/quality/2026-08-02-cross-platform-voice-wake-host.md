@@ -16,6 +16,7 @@
 12. Added an explicit mismatch recovery action that synchronizes only declared local model labels through `voicewake.set`, preserves Gateway routing, and retries the fenced arm sequence.
 13. Marked the official-model detector regression as explicitly fixture-gated so ordinary test output cannot imply a real keyword detection occurred without the upstream model and WAV asset.
 14. Ran the fixture-gated official bilingual model test against its upstream `zh_3.wav` on the local macOS build; target-platform microphone and Gateway validation remain separate work.
+15. Rejected wake keywords now suppress both WAV fallback and any in-flight PCM frames before the Talk relay queue, closing the native stop-request race.
 
 ## In Progress
 

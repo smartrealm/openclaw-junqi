@@ -95,6 +95,16 @@ test('BUG-16 native VAD suppresses assistant playback feedback', () => {
   assert.match(wake, /voiceRuntime\.interruptAll\(\);\s+setError\(null\)/);
 });
 
+test('BUG-24 rejected wake keywords cannot forward in-flight PCM to Talk', () => {
+  const wake = read('../../hooks/useVoiceWake.ts');
+  const pcmBranch = wake.slice(wake.indexOf("st === 'pcm'"), wake.indexOf("st === 'captured'"));
+  assert.match(pcmBranch, /if \(suppressNativeCaptureRef\.current\) return;/);
+  assert.ok(
+    pcmBranch.indexOf('if (suppressNativeCaptureRef.current) return;')
+      < pcmBranch.indexOf('onPcmAudio?.'),
+  );
+});
+
 test('BUG-17 Gateway message ids own voice stream segments', () => {
   const app = read('../../App.tsx');
   const quick = read('../../pages/QuickChatRoot.tsx');
