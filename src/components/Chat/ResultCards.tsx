@@ -1,13 +1,11 @@
 import { useCallback, useState } from 'react';
-import { AlertCircle, ChevronDown, ChevronUp, Copy, ExternalLink, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, MoreHorizontal, RefreshCw, Sparkles, Layers, type LucideIcon } from 'lucide-react';
+import { AlertCircle, Copy, ExternalLink, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, PanelRightOpen, RefreshCw, Sparkles, Layers, type LucideIcon } from 'lucide-react';
 import { ArrowsClockwise } from '@phosphor-icons/react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { IconButton } from '@/components/shared/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ChatIconButton } from './ChatIconButton';
 import { getFileName, getFileParentFolder } from '@/services/chat/filePresentation';
 import { resolveOutputFilePath } from '@/services/chat/fileOutputPath';
 import {
@@ -24,6 +22,13 @@ import {
 } from '@/services/chat/managedFileRuntime';
 import { debugError, debugWarn } from '@/utils/debugLog';
 import { ManagedFilePreview } from '@/components/FileExplorer/ManagedFilePreview';
+
+const FILE_ACTION_BUTTON_CLASS = [
+  'grid size-7 place-items-center rounded-md text-aegis-text-muted transition-colors',
+  '[@media(pointer:coarse)]:size-11',
+  'hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text',
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-aegis-primary',
+].join(' ');
 
 async function resolveExistingFilePath(path: string): Promise<string> {
   const candidate = path.trim();
@@ -156,19 +161,13 @@ function FileRow({ file, workspaceRoot }: { file: FileRef; workspaceRoot?: strin
             <AlertCircle size={14} className="shrink-0 text-aegis-warning" />
             <span>{t('resultCards.previewReadFailed')}</span>
           </span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <IconButton
-                aria-label={t('resultCards.retryPreview')}
-                size="xs"
-                variant="ghost"
-                onClick={() => void loadPreview()}
-              >
-                <RefreshCw size={13} />
-              </IconButton>
-            </TooltipTrigger>
-            <TooltipContent>{t('resultCards.retryPreview')}</TooltipContent>
-          </Tooltip>
+          <ChatIconButton
+            label={t('resultCards.retryPreview')}
+            className={FILE_ACTION_BUTTON_CLASS}
+            onClick={() => void loadPreview()}
+          >
+            <RefreshCw size={13} />
+          </ChatIconButton>
         </div>
       );
     }
@@ -208,50 +207,41 @@ function FileRow({ file, workspaceRoot }: { file: FileRef; workspaceRoot?: strin
             </span>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5" data-file-actions>
           {isPreviewable && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <IconButton
-                  aria-label={previewOpen ? t('resultCards.hidePreview') : t('resultCards.preview')}
-                  size="xs"
-                  variant={previewOpen ? 'soft' : 'ghost'}
-                  tone="primary"
-                  onClick={(event) => { event.stopPropagation(); handlePreview(); }}
-                >
-                  {previewOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                </IconButton>
-              </TooltipTrigger>
-              <TooltipContent>{previewOpen ? t('resultCards.hidePreview') : t('resultCards.preview')}</TooltipContent>
-            </Tooltip>
+            <ChatIconButton
+              data-file-action="preview"
+              label={previewOpen ? t('resultCards.hidePreview') : t('resultCards.preview')}
+              className={clsx(FILE_ACTION_BUTTON_CLASS, previewOpen && 'bg-aegis-primary/10 text-aegis-primary')}
+              onClick={(event) => { event.stopPropagation(); handlePreview(); }}
+            >
+              <PanelRightOpen size={14} />
+            </ChatIconButton>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <IconButton
-                aria-label={t('resultCards.moreFileActions')}
-                title={t('resultCards.moreFileActions')}
-                size="xs"
-                variant="ghost"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <MoreHorizontal size={14} />
-              </IconButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => void handleOpen()}>
-                <ExternalLink />
-                {t('resultCards.openExternal')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void handleReveal()}>
-                <FolderOpen />
-                {t('resultCards.revealInFolder')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void handleCopy()}>
-                <Copy />
-                {t('resultCards.copyPath')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ChatIconButton
+            data-file-action="open"
+            label={t('resultCards.openExternal')}
+            className={FILE_ACTION_BUTTON_CLASS}
+            onClick={(event) => { event.stopPropagation(); void handleOpen(); }}
+          >
+            <ExternalLink size={14} />
+          </ChatIconButton>
+          <ChatIconButton
+            data-file-action="reveal"
+            label={t('resultCards.revealInFolder')}
+            className={FILE_ACTION_BUTTON_CLASS}
+            onClick={(event) => { event.stopPropagation(); void handleReveal(); }}
+          >
+            <FolderOpen size={14} />
+          </ChatIconButton>
+          <ChatIconButton
+            data-file-action="copy"
+            label={t('resultCards.copyPath')}
+            className={FILE_ACTION_BUTTON_CLASS}
+            onClick={(event) => { event.stopPropagation(); void handleCopy(); }}
+          >
+            <Copy size={14} />
+          </ChatIconButton>
         </div>
       </div>
       {previewOpen && (

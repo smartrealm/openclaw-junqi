@@ -18,7 +18,7 @@ async function sourceFiles(directory: string): Promise<string[]> {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === 'locales') continue;
+      if (entry.name === 'locales' || entry.name === 'business-applications') continue;
       files.push(...await sourceFiles(path));
     } else if (['.ts', '.tsx', '.rs', '.mjs', '.js'].includes(extname(entry.name))) {
       if (!entry.name.includes('.test.') && !entry.name.includes('.spec.')) files.push(path);

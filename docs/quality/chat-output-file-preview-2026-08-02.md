@@ -6,15 +6,15 @@ Chat output lines such as `文件位置：都市骑手-短篇.md` are parsed as 
 
 ## Current Behavior
 
-The chat file card resolves both relative and explicit local paths against the workspace configured for the session's agent. It rejects traversal, absolute paths outside that workspace, and Gateway-provided workspace roots as authorization input. Clicking a previewable card toggles its inline preview; the action menu remains available for external open, reveal, and copy.
+The chat file card resolves both relative and explicit local paths against the workspace configured for the session's agent. It rejects traversal, absolute paths outside that workspace, and Gateway-provided workspace roots as authorization input. Previewable output has a dedicated right-side expand button, and default-open, folder-reveal, and copy-path are direct right-side icon actions with tooltips; no file actions are hidden behind an overflow menu.
 
 Markdown, HTML, text, image, audio, video, and PDF keep their existing preview modes. OOXML `xlsx`, `pptx`, and `docx` files now receive a read-only content preview. The native command canonicalizes the file and selected workspace, rejects symlink escapes, and runs ZIP/XML extraction outside Tauri's async executor. It does not execute macros or embedded scripts, limits packages to 32 MB, each extracted XML entry to 768 KB, presentations to 100 slides, and returned preview content to 512 KB. Legacy binary `xls` and `ppt` remain external-open only.
 
 ## Validation
 
-- Focused chat path and preview tests cover session-workspace authorization and Office bridge parameters.
+- Focused chat path and preview tests cover session-workspace authorization, Office bridge parameters, and the direct file-action surface.
 - Rust Office parser tests cover spreadsheet shared strings/cells, ordered presentation text, workspace escape rejection, and an oversized uncompressed ZIP entry.
-- `pnpm test`, `pnpm lint`, `pnpm build`, `cargo fmt -- --check`, `cargo check --lib`, `cargo test --lib`, and `git diff --check` passed.
+- The direct action regression test and a fresh `pnpm test`, `pnpm lint`, `pnpm build`, `cargo fmt -- --check`, `cargo check --lib`, `cargo test --lib`, and `git diff --check` passed.
 - Rust validation retains one pre-existing unused-variable warning in `commands/system.rs`.
 
 ## Remaining Boundary
