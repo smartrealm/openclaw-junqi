@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, type LucideIcon } from 'lucide-react';
+import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Blocks, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -40,6 +40,7 @@ import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigati
 import { SessionChannelIcon } from '@/components/shared/SessionChannelIcon';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
+const BusinessApplicationsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.BusinessApplicationsPanel })));
 const ToolsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.ToolsPanel })));
 const CommandsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.CommandsPanel })));
 const SettingsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.SettingsPanel })));
@@ -795,6 +796,7 @@ function WorkbenchPanel() {
 const PANEL_REGISTRY: Record<SidebarTab, React.ComponentType> = {
   workbench: WorkbenchPanel,
   agents:    AgentsPanel,
+  businessApplications: BusinessApplicationsPanel,
   tools:     ToolsPanel,
   commands:  CommandsPanel,
   settings:  SettingsPanel,
@@ -856,6 +858,9 @@ function miniItemsFor(
       { to: '/agents?new=1', icon: <Plus size={20} />, label: t('sidebar.newAgent', 'New agent'), feature: 'agents' },
       { to: '/agents', icon: <Bot size={20} />, label: t('nav.agents', 'Agents'), feature: 'agents' },
       { to: '/memory', icon: <Brain size={20} />, label: t('nav.memory', 'Memory'), feature: 'memory' },
+    ];
+    case 'businessApplications': return [
+      { to: '/business-applications', icon: <Blocks size={20} />, label: t('nav.businessApplications', '业务应用'), feature: 'businessApplications' },
     ];
     case 'tools': return [
       { to: '/ai-workspace', icon: <Bot size={20} />, label: t('nav.agentTasks', 'Agent 任务'), feature: 'agentRun' },

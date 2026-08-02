@@ -8,6 +8,7 @@ docs/
 ├── installation/     安装、首次启动、Windows 与网络策略
 ├── gateway/          Gateway 生命周期、服务归属与验证
 ├── collaboration/    多智能体协作设计、审计与发布证据
+├── business/          特定业务领域的集成设计、契约与验收记录
 ├── quality/          产品模块审计与运行质量
 ├── design/           尚未完全落地的产品设计稿
 ├── previews/         独立 HTML 流程与视觉预览
@@ -85,6 +86,17 @@ docs/
 - [Workflow Template 与 Run 边界 ADR](adr/0001-workflow-template-and-run-boundary.md)
 
 根目录 [`CONTEXT.md`](../CONTEXT.md) 定义协作领域的规范术语。
+
+## 特定业务
+
+目录：[`business/`](business/)
+
+- [业务应用多平台 UI 设计](business/business-applications-ui-design-2026-08-02.md)
+- [业务应用 UI 验证记录](business/business-applications-ui-validation-2026-08-02.md)
+- [钉钉 OA 请假审批接入设计](business/dingtalk-leave-approval-integration-design-2026-08-02.md)
+- [业务集成运行时多态架构](business/business-integration-runtime-design-2026-08-02.md)
+
+这里保存面向明确企业业务场景的 Markdown 文档。每个业务目录记录其上游契约、数据与权限边界、实施分期、验收条件和未验证事项；不把租户 ID、审批编号、用户标识、密钥或真实审批内容写入仓库。
 
 ## 产品模块与运行质量
 

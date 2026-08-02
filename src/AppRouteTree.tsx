@@ -12,6 +12,7 @@ const WorkshopPage = lazy(() => import('@/pages/Workshop').then(m => ({ default:
 const FullAnalyticsPage = lazy(() => import('@/pages/FullAnalytics').then(m => ({ default: m.FullAnalyticsPage })));
 const CronMonitorPage = lazy(() => import('@/pages/CronMonitor').then(m => ({ default: m.CronMonitorPage })));
 const AgentHubPage = lazy(() => import('@/pages/AgentHub').then(m => ({ default: m.AgentHubPage })));
+const BusinessApplicationsPage = lazy(() => import('@/pages/BusinessApplicationsPage').then(m => ({ default: m.BusinessApplicationsPage })));
 const ChannelsCenterPage = lazy(() => import('@/pages/ChannelsCenter').then(m => ({ default: m.ChannelsCenterPage })));
 const MemoryExplorerPage = lazy(() => import('@/pages/MemoryExplorer').then(m => ({ default: m.MemoryExplorerPage })));
 const SkillsPageFull = lazy(() => import('@/pages/SkillsPage').then(m => ({ default: m.SkillsPage })));
@@ -71,6 +72,7 @@ export default function AppRouteTree() {
         <Route path="/analytics" element={<FeatureRoute feature="analytics"><FullAnalyticsPage /></FeatureRoute>} />
         <Route path="/cron" element={<FeatureRoute feature="cron"><CronMonitorPage /></FeatureRoute>} />
         <Route path="/agents" element={<FeatureRoute feature="agents"><AgentHubPage /></FeatureRoute>} />
+        <Route path="/business-applications" element={<FeatureRoute feature="businessApplications"><BusinessApplicationsPage /></FeatureRoute>} />
         <Route path="/channels" element={<FeatureRoute feature="configManager"><ChannelsCenterPage /></FeatureRoute>} />
         <Route path="/skills" element={<FeatureRoute feature="skills"><SkillsPageFull /></FeatureRoute>} />
         <Route path="/skill-hub" element={<FeatureRoute feature="skills"><SkillHubManagerPage /></FeatureRoute>} />

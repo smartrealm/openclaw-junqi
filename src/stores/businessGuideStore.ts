@@ -2,19 +2,27 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 interface BusinessGuideState {
-  dismissed: boolean;
+  welcomeDismissed: boolean;
   tourOpen: boolean;
-  tourSeen: boolean;
-  dismiss: () => void;
-  reopen: () => void;
+  dismissWelcome: () => void;
+  openTour: () => void;
   closeTour: () => void;
 }
 
 export const useBusinessGuideStore = create<BusinessGuideState>()(persist(
-  (set) => ({ dismissed: false, tourOpen: true, tourSeen: false, dismiss: () => set({ dismissed: true, tourOpen: false, tourSeen: true }), reopen: () => set({ dismissed: false, tourOpen: true, tourSeen: true }), closeTour: () => set({ tourOpen: false, tourSeen: true }) }),
-  { name: 'junqi:business-guide:v1', version: 2, storage: createJSONStorage(() => localStorage), merge: (persisted, current) => {
+  (set) => ({
+    welcomeDismissed: false,
+    tourOpen: false,
+    dismissWelcome: () => set({ welcomeDismissed: true }),
+    openTour: () => set({ tourOpen: true }),
+    closeTour: () => set({ tourOpen: false }),
+  }),
+  { name: 'junqi:business-guide:v1', version: 3, storage: createJSONStorage(() => localStorage), merge: (persisted, current) => {
     const saved = persisted as Partial<BusinessGuideState> | undefined;
-    const tourSeen = saved?.tourSeen === true || saved?.dismissed === true;
-    return { ...current, dismissed: saved?.dismissed === true, tourSeen, tourOpen: !tourSeen };
-  }, partialize: (state) => ({ dismissed: state.dismissed, tourSeen: state.tourSeen }) },
+    const legacy = saved as (Partial<BusinessGuideState> & { dismissed?: boolean; tourSeen?: boolean }) | undefined;
+    return {
+      ...current,
+      welcomeDismissed: saved?.welcomeDismissed === true || legacy?.dismissed === true || legacy?.tourSeen === true,
+    };
+  }, partialize: (state) => ({ welcomeDismissed: state.welcomeDismissed }) },
 ));
