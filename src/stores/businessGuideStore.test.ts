@@ -34,12 +34,14 @@ test('business guide welcome does not reopen after dismissal', () => {
 });
 
 test('business guide tour opens only from the explicit global trigger', () => {
-  useBusinessGuideStore.setState({ welcomeDismissed: true, tourOpen: false });
+  useBusinessGuideStore.setState({ welcomeDismissed: true, tourOpen: false, tourStartIndex: 0 });
 
-  useBusinessGuideStore.getState().openTour();
+  useBusinessGuideStore.getState().openTour(3);
   assert.equal(useBusinessGuideStore.getState().tourOpen, true);
+  assert.equal(useBusinessGuideStore.getState().tourStartIndex, 3);
 
   useBusinessGuideStore.getState().closeTour();
   assert.equal(useBusinessGuideStore.getState().tourOpen, false);
+  assert.equal(useBusinessGuideStore.getState().tourStartIndex, 0);
   assert.equal(useBusinessGuideStore.getState().welcomeDismissed, true);
 });
