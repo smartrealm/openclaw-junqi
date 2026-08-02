@@ -13,6 +13,7 @@ import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { getDirection } from '@/i18n';
+import { BusinessGuide } from '@/components/BusinessGuide/BusinessGuide';
 
 const CommandPalette = lazy(() => import('@/components/CommandPalette').then(m => ({ default: m.CommandPalette })));
 const PetBreakOverlay = lazy(() => import('@/pet/PetBreakOverlay').then(m => ({ default: m.PetBreakOverlay })));
@@ -117,6 +118,7 @@ export function AppLayout() {
             className={`route-scrollbar flex-1 h-full ${isTerminalPage || isAgentWorkspacePage ? 'overflow-hidden' : 'overflow-y-auto'}`}
             data-route-scroll
           >
+            <BusinessGuide />
             <ErrorBoundary>
               <Suspense fallback={
                 <div className="flex-1 flex items-center justify-center h-full">
