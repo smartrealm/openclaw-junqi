@@ -115,6 +115,7 @@ cargo test --lib
 ## Git 与发布
 
 - 未经明确要求不要提交、推送、创建 tag、发布 Release 或修改远端系统。
+- 提交信息的标题和正文必须使用中文，并遵守全局 Emoji 禁止规则。
 - 版本发布必须保持 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 三处版本一致。
 - 不修改或泄露签名私钥、token、证书和 CI secret。发布结论以 `.github/workflows/` 的不可变源码与制品校验为准。
 - 报告结果时区分：代码完成、自动化通过、本机实测、目标平台实测、正式签名/公证、线上部署。不得合并成模糊的“已完成”。
