@@ -5,12 +5,18 @@
 // or to a future provider adapter instead.
 
 import { useEffect, useCallback, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { startVoiceWake, stopVoiceWake, type VoiceWakeCaptureMode } from '@/api/tauri-commands';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import {
+  VoiceWakeAcceptanceGate,
+  type VoiceWakePcmFrame,
+} from '@/services/voice/VoiceWakeAcceptanceGate';
+import { shouldAcceptVoiceWakeDuringOutput } from '@/services/voice/VoiceWakeBargeInPolicy';
 import { useVoiceStore } from '@/stores/voiceStore';
 
 export type WakePhase = 'idle' | 'listening' | 'wake_detected' | 'transcribing' | 'error';
+export type { VoiceWakeCaptureMode } from '@/api/tauri-commands';
 
 export interface VoiceWakeOptions {
   /** Called with the transcribed text so the caller can fill the chat input. */
@@ -19,7 +25,9 @@ export interface VoiceWakeOptions {
    *  this platform). Lets the caller offer it as an audio attachment instead. */
   onCaptureFallback?: (wavDataUrl: string) => void | Promise<void>;
   /** Called just before a new utterance is accepted. */
-  onWakeDetected?: () => void;
+  onWakeDetected?: (trigger: string | null) => boolean | void | Promise<boolean | void>;
+  /** Native PCM16 frames emitted after a VAD or keyword trigger. */
+  onPcmAudio?: (frame: VoiceWakePcmFrame) => void | Promise<void>;
   /** Preferred language for transcription (BCP-47). */
   lang?: string;
   /** Session that owns captured input and runtime state. */
@@ -32,9 +40,31 @@ interface SpeechRecognitionLike {
   interimResults: boolean;
   start: () => void;
   stop: () => void;
-  onresult: ((e: any) => void) | null;
-  onerror: ((e: any) => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
   onend: (() => void) | null;
+}
+
+interface SpeechRecognitionAlternativeLike {
+  transcript?: string;
+}
+
+interface SpeechRecognitionResultLike {
+  isFinal?: boolean;
+  0?: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionEventLike {
+  results?: ArrayLike<SpeechRecognitionResultLike>;
+  resultIndex?: number;
+}
+
+interface SpeechRecognitionErrorEventLike {
+  error?: string;
+}
+
+interface SpeechRecognitionConstructor {
+  new (): SpeechRecognitionLike;
 }
 
 interface QueuedCapture {
@@ -43,9 +73,12 @@ interface QueuedCapture {
   onCaptureFallback?: (wavDataUrl: string) => void | Promise<void>;
 }
 
-function getSpeechRecognition(): { new (): SpeechRecognitionLike } | null {
+function getSpeechRecognition(): SpeechRecognitionConstructor | null {
   if (typeof window === 'undefined') return null;
-  const w = window as any;
+  const w = window as Window & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }
 
@@ -54,10 +87,25 @@ function isVoiceOutputActive(): boolean {
   return voice.remoteOutput !== null || voice.phase === 'queued' || voice.phase === 'speaking';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<boolean | void> {
+  return isRecord(value) && typeof value.then === 'function';
+}
+
+function errorMessage(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (isRecord(error) && typeof error.message === 'string') return error.message;
+  return String(error);
+}
+
 export function useVoiceWake({
   onTranscript,
   onCaptureFallback,
   onWakeDetected,
+  onPcmAudio,
   lang = 'zh-CN',
   sessionKey = null,
 }: VoiceWakeOptions) {
@@ -71,8 +119,9 @@ export function useVoiceWake({
   const captureQueueRef = useRef<QueuedCapture[]>([]);
   const captureDrainingRef = useRef(false);
   const suppressNativeCaptureRef = useRef(false);
-  const callbacksRef = useRef({ onTranscript, onCaptureFallback, onWakeDetected, sessionKey });
-  callbacksRef.current = { onTranscript, onCaptureFallback, onWakeDetected, sessionKey };
+  const wakeAcceptanceGateRef = useRef(new VoiceWakeAcceptanceGate());
+  const callbacksRef = useRef({ onTranscript, onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey });
+  callbacksRef.current = { onTranscript, onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey };
 
   const updatePhase = useCallback((next: WakePhase, ownerSessionKey?: string | null) => {
     const resolvedSessionKey = ownerSessionKey === undefined
@@ -109,13 +158,13 @@ export function useVoiceWake({
     }
   }, [updatePhase]);
 
-  const startNativeVAD = useCallback(async () => {
+  const startNativeVAD = useCallback(async (mode: VoiceWakeCaptureMode, streamPcm = false) => {
     if (nativeVADRef.current || stoppedRef.current) return;
     nativeVADRef.current = true;
     try {
-      await invoke('voice_wake_start');
+      await startVoiceWake(mode, { streamPcm });
       if (stoppedRef.current) {
-        await invoke('voice_wake_stop').catch(() => undefined);
+        await stopVoiceWake().catch(() => undefined);
         nativeVADRef.current = false;
         return;
       }
@@ -124,7 +173,7 @@ export function useVoiceWake({
       updatePhase('listening');
     } catch (error) {
       nativeVADRef.current = false;
-      setError(typeof error === 'string' ? error : String((error as any)?.message ?? error));
+      setError(errorMessage(error));
       updatePhase('error');
       voiceRuntime.setError(error, callbacksRef.current.sessionKey);
       setEnabled(false);
@@ -142,24 +191,26 @@ export function useVoiceWake({
     rec.lang = lang;
     rec.continuous = true;
     rec.interimResults = false;
-    rec.onresult = (event: any) => {
+    rec.onresult = (event) => {
       if (stoppedRef.current || recognitionRef.current !== rec) return;
       const results = event?.results;
-      const startIndex = Number(event?.resultIndex || 0);
-      for (let index = startIndex; index < (results?.length || 0); index += 1) {
+      if (!results) return;
+      const startIndex = typeof event.resultIndex === 'number' ? event.resultIndex : 0;
+      for (let index = startIndex; index < results.length; index += 1) {
         const result = results[index];
         if (!result?.isFinal) continue;
-        const transcript = String(result?.[0]?.transcript || '').trim();
+        const transcript = (result[0]?.transcript || '').trim();
         if (!transcript) continue;
+        if (!shouldAcceptVoiceWakeDuringOutput(null, isVoiceOutputActive())) continue;
         updatePhase('transcribing');
         const callbacks = callbacksRef.current;
-        callbacks.onWakeDetected?.();
+        callbacks.onWakeDetected?.(null);
         if (stoppedRef.current || recognitionRef.current !== rec) return;
         callbacks.onTranscript(transcript);
         if (!stoppedRef.current && recognitionRef.current === rec) updatePhase('listening');
       }
     };
-    rec.onerror = (event: any) => {
+    rec.onerror = (event) => {
       if (stoppedRef.current || recognitionRef.current !== rec || event?.error === 'aborted') return;
       const message = String(event?.error || 'speech recognition failed');
       // Silence is a normal end condition for some continuous recognizers.
@@ -170,7 +221,7 @@ export function useVoiceWake({
       // enabled with no input path.
       recognitionRef.current = null;
       try { rec.stop(); } catch {}
-      void startNativeVAD();
+      void startNativeVAD('dictation');
     };
     rec.onend = () => {
       if (recognitionRef.current !== rec) return;
@@ -195,19 +246,23 @@ export function useVoiceWake({
         setError(String(error));
         updatePhase('error');
         voiceRuntime.setError(error, callbacksRef.current.sessionKey);
-        void startNativeVAD();
+        void startNativeVAD('dictation');
       }
     }
   }, [lang, startNativeVAD, updatePhase]);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (
+    mode: VoiceWakeCaptureMode = 'dictation',
+    options: { streamPcm?: boolean } = {},
+  ) => {
     if (!stoppedRef.current && (recognitionRef.current || nativeVADRef.current)) return;
     voiceRuntime.interruptAll();
     setError(null);
     stoppedRef.current = false;
     captureQueueRef.current = [];
     suppressNativeCaptureRef.current = false;
-    const Ctor = getSpeechRecognition();
+    wakeAcceptanceGateRef.current.reject();
+    const Ctor = mode === 'dictation' ? getSpeechRecognition() : null;
     if (Ctor) {
       nativeVADRef.current = false;
       setEnabled(true);
@@ -215,19 +270,20 @@ export function useVoiceWake({
       startBrowserRecognition();
       return;
     }
-    await startNativeVAD();
+    await startNativeVAD(mode, options.streamPcm === true);
   }, [startBrowserRecognition, startNativeVAD, updatePhase]);
 
   const stop = useCallback(async () => {
     stoppedRef.current = true;
     captureQueueRef.current = [];
     suppressNativeCaptureRef.current = false;
+    wakeAcceptanceGateRef.current.reject();
     if (restartTimerRef.current) {
       clearTimeout(restartTimerRef.current);
       restartTimerRef.current = null;
     }
     if (nativeVADRef.current) {
-      try { await invoke('voice_wake_stop'); } catch {}
+      try { await stopVoiceWake(); } catch {}
     }
     nativeVADRef.current = false;
     const recognition = recognitionRef.current;
@@ -242,11 +298,12 @@ export function useVoiceWake({
     stoppedRef.current = true;
     captureQueueRef.current = [];
     suppressNativeCaptureRef.current = false;
+    wakeAcceptanceGateRef.current.reject();
     if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     if (recognition) { try { recognition.stop(); } catch {} }
-    if (nativeVADRef.current) void invoke('voice_wake_stop').catch(() => undefined);
+    if (nativeVADRef.current) void stopVoiceWake().catch(() => undefined);
     nativeVADRef.current = false;
     voiceRuntime.setIdle(callbacksRef.current.sessionKey);
   }, []);
@@ -254,16 +311,90 @@ export function useVoiceWake({
   // Subscribe to Rust voice-wake events for the lifetime of `enabled`.
   useEffect(() => {
     if (!enabled) return;
-    const unlisten = subscribeTauriEvent('voice-wake', (event: any) => {
+    const unlisten = subscribeTauriEvent<unknown>('voice-wake', (event) => {
       if (stoppedRef.current || !nativeVADRef.current) return;
-      const payload = event.payload || {};
+      const payload = isRecord(event.payload) ? event.payload : {};
       const st = payload.state;
       if (st === 'wake_detected') {
-        suppressNativeCaptureRef.current = isVoiceOutputActive();
+        const trigger = typeof payload.trigger === 'string' && payload.trigger.trim().length > 0
+          ? payload.trigger.trim()
+          : null;
+        suppressNativeCaptureRef.current = !shouldAcceptVoiceWakeDuringOutput(
+          trigger,
+          isVoiceOutputActive(),
+        );
         if (suppressNativeCaptureRef.current) return;
         updatePhase('wake_detected');
-        callbacksRef.current.onWakeDetected?.();
+        const completeCapture = (wavDataUrl: string, ownerSessionKey: string | null | undefined) => {
+          captureQueueRef.current.push({
+            wavDataUrl,
+            sessionKey: ownerSessionKey,
+            onCaptureFallback: callbacksRef.current.onCaptureFallback,
+          });
+          void drainCaptureQueue();
+        };
+        const completeAcceptance = (accepted: boolean | void) => {
+          if (accepted === false) {
+            wakeAcceptanceGateRef.current.reject();
+            suppressNativeCaptureRef.current = true;
+            updatePhase('listening');
+            return;
+          }
+          const buffered = wakeAcceptanceGateRef.current.accept();
+          for (const frame of buffered.pcmFrames) {
+            void callbacksRef.current.onPcmAudio?.(frame);
+          }
+          if (buffered.capture) {
+            completeCapture(buffered.capture.wavDataUrl, buffered.capture.sessionKey);
+          }
+        };
+        const accepted = callbacksRef.current.onWakeDetected?.(trigger);
+        if (isPromiseLike(accepted)) {
+          wakeAcceptanceGateRef.current.begin();
+          void Promise.resolve(accepted).then((result) => {
+            if (stoppedRef.current || !nativeVADRef.current || !wakeAcceptanceGateRef.current.isPending()) {
+              wakeAcceptanceGateRef.current.reject();
+              return;
+            }
+            completeAcceptance(result);
+          }).catch((wakeError) => {
+            wakeAcceptanceGateRef.current.reject();
+            suppressNativeCaptureRef.current = true;
+            setError(wakeError instanceof Error ? wakeError.message : String(wakeError));
+            updatePhase('error');
+            voiceRuntime.setError(wakeError, callbacksRef.current.sessionKey);
+          });
+        } else if (accepted === false) {
+          suppressNativeCaptureRef.current = true;
+          updatePhase('listening');
+        }
+      } else if (
+        st === 'pcm'
+        && typeof payload.data === 'string'
+        && payload.encoding === 'pcm16'
+        && typeof payload.sampleRateHz === 'number'
+        && typeof payload.channels === 'number'
+        && Number.isInteger(payload.sampleRateHz)
+        && Number.isInteger(payload.channels)
+      ) {
+        if (wakeAcceptanceGateRef.current.retainPcm({
+          data: payload.data,
+          sampleRateHz: payload.sampleRateHz,
+          channels: payload.channels,
+        })) return;
+        // A rejected keyword can still have callback frames in flight while
+        // the native stop request reaches the capture worker.
+        if (suppressNativeCaptureRef.current) return;
+        void callbacksRef.current.onPcmAudio?.({
+          data: payload.data,
+          sampleRateHz: payload.sampleRateHz,
+          channels: payload.channels,
+        });
       } else if (st === 'captured' && typeof payload.data === 'string') {
+        if (wakeAcceptanceGateRef.current.retainCapture({
+          wavDataUrl: payload.data,
+          sessionKey: callbacksRef.current.sessionKey,
+        })) return;
         if (suppressNativeCaptureRef.current) {
           suppressNativeCaptureRef.current = false;
           return;
@@ -278,6 +409,7 @@ export function useVoiceWake({
         nativeVADRef.current = false;
         captureQueueRef.current = [];
         suppressNativeCaptureRef.current = false;
+        wakeAcceptanceGateRef.current.reject();
         setError(String(payload.error || 'voice wake error'));
         updatePhase('error');
         voiceRuntime.setError(payload.error, callbacksRef.current.sessionKey);
@@ -285,6 +417,7 @@ export function useVoiceWake({
       } else if (st === 'stopped') {
         nativeVADRef.current = false;
         suppressNativeCaptureRef.current = false;
+        wakeAcceptanceGateRef.current.reject();
         setEnabled(false);
         updatePhase('idle');
       }

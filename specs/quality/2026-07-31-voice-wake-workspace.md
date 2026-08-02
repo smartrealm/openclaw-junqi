@@ -75,8 +75,9 @@
 | PRE-01 | Docker identity、AgentRun route identity、任务深链、Dynamic Island lifecycle 与宠物跨窗口状态已修复。 | 对应 TypeScript/Rust 回归已新增；完整命令结果在计划记录。 | 目标平台窗口、Docker 冷启动和原生凭据仍需真机。 |
 | VWS-01 | coordinator fence 陈旧 turn、target/Gateway 变化；异步启动、确认和卸载仅可操作拥有的 attested turn，stop 同时请求释放 capture owner。 | `VoiceModeCoordinator.test.ts`、`useComposerVoice.test.ts`。 | 真实重连与设备断开。 |
 | VWS-02 | Web Speech/native VAD 先生成草稿；音频只在确认后走普通附件发送。 | `useComposerVoice.test.ts` 与 coordinator 测试。 | 真实媒体与 Gateway 音频理解。 |
-| VWS-03 | 聊天内提供 Off、Dictation、Wake；Wake 无 detector 时显示 unavailable。 | `MessageInput.composer.test.ts`。 | PTT、键盘按住和真实 detector。 |
+| VWS-03 | 聊天内提供 Off、Dictation、Wake；Wake 无 detector 时显示 unavailable。选择 Wake 后，以固定全窗口控制面替代 composer 局部状态，覆盖层提供模型配置、停止、草稿确认和丢弃，Escape 停止 capture。模型配置、登录启动和 detector 状态均由 composer hook 通过 typed IPC adapter 管理，界面不直接访问 Tauri。确认或丢弃草稿后，同一已认证会话会重新进入待命；native listener 失败按有上限的指数延迟重试。 | `VoiceWakeOverlay.test.ts`、`MessageInput.composer.test.ts`、`useComposerVoice.test.ts` 与 native voice-wake 测试。 | PTT、键盘按住和真实 detector。 |
 | VWS-04 | Island 只收到最小非敏感 cue，宠物只映射 capture phase；Island stop 请求 coordinator 释放 capture。 | `dynamic-island/model.test.ts`、`integration.test.ts`、`voiceModeProjection.test.ts`。 | 最小化窗口、跨 WebView 与多显示器。 |
+| Talk 输出 | 同一 attested Talk session 的 PCM delta 在前端和原生队列中保持顺序；`output.audio.done` 只表示 Gateway 不再发送新帧，主窗口和辅助投影持续 speaking 直到原生 sink 排空。取消、关闭或新唤醒先 fence 队列并立即停止本地输出。 | `TalkConversationCoordinator.test.ts`。 | 真实 Gateway 与各目标系统的原生音频设备。 |
 
 ## 本机验证
 
@@ -93,6 +94,7 @@
 - 不在前端 persist trigger、audio、transcript、Gateway token 或 device credential。
 - 不使用 `any`、强制断言或静默 default 掩盖 Tauri/Gateway 契约。
 - 真实唤醒词功能没有经许可审核的 detector/model 时必须不可用，不能把 VAD 标为 wake word。
+- detector 模型配置必须原子写入；IPC 返回数据必须由 typed adapter 校验，不能由 UI 假定字段结构。
 - Native 与 Docker 不可互相静默回退。
 - 所有协作行为必须从用户确认后的普通消息与现有入口开始。
 - 本次不把 VAD、浏览器连续听写或静态测试称为真实 Wake、真实 Gateway 或正式发布验收。

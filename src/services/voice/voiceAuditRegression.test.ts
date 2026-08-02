@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { bytesToBase64, voiceSessionDirectory } from '@/services/chat/voiceStoragePath';
+import { shouldAcceptVoiceWakeDuringOutput } from './VoiceWakeBargeInPolicy';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -81,7 +82,7 @@ test('BUG-12 VAD startup is handshaken and stale stop events are suppressed', ()
   const native = read('../../../src-tauri/src/commands/voice_wake.rs');
   assert.match(native, /recv_timeout\(Duration::from_secs\(3\)\)/);
   assert.match(native, /should_emit_command_stop/);
-  assert.match(native, /run_vad_loop\(app_for_thread, cmd_rx, worker_id, ready_tx\)/);
+  assert.match(native, /run_capture_loop\([\s\S]*app_for_thread,[\s\S]*cmd_rx,[\s\S]*worker_id,[\s\S]*mode,[\s\S]*stream_pcm,[\s\S]*ready_tx/);
 });
 
 test('BUG-13 recorder invalidates stale starts and finalizes browser chunks before cleanup', () => {
@@ -106,13 +107,9 @@ test('BUG-15 native recorder holds one slot across replacement and installation'
   assert.match(native, /\*recorder_slot = Some\(rec\)/);
 });
 
-test('BUG-16 native VAD suppresses assistant playback feedback', () => {
-  const wake = read('../../hooks/useVoiceWake.ts');
-  assert.match(wake, /isVoiceOutputActive/);
-  assert.match(wake, /voice\.remoteOutput !== null/);
-  assert.match(wake, /suppressNativeCaptureRef\.current = isVoiceOutputActive/);
-  assert.match(wake, /if \(suppressNativeCaptureRef\.current\) \{[\s\S]*return;/);
-  assert.match(wake, /voiceRuntime\.interruptAll\(\);\s+setError\(null\)/);
+test('BUG-16 preserves KWS barge-in while suppressing unverified feedback', () => {
+  assert.equal(shouldAcceptVoiceWakeDuringOutput('Jarvis', true), true);
+  assert.equal(shouldAcceptVoiceWakeDuringOutput(null, true), false);
 });
 
 test('BUG-17 Gateway message ids own voice stream segments', () => {

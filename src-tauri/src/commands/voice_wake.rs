@@ -1,18 +1,13 @@
-// Voice wake detection via cpal continuous capture + energy-based VAD.
-// Cross-platform (macOS CoreAudio / Windows WASAPI via cpal).
-//
-// Phase 1: VAD placeholder for a wake word.
-//   - Continuous mic capture on a background thread.
-//   - Energy-based VAD: speech → start capturing samples; silence → finalize.
-//   - Emits `voice-wake` events: listening / wake_detected / captured / error.
-//   - Captured utterance returned as base64 WAV for the frontend to feed ASR.
-// Phase 2: replace the VAD detector with Porcupine (real wake word).
+// Cross-platform voice capture via cpal. Dictation uses local VAD. Wake-word
+// sessions use the local Sherpa-ONNX keyword detector before VAD begins capture.
 //
 // cpal streams are !Send, so all audio lives on one dedicated thread; the
 // Tauri side only touches channels + the AppHandle.
 
+use super::voice_wake_model::{self, WakeKeywordSpotter};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,11 +21,19 @@ enum WakeCmd {
     Stop,
 }
 
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceWakeMode {
+    Dictation,
+    WakeWord,
+}
+
 struct WakeState {
     worker_id: u64,
     tx: Option<mpsc::Sender<WakeCmd>>,
     worker: Option<JoinHandle<()>>,
     running: bool,
+    mode: VoiceWakeMode,
 }
 
 static WAKE: Mutex<Option<WakeState>> = Mutex::new(None);
@@ -62,6 +65,17 @@ fn mark_worker_stopped(state: &mut Option<WakeState>, worker_id: u64) -> bool {
 
 fn should_emit_command_stop(state: &Option<WakeState>) -> bool {
     state.is_none()
+}
+
+fn report_stream_error(error_tx: &mpsc::Sender<String>, error: impl std::fmt::Display) {
+    let _ = error_tx.send(format!("Microphone stream failed: {error}"));
+}
+
+fn stream_failure(error_rx: &mpsc::Receiver<String>) -> Result<(), String> {
+    match error_rx.try_recv() {
+        Ok(error) => Err(error),
+        Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => Ok(()),
+    }
 }
 
 /// Tunable VAD thresholds (platform-agnostic).
@@ -125,11 +139,14 @@ fn rms_u16(data: &[u16]) -> f32 {
 struct CaptureState {
     rms_window: Vec<f32>,
     samples: Vec<i16>,
+    stream_samples: Vec<i16>,
     pre_roll: VecDeque<i16>,
     pre_roll_capacity: usize,
     sample_rate: u32,
     channels: u16,
     recording_flag: bool,
+    pending_mono: Vec<f32>,
+    mono_frame: Vec<f32>,
 }
 
 impl CaptureState {
@@ -137,11 +154,14 @@ impl CaptureState {
         Self {
             rms_window: Vec::with_capacity(8),
             samples: Vec::new(),
+            stream_samples: Vec::new(),
             pre_roll: VecDeque::new(),
             pre_roll_capacity: 5_600,
             sample_rate: 16000,
             channels: 1,
             recording_flag: false,
+            pending_mono: Vec::with_capacity(4_096),
+            mono_frame: Vec::new(),
         }
     }
     fn push_rms(&mut self, rms: f32) {
@@ -165,10 +185,12 @@ impl CaptureState {
             .saturating_mul(350)
             / 1_000) as usize;
         self.pre_roll.clear();
+        self.mono_frame.clear();
     }
     fn push_sample(&mut self, sample: i16) {
         if self.recording_flag {
             self.samples.push(sample);
+            self.stream_samples.push(sample);
             return;
         }
         if self.pre_roll_capacity == 0 {
@@ -183,34 +205,66 @@ impl CaptureState {
         for &sample in data {
             self.push_sample(sample);
         }
+        self.push_mono(data.iter().map(|sample| *sample as f32 / i16::MAX as f32));
     }
     fn push_samples_f32(&mut self, data: &[f32]) {
         for &sample in data {
             self.push_sample((sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
         }
+        self.push_mono(data.iter().copied());
     }
     fn push_samples_u16(&mut self, data: &[u16]) {
         for &sample in data {
             self.push_sample((sample as i32 - (i16::MAX as i32 + 1)) as i16);
         }
+        self.push_mono(
+            data.iter()
+                .map(|sample| (*sample as f32 - 32_768.0) / 32_768.0),
+        );
     }
     fn begin_recording(&mut self) {
         self.samples.clear();
+        self.stream_samples.clear();
         while let Some(sample) = self.pre_roll.pop_front() {
             self.samples.push(sample);
+            self.stream_samples.push(sample);
         }
         self.recording_flag = true;
+    }
+    fn push_mono(&mut self, samples: impl Iterator<Item = f32>) {
+        let channels = usize::from(self.channels.max(1));
+        for sample in samples {
+            self.mono_frame.push(sample);
+            if self.mono_frame.len() == channels {
+                self.pending_mono
+                    .push(self.mono_frame.iter().sum::<f32>() / channels as f32);
+                self.mono_frame.clear();
+            }
+        }
+    }
+    fn take_pending_mono(&mut self) -> Vec<f32> {
+        std::mem::take(&mut self.pending_mono)
+    }
+    fn take_stream_samples(&mut self) -> Vec<i16> {
+        std::mem::take(&mut self.stream_samples)
     }
 }
 
 /// Start continuous wake listening. Idempotent.
 #[tauri::command]
-pub fn voice_wake_start(app: AppHandle) -> Result<serde_json::Value, String> {
+pub fn voice_wake_start(
+    app: AppHandle,
+    mode: VoiceWakeMode,
+    stream_pcm: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let stream_pcm = stream_pcm.unwrap_or(false);
     let stale_worker = {
         let mut guard = WAKE.lock().map_err(|e| format!("Lock: {}", e))?;
         if let Some(ref st) = *guard {
             if st.running {
-                return Ok(serde_json::json!({ "listening": true, "already": true }));
+                return Ok(
+                    serde_json::json!({ "listening": true, "already": true, "mode": st.mode }),
+                );
             }
         }
         guard.take()
@@ -227,7 +281,7 @@ pub fn voice_wake_start(app: AppHandle) -> Result<serde_json::Value, String> {
     let mut guard = WAKE.lock().map_err(|e| format!("Lock: {}", e))?;
     if let Some(ref st) = *guard {
         if st.running {
-            return Ok(serde_json::json!({ "listening": true, "already": true }));
+            return Ok(serde_json::json!({ "listening": true, "already": true, "mode": st.mode }));
         }
     }
 
@@ -235,14 +289,23 @@ pub fn voice_wake_start(app: AppHandle) -> Result<serde_json::Value, String> {
     let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), String>>(1);
     let worker_id = NEXT_WORKER_ID.fetch_add(1, Ordering::Relaxed);
     let app_for_thread = app.clone();
-    let worker =
-        std::thread::spawn(move || run_vad_loop(app_for_thread, cmd_rx, worker_id, ready_tx));
+    let worker = std::thread::spawn(move || {
+        run_capture_loop(
+            app_for_thread,
+            cmd_rx,
+            worker_id,
+            mode,
+            stream_pcm,
+            ready_tx,
+        )
+    });
 
     *guard = Some(WakeState {
         worker_id,
         tx: Some(cmd_tx),
         worker: Some(worker),
         running: true,
+        mode,
     });
     drop(guard);
 
@@ -270,7 +333,7 @@ pub fn voice_wake_start(app: AppHandle) -> Result<serde_json::Value, String> {
                     let _ = app.emit("voice-wake", serde_json::json!({ "state": "listening" }));
                 }
             }
-            Ok(serde_json::json!({ "listening": true }))
+            Ok(serde_json::json!({ "listening": true, "mode": mode }))
         }
         Ok(Err(error)) => {
             stop_worker_by_id(worker_id);
@@ -342,13 +405,16 @@ pub fn voice_wake_stop(app: AppHandle) -> Result<serde_json::Value, String> {
 pub fn voice_wake_status() -> Result<serde_json::Value, String> {
     let guard = WAKE.lock().map_err(|e| format!("Lock: {}", e))?;
     let listening = guard.as_ref().map(|st| st.running).unwrap_or(false);
-    Ok(serde_json::json!({ "listening": listening }))
+    let mode = guard.as_ref().map(|st| st.mode);
+    Ok(serde_json::json!({ "listening": listening, "mode": mode }))
 }
 
-fn run_vad_loop(
+fn run_capture_loop(
     app: AppHandle,
     cmd_rx: mpsc::Receiver<WakeCmd>,
     worker_id: u64,
+    mode: VoiceWakeMode,
+    stream_pcm: bool,
     ready_tx: mpsc::SyncSender<Result<(), String>>,
 ) {
     let cfg = VadConfig::default();
@@ -370,6 +436,15 @@ fn run_vad_loop(
             s.set_audio_format(sample_rate, channels);
         }
 
+        let mut keyword_spotter = if mode == VoiceWakeMode::WakeWord {
+            Some(WakeKeywordSpotter::create(
+                &voice_wake_model::configured_directory(&app)?,
+            )?)
+        } else {
+            None
+        };
+
+        let (stream_error_tx, stream_error_rx) = mpsc::channel::<String>();
         let state_cb = state.clone();
         let stream = match config.sample_format() {
             cpal::SampleFormat::I16 => device
@@ -382,7 +457,10 @@ fn run_vad_loop(
                             s.push_samples_i16(data);
                         }
                     },
-                    |e| eprintln!("[VoiceWake] stream error: {}", e),
+                    {
+                        let stream_error_tx = stream_error_tx.clone();
+                        move |error| report_stream_error(&stream_error_tx, error)
+                    },
                     None,
                 )
                 .map_err(|e| format!("启动采集流失败: {}", e))?,
@@ -396,7 +474,10 @@ fn run_vad_loop(
                             s.push_samples_f32(data);
                         }
                     },
-                    |e| eprintln!("[VoiceWake] stream error: {}", e),
+                    {
+                        let stream_error_tx = stream_error_tx.clone();
+                        move |error| report_stream_error(&stream_error_tx, error)
+                    },
                     None,
                 )
                 .map_err(|e| format!("启动采集流失败: {}", e))?,
@@ -410,7 +491,10 @@ fn run_vad_loop(
                             s.push_samples_u16(data);
                         }
                     },
-                    |e| eprintln!("[VoiceWake] stream error: {}", e),
+                    {
+                        let stream_error_tx = stream_error_tx.clone();
+                        move |error| report_stream_error(&stream_error_tx, error)
+                    },
                     None,
                 )
                 .map_err(|e| format!("启动采集流失败: {}", e))?,
@@ -433,20 +517,50 @@ fn run_vad_loop(
             if let Ok(WakeCmd::Stop) = cmd_rx.try_recv() {
                 break;
             }
+            stream_failure(&stream_error_rx)?;
 
-            let rms = state.lock().map(|s| s.smoothed_rms()).unwrap_or(0.0);
+            let (rms, pending_mono, stream_samples) = state
+                .lock()
+                .map(|mut s| {
+                    (
+                        s.smoothed_rms(),
+                        s.take_pending_mono(),
+                        s.take_stream_samples(),
+                    )
+                })
+                .unwrap_or((0.0, Vec::new(), Vec::new()));
             let is_speech = rms >= cfg.speech_rms;
             let is_silence = rms <= cfg.silence_rms;
             let now_ms = thread_start.elapsed().as_millis();
 
             if !recording {
-                if is_speech {
+                let detected_keyword = keyword_spotter.as_mut().and_then(|spotter| {
+                    spotter.accept_waveform_and_detect(sample_rate, &pending_mono)
+                });
+                if mode == VoiceWakeMode::WakeWord && detected_keyword.is_some() {
+                    recording = true;
+                    speech_ms = 0;
+                    silence_ms = 0;
+                    utterance_start_ms = now_ms;
+                    if let Ok(mut s) = state.lock() {
+                        s.begin_recording();
+                    }
+                    emit_worker_event(
+                        &app,
+                        worker_id,
+                        serde_json::json!({
+                            "state": "wake_detected",
+                            "source": "keyword",
+                            "trigger": detected_keyword,
+                        }),
+                    );
+                } else if mode == VoiceWakeMode::Dictation && is_speech {
                     speech_ms += 20;
                     silence_ms = 0;
-                } else {
+                } else if mode == VoiceWakeMode::Dictation {
                     speech_ms = 0;
                 }
-                if speech_ms >= cfg.speech_trigger_ms {
+                if mode == VoiceWakeMode::Dictation && speech_ms >= cfg.speech_trigger_ms {
                     recording = true;
                     speech_ms = 0;
                     silence_ms = 0;
@@ -458,10 +572,26 @@ fn run_vad_loop(
                     emit_worker_event(
                         &app,
                         worker_id,
-                        serde_json::json!({ "state": "wake_detected" }),
+                        serde_json::json!({ "state": "wake_detected", "source": "vad" }),
                     );
                 }
             } else {
+                if stream_pcm && !stream_samples.is_empty() {
+                    let pcm = resample_pcm16_mono(&stream_samples, sample_rate, channels, 24_000);
+                    if !pcm.is_empty() {
+                        emit_worker_event(
+                            &app,
+                            worker_id,
+                            serde_json::json!({
+                                "state": "pcm",
+                                "data": STANDARD.encode(pcm_to_bytes(&pcm)),
+                                "encoding": "pcm16",
+                                "sampleRateHz": 24_000,
+                                "channels": 1,
+                            }),
+                        );
+                    }
+                }
                 if is_silence {
                     silence_ms += 20;
                 } else {
@@ -543,9 +673,53 @@ fn finalize_wav(samples: &[i16], sample_rate: u32, channels: u16) -> Result<Stri
     Ok(STANDARD.encode(&buf))
 }
 
+fn pcm_to_bytes(samples: &[i16]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(samples.len() * 2);
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    bytes
+}
+
+fn resample_pcm16_mono(
+    samples: &[i16],
+    source_sample_rate: u32,
+    channels: u16,
+    target_sample_rate: u32,
+) -> Vec<i16> {
+    let channel_count = usize::from(channels.max(1));
+    let mono: Vec<i16> = samples
+        .chunks_exact(channel_count)
+        .map(|frame| {
+            let sum: i32 = frame.iter().map(|sample| i32::from(*sample)).sum();
+            (sum / i32::try_from(frame.len()).unwrap_or(1)) as i16
+        })
+        .collect();
+    if mono.is_empty() || source_sample_rate == 0 || target_sample_rate == 0 {
+        return Vec::new();
+    }
+    if source_sample_rate == target_sample_rate {
+        return mono;
+    }
+    let output_len =
+        mono.len().saturating_mul(target_sample_rate as usize) / source_sample_rate as usize;
+    let mut output = Vec::with_capacity(output_len);
+    for index in 0..output_len {
+        let source_index =
+            index.saturating_mul(source_sample_rate as usize) / target_sample_rate as usize;
+        if let Some(sample) = mono.get(source_index) {
+            output.push(*sample);
+        }
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{mark_worker_stopped, rms_u16, should_emit_command_stop, CaptureState, WakeState};
+    use super::{
+        mark_worker_stopped, resample_pcm16_mono, rms_u16, should_emit_command_stop,
+        stream_failure, CaptureState, VoiceWakeMode, WakeState,
+    };
 
     #[test]
     fn test_bug_01_old_worker_cannot_stop_replacement() {
@@ -554,6 +728,7 @@ mod tests {
             tx: None,
             worker: None,
             running: true,
+            mode: VoiceWakeMode::Dictation,
         });
 
         assert!(!mark_worker_stopped(&mut state, 1));
@@ -585,14 +760,45 @@ mod tests {
     }
 
     #[test]
+    fn wake_detector_keeps_partial_stereo_frame_between_callbacks() {
+        let mut capture = CaptureState::new();
+        capture.set_audio_format(16_000, 2);
+        capture.push_samples_f32(&[0.2]);
+        assert!(capture.take_pending_mono().is_empty());
+
+        capture.push_samples_f32(&[0.6]);
+        assert_eq!(capture.take_pending_mono(), vec![0.4]);
+    }
+
+    #[test]
     fn test_bug_12_replacement_suppresses_stale_command_stop() {
         let replacement = Some(WakeState {
             worker_id: 9,
             tx: None,
             worker: None,
             running: true,
+            mode: VoiceWakeMode::Dictation,
         });
         assert!(!should_emit_command_stop(&replacement));
         assert!(should_emit_command_stop(&None));
+    }
+
+    #[test]
+    fn microphone_stream_error_terminates_the_listener_loop() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send("Microphone stream failed: device disconnected".to_string())
+            .expect("receiver remains available");
+
+        assert_eq!(
+            stream_failure(&rx),
+            Err("Microphone stream failed: device disconnected".to_string()),
+        );
+    }
+
+    #[test]
+    fn pcm_stream_is_mono_and_resampled_for_gateway_relay() {
+        let samples = [1_000, 3_000, 5_000, 7_000];
+        let pcm = resample_pcm16_mono(&samples, 48_000, 2, 24_000);
+        assert_eq!(pcm, vec![2_000]);
     }
 }

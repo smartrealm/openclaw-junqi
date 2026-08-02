@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { presentVoiceWakeWindow } from '@/services/voice/VoiceWakeWindowPresenter';
 import type {
   ClearRuntimeIdentityParams,
   GatewayHelloObservation,
@@ -20,6 +22,115 @@ import type {
   CollaborationBootstrapStatus,
 } from '@/types/collaborationBootstrap';
 import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
+
+export type VoiceWakeCaptureMode = 'dictation' | 'wake_word';
+
+export interface VoiceWakeStatus {
+  listening: boolean;
+  mode: VoiceWakeCaptureMode | null;
+}
+
+export interface VoiceWakeDetectorStatus {
+  available: boolean;
+  modelId: string | null;
+  directory: string | null;
+  keywords: string[];
+  reason: string | null;
+}
+
+function voiceWakeContractError(command: string): Error {
+  return new Error(`${command} returned an invalid native contract`);
+}
+
+function optionalString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') throw new Error('invalid optional string');
+  return value;
+}
+
+function nonEmptyStringArray(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 32) throw new Error('invalid string array');
+  const result: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string' || entry.trim().length === 0 || entry.length > 128) {
+      throw new Error('invalid string array entry');
+    }
+    result.push(entry);
+  }
+  return result;
+}
+
+function parseVoiceWakeStatus(command: string, value: unknown): VoiceWakeStatus {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw voiceWakeContractError(command);
+  const record = value as Record<string, unknown>;
+  if (typeof record.listening !== 'boolean') throw voiceWakeContractError(command);
+  const mode = optionalString(record.mode);
+  if (mode !== null && mode !== 'dictation' && mode !== 'wake_word') throw voiceWakeContractError(command);
+  return { listening: record.listening, mode };
+}
+
+function parseVoiceWakeDetectorStatus(command: string, value: unknown): VoiceWakeDetectorStatus {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw voiceWakeContractError(command);
+  const record = value as Record<string, unknown>;
+  if (typeof record.available !== 'boolean') throw voiceWakeContractError(command);
+  try {
+    return {
+      available: record.available,
+      modelId: optionalString(record.modelId),
+      directory: optionalString(record.directory),
+      keywords: nonEmptyStringArray(record.keywords),
+      reason: optionalString(record.reason),
+    };
+  } catch {
+    throw voiceWakeContractError(command);
+  }
+}
+
+export const getVoiceWakeStatus = async (): Promise<VoiceWakeStatus> => (
+  parseVoiceWakeStatus('voice_wake_status', await invoke<unknown>('voice_wake_status'))
+);
+
+export const startVoiceWake = async (
+  mode: VoiceWakeCaptureMode,
+  options: { streamPcm?: boolean } = {},
+): Promise<VoiceWakeStatus> => (
+  parseVoiceWakeStatus('voice_wake_start', await invoke<unknown>('voice_wake_start', {
+    mode,
+    streamPcm: options.streamPcm ?? false,
+  }))
+);
+
+export const stopVoiceWake = async (): Promise<VoiceWakeStatus> => (
+  parseVoiceWakeStatus('voice_wake_stop', await invoke<unknown>('voice_wake_stop'))
+);
+
+export const playTalkPcm = (audioBase64: string) => invoke<void>('voice_talk_play_pcm', {
+  audioBase64,
+  sampleRateHz: 24_000,
+  channels: 1,
+});
+
+export const stopTalkPlayback = () => invoke<void>('voice_talk_stop_playback');
+
+export const finishTalkPlayback = () => invoke<void>('voice_talk_finish_playback');
+
+export const getVoiceWakeDetectorStatus = async (): Promise<VoiceWakeDetectorStatus> => (
+  parseVoiceWakeDetectorStatus(
+    'voice_wake_detector_status',
+    await invoke<unknown>('voice_wake_detector_status'),
+  )
+);
+
+export const setVoiceWakeModelDirectory = async (directory: string): Promise<VoiceWakeDetectorStatus> => (
+  parseVoiceWakeDetectorStatus(
+    'voice_wake_set_model_directory',
+    await invoke<unknown>('voice_wake_set_model_directory', { directory }),
+  )
+);
+
+export const presentCurrentWindowForVoiceWake = () => (
+  presentVoiceWakeWindow(getCurrentWindow())
+);
 
 export type RuntimeToolSource = 'system' | 'custom';
 export interface NodeStatus { available: boolean; version: string | null; path: string | null; source: RuntimeToolSource | null; }

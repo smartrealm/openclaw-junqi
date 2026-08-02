@@ -13,6 +13,8 @@ export type VoiceInputPhase =
 export type VoiceModeErrorCode =
   | 'gateway_unavailable'
   | 'wake_detector_unavailable'
+  | 'wake_trigger_model_mismatch'
+  | 'session_category_unavailable'
   | 'target_changed'
   | 'capture_failed';
 
@@ -171,6 +173,13 @@ export class VoiceModeCoordinator {
       return false;
     }
     this.commit({ ...this.snapshot, phase: 'transcribing' });
+    return true;
+  }
+
+  resumeListening(turnId: string | null, context: VoiceModeContext): boolean {
+    if (!this.isCurrentTurn(turnId, context)) return false;
+    if (this.snapshot.phase !== 'triggered' && this.snapshot.phase !== 'transcribing') return false;
+    this.commit({ ...this.snapshot, phase: 'listening', error: null });
     return true;
   }
 

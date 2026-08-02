@@ -297,6 +297,8 @@ export interface Session {
   /** Ephemeral OpenClaw session identity. Changes after reset/new. */
   sessionId?: string;
   label: string;
+  /** OpenClaw user-defined session organization bucket. `null` means ungrouped. */
+  category?: string | null;
   agentId?: string;
   createdAt?: number | string;
   topic?: string;
@@ -340,8 +342,6 @@ export interface Session {
   // User-controlled lifecycle flags (SPEC: archive + pin)
   pinned?: boolean;
   archived?: boolean;
-  /** OpenClaw's persisted organization bucket. */
-  category?: string | null;
   /** Desktop organization metadata, keyed by the Gateway session identity. */
   groupId?: string;
 }

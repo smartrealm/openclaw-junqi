@@ -128,6 +128,7 @@ docs/
 - [Tauri Command 边界审计](quality/tauri-command-boundary-audit-2026-07-27.md)
 - [Voice Runtime 审计](quality/voice-runtime-audit.md)
 - [Voice Runtime 审计计划](quality/voice-runtime-audit-plan.md)
+- [跨平台语音唤醒宿主验证](quality/2026-08-02-cross-platform-voice-wake-host.md)
 - [JunQi Namespace 审计](quality/junqi-namespace-audit.md)
 - [JunQi Namespace 计划](quality/junqi-namespace-plan.md)
 - [技能管理入口与双路由审计](quality/skill-management-route-audit-2026-07-27.md)

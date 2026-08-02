@@ -10,3 +10,9 @@ agent icon artwork from the local Kooky reference project.
 - JetBrains Mono: SIL Open Font License 1.1.
 - Agent icons: Kooky lists their upstream sources and licenses in its
   `NOTICE.md`; corresponding notices remain applicable.
+
+## Voice wake dependencies
+
+- sherpa-onnx 1.13.4: Apache License 2.0.
+- tauri-plugin-autostart 2.5.1: Apache License 2.0 or MIT License.
+- auto-launch 0.5.0: application-scoped command-serialization patch; MIT License.

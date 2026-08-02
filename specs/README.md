@@ -49,6 +49,7 @@ specs/
 - [Chat production hardening](quality/2026-07-21-chat-production-hardening.md)
 - [JunQi namespace](quality/2026-07-21-junqi-namespace-bugfix.md)
 - [Voice runtime](quality/2026-07-21-voice-runtime-bugfix.md)
+- [跨平台语音唤醒宿主](quality/2026-08-02-cross-platform-voice-wake-host.md)
 - [Tauri listener lifecycle](quality/2026-07-22-tauri-listener-lifecycle-bugfix.md)
 - [Tauri command boundary](quality/2026-07-27-tauri-command-boundary-bugfix.md)
 - [字体设置与 Orca 对齐](quality/2026-07-28-font-settings-orca-parity.md)

@@ -102,6 +102,16 @@ async function waitForSocketCount(count: number): Promise<void> {
   assert.equal(MemoryWebSocket.instances.length, count);
 }
 
+async function waitForSocketRequest(socket: MemoryWebSocket, method: string): Promise<WireRequest> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const request = socket.sent.find((candidate) => candidate.method === method);
+    if (request) return request;
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  }
+  assert.fail(`Expected ${method} request before the handshake deadline`);
+}
+
 function challenge(socket: MemoryWebSocket) {
   socket.open();
   socket.receive({
@@ -181,9 +191,9 @@ describe('Gateway credential security regression gates', () => {
     };
     challenge(socket);
 
-    const handshake = socket.sent.find((message) => message.method === 'connect');
-    assert.deepEqual(handshake?.params.scopes, ['operator.read', 'operator.write']);
-    assert.deepEqual(handshake?.params.auth, { token: 'daily-token' });
+    const handshake = await waitForSocketRequest(socket, 'connect');
+    assert.deepEqual(handshake.params.scopes, ['operator.read', 'operator.write']);
+    assert.deepEqual(handshake.params.auth, { token: 'daily-token' });
     assert.deepEqual(savedDeviceTokens, [{
       token: 'daily-device-token',
       url: 'ws://127.0.0.1:18789',
@@ -213,8 +223,8 @@ describe('Gateway credential security regression gates', () => {
     };
     challenge(socket);
 
-    const handshake = socket.sent.find((message) => message.method === 'connect');
-    assert.deepEqual(handshake?.params.auth, {
+    const handshake = await waitForSocketRequest(socket, 'connect');
+    assert.deepEqual(handshake.params.auth, {
       token: 'paired-device-token',
       deviceToken: 'paired-device-token',
     });
@@ -372,6 +382,7 @@ describe('Gateway credential security regression gates', () => {
       });
     };
     challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
     await turn();
     requestPrivileged.cancelPairingRetry();
 
@@ -397,14 +408,11 @@ describe('Gateway credential security regression gates', () => {
     await waitForSocketCount(1);
 
     const firstSocket = MemoryWebSocket.instances[0];
-    const firstRpcs: WireRequest[] = [];
     firstSocket.onSend = (message) => {
       if (message.method === 'connect') acceptHandshake(firstSocket, message, 'privileged-first');
-      else firstRpcs.push(message);
     };
     challenge(firstSocket);
-    const firstRpc = firstRpcs[0];
-    assert.ok(firstRpc);
+    const firstRpc = await waitForSocketRequest(firstSocket, 'admin.first');
     assert.equal(firstRpc.method, 'admin.first');
     await turn();
     assert.equal(MemoryWebSocket.instances.length, 1, 'second request must wait for the first');
@@ -414,14 +422,11 @@ describe('Gateway credential security regression gates', () => {
     await waitForSocketCount(2);
 
     const secondSocket = MemoryWebSocket.instances[1];
-    const secondRpcs: WireRequest[] = [];
     secondSocket.onSend = (message) => {
       if (message.method === 'connect') acceptHandshake(secondSocket, message, 'privileged-second');
-      else secondRpcs.push(message);
     };
     challenge(secondSocket);
-    const secondRpc = secondRpcs[0];
-    assert.ok(secondRpc);
+    const secondRpc = await waitForSocketRequest(secondSocket, 'admin.second');
     assert.equal(secondRpc.method, 'admin.second');
     secondSocket.receive({ type: 'res', id: secondRpc.id, ok: true, payload: 'second' });
     assert.equal(await secondResult, 'second');
@@ -451,7 +456,7 @@ describe('Gateway credential security regression gates', () => {
       // Keep the Wizard RPC pending to reproduce a stale serialized lane.
     };
     challenge(firstSocket);
-    await turn();
+    await waitForSocketRequest(firstSocket, 'wizard.next');
     assert.deepEqual(firstSocket.sent.map((message) => message.method), ['connect', 'wizard.next']);
 
     const queuedResult = requestPrivileged('wizard.status', { sessionId: 'replacement' }, 1_000);

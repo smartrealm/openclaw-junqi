@@ -29,6 +29,7 @@ export interface SessionInfo {
   key: string;
   sessionId?: string;
   label?: string;
+  category?: string;
   model?: string;
   running?: boolean;
   totalTokens?: number;
@@ -562,6 +563,7 @@ async function fetchSessions(): Promise<boolean> {
     const same = prev.length === list.length
       && prev.every((s, i) => s.key === list[i]?.key
         && s.label === list[i]?.label
+        && s.category === list[i]?.category
         && s.running === list[i]?.running
         && s.totalTokens === list[i]?.totalTokens
         && s.runningUpdatedAt === list[i]?.runningUpdatedAt);

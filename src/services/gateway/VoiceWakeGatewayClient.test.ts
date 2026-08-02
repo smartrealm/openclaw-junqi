@@ -31,8 +31,25 @@ test('voice wake client fences trigger reads to the attested Gateway connection'
   assert.deepEqual(calls, [{ method: 'voicewake.get', params: {}, connectionId: 'connection-a' }]);
 });
 
+test('voice wake client synchronizes only the supplied trigger list', async () => {
+  const { client, calls } = clientWith({ triggers: ['JARVIS', '你好'] });
+  const snapshot = await client.setTriggers(['JARVIS', '你好']);
+
+  assert.deepEqual(snapshot, { triggers: ['JARVIS', '你好'] });
+  assert.deepEqual(calls, [{
+    method: 'voicewake.set',
+    params: { triggers: ['JARVIS', '你好'] },
+    connectionId: 'connection-a',
+  }]);
+});
+
 test('voice wake client rejects malformed Gateway payloads instead of defaulting', async () => {
   const { client } = clientWith({ triggers: [42] });
+  await assert.rejects(client.getTriggers(), VoiceWakeGatewayUnavailableError);
+});
+
+test('voice wake client rejects an empty trigger list that the installed Gateway never emits', async () => {
+  const { client } = clientWith({ triggers: [] });
   await assert.rejects(client.getTriggers(), VoiceWakeGatewayUnavailableError);
 });
 

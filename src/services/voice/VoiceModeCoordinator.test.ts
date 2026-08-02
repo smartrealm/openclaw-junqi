@@ -128,3 +128,18 @@ test('VWS-03 does not present VAD as a wake detector', () => {
   assert.equal(snapshot.phase, 'unavailable');
   assert.equal(snapshot.error, 'wake_detector_unavailable');
 });
+
+test('a failed Jarvis category assignment leaves the wake turn recoverable and non-dispatching', () => {
+  const coordinator = new VoiceModeCoordinator();
+  const owner = context();
+  const snapshot = coordinator.start({ mode: 'wake_word', context: owner, wakeDetectorAvailable: true });
+
+  assert.equal(coordinator.markTriggered(snapshot.turnId, owner), true);
+  assert.equal(
+    coordinator.reportUnavailable(snapshot.turnId, owner, 'session_category_unavailable'),
+    true,
+  );
+  assert.equal(coordinator.getSnapshot().phase, 'error');
+  assert.equal(coordinator.getSnapshot().error, 'session_category_unavailable');
+  assert.equal(coordinator.acceptAudioCapture(snapshot.turnId, owner, 1), null);
+});

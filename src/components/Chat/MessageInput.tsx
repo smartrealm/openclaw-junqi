@@ -9,6 +9,7 @@ import { ComposerVoiceRecorder } from './message-input/ComposerVoiceRecorder';
 import { MessageQueuePanel } from './message-input/MessageQueuePanel';
 import { VoiceStatusBanner } from './message-input/VoiceStatusBanner';
 import { VoiceWorkspace } from './message-input/VoiceWorkspace';
+import { VoiceWakeOverlay } from './message-input/VoiceWakeOverlay';
 import { useComposerAttachments } from './message-input/useComposerAttachments';
 import { useComposerInterruption } from './message-input/useComposerInterruption';
 import { useComposerMenu } from './message-input/useComposerMenu';
@@ -92,13 +93,40 @@ export function MessageInput() {
         onRemove={attachments.removeFile}
       />
       <MessageQueuePanel sessionKey={activeSessionKey} dir={dir} />
-      {!voice.recording && (
+      {!voice.recording && voice.voiceMode.mode !== 'wake_word' && (
         <VoiceWorkspace
           snapshot={voice.voiceMode}
           connected={connected && !historyLoading}
           onStartDictation={voice.startDictation}
           onRequestWakeWord={voice.requestWakeWord}
           onStop={voice.stopVoiceMode}
+          onConfirmDraft={voice.confirmVoiceDraft}
+          onDiscardDraft={voice.discardVoiceDraft}
+          autoArmEnabled={voice.autoArmEnabled}
+          detector={voice.detector}
+          detectorError={voice.detectorError}
+          configuringDetector={voice.configuringDetector}
+          syncingWakeTriggers={voice.syncingWakeTriggers}
+          launchOnLogin={voice.launchOnLogin}
+          onConfigureDetector={() => { void voice.configureWakeDetector(); }}
+          onSyncWakeTriggers={() => { void voice.syncWakeTriggers(); }}
+          onToggleLaunchOnLogin={() => { void voice.toggleLaunchOnLogin(); }}
+        />
+      )}
+      {!voice.recording && (
+        <VoiceWakeOverlay
+          snapshot={voice.voiceMode}
+          talkPhase={voice.talkConversation.phase}
+          detector={voice.detector}
+          detectorError={voice.detectorError}
+          configuringDetector={voice.configuringDetector}
+          syncingWakeTriggers={voice.syncingWakeTriggers}
+          modelWakeKeywords={voice.modelWakeKeywords}
+          selectedWakeKeywords={voice.selectedWakeKeywords}
+          onStop={voice.stopVoiceMode}
+          onConfigureDetector={() => { void voice.configureWakeDetector(); }}
+          onSyncWakeTriggers={() => { void voice.syncWakeTriggers(); }}
+          onSaveWakeTriggers={voice.saveWakeTriggers}
           onConfirmDraft={voice.confirmVoiceDraft}
           onDiscardDraft={voice.discardVoiceDraft}
         />

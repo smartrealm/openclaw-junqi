@@ -14,6 +14,7 @@ import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { isAgentMainSession } from '@/utils/sessionLifecycle';
 import { isSubagentSessionKey } from '@/utils/sessionPresentation';
+import { isJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import type { AgentInfo, SessionInfo } from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
@@ -62,13 +63,14 @@ const fmtTokens = (n?: number): string => n == null ? '—' : formatTokens(n);
 // Filter types
 // ═══════════════════════════════════════════════════════════
 
-type FilterType = 'all' | 'running' | 'idle' | 'subagent';
+type FilterType = 'all' | 'running' | 'idle' | 'subagent' | 'jarvis';
 
 const FILTERS: { id: FilterType; labelKey: string; fallback: string }[] = [
   { id: 'all',      labelKey: 'sessions.filterAll',      fallback: 'All'        },
   { id: 'running',  labelKey: 'sessions.filterRunning',  fallback: 'Running'    },
   { id: 'idle',     labelKey: 'sessions.filterIdle',     fallback: 'Idle'       },
   { id: 'subagent', labelKey: 'sessions.filterSubagent', fallback: 'Sub-agents' },
+  { id: 'jarvis',   labelKey: 'sessions.filterJarvis',   fallback: 'Jarvis' },
 ];
 
 
@@ -335,6 +337,12 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
                 : t('sessions.typeSession', 'Session')}
         </Badge>
 
+        {typeof session.category === 'string' && session.category.trim() && (
+          <Badge tone="info" size="sm" variant="soft" title={session.category}>
+            {session.category}
+          </Badge>
+        )}
+
         {session.model && (
           <Badge tone="info" size="sm" variant="soft" className="font-mono">
             {shortModel(session.model)}
@@ -417,6 +425,8 @@ export function SessionManagerPage() {
           return sessions.filter((s) => s.running !== true);
         case 'subagent':
           return sessions.filter((s) => getSessionKind(s) === 'subagent');
+        case 'jarvis':
+          return sessions.filter((s) => isJarvisSessionCategory(s.category));
         default:
           return sessions;
       }
@@ -442,6 +452,7 @@ export function SessionManagerPage() {
     running:  sessions.filter((s) => s.running === true).length,
     idle:     sessions.filter((s) => s.running !== true).length,
     subagent: sessions.filter((s) => getSessionKind(s) === 'subagent').length,
+    jarvis:   sessions.filter((s) => isJarvisSessionCategory(s.category)).length,
   }), [sessions]);
 
   // ═══ RENDER ═══
