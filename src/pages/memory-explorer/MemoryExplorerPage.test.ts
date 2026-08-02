@@ -7,6 +7,8 @@ const hook = readFileSync(new URL('./useOpenClawWorkspaceMemories.ts', import.me
 
 test('memory page only consumes the shared workspace-memory hook', () => {
   assert.match(page, /useOpenClawWorkspaceMemories\(\)/);
+  assert.match(page, /useGatewayDataStore/);
+  assert.match(page, /searchOpenClawMemory/);
   assert.doesNotMatch(page, /window\.aegis/);
   assert.doesNotMatch(page, /\bfetch\(/);
   assert.doesNotMatch(page, /useSettingsStore/);

@@ -244,11 +244,11 @@
 
 优先级：中低
 
-**官方依据**：`protocol.md` 的 `doctor.memory.status`、`doctor.memory.remHarness`（后者明确标注 requires `operator.read`，返回 bounded read-only 预览）；`docs/concepts/memory.md`、`memory-builtin.md`、`memory-search.md`
+**官方依据**：`protocol.md` 的 `doctor.memory.status`、`doctor.memory.remHarness`（后者明确标注 requires `operator.read`，返回 bounded read-only 预览）；当前官方 `core-descriptors.ts`、`server-methods/memory-search.ts` 和 `memory-host-sdk/host/types.ts` 对 `memory.search` 的权限、请求和结果类型定义。
 
-**当前行为**：`src/pages/MemoryExplorer.tsx`（980 行）让用户二选一：读本地 `.md` 文件夹，或连接一个自定义的 "Memory API server"。页面自述为 experimental。`doctor.memory.*` 引用为 0。
+**当前行为**：`src/pages/memory-explorer/MemoryExplorerPage.tsx` 保留通过受保护桌面 IPC 浏览当前 OpenClaw 工作区 `MEMORY.md` 与 `memory/` Markdown 的只读视图，并增加显式 Gateway 检索视图。Gateway 视图只调用官方 `memory.search`，按能力广告、连接和最新查询管理结果；`doctor.memory.*` 仍未接入。
 
-**可拓展**：OpenClaw 自身就是 memory 的权威持有者。接入 `doctor.memory.status` 与 `doctor.memory.remHarness` 后，用户不需要手工指定路径或搭建额外服务。
+**可拓展**：OpenClaw 自身就是 memory 的权威持有者。当前已接入 `memory.search`，让 Gateway 返回持久记忆和会话来源的检索结果；后续如接入 `doctor.memory.status` 或 `doctor.memory.remHarness`，必须继续保持诊断只读、权限明确和状态独立，不得把它们扩展成 JunQi 私有 CRUD。
 
 **边界**：`doctor.memory.*` 家族中大部分是修复类操作（`resetDreamDiary`、`repairDreamingArtifacts` 等），属于破坏性动作，只应接入只读的 `status` 与 `remHarness`，不应把修复操作放进浏览界面。
 
@@ -290,7 +290,7 @@
 10. EXT-A 的审批协议（涉及 `operator.approvals` 权限提升）
 11. EXT-D 技能协议迁移（涉及既有安装记录）
 12. EXT-E 产物协议（当前 session scope 已接入；run/task scope 待真实场景验证）
-13. EXT-F Memory 只读接入
+13. EXT-F Memory 只读接入（`memory.search` 已接入；`doctor.memory.status/remHarness` 仍待独立立项）
 14. IMP-02 大文件拆分，只在其他任务顺带触及时进行
 
 ## 不建议做的

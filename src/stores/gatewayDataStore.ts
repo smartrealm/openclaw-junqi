@@ -36,6 +36,12 @@ import {
   type OpenClawArtifactSummary,
   type OpenClawArtifactsDownloadResult,
 } from '@/services/gateway/OpenClawArtifactsClient';
+import {
+  OPENCLAW_MEMORY_SEARCH_METHOD,
+  OpenClawMemorySearchClient,
+  OpenClawMemorySearchResponseError,
+  type OpenClawMemorySearchResponse,
+} from '@/services/gateway/OpenClawMemorySearchClient';
 import { saveChatMedia } from '@/services/chat/mediaSaveRuntime';
 
 export type { OpenClawSessionPreviewEntry } from '@/services/gateway/OpenClawSessionPreviewClient';
@@ -59,6 +65,13 @@ export type {
   OpenClawArtifactsGetResult,
   OpenClawArtifactsListResult,
 } from '@/services/gateway/OpenClawArtifactsClient';
+export type {
+  OpenClawMemorySearchInput,
+  OpenClawMemorySearchMode,
+  OpenClawMemorySearchResult,
+  OpenClawMemorySearchResponse,
+  OpenClawMemorySource,
+} from '@/services/gateway/OpenClawMemorySearchClient';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -247,6 +260,11 @@ interface GatewayDataState {
   sessionArtifactsLoading: boolean;
   sessionArtifactsLoadingKey: string | null;
   sessionArtifactsError: string | null;
+  memorySearch: OpenClawMemorySearchResponse | null;
+  memorySearchQuery: string;
+  memorySearchUpdatedAt: number;
+  memorySearchLoading: boolean;
+  memorySearchError: string | null;
   agents: AgentInfo[];
   costSummary: CostSummary | null;
   sessionsUsage: SessionsUsage | null;
@@ -304,6 +322,10 @@ interface GatewayDataState {
   clearSessionArtifacts: (sessionKey?: string) => void;
   setSessionArtifactsLoading: (sessionKey: string | null) => void;
   setSessionArtifactsError: (value: string | null) => void;
+  setMemorySearch: (query: string, result: OpenClawMemorySearchResponse) => void;
+  clearMemorySearch: () => void;
+  setMemorySearchLoading: (query: string | null) => void;
+  setMemorySearchError: (value: string | null) => void;
   setAgents: (agents: AgentInfo[]) => void;
   setCostSummary: (data: CostSummary) => void;
   setSessionsUsage: (data: SessionsUsage) => void;
@@ -346,6 +368,11 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   sessionArtifactsLoading: false,
   sessionArtifactsLoadingKey: null,
   sessionArtifactsError: null,
+  memorySearch: null,
+  memorySearchQuery: '',
+  memorySearchUpdatedAt: 0,
+  memorySearchLoading: false,
+  memorySearchError: null,
   agents: [],
   costSummary: null,
   sessionsUsage: null,
@@ -530,6 +557,30 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   }),
 
   setSessionArtifactsError: (value) => set({ sessionArtifactsError: value }),
+
+  setMemorySearch: (query, result) => set({
+    memorySearch: result,
+    memorySearchQuery: query,
+    memorySearchUpdatedAt: Date.now(),
+    memorySearchLoading: false,
+    memorySearchError: null,
+  }),
+
+  clearMemorySearch: () => set({
+    memorySearch: null,
+    memorySearchQuery: '',
+    memorySearchUpdatedAt: 0,
+  }),
+
+  setMemorySearchLoading: (query) => set((state) => ({
+    memorySearchLoading: query !== null,
+    ...(query !== null ? { memorySearchQuery: query } : {}),
+    ...(query !== null && state.memorySearchQuery !== query
+      ? { memorySearch: null, memorySearchUpdatedAt: 0 }
+      : {}),
+  })),
+
+  setMemorySearchError: (value) => set({ memorySearchError: value }),
 
   setAgents: (agents) =>
     set({
@@ -809,6 +860,7 @@ const sessionPreviewRequestGate = createLatestRequestGate();
 const toolsEffectiveRequestGate = createLatestRequestGate();
 const toolsCatalogRequestGate = createLatestRequestGate();
 const sessionArtifactsRequestGate = createLatestRequestGate();
+const memorySearchRequestGate = createLatestRequestGate();
 
 interface SessionPreviewRequestTicket {
   connection: GatewayRequester;
@@ -885,6 +937,28 @@ function isCurrentSessionArtifactsRequest(ticket: SessionArtifactsRequestTicket)
   return ticket.connection === gw
     && sessionArtifactsRequestGate.isCurrent(ticket.requestId)
     && useGatewayDataStore.getState().sessionArtifactsLoadingKey === ticket.sessionKey;
+}
+
+interface MemorySearchRequestTicket {
+  connection: GatewayRequester;
+  requestId: number;
+  query: string;
+}
+
+function beginMemorySearchRequest(query: string): MemorySearchRequestTicket | null {
+  if (!gw) return null;
+  return {
+    connection: gw,
+    requestId: memorySearchRequestGate.begin(),
+    query,
+  };
+}
+
+function isCurrentMemorySearchRequest(ticket: MemorySearchRequestTicket): boolean {
+  return ticket.connection === gw
+    && memorySearchRequestGate.isCurrent(ticket.requestId)
+    && useGatewayDataStore.getState().memorySearchLoading
+    && useGatewayDataStore.getState().memorySearchQuery === ticket.query;
 }
 
 function beginGatewayRequest(group: GatewayDataGroup): GatewayRequestTicket<GatewayRequester> | null {
@@ -1123,6 +1197,7 @@ export function startPolling(gateway: GatewayRequester) {
   toolsEffectiveRequestGate.invalidate();
   toolsCatalogRequestGate.invalidate();
   sessionArtifactsRequestGate.invalidate();
+  memorySearchRequestGate.invalidate();
   gw = gateway;
   useGatewayDataStore.getState().setPolling(true);
   debugLog('datastore', '[DataStore] Polling started (sessions=10s, agents=30s, demand groups lazy)');
@@ -1151,6 +1226,7 @@ export function stopPolling() {
   toolsEffectiveRequestGate.invalidate();
   toolsCatalogRequestGate.invalidate();
   sessionArtifactsRequestGate.invalidate();
+  memorySearchRequestGate.invalidate();
   gw = null;
   const store = useGatewayDataStore.getState();
   store.setPolling(false);
@@ -1167,6 +1243,9 @@ export function stopPolling() {
   store.clearSessionArtifacts();
   store.setSessionArtifactsLoading(null);
   store.setSessionArtifactsError(null);
+  store.clearMemorySearch();
+  store.setMemorySearchLoading(null);
+  store.setMemorySearchError(null);
   // Clear running sub-agents on disconnect — presence-based detection is meaningless
   // without a live sessions.list feed. Without this, stale sub-agents keep the pet
   // in "working" state indefinitely after a gateway disconnect/reconnect cycle.
@@ -1415,6 +1494,12 @@ function sessionArtifactsFailureCode(error: unknown): string {
     : 'OPENCLAW_ARTIFACTS_FAILED';
 }
 
+function memorySearchFailureCode(error: unknown): string {
+  return error instanceof OpenClawMemorySearchResponseError
+    ? error.code
+    : 'OPENCLAW_MEMORY_SEARCH_FAILED';
+}
+
 export interface OpenClawArtifactSaveResult {
   readonly success: boolean;
   readonly canceled?: boolean;
@@ -1535,6 +1620,71 @@ export async function ensureSessionArtifactsFresh(
     return true;
   }
   return refreshSessionArtifacts(normalizedSessionKey, agentId);
+}
+
+/** Search the Gateway-owned OpenClaw memory index without synthesizing local results. */
+export async function searchOpenClawMemory(
+  query: string,
+  options: {
+    readonly maxResults?: number;
+    readonly minScore?: number;
+    readonly agentId?: string;
+  } = {},
+): Promise<boolean> {
+  const normalizedQuery = typeof query === 'string' ? query.trim() : '';
+  const store = useGatewayDataStore.getState();
+  if (!normalizedQuery) {
+    memorySearchRequestGate.invalidate();
+    store.clearMemorySearch();
+    store.setMemorySearchLoading(null);
+    store.setMemorySearchError(null);
+    return false;
+  }
+  if (!gw) {
+    memorySearchRequestGate.invalidate();
+    store.clearMemorySearch();
+    store.setMemorySearchLoading(null);
+    store.setMemorySearchError('OPENCLAW_MEMORY_SEARCH_UNAVAILABLE');
+    return false;
+  }
+
+  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_MEMORY_SEARCH_METHOD);
+  if (advertised === false) {
+    memorySearchRequestGate.invalidate();
+    store.clearMemorySearch();
+    store.setMemorySearchLoading(null);
+    store.setMemorySearchError('OPENCLAW_MEMORY_SEARCH_UNSUPPORTED');
+    return false;
+  }
+
+  const ticket = beginMemorySearchRequest(normalizedQuery);
+  if (!ticket) return false;
+  store.clearMemorySearch();
+  store.setMemorySearchLoading(normalizedQuery);
+  store.setMemorySearchError(null);
+
+  const client = new OpenClawMemorySearchClient(
+    <T>(method: string, params: Record<string, unknown>) => (
+      ticket.connection.request(method, params) as Promise<T>
+    ),
+  );
+  try {
+    const result = await client.search({
+      query: normalizedQuery,
+      ...(options.maxResults !== undefined ? { maxResults: options.maxResults } : {}),
+      ...(options.minScore !== undefined ? { minScore: options.minScore } : {}),
+      ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+    });
+    if (!isCurrentMemorySearchRequest(ticket)) return false;
+    store.setMemorySearch(normalizedQuery, result);
+    return true;
+  } catch (error) {
+    if (!isCurrentMemorySearchRequest(ticket)) return false;
+    store.clearMemorySearch();
+    store.setMemorySearchLoading(null);
+    store.setMemorySearchError(memorySearchFailureCode(error));
+    return false;
+  }
 }
 
 /** Save one Gateway-confirmed artifact through the desktop file boundary. */

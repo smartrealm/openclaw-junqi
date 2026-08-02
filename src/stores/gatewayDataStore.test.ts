@@ -10,6 +10,7 @@ import {
   parseGatewayCronJobList,
   parseGatewaySessionsUsage,
   refreshSessionArtifacts,
+  searchOpenClawMemory,
   refreshToolsCatalog,
   refreshToolsEffective,
   resolveOpenClawArtifactDownloadUrl,
@@ -398,4 +399,123 @@ test('refreshSessionArtifacts commits only a current Gateway result for an activ
   } finally {
     stopPolling();
   }
+});
+
+test('memory.search follows capability advertisement and never fabricates an unsupported result', async () => {
+  const calls: string[] = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'memory.search' ? false : true,
+    request: async (method: string) => {
+      calls.push(method);
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    assert.equal(await searchOpenClawMemory('release notes'), false);
+    assert.equal(useGatewayDataStore.getState().memorySearchError, 'OPENCLAW_MEMORY_SEARCH_UNSUPPORTED');
+    assert.equal(useGatewayDataStore.getState().memorySearch, null);
+    assert.equal(calls.includes('memory.search'), false);
+  } finally {
+    stopPolling();
+  }
+});
+
+test('memory.search commits only the latest query and preserves Gateway metadata', async () => {
+  const pending = new Map<string, (value: unknown) => void>();
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'memory.search' ? true : null,
+    request: (method: string, params: Record<string, unknown>) => {
+      if (method === 'sessions.list') return Promise.resolve({ sessions: [], hasMore: false });
+      if (method === 'agents.list') return Promise.resolve({ agents: [] });
+      if (method === 'memory.search') {
+        return new Promise<unknown>((resolve) => pending.set(String(params.query), resolve));
+      }
+      return Promise.reject(new Error(`unexpected method: ${method}`));
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    const first = searchOpenClawMemory('first');
+    await Promise.resolve();
+    const second = searchOpenClawMemory('second');
+    await Promise.resolve();
+    pending.get('second')?.({
+      agentId: 'writer',
+      provider: 'local',
+      searchMode: 'fts-only',
+      stale: true,
+      warning: 'Index is stale',
+      action: 'retry',
+      results: [{
+        path: 'sessions/2026-08-03.jsonl',
+        startLine: 12,
+        endLine: 14,
+        score: 0.77,
+        snippet: 'Gateway result',
+        source: 'sessions',
+      }],
+    });
+    assert.equal(await second, true);
+    pending.get('first')?.({
+      agentId: 'writer',
+      provider: 'local',
+      searchMode: 'hybrid',
+      results: [],
+    });
+    assert.equal(await first, false);
+    assert.deepEqual(useGatewayDataStore.getState().memorySearch, {
+      agentId: 'writer',
+      provider: 'local',
+      searchMode: 'fts-only',
+      stale: true,
+      warning: 'Index is stale',
+      action: 'retry',
+      results: [{
+        path: 'sessions/2026-08-03.jsonl',
+        startLine: 12,
+        endLine: 14,
+        score: 0.77,
+        snippet: 'Gateway result',
+        source: 'sessions',
+      }],
+    });
+    assert.equal(useGatewayDataStore.getState().memorySearchQuery, 'second');
+  } finally {
+    stopPolling();
+  }
+});
+
+test('disconnect clears the Gateway-owned memory snapshot and invalidates its request', async () => {
+  const gateway = {
+    hasAdvertisedMethod: () => true,
+    request: async (method: string) => {
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [] };
+      if (method === 'memory.search') {
+        return {
+          agentId: 'main',
+          provider: 'local',
+          searchMode: 'hybrid',
+          results: [],
+        };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  assert.equal(await searchOpenClawMemory('disconnect'), true);
+  stopPolling();
+  assert.equal(useGatewayDataStore.getState().memorySearch, null);
+  assert.equal(useGatewayDataStore.getState().memorySearchQuery, '');
+  assert.equal(useGatewayDataStore.getState().memorySearchLoading, false);
+  assert.equal(useGatewayDataStore.getState().memorySearchError, null);
 });

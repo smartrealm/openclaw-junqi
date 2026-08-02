@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, FolderOpen, RefreshCw, Search, X } from 'lucide-react';
+import { Database, FileText, FolderOpen, RefreshCw, Search, X } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import type { OpenClawWorkspaceMemoryItem } from '@/services/openclawWorkspaceMemory';
+import { searchOpenClawMemory, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { useOpenClawWorkspaceMemories } from './useOpenClawWorkspaceMemories';
+
+type MemoryView = 'workspace' | 'gateway';
 
 function displayTitle(item: OpenClawWorkspaceMemoryItem): string {
   const firstLine = item.content
@@ -69,7 +72,11 @@ function MemoryDetail({
 export function MemoryExplorerPage() {
   const { t, i18n } = useTranslation();
   const { snapshot, loading, error, refresh } = useOpenClawWorkspaceMemories();
+  const nativeSearch = useGatewayDataStore((state) => state.memorySearch);
+  const nativeSearchLoading = useGatewayDataStore((state) => state.memorySearchLoading);
+  const nativeSearchError = useGatewayDataStore((state) => state.memorySearchError);
   const [query, setQuery] = useState('');
+  const [view, setView] = useState<MemoryView>('workspace');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const items = snapshot?.items ?? [];
   const selected = items.find((item) => item.id === selectedId) ?? null;
@@ -82,41 +89,159 @@ export function MemoryExplorerPage() {
     ));
   }, [i18n.language, items, normalizedQuery]);
 
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (view === 'gateway') void searchOpenClawMemory(query);
+  }
+
+  const nativeErrorLabel = nativeSearchError === 'OPENCLAW_MEMORY_SEARCH_UNSUPPORTED'
+    ? t('memoryExplorer.nativeUnsupported', 'This Gateway does not advertise memory.search')
+    : nativeSearchError === 'OPENCLAW_MEMORY_SEARCH_UNAVAILABLE'
+      ? t('memoryExplorer.nativeUnavailable', 'Connect to an OpenClaw Gateway to search indexed memory')
+      : nativeSearchError === 'OPENCLAW_MEMORY_SEARCH_RESPONSE_INVALID'
+        ? t('memoryExplorer.nativeInvalid', 'The Gateway returned an invalid memory.search response')
+        : t('memoryExplorer.nativeFailed', 'Gateway memory search failed');
+
   return (
     <PageTransition>
       <main className="flex min-h-0 flex-1 flex-col bg-aegis-bg">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-aegis-border px-6 py-4">
           <div className="min-w-0">
             <h1 className="text-lg font-semibold text-aegis-text">{t('memoryExplorer.title', 'Memory Explorer')}</h1>
-            <p className="mt-1 truncate text-sm text-aegis-text-dim" title={snapshot?.workspacePath}>
-              {snapshot?.workspacePath ?? t('memoryExplorer.workspaceLoading', 'Loading OpenClaw workspace memory')}
+            <p className="mt-1 truncate text-sm text-aegis-text-dim" title={view === 'workspace' ? snapshot?.workspacePath : nativeSearch?.provider}>
+              {view === 'workspace'
+                ? (snapshot?.workspacePath ?? t('memoryExplorer.workspaceLoading', 'Loading OpenClaw workspace memory'))
+                : (nativeSearch?.provider ?? t('memoryExplorer.gatewaySearchHint', 'OpenClaw Gateway memory index'))}
             </p>
           </div>
           <button
             type="button"
-            onClick={() => void refresh()}
-            disabled={loading}
+            onClick={() => {
+              if (view === 'workspace') void refresh();
+              else if (query.trim()) void searchOpenClawMemory(query);
+            }}
+            disabled={view === 'workspace' ? loading : nativeSearchLoading || !query.trim()}
             title={t('common.refresh', 'Refresh')}
             aria-label={t('common.refresh', 'Refresh')}
             className="grid h-9 w-9 place-items-center rounded-md border border-aegis-border text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+            <RefreshCw size={16} className={loading || nativeSearchLoading ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
         </header>
 
         <div className="flex min-h-0 flex-1">
           <section className="min-w-0 flex-1 overflow-y-auto px-6 py-5">
-            <label className="relative mb-5 block max-w-xl">
-              <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-aegis-text-dim" aria-hidden="true" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={t('memoryExplorer.searchWorkspace', 'Search workspace memory')}
-                className="h-10 w-full rounded-md border border-aegis-border bg-aegis-surface ps-10 pe-3 text-sm text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary"
-              />
-            </label>
+            <div className="mb-5 flex flex-wrap items-center gap-2" role="tablist" aria-label={t('memoryExplorer.viewModes', 'Memory views')}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'workspace'}
+                onClick={() => setView('workspace')}
+                className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm transition-colors ${view === 'workspace'
+                  ? 'border-aegis-primary bg-aegis-primary/10 text-aegis-text'
+                  : 'border-aegis-border text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text'}`}
+              >
+                <FileText size={15} aria-hidden="true" />
+                {t('memoryExplorer.workspaceMode', 'Workspace files')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'gateway'}
+                onClick={() => setView('gateway')}
+                className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm transition-colors ${view === 'gateway'
+                  ? 'border-aegis-primary bg-aegis-primary/10 text-aegis-text'
+                  : 'border-aegis-border text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text'}`}
+              >
+                <Database size={15} aria-hidden="true" />
+                {t('memoryExplorer.gatewayMode', 'Gateway search')}
+              </button>
+            </div>
 
-            {loading ? (
+            <form className="mb-5 flex max-w-xl gap-2" onSubmit={submitSearch}>
+              <label className="relative block min-w-0 flex-1">
+                <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-aegis-text-dim" aria-hidden="true" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={view === 'workspace'
+                    ? t('memoryExplorer.searchWorkspace', 'Search workspace memory')
+                    : t('memoryExplorer.searchGateway', 'Search Gateway memory')}
+                  className="h-10 w-full rounded-md border border-aegis-border bg-aegis-surface ps-10 pe-3 text-sm text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary"
+                />
+              </label>
+              {view === 'gateway' && (
+                <button
+                  type="submit"
+                  disabled={nativeSearchLoading || !query.trim()}
+                  title={t('common.search', 'Search')}
+                  aria-label={t('common.search', 'Search')}
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-aegis-border bg-aegis-surface text-aegis-text-dim hover:border-aegis-primary hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Search size={16} aria-hidden="true" />
+                </button>
+              )}
+            </form>
+
+            {view === 'gateway' ? (
+              nativeSearchLoading ? (
+                <div className="grid min-h-48 place-items-center"><LoadingIndicator size={24} /></div>
+              ) : nativeSearchError ? (
+                <div className="max-w-2xl rounded-md border border-aegis-danger/30 bg-aegis-danger/10 px-4 py-3 text-sm text-aegis-text">
+                  <p className="font-medium">{nativeErrorLabel}</p>
+                  <p className="mt-1 font-mono text-xs text-aegis-text-dim">{nativeSearchError}</p>
+                </div>
+              ) : !nativeSearch ? (
+                <div className="grid min-h-48 place-items-center rounded-md border border-dashed border-aegis-border px-5 text-center text-sm text-aegis-text-dim">
+                  <div>
+                    <Database size={24} className="mx-auto mb-3" aria-hidden="true" />
+                    <p>{t('memoryExplorer.gatewaySearchHint', 'Search the memory index exposed by the OpenClaw Gateway')}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="max-w-4xl space-y-3">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-aegis-text-dim">
+                    <span>{t('memoryExplorer.provider', 'Provider')}: {nativeSearch.provider}</span>
+                    <span>{t('memoryExplorer.agent', 'Agent')}: {nativeSearch.agentId}</span>
+                    <span>{t('memoryExplorer.searchMode', 'Mode')}: {nativeSearch.searchMode}</span>
+                    {nativeSearch.stale && <span className="text-aegis-warning">{t('memoryExplorer.stale', 'Index may be stale')}</span>}
+                  </div>
+                  {(nativeSearch.warning || nativeSearch.action) && (
+                    <div className="rounded-md border border-aegis-warning/30 bg-aegis-warning/10 px-4 py-3 text-sm text-aegis-text">
+                      {nativeSearch.warning && <p>{nativeSearch.warning}</p>}
+                      {nativeSearch.action && <p className="mt-1 font-mono text-xs text-aegis-text-dim">{nativeSearch.action}</p>}
+                    </div>
+                  )}
+                  {nativeSearch.results.length === 0 ? (
+                    <div className="grid min-h-48 place-items-center rounded-md border border-dashed border-aegis-border px-5 text-center text-sm text-aegis-text-dim">
+                      <p>{t('memoryExplorer.noGatewayResults', 'No Gateway memory results')}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {nativeSearch.results.map((result, index) => (
+                        <article key={`${result.path}:${result.startLine}:${result.endLine}:${index}`} className="rounded-md border border-aegis-border bg-aegis-surface p-4">
+                          <div className="flex items-start gap-3">
+                            <Database size={18} className="mt-0.5 shrink-0 text-aegis-primary" aria-hidden="true" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-mono text-sm text-aegis-text" title={result.path}>{result.path}</p>
+                              <p className="mt-1 text-xs text-aegis-text-dim">
+                                {result.source === 'memory'
+                                  ? t('memoryExplorer.sourceMemory', 'Durable memory')
+                                  : t('memoryExplorer.sourceSessions', 'Session transcript')}
+                                {' · '}{t('memoryExplorer.nativeLines', 'Lines {{start}}-{{end}}', { start: result.startLine, end: result.endLine })}
+                                {' · '}{t('memoryExplorer.nativeScore', 'Score {{score}}', { score: result.score.toFixed(3) })}
+                              </p>
+                              <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-5 text-aegis-text-dim">{result.snippet}</p>
+                              {result.citation && <p className="mt-3 truncate font-mono text-[11px] text-aegis-text-dim" title={result.citation}>{result.citation}</p>}
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            ) : loading ? (
               <div className="grid min-h-48 place-items-center"><LoadingIndicator size={24} /></div>
             ) : error ? (
               <div className="max-w-2xl rounded-md border border-aegis-danger/30 bg-aegis-danger/10 px-4 py-3 text-sm text-aegis-text">
@@ -158,7 +283,7 @@ export function MemoryExplorerPage() {
               </div>
             )}
           </section>
-          <MemoryDetail item={selected} language={i18n.language} onClose={() => setSelectedId(null)} />
+          {view === 'workspace' && <MemoryDetail item={selected} language={i18n.language} onClose={() => setSelectedId(null)} />}
         </div>
       </main>
     </PageTransition>
