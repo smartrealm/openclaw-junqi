@@ -1489,6 +1489,8 @@
       "fileOutput": "文件產物",
       "workshopEvent": "工作台事件",
       "sessionEvent": "會話事件",
+      "compaction": "上下文壓縮",
+      "compactionDescription": "OpenClaw 在對話記錄中報告了一次上下文壓縮事件。",
       "structuredAction": "結構化操作",
       "artifact": "產物",
       "sequence": "序號",

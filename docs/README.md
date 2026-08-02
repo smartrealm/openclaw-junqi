@@ -160,6 +160,7 @@ docs/
 - [执行计划终态修复与灵动岛接入](quality/execution-plan-terminal-state-and-island-2026-08-01.md)
 - [会话执行追溯的 OpenClaw 能力拓展分析](quality/chat-response-trace-openclaw-extension-analysis-2026-07-31.md)
 - [OpenClaw 审计账本与 JunQi 追溯对齐](quality/openclaw-audit-ledger-alignment-2026-08-03.md)
+- [OpenClaw 压缩事件追溯对齐](quality/openclaw-compaction-trace-alignment-2026-08-03.md)
 - [全局改进与功能拓展计划](quality/codebase-improvement-and-extension-plan-2026-07-31.md)
 - [仪表盘首次主题切换验证](quality/dashboard-first-theme-switch-validation-2026-07-30.md)
 - [Gateway AI 诊断与 OpenClaw 运行时验证](quality/gateway-ai-diagnostics-openclaw-runtime-validation-2026-07-30.md)

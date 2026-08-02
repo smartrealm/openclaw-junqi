@@ -1522,6 +1522,8 @@
       "fileOutput": "File output",
       "workshopEvent": "Workbench event",
       "sessionEvent": "Session event",
+      "compaction": "Context compaction",
+      "compactionDescription": "OpenClaw reported a context compaction event in the transcript.",
       "structuredAction": "Structured action",
       "artifact": "Artifact",
       "sequence": "Sequence",

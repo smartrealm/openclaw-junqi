@@ -1520,6 +1520,8 @@
       "fileOutput": "文件产物",
       "workshopEvent": "工作台事件",
       "sessionEvent": "会话事件",
+      "compaction": "上下文压缩",
+      "compactionDescription": "OpenClaw 在会话记录中报告了一次上下文压缩事件。",
       "structuredAction": "结构化操作",
       "artifact": "产物",
       "sequence": "序号",

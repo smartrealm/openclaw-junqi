@@ -94,6 +94,7 @@ test('main and quick chat expose the same response trace entry and panel', () =>
   assert.match(tracePanelSource, /onOpenSourceMessage/);
   assert.match(tracePanelSource, /onLoadAuditEvents/);
   assert.match(tracePanelSource, /metadataOnly/);
+  assert.match(traceNodeCardSource, /compactionDescription/);
   assert.match(chatSource, /openTraceSourceMessage/);
   assert.match(quickChatSource, /openTraceSourceMessage/);
   assert.match(chatSource, /listAuditEvents/);

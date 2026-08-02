@@ -2,7 +2,7 @@
 
 日期：2026-07-31
 
-状态注记（2026-08-03）：EXT-01 已按官方当前主线的 `audit.activity.list` 与兼容 `audit.list` 落地，具体能力选择、解析边界和验证结果见 [OpenClaw 审计账本与 JunQi 追溯对齐](openclaw-audit-ledger-alignment-2026-08-03.md)。本文保留为 2026-07-31 的历史分析，不把当时的“未接入”结论当作当前实现状态。
+状态注记（2026-08-03）：EXT-01 已按官方当前主线的 `audit.activity.list` 与兼容 `audit.list` 落地，EXT-06 的上游 compaction block 也已恢复到结构化追溯；具体边界见 [OpenClaw 审计账本与 JunQi 追溯对齐](openclaw-audit-ledger-alignment-2026-08-03.md) 和 [OpenClaw 压缩事件追溯对齐](openclaw-compaction-trace-alignment-2026-08-03.md)。本文保留为 2026-07-31 的历史分析，不把当时的“未接入”结论当作当前实现状态。
 
 ## 依据
 

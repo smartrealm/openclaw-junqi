@@ -82,6 +82,17 @@ test('does not invent run or human-review records when upstream omitted them', (
   });
 });
 
+test('keeps the upstream compaction event in the structured trace', () => {
+  const semanticBlocks = blocks({
+    id: 'compaction-1',
+    role: 'compaction',
+    runId: 'run-trace',
+  });
+  const trace = projectChatResponseTrace(buildResponseGroups(semanticBlocks)[0]);
+
+  assert.deepEqual(trace.nodes.map((node) => node.kind), ['compaction']);
+});
+
 test('exposes a formal review relation only when the transcript explicitly provides one', () => {
   const semanticBlocks = blocks({
     id: 'assistant-formal-review',

@@ -1,5 +1,6 @@
 import {
   Bot,
+  Archive,
   CheckCircle2,
   CircleDot,
   Clock3,
@@ -26,6 +27,7 @@ function nodeIcon(node: ChatResponseTraceNode) {
     case 'file-output': return <FileOutput size={14} />;
     case 'workshop-event': return <SquareTerminal size={14} />;
     case 'session-event': return <History size={14} />;
+    case 'compaction': return <Archive size={14} />;
     case 'action': return <CheckCircle2 size={14} />;
     case 'artifact': return <Bot size={14} />;
   }
@@ -129,6 +131,9 @@ function TraceNodeDetails({ node }: { node: ChatResponseTraceNode }) {
   if (node.kind === 'session-event') {
     return <p className="mt-2 text-[10.5px] text-aegis-text-muted"><span className="font-mono text-aegis-text-dim">{node.event.kind}</span> {node.event.text}</p>;
   }
+  if (node.kind === 'compaction') {
+    return <p className="mt-2 text-[10.5px] text-aegis-text-muted">{t('chat.trace.compactionDescription')}</p>;
+  }
   if (node.kind === 'artifact') {
     return <p className="mt-2 font-mono text-[10.5px] text-aegis-text-muted">{node.artifactType}</p>;
   }
@@ -153,6 +158,7 @@ export function ChatResponseTraceNodeCard({
       case 'file-output': return t('chat.trace.fileOutput');
       case 'workshop-event': return t('chat.trace.workshopEvent');
       case 'session-event': return t('chat.trace.sessionEvent');
+      case 'compaction': return t('chat.trace.compaction');
       case 'action': return t('chat.trace.structuredAction');
       case 'artifact': return node.title || t('chat.trace.artifact');
     }

@@ -74,6 +74,7 @@ export type ChatResponseTraceNode =
   | (TraceNodeBase & { kind: 'file-output'; files: FileRef[] })
   | (TraceNodeBase & { kind: 'workshop-event'; events: WorkshopEvent[] })
   | (TraceNodeBase & { kind: 'session-event'; event: SessionEvent })
+  | (TraceNodeBase & { kind: 'compaction' })
   | (TraceNodeBase & { kind: 'action'; actions: Array<{ text: string; callbackData: string }> })
   | (TraceNodeBase & { kind: 'artifact'; artifactType: string; title: string });
 
@@ -147,6 +148,8 @@ export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrac
         return [{ ...base, kind: 'workshop-event', events: block.events }];
       case 'session-event':
         return [{ ...base, kind: 'session-event', event: block.event }];
+      case 'compaction':
+        return [{ ...base, kind: 'compaction' }];
       case 'inline-buttons':
         return [{
           ...base,
@@ -164,7 +167,6 @@ export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrac
           title: block.artifact.title,
         }];
       case 'system-note':
-      case 'compaction':
         return [];
     }
   });
