@@ -24,9 +24,11 @@ Wake mode is not confined to the composer. Once selected, it presents a fixed fu
 
 ## Jarvis Session Categories
 
-OpenClaw `v2026.7.1-2` separates channel group-session routing from a user-defined session organization bucket. JunQi does not fabricate a channel-style `:group:` session key for a wake word. When the local Sherpa detector returns a non-empty keyword, JunQi persists `sessions.patch({ key, category: "Jarvis: <keyword>" })` for the currently selected OpenClaw session. The Session Manager renders that category, so sessions activated by the same recognized phrase can be identified as one Jarvis group without changing channel routing, sandbox policy, or session identity.
+OpenClaw `v2026.7.1-2` separates channel group-session routing from a user-defined session organization bucket. JunQi does not fabricate a channel-style `:group:` session key for a wake word. When the local Sherpa detector returns a non-empty keyword, JunQi persists `sessions.patch({ key, category: "Jarvis: <keyword>" })` for the currently selected OpenClaw session. The Session Manager renders that category and provides a Jarvis filter, so sessions activated by the same recognized phrase can be identified as one Jarvis group without changing channel routing, sandbox policy, or session identity.
 
 OpenClaw voice-wake routing can target `current`, an agent, or a canonical session key, but `talk.session.create` has no `voiceWakeTrigger` parameter. Continuous Talk therefore stays bound to the resolved selected session; it does not claim that Gateway automatically routes Talk audio by keyword. The local model's `keywords.txt` remains externally generated through the selected model's documented tokenization process. JunQi does not write or infer that asset.
+
+Before a wake listener starts, JunQi reads both `voicewake.get` and `voicewake.routing.get` from the selected authenticated Gateway and retains the resulting configuration only for that live connection. Gateway `voicewake.changed` and `voicewake.routing.changed` updates replace the matching in-memory portion. A local KWS result that is absent from the Gateway trigger list is discarded without forwarding audio. A route that resolves outside the selected session is stopped with `target_changed` rather than silently delivering Talk to a different chat; full cross-session Talk handoff remains pending because its installed contract has no wake-trigger field.
 
 ## Talk Relay Boundary
 

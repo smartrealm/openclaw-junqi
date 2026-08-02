@@ -3826,6 +3826,7 @@
     "filterRunning": "Running",
     "filterIdle": "Idle",
     "filterSubagent": "Sub-agents",
+    "filterJarvis": "Jarvis",
     "refresh": "Refresh",
     "loading": "Loading sessions…",
     "empty": "No sessions found",

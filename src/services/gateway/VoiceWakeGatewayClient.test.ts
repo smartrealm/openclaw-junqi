@@ -36,6 +36,11 @@ test('voice wake client rejects malformed Gateway payloads instead of defaulting
   await assert.rejects(client.getTriggers(), VoiceWakeGatewayUnavailableError);
 });
 
+test('voice wake client rejects an empty trigger list that the installed Gateway never emits', async () => {
+  const { client } = clientWith({ triggers: [] });
+  await assert.rejects(client.getTriggers(), VoiceWakeGatewayUnavailableError);
+});
+
 test('voice wake client rejects a connection that changes during a request', async () => {
   const { client } = clientWith({ triggers: ['junqi'] }, { current: false });
   await assert.rejects(client.getTriggers(), VoiceWakeGatewayUnavailableError);

@@ -10,6 +10,7 @@
 6. Replaced the Wake mode composer-only presentation with a full-window control surface while preserving the existing pet and Dynamic Island projections.
 7. Added a fenced OpenClaw Talk catalog/session client and a validated, per-session ordered `talk.event` bridge for the `realtime/gateway-relay/agent-consult` contract.
 8. Preserved the native detector's recognized keyword and persistently categorized the selected OpenClaw session as `Jarvis: <keyword>` through the documented `sessions.patch.category` contract; no channel-style group session key is invented.
+9. Gated wake-listener startup and each keyword acceptance on the Gateway-owned trigger/routing snapshot, including live change events; cross-session Talk routing fails closed until the installed Talk contract can represent the trigger.
 
 ## In Progress
 

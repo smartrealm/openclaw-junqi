@@ -19,6 +19,36 @@ export interface VoiceWakeRoutingConfig {
   updatedAtMs: number;
 }
 
+/** Match the installed Gateway's route-key normalization exactly. */
+export function normalizeVoiceWakeTrigger(value: string): string {
+  return value
+    .toLowerCase()
+    .split(/\s+/)
+    .map((token) => token.replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, ''))
+    .filter(Boolean)
+    .join(' ');
+}
+
+export function includesVoiceWakeTrigger(
+  triggers: readonly string[],
+  recognizedTrigger: string,
+): boolean {
+  const normalized = normalizeVoiceWakeTrigger(recognizedTrigger);
+  return normalized.length > 0 && triggers.some((trigger) => (
+    normalizeVoiceWakeTrigger(trigger) === normalized
+  ));
+}
+
+export function resolveVoiceWakeRoute(
+  config: VoiceWakeRoutingConfig,
+  recognizedTrigger: string,
+): VoiceWakeRouteTarget {
+  const normalized = normalizeVoiceWakeTrigger(recognizedTrigger);
+  return config.routes.find((route) => (
+    normalizeVoiceWakeTrigger(route.trigger) === normalized
+  ))?.target ?? config.defaultTarget;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -56,7 +86,7 @@ export function decodeVoiceWakeRouteTarget(value: unknown): VoiceWakeRouteTarget
 export function decodeVoiceWakeTriggerSnapshot(value: unknown): VoiceWakeTriggerSnapshot | null {
   if (!isRecord(value)) return null;
   const rawTriggers = value.triggers;
-  if (!Array.isArray(rawTriggers) || rawTriggers.length > 32) return null;
+  if (!Array.isArray(rawTriggers) || rawTriggers.length === 0 || rawTriggers.length > 32) return null;
 
   const triggers: string[] = [];
   for (const entry of rawTriggers) {

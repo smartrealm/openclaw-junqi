@@ -3820,6 +3820,7 @@
     "filterRunning": "運行中",
     "filterIdle": "空閒",
     "filterSubagent": "子智能體",
+    "filterJarvis": "Jarvis",
     "refresh": "刷新",
     "loading": "正在加載會話…",
     "empty": "沒有找到會話",

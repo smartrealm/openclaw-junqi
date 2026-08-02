@@ -3851,6 +3851,7 @@
     "filterRunning": "运行中",
     "filterIdle": "空闲",
     "filterSubagent": "子智能体",
+    "filterJarvis": "Jarvis",
     "refresh": "刷新",
     "loading": "正在加载会话…",
     "empty": "没有找到会话",

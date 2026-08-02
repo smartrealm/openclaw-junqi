@@ -13,15 +13,17 @@ import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { AttachmentValidationError, createPreparedAttachment, toGatewayAttachments } from '@/services/chat/attachments';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
-import { gateway } from '@/services/gateway';
-import { talkGatewayClient } from '@/services/gateway';
+import { gateway, talkGatewayClient, voiceWakeGatewayClient } from '@/services/gateway';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
+import type { VoiceWakeGatewayConfiguration } from '@/services/gateway/VoiceWakeGatewayClient';
 import {
   voiceModeCoordinator,
   type VoiceModeContext,
 } from '@/services/voice/VoiceModeCoordinator';
+import { decideVoiceWakeRoute } from '@/services/voice/VoiceWakeRoutePolicy';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { TalkConversationCoordinator } from '@/services/voice/TalkConversationCoordinator';
+import { createJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
 import {
   clearAutoArmSession,
   setAutoArmSession,
@@ -97,6 +99,7 @@ export function useComposerVoice({
   const activeTurnRef = useRef<string | null>(null);
   const autoArmAttemptRef = useRef<string | null>(null);
   const autoArmRecoveryAttemptsRef = useRef(0);
+  const wakeConfigurationRef = useRef<VoiceWakeGatewayConfiguration | null>(null);
   const pendingAudioCapturesRef = useRef(new Map<string, {
     wavDataUrl: string;
     durationSec: number;
@@ -153,6 +156,14 @@ export function useComposerVoice({
       });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => voiceWakeGatewayClient.subscribe((event) => {
+    const current = wakeConfigurationRef.current;
+    if (!current) return;
+    wakeConfigurationRef.current = event.type === 'triggers'
+      ? { ...current, triggers: event.snapshot }
+      : { ...current, routing: event.config };
+  }), []);
 
   useEffect(() => {
     let active = true;
@@ -255,14 +266,30 @@ export function useComposerVoice({
     },
     onWakeDetected: (trigger) => {
       const context = currentContextRef.current;
-      if (!context || !voiceModeCoordinator.markTriggered(activeTurnRef.current, context)) return;
+      if (!context || !voiceModeCoordinator.markTriggered(activeTurnRef.current, context)) return false;
       if (trigger) {
-        void gateway.setSessionCategory(`Jarvis: ${trigger}`, context.sessionKey)
-          .catch((error) => debugError('gateway', '[ComposerVoice] Unable to categorize Jarvis session:', error));
+        const disposition = decideVoiceWakeRoute(wakeConfigurationRef.current, trigger, context.sessionKey);
+        if (disposition === 'unknown_trigger') {
+          voiceModeCoordinator.resumeListening(activeTurnRef.current, context);
+          return false;
+        }
+        if (disposition === 'target_changed') {
+          voiceModeCoordinator.reportUnavailable(activeTurnRef.current, context, 'target_changed');
+          void stopVoiceWakeRef.current();
+          return false;
+        }
+      }
+      if (trigger) {
+        const category = createJarvisSessionCategory(trigger);
+        if (category) {
+          void gateway.setSessionCategory(category, context.sessionKey)
+            .catch((error) => debugError('gateway', '[ComposerVoice] Unable to categorize Jarvis session:', error));
+        }
       }
       void talkConversationRef.current?.start(context.sessionKey);
       void talkConversationRef.current?.interrupt();
       void stopAssistant();
+      return true;
     },
     onPcmAudio: (frame) => {
       const context = currentContextRef.current;
@@ -353,12 +380,37 @@ export function useComposerVoice({
         setDetectorError(null);
       } catch (error) {
         setDetectorError(error instanceof Error ? error.message : String(error));
-        voiceModeCoordinator.start({
+        const snapshot = voiceModeCoordinator.start({
           mode: 'wake_word',
           context,
           wakeDetectorAvailable: false,
         });
-        activeTurnRef.current = null;
+        activeTurnRef.current = snapshot.turnId;
+        return;
+      }
+      if (!detectorAvailable) {
+        const snapshot = voiceModeCoordinator.start({
+          mode: 'wake_word',
+          context,
+          wakeDetectorAvailable: false,
+        });
+        activeTurnRef.current = snapshot.turnId;
+        return;
+      }
+      try {
+        const configuration = await voiceWakeGatewayClient.getConfiguration();
+        if (!isCurrentVoiceContext(context)) return;
+        wakeConfigurationRef.current = configuration;
+      } catch (error) {
+        if (!isCurrentVoiceContext(context)) return;
+        setDetectorError(error instanceof Error ? error.message : String(error));
+        const snapshot = voiceModeCoordinator.start({
+          mode: 'wake_word',
+          context,
+          wakeDetectorAvailable: true,
+        });
+        activeTurnRef.current = snapshot.turnId;
+        voiceModeCoordinator.reportUnavailable(snapshot.turnId, context, 'gateway_unavailable');
         return;
       }
       const snapshot = voiceModeCoordinator.start({
@@ -367,7 +419,6 @@ export function useComposerVoice({
         wakeDetectorAvailable: detectorAvailable,
       });
       activeTurnRef.current = snapshot.turnId;
-      if (!detectorAvailable) return;
       await voiceWake.start('wake_word', { streamPcm: true });
       if (
         !isCurrentVoiceContext(context)
