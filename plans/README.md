@@ -31,6 +31,7 @@ plans/
 ## Collaboration
 
 - [本机 System Service 协作启用归属修复](collaboration/2026-07-31-local-system-service-collaboration-enablement.md)
+- [Agent Office 只读协作投影](collaboration/2026-08-03-agent-office-read-only-projection.md)
 
 ## Business
 

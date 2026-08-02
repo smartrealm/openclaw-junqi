@@ -10,6 +10,7 @@ import {
   Library,
   List,
   Network,
+  PanelsTopLeft,
   RefreshCw,
   Send,
   ShieldAlert,
@@ -24,6 +25,7 @@ import {
 } from '@/services/collaboration/workflowGraph';
 import type {
   CollaborationAttemptSnapshot,
+  CollaborationCapabilityAgent,
   CollaborationDeliverySnapshot,
   CollaborationEvent,
   CollaborationInterventionSnapshot,
@@ -42,8 +44,9 @@ import {
   type CollaborationTranslate,
 } from './CollaborationCard';
 import { CollaborationAttemptIdentity } from './CollaborationAttemptIdentity';
+import { AgentOfficeView } from './AgentOfficeView';
 
-export type CollaborationWorkItemView = 'graph' | 'list';
+export type CollaborationWorkItemView = 'graph' | 'list' | 'office';
 
 export interface CollaborationDetailsProps {
   snapshot?: CollaborationRunSnapshot | null;
@@ -58,6 +61,8 @@ export interface CollaborationDetailsProps {
   disabledActions?: readonly string[];
   translate?: CollaborationTranslate;
   locale?: string;
+  configuredAgents?: readonly CollaborationCapabilityAgent[];
+  coordinatorAgentId?: string | null;
   onWorkItemViewChange?: (view: CollaborationWorkItemView) => void;
   onAction?: (context: CollaborationActionContext) => void;
   onRetry?: () => void;
@@ -597,6 +602,8 @@ export function CollaborationDetails({
   disabledActions,
   translate,
   locale,
+  configuredAgents = [],
+  coordinatorAgentId = null,
   onWorkItemViewChange,
   onAction,
   onRetry,
@@ -710,12 +717,30 @@ export function CollaborationDetails({
             <List size={12} aria-hidden />
             {text('collaboration.details.list', 'List')}
           </button>
+          <button
+            type="button"
+            onClick={() => changeView('office')}
+            aria-pressed={activeView === 'office'}
+            className={cn('inline-flex min-h-7 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 py-1 text-[10.5px]', activeView === 'office' ? 'bg-aegis-elevated-solid text-aegis-text' : 'text-aegis-text-muted hover:text-aegis-text-secondary')}
+          >
+            <PanelsTopLeft size={12} aria-hidden />
+            {text('collaboration.details.office', 'Office')}
+          </button>
         </div>
-        {snapshot.workItems.length === 0
-          ? <EmptySection>{text('collaboration.details.noWorkItems', 'No work items recorded.')}</EmptySection>
-          : activeView === 'graph'
-            ? <WorkItemGraph items={snapshot.workItems} text={text} />
-            : <WorkItemList items={snapshot.workItems} text={text} />}
+        {activeView === 'office'
+          ? (
+              <AgentOfficeView
+                snapshot={snapshot}
+                configuredAgents={configuredAgents}
+                coordinatorAgentId={coordinatorAgentId}
+                text={text}
+              />
+            )
+          : snapshot.workItems.length === 0
+            ? <EmptySection>{text('collaboration.details.noWorkItems', 'No work items recorded.')}</EmptySection>
+            : activeView === 'graph'
+              ? <WorkItemGraph items={snapshot.workItems} text={text} />
+              : <WorkItemList items={snapshot.workItems} text={text} />}
       </DetailSection>
 
       {snapshot.planRevisions && snapshot.planRevisions.length > 0 && (
