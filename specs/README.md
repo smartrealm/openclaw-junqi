@@ -47,6 +47,7 @@ specs/
 - [会话渠道来源呈现](quality/2026-07-31-session-channel-presentation.md)
 - [OpenClaw 原生会话体验对齐](quality/2026-08-02-openclaw-native-session-experience.md)
 - [Chat production hardening](quality/2026-07-21-chat-production-hardening.md)
+- [Chat 流式渲染性能](quality/2026-08-03-chat-stream-rendering-performance.md)
 - [JunQi namespace](quality/2026-07-21-junqi-namespace-bugfix.md)
 - [Voice runtime](quality/2026-07-21-voice-runtime-bugfix.md)
 - [跨平台语音唤醒宿主](quality/2026-08-02-cross-platform-voice-wake-host.md)

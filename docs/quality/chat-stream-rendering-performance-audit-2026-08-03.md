@@ -1,0 +1,71 @@
+# Chat 流式渲染性能审计
+
+日期：2026-08-03
+
+## 依据
+
+- JunQi 当前安装的 OpenClaw 版本：`2026.7.1`，并对照其随包发布的 Control UI 生产资源。
+- OpenClaw Gateway 的 `agent`、`chat`、`session.tool` 与终态事件仍是运行状态和消息内容的权威来源。
+- OpenClaw Control UI 使用累计流快照更新当前消息，并在更新完成后通过动画帧和近底部阈值协调滚动；历史刷新会保留本地运行尾部并与权威 transcript 收敛。
+- JunQi 的对应链路为 `ChatHandler -> App callbacks -> chatStore -> SemanticBlock -> ResponseGroup -> ChatView/Virtuoso`。
+
+## 当前行为
+
+JunQi 已具备以下基础：
+
+1. `ChatHandler` 合并 OpenClaw 的双文本流，并以稳定的 session、run 和 message identity 投影累计快照。
+2. Gateway 流事件先经过 50ms 微批处理，再进入 React 状态。
+3. 流式正文只渲染轻量纯文本，终态才进入完整 Markdown 渲染。
+4. ChatView 使用 Virtuoso，并在用户离开底部后锁定自动跟随。
+5. final、error 和 abort 会先强制排空待处理快照，再提交终态。
+
+现有主要成本位于 Store 派生层。每次 `updateStreamingMessage` 都对完整会话重新执行消息规范化、SemanticBlock 构建、ResponseGroup 分组和 RenderBlock 投影。虚拟滚动减少了 DOM 数量，但不能消除这部分随历史长度增长的 JavaScript 工作。
+
+## OpenClaw 借鉴边界
+
+本次借鉴 OpenClaw 的协议和状态处理原则，而不是复制其 Control UI 实现：
+
+- 保留累计快照语义，不把 delta 误当成可直接追加的独立消息。
+- 保留 replace、双流纠偏、工具边界、终态强制排空和 transcript 收敛。
+- 保留稳定 run/message identity，不能为了性能拆成每 Token 一个节点。
+- 流式优化只能改变 JunQi 的本地投影成本，不能改变 OpenClaw 的权威状态、字段或事件顺序。
+
+OpenClaw Control UI 当前并未为 JunQi 的 SemanticBlock 和 ResponseGroup 业务层提供可直接复用的增量算法。JunQi 需要针对自身结构化消息、执行计划、协作时间线和预览能力实现受约束的尾部增量投影。
+
+## 本次目标
+
+当 OpenClaw 更新的是会话最后一条、且该消息已经位于最后一个 ResponseGroup 时：
+
+1. 只重新规范化当前流式消息。
+2. 只重建最后一个 ResponseGroup。
+3. 复用此前所有 ResponseGroup 和 RenderBlock 的对象引用。
+4. 不满足安全前提时回退到原有完整重算。
+5. 首个流片段、工具边界、历史替换、非尾部更新和终态继续走现有权威路径。
+
+该策略将常规流式刷新从“完整历史投影”收敛为“当前尾消息和尾分组投影”，同时保留现有协议行为。
+
+## 后续阶段
+
+本次不直接引入独立 LiveStream Store。该方案会影响语音流、协作时间线、执行计划、历史对账、通知和多会话后台运行，需要单独完成协议级设计和真实性能基准后再实施。
+
+后续候选项：
+
+- 将 ChatTabs 从高频消息缓存通知中隔离。
+- 对 Thinking 文本滚动和行数统计做动画帧合并。
+- 为 Virtuoso 增加稳定 item key，并用 React Profiler 核验可见历史行的提交次数。
+- 在 500 条历史消息和超长单回复场景记录 Store 投影、React commit、布局测量和滚动耗时。
+- 根据前台、后台和内容长度评估 50ms 微批间隔是否需要自适应调整。
+
+## 验证结果
+
+- Store 定向测试：25/25 通过，包含增量投影等价性、历史对象引用复用和非尾部安全回退。
+- ChatHandler 定向测试：52/52 通过，覆盖 OpenClaw 双流、replace、终态、工具边界、history 收敛和多会话排空。
+- 完整前端测试：2287/2287 通过。
+- 脚本测试：233/233 通过。
+- `pnpm lint` 通过，模块边界检查 761 个文件，桌面版本四处一致为 `2.0.0`，TypeScript 通过。
+- `pnpm build` 通过，collaboration package contract 成功，Vite 完成 9104 个模块转换。
+- `git diff --check` 和修改文件禁用 Unicode 符号扫描通过。
+
+## 验证边界
+
+自动化验证了投影等价性、历史对象引用复用和回退行为，但不能替代真实 Tauri 中的长会话帧率、滚动稳定性、亮暗主题及窄窗口验收。本次未执行真实性能录制，因此不声明已达到固定 FPS 或 commit 耗时目标。

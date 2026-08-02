@@ -47,6 +47,7 @@ plans/
 - [会话分组与后台活动下钻](quality/2026-07-31-session-background-activity-drilldown.md)
 - [会话渠道来源呈现](quality/2026-07-31-session-channel-presentation.md)
 - [OpenClaw 原生会话体验对齐](quality/2026-08-02-openclaw-native-session-experience.md)
+- [Chat 流式渲染性能](quality/2026-08-03-chat-stream-rendering-performance.md)
 - [Tauri listener lifecycle](quality/2026-07-22-tauri-listener-lifecycle.md)
 - [Tauri command boundary](quality/2026-07-27-tauri-command-boundary.md)
 - [字体设置与 Orca 对齐](quality/2026-07-28-font-settings-orca-parity.md)
