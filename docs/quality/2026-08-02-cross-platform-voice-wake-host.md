@@ -68,6 +68,12 @@ The installed OpenClaw Talk relay emits ordered `output.audio.delta` frames and 
 
 Interruption, relay replacement, close, and relay failure invalidate the queued generation before sending the native stop command. A frame that was waiting behind an interrupted frame cannot begin playback afterward. The native drain wait processes stop commands while waiting, so a recognized barge-in is not delayed by a long assistant reply.
 
+## Configuration And Auxiliary Controls
+
+Jarvis configuration is a desktop-level concern and is reachable through the Settings `Jarvis` tab. It owns only the local model-directory selection and the explicit Gateway trigger update. The selected model directory remains in native application data, and the trigger list remains Gateway-owned. The page does not obtain microphone access, start an armed listener, create a Talk session, or rewrite voice-wake routing. The conversation composer retains only a shortcut that arms or stops its selected, attested session.
+
+The Dynamic Island auxiliary window closes itself through its native command before it emits the main-window preference action. This preserves immediate visual feedback even if a cross-window event is unavailable; the subsequent main-window action still persists the user preference and prevents reopening on later state updates.
+
 ## Automated Evidence
 
 - `pnpm exec tsc --noEmit` passed.
@@ -93,6 +99,7 @@ Interruption, relay replacement, close, and relay failure invalidate the queued 
 - On 2026-08-02, the native Talk projection regression verified that only the owning Talk session can publish and clear the shared `speaking` state consumed by the pet and Dynamic Island.
 - On 2026-08-02, `pnpm lint`, the complete `pnpm test` suite (2,242 frontend tests and 233 script tests), `pnpm build`, `cargo fmt -- --check`, `cargo check --lib`, and `cargo test --lib` passed. The Rust library suite reported 692 passed and 4 intentionally ignored tests; the existing `system.rs` unused-variable warning remains.
 - On 2026-08-02, the Talk output ordering regression verified that PCM deltas serialize, `output.audio.done` waits for native drain, and stopping a relay fences queued playback. The complete frontend lint/test/build suite and complete Rust library suite passed again; Rust reported 692 passed and 4 intentionally ignored tests, with the existing `system.rs` unused-variable warning.
+- On 2026-08-02, Dynamic Island close regression verified immediate local native hide before the main-window preference action. The Settings Jarvis tab passed TypeScript, module-boundary, Gateway trigger contract, model-label selection, locale JSON, complete frontend test, and production build validation.
 - Capability and locale JSON parsed successfully, and `git diff --check` passed.
 
 ## Unverified Boundaries

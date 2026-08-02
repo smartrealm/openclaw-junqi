@@ -24,6 +24,8 @@
 20. Expose the selected model's declared wake labels in the full-window Jarvis surface, saving only a non-empty model-backed subset through the fenced Gateway trigger contract.
 21. Preserve a verified KWS phrase as the barge-in signal during assistant output, while retaining VAD/browser feedback suppression; cancel old Gateway Talk output after local stop and before closing its replaced relay session.
 22. Serialize Gateway Talk PCM deltas at the Tauri boundary, wait for the native sink to drain after `output.audio.done`, and make cancellation fence queued frames before stopping the sink.
+23. Move Jarvis model and wake-phrase configuration to an independent Settings tab; retain the composer as a session-scoped shortcut only.
+24. Make the Dynamic Island close control invoke its native hide command before synchronizing the main-window display preference.
 
 ## Current Remediation (Completed)
 

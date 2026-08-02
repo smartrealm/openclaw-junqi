@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, PawPrint, Info, Clock, Palette, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, PawPrint, Info, Clock, Palette, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2, Radio,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard, GlassCardEnterMotionScope } from '@/components/shared/GlassCard';
@@ -46,7 +46,9 @@ import { NpmCacheSettingsPanel } from '@/components/settings/NpmCacheSettingsPan
 import { ManagedRuntimeSettingsPanel } from '@/components/settings/ManagedRuntimeSettingsPanel';
 import { FontPanel } from '@/components/settings/FontPanel';
 import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
+import { JarvisVoiceSettingsPanel } from '@/components/settings/JarvisVoiceSettingsPanel';
 import { StructuredPlanSettingsPanel } from '@/components/settings/StructuredPlanSettingsPanel';
+import { useJarvisVoiceSettings } from '@/hooks/useJarvisVoiceSettings';
 import { useOpenClawPlanToolSetting } from '@/hooks/useOpenClawPlanToolSetting';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
@@ -54,8 +56,8 @@ import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
-type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'pet' | 'connect' | 'storage' | 'maintenance' | 'about';
-const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'pet', 'connect', 'storage', 'maintenance', 'about'];
+type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'jarvis' | 'pet' | 'connect' | 'storage' | 'maintenance' | 'about';
+const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'jarvis', 'pet', 'connect', 'storage', 'maintenance', 'about'];
 
 export function SettingsPageFull() {
   const { t, i18n } = useTranslation();
@@ -202,6 +204,7 @@ export function SettingsPageFull() {
   const activeTab: SettingsTab = SETTINGS_TABS.includes(requestedTab as SettingsTab)
     ? requestedTab as SettingsTab
     : 'appearance';
+  const jarvisVoiceSettings = useJarvisVoiceSettings(activeTab === 'jarvis');
   const structuredPlans = useOpenClawPlanToolSetting(activeTab === 'connect' && connected);
 
   useEffect(() => {
@@ -408,6 +411,7 @@ export function SettingsPageFull() {
           ['appearance', t('settings.tab.appearance'), Sun],
           ['terminal', t('settings.tab.terminal'), TerminalSquare],
           ['notify', t('settings.tab.notify'), Bell],
+          ['jarvis', t('settings.tab.jarvis'), Radio],
           ['pet', t('settings.tab.pet'), PawPrint],
           ['connect', t('settings.tab.connect'), Wifi],
           ['storage', t('settings.tab.storage'), HardDrive],
@@ -430,6 +434,8 @@ export function SettingsPageFull() {
       <div className="space-y-6">
 
       {activeTab === 'terminal' && <TerminalSettingsPanel />}
+
+      {activeTab === 'jarvis' && <JarvisVoiceSettingsPanel settings={jarvisVoiceSettings} />}
 
       {activeTab === 'maintenance' && (
         <MaintenanceCenter
