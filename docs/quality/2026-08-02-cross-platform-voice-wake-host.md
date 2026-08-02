@@ -2,6 +2,8 @@
 
 ## Implemented Boundary
 
+本记录中的 OpenClaw Talk 目录表述已按官方当前 schema 校正：就绪状态来自 `realtime.ready`，provider 的音频格式与 barge-in 能力是可选声明；JunQi 只有在当前 Gateway 明确提供完整的桌面 PCM 能力时才启用 relay。`package.json`、lockfile 和本机安装包只作为复现实验与验证范围证据，不作为协议契约或版本分支条件。详见 [Talk 目录对齐记录](openclaw-talk-catalog-alignment-2026-08-03.md)。
+
 The native host uses CPAL for microphone capture and Sherpa-ONNX for local keyword spotting. It does not introduce an OpenJarvis, Kiwi Voice, browser VAD, or proxy runtime. After a keyword result, the existing JunQi capture flow creates a local WAV draft and retains explicit user confirmation before the existing OpenClaw attachment transaction is invoked. OpenClaw remains the selected Gateway authority.
 
 The local detector requires the extracted official bilingual model directory with these files:
@@ -12,7 +14,7 @@ The local detector requires the extracted official bilingual model directory wit
 - `tokens.txt`
 - `keywords.txt`
 
-`keywords.txt` is intentionally not generated from guessed text. It must be produced with the model's official tokenization procedure and reviewed with the selected wake phrase. For the selected `phone+ppinyin` model, JunQi reads only the official `@original_phrase` labels from that file; a missing label makes the model unavailable. Labels must not exceed OpenClaw's installed 64 UTF-16-code-unit trigger limit, so a model that cannot be synchronized to the selected Gateway is rejected before it can arm.
+`keywords.txt` is intentionally not generated from guessed text. It must be produced with the model's official tokenization procedure and reviewed with the selected wake phrase. For the selected `phone+ppinyin` model, JunQi reads only the official `@original_phrase` labels from that file; a missing label makes the model unavailable. Labels must not exceed the OpenClaw voice-wake trigger limit declared by the official Gateway contract, so a model that cannot be synchronized to the selected Gateway is rejected before it can arm.
 
 ## Residency
 
@@ -50,7 +52,7 @@ The full-window Jarvis surface also lets the user select a non-empty subset of l
 
 ## Talk Relay Boundary
 
-JunQi now has a fenced client for the installed OpenClaw `talk.catalog` and `talk.session.*` protocol, plus a strict `talk.event` bridge. The client rejects a missing or unready catalog and only creates the documented `realtime/gateway-relay/agent-consult` session shape after the catalog explicitly advertises PCM16 input and barge-in support. It binds every request to the attested Gateway connection and rejects a response if that connection changed.
+JunQi now has a fenced client for the official OpenClaw `talk.catalog` and `talk.session.*` protocol, plus a strict `talk.event` bridge. The client rejects a missing or unready catalog and only creates the documented `realtime/gateway-relay/agent-consult` session shape after the catalog explicitly advertises the native PCM16 24000Hz mono input/output contract and barge-in support. It binds every request to the attested Gateway connection and rejects a response if that connection changed.
 
 The event bridge validates the OpenClaw Talk envelope within `payload.talkEvent` and retains the highest sequence number per Talk session. Malformed Talk envelopes are consumed without falling through to chat handling; duplicate or stale event sequences are discarded. The native worker now emits PCM16/24000Hz/mono frames only after a VAD or verified keyword trigger, while preserving WAV only for the confirmation-required fallback. Gateway PCM output is queued through a Rust-owned Rodio/CPAL playback thread; it does not use Web Speech. The Talk relay is created on a keyword trigger rather than when the listener arms, so idle standby cannot consume its Gateway session TTL; early PCM is bounded and retained while that session connects.
 
@@ -64,7 +66,7 @@ Talk's native PCM output publishes only its active session key and `speaking` st
 
 ## Talk Output Ordering
 
-The installed OpenClaw Talk relay emits ordered `output.audio.delta` frames and then `output.audio.done`. JunQi serializes every accepted PCM16 frame for one attested session before it crosses Tauri IPC. The native playback worker appends those frames to one Rodio sink. The done event does not stop that sink: it waits until the sink has consumed its queued audio, then transitions the full-window surface and its projections from speaking to listening.
+The OpenClaw Talk relay emits ordered `output.audio.delta` frames and then `output.audio.done`. JunQi serializes every accepted PCM16 frame for one attested session before it crosses Tauri IPC. The native playback worker appends those frames to one Rodio sink. The done event does not stop that sink: it waits until the sink has consumed its queued audio, then transitions the full-window surface and its projections from speaking to listening.
 
 Interruption, relay replacement, close, and relay failure invalidate the queued generation before sending the native stop command. A frame that was waiting behind an interrupted frame cannot begin playback afterward. The native drain wait processes stop commands while waiting, so a recognized barge-in is not delayed by a long assistant reply.
 

@@ -10,17 +10,30 @@ export interface TalkAudioFormat {
 
 export interface TalkProviderCatalogEntry {
   id: string;
+  label: string;
   configured: boolean;
-  modes: TalkMode[];
-  transports: TalkTransport[];
-  brains: TalkBrain[];
-  inputAudioFormats: TalkAudioFormat[];
-  supportsBargeIn: boolean;
+  modes?: TalkMode[];
+  transports?: TalkTransport[];
+  brains?: TalkBrain[];
+  inputAudioFormats?: TalkAudioFormat[];
+  outputAudioFormats?: TalkAudioFormat[];
+  supportsBargeIn?: boolean;
+  supportsToolCalls?: boolean;
+}
+
+export interface TalkProviderGroup {
+  ready?: boolean;
+  activeProvider?: string;
+  providers: TalkProviderCatalogEntry[];
 }
 
 export interface TalkCatalog {
-  ready: boolean;
-  providers: TalkProviderCatalogEntry[];
+  modes: TalkMode[];
+  transports: TalkTransport[];
+  brains: TalkBrain[];
+  speech: TalkProviderGroup;
+  transcription: TalkProviderGroup;
+  realtime: TalkProviderGroup;
 }
 
 export interface TalkSession {
@@ -69,6 +82,11 @@ function enumArray<T extends string>(value: unknown, allowed: readonly T[]): T[]
   return decoded;
 }
 
+function optionalEnumArray<T extends string>(value: unknown, allowed: readonly T[]): T[] | undefined | null {
+  if (value === undefined) return undefined;
+  return enumArray(value, allowed);
+}
+
 function audioFormats(value: unknown): TalkAudioFormat[] | null {
   if (!Array.isArray(value)) return null;
   const decoded: TalkAudioFormat[] = [];
@@ -78,40 +96,112 @@ function audioFormats(value: unknown): TalkAudioFormat[] | null {
     const sampleRateHz = item.sampleRateHz;
     const channels = item.channels;
     if (!encoding || typeof sampleRateHz !== 'number' || !Number.isInteger(sampleRateHz)
-      || sampleRateHz < 8_000 || sampleRateHz > 96_000 || typeof channels !== 'number'
-      || !Number.isInteger(channels) || channels < 1 || channels > 2) return null;
+      || sampleRateHz < 1 || typeof channels !== 'number'
+      || !Number.isInteger(channels) || channels < 1) return null;
     decoded.push({ encoding, sampleRateHz, channels });
   }
   return decoded;
 }
 
-export function decodeTalkCatalog(value: unknown): TalkCatalog | null {
-  if (!isRecord(value) || !isRecord(value.speech) || value.speech.ready !== true || !Array.isArray(value.speech.providers)) {
-    return null;
+function optionalAudioFormats(value: unknown): TalkAudioFormat[] | undefined | null {
+  if (value === undefined) return undefined;
+  return audioFormats(value);
+}
+
+function stringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const decoded: string[] = [];
+  for (const item of value) {
+    const parsed = string(item);
+    if (!parsed) return null;
+    decoded.push(parsed);
   }
+  return decoded;
+}
+
+function optionalStringArray(value: unknown): string[] | undefined | null {
+  if (value === undefined) return undefined;
+  return stringArray(value);
+}
+
+function optionalBoolean(value: unknown): boolean | undefined | null {
+  if (value === undefined) return undefined;
+  return typeof value === 'boolean' ? value : null;
+}
+
+function decodeProvider(value: unknown): TalkProviderCatalogEntry | null {
+  if (!isRecord(value)) return null;
+  const id = string(value.id);
+  const label = string(value.label);
+  const modes = optionalEnumArray(value.modes, MODES);
+  const transports = optionalEnumArray(value.transports, TRANSPORTS);
+  const brains = optionalEnumArray(value.brains, BRAINS);
+  const inputAudioFormats = optionalAudioFormats(value.inputAudioFormats);
+  const outputAudioFormats = optionalAudioFormats(value.outputAudioFormats);
+  const aliases = optionalStringArray(value.aliases);
+  const models = optionalStringArray(value.models);
+  const voices = optionalStringArray(value.voices);
+  const supportsBargeIn = optionalBoolean(value.supportsBargeIn);
+  const supportsToolCalls = optionalBoolean(value.supportsToolCalls);
+  if (!id || !label || typeof value.configured !== 'boolean'
+    || modes === null || transports === null || brains === null
+    || inputAudioFormats === null || outputAudioFormats === null
+    || aliases === null || models === null || voices === null
+    || supportsBargeIn === null || supportsToolCalls === null) return null;
+  return {
+    id,
+    label,
+    configured: value.configured,
+    ...(modes === undefined ? {} : { modes }),
+    ...(transports === undefined ? {} : { transports }),
+    ...(brains === undefined ? {} : { brains }),
+    ...(inputAudioFormats === undefined ? {} : { inputAudioFormats }),
+    ...(outputAudioFormats === undefined ? {} : { outputAudioFormats }),
+    ...(supportsBargeIn === undefined ? {} : { supportsBargeIn }),
+    ...(supportsToolCalls === undefined ? {} : { supportsToolCalls }),
+  };
+}
+
+function decodeProviderGroup(value: unknown): TalkProviderGroup | null {
+  if (!isRecord(value) || !Array.isArray(value.providers)) return null;
+  const ready = optionalBoolean(value.ready);
+  const activeProvider = value.activeProvider === undefined ? undefined : string(value.activeProvider);
+  if (ready === null || activeProvider === null) return null;
   const providers: TalkProviderCatalogEntry[] = [];
-  for (const rawProvider of value.speech.providers) {
-    if (!isRecord(rawProvider)) return null;
-    const id = string(rawProvider.id);
-    const modes = enumArray(rawProvider.modes, MODES);
-    const transports = enumArray(rawProvider.transports, TRANSPORTS);
-    const brains = enumArray(rawProvider.brains, BRAINS);
-    const inputAudioFormats = audioFormats(rawProvider.inputAudioFormats);
-    if (!id || typeof rawProvider.configured !== 'boolean' || !modes || !transports || !brains || !inputAudioFormats
-      || typeof rawProvider.supportsBargeIn !== 'boolean') return null;
-    providers.push({ id, configured: rawProvider.configured, modes, transports, brains, inputAudioFormats, supportsBargeIn: rawProvider.supportsBargeIn });
+  for (const rawProvider of value.providers) {
+    const provider = decodeProvider(rawProvider);
+    if (!provider) return null;
+    providers.push(provider);
   }
-  return { ready: true, providers };
+  return {
+    ...(ready === undefined ? {} : { ready }),
+    ...(activeProvider === undefined ? {} : { activeProvider }),
+    providers,
+  };
+}
+
+export function decodeTalkCatalog(value: unknown): TalkCatalog | null {
+  if (!isRecord(value)) return null;
+  const modes = enumArray(value.modes, MODES);
+  const transports = enumArray(value.transports, TRANSPORTS);
+  const brains = enumArray(value.brains, BRAINS);
+  const speech = decodeProviderGroup(value.speech);
+  const transcription = decodeProviderGroup(value.transcription);
+  const realtime = decodeProviderGroup(value.realtime);
+  if (!modes || !transports || !brains || !speech || !transcription || !realtime) return null;
+  return { modes, transports, brains, speech, transcription, realtime };
 }
 
 export function selectRealtimeRelayProvider(catalog: TalkCatalog): TalkProviderCatalogEntry | null {
-  return catalog.providers.find((provider) => (
+  if (catalog.realtime.ready !== true) return null;
+  return catalog.realtime.providers.find((provider) => (
     provider.configured
-    && provider.modes.includes('realtime')
-    && provider.transports.includes('gateway-relay')
-    && provider.brains.includes('agent-consult')
-    && provider.supportsBargeIn
-    && provider.inputAudioFormats.some((format) => format.encoding === 'pcm16')
+    && provider.modes?.includes('realtime')
+    && provider.transports?.includes('gateway-relay')
+    && provider.brains?.includes('agent-consult')
+    && provider.supportsBargeIn === true
+    && provider.inputAudioFormats?.some((format) => format.encoding === 'pcm16' && format.sampleRateHz === 24_000 && format.channels === 1)
+    && provider.outputAudioFormats?.some((format) => format.encoding === 'pcm16' && format.sampleRateHz === 24_000 && format.channels === 1)
   )) ?? null;
 }
 
