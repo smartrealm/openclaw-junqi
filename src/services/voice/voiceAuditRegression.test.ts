@@ -41,12 +41,15 @@ test('AudioPlayer does not retain an unreachable replay implementation', () => {
 test('BUG-07 all direct chat send paths interrupt voice first', () => {
   const input = read('../../components/Chat/MessageInput.tsx');
   const composerVoice = read('../../components/Chat/message-input/useComposerVoice.ts');
+  const runtime = read('../../runtime/JarvisVoiceRuntime.tsx');
   const interruption = read('../../components/Chat/message-input/useComposerInterruption.ts');
   const chat = read('../../components/Chat/ChatView.tsx');
   const quick = read('../../pages/QuickChatPage.tsx');
   assert.match(input, /useComposerInterruption\(\{/);
   assert.match(interruption, /if \(state\.typingBySession\[activeSessionKey\] \|\| voiceOutputActive\)/);
-  assert.match(input, /useComposerVoice\(\{/);
+  assert.match(input, /useJarvisVoiceRuntime\(\)/);
+  assert.match(runtime, /<VoiceWakeOverlay/);
+  assert.match(runtime, /useComposerVoice\(\{/);
   const voiceSend = composerVoice.slice(
     composerVoice.indexOf('const sendVoice'),
     composerVoice.indexOf('const stopAssistant'),

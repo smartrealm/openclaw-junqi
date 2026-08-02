@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
+  appAutostartStatus,
+  disableAppAutostart,
+  enableAppAutostart,
   getVoiceWakeDetectorStatus,
   setVoiceWakeModelDirectory,
   type VoiceWakeDetectorStatus,
@@ -10,6 +13,8 @@ import {
   resolveModelWakeKeywordSelection,
   selectedModelWakeKeywords,
 } from '@/services/voice/VoiceWakeKeywordSelection';
+import { autoArmSessionKey, clearAutoArmSession, setAutoArmSession } from '@/services/voice/VoiceWakePreference';
+import { useChatStore } from '@/stores/chatStore';
 
 export interface JarvisVoiceSettingsState {
   detector: VoiceWakeDetectorStatus | null;
@@ -18,10 +23,13 @@ export interface JarvisVoiceSettingsState {
   loading: boolean;
   configuring: boolean;
   saving: boolean;
+  standbyEnabled: boolean;
+  standbySessionKey: string | null;
   error: string | null;
   configureModel: (title: string) => Promise<void>;
   saveKeywords: (requestedKeywords: readonly string[], invalidSelection: string) => Promise<boolean>;
   refresh: () => Promise<void>;
+  toggleStandby: () => Promise<void>;
 }
 
 /** Reads global Jarvis configuration without owning a conversation or microphone. */
@@ -31,18 +39,24 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
   const [loading, setLoading] = useState(false);
   const [configuring, setConfiguring] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [standbyEnabled, setStandbyEnabled] = useState(false);
+  const [standbySessionKey, setStandbySessionKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [nextDetector, triggers] = await Promise.all([
+      const [nextDetector, triggers, autostartEnabled] = await Promise.all([
         getVoiceWakeDetectorStatus(),
         voiceWakeGatewayClient.getTriggers(),
+        appAutostartStatus(),
       ]);
       setDetector(nextDetector);
       setGatewayTriggers(triggers.triggers);
+      const target = autoArmSessionKey();
+      setStandbySessionKey(target);
+      setStandbyEnabled(autostartEnabled.enabled && target !== null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -94,6 +108,27 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     }
   }, [detector, saving]);
 
+  const toggleStandby = useCallback(async () => {
+    setError(null);
+    try {
+      if (standbyEnabled) {
+        await disableAppAutostart();
+        clearAutoArmSession();
+        setStandbyEnabled(false);
+        setStandbySessionKey(null);
+        return;
+      }
+      const sessionKey = useChatStore.getState().activeSessionKey.trim();
+      if (!sessionKey) throw new Error('No active OpenClaw session is available for Jarvis standby');
+      await enableAppAutostart();
+      setAutoArmSession(sessionKey);
+      setStandbyEnabled(true);
+      setStandbySessionKey(sessionKey);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [standbyEnabled]);
+
   const selectedKeywords = useMemo(() => (
     selectedModelWakeKeywords(detector?.keywords ?? [], gatewayTriggers)
   ), [detector?.keywords, gatewayTriggers]);
@@ -105,9 +140,12 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     loading,
     configuring,
     saving,
+    standbyEnabled,
+    standbySessionKey,
     error,
     configureModel,
     saveKeywords,
     refresh,
+    toggleStandby,
   };
 }

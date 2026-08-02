@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, FolderOpen, Radio, RefreshCw, TriangleAlert } from 'lucide-react';
+import { Check, FolderOpen, Power, Radio, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { JarvisVoiceSettingsState } from '@/hooks/useJarvisVoiceSettings';
 
@@ -43,6 +43,30 @@ export function JarvisVoiceSettingsPanel({ settings }: JarvisVoiceSettingsPanelP
             aria-label={t('common.refresh')}
           >
             <RefreshCw size={16} className={settings.loading ? 'animate-spin motion-reduce:animate-none' : ''} />
+          </button>
+        </div>
+      </section>
+
+      <section className="border border-aegis-border bg-aegis-bg-panel p-5">
+        <div className="flex items-start justify-between gap-5">
+          <div className="min-w-0">
+            <h3 className="text-[13px] font-semibold text-aegis-text">{t('settings.jarvisStandby')}</h3>
+            <p className="mt-1 text-[12px] leading-5 text-aegis-text-dim">
+              {settings.standbyEnabled ? t('settings.jarvisStandbyEnabled') : t('settings.jarvisStandbyDisabled')}
+            </p>
+            {settings.standbySessionKey && (
+              <p className="mt-3 break-all font-mono text-[11px] text-aegis-text-secondary">{settings.standbySessionKey}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => { void settings.toggleStandby(); }}
+            className={settings.standbyEnabled
+              ? 'inline-flex h-9 shrink-0 items-center gap-2 border border-aegis-danger/45 px-3 text-[12px] font-semibold text-aegis-danger transition-colors hover:bg-aegis-danger/[0.08]'
+              : 'inline-flex h-9 shrink-0 items-center gap-2 border border-aegis-primary/45 bg-aegis-primary/[0.08] px-3 text-[12px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/[0.14]'}
+          >
+            <Power size={15} />
+            {settings.standbyEnabled ? t('settings.jarvisStandbyStop') : t('settings.jarvisStandbyStart')}
           </button>
         </div>
       </section>

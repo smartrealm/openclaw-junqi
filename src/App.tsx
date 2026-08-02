@@ -62,6 +62,7 @@ import { readActiveOpenclawConfig } from '@/services/openclawConfigRuntime';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
+import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
 
 function ThemeRuntime() {
   useTheme();
@@ -1162,20 +1163,21 @@ export default function App() {
 
   return (
     <>
-      <ThemeRuntime />
-      <Suspense fallback={null}>
-        <NotificationPreferencesRuntime />
-      </Suspense>
-      <LazyPetRuntimeHost />
-      {hasTauriEventBridge() && (
+      <JarvisVoiceRuntime>
+        <ThemeRuntime />
         <Suspense fallback={null}>
-          <DynamicIslandRuntime />
+          <NotificationPreferencesRuntime />
         </Suspense>
-      )}
+        <LazyPetRuntimeHost />
+        {hasTauriEventBridge() && (
+          <Suspense fallback={null}>
+            <DynamicIslandRuntime />
+          </Suspense>
+        )}
 
       {/* Gateway process error overlay — shown when the gateway failed to start.
           Takes priority over everything; user must recover before using the app. */}
-      {gatewayBootError && !gatewayOptionalRoute && (
+        {gatewayBootError && !gatewayOptionalRoute && (
         <Suspense fallback={null}>
           <GatewayErrorScreen
             error={gatewayBootError}
@@ -1185,14 +1187,14 @@ export default function App() {
             onRecovered={handleGatewayRecovered}
           />
         </Suspense>
-      )}
+        )}
 
-      <Suspense fallback={null}>
-        <DragDropRuntime />
-      </Suspense>
+        <Suspense fallback={null}>
+          <DragDropRuntime />
+        </Suspense>
 
       {/* Pairing overlay — shown when Gateway rejects due to missing scopes */}
-      {pairingIssue && !gatewayOptionalRoute && !gatewayBootError && (
+        {pairingIssue && !gatewayOptionalRoute && !gatewayBootError && (
         <Suspense fallback={null}>
           <PairingScreen
             issue={pairingIssue}
@@ -1200,11 +1202,12 @@ export default function App() {
             onCancel={handlePairingCancel}
           />
         </Suspense>
-      )}
+        )}
 
-      <Suspense fallback={<AppLoadingFallback />}>
-        <AppRoutes />
-      </Suspense>
+        <Suspense fallback={<AppLoadingFallback />}>
+          <AppRoutes />
+        </Suspense>
+      </JarvisVoiceRuntime>
     </>
   );
 }
