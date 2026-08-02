@@ -1,5 +1,9 @@
 import type { ManagedFilePreview } from '@/utils/filePreviewCapabilities';
 import { resolveWorkspacePreview } from '@/workspace-files/services/previewResolver';
+import {
+  createLocalManagedFilePreviewUrl,
+  readLocalManagedFileText,
+} from './managedFileRuntime';
 
 export type FilePreviewKind = ManagedFilePreview['kind'];
 export type LocalFilePreview = ManagedFilePreview;
@@ -29,6 +33,13 @@ export interface LocalFilePreviewBridge {
     } | null>;
   };
 }
+
+const nativePreviewBridge: LocalFilePreviewBridge = {
+  managedFiles: {
+    read: readLocalManagedFileText,
+    createPreview: createLocalManagedFilePreviewUrl,
+  },
+};
 
 const MANAGED_PREVIEW_CAPABILITIES = {
   read: true,
@@ -82,7 +93,7 @@ export function normalizePreviewPath(rawPath: string): string {
 
 export async function readLocalTextPreview(
   rawPath: string,
-  bridge: LocalFilePreviewBridge = window.aegis ?? {},
+  bridge: LocalFilePreviewBridge = nativePreviewBridge,
 ): Promise<{ content: string; truncated: boolean; byteSize: number }> {
   const path = normalizePreviewPath(rawPath);
   const managedReader = bridge.managedFiles?.read;
@@ -139,7 +150,7 @@ async function createNativePreviewUrl(
 export async function loadLocalFilePreview(
   rawPath: string,
   fileName: string,
-  bridge: LocalFilePreviewBridge = window.aegis ?? {},
+  bridge: LocalFilePreviewBridge = nativePreviewBridge,
 ): Promise<LocalFilePreview> {
   const kind = getFilePreviewKind(fileName);
   if (!kind) throw new FilePreviewError('unsupported');
@@ -214,7 +225,7 @@ export async function loadLocalMarkdownImage(
   reference: string,
   ownerPath: string,
   allowedRoot?: string,
-  bridge: LocalFilePreviewBridge = window.aegis ?? {},
+  bridge: LocalFilePreviewBridge = nativePreviewBridge,
 ): Promise<string | null> {
   const resolved = resolveLocalFileReference(reference, ownerPath, allowedRoot);
   return resolved ? createNativePreviewUrl(resolved, bridge) : null;

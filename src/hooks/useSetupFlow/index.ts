@@ -5,7 +5,6 @@
 
 import { useEffect, useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/app-store";
 import {
   isStaleSetupBackDestination,
@@ -15,8 +14,8 @@ import {
   checkOpenclaw, checkDocker, detectGatewayConfig, setActiveGatewayRuntime,
   commitSetupGatewayRuntime, rollbackActiveGatewayRuntime,
   rollbackRuntimeReconfiguration,
+  getGatewayProcessStatus, probeSelectedGateway, probeActiveOpenclawModel,
   type DockerStatus,
-  type GatewayStatus,
   type OpenclawStatus,
 } from "@/api/tauri-commands";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
@@ -24,6 +23,10 @@ import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
 import { executeRuntimeSelectionTransaction } from "@/services/setup/runtimeSelectionTransaction";
 import { validateSetupCompletion } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
+import {
+  readActiveOpenclawConfig,
+  validateActiveOpenclawConfig,
+} from '@/services/openclawConfigRuntime';
 import { isCurrentSetupOperationProgress } from "@/hooks/setupProgressEvents";
 import {
   requiresOpenClawOnboarding,
@@ -151,10 +154,10 @@ export function useSetupFlow(
       if (!isRunActive(runId)) throw new Error("setup cancelled");
       try {
         if (port) {
-          const reachable: boolean = await invoke("probe_selected_gateway", { port });
+          const reachable = await probeSelectedGateway(port);
           if (reachable) return { running: true, port };
         } else {
-          const status = await invoke<GatewayStatus>("gateway_status");
+          const status = await getGatewayProcessStatus();
           if (status.running) {
             cacheGatewayTarget(status.port);
             return status;
@@ -170,8 +173,8 @@ export function useSetupFlow(
 
   const resolveActiveRuntimeOnboardingRequirement = useCallback(async (): Promise<boolean> => {
     try {
-      const detected = await window.aegis.config.detect();
-      const loaded = await window.aegis.config.read();
+      const detected = await validateActiveOpenclawConfig();
+      const loaded = await readActiveOpenclawConfig();
       return requiresOpenClawOnboarding(detected.exists, loaded.data);
     } catch {
       // A missing or unreadable selected-runtime config must stay in the
@@ -187,7 +190,7 @@ export function useSetupFlow(
   }> => {
     report(t("setup.wizard.checkingModel", "正在验证所选模型…"), 90);
     try {
-      const result = await window.aegis.providerRuntime.probeActive();
+      const result = await probeActiveOpenclawModel();
       const detail = result.detail ? sanitizeSetupDiagnostic(result.detail) : result.detail;
       appendSetupLog({
         source: "setup",
@@ -821,7 +824,7 @@ export function useSetupFlow(
       // again in the same user action that commits the setup marker so a
       // Gateway lost during autostart handoff cannot be cached as complete.
       const completion = await validateSetupCompletion({
-        probeGateway: () => invoke<boolean>("probe_selected_gateway", {}).catch(() => false),
+        probeGateway: () => probeSelectedGateway().catch(() => false),
         requiresOnboarding: resolveActiveRuntimeOnboardingRequirement,
         probeModel: probeActiveRuntimeModel,
       });
@@ -900,7 +903,7 @@ export function useSetupFlow(
         : { tier: "existing", path: status.path!, version: status.version ?? undefined });
     }
 
-    const gatewayRunning = await invoke<boolean>("probe_selected_gateway", {}).catch(() => false);
+    const gatewayRunning = await probeSelectedGateway().catch(() => false);
     if (!isRunActive(runId)) return { status: null, gatewayRunning: false, needsOnboarding: needsOnboardingRef.current };
     setGatewayRunning(gatewayRunning);
     let needsOnboarding = needsOnboardingRef.current;

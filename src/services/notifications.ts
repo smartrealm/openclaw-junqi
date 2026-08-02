@@ -5,20 +5,26 @@
 
 import { useNotificationStore, type NotificationType } from '@/stores/notificationStore';
 import { debugLog, debugWarn } from '@/utils/debugLog';
-import { invoke } from '@tauri-apps/api/core';
-import { PERSISTENT_NOTIFICATIONS_CHANGED_EVENT } from '@/hooks/usePersistentNotifications';
+import {
+  notifyPersistentNotificationsChanged,
+  persistentNotificationRepository,
+} from '@/services/persistentNotifications';
 
 export interface NotifyOptions {
   type: NotificationType;
   title: string;
   body: string;
+  /** Stable upstream event identity. Optional for notifications without one. */
+  dedupeKey?: string;
 }
 
 class NotificationService {
+  private static readonly MAX_DEDUPE_KEYS = 512;
   private _enabled = true;
   private _soundEnabled = true;
   private _dndMode = false;
   private permissionRequested = false;
+  private readonly deliveredDedupeKeys = new Set<string>();
 
   private audioCtx: AudioContext | null = null;
 
@@ -82,36 +88,56 @@ class NotificationService {
    */
   notify(options: NotifyOptions): void {
     if (!this._enabled) return;
-    this.persist(options);
-    if (this._dndMode) return;
-    this.playChime();
-
-    if (document.hasFocus()) {
+    if (options.dedupeKey && !this.rememberDedupeKey(options.dedupeKey)) return;
+    const present = () => {
+      if (this._dndMode) return;
+      this.playChime();
+      if (document.hasFocus()) {
       // Window visible — in-app toast works fine
-      useNotificationStore.getState().addToast(options.type, options.title, options.body);
-    } else {
+        useNotificationStore.getState().addToast(options.type, options.title, options.body);
+      } else {
       // Window minimized/background — try both methods for maximum reliability:
       // 1. Web Notification API (worked in v4 dev mode)
       // 2. Electron IPC fallback (works in production where file:// may block Web API)
-      this.showOSNotification(options.title, options.body);
-    }
+        this.showOSNotification(options.title, options.body);
+      }
+    };
+
+    void this.persist(options).then((inserted) => {
+      if (inserted) present();
+    }).catch(() => {
+      // Persistence is unavailable in browser-only development. Preserve the
+      // visible notification rather than silently discarding the event.
+      present();
+    });
   }
 
-  private persist(options: NotifyOptions): void {
+  private rememberDedupeKey(dedupeKey: string): boolean {
+    if (this.deliveredDedupeKeys.has(dedupeKey)) return false;
+    this.deliveredDedupeKeys.add(dedupeKey);
+    if (this.deliveredDedupeKeys.size > NotificationService.MAX_DEDUPE_KEYS) {
+      const oldest = this.deliveredDedupeKeys.values().next().value;
+      if (oldest) this.deliveredDedupeKeys.delete(oldest);
+    }
+    return true;
+  }
+
+  private persist(options: NotifyOptions): Promise<boolean> {
     const host = window as Window & { __TAURI_INTERNALS__?: unknown };
-    if (!host.__TAURI_INTERNALS__) return;
+    if (!host.__TAURI_INTERNALS__) return Promise.resolve(true);
     const level = options.type === 'error' ? 'error' : 'info';
-    void invoke('push_notification', {
+    return persistentNotificationRepository.push({
       level,
       title: options.title,
       body: options.body,
       url: null,
-    }).then(() => {
-      if (typeof window.dispatchEvent === 'function') {
-        window.dispatchEvent(new Event(PERSISTENT_NOTIFICATIONS_CHANGED_EVENT));
-      }
+      dedupeKey: options.dedupeKey ?? null,
+    }).then((result) => {
+      notifyPersistentNotificationsChanged();
+      return result.inserted;
     }).catch((error) => {
       debugWarn('notifications', '[Notify] Failed to persist notification:', error);
+      throw error;
     });
   }
 

@@ -2,7 +2,6 @@
 // Gateway-owned session, plus the recovery paths for a lost or seized session.
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
 import type { SetupStep } from "@/stores/setup-navigation";
 import type { PostStorageStep, SetupLog } from "@/stores/app-store";
 import {
@@ -12,7 +11,12 @@ import {
 } from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
 import { gatewayLifecycle } from "@/services/gateway/gatewayLifecycle";
-import { detectGatewayConfig, handoffGatewayToOfficialService } from "@/api/tauri-commands";
+import {
+  detectGatewayConfig,
+  getGatewayToken,
+  handoffGatewayToOfficialService,
+  probeSelectedGateway,
+} from "@/api/tauri-commands";
 import {
   classifyOpenClawWizardFailure,
   createBrowserOpenClawWizardSessionStore,
@@ -28,6 +32,7 @@ import {
 import { cacheGatewayTarget } from "./helpers";
 import type { StepStatus } from "./types";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
+import { getGatewayDeviceCredentialForUrl } from "@/services/gateway/credentialProvider";
 
 export interface WizardSessionPorts {
   setupStep: SetupStep;
@@ -154,18 +159,17 @@ export function useWizardSession({
     try {
       const target = await detectGatewayConfig();
       cacheGatewayTarget(target.port);
+      const gatewayWsUrl = target.ws_url;
+      if (!gatewayWsUrl) {
+        gatewayManager.reconnect();
+        return false;
+      }
       // The official wizard writes the final Gateway token before installing or
       // restarting its service. Re-read it instead of retaining the bootstrap
       // process' stale in-memory credential.
-      const resolved = await window.aegis.config.get();
-      const token = String(
-        resolved?.gatewayBootstrapToken
-          || target.token
-          || resolved?.gatewayToken
-          || "",
-      ).trim();
-      const deviceToken = String(resolved?.gatewayDeviceToken || "").trim();
-      gatewayManager.connect(target.ws_url, token, deviceToken);
+      const token = String(await getGatewayToken().catch(() => target.token || "")).trim();
+      const deviceToken = (await getGatewayDeviceCredentialForUrl(gatewayWsUrl)).token ?? '';
+      gatewayManager.connect(gatewayWsUrl, token, deviceToken);
       return true;
     } catch {
       // The normal connection resolver can still read settings/config later.
@@ -228,7 +232,7 @@ export function useWizardSession({
       try {
         await handoffGatewayToOfficialService();
         assertWizardOperationCurrent(operationId);
-        const selectedGatewayReady = await invoke<boolean>("probe_selected_gateway", {});
+        const selectedGatewayReady = await probeSelectedGateway();
         assertWizardOperationCurrent(operationId);
         if (!selectedGatewayReady) {
           throw new Error(t(

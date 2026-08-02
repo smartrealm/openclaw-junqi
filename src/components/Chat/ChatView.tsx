@@ -46,7 +46,6 @@ import { ExecutionProcessGroup } from './ExecutionProcessGroup';
 import { groupExecutionProcessBlocks } from './executionProcessGrouping';
 import clsx from 'clsx';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
-import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { isSessionDeleted } from '@/utils/sessionLifecycle';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
 import { startRecoverableTask } from '@/utils/recoverableTask';
@@ -80,7 +79,6 @@ const HISTORY_BACKGROUND_RETRY_BASE_MS = 30_000;
 const HISTORY_BACKGROUND_RETRY_MAX_MS = 120_000;
 const HISTORY_STARTUP_RETRY_BASE_MS = 3_000;
 const HISTORY_STARTUP_RETRY_MAX_MS = 12_000;
-const DEFAULT_GATEWAY_WS_URL = defaultGatewayWsUrl();
 
 const InlineButtonBar = lazy(() => import('./InlineButtonBar').then((m) => ({ default: m.InlineButtonBar })));
 const DecisionCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.DecisionCard })));
@@ -1290,13 +1288,7 @@ function ChatViewContent() {
               {connectionError && <span className="opacity-60"> — {connectionError}</span>}
               <button onClick={() => {
                 startRecoverableTask(async () => {
-                  const c = await window.aegis?.config.get();
-                  if (!c) return;
-                  gatewayManager.connect(
-                    c.gatewayUrl || c.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL,
-                    c.gatewayBootstrapToken ?? c.gatewayToken ?? '',
-                    c.gatewayDeviceToken ?? '',
-                  );
+                  gatewayManager.reconnect();
                 }, (error) => debugWarn('gateway', '[ChatView] Manual reconnect failed:', error));
               }} className="mx-2 underline hover:no-underline">
                 {t('connection.reconnect')}

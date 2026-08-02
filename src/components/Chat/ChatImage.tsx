@@ -8,6 +8,7 @@ import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { resolveOpenClawMediaPreviewUrl } from '@/services/chat/openclawMediaPreview';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { saveChatMedia } from '@/services/chat/mediaSaveRuntime';
 
 // ═══════════════════════════════════════════════════════════
 // ChatImage — Image display with save, zoom, and lightbox
@@ -70,7 +71,6 @@ function useResolvedImageSrc(src: string): string {
     if (syncResolved !== null) return;
     if (!src.startsWith('aegis-media:')) return;
 
-    const filePath = src.replace('aegis-media:', '');
     let disposed = false;
     setAsyncSrc('');
 
@@ -82,22 +82,7 @@ function useResolvedImageSrc(src: string): string {
         return;
       }
 
-      // New desktop builds always expose the scoped native command. Do not
-      // bypass it if that command rejects a transcript path.
-      if (window.aegis?.openclawMedia) {
-        debugError('media', '[ChatImage] OpenClaw media preview was unavailable');
-        return;
-      }
-
-      // Keep older preload bridges functional while the desktop app upgrades.
-      const ext = filePath.split('.').pop()?.toLowerCase() || 'png';
-      const mimeMap: Record<string, string> = {
-        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-        gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp',
-      };
-      const result = await window.aegis?.file?.read(filePath);
-      if (disposed || !result?.base64) return;
-      setAsyncSrc(`data:${mimeMap[ext] || 'image/png'};base64,${result.base64}`);
+      debugError('media', '[ChatImage] OpenClaw media preview was unavailable');
     })().catch((error: unknown) => {
       if (!disposed) debugError('media', '[ChatImage] OpenClaw media preview failed', error);
     });
@@ -132,7 +117,7 @@ function extractFilename(src: string, alt?: string): string {
 // ── Save image via Electron IPC ──
 async function saveImage(src: string, suggestedName: string): Promise<void> {
   try {
-    const result = await window.aegis?.image?.save(src, suggestedName);
+    const result = await saveChatMedia(src, suggestedName);
     const outcome = classifyImageSaveResult(result);
     if (outcome === 'saved') {
       debugLog('media', '[ChatImage] Saved to:', result?.path);

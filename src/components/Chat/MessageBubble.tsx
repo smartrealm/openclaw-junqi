@@ -567,7 +567,7 @@ function stripInlineCodeTicks(md: string): string {
 
           {hasBubbleActions && (
             <div
-              className="absolute end-2 top-2 z-10 rounded-md bg-[rgb(var(--aegis-bg)/0.72)] p-0.5"
+              className="mb-1.5 flex justify-end"
               data-message-bubble-actions
             >
               {messageActions}

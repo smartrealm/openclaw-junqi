@@ -2,7 +2,7 @@
 // SettingsPage — Full settings with Gateway, Theme, Model
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -22,7 +22,13 @@ import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { openSelectedGatewayControlUi } from '@/services/gateway/GatewayControlUi';
+import {
+  getStoredGatewayCredentialToken,
+  resolveGatewayConnectionTarget,
+} from '@/services/gateway/GatewayConnectionTargetResolver';
 import { notifications } from '@/services/notifications';
+import { openRuntimeDataDirectory } from '@/services/runtimeDataDirectory';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { PET_SKIN_OPTIONS } from '@/pet/skins';
 import { SkinPreview } from '@/pet/SkinPreview';
@@ -30,7 +36,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
-import { formatBytes } from '@/utils/format';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { ThemePicker } from '@/components/settings/ThemePicker';
 import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
@@ -202,7 +207,7 @@ export function SettingsPageFull() {
   useEffect(() => {
     if (activeTab !== 'connect') return;
     let cancelled = false;
-    void window.aegis?.pairing?.getToken(gatewayUrl.trim() || undefined).then((token) => {
+    void getStoredGatewayCredentialToken(gatewayUrl.trim()).then((token) => {
       if (!cancelled) setHasStoredGatewayToken(Boolean(token));
     }).catch(() => {
       if (!cancelled) setHasStoredGatewayToken(false);
@@ -237,64 +242,12 @@ export function SettingsPageFull() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  const [managedFilesRefreshing, setManagedFilesRefreshing] = useState(false);
-  const [attachmentsStatus, setAttachmentsStatus] = useState<string>('');
-
-  const [managedIndexInfo, setManagedIndexInfo] = useState<{
-    indexedTotal: number;
-    indexedBytes: number;
-    loadedRows: number;
-    bytesIsPartial: boolean;
-    workspaceSample: string;
-  } | null>(null);
-
   useEffect(() => {
     window.aegis?.app?.versions()
       .then((v) => setOpenclawVersion(v.openclaw ?? (v as any).runtime ?? null))
       .catch(() => {});
     window.aegis?.app?.platformInfo?.().then(setPlatformLabel).catch(() => {});
   }, []);
-
-  const refreshManagedIndexInfo = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
-    try {
-      if (!window.aegis?.managedFiles?.list) {
-        setManagedIndexInfo(null);
-        return { success: false, error: t('settings.managedFilesApiUnavailable') };
-      }
-      const result = await window.aegis.managedFiles.list({ limit: 500_000, offset: 0 });
-      if (!result || !('success' in result) || !result.success) {
-        setManagedIndexInfo(null);
-        return { success: false, error: (result as { error?: string })?.error || t('settings.managedFilesListFailed') };
-      }
-      const rows = result.rows || [];
-      const indexedTotal = typeof result.total === 'number' ? result.total : rows.length;
-      let indexedBytes = 0;
-      for (const r of rows) {
-        indexedBytes += Number((r as { size?: number }).size || 0);
-      }
-      const bytesIsPartial = indexedTotal > rows.length;
-      const workspaceSample = String((rows[0] as { workspaceRoot?: string })?.workspaceRoot || '');
-      setManagedIndexInfo({
-        indexedTotal,
-        indexedBytes,
-        loadedRows: rows.length,
-        bytesIsPartial,
-        workspaceSample,
-      });
-      return { success: true };
-    } catch (error: unknown) {
-      setManagedIndexInfo(null);
-      const message = error instanceof Error ? error.message : '';
-      return { success: false, error: message || t('settings.managedFilesListFailed') };
-    }
-  }, [t]);
-
-  useEffect(() => {
-    if (activeTab !== 'storage') return;
-    refreshManagedIndexInfo().then((r) => {
-      if (!r.success && r.error) setAttachmentsStatus(r.error);
-    });
-  }, [activeTab, refreshManagedIndexInfo]);
 
   const handleLanguageChange = (lang: AppLanguage) => {
     setLanguage(lang);
@@ -323,8 +276,8 @@ export function SettingsPageFull() {
 
   const openControlUi = async () => {
     try {
-      const result = await window.aegis?.consoleUi?.open();
-      if (result?.success) return;
+      const result = await openSelectedGatewayControlUi();
+      if (result.success) return;
     } catch {
       // Fall through to the normal Gateway recovery path below.
     }
@@ -333,7 +286,7 @@ export function SettingsPageFull() {
       t('settings.controlUiRecovering'),
     );
     void gatewayLifecycle.recover('settings-control-ui').then((result) => {
-      if (result.success) void window.aegis?.consoleUi?.open();
+      if (result.success) void openSelectedGatewayControlUi();
     });
   };
 
@@ -377,75 +330,28 @@ export function SettingsPageFull() {
     }
   };
 
-  const openGatewayLogs = async () => {
+  const openRuntimeData = async () => {
     try {
-      const res = await (window.aegis?.logs?.openGatewayLogFile?.() ?? window.aegis?.logs?.openElectronLogFile?.());
+      const res = await openRuntimeDataDirectory();
       if (res?.success) return;
-      notifyError(t('settings.openGatewayLogs', '查看 Gateway 日志'), res?.error || t('settings.managedFilesListFailed'));
+      notifyError(t('settings.openRuntimeData', '打开运行数据目录'), res?.error || t('settings.managedFilesListFailed'));
     } catch (err: any) {
-      notifyError(t('settings.openGatewayLogs', '查看 Gateway 日志'), err?.message || t('settings.managedFilesListFailed'));
+      notifyError(t('settings.openRuntimeData', '打开运行数据目录'), err?.message || t('settings.managedFilesListFailed'));
     }
   };
 
-  const openDesktopLogs = async () => {
-    try {
-      // Fallback for stale preload in running app: at least open legacy log entrypoint.
-      const res = await (window.aegis?.logs?.openDesktopLogFile?.() ?? window.aegis?.logs?.openElectronLogFile?.());
-      if (res?.success) return;
-      notifyError(t('settings.openDesktopLogs', '查看桌面日志'), res?.error || t('settings.managedFilesListFailed'));
-    } catch (err: any) {
-      const message = String(err?.message || err || '');
-      if (message.includes("No handler registered for 'logs:openDesktopLogFile'")) {
-        try {
-          const fallback = await window.aegis?.logs?.openElectronLogFile?.();
-          if (fallback?.success) return;
-        } catch {
-          // handled below
-        }
-      }
-      notifyError(t('settings.openDesktopLogs', '查看桌面日志'), message || t('settings.managedFilesListFailed'));
-    }
-  };
-
-  const resolveConnectionUrl = async (): Promise<{ url: string; token: string; deviceToken: string }> => {
-    const userUrl = editUrl.trim();
-    const userToken = editToken.trim();
-    if (userUrl) {
-      if (tokenDirty) return { url: userUrl, token: userToken, deviceToken: '' };
-      const config = await window.aegis?.config.get();
-      const configUrl = config?.gatewayUrl || config?.gatewayWsUrl || '';
-      const splitCredentials = config
-        && ('gatewayBootstrapToken' in config || 'gatewayDeviceToken' in config);
-      const sameTarget = userUrl === configUrl;
-      const storedDeviceToken = await window.aegis?.pairing?.getToken(userUrl) || '';
-      return {
-        url: userUrl,
-        token: sameTarget
-          ? (config?.gatewayBootstrapToken ?? (!splitCredentials ? config?.gatewayToken : '') ?? '')
-          : '',
-        deviceToken: sameTarget ? (config?.gatewayDeviceToken || storedDeviceToken) : storedDeviceToken,
-      };
-    }
-    try {
-      const config = await window.aegis?.config.get();
-      return {
-        url: config?.gatewayUrl || config?.gatewayWsUrl || defaultGatewayWsUrl(),
-        token: tokenDirty
-          ? userToken
-          : config?.gatewayBootstrapToken ?? config?.gatewayToken ?? '',
-        deviceToken: tokenDirty ? '' : config?.gatewayDeviceToken ?? '',
-      };
-    } catch {
-      return { url: defaultGatewayWsUrl(), token: '', deviceToken: '' };
-    }
-  };
+  const resolveConnectionUrl = () => resolveGatewayConnectionTarget({
+    preferredUrl: editUrl,
+    tokenOverride: editToken,
+    useTokenOverride: tokenDirty,
+  });
 
   const handleTestConnection = async () => {
     setTestingConnection(true);
     setTestResult(null);
     try {
-      const { url, token, deviceToken } = await resolveConnectionUrl();
-      gatewayManager.connect(url, token, deviceToken);
+      const { wsUrl, token, deviceToken } = await resolveConnectionUrl();
+      gatewayManager.connect(wsUrl, token, deviceToken);
       // Poll the store for up to 5 s (50 × 100 ms) instead of a fixed 2.5 s sleep.
       // This resolves faster on quick connections and is more reliable on slow ones.
       let connected = false;
@@ -464,8 +370,8 @@ export function SettingsPageFull() {
   const handleReconnect = async () => {
     setTestResult(null);
     try {
-      const { url, token, deviceToken } = await resolveConnectionUrl();
-      gatewayManager.connect(url, token, deviceToken);
+      const { wsUrl, token, deviceToken } = await resolveConnectionUrl();
+      gatewayManager.connect(wsUrl, token, deviceToken);
     } catch {
       setTestResult('fail');
     }
@@ -474,14 +380,14 @@ export function SettingsPageFull() {
   const handleSaveConnection = async () => {
     setTestResult(null);
     try {
-      const { url, token, deviceToken } = await resolveConnectionUrl();
+      const { wsUrl, token, deviceToken } = await resolveConnectionUrl();
       setGatewayUrl(editUrl.trim());
       if (tokenDirty) setGatewayToken(editToken.trim());
       setHasStoredGatewayToken(Boolean(token || deviceToken));
       setEditToken('');
       setTokenDirty(false);
       setConnectionDirty(false);
-      gatewayManager.connect(url, token, deviceToken);
+      gatewayManager.connect(wsUrl, token, deviceToken);
     } catch {
       setTestResult('fail');
     }
@@ -1236,73 +1142,6 @@ export function SettingsPageFull() {
 
       <NpmCacheSettingsPanel />
 
-      {/* Conversation files — same managed index as File Manager */}
-      <GlassCard delay={0.28}>
-        <h3 className="text-[14px] font-semibold text-aegis-text mb-1 flex items-center gap-2">
-          <HardDrive size={16} className="text-aegis-primary" />
-          {t('settings.attachmentsTemp')}
-        </h3>
-        <p className="text-[11px] text-aegis-text-dim/70 mb-4 leading-relaxed">
-          {t('settings.attachmentsSectionHint')}
-        </p>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="text-aegis-text-dim">{t('settings.attachmentsCount')}</span>
-            <span className="text-aegis-text">{managedIndexInfo?.indexedTotal ?? '—'}</span>
-          </div>
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="text-aegis-text-dim">{t('settings.attachmentsSize')}</span>
-            <span className="text-aegis-text">
-              {managedIndexInfo ? formatBytes(managedIndexInfo.indexedBytes) : '—'}
-              {managedIndexInfo?.bytesIsPartial && (
-                <span className="text-[10px] text-aegis-text-dim ms-1">
-                  ({t('settings.attachmentsSizePartial', { loaded: managedIndexInfo.loadedRows, total: managedIndexInfo.indexedTotal })})
-                </span>
-              )}
-            </span>
-          </div>
-          {!!managedIndexInfo?.workspaceSample && (
-            <div className="text-[10px] text-aegis-text-dim break-all">
-              {t('settings.attachmentsWorkspaceSample')}: {managedIndexInfo.workspaceSample}
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={async () => {
-                if (managedFilesRefreshing) return;
-                setManagedFilesRefreshing(true);
-                setAttachmentsStatus('');
-                try {
-                  const r = await refreshManagedIndexInfo();
-                  if (r.success) setAttachmentsStatus(t('settings.attachmentsReady'));
-                  else setAttachmentsStatus(r.error || t('settings.managedFilesListFailed'));
-                } catch {
-                  setAttachmentsStatus(t('settings.managedFilesListFailed'));
-                } finally {
-                  setManagedFilesRefreshing(false);
-                }
-              }}
-              disabled={managedFilesRefreshing}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] border transition-colors',
-                managedFilesRefreshing
-                  ? 'text-aegis-text-dim/60 border-aegis-border/10 cursor-not-allowed'
-                  : 'text-aegis-text-dim hover:text-aegis-text border-aegis-border/20 hover:border-aegis-border/40',
-              )}
-            >
-              <RefreshCw size={12} className={managedFilesRefreshing ? 'animate-spin' : ''} />
-              {managedFilesRefreshing ? t('settings.refreshing') : t('settings.refresh')}
-            </button>
-          </div>
-          {!!attachmentsStatus && (
-            <div className="text-[11px] text-aegis-text-dim">
-              {attachmentsStatus}
-            </div>
-          )}
-        </div>
-      </GlassCard>
-
       {/* Gateway Log (SPEC §M6, T5) — 200-entry circular buffer viewer. */}
       <GatewayLogPanel />
         </>
@@ -1374,36 +1213,26 @@ export function SettingsPageFull() {
             {t('settings.openMaintenance', '打开检修')}
           </button>
 
-          {window.aegis?.logs && (
-            <>
-              <button
-                onClick={() => { void openGatewayLogs(); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/20 hover:border-aegis-border/40 transition-colors"
-              >
-                <FileText size={12} /> {t('settings.openGatewayLogs', '查看 Gateway 日志')}
-              </button>
-              <button
-                onClick={() => { void openDesktopLogs(); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/20 hover:border-aegis-border/40 transition-colors"
-              >
-                <FileText size={12} /> {t('settings.openDesktopLogs', '查看桌面日志')}
-              </button>
-            </>
+          {window.aegis?.runtimeData && (
+            <button
+              onClick={() => { void openRuntimeData(); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/20 hover:border-aegis-border/40 transition-colors"
+            >
+              <FileText size={12} /> {t('settings.openRuntimeData', '打开运行数据目录')}
+            </button>
           )}
         </div>
 
-        {window.aegis?.consoleUi && (
-          <div className="mt-3 flex items-center justify-center">
-            <button
-              onClick={() => { void openControlUi(); }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-semibold
-                bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/30
-                hover:bg-aegis-primary/25 transition-colors"
-            >
-              <MonitorDot size={13} /> {t('settings.controlUi', 'Control UI')}
-            </button>
-          </div>
-        )}
+        <div className="mt-3 flex items-center justify-center">
+          <button
+            onClick={() => { void openControlUi(); }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-semibold
+              bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/30
+              hover:bg-aegis-primary/25 transition-colors"
+          >
+            <MonitorDot size={13} /> {t('settings.controlUi', 'Control UI')}
+          </button>
+        </div>
       </GlassCard>
         </>
       )}

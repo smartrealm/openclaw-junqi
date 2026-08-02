@@ -42,8 +42,8 @@ test('TopBar and notification service use the persistent notification contract',
 
   assert.match(topBar, /usePersistentNotifications\(\)/);
   assert.doesNotMatch(topBar, /useNotificationStore/);
-  assert.match(service, /invoke\('push_notification'/);
-  assert.match(service, /PERSISTENT_NOTIFICATIONS_CHANGED_EVENT/);
+  assert.match(service, /persistentNotificationRepository\.push/);
+  assert.match(service, /notifyPersistentNotificationsChanged/);
   assert.match(topBar, /resolveNotificationTarget\(item\.url\)/);
   assert.match(topBar, /if \(!target\) \{\s+if \(terminalChrome\) setPanelOpen\(false\);\s+return;/);
   assert.match(topBar, /<TerminalNotificationPanel/);

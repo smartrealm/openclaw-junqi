@@ -18,12 +18,9 @@ import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { changeLanguage } from '@/i18n';
 import { nextPrimaryLanguage } from '@/i18n/languages';
 import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
-import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { gateway } from '@/services/gateway';
 import { useNotificationStore } from '@/stores/notificationStore';
 import clsx from 'clsx';
-
-const DEFAULT_GATEWAY_WS_URL = defaultGatewayWsUrl();
 
 const QUICK_AGENTS = [
   { id: 'claude', label: 'Claude Code', desc: 'Anthropic Claude', keywords: ['claude', 'anthropic'] },
@@ -63,15 +60,7 @@ export function CommandPalette() {
   const [query, setQuery] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const reconnectWithBestConfig = async () => {
-    const config = await window.aegis?.config?.get();
-    const cfgUrl = config?.gatewayUrl || config?.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL;
-    gatewayManager.connect(
-      cfgUrl,
-      config?.gatewayBootstrapToken ?? config?.gatewayToken ?? '',
-      config?.gatewayDeviceToken ?? '',
-    );
-  };
+  const reconnectWithBestConfig = () => gatewayManager.reconnect();
 
   // Define commands — all names use i18n keys
   const commands: PaletteCommand[] = [

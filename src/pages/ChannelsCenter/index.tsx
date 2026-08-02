@@ -7,7 +7,7 @@ import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { gateway } from '@/services/gateway';
-import type { LogEntry } from '@/api/tauri-commands';
+import { clearGatewayLogs, type LogEntry } from '@/api/tauri-commands';
 import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
 import type { AgentConfig, GatewayRuntimeConfig } from '@/types/openclawConfig';
 import { ChannelOfficialSchemaEditor } from '@/pages/ConfigManager/ChannelOfficialSchemaEditor';
@@ -38,8 +38,10 @@ import {
   installManagedExternalChannelPlugin,
   loadOfficialChannelCapability,
   loadOfficialChannelCatalog,
-  managedExternalChannelPlugin,
+  loadOfficialChannelLogs,
+  loadOfficialChannelStatus,
   redactChannelSecrets,
+  runtimeChannelIds,
   type ChannelsRuntimeSnapshot,
   type OfficialChannelCatalog,
   type OfficialChannelCatalogEntry,
@@ -47,6 +49,16 @@ import {
 } from '@/services/openclawChannelRuntime';
 import { ChannelQrLoginDialog } from './ChannelQrLoginDialog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { ChannelRuntimeIcon } from '@/components/shared/ChannelRuntimeIcon';
+import { runChannelRuntimeAction } from '@/services/channelRuntimeActions';
+import {
+  readActiveOpenclawConfig,
+  validateActiveOpenclawConfig,
+} from '@/services/openclawConfigRuntime';
+import {
+  loadGatewayProcessLogs,
+  observeSelectedGatewayProcess,
+} from '@/services/gateway/gatewayProcessObservation';
 
 function channelName(
   t: ReturnType<typeof useTranslation>['t'],
@@ -54,10 +66,6 @@ function channelName(
   runtimeLabel?: string,
 ) {
   return runtimeLabel?.trim() || t(`config.channel.${id}`, { defaultValue: id });
-}
-
-function channelIcon(id: string) {
-  return id.slice(0, 2).toUpperCase();
 }
 
 function catalogEntryStateLabel(
@@ -336,15 +344,12 @@ export function ChannelsCenterPage() {
   const loadGatewaySnapshot = useCallback(async () => {
     setGatewayLoading(true);
     try {
-      if (!window.aegis?.gateway) {
-        throw new Error('Gateway API unavailable');
-      }
       const [status, logs] = await Promise.all([
-        window.aegis.gateway.getStatus(),
-        window.aegis.gateway.getLogs?.(120) ?? Promise.resolve([]),
+        observeSelectedGatewayProcess(),
+        loadGatewayProcessLogs(120),
       ]);
-      setGatewayStatus(status as GatewayUiStatus);
-      setGatewayLogs(logs as LogEntry[]);
+      setGatewayStatus(status);
+      setGatewayLogs(logs);
     } catch (err) {
       setGatewayStatus({ running: false, ready: false, error: err instanceof Error ? err.message : String(err) });
       setGatewayLogs([]);
@@ -357,7 +362,7 @@ export function ChannelsCenterPage() {
     setLoading(true);
     setError('');
     try {
-      const detected = await window.aegis.config.detect();
+      const detected = await validateActiveOpenclawConfig();
       if (!detected.valid) {
         throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
       }
@@ -366,7 +371,7 @@ export function ChannelsCenterPage() {
         setError(t('channelsCenter.configMissing', 'OpenClaw config file was not found.'));
         return;
       }
-      const { data } = await window.aegis.config.read();
+      const { data } = await readActiveOpenclawConfig();
       setConfig(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -384,7 +389,7 @@ export function ChannelsCenterPage() {
           probe,
           timeoutMs: probe ? 15000 : 8000,
           ...(channelId ? { channel: channelId } : {}),
-        }).catch(() => window.aegis.channelRuntime.status(channelId, probe)),
+        }).catch(() => loadOfficialChannelStatus(channelId, probe)),
       ]);
       setCatalog(nextCatalog);
       if (channelId) {
@@ -446,6 +451,10 @@ export function ChannelsCenterPage() {
     }))
   ), [config]);
   const accountCount = groups.reduce((sum, group) => sum + group.accounts.length, 0);
+  const configuredChannelIds = useMemo(() => new Set([
+    ...groups.map((group) => group.id),
+    ...runtimeChannelIds(runtimeSnapshot),
+  ]), [groups, runtimeSnapshot]);
   const readinessSummary = useMemo(() => {
     const summary = summarizeChannelReadiness([]);
     for (const group of groups) {
@@ -560,9 +569,9 @@ export function ChannelsCenterPage() {
     if (accountActionBusy) return;
     setAccountActionBusy(key);
     try {
-      await gateway.call(method, {
-        channel: group.id,
-        ...(account.id !== 'default' ? { accountId: account.id } : {}),
+      await runChannelRuntimeAction(gateway.callPrivileged, method, {
+        channelId: group.id,
+        accountId: account.id,
       });
       await loadOfficialState(true, group.id);
     } catch (reason: any) {
@@ -584,7 +593,7 @@ export function ChannelsCenterPage() {
     }
     setChannelLogsBusy(channelId);
     try {
-      const payload = await window.aegis.channelRuntime.logs(channelId, 200);
+      const payload = await loadOfficialChannelLogs(channelId, 200);
       setChannelLogPayloads((current) => ({ ...current, [channelId]: redactChannelSecrets(payload) }));
     } catch (reason: any) {
       showAlert(t('channelsCenter.logsFailed', 'Unable to load channel logs'), reason?.message || String(reason), 'error');
@@ -634,8 +643,12 @@ export function ChannelsCenterPage() {
   };
 
   const handleClearGatewayLogs = async () => {
-    const ok = await window.aegis?.gateway?.clearLogs?.();
-    if (ok) setGatewayLogs([]);
+    try {
+      await clearGatewayLogs();
+      setGatewayLogs([]);
+    } catch {
+      // The refresh path retains the current diagnostics after a failed clear.
+    }
   };
 
   const handleSaveAccount = async (accountId: string, accountConfig: Record<string, unknown>) => {
@@ -706,8 +719,7 @@ export function ChannelsCenterPage() {
         return;
       }
     }
-    const managedPlugin = managedExternalChannelPlugin(entry.id);
-    if (managedPlugin && entry.installed && config) {
+    if (entry.managedInstall && entry.installed && config) {
       // Keep the draft out of live React state until the user explicitly
       // saves credentials. The schema is read from the installed OpenClaw
       // plugin, so JunQi never invents DingTalk configuration fields.
@@ -737,10 +749,22 @@ export function ChannelsCenterPage() {
     openChannelTerminal(buildChannelSetupCommand(entry.id));
   };
 
+  const handleCatalogEntry = (entry: OfficialChannelCatalogEntry) => {
+    const configured = groups.find((group) => group.id === entry.id);
+    if (!configured) {
+      void handleAdd(entry);
+      return;
+    }
+    setExpanded(entry.id);
+    document.getElementById(`configured-channel-${entry.id}`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  };
+
   const handleInstallManagedPlugin = async (channelId: string) => {
-    const plugin = managedExternalChannelPlugin(channelId);
     const currentEntry = catalog.entries.find((entry) => entry.id === channelId);
-    if (!plugin || currentEntry?.installed || pluginInstalling) return;
+    if (!currentEntry?.managedInstall || currentEntry.installed || pluginInstalling) return;
     setPluginInstalling(channelId);
     try {
       const result = await installManagedExternalChannelPlugin(channelId);
@@ -1005,17 +1029,16 @@ export function ChannelsCenterPage() {
                   const open = expanded === group.id;
                   const originalAccountCount = groups.find((item) => item.id === group.id)?.accounts.length ?? group.accounts.length;
                   const catalogEntry = catalog.entries.find((entry) => entry.id === group.id);
-                  const managedPlugin = managedExternalChannelPlugin(group.id);
                   const pluginMissing = Boolean(
-                    managedPlugin
+                    catalogEntry?.managedInstall
                     && catalog.source === 'openclaw-cli'
                     && catalogEntry?.installed === false,
                   );
                   return (
-                    <div key={group.id} className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] overflow-hidden">
+                    <div id={`configured-channel-${group.id}`} key={group.id} className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] overflow-hidden">
                       <button onClick={() => handleExpand(group, open)} className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left hover:bg-[rgb(var(--aegis-overlay)/0.03)]">
                         <div className="w-8 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] flex items-center justify-center text-[10px] font-bold text-aegis-text-muted">
-                          {channelIcon(group.id)}
+                          <ChannelRuntimeIcon systemImage={runtimeSnapshot?.channelSystemImages?.[group.id]} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
@@ -1204,9 +1227,8 @@ export function ChannelsCenterPage() {
             ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {availableEntries.map((entry) => {
-                const managedPlugin = managedExternalChannelPlugin(entry.id);
                 const pluginMissing = Boolean(
-                  managedPlugin
+                  entry.managedInstall
                   && catalog.source === 'openclaw-cli'
                   && !entry.installed,
                 );
@@ -1215,25 +1237,29 @@ export function ChannelsCenterPage() {
                   <div key={entry.id} className="flex items-center gap-2 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] p-2">
                     <button
                       type="button"
-                      onClick={() => void handleAdd(entry)}
+                      onClick={() => handleCatalogEntry(entry)}
                       disabled={!config || saving || pluginMissing}
                       title={pluginMissing ? t('channelsCenter.installPluginFirst', 'Install the official plugin first') : t('channelsCenter.configureChannel', 'Configure channel')}
                       className="flex min-w-0 flex-1 items-center gap-3 rounded px-1 py-0.5 text-left hover:bg-aegis-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] text-[10px] font-bold text-aegis-text-muted">
-                        {channelIcon(entry.id)}
+                        <ChannelRuntimeIcon systemImage={runtimeSnapshot?.channelSystemImages?.[entry.id]} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-[13px] font-bold text-aegis-text">
                           {channelName(t, entry.id, runtimeSnapshot?.channelLabels?.[entry.id])}
                         </div>
                         <div className="truncate text-[10px] text-aegis-text-dim">
-                          {pluginMissing
+                          {configuredChannelIds.has(entry.id)
+                            ? t('channelsCenter.alreadyConfigured', 'Configured')
+                            : pluginMissing
                             ? `${t('channelsCenter.officialExternalPlugin', 'Official external plugin')} · ${t('channelsCenter.installable', 'Installable')}`
                             : catalogEntryStateLabel(t, catalog, entry)}
                         </div>
                       </div>
-                      <Plus size={14} className="shrink-0 text-aegis-primary" />
+                      {configuredChannelIds.has(entry.id)
+                        ? <Check size={14} className="shrink-0 text-aegis-success" />
+                        : <Plus size={14} className="shrink-0 text-aegis-primary" />}
                     </button>
                     {pluginMissing && (
                       <button

@@ -15,6 +15,11 @@ test('Gateway lifecycle settings contain no platform service identity guesses', 
   assert.doesNotMatch(source, /launchctl|systemctl|schtasks|\.plist|ai\.openclaw|18789/i);
 });
 
+test('Gateway lifecycle settings use the shared typed runtime snapshot boundary', () => {
+  assert.match(source, /getGatewayRuntimeSnapshot\(\)/);
+  assert.doesNotMatch(source, /invoke<GatewayRuntimeSnapshot>\('get_gateway_runtime_snapshot'\)/);
+});
+
 test('Gateway lifecycle settings render the shared backend-driven autostart presentation', () => {
   assert.match(source, /presentGatewayAutostart\(autostart, t\)/);
   assert.match(source, /autostartPresentation\?\.description/);

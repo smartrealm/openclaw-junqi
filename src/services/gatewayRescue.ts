@@ -1,28 +1,19 @@
-import { invoke } from '@tauri-apps/api/core';
+import {
+  gatewayRescueChat,
+  listGatewayRescueTargets,
+  type GatewayRescueContext,
+  type GatewayRescueMessage,
+  type GatewayRescueTarget,
+} from '@/api/tauri-commands';
 
-export interface GatewayRescueTarget {
-  providerId: string;
-  modelId: string;
-  modelRef: string;
-  source: 'primary' | 'configured';
-}
-
-export interface GatewayRescueMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-export interface GatewayRescueContext {
-  error: string;
-  logs?: string;
-}
+export type { GatewayRescueContext, GatewayRescueMessage, GatewayRescueTarget };
 
 export function gatewayRescueTargetKey(target: GatewayRescueTarget): string {
   return target.modelRef;
 }
 
 export async function loadGatewayRescueTargets(): Promise<GatewayRescueTarget[]> {
-  return invoke<GatewayRescueTarget[]>('list_gateway_rescue_targets');
+  return listGatewayRescueTargets();
 }
 
 export async function sendGatewayRescueMessage(
@@ -30,12 +21,10 @@ export async function sendGatewayRescueMessage(
   messages: GatewayRescueMessage[],
   context: GatewayRescueContext,
 ): Promise<string> {
-  const response = await invoke<{ text: string }>('gateway_rescue_chat', {
-    req: {
-      modelRef: target.modelRef,
-      messages,
-      context,
-    },
+  const response = await gatewayRescueChat({
+    modelRef: target.modelRef,
+    messages,
+    context,
   });
   return response.text;
 }

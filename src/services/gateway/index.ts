@@ -26,6 +26,7 @@ import {
   OpenClawAgentManagement,
 } from './AgentManagement';
 import { debugWarn } from '@/utils/debugLog';
+import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
 import type { GatewayAgentCreatePayload } from '@/utils/gatewayAgentFlow';
 import { routeGatewayEvent } from './collaborationEventBridge';
 import { VoiceWakeGatewayClient } from './VoiceWakeGatewayClient';
@@ -133,9 +134,7 @@ export { GatewayAgentDisplayNameUpdateError };
 
 async function cleanupSessionArtifacts(sessionKey: string): Promise<void> {
   const operations: Array<{ label: string; task: Promise<unknown> | undefined }> = [
-    { label: 'uploads', task: window.aegis?.uploads?.cleanupSession?.({ sessionKey }) },
-    { label: 'outputs', task: window.aegis?.managedFiles?.cleanupSessionRefs?.({ sessionKey, kind: 'outputs' }) },
-    { label: 'voice', task: window.aegis?.voice?.cleanupSession?.({ sessionKey }) },
+    { label: 'voice', task: voiceFileRuntime.cleanupSession(sessionKey) },
   ];
 
   await Promise.all(operations.map(async ({ label, task }) => {

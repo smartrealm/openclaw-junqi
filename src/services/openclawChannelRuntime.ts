@@ -1,10 +1,19 @@
 import type { OpenClawFieldSchema } from './openclawConfigSchema';
+import {
+  getOpenclawChannelCapabilities,
+  getOpenclawChannelCatalog,
+  getOpenclawChannelLogs,
+  getOpenclawChannelStatus,
+  installOpenclawChannelPlugin,
+} from '@/api/tauri-commands';
 
 export interface OfficialChannelCatalogEntry {
   id: string;
   accounts: string[];
   installed: boolean;
   origin: 'configured' | 'bundled' | 'installable' | string;
+  /** Native runtime explicitly authorizes JunQi to install this channel. */
+  managedInstall: boolean;
 }
 
 export interface OfficialChannelCatalog {
@@ -13,14 +22,8 @@ export interface OfficialChannelCatalog {
   entries: OfficialChannelCatalogEntry[];
 }
 
-export interface ManagedExternalChannelPlugin {
-  channelId: string;
-  npmSpec: string;
-}
-
 export interface OfficialChannelPluginInstallResult {
   channel: string;
-  npmSpec: string;
   alreadyInstalled: boolean;
   installed: boolean;
 }
@@ -61,6 +64,15 @@ export interface ChannelsRuntimeSnapshot {
   ts?: number;
   channelOrder?: string[];
   channelLabels?: Record<string, string>;
+  channelDetailLabels?: Record<string, string>;
+  /** Icon semantic from the selected OpenClaw Runtime, not a JunQi channel map. */
+  channelSystemImages?: Record<string, string>;
+  channelMeta?: Array<{
+    id: string;
+    label: string;
+    detailLabel: string;
+    systemImage?: string;
+  }>;
   channelAccounts?: Record<string, ChannelAccountRuntimeStatus[]>;
   channels?: Record<string, unknown>;
   partial?: boolean;
@@ -73,13 +85,6 @@ export interface ChannelsRuntimeSnapshot {
 export type ChannelLinkMode = 'embedded_qr' | 'terminal_setup' | 'none';
 const CLI_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
-const MANAGED_EXTERNAL_CHANNEL_PLUGINS: readonly ManagedExternalChannelPlugin[] = [
-  {
-    channelId: 'dingtalk-connector',
-    npmSpec: '@dingtalk-real-ai/dingtalk-connector',
-  },
-];
-
 export function isOpenClawChannelIdentifier(value: string): boolean {
   return CLI_IDENTIFIER.test(value.trim());
 }
@@ -90,24 +95,12 @@ export function assertChannelCliIdentifier(value: string, label: string): string
   return normalized;
 }
 
-/**
- * The renderer can use this only for presentation. Native code repeats the
- * whitelist before invoking OpenClaw, so an untrusted page cannot select an
- * arbitrary npm package.
- */
-export function managedExternalChannelPlugin(channelId: string): ManagedExternalChannelPlugin | null {
-  const channel = channelId.trim();
-  if (!isOpenClawChannelIdentifier(channel)) return null;
-  return MANAGED_EXTERNAL_CHANNEL_PLUGINS.find((plugin) => plugin.channelId === channel) ?? null;
-}
-
 export async function installManagedExternalChannelPlugin(
   channelId: string,
 ): Promise<OfficialChannelPluginInstallResult> {
-  const plugin = managedExternalChannelPlugin(channelId);
-  if (!plugin) throw new Error('This channel does not have a JunQi-managed external plugin.');
-  const result = await window.aegis.channelRuntime.install(plugin.channelId);
-  if (!result || result.channel !== plugin.channelId || result.installed !== true) {
+  const channel = assertChannelCliIdentifier(channelId, 'Channel ID');
+  const result = await installOpenclawChannelPlugin(channel) as OfficialChannelPluginInstallResult;
+  if (!result || result.channel !== channel || result.installed !== true) {
     throw new Error('OpenClaw did not confirm that the channel plugin was installed.');
   }
   return result;
@@ -130,6 +123,7 @@ export function normalizeOfficialChannelCatalog(payload: unknown): OfficialChann
           : [],
         installed: entry.installed === true,
         origin: typeof entry.origin === 'string' ? entry.origin : 'installable',
+        managedInstall: entry.managedInstall === true,
       };
     }),
   };
@@ -140,7 +134,7 @@ export async function loadOfficialChannelCatalog(_force = false): Promise<Offici
   // runtime is the sole catalog authority, and every load re-reads it so an
   // OpenClaw upgrade/plugin change is reflected without restarting JunQi.
   try {
-    return normalizeOfficialChannelCatalog(await window.aegis.channelRuntime.catalog());
+    return normalizeOfficialChannelCatalog(await getOpenclawChannelCatalog());
   } catch {
     return { source: 'unavailable', entries: [] };
   }
@@ -190,8 +184,16 @@ export function loadOfficialChannelCapability(
   // Capabilities belong to the selected OpenClaw runtime and can change after
   // an upgrade or plugin operation. Re-read them instead of retaining a
   // renderer-lifetime JunQi cache.
-  return window.aegis.channelRuntime.capabilities(channel)
+  return getOpenclawChannelCapabilities(channel)
     .then(normalizeOfficialChannelCapability);
+}
+
+export function loadOfficialChannelStatus(channel?: string, probe = false): Promise<unknown> {
+  return getOpenclawChannelStatus(channel, probe);
+}
+
+export function loadOfficialChannelLogs(channel?: string, lines = 200): Promise<unknown> {
+  return getOpenclawChannelLogs(channel, lines);
 }
 
 export function channelLinkMode(
@@ -222,16 +224,17 @@ export function redactChannelSecrets(value: unknown): unknown {
   ]));
 }
 
-export function runtimeChannelIds(snapshot: ChannelsRuntimeSnapshot | null | undefined): string[] {
-  if (!snapshot) return [];
+export function runtimeChannelIds(snapshot: unknown): string[] {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return [];
+  const runtime = snapshot as ChannelsRuntimeSnapshot;
   const ids = new Set<string>();
   const add = (value: unknown) => {
     if (typeof value === 'string' && isOpenClawChannelIdentifier(value)) ids.add(value.trim());
   };
-  snapshot.channelOrder?.forEach(add);
-  snapshot.configuredChannels?.forEach(add);
-  Object.keys(snapshot.channelAccounts ?? {}).forEach(add);
-  Object.keys(snapshot.channels ?? {}).forEach(add);
+  runtime.channelOrder?.forEach(add);
+  runtime.configuredChannels?.forEach(add);
+  Object.keys(runtime.channelAccounts ?? {}).forEach(add);
+  Object.keys(runtime.channels ?? {}).forEach(add);
   return Array.from(ids);
 }
 

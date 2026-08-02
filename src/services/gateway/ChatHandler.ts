@@ -51,6 +51,11 @@ interface TextStreamSnapshots {
   chat?: string;
 }
 
+interface RecentTerminalAssistantReply {
+  contentSignature: string;
+  completedAt: number;
+}
+
 export interface ChatSessionRunObservation {
   sessionKey: string;
   activeRunId: string | null;
@@ -102,6 +107,10 @@ function isOpenClawSessionToolPayload(raw: unknown): raw is Record<string, unkno
     && toolEvent?.sourceSequence !== undefined;
 }
 
+function notificationContentSignature(content: string): string {
+  return content.trim().replace(/\s+/g, ' ');
+}
+
 // ═══════════════════════════════════════════════════════════
 // ChatHandler Class
 // ═══════════════════════════════════════════════════════════
@@ -124,11 +133,14 @@ export class ChatHandler {
   // to reduce re-renders from every event to ~20 FPS max
   private static readonly STREAM_FLUSH_MS = 50;
   private static readonly MAX_RUN_SESSION_BINDINGS = 512;
+  private static readonly RECENT_TERMINAL_REPLY_TTL_MS = 120_000;
+  private static readonly MAX_RECENT_TERMINAL_REPLIES = 512;
   private streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingStreams = new Map<string, { id: string; content: string; media?: MediaInfo; runId?: string | null }>();
   private sessionKeyByRunId = new Map<string, string>();
   private transcriptRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private recentObservedRunIds = new Map<string, string>();
+  private recentTerminalAssistantReplies = new Map<string, RecentTerminalAssistantReply>();
 
   constructor(private conn: ChatHandlerConnection) {}
 
@@ -139,6 +151,7 @@ export class ChatHandler {
     for (const [runId, ownerSessionKey] of this.recentObservedRunIds) {
       if (ownerSessionKey === sessionKey) this.recentObservedRunIds.delete(runId);
     }
+    this.recentTerminalAssistantReplies.delete(sessionKey);
     this.clearSessionProjection(sessionKey);
   }
 
@@ -479,6 +492,34 @@ export class ChatHandler {
       if (oldestRunId === undefined) break;
       this.recentObservedRunIds.delete(oldestRunId);
     }
+  }
+
+  private rememberTerminalAssistantReply(sessionKey: string, content: string): void {
+    const contentSignature = notificationContentSignature(content);
+    if (!contentSignature) return;
+    this.recentTerminalAssistantReplies.delete(sessionKey);
+    this.recentTerminalAssistantReplies.set(sessionKey, {
+      contentSignature,
+      completedAt: Date.now(),
+    });
+    while (this.recentTerminalAssistantReplies.size > ChatHandler.MAX_RECENT_TERMINAL_REPLIES) {
+      const oldestSessionKey = this.recentTerminalAssistantReplies.keys().next().value;
+      if (oldestSessionKey === undefined) break;
+      this.recentTerminalAssistantReplies.delete(oldestSessionKey);
+    }
+  }
+
+  private findRecentTerminalAssistantReply(
+    sessionKey: string,
+    content: string,
+  ): RecentTerminalAssistantReply | null {
+    const recent = this.recentTerminalAssistantReplies.get(sessionKey);
+    if (!recent) return null;
+    if (Date.now() - recent.completedAt > ChatHandler.RECENT_TERMINAL_REPLY_TTL_MS) {
+      this.recentTerminalAssistantReplies.delete(sessionKey);
+      return null;
+    }
+    return recent.contentSignature === notificationContentSignature(content) ? recent : null;
   }
 
   private completePendingSend(sessionKey: string, runId: string): boolean {
@@ -829,6 +870,8 @@ export class ChatHandler {
     } else {
       useChatStore.getState().setQuickReplies([], sessionKey);
     }
+
+    this.rememberTerminalAssistantReply(sessionKey, finalText);
 
     this.conn.callbacks?.onStreamEnd(
       sessionKey,
@@ -1200,12 +1243,32 @@ export class ChatHandler {
         const hasAnonymousActiveRun = !activeRun
           && this.runProjection.hasActiveSession(transcriptSessionKey);
         const transcriptRole = typeof p.message?.role === 'string' ? p.message.role : '';
-        const transcriptRunId = readGatewayMessageIdentity(p.message).clientMessageId;
+        const transcriptEventRunId = typeof p.runId === 'string' ? p.runId.trim() : '';
         const transcriptIdentity = readGatewayMessageIdentity(p.message);
+        const transcriptText = extractText(p.message?.content);
+        // Older transcript events do not have an outer run id. Their persisted
+        // client identity is the documented fallback for run reconciliation.
+        const transcriptRunId = transcriptEventRunId || transcriptIdentity.clientMessageId || '';
+        // Older Gateway payloads may omit the outer run id and use a different
+        // message identity from the live stream. Correlate only the immediate,
+        // same-session durable mirror of a terminal assistant reply; this is a
+        // transport projection fence, not general text-based notification dedupe.
+        const terminalMirror = transcriptRole === 'assistant'
+          ? this.findRecentTerminalAssistantReply(transcriptSessionKey, transcriptText)
+          : null;
+        const hasObservedRunProjection = Boolean(
+          transcriptRunId
+          && (
+            activeRun?.runId === transcriptRunId
+            || this.pendingSends.current(transcriptSessionKey)?.runId === transcriptRunId
+            || this.recentObservedRunIds.get(transcriptRunId) === transcriptSessionKey
+          )
+        );
         this.conn.callbacks?.onTranscriptMessage?.({
           sessionKey: transcriptSessionKey,
           role: transcriptRole,
-          text: extractText(p.message?.content),
+          text: transcriptText,
+          ...(transcriptEventRunId ? { runId: transcriptEventRunId } : {}),
           ...(transcriptIdentity.nativeMessageId
             ? { nativeMessageId: transcriptIdentity.nativeMessageId }
             : {}),
@@ -1213,14 +1276,7 @@ export class ChatHandler {
             ? { clientMessageId: transcriptIdentity.clientMessageId }
             : {}),
           ...(typeof p.messageSeq === 'number' ? { messageSeq: p.messageSeq } : {}),
-          liveProjected: Boolean(
-            transcriptRunId
-            && (
-              activeRun?.runId === transcriptRunId
-              || this.pendingSends.current(transcriptSessionKey)?.runId === transcriptRunId
-              || this.recentObservedRunIds.get(transcriptRunId) === transcriptSessionKey
-            )
-          ),
+          liveProjected: hasObservedRunProjection || terminalMirror !== null,
         });
         const transcriptSettlesActiveRun = Boolean(
           activeRun

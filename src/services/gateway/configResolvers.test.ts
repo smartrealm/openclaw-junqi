@@ -9,12 +9,15 @@ import {
 
 test('selected OpenClaw config outranks stale event and volatile credentials', async () => {
   const chain = new ConfigResolverChain([
-    new FileReadResolver(async () => ({
-      token: 'docker-current',
-      ws_url: 'ws://127.0.0.1:28789',
-      runtime_mode: 'docker',
-      config_path: '/state/docker/openclaw.json',
-    })),
+    new FileReadResolver({
+      detect: async () => ({
+        token: 'docker-current',
+        ws_url: 'ws://127.0.0.1:28789',
+        runtime_mode: 'docker',
+        config_path: '/state/docker/openclaw.json',
+      }),
+      resolveToken: async () => '',
+    }),
     new EventPayloadResolver(() => ({
       token: 'event-old',
       ws_url: 'ws://127.0.0.1:18789',
@@ -33,13 +36,16 @@ test('selected OpenClaw config outranks stale event and volatile credentials', a
 });
 
 test('backend credential scope remains authoritative when runtimes share one endpoint', async () => {
-  const resolver = new FileReadResolver(async () => ({
-    token: 'docker-token',
-    ws_url: 'ws://127.0.0.1:18789',
-    runtime_mode: 'docker',
-    config_path: '/state/docker/openclaw.json',
-    credential_scope: 'docker-state:verified-identity',
-  }));
+  const resolver = new FileReadResolver({
+    detect: async () => ({
+      token: 'docker-token',
+      ws_url: 'ws://127.0.0.1:18789',
+      runtime_mode: 'docker',
+      config_path: '/state/docker/openclaw.json',
+      credential_scope: 'docker-state:verified-identity',
+    }),
+    resolveToken: async () => '',
+  });
   assert.deepEqual(await resolver.resolve(), {
     token: 'docker-token',
     ws_url: 'ws://127.0.0.1:18789',
@@ -49,39 +55,41 @@ test('backend credential scope remains authoritative when runtimes share one end
 
 test('authoritative endpoint resolves a selected SecretRef through the official OpenClaw resolver', async () => {
   const calls: string[] = [];
-  const resolver = new FileReadResolver(async (command) => {
-    calls.push(command);
-    if (command === 'detect_gateway_config') {
+  const resolver = new FileReadResolver({
+    detect: async () => {
+      calls.push('detect');
       return {
         token: null,
         ws_url: 'ws://127.0.0.1:18789',
         runtime_mode: 'native',
         config_path: '/state/native/openclaw.json',
       };
-    }
-    if (command === 'get_gateway_token') return 'resolved-secret-token';
-    throw new Error(`unexpected ${command}`);
+    },
+    resolveToken: async () => {
+      calls.push('resolveToken');
+      return 'resolved-secret-token';
+    },
   });
   assert.deepEqual(await resolver.resolve(), {
     token: 'resolved-secret-token',
     ws_url: 'ws://127.0.0.1:18789',
     credential_scope: 'native:/state/native/openclaw.json',
   });
-  assert.deepEqual(calls, ['detect_gateway_config', 'get_gateway_token']);
+  assert.deepEqual(calls, ['detect', 'resolveToken']);
 });
 
 test('SecretRef resolution failure never falls through to a stale runtime endpoint', async () => {
   const chain = new ConfigResolverChain([
-    new FileReadResolver(async (command) => {
-      if (command === 'detect_gateway_config') {
+    new FileReadResolver({
+      detect: async () => {
         return {
           token: null,
           ws_url: 'ws://127.0.0.1:28789',
           runtime_mode: 'docker',
           config_path: '/state/docker/openclaw.json',
         };
-      }
-      throw new Error('official SecretRef resolution failed');
+      },
+      resolveToken: async () => { throw new Error('official SecretRef resolution failed'); },
     }),
     new CachedTokenResolver(() => ({ token: 'stale-native-token', ws_url: 'ws://127.0.0.1:18789' })),
   ]);

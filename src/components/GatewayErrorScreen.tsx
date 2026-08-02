@@ -20,6 +20,12 @@ import {
 } from 'lucide-react';
 import { GatewaySelfRescuePanel } from './GatewaySelfRescuePanel';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import {
+  resetActiveOpenclawConfig,
+  validateActiveOpenclawConfig,
+} from '@/services/openclawConfigRuntime';
+import { openRuntimeDataDirectory } from '@/services/runtimeDataDirectory';
+import { useGatewayProcessRecovery } from '@/hooks/useGatewayProcessRecovery';
 
 interface GatewayErrorScreenProps {
   error: string;
@@ -111,51 +117,27 @@ export function GatewayErrorScreen({
   // Re-validate config file on mount (in case the error message isn't CONFIG_INVALID
   // but the file is still broken — e.g. crash triggered by invalid config)
   useEffect(() => {
-    if (window.aegis?.config?.validateOpenclawJson) {
-      void window.aegis.config.validateOpenclawJson().then(setConfigValidation).catch(() => setConfigValidation(null));
-    }
+    void validateActiveOpenclawConfig().then(setConfigValidation).catch(() => setConfigValidation(null));
   }, []);
 
-  // Subscribe to gateway status-changed events from the main process
-  useEffect(() => {
-    if (!window.aegis?.gateway?.onStatusChanged) return;
-    const unsub = window.aegis.gateway.onStatusChanged((status) => {
-      if (status.running && !status.error) {
-        onRecovered?.();
-      }
-    });
-    return unsub;
-  }, [onRecovered]);
+  useGatewayProcessRecovery(onRecovered);
 
   const handleResetConfig = useCallback(async () => {
-    if (!window.aegis?.config?.backupAndResetOpenclaw) return;
     setResetting(true);
     setResetResult(null);
     try {
-      const result = await window.aegis.config.backupAndResetOpenclaw();
-      if (result.success) {
-        setResetResult(
-          result.backupPath
-            ? t('gatewayError.reset.backedUpTo', { path: result.backupPath })
-            : t('gatewayError.reset.removed')
-        );
-        // Refresh validation after reset
-        if (window.aegis?.config?.validateOpenclawJson) {
-          const v = await window.aegis.config.validateOpenclawJson();
-          setConfigValidation(v);
-        }
-      } else {
-        setResetResult(t('gatewayError.reset.failed', { error: result.error }));
-      }
+      await resetActiveOpenclawConfig();
+      setResetResult(t('gatewayError.reset.removed'));
+      setConfigValidation(await validateActiveOpenclawConfig());
+    } catch (error) {
+      setResetResult(t('gatewayError.reset.failed', { error: String(error) }));
     } finally {
       setResetting(false);
     }
   }, []);
 
   const handleOpenLogFile = useCallback(() => {
-    if (window.aegis?.logs?.openElectronLogFile) {
-      void window.aegis.logs.openElectronLogFile();
-    }
+    void openRuntimeDataDirectory();
   }, []);
 
   const errorBody = error

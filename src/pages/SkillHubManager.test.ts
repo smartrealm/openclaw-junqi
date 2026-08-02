@@ -13,7 +13,8 @@ test('skill installs detect conflicts before offering JunQi resolution choices',
 });
 
 test('skill removal separates one installation from deleting the hub source', () => {
-  assert.match(source, /invoke\('uninstall_skill'/);
-  assert.match(source, /invoke<DeleteResult>\('delete_skill'/);
+  assert.match(source, /uninstallSkillHubSkill\(/);
+  assert.match(source, /deleteSkillHubSkill\(/);
+  assert.doesNotMatch(source, /\binvoke\(/);
   assert.match(source, /Delete skill/);
 });

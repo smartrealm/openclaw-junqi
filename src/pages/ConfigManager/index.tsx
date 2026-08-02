@@ -14,7 +14,7 @@ import { getTemplateById } from './providerTemplates';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import {
-  summarizeOfficialProviderProbe,
+  probeOfficialProviderCandidate,
   type ProviderProbeRequest,
   type ProviderProbeSummary,
 } from '@/services/openclawProviderRuntime';
@@ -34,6 +34,12 @@ import { readConfigNavigationIntent, type ConfigTab } from './configNavigation';
 import { migrateLegacyChannelBindings } from '@/services/channelConfig';
 import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
 import { smartMerge } from './configMerge';
+import {
+  parseActiveOpenclawConfig,
+  readActiveOpenclawConfig,
+  validateActiveOpenclawConfig,
+  writeActiveOpenclawConfig,
+} from '@/services/openclawConfigRuntime';
 
 type Tab = ConfigTab;
 
@@ -94,7 +100,7 @@ export function ConfigManagerPage() {
         setDetecting(true);
         setError('');
 
-        const detected = await window.aegis.config.detect();
+        const detected = await validateActiveOpenclawConfig();
         setConfigPath(detected.path);
         setConfigExists(detected.exists);
         if (!detected.valid) {
@@ -104,7 +110,7 @@ export function ConfigManagerPage() {
         // A missing openclaw.json is a valid first-run state. The backend read
         // contract returns an empty object for that case. Keep the editor
         // usable and let the first save create the selected-runtime file.
-        const { data } = await window.aegis.config.read();
+        const { data } = await readActiveOpenclawConfig();
         const normalized = normalizeConfig(data);
         setConfig(normalized);
         setOriginalConfig(structuredClone(normalized));
@@ -149,7 +155,7 @@ export function ConfigManagerPage() {
 
     try {
       // 1. Re-read the latest version from disk to capture any external edits
-      const { data: diskConfig, revision } = await window.aegis.config.read();
+      const { data: diskConfig, revision } = await readActiveOpenclawConfig();
 
       // 2. Apply only the user's changes on top of the fresh disk version
       const mergedRaw = smartMerge(diskConfig, originalConfig, configToSave) as GatewayRuntimeConfig;
@@ -168,19 +174,8 @@ export function ConfigManagerPage() {
       }
 
       // 3. Write the already validated candidate.
-      const writeResult = await window.aegis.config.write(toWrite, revision);
-      if (!writeResult.success) {
-        throw new Error(writeResult.error || t('config.saveFailed'));
-      }
+      await writeActiveOpenclawConfig(toWrite, revision);
       setConfigExists(true);
-
-      // 3.5 Keep main agent runtime state clean:
-      // normalize alias-drifted auth-profiles and force models.json rebuild.
-      try {
-        await window.aegis.agentAuth?.rehydrateMainRuntime?.();
-      } catch (rehydrateErr) {
-        debugWarn('app', '[Config] Failed to rehydrate main runtime state:', rehydrateErr);
-      }
 
       // 4. Sync UI state from the actual saved config so in-memory state matches disk.
       const normalizedSavedConfig = normalizeConfig(toWrite);
@@ -263,7 +258,7 @@ export function ConfigManagerPage() {
       if (!file) return;
       const text = await file.text();
       try {
-        const data = await window.aegis.config.parse(text);
+        const data = await parseActiveOpenclawConfig(text);
         setConfig(normalizeConfig(data));
         // Don't update originalConfig — so hasChanges becomes true
       } catch {
@@ -650,12 +645,10 @@ export function ConfigManagerPage() {
       return { ok: false, status: 'unknown', detail: 'Provider ID is required.' };
     }
     const normalizedCandidate = normalizeConfigForDisk(candidate);
-    const payload = await window.aegis.providerRuntime.probe(
-      normalizedCandidate,
+    return probeOfficialProviderCandidate(normalizedCandidate, {
       providerId,
-      probe.profileKey,
-    );
-    return summarizeOfficialProviderProbe(payload);
+      profileKey: probe.profileKey,
+    });
   };
 
   const runConnectionPrecheck = async (
@@ -691,14 +684,14 @@ export function ConfigManagerPage() {
     setError('');
     setReloadSuccess(false);
     try {
-      const detected = await window.aegis.config.detect();
+      const detected = await validateActiveOpenclawConfig();
       setConfigPath(detected.path);
       setConfigExists(detected.exists);
       if (!detected.valid) {
         throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
       }
 
-      const { data } = await window.aegis.config.read();
+      const { data } = await readActiveOpenclawConfig();
       const normalized = normalizeConfig(data);
       setConfig(normalized);
       setOriginalConfig(structuredClone(normalized));

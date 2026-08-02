@@ -1,27 +1,20 @@
-import { invoke } from '@tauri-apps/api/core';
+import {
+  disableOpenclawPlugin as disableOpenclawPluginCommand,
+  healOpenclawPlugin as healOpenclawPluginCommand,
+  listBrokenGatewayPlugins as listBrokenGatewayPluginsCommand,
+  type BrokenGatewayPlugin,
+  type PluginHealOutcome,
+} from '@/api/tauri-commands';
 
 // Broken-plugin recovery (BUG-CPI-07). See src-tauri/src/commands/plugin_recovery.rs
 // for the detection contract: structured `plugins list --json` entries plus a
 // file-level replica of the Gateway's payload smoke check; error-text plugin
 // ids are hints only and are cross-validated against the structured list.
 
-export interface BrokenGatewayPlugin {
-  id: string;
-  version: string | null;
-  /** "missing-main-entry" | "plugin-error" | "gateway-smoke-check" */
-  reason: string;
-  detail: string | null;
-}
-
-export interface PluginHealOutcome {
-  id: string;
-  healed: boolean;
-  attempted: string[];
-  error: string | null;
-}
+export type { BrokenGatewayPlugin, PluginHealOutcome } from '@/api/tauri-commands';
 
 export function listBrokenGatewayPlugins(error?: string): Promise<BrokenGatewayPlugin[]> {
-  return invoke<BrokenGatewayPlugin[]>('list_broken_gateway_plugins', { error: error ?? null });
+  return listBrokenGatewayPluginsCommand(error);
 }
 
 /** Findings whose cause only the Gateway's own smoke check can observe.
@@ -39,11 +32,11 @@ export interface PluginRecoveryPlan {
 }
 
 export function healOpenclawPlugin(id: string, reason?: string): Promise<PluginHealOutcome> {
-  return invoke<PluginHealOutcome>('heal_openclaw_plugin', { id, reason: reason ?? null });
+  return healOpenclawPluginCommand(id, reason);
 }
 
 export function disableOpenclawPlugin(id: string): Promise<void> {
-  return invoke<void>('disable_openclaw_plugin', { id });
+  return disableOpenclawPluginCommand(id);
 }
 
 /**

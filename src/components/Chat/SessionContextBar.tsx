@@ -12,6 +12,7 @@ import { debugError } from '@/utils/debugLog';
 import { useSkillsStore } from '@/stores/skillsStore';
 import { useFocusContextStore } from '@/stores/focusContextStore';
 import { SessionRuntimeControl } from './session-runtime/SessionRuntimeControl';
+import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
 
 function WorkspacePicker({ agentId, current }: { agentId: string; current?: string }) {
   const { t } = useTranslation();
@@ -40,9 +41,8 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
     try { await gateway.updateAgent(agentId, { workspace: ws }); } catch (e) { debugError('app', '[WorkspacePicker] switch failed:', e); }
   };
   const pickFolder = async () => {
-    const openDialog = (window.aegis?.file as any)?.openDialog;
-    const result = typeof openDialog === 'function' ? await openDialog({ properties: ['openDirectory'] }) : null;
-    if (result?.filePaths?.[0]) await switchTo(result.filePaths[0]);
+    const directory = await desktopFileRuntime.selectDirectory();
+    if (directory) await switchTo(directory);
   };
   const label = current ? (current.split(/[\\/]/).pop() || current) : t('chat.workspaceDefault');
   const filtered = query.trim()

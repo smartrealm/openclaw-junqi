@@ -27,11 +27,17 @@ async function sourceFiles(directory: string): Promise<string[]> {
   return files;
 }
 
+function productionSource(path: string, source: string): string {
+  if (extname(path) !== '.rs') return source;
+  const testModule = source.indexOf('#[cfg(test)]');
+  return testModule >= 0 ? source.slice(0, testModule) : source;
+}
+
 test('production channel logic contains no non-DingTalk channel-id literals', async () => {
   const roots = ['src', 'src-tauri/src', 'scripts'].map((directory) => join(ROOT, directory));
   const matches: string[] = [];
   for (const file of (await Promise.all(roots.map(sourceFiles))).flat()) {
-    const source = await readFile(file, 'utf8');
+    const source = productionSource(file, await readFile(file, 'utf8'));
     if (CHANNEL_LITERAL.test(source)) matches.push(relative(ROOT, file));
   }
   assert.deepEqual(matches, []);

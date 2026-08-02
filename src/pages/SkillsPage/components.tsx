@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
-import { X, Copy, ExternalLink, Download, Trash2, MessageSquare, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star, Share2 } from 'lucide-react';
+import { X, Copy, ExternalLink, Download, MessageSquare, FileText, Key, Settings2, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
@@ -24,15 +24,6 @@ export interface MySkill extends SkillPersonaFields {
   enabled: boolean;
   /** Raw source string from the gateway (e.g. "openclaw-bundled", "openclaw-managed", "openclaw-extra") */
   source: string;
-  /**
-   * Actual directory name under ~/.openclaw/skills/ (basename of `baseDir` from gateway).
-   * May differ from `slug` (the skillKey) when the skill's declared key doesn't match the
-   * directory it was installed into — e.g. slug="self-improvement" but dirName="self-improving-agent".
-   * Used for the delete IPC call which resolves by directory, not by skillKey.
-  */
-  dirName?: string;
-  /** Absolute skill directory when the source can be shared as a local package. */
-  path?: string;
 }
 
 /** Map raw gateway source to a display group */
@@ -40,11 +31,6 @@ export function getSkillGroup(source: string): 'builtin' | 'installed' | 'extra'
   if (source === 'openclaw-bundled') return 'builtin';
   if (source === 'openclaw-extra') return 'extra';
   return 'installed';
-}
-
-/** A skill in the "installed" group (openclaw-managed) can be deleted */
-export function isSkillDeletable(source: string): boolean {
-  return source === 'openclaw-managed';
 }
 
 export interface HubSkill extends SkillPersonaFields {
@@ -59,7 +45,6 @@ export interface HubSkill extends SkillPersonaFields {
   installs: number;
   version: string;
   badge?: 'official' | 'featured';
-  category: string;
   /** Direct URL to the skill's page on its source hub (used as externalUrl in the detail panel). */
   homepage?: string;
 }
@@ -69,23 +54,6 @@ export interface SkillDetail extends HubSkill {
   requirements: { env: string[]; bin: string[] };
   versions: Array<{ version: string; date: string; changelog: string; latest: boolean }>;
 }
-
-// ═══════════════════════════════════════════════════════════
-// Categories
-// ═══════════════════════════════════════════════════════════
-
-// Category IDs mirror SkillsHub's server-side values so client filtering works
-// without any remapping. guessCategory() uses these same IDs as a ClawHub fallback.
-export const CATEGORIES = [
-  { id: 'all',                        label: 'All',           emoji: null as React.ReactNode },
-  { id: 'developer-tools',            label: 'Dev Tools',     emoji: <Monitor size={14} strokeWidth={1.75} /> },
-  { id: 'productivity',               label: 'Productivity',  emoji: <BarChart3 size={14} strokeWidth={1.75} /> },
-  { id: 'ai-intelligence',            label: 'AI',            emoji: <Bot size={14} strokeWidth={1.75} /> },
-  { id: 'content-creation',           label: 'Content',       emoji: <Pencil size={14} strokeWidth={1.75} /> },
-  { id: 'data-analysis',              label: 'Data',          emoji: <TrendingUp size={14} strokeWidth={1.75} /> },
-  { id: 'communication-collaboration',label: 'Communication', emoji: <MessageCircle size={14} strokeWidth={1.75} /> },
-  { id: 'security-compliance',        label: 'Security',      emoji: <Lock size={14} strokeWidth={1.75} /> },
-];
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
@@ -168,12 +136,10 @@ function HubBadge({ badge }: { badge?: 'official' | 'featured' }) {
 // MySkillRow — Installed skill (clean list item)
 // ═══════════════════════════════════════════════════════════
 
-export function MySkillRow({ skill, onToggle, index = 0, onDelete, onShare }: {
+export function MySkillRow({ skill, onToggle, index = 0 }: {
   skill: MySkill;
   onToggle: () => void;
   index?: number;
-  onDelete?: (slug: string) => void;
-  onShare?: (skill: MySkill) => void;
 }) {
   const { t } = useTranslation();
   const color = SKILL_COLORS[index % SKILL_COLORS.length];
@@ -210,22 +176,6 @@ export function MySkillRow({ skill, onToggle, index = 0, onDelete, onShare }: {
         </div>
       </div>
 
-      {/* Delete action (left of Version + Toggle, so their positions remain stable) */}
-      <div className="w-[36px] shrink-0 flex items-center justify-center">
-        {isSkillDeletable(skill.source) && (
-          <button
-            onClick={() => onDelete?.(skill.slug)}
-            title={t('skills.deleteSkill')}
-            className="w-7 h-7 rounded-lg flex items-center justify-center border
-              border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim
-              hover:text-aegis-danger hover:border-aegis-danger/30 hover:bg-aegis-danger/[0.04]
-              transition-all opacity-0 group-hover:opacity-100"
-          >
-            <Trash2 size={11} />
-          </button>
-        )}
-      </div>
-
       {/* Version — same position as "Time Left" in CronMonitor */}
       <div className="w-[80px] shrink-0 flex flex-col items-end justify-center pe-3 py-2">
         <span className="text-[8px] text-aegis-text-dim font-medium mb-0.5">{t('skillsExtra.version', 'Version')}</span>
@@ -236,21 +186,8 @@ export function MySkillRow({ skill, onToggle, index = 0, onDelete, onShare }: {
         </span>
       </div>
 
-      {/* Actions — toggle + optional persona chat (position preserved) */}
+      {/* Actions — toggle + optional persona chat */}
       <div className="flex items-center gap-1.5 pe-3 shrink-0">
-        {skill.path && onShare && (
-          <button
-            onClick={() => onShare(skill)}
-            title="Export share package"
-            aria-label="Export share package"
-            className="w-7 h-7 rounded-lg flex items-center justify-center border
-              border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim
-              hover:text-aegis-primary hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04]
-              transition-all"
-          >
-            <Share2 size={11} />
-          </button>
-        )}
         {(() => {
           const persona = resolvePersona(skill.persona);
           if (!persona) return null;
@@ -329,39 +266,6 @@ export function HubSkillRow({ skill, onClick }: { skill: HubSkill; onClick: () =
         </span>
         <span className="text-[10px] font-mono">{skill.version ? `v${skill.version}` : '—'}</span>
       </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
-// CategoryChips — Filter pills
-// ═══════════════════════════════════════════════════════════
-
-export function CategoryChips({ active, onSelect, accentColor }: {
-  active: string;
-  onSelect: (id: string) => void;
-  accentColor?: 'primary' | 'red';
-}) {
-  const isRed = accentColor === 'red';
-  return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      {CATEGORIES.map(cat => (
-        <button
-          key={cat.id}
-          onClick={() => onSelect(cat.id)}
-          className={clsx(
-            'px-3 py-1.5 rounded-2xl text-[11px] font-medium border transition-all whitespace-nowrap',
-            active === cat.id
-              ? isRed
-                ? 'border-red-500/25 text-red-400 bg-red-500/[0.06]'
-                : 'border-aegis-primary/25 text-aegis-primary bg-aegis-primary/[0.06]'
-              : 'border-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-muted bg-transparent hover:border-[rgb(var(--aegis-overlay)/0.1)] hover:text-aegis-text-secondary',
-          )}
-        >
-          {cat.emoji && <span className="me-1">{cat.emoji}</span>}
-          {cat.label}
-        </button>
-      ))}
     </div>
   );
 }

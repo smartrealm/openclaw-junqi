@@ -2,8 +2,5 @@
   "gateway": {
     "host": "127.0.0.1",
     "port": 18789
-  },
-  "memoryApi": {
-    "url": "http://localhost:3040"
   }
 }

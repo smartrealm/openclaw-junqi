@@ -56,7 +56,7 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   assert.match(detection, /const cancelled = \(\) => !isRunActive\(runId\) \|\| navigationLeavingRef\.current/);
   assert.match(detection, /await detectGatewayConfig\(\);\s*if \(cancelled\(\)\) return null/);
   assert.match(detection, /const openclaw = await checkOpenclaw\(\);\s*if \(cancelled\(\)\) return null/);
-  assert.match(setupFlow, /await window\.aegis\.config\.detect\(\);/);
+  assert.doesNotMatch(setupFlow, /window\.aegis\.config\.detect/);
   assert.match(detection, /const next = await detectEnvironment\(runId\);[\s\S]*?!isRunActive\(runId\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
 });
 
@@ -75,7 +75,7 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
   );
 
   assert.match(completion, /await handoffGatewayToOfficialService\(\)/);
-  assert.match(completion, /await invoke<boolean>\("probe_selected_gateway", \{\}\)/);
+  assert.match(completion, /await probeSelectedGateway\(\)/);
   assert.match(completion, /replaceSetupStep\("error"\)/);
   assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
 });
@@ -141,7 +141,7 @@ test('BUG-ONB-37 dashboard completion revalidates Gateway, config, and model bef
   );
 
   assert.match(entry, /validateSetupCompletion\(\{/);
-  assert.match(entry, /probeGateway: \(\) => invoke<boolean>\("probe_selected_gateway", \{\}\)/);
+  assert.match(entry, /probeGateway: \(\) => probeSelectedGateway\(\)\.catch\(\(\) => false\)/);
   assert.match(entry, /requiresOnboarding: resolveActiveRuntimeOnboardingRequirement/);
   assert.match(entry, /probeModel: probeActiveRuntimeModel/);
   assert.ok(entry.indexOf('validateSetupCompletion') < entry.indexOf('setSetupComplete(true)'));
@@ -249,11 +249,11 @@ test('BUG-ONB-17 setup endpoint cache removes legacy renderer Gateway credential
 
 test('BUG-ONB-24 URL-only settings changes preserve endpoint-scoped credentials', () => {
   assert.doesNotMatch(settingsStore, /setItem\(['"]aegis-gateway-token/);
-  assert.match(settingsStore, /config\?\.save\?\.\(\{ gatewayUrl: url \}\)/);
+  assert.match(settingsStore, /localStorage\.setItem\('aegis-gateway-url', url\)/);
+  assert.match(settingsStore, /resolveGatewayCredentialRuntimeKey/);
+  assert.match(settingsStore, /storeGatewayDeviceCredential\(runtimeKey, normalized\)/);
   assert.match(settingsPage, /if \(tokenDirty\) setGatewayToken\(editToken\.trim\(\)\)/);
-  assert.match(adapter, /const safe = \{ \.\.\.current, \.\.\.update \}/);
-  assert.match(adapter, /delete safe\.gatewayToken/);
-  assert.match(adapter, /if \(token\) await persistGatewayToken\(token,/);
+  assert.doesNotMatch(adapter, /gatewayToken/);
 });
 
 test('BUG-ONB-05 runtime selection is explicit and confirmed by one contextual action', () => {
@@ -585,8 +585,9 @@ test('BUG-ONB-42 a user-started QR flow crosses only its protocol continuation',
 });
 
 test('BUG-ONB-40 official Gateway finalizer refreshes credentials and reconciles its lost wizard session', () => {
-  assert.match(setupFlow, /resolved\?\.gatewayBootstrapToken[\s\S]*?target\.token[\s\S]*?resolved\?\.gatewayToken/);
-  assert.match(setupFlow, /gatewayManager\.connect\(target\.ws_url, token, deviceToken\)/);
+  assert.match(setupFlow, /getGatewayToken\(\)\.catch\(\(\) => target\.token/);
+  assert.match(setupFlow, /getGatewayDeviceCredentialForUrl\(gatewayWsUrl\)/);
+  assert.match(setupFlow, /gatewayManager\.connect\(gatewayWsUrl, token, deviceToken\)/);
   assert.match(setupFlow, /const recoverAfterGatewayHandoff/);
   assert.match(setupFlow, /return await recoverLostWizardSession\(client\)/);
   assert.match(setupFlow, /error instanceof GatewayPrivilegedSourceChangedError/);

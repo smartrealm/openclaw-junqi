@@ -6,7 +6,11 @@
  * enabled) is cached. The full skill list still lives in SkillsPage.
  */
 import { create } from 'zustand';
-import { gateway } from '@/services/gateway';
+import { openClawSkillsRuntime } from '@/services/openclawSkillsRuntime';
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export interface SkillState {
   /** Cached skill name + enabled flag. Loaded from gateway on first access. */
@@ -26,17 +30,14 @@ export const useSkillsStore = create<SkillState>((set) => ({
   async refresh() {
     set({ loading: true, error: null });
     try {
-      const result: any = await gateway.call('skills.status', {});
-      const list: any[] = result?.skills || result?.entries || [];
+      const list = await openClawSkillsRuntime.list();
       const next: SkillState['skills'] = {};
-      for (const s of list) {
-        const slug = s.skillKey || s.slug || s.name || '';
-        if (!slug) continue;
-        next[slug] = { name: s.name || slug, enabled: s.enabled !== false };
+      for (const skill of list) {
+        next[skill.key] = { name: skill.name, enabled: skill.enabled };
       }
       set({ skills: next, loading: false });
-    } catch (err: any) {
-      set({ error: err?.message || String(err), loading: false });
+    } catch (error) {
+      set({ error: errorMessage(error), loading: false });
     }
   },
 
@@ -44,11 +45,11 @@ export const useSkillsStore = create<SkillState>((set) => ({
     // Optimistic update.
     set((s) => ({ skills: { ...s.skills, [slug]: { name: s.skills[slug]?.name || slug, enabled } } }));
     try {
-      await gateway.call('skills.update', { skillKey: slug, enabled });
-    } catch (err: any) {
+      await openClawSkillsRuntime.setEnabled(slug, enabled);
+    } catch (error) {
       // Revert on failure.
       set((s) => ({ skills: { ...s.skills, [slug]: { name: s.skills[slug]?.name || slug, enabled: !enabled } } }));
-      set({ error: err?.message || String(err) });
+      set({ error: errorMessage(error) });
     }
   },
 }));

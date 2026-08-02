@@ -8,7 +8,7 @@
 
 ## 依据
 
-- `src/pages/SkillHubManager.tsx`：文件头将页面描述为 `minimal` companion view，并调用 `get_skill_hub_config`、`list_skills`、`install_skill` 等本地目录/符号链接 commands。
+- `src/pages/SkillHubManager.tsx`：文件头将页面描述为 `minimal` companion view，并经 `skillHubRuntime` 调用 `get_skill_hub_config`、`list_skills`、`install_skill` 等本地目录/符号链接 commands。
 - `src/pages/SkillsPage/index.tsx`：定义 `my`、`skillhub`、`clawhub` 三个视图，并实现已安装技能启停、删除、本地导入和市场安装。
 - `src/components/shared/AppSettingsDialog.tsx`：已提供 Skill Hub 根目录的选择和清除操作，因此普通用户无需进入伴生页才能设置 Hub 路径。
 - Git 历史 `2dda64b`：引入 `SkillHubManager` 时，源码已经说明它不与完整 `SkillsPage` 竞争；后续入口却逐步指向了该伴生页。
@@ -32,3 +32,11 @@
 - 未修改技能安装、卸载、冲突解决或 Gateway RPC。
 - 未删除 `SkillHubManager` 和对应 Tauri commands。
 - 未对 SkillHub/ClawHub 第三方服务协议作任何推断或变更。
+- 本地 Hub command 的 renderer 参数与返回 DTO 统一定义在 `src/api/tauri-commands.ts`，页面不直接调用 Tauri `invoke`；欢迎页的本地技能计数复用同一 typed command。
+
+## 2026-08-02 后续记录
+
+该审计中的 `/skills` 市场、导入和删除描述已不再代表当前实现。当前安装 OpenClaw
+Gateway 没有对应删除或本地导入 command，因此 `/skills` 仅展示 Gateway 声明的
+status、search、detail、update 与 install 能力。完整依据和验证边界见
+[`openclaw-skills-runtime-convergence-2026-08-02.md`](openclaw-skills-runtime-convergence-2026-08-02.md)。

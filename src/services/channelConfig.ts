@@ -4,6 +4,11 @@ import {
   isConfigRevisionConflict,
   mergeChannelConfigPartitions,
 } from './channelConfigMerge';
+import {
+  readActiveOpenclawConfig,
+  validateActiveOpenclawConfig,
+  writeActiveOpenclawConfig,
+} from './openclawConfigRuntime';
 
 export type ChannelBindingSource = 'account' | 'channel';
 
@@ -475,17 +480,14 @@ export async function persistChannelsOnly(
 
 export const tauriChannelConfigRepository: ChannelConfigRepository = {
   async detect() {
-    return window.aegis.config.detect();
+    return validateActiveOpenclawConfig();
   },
   async read() {
-    const { data, revision } = await window.aegis.config.read();
+    const { data, revision } = await readActiveOpenclawConfig();
     return { config: data, revision };
   },
   async write(config: GatewayRuntimeConfig, expectedRevision: string) {
-    const result = await window.aegis.config.write(config, expectedRevision);
-    if (result?.success === false) {
-      throw new Error(result.error || 'Failed to write config');
-    }
+    await writeActiveOpenclawConfig(config, expectedRevision);
   },
   async restart() {
     const { gatewayLifecycle } = await import('@/services/gateway/gatewayLifecycle');

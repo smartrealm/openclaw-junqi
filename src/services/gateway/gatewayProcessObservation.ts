@@ -1,0 +1,108 @@
+import {
+  ensureGatewayRunning,
+  getGatewayLogs,
+  getGatewayProcessStatus,
+  probeSelectedGateway,
+  restartGateway,
+  type LogEntry,
+} from '@/api/tauri-commands';
+import { formatGatewayLogs } from './gatewayLogFormatting';
+import { gatewayRestartSingleFlight } from './SingleFlight';
+import type { GatewayEnsureResult, GatewayRestartResult } from './GatewayLifecycleCoordinator';
+
+export interface GatewayProcessObservation {
+  running: boolean;
+  processAlive: boolean;
+  ready: boolean;
+  error: string | null;
+}
+
+export interface GatewayProcessRuntimeStatus extends GatewayProcessObservation {
+  retrying: boolean;
+  logs: { stdout: string; stderr: string };
+}
+
+/**
+ * Reads the selected runtime's process and authenticated endpoint as separate
+ * facts. A process can be alive while its Gateway is still warming up.
+ */
+export async function observeSelectedGatewayProcess(): Promise<GatewayProcessObservation> {
+  try {
+    const status = await getGatewayProcessStatus();
+    const processAlive = Boolean(status.running || status.pid);
+    const ready = processAlive
+      ? await probeSelectedGateway(status.port)
+      : false;
+    return { running: processAlive, processAlive, ready, error: null };
+  } catch (error) {
+    return {
+      running: false,
+      processAlive: false,
+      ready: false,
+      error: String(error),
+    };
+  }
+}
+
+/** Logs are process diagnostics and never determine the selected runtime state. */
+export async function loadGatewayProcessLogs(limit: number): Promise<LogEntry[]> {
+  try {
+    return await getGatewayLogs(limit);
+  } catch {
+    return [];
+  }
+}
+
+export async function readGatewayProcessRuntimeStatus(): Promise<GatewayProcessRuntimeStatus> {
+  const observation = await observeSelectedGatewayProcess();
+  return {
+    ...observation,
+    retrying: false,
+    logs: formatGatewayLogs(await loadGatewayProcessLogs(80)),
+  };
+}
+
+/** Serial polling avoids stale status commits while an authenticated probe is in flight. */
+export function subscribeGatewayProcessRuntime(
+  listener: (status: GatewayProcessRuntimeStatus) => void,
+  intervalMs = 2_000,
+): () => void {
+  let stopped = false;
+  let inFlight = false;
+  let queued = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const poll = () => {
+    if (stopped || inFlight) { queued = true; return; }
+    inFlight = true;
+    void readGatewayProcessRuntimeStatus().then((status) => {
+      if (!stopped) listener(status);
+    }).finally(() => {
+      inFlight = false;
+      if (stopped) return;
+      const delay = queued ? 0 : intervalMs;
+      queued = false;
+      timer = setTimeout(poll, delay);
+    });
+  };
+  poll();
+  return () => { stopped = true; if (timer) clearTimeout(timer); };
+}
+
+export async function ensureSelectedGatewayRuntime(): Promise<GatewayEnsureResult> {
+  try {
+    return await ensureGatewayRunning();
+  } catch (error) {
+    return { healthy: false, error: String(error) };
+  }
+}
+
+export function restartSelectedGatewayRuntime(): Promise<GatewayRestartResult> {
+  return gatewayRestartSingleFlight.run(async () => {
+    try {
+      await restartGateway();
+      return { success: true, method: 'gateway-restart' };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+}

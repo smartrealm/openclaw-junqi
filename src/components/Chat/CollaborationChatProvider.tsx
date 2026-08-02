@@ -54,7 +54,7 @@ import {
   getCurrentRuntimeIdentity,
   subscribeRuntimeIdentity,
 } from '@/services/gateway/runtimeIdentity';
-import { bindGatewayCredentialToInstance } from '@/services/gateway/credentialProvider';
+import { useGatewayCredentialBinding } from '@/hooks/useGatewayCredentialBinding';
 import { useChatStore, type ChatMessage } from '@/stores/chatStore';
 import {
   useCollaborationStore,
@@ -360,6 +360,7 @@ export function CollaborationSessionDockView({
 
 export function CollaborationChatProvider({ children }: { children: ReactNode }) {
   const { t, i18n } = useTranslation();
+  const bindGatewayCredential = useGatewayCredentialBinding();
   const connected = useChatStore((state) => state.connected);
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const activeSession = useChatStore((state) => state.sessions.find((session) => session.key === state.activeSessionKey));
@@ -490,34 +491,11 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
       }
       if (boundIdentity?.endpoint) {
         try {
-          const adapterBinding = window.aegis?.pairing?.bindTokenToInstance;
-          if (adapterBinding) {
-            const result = await adapterBinding(
-              boundIdentity.endpoint,
-              currentCapabilities.collaborationInstanceId,
-              expectedConnectionId,
-            );
-            if (!result.success) {
-              throw new Error('Gateway identity changed before credential binding completed');
-            }
-          } else {
-            // Compatibility for non-Tauri/test adapters. The desktop adapter
-            // supplies the selected-runtime source slot and identity fence.
-            await bindGatewayCredentialToInstance(
-              boundIdentity.endpoint,
-              currentCapabilities.collaborationInstanceId,
-              {
-                isCurrent: () => {
-                  const identity = getCurrentRuntimeIdentity();
-                  return Boolean(
-                    identity?.verified
-                    && identity.connectionId === expectedConnectionId
-                    && identity.runtimeId === currentCapabilities.collaborationInstanceId,
-                  );
-                },
-              },
-            );
-          }
+          await bindGatewayCredential(
+            boundIdentity.endpoint,
+            currentCapabilities.collaborationInstanceId,
+            expectedConnectionId,
+          );
         } catch (error) {
           if (generation === capabilityCheckGeneration.current) {
             setLocalError(collaborationErrorMessage(error));
@@ -542,7 +520,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
         capabilityCheckInFlight.current = false;
       }
     }
-  }, [bootstrap, connected, runtimeIdentity?.connectionId]);
+  }, [bindGatewayCredential, bootstrap, connected, runtimeIdentity?.connectionId]);
 
   const clearConnectionScopedUi = useCallback(() => {
     setLocalError(null);

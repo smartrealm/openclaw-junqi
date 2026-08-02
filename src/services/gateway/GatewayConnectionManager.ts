@@ -9,8 +9,14 @@ import { GatewayStateMachine, type GatewayAction } from './GatewayStateMachine';
 import { executeConnect, executeDockerStart, executeStart } from './GatewayActionExecutor';
 import { LifecycleEpoch } from './LifecycleEpoch';
 import {
+  ensureSelectedGatewayRuntime,
+  readGatewayProcessRuntimeStatus,
+  restartSelectedGatewayRuntime,
+  subscribeGatewayProcessRuntime,
+  type GatewayProcessRuntimeStatus,
+} from './gatewayProcessObservation';
+import {
   type GatewayEvent,
-  type GatewayProcessStatus,
   type GatewayStartResult,
   type GatewayStateSnapshot,
 } from './types';
@@ -20,6 +26,31 @@ import type {
 } from './GatewayLifecycleCoordinator';
 
 type StateListener = (snapshot: GatewayStateSnapshot) => void;
+
+interface GatewayActionExecutorPort {
+  connect: typeof executeConnect;
+  start: typeof executeStart;
+  startDocker: typeof executeDockerStart;
+}
+
+interface GatewayProcessRuntimePort {
+  observe: () => Promise<GatewayProcessRuntimeStatus>;
+  subscribe: (listener: (status: GatewayProcessRuntimeStatus) => void) => () => void;
+  ensure: () => Promise<GatewayEnsureResult>;
+  restart: () => Promise<GatewayRestartResult>;
+}
+
+const defaultGatewayActionExecutor: GatewayActionExecutorPort = {
+  connect: executeConnect,
+  start: executeStart,
+  startDocker: executeDockerStart,
+};
+const defaultGatewayProcessRuntime: GatewayProcessRuntimePort = {
+  observe: readGatewayProcessRuntimeStatus,
+  subscribe: subscribeGatewayProcessRuntime,
+  ensure: ensureSelectedGatewayRuntime,
+  restart: restartSelectedGatewayRuntime,
+};
 
 export class GatewayConnectionManager {
   private fsm = new GatewayStateMachine();
@@ -37,6 +68,11 @@ export class GatewayConnectionManager {
   } | null = null;
   private readonly lifecycleEpoch = new LifecycleEpoch();
 
+  constructor(
+    private readonly actionExecutor: GatewayActionExecutorPort = defaultGatewayActionExecutor,
+    private readonly processRuntime: GatewayProcessRuntimePort = defaultGatewayProcessRuntime,
+  ) {}
+
   /** Subscribe to state changes. Returns unsubscribe function. */
   onStateChange(listener: StateListener): () => void {
     this.listeners.add(listener);
@@ -52,13 +88,7 @@ export class GatewayConnectionManager {
     this.statusUnsub = undefined;
     this.dispatch({ type: 'INITIALIZE' });
 
-    if (!window.aegis?.gateway) {
-      this.dispatch({ type: 'STATUS_RECEIVED', processAlive: true, endpointReady: true, error: null, retrying: false });
-      return;
-    }
-
-    // Subscribe to real-time status updates
-    this.statusUnsub = window.aegis.gateway.onStatusChanged((status: GatewayProcessStatus) => {
+    this.statusUnsub = this.processRuntime.subscribe((status) => {
       if (!this.isCurrent(generation)) return;
       this.dispatch({
         type: 'STATUS_RECEIVED',
@@ -70,8 +100,6 @@ export class GatewayConnectionManager {
       });
     });
 
-    // onStatusChanged owns the initial probe as well as periodic updates. A
-    // second getStatus() here used to race it and submit stale process state.
   }
 
   /** Notify that WebSocket has opened (called from App onStatusChange). */
@@ -100,12 +128,8 @@ export class GatewayConnectionManager {
    * Use after reset() to avoid waiting up to 2s for the periodic poller to fire.
    */
   probe(): void {
-    if (!window.aegis?.gateway) {
-      this.dispatch({ type: 'STATUS_RECEIVED', processAlive: true, endpointReady: true, error: null, retrying: false });
-      return;
-    }
     const generation = this.lifecycleEpoch.capture();
-    void window.aegis.gateway.getStatus().then((status: GatewayProcessStatus) => {
+    void this.processRuntime.observe().then((status) => {
       if (!this.isCurrent(generation)) return;
       this.dispatch({
         type: 'STATUS_RECEIVED',
@@ -162,14 +186,10 @@ export class GatewayConnectionManager {
   }
 
   async ensureRunning(): Promise<GatewayEnsureResult> {
-    if (!window.aegis?.gateway?.ensureRunning) {
-      this.reconnect();
-      return { healthy: true, mode: 'browser' };
-    }
     const generation = this.beginProcessRecovery();
     let result: GatewayEnsureResult;
     try {
-      result = await window.aegis.gateway.ensureRunning();
+      result = await this.processRuntime.ensure();
     } catch (error) {
       result = { healthy: false, error: String(error) };
     }
@@ -190,15 +210,10 @@ export class GatewayConnectionManager {
   }
 
   async restart(): Promise<GatewayRestartResult> {
-    if (!window.aegis?.gateway?.retry) {
-      const result = { success: false, error: 'Gateway restart is unavailable in this runtime.' };
-      this.dispatch({ type: 'STATUS_RECEIVED', processAlive: false, endpointReady: false, error: result.error, retrying: false });
-      return result;
-    }
     const generation = this.beginProcessRecovery();
     let result: GatewayRestartResult;
     try {
-      result = await window.aegis.gateway.retry();
+      result = await this.processRuntime.restart();
     } catch (error) {
       result = { success: false, error: String(error) };
     }
@@ -288,19 +303,19 @@ export class GatewayConnectionManager {
   private executeAction(action: GatewayAction, generation: number): void {
     switch (action) {
       case 'CONNECT':
-        void executeConnect((httpUrl) => {
+        void this.actionExecutor.connect((httpUrl) => {
           if (!this.isCurrent(generation)) return;
           // App.tsx uses this for media resolution / pairing
           window.dispatchEvent(new CustomEvent('aegis:gateway-http-url', { detail: httpUrl }));
         }, () => this.isCurrent(generation));
         break;
       case 'START':
-        void executeStart()
+        void this.actionExecutor.start()
           .then((result) => this.completeStart(result, generation))
           .catch((error) => this.completeStart({ success: false, error: String(error) }, generation));
         break;
       case 'START_DOCKER':
-        void executeDockerStart()
+        void this.actionExecutor.startDocker()
           .then((result) => this.completeStart(result, generation))
           .catch((error) => this.completeStart({ success: false, error: String(error) }, generation));
         break;

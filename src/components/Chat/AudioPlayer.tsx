@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { VOICE_INTERRUPT_EVENT, VOICE_MEDIA_REQUEST_EVENT } from '@/services/voice/types';
+import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
 
 // ═══════════════════════════════════════════════════════════
 // AudioPlayer — Custom audio player for TTS / voice messages
@@ -101,8 +102,8 @@ export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutpu
 
       debugLog('media', '[AudioPlayer] Loading media via IPC:', filePath);
 
-      if (window.aegis?.voice?.read) {
-        window.aegis.voice.read(filePath).then((base64: string | null) => {
+      {
+        voiceFileRuntime.read(filePath).then((base64: string | null) => {
           if (base64) {
             const ext = filePath.split('.').pop()?.toLowerCase() || 'mp3';
             const mime = ext === 'mp3' ? 'audio/mpeg' : ext === 'ogg' ? 'audio/ogg' : ext === 'wav' ? 'audio/wav' : 'audio/webm';
@@ -116,10 +117,6 @@ export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutpu
           debugError('media', '[AudioPlayer] Read failed:', err);
           if (active) { setError(true); setLoading(false); }
         });
-      } else {
-        debugError('media', '[AudioPlayer] No voice.read IPC available');
-        setError(true);
-        setLoading(false);
       }
 
     } else if (src.startsWith('data:') || src.startsWith('http') || src.startsWith('blob:')) {

@@ -1,10 +1,14 @@
-import { invoke } from '@tauri-apps/api/core';
 import { useSyncExternalStore } from 'react';
+import {
+  diagnoseGatewayRecovery as diagnoseGatewayRecoveryCommand,
+  repairOpenclaw,
+  type GatewayRecoveryRecommendation,
+} from '@/api/tauri-commands';
 
-export type GatewayRecoveryRecommendation = 'retry' | 'repair' | 'inspect_config' | 'select_storage';
+export type { GatewayRecoveryRecommendation } from '@/api/tauri-commands';
 
 export function diagnoseGatewayRecovery(error: string): Promise<GatewayRecoveryRecommendation> {
-  return invoke<GatewayRecoveryRecommendation>('diagnose_gateway_recovery', { error });
+  return diagnoseGatewayRecoveryCommand(error);
 }
 
 const MIGRATION_RETRY_PATTERN = /startup migrations are already running[\s\S]*?after\s+(\d{4}-\d{2}-\d{2}T\S+?Z)\b/i;
@@ -106,7 +110,7 @@ export function createOpenClawRepairCoordinator(
   };
 }
 
-const coordinator = createOpenClawRepairCoordinator(() => invoke<boolean>('repair_openclaw'));
+const coordinator = createOpenClawRepairCoordinator(repairOpenclaw);
 
 export function isOpenClawRepairing(): boolean {
   return coordinator.isRepairing();

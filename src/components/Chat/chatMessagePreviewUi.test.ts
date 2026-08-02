@@ -24,6 +24,8 @@ test('message preview uses the official panel-open action without glow effects',
   assert.doesNotMatch(actionsSource, /shadow|backdrop-blur/);
   assert.doesNotMatch(panelSource, /text-shadow|drop-shadow/);
   assert.match(bubbleSource, /data-message-bubble-actions/);
+  assert.match(bubbleSource, /className="mb-1\.5 flex justify-end"/);
+  assert.doesNotMatch(bubbleSource, /absolute end-2 top-2 z-10[\s\S]*data-message-bubble-actions/);
   assert.match(bubbleSource, /const hasBubbleActions = !isUser && Boolean\(messageActions\);/);
   assert.match(bubbleSource, /const footerActions = isUser \? messageActions : null;/);
   assert.doesNotMatch(bubbleSource, /<AssistantResponseFooter[\s\S]*?\{messageActions\}/);

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { LoadingIndicator } from './LoadingIndicator';
+import { sharePackagesRuntime } from '@/services/sharePackagesRuntime';
 
 export type SharePackageKind = 'agent' | 'skill';
 
@@ -333,7 +334,7 @@ export function ExportSharePackageDialog({
     setSelected(new Set());
     setIncludeSensitive(false);
     setSensitiveNotice(false);
-    void window.aegis.sharePackages.scan(subject.root)
+    void sharePackagesRuntime.scan(subject.root)
       .then((result) => {
         if (cancelled) return;
         const entries = result.entries as PackageEntry[];
@@ -401,7 +402,7 @@ export function ExportSharePackageDialog({
       });
       if (!destination) return;
       setExporting(true);
-      const result = await window.aegis.sharePackages.export({
+      const result = await sharePackagesRuntime.export({
         kind: subject.kind,
         name: subject.name,
         root: subject.root,
@@ -572,7 +573,7 @@ export function ImportSharePackageDialog({
       });
       if (!selectedPath || Array.isArray(selectedPath)) return;
       setLoading(true);
-      const result = await window.aegis.sharePackages.inspect(selectedPath);
+      const result = await sharePackagesRuntime.inspect(selectedPath);
       if (result.manifest.kind !== acceptedKind) {
         throw new Error(`This package contains a ${packageLabel(result.manifest.kind)}, not a ${packageLabel(acceptedKind)}.`);
       }
@@ -607,7 +608,7 @@ export function ImportSharePackageDialog({
     setError(null);
     setLoading(true);
     try {
-      const nextPreview = await window.aegis.sharePackages.previewImport({
+      const nextPreview = await sharePackagesRuntime.previewImport({
         sourcePath: inspection.packagePath,
         targetParent,
         targetName: targetName.trim(),
@@ -629,7 +630,7 @@ export function ImportSharePackageDialog({
     setError(null);
     setImporting(true);
     try {
-      const result = await window.aegis.sharePackages.import({
+      const result = await sharePackagesRuntime.import({
         sourcePath: inspection.packagePath,
         targetParent,
         targetName: targetName.trim(),

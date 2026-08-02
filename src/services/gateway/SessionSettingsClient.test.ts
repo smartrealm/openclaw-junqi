@@ -15,7 +15,7 @@ function response(entry: Record<string, unknown> = {}) {
 }
 
 describe('SessionSettingsClient', () => {
-  it('uses operator.admin requests only for runtime overrides', async () => {
+  it('uses an operator.admin request for every persistent sessions.patch mutation', async () => {
     const calls: Array<{ lane: 'daily' | 'admin'; method: string; params: Record<string, unknown> }> = [];
     const client = new SessionSettingsClient({
       runMutation: (_key, operation) => operation(),
@@ -38,7 +38,7 @@ describe('SessionSettingsClient', () => {
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, model: 'openai/gpt-5.6' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, model: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, thinkingLevel: 'high' } },
-      { lane: 'daily', method: 'sessions.patch', params: { key: SESSION_KEY, label: 'Planning' } },
+      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, label: 'Planning' } },
     ]);
   });
 

@@ -15,7 +15,8 @@ test('gateway rescue target identity is the authoritative OpenClaw model referen
 
 test('gateway rescue IPC never accepts provider credentials from the renderer', () => {
   const source = readFileSync(new URL('./gatewayRescue.ts', import.meta.url), 'utf8');
-  assert.match(source, /list_gateway_rescue_targets/);
+  assert.match(source, /listGatewayRescueTargets/);
+  assert.match(source, /gatewayRescueChat/);
   assert.match(source, /modelRef: target\.modelRef/);
   assert.doesNotMatch(source, /apiKey|baseUrl|credentialSource|RescueProviderApi/);
 });

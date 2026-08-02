@@ -8,6 +8,20 @@ import { debugLog } from '@/utils/debugLog';
 export interface GwConfig { token: string; ws_url: string; credential_scope?: string }
 export interface ConfigResolver { name: string; resolve(): Promise<GwConfig | null> }
 
+export interface GatewayConfigSnapshot {
+  token?: string | null;
+  ws_url?: string | null;
+  runtime_mode?: string | null;
+  config_path?: string | null;
+  credential_scope?: string | null;
+}
+
+/** The only dependency needed by the authoritative OpenClaw config resolver. */
+export interface GatewayConfigReader {
+  detect(): Promise<GatewayConfigSnapshot>;
+  resolveToken(): Promise<string>;
+}
+
 /** Volatile fallback from a prior lifecycle result, scoped to its endpoint. */
 export class CachedTokenResolver implements ConfigResolver {
   name = 'cached';
@@ -30,13 +44,13 @@ export class EventPayloadResolver implements ConfigResolver {
   }
 }
 
-/** Resolver 3: Read openclaw.json via Tauri invoke (authoritative). */
+/** Resolver 3: Read selected OpenClaw config through the typed desktop boundary. */
 export class FileReadResolver implements ConfigResolver {
   name = 'file';
-  constructor(private invoke: (cmd: string) => Promise<any>) {}
+  constructor(private readonly reader: GatewayConfigReader) {}
   async resolve(): Promise<GwConfig | null> {
     try {
-      const gw: any = await this.invoke('detect_gateway_config');
+      const gw = await this.reader.detect();
       if (typeof gw?.ws_url !== 'string' || !gw.ws_url.trim()) return null;
       const runtimeMode = typeof gw.runtime_mode === 'string' ? gw.runtime_mode : 'unknown';
       const configPath = typeof gw.config_path === 'string' ? gw.config_path : '';
@@ -49,7 +63,7 @@ export class FileReadResolver implements ConfigResolver {
           // `detect_gateway_config` deliberately returns literal tokens only.
           // Resolve a selected SecretRef through OpenClaw's official resolver;
           // never pass its config representation to the WebSocket handshake.
-          const resolved = await this.invoke('get_gateway_token');
+          const resolved = await this.reader.resolveToken();
           token = typeof resolved === 'string' ? resolved.trim() : '';
         } catch {
           // Token-less configurations remain valid resolver results so the

@@ -41,6 +41,10 @@ import {
 import type { AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import {
+  readActiveOpenclawConfig,
+  validateActiveOpenclawConfig,
+} from '@/services/openclawConfigRuntime';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -277,7 +281,7 @@ export function AgentSettingsPanel({
     setLoadingChannels(true);
     setChannelError(null);
     try {
-      const detected = await window.aegis.config.detect();
+      const detected = await validateActiveOpenclawConfig();
       if (!detected.valid) {
         throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
       }
@@ -286,7 +290,7 @@ export function AgentSettingsPanel({
         setChannelError(t('channelsCenter.configMissing', 'OpenClaw config file was not found.'));
         return;
       }
-      const { data } = await window.aegis.config.read();
+      const { data } = await readActiveOpenclawConfig();
       setChannelConfig(data);
     } catch (err) {
       setChannelError(err instanceof Error ? err.message : String(err));

@@ -89,7 +89,7 @@ test('BUG-GL04 diagnostics expose lifecycle and runtime ownership together', () 
   assert.doesNotMatch(processFields, /pub lifecycle:|pub runtime_mode:/);
   assert.match(supervisor, /GatewayRuntimeSnapshot/);
   assert.match(supervisor, /lifecycle:[\s\S]*mode:[\s\S]*managed_pid/);
-  assert.match(panel, /get_gateway_runtime_snapshot/);
+  assert.match(panel, /getGatewayRuntimeSnapshot/);
   assert.match(panel, /runtimeModeLabel/);
 });
 
@@ -450,30 +450,27 @@ test('BUG-03 gateway manager snapshots include collected logs', () => {
 });
 
 test('BUG-03 normal gateway logs do not report the process as restarting', () => {
-  const adapter = source('src/api/tauri-adapter.ts');
-  const normalHandler = adapter.slice(
-    adapter.indexOf('const handleGatewayLog'),
-    adapter.indexOf('const handleRestartProgress'),
-  );
-  assert.doesNotMatch(normalHandler, /retrying:\s*true/);
-  assert.doesNotMatch(normalHandler, /running:\s*false/);
+  const observation = source('src/services/gateway/gatewayProcessObservation.ts');
+  const manager = source('src/services/gateway/GatewayConnectionManager.ts');
+  assert.match(observation, /retrying: false/);
+  assert.match(manager, /this\.retrying = event\.retrying/);
+  assert.doesNotMatch(observation, /gateway-log/);
 });
 
 test('BUG-04 restart lifecycle has explicit synchronous start and finish events', () => {
-  const adapter = source('src/api/tauri-adapter.ts');
-  assert.match(adapter, /GATEWAY_RESTART_STARTED_EVENT/);
-  assert.match(adapter, /GATEWAY_RESTART_FINISHED_EVENT/);
-  assert.match(adapter, /handleRestartFinished[\s\S]*requestImmediatePoll/);
+  const observation = source('src/services/gateway/gatewayProcessObservation.ts');
+  const manager = source('src/services/gateway/GatewayConnectionManager.ts');
+  assert.match(observation, /gatewayRestartSingleFlight\.run/);
+  assert.match(observation, /await restartGateway\(\)/);
+  assert.match(manager, /this\.dispatch\(\{ type: 'RECOVERY_REQUESTED' \}\)/);
 });
 
 test('BUG-04 late restart progress cannot re-lock recovery controls', () => {
-  const adapter = source('src/api/tauri-adapter.ts');
-  const progressHandler = adapter.slice(
-    adapter.indexOf('const handleRestartProgress'),
-    adapter.indexOf('const handleRestartStarted'),
-  );
-  assert.doesNotMatch(progressHandler, /restartActive\s*=\s*true/);
-  assert.match(progressHandler, /retrying:\s*restartActive/);
+  const observation = source('src/services/gateway/gatewayProcessObservation.ts');
+  const manager = source('src/services/gateway/GatewayConnectionManager.ts');
+  assert.doesNotMatch(observation, /gateway-restart-progress/);
+  assert.match(manager, /event\.type === 'RECOVERY_REQUESTED'[\s\S]*this\.retrying = true/);
+  assert.match(manager, /event\.type === 'STATUS_RECEIVED'[\s\S]*this\.retrying = event\.retrying/);
 });
 
 test('BUG-GL07 restart CLI is terminated and fails closed on abnormal wait', () => {
@@ -585,21 +582,17 @@ test('BUG-GL09 manager rejects stale lifecycle work and destroys its subscriptio
 });
 
 test('BUG-GL10 status polling is serial and invalidates in-flight results on cleanup', () => {
-  const adapter = source('src/api/tauri-adapter.ts');
-  const statusObserver = adapter.slice(
-    adapter.indexOf('onStatusChanged: (cb: any)'),
-    adapter.indexOf('\n  settings:'),
+  const observation = source('src/services/gateway/gatewayProcessObservation.ts');
+  const statusObserver = observation.slice(
+    observation.indexOf('export function subscribeGatewayProcessRuntime'),
+    observation.indexOf('export async function ensureSelectedGatewayRuntime'),
   );
   assert.doesNotMatch(statusObserver, /setInterval/);
-  assert.match(statusObserver, /pollInFlight/);
-  assert.match(statusObserver, /schedulePoll\(2_000\)/);
-  assert.match(statusObserver, /pollGeneration \+= 1/);
-  assert.match(statusObserver, /if \(!isCurrent\(\)\) return/g);
-  assert.equal(
-    (statusObserver.match(/subscribeTauriEvent\(/g) ?? []).length,
-    2,
-    'both status listeners must use the lifecycle-safe subscription boundary',
-  );
+  assert.match(statusObserver, /let inFlight = false/);
+  assert.match(statusObserver, /let queued = false/);
+  assert.match(statusObserver, /if \(stopped \|\| inFlight\) \{ queued = true; return; \}/);
+  assert.match(statusObserver, /if \(!stopped\) listener\(status\)/);
+  assert.match(statusObserver, /return \(\) => \{ stopped = true; if \(timer\) clearTimeout\(timer\); \}/);
 });
 
 test('BUG-05 recovery log surfaces retain useful diagnostic context', () => {
@@ -612,7 +605,7 @@ test('BUG-05 recovery log surfaces retain useful diagnostic context', () => {
 test('BUG-GL11 nonblocking recovery shares the App route and exposes determinate progress', () => {
   const dashboard = source('src/pages/Dashboard/index.tsx');
   const statusBar = source('src/components/Layout/StatusBar.tsx');
-  const adapter = source('src/api/tauri-adapter.ts');
+  const coordinator = source('src/services/gateway/GatewayLifecycleCoordinator.ts');
   const app = source('src/App.tsx');
   const settings = source('src/pages/SettingsPage.tsx');
   const console = source('src-tauri/src/commands/console.rs');
@@ -621,8 +614,7 @@ test('BUG-GL11 nonblocking recovery shares the App route and exposes determinate
   assert.match(dashboard, /role="status"/);
   assert.match(statusBar, /<GatewaySelfRescuePanel/);
   assert.doesNotMatch(dashboard, /gateway\?\.ensureRunning/);
-  assert.match(adapter, /gatewayRestartProgressFromLog/);
-  assert.doesNotMatch(adapter.slice(adapter.indexOf('consoleUi:'), adapter.indexOf('\n  logs:')), /plugin-shell/);
+  assert.match(coordinator, /new CustomEvent\('aegis:gateway-progress'/);
   assert.match(app, /openControlUiAfterRecoveryRef/);
   assert.match(settings, /gatewayLifecycle\.recover\('settings-control-ui'\)/);
   assert.match(console, /configured_gateway_port/);
@@ -712,12 +704,11 @@ test('migration-lock failures wait for OpenClaw expiry before another restart at
 
 test('BUG-GSC11 an authenticated external Gateway cancels a stale migration retry', () => {
   const app = source('src/App.tsx');
-  const adapter = source('src/api/tauri-adapter.ts');
+  const observation = source('src/services/gateway/gatewayProcessObservation.ts');
   const manager = source('src/services/gateway/GatewayConnectionManager.ts');
   const recovery = source('src/services/gateway/openclawRepair.ts');
 
-  assert.match(adapter, /probeSelectedGatewayReady/);
-  assert.match(adapter, /invoke<boolean>\('probe_selected_gateway'/);
+  assert.match(observation, /await probeSelectedGateway\(status\.port\)/);
   assert.match(manager, /selectedGatewayReady/);
   assert.match(manager, /type: 'SELECTED_GATEWAY_READY'/);
   assert.match(app, /if \(snap\.selectedGatewayReady\)[\s\S]*cancelGatewayMigrationRetry\(\)/);

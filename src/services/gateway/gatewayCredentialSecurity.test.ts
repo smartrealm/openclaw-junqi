@@ -85,22 +85,11 @@ Object.defineProperty(globalThis, 'WebSocket', {
   writable: true,
   value: MemoryWebSocket,
 });
-const originalAegis = window.aegis;
 const savedDeviceTokens: Array<{ token: string; url: string }> = [];
-(window as any).aegis = {
-  ...originalAegis,
-  pairing: {
-    ...originalAegis?.pairing,
-    async saveToken(token: string, url: string) {
-      savedDeviceTokens.push({ token, url });
-    },
-  },
-};
 
 after(() => {
   if (originalWebSocket) Object.defineProperty(globalThis, 'WebSocket', originalWebSocket);
   else Reflect.deleteProperty(globalThis, 'WebSocket');
-  (window as any).aegis = originalAegis;
 });
 
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -172,7 +161,11 @@ function resetSockets() {
 describe('Gateway credential security regression gates', () => {
   it('requests only read/write scopes in the daily socket handshake', async () => {
     resetSockets();
-    const connection = new GatewayConnection();
+    const connection = new GatewayConnection({
+      persistDeviceCredential: async (url, token) => {
+        savedDeviceTokens.push({ url, token });
+      },
+    });
     connection.connect('ws://127.0.0.1:18789', 'daily-token');
     const socket = MemoryWebSocket.instances[0];
     socket.onSend = (message) => {
@@ -202,9 +195,10 @@ describe('Gateway credential security regression gates', () => {
   });
 
   it('saves a rotated device token into the attested instance slot after alias binding', () => {
-    const adapter = readFileSync(new URL('../../api/tauri-adapter.ts', import.meta.url), 'utf8');
-    assert.match(adapter, /await storeGatewayDeviceCredential\(\s*gatewayDeviceCredentialRuntimeKey\(gatewayUrl, activeConfig\)/);
-    assert.match(adapter, /if \(boundRuntimeKey !== endpointKey\) return boundRuntimeKey/);
+    const resolver = readFileSync(new URL('./GatewayConnectionTargetResolver.ts', import.meta.url), 'utf8');
+    assert.match(resolver, /storeGatewayConnectionDeviceCredential/);
+    assert.match(resolver, /if \(boundKey !== endpointKey\) return boundKey/);
+    assert.match(resolver, /selectedGatewayRuntimeKey\(gatewayUrl, configured\.credential_scope\)/);
   });
 
   it('sends a stored device credential through the official deviceToken field', async () => {
@@ -520,22 +514,21 @@ describe('Gateway credential security regression gates', () => {
   });
 
   it('resolves the active OpenClaw config before cached Gateway credentials', () => {
-    const adapter = source('src/api/tauri-adapter.ts');
-    const start = adapter.indexOf('const chain = new ConfigResolverChain');
-    const end = adapter.indexOf('const result = await chain.resolve()', start);
-    const resolvers = adapter.slice(start, end);
-    assert.ok(resolvers.indexOf('new FileReadResolver') < resolvers.indexOf('new EventPayloadResolver'));
-    assert.ok(resolvers.indexOf('new EventPayloadResolver') < resolvers.indexOf('new CachedTokenResolver'));
+    const resolver = source('src/services/gateway/GatewayConnectionTargetResolver.ts');
+    const start = resolver.indexOf('export async function resolveGatewayConnectionTarget');
+    const body = resolver.slice(start);
+    assert.ok(body.indexOf('await dependencies.detectConfig()') < body.indexOf('await deviceCredential('));
+    assert.doesNotMatch(resolver, /ConfigResolverChain|EventPayloadResolver|CachedTokenResolver/);
   });
 
   it('migrates the 1.2.33 credential slot before deleting the legacy copy', () => {
-    const adapter = source('src/api/tauri-adapter.ts');
-    const start = adapter.indexOf('async function migrateNativeLegacyGatewayCredential');
-    const end = adapter.indexOf('// Upgrade migration', start);
-    const migration = adapter.slice(start, end);
-    const storeIndex = migration.indexOf('await storeGatewayDeviceCredential');
+    const resolver = source('src/services/gateway/GatewayConnectionTargetResolver.ts');
+    const start = resolver.indexOf('async function deviceCredential');
+    const end = resolver.indexOf('/** Reads a migrated', start);
+    const migration = resolver.slice(start, end);
+    const storeIndex = migration.indexOf('await dependencies.storeDeviceCredential');
     const persistenceIndex = migration.indexOf("credential.persistence === 'system'");
-    const deleteIndex = migration.indexOf("delete_legacy_gateway_credential");
+    const deleteIndex = migration.indexOf('deleteLegacyCredential');
     assert.ok(storeIndex >= 0 && storeIndex < persistenceIndex);
     assert.ok(persistenceIndex < deleteIndex);
   });

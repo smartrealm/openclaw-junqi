@@ -30,7 +30,7 @@ import {
   resolveGatewayCredentialRuntimeKey,
   storeGatewayDeviceCredential,
 } from '@/services/gateway/credentialProvider';
-import { DEFAULT_MEMORY_API_URL, defaultGatewayWsUrl } from '@/config/runtimeDefaults';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { buildFontStack } from '@/utils/fonts';
 
 // ═══════════════════════════════════════════════════════════
@@ -65,10 +65,6 @@ interface SettingsState {
   dynamicIslandAutoExpand: boolean;
   budgetLimit: number;
   commandPaletteOpen: boolean;
-  memoryExplorerEnabled: boolean;
-  memoryMode: 'api' | 'local';
-  memoryApiUrl: string;
-  memoryLocalPath: string;
   context1mEnabled: boolean;
   toolIntentEnabled: boolean;
   audioAutoPlay: boolean;
@@ -97,10 +93,6 @@ interface SettingsState {
   setDynamicIslandAutoExpand: (enabled: boolean) => void;
   setBudgetLimit: (n: number) => void;
   setCommandPaletteOpen: (open: boolean) => void;
-  setMemoryExplorerEnabled: (enabled: boolean) => void;
-  setMemoryMode: (mode: 'api' | 'local') => void;
-  setMemoryApiUrl: (url: string) => void;
-  setMemoryLocalPath: (path: string) => void;
   setContext1mEnabled: (enabled: boolean) => void;
   setToolIntentEnabled: (enabled: boolean) => void;
   setAudioAutoPlay: (enabled: boolean) => void;
@@ -187,10 +179,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   dynamicIslandAutoExpand: localStorage.getItem('junqi:dynamic-island-auto-expand') !== 'false',
   budgetLimit: parseFloat(localStorage.getItem('aegis-budget-limit') || '0') || 0,
   commandPaletteOpen: false,
-  memoryExplorerEnabled: localStorage.getItem('aegis-memory-explorer') === 'true',
-  memoryMode: (localStorage.getItem('aegis-memory-mode') || 'local') as 'api' | 'local',
-  memoryApiUrl: localStorage.getItem('aegis-memory-api-url') || DEFAULT_MEMORY_API_URL,
-  memoryLocalPath: localStorage.getItem('aegis-memory-local-path') || '',
   context1mEnabled: localStorage.getItem('aegis-context1m') === 'true',
   toolIntentEnabled: localStorage.getItem('aegis-tool-intent') === 'true',
   audioAutoPlay: localStorage.getItem(AUDIO_AUTO_PLAY_STORAGE_KEY) === 'true',
@@ -208,7 +196,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!isThemeSetting(theme)) return;
     localStorage.setItem(THEME_STORAGE_KEY, theme);
     set({ theme });
-    window.aegis?.settings?.save?.('theme', theme).catch?.(() => {});
     const resolvedTheme = resolveTheme(theme, detectOSPreference());
     applyTheme(resolvedTheme, theme);
     // Notify same-document listeners; companion windows also observe the
@@ -220,7 +207,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     localStorage.setItem('aegis-ui-scale', String(v));
     set({ uiScale: v });
     void applyUiZoom(v);
-    window.aegis?.settings?.save?.('uiScale', v).catch?.(() => {});
   },
   setUiFont: (font) => {
     const next = buildFontStack(font, 'ui');
@@ -269,10 +255,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setDynamicIslandAutoExpand: (enabled) => { localStorage.setItem('junqi:dynamic-island-auto-expand', String(enabled)); set({ dynamicIslandAutoExpand: enabled }); },
   setBudgetLimit: (n) => { localStorage.setItem('aegis-budget-limit', String(n)); set({ budgetLimit: n }); },
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
-  setMemoryExplorerEnabled: (enabled) => { localStorage.setItem('aegis-memory-explorer', String(enabled)); set({ memoryExplorerEnabled: enabled }); },
-  setMemoryMode: (mode) => { localStorage.setItem('aegis-memory-mode', mode); set({ memoryMode: mode }); },
-  setMemoryApiUrl: (url) => { localStorage.setItem('aegis-memory-api-url', url); set({ memoryApiUrl: url }); },
-  setMemoryLocalPath: (path) => { localStorage.setItem('aegis-memory-local-path', path); set({ memoryLocalPath: path }); },
   setContext1mEnabled: (enabled) => { localStorage.setItem('aegis-context1m', String(enabled)); set({ context1mEnabled: enabled }); },
   setToolIntentEnabled: (enabled) => { localStorage.setItem('aegis-tool-intent', String(enabled)); set({ toolIntentEnabled: enabled }); },
   setAudioAutoPlay: (enabled) => { localStorage.setItem(AUDIO_AUTO_PLAY_STORAGE_KEY, String(enabled)); set({ audioAutoPlay: enabled }); },
@@ -280,8 +262,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setGatewayUrl: (url) => {
     localStorage.setItem('aegis-gateway-url', url);
     set({ gatewayUrl: url });
-    window.aegis?.settings?.save?.('gatewayUrl', url).catch?.(() => {});
-    void window.aegis?.config?.save?.({ gatewayUrl: url });
   },
   setGatewayToken: (token) => {
     const normalized = token.trim();
@@ -300,7 +280,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     localStorage.setItem('aegis-sidebar-collapsed', String(collapsed));
     localStorage.setItem('aegis-sidebar-mode', mode);
     set({ sidebarCollapsed: collapsed, sidebarMode: mode });
-    window.aegis?.settings?.save?.('sidebarCollapsed', collapsed).catch?.(() => {});
   },
   // Three-stage cycle: expanded → mini → hidden → expanded …
   setActiveSidebarTab: (tab) => set({ activeSidebarTab: tab }),
@@ -311,7 +290,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           : 'expanded';
     localStorage.setItem('aegis-sidebar-mode', next);
     localStorage.setItem('aegis-sidebar-collapsed', String(next === 'mini'));
-    window.aegis?.settings?.save?.('sidebarCollapsed', next === 'mini').catch?.(() => {});
     return { sidebarMode: next, sidebarCollapsed: next === 'mini' };
   }),
   setAccentColor: (color) => {

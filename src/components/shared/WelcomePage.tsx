@@ -28,6 +28,7 @@ import {
 import { Cube, Robot } from '@phosphor-icons/react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { listSkillHubSkills } from '@/api/tauri-commands';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { TimelineView, type TimelineTask } from './TimelineView';
@@ -780,7 +781,7 @@ function SkillsView() {
 
   useEffect(() => {
     let cancelled = false;
-    invoke<{ name: string; displayName?: string; description?: string }[]>('list_skills')
+    listSkillHubSkills()
       .then((list) => {
         if (!cancelled) setSkills(list);
       })

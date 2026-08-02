@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
 import {
   checkDocker,
   checkOpenclaw,
   detectGatewayConfig,
+  probeSelectedGateway,
   type DockerStatus,
   type OpenclawStatus,
 } from "@/api/tauri-commands";
@@ -100,7 +100,7 @@ export function useSetupEnvironmentReview({
         });
       }
       try {
-        const reachable = await invoke<boolean>("probe_selected_gateway", {});
+        const reachable = await probeSelectedGateway();
         if (cancelled()) return null;
         if (reachable) {
           setGatewayRunning(true);
