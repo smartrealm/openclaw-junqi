@@ -150,7 +150,7 @@ test('BUG-ONB-37 dashboard completion revalidates Gateway, config, and model bef
   assert.match(entry, /dashboardEntryInFlightRef\.current/);
 });
 
-test('BUG-ONB-38 Ready navigation is locked during autostart handoff and final Gateway verification', () => {
+test('BUG-ONB-38 Ready navigation is locked during either autostart operation and final Gateway verification', () => {
   const readyFile = screen('ReadyScreen');
   const ready = readyFile.slice(readyFile.indexOf('function ReadyScreen'));
   const autostart = readyFile.slice(
@@ -159,7 +159,7 @@ test('BUG-ONB-38 Ready navigation is locked during autostart handoff and final G
   );
 
   assert.match(autostart, /onOperationStateChange\(busy\)/);
-  assert.match(ready, /blockNavigation = autostartBusy \|\| flow\.enteringDashboard/);
+  assert.match(ready, /blockNavigation = gatewayAutostartBusy \|\| appAutostartBusy \|\| flow\.enteringDashboard/);
   assert.match(ready, /previousAction=\{\{ onClick: flow\.goBack, disabled: blockNavigation \}\}/);
   assert.match(ready, /disabled: blockNavigation/);
 });
@@ -476,7 +476,7 @@ test('BUG-GSO-02 autostart enable completes the official service handoff', () =>
   assert.match(setupPage, /function GatewayAutostartPreference/);
   assert.match(setupPage, /installMode !== "native" \|\| status === null \|\| status\?\.supported === false/);
   assert.match(setupPage, /setup\.runtimePreferences/);
-  assert.match(ready, /<GatewayAutostartPreference[\s\S]*installMode=\{flow\.installMode\}[\s\S]*onOperationStateChange=\{setAutostartBusy\}[\s\S]*\/>/);
+  assert.match(ready, /<AutostartPreferences[\s\S]*installMode=\{flow\.installMode\}[\s\S]*onGatewayOperationStateChange=\{setGatewayAutostartBusy\}[\s\S]*onAppOperationStateChange=\{setAppAutostartBusy\}[\s\S]*\/>/);
   assert.doesNotMatch(ready, /OpenClawUpdatePanel/);
 
   // Enable uses the rollback-aware official handoff; disable removes the

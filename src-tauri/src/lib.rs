@@ -48,6 +48,13 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        // The plugin uses a LaunchAgent on macOS, the current-user Run entry
+        // on Windows, and the XDG autostart entry on Linux. The launcher
+        // argument only applies on macOS.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         // Remembers window size/position across launches (auto-restores on start,
         // auto-saves on exit). First-launch sizing is handled in setup() below.
         .plugin(tauri_plugin_window_state::Builder::default().build())
@@ -68,6 +75,9 @@ pub fn run() {
             commands::gateway_service::gateway_autostart_status,
             commands::gateway_service::enable_gateway_autostart,
             commands::gateway_service::disable_gateway_autostart,
+            commands::app_autostart::app_autostart_status,
+            commands::app_autostart::enable_app_autostart,
+            commands::app_autostart::disable_app_autostart,
             commands::gateway_logs::get_gateway_logs,
             commands::gateway_logs::clear_gateway_logs,
             commands::gateway_rescue::list_gateway_rescue_targets,

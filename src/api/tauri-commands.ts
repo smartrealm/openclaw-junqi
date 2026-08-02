@@ -659,6 +659,14 @@ export const detectStateDirSplit = () => invoke<StateDirSplit>("detect_state_dir
 export const enableGatewayAutostart = () => invoke<GatewayAutostartStatus>("enable_gateway_autostart");
 export const disableGatewayAutostart = () => invoke<GatewayAutostartStatus>("disable_gateway_autostart");
 
+/** JunQi Desktop login autostart, intentionally independent of the Gateway service. */
+export interface AppAutostartStatus {
+  enabled: boolean;
+}
+export const appAutostartStatus = () => invoke<AppAutostartStatus>('app_autostart_status');
+export const enableAppAutostart = () => invoke<AppAutostartStatus>('enable_app_autostart');
+export const disableAppAutostart = () => invoke<AppAutostartStatus>('disable_app_autostart');
+
 /** Gateway log buffer access (200-entry circular, see gateway_process.rs). */
 export type LogLevel = 'info' | 'warn' | 'error';
 export type LogSource = 'child_stdout' | 'child_stderr' | 'docker_stdout' | 'docker_stderr' | 'lifecycle';
