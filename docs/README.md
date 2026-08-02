@@ -36,6 +36,7 @@ docs/
 - [Windows 首次安装观测复审](installation/openclaw-windows-first-run-observation-audit.md)
 - [Windows Node 探测补充审计](installation/openclaw-windows-node-probe-audit.md)
 - [Windows Wizard 链路审计](installation/openclaw-windows-wizard-audit.md)
+- [Windows OpenClaw Wizard 可视化链路复审](installation/windows-openclaw-wizard-visual-audit-2026-08-03.md)
 - [安装与 Wizard 第四轮审计](installation/openclaw-install-wizard-fourth-pass-audit-2026-07-29.md)
 - [安装与 Wizard 第五轮审计](installation/openclaw-install-wizard-fifth-pass-audit-2026-07-29.md)
 - [安装与 Wizard 第六轮审计](installation/openclaw-install-wizard-sixth-pass-audit-2026-07-29.md)

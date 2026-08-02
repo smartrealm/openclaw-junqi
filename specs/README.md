@@ -18,6 +18,7 @@ specs/
 - [安装诊断](installation/2026-07-21-install-diagnostics-bugfix.md)
 - [Windows Native 安装](installation/2026-07-21-windows-native-install-bugfix.md)
 - [Windows OpenClaw Wizard](installation/2026-07-23-openclaw-windows-wizard-bugfix.md)
+- [Windows OpenClaw Wizard 可视化加固](installation/2026-08-03-windows-openclaw-wizard-visual-hardening.md)
 - [Windows 首次安装](installation/2026-07-24-openclaw-windows-first-run-bugfix.md)
 - [首次安装底部操作区响应式修复](installation/2026-08-02-setup-footer-responsive-actions.md)
 - [Windows 卸载流程](installation/2026-07-26-windows-uninstall-flow-bugfix.md)
