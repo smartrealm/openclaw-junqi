@@ -149,6 +149,7 @@ docs/
 - [会话模型选择器与 OpenClaw 对齐记录](quality/session-model-picker-openclaw-parity-2026-07-30.md)
 - [侧栏主操作一致性记录](quality/sidebar-primary-action-convergence-2026-07-30.md)
 - [会话模型切换闪动审计](quality/session-model-switch-flicker-audit-2026-07-30.md)
+- [导航与页签平滑动效设计](quality/navigation-and-tab-motion-design-2026-08-02.md)
 - [主窗口关闭 ACL 审计](quality/main-window-close-acl-audit-2026-07-30.md)
 - [提供商模型目录设计记录](quality/provider-model-directory-design-2026-07-31.md)
 - [设置页面多语言完整性审计](quality/settings-localization-completeness-2026-07-30.md)

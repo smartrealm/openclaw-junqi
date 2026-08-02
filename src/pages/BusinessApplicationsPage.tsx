@@ -6,6 +6,7 @@ import { ApplicationDetail, type BusinessApplicationsView } from '@/components/B
 import { ApplicationJournal } from '@/components/BusinessApplications/ApplicationJournal';
 import { ApplicationCatalog } from '@/components/BusinessApplications/ApplicationCatalog';
 import { useBusinessChatPlanner } from '@/hooks/useBusinessChatPlanner';
+import { PageTransition } from '@/components/shared/PageTransition';
 
 export function BusinessApplicationsPage() {
   const { t } = useTranslation();
@@ -20,7 +21,7 @@ export function BusinessApplicationsPage() {
   };
 
   return (
-    <div className="h-full min-h-[520px] min-w-0 overflow-y-auto bg-aegis-bg">
+    <PageTransition className="h-full min-h-[520px] min-w-0 overflow-y-auto bg-aegis-bg">
       <div className="mx-auto max-w-[1440px] px-5 py-5 lg:px-7">
         <div>
           <h1 className="text-[18px] font-semibold text-aegis-text">{t('businessApplications.title', '业务应用')}</h1>
@@ -34,6 +35,6 @@ export function BusinessApplicationsPage() {
           <ApplicationJournal />
         </div>
       </div>
-    </div>
+    </PageTransition>
   );
 }
