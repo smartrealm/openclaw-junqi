@@ -1567,6 +1567,8 @@
     "voiceWorkspaceListening": "Listening locally",
     "voiceWorkspaceTriggered": "Voice detected",
     "voiceWorkspaceTranscribing": "Preparing a draft",
+    "voiceWorkspaceThinking": "Processing the request",
+    "voiceWorkspaceSpeaking": "Speaking",
     "voiceWorkspaceDraftReady": "Draft ready for confirmation",
     "voiceWorkspaceUnavailable": "Voice wake is unavailable",
     "voiceWorkspacePreparing": "Preparing voice input",

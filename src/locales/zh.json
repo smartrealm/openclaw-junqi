@@ -1565,6 +1565,8 @@
     "voiceWorkspaceListening": "正在本地监听",
     "voiceWorkspaceTriggered": "已检测到语音",
     "voiceWorkspaceTranscribing": "正在准备草稿",
+    "voiceWorkspaceThinking": "正在处理请求",
+    "voiceWorkspaceSpeaking": "正在语音回复",
     "voiceWorkspaceDraftReady": "草稿已准备，等待确认",
     "voiceWorkspaceUnavailable": "语音唤醒不可用",
     "voiceWorkspacePreparing": "正在准备语音输入",

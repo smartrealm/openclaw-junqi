@@ -21,6 +21,8 @@ export interface VoiceWakeOptions {
   onCaptureFallback?: (wavDataUrl: string) => void | Promise<void>;
   /** Called just before a new utterance is accepted. */
   onWakeDetected?: () => void;
+  /** Native PCM16 frames emitted after a VAD or keyword trigger. */
+  onPcmAudio?: (frame: { data: string; sampleRateHz: number; channels: number }) => void | Promise<void>;
   /** Preferred language for transcription (BCP-47). */
   lang?: string;
   /** Session that owns captured input and runtime state. */
@@ -59,6 +61,7 @@ export function useVoiceWake({
   onTranscript,
   onCaptureFallback,
   onWakeDetected,
+  onPcmAudio,
   lang = 'zh-CN',
   sessionKey = null,
 }: VoiceWakeOptions) {
@@ -72,8 +75,8 @@ export function useVoiceWake({
   const captureQueueRef = useRef<QueuedCapture[]>([]);
   const captureDrainingRef = useRef(false);
   const suppressNativeCaptureRef = useRef(false);
-  const callbacksRef = useRef({ onTranscript, onCaptureFallback, onWakeDetected, sessionKey });
-  callbacksRef.current = { onTranscript, onCaptureFallback, onWakeDetected, sessionKey };
+  const callbacksRef = useRef({ onTranscript, onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey });
+  callbacksRef.current = { onTranscript, onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey };
 
   const updatePhase = useCallback((next: WakePhase, ownerSessionKey?: string | null) => {
     const resolvedSessionKey = ownerSessionKey === undefined
@@ -110,11 +113,11 @@ export function useVoiceWake({
     }
   }, [updatePhase]);
 
-  const startNativeVAD = useCallback(async (mode: VoiceWakeCaptureMode) => {
+  const startNativeVAD = useCallback(async (mode: VoiceWakeCaptureMode, streamPcm = false) => {
     if (nativeVADRef.current || stoppedRef.current) return;
     nativeVADRef.current = true;
     try {
-      await startVoiceWake(mode);
+      await startVoiceWake(mode, { streamPcm });
       if (stoppedRef.current) {
         await stopVoiceWake().catch(() => undefined);
         nativeVADRef.current = false;
@@ -201,7 +204,10 @@ export function useVoiceWake({
     }
   }, [lang, startNativeVAD, updatePhase]);
 
-  const start = useCallback(async (mode: VoiceWakeCaptureMode = 'dictation') => {
+  const start = useCallback(async (
+    mode: VoiceWakeCaptureMode = 'dictation',
+    options: { streamPcm?: boolean } = {},
+  ) => {
     if (!stoppedRef.current && (recognitionRef.current || nativeVADRef.current)) return;
     voiceRuntime.interruptAll();
     setError(null);
@@ -216,7 +222,7 @@ export function useVoiceWake({
       startBrowserRecognition();
       return;
     }
-    await startNativeVAD(mode);
+    await startNativeVAD(mode, options.streamPcm === true);
   }, [startBrowserRecognition, startNativeVAD, updatePhase]);
 
   const stop = useCallback(async () => {
@@ -264,6 +270,18 @@ export function useVoiceWake({
         if (suppressNativeCaptureRef.current) return;
         updatePhase('wake_detected');
         callbacksRef.current.onWakeDetected?.();
+      } else if (
+        st === 'pcm'
+        && typeof payload.data === 'string'
+        && payload.encoding === 'pcm16'
+        && Number.isInteger(payload.sampleRateHz)
+        && Number.isInteger(payload.channels)
+      ) {
+        void callbacksRef.current.onPcmAudio?.({
+          data: payload.data,
+          sampleRateHz: payload.sampleRateHz,
+          channels: payload.channels,
+        });
       } else if (st === 'captured' && typeof payload.data === 'string') {
         if (suppressNativeCaptureRef.current) {
           suppressNativeCaptureRef.current = false;

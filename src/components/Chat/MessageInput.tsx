@@ -114,6 +114,7 @@ export function MessageInput() {
       {!voice.recording && (
         <VoiceWakeOverlay
           snapshot={voice.voiceMode}
+          talkPhase={voice.talkConversation.phase}
           detector={voice.detector}
           detectorError={voice.detectorError}
           configuringDetector={voice.configuringDetector}

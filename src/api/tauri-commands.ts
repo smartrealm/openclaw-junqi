@@ -74,13 +74,27 @@ export const getVoiceWakeStatus = async (): Promise<VoiceWakeStatus> => (
   parseVoiceWakeStatus('voice_wake_status', await invoke<unknown>('voice_wake_status'))
 );
 
-export const startVoiceWake = async (mode: VoiceWakeCaptureMode): Promise<VoiceWakeStatus> => (
-  parseVoiceWakeStatus('voice_wake_start', await invoke<unknown>('voice_wake_start', { mode }))
+export const startVoiceWake = async (
+  mode: VoiceWakeCaptureMode,
+  options: { streamPcm?: boolean } = {},
+): Promise<VoiceWakeStatus> => (
+  parseVoiceWakeStatus('voice_wake_start', await invoke<unknown>('voice_wake_start', {
+    mode,
+    streamPcm: options.streamPcm ?? false,
+  }))
 );
 
 export const stopVoiceWake = async (): Promise<VoiceWakeStatus> => (
   parseVoiceWakeStatus('voice_wake_stop', await invoke<unknown>('voice_wake_stop'))
 );
+
+export const playTalkPcm = (audioBase64: string) => invoke<void>('voice_talk_play_pcm', {
+  audioBase64,
+  sampleRateHz: 24_000,
+  channels: 1,
+});
+
+export const stopTalkPlayback = () => invoke<void>('voice_talk_stop_playback');
 
 export const getVoiceWakeDetectorStatus = async (): Promise<VoiceWakeDetectorStatus> => (
   parseVoiceWakeDetectorStatus(

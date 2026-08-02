@@ -5,9 +5,11 @@ import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import type { VoiceWakeDetectorStatus } from '@/api/tauri-commands';
 import type { VoiceModeSnapshot } from '@/services/voice/VoiceModeCoordinator';
+import type { TalkConversationPhase } from '@/services/voice/TalkConversationCoordinator';
 
 interface VoiceWakeOverlayProps {
   snapshot: VoiceModeSnapshot;
+  talkPhase: TalkConversationPhase;
   detector: VoiceWakeDetectorStatus | null;
   detectorError: string | null;
   configuringDetector: boolean;
@@ -21,7 +23,9 @@ export function shouldShowVoiceWakeOverlay(snapshot: VoiceModeSnapshot): boolean
   return snapshot.mode === 'wake_word' && snapshot.phase !== 'off';
 }
 
-function phaseCopy(snapshot: VoiceModeSnapshot, t: TFunction): string {
+function phaseCopy(snapshot: VoiceModeSnapshot, talkPhase: TalkConversationPhase, t: TFunction): string {
+  if (talkPhase === 'speaking') return t('input.voiceWorkspaceSpeaking');
+  if (talkPhase === 'connecting') return t('input.voiceWorkspaceThinking');
   if (snapshot.error === 'wake_detector_unavailable') return t('input.voiceWakeUnavailable');
   if (snapshot.error === 'gateway_unavailable') return t('input.voiceGatewayUnavailable');
   if (snapshot.error === 'target_changed') return t('input.voiceTargetChanged');
@@ -39,6 +43,7 @@ function phaseCopy(snapshot: VoiceModeSnapshot, t: TFunction): string {
 
 export function VoiceWakeOverlay({
   snapshot,
+  talkPhase,
   detector,
   detectorError,
   configuringDetector,
@@ -113,7 +118,7 @@ export function VoiceWakeOverlay({
           </div>
 
           <h2 className="mt-8 text-2xl font-semibold text-aegis-text sm:text-3xl">
-            {phaseCopy(snapshot, t)}
+            {phaseCopy(snapshot, talkPhase, t)}
           </h2>
           <p className="mx-auto mt-3 max-w-md text-[13px] leading-6 text-aegis-text-muted">
             {ready ? t('input.voiceWorkspaceLocalOnly') : t('input.voiceWorkspacePreparing')}

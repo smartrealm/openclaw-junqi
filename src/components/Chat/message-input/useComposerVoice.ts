@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type RefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject, type SetStateAction } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart';
 import { useTranslation } from 'react-i18next';
 import {
   getVoiceWakeDetectorStatus,
+  playTalkPcm,
   setVoiceWakeModelDirectory,
+  stopTalkPlayback,
   type VoiceWakeDetectorStatus,
 } from '@/api/tauri-commands';
 import { useVoiceMode } from '@/hooks/useVoiceMode';
@@ -12,12 +14,14 @@ import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { AttachmentValidationError, createPreparedAttachment, toGatewayAttachments } from '@/services/chat/attachments';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
 import { gateway } from '@/services/gateway';
+import { talkGatewayClient } from '@/services/gateway';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import {
   voiceModeCoordinator,
   type VoiceModeContext,
 } from '@/services/voice/VoiceModeCoordinator';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { TalkConversationCoordinator } from '@/services/voice/TalkConversationCoordinator';
 import {
   clearAutoArmSession,
   setAutoArmSession,
@@ -98,6 +102,22 @@ export function useComposerVoice({
     durationSec: number;
   }>());
   const stopVoiceWakeRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const talkConversationRef = useRef<TalkConversationCoordinator | null>(null);
+  if (!talkConversationRef.current) {
+    talkConversationRef.current = new TalkConversationCoordinator({
+      client: talkGatewayClient,
+      captureConnectionId: () => gateway.captureConnectionId(),
+      isConnectionCurrent: (candidate) => gateway.isConnectionCurrent(candidate),
+      interruptLocalOutput: (sessionKey) => voiceRuntime.interruptGlobally(sessionKey),
+      playOutput: playTalkPcm,
+      stopOutput: stopTalkPlayback,
+    });
+  }
+  const talkConversation = useSyncExternalStore(
+    talkConversationRef.current.subscribe,
+    talkConversationRef.current.getSnapshot,
+    talkConversationRef.current.getSnapshot,
+  );
   const currentContextRef = useRef<VoiceModeContext | null>(null);
   const connectionId = gateway.captureConnectionId();
   currentContextRef.current = connectionId && activeSessionKey
@@ -212,6 +232,10 @@ export function useComposerVoice({
     onCaptureFallback: async (wavDataUrl) => {
       const context = currentContextRef.current;
       if (!context) return;
+      if (talkConversationRef.current?.getSnapshot().sessionId) {
+        voiceModeCoordinator.resumeListening(activeTurnRef.current, context);
+        return;
+      }
       if (!voiceModeCoordinator.markTranscribing(activeTurnRef.current, context)) return;
       voiceRuntime.interruptGlobally(context.sessionKey);
       const base64 = wavDataUrl.split(',')[1] || '';
@@ -232,7 +256,14 @@ export function useComposerVoice({
     onWakeDetected: () => {
       const context = currentContextRef.current;
       if (!context || !voiceModeCoordinator.markTriggered(activeTurnRef.current, context)) return;
+      void talkConversationRef.current?.start(context.sessionKey);
+      void talkConversationRef.current?.interrupt();
       void stopAssistant();
+    },
+    onPcmAudio: (frame) => {
+      const context = currentContextRef.current;
+      if (context) voiceModeCoordinator.markTranscribing(activeTurnRef.current, context);
+      talkConversationRef.current?.appendPcm(frame);
     },
     lang: language === 'zh-TW' ? 'zh-TW' : language === 'zh' ? 'zh-CN' : 'en-US',
     sessionKey: activeSessionKey,
@@ -242,6 +273,7 @@ export function useComposerVoice({
   const stopVoiceMode = useCallback(async () => {
     activeTurnRef.current = null;
     pendingAudioCapturesRef.current.clear();
+    await talkConversationRef.current?.stop();
     await voiceModeCoordinator.stopAndReleaseCapture();
   }, []);
 
@@ -332,7 +364,7 @@ export function useComposerVoice({
       });
       activeTurnRef.current = snapshot.turnId;
       if (!detectorAvailable) return;
-      await voiceWake.start('wake_word');
+      await voiceWake.start('wake_word', { streamPcm: true });
       if (
         !isCurrentVoiceContext(context)
         || !voiceModeCoordinator.ownsTurn(snapshot.turnId, context)
@@ -508,6 +540,7 @@ export function useComposerVoice({
     if (!context) {
       activeTurnRef.current = null;
       pendingAudioCapturesRef.current.clear();
+      void talkConversationRef.current?.stop();
       voiceModeCoordinator.invalidate('gateway_unavailable');
       void voiceWake.stop();
       return;
@@ -515,6 +548,7 @@ export function useComposerVoice({
     if (!sameVoiceContext(snapshot.context, context)) {
       activeTurnRef.current = null;
       pendingAudioCapturesRef.current.clear();
+      void talkConversationRef.current?.stop();
       voiceModeCoordinator.invalidateContext(context);
       void voiceWake.stop();
     }
@@ -531,6 +565,7 @@ export function useComposerVoice({
     const context = currentContextRef.current;
     activeTurnRef.current = null;
     pendingAudioCapturesRef.current.clear();
+    void talkConversationRef.current?.stop();
     void stopVoiceWakeRef.current();
     void voiceModeCoordinator.stopOwnedTurnAndReleaseCapture(turnId, context);
   }, []);
@@ -563,6 +598,7 @@ export function useComposerVoice({
     outputActive,
     voiceWake,
     voiceMode,
+    talkConversation,
     status,
     startRecording,
     toggleDictation,

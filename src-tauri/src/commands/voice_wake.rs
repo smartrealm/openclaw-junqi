@@ -139,6 +139,7 @@ fn rms_u16(data: &[u16]) -> f32 {
 struct CaptureState {
     rms_window: Vec<f32>,
     samples: Vec<i16>,
+    stream_samples: Vec<i16>,
     pre_roll: VecDeque<i16>,
     pre_roll_capacity: usize,
     sample_rate: u32,
@@ -153,6 +154,7 @@ impl CaptureState {
         Self {
             rms_window: Vec::with_capacity(8),
             samples: Vec::new(),
+            stream_samples: Vec::new(),
             pre_roll: VecDeque::new(),
             pre_roll_capacity: 5_600,
             sample_rate: 16000,
@@ -188,6 +190,7 @@ impl CaptureState {
     fn push_sample(&mut self, sample: i16) {
         if self.recording_flag {
             self.samples.push(sample);
+            self.stream_samples.push(sample);
             return;
         }
         if self.pre_roll_capacity == 0 {
@@ -221,8 +224,10 @@ impl CaptureState {
     }
     fn begin_recording(&mut self) {
         self.samples.clear();
+        self.stream_samples.clear();
         while let Some(sample) = self.pre_roll.pop_front() {
             self.samples.push(sample);
+            self.stream_samples.push(sample);
         }
         self.recording_flag = true;
     }
@@ -240,11 +245,19 @@ impl CaptureState {
     fn take_pending_mono(&mut self) -> Vec<f32> {
         std::mem::take(&mut self.pending_mono)
     }
+    fn take_stream_samples(&mut self) -> Vec<i16> {
+        std::mem::take(&mut self.stream_samples)
+    }
 }
 
 /// Start continuous wake listening. Idempotent.
 #[tauri::command]
-pub fn voice_wake_start(app: AppHandle, mode: VoiceWakeMode) -> Result<serde_json::Value, String> {
+pub fn voice_wake_start(
+    app: AppHandle,
+    mode: VoiceWakeMode,
+    stream_pcm: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let stream_pcm = stream_pcm.unwrap_or(false);
     let stale_worker = {
         let mut guard = WAKE.lock().map_err(|e| format!("Lock: {}", e))?;
         if let Some(ref st) = *guard {
@@ -277,7 +290,14 @@ pub fn voice_wake_start(app: AppHandle, mode: VoiceWakeMode) -> Result<serde_jso
     let worker_id = NEXT_WORKER_ID.fetch_add(1, Ordering::Relaxed);
     let app_for_thread = app.clone();
     let worker = std::thread::spawn(move || {
-        run_capture_loop(app_for_thread, cmd_rx, worker_id, mode, ready_tx)
+        run_capture_loop(
+            app_for_thread,
+            cmd_rx,
+            worker_id,
+            mode,
+            stream_pcm,
+            ready_tx,
+        )
     });
 
     *guard = Some(WakeState {
@@ -394,6 +414,7 @@ fn run_capture_loop(
     cmd_rx: mpsc::Receiver<WakeCmd>,
     worker_id: u64,
     mode: VoiceWakeMode,
+    stream_pcm: bool,
     ready_tx: mpsc::SyncSender<Result<(), String>>,
 ) {
     let cfg = VadConfig::default();
@@ -498,10 +519,16 @@ fn run_capture_loop(
             }
             stream_failure(&stream_error_rx)?;
 
-            let (rms, pending_mono) = state
+            let (rms, pending_mono, stream_samples) = state
                 .lock()
-                .map(|mut s| (s.smoothed_rms(), s.take_pending_mono()))
-                .unwrap_or((0.0, Vec::new()));
+                .map(|mut s| {
+                    (
+                        s.smoothed_rms(),
+                        s.take_pending_mono(),
+                        s.take_stream_samples(),
+                    )
+                })
+                .unwrap_or((0.0, Vec::new(), Vec::new()));
             let is_speech = rms >= cfg.speech_rms;
             let is_silence = rms <= cfg.silence_rms;
             let now_ms = thread_start.elapsed().as_millis();
@@ -545,6 +572,22 @@ fn run_capture_loop(
                     );
                 }
             } else {
+                if stream_pcm && !stream_samples.is_empty() {
+                    let pcm = resample_pcm16_mono(&stream_samples, sample_rate, channels, 24_000);
+                    if !pcm.is_empty() {
+                        emit_worker_event(
+                            &app,
+                            worker_id,
+                            serde_json::json!({
+                                "state": "pcm",
+                                "data": STANDARD.encode(pcm_to_bytes(&pcm)),
+                                "encoding": "pcm16",
+                                "sampleRateHz": 24_000,
+                                "channels": 1,
+                            }),
+                        );
+                    }
+                }
                 if is_silence {
                     silence_ms += 20;
                 } else {
@@ -626,11 +669,52 @@ fn finalize_wav(samples: &[i16], sample_rate: u32, channels: u16) -> Result<Stri
     Ok(STANDARD.encode(&buf))
 }
 
+fn pcm_to_bytes(samples: &[i16]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(samples.len() * 2);
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    bytes
+}
+
+fn resample_pcm16_mono(
+    samples: &[i16],
+    source_sample_rate: u32,
+    channels: u16,
+    target_sample_rate: u32,
+) -> Vec<i16> {
+    let channel_count = usize::from(channels.max(1));
+    let mono: Vec<i16> = samples
+        .chunks_exact(channel_count)
+        .map(|frame| {
+            let sum: i32 = frame.iter().map(|sample| i32::from(*sample)).sum();
+            (sum / i32::try_from(frame.len()).unwrap_or(1)) as i16
+        })
+        .collect();
+    if mono.is_empty() || source_sample_rate == 0 || target_sample_rate == 0 {
+        return Vec::new();
+    }
+    if source_sample_rate == target_sample_rate {
+        return mono;
+    }
+    let output_len =
+        mono.len().saturating_mul(target_sample_rate as usize) / source_sample_rate as usize;
+    let mut output = Vec::with_capacity(output_len);
+    for index in 0..output_len {
+        let source_index =
+            index.saturating_mul(source_sample_rate as usize) / target_sample_rate as usize;
+        if let Some(sample) = mono.get(source_index) {
+            output.push(*sample);
+        }
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        mark_worker_stopped, rms_u16, should_emit_command_stop, stream_failure, CaptureState,
-        VoiceWakeMode, WakeState,
+        mark_worker_stopped, resample_pcm16_mono, rms_u16, should_emit_command_stop,
+        stream_failure, CaptureState, VoiceWakeMode, WakeState,
     };
 
     #[test]
@@ -705,5 +789,12 @@ mod tests {
             stream_failure(&rx),
             Err("Microphone stream failed: device disconnected".to_string()),
         );
+    }
+
+    #[test]
+    fn pcm_stream_is_mono_and_resampled_for_gateway_relay() {
+        let samples = [1_000, 3_000, 5_000, 7_000];
+        let pcm = resample_pcm16_mono(&samples, 48_000, 2, 24_000);
+        assert_eq!(pcm, vec![2_000]);
     }
 }

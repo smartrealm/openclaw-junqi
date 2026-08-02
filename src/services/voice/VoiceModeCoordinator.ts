@@ -174,6 +174,13 @@ export class VoiceModeCoordinator {
     return true;
   }
 
+  resumeListening(turnId: string | null, context: VoiceModeContext): boolean {
+    if (!this.isCurrentTurn(turnId, context)) return false;
+    if (this.snapshot.phase !== 'triggered' && this.snapshot.phase !== 'transcribing') return false;
+    this.commit({ ...this.snapshot, phase: 'listening', error: null });
+    return true;
+  }
+
   private canAcceptInput(turnId: string | null, context: VoiceModeContext): boolean {
     return this.isCurrentTurn(turnId, context)
       && (this.snapshot.phase === 'listening'

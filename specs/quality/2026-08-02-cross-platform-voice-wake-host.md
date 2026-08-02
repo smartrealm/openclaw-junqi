@@ -19,6 +19,14 @@
 - The window hides after the existing checkpoint only while the real wake-word listener is armed. Tray Quit remains an explicit exit.
 - The login-start choice starts JunQi on macOS, Windows, and Linux with the main window hidden. It restores only the explicitly saved session key after its Gateway connection is authenticated; it does not persist a connection ID, credential, audio, or guessed target.
 
+## Talk Relay Extension
+
+- Continuous Jarvis Talk is available only when the selected, authenticated Gateway returns a `talk.catalog` payload with `speech.ready: true` and a configured provider that explicitly supports `realtime`, `gateway-relay`, `agent-consult`, PCM16 input, and barge-in.
+- JunQi creates only `talk.session.create({ mode: 'realtime', transport: 'gateway-relay', brain: 'agent-consult' })` sessions. It does not use browser-owned WebRTC or provider WebSocket paths for the desktop host.
+- Audio is sent only as native PCM16 chunks. A complete WAV capture must not be submitted to `talk.session.appendAudio`.
+- Gateway `talk.event` envelopes are validated and ordered per Talk session. Repeated or stale sequence numbers cannot update a newer voice turn.
+- A user speech interruption must first stop local output and then request `talk.session.cancelOutput` on the same attested connection. Connection changes close the local Talk owner and discard later events.
+
 ## Non-Goals
 
 - Bundling model assets, generating keyword token files, automatic model download, or claiming a default JunQi pronunciation.
@@ -31,3 +39,4 @@
 - A selected model directory is persisted in JunQi application data and must pass both asset validation and Sherpa detector creation before it is reported available.
 - A wake listener cannot be activated by VAD alone.
 - Existing dictation, session ownership, draft confirmation, and Gateway connection fences remain in force.
+- A Gateway without the explicit realtime relay capability remains in the current confirmation-required voice-draft path; it is never presented as continuous Talk.

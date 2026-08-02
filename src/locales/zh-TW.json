@@ -1534,6 +1534,8 @@
     "voiceWorkspaceListening": "正在本機監聽",
     "voiceWorkspaceTriggered": "已偵測到語音",
     "voiceWorkspaceTranscribing": "正在準備草稿",
+    "voiceWorkspaceThinking": "正在處理請求",
+    "voiceWorkspaceSpeaking": "正在語音回覆",
     "voiceWorkspaceDraftReady": "草稿已準備，等待確認",
     "voiceWorkspaceUnavailable": "語音喚醒無法使用",
     "voiceWorkspacePreparing": "正在準備語音輸入",

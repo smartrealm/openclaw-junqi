@@ -34,6 +34,11 @@ import {
   routeVoiceWakeGatewayEvent,
   subscribeVoiceWakeGatewayEvents,
 } from './voiceWakeEventBridge';
+import { TalkGatewayClient } from './TalkGatewayClient';
+import {
+  routeTalkGatewayEvent,
+  subscribeTalkGatewayEvents,
+} from './talkEventBridge';
 import type { GatewayAuthorizationIssue } from './messageRouter';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
 import type { GatewayAttachment } from '@/services/chat/types';
@@ -128,6 +133,19 @@ export const voiceWakeGatewayClient = new VoiceWakeGatewayClient({
     expectedConnectionId,
   ),
   subscribe: subscribeVoiceWakeGatewayEvents,
+});
+
+export const talkGatewayClient = new TalkGatewayClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+  subscribe: subscribeTalkGatewayEvents,
 });
 
 export { GatewayAgentDisplayNameUpdateError };
@@ -539,9 +557,12 @@ const sessionRunReconciler = new OpenClawSessionRunReconciler({
 
 // Collaboration plugin streams are refresh hints, not chat/agent activity.
 // Route them through the typed bridge before the generic ChatHandler path.
-connection.onEvent = (msg: unknown) => routeVoiceWakeGatewayEvent(
+connection.onEvent = (msg: unknown) => routeTalkGatewayEvent(
   msg,
-  (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+  (talkRemainder) => routeVoiceWakeGatewayEvent(
+    talkRemainder,
+    (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+  ),
 );
 
 // ── Public API (matches original gateway.ts exactly) ──

@@ -22,6 +22,12 @@ After a confirmed or discarded audio draft, the session-scoped automatic arm req
 
 Wake mode is not confined to the composer. Once selected, it presents a fixed full-window control surface above the desktop workspace for local listening, keyword detection, draft confirmation, model configuration, and recoverable errors. Escape and the visible stop controls release capture. The assistant pet and Dynamic Island remain separate auxiliary projections and receive only mode, phase, confirmation-needed, and error cues.
 
+## Talk Relay Boundary
+
+JunQi now has a fenced client for the installed OpenClaw `talk.catalog` and `talk.session.*` protocol, plus a strict `talk.event` bridge. The client rejects a missing or unready catalog and only creates the documented `realtime/gateway-relay/agent-consult` session shape after the catalog explicitly advertises PCM16 input and barge-in support. It binds every request to the attested Gateway connection and rejects a response if that connection changed.
+
+The event bridge validates the OpenClaw Talk envelope within `payload.talkEvent` and retains the highest sequence number per Talk session. Malformed Talk envelopes are consumed without falling through to chat handling; duplicate or stale event sequences are discarded. The native worker now emits PCM16/24000Hz/mono frames only after a VAD or verified keyword trigger, while preserving WAV only for the confirmation-required fallback. Gateway PCM output is queued through a Rust-owned Rodio/CPAL playback thread; it does not use Web Speech. The Talk relay is created on a keyword trigger rather than when the listener arms, so idle standby cannot consume its Gateway session TTL; early PCM is bounded and retained while that session connects.
+
 ## Automated Evidence
 
 - `pnpm exec tsc --noEmit` passed.
@@ -41,3 +47,4 @@ Wake mode is not confined to the composer. Once selected, it presents a fixed fu
 - No model archive is bundled in this change.
 - No microphone, login-start, tray, sleep-resume, or package validation has been performed on Windows, CentOS, or Ubuntu.
 - The local development machine is not evidence of target-platform behavior.
+- A real Talk relay session has not yet been exercised against a configured Gateway or on target operating systems.

@@ -8,6 +8,13 @@
 4. Added the voice workspace model selector, explicit session-scoped login restore, and close-to-tray behavior while armed.
 5. Renewed automatic arming after each completed draft, added bounded retry after native listener errors, moved voice-workspace IPC ownership to the composer hook, and made model settings writes atomic.
 6. Replaced the Wake mode composer-only presentation with a full-window control surface while preserving the existing pet and Dynamic Island projections.
+7. Added a fenced OpenClaw Talk catalog/session client and a validated, per-session ordered `talk.event` bridge for the `realtime/gateway-relay/agent-consult` contract.
+
+## In Progress
+
+1. Completed: native capture emits bounded PCM16/24000Hz/mono chunks after a verified trigger; WAV remains only for the confirmation-required fallback path.
+2. Completed: the Talk session owner is bound to the authenticated Gateway connection and selected OpenClaw session, with close/cancel behavior on route, runtime, or connection change.
+3. Completed in the main window: the full-window surface reflects Talk connecting and speaking phases; pet/Dynamic Island remain derived projections.
 
 ## Validation
 
@@ -20,3 +27,4 @@
 - Audit the exact model archive checksum and license before shipping a downloader or bundle.
 - Produce approved `keywords.txt` files for supported wake phrases using the upstream tokenization process.
 - Measure false accepts, false rejects, idle CPU, memory, and battery impact on each supported platform.
+- Run a real configured Gateway relay session on macOS, Windows, CentOS, and Ubuntu before declaring continuous Talk available on those targets.

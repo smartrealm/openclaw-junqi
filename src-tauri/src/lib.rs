@@ -144,6 +144,8 @@ pub fn run() {
             commands::voice::voice_start_recording,
             commands::voice::voice_stop_recording,
             commands::voice::voice_is_recording,
+            commands::voice_talk_playback::voice_talk_play_pcm,
+            commands::voice_talk_playback::voice_talk_stop_playback,
             commands::voice_wake::voice_wake_start,
             commands::voice_wake::voice_wake_stop,
             commands::voice_wake::voice_wake_status,

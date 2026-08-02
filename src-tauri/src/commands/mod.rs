@@ -82,6 +82,7 @@ pub mod terminal_workspace_watch;
 pub(crate) mod uninstall;
 pub mod usage;
 pub mod voice;
+pub mod voice_talk_playback;
 pub mod voice_wake;
 pub mod voice_wake_model;
 pub mod workbench_provider;
