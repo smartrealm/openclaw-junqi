@@ -127,6 +127,7 @@ function acceptHandshake(
   connectionId: string,
   scopes = ['operator.admin'],
   deviceToken?: string,
+  methods: string[] = [],
 ) {
   socket.receive({
     type: 'res',
@@ -136,7 +137,7 @@ function acceptHandshake(
       type: 'hello-ok',
       protocol: 4,
       server: { version: '2026.7.1', connId: connectionId },
-      features: { methods: [], events: [] },
+      features: { methods, events: [] },
       auth: { role: 'operator', scopes, ...(deviceToken ? { deviceToken } : {}) },
     },
   });
@@ -169,6 +170,33 @@ function resetSockets() {
 }
 
 describe('Gateway credential security regression gates', () => {
+  it('records the hello-ok method advertisement and clears it on disconnect', async () => {
+    resetSockets();
+    const connection = new GatewayConnection();
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(
+          socket,
+          message,
+          'daily-connection',
+          ['operator.read', 'operator.write'],
+          undefined,
+          ['audit.activity.list', 'audit.list'],
+        );
+      }
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), true);
+    assert.equal(connection.hasAdvertisedMethod('audit.list'), true);
+    connection.disconnect();
+    assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), null);
+    stopPolling();
+    await turn();
+  });
+
   it('requests only read/write scopes in the daily socket handshake', async () => {
     resetSockets();
     const connection = new GatewayConnection({

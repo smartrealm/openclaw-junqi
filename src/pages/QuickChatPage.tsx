@@ -99,6 +99,10 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   const sessionKey = ownedSessionKey || fallbackSessionKey;
   const sessionId = useChatStore((state) => state.sessions.find((session) => session.key === sessionKey)?.sessionId);
   const sidePanel = useChatSidePanel(sessionKey);
+  const loadTraceAuditEvents = useCallback(
+    (runId: string) => gateway.listAuditEvents({ runId, limit: 500 }),
+    [],
+  );
   const isTyping = useChatStore((state) => Boolean(state.typingBySession[sessionKey]));
   const queue = useChatStore((state) => state.messageQueue[sessionKey] ?? EMPTY_QUEUE);
   const queueCount = queue.length;
@@ -596,6 +600,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
             trace={projectChatResponseTrace(group)}
             onClose={sidePanel.closePanel}
             onOpenSourceMessage={(sourceMessageId) => sidePanel.openTraceSourceMessage(groupId, sourceMessageId)}
+            onLoadAuditEvents={loadTraceAuditEvents}
             overlay
           />
         ) : null;

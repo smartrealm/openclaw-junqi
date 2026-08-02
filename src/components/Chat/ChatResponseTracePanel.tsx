@@ -1,6 +1,10 @@
-import { History, ShieldCheck } from 'lucide-react';
+import { Activity, History, ShieldCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ChatResponseTrace } from './chatResponseTrace';
+import type {
+  ChatResponseTrace,
+  ChatResponseTraceAuditPage,
+} from './chatResponseTrace';
 import { ChatSidePanel } from './ChatSidePanel';
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import { ChatResponseTraceNodeCard } from './ChatResponseTraceNodeCard';
@@ -13,13 +17,30 @@ interface ChatResponseTracePanelProps {
   trace: ChatResponseTrace;
   onClose: () => void;
   onOpenSourceMessage: (sourceMessageId: string) => void;
+  onLoadAuditEvents?: (runId: string) => Promise<ChatResponseTraceAuditPage>;
   overlay?: boolean;
+}
+
+type AuditLoadState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'loaded'; page: ChatResponseTraceAuditPage }
+  | { kind: 'unsupported' }
+  | { kind: 'unavailable' };
+
+function auditErrorKind(error: unknown): 'unsupported' | 'unavailable' {
+  if (error && typeof error === 'object' && !Array.isArray(error)) {
+    const code = (error as Record<string, unknown>).code;
+    if (code === 'OPENCLAW_AUDIT_UNSUPPORTED') return 'unsupported';
+  }
+  return 'unavailable';
 }
 
 export function ChatResponseTracePanel({
   trace,
   onClose,
   onOpenSourceMessage,
+  onLoadAuditEvents,
   overlay = false,
 }: ChatResponseTracePanelProps) {
   const { t, i18n } = useTranslation();
@@ -34,6 +55,7 @@ export function ChatResponseTracePanel({
     ? sessionLabel
     : t('chat.trace.currentConversation');
   const titleId = `chat-trace-title-${trace.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const [auditState, setAuditState] = useState<AuditLoadState>({ kind: 'idle' });
   const status = trace.status === 'final'
     ? 'completed'
     : trace.status === 'streaming'
@@ -41,6 +63,27 @@ export function ChatResponseTracePanel({
       : trace.status === 'aborted'
         ? 'cancelled'
         : 'error';
+
+  useEffect(() => {
+    let active = true;
+    if (!trace.runId) {
+      setAuditState({ kind: 'idle' });
+      return () => { active = false; };
+    }
+    if (!onLoadAuditEvents) {
+      setAuditState({ kind: 'unavailable' });
+      return () => { active = false; };
+    }
+    setAuditState({ kind: 'loading' });
+    void onLoadAuditEvents(trace.runId)
+      .then((page) => {
+        if (active) setAuditState({ kind: 'loaded', page });
+      })
+      .catch((error: unknown) => {
+        if (active) setAuditState({ kind: auditErrorKind(error) });
+      });
+    return () => { active = false; };
+  }, [onLoadAuditEvents, trace.runId]);
 
   return (
     <ChatSidePanel
@@ -119,6 +162,71 @@ export function ChatResponseTracePanel({
               </p>
             </div>
           </div>
+        </section>
+
+        <section className="border-b border-aegis-border px-4 py-3" aria-label={t('chat.trace.audit.title')}>
+          <div className="flex items-center gap-2">
+            <Activity size={14} className="text-aegis-text-muted" />
+            <h3 className="text-[11px] font-semibold text-aegis-text">{t('chat.trace.audit.title')}</h3>
+            {auditState.kind === 'loaded' && (
+              <span className="text-[10px] text-aegis-text-dim">{auditState.page.events.length}</span>
+            )}
+          </div>
+          <p className="mt-1 text-[10px] leading-4 text-aegis-text-muted">
+            {t('chat.trace.audit.metadataOnly')}
+          </p>
+          {auditState.kind === 'idle' && !trace.runId && (
+            <p className="mt-2 text-[10px] text-aegis-text-dim">{t('chat.trace.audit.noRun')}</p>
+          )}
+          {auditState.kind === 'loading' && (
+            <p className="mt-2 text-[10px] text-aegis-text-dim">{t('chat.trace.audit.loading')}</p>
+          )}
+          {auditState.kind === 'unsupported' && (
+            <p className="mt-2 text-[10px] text-aegis-text-dim">{t('chat.trace.audit.unsupported')}</p>
+          )}
+          {auditState.kind === 'unavailable' && (
+            <p className="mt-2 text-[10px] text-aegis-text-dim">{t('chat.trace.audit.unavailable')}</p>
+          )}
+          {auditState.kind === 'loaded' && (
+            <>
+              <div className="mt-2 flex items-center justify-between text-[9px] text-aegis-text-dim">
+                <span>{t(`chat.trace.audit.source.${auditState.page.source}`)}</span>
+                {auditState.page.nextCursor && <span>{t('chat.trace.audit.moreAvailable')}</span>}
+              </div>
+              {auditState.page.events.length === 0 ? (
+                <p className="mt-2 text-[10px] text-aegis-text-dim">{t('chat.trace.audit.empty')}</p>
+              ) : (
+                <ol className="mt-2 space-y-1.5">
+                  {auditState.page.events.map((event) => (
+                    <li key={`${event.eventId}-${event.sequence}`} className="rounded-md border border-aegis-border/70 bg-[rgb(var(--aegis-overlay)/0.025)] px-2.5 py-2">
+                      <div className="flex items-start gap-2">
+                        <span className="min-w-0 flex-1 text-[10px] font-medium text-aegis-text">
+                          {t(`chat.trace.audit.kind.${event.kind}`)} · {event.action}
+                        </span>
+                        <span className="shrink-0 text-[9px] text-aegis-text-dim">
+                          {t(`chat.trace.audit.status.${event.status}`)}
+                        </span>
+                      </div>
+                      <div className="mt-1 grid grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-[9px] text-aegis-text-dim">
+                        <span>{t('chat.trace.audit.recorded')}</span>
+                        <span className="text-aegis-text-muted">{formatTraceTimestamp(event.occurredAt, i18n.language)}</span>
+                        <span>{t('chat.trace.audit.actor')}</span>
+                        <span className="break-all text-aegis-text-muted">{event.actor.type}:{event.actor.id}</span>
+                        {event.toolName && (
+                          <>
+                            <span>{t('chat.trace.audit.tool')}</span>
+                            <span className="break-all text-aegis-text-muted">{event.toolName}</span>
+                          </>
+                        )}
+                        <span>{t('chat.trace.audit.sequence')}</span>
+                        <span className="text-aegis-text-muted">{event.sequence}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
+          )}
         </section>
 
         <section className="px-4 py-3" aria-label={t('chat.trace.timeline')}>

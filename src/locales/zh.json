@@ -1448,6 +1448,38 @@
       "chatTranscript": "Gateway 对话记录",
       "activity": "执行活动",
       "activityCount": "{{count}} 个已记录阶段",
+      "audit": {
+        "title": "OpenClaw 审计账本",
+        "metadataOnly": "以下仅展示已连接 Gateway 提供的元数据记录，不包含提示词、工具参数、工具结果或原始错误。",
+        "noRun": "此追溯没有上游运行标识。",
+        "loading": "正在加载审计记录……",
+        "unsupported": "当前 Gateway 没有声明审计查询方法。",
+        "unavailable": "当前 Gateway 连接暂时无法提供审计记录。",
+        "empty": "上游没有返回匹配的审计记录。",
+        "moreAvailable": "上游还有更多记录。",
+        "recorded": "记录时间",
+        "actor": "执行者",
+        "tool": "工具",
+        "sequence": "序号",
+        "source": {
+          "activity": "版本化活动账本",
+          "legacy": "兼容运行与工具账本"
+        },
+        "kind": {
+          "agent_run": "智能体运行",
+          "tool_action": "工具动作",
+          "message": "消息"
+        },
+        "status": {
+          "started": "已开始",
+          "succeeded": "已成功",
+          "failed": "失败",
+          "cancelled": "已取消",
+          "timed_out": "已超时",
+          "blocked": "已阻塞",
+          "unknown": "未知"
+        }
+      },
       "technicalDetails": "查看技术详情",
       "unknownTool": "外部工具：{{name}}",
       "sourceRecords": "原始会话记录",

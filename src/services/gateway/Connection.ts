@@ -250,6 +250,7 @@ export class GatewayConnection {
   private attemptTimer: ReturnType<typeof setTimeout> | null = null;
   private handshakeRequestId: string | null = null;
   private runtimeIdentityConnectionId: string | null = null;
+  private advertisedMethods: Set<string> | null = null;
 
   // ── Pairing detection (gentle retry instead of exponential backoff) ──
   private pairingRequired = false;
@@ -335,6 +336,21 @@ export class GatewayConnection {
     return this.runtimeIdentityConnectionId;
   }
 
+  /**
+   * Returns the method set explicitly advertised by the current hello-ok.
+   * `null` means this socket has not completed a handshake or the Gateway did
+   * not provide a methods list; an empty list is a valid explicit advertisement.
+   */
+  getAdvertisedMethods(): readonly string[] | null {
+    return this.advertisedMethods ? [...this.advertisedMethods] : null;
+  }
+
+  /** Returns true/false for an attested advertisement, or null when unknown. */
+  hasAdvertisedMethod(method: string): boolean | null {
+    if (!this.advertisedMethods) return null;
+    return this.advertisedMethods.has(method);
+  }
+
   // ══════════════════════════════════════════════════════
   // Setup
   // ══════════════════════════════════════════════════════
@@ -367,6 +383,7 @@ export class GatewayConnection {
       this.ws.close();
       this.ws = null;
     }
+    this.advertisedMethods = null;
 
     this.connecting = true;
     this.lastError = null;
@@ -419,6 +436,7 @@ export class GatewayConnection {
       this.connected = false;
       this.connecting = false;
       this.ws = null;
+      this.advertisedMethods = null;
       if (!this.transient) this.invalidateObservedRuntimeIdentity();
       this.rejectAllPending(new GatewayTransportLifecycleError(
         event.reason || 'Gateway connection closed',
@@ -467,6 +485,7 @@ export class GatewayConnection {
       this.ws.close();
       this.ws = null;
     }
+    this.advertisedMethods = null;
     this.rejectAllPending(new GatewayTransportLifecycleError());
     this.connected = false;
     this.connecting = false;
@@ -561,6 +580,12 @@ export class GatewayConnection {
         if (response.ok !== false && (response.payload?.type === 'hello-ok' || response.type === 'hello-ok')) {
           debugLog('gateway', '[GW] Connected');
           const helloPayload = response.payload?.type === 'hello-ok' ? response.payload : response;
+          const advertisedMethods = helloPayload.features?.methods;
+          this.advertisedMethods = Array.isArray(advertisedMethods)
+            ? new Set(advertisedMethods.filter((method: unknown): method is string => (
+              typeof method === 'string' && method.trim().length > 0
+            )))
+            : null;
           const auth = helloPayload.auth;
           if (!this.transient) {
             const helloObservation = buildGatewayHelloObservation(this.url, helloPayload);
@@ -882,6 +907,7 @@ export class GatewayConnection {
   }
 
   private invalidateObservedRuntimeIdentity() {
+    this.advertisedMethods = null;
     const connectionId = this.runtimeIdentityConnectionId;
     this.runtimeIdentityConnectionId = null;
     if (!connectionId) return;
@@ -960,6 +986,7 @@ export class GatewayConnection {
       this.ws.close();
       this.ws = null;
     }
+    this.advertisedMethods = null;
     this.connected = false;
     this.connecting = false;
     this.invalidateObservedRuntimeIdentity();

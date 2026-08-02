@@ -49,6 +49,10 @@ import {
   OpenClawTaskLedgerClient,
   type OpenClawTaskListInput,
 } from './OpenClawTaskLedgerClient';
+import {
+  OpenClawAuditClient,
+  type OpenClawAuditListInput,
+} from './OpenClawAuditClient';
 import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 
@@ -160,6 +164,10 @@ function historyTaskObservation(response: unknown): {
 const connection = new GatewayConnection();
 const chatHandler = new ChatHandler(connection);
 const transcriptSubscription = new OpenClawSessionTranscriptSubscription(connection);
+const auditClient = new OpenClawAuditClient(
+  (method, params) => connection.request(method, params),
+  (method) => connection.hasAdvertisedMethod(method),
+);
 const SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS = 5_000;
 const RUN_STATE_LOOKUP_TIMEOUT_MS = 5_000;
 
@@ -798,6 +806,7 @@ export const gateway = {
   async listTasks(input: OpenClawTaskListInput = {}) { return taskLedger.list(input); },
   async getTask(taskId: string) { return taskLedger.get(taskId); },
   async cancelTask(taskId: string, reason?: string) { return taskLedger.cancel(taskId, reason); },
+  async listAuditEvents(input: OpenClawAuditListInput = {}) { return auditClient.list(input); },
   async createAgent(agent: GatewayAgentCreatePayload) { return agentManagement.create(agent); },
   async updateAgent(agentId: string, patch: GatewayAgentUpdateParams) {
     return requestPrivileged<{ ok: true; agentId: string }>('agents.update', { agentId, ...patch });

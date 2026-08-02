@@ -92,10 +92,25 @@ test('main and quick chat expose the same response trace entry and panel', () =>
   assert.doesNotMatch(tracePanelSource, /onOpenCollaborationHistory/);
   assert.match(tracePanelSource, /reviewTranscriptOnly/);
   assert.match(tracePanelSource, /onOpenSourceMessage/);
+  assert.match(tracePanelSource, /onLoadAuditEvents/);
+  assert.match(tracePanelSource, /metadataOnly/);
   assert.match(chatSource, /openTraceSourceMessage/);
   assert.match(quickChatSource, /openTraceSourceMessage/);
+  assert.match(chatSource, /listAuditEvents/);
+  assert.match(quickChatSource, /listAuditEvents/);
   assert.match(traceNodeCardSource, /technicalDetails/);
   assert.match(traceNodeCardSource, /viewSourceRecord/);
   assert.match(traceSourcePanelSource, /sourceRecordUnavailableDescription/);
   assert.doesNotMatch(tracePanelSource, /font-mono text-aegis-text-muted>\{trace\.sessionKey\}/);
+});
+
+test('audit ledger labels exist in every shipped language', () => {
+  for (const language of ['en', 'zh', 'zh-TW']) {
+    const locale = JSON.parse(readFileSync(
+      new URL(`../../locales/${language}.json`, import.meta.url),
+      'utf8',
+    )) as { chat?: { trace?: { audit?: Record<string, unknown> } } };
+    assert.equal(typeof locale.chat?.trace?.audit?.title, 'string', `${language} is missing chat.trace.audit.title`);
+    assert.equal(typeof locale.chat?.trace?.audit?.metadataOnly, 'string', `${language} is missing chat.trace.audit.metadataOnly`);
+  }
 });

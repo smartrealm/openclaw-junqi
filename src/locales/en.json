@@ -1450,6 +1450,38 @@
       "chatTranscript": "Gateway chat transcript",
       "activity": "Execution activity",
       "activityCount": "{{count}} recorded stage(s)",
+      "audit": {
+        "title": "OpenClaw audit ledger",
+        "metadataOnly": "Metadata-only records supplied by the connected Gateway. Prompts, tool arguments, results, and raw errors are not exposed here.",
+        "noRun": "This trace has no upstream run identifier.",
+        "loading": "Loading audit records...",
+        "unsupported": "The connected Gateway does not advertise an audit query method.",
+        "unavailable": "Audit records are unavailable for this Gateway connection.",
+        "empty": "No matching audit records were returned.",
+        "moreAvailable": "More records are available upstream.",
+        "recorded": "Recorded",
+        "actor": "Actor",
+        "tool": "Tool",
+        "sequence": "Sequence",
+        "source": {
+          "activity": "Versioned activity ledger",
+          "legacy": "Compatibility run/tool ledger"
+        },
+        "kind": {
+          "agent_run": "Agent run",
+          "tool_action": "Tool action",
+          "message": "Message"
+        },
+        "status": {
+          "started": "Started",
+          "succeeded": "Succeeded",
+          "failed": "Failed",
+          "cancelled": "Cancelled",
+          "timed_out": "Timed out",
+          "blocked": "Blocked",
+          "unknown": "Unknown"
+        }
+      },
       "technicalDetails": "View technical details",
       "unknownTool": "External tool: {{name}}",
       "sourceRecords": "Source records",

@@ -1417,6 +1417,38 @@
       "chatTranscript": "Gateway 對話記錄",
       "activity": "執行活動",
       "activityCount": "{{count}} 個已記錄階段",
+      "audit": {
+        "title": "OpenClaw 審計帳本",
+        "metadataOnly": "以下僅顯示已連接 Gateway 提供的中繼資料記錄，不包含提示詞、工具參數、工具結果或原始錯誤。",
+        "noRun": "此追溯沒有上游運行識別碼。",
+        "loading": "正在載入審計記錄……",
+        "unsupported": "目前 Gateway 沒有宣告審計查詢方法。",
+        "unavailable": "目前 Gateway 連線暫時無法提供審計記錄。",
+        "empty": "上游沒有返回符合的審計記錄。",
+        "moreAvailable": "上游還有更多記錄。",
+        "recorded": "記錄時間",
+        "actor": "執行者",
+        "tool": "工具",
+        "sequence": "序號",
+        "source": {
+          "activity": "版本化活動帳本",
+          "legacy": "相容運行與工具帳本"
+        },
+        "kind": {
+          "agent_run": "智能體運行",
+          "tool_action": "工具動作",
+          "message": "訊息"
+        },
+        "status": {
+          "started": "已開始",
+          "succeeded": "已成功",
+          "failed": "失敗",
+          "cancelled": "已取消",
+          "timed_out": "已逾時",
+          "blocked": "已阻塞",
+          "unknown": "未知"
+        }
+      },
       "technicalDetails": "查看技術詳情",
       "unknownTool": "外部工具：{{name}}",
       "sourceRecords": "原始對話記錄",

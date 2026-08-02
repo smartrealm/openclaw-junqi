@@ -21,6 +21,17 @@ function failedGatewayCall(
 }
 
 describe('GatewayConnection request identity', () => {
+  it('keeps advertised Gateway methods tri-state across a socket lifecycle', () => {
+    const connection = new GatewayConnection() as any;
+    assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), null);
+    connection.advertisedMethods = new Set(['audit.activity.list']);
+    assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), true);
+    assert.equal(connection.hasAdvertisedMethod('audit.list'), false);
+    assert.deepEqual(connection.getAdvertisedMethods(), ['audit.activity.list']);
+    connection.disconnect();
+    assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), null);
+  });
+
   it('uses the recoverable transport contract before connect and for pending disconnects', async () => {
     const connection = new GatewayConnection();
     await assert.rejects(

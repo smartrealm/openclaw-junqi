@@ -257,6 +257,10 @@ function ChatViewContent() {
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const sidePanel = useChatSidePanel(activeSessionKey);
+  const loadTraceAuditEvents = useCallback(
+    (runId: string) => gateway.listAuditEvents({ runId, limit: 500 }),
+    [],
+  );
   const isLoadingHistory = useChatStore(
     (s) => Boolean(s.loadingHistoryBySession[activeSessionKey]),
   );
@@ -1493,6 +1497,7 @@ function ChatViewContent() {
             trace={projectChatResponseTrace(group)}
             onClose={sidePanel.closePanel}
             onOpenSourceMessage={(sourceMessageId) => sidePanel.openTraceSourceMessage(groupId, sourceMessageId)}
+            onLoadAuditEvents={loadTraceAuditEvents}
           />
         ) : null;
       })()}
