@@ -7,4 +7,4 @@
 3. 已配置目录条目不会重新执行添加操作，而是进入既有配置区域。
 4. 会话标签修改必须符合当前 `sessions.patch` 管理员权限。
 5. 本机置顶、未读、归档必须明确不等同于 OpenClaw 持久会话字段，并能恢复归档会话。
-6. 不得将任意会话分叉或用户分组描述为 OpenClaw 原生能力。
+6. 会话分叉、置顶、未读、归档和分组的产品体验参照 OpenClaw Web UI；其 Gateway 持久化边界以当前安装版本 schema 为准，详见 `2026-08-02-openclaw-native-session-experience.md`。

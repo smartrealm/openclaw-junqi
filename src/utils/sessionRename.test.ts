@@ -109,18 +109,4 @@ describe('applySessionRename', () => {
     assert.deepEqual(patches, []);
   });
 
-  test('renames an unmaterialized local session without calling OpenClaw', async () => {
-    useChatStore.getState().addLocalSession({
-      key: TEST_KEY,
-      label: 'New session',
-      agentId: 'test',
-      createdAt: Date.now(),
-    });
-
-    const result = await applySessionRename(TEST_KEY, 'Local draft');
-
-    assert.deepEqual(result, { ok: true, label: 'Local draft' });
-    assert.deepEqual(patches, []);
-    assert.equal(chatLabel(), 'Local draft');
-  });
 });

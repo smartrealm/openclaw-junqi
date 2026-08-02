@@ -2,7 +2,6 @@
 // 不在组件内联逻辑 — 全部抽到此处，方便单元测试
 
 import type { Session } from '@/stores/chatStore';
-import { isUnmaterializedLocalSession } from '@/utils/sessionLifecycle';
 
 export function isSessionActive(sx: Session): boolean {
   if (sx.running === true) return true;
@@ -93,21 +92,6 @@ export function resolveExpandedSessionBuckets(
     }
   }
   return expanded;
-}
-
-export function isEmptyTransientSession(
-  session: Session | undefined,
-  messages: unknown[] | undefined,
-): boolean {
-  if (!session) return false;
-  if (session.key === 'agent:main:main') return false;
-  if (!isUnmaterializedLocalSession(session, messages)) return false;
-  if (session.pinned || session.archived) return false;
-  if (isSessionActive(session)) return false;
-  if (messages && messages.length > 0) return false;
-  if (session.lastMessage || session.lastTimestamp || session.lastActive || session.updatedAt) return false;
-  if ((session.totalTokens ?? 0) > 0) return false;
-  return /^(新会话|new session|untitled)$/i.test((session.label || '').trim());
 }
 
 export function sessionTitle(sx: Session, firstUserMessage?: string): string {

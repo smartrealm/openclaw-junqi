@@ -2,8 +2,9 @@
 // 每个 Panel 是真 React 组件，hooks 各自管理。Registry 按 tab 分发。
 
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Blocks, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, type LucideIcon } from 'lucide-react';
+import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Blocks, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, Ellipsis, Pin, Pencil, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -14,7 +15,6 @@ import { SidebarPrimaryAction } from './SidebarPrimaryAction';
 import { resolveTab, type SidebarTab } from './tab-utils';
 import {
   bucketSessionsByActivity,
-  isEmptyTransientSession,
   isSessionBucketKey,
   resolveExpandedSessionBuckets,
   sessionActivityTime,
@@ -24,7 +24,8 @@ import {
 } from './sidebarUtils';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
-import { createAgentSessionKey, isAgentMainSession } from '@/utils/sessionLifecycle';
+import { createNativeSession } from '@/utils/sessionCreate';
+import { useNotificationStore } from '@/stores/notificationStore';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import {
   agentIdFromSessionKey,
@@ -38,6 +39,8 @@ import { resolveBackgroundActivityNavigation } from '@/utils/backgroundActivityN
 import { resolveSessionChannelPresentation } from '@/utils/sessionChannelPresentation';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 import { SessionChannelIcon } from '@/components/shared/SessionChannelIcon';
+import { SessionActionsMenu } from '@/components/Chat/session-actions/SessionActionsMenu';
+import type { SessionGroup } from '@/services/chat/sessionOrganization';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
 const BusinessApplicationsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.BusinessApplicationsPanel })));
@@ -93,17 +96,6 @@ function formatSidebarTime(timestampMs: number): string {
   return date.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
 }
 
-function cleanupEmptyActiveSession(nextSessionKey?: string): boolean {
-  const state = useChatStore.getState();
-  const key = state.activeSessionKey;
-  if (!key || key === nextSessionKey) return false;
-  const session = state.sessions.find((s) => s.key === key);
-  const messages = state.messagesPerSession[key] ?? (key === state.activeSessionKey ? state.messages : []);
-  if (!isEmptyTransientSession(session, messages)) return false;
-  state.removeSession(key);
-  return true;
-}
-
 // ═══════════════════════════════════════════════════════════
 // 4 个 Panel — 真正 React 组件，hooks 各组件内独立调用
 // ═══════════════════════════════════════════════════════════
@@ -122,6 +114,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
   const [renamingInFlight, setRenamingInFlight] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
   const agentId = sessionAgentId(session, sessionKey);
   const agentFallbackName = agentId === 'main' ? t('agents.mainAgent', 'Main Agent') : agentId;
   const agentName = getAgentDisplayName(agents.find((agent: any) => agent?.id === agentId), agentFallbackName);
@@ -146,13 +139,21 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
       ? t('chat.sessionCompleted', 'Reply ready')
       : '';
   const timeLabel = formatSidebarTime(sessionActivityTime(session));
-  const canDelete = !isAgentMainSession(sessionKey);
+  const [actionsPosition, setActionsPosition] = useState<{ x: number; y: number } | null>(null);
 
   const goSession = () => {
-    cleanupEmptyActiveSession(sessionKey);
     useChatStore.getState().openTab(sessionKey);
     navigate('/chat');
   };
+
+  useEffect(() => {
+    if (!actionsPosition) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!actionsMenuRef.current?.contains(event.target as Node)) setActionsPosition(null);
+    };
+    document.addEventListener('mousedown', dismiss);
+    return () => document.removeEventListener('mousedown', dismiss);
+  }, [actionsPosition]);
 
   const startRename = useCallback(() => {
     setRenameValue(currentTitle);
@@ -185,16 +186,6 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
       setRenamingInFlight(false);
     }
   }, [renameValue, renamingInFlight, cancelRename, session, sessionKey]);
-
-  const handleDelete = useCallback(() => {
-    showConfirm(
-      t('chat.deleteSession', '删除会话'),
-      t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
-      async () => {
-        await deleteSessionEverywhere(sessionKey);
-      }
-    );
-  }, [sessionKey, t]);
 
   if (renaming) {
     return (
@@ -241,6 +232,10 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
     <div
       className="group/session relative mx-2 mb-1"
       onDoubleClick={(e) => { e.stopPropagation(); startRename(); }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setActionsPosition({ x: event.clientX, y: event.clientY });
+      }}
     >
       <div
         role="button"
@@ -331,36 +326,113 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); startRename(); }}
+          onClick={(event) => {
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            setActionsPosition({ x: rect.right - 204, y: rect.bottom + 4 });
+          }}
           onDoubleClick={(e) => e.stopPropagation()}
           className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-aegis-hover/55 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/45"
-          title={t('chat.renameSession', 'Rename session')}
-          aria-label={t('chat.renameSession', 'Rename session')}
+          title={t('chat.sessionActions', '会话操作')}
+          aria-label={t('chat.sessionActions', '会话操作')}
         >
-          <Pencil size={12} aria-hidden="true" />
+          <Ellipsis size={14} aria-hidden="true" />
+        </button>
+      </span>
+      {actionsPosition && createPortal(
+        <div ref={actionsMenuRef} className="fixed z-[9999]" style={{ left: actionsPosition.x, top: actionsPosition.y }}>
+          <SessionActionsMenu
+            session={session}
+            onDismiss={() => setActionsPosition(null)}
+            onRequestRename={startRename}
+            onOpenSession={(key) => {
+              useChatStore.getState().openTab(key);
+              navigate('/chat');
+            }}
+          />
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+function SessionGroupHeader({ group, count }: { group: SessionGroup; count: number }) {
+  const { t } = useTranslation();
+  const renameSessionGroup = useChatStore((state) => state.renameSessionGroup);
+  const deleteSessionGroup = useChatStore((state) => state.deleteSessionGroup);
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(group.label);
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1 px-3 py-1.5">
+        <Folder size={11} className="shrink-0 opacity-70" aria-hidden="true" />
+        <input
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              renameSessionGroup(group.id, label);
+              setEditing(false);
+            }
+            if (event.key === 'Escape') {
+              setLabel(group.label);
+              setEditing(false);
+            }
+          }}
+          className="h-6 min-w-0 flex-1 rounded border border-aegis-primary/50 bg-aegis-bg px-1.5 text-[11px] text-aegis-text outline-none"
+          autoFocus
+        />
+        <button
+          type="button"
+          onClick={() => { renameSessionGroup(group.id, label); setEditing(false); }}
+          className="flex h-6 w-6 items-center justify-center rounded text-aegis-primary hover:bg-aegis-primary/10"
+          title={t('common.save')}
+          aria-label={t('common.save')}
+        >
+          <Check size={11} aria-hidden="true" />
         </button>
         <button
           type="button"
-          disabled={!canDelete}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); if (canDelete) handleDelete(); }}
-          onDoubleClick={(e) => e.stopPropagation()}
-          className={clsx(
-            'flex h-6 w-6 items-center justify-center rounded transition-colors focus-visible:outline-none',
-            canDelete
-              ? 'hover:bg-aegis-danger/10 hover:text-aegis-danger focus-visible:ring-1 focus-visible:ring-aegis-danger/45'
-              : 'cursor-not-allowed text-aegis-text-dim/30',
-          )}
-          title={canDelete
-            ? t('chat.deleteSession', 'Delete session')
-            : t('chat.mainSessionCannotDelete', 'The main session cannot be deleted')}
-          aria-label={canDelete
-            ? t('chat.deleteSession', 'Delete session')
-            : t('chat.mainSessionCannotDelete', 'The main session cannot be deleted')}
+          onClick={() => { setLabel(group.label); setEditing(false); }}
+          className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-muted hover:bg-aegis-hover/40"
+          title={t('common.cancel')}
+          aria-label={t('common.cancel')}
         >
-          <Trash2 size={12} aria-hidden="true" />
+          <X size={11} aria-hidden="true" />
         </button>
-      </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group/session-group flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-aegis-text-dim">
+      <Folder size={11} className="opacity-70" aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate">{group.label}</span>
+      <span className="text-[10.5px] font-mono text-aegis-text-dim/70">{count}</span>
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-aegis-hover/40 hover:text-aegis-text group-hover/session-group:opacity-100 focus-visible:opacity-100"
+        title={t('chat.renameSessionGroup')}
+        aria-label={t('chat.renameSessionGroup')}
+      >
+        <Pencil size={10} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        onClick={() => showConfirm(
+          t('chat.deleteSessionGroup'),
+          t('chat.deleteSessionGroupConfirm'),
+          () => { deleteSessionGroup(group.id); },
+        )}
+        className="flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-aegis-danger/10 hover:text-aegis-danger group-hover/session-group:opacity-100 focus-visible:opacity-100"
+        title={t('chat.deleteSessionGroup')}
+        aria-label={t('chat.deleteSessionGroup')}
+      >
+        <Trash2 size={10} aria-hidden="true" />
+      </button>
     </div>
   );
 }
@@ -382,6 +454,7 @@ function WorkbenchPanel() {
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [preferredBucket, setPreferredBucket] = useState<SessionBucketKey>(readPreferredSessionBucket);
   const setSessionArchived = useChatStore((state) => state.setSessionArchived);
+  const sessionGroups = useChatStore((state) => state.sessionGroups);
 
   // Per-session first user message, keyed for O(1) lookups during render.
   // Without this we'd have to walk messagesPerSession on every session row.
@@ -403,6 +476,18 @@ function WorkbenchPanel() {
     [cronJobs, sessions],
   );
   const visibleSessions = presentation.conversations;
+  const pinnedSessions = useMemo(
+    () => sortSessionsByActivity(visibleSessions.filter((session) => session.pinned)),
+    [visibleSessions],
+  );
+  const groupedSessions = useMemo(() => new Map(sessionGroups.map((group) => [
+    group.id,
+    sortSessionsByActivity(visibleSessions.filter((session) => !session.pinned && session.groupId === group.id)),
+  ])), [sessionGroups, visibleSessions]);
+  const ungroupedSessions = useMemo(
+    () => visibleSessions.filter((session) => !session.pinned && !session.groupId),
+    [visibleSessions],
+  );
   const archivedSessions = useMemo(
     () => sortSessionsByActivity(sessions.filter((session) => session.archived)),
     [sessions],
@@ -420,7 +505,7 @@ function WorkbenchPanel() {
     .reduce((total, group) => total + group.length, 0);
   const backgroundRunning = Object.values(presentation.background)
     .some((group) => group.some((session) => activityProjection.bySessionKey.get(session.key)?.active));
-  const buckets = useMemo(() => bucketSessionsByActivity(visibleSessions, nowMs), [visibleSessions, nowMs]);
+  const buckets = useMemo(() => bucketSessionsByActivity(ungroupedSessions, nowMs), [nowMs, ungroupedSessions]);
   const requiredSessionKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const session of visibleSessions) {
@@ -459,7 +544,6 @@ function WorkbenchPanel() {
     setBackgroundUserOpen(true);
     const target = resolveBackgroundActivityNavigation(kind, sessionKey);
     if (target.kind === 'chat') {
-      cleanupEmptyActiveSession(target.sessionKey);
       useChatStore.getState().openTab(target.sessionKey);
       navigate('/chat');
       return;
@@ -504,25 +588,20 @@ function WorkbenchPanel() {
       <SidebarPrimaryAction
         icon={<Plus size={16} />}
         onClick={() => {
-            const state = useChatStore.getState();
-            const current = state.sessions.find((s) => s.key === state.activeSessionKey);
-            const currentMessages = state.messagesPerSession[state.activeSessionKey] ?? state.messages;
-            if (isEmptyTransientSession(current, currentMessages)) {
-              navigate('/chat');
-              return;
-            }
-            if (currentMessages.length === 0 && !current?.lastMessage && (current?.totalTokens ?? 0) <= 0) {
-              navigate('/chat');
-              return;
-            }
-            const newKey = createAgentSessionKey('main');
-            useChatStore.getState().addLocalSession({
-              key: newKey,
-              label: t('sidebar.newChat', 'New chat'),
+            void createNativeSession({
               agentId: 'main',
-              createdAt: Date.now(),
+              label: t('sidebar.newChat', 'New chat'),
+            }).then((result) => {
+              if (result.ok) {
+                navigate('/chat');
+                return;
+              }
+              useNotificationStore.getState().addToast(
+                'error',
+                t('sidebar.newChat', 'New chat'),
+                result.error,
+              );
             });
-            navigate('/chat');
         }}
       >
         {t('sidebar.newChat', '新建对话')}
@@ -584,6 +663,28 @@ function WorkbenchPanel() {
           <div className="px-4 py-3 text-[13px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
         )}
 
+        {pinnedSessions.length > 0 && (
+          <div className="mb-2">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-aegis-text-dim">
+              <Pin size={11} className="opacity-70" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate">{t('chat.pinnedSessions')}</span>
+              <span className="text-[10.5px] font-mono text-aegis-text-dim/70">{pinnedSessions.length}</span>
+            </div>
+            {pinnedSessions.map(renderRow)}
+          </div>
+        )}
+
+        {sessionGroups.map((group) => {
+          const groupSessions = groupedSessions.get(group.id) ?? [];
+          if (groupSessions.length === 0) return null;
+          return (
+            <div key={group.id} className="mb-2">
+              <SessionGroupHeader group={group} count={groupSessions.length} />
+              {groupSessions.map(renderRow)}
+            </div>
+          );
+        })}
+
         {buckets.map((bucket) => {
           if (bucket.sessions.length === 0) return null;
           const isOpen = expandedBucketKeys.has(bucket.key);
@@ -624,7 +725,6 @@ function WorkbenchPanel() {
                   type="button"
                   onClick={() => {
                     setSessionArchived(session.key, false);
-                    cleanupEmptyActiveSession(session.key);
                     useChatStore.getState().openTab(session.key);
                     navigate('/chat');
                   }}

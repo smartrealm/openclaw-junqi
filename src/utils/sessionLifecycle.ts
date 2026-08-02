@@ -7,10 +7,6 @@ type SessionKeyLike = {
   lastTimestamp?: string | number;
 };
 
-type LocalSessionLike = SessionKeyLike & {
-  localOnly?: boolean;
-};
-
 /**
  * A deleted OpenClaw transcript is identified by both its stable routing key
  * and its ephemeral session id.  Keeping the id prevents a confirmed delete
@@ -19,7 +15,6 @@ type LocalSessionLike = SessionKeyLike & {
  * that fail-closed case an explicit local restore is required.
  */
 const deletedSessionIdentities = new Map<string, string | null>();
-let fallbackKeySequence = 0;
 
 export function normalizeSessionKey(value: string): string {
   return String(value ?? '').trim();
@@ -74,19 +69,6 @@ export function hasSessionIdentityChanged(
   const previous = normalizeSessionId(previousSessionId);
   const next = normalizeSessionId(nextSessionId);
   return Boolean(previous && next && previous !== next);
-}
-
-/** A renderer placeholder has no corresponding OpenClaw transcript yet. */
-export function isUnmaterializedLocalSession(
-  session: LocalSessionLike | undefined,
-  messages: readonly unknown[] | undefined,
-): boolean {
-  return Boolean(
-    session
-    && session.localOnly === true
-    && !normalizeSessionId(session.sessionId)
-    && (!messages || messages.length === 0),
-  );
 }
 
 function sessionRevision(session: SessionKeyLike): number {
@@ -174,22 +156,6 @@ export function createLatestRequestGate(): LatestRequestGate {
   };
 }
 
-function randomKeySuffix(): string {
-  const randomUuid = globalThis.crypto?.randomUUID?.();
-  if (randomUuid) return randomUuid.replace(/-/g, '').slice(0, 12);
-  fallbackKeySequence += 1;
-  const random = Math.random().toString(36).slice(2, 10);
-  return `${fallbackKeySequence.toString(36)}${random}`;
-}
-
-export function createAgentSessionKey(agentId: string): string {
-  const normalizedAgentId = String(agentId ?? '').trim();
-  if (!normalizedAgentId || normalizedAgentId.includes(':')) {
-    throw new Error('Invalid agent id for session key');
-  }
-  return `agent:${normalizedAgentId}:desktop-${Date.now().toString(36)}-${randomKeySuffix()}`;
-}
-
 export const FALLBACK_NEW_SESSION_AGENT_ID = 'main';
 
 /**
@@ -213,5 +179,4 @@ export function resolveNewSessionAgentId(
 
 export function __resetSessionLifecycleForTest(): void {
   deletedSessionIdentities.clear();
-  fallbackKeySequence = 0;
 }

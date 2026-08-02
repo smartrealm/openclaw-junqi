@@ -38,6 +38,7 @@ import type { GatewayAuthorizationIssue } from './messageRouter';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
 import type { GatewayAttachment } from '@/services/chat/types';
 import { SessionSettingsClient } from './SessionSettingsClient';
+import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
 
 // Re-export types for consumers
 export type {
@@ -506,6 +507,9 @@ const sessionSettings = new SessionSettingsClient({
   request: (method, params) => connection.request(method, params),
   requestPrivileged: (method, params) => requestPrivileged(method, params),
 });
+const sessionLifecycle = new OpenClawSessionLifecycleClient(
+  (method, params) => connection.request(method, params),
+);
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
 });
@@ -673,6 +677,9 @@ export const gateway = {
 
   // Sessions & Agents
   async getSessions() { return connection.request('sessions.list', {}); },
+  async createSession(input: { agentId: string; label?: string; parentSessionKey?: string }) {
+    return sessionLifecycle.create(input);
+  },
   async describeSession(sessionKey: string) {
     return connection.request('sessions.describe', { key: sessionKey });
   },
@@ -746,7 +753,7 @@ export const gateway = {
     return sessionCommandCoordinator.runMutation(
       sessionKey,
       async () => {
-        const result = await connection.request('sessions.reset', { key: sessionKey });
+        const result = await requestPrivileged<Record<string, unknown>>('sessions.reset', { key: sessionKey });
         assertVerifiedSessionMutationResult(result, 'reset', sessionKey);
         await cleanupSessionArtifacts(sessionKey);
         return result;

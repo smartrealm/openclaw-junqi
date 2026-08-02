@@ -69,23 +69,3 @@ test('preserves local state and reports a core failure', async () => {
   assert.equal(useChatStore.getState().messagesPerSession[KEY]?.length, 1);
   assert.deepEqual(failures, ['reset rejected']);
 });
-
-test('resets an unmaterialized local session without calling OpenClaw', async () => {
-  let requests = 0;
-  useChatStore.setState({ sessions: [], messages: [], messagesPerSession: {} });
-  useChatStore.getState().addLocalSession({
-    key: KEY,
-    label: 'New session',
-    agentId: 'main',
-    createdAt: Date.now(),
-  });
-  setSessionResetDependenciesForTests({
-    resetRemote: async () => {
-      requests += 1;
-      return { success: true };
-    },
-  });
-
-  assert.equal(await resetSessionEverywhere(KEY), true);
-  assert.equal(requests, 0);
-});

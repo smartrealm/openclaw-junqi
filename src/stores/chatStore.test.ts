@@ -9,6 +9,11 @@ import {
 import { normalizeHistoryMessage } from '@/processing/normalizeHistoryMessage';
 import { gateway } from '@/services/gateway';
 import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
+import {
+  __resetSessionOrganizationForTests,
+  projectSessionOrganization,
+  setSessionOrganizationFlag,
+} from '@/services/chat/sessionOrganization';
 
 const MAIN_KEY = 'agent:main:main';
 const OTHER_KEY = 'agent:worker:main';
@@ -184,7 +189,7 @@ test('an equivalent sessions.list refresh preserves session object references', 
   assert.equal(useChatStore.getState().sessions[0], previous);
 });
 
-test('sessionId rotation atomically replaces transcript state and preserves user preferences', () => {
+test('sessionId rotation atomically replaces transcript state and resets identity-bound organization', () => {
   const transitions: Array<{ previousSessionId: string; nextSessionId: string }> = [];
   const unsubscribe = subscribeSessionIdentityTransitions((transition) => {
     if (transition.sessionKey === OTHER_KEY) transitions.push(transition);
@@ -218,7 +223,7 @@ test('sessionId rotation atomically replaces transcript state and preserves user
   assert.equal(state.messageQueue[OTHER_KEY], undefined);
   assert.deepEqual(state.messages, []);
   assert.equal(state.drafts[OTHER_KEY], 'keep this draft');
-  assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.pinned, true);
+  assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.pinned, false);
   assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.sessionId, 'new-id');
   assert.deepEqual(transitions, [{
     sessionKey: OTHER_KEY,
@@ -306,6 +311,28 @@ test('removeSession closes the tab, switches active session, and persists tab or
   assert.equal(state.sessions.some((session) => session.key === deletedKey), false);
   assert.equal(state.messagesPerSession[deletedKey], undefined);
   assert.equal(localStorage.getItem('aegis-open-tabs'), JSON.stringify([MAIN_KEY]));
+});
+
+test('opening or replacing the active tab clears the persisted unread marker', () => {
+  const unreadKey = 'agent:worker:unread-target';
+  const unreadSession = { key: unreadKey, sessionId: 'gateway-session-id', label: 'Unread target' };
+  const mainSession = { key: MAIN_KEY, sessionId: 'main-gateway-session-id', label: 'Main' };
+  __resetSessionOrganizationForTests();
+  setSessionOrganizationFlag(unreadSession, 'unread', true);
+  useChatStore.setState({
+    sessions: [mainSession, unreadSession],
+    openTabs: [MAIN_KEY],
+    activeSessionKey: MAIN_KEY,
+  });
+
+  useChatStore.getState().openTab(unreadKey);
+
+  assert.equal(projectSessionOrganization(unreadSession).unread, false);
+
+  setSessionOrganizationFlag(mainSession, 'unread', true);
+  useChatStore.getState().closeTab(unreadKey);
+  assert.equal(projectSessionOrganization(mainSession).unread, false);
+  __resetSessionOrganizationForTests();
 });
 
 test('history cache preserves structured Gateway blocks through ChatStore projection', () => {

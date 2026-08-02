@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Archive, Mail, Pin, PinOff, Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
+import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
 import { IconButton } from '@/components/shared/button/Button';
 import { useTranslation } from 'react-i18next';
@@ -15,8 +15,9 @@ import { themeHex, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
-import { resetSessionEverywhere } from '@/utils/sessionReset';
-import { coalesceSessionsByKey, createAgentSessionKey, isAgentMainSession, resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
+import { coalesceSessionsByKey, isAgentMainSession, resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
+import { createNativeSession } from '@/utils/sessionCreate';
+import { useNotificationStore } from '@/stores/notificationStore';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPersona';
 import type { SkillPersona } from '@/types/skills';
@@ -25,6 +26,7 @@ import { applyPersonaToSessionDraft } from '@/utils/personaDraft';
 import { resolveAgentStatusSnapshot } from './agentStatus';
 import { useOptionalCollaborationChat } from './CollaborationChatProvider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { SessionActionsMenu } from './session-actions/SessionActionsMenu';
 
 // ═══════════════════════════════════════════════════════════
 // ChatTabs — Browser-style tab bar
@@ -333,7 +335,8 @@ function NewSessionPicker({
   onClose,
   onOpenExisting,
   onOpenMainSession,
-  onCreateDesktopSession,
+  onCreateNativeSession,
+  creatingSession,
   loadingNew,
   newSessions,
   setNewSessions,
@@ -349,7 +352,8 @@ function NewSessionPicker({
   onClose: () => void;
   onOpenExisting: (key: string) => void;
   onOpenMainSession: (agentId: string, persona?: SkillPersona | null) => void;
-  onCreateDesktopSession: (agentId: string, persona?: SkillPersona | null) => void;
+  onCreateNativeSession: (agentId: string, persona?: SkillPersona | null) => Promise<boolean>;
+  creatingSession: boolean;
   openTabs: string[];
   loadingNew: boolean;
   newSessions: Session[];
@@ -608,10 +612,17 @@ function NewSessionPicker({
                 </span>
               </button>
               <button
-                onClick={() => { onCreateDesktopSession(selectedAgentId, effectivePersona); onClose(); }}
+                type="button"
+                disabled={creatingSession}
+                onClick={() => {
+                  void onCreateNativeSession(selectedAgentId, effectivePersona).then((created) => {
+                    if (created) onClose();
+                  });
+                }}
                 className={clsx(
                   'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-start transition-colors',
                   'hover:bg-[rgb(var(--aegis-overlay)/0.06)] border border-transparent hover:border-[rgb(var(--aegis-overlay)/0.08)]',
+                  creatingSession && 'cursor-wait opacity-60',
                 )}
               >
                 <FilePlus size={13} className="text-aegis-primary shrink-0" />
@@ -843,9 +854,6 @@ export function ChatTabs() {
     tokenUsage,
     currentThinking,
     sessionDefaults,
-    togglePinSession,
-    setSessionArchived,
-    markSessionUnread,
   } = useChatStore();
 
   // ── Drag-to-reorder sensors ──
@@ -882,6 +890,7 @@ export function ChatTabs() {
   const [showNewPicker, setShowNewPicker] = useState(false);
   const [newSessions, setNewSessions] = useState<Session[]>([]);
   const [loadingNew, setLoadingNew] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
   const newPickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -964,23 +973,28 @@ export function ChatTabs() {
     }
   }, [openTab]);
 
-  const handleCreateDesktopSession = useCallback((agentId: string, persona?: SkillPersona | null) => {
-    const desktopKey = createAgentSessionKey(agentId);
-
-    useChatStore.getState().addLocalSession({
-      key: desktopKey,
-      label: t('sidebar.newSession'),
-      agentId,
-      createdAt: Date.now(),
-    });
-    setShowNewPicker(false);
-    setPendingPersona(null);
-
-    if (persona && persona.prompt) {
-      applyPersonaToSessionDraft(desktopKey, persona);
+  const handleCreateNativeSession = useCallback(async (
+    agentId: string,
+    persona?: SkillPersona | null,
+  ): Promise<boolean> => {
+    if (creatingSession) return false;
+    setCreatingSession(true);
+    try {
+      const result = await createNativeSession({
+        agentId,
+        label: t('sidebar.newSession'),
+      });
+      if (!result.ok) {
+        useNotificationStore.getState().addToast('error', t('chat.newSession'), result.error);
+        return false;
+      }
+      setPendingPersona(null);
+      if (persona?.prompt) applyPersonaToSessionDraft(result.session.key, persona);
+      return true;
+    } finally {
+      setCreatingSession(false);
     }
-
-  }, [t]);
+  }, [creatingSession, t]);
 
   const agents = useGatewayDataStore((s) => s.agents);
   const mainAgentName = agents.find((a) => a.id === 'main')?.name || t('agents.mainAgent');
@@ -1076,48 +1090,6 @@ export function ChatTabs() {
     e.preventDefault();
     setCtxMenu({ key, x: e.clientX, y: e.clientY });
   }, []);
-
-  const requestDeleteSession = useCallback((key: string) => {
-    showConfirm(
-      t('chat.deleteSession'),
-      t('chat.deleteSessionConfirm'),
-      () => { void deleteSessionEverywhere(key); },
-    );
-  }, [t]);
-
-  const handleDeleteSession = useCallback(() => {
-    if (!ctxMenu) return;
-    const key = ctxMenu.key;
-    setCtxMenu(null);
-    requestDeleteSession(key);
-  }, [ctxMenu, requestDeleteSession]);
-
-  const handleResetSession = useCallback(async () => {
-    if (!ctxMenu) return;
-    const key = ctxMenu.key;
-    setCtxMenu(null);
-    showConfirm(
-      t('chat.resetSession'),
-      t('chat.resetSessionConfirm'),
-      async () => {
-        await resetSessionEverywhere(key);
-      }
-    );
-  }, [ctxMenu, t]);
-
-  const applyLocalSessionViewAction = useCallback((action: 'pin' | 'unread' | 'archive') => {
-    if (!ctxMenu) return;
-    const key = ctxMenu.key;
-    const session = sessions.find((candidate) => candidate.key === key);
-    if (!session) return;
-    if (action === 'pin') togglePinSession(key);
-    if (action === 'unread') markSessionUnread(key);
-    if (action === 'archive') {
-      setSessionArchived(key, !session.archived);
-      if (!session.archived) closeTab(key);
-    }
-    setCtxMenu(null);
-  }, [closeTab, ctxMenu, markSessionUnread, sessions, setSessionArchived, togglePinSession]);
 
   const startRename = useCallback((key: string, currentLabel: string) => {
     setEditingKey(key);
@@ -1376,90 +1348,26 @@ export function ChatTabs() {
 
       {/* ── Tab context menu (right-click) ── */}
       {ctxMenu && (() => {
-        const { isMainSession } = parseSessionKey(ctxMenu.key);
-        const isMainTab = ctxMenu.key === MAIN_SESSION;
         const session = sessions.find((candidate) => candidate.key === ctxMenu.key);
+        if (!session) return null;
         return createPortal(
           <div
             ref={ctxMenuRef}
-            className="fixed z-[9999] min-w-[180px] py-1 rounded-lg border bg-aegis-menu-bg border-aegis-menu-border text-[12px]"
-            style={{ left: ctxMenu.x, top: ctxMenu.y, boxShadow: 'var(--aegis-menu-shadow)' }}
+            className="fixed z-[9999]"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
           >
-            {/* Rename — works for all tabs. Use the same display-label helper as
-                the double-click path so the input pre-fills with the visible
-                label (topic / lastMessage / label — whichever the tab shows). */}
-            <button
-              onClick={() => {
-                const key = ctxMenu.key;
-                setCtxMenu(null);
-                const sess = sessions.find(s => s.key === key);
-                const current = sess
-                  ? sessionLabel(sess, key, agents, mainAgentName, messagesPerSession[key])
-                  : '';
-                startRename(key, current);
+            <SessionActionsMenu
+              session={session}
+              onDismiss={() => setCtxMenu(null)}
+              onRequestRename={() => {
+                startRename(
+                  session.key,
+                  sessionLabel(session, session.key, agents, mainAgentName, messagesPerSession[session.key]),
+                );
               }}
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-            >
-              <Pencil size={13} className="opacity-60" />
-              {t('chat.renameSession')}
-            </button>
-            {!isMainSession && session && (
-              <>
-                <button
-                  onClick={() => applyLocalSessionViewAction('pin')}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-                >
-                  {session.pinned ? <PinOff size={13} className="opacity-60" /> : <Pin size={13} className="opacity-60" />}
-                  {session.pinned ? t('chat.unpinSession') : t('chat.pinSession')}
-                </button>
-                <button
-                  onClick={() => applyLocalSessionViewAction('unread')}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-                >
-                  <Mail size={13} className="opacity-60" />
-                  {t('chat.markSessionUnread')}
-                </button>
-                <button
-                  onClick={() => applyLocalSessionViewAction('archive')}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-                >
-                  <Archive size={13} className="opacity-60" />
-                  {session.archived ? t('chat.restoreSession') : t('chat.archiveSession')}
-                </button>
-                <div className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
-              </>
-            )}
-            {/* Close tab — not for agent:main:main (always pinned) */}
-            {!isMainTab && (
-              <button
-                onClick={() => { closeTab(ctxMenu.key); setCtxMenu(null); }}
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-              >
-                <X size={13} className="opacity-60" />
-                {t('chat.closeTab')}
-              </button>
-            )}
-            {/* Reset — available for all sessions */}
-            <button
-              onClick={handleResetSession}
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-            >
-              <RefreshCw size={13} className="opacity-60" />
-              {t('chat.resetSession')}
-            </button>
-            {/* Delete — only for non-main sessions (main sessions are auto-recreated by Gateway) */}
-            {!isMainSession && (
-              <>
-                <div className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
-                <button
-                  onClick={handleDeleteSession}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-red-400 hover:bg-red-500/10 transition-colors"
-                >
-                  <Trash2 size={13} />
-                  {t('chat.deleteSession')}
-                </button>
-              </>
-            )}
+              onOpenSession={(key) => openTab(key)}
+              onCloseTab={() => closeTab(session.key)}
+            />
           </div>,
           document.body,
         );
@@ -1489,7 +1397,8 @@ export function ChatTabs() {
           onClose={() => { setShowNewPicker(false); setPendingPersona(null); }}
           onOpenExisting={(key) => openTab(key)}
           onOpenMainSession={handleOpenMainSession}
-          onCreateDesktopSession={handleCreateDesktopSession}
+          onCreateNativeSession={handleCreateNativeSession}
+          creatingSession={creatingSession}
           openTabs={openTabs}
           loadingNew={loadingNew}
           newSessions={newSessions}

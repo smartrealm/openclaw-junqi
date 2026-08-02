@@ -137,24 +137,4 @@ describe('deleteSessionEverywhere', () => {
     assert.equal(useChatStore.getState().sessions.some((session) => session.key === MAIN_KEY), true);
   });
 
-  test('removes an unmaterialized local session without calling OpenClaw', async () => {
-    useChatStore.setState({
-      sessions: [{ key: MAIN_KEY, label: 'Main' }],
-      openTabs: [MAIN_KEY],
-      activeSessionKey: MAIN_KEY,
-      messagesPerSession: {},
-    });
-    useChatStore.getState().addLocalSession({
-      key: TEST_KEY,
-      label: 'New session',
-      agentId: 'worker',
-      createdAt: Date.now(),
-    });
-
-    const result = await deleteSessionEverywhere(TEST_KEY);
-
-    assert.equal(result, true);
-    assert.deepEqual(requests, []);
-    assert.equal(useChatStore.getState().sessions.some((session) => session.key === TEST_KEY), false);
-  });
 });

@@ -35,7 +35,7 @@ export function BusinessGuide() {
   const connected = useChatStore((state) => state.connected);
   const hasModels = useChatStore((state) => state.availableModels.length > 0);
   const hasSession = useChatStore((state) => state.sessions.some((session) => (
-    session.key !== 'agent:main:main' && !session.localOnly
+    session.key !== 'agent:main:main'
   )));
   const hasAgent = useGatewayDataStore((state) => state.agents.length > 0);
   const active = useBusinessGuideActivation();

@@ -32,16 +32,25 @@ import {
   restoreSessionKey,
   withoutDeletedSessions,
 } from '@/utils/sessionLifecycle';
+import {
+  createSessionOrganizationGroup,
+  deleteSessionOrganizationGroup,
+  getSessionOrganizationGroups,
+  projectSessionOrganization,
+  removeSessionOrganization,
+  renameSessionOrganizationGroup,
+  setSessionOrganizationFlag,
+  setSessionOrganizationGroup,
+  setSessionOrganizationTopic,
+  type SessionGroup,
+} from '@/services/chat/sessionOrganization';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
 // ═══════════════════════════════════════════════════════════
 
 const MAIN_SESSION = 'agent:main:main';
-const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
 const OPEN_TABS_PREFS_KEY = 'aegis-open-tabs';
-const SESSION_PIN_PREFS_KEY = 'aegis:session-pin-prefs';
-const SESSION_ARCHIVE_PREFS_KEY = 'aegis:session-archive-prefs';
 const drainingQueueSessions = new Set<string>();
 
 function outboundPayloadFromQueue(message: QueuedChatMessage): OutboundChatPayload {
@@ -58,87 +67,6 @@ function outboundPayloadFromQueue(message: QueuedChatMessage): OutboundChatPaylo
 function persistOpenTabs(tabs: string[]): void {
   try {
     localStorage.setItem(OPEN_TABS_PREFS_KEY, JSON.stringify(tabs));
-  } catch {
-    // ignore persistence errors
-  }
-}
-
-function readSessionBooleanPrefs(storageKey: string): Record<string, boolean> {
-  try {
-    const raw = localStorage.getItem(storageKey);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, boolean] => (
-        typeof entry[0] === 'string' && entry[0].trim().length > 0 && typeof entry[1] === 'boolean'
-      )),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function persistSessionBooleanPref(storageKey: string, sessionKey: string, value: boolean): void {
-  try {
-    const prefs = readSessionBooleanPrefs(storageKey);
-    prefs[sessionKey] = value;
-    localStorage.setItem(storageKey, JSON.stringify(prefs));
-  } catch {
-    // ignore persistence errors
-  }
-}
-
-function clearSessionBooleanPref(storageKey: string, sessionKey: string): void {
-  try {
-    const prefs = readSessionBooleanPrefs(storageKey);
-    delete prefs[sessionKey];
-    localStorage.setItem(storageKey, JSON.stringify(prefs));
-  } catch {
-    // ignore persistence errors
-  }
-}
-
-function readSessionTopicPrefs(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(SESSION_TOPIC_PREFS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return {};
-    return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, string] => (
-        typeof entry[0] === 'string' && typeof entry[1] === 'string' && entry[1].trim().length > 0
-      )),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function getSessionTopicPref(sessionKey: string): string | undefined {
-  const prefs = readSessionTopicPrefs();
-  const topic = prefs[sessionKey];
-  return typeof topic === 'string' && topic.trim().length > 0 ? topic : undefined;
-}
-
-function persistSessionTopicPref(sessionKey: string, topic: string | undefined): void {
-  try {
-    const prefs = readSessionTopicPrefs();
-    if (topic && topic.trim()) {
-      prefs[sessionKey] = topic.trim();
-    }
-    localStorage.setItem(SESSION_TOPIC_PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    // ignore persistence errors
-  }
-}
-
-function clearSessionTopicPref(sessionKey: string): void {
-  try {
-    const prefs = readSessionTopicPrefs();
-    if (!Object.prototype.hasOwnProperty.call(prefs, sessionKey)) return;
-    delete prefs[sessionKey];
-    localStorage.setItem(SESSION_TOPIC_PREFS_KEY, JSON.stringify(prefs));
   } catch {
     // ignore persistence errors
   }
@@ -248,15 +176,14 @@ const resolveSessionTopic = (
 };
 
 function resolveAndPersistSessionTopic(
-  sessionKey: string,
-  currentTopic: string | undefined,
+  session: Pick<Session, 'key' | 'sessionId' | 'topic'>,
   messages: ChatMessage[],
   fallbackText?: string,
 ): string | undefined {
-  const hydratedCurrentTopic = currentTopic ?? getSessionTopicPref(sessionKey);
+  const hydratedCurrentTopic = session.topic ?? projectSessionOrganization(session).topic;
   const nextTopic = resolveSessionTopic(hydratedCurrentTopic, messages, fallbackText);
   if (nextTopic && !isWeakSessionTopic(nextTopic)) {
-    persistSessionTopicPref(sessionKey, nextTopic);
+    setSessionOrganizationTopic(session, nextTopic);
   }
   return nextTopic;
 }
@@ -266,6 +193,10 @@ const clearSessionAttentionState = (session: Session): Session => ({
   unread: 0,
   hasPendingCompletion: false,
 });
+
+function persistSessionAsRead(session: Session | undefined): void {
+  if (session) setSessionOrganizationFlag(session, 'unread', false);
+}
 
 const updateSession = (
   sessions: Session[],
@@ -287,10 +218,6 @@ const upsertSession = (
   if (found) return next;
   return [...next, build({ key, label: key })];
 };
-
-function isLocalPlaceholderSession(session: Session): boolean {
-  return session.localOnly === true && !session.sessionId;
-}
 
 export type ChatMessageRole = 'user' | 'assistant' | 'system' | 'tool' | 'toolResult' | 'compaction' | 'unknown';
 
@@ -402,8 +329,8 @@ export interface Session {
   // User-controlled lifecycle flags (SPEC: archive + pin)
   pinned?: boolean;
   archived?: boolean;
-  /** Renderer-only marker; removed as soon as sessions.list materializes it. */
-  localOnly?: boolean;
+  /** Desktop organization metadata, keyed by the Gateway session identity. */
+  groupId?: string;
 }
 
 function recordsHaveEqualValues(
@@ -500,11 +427,8 @@ interface ChatState {
     options?: { completeSnapshot?: boolean },
   ) => void;
   setSessionIdentity: (key: string, sessionId: string, agentId?: string) => void;
-  /** Append a new session to the sidebar immediately (before the gateway's
-   *  sessions.list reply). Used by per-agent "+ New Session" buttons in
-   *  the sidebar: create the row and mark it active — the gateway catches
-   *  up once the user actually sends a message. */
-  addLocalSession: (session: Session) => void;
+  /** Commit a session only after `sessions.create` confirms its Gateway identity. */
+  addNativeSession: (session: Session) => void;
   /** Update a single session's label locally without a full sessions.list refetch. */
   setSessionLabel: (key: string, label: string) => void;
   /** Update a single session's model locally after sessions.patch succeeds. */
@@ -521,6 +445,11 @@ interface ChatState {
   setSessionArchived: (key: string, archived: boolean) => void;
   /** Local-only explicit unread marker. Gateway does not persist reader state. */
   markSessionUnread: (key: string) => void;
+  sessionGroups: SessionGroup[];
+  createSessionGroup: (label: string) => SessionGroup | null;
+  renameSessionGroup: (groupId: string, label: string) => SessionGroup | null;
+  deleteSessionGroup: (groupId: string) => void;
+  moveSessionToGroup: (key: string, groupId: string | null) => void;
   setActiveSession: (key: string) => void;
   incrementSessionUnread: (key: string, amount?: number) => void;
   markSessionCompleted: (key: string) => void;
@@ -893,7 +822,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return {
         sessions: updateSession(state.sessions, targetKey, (session) => ({
           ...session,
-          topic: resolveAndPersistSessionTopic(targetKey, session.topic, updated, session.lastMessage),
+          topic: resolveAndPersistSessionTopic(session, updated, session.lastMessage),
         })),
         ...(isActive ? { messages: updated, renderBlocks: derived.blocks, responseGroups: derived.groups } : {}),
         messagesPerSession: {
@@ -1154,7 +1083,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return {
       sessions: updateSession(state.sessions, targetKey, (session) => ({
         ...session,
-        topic: resolveAndPersistSessionTopic(targetKey, session.topic, canonicalMessages, session.lastMessage),
+        topic: resolveAndPersistSessionTopic(session, canonicalMessages, session.lastMessage),
       })),
       ...(isActive ? { messages: canonicalMessages, renderBlocks: derived.blocks, responseGroups: derived.groups } : {}),
       messagesPerSession: {
@@ -1234,7 +1163,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return {
       sessions: updateSession(state.sessions, key, (session) => ({
         ...session,
-        topic: resolveAndPersistSessionTopic(key, session.topic, canonicalMessages, session.lastMessage),
+        topic: resolveAndPersistSessionTopic(session, canonicalMessages, session.lastMessage),
       })),
       messagesPerSession: { ...state.messagesPerSession, [key]: canonicalMessages },
       _blocksCache: { ...state._blocksCache, [key]: derived.blocks },
@@ -1275,6 +1204,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Sessions ──
   sessions: [{ key: MAIN_SESSION, label: 'Main Session' }],
   activeSessionKey: MAIN_SESSION,
+  sessionGroups: getSessionOrganizationGroups(),
 
   setSessions: (sessions, defaults, options) => {
     const stateBeforeMerge = get();
@@ -1287,15 +1217,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } = stateBeforeMerge;
     const defs = defaults ?? prev;
     const visibleIncomingSessions = coalesceSessionsByKey(withoutDeletedSessions(sessions));
-    const persistedPins = readSessionBooleanPrefs(SESSION_PIN_PREFS_KEY);
-    const persistedArchives = readSessionBooleanPrefs(SESSION_ARCHIVE_PREFS_KEY);
     const previousByKey = new Map(previousSessions.map((session) => [session.key, session]));
     const identityTransitions = collectSessionIdentityTransitions(
       previousSessions,
       visibleIncomingSessions,
     );
     const changedIdentityKeys = new Set(identityTransitions.map((transition) => transition.sessionKey));
-    changedIdentityKeys.forEach(clearSessionTopicPref);
     const transcriptReset = clearTranscriptStateForIdentityChanges(stateBeforeMerge, changedIdentityKeys);
     const retainedMessageCache = transcriptReset.messagesPerSession ?? messagesPerSession;
     const incomingKeys = new Set(visibleIncomingSessions.map((session) => session.key));
@@ -1303,30 +1230,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const previous = previousByKey.get(session.key);
       const hasCachedMessages = Object.prototype.hasOwnProperty.call(retainedMessageCache, session.key);
       const cachedMessages = hasCachedMessages ? retainedMessageCache[session.key] ?? [] : [];
+      const organization = projectSessionOrganization(session);
       const hydratedTopic = changedIdentityKeys.has(session.key)
         ? undefined
-        : previous?.topic ?? getSessionTopicPref(session.key);
+        : previous?.topic ?? organization.topic;
       const merged: Session = {
         ...session,
         // OpenClaw's `sessions.list` response is authoritative for labels.
         // User mutations are only applied locally after `sessions.patch`
         // confirms them, so no client-side shadow value is needed here.
         label: typeof session.label === 'string' ? session.label : '',
-        // Preserve pin/archive flags (purely local UI state).
-        pinned: previous?.pinned
-          ?? (Object.prototype.hasOwnProperty.call(persistedPins, session.key)
-            ? persistedPins[session.key]
-            : session.pinned),
-        archived: previous?.archived
-          ?? (Object.prototype.hasOwnProperty.call(persistedArchives, session.key)
-            ? persistedArchives[session.key]
-            : session.archived),
+        // Gateway owns lifecycle identity and labels; desktop organization is
+        // stored separately and never fakes a Gateway mutation.
+        pinned: organization.pinned || session.pinned === true,
+        archived: organization.archived || session.archived === true,
+        ...(organization.groupId ? { groupId: organization.groupId } : {}),
         topic: hasCachedMessages
-          ? resolveAndPersistSessionTopic(session.key, hydratedTopic, cachedMessages, session.lastMessage)
-          : resolveAndPersistSessionTopic(session.key, hydratedTopic, [], session.lastMessage),
-        unread: changedIdentityKeys.has(session.key)
-          ? session.unread ?? 0
-          : previous?.unread ?? session.unread ?? 0,
+          ? resolveAndPersistSessionTopic({ ...session, topic: hydratedTopic }, cachedMessages, session.lastMessage)
+          : resolveAndPersistSessionTopic({ ...session, topic: hydratedTopic }, [], session.lastMessage),
+        unread: Math.max(
+          organization.unread ? 1 : 0,
+          changedIdentityKeys.has(session.key)
+            ? session.unread ?? 0
+            : previous?.unread ?? session.unread ?? 0,
+        ),
         hasPendingCompletion: changedIdentityKeys.has(session.key)
           ? session.hasPendingCompletion ?? false
           : previous?.hasPendingCompletion ?? session.hasPendingCompletion ?? false,
@@ -1338,25 +1265,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ? previous
         : projected;
     });
-    const retainedPreviousSessions = previousSessions.filter((session) => {
-      if (incomingKeys.has(session.key)) return false;
-      if (options?.completeSnapshot === false) return true;
-      if (session.archived) return false;
-      return isLocalPlaceholderSession(session);
-    });
+    const retainedPreviousSessions = previousSessions.filter((session) => (
+      !incomingKeys.has(session.key) && options?.completeSnapshot === false
+    ));
     const nextSessions = [...mergedSessions, ...retainedPreviousSessions];
     const hasAuthoritativeMainSession = visibleIncomingSessions.some((session) => isAgentMainSession(session.key));
     const removedCanonicalSessionKeys = options?.completeSnapshot !== false && hasAuthoritativeMainSession
       ? previousSessions.flatMap((session) => {
           if (incomingKeys.has(session.key) || isAgentMainSession(session.key)) return [];
-          return isLocalPlaceholderSession(session) ? [] : [session.key];
+          return [session.key];
         })
       : [];
     const active = nextSessions.find((s) => s.key === activeSessionKey);
+    if (active) setSessionOrganizationFlag(active, 'unread', false);
     const titleBar = titleBarStateFromSession(active, defs);
     set({
       ...transcriptReset,
       sessions: nextSessions,
+      sessionGroups: getSessionOrganizationGroups(),
       ...(defaults ? { sessionDefaults: defs } : {}),
       currentThinking: titleBar.currentThinking,
       tokenUsage: titleBar.tokenUsage,
@@ -1372,15 +1298,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSessionIdentity: (key, sessionId, agentId) => {
     const previousSessionId = get().sessions.find((session) => session.key === key)?.sessionId;
     const changed = hasSessionIdentityChanged(previousSessionId, sessionId);
-    if (changed) clearSessionTopicPref(key);
+    const organization = projectSessionOrganization({ key, sessionId });
     set((state) => ({
       ...(changed ? clearTranscriptStateForIdentityChanges(state, new Set([key])) : {}),
       sessions: upsertSession(state.sessions, key, (session) => ({
         ...session,
         sessionId,
-        localOnly: false,
         ...(agentId ? { agentId } : {}),
-        ...(changed ? { topic: undefined, unread: 0, hasPendingCompletion: false } : {}),
+        ...(changed ? {
+          topic: undefined,
+          ...(organization.topic ? { topic: organization.topic } : {}),
+          unread: organization.unread ? 1 : 0,
+          hasPendingCompletion: false,
+          pinned: organization.pinned,
+          archived: organization.archived,
+          groupId: organization.groupId,
+        } : {}),
       })),
     }));
     if (changed) {
@@ -1395,6 +1328,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setActiveSession: (key) => {
     if (isSessionDeleted(key)) return;
     const state = get();
+    const activeSession = state.sessions.find((session) => session.key === key);
+    persistSessionAsRead(activeSession);
     const msgs = state.messagesPerSession[key] || [];
     const blocks = state._blocksCache[key];
     const groups = state._groupsCache[key];
@@ -1417,6 +1352,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   incrementSessionUnread: (key, amount = 1) => set((state) => {
     if (key === state.activeSessionKey) {
+      const session = state.sessions.find((candidate) => candidate.key === key);
+      if (session) setSessionOrganizationFlag(session, 'unread', false);
       return { sessions: updateSession(state.sessions, key, clearSessionAttentionState) };
     }
     return {
@@ -1439,15 +1376,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
   }),
 
-  clearSessionAttention: (key) => set((state) => ({
-    sessions: updateSession(state.sessions, key, clearSessionAttentionState),
-  })),
+  clearSessionAttention: (key) => set((state) => {
+    const session = state.sessions.find((candidate) => candidate.key === key);
+    if (session) setSessionOrganizationFlag(session, 'unread', false);
+    return { sessions: updateSession(state.sessions, key, clearSessionAttentionState) };
+  }),
 
-  /** Append a placeholder session to the sidebar. Idempotent: if a session
-   *  with this key already exists we surface it instead of duplicating.
-   *  Used by per-agent "+ New Session" buttons before the user has sent
-   *  any messages. */
-  addLocalSession: (session) => {
+  /** Commit a confirmed Gateway session and make it the active desktop tab. */
+  addNativeSession: (session) => {
     restoreSessionKey(session.key);
     set((state) => {
       const exists = state.sessions.some((s) => s.key === session.key);
@@ -1456,8 +1392,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const msgs = state.messagesPerSession[session.key] || [];
       const blocks = state._blocksCache[session.key];
       const groups = state._groupsCache[session.key];
-      const localSession = { ...session, localOnly: true };
-      const titleBar = titleBarStateFromSession(localSession, state.sessionDefaults);
+      const nativeSession = session;
+      const titleBar = titleBarStateFromSession(nativeSession, state.sessionDefaults);
       const activeState = {
         openTabs,
         activeSessionKey: session.key,
@@ -1472,7 +1408,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       return {
         ...activeState,
-        sessions: [...state.sessions, localSession],
+        sessions: [...state.sessions, nativeSession],
       };
     });
   },
@@ -1515,22 +1451,59 @@ export const useChatStore = create<ChatState>((set, get) => ({
   togglePinSession: (key) => set((state) => ({
     sessions: updateSession(state.sessions, key, (session) => {
       const pinned = !session.pinned;
-      persistSessionBooleanPref(SESSION_PIN_PREFS_KEY, key, pinned);
+      setSessionOrganizationFlag(session, 'pinned', pinned);
       return { ...session, pinned };
     }),
   })),
 
   setSessionArchived: (key, archived) => set((state) => {
-    persistSessionBooleanPref(SESSION_ARCHIVE_PREFS_KEY, key, archived);
-    return { sessions: updateSession(state.sessions, key, (session) => ({ ...session, archived })) };
+    return {
+      sessions: updateSession(state.sessions, key, (session) => {
+        setSessionOrganizationFlag(session, 'archived', archived);
+        return { ...session, archived };
+      }),
+    };
   }),
 
   markSessionUnread: (key) => set((state) => ({
-    sessions: updateSession(state.sessions, key, (session) => ({
-      ...session,
-      unread: Math.max(1, session.unread ?? 0),
-      hasPendingCompletion: false,
-    })),
+    sessions: updateSession(state.sessions, key, (session) => {
+      setSessionOrganizationFlag(session, 'unread', true);
+      return {
+        ...session,
+        unread: Math.max(1, session.unread ?? 0),
+        hasPendingCompletion: false,
+      };
+    }),
+  })),
+
+  createSessionGroup: (label) => {
+    const group = createSessionOrganizationGroup(label);
+    if (group) set({ sessionGroups: getSessionOrganizationGroups() });
+    return group;
+  },
+
+  renameSessionGroup: (groupId, label) => {
+    const group = renameSessionOrganizationGroup(groupId, label);
+    if (group) set({ sessionGroups: getSessionOrganizationGroups() });
+    return group;
+  },
+
+  deleteSessionGroup: (groupId) => {
+    deleteSessionOrganizationGroup(groupId);
+    set((state) => ({
+      sessionGroups: getSessionOrganizationGroups(),
+      sessions: state.sessions.map((session) => (
+        session.groupId === groupId ? { ...session, groupId: undefined } : session
+      )),
+    }));
+  },
+
+  moveSessionToGroup: (key, groupId) => set((state) => ({
+    sessions: updateSession(state.sessions, key, (session) => {
+      const organization = setSessionOrganizationGroup(session, groupId);
+      return { ...session, ...(organization.groupId ? { groupId: organization.groupId } : { groupId: undefined }) };
+    }),
+    sessionGroups: getSessionOrganizationGroups(),
   })),
 
   // ── Pending file attachments (drag-drop → new session) ─────
@@ -1593,6 +1566,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (isSessionDeleted(key)) return state;
     const clearedSessions = updateSession(state.sessions, key, clearSessionAttentionState);
     const session = clearedSessions.find((s) => s.key === key) ?? state.sessions.find((s) => s.key === key);
+    persistSessionAsRead(session);
     const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
     if (state.openTabs.includes(key)) {
       const cached = state.messagesPerSession[key] || [];
@@ -1638,6 +1612,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const blocks = state._blocksCache[newActive];
     const groups = state._groupsCache[newActive];
     const session = clearedSessions.find((s) => s.key === newActive) ?? state.sessions.find((s) => s.key === newActive);
+    persistSessionAsRead(session);
     const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
     return {
       sessions: clearedSessions,
@@ -1658,8 +1633,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   removeSession: (key) => set((state) => {
     if (isAgentMainSession(key)) return state;
-    clearSessionBooleanPref(SESSION_PIN_PREFS_KEY, key);
-    clearSessionBooleanPref(SESSION_ARCHIVE_PREFS_KEY, key);
+    const deletedSession = state.sessions.find((session) => session.key === key);
+    if (deletedSession) removeSessionOrganization(deletedSession);
     const newTabs = state.openTabs.filter((t) => t !== key);
     if (newTabs.length === 0) newTabs.push(MAIN_SESSION);
     persistOpenTabs(newTabs);
@@ -1688,6 +1663,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const blocks = restBlocks[newActive];
     const groups = restGroupsCache[newActive];
     const session = newSessions.find((s) => s.key === newActive);
+    persistSessionAsRead(session);
     const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
     return {
       openTabs: newTabs,

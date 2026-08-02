@@ -4,7 +4,6 @@ import type { Session } from '@/stores/chatStore';
 import {
   bucketSessionsByActivity,
   getSessionBucketKey,
-  isEmptyTransientSession,
   isSessionBucketKey,
   resolveExpandedSessionBuckets,
   sortSessionsByActivity,
@@ -84,19 +83,4 @@ test('session bucket disclosure keeps the preferred bucket and reveals required 
   );
   assert.equal(isSessionBucketKey('today'), true);
   assert.equal(isSessionBucketKey('yesterday'), false);
-});
-
-test('isEmptyTransientSession only removes untouched local placeholders', () => {
-  assert.equal(isEmptyTransientSession(
-    sx({ key: 'agent:main:s-empty', label: '新会话', createdAt: 123, localOnly: true }),
-    [],
-  ), true);
-  assert.equal(isEmptyTransientSession(
-    sx({ key: 'agent:main:s-content', label: '新会话', createdAt: 123, localOnly: true, totalTokens: 1 }),
-    [],
-  ), false);
-  assert.equal(isEmptyTransientSession(
-    sx({ key: 'agent:main:main', label: 'Main Session', createdAt: 123 }),
-    [],
-  ), false);
 });

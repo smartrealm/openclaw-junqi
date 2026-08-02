@@ -7,7 +7,6 @@ import { handleGatewayEvent, useGatewayDataStore } from '@/stores/gatewayDataSto
 import {
   __resetSessionLifecycleForTest,
   coalesceSessionsByKey,
-  createAgentSessionKey,
   createLatestRequestGate,
   isSessionDeleted,
 } from '@/utils/sessionLifecycle';
@@ -18,7 +17,7 @@ import {
 } from '@/utils/sessionDelete';
 import { __setSessionRenameDepsForTest, applySessionRename } from '@/utils/sessionRename';
 import { __setSessionResetDepsForTest, resetSessionEverywhere } from '@/utils/sessionReset';
-import { getSessionDisplayLabel } from '@/utils/sessionLabel';
+import { projectSessionOrganization } from '@/services/chat/sessionOrganization';
 
 const MAIN_KEY = 'agent:main:main';
 const SESSION_KEY = 'agent:worker:desktop-lifecycle-regression';
@@ -276,30 +275,6 @@ describe('session lifecycle regression fixes', () => {
     assert.match(source, /aria-busy=\{confirming/);
   });
 
-  test('BUG-07 generated keys remain unique within the same millisecond', () => {
-    const originalNow = Date.now;
-    Date.now = () => 1_720_000_000_000;
-    try {
-      const first = createAgentSessionKey('main');
-      const second = createAgentSessionKey('main');
-      assert.notEqual(first, second);
-      assert.match(first, /^agent:main:desktop-[a-z0-9]+-[a-z0-9]+$/);
-      assert.equal(
-        getSessionDisplayLabel({ key: first, label: '新会话' }, { genericSessionLabel: '会话' }),
-        '会话',
-      );
-      assert.equal(
-        getSessionDisplayLabel(
-          { key: 'agent:worker:main', label: 'Main Session' },
-          { mainSessionLabel: '主会话' },
-        ),
-        '主会话',
-      );
-    } finally {
-      Date.now = originalNow;
-    }
-  });
-
   test('BUG-07 route-based creation consumes params through React Router and can repeat', () => {
     const source = readFileSync(new URL('../hooks/useAgentScopedSession.ts', import.meta.url), 'utf8');
     assert.match(source, /handledLocationKeyRef/);
@@ -307,21 +282,28 @@ describe('session lifecycle regression fixes', () => {
     assert.doesNotMatch(source, /window\.history\.replaceState|appliedRef/);
   });
 
-  test('BUG-08 pinned sessions survive a store reload and deletion clears the preference', () => {
+  test('BUG-08 pinned sessions survive a store reload and deletion clears identity-bound organization state', () => {
     seedSession(MAIN_KEY);
+    useChatStore.getState().setSessionIdentity(SESSION_KEY, 'worker-session-id');
     useChatStore.getState().togglePinSession(SESSION_KEY);
-    assert.equal(JSON.parse(localStorage.getItem('aegis:session-pin-prefs') || '{}')[SESSION_KEY], true);
+    assert.equal(projectSessionOrganization({ key: SESSION_KEY, sessionId: 'worker-session-id' }).pinned, true);
 
     useChatStore.setState({ sessions: [] });
-    useChatStore.getState().setSessions([{ key: MAIN_KEY, label: 'Main' }, { key: SESSION_KEY, label: 'Worker' }]);
+    useChatStore.getState().setSessions([
+      { key: MAIN_KEY, label: 'Main' },
+      { key: SESSION_KEY, label: 'Worker', sessionId: 'worker-session-id' },
+    ]);
     assert.equal(useChatStore.getState().sessions.find((session) => session.key === SESSION_KEY)?.pinned, true);
 
     useChatStore.getState().togglePinSession(SESSION_KEY);
     useChatStore.setState({ sessions: [] });
-    useChatStore.getState().setSessions([{ key: MAIN_KEY, label: 'Main' }, { key: SESSION_KEY, label: 'Worker', pinned: true }]);
+    useChatStore.getState().setSessions([
+      { key: MAIN_KEY, label: 'Main' },
+      { key: SESSION_KEY, label: 'Worker', sessionId: 'worker-session-id' },
+    ]);
     assert.equal(useChatStore.getState().sessions.find((session) => session.key === SESSION_KEY)?.pinned, false);
 
     useChatStore.getState().removeSession(SESSION_KEY);
-    assert.equal(JSON.parse(localStorage.getItem('aegis:session-pin-prefs') || '{}')[SESSION_KEY], undefined);
+    assert.equal(projectSessionOrganization({ key: SESSION_KEY, sessionId: 'worker-session-id' }).pinned, false);
   });
 });

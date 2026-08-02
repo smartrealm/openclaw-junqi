@@ -9,7 +9,6 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import {
   gatewayMutationFailure,
   isSessionDeleted,
-  isUnmaterializedLocalSession,
   normalizeSessionKey,
 } from '@/utils/sessionLifecycle';
 
@@ -73,14 +72,6 @@ function resumeQueuedMessages(sessionKey: string): void {
 }
 
 async function performSessionReset(sessionKey: string): Promise<boolean> {
-  const localState = useChatStore.getState();
-  const localSession = localState.sessions.find((session) => session.key === sessionKey);
-  if (isUnmaterializedLocalSession(localSession, localState.messagesPerSession[sessionKey])) {
-    localState.clearQueue(sessionKey);
-    localState.clearSessionMessages(sessionKey);
-    localState.clearSessionTokens(sessionKey);
-    return true;
-  }
   try {
     const result = await sessionResetDeps.resetRemote(sessionKey);
     const outcome = result && typeof result === 'object'

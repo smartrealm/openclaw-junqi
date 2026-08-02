@@ -14,7 +14,6 @@ import { debugWarn } from '@/utils/debugLog';
 import {
   gatewayMutationFailure,
   isSessionDeleted,
-  isUnmaterializedLocalSession,
   normalizeSessionKey,
 } from '@/utils/sessionLifecycle';
 
@@ -99,16 +98,6 @@ async function performSessionRename(
   operationId: number,
 ): Promise<SessionRenameResult> {
   if (isSessionDeleted(sessionKey)) return { ok: false, error: 'Session has been deleted' };
-
-  const chat = useChatStore.getState();
-  const localSession = chat.sessions.find((session) => session.key === sessionKey);
-  if (isUnmaterializedLocalSession(localSession, chat.messagesPerSession[sessionKey])) {
-    if (latestRenameBySession.get(sessionKey) !== operationId) {
-      return { ok: true, label: localSession?.label ?? requestedLabel, superseded: true };
-    }
-    applyConfirmedLabel(sessionKey, requestedLabel);
-    return { ok: true, label: requestedLabel };
-  }
 
   try {
     const response = await sessionRenameDeps.patchLabel(sessionKey, requestedLabel || null);

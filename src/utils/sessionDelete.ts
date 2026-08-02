@@ -10,12 +10,9 @@ import {
   gatewayMutationFailure,
   isAgentMainSession,
   isSessionDeleted,
-  isUnmaterializedLocalSession,
   markSessionDeleted,
   normalizeSessionKey,
 } from '@/utils/sessionLifecycle';
-
-const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
 
 type SessionDeleteDeps = {
   deleteRemote: (sessionKey: string) => Promise<unknown>;
@@ -53,24 +50,6 @@ function errorMessage(error: unknown): string {
   }
 }
 
-function removeLocalStorageMapEntry(storageKey: string, sessionKey: string): void {
-  try {
-    const raw = localStorage.getItem(storageKey);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
-    if (!Object.prototype.hasOwnProperty.call(parsed, sessionKey)) return;
-    delete parsed[sessionKey];
-    localStorage.setItem(storageKey, JSON.stringify(parsed));
-  } catch {
-    // ignore corrupt local cache
-  }
-}
-
-function clearDeletedSessionLocalPrefs(sessionKey: string): void {
-  removeLocalStorageMapEntry(SESSION_TOPIC_PREFS_KEY, sessionKey);
-}
-
 function resumeQueuedMessages(sessionKey: string): void {
   queueMicrotask(() => {
     const chat = useChatStore.getState();
@@ -97,24 +76,13 @@ export function applyConfirmedSessionDeletion(rawSessionKey: string, confirmedSe
   if (sessionId) {
     useCollaborationStore.getState().clearSessionProjection({ sessionKey, sessionId });
   }
-  clearDeletedSessionLocalPrefs(sessionKey);
   chatStore.removeSession(sessionKey);
   const gatewayStore = useGatewayDataStore.getState();
   gatewayStore.setSessions(gatewayStore.sessions.filter((session) => session.key !== sessionKey));
   return true;
 }
 
-function removeUnmaterializedLocalSession(sessionKey: string): boolean {
-  const chatStore = useChatStore.getState();
-  const session = chatStore.sessions.find((candidate) => candidate.key === sessionKey);
-  if (!isUnmaterializedLocalSession(session, chatStore.messagesPerSession[sessionKey])) return false;
-  clearDeletedSessionLocalPrefs(sessionKey);
-  chatStore.removeSession(sessionKey);
-  return true;
-}
-
 async function performSessionDeletion(sessionKey: string): Promise<boolean> {
-  if (removeUnmaterializedLocalSession(sessionKey)) return true;
   if (isSessionDeleted(sessionKey)) return applyConfirmedSessionDeletion(sessionKey);
 
   try {
