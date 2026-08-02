@@ -5,14 +5,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { Users, RefreshCw, Zap, Clock, Bot, Activity, Search, Pencil, Trash2, Check, X, MessageSquare } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import {
   ensureSessionPreviewsFresh,
   refreshGroup,
   refreshSessionPreviews,
+  searchOpenClawSessions,
   useGatewayDataStore,
 } from '@/stores/gatewayDataStore';
+import { useChatStore } from '@/stores/chatStore';
 import { formatTokens } from '@/utils/format';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
@@ -21,7 +24,12 @@ import { isAgentMainSession } from '@/utils/sessionLifecycle';
 import { isSubagentSessionKey } from '@/utils/sessionPresentation';
 import { isJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
 import { showConfirm } from '@/components/shared/AlertDialog';
-import type { AgentInfo, OpenClawSessionPreviewEntry, SessionInfo } from '@/stores/gatewayDataStore';
+import type {
+  AgentInfo,
+  OpenClawSessionPreviewEntry,
+  OpenClawSessionSearchHit,
+  SessionInfo,
+} from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import { IconButton } from '@/components/shared/button';
@@ -104,6 +112,15 @@ function latestPreviewText(preview: OpenClawSessionPreviewEntry | undefined): st
     if (text) return text;
   }
   return null;
+}
+
+function formatSearchTimestamp(
+  timestamp: number,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return '—';
+  return formatTimeAgo(date.toISOString(), t);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -424,6 +441,55 @@ function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
   );
 }
 
+interface SessionSearchHitCardProps {
+  hit: OpenClawSessionSearchHit;
+}
+
+function SessionSearchHitCard({ hit }: SessionSearchHitCardProps) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const roleLabel = hit.role === 'user'
+    ? t('sessions.transcriptSearchRoleUser', 'User')
+    : t('sessions.transcriptSearchRoleAssistant', 'Assistant');
+
+  const openSession = useCallback(() => {
+    useChatStore.getState().openTab(hit.sessionKey);
+    navigate('/chat');
+  }, [hit.sessionKey, navigate]);
+
+  return (
+    <button
+      type="button"
+      onClick={openSession}
+      className="flex min-w-0 flex-col gap-2 rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.02)] p-3 text-left transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50"
+      aria-label={t('sessions.transcriptSearchOpen', { sessionKey: hit.sessionKey, defaultValue: `Open session ${hit.sessionKey}` })}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Badge tone={hit.role === 'user' ? 'info' : 'ok'} size="sm" variant="soft">
+            {roleLabel}
+          </Badge>
+          <span className="truncate font-mono text-[10px] text-aegis-text-dim" title={hit.sessionKey}>
+            {hit.sessionKey}
+          </span>
+        </div>
+        <span className="shrink-0 text-[10px] text-aegis-text-dim">
+          {formatSearchTimestamp(hit.timestamp, t)}
+        </span>
+      </div>
+      <p className="line-clamp-3 min-h-[3.75rem] break-words text-[11px] leading-5 text-aegis-text-secondary">
+        {hit.snippet || t('sessions.transcriptSearchNoSnippet', 'Gateway returned an empty snippet')}
+      </p>
+      <div className="flex items-center justify-between gap-2 text-[9px] text-aegis-text-dim">
+        <span className="truncate font-mono" title={hit.messageId}>{hit.messageId}</span>
+        <span className="shrink-0">
+          {t('sessions.transcriptSearchScore', { score: hit.score.toFixed(2), defaultValue: `Score ${hit.score.toFixed(2)}` })}
+        </span>
+      </div>
+    </button>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════
 // SessionManagerPage
 // ═══════════════════════════════════════════════════════════
@@ -440,6 +506,9 @@ export function SessionManagerPage() {
   const sessionPreviews = useGatewayDataStore((s) => s.sessionPreviews);
   const previewLoading = useGatewayDataStore((s) => s.sessionPreviewsLoading);
   const previewError = useGatewayDataStore((s) => s.sessionPreviewsError);
+  const sessionSearch = useGatewayDataStore((s) => s.sessionSearch);
+  const sessionSearchLoading = useGatewayDataStore((s) => s.sessionSearchLoading);
+  const sessionSearchError = useGatewayDataStore((s) => s.sessionSearchError);
 
   const sessionPreviewSignature = useMemo(
     () => JSON.stringify(sessions.map((session) => ({
@@ -454,6 +523,21 @@ export function SessionManagerPage() {
     const keys = JSON.parse(sessionPreviewSignature) as Array<{ key: string }>;
     void ensureSessionPreviewsFresh(keys.map((session) => session.key));
   }, [sessionPreviewSignature]);
+
+  useEffect(() => {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) {
+      void searchOpenClawSessions('');
+      return undefined;
+    }
+    // Invalidate an earlier Gateway request immediately so an old response cannot
+    // remain visible while the debounce window waits for the new query.
+    void searchOpenClawSessions('');
+    const timer = window.setTimeout(() => {
+      void searchOpenClawSessions(normalizedQuery);
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   const handleRefresh = useCallback(async () => {
     await refreshGroup('sessions');
@@ -508,6 +592,15 @@ export function SessionManagerPage() {
     : previewError
       ? t('sessions.previewError', 'Recent messages could not be loaded')
       : null;
+
+  const transcriptSearchErrorMessage = sessionSearchError === 'OPENCLAW_SESSIONS_SEARCH_UNSUPPORTED'
+    ? t('sessions.transcriptSearchUnsupported', 'This Gateway does not advertise transcript search.')
+    : sessionSearchError === 'OPENCLAW_SESSIONS_SEARCH_UNAVAILABLE'
+      ? t('sessions.transcriptSearchUnavailable', 'Transcript search is unavailable while Gateway is disconnected.')
+      : sessionSearchError
+        ? t('sessions.transcriptSearchError', 'Gateway transcript search failed.')
+        : null;
+  const transcriptSearchActive = query.trim().length > 0;
 
   // ═══ RENDER ═══
   return (
@@ -606,6 +699,59 @@ export function SessionManagerPage() {
           </button>
         )}
       </div>
+
+      {transcriptSearchActive && (
+        <section className="space-y-2" aria-live="polite" aria-busy={sessionSearchLoading}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <MessageSquare size={14} className="shrink-0 text-aegis-primary" aria-hidden="true" />
+              <h2 className="truncate text-[12px] font-bold text-aegis-text">
+                {t('sessions.transcriptSearchMatches', 'Gateway transcript matches')}
+              </h2>
+              {sessionSearch && (
+                <span className="shrink-0 rounded-md bg-aegis-primary/10 px-1.5 py-0.5 text-[9px] font-bold text-aegis-primary">
+                  {sessionSearch.results.length}
+                </span>
+              )}
+            </div>
+            {sessionSearchLoading && <LoadingIndicator size={14} />}
+          </div>
+
+          {transcriptSearchErrorMessage ? (
+            <p className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] px-3 py-2 text-[10px] text-aegis-text-dim" role="status">
+              {transcriptSearchErrorMessage}
+            </p>
+          ) : sessionSearchLoading && !sessionSearch ? (
+            <p className="text-[10px] text-aegis-text-dim" role="status">
+              {t('sessions.transcriptSearchLoading', 'Searching Gateway-owned transcripts…')}
+            </p>
+          ) : sessionSearch ? (
+            <>
+              {sessionSearch.indexing === true && (
+                <p className="text-[10px] text-aegis-text-dim" role="status">
+                  {t('sessions.transcriptSearchIndexing', 'Gateway is still indexing transcripts; results may be incomplete.')}
+                </p>
+              )}
+              {sessionSearch.truncated === true && (
+                <p className="text-[10px] text-aegis-text-dim" role="status">
+                  {t('sessions.transcriptSearchTruncated', 'Gateway limited the returned matches.')}
+                </p>
+              )}
+              {sessionSearch.results.length === 0 ? (
+                <p className="text-[10px] text-aegis-text-dim" role="status">
+                  {t('sessions.transcriptSearchEmpty', 'No transcript matches returned by Gateway.')}
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                  {sessionSearch.results.map((hit) => (
+                    <SessionSearchHitCard key={`${hit.sessionKey}:${hit.messageId}`} hit={hit} />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : null}
+        </section>
+      )}
 
       {/* ── Content ── */}
       {loading && sessions.length === 0 ? (

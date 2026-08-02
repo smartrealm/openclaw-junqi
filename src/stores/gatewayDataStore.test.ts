@@ -18,6 +18,7 @@ import {
   resolveGatewayConnectionStartedAt,
   startPolling,
   stopPolling,
+  searchOpenClawSessions,
   useGatewayDataStore,
 } from './gatewayDataStore';
 
@@ -518,4 +519,117 @@ test('disconnect clears the Gateway-owned memory snapshot and invalidates its re
   assert.equal(useGatewayDataStore.getState().memorySearchQuery, '');
   assert.equal(useGatewayDataStore.getState().memorySearchLoading, false);
   assert.equal(useGatewayDataStore.getState().memorySearchError, null);
+});
+
+test('sessions.search follows capability advertisement and never fabricates unsupported hits', async () => {
+  const calls: string[] = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'sessions.search' ? false : true,
+    request: async (method: string) => {
+      calls.push(method);
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [] };
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    assert.equal(await searchOpenClawSessions('release notes'), false);
+    assert.equal(useGatewayDataStore.getState().sessionSearchError, 'OPENCLAW_SESSIONS_SEARCH_UNSUPPORTED');
+    assert.equal(useGatewayDataStore.getState().sessionSearch, null);
+    assert.equal(calls.includes('sessions.search'), false);
+  } finally {
+    stopPolling();
+  }
+});
+
+test('sessions.search commits only the latest query and preserves native indexing flags', async () => {
+  const pending = new Map<string, (value: unknown) => void>();
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'sessions.search' ? true : null,
+    request: (method: string, params: Record<string, unknown>) => {
+      if (method === 'sessions.list') return Promise.resolve({ sessions: [], hasMore: false });
+      if (method === 'agents.list') return Promise.resolve({ agents: [] });
+      if (method === 'sessions.search') {
+        return new Promise<unknown>((resolve) => pending.set(String(params.query), resolve));
+      }
+      return Promise.reject(new Error(`unexpected method: ${method}`));
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    const first = searchOpenClawSessions('first');
+    await Promise.resolve();
+    const second = searchOpenClawSessions('second');
+    await Promise.resolve();
+    pending.get('second')?.({
+      indexing: false,
+      truncated: true,
+      results: [{
+        sessionKey: 'agent:main:main',
+        sessionId: 'session-2',
+        messageId: 'message-2',
+        role: 'assistant',
+        timestamp: 1_700_000_000_000,
+        snippet: 'Native transcript hit',
+        score: 0.84,
+      }],
+    });
+    assert.equal(await second, true);
+    pending.get('first')?.({ results: [] });
+    assert.equal(await first, false);
+    assert.deepEqual(useGatewayDataStore.getState().sessionSearch, {
+      indexing: false,
+      truncated: true,
+      results: [{
+        sessionKey: 'agent:main:main',
+        sessionId: 'session-2',
+        messageId: 'message-2',
+        role: 'assistant',
+        timestamp: 1_700_000_000_000,
+        snippet: 'Native transcript hit',
+        score: 0.84,
+      }],
+    });
+    assert.equal(useGatewayDataStore.getState().sessionSearchQuery, 'second');
+  } finally {
+    stopPolling();
+  }
+});
+
+test('disconnect clears the Gateway-owned session search snapshot', async () => {
+  const gateway = {
+    hasAdvertisedMethod: () => true,
+    request: async (method: string) => {
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [] };
+      if (method === 'sessions.search') {
+        return {
+          results: [{
+            sessionKey: 'agent:main:main',
+            sessionId: 'session-1',
+            messageId: 'message-1',
+            role: 'user',
+            timestamp: 1_700_000_000_000,
+            snippet: 'Gateway hit',
+            score: 0.9,
+          }],
+        };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  assert.equal(await searchOpenClawSessions('disconnect'), true);
+  stopPolling();
+  assert.equal(useGatewayDataStore.getState().sessionSearch, null);
+  assert.equal(useGatewayDataStore.getState().sessionSearchQuery, '');
+  assert.equal(useGatewayDataStore.getState().sessionSearchLoading, false);
+  assert.equal(useGatewayDataStore.getState().sessionSearchError, null);
 });

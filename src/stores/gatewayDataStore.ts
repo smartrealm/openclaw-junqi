@@ -42,6 +42,12 @@ import {
   OpenClawMemorySearchResponseError,
   type OpenClawMemorySearchResponse,
 } from '@/services/gateway/OpenClawMemorySearchClient';
+import {
+  OPENCLAW_SESSIONS_SEARCH_METHOD,
+  OpenClawSessionSearchClient,
+  OpenClawSessionSearchResponseError,
+  type OpenClawSessionSearchResult,
+} from '@/services/gateway/OpenClawSessionSearchClient';
 import { saveChatMedia } from '@/services/chat/mediaSaveRuntime';
 
 export type { OpenClawSessionPreviewEntry } from '@/services/gateway/OpenClawSessionPreviewClient';
@@ -72,6 +78,12 @@ export type {
   OpenClawMemorySearchResponse,
   OpenClawMemorySource,
 } from '@/services/gateway/OpenClawMemorySearchClient';
+export type {
+  OpenClawSessionSearchHit,
+  OpenClawSessionSearchInput,
+  OpenClawSessionSearchResult,
+  OpenClawSessionSearchRole,
+} from '@/services/gateway/OpenClawSessionSearchClient';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -265,6 +277,11 @@ interface GatewayDataState {
   memorySearchUpdatedAt: number;
   memorySearchLoading: boolean;
   memorySearchError: string | null;
+  sessionSearch: OpenClawSessionSearchResult | null;
+  sessionSearchQuery: string;
+  sessionSearchUpdatedAt: number;
+  sessionSearchLoading: boolean;
+  sessionSearchError: string | null;
   agents: AgentInfo[];
   costSummary: CostSummary | null;
   sessionsUsage: SessionsUsage | null;
@@ -326,6 +343,10 @@ interface GatewayDataState {
   clearMemorySearch: () => void;
   setMemorySearchLoading: (query: string | null) => void;
   setMemorySearchError: (value: string | null) => void;
+  setSessionSearch: (query: string, result: OpenClawSessionSearchResult) => void;
+  clearSessionSearch: () => void;
+  setSessionSearchLoading: (query: string | null) => void;
+  setSessionSearchError: (value: string | null) => void;
   setAgents: (agents: AgentInfo[]) => void;
   setCostSummary: (data: CostSummary) => void;
   setSessionsUsage: (data: SessionsUsage) => void;
@@ -373,6 +394,11 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   memorySearchUpdatedAt: 0,
   memorySearchLoading: false,
   memorySearchError: null,
+  sessionSearch: null,
+  sessionSearchQuery: '',
+  sessionSearchUpdatedAt: 0,
+  sessionSearchLoading: false,
+  sessionSearchError: null,
   agents: [],
   costSummary: null,
   sessionsUsage: null,
@@ -581,6 +607,30 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   })),
 
   setMemorySearchError: (value) => set({ memorySearchError: value }),
+
+  setSessionSearch: (query, result) => set({
+    sessionSearch: result,
+    sessionSearchQuery: query,
+    sessionSearchUpdatedAt: Date.now(),
+    sessionSearchLoading: false,
+    sessionSearchError: null,
+  }),
+
+  clearSessionSearch: () => set({
+    sessionSearch: null,
+    sessionSearchQuery: '',
+    sessionSearchUpdatedAt: 0,
+  }),
+
+  setSessionSearchLoading: (query) => set((state) => ({
+    sessionSearchLoading: query !== null,
+    ...(query !== null ? { sessionSearchQuery: query } : {}),
+    ...(query !== null && state.sessionSearchQuery !== query
+      ? { sessionSearch: null, sessionSearchUpdatedAt: 0 }
+      : {}),
+  })),
+
+  setSessionSearchError: (value) => set({ sessionSearchError: value }),
 
   setAgents: (agents) =>
     set({
@@ -861,6 +911,7 @@ const toolsEffectiveRequestGate = createLatestRequestGate();
 const toolsCatalogRequestGate = createLatestRequestGate();
 const sessionArtifactsRequestGate = createLatestRequestGate();
 const memorySearchRequestGate = createLatestRequestGate();
+const sessionSearchRequestGate = createLatestRequestGate();
 
 interface SessionPreviewRequestTicket {
   connection: GatewayRequester;
@@ -959,6 +1010,28 @@ function isCurrentMemorySearchRequest(ticket: MemorySearchRequestTicket): boolea
     && memorySearchRequestGate.isCurrent(ticket.requestId)
     && useGatewayDataStore.getState().memorySearchLoading
     && useGatewayDataStore.getState().memorySearchQuery === ticket.query;
+}
+
+interface SessionSearchRequestTicket {
+  connection: GatewayRequester;
+  requestId: number;
+  query: string;
+}
+
+function beginSessionSearchRequest(query: string): SessionSearchRequestTicket | null {
+  if (!gw) return null;
+  return {
+    connection: gw,
+    requestId: sessionSearchRequestGate.begin(),
+    query,
+  };
+}
+
+function isCurrentSessionSearchRequest(ticket: SessionSearchRequestTicket): boolean {
+  return ticket.connection === gw
+    && sessionSearchRequestGate.isCurrent(ticket.requestId)
+    && useGatewayDataStore.getState().sessionSearchLoading
+    && useGatewayDataStore.getState().sessionSearchQuery === ticket.query;
 }
 
 function beginGatewayRequest(group: GatewayDataGroup): GatewayRequestTicket<GatewayRequester> | null {
@@ -1198,6 +1271,7 @@ export function startPolling(gateway: GatewayRequester) {
   toolsCatalogRequestGate.invalidate();
   sessionArtifactsRequestGate.invalidate();
   memorySearchRequestGate.invalidate();
+  sessionSearchRequestGate.invalidate();
   gw = gateway;
   useGatewayDataStore.getState().setPolling(true);
   debugLog('datastore', '[DataStore] Polling started (sessions=10s, agents=30s, demand groups lazy)');
@@ -1227,6 +1301,7 @@ export function stopPolling() {
   toolsCatalogRequestGate.invalidate();
   sessionArtifactsRequestGate.invalidate();
   memorySearchRequestGate.invalidate();
+  sessionSearchRequestGate.invalidate();
   gw = null;
   const store = useGatewayDataStore.getState();
   store.setPolling(false);
@@ -1246,6 +1321,9 @@ export function stopPolling() {
   store.clearMemorySearch();
   store.setMemorySearchLoading(null);
   store.setMemorySearchError(null);
+  store.clearSessionSearch();
+  store.setSessionSearchLoading(null);
+  store.setSessionSearchError(null);
   // Clear running sub-agents on disconnect — presence-based detection is meaningless
   // without a live sessions.list feed. Without this, stale sub-agents keep the pet
   // in "working" state indefinitely after a gateway disconnect/reconnect cycle.
@@ -1500,6 +1578,12 @@ function memorySearchFailureCode(error: unknown): string {
     : 'OPENCLAW_MEMORY_SEARCH_FAILED';
 }
 
+function sessionSearchFailureCode(error: unknown): string {
+  return error instanceof OpenClawSessionSearchResponseError
+    ? error.code
+    : 'OPENCLAW_SESSIONS_SEARCH_FAILED';
+}
+
 export interface OpenClawArtifactSaveResult {
   readonly success: boolean;
   readonly canceled?: boolean;
@@ -1683,6 +1767,71 @@ export async function searchOpenClawMemory(
     store.clearMemorySearch();
     store.setMemorySearchLoading(null);
     store.setMemorySearchError(memorySearchFailureCode(error));
+    return false;
+  }
+}
+
+/** Search Gateway-owned session transcripts without synthesizing local hits. */
+export async function searchOpenClawSessions(
+  query: string,
+  options: {
+    readonly agentId?: string;
+    readonly sessionKeys?: readonly string[];
+    readonly limit?: number;
+  } = {},
+): Promise<boolean> {
+  const normalizedQuery = typeof query === 'string' ? query.trim() : '';
+  const store = useGatewayDataStore.getState();
+  if (!normalizedQuery) {
+    sessionSearchRequestGate.invalidate();
+    store.clearSessionSearch();
+    store.setSessionSearchLoading(null);
+    store.setSessionSearchError(null);
+    return false;
+  }
+  if (!gw) {
+    sessionSearchRequestGate.invalidate();
+    store.clearSessionSearch();
+    store.setSessionSearchLoading(null);
+    store.setSessionSearchError('OPENCLAW_SESSIONS_SEARCH_UNAVAILABLE');
+    return false;
+  }
+
+  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_SESSIONS_SEARCH_METHOD);
+  if (advertised === false) {
+    sessionSearchRequestGate.invalidate();
+    store.clearSessionSearch();
+    store.setSessionSearchLoading(null);
+    store.setSessionSearchError('OPENCLAW_SESSIONS_SEARCH_UNSUPPORTED');
+    return false;
+  }
+
+  const ticket = beginSessionSearchRequest(normalizedQuery);
+  if (!ticket) return false;
+  store.clearSessionSearch();
+  store.setSessionSearchLoading(normalizedQuery);
+  store.setSessionSearchError(null);
+
+  const client = new OpenClawSessionSearchClient(
+    <T>(method: string, params: Record<string, unknown>) => (
+      ticket.connection.request(method, params) as Promise<T>
+    ),
+  );
+  try {
+    const result = await client.search({
+      query: normalizedQuery,
+      ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+      ...(options.sessionKeys !== undefined ? { sessionKeys: options.sessionKeys } : {}),
+      ...(options.limit !== undefined ? { limit: options.limit } : {}),
+    });
+    if (!isCurrentSessionSearchRequest(ticket)) return false;
+    store.setSessionSearch(normalizedQuery, result);
+    return true;
+  } catch (error) {
+    if (!isCurrentSessionSearchRequest(ticket)) return false;
+    store.clearSessionSearch();
+    store.setSessionSearchLoading(null);
+    store.setSessionSearchError(sessionSearchFailureCode(error));
     return false;
   }
 }
