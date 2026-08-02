@@ -1,17 +1,10 @@
 import { appDataDir } from '@tauri-apps/api/path';
 import { exists, mkdir, readFile, remove, writeFile } from '@tauri-apps/plugin-fs';
 import { startVoiceRecording, stopVoiceRecording } from '@/api/tauri-commands';
-
-function encodePathSegment(value: string): string {
-  return btoa(String.fromCharCode(...new TextEncoder().encode(value)))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
+import { voiceSessionDirectory } from './voiceStoragePath';
 
 async function sessionDirectory(sessionKey?: string): Promise<string> {
-  const root = `${(await appDataDir()).replace(/[\\/]+$/, '')}/voice`;
-  if (!sessionKey) return root;
-  const chunks = encodePathSegment(sessionKey).match(/.{1,120}/g) ?? ['_'];
-  return `${root}/v1/${chunks.join('/')}/_`;
+  return voiceSessionDirectory(await appDataDir(), sessionKey);
 }
 
 function toBase64(bytes: Uint8Array): string {

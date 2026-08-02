@@ -96,6 +96,7 @@ docs/
 - [定时任务 OpenClaw Agent 路由验证](quality/cron-openclaw-agent-routing-validation-2026-08-02.md)
 - [Dashboard 运行审计](quality/dashboard-operations-audit.md)
 - [Chat 生产加固审计](quality/chat-production-hardening-audit.md)
+- [业务引导审计](quality/business-guide-audit-2026-08-02.md)
 - [Chat 通知幂等与消息操作栏修复](quality/chat-notification-idempotency-and-message-actions-2026-08-01.md)
 - [OpenClaw Gateway IPC 出口收敛](quality/openclaw-gateway-ipc-boundary-convergence-2026-08-02.md)
 - [OpenClaw 技能运行时出口收敛](quality/openclaw-skills-runtime-convergence-2026-08-02.md)

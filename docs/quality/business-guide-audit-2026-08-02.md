@@ -13,3 +13,20 @@
 ## BUG-GUIDE-03
 
 渠道任务只依据 Gateway 连接，不读取 Runtime 的 `channels.status`。目标是仅在现有 `assessChannelAccountReadiness` 判定至少一个账号为 `ready` 时完成；状态不可用时受阻。
+
+## 修复记录
+
+- `BusinessGuideStore` 升级为版本 3，并提供从旧版 `dismissed/tourSeen` 到 `welcomeDismissed` 的显式迁移。迁移后的欢迎区不会因状态结构变化自动重开。
+- 首次欢迎区只在总览路由显示；用户关闭后，仅能通过窗口顶部的单一全局入口显式打开引导对话框。
+- 引导表面和全局入口共同要求 Setup 完成、当前 Gateway 身份已证明、选定 runtime 配置有效且实时模型探测成功。连接、身份、配置或模型任一事实缺失时均不显示。
+- 语音文件路径编码从遗留 Tauri adapter 迁移到 `voiceStoragePath`，由 `voiceFileRuntime` 统一复用；相关回归测试改为验证现行文件运行时边界。
+
+## 验证结果
+
+- 2026-08-02：业务引导状态迁移、可信门禁、渠道就绪和语音文件边界的定向测试通过。
+- 2026-08-02：`pnpm lint`、`pnpm test`、`pnpm build` 与 `git diff --check` 通过。
+
+## 未验证边界
+
+- Native、Docker、远程 Gateway 和配置变更后的真实桌面引导展示仍需分别进行人工验收。
+- 真实渠道授权和模型凭据不在自动化测试中执行；引导只读取其已验证的运行时投影。

@@ -48,29 +48,6 @@ function clearLegacyOpenClawConfigBackups(): void {
 
 clearLegacyOpenClawConfigBackups();
 
-/** Encode arbitrary-sized binary data without exceeding JS argument limits. */
-export function bytesToBase64(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-
-export function voiceSessionDirectory(appDataPath: string, sessionKey?: string): string {
-  const root = `${appDataPath.replace(/[\\/]+$/, '')}/voice`;
-  if (!sessionKey) return root;
-  const encoded = bytesToBase64(new TextEncoder().encode(sessionKey))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
-  const chunks = encoded.match(/.{1,120}/g) ?? ['_'];
-  // The terminal component makes encoded keys prefix-safe: no session
-  // directory can become an ancestor of another session directory.
-  return `${root}/v1/${chunks.join('/')}/_`;
-}
-
 let _deviceIdentity: any = null;
 async function deviceIdentity() {
   if (!_deviceIdentity) _deviceIdentity = await loadOrCreateDeviceIdentity();
