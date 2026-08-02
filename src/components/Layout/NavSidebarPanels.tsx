@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Activity, ArrowUpRight, BarChart3, BookOpenText, Bot, Brain, Calendar, Clock, Cpu, Database, FileText, Folder, History, KeyRound, ListChecks, MessageSquare, Plus, Puzzle, Server, Settings, Terminal, Wrench } from 'lucide-react';
+import { Activity, ArrowUpRight, BarChart3, Blocks, BookOpenText, Bot, Brain, Calendar, Clock, Cpu, Database, FileText, Folder, History, KeyRound, ListChecks, MessageSquare, Plus, Puzzle, Server, Settings, Terminal, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
@@ -234,6 +234,32 @@ export function ToolsPanel() {
             <SidebarRow key={it.to} icon={it.icon} title={it.label} active={location.pathname === it.to} onClick={() => navigate(it.to)} />
           ))}
         </SidebarSection>
+      </div>
+    </>
+  );
+}
+
+export function BusinessApplicationsPanel() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
+  return (
+    <>
+      <SidebarPrimaryAction icon={<Blocks size={16} />} onClick={() => navigate('/business-applications')}>
+        {t('businessApplications.openCatalog', '打开业务应用')}
+      </SidebarPrimaryAction>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <SidebarSection label={t('businessApplications.sidebarTitle', '业务平台')}>
+          <SidebarRow
+            icon={<Blocks size={14} />}
+            title={t('businessApplications.catalogTitle', '应用目录')}
+            active={location.pathname === '/business-applications'}
+            onClick={() => navigate('/business-applications')}
+          />
+        </SidebarSection>
+        <div className="px-4 py-2 text-[11px] leading-5 text-aegis-text-dim">
+          {t('businessApplications.sidebarHint', '应用、授权和操作记录在同一工作区中管理。')}
+        </div>
       </div>
     </>
   );

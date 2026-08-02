@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { SidebarTab } from './tab-utils';
-import { LayoutDashboard, BookOpenText, Bot, Wrench, Settings } from 'lucide-react';
+import { LayoutDashboard, BookOpenText, Bot, Blocks, Wrench, Settings } from 'lucide-react';
 import clsx from 'clsx';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 
 const TABS = [
   { id: 'workbench', labelKey: 'nav.dashboard', labelFallback: '仪表盘', path: '/', Icon: LayoutDashboard },
   { id: 'agents',    labelKey: 'nav.agents',     labelFallback: '智能体', path: '/agents', Icon: Bot },
+  { id: 'businessApplications', labelKey: 'nav.businessApplications', labelFallback: '业务应用', path: '/business-applications', Icon: Blocks },
   { id: 'tools',     labelKey: 'nav.tools',      labelFallback: '工具',   path: '/tools', Icon: Wrench },
   { id: 'commands',  labelKey: 'nav.openclawCommands', labelFallback: '常用命令', path: '/openclaw-commands', Icon: BookOpenText },
   { id: 'settings',  labelKey: 'nav.settings',   labelFallback: '设置',   path: '/settings', Icon: Settings },

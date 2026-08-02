@@ -1,9 +1,10 @@
 // Tab resolution — shared between TabBar and NavSidebar.
-export type SidebarTab = 'workbench' | 'agents' | 'tools' | 'commands' | 'settings';
+export type SidebarTab = 'workbench' | 'agents' | 'businessApplications' | 'tools' | 'commands' | 'settings';
 
 const TAB_ROUTE_MAP: [SidebarTab, string[]][] = [
   ['workbench', ['/', '/chat', '/welcome', '/session']],
   ['agents',    ['/agents', '/agent-run', '/agents/live', '/channels', '/memory', '/config', '/sessions', '/skills', '/skill-hub']],
+  ['businessApplications', ['/business-applications']],
   ['commands',  ['/openclaw-commands']],
   ['tools',     ['/terminal', '/files', '/cron', '/sandbox', '/git', '/calendar', '/tools', '/kanban', '/timeline', '/activity', '/workshop', '/ai-workspace', '/briefs']],
   ['settings',  ['/settings', '/logs', '/perf', '/analytics']],

@@ -7,6 +7,7 @@ plans/
 ├── installation/   安装、首次启动、Wizard 与卸载
 ├── gateway/        Gateway 服务归属
 ├── collaboration/  多智能体协作安装与运行边界
+├── business/       企业业务应用集成
 ├── quality/        产品模块与运行质量
 └── workbench/      AI 工作台、文件平台与开发工具基础设施
 ```
@@ -30,6 +31,10 @@ plans/
 ## Collaboration
 
 - [本机 System Service 协作启用归属修复](collaboration/2026-07-31-local-system-service-collaboration-enablement.md)
+
+## Business
+
+- [业务应用 UI 实施计划](business/2026-08-02-business-applications-ui.md)
 
 ## Workbench
 

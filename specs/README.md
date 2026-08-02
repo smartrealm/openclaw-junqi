@@ -7,6 +7,7 @@ specs/
 ├── installation/    安装、首次启动、Wizard 与卸载
 ├── gateway/         Gateway 生命周期与服务归属
 ├── collaboration/   多智能体协作与发布证据
+├── business/        企业业务应用集成
 └── quality/         产品模块与运行质量
 ```
 
@@ -32,6 +33,10 @@ specs/
 - [OpenClaw 多智能体协作](collaboration/2026-07-16-openclaw-agent-collaboration-bugfix.md)
 - [协作发布证据](collaboration/2026-07-18-openclaw-collaboration-release-evidence-bugfix.md)
 - [本机 System Service 协作启用归属修复](collaboration/2026-07-31-local-system-service-collaboration-enablement.md)
+
+## Business
+
+- [业务应用 UI 与 Chat 双入口](business/2026-08-02-business-applications-ui.md)
 
 ## Quality
 
