@@ -20,7 +20,7 @@ export interface VoiceWakeOptions {
    *  this platform). Lets the caller offer it as an audio attachment instead. */
   onCaptureFallback?: (wavDataUrl: string) => void | Promise<void>;
   /** Called just before a new utterance is accepted. */
-  onWakeDetected?: () => void;
+  onWakeDetected?: (trigger: string | null) => void;
   /** Native PCM16 frames emitted after a VAD or keyword trigger. */
   onPcmAudio?: (frame: { data: string; sampleRateHz: number; channels: number }) => void | Promise<void>;
   /** Preferred language for transcription (BCP-47). */
@@ -157,7 +157,7 @@ export function useVoiceWake({
         if (!transcript) continue;
         updatePhase('transcribing');
         const callbacks = callbacksRef.current;
-        callbacks.onWakeDetected?.();
+        callbacks.onWakeDetected?.(null);
         if (stoppedRef.current || recognitionRef.current !== rec) return;
         callbacks.onTranscript(transcript);
         if (!stoppedRef.current && recognitionRef.current === rec) updatePhase('listening');
@@ -269,7 +269,10 @@ export function useVoiceWake({
         suppressNativeCaptureRef.current = isVoiceOutputActive();
         if (suppressNativeCaptureRef.current) return;
         updatePhase('wake_detected');
-        callbacksRef.current.onWakeDetected?.();
+        const trigger = typeof payload.trigger === 'string' && payload.trigger.trim().length > 0
+          ? payload.trigger.trim()
+          : null;
+        callbacksRef.current.onWakeDetected?.(trigger);
       } else if (
         st === 'pcm'
         && typeof payload.data === 'string'

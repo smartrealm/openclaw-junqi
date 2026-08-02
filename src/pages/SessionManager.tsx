@@ -335,6 +335,12 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
                 : t('sessions.typeSession', 'Session')}
         </Badge>
 
+        {typeof session.category === 'string' && session.category.trim() && (
+          <Badge tone="info" size="sm" variant="soft" title={session.category}>
+            {session.category}
+          </Badge>
+        )}
+
         {session.model && (
           <Badge tone="info" size="sm" variant="soft" className="font-mono">
             {shortModel(session.model)}

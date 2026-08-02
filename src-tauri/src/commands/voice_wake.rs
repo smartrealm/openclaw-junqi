@@ -534,10 +534,10 @@ fn run_capture_loop(
             let now_ms = thread_start.elapsed().as_millis();
 
             if !recording {
-                let detected = keyword_spotter.as_mut().is_some_and(|spotter| {
+                let detected_keyword = keyword_spotter.as_mut().and_then(|spotter| {
                     spotter.accept_waveform_and_detect(sample_rate, &pending_mono)
                 });
-                if mode == VoiceWakeMode::WakeWord && detected {
+                if mode == VoiceWakeMode::WakeWord && detected_keyword.is_some() {
                     recording = true;
                     speech_ms = 0;
                     silence_ms = 0;
@@ -548,7 +548,11 @@ fn run_capture_loop(
                     emit_worker_event(
                         &app,
                         worker_id,
-                        serde_json::json!({ "state": "wake_detected", "source": "keyword" }),
+                        serde_json::json!({
+                            "state": "wake_detected",
+                            "source": "keyword",
+                            "trigger": detected_keyword,
+                        }),
                     );
                 } else if mode == VoiceWakeMode::Dictation && is_speech {
                     speech_ms += 20;

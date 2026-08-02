@@ -253,9 +253,13 @@ export function useComposerVoice({
         void stopVoiceWakeRef.current();
       }
     },
-    onWakeDetected: () => {
+    onWakeDetected: (trigger) => {
       const context = currentContextRef.current;
       if (!context || !voiceModeCoordinator.markTriggered(activeTurnRef.current, context)) return;
+      if (trigger) {
+        void gateway.setSessionCategory(`Jarvis: ${trigger}`, context.sessionKey)
+          .catch((error) => debugError('gateway', '[ComposerVoice] Unable to categorize Jarvis session:', error));
+      }
       void talkConversationRef.current?.start(context.sessionKey);
       void talkConversationRef.current?.interrupt();
       void stopAssistant();

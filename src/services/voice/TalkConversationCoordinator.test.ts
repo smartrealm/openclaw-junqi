@@ -99,9 +99,40 @@ test('Talk conversation retains bounded PCM while the relay session is connectin
     stopOutput: () => undefined,
   });
   const start = coordinator.start('agent:main:main');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(resolveSession);
   coordinator.appendPcm({ data: 'opening', sampleRateHz: 24_000, channels: 1 });
-  resolveSession?.({ sessionId: 'talk-1', provider: 'relay' });
+  resolveSession({ sessionId: 'talk-1', provider: 'relay' });
   await start;
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(appended, ['opening']);
+});
+
+test('a stale Talk session creation cannot replace a newer trigger', async () => {
+  const resolvers: Array<(value: { sessionId: string; provider: string }) => void> = [];
+  const closed: string[] = [];
+  const coordinator = new TalkConversationCoordinator({
+    client: {
+      createRealtimeRelay: () => new Promise((resolve) => resolvers.push(resolve)),
+      appendAudio: async () => undefined,
+      cancelOutput: async () => undefined,
+      close: async (sessionId) => { closed.push(sessionId); },
+      subscribe: () => () => undefined,
+    },
+    captureConnectionId: () => 'connection-a',
+    isConnectionCurrent: () => true,
+    interruptLocalOutput: () => undefined,
+    playOutput: () => undefined,
+    stopOutput: () => undefined,
+  });
+  const first = coordinator.start('agent:main:main');
+  const second = coordinator.start('agent:main:main');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolvers.length, 2);
+  resolvers[1]({ sessionId: 'talk-new', provider: 'relay' });
+  await second;
+  resolvers[0]({ sessionId: 'talk-old', provider: 'relay' });
+  await first;
+  assert.equal(coordinator.getSnapshot().sessionId, 'talk-new');
+  assert.deepEqual(closed, ['talk-old']);
 });

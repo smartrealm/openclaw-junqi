@@ -359,6 +359,8 @@ export interface Session {
   /** Ephemeral OpenClaw session identity. Changes after reset/new. */
   sessionId?: string;
   label: string;
+  /** OpenClaw user-defined session organization bucket. */
+  category?: string;
   agentId?: string;
   createdAt?: number | string;
   topic?: string;

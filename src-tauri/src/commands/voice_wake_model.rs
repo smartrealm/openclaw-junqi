@@ -50,26 +50,30 @@ impl WakeKeywordSpotter {
         Ok(Self { spotter, stream })
     }
 
-    pub fn accept_waveform_and_detect(&mut self, sample_rate: u32, samples: &[f32]) -> bool {
+    pub fn accept_waveform_and_detect(
+        &mut self,
+        sample_rate: u32,
+        samples: &[f32],
+    ) -> Option<String> {
         if samples.is_empty() {
-            return false;
+            return None;
         }
         let Ok(sample_rate) = i32::try_from(sample_rate) else {
-            return false;
+            return None;
         };
         self.stream.accept_waveform(sample_rate, samples);
         while self.spotter.is_ready(&self.stream) {
             self.spotter.decode(&self.stream);
-            if self
-                .spotter
-                .get_result(&self.stream)
-                .is_some_and(|result| !result.keyword.trim().is_empty())
-            {
+            if let Some(result) = self.spotter.get_result(&self.stream) {
+                let keyword = result.keyword.trim();
+                if keyword.is_empty() {
+                    continue;
+                }
                 self.spotter.reset(&self.stream);
-                return true;
+                return Some(keyword.to_string());
             }
         }
-        false
+        None
     }
 }
 
@@ -250,7 +254,9 @@ mod tests {
             .collect::<Vec<_>>();
         samples.extend(std::iter::repeat_n(0.0, (sample_rate / 2) as usize));
 
-        assert!(detector.accept_waveform_and_detect(sample_rate, &samples));
+        assert!(detector
+            .accept_waveform_and_detect(sample_rate, &samples)
+            .is_some());
     }
 
     #[test]

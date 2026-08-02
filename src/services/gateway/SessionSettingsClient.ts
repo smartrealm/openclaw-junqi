@@ -98,4 +98,8 @@ export class SessionSettingsClient {
   setLabel(sessionKey: string, label: string | null): Promise<SessionPatchResult> {
     return this.patch(sessionKey, { label }, true);
   }
+
+  setCategory(sessionKey: string, category: string | null): Promise<SessionPatchResult> {
+    return this.patch(sessionKey, { category }, true);
+  }
 }

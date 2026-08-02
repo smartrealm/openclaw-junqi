@@ -330,6 +330,7 @@ export default function App() {
           label: typeof s.label === 'string'
             ? s.label
             : (typeof s.name === 'string' ? s.name : ''),
+          category: typeof s.category === 'string' ? s.category : undefined,
           topic: typeof s.topic === 'string' ? s.topic : undefined,
           lastMessage: s.lastMessage?.content?.substring?.(0, 60),
           lastTimestamp: s.lastMessage?.timestamp || s.updatedAt,

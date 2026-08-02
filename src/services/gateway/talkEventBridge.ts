@@ -39,6 +39,12 @@ export function publishTalkGatewayEvent(message: unknown): boolean {
   const latest = latestSequenceBySession.get(event.sessionId);
   if (latest !== undefined && event.seq <= latest) return true;
   latestSequenceBySession.set(event.sessionId, event.seq);
+  if (event.type === 'session.closed' || event.type === 'session.error') {
+    latestSequenceBySession.delete(event.sessionId);
+  } else if (latestSequenceBySession.size > 256) {
+    const oldest = latestSequenceBySession.keys().next().value;
+    if (oldest) latestSequenceBySession.delete(oldest);
+  }
   for (const listener of [...listeners]) {
     try { listener(event); } catch { /* Presentation listeners cannot block gateway dispatch. */ }
   }

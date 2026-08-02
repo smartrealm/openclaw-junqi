@@ -826,6 +826,9 @@ export const gateway = {
   async setSessionLabel(label: string | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setLabel(sessionKey, label);
   },
+  async setSessionCategory(category: string | null, sessionKey = 'agent:main:main') {
+    return sessionSettings.setCategory(sessionKey, category);
+  },
   async updateAgentParams(agentId: string, params: Record<string, any>) {
     return requestPrivileged('agents.update', { agentId, params });
   },

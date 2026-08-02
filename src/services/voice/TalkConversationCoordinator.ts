@@ -30,6 +30,7 @@ export class TalkConversationCoordinator {
   private unsubscribeEvents: (() => void) | null = null;
   private appendQueue: Promise<void> = Promise.resolve();
   private pendingFrames: Array<{ data: string; sampleRateHz: number; channels: number }> = [];
+  private generation = 0;
   private readonly listeners = new Set<Listener>();
   private readonly now: () => number;
 
@@ -61,6 +62,7 @@ export class TalkConversationCoordinator {
     if (this.sessionKey) this.dependencies.interruptLocalOutput(this.sessionKey);
     await Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
     await this.stop();
+    const generation = ++this.generation;
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId || !sessionKey.trim()) {
       this.set({ ...INITIAL, phase: 'error', error: 'No attested Gateway connection is available for Talk' });
@@ -69,8 +71,9 @@ export class TalkConversationCoordinator {
     this.set({ phase: 'connecting', sessionId: null, connectionId, error: null });
     try {
       const session = await this.dependencies.client.createRealtimeRelay(sessionKey);
-      if (!this.dependencies.isConnectionCurrent(connectionId)) {
+      if (generation !== this.generation || !this.dependencies.isConnectionCurrent(connectionId)) {
         await this.dependencies.client.close(session.sessionId).catch(() => undefined);
+        if (generation !== this.generation) return this.snapshot;
         throw new Error('Gateway connection changed while creating the Talk session');
       }
       this.sessionKey = sessionKey;
@@ -120,6 +123,7 @@ export class TalkConversationCoordinator {
   }
 
   async stop(): Promise<void> {
+    this.generation += 1;
     const sessionId = this.snapshot.sessionId;
     const ownsSession = this.ownsSession();
     this.unsubscribeEvents?.();
@@ -147,6 +151,7 @@ export class TalkConversationCoordinator {
       void Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
       this.set({ ...this.snapshot, phase: 'listening', error: null });
     } else if (event.type === 'session.error' || event.type === 'session.closed') {
+      void Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
       this.set({ ...INITIAL, phase: 'error', error: `Talk session ${event.type}` });
     }
   }
