@@ -22,6 +22,12 @@ import {
   OpenClawToolsEffectiveResponseError,
   type OpenClawToolsEffectiveResult,
 } from '@/services/gateway/OpenClawToolsEffectiveClient';
+import {
+  OPENCLAW_TOOLS_CATALOG_METHOD,
+  OpenClawToolsCatalogClient,
+  OpenClawToolsCatalogResponseError,
+  type OpenClawToolsCatalogResult,
+} from '@/services/gateway/OpenClawToolsCatalogClient';
 
 export type { OpenClawSessionPreviewEntry } from '@/services/gateway/OpenClawSessionPreviewClient';
 export type {
@@ -30,6 +36,13 @@ export type {
   OpenClawToolsEffectiveNotice,
   OpenClawToolsEffectiveResult,
 } from '@/services/gateway/OpenClawToolsEffectiveClient';
+export type {
+  OpenClawToolsCatalogEntry,
+  OpenClawToolsCatalogGroup,
+  OpenClawToolsCatalogProfile,
+  OpenClawToolsCatalogProfileId,
+  OpenClawToolsCatalogResult,
+} from '@/services/gateway/OpenClawToolsCatalogClient';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -208,6 +221,11 @@ interface GatewayDataState {
   toolsEffectiveLoading: boolean;
   toolsEffectiveLoadingSessionKey: string | null;
   toolsEffectiveError: string | null;
+  toolsCatalog: Record<string, OpenClawToolsCatalogResult>;
+  toolsCatalogUpdatedAt: Record<string, number>;
+  toolsCatalogLoading: boolean;
+  toolsCatalogLoadingAgentId: string | null;
+  toolsCatalogError: string | null;
   agents: AgentInfo[];
   costSummary: CostSummary | null;
   sessionsUsage: SessionsUsage | null;
@@ -257,6 +275,10 @@ interface GatewayDataState {
   clearToolsEffective: (sessionKey?: string) => void;
   setToolsEffectiveLoading: (sessionKey: string | null) => void;
   setToolsEffectiveError: (value: string | null) => void;
+  setToolsCatalog: (agentId: string, result: OpenClawToolsCatalogResult) => void;
+  clearToolsCatalog: (agentId?: string) => void;
+  setToolsCatalogLoading: (agentId: string | null) => void;
+  setToolsCatalogError: (value: string | null) => void;
   setAgents: (agents: AgentInfo[]) => void;
   setCostSummary: (data: CostSummary) => void;
   setSessionsUsage: (data: SessionsUsage) => void;
@@ -289,6 +311,11 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   toolsEffectiveLoading: false,
   toolsEffectiveLoadingSessionKey: null,
   toolsEffectiveError: null,
+  toolsCatalog: {},
+  toolsCatalogUpdatedAt: {},
+  toolsCatalogLoading: false,
+  toolsCatalogLoadingAgentId: null,
+  toolsCatalogError: null,
   agents: [],
   costSummary: null,
   sessionsUsage: null,
@@ -405,9 +432,47 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
 
   setToolsEffectiveError: (value) => set({ toolsEffectiveError: value }),
 
+  setToolsCatalog: (agentId, result) => set({
+    toolsCatalog: { ...get().toolsCatalog, [agentId]: result },
+    toolsCatalogUpdatedAt: { ...get().toolsCatalogUpdatedAt, [agentId]: Date.now() },
+    toolsCatalogLoading: false,
+    toolsCatalogLoadingAgentId: null,
+    toolsCatalogError: null,
+  }),
+
+  clearToolsCatalog: (agentId) => {
+    if (!agentId) {
+      set({ toolsCatalog: {}, toolsCatalogUpdatedAt: {} });
+      return;
+    }
+    const toolsCatalog = { ...get().toolsCatalog };
+    const toolsCatalogUpdatedAt = { ...get().toolsCatalogUpdatedAt };
+    const normalizedAgentId = agentId.trim();
+    delete toolsCatalog[normalizedAgentId];
+    delete toolsCatalogUpdatedAt[normalizedAgentId];
+    set({ toolsCatalog, toolsCatalogUpdatedAt });
+  },
+
+  setToolsCatalogLoading: (agentId) => set({
+    toolsCatalogLoading: agentId !== null,
+    toolsCatalogLoadingAgentId: agentId,
+  }),
+
+  setToolsCatalogError: (value) => set({ toolsCatalogError: value }),
+
   setAgents: (agents) =>
     set({
       agents,
+      toolsCatalog: Object.fromEntries(
+        Object.entries(get().toolsCatalog).filter(([agentId]) => agents.some((agent) => agent.id === agentId)),
+      ),
+      toolsCatalogUpdatedAt: Object.fromEntries(
+        Object.entries(get().toolsCatalogUpdatedAt).filter(([agentId]) => agents.some((agent) => agent.id === agentId)),
+      ),
+      ...(get().toolsCatalogLoadingAgentId !== null
+        && !agents.some((agent) => agent.id === get().toolsCatalogLoadingAgentId)
+        ? { toolsCatalogLoading: false, toolsCatalogLoadingAgentId: null }
+        : {}),
       lastFetch: { ...get().lastFetch, agents: Date.now() },
       loading: { ...get().loading, agents: false },
       errors: { ...get().errors, agents: null },
@@ -494,6 +559,7 @@ const SESSION_PREVIEW_LIMIT = 3;
 const SESSION_PREVIEW_MAX_CHARS = 160;
 const SESSION_PREVIEW_FRESHNESS_MS = 30_000;
 const TOOLS_EFFECTIVE_FRESHNESS_MS = 30_000;
+const TOOLS_CATALOG_FRESHNESS_MS = 30_000;
 
 // Reference to gateway connection (set by startPolling)
 // Uses request() directly to avoid circular imports with gateway facade
@@ -668,6 +734,7 @@ let gw: GatewayRequester | null = null;
 const requestFence = createGatewayRequestFence<GatewayRequester>();
 const sessionPreviewRequestGate = createLatestRequestGate();
 const toolsEffectiveRequestGate = createLatestRequestGate();
+const toolsCatalogRequestGate = createLatestRequestGate();
 
 interface SessionPreviewRequestTicket {
   connection: GatewayRequester;
@@ -702,6 +769,27 @@ function isCurrentToolsEffectiveRequest(ticket: ToolsEffectiveRequestTicket): bo
   return ticket.connection === gw
     && toolsEffectiveRequestGate.isCurrent(ticket.requestId)
     && useGatewayDataStore.getState().toolsEffectiveLoadingSessionKey === ticket.sessionKey;
+}
+
+interface ToolsCatalogRequestTicket {
+  connection: GatewayRequester;
+  requestId: number;
+  agentId: string;
+}
+
+function beginToolsCatalogRequest(agentId: string): ToolsCatalogRequestTicket | null {
+  if (!gw) return null;
+  return {
+    connection: gw,
+    requestId: toolsCatalogRequestGate.begin(),
+    agentId,
+  };
+}
+
+function isCurrentToolsCatalogRequest(ticket: ToolsCatalogRequestTicket): boolean {
+  return ticket.connection === gw
+    && toolsCatalogRequestGate.isCurrent(ticket.requestId)
+    && useGatewayDataStore.getState().toolsCatalogLoadingAgentId === ticket.agentId;
 }
 
 function beginGatewayRequest(group: GatewayDataGroup): GatewayRequestTicket<GatewayRequester> | null {
@@ -938,6 +1026,7 @@ export function startPolling(gateway: GatewayRequester) {
   requestFence.invalidateAll();
   sessionPreviewRequestGate.invalidate();
   toolsEffectiveRequestGate.invalidate();
+  toolsCatalogRequestGate.invalidate();
   gw = gateway;
   useGatewayDataStore.getState().setPolling(true);
   debugLog('datastore', '[DataStore] Polling started (sessions=10s, agents=30s, demand groups lazy)');
@@ -964,6 +1053,7 @@ export function stopPolling() {
   requestFence.invalidateAll();
   sessionPreviewRequestGate.invalidate();
   toolsEffectiveRequestGate.invalidate();
+  toolsCatalogRequestGate.invalidate();
   gw = null;
   const store = useGatewayDataStore.getState();
   store.setPolling(false);
@@ -974,6 +1064,9 @@ export function stopPolling() {
   store.clearToolsEffective();
   store.setToolsEffectiveLoading(null);
   store.setToolsEffectiveError(null);
+  store.clearToolsCatalog();
+  store.setToolsCatalogLoading(null);
+  store.setToolsCatalogError(null);
   // Clear running sub-agents on disconnect — presence-based detection is meaningless
   // without a live sessions.list feed. Without this, stale sub-agents keep the pet
   // in "working" state indefinitely after a gateway disconnect/reconnect cycle.
@@ -1208,6 +1301,93 @@ export async function ensureToolsEffectiveFresh(
     return true;
   }
   return refreshToolsEffective(normalizedSessionKey, agentId);
+}
+
+function toolsCatalogFailureCode(error: unknown): string {
+  return error instanceof OpenClawToolsCatalogResponseError
+    ? error.code
+    : 'OPENCLAW_TOOLS_CATALOG_FAILED';
+}
+
+/** Fetch the Gateway's agent-scoped core/plugin tool catalog. */
+export async function refreshToolsCatalog(
+  agentId: string,
+  includePlugins = true,
+): Promise<boolean> {
+  const normalizedAgentId = typeof agentId === 'string' ? agentId.trim() : '';
+  const store = useGatewayDataStore.getState();
+  if (!normalizedAgentId) {
+    toolsCatalogRequestGate.invalidate();
+    store.clearToolsCatalog();
+    store.setToolsCatalogLoading(null);
+    store.setToolsCatalogError(null);
+    return false;
+  }
+  if (!gw) return false;
+
+  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_TOOLS_CATALOG_METHOD);
+  if (advertised === false) {
+    toolsCatalogRequestGate.invalidate();
+    store.clearToolsCatalog(normalizedAgentId);
+    store.setToolsCatalogLoading(null);
+    store.setToolsCatalogError('OPENCLAW_TOOLS_CATALOG_UNSUPPORTED');
+    return false;
+  }
+
+  const ticket = beginToolsCatalogRequest(normalizedAgentId);
+  if (!ticket) return false;
+  store.clearToolsCatalog(normalizedAgentId);
+  store.setToolsCatalogLoading(normalizedAgentId);
+  store.setToolsCatalogError(null);
+
+  const client = new OpenClawToolsCatalogClient(
+    <T>(method: string, params: Record<string, unknown>) => (
+      ticket.connection.request(method, params) as Promise<T>
+    ),
+  );
+  try {
+    const result = await client.get({ agentId: normalizedAgentId, includePlugins });
+    if (!isCurrentToolsCatalogRequest(ticket)) return false;
+    const active = useGatewayDataStore.getState().agents.some(
+      (agent) => agent.id === normalizedAgentId,
+    );
+    if (!active) {
+      store.clearToolsCatalog(normalizedAgentId);
+      store.setToolsCatalogLoading(null);
+      return false;
+    }
+    store.setToolsCatalog(normalizedAgentId, result);
+    return true;
+  } catch (error) {
+    if (!isCurrentToolsCatalogRequest(ticket)) return false;
+    store.clearToolsCatalog(normalizedAgentId);
+    store.setToolsCatalogLoading(null);
+    store.setToolsCatalogError(toolsCatalogFailureCode(error));
+    return false;
+  }
+}
+
+/** Fetch an agent catalog only when the selected snapshot is stale. */
+export async function ensureToolsCatalogFresh(
+  agentId: string,
+  maxAgeMs = TOOLS_CATALOG_FRESHNESS_MS,
+  includePlugins = true,
+): Promise<boolean> {
+  const normalizedAgentId = typeof agentId === 'string' ? agentId.trim() : '';
+  if (!normalizedAgentId || !gw) return false;
+  const store = useGatewayDataStore.getState();
+  if (store.toolsCatalogLoading) {
+    return store.toolsCatalogLoadingAgentId === normalizedAgentId;
+  }
+  const updatedAt = store.toolsCatalogUpdatedAt[normalizedAgentId] ?? 0;
+  if (
+    updatedAt > 0
+    && Date.now() - updatedAt < maxAgeMs
+    && Object.prototype.hasOwnProperty.call(store.toolsCatalog, normalizedAgentId)
+  ) {
+    return true;
+  }
+  return refreshToolsCatalog(normalizedAgentId, includePlugins);
 }
 
 /**

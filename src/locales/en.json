@@ -2686,6 +2686,22 @@
       "channel": "Channel",
       "mcp": "MCP"
     },
+    "toolsCatalogTitle": "Tool catalog",
+    "toolsCatalogHint": "Read-only core and plugin catalog reported by OpenClaw for the selected agent.",
+    "toolsCatalogAgent": "Agent",
+    "toolsCatalogRefresh": "Refresh tool catalog",
+    "toolsCatalogLoading": "Loading the tool catalog…",
+    "toolsCatalogUnavailable": "This OpenClaw Gateway does not advertise tools.catalog for the current connection.",
+    "toolsCatalogError": "The Gateway did not return a valid tool catalog.",
+    "toolsCatalogNoAgents": "No Gateway agents are available.",
+    "toolsCatalogEmpty": "No catalog tools were reported.",
+    "toolsCatalogProfiles": "Profiles",
+    "catalogToolOptional": "Optional",
+    "effectiveToolsRisk": {
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk"
+    },
     "execAskMode": "Exec Ask Mode",
     "toolProfile": "Tool Profile",
     "denyTools": "Deny Tools",

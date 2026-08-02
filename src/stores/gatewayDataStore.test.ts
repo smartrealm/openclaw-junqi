@@ -9,6 +9,7 @@ import {
   parseGatewayCostSummary,
   parseGatewayCronJobList,
   parseGatewaySessionsUsage,
+  refreshToolsCatalog,
   refreshToolsEffective,
   resolveGatewayConnectionStartedAt,
   startPolling,
@@ -186,6 +187,80 @@ test('effective tool snapshots follow Session lifecycle and capability advertise
     assert.equal(await refreshToolsEffective('agent:main:main'), false);
     assert.equal(useGatewayDataStore.getState().toolsEffectiveError, 'OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED');
     assert.equal(calls.includes('tools.effective'), false);
+  } finally {
+    stopPolling();
+  }
+});
+
+test('tool catalogs follow Agent lifecycle and capability advertisement', async () => {
+  const store = useGatewayDataStore.getState();
+  store.setAgents([{ id: 'main' }]);
+  store.setToolsCatalog('main', {
+    agentId: 'main',
+    profiles: [],
+    groups: [],
+  });
+  assert.ok(useGatewayDataStore.getState().toolsCatalog.main);
+
+  store.setToolsCatalogLoading('main');
+  store.setAgents([]);
+  const afterDeletion = useGatewayDataStore.getState();
+  assert.equal(afterDeletion.toolsCatalog.main, undefined);
+  assert.equal(afterDeletion.toolsCatalogLoading, false);
+  assert.equal(afterDeletion.toolsCatalogLoadingAgentId, null);
+
+  const calls: string[] = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'tools.catalog' ? false : true,
+    request: async (method: string) => {
+      calls.push(method);
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    assert.equal(await refreshToolsCatalog('main'), false);
+    assert.equal(useGatewayDataStore.getState().toolsCatalogError, 'OPENCLAW_TOOLS_CATALOG_UNSUPPORTED');
+    assert.equal(calls.includes('tools.catalog'), false);
+  } finally {
+    stopPolling();
+  }
+});
+
+test('refreshToolsCatalog commits only the current Gateway result for the selected Agent', async () => {
+  const store = useGatewayDataStore.getState();
+  store.setAgents([{ id: 'main' }]);
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'tools.catalog' ? true : null,
+    request: async (method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params });
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      if (method === 'tools.catalog') {
+        return { agentId: 'main', profiles: [], groups: [] };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    assert.equal(await refreshToolsCatalog('main'), true);
+    assert.deepEqual(useGatewayDataStore.getState().toolsCatalog.main, {
+      agentId: 'main',
+      profiles: [],
+      groups: [],
+    });
+    assert.deepEqual(calls.find((call) => call.method === 'tools.catalog'), {
+      method: 'tools.catalog',
+      params: { agentId: 'main', includePlugins: true },
+    });
   } finally {
     stopPolling();
   }

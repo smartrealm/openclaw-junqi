@@ -56,5 +56,5 @@ methods 为准。
 - 尚未连接真实 Gateway 现场验证不同 agent、profile 覆盖、渠道插件和 MCP notices 的
   实际数据组合。
 - 尚未在 macOS、Windows、CentOS、Ubuntu 真机完成 Tools 页面和断线重连验收。
-- `tools.catalog`、`tools.invoke` 仍未接入；本次改动不改变工具执行、授权或 MCP 生命周期。
+- `tools.catalog` 已由 [OpenClaw 原生工具目录对齐](openclaw-native-tools-catalog-alignment-2026-08-03.md) 单独接入；`tools.invoke` 仍未接入。本次有效工具改动不改变工具执行、授权或 MCP 生命周期。
 - OpenClaw 官方 schema、handler 或权限目录变化时，必须重新核对源码后更新适配器。

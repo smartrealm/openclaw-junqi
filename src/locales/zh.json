@@ -2682,6 +2682,22 @@
       "channel": "渠道",
       "mcp": "MCP"
     },
+    "toolsCatalogTitle": "工具目录",
+    "toolsCatalogHint": "由 OpenClaw 为所选智能体返回的只读核心与插件工具目录。",
+    "toolsCatalogAgent": "智能体",
+    "toolsCatalogRefresh": "刷新工具目录",
+    "toolsCatalogLoading": "正在加载工具目录…",
+    "toolsCatalogUnavailable": "当前 OpenClaw Gateway 未通过能力广告提供 tools.catalog。",
+    "toolsCatalogError": "Gateway 未返回有效的工具目录。",
+    "toolsCatalogNoAgents": "当前没有可用的 Gateway 智能体。",
+    "toolsCatalogEmpty": "Gateway 未报告工具目录。",
+    "toolsCatalogProfiles": "工具配置档",
+    "catalogToolOptional": "可选",
+    "effectiveToolsRisk": {
+      "low": "低风险",
+      "medium": "中风险",
+      "high": "高风险"
+    },
     "execAskMode": "执行确认模式",
     "toolProfile": "工具配置档",
     "denyTools": "禁止工具",
