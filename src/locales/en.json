@@ -866,6 +866,8 @@
     "dynamicIslandDesc": "Appears while the main window is minimized and a session is active, or temporarily while receiving dropped files.",
     "dynamicIslandAutoExpand": "Expand for important activity",
     "dynamicIslandAutoExpandDesc": "Briefly expands for input requests, completion, failures, and incoming files, then collapses automatically.",
+    "openClawSessionObserverEnabled": "Use OpenClaw Session Observer",
+    "openClawSessionObserverDesc": "While the main window is minimized, lets the Gateway provide native session summaries. This may use the Gateway utility model.",
     "dynamicIslandPreview": "Preview Dynamic Island",
     "structuredPlans": {
       "title": "Structured Chat plans",
@@ -5137,6 +5139,8 @@
     "returnToChatToControlVoice": "Return to chat to control voice input",
     "openclawOnline": "OPENCLAW ONLINE",
     "openclawStandby": "OPENCLAW STANDBY",
+    "openclaw": "OpenClaw",
+    "observer": "OpenClaw observation",
     "releaseFiles": "Release to let JunQi analyze them",
     "quickChatReady": "Quick Chat has the file context",
     "currentActivity": "Current activity",
@@ -5163,7 +5167,17 @@
     "alerts": "Alerts",
     "agent": {
       "thinking": "{{agent}} is thinking",
-      "generating": "{{agent}} is responding"
+      "generating": "{{agent}} is responding",
+      "observing": "{{agent}} status update"
+    },
+    "observerHealth": {
+      "on-track": "On track",
+      "grinding": "Working through it",
+      "stuck": "Blocked",
+      "waiting-on-user": "Waiting for you",
+      "wrapping-up": "Wrapping up",
+      "done": "Done",
+      "failed": "Failed"
     },
     "elapsed": {
       "thinking": "{{elapsed}} · THINKING",

@@ -20,12 +20,26 @@ export interface DynamicIslandTask {
 }
 
 export interface DynamicIslandSessionActivity {
+  id: string;
   sessionKey: string;
   agentName: string;
   sessionTitle: string;
-  phase: 'thinking' | 'generating';
+  phase: 'thinking' | 'generating' | 'observing';
   startedAt: number;
+  observer?: {
+    headline: string;
+    health: DynamicIslandSessionObserverHealth;
+  };
 }
+
+export type DynamicIslandSessionObserverHealth =
+  | 'on-track'
+  | 'grinding'
+  | 'stuck'
+  | 'waiting-on-user'
+  | 'wrapping-up'
+  | 'done'
+  | 'failed';
 
 export interface DynamicIslandNotice {
   id: string;
@@ -233,6 +247,17 @@ export function shouldPeekForSnapshot(
     && previous.executionPlan
     && next.executionPlan.currentStep > previous.executionPlan.currentStep
   ) return true;
+
+  const previousObserverHealth = new Map(
+    previous.sessionActivities
+      .filter((activity) => activity.observer)
+      .map((activity) => [activity.id, activity.observer?.health]),
+  );
+  if (next.sessionActivities.some((activity) => (
+    activity.observer
+    && (activity.observer.health === 'stuck' || activity.observer.health === 'waiting-on-user')
+    && previousObserverHealth.get(activity.id) !== activity.observer.health
+  ))) return true;
 
   const oldStatuses = new Map(previous.tasks.map((task) => [task.id, task.status]));
   return next.tasks.some((task) => {

@@ -19,6 +19,8 @@ import { projectSessionActivity } from '@/utils/sessionPresentation';
 import { selectActiveExecutionPlan } from '@/components/Chat/executionPlanPlacement';
 import { prepareFocusNavigation } from '@/focus/openFocus';
 import { useFocusProjection } from '@/focus/useFocusProjection';
+import { useOpenClawSessionObserver } from '@/hooks/useOpenClawSessionObserver';
+import type { OpenClawSessionObserverDigest } from '@/services/gateway';
 import {
   isVoiceActivePhase,
   isDynamicIslandVoiceInputActive,
@@ -30,11 +32,15 @@ import {
   type DynamicIslandSnapshot,
 } from './model';
 
+function observerDigestKey(digest: Pick<OpenClawSessionObserverDigest, 'sessionKey' | 'agentId'>): string {
+  return `${digest.sessionKey}\u0000${digest.agentId ?? ''}`;
+}
 
 export default function DynamicIslandRuntime() {
   const { t } = useTranslation();
   const enabled = useSettingsStore((state) => state.dynamicIslandEnabled);
   const autoExpand = useSettingsStore((state) => state.dynamicIslandAutoExpand);
+  const openClawSessionObserverEnabled = useSettingsStore((state) => state.openClawSessionObserverEnabled);
   const dndMode = useSettingsStore((state) => state.dndMode);
   const connected = useChatStore((state) => state.connected);
   const connecting = useChatStore((state) => state.connecting);
@@ -67,6 +73,9 @@ export default function DynamicIslandRuntime() {
   const previousTaskStatusesRef = useRef<Map<string, string> | null>(null);
   resourceDropRef.current = resourceDrop;
 
+  const observerVisible = enabled && openClawSessionObserverEnabled && mainMinimized && connected;
+  const observerDigests = useOpenClawSessionObserver(observerVisible);
+
   const visibleTasks = useMemo(() => selectDynamicIslandTasks(tasks), [tasks]);
   const activityProjection = useMemo(() => projectSessionActivity({
     sessions: chatSessions,
@@ -78,7 +87,8 @@ export default function DynamicIslandRuntime() {
   }), [activeSessionKey, chatSessions, sendingBySession, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const sessionActivities = useMemo<DynamicIslandSessionActivity[]>(() => {
     const observedAt = Date.now();
-    return activityProjection.active.map((activity) => {
+    const consumedObserverDigests = new Set<string>();
+    const localActivities = activityProjection.active.map((activity) => {
       const { sessionKey, session } = activity;
       const agentId = session?.agentId || sessionKey.split(':')[1] || 'main';
       const agentName = gatewayAgents.find((agent) => agent.id === agentId)?.name || agentId;
@@ -90,16 +100,49 @@ export default function DynamicIslandRuntime() {
       const phase: DynamicIslandSessionActivity['phase'] = activity.phase === 'thinking'
         ? 'thinking'
         : 'generating';
+      const observer = observerDigests.find((digest) => (
+        digest.sessionKey === sessionKey && (!digest.agentId || digest.agentId === agentId)
+      ));
+      if (observer) consumedObserverDigests.add(observerDigestKey(observer));
       return {
+        id: `session:${sessionKey}`,
         sessionKey,
         agentName,
         sessionTitle: title,
         phase,
         startedAt: activity.startedAt ?? observedAt,
+        ...(observer ? {
+          observer: {
+            headline: observer.headline,
+            health: observer.health,
+          },
+        } : {}),
       };
     });
-  }, [activityProjection, gatewayAgents, t]);
-  const sessionRunning = activityProjection.active.length > 0;
+    const observerActivities = observerDigests
+      .filter((digest) => digest.health !== 'done' && digest.health !== 'failed')
+      .filter((digest) => !consumedObserverDigests.has(observerDigestKey(digest)))
+      .map((digest) => {
+        const agentId = digest.agentId;
+        const agentName = agentId
+          ? gatewayAgents.find((agent) => agent.id === agentId)?.name || agentId
+          : t('dynamicIsland.openclaw');
+        return {
+          id: `observer:${observerDigestKey(digest)}`,
+          sessionKey: digest.sessionKey,
+          agentName,
+          sessionTitle: t('dynamicIsland.observer'),
+          phase: 'observing' as const,
+          startedAt: digest.updatedAt,
+          observer: {
+            headline: digest.headline,
+            health: digest.health,
+          },
+        };
+      });
+    return [...localActivities, ...observerActivities];
+  }, [activityProjection, gatewayAgents, observerDigests, t]);
+  const sessionRunning = sessionActivities.length > 0;
   const responseGroups = useChatStore((state) => state.responseGroups);
   const executionPlan = useMemo(() => {
     const plan = selectActiveExecutionPlan(responseGroups);

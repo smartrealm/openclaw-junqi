@@ -79,6 +79,7 @@ export function SettingsPageFull() {
     dndMode, setDndMode,
     dynamicIslandEnabled, setDynamicIslandEnabled,
     dynamicIslandAutoExpand, setDynamicIslandAutoExpand,
+    openClawSessionObserverEnabled, setOpenClawSessionObserverEnabled,
     gatewayUrl, setGatewayUrl,
     budgetLimit, setBudgetLimit,
     setGatewayToken,
@@ -721,6 +722,14 @@ export function SettingsPageFull() {
               <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.dynamicIslandAutoExpandDesc', '等待输入、执行完成、失败或接收文件时短暂展开，随后自动收起。')}</div>
             </div>
             <SettingsSwitch checked={dynamicIslandAutoExpand} onCheckedChange={setDynamicIslandAutoExpand} disabled={!dynamicIslandEnabled} label={t('settings.dynamicIslandAutoExpand', '重要状态自动展开')} />
+          </div>
+
+          <div className="flex items-center justify-between gap-5">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('settings.openClawSessionObserverEnabled', '使用 OpenClaw 会话观察')}</div>
+              <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.openClawSessionObserverDesc', '主窗口最小化时，允许 Gateway 提供原生会话摘要。该能力可能使用 Gateway 配置的 utility model。')}</div>
+            </div>
+            <SettingsSwitch checked={openClawSessionObserverEnabled} onCheckedChange={setOpenClawSessionObserverEnabled} disabled={!dynamicIslandEnabled} label={t('settings.openClawSessionObserverEnabled', '使用 OpenClaw 会话观察')} />
           </div>
 
           <button

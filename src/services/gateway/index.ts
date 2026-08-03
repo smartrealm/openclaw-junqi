@@ -64,6 +64,11 @@ import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
 import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
 import { OpenClawSessionCompactionCheckpointsClient } from './OpenClawSessionCompactionCheckpointsClient';
 import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
+import { OpenClawSessionObserverClient } from './OpenClawSessionObserverClient';
+import {
+  openClawSessionObserverStream,
+  routeOpenClawSessionObserverEvent,
+} from './sessionObserverEventBridge';
 import { OpenClawCronRunClient } from './OpenClawCronRunClient';
 import { OpenClawCronStatusClient } from './OpenClawCronStatusClient';
 import { OpenClawTtsClient } from './OpenClawTtsClient';
@@ -91,6 +96,10 @@ export type {
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
 export type { OpenClawTtsClip, OpenClawTtsSpeakInput } from './OpenClawTtsClient';
 export type { OpenClawTtsStatus } from './OpenClawTtsStatusClient';
+export type {
+  OpenClawSessionObserverDigest,
+  OpenClawSessionObserverHealth,
+} from './sessionObserverEventBridge';
 export type {
   OpenClawCompactionCheckpoint,
   OpenClawCompactionCheckpointReason,
@@ -253,6 +262,18 @@ function historyTaskObservation(response: unknown): {
 const connection = new GatewayConnection();
 const chatHandler = new ChatHandler(connection);
 const transcriptSubscription = new OpenClawSessionTranscriptSubscription(connection);
+export const openClawSessionObserverClient = new OpenClawSessionObserverClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
 const auditClient = new OpenClawAuditClient(
   (method, params) => connection.request(method, params),
   (method) => connection.hasAdvertisedMethod(method),
@@ -799,7 +820,10 @@ connection.onEvent = (msg: unknown) => routeTalkGatewayEvent(
   msg,
   (talkRemainder) => routeVoiceWakeGatewayEvent(
     talkRemainder,
-    (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+    (voiceWakeRemainder) => routeOpenClawSessionObserverEvent(
+      voiceWakeRemainder,
+      (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+    ),
   ),
 );
 
@@ -860,6 +884,8 @@ export const gateway = {
   connect(url: string, token: string, deviceToken = '') { connection.connect(url, token, deviceToken); },
   disconnect() {
     transcriptSubscription.resetTransport();
+    openClawSessionObserverClient.resetTransport();
+    openClawSessionObserverStream.clear();
     connection.disconnect();
   },
   getStatus() { return connection.getStatus(); },

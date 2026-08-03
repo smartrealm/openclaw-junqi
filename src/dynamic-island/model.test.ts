@@ -104,6 +104,28 @@ test('a voice draft asks the island to peek without exposing its contents', () =
   assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, draftReady), true);
 });
 
+test('a newly blocked native observer digest peeks once without becoming a task', () => {
+  const blocked = {
+    ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
+    sessionRunning: true,
+    sessionActivities: [{
+      id: 'observer:agent:main:main',
+      sessionKey: 'agent:main:main',
+      agentName: 'main',
+      sessionTitle: 'OpenClaw observation',
+      phase: 'observing' as const,
+      startedAt: 1,
+      observer: {
+        headline: 'Waiting for a decision.',
+        health: 'waiting-on-user' as const,
+      },
+    }],
+  };
+  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, blocked), true);
+  assert.equal(shouldPeekForSnapshot(blocked, { ...blocked, revision: 2 }), false);
+  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, { ...blocked, autoExpand: false }), false);
+});
+
 test('remaining time freezes while paused and uses stable tabular format', () => {
   const paused = {
     ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
@@ -187,4 +209,11 @@ test('the island plan projection carries no transcript content', () => {
   );
   assert.deepEqual(keys.sort(), ['currentStep', 'stepTitle', 'totalSteps']);
   assert.equal(EMPTY_DYNAMIC_ISLAND_SNAPSHOT.executionPlan, null);
+});
+
+test('native observer projection is limited to display-safe state', () => {
+  const keys = Object.keys({ headline: 'Waiting for a decision.', health: 'waiting-on-user' } satisfies NonNullable<
+    typeof EMPTY_DYNAMIC_ISLAND_SNAPSHOT.sessionActivities[number]['observer']
+  >);
+  assert.deepEqual(keys.sort(), ['headline', 'health']);
 });

@@ -194,6 +194,7 @@ export default function DynamicIsland() {
     if (inputVoiceActive) return t(voiceInputTitleKey(snapshot.voiceInput));
     if (runningCount === 1 && primaryRunningTask) return primaryRunningTask.title;
     if (runningCount > 0) return t('dynamicIsland.agentsRunning', { count: runningCount });
+    if (primarySessionActivity?.observer) return primarySessionActivity.observer.headline;
     if (primarySessionActivity) {
       return t(`dynamicIsland.agent.${primarySessionActivity.phase}`, { agent: primarySessionActivity.agentName });
     }
@@ -206,6 +207,9 @@ export default function DynamicIsland() {
     if (task) return `${task.agent} · ${statusLabel(task.status)}`;
     if (snapshot.pomodoro.running) {
       return t(snapshot.pomodoro.phase === 'work' ? 'dynamicIsland.focusSession' : 'dynamicIsland.breakSession');
+    }
+    if (primarySessionActivity?.observer) {
+      return `${primarySessionActivity.agentName} · ${t(`dynamicIsland.observerHealth.${primarySessionActivity.observer.health}`)}`;
     }
     if (primarySessionActivity) {
       return t(`dynamicIsland.elapsed.${primarySessionActivity.phase}`, {
@@ -302,6 +306,8 @@ export default function DynamicIsland() {
                   ? t(snapshot.resourceDrop.phase === 'dragging' ? 'dynamicIsland.releaseFiles' : 'dynamicIsland.quickChatReady')
                   : inputVoiceActive
                     ? t(voiceInputDetailKey(snapshot.voiceInput))
+                    : primarySessionActivity?.observer
+                      ? t(`dynamicIsland.observerHealth.${primarySessionActivity.observer.health}`)
                     : snapshot.notice?.body || t('dynamicIsland.currentActivity')}</small></span>
               </div>
               <div className="junqi-island-window-actions">
@@ -363,11 +369,13 @@ export default function DynamicIsland() {
                       </button>
                     )}
                     {snapshot.sessionActivities.slice(0, 2).map((activity) => (
-                      <button key={activity.sessionKey} type="button" className="junqi-island-task is-session" onClick={() => action({ type: 'open-session', sessionKey: activity.sessionKey })}>
+                      <button key={activity.id} type="button" className="junqi-island-task is-session" onClick={() => action({ type: 'open-session', sessionKey: activity.sessionKey })}>
                         <span className="junqi-island-task-icon is-running"><span className="junqi-island-spinner" /></span>
                         <span className="junqi-island-task-copy">
-                          <strong>{t(`dynamicIsland.agent.${activity.phase}`, { agent: activity.agentName })}</strong>
-                          <small>{activity.sessionTitle} · {t(`dynamicIsland.elapsed.${activity.phase}`, { elapsed: formatElapsedTime(activity.startedAt, now) })}</small>
+                          <strong>{activity.observer?.headline ?? t(`dynamicIsland.agent.${activity.phase}`, { agent: activity.agentName })}</strong>
+                          <small>{activity.observer
+                            ? `${activity.agentName} · ${t(`dynamicIsland.observerHealth.${activity.observer.health}`)}`
+                            : `${activity.sessionTitle} · ${t(`dynamicIsland.elapsed.${activity.phase}`, { elapsed: formatElapsedTime(activity.startedAt, now) })}`}</small>
                         </span>
                         <ChevronUp size={13} className="junqi-island-task-open" />
                       </button>

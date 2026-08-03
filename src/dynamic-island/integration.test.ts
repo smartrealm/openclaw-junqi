@@ -104,11 +104,14 @@ test('island returns to the existing chat session and uses packaged JunQi brandi
   assert.match(island, /JunQiLogo/);
   assert.match(island, /type: 'open-session', sessionKey: primarySessionActivity\?\.sessionKey \|\| snapshot\.sessionKey/);
   assert.match(island, /snapshot\.sessionActivities\.slice\(0, 2\)/);
+  assert.match(island, /activity\.observer\?\.headline/);
   assert.match(island, /formatElapsedTime\(activity\.startedAt, now\)/);
   assert.doesNotMatch(island, /src="\/src\/assets\/brand\/junqi-emblem\.svg"/);
   assert.match(runtime, /chat\.setActiveSession\(action\.sessionKey\)/);
   assert.match(runtime, /dynamic_island_focus_main', \{ route: '\/chat' \}/);
   assert.match(runtime, /prepareFocusNavigation/);
+  assert.match(runtime, /useOpenClawSessionObserver\(observerVisible\)/);
+  assert.match(runtime, /digest\.health !== 'done' && digest\.health !== 'failed'/);
   assert.match(island, /type: 'open-focus'/);
   assert.doesNotMatch(runtime, /open_quickchat_with_files', \{ paths: \[\] \}/);
   assert.match(styles, /var\(--aegis-bg-frosted\)/);
@@ -121,8 +124,10 @@ test('settings expose conditional display and important-activity expansion', () 
   const en = JSON.parse(read('src/locales/en.json')) as { settings: Record<string, string> };
   assert.match(settings, /dynamicIslandEnabled/);
   assert.match(settings, /dynamicIslandAutoExpand/);
+  assert.match(settings, /openClawSessionObserverEnabled/);
   for (const catalog of [zh, en]) {
     assert.ok(catalog.settings.dynamicIslandDesc);
     assert.ok(catalog.settings.dynamicIslandAutoExpandDesc);
+    assert.ok(catalog.settings.openClawSessionObserverDesc);
   }
 });

@@ -63,6 +63,7 @@ interface SettingsState {
   dndMode: boolean;
   dynamicIslandEnabled: boolean;
   dynamicIslandAutoExpand: boolean;
+  openClawSessionObserverEnabled: boolean;
   budgetLimit: number;
   commandPaletteOpen: boolean;
   context1mEnabled: boolean;
@@ -91,6 +92,7 @@ interface SettingsState {
   setDndMode: (dnd: boolean) => void;
   setDynamicIslandEnabled: (enabled: boolean) => void;
   setDynamicIslandAutoExpand: (enabled: boolean) => void;
+  setOpenClawSessionObserverEnabled: (enabled: boolean) => void;
   setBudgetLimit: (n: number) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setContext1mEnabled: (enabled: boolean) => void;
@@ -177,6 +179,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   dndMode: localStorage.getItem('aegis-dnd-mode') === 'true',
   dynamicIslandEnabled: localStorage.getItem('junqi:dynamic-island-enabled') !== 'false',
   dynamicIslandAutoExpand: localStorage.getItem('junqi:dynamic-island-auto-expand') !== 'false',
+  openClawSessionObserverEnabled: localStorage.getItem('junqi:openclaw-session-observer-enabled') === 'true',
   budgetLimit: parseFloat(localStorage.getItem('aegis-budget-limit') || '0') || 0,
   commandPaletteOpen: false,
   context1mEnabled: localStorage.getItem('aegis-context1m') === 'true',
@@ -253,6 +256,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setDndMode: (dnd) => { localStorage.setItem('aegis-dnd-mode', String(dnd)); set({ dndMode: dnd }); },
   setDynamicIslandEnabled: (enabled) => { localStorage.setItem('junqi:dynamic-island-enabled', String(enabled)); set({ dynamicIslandEnabled: enabled }); },
   setDynamicIslandAutoExpand: (enabled) => { localStorage.setItem('junqi:dynamic-island-auto-expand', String(enabled)); set({ dynamicIslandAutoExpand: enabled }); },
+  setOpenClawSessionObserverEnabled: (enabled) => { localStorage.setItem('junqi:openclaw-session-observer-enabled', String(enabled)); set({ openClawSessionObserverEnabled: enabled }); },
   setBudgetLimit: (n) => { localStorage.setItem('aegis-budget-limit', String(n)); set({ budgetLimit: n }); },
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   setContext1mEnabled: (enabled) => { localStorage.setItem('aegis-context1m', String(enabled)); set({ context1mEnabled: enabled }); },

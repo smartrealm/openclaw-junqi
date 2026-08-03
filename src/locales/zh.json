@@ -866,6 +866,8 @@
     "dynamicIslandDesc": "主窗口最小化且会话正在执行时显示；拖入文件时临时显示接收状态。",
     "dynamicIslandAutoExpand": "重要状态自动展开",
     "dynamicIslandAutoExpandDesc": "等待输入、执行完成、失败或接收文件时短暂展开，随后自动收起。",
+    "openClawSessionObserverEnabled": "使用 OpenClaw 会话观察",
+    "openClawSessionObserverDesc": "主窗口最小化时，允许 Gateway 提供原生会话摘要。该能力可能使用 Gateway 配置的 utility model。",
     "dynamicIslandPreview": "预览灵动岛",
     "structuredPlans": {
       "title": "结构化会话计划",
@@ -5160,6 +5162,8 @@
     "returnToChatToControlVoice": "回到会话控制语音输入",
     "openclawOnline": "OPENCLAW 在线",
     "openclawStandby": "OPENCLAW 待命",
+    "openclaw": "OpenClaw",
+    "observer": "OpenClaw 会话观察",
     "releaseFiles": "松开鼠标，交给 JunQi 分析",
     "quickChatReady": "快捷对话已准备好文件上下文",
     "currentActivity": "当前活动",
@@ -5186,7 +5190,17 @@
     "alerts": "通知",
     "agent": {
       "thinking": "{{agent}} 正在思考",
-      "generating": "{{agent}} 正在回复"
+      "generating": "{{agent}} 正在回复",
+      "observing": "{{agent}} 状态更新"
+    },
+    "observerHealth": {
+      "on-track": "进展正常",
+      "grinding": "正在处理",
+      "stuck": "已阻塞",
+      "waiting-on-user": "等待你的输入",
+      "wrapping-up": "正在收尾",
+      "done": "已完成",
+      "failed": "失败"
     },
     "elapsed": {
       "thinking": "已响应 {{elapsed}} · 思考中",
