@@ -16,6 +16,8 @@ JunQi 的未签名 Windows 内部构建缺少可验证发布者身份。团队�
 8. 安装脚本必须显示 subject、thumbprint、有效期并要求固定确认语句。
 9. 删除脚本必须同时校验 subject 和 thumbprint，避免删除无关证书。
 10. JunQi 安装器和卸载器不得自动安装或删除根证书。
+11. Tag 测试发布使用临时 runner 内不可导出的短期证书，先签主程序再签 NSIS。
+12. Release 只发布 CER 和证书信息，不发布 PFX；每个 tag 的证书身份相互独立。
 
 ## 非目标
 

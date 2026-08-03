@@ -164,6 +164,19 @@ REMOVE JUNQI TEST CERTIFICATE
 - 安装后的主程序及卸载程序签名状态；
 - 证书移除后原签名程序是否重新被阻止。
 
+## Tag 测试发布
+
+`tag-release.yml` 的 Windows job 在 GitHub 托管的临时 runner 中生成最长 14 天、不可导出的短期内部证书。该 job 先签署 `junqi-desktop.exe`，再构建并签署 NSIS，最后随 Release 发布：
+
+```text
+junqi-internal-test-signing.cer
+junqi-internal-test-signing-info.txt
+```
+
+CI 私钥只存在于临时 runner 的当前用户证书存储，不导出、不上传。每个 tag 都生成新的证书，因此每次测试新 tag 前都必须核对并安装该 Release 对应的 CER；旧 tag 的 CER 不能用于验证新 tag。
+
+该 tag 路径是内部测试发布，不是公共可信正式发布。Release 说明必须保留 Smart App Control 限制，不能将 Tauri updater 的 `.sig` 描述为 Authenticode 公共信任。
+
 在取得这些真机证据前，本流程状态为“内部 Authenticode 测试方案已实现，Windows 真机行为待验证”；不得把它描述为 Smart App Control 解决方案。
 
 官方依据：Microsoft Learn, [Smart App Control overview](https://learn.microsoft.com/windows/apps/develop/smart-app-control/overview)。
