@@ -9,8 +9,8 @@ core/plugin 工具目录。这个目录用于观察配置可见的工具、工�
 可选标记和默认 profile；它不是某个 Session 的最终权限。Session 级实际结果仍由旁边的
 `tools.effective` 面板负责。
 
-JunQi 不维护第二份工具目录，不根据配置字段本地合成插件工具，不执行 `tools.invoke`，
-也不主动连接 MCP。Gateway 未广告该方法、返回不合法数据、agent 被删除或连接断开时，
+JunQi 不维护第二份工具目录，不根据配置字段本地合成插件工具；目录读取路径本身不执行
+`tools.invoke`，也不主动连接 MCP。Gateway 未广告该方法、返回不合法数据、agent 被删除或连接断开时，
 界面不保留旧目录作为当前事实。
 
 ## 权威依据
@@ -50,4 +50,5 @@ schema、handler、方法目录和当前连接的 advertised methods 为准。
 
 - 尚未连接真实 Gateway 现场验证插件 registry、optional 工具和 profile 的实际组合。
 - 尚未在 macOS、Windows、CentOS、Ubuntu 真机完成 Tools 页面和断线重连验收。
-- `tools.invoke` 仍未接入；本次改动不改变工具执行、审批、授权或 MCP 生命周期。
+- `tools.invoke` 由独立的 [OpenClaw 原生工具调用对齐](openclaw-native-tools-invoke-alignment-2026-08-03.md)
+  记录负责；本次目录读取改动不改变工具执行、审批、授权或 MCP 生命周期。

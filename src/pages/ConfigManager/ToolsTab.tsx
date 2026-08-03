@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, CheckCircle2, Info, Library, RefreshCw, ShieldCheck, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Library, Play, RefreshCw, ShieldAlert, ShieldCheck, Wrench } from 'lucide-react';
 import type { OpenClawConfig } from './types';
 import { SchemaDrivenObjectEditor } from './SchemaDrivenObjectEditor';
 import {
@@ -13,12 +13,15 @@ import {
   ensureToolsCatalogFresh,
   refreshToolsCatalog,
   refreshToolsEffective,
+  invokeOpenClawTool,
+  OpenClawToolsInvokeUnavailableError,
   useGatewayDataStore,
   type AgentInfo,
   type OpenClawToolsCatalogEntry,
   type OpenClawToolsCatalogGroup,
   type OpenClawToolsCatalogProfileId,
   type OpenClawToolsEffectiveGroup,
+  type OpenClawToolsInvokeResult,
   type SessionInfo,
 } from '@/stores/gatewayDataStore';
 
@@ -296,6 +299,261 @@ function ToolsCatalogPanel() {
   );
 }
 
+function formatToolValue(value: unknown, emptyLabel: string): string {
+  if (value === undefined) return emptyLabel;
+  try {
+    const serialized = JSON.stringify(value, null, 2);
+    return serialized === undefined ? emptyLabel : serialized;
+  } catch {
+    return emptyLabel;
+  }
+}
+
+function ToolInvokePanel() {
+  const { t } = useTranslation();
+  const sessions = useGatewayDataStore((state) => state.sessions);
+  const effectiveTools = useGatewayDataStore((state) => state.toolsEffective);
+  const loading = useGatewayDataStore((state) => state.toolsEffectiveLoading);
+  const loadingSessionKey = useGatewayDataStore((state) => state.toolsEffectiveLoadingSessionKey);
+  const effectiveError = useGatewayDataStore((state) => state.toolsEffectiveError);
+  const [selectedSessionKey, setSelectedSessionKey] = useState('');
+  const [selectedToolName, setSelectedToolName] = useState('');
+  const [argsText, setArgsText] = useState('{}');
+  const [confirm, setConfirm] = useState(false);
+  const [result, setResult] = useState<OpenClawToolsInvokeResult | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [invoking, setInvoking] = useState(false);
+
+  useEffect(() => {
+    if (selectedSessionKey && sessions.some((session) => session.key === selectedSessionKey)) return;
+    setSelectedSessionKey(sessions[0]?.key ?? '');
+  }, [selectedSessionKey, sessions]);
+
+  useEffect(() => {
+    if (selectedSessionKey) void ensureToolsEffectiveFresh(selectedSessionKey);
+  }, [selectedSessionKey]);
+
+  const selectedResult = selectedSessionKey ? effectiveTools[selectedSessionKey] : undefined;
+  const tools = selectedResult?.groups.flatMap((group) => group.tools)
+    .filter((tool) => tool.deniedBySession !== true) ?? [];
+  const selectedTool = tools.find((tool) => tool.id === selectedToolName);
+
+  useEffect(() => {
+    if (selectedToolName && tools.some((tool) => tool.id === selectedToolName)) return;
+    setSelectedToolName(tools[0]?.id ?? '');
+  }, [selectedToolName, tools]);
+
+  const isLoadingSelected = loading && loadingSessionKey === selectedSessionKey;
+  const submit = useCallback(async () => {
+    if (!selectedSessionKey || !selectedToolName || invoking) return;
+    let args: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(argsText);
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error(t('config.toolsInvokeArgsObject', 'Tool arguments must be a JSON object.'));
+      }
+      args = parsed as Record<string, unknown>;
+    } catch (error) {
+      setResult(null);
+      setLocalError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+
+    setInvoking(true);
+    setResult(null);
+    setLocalError(null);
+    try {
+      const response = await invokeOpenClawTool({
+        name: selectedToolName,
+        args,
+        sessionKey: selectedSessionKey,
+        confirm,
+      });
+      setResult(response);
+    } catch (error) {
+      const message = error instanceof OpenClawToolsInvokeUnavailableError
+        ? `${error.code}: ${error.message}`
+        : error instanceof Error
+          ? error.message
+          : String(error);
+      setLocalError(message);
+    } finally {
+      setInvoking(false);
+    }
+  }, [argsText, confirm, invoking, selectedSessionKey, selectedToolName, t]);
+
+  return (
+    <div className="mt-4 rounded-xl border border-aegis-border bg-aegis-elevated p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <div className="mt-0.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-1.5 text-yellow-300">
+            <ShieldAlert size={15} aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-aegis-text">
+              {t('config.toolsInvokeTitle', 'Invoke an OpenClaw tool')}
+            </h3>
+            <p className="mt-0.5 text-xs text-aegis-text-muted">
+              {t(
+                'config.toolsInvokeHint',
+                'Runs the selected effective tool through the Gateway. OpenClaw owns validation, policy and approval.',
+              )}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {sessions.length === 0 ? (
+        <div className="flex items-center gap-2 rounded-lg border border-aegis-border/70 bg-aegis-overlay/40 px-3 py-3 text-xs text-aegis-text-muted">
+          <Info size={14} aria-hidden="true" />
+          {t('config.toolsInvokeNoSessions', 'No Gateway Sessions are available.')}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <label className="block text-xs text-aegis-text-muted">
+            <span className="mb-1.5 block">{t('config.toolsInvokeSession', 'Session')}</span>
+            <select
+              value={selectedSessionKey}
+              onChange={(event) => {
+                setSelectedSessionKey(event.target.value);
+                setResult(null);
+                setLocalError(null);
+              }}
+              className="w-full rounded-lg border border-aegis-border bg-aegis-overlay px-3 py-2 text-xs text-aegis-text outline-none focus:border-aegis-accent"
+            >
+              {sessions.map((session) => (
+                <option key={session.key} value={session.key}>
+                  {sessionLabel(session)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {effectiveError && !selectedResult ? (
+            <div className="flex items-start gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-3 text-xs text-yellow-200">
+              {effectiveError === 'OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED'
+                ? <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                : <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />}
+              <span>{effectiveError === 'OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED'
+                ? t('config.toolsInvokeEffectiveUnavailable', 'OpenClaw did not advertise tools.effective, so JunQi cannot verify an invokable tool for this Session.')
+                : t('config.toolsInvokeEffectiveError', 'OpenClaw did not return a valid effective tool snapshot.')}</span>
+            </div>
+          ) : isLoadingSelected && !selectedResult ? (
+            <div className="flex items-center gap-2 rounded-lg border border-aegis-border/70 bg-aegis-overlay/40 px-3 py-3 text-xs text-aegis-text-muted">
+              <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
+              {t('config.toolsInvokeEffectiveLoading', 'Loading the effective tool snapshot…')}
+            </div>
+          ) : selectedResult && tools.length === 0 ? (
+            <div className="flex items-center gap-2 rounded-lg border border-aegis-border/70 bg-aegis-overlay/40 px-3 py-3 text-xs text-aegis-text-muted">
+              <Info size={14} aria-hidden="true" />
+              {t('config.toolsInvokeNoEffectiveTools', 'OpenClaw reports no invokable tools for this Session.')}
+            </div>
+          ) : selectedResult ? (
+            <>
+              <label className="block text-xs text-aegis-text-muted">
+                <span className="mb-1.5 block">{t('config.toolsInvokeTool', 'Tool')}</span>
+                <select
+                  value={selectedToolName}
+                  onChange={(event) => {
+                    setSelectedToolName(event.target.value);
+                    setResult(null);
+                    setLocalError(null);
+                  }}
+                  className="w-full rounded-lg border border-aegis-border bg-aegis-overlay px-3 py-2 text-xs text-aegis-text outline-none focus:border-aegis-accent"
+                >
+                  {tools.map((tool) => (
+                    <option key={tool.id} value={tool.id}>
+                      {tool.label} · {tool.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {selectedTool ? (
+                <div className="rounded-lg border border-aegis-border/70 bg-aegis-overlay/40 px-3 py-2 text-xs text-aegis-text-muted">
+                  <div className="font-mono text-[10px] text-aegis-text">{selectedTool.id}</div>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedTool.description}</p>
+                </div>
+              ) : null}
+
+              <label className="block text-xs text-aegis-text-muted">
+                <span className="mb-1.5 block">{t('config.toolsInvokeArgs', 'Arguments')}</span>
+                <textarea
+                  value={argsText}
+                  onChange={(event) => setArgsText(event.target.value)}
+                  spellCheck={false}
+                  rows={6}
+                  className="w-full resize-y rounded-lg border border-aegis-border bg-aegis-overlay px-3 py-2 font-mono text-xs text-aegis-text outline-none focus:border-aegis-accent"
+                  aria-label={t('config.toolsInvokeArgs', 'Arguments')}
+                />
+              </label>
+
+              <label className="flex items-start gap-2 text-xs text-aegis-text-muted">
+                <input
+                  type="checkbox"
+                  checked={confirm}
+                  onChange={(event) => setConfirm(event.target.checked)}
+                  className="mt-0.5 accent-aegis-accent"
+                />
+                <span>{t('config.toolsInvokeConfirm', 'Ask the OpenClaw Gateway to request approval when its policy requires it.')}</span>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => void submit()}
+                disabled={!selectedToolName || invoking}
+                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-aegis-accent/40 bg-aegis-accent/15 px-3 py-2 text-xs font-medium text-aegis-text transition-colors hover:bg-aegis-accent/25 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Play size={14} aria-hidden="true" />
+                {invoking ? t('config.toolsInvokeRunning', 'Waiting for OpenClaw…') : t('config.toolsInvokeRun', 'Invoke tool')}
+              </button>
+            </>
+          ) : null}
+
+          {localError ? (
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-3 text-xs text-red-200">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>{localError}</span>
+            </div>
+          ) : null}
+
+          {result ? (
+            <div className={`rounded-lg border px-3 py-3 text-xs ${result.ok
+              ? 'border-green-500/30 bg-green-500/10 text-green-100'
+              : 'border-yellow-500/30 bg-yellow-500/10 text-yellow-100'}`}>
+              <div className="flex items-center gap-2 font-medium">
+                {result.ok
+                  ? <CheckCircle2 size={14} aria-hidden="true" />
+                  : <AlertTriangle size={14} aria-hidden="true" />}
+                <span>{result.ok
+                  ? t('config.toolsInvokeSucceeded', 'OpenClaw returned a tool result.')
+                  : result.requiresApproval
+                    ? t('config.toolsInvokeApprovalRequired', 'OpenClaw requires approval before this tool can run.')
+                    : t('config.toolsInvokeRejected', 'OpenClaw rejected this tool invocation.')}</span>
+              </div>
+              <div className="mt-2 font-mono text-[10px] opacity-80">{result.toolName}</div>
+              {result.error ? (
+                <div className="mt-2 whitespace-pre-wrap">{result.error.code}: {result.error.message}</div>
+              ) : null}
+              {result.approvalId ? (
+                <div className="mt-2 font-mono text-[10px] opacity-80">
+                  {t('config.toolsInvokeApprovalId', 'Approval')}: {result.approvalId}
+                </div>
+              ) : null}
+              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded border border-current/15 bg-black/10 p-2 font-mono text-[11px]">
+                {formatToolValue(
+                  result.ok ? result.output : result.error?.details,
+                  t('config.toolsInvokeNoOutput', 'OpenClaw returned no structured output.'),
+                )}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EffectiveToolsPanel() {
   const { t } = useTranslation();
   const sessions = useGatewayDataStore((state) => state.sessions);
@@ -476,6 +734,7 @@ export function ToolsTab({ config, onChange }: ToolsTabProps) {
         </div>
         <ToolsCatalogPanel />
         <EffectiveToolsPanel />
+        <ToolInvokePanel />
       </>
     );
   }
@@ -496,6 +755,7 @@ export function ToolsTab({ config, onChange }: ToolsTabProps) {
       </div>
       <ToolsCatalogPanel />
       <EffectiveToolsPanel />
+      <ToolInvokePanel />
     </>
   );
 }

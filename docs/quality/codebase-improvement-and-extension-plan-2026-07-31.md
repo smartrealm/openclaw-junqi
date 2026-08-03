@@ -217,9 +217,9 @@ pending 队列的管理员临时读取和解析，日常 scope 不增加 `operat
 
 **官方依据**：`protocol.md` 的 `tools.catalog`、`tools.effective`、`tools.invoke`
 
-**当前行为**：`tools.catalog` 已按 [OpenClaw 原生工具目录对齐](openclaw-native-tools-catalog-alignment-2026-08-03.md) 接入 Config Manager Tools 页面，按 agent 只读展示 Gateway 的 core/plugin 目录；`tools.effective` 已按 [OpenClaw 原生有效工具目录对齐](openclaw-native-tools-effective-alignment-2026-08-03.md) 展示指定 Session 的实际结果，`tools.invoke` 仍未调用。`src/services/gateway/OpenClawPlanToolSettings.ts:63` 的 `tools.experimental` 仍只是配置路径字符串，不能作为运行时工具目录。
+**当前行为**：`tools.catalog` 已按 [OpenClaw 原生工具目录对齐](openclaw-native-tools-catalog-alignment-2026-08-03.md) 接入 Config Manager Tools 页面，按 agent 只读展示 Gateway 的 core/plugin 目录；`tools.effective` 已按 [OpenClaw 原生有效工具目录对齐](openclaw-native-tools-effective-alignment-2026-08-03.md) 展示指定 Session 的实际结果；`tools.invoke` 已按 [OpenClaw 原生工具调用对齐](openclaw-native-tools-invoke-alignment-2026-08-03.md) 提供受有效工具和运行时身份门禁保护的一次性调用入口。`src/services/gateway/OpenClawPlanToolSettings.ts:63` 的 `tools.experimental` 仍只是配置路径字符串，不能作为运行时工具目录。
 
-**可拓展**：`tools.catalog` 展示 agent 级可配置的 core/plugin 目录，`tools.effective` 展示 Session 级最终结果。两者并列可以解释配置目录与实际权限的差异，但 JunQi 不本地推断策略；`tools.invoke` 仍必须另行核对写操作、授权和副作用边界。
+**可拓展**：`tools.catalog` 展示 agent 级可配置的 core/plugin 目录，`tools.effective` 展示 Session 级最终结果，`tools.invoke` 只在有效工具和运行时身份均可验证时透传用户显式调用。三者并列可以解释配置目录、实际权限与一次性执行的边界；JunQi 不本地推断策略、不写入聊天/Task 图，也不自动重试副作用调用。审批队列、工具 schema 编辑和真实 Gateway 现场验证仍按官方能力另行核对。
 
 这也与既有 `docs/quality/openclaw-config-authority-audit-2026-07-29.md` 的 BUG-OCA-02（Tools/provider/plugin 配置能力被整套硬编码）直接相关：`tools.catalog` 正是那条审计所缺的权威来源。
 

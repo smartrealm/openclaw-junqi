@@ -84,6 +84,7 @@ specs/
 - [OpenClaw 原生会话预览对齐](quality/2026-08-03-openclaw-native-session-preview.md)
 - [OpenClaw 原生有效工具目录对齐](quality/2026-08-03-openclaw-native-tools-effective.md)
 - [OpenClaw 原生工具目录对齐](quality/2026-08-03-openclaw-native-tools-catalog.md)
+- [OpenClaw 原生工具调用对齐](quality/2026-08-03-openclaw-native-tools-invoke.md)
 - [OpenClaw 原生产物协议对齐](quality/2026-08-03-openclaw-native-artifacts.md)
 - [OpenClaw 原生记忆检索对齐](quality/2026-08-03-openclaw-native-memory-search.md)
 - [OpenClaw 原生记忆诊断](quality/2026-08-03-openclaw-native-memory-diagnostics.md)

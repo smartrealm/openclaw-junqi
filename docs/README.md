@@ -170,6 +170,7 @@ docs/
 - [OpenClaw 原生会话预览对齐](quality/openclaw-native-session-preview-alignment-2026-08-03.md)
 - [OpenClaw 原生有效工具目录对齐](quality/openclaw-native-tools-effective-alignment-2026-08-03.md)
 - [OpenClaw 原生工具目录对齐](quality/openclaw-native-tools-catalog-alignment-2026-08-03.md)
+- [OpenClaw 原生工具调用对齐](quality/openclaw-native-tools-invoke-alignment-2026-08-03.md)
 - [OpenClaw 原生产物协议对齐](quality/openclaw-native-artifacts-alignment-2026-08-03.md)
 - [OpenClaw 原生记忆检索对齐](quality/openclaw-native-memory-search-alignment-2026-08-03.md)
 - [OpenClaw 原生会话检索对齐](quality/openclaw-native-session-search-alignment-2026-08-03.md)

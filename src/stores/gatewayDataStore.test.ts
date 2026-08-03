@@ -15,6 +15,8 @@ import {
   previewOpenClawMemoryRemHarness,
   refreshToolsCatalog,
   refreshToolsEffective,
+  invokeOpenClawTool,
+  OpenClawToolsInvokeUnavailableError,
   resolveOpenClawArtifactDownloadUrl,
   saveSessionArtifact,
   resolveGatewayConnectionStartedAt,
@@ -194,6 +196,129 @@ test('effective tool snapshots follow Session lifecycle and capability advertise
     assert.equal(await refreshToolsEffective('agent:main:main'), false);
     assert.equal(useGatewayDataStore.getState().toolsEffectiveError, 'OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED');
     assert.equal(calls.includes('tools.effective'), false);
+  } finally {
+    stopPolling();
+  }
+});
+
+test('tools.invoke is restricted to the current effective Session tool set and uses a connection fence', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown>; connectionId?: string }> = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'tools.invoke' || method === 'tools.effective',
+    getAttestedConnectionId: () => 'connection-1',
+    request: async (method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params });
+      if (method === 'sessions.list') return { sessions: [{ key: 'agent:main:main' }], hasMore: false };
+      if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      throw new Error(`unexpected unfenced method: ${method}`);
+    },
+    requestFenced: async (method: string, params: Record<string, unknown>, connectionId: string) => {
+      calls.push({ method, params, connectionId });
+      if (method === 'tools.invoke') {
+        return { ok: true, toolName: 'memory_search', output: { results: [] }, source: 'core' };
+      }
+      throw new Error(`unexpected fenced method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    const store = useGatewayDataStore.getState();
+    store.setSessions([{ key: 'agent:main:main' }]);
+    store.setToolsEffective('agent:main:main', {
+      agentId: 'main',
+      profile: 'coding',
+      groups: [{
+        id: 'core',
+        label: 'Core',
+        source: 'core',
+        tools: [{
+          id: 'memory_search',
+          label: 'Memory search',
+          description: 'Search memory',
+          rawDescription: 'Search memory',
+          source: 'core',
+        }],
+      }],
+    });
+
+    const result = await invokeOpenClawTool({
+      name: 'memory_search',
+      args: { query: 'JunQi' },
+      sessionKey: 'agent:main:main',
+    });
+    assert.deepEqual(result, {
+      ok: true,
+      toolName: 'memory_search',
+      output: { results: [] },
+      source: 'core',
+    });
+    const invokeCall = calls.find((call) => call.method === 'tools.invoke');
+    assert.equal(invokeCall?.connectionId, 'connection-1');
+    assert.equal(invokeCall?.params.name, 'memory_search');
+    assert.deepEqual(invokeCall?.params.args, { query: 'JunQi' });
+    assert.equal(invokeCall?.params.sessionKey, 'agent:main:main');
+    assert.equal(invokeCall?.params.agentId, 'main');
+    assert.equal(typeof invokeCall?.params.idempotencyKey, 'string');
+  } finally {
+    stopPolling();
+  }
+});
+
+test('tools.invoke refuses an explicitly omitted capability and an ineffective tool', async () => {
+  const calls: string[] = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'tools.invoke' ? false : true,
+    request: async (method: string) => {
+      calls.push(method);
+      if (method === 'sessions.list') return { sessions: [{ key: 'agent:main:main' }], hasMore: false };
+      if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    useGatewayDataStore.getState().setSessions([{ key: 'agent:main:main' }]);
+    await assert.rejects(
+      invokeOpenClawTool({ name: 'exec', sessionKey: 'agent:main:main' }),
+      (error: unknown) => error instanceof OpenClawToolsInvokeUnavailableError
+        && error.code === 'OPENCLAW_TOOLS_INVOKE_UNSUPPORTED',
+    );
+    assert.equal(calls.includes('tools.invoke'), false);
+  } finally {
+    stopPolling();
+  }
+});
+
+test('tools.invoke never bypasses an effective snapshot that omits the requested tool', async () => {
+  const calls: string[] = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => method === 'tools.invoke' || method === 'tools.effective',
+    request: async (method: string) => {
+      calls.push(method);
+      if (method === 'sessions.list') return { sessions: [{ key: 'agent:main:main' }], hasMore: false };
+      if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      if (method === 'tools.effective') {
+        return { agentId: 'main', profile: 'minimal', groups: [] };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    useGatewayDataStore.getState().setSessions([{ key: 'agent:main:main' }]);
+    await assert.rejects(
+      invokeOpenClawTool({ name: 'exec', sessionKey: 'agent:main:main' }),
+      (error: unknown) => error instanceof OpenClawToolsInvokeUnavailableError
+        && error.code === 'OPENCLAW_TOOLS_INVOKE_TOOL_NOT_EFFECTIVE',
+    );
+    assert.equal(calls.includes('tools.invoke'), false);
+    assert.equal(calls.includes('tools.effective'), true);
   } finally {
     stopPolling();
   }

@@ -9,8 +9,8 @@ JunQi 的 Tools 页面现在可以按真实 Session 展示 OpenClaw Gateway 返�
 明确分开：配置编辑器展示可配置字段，有效工具面板展示 Gateway 依据 Session、agent、
 渠道、插件和 MCP 策略实际计算出的结果。
 
-JunQi 不在本地计算 allow/deny、profile、插件或 MCP 权限，不调用工具，也不主动连接或
-列举 MCP 服务。Gateway 未广告该方法、响应不符合官方结构、连接断开或 Session 被删除
+JunQi 不在本地计算 allow/deny、profile、插件或 MCP 权限；有效工具读取路径不调用工具，
+也不主动连接或列举 MCP 服务。Gateway 未广告该方法、响应不符合官方结构、连接断开或 Session 被删除
 时，界面保持不可用或清空旧快照，不用配置字段拼出伪造的权限结果。
 
 ## 权威依据
@@ -56,5 +56,5 @@ methods 为准。
 - 尚未连接真实 Gateway 现场验证不同 agent、profile 覆盖、渠道插件和 MCP notices 的
   实际数据组合。
 - 尚未在 macOS、Windows、CentOS、Ubuntu 真机完成 Tools 页面和断线重连验收。
-- `tools.catalog` 已由 [OpenClaw 原生工具目录对齐](openclaw-native-tools-catalog-alignment-2026-08-03.md) 单独接入；`tools.invoke` 仍未接入。本次有效工具改动不改变工具执行、授权或 MCP 生命周期。
+- `tools.catalog` 已由 [OpenClaw 原生工具目录对齐](openclaw-native-tools-catalog-alignment-2026-08-03.md) 单独接入；工具调用由 [OpenClaw 原生工具调用对齐](openclaw-native-tools-invoke-alignment-2026-08-03.md) 单独负责。本次有效工具读取改动不改变工具执行、授权或 MCP 生命周期。
 - OpenClaw 官方 schema、handler 或权限目录变化时，必须重新核对源码后更新适配器。

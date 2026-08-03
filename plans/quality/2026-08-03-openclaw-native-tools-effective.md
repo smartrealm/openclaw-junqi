@@ -30,6 +30,6 @@
 ## 不做的事情
 
 - 不本地计算 OpenClaw 工具 profile、allow/deny 或渠道/MCP 权限。
-- 不调用 `tools.invoke`，不主动连接、创建或列举 MCP 工具。
+- 本计划对应的有效工具读取路径不调用 `tools.invoke`，不主动连接、创建或列举 MCP 工具；工具调用另由独立原生对齐计划负责。
 - 不把 OpenClaw 安装版本写成能力开关，不用配置编辑器替代 Gateway 的有效结果。
 - 不在 Gateway 未广告或响应无法验证时生成空工具、默认 profile 或伪成功状态。

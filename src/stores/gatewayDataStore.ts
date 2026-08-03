@@ -20,6 +20,7 @@ import {
   OPENCLAW_TOOLS_EFFECTIVE_METHOD,
   OpenClawToolsEffectiveClient,
   OpenClawToolsEffectiveResponseError,
+  type OpenClawToolsEffectiveEntry,
   type OpenClawToolsEffectiveResult,
 } from '@/services/gateway/OpenClawToolsEffectiveClient';
 import {
@@ -28,6 +29,12 @@ import {
   OpenClawToolsCatalogResponseError,
   type OpenClawToolsCatalogResult,
 } from '@/services/gateway/OpenClawToolsCatalogClient';
+import {
+  OPENCLAW_TOOLS_INVOKE_METHOD,
+  OpenClawToolsInvokeClient,
+  type OpenClawToolsInvokeInput,
+  type OpenClawToolsInvokeResult,
+} from '@/services/gateway/OpenClawToolsInvokeClient';
 import {
   OPENCLAW_ARTIFACTS_DOWNLOAD_METHOD,
   OPENCLAW_ARTIFACTS_LIST_METHOD,
@@ -74,6 +81,11 @@ export type {
   OpenClawToolsCatalogProfileId,
   OpenClawToolsCatalogResult,
 } from '@/services/gateway/OpenClawToolsCatalogClient';
+export type {
+  OpenClawToolsInvokeError,
+  OpenClawToolsInvokeInput,
+  OpenClawToolsInvokeResult,
+} from '@/services/gateway/OpenClawToolsInvokeClient';
 export type {
   OpenClawArtifactDownloadMode,
   OpenClawArtifactSummary,
@@ -821,6 +833,12 @@ type GatewayRequestParams = Record<string, unknown>;
 type GatewayRequester = {
   request: (method: string, params: GatewayRequestParams) => Promise<unknown>;
   hasAdvertisedMethod?: (method: string) => boolean | null;
+  getAttestedConnectionId?: () => string | null;
+  requestFenced?: (
+    method: string,
+    params: GatewayRequestParams,
+    expectedConnectionId: string,
+  ) => Promise<unknown>;
   getHttpBaseUrl?: () => string;
 };
 
@@ -1684,6 +1702,142 @@ export async function ensureToolsEffectiveFresh(
     return true;
   }
   return refreshToolsEffective(normalizedSessionKey, agentId);
+}
+
+export class OpenClawToolsInvokeUnavailableError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'OpenClawToolsInvokeUnavailableError';
+  }
+}
+
+function effectiveToolForSession(
+  sessionKey: string,
+  toolName: string,
+): OpenClawToolsEffectiveEntry | null {
+  const snapshot = useGatewayDataStore.getState().toolsEffective[sessionKey];
+  if (!snapshot) return null;
+  for (const group of snapshot.groups) {
+    const tool = group.tools.find((entry) => entry.id === toolName);
+    if (tool) return tool;
+  }
+  return null;
+}
+
+function createToolsInvokeIdempotencyKey(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  throw new OpenClawToolsInvokeUnavailableError(
+    'OPENCLAW_TOOLS_INVOKE_IDEMPOTENCY_UNAVAILABLE',
+    'JunQi could not create an idempotency key for the OpenClaw tool call',
+  );
+}
+
+/**
+ * Invoke one tool that OpenClaw currently reports as effective for a Session.
+ * The helper deliberately does not write a chat message or retry an uncertain
+ * transport outcome. OpenClaw remains responsible for tool authorization,
+ * approval and execution semantics.
+ */
+export async function invokeOpenClawTool(
+  input: OpenClawToolsInvokeInput,
+): Promise<OpenClawToolsInvokeResult> {
+  const normalizedSessionKey = normalizeSessionKey(input.sessionKey ?? '');
+  const normalizedToolName = typeof input.name === 'string' ? input.name.trim() : '';
+  if (!normalizedSessionKey) {
+    throw new OpenClawToolsInvokeUnavailableError(
+      'OPENCLAW_TOOLS_INVOKE_SESSION_REQUIRED',
+      'OpenClaw tools.invoke requires a Session key',
+    );
+  }
+  if (!normalizedToolName) {
+    throw new OpenClawToolsInvokeUnavailableError(
+      'OPENCLAW_TOOLS_INVOKE_TOOL_REQUIRED',
+      'OpenClaw tools.invoke requires a tool name',
+    );
+  }
+  if (!gw) {
+    throw new OpenClawToolsInvokeUnavailableError(
+      'OPENCLAW_TOOLS_INVOKE_GATEWAY_UNAVAILABLE',
+      'The OpenClaw Gateway is not connected',
+    );
+  }
+
+  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_TOOLS_INVOKE_METHOD);
+  if (advertised === false) {
+    throw new OpenClawToolsInvokeUnavailableError(
+      'OPENCLAW_TOOLS_INVOKE_UNSUPPORTED',
+      'The OpenClaw Gateway does not advertise tools.invoke',
+    );
+  }
+
+  const session = useGatewayDataStore.getState().sessions.find(
+    (entry) => entry.key === normalizedSessionKey,
+  );
+  if (!session) {
+    throw new OpenClawToolsInvokeUnavailableError(
+      'OPENCLAW_TOOLS_INVOKE_SESSION_UNKNOWN',
+      'The selected OpenClaw Session is no longer available',
+    );
+  }
+
+  await ensureToolsEffectiveFresh(normalizedSessionKey);
+  const effectiveSnapshotState = useGatewayDataStore.getState();
+  const effectiveSnapshot = effectiveSnapshotState.toolsEffective[normalizedSessionKey];
+  const effectiveUpdatedAt = effectiveSnapshotState.toolsEffectiveUpdatedAt[normalizedSessionKey] ?? 0;
+  if (
+    !effectiveSnapshot
+    || effectiveSnapshotState.toolsEffectiveLoading
+    || effectiveUpdatedAt <= 0
+    || Date.now() - effectiveUpdatedAt >= TOOLS_EFFECTIVE_FRESHNESS_MS
+  ) {
+    throw new OpenClawToolsInvokeUnavailableError(
+      'OPENCLAW_TOOLS_INVOKE_EFFECTIVE_STALE',
+      'JunQi could not verify a current effective tool snapshot for the selected Session',
+    );
+  }
+  const effectiveTool = effectiveToolForSession(normalizedSessionKey, normalizedToolName);
+  if (!effectiveTool) {
+    throw new OpenClawToolsInvokeUnavailableError(
+      'OPENCLAW_TOOLS_INVOKE_TOOL_NOT_EFFECTIVE',
+      'OpenClaw did not report this tool as effective for the selected Session',
+    );
+  }
+  if (effectiveTool.deniedBySession === true) {
+    throw new OpenClawToolsInvokeUnavailableError(
+      'OPENCLAW_TOOLS_INVOKE_TOOL_DENIED',
+      'OpenClaw marked this tool as denied for the selected Session',
+    );
+  }
+
+  const connection = gw;
+  const connectionId = connection.getAttestedConnectionId?.() ?? null;
+  const request = connection.requestFenced && connection.getAttestedConnectionId
+    ? (connectionId
+      ? (method: string, params: Record<string, unknown>) => connection.requestFenced!(method, params, connectionId)
+      : null)
+    : (method: string, params: Record<string, unknown>) => connection.request(method, params);
+  if (!request) {
+    throw new OpenClawToolsInvokeUnavailableError(
+      'OPENCLAW_TOOLS_INVOKE_CONNECTION_UNATTESTED',
+      'The current OpenClaw Gateway connection has no verified runtime identity',
+    );
+  }
+
+  const client = new OpenClawToolsInvokeClient(
+    <T>(method: string, params: Record<string, unknown>) => request(method, params) as Promise<T>,
+  );
+  return client.invoke({
+    ...input,
+    name: normalizedToolName,
+    sessionKey: normalizedSessionKey,
+    agentId: typeof input.agentId === 'string' && input.agentId.trim()
+      ? input.agentId.trim()
+      : effectiveSnapshot.agentId,
+    idempotencyKey: input.idempotencyKey?.trim() || createToolsInvokeIdempotencyKey(),
+  });
 }
 
 function toolsCatalogFailureCode(error: unknown): string {

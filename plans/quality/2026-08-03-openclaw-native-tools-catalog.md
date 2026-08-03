@@ -30,5 +30,5 @@
 ## 不做的事情
 
 - 不在 JunQi 本地推断 agent profile 或插件工具，不把 catalog 当作 Session 最终权限。
-- 不调用 `tools.invoke`，不主动连接或列举 MCP 工具。
+- 本计划对应的目录读取路径不调用 `tools.invoke`，不主动连接或列举 MCP 工具；工具调用另由独立原生对齐计划负责。
 - 不把 OpenClaw 安装版本写成能力开关，不在 Gateway 未广告或响应无法验证时伪造目录。
