@@ -7,7 +7,6 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -21,6 +20,7 @@ import {
 } from 'lucide-react';
 import { debugError } from '@/utils/debugLog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { exportSessionMarkdown, readSessionMessages } from '@/api/tauri-commands';
 
 interface SessionContent {
   type: 'text' | 'tool_use' | 'thinking';
@@ -303,7 +303,7 @@ export function SessionViewPage({
     }
     setLoading(true);
     setError(null);
-    invoke<SessionMessage[]>('read_session_messages', { sessionPath })
+    readSessionMessages(sessionPath)
       .then((msgs) => setMessages(msgs ?? []))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -336,7 +336,7 @@ export function SessionViewPage({
         filters: [{ name: 'Markdown', extensions: ['md'] }],
       });
       if (!filePath) return; // user cancelled
-      await invoke('export_session_markdown', {
+      await exportSessionMarkdown({
         sessionPath,
         outputPath: filePath,
         taskMeta: {

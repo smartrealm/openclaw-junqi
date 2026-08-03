@@ -12,6 +12,7 @@
  *   services/*    →  stores/, theme/
  *   components/*  →  services/* directly (must go through stores)
  *   pages/*       →  state/* Rust directly (only via services + IPC)
+ *   pages/*       →  @tauri-apps/api/core or direct invoke() (only via typed API wrappers)
  *
  * Bridge files (explicit allowlist for the few cases where the rule
  * needs to bend):
@@ -75,8 +76,9 @@ const RULES = [
     pattern: /^pages\//,
     forbid: [
       '@/state/**',
+      '@tauri-apps/api/core',
     ],
-    message: 'pages/* must not import Rust state/ directly. Use services/ + IPC commands. See SPEC §1.',
+    message: 'pages/* must not import Rust state/ or Tauri core IPC directly. Use typed API wrappers. See SPEC §1.',
   },
 ];
 
@@ -115,6 +117,11 @@ function extractImports(content) {
   return out;
 }
 
+/** Raw invoke calls bypass the typed command wrappers even without an import. */
+function hasDirectInvoke(content) {
+  return /(?:^|[^\w$.])invoke\s*\(/m.test(content);
+}
+
 // ── Glob matcher ──────────────────────────────────────────────────────────
 
 /** Minimal glob: ** matches any path segment(s), * matches within a segment. */
@@ -147,15 +154,25 @@ for (const file of files) {
   const content = readFileSync(file, 'utf8');
   const imports = extractImports(content);
 
+  if (/^pages\//.test(rel) && hasDirectInvoke(content)) {
+    violations.push({
+      file: rel,
+      import: 'invoke(...)',
+      rule: 'pages/* must use named typed wrappers from src/api/tauri-commands.ts; direct invoke() is forbidden.',
+      target: 'src/api/tauri-commands.ts',
+    });
+  }
+
   for (const rule of RULES) {
     if (!rule.pattern.test(rel)) continue;
 
     for (const imp of imports) {
       const resolved = resolveAlias(imp, file);
-      if (!resolved) continue; // bare module — out of scope for boundary rules
-      const targetRel = relative(SRC, resolved).replace(/\\/g, '/');
+      const targetRel = resolved
+        ? relative(SRC, resolved).replace(/\\/g, '/')
+        : imp;
       for (const forbidden of rule.forbid) {
-        if (matchGlob(forbidden, targetRel)) {
+        if (imp === forbidden || matchGlob(forbidden, targetRel)) {
           violations.push({
             file: rel,
             import: imp,

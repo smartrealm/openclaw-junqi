@@ -33,7 +33,6 @@ import {
   WorkspaceSidebarHeader,
 } from '@/components/Layout/WorkspaceChrome';
 import type { WorkspaceSidebarMode } from '@/components/Layout/workspaceSidebarChannel';
-import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { projectLegacyTasksToWorkbench } from '@/workbench/session/legacyTaskMigration';
@@ -51,6 +50,7 @@ import { WorkbenchTerminalPane } from '@/workbench/components/WorkbenchTerminalP
 import { closeWorkbenchPtyTab, closeWorkbenchPtyTabs } from '@/workbench/pty/workbenchPtyClient';
 import type { WorkbenchTab as DomainWorkbenchTab } from '@/workbench/domain/types';
 import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
+import { BrowserProviderPanel } from '@/components/Browser/BrowserProviderPanel';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import { GitChanges, GitDiffViewer } from '@/components/Git';
 import { localWorkspaceFiles } from '@/workspace-files/adapters/localWorkspaceFiles';
@@ -58,6 +58,7 @@ import type { WorkspaceFileScope } from '@/workspace-files/domain/types';
 import { useFocusContextStore } from '@/stores/focusContextStore';
 import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import './workbench.css';
+import { openTerminalWorkspaceDirectory } from '@/api/tauri-commands';
 
 type WorktreeState = 'idle' | 'active' | 'unavailable';
 type WorkbenchTabKind = 'terminal' | 'editor' | 'diff' | 'browser';
@@ -309,11 +310,9 @@ function DiffPreview() {
 
 function BrowserPreview() {
   return (
-    <div className="junqi-wb-empty-panel">
-      <Browser size={28} weight="thin" />
-      <strong>Browser Pane 不可用</strong>
-      <span>Tauri 隔离浏览器后端尚未实现；当前不会创建模拟页面或本机文件权限。</span>
-    </div>
+    <section className="junqi-wb-pane junqi-wb-browser-pane">
+      <BrowserProviderPanel compact />
+    </section>
   );
 }
 
@@ -671,7 +670,7 @@ export function AgentWorkspacePage() {
     try {
       const selected = await openDialog({ directory: true, multiple: false, title: '打开本机项目' });
       if (typeof selected !== 'string' || !selected) return;
-      const resolved = await invoke<{ path: string }>('open_terminal_workspace_directory', { path: selected });
+      const resolved = await openTerminalWorkspaceDirectory(selected);
       if (!resolved.path) throw new Error('无法解析所选工作区目录');
       // Release the dialog transaction before the admitted ordinary Store mutation.
       if (!endResourceTransaction(transactionToken)) return;

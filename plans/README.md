@@ -45,6 +45,9 @@ plans/
 
 ## Quality
 
+- [浏览器 Provider 与 ego-lite 集成](quality/2026-08-03-browser-provider-ego-lite.md)
+- [P0 IPC 与 Gateway 边界收敛](quality/2026-08-03-p0-ipc-and-gateway-boundary.md)
+
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
 - [Session origin aggregation](quality/2026-07-20-session-origin-aggregation.md)
 - [会话分组与后台活动下钻](quality/2026-07-31-session-background-activity-drilldown.md)

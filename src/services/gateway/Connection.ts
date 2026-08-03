@@ -156,9 +156,20 @@ export interface GatewayRetryState {
 }
 
 interface PendingRequest {
-  resolve: (value: any) => void;
-  reject: (reason: any) => void;
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
   timer: ReturnType<typeof setTimeout> | null;
+}
+
+/** JSON object parameters accepted by an OpenClaw RPC request. */
+export type GatewayRequestParams = object;
+
+interface GatewayDeviceIdentity {
+  id: string;
+  publicKey: string;
+  signature: string;
+  signedAt: number;
+  nonce: string;
 }
 
 export interface GatewayRequestOptions {
@@ -268,7 +279,7 @@ export class GatewayConnection {
 
   // ── Event callback (set by ChatHandler) ──
   /** Called for every incoming non-response event from the WebSocket. */
-  onEvent: (msg: any) => void = () => {};
+  onEvent: (msg: unknown) => void = () => {};
 
   constructor(options: GatewayConnectionOptions = {}) {
     this.requestedScopes = [...new Set(options.scopes?.length ? options.scopes : DAILY_OPERATOR_SCOPES)];
@@ -537,12 +548,30 @@ export class GatewayConnection {
     this.registerCallback(
       id,
       {
-      resolve: (response: any) => {
+      resolve: (response: unknown) => {
+        const responseRecord = response !== null && typeof response === 'object' && !Array.isArray(response)
+          ? response as Record<string, unknown>
+          : null;
+        const payload = responseRecord?.payload !== null
+          && typeof responseRecord?.payload === 'object'
+          && !Array.isArray(responseRecord.payload)
+          ? responseRecord.payload as Record<string, unknown>
+          : null;
+        if (!responseRecord) {
+          debugError('gateway', '[GW] Handshake returned an invalid response:', response);
+          this.connecting = false;
+          this.emitStatus({ error: 'Gateway handshake returned an invalid response' });
+          return;
+        }
         debugLog('gateway', '[GW] Handshake response:', JSON.stringify(response).substring(0, 200));
-        if (response.ok !== false && (response.payload?.type === 'hello-ok' || response.type === 'hello-ok')) {
+        if (responseRecord.ok !== false && (payload?.type === 'hello-ok' || responseRecord.type === 'hello-ok')) {
           debugLog('gateway', '[GW] Connected');
-          const helloPayload = response.payload?.type === 'hello-ok' ? response.payload : response;
-          const auth = helloPayload.auth;
+          const helloPayload = payload?.type === 'hello-ok' ? payload : responseRecord;
+          const auth = helloPayload.auth !== null
+            && typeof helloPayload.auth === 'object'
+            && !Array.isArray(helloPayload.auth)
+            ? helloPayload.auth as Record<string, unknown>
+            : null;
           if (!this.transient) {
             const helloObservation = buildGatewayHelloObservation(this.url, helloPayload);
             this.runtimeIdentityConnectionId = helloObservation.connectionId || null;
@@ -557,7 +586,7 @@ export class GatewayConnection {
                 debugWarn('gateway', '[GW] Runtime identity attestation failed:', error);
             });
           }
-          if (!this.transient && auth?.deviceToken) {
+          if (!this.transient && typeof auth?.deviceToken === 'string' && auth.deviceToken) {
             this.deviceToken = auth.deviceToken;
             void this.persistDeviceCredential(this.url, auth.deviceToken)
               .catch(() => {});
@@ -584,7 +613,14 @@ export class GatewayConnection {
             });
           }
         } else {
-          const err = response.error?.message || JSON.stringify(response);
+          const responseError = responseRecord.error !== null
+            && typeof responseRecord.error === 'object'
+            && !Array.isArray(responseRecord.error)
+            ? responseRecord.error as Record<string, unknown>
+            : null;
+          const err = typeof responseError?.message === 'string'
+            ? responseError.message
+            : JSON.stringify(responseRecord);
           debugError('gateway', '[GW] Handshake failed:', err);
           this.connected = false;
           this.connecting = false;
@@ -594,7 +630,7 @@ export class GatewayConnection {
           }
         }
       },
-      reject: (err: any) => {
+      reject: (err: unknown) => {
         const errStr = String(err);
         debugError('gateway', '[GW] Handshake rejected:', errStr);
         this.connecting = false;
@@ -624,7 +660,7 @@ export class GatewayConnection {
     // A stored device token is sent as deviceToken only when no shared token is
     // available; a successful shared-token handshake rotates it via hello-ok.
     const authDeviceToken = sharedToken ? '' : storedDeviceToken;
-    let device: any = undefined;
+    let device: GatewayDeviceIdentity | undefined;
     try {
       if (this.challengeNonce) {
         const signed = await signGatewayDeviceChallenge({
@@ -690,14 +726,18 @@ export class GatewayConnection {
   // Request / Response
   // ══════════════════════════════════════════════════════
 
-  async request(method: string, params: any, options?: GatewayRequestOptions): Promise<any> {
+  async request<T = unknown>(
+    method: string,
+    params: GatewayRequestParams = {},
+    options?: GatewayRequestOptions,
+  ): Promise<T> {
     if (!this.ws || !this.connected) {
       throw new GatewayTransportLifecycleError('Gateway is not connected');
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       const id = this.nextId();
-      this.registerCallback(id, { resolve, reject }, options);
+      this.registerCallback<T>(id, { resolve, reject }, options);
       this.send({ type: 'req', id, method, params });
     });
   }
@@ -708,12 +748,12 @@ export class GatewayConnection {
    * the synchronous fence check and WebSocket.send; close/swap rejects the
    * pending request, and the response path verifies the fence again.
    */
-  async requestFenced(
+  async requestFenced<T = unknown>(
     method: string,
-    params: any,
+    params: GatewayRequestParams,
     expectedConnectionId: string,
     options?: GatewayRequestOptions,
-  ): Promise<any> {
+  ): Promise<T> {
     const expected = expectedConnectionId.trim();
     const socket = this.ws;
     const actual = this.runtimeIdentityConnectionId;
@@ -727,7 +767,7 @@ export class GatewayConnection {
       throw new GatewayConnectionFenceError(expected, actual);
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       const id = this.nextId();
       const verifyFence = () => this.ws === socket
         && this.connected
@@ -739,13 +779,13 @@ export class GatewayConnection {
         }
         reject(error);
       };
-      this.registerCallback(id, {
+      this.registerCallback<T>(id, {
         resolve: (value) => {
           if (!verifyFence()) {
             reject(new GatewayConnectionFenceError(expected, this.runtimeIdentityConnectionId));
             return;
           }
-          resolve(value);
+          resolve(value as T);
         },
         reject: rejectFenced,
       }, options);
@@ -760,9 +800,9 @@ export class GatewayConnection {
     });
   }
 
-  registerCallback(
+  registerCallback<T>(
     id: string,
-    handlers: { resolve: (v: any) => void; reject: (e: any) => void },
+    handlers: { resolve: (v: T) => void; reject: (e: unknown) => void },
     options?: GatewayRequestOptions,
   ) {
     const configuredTimeout = options?.timeoutMs;
@@ -773,10 +813,14 @@ export class GatewayConnection {
       this.pendingRequests.delete(id);
       handlers.reject(`Request timeout (${timeoutMs}ms)`);
     }, timeoutMs);
-    this.pendingRequests.set(id, { ...handlers, timer });
+    this.pendingRequests.set(id, {
+      resolve: (value) => handlers.resolve(value as T),
+      reject: handlers.reject,
+      timer,
+    });
   }
 
-  send(msg: any) {
+  send(msg: Record<string, unknown>) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
@@ -795,7 +839,12 @@ export class GatewayConnection {
     this.msgRouter
       // connect.challenge — extract nonce, trigger handshake
       .on('event', (msg) => {
-        const nonce = msg.payload?.nonce;
+        const payload = msg.payload !== null
+          && typeof msg.payload === 'object'
+          && !Array.isArray(msg.payload)
+          ? msg.payload as Record<string, unknown>
+          : null;
+        const nonce = payload?.nonce;
         if (nonce && typeof nonce === 'string') {
           debugLog('gateway', '[GW] Received connect.challenge with nonce');
           this.challengeNonce = nonce;
@@ -805,6 +854,7 @@ export class GatewayConnection {
       }, 'connect.challenge')
       // Response — resolve/reject pending requests
       .on('res', (msg) => {
+        if (!msg.id) return;
         const pending = this.pendingRequests.get(msg.id);
         if (!pending) return;
         if (pending.timer) clearTimeout(pending.timer);
@@ -826,7 +876,7 @@ export class GatewayConnection {
       .on('event', (msg) => { this.onEvent(msg); });
   }
 
-  private handleMessage(msg: any) {
+  private handleMessage(msg: unknown) {
     // Any incoming message = connection alive — reset heartbeat timer
     this.resetHeartbeat();
     this.msgRouter.route(msg);

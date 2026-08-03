@@ -73,11 +73,10 @@ import {
   TERMINAL_SIDEBAR_MIN_WIDTH,
   type TerminalSidebarMode,
 } from "@/components/Terminal/terminalWorkspaceTree";
-import { useWorkspaceStore, type TerminalWorktreeDescriptor } from "@/stores/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useRef, useState, useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { homeDir } from "@tauri-apps/api/path";
-import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ChevronRight, Clock3, FolderOpen, FolderTree, GitBranch, Layers, Plus, Search, Server, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
 import { Icon } from '@/components/shared/icons';
@@ -88,6 +87,18 @@ import type { Workspace } from "@/workspace/types";
 import { takePendingTerminalCommands } from '@/services/terminalCommandQueue';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useTerminalPreferences } from '@/hooks/useTerminalPreferences';
+import {
+  clearTerminalRecentWorkspaces,
+  createTerminalWorkspaceWorktree,
+  getTerminalGitStatus,
+  listTerminalGitBranches,
+  listTerminalRecentWorkspaces,
+  listTerminalWorkspaceWorktrees,
+  openFolder,
+  openTerminalWorkspaceDirectory,
+  recordTerminalWorkspaceDirectory,
+  removeTerminalWorkspaceWorktree,
+} from '@/api/tauri-commands';
 import { WorkspaceChromeIconButton, WorkspaceSidebarHeader } from '@/components/Layout/WorkspaceChrome';
 
 interface TerminalWorkspaceDirectory {
@@ -364,9 +375,7 @@ export function TerminalPage() {
     ));
     void Promise.all(sources.map(async (source) => {
       try {
-        await invoke('git_status', {
-          projectPath: source.projectDirectory || source.workingDirectory,
-        });
+        await getTerminalGitStatus(source.projectDirectory || source.workingDirectory);
         return source.id;
       } catch {
         return null;
@@ -386,9 +395,7 @@ export function TerminalPage() {
     ));
     void Promise.all(sources.map(async (source) => {
       try {
-        const worktrees = await invoke<TerminalWorktreeDescriptor[]>('list_terminal_workspace_worktrees', {
-          projectPath: source.projectDirectory || source.workingDirectory,
-        });
+        const worktrees = await listTerminalWorkspaceWorktrees(source.projectDirectory || source.workingDirectory);
         return { parentId: source.id, worktrees };
       } catch {
         // A normal directory is not necessarily a Git repository. Do not
@@ -407,7 +414,7 @@ export function TerminalPage() {
 
   const refreshRecentDirectories = useCallback(async () => {
     try {
-      const directories = await invoke<TerminalWorkspaceDirectory[]>('list_terminal_recent_workspaces');
+      const directories = await listTerminalRecentWorkspaces();
       setRecentDirectories(directories);
     } catch {
       // Recent folders are auxiliary state. A read failure must not block a shell.
@@ -421,7 +428,7 @@ export function TerminalPage() {
 
   const recordWorkspaceDirectory = useCallback((directory: string) => {
     if (!directory) return;
-    void invoke('record_terminal_workspace_directory', { path: directory })
+    void recordTerminalWorkspaceDirectory(directory)
       .then(() => refreshRecentDirectories())
       .catch(() => undefined);
   }, [refreshRecentDirectories]);
@@ -441,7 +448,7 @@ export function TerminalPage() {
   const createWorktreeWorkspace = useCallback(async (parentId: string, branch: string, startPoint?: string) => {
     const parent = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === parentId);
     if (!parent) throw new Error(t('terminal.worktreeSourceMissing'));
-    const created = await invoke<TerminalWorkspaceWorktree>('create_terminal_workspace_worktree', {
+    const created = await createTerminalWorkspaceWorktree({
       projectPath: parent.projectDirectory || parent.workingDirectory,
       branch,
       ...(startPoint?.trim() ? { startPoint: startPoint.trim() } : {}),
@@ -460,9 +467,7 @@ export function TerminalPage() {
   ) => {
     const parent = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === parentId);
     if (!parent) throw new Error(t('terminal.worktreeSourceMissing'));
-    const live = await invoke<TerminalWorkspaceWorktree[]>('list_terminal_workspace_worktrees', {
-      projectPath: parent.projectDirectory || parent.workingDirectory,
-    });
+    const live = await listTerminalWorkspaceWorktrees(parent.projectDirectory || parent.workingDirectory);
     const requestedPaths = new Set(requested.map((worktree) => worktree.path));
     const stillPresent = (live ?? []).filter((worktree) => requestedPaths.has(worktree.path));
     if (stillPresent.length === 0) throw new Error(t('terminal.worktreeAdoptMissing', 'The selected worktree is no longer available.'));
@@ -471,7 +476,7 @@ export function TerminalPage() {
 
   const closeWorktreeWorkspace = useCallback(async (workspace: Workspace, deleteOnDisk: boolean) => {
     if (deleteOnDisk) {
-      await invoke('remove_terminal_workspace_worktree', {
+      await removeTerminalWorkspaceWorktree({
         projectPath: workspace.projectDirectory || workspace.workingDirectory,
         worktreePath: workspace.worktreePath || workspace.workingDirectory,
         branch: workspace.worktreeBranch || workspace.name,
@@ -483,7 +488,7 @@ export function TerminalPage() {
   const revealWorkspaceDirectory = useCallback(async (workspace: Workspace) => {
     const path = workspace.worktreePath || workspace.projectDirectory || workspace.workingDirectory;
     try {
-      await invoke('open_folder', { path });
+      await openFolder(path);
     } catch {
       addToast(
         'error',
@@ -495,9 +500,7 @@ export function TerminalPage() {
 
   const openWorkspaceDirectory = useCallback(async (directoryPath: string) => {
     try {
-      const directory = await invoke<TerminalWorkspaceDirectory>('open_terminal_workspace_directory', {
-        path: directoryPath,
-      });
+      const directory = await openTerminalWorkspaceDirectory(directoryPath);
       useWorkspaceStore.getState().createWorkspace(directory.name, directory.path);
       await refreshRecentDirectories();
       return directory;
@@ -536,7 +539,7 @@ export function TerminalPage() {
 
   const clearRecentDirectories = useCallback(async () => {
     try {
-      await invoke('clear_terminal_recent_workspaces');
+      await clearTerminalRecentWorkspaces();
       setRecentDirectories([]);
     } catch {
       addToast(
@@ -1611,7 +1614,7 @@ function TerminalWorktreeCreateDialog({ workspace, existingWorktreePaths, onClos
   }, [mode]);
   useEffect(() => {
     let cancelled = false;
-    void invoke<TerminalWorkspaceBranch[]>('git_list_branches', { projectPath })
+    void listTerminalGitBranches(projectPath)
       .then((result) => {
         if (cancelled) return;
         const local = (result ?? []).filter((candidate) => !candidate.remote && !candidate.current);
@@ -1626,7 +1629,7 @@ function TerminalWorktreeCreateDialog({ workspace, existingWorktreePaths, onClos
   }, [projectPath]);
   useEffect(() => {
     let cancelled = false;
-    void invoke<TerminalWorkspaceWorktree[]>('list_terminal_workspace_worktrees', { projectPath })
+    void listTerminalWorkspaceWorktrees(projectPath)
       .then((result) => { if (!cancelled) setDiskWorktrees(result ?? []); })
       .catch(() => { if (!cancelled) setDiskWorktrees([]); })
       .finally(() => { if (!cancelled) setWorktreesLoading(false); });

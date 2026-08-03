@@ -4,7 +4,14 @@ import type {
 } from '@/utils/gatewayAgentFlow';
 
 interface AgentRpcClient {
-  request(method: string, params: Record<string, unknown>): Promise<any>;
+  request(method: string, params: Record<string, unknown>): Promise<unknown>;
+}
+
+function responseRecord(value: unknown): Record<string, unknown> {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  throw new Error('OpenClaw agents.create returned an invalid response');
 }
 
 /**
@@ -30,7 +37,7 @@ export class GatewayAgentDisplayNameUpdateError extends Error {
 export class OpenClawAgentManagement {
   constructor(private readonly client: AgentRpcClient) {}
 
-  async create(agent: GatewayAgentCreatePayload) {
+  async create(agent: GatewayAgentCreatePayload): Promise<Record<string, unknown>> {
     const workspace = agent.workspace?.trim();
     if (!workspace) {
       throw new Error('A workspace is required to create an OpenClaw agent.');
@@ -43,9 +50,10 @@ export class OpenClawAgentManagement {
       workspace,
       ...(agent.model ? { model: agent.model } : {}),
     });
+    const createdRecord = responseRecord(created);
     const requestedName = agent.name?.trim();
     if (!requestedName || requestedName === agent.id) {
-      return created;
+      return createdRecord;
     }
 
     const update: GatewayAgentDisplayNameUpdate = {
@@ -57,6 +65,6 @@ export class OpenClawAgentManagement {
     } catch (error) {
       throw new GatewayAgentDisplayNameUpdateError(update, error);
     }
-    return { ...created, agentId: agent.id, name: requestedName };
+    return { ...createdRecord, agentId: agent.id, name: requestedName };
   }
 }

@@ -6,7 +6,7 @@ const source = readFileSync(new URL('./AgentRunView.tsx', import.meta.url), 'utf
 
 test('AI task terminal forwards interactive keyboard input', () => {
   assert.match(source, /attachLinuxIMEFix\(term, sendTerminalInput\)/);
-  assert.match(source, /agent_send_input/);
+  assert.match(source, /sendAgentTaskInput/);
   assert.doesNotMatch(source, /data\.length <= 3/);
 });
 
@@ -35,7 +35,7 @@ test('AI task terminal applies live font and theme settings', () => {
   assert.match(source, /applyTerminalFontSize/);
   assert.match(source, /applyTerminalFontFamily/);
   assert.match(source, /applyTerminalThemeOnPanel/);
-  assert.match(source, /agent_resize_pty/);
+  assert.match(source, /resizeAgentTaskPty/);
 });
 
 test('standalone and workspace task terminals share live terminal preferences', () => {
@@ -56,7 +56,7 @@ test('worktree actions are mutually exclusive while running', () => {
 });
 
 test('detached and interrupted tasks perform a real session recovery', () => {
-  assert.match(source, /reset_task_process/);
+  assert.match(source, /resetAgentTaskProcess/);
   assert.match(source, /handleStart\(prompt, true\)/);
   assert.match(source, /disabled=\{!recoverySessionId\}/);
   assert.match(source, /agentWorkspace\.run\.missingSessionId/);
@@ -110,7 +110,7 @@ test('new worktree tasks require an explicit base branch', () => {
 });
 
 test('new worktree creation consumes the JunQi camel-case response contract', () => {
-  assert.match(source, /worktreePath: string; worktreeBranch: string; baseBranch: string/);
+  assert.match(source, /createAgentTaskWorktree/);
   assert.match(source, /actualPath = result\.worktreePath/);
   assert.match(source, /worktreeBranch: result\.worktreeBranch/);
   assert.match(source, /baseBranch: result\.baseBranch/);

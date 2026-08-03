@@ -11,6 +11,7 @@ pub mod agent_task_pty;
 pub mod agent_workspace_storage;
 pub mod app_autostart;
 pub mod app_settings;
+pub mod browser_provider;
 pub mod builtin_skills;
 pub mod config;
 pub mod console;

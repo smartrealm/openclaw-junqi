@@ -14,6 +14,8 @@
 - [x] 运行完整 lint、测试、生产构建和 diff 检查。
 - [x] 将完整 locale JSON 从同步 i18n 入口移到按需资源加载器，保持初始语言与英文
   回退的启动可用性。
+- [x] 将 xterm 核心与 fit、search、serialize、unicode11、webgl 插件拆为独立第三方
+  chunk，并补充精确包边界回归测试。
 
 ## 主要影响文件
 

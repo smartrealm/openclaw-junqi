@@ -115,6 +115,11 @@ docs/
 
 目录：[`quality/`](quality/)
 
+- [浏览器 Provider 与 ego-lite 集成设计](design/browser-provider-ego-lite-integration-2026-08-03.md)
+- [浏览器 Provider 与 ego-lite 验证记录](quality/browser-provider-ego-lite-validation-2026-08-03.md)
+- [浏览器 Provider 与 ego-lite 验收规格](../specs/quality/2026-08-03-browser-provider-ego-lite.md)
+- [P0 IPC 与 Gateway 边界收敛验证](quality/p0-ipc-and-gateway-boundary-validation-2026-08-03.md)
+
 - [维护中心审计](quality/maintenance-center-audit.md)
 - [定时任务与 OpenClaw Agent 路由审计](quality/cron-openclaw-agent-routing-audit-2026-08-02.md)
 - [定时任务 OpenClaw Agent 路由验证](quality/cron-openclaw-agent-routing-validation-2026-08-02.md)

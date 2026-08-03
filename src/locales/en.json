@@ -1352,6 +1352,33 @@
     "comingSoonTitle": "MCP Integration — Coming Soon",
     "comingSoonDesc": "Connect external tools via Model Context Protocol (MCP). GitHub, Slack, Google, databases, and more — directly from JunQi Desktop."
   },
+  "browserProviders": {
+    "title": "Browser runtimes",
+    "subtitle": "See the live state of OpenClaw's native browser and optional ego-lite in one place.",
+    "openclawName": "OpenClaw native browser",
+    "openclawDescription": "A Gateway-managed isolated browser exposed to the current session as an effective tool.",
+    "openclawCapability": "Read from the current session's tools.effective response; JunQi does not create a simulated page.",
+    "nativeToolError": "The current session's browser tool state could not be read. Check the Gateway connection.",
+    "egoLiteName": "ego-lite",
+    "egoLiteDescription": "A separate browser with isolated task spaces, exposed through the official local skill CLI.",
+    "egoLiteCapability": "Only the ego-browser CLI is discovered. JunQi never migrates login data, starts the browser, or installs it automatically.",
+    "status": {
+      "checking": "Checking",
+      "available": "Available",
+      "unavailable": "Not enabled",
+      "notInstalled": "Not installed",
+      "unsupported": "Unsupported on this platform",
+      "unknown": "Unknown"
+    },
+    "refresh": "Check again",
+    "openTools": "View tools",
+    "openDocs": "Open official docs",
+    "detectedPath": "Detected: {{path}}",
+    "detectedPlatform": "Platform: {{platform}}",
+    "copyInstallCommand": "Copy install command",
+    "copied": "Copied",
+    "probeError": "Browser provider detection failed. Try again later."
+  },
   "session": {
     "recent": "Recent",
     "justNow": "just now",

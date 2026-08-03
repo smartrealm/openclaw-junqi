@@ -29,6 +29,16 @@
 
 PDF worker 是 PDF.js 独立 worker 资产，大小 1,286.28 kB，不是 Vite 报告的 JavaScript 入口 chunk，也不会进入应用首屏执行链。
 
+## 2026-08-03 跟进：xterm 核心与插件拆分
+
+当前终端依赖按实际 npm 包边界分为 `xterm-core`（`@xterm/xterm`）和
+`xterm-addons`（fit、search、serialize、unicode11、webgl）。这避免终端插件与核心
+被强制合并到同一个 vendor chunk，同时保留终端入口的按需加载行为。
+
+当前构建结果为 `xterm-core` 291.38 kB、`xterm-addons` 187.81 kB；没有新增
+circular chunk 或 JavaScript chunk size warning。分包规则与回归测试仍集中在
+`scripts/vite-chunk-strategy.mjs` 和 `scripts/vite-chunk-strategy.test.mjs`。
+
 ## 实现约束
 
 - `scripts/vite-chunk-strategy.mjs` 是唯一手工分包规则来源。

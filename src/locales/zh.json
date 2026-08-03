@@ -1352,6 +1352,33 @@
     "comingSoonTitle": "MCP 集成 — 即将上线",
     "comingSoonDesc": "通过 Model Context Protocol（MCP）连接外部工具：GitHub、Slack、Google、数据库等，直接在 JunQi Desktop 中使用。"
   },
+  "browserProviders": {
+    "title": "浏览器运行时",
+    "subtitle": "统一查看 OpenClaw 原生浏览器与可选 ego-lite 的真实状态。",
+    "openclawName": "OpenClaw 原生浏览器",
+    "openclawDescription": "由 Gateway 管理的隔离浏览器，当前会话通过有效工具使用。",
+    "openclawCapability": "状态来自当前会话的 tools.effective，不会在本机创建模拟页面。",
+    "nativeToolError": "无法读取当前会话的浏览器工具状态，请检查 Gateway 连接。",
+    "egoLiteName": "ego-lite",
+    "egoLiteDescription": "独立浏览器与隔离任务空间，沿用官方 skill 的本机 CLI。",
+    "egoLiteCapability": "只探测 ego-browser CLI，不会迁移登录态、启动浏览器或自动安装。",
+    "status": {
+      "checking": "检测中",
+      "available": "可用",
+      "unavailable": "未启用",
+      "notInstalled": "未安装",
+      "unsupported": "当前平台不支持",
+      "unknown": "状态未知"
+    },
+    "refresh": "重新检测",
+    "openTools": "查看工具",
+    "openDocs": "打开官方文档",
+    "detectedPath": "已检测到：{{path}}",
+    "detectedPlatform": "检测平台：{{platform}}",
+    "copyInstallCommand": "复制安装命令",
+    "copied": "已复制",
+    "probeError": "浏览器 Provider 检测失败，请稍后重试。"
+  },
   "session": {
     "recent": "最近会话",
     "justNow": "刚刚",

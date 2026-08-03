@@ -43,6 +43,9 @@ specs/
 
 ## Quality
 
+- [浏览器 Provider 与 ego-lite](quality/2026-08-03-browser-provider-ego-lite.md)
+- [P0 IPC 与 Gateway 边界收敛](quality/2026-08-03-p0-ipc-and-gateway-boundary.md)
+
 - [维护中心](quality/2026-07-14-maintenance-center-hardening.md)
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
 - [Session origin aggregation](quality/2026-07-20-session-origin-aggregation.md)

@@ -14,6 +14,7 @@ import {
   DeviceMobile, Palette, PuzzlePiece,
 } from '@phosphor-icons/react';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { BrowserProviderPanel } from '@/components/Browser/BrowserProviderPanel';
 import { useChatStore } from '@/stores/chatStore';
 import type { ToolBlock } from '@/types/RenderBlock';
 import clsx from 'clsx';
@@ -237,6 +238,10 @@ export function McpToolsPage() {
               })}
             </p>
           </div>
+        </div>
+
+        <div className="mb-8">
+          <BrowserProviderPanel />
         </div>
 
         {/* ── Active Tools ────────────────────────────────── */}

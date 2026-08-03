@@ -27,7 +27,7 @@ test('QuickChat recovers seed paths even if the startup event was missed', async
     read('../pages/QuickChatPage.tsx'),
     read('../../src-tauri/src/commands/quickchat.rs'),
   ]);
-  assert.match(page, /get_quickchat_seed/);
+  assert.match(page, /getQuickChatSeed/);
   assert.match(backend, /static QUICKCHAT_SEED/);
 });
 
@@ -80,7 +80,7 @@ test('pet creation installs the JunQi-bundled skill into the current chat worksp
     read('../../src-tauri/src/commands/builtin_skills.rs'),
     read('../../src-tauri/resources/skills/hatch-pet/SKILL.md'),
   ]);
-  assert.match(settings, /install_builtin_skill_for_chat/);
+  assert.match(settings, /installBuiltinSkillForChat/);
   assert.match(settings, /@hatch-pet/);
   assert.doesNotMatch(settings, /agent-run\?\$\{params/);
   assert.equal(

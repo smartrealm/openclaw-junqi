@@ -16,6 +16,11 @@ import { debugError } from '@/utils/debugLog';
 const EVENTS_KEY = 'aegis-calendar-events';
 const SETTINGS_KEY = 'aegis-calendar-settings';
 
+interface CronCreateResponse extends Record<string, unknown> {
+  id?: string;
+  jobId?: string;
+}
+
 function persistEvents(events: CalendarEvent[]): void {
   try { localStorage.setItem(EVENTS_KEY, JSON.stringify(events)); } catch { /* quota exceeded */ }
 }
@@ -52,7 +57,7 @@ async function createCronReminder(event: CalendarEvent): Promise<string | null> 
   const isRecurring = !!event.recurrence;
 
   try {
-    const result = await gateway.call('cron.add', buildCronAgentTurnAddParams({
+    const result = await gateway.call<CronCreateResponse>('cron.add', buildCronAgentTurnAddParams({
       name: `Calendar: ${event.title}`,
       schedule: isRecurring
         ? { kind: 'cron', expr: buildCronExpr(event), tz: getLocalTimezone() }

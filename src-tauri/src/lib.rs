@@ -362,6 +362,7 @@ pub fn run() {
             commands::skills::install_skill,
             commands::skills::uninstall_skill,
             commands::skills::delete_skill,
+            commands::browser_provider::probe_browser_providers,
             // Selective Agent / Skill share packages
             commands::share_packages::scan_share_package_source,
             commands::share_packages::export_share_package,
