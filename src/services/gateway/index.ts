@@ -123,6 +123,18 @@ export class GatewaySessionMutationRejectedError extends Error {
   }
 }
 
+/**
+ * A remote Stop is permitted only after its local Task checkpoint is durable.
+ * The caller owns both operations; this helper only preserves their ordering.
+ */
+export async function abortAfterTaskCheckpoint<T>(
+  checkpointStop: () => Promise<void>,
+  abort: () => Promise<T>,
+): Promise<T> {
+  await checkpointStop();
+  return abort();
+}
+
 export interface GatewayAgentCreateParams {
   name: string;
   workspace: string;
@@ -934,15 +946,24 @@ export const gateway = {
     // Abort is a control-plane request. Waiting behind a long-running
     // chat.send request makes it impossible to stop a response whose send
     // acknowledgement was lost or delayed.
-    await taskExecutionCoordinator.requestStop(sessionKey).catch((error) => {
-      taskExecutionCoordinator.reportPersistenceFailure('persist Stop checkpoint', error);
-    });
-    const runId = chatHandler.abortRunId(sessionKey);
-    const result = await sessionAbort.abort({
-      key: sessionKey,
-      ...(runId ? { runId } : {}),
-    });
-    return chatHandler.reconcileSessionAbortAcknowledgement(sessionKey, result);
+    return abortAfterTaskCheckpoint(
+      async () => {
+        try {
+          await taskExecutionCoordinator.requestStop(sessionKey);
+        } catch (error) {
+          taskExecutionCoordinator.reportPersistenceFailure('persist Stop checkpoint', error);
+          throw error;
+        }
+      },
+      async () => {
+        const runId = chatHandler.abortRunId(sessionKey);
+        const result = await sessionAbort.abort({
+          key: sessionKey,
+          ...(runId ? { runId } : {}),
+        });
+        return chatHandler.reconcileSessionAbortAcknowledgement(sessionKey, result);
+      },
+    );
   },
   async compactSession(sessionKey = 'agent:main:main') {
     const key = sessionKey.trim();

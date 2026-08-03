@@ -54,5 +54,8 @@
 - 冷启动后的 Chat 和 Quick Chat 显示只读的 `verification_required` 核验提示，并把按钮连接到官方 `chat.history`；该按钮不自动恢复、重试或改变 OpenClaw 状态。
 - 每个 Run 记录发送时可观察到的模型身份；session identity 轮换生成新的 Task checkpoint。无 `sessionId` 的 Stream 结束、Tool event 和 Stop 回调只在同一 attested runtime 下存在唯一 checkpoint 时解析到该任务，候选不唯一则失败关闭。
 - 本地队列排空路径先经过 Task checkpoint 协调器再发送官方 `chat.send`；无活动 Run 时创建新的 Run，已有活动 Run 时复用其边界，因此 Chat、Quick Chat 和 Jarvis 都经过同一 checkpoint 边界而不创建第二个活动 Run。
+- 2026-08-03 起，Task Stop checkpoint 写入失败会终止本次 Stop transaction，不能在无持久
+  Stop intent 时继续发送 `sessions.abort`；普通 Composer、Jarvis 和 Quick Chat Stop 不再
+  清除本地待发送队列。该约束不改变显式队列清理、Session reset/delete 或窗口销毁语义。
 
 以下验收条件仍未完成且不能被客户端伪造：真实 Gateway 中工具进程中断的复现、真实副作用工具的幂等/查询/补偿策略、`tasks.*` 账本与 Chat Task 的自动关联、自动恢复或自动重试，以及 macOS/Windows/CentOS/Ubuntu 的真机麦克风、后台常驻和发布验收。

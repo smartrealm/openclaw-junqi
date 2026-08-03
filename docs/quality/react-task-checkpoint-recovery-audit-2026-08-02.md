@@ -112,4 +112,9 @@ LiveKit 的 AgentSession、Server、WebRTC 和独立 STT/LLM/TTS 工具链会与
 14. 每个 Run 记录发送时可观察到的模型身份；session identity 轮换生成新的 Task checkpoint。无 sessionId 的 Stream 结束、Tool event 和 Stop 回调只在同一 attested runtime 下存在唯一 checkpoint 时解析到该任务，候选不唯一则失败关闭。
 15. 本地队列排空路径也会先通过 Task checkpoint 协调器再发送 OpenClaw `chat.send`；无活动 Run 时创建新的 Run，已有活动 Run 时复用其边界，不再因排空输入创建第二个活动 Run。Chat、Quick Chat 和 Jarvis 不再有绕过 checkpoint 的发送入口。
 
+16. 2026-08-03 的 Stop 对齐补充保证：Task checkpoint 的 Stop intent 写入失败会阻止远端
+    `sessions.abort`，不会记录错误后继续中止 Run；普通 Composer、Jarvis 与 Quick Chat 的
+    Stop 不再清除 JunQi 本地待发送队列。Gateway 的 run-scoped abort 仍默认省略
+    `clearQueued`，显式 queue 清理、Session reset/delete 和 Quick Chat 窗口销毁保持独立语义。
+
 仍未完成且不能描述为已完成：真实 Gateway 中工具进程中断的复现、真实副作用工具的幂等/查询/补偿策略、将 `tasks.*` 账本自动关联到 Chat Task、自动恢复或自动重试、以及 macOS/Windows/CentOS/Ubuntu 的真机麦克风、后台常驻和发布验收。

@@ -26,7 +26,6 @@ export function useComposerInterruption({
     voiceRuntime.interruptGlobally(activeSessionKey);
     const state = useChatStore.getState();
     if (!state.typingBySession[activeSessionKey] && !state.sendingBySession[activeSessionKey]) return;
-    state.clearQueue(activeSessionKey);
     await gateway.abortChat(activeSessionKey)
       .catch((error) => debugError('gateway', '[ComposerInterruption] Unable to stop response:', error));
   }, [activeSessionKey]);

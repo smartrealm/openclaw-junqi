@@ -239,7 +239,6 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
 
   const handleStop = useCallback(async () => {
     voiceRuntime.interruptGlobally(sessionKey);
-    useChatStore.getState().clearQueue(sessionKey);
     if (!useChatStore.getState().typingBySession[sessionKey]) return;
     try {
       await gateway.abortChat(sessionKey);

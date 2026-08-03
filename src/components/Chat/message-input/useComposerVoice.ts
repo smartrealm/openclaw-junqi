@@ -206,7 +206,6 @@ export function useComposerVoice({
   const stopAssistant = useCallback(async () => {
     voiceRuntime.interruptGlobally(activeSessionKey);
     if (!useChatStore.getState().typingBySession[activeSessionKey]) return;
-    useChatStore.getState().clearQueue(activeSessionKey);
     await gateway.abortChat(activeSessionKey)
       .catch((error) => debugError('gateway', '[ComposerVoice] Unable to stop response:', error));
   }, [activeSessionKey]);
