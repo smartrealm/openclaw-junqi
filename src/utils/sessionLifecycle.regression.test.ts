@@ -275,10 +275,14 @@ describe('session lifecycle regression fixes', () => {
     assert.match(source, /aria-busy=\{confirming/);
   });
 
-  test('BUG-07 route-based creation consumes params through React Router and can repeat', () => {
+  test('BUG-07 route-based creation consumes params only after success and exposes manual retry', () => {
     const source = readFileSync(new URL('../hooks/useAgentScopedSession.ts', import.meta.url), 'utf8');
+    const creationIndex = source.indexOf('createNativeSession({ agentId');
+    const successIndex = source.indexOf("if (!result.ok)");
+    const consumeIndex = source.indexOf('setParams(nextParams, { replace: true })');
     assert.match(source, /handledLocationKeyRef/);
-    assert.match(source, /setParams\(nextParams, \{ replace: true \}\)/);
+    assert.ok(creationIndex >= 0 && successIndex > creationIndex && consumeIndex > successIndex);
+    assert.match(source, /return \{ error, retrying, retry: createForRoute \}/);
     assert.doesNotMatch(source, /window\.history\.replaceState|appliedRef/);
   });
 

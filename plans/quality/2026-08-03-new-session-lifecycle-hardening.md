@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | BUG-NS-04 | 新建共享 session mutation/list gate helper | 建立 mutation revision，区分 mutation 前后开始的快照。 |
 | BUG-NS-04 | `src/App.tsx` | `loadSessions` 提交前检查创建 mutation revision。 |
-| BUG-NS-04 | `src/utils/sessionCreate.ts` | 创建 mutation 在共享 gate 上登记开始和确认。 |
+| BUG-NS-04 | `src/utils/sessionCreate.ts` | 创建确认后、Store commit 前推进共享 mutation revision。 |
 | BUG-NS-04 | `src/stores/chatStore.ts` | 保持 complete snapshot 删除语义，不用永久本地保留掩盖竞态。 |
 | BUG-NS-04 | 对应测试 | 复现旧快照删除新 session，并验证 mutation 后快照仍可删除。 |
 
@@ -54,3 +54,11 @@
 7. `pnpm build`。
 8. locale JSON、禁用 Unicode 符号扫描与 `git diff --check`。
 9. 真实 Gateway 验证普通创建、非 main Agent 创建、活动父会话 fork 拒绝、成功 transcript fork 和失败重试。
+
+## 实施状态
+
+- Phase A：已完成。
+- Phase B：已完成。
+- Phase C：已完成。
+- Phase D：已完成，使用 Chat 页内可访问重试条。
+- Phase E：自动化契约已完成；真实 Tauri 与 Gateway 人工验收未执行。

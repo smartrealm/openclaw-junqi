@@ -37,12 +37,22 @@ test('every new-session entry resolves the agent the same way', () => {
   const dashboard = readFileSync('src/pages/Dashboard/index.tsx', 'utf8');
   assert.match(dashboard, /resolveNewSessionAgentId\(activeSessionKey/);
   assert.doesNotMatch(dashboard, /\/chat\?agent=main&new=1/);
+
+  const sidebar = readFileSync('src/components/Layout/NavSidebar.tsx', 'utf8');
+  assert.match(sidebar, /resolveNewSessionAgentId\(activeKey, agents\.map\(\(agent\) => agent\.id\)\)/);
+  assert.doesNotMatch(sidebar, /createNativeSession\(\{\s*agentId: 'main'/);
 });
 
-test('the placeholder session label is localised', () => {
-  const source = readFileSync('src/hooks/useAgentScopedSession.ts', 'utf8');
-  assert.match(source, /label: t\('chat\.newSessionLabel'\)/);
-  assert.doesNotMatch(source, /label: '新会话'/);
+test('the placeholder session label is localised and shared by every creation entry', () => {
+  for (const file of [
+    'src/hooks/useAgentScopedSession.ts',
+    'src/components/Chat/ChatTabs.tsx',
+    'src/components/Layout/NavSidebar.tsx',
+  ]) {
+    const source = readFileSync(file, 'utf8');
+    assert.match(source, /label: t\('chat\.newSessionLabel'/, `${file} must use the persistent session label`);
+    assert.doesNotMatch(source, /label: '新会话'/);
+  }
   for (const locale of ['zh', 'zh-TW', 'en']) {
     const bundle = JSON.parse(readFileSync(`src/locales/${locale}.json`, 'utf8'));
     assert.equal(typeof bundle.chat?.newSessionLabel, 'string', `${locale} is missing chat.newSessionLabel`);

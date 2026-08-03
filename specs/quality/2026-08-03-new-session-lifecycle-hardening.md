@@ -14,10 +14,10 @@
 
 **Acceptance**：
 
-- [ ] fork wire payload 明确包含 `fork: true`。
-- [ ] `fork: true` 缺少父 key 在发 RPC 前失败。
-- [ ] Gateway 的 active-parent 和 size policy 错误保持可见。
-- [ ] 成功响应仍要求 key、sessionId 与 entry identity 一致。
+- [x] fork wire payload 明确包含 `fork: true`。
+- [x] `fork: true` 缺少父 key 在发 RPC 前失败。
+- [x] Gateway 的 active-parent 和 size policy 错误保持可见。
+- [x] 成功响应仍要求 key、sessionId 与 entry identity 一致。
 
 ## BUG-NS-02 · 统一所有普通新建入口的 Agent 归属
 
@@ -27,10 +27,10 @@
 
 **Acceptance**：
 
-- [ ] 非 main 会话中点击侧栏新建会创建到同一 Agent。
-- [ ] stale Agent 不会被复用。
-- [ ] Agent 列表尚未加载时使用当前 session key 中可验证的 Agent。
-- [ ] 无法解析时回退 main。
+- [x] 非 main 会话中点击侧栏新建会创建到同一 Agent。
+- [x] stale Agent 不会被复用。
+- [x] Agent 列表尚未加载时使用当前 session key 中可验证的 Agent。
+- [x] 无法解析时回退 main。
 
 ## BUG-NS-03 · 仅去重完全相同的创建意图
 
@@ -40,23 +40,23 @@
 
 **Acceptance**：
 
-- [ ] 完全相同的重复点击只发一个 RPC。
-- [ ] 不同 label 不会合并。
-- [ ] 普通 parent child 与 transcript fork 不会合并。
-- [ ] 请求终态后去重记录释放。
+- [x] 完全相同的重复点击只发一个 RPC。
+- [x] 不同 label 不会合并。
+- [x] 普通 parent child 与 transcript fork 不会合并。
+- [x] 请求终态后去重记录释放。
 
 ## BUG-NS-04 · 创建 mutation 与 session list 快照建立因果门禁
 
 **Current**：创建确认后，较早开始的 complete sessions.list 仍可删除刚提交的新 session。
 
-**Target**：创建开始或确认时使早于该 mutation 的 list snapshot 失效；只有 mutation 后开始的完整权威快照或明确 delete event 可以删除新 session。
+**Target**：创建确认后使确认前开始的 list snapshot 失效；只有确认后开始的完整权威快照或明确 delete event 可以删除新 session。失败创建不影响列表读取。
 
 **Acceptance**：
 
-- [ ] 旧 complete snapshot 不会移除新确认的 session。
-- [ ] 创建后的 complete snapshot可以正常删除已不存在的 session。
-- [ ] 明确 delete event 仍立即生效。
-- [ ] 不永久保留 Gateway 已删除的本地 session。
+- [x] 旧 complete snapshot 不会移除新确认的 session。
+- [x] 创建后的 complete snapshot可以正常删除已不存在的 session。
+- [x] 明确 delete event 仍立即生效。
+- [x] 不永久保留 Gateway 已删除的本地 session。
 
 ## BUG-NS-05 · 路由创建失败可重试
 
@@ -66,10 +66,10 @@
 
 **Acceptance**：
 
-- [ ] 同一 location render 不会重复创建。
-- [ ] 成功后清理 route intent。
-- [ ] 失败后用户可以显式重试。
-- [ ] 重试成功后不会再次自动创建。
+- [x] 同一 location render 不会重复创建。
+- [x] 成功后清理 route intent。
+- [x] 失败后用户可以显式重试。
+- [x] 重试成功后不会再次自动创建。
 
 ## BUG-NS-06 · 统一普通新会话持久 label
 
@@ -79,9 +79,9 @@
 
 **Acceptance**：
 
-- [ ] Chat picker、Dashboard route 和 NavSidebar 创建相同默认 label。
-- [ ] zh、zh-TW、en 均有持久 label。
-- [ ] fork 继续使用独立 label。
+- [x] Chat picker、Dashboard route 和 NavSidebar 创建相同默认 label。
+- [x] zh、zh-TW、en 均有持久 label。
+- [x] fork 继续使用独立 label。
 
 ## BUG-NS-07 · 组件行为回归
 
@@ -91,10 +91,10 @@
 
 **Acceptance**：
 
-- [ ] 测试在 BUG-NS-01 修复前会因缺少 `fork: true` 失败。
-- [ ] 测试在 BUG-NS-02 修复前会因侧栏提交 main 失败。
-- [ ] 覆盖 loading、失败、重试、成功关闭和 active session。
-- [ ] persona 只写入确认创建的 session draft。
+- [x] 测试在 BUG-NS-01 修复前会因缺少 `fork: true` 失败。
+- [x] 测试在 BUG-NS-02 修复前会因侧栏提交 main 失败。
+- [x] 覆盖 loading、失败、重试、成功关闭和 active session。
+- [x] persona 只写入确认创建的 session draft。
 
 ## 禁止项
 

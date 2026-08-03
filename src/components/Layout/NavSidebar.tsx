@@ -25,6 +25,7 @@ import {
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { createNativeSession } from '@/utils/sessionCreate';
+import { resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import {
@@ -605,8 +606,8 @@ function WorkbenchPanel() {
         icon={<Plus size={16} />}
         onClick={() => {
             void createNativeSession({
-              agentId: 'main',
-              label: t('sidebar.newChat', 'New chat'),
+              agentId: resolveNewSessionAgentId(activeKey, agents.map((agent) => agent.id)),
+              label: t('chat.newSessionLabel', 'New chat'),
             }).then((result) => {
               if (result.ok) {
                 navigate('/chat');

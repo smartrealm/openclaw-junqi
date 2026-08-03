@@ -2,11 +2,13 @@ import { gateway } from '@/services/gateway';
 import type { OpenClawCreatedSession } from '@/services/gateway/OpenClawSessionLifecycleClient';
 import { useChatStore, type Session } from '@/stores/chatStore';
 import { useGatewayDataStore, type SessionInfo } from '@/stores/gatewayDataStore';
+import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
 
 export interface CreateNativeSessionInput {
   readonly agentId: string;
   readonly label: string;
   readonly parentSessionKey?: string;
+  readonly fork?: boolean;
 }
 
 export type CreateNativeSessionResult =
@@ -85,18 +87,31 @@ export function createNativeSession(input: CreateNativeSessionInput): Promise<Cr
   if (!agentId || !label) {
     return Promise.resolve({ ok: false, error: 'agentId and label are required' });
   }
+  const parentSessionKey = input.parentSessionKey?.trim();
+  if (input.fork === true && !parentSessionKey) {
+    return Promise.resolve({ ok: false, error: 'parentSessionKey is required when fork is true' });
+  }
 
   const request: CreateNativeSessionInput = {
     agentId,
     label,
-    ...(input.parentSessionKey?.trim() ? { parentSessionKey: input.parentSessionKey.trim() } : {}),
+    ...(parentSessionKey ? { parentSessionKey } : {}),
+    ...(input.fork === true ? { fork: true } : {}),
   };
-  const inflightKey = `${request.agentId}:${request.parentSessionKey ?? ''}`;
+  const inflightKey = JSON.stringify([
+    request.agentId,
+    request.label,
+    request.parentSessionKey ?? '',
+    request.fork === true,
+  ]);
   const existing = creationInFlight.get(inflightKey);
   if (existing) return existing;
 
   const task = dependencies.createRemote(request)
-    .then((created) => ({ ok: true as const, session: dependencies.commit(created, request) }))
+    .then((created) => {
+      sessionListMutationFence.invalidate();
+      return { ok: true as const, session: dependencies.commit(created, request) };
+    })
     .catch((error) => ({ ok: false as const, error: errorMessage(error) }))
     .finally(() => {
       if (creationInFlight.get(inflightKey) === task) creationInFlight.delete(inflightKey);

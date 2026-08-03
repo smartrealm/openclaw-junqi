@@ -229,13 +229,17 @@ Hook 在调用 `sessions.create` 前先从 URL 删除 `agent` 与 `new`。如果
 
 增加组件级测试，mock `createNativeSession` 或 Gateway request 边界，验证传参、loading、错误、关闭和 active session 结果。源码 smoke test只保留结构性约束。
 
-## 建议修复顺序
+## 修复结果
 
-1. BUG-NS-01：先恢复官方 fork 语义。
-2. BUG-NS-02 与 BUG-NS-03：统一 Agent 归属和完整 intent 去重。
-3. BUG-NS-04：建立 mutation 与 list snapshot 的因果门禁。
-4. BUG-NS-05 与 BUG-NS-06：完善失败重试和持久 label。
-5. BUG-NS-07：用行为测试锁定全部入口。
+在合并 `main` 的 `v2.2.0` 最新基线后逐项复核并完成修复：
+
+1. BUG-NS-01：create contract、Gateway facade 和会话菜单已支持并发送 `fork: true`；无父 key 的 fork 在本地 fail closed。
+2. BUG-NS-02：NavSidebar 已与 Chat picker、Dashboard 共用当前会话 Agent 解析规则。
+3. BUG-NS-03：飞行去重 identity 已包含规范化的 agent、label、parent key 和 fork。
+4. BUG-NS-04：创建确认与 App、gatewayDataStore 的两条 sessions.list 链已共享 mutation revision，拒绝确认前开始的旧快照；失败创建不会干扰列表读取。
+5. BUG-NS-05：route intent 只在 Gateway 成功后消费；失败保留可访问错误条和显式重试，不自动循环。
+6. BUG-NS-06：三个普通创建入口统一使用 `chat.newSessionLabel` 作为持久 label，按钮动作文案不变。
+7. BUG-NS-07：补充 fork wire contract、完整 intent 去重、mutation revision、跨入口 Agent/label 和入口 loading、成功关闭、失败重试、persona 归属契约测试。
 
 ## 本次验证
 
@@ -254,4 +258,4 @@ Hook 在调用 `sessions.create` 前先从 URL 删除 `agent` 与 `new`。如果
 - 未对真实 Gateway 执行创建、分叉或删除。
 - 未在 Windows、macOS 或 Docker 中录制 UI 行为。
 - 未验证父会话活动运行、超大 transcript 和真实 fork transcript 内容。
-- 本次只完成审计，没有修改运行时代码。
+- 已修改运行时代码并完成自动化验证；真实 Gateway 和 Tauri 行为仍待人工验收。

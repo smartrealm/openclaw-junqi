@@ -53,6 +53,7 @@ import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { applyConfirmedSessionDeletion } from '@/utils/sessionDelete';
 import { createLatestRequestGate, isSessionDeleted } from '@/utils/sessionLifecycle';
+import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
 import { startRecoverableTask } from '@/utils/recoverableTask';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
@@ -294,6 +295,7 @@ export default function App() {
   ): Promise<SessionLoadResult> => {
     const requestGate = sessionListRequestGateRef.current;
     const requestId = requestGate.begin();
+    const mutationRevision = sessionListMutationFence.capture();
     try {
       // Compatibility only: prior Desktop builds wrote labels to a local JSON
       // file. Copy confirmed entries to OpenClaw before this read, then let
@@ -304,7 +306,9 @@ export default function App() {
         ? gateway.capturePendingChatSessionRunObservations()
         : undefined;
       const result = await gateway.getSessions();
-      if (!requestGate.isCurrent(requestId)) return 'superseded';
+      if (!requestGate.isCurrent(requestId) || !sessionListMutationFence.isCurrent(mutationRevision)) {
+        return 'superseded';
+      }
       const sessionListSnapshot = parseOpenClawSessionListSnapshot(result);
       const rawSessions = sessionListSnapshot.sessions;
       // Gateway-level defaults (configured model, context window)

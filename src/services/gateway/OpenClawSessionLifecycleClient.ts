@@ -18,6 +18,7 @@ export interface OpenClawSessionCreateInput {
   readonly agentId: string;
   readonly label?: string;
   readonly parentSessionKey?: string;
+  readonly fork?: boolean;
 }
 
 export type OpenClawSessionRequester = <T>(
@@ -86,10 +87,14 @@ export class OpenClawSessionLifecycleClient {
 
     const label = input.label?.trim();
     const parentSessionKey = input.parentSessionKey?.trim();
+    if (input.fork === true && !parentSessionKey) {
+      throw new Error('parentSessionKey is required when fork is true');
+    }
     const result = await this.request<unknown>('sessions.create', {
       agentId,
       ...(label ? { label } : {}),
       ...(parentSessionKey ? { parentSessionKey } : {}),
+      ...(input.fork === true ? { fork: true } : {}),
     });
     return parseOpenClawCreatedSession(result);
   }
