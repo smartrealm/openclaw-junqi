@@ -12,7 +12,8 @@ JunQi 需要在桌面活动中心处理 OpenClaw Gateway 已经创建的 exec/pl
   `plugin.approval.list` 和 `plugin.approval.resolve`；当前统一路径调用官方
   `approval.history`、`approval.get` 或 `approval.resolve`，不得猜测 request、policy、wait
   或 event 字段。
-- 管理员临时连接使用既有 `operator.admin` 出口；不得把 `operator.approvals` 加入日常连接。
+- 审批 transient 连接只使用 `operator.approvals`；不得把 `operator.approvals` 或
+  `operator.admin` 加入日常连接，也不得以 admin fallback 绕过审批 visibility。
 - list 返回的 envelope、时间戳、请求字段和 `allowedDecisions` 必须严格校验。未知能力只能
   真实尝试，明确缺失的方法不能调用；错误不能转成空队列或成功。
 - resolve 的 decision 必须由 Gateway 返回的 `allowedDecisions` 明确允许，且只在
@@ -25,7 +26,8 @@ JunQi 需要在桌面活动中心处理 OpenClaw Gateway 已经创建的 exec/pl
 
 ## 验收条件
 
-1. 已连接 Gateway 时，活动中心能通过管理员临时通道读取 exec 与 plugin pending list。
+1. 已连接 Gateway 时，活动中心能通过 approvals-only 临时通道读取当前身份可见的 exec 与
+   plugin pending list。
 2. `hello-ok.features.methods` 明确缺少某一 family 时，该 family 标记 unavailable 且不发 RPC；
    方法列表未知时发起真实 RPC；method-not-found 只标记该 family unavailable。
 3. malformed list envelope、非法时间戳、非法决策值或非对象 request 导致明确错误，不显示伪造

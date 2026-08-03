@@ -94,6 +94,7 @@ plans/
 - [OpenClaw 原生技能目录字段对齐](quality/2026-08-03-openclaw-native-skill-catalog-fidelity.md)
 - [OpenClaw 技能归档上传](quality/2026-08-03-openclaw-skills-upload.md)
 - [OpenClaw 原生审批](quality/2026-08-03-openclaw-native-approvals.md)
+- [OpenClaw 审批最小权限对齐](quality/2026-08-03-openclaw-approval-scope-alignment.md)
 - [OpenClaw 原生任务账本](quality/2026-08-03-openclaw-native-task-ledger.md)
 - [OpenClaw 原生 Cron 运行语义](quality/2026-08-03-openclaw-native-cron-run.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界](quality/2026-07-31-installation-dashboard-chat-provider-channel-runtime-boundaries.md)

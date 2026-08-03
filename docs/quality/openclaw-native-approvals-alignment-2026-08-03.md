@@ -39,8 +39,9 @@ OpenClaw 审批。语音常驻场景下，如果桌面只展示文本而没有�
   status、reason、source、resolver 与 canonical terminal decision。JunQi 不调用 approval
   request，不创建本地审批，不写入 exec policy，也不复制 Gateway 的超时、命令绑定或副作用
   执行逻辑。
-- 读取和解析通过既有 `requestPrivileged` 管理员临时连接完成。日常连接仍只申请
-  `operator.read` 与 `operator.write`，没有把 `operator.approvals` 加入日常 scope。
+- 读取、历史和解析通过只请求 `operator.approvals` 的专用 transient 连接完成。日常连接仍只
+  申请 `operator.read` 与 `operator.write`，没有把 `operator.approvals` 或
+  `operator.admin` 加入日常 scope；scope 拒绝不会回退为管理员读取。
 - `hello-ok.features.methods` 明确没有某个 list 方法时不发起该 RPC；方法列表未知时按官方
   协议的保守发现语义真实尝试一次。Gateway 明确返回 method-not-found 时，该方法标记为
   不可用；认证、传输、参数或响应错误继续向 UI 抛出，不静默降级。
@@ -72,7 +73,7 @@ OpenClaw 审批。语音常驻场景下，如果桌面只展示文本而没有�
 ## 未验证边界
 
 尚未连接真实 Gateway 验证不同 OpenClaw 配置下的 pending 与统一 history/resolve 响应，也未在 Windows、
-macOS、Linux 真机上手工验证管理员配对、Gateway 断线重连和多窗口轮询。审批策略
+macOS、Linux 真机上手工验证 approvals scope 配对、Gateway 断线重连和多窗口轮询。审批策略
 `exec.approvals.get/set`、approval waitDecision、`sessions.messages.subscribe` 的
 `includeApprovals` 长连接、插件自定义 action 和 Gateway 端执行副作用不在本次范围内；这些
 能力必须在取得当前官方 schema/handler 证据并完成权限链路设计后独立立项。

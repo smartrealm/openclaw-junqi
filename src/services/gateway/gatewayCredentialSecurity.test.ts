@@ -6,6 +6,7 @@ import type { RuntimeIdentity } from '@/types/gatewayRuntime';
 import { GatewayConnection, type GatewayConnectionOptions } from './Connection';
 import type { GatewayAuthorizationIssue } from './messageRouter';
 import {
+  createApprovalRequester,
   createPrivilegedRequester,
   subscribePrivilegedAuthorizationIssues,
   subscribePrivilegedAuthorizationResolved,
@@ -291,6 +292,39 @@ describe('Gateway credential security regression gates', () => {
     await turn();
     assert.equal(MemoryWebSocket.instances.length, 1);
     assert.equal(useGatewayDataStore.getState().polling, false);
+  });
+
+  it('uses an approvals-only transient socket for OpenClaw approval RPCs', async () => {
+    resetSockets();
+    const connectionOptions: GatewayConnectionOptions[] = [];
+    const requestApproval = createApprovalRequester(
+      sourceConnection(),
+      (options) => {
+        connectionOptions.push(options);
+        return new GatewayConnection(options);
+      },
+      { pairingRetryMs: 0, pairingTimeoutMs: 1_000 },
+    );
+    const resultPromise = requestApproval<{ items: unknown[] }>('approval.history', { limit: 25 });
+    await waitForSocketCount(1);
+    const socket = MemoryWebSocket.instances[0];
+
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        assert.deepEqual(message.params.scopes, ['operator.approvals']);
+        acceptHandshake(socket, message, 'approval-1', ['operator.approvals'], 'approval-device-token');
+        return;
+      }
+      assert.equal(message.method, 'approval.history');
+      socket.receive({ type: 'res', id: message.id, ok: true, payload: { items: [] } });
+    };
+    challenge(socket);
+
+    assert.deepEqual(await resultPromise, { items: [] });
+    assert.deepEqual(connectionOptions, [{ scopes: ['operator.approvals'], transient: true }]);
+    assert.deepEqual(savedDeviceTokens, [], 'transient credentials must not be persisted');
+    assert.equal(socket.closeCalls.length, 1);
+    assert.equal(socket.readyState, MemoryWebSocket.CLOSED);
   });
 
   it('preserves a Windows scope-upgrade request through the privileged handshake', async () => {

@@ -11,6 +11,7 @@ import {
   type GatewayCallbacks,
   type GatewayRequestOptions,
   type GatewayConnectionOptions,
+  type GatewayOperatorScope,
   type ChatMessage,
   type MediaInfo,
 } from './Connection';
@@ -290,10 +291,13 @@ export interface PrivilegedRequester {
   cancelPairingRetry(): void;
 }
 
-interface PrivilegedRequesterOptions {
+export interface PrivilegedRequesterOptions {
+  scopes?: readonly GatewayOperatorScope[];
   pairingRetryMs?: number;
   pairingTimeoutMs?: number;
 }
+
+const DEFAULT_PRIVILEGED_OPERATOR_SCOPES: readonly GatewayOperatorScope[] = ['operator.admin'];
 
 type PrivilegedAuthorizationIssueListener = (issue: GatewayAuthorizationIssue) => void;
 const privilegedAuthorizationIssueListeners = new Set<PrivilegedAuthorizationIssueListener>();
@@ -402,7 +406,7 @@ function errorValue(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
 }
 
-/** Build a serialized admin lane whose elevated socket exists for one RPC only. */
+/** Build a serialized transient scope lane whose elevated socket exists for one RPC only. */
 export function createPrivilegedRequester(
   source: PrivilegedSourceConnection,
   createConnection: PrivilegedConnectionFactory = (options) => new GatewayConnection(options),
@@ -410,6 +414,10 @@ export function createPrivilegedRequester(
 ): PrivilegedRequester {
   let lane: Promise<void> = Promise.resolve();
   let cancelActivePairingRetry: (() => void) | null = null;
+  const scopes = [...new Set(options.scopes ?? DEFAULT_PRIVILEGED_OPERATOR_SCOPES)];
+  if (scopes.length === 0) {
+    throw new Error('A transient Gateway requester requires at least one operator scope');
+  }
   const pairingRetryMs = options.pairingRetryMs ?? 5_000;
   const pairingTimeoutMs = options.pairingTimeoutMs ?? 5 * 60_000;
 
@@ -430,7 +438,7 @@ export function createPrivilegedRequester(
     registerCancel: (cancel: () => void) => void,
     onConnected: () => void,
   ): Promise<AttemptResult<T>> => {
-    const transient = createConnection({ scopes: ['operator.admin'], transient: true });
+    const transient = createConnection({ scopes, transient: true });
     return new Promise<AttemptResult<T>>((resolve) => {
       let settled = false;
       let requestStarted = false;
@@ -608,9 +616,24 @@ export function createPrivilegedRequester(
   return request;
 }
 
+const APPROVAL_OPERATOR_SCOPES: readonly GatewayOperatorScope[] = ['operator.approvals'];
+
+/** Build a transient requester for the official OpenClaw approval scope only. */
+export function createApprovalRequester(
+  source: PrivilegedSourceConnection,
+  createConnection: PrivilegedConnectionFactory = (options) => new GatewayConnection(options),
+  options: Omit<PrivilegedRequesterOptions, 'scopes'> = {},
+): PrivilegedRequester {
+  return createPrivilegedRequester(source, createConnection, {
+    ...options,
+    scopes: APPROVAL_OPERATOR_SCOPES,
+  });
+}
+
 const requestPrivileged = createPrivilegedRequester(connection);
+const requestApprovals = createApprovalRequester(connection);
 const approvalClient = new OpenClawApprovalClient(
-  (method, params) => requestPrivileged(method, params),
+  (method, params) => requestApprovals(method, params),
   (method) => connection.hasAdvertisedMethod(method),
 );
 const sessionSettings = new SessionSettingsClient({

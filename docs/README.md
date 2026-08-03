@@ -181,6 +181,7 @@ docs/
 - [OpenClaw 原生技能目录字段对齐](quality/openclaw-native-skill-catalog-fidelity-2026-08-03.md)
 - [OpenClaw 技能归档上传能力对齐](quality/openclaw-skills-upload-parity-2026-08-03.md)
 - [OpenClaw 原生审批对齐](quality/openclaw-native-approvals-alignment-2026-08-03.md)
+- [OpenClaw 审批最小权限对齐](quality/openclaw-approval-scope-alignment-2026-08-03.md)
 - [OpenClaw 原生任务账本对齐](quality/openclaw-native-task-ledger-alignment-2026-08-03.md)
 - [OpenClaw 原生 Cron 运行语义对齐](quality/openclaw-native-cron-run-alignment-2026-08-03.md)
 - [全局改进与功能拓展计划](quality/codebase-improvement-and-extension-plan-2026-07-31.md)
