@@ -32,6 +32,7 @@ docs/
 - [Windows 安装阶段全量复审](installation/windows-installation-full-audit-2026-07-24.md)
 - [Windows Native 安装审计](installation/windows-native-install-audit.md)
 - [安装向导存储页导航可见性验证](installation/setup-storage-navigation-visibility-validation-2026-08-02.md)
+- [设备审批、Ready 导航、智能体与渠道加载体验复审](installation/device-approval-experience-audit-2026-08-03.md)
 - [首次安装二次复审](installation/openclaw-setup-second-pass-audit.md)
 - [Windows 首次安装观测复审](installation/openclaw-windows-first-run-observation-audit.md)
 - [Windows Node 探测补充审计](installation/openclaw-windows-node-probe-audit.md)

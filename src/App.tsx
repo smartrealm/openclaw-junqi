@@ -61,6 +61,7 @@ import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { readActiveOpenclawConfig } from '@/services/openclawConfigRuntime';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
+import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
 
@@ -1097,6 +1098,14 @@ export default function App() {
     pairingTriggeredRef.current = false;
   }, []);
 
+  const handlePairingApprove = useCallback(async (requestId: string) => {
+    await approveSelectedGatewayDevice(requestId);
+    // The selected OpenClaw runtime has confirmed the exact request. Wake the
+    // existing privileged operation immediately instead of making the user
+    // wait for its next scheduled authorization probe.
+    gateway.retryPrivilegedAuthorizationNow();
+  }, []);
+
   const handlePairingCancel = useCallback(() => {
     debugLog('gateway', '[App] Pairing cancelled by user');
     setPairingIssue(null);
@@ -1143,6 +1152,7 @@ export default function App() {
           <Suspense fallback={null}>
             <PairingScreen
               issue={pairingIssue}
+              onApprove={handlePairingApprove}
               onPaired={handlePairingComplete}
               onCancel={handlePairingCancel}
             />
@@ -1198,6 +1208,7 @@ export default function App() {
         <Suspense fallback={null}>
           <PairingScreen
             issue={pairingIssue}
+            onApprove={handlePairingApprove}
             onPaired={handlePairingComplete}
             onCancel={handlePairingCancel}
           />

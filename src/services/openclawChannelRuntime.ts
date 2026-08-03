@@ -133,11 +133,9 @@ export async function loadOfficialChannelCatalog(_force = false): Promise<Offici
   // Never substitute a JunQi-maintained channel list. The selected OpenClaw
   // runtime is the sole catalog authority, and every load re-reads it so an
   // OpenClaw upgrade/plugin change is reflected without restarting JunQi.
-  try {
-    return normalizeOfficialChannelCatalog(await getOpenclawChannelCatalog());
-  } catch {
-    return { source: 'unavailable', entries: [] };
-  }
+  // Failures must reach the page: turning them into an empty catalog makes a
+  // loading or runtime error indistinguishable from "OpenClaw has no channels".
+  return normalizeOfficialChannelCatalog(await getOpenclawChannelCatalog());
 }
 
 function firstCapabilityRow(payload: unknown): Record<string, any> | undefined {
