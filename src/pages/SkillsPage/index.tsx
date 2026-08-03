@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { ClipboardList, Package, Puzzle, RefreshCw, Search, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   openClawSkillsRuntime,
   type OpenClawSkill,
@@ -26,6 +28,12 @@ import {
   type SkillDetail,
 } from './components';
 import { SkillArchiveUploadPanel } from './SkillArchiveUploadPanel';
+import {
+  ACTIVE_SESSION_PROPOSAL_SCOPE,
+  GATEWAY_DEFAULT_PROPOSAL_SCOPE,
+  proposalScopeValueForAgent,
+  resolveProposalScopeAgentId,
+} from './proposalScope';
 
 type SkillsTab = 'installed' | 'catalog' | 'proposals';
 
@@ -156,6 +164,12 @@ function SkillsList({ skills, onToggle, onViewCard }: {
 export function SkillsPage() {
   const { t } = useTranslation();
   const connected = useChatStore((state) => state.connected);
+  const activeSessionAgentId = useChatStore(
+    (state) => state.sessions.find((session) => session.key === state.activeSessionKey)?.agentId,
+  );
+  const agents = useGatewayDataStore((state) => state.agents);
+  const agentsLoading = useGatewayDataStore((state) => state.loading.agents);
+  const agentsError = useGatewayDataStore((state) => state.errors.agents);
   const archiveUploadCapability = openClawSkillsRuntime.archiveUploadCapability();
   const skillCardCapability = openClawSkillsRuntime.skillCardCapability();
   const curatorStatusCapability = openClawSkillsRuntime.curatorStatusCapability();
@@ -173,6 +187,7 @@ export function SkillsPage() {
   const [proposals, setProposals] = useState<OpenClawSkillProposal[]>([]);
   const [loadingProposals, setLoadingProposals] = useState(false);
   const [proposalsError, setProposalsError] = useState<string | null>(null);
+  const [proposalScope, setProposalScope] = useState(GATEWAY_DEFAULT_PROPOSAL_SCOPE);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<SkillDetail | null>(null);
@@ -183,6 +198,13 @@ export function SkillsPage() {
   const [skillCard, setSkillCard] = useState<OpenClawSkillCard | null>(null);
   const [skillCardError, setSkillCardError] = useState<string | null>(null);
   const skillCardRequestGeneration = useRef(0);
+  const proposalRequestGeneration = useRef(0);
+  const activeProposalSessionAgentId = activeSessionAgentId?.trim() || undefined;
+  const proposalScopeAgentId = resolveProposalScopeAgentId(proposalScope, activeProposalSessionAgentId);
+  const proposalScopeAgents = useMemo(
+    () => agents.filter((agent) => agent.id !== activeProposalSessionAgentId),
+    [activeProposalSessionAgentId, agents],
+  );
 
   const loadInstalled = useCallback(async () => {
     if (!connected) return;
@@ -228,19 +250,27 @@ export function SkillsPage() {
 
   const loadProposals = useCallback(async () => {
     if (!connected || proposalsCapability === false) return;
+    const requestGeneration = proposalRequestGeneration.current + 1;
+    proposalRequestGeneration.current = requestGeneration;
     setLoadingProposals(true);
     setProposalsError(null);
     try {
-      const manifest = await openClawSkillsRuntime.proposals();
-      setProposals([...manifest.proposals].sort((left, right) => (
-        Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
-      )));
+      const manifest = await openClawSkillsRuntime.proposals(proposalScopeAgentId);
+      if (proposalRequestGeneration.current === requestGeneration) {
+        setProposals([...manifest.proposals].sort((left, right) => (
+          Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+        )));
+      }
     } catch (error) {
-      setProposalsError(operationError(error));
+      if (proposalRequestGeneration.current === requestGeneration) {
+        setProposalsError(operationError(error));
+      }
     } finally {
-      setLoadingProposals(false);
+      if (proposalRequestGeneration.current === requestGeneration) {
+        setLoadingProposals(false);
+      }
     }
-  }, [connected, proposalsCapability]);
+  }, [connected, proposalScopeAgentId, proposalsCapability]);
 
   useEffect(() => {
     void loadInstalled();
@@ -253,6 +283,19 @@ export function SkillsPage() {
   }, [activeTab, loadCatalog, query]);
 
   useEffect(() => {
+    if (proposalScope === ACTIVE_SESSION_PROPOSAL_SCOPE && !activeProposalSessionAgentId) {
+      setProposalScope(GATEWAY_DEFAULT_PROPOSAL_SCOPE);
+    }
+  }, [activeProposalSessionAgentId, proposalScope]);
+
+  useEffect(() => {
+    proposalRequestGeneration.current += 1;
+    setLoadingProposals(false);
+    setProposals([]);
+    setProposalsError(null);
+  }, [proposalScopeAgentId]);
+
+  useEffect(() => {
     if (activeTab !== 'proposals') return;
     void loadProposals();
   }, [activeTab, loadProposals]);
@@ -262,6 +305,14 @@ export function SkillsPage() {
       setActiveTab('installed');
     }
   }, [activeTab, proposalsCapability]);
+
+  useEffect(() => {
+    if (connected && proposalsCapability !== false) return;
+    proposalRequestGeneration.current += 1;
+    setLoadingProposals(false);
+    setProposals([]);
+    setProposalsError(null);
+  }, [connected, proposalsCapability]);
 
   useEffect(() => {
     if (connected) return;
@@ -524,14 +575,48 @@ export function SkillsPage() {
         {activeTab === 'proposals' && (
           <section>
             <div className="mb-4 flex items-center justify-between gap-4">
-              <p className="text-[11px] text-aegis-text-dim">{t('skillsExtra.proposalsHint', 'OpenClaw Skill Workshop proposals')}</p>
+              <div className="min-w-0">
+                <p className="text-[11px] text-aegis-text-dim">{t('skillsExtra.proposalsHint', 'OpenClaw Skill Workshop proposals')}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <label htmlFor="skill-proposal-scope" className="text-[10px] text-aegis-text-dim">
+                    {t('skillsExtra.proposalsScope', 'Agent scope')}
+                  </label>
+                  <Select value={proposalScope} onValueChange={setProposalScope}>
+                    <SelectTrigger
+                      id="skill-proposal-scope"
+                      aria-label={t('skillsExtra.proposalsScope', 'Agent scope')}
+                      disabled={!connected}
+                      className="h-7 w-[min(260px,calc(100vw-8rem))] border-aegis-border bg-aegis-surface-solid px-2 text-[10px] text-aegis-text focus:ring-aegis-primary/40"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-aegis-border bg-aegis-card-solid text-aegis-text">
+                      <SelectItem value={GATEWAY_DEFAULT_PROPOSAL_SCOPE} className="text-[11px]">
+                        {t('skillsExtra.proposalsGatewayDefaultScope', 'Gateway default agent')}
+                      </SelectItem>
+                      {activeProposalSessionAgentId && (
+                        <SelectItem value={ACTIVE_SESSION_PROPOSAL_SCOPE} className="text-[11px]">
+                          {t('skillsExtra.proposalsCurrentSessionScope', 'Current session: {{agent}}', { agent: activeProposalSessionAgentId })}
+                        </SelectItem>
+                      )}
+                      {proposalScopeAgents.map((agent) => (
+                        <SelectItem key={agent.id} value={proposalScopeValueForAgent(agent.id)} className="text-[11px]">
+                          {agent.name || agent.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {agentsLoading && <span className="text-[10px] text-aegis-text-dim">{t('common.loading', 'Loading')}</span>}
+                  {agentsError && <span className="max-w-full break-words text-[10px] text-aegis-warning">{t('skillsExtra.proposalsAgentsUnavailable', 'Agent list unavailable')}: {agentsError}</span>}
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => void loadProposals()}
                 disabled={loadingProposals || !connected}
                 title={t('common.refresh', 'Refresh')}
                 aria-label={t('common.refresh', 'Refresh')}
-                className="grid size-8 place-items-center rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.06] hover:text-aegis-primary disabled:cursor-wait disabled:opacity-50"
+                className="grid size-8 shrink-0 place-items-center rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.06] hover:text-aegis-primary disabled:cursor-wait disabled:opacity-50"
               >
                 {loadingProposals ? <LoadingIndicator size={13} /> : <RefreshCw size={13} aria-hidden="true" />}
               </button>

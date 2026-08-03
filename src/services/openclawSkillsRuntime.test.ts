@@ -448,6 +448,29 @@ test('reads the default-scope proposal manifest through the read-only Gateway me
   assert.deepEqual(calls, [{ method: 'skills.proposals.list', params: {} }]);
 });
 
+test('preserves an explicitly selected proposal agent scope in the read-only Gateway request', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const runtime = createOpenClawSkillsRuntime({
+    async call(method, params = {}) {
+      calls.push({ method, params });
+      return {
+        schema: 'openclaw.skill-workshop.proposals-manifest.v1',
+        updatedAt: '2026-08-03T00:00:00.000Z',
+        proposals: [],
+      };
+    },
+    async callPrivileged() {
+      return { ok: true };
+    },
+    hasAdvertisedMethod(method) {
+      return method === 'skills.proposals.list';
+    },
+  });
+
+  await runtime.proposals(' research ');
+  assert.deepEqual(calls, [{ method: 'skills.proposals.list', params: { agentId: 'research' } }]);
+});
+
 test('does not request proposal manifests that the Gateway explicitly does not advertise', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({

@@ -23,7 +23,8 @@
 
 ## 非目标
 
-- 不接入 `skills.proposals.inspect`，直到页面拥有经官方契约核对的 agent scope 选择与绑定。
+- 不接入 `skills.proposals.inspect`；agent scope 选择与绑定已在独立的 proposal scope 对齐项中处理，
+  detail 的完整内容与安全边界仍需另行审查。
 - 不接入 create、update、revise、evaluate、apply、reject、quarantine、history 或 events。
 - 不将默认 Gateway scope 描述为当前会话、当前 agent 或本地 `/skill-hub`。
 - 不读取、写入或猜测 workspace proposal 文件、运行时路径、权限或跨平台能力。

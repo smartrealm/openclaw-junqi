@@ -19,8 +19,8 @@ OpenClaw 的 agent scope、权限和管理员写入边界。
    畸形条目时拒绝整个回包，不补默认值。
 3. Gateway 明确未广告该方法时不得发送请求；广告未知时允许实际 RPC 并显示真实错误，不能由
    版本号、平台或本机状态推断支持性。
-4. 因页面尚无已核对的 agent scope 选择，调用必须省略 `agentId`，并且 UI 不得称结果属于当前
-   会话、当前 agent 或本地 `/skill-hub`。
+4. agent scope 选择、默认参数省略和请求隔离由后续
+   `2026-08-03-openclaw-native-skill-proposal-scope.md` 约束；不得将本地 `/skill-hub` 当作 scope。
 5. 页面只呈现原生清单字段和加载、空、失败状态；不得伪造详情、草稿、scanner 结论、revision
    hash、执行结果或 lifecycle 动作。
 6. 不读取或写入本机技能路径、proposal 文件、Gateway 配置或系统凭据。

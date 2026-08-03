@@ -34,8 +34,9 @@ workspace scope resolver 选择 agent workspace。
   或畸形条目会整体拒绝回包，不从部分数据生成本地提案结论。
 - `src/pages/SkillsPage/index.tsx` 仅显示标题、描述、技能 key、更新时间和 Gateway 生命周期
   status。请求中、空清单与 Gateway/协议失败均有明确状态；刷新仅重新读取清单。
-- 当前页面没有已核对的 agent-scope 选择器，因此调用刻意省略 `agentId`，由 Gateway 按官方默认
-  scope 解析。UI 不把返回结果标成当前会话、当前选中 agent 或本地工作区。
+- 页面现在可在 Gateway 默认、当前会话 agent 与已验证 `agents.list` 条目之间明确选择 scope；
+  默认选项仍省略 `agentId`，其他选择传递精确 agent id。请求隔离和来源边界见
+  [OpenClaw 原生技能提案范围对齐](openclaw-native-skill-proposal-scope-alignment-2026-08-03.md)。
 - 未接入 `skills.proposals.inspect`。官方控制台会先绑定 selected agent scope 再读取详情；JunQi
   尚不具备这一经核对的 scope 绑定，直接接入会误导用户 proposal 所属 workspace。
 
@@ -59,7 +60,7 @@ CentOS 和 Ubuntu 共享同一协议路径，不依赖浏览器 HTTP、本地文
 
 - 尚未连接真实 Gateway，未验证默认 agent 的解析结果、operator.read 拒绝、空清单、远端
   Gateway 或列表在提案状态变化时的实际表现。
-- 尚未实装 agent-scope 选择、proposal inspect、history、事件流或任一管理员写操作：create、
-  update、revise、evaluate、apply、reject、quarantine。
+- 尚未实装 proposal inspect、history、事件流或任一管理员写操作：create、update、revise、
+  evaluate、apply、reject、quarantine。
 - `/skill-hub` 仍是单独的 JunQi 本地目录与符号链接工具，本次未把它或任何本地文件投影为
   OpenClaw Skill Workshop 数据。
