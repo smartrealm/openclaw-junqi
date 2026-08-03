@@ -9,7 +9,7 @@ function event(sessionId: string, seq: number) {
       type: 'audio',
       audioBase64: 'AA==',
       talkEvent: {
-        id: `${sessionId}-${seq}`, type: 'output.audio.started', sessionId, seq,
+        id: `${sessionId}-${seq}`, type: 'output.audio.started', sessionId, turnId: `turn-${seq}`, seq,
         timestamp: '2026-08-02T00:00:00.000Z', mode: 'realtime', transport: 'gateway-relay', brain: 'agent-consult', payload: {},
       },
     },
@@ -29,5 +29,6 @@ test('Talk event bridge publishes valid events once per monotonic session sequen
 
 test('Talk event bridge consumes malformed Talk envelopes without routing them as chat events', () => {
   assert.equal(publishTalkGatewayEvent({ type: 'event', event: 'talk.event', payload: { talkEvent: { sessionId: 'missing-fields' } } }), true);
+  assert.equal(publishTalkGatewayEvent(event('talk-event-invalid-seq', 0)), true);
   assert.equal(publishTalkGatewayEvent({ type: 'event', event: 'agent', payload: {} }), false);
 });

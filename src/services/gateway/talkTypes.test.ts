@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decodeTalkCatalog, selectRealtimeRelayProvider } from './talkTypes';
+import { decodeTalkCatalog, decodeTalkEvent, selectRealtimeRelayProvider } from './talkTypes';
 
 function officialCatalog() {
   return {
@@ -57,4 +57,35 @@ test('does not claim native Talk when realtime readiness or native formats are u
   const malformedDecoded = decodeTalkCatalog(malformed);
   assert.ok(malformedDecoded);
   assert.equal(selectRealtimeRelayProvider(malformedDecoded), null);
+});
+
+test('accepts only complete current OpenClaw Talk event envelopes', () => {
+  const base = {
+    id: 'talk-event-1',
+    type: 'output.audio.delta',
+    sessionId: 'talk-session-1',
+    turnId: 'talk-turn-1',
+    seq: 1,
+    timestamp: '2026-08-04T00:00:00.000Z',
+    mode: 'realtime',
+    transport: 'gateway-relay',
+    brain: 'agent-consult',
+    payload: {},
+  };
+  assert.ok(decodeTalkEvent(base));
+  assert.equal(decodeTalkEvent({ ...base, seq: 0 }), null);
+  assert.equal(decodeTalkEvent({ ...base, timestamp: '' }), null);
+  assert.equal(decodeTalkEvent({ ...base, turnId: undefined }), null);
+  assert.equal(decodeTalkEvent({
+    ...base,
+    type: 'capture.started',
+    turnId: undefined,
+    captureId: undefined,
+  }), null);
+  assert.ok(decodeTalkEvent({
+    ...base,
+    type: 'capture.started',
+    turnId: undefined,
+    captureId: 'capture-1',
+  }));
 });

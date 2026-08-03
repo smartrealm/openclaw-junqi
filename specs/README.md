@@ -154,6 +154,7 @@ specs/
 - [Gateway 凭据绑定失败关闭](quality/2026-08-03-gateway-credential-binding-fail-closed.md)
 - [Gateway Client 平台身份](quality/2026-08-03-gateway-client-platform-identity.md)
 - [OpenClaw 模型目录权威性](quality/2026-08-04-openclaw-model-catalog-authority-alignment.md)
+- [OpenClaw Talk 事件契约](quality/2026-08-04-openclaw-talk-event-contract-alignment.md)
 - [OpenClaw Operator Protocol v4](quality/2026-08-03-openclaw-operator-protocol-v4.md)
 - [Gateway Task Ledger 详情](quality/2026-08-03-task-ledger-details.md)
 - [Windows Gateway 重启后续规格](quality/2026-08-03-windows-gateway-restart-followup.md)

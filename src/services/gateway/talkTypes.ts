@@ -136,6 +136,30 @@ const EVENT_TYPES: readonly TalkEventType[] = [
   'latency.metrics',
   'health.changed',
 ];
+const TURN_SCOPED_EVENT_TYPES: readonly TalkEventType[] = [
+  'turn.started',
+  'turn.ended',
+  'turn.cancelled',
+  'input.audio.delta',
+  'input.audio.committed',
+  'transcript.delta',
+  'transcript.done',
+  'output.text.delta',
+  'output.text.done',
+  'output.audio.started',
+  'output.audio.delta',
+  'output.audio.done',
+  'tool.call',
+  'tool.progress',
+  'tool.result',
+  'tool.error',
+];
+const CAPTURE_SCOPED_EVENT_TYPES: readonly TalkEventType[] = [
+  'capture.started',
+  'capture.stopped',
+  'capture.cancelled',
+  'capture.once',
+];
 
 function enumArray<T extends string>(value: unknown, allowed: readonly T[]): T[] | null {
   if (!Array.isArray(value)) return null;
@@ -286,15 +310,30 @@ export function decodeTalkEvent(value: unknown): TalkEvent | null {
   const id = string(value.id);
   const type = enumValue(value.type, EVENT_TYPES);
   const sessionId = string(value.sessionId);
+  const timestamp = string(value.timestamp);
   const mode = enumValue(value.mode, MODES);
   const transport = enumValue(value.transport, TRANSPORTS);
   const brain = enumValue(value.brain, BRAINS);
   if (!id || !type || !sessionId || !mode || !transport || !brain || typeof value.seq !== 'number'
-    || !Number.isInteger(value.seq) || value.seq < 0
+    || !Number.isInteger(value.seq) || value.seq < 1 || !timestamp
     || !Object.prototype.hasOwnProperty.call(value, 'payload')) return null;
   const turnId = value.turnId === undefined ? null : string(value.turnId);
-  if (value.turnId !== undefined && !turnId) return null;
-  return { id, type, sessionId, turnId, seq: value.seq, mode, transport, brain, payload: value.payload };
+  const captureId = value.captureId === undefined ? null : string(value.captureId);
+  if ((value.turnId !== undefined && !turnId)
+    || (value.captureId !== undefined && !captureId)
+    || (TURN_SCOPED_EVENT_TYPES.includes(type) && !turnId)
+    || (CAPTURE_SCOPED_EVENT_TYPES.includes(type) && !captureId)) return null;
+  return {
+    id,
+    type,
+    sessionId,
+    turnId,
+    seq: value.seq,
+    mode,
+    transport,
+    brain,
+    payload: value.payload,
+  };
 }
 
 export function decodeTalkSessionReplacedPayload(value: unknown): TalkSessionReplacedPayload | null {
