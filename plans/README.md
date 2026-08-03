@@ -19,6 +19,7 @@ plans/
 - [Setup onboarding 二次复审](installation/2026-07-20-setup-onboarding-second-pass.md)
 - [安装诊断完整性](installation/2026-07-21-install-diagnostics-completeness.md)
 - [Windows OpenClaw Wizard](installation/2026-07-23-openclaw-windows-wizard.md)
+- [Windows OpenClaw Wizard 可视化加固](installation/2026-08-03-windows-openclaw-wizard-visual-hardening.md)
 - [Windows 首次安装](installation/2026-07-24-openclaw-windows-first-run.md)
 - [首次安装底部操作区响应式修复](installation/2026-08-02-setup-footer-responsive-actions.md)
 - [Windows 卸载流程](installation/2026-07-26-windows-uninstall-flow.md)
@@ -31,6 +32,7 @@ plans/
 ## Collaboration
 
 - [本机 System Service 协作启用归属修复](collaboration/2026-07-31-local-system-service-collaboration-enablement.md)
+- [Agent Office 只读协作投影](collaboration/2026-08-03-agent-office-read-only-projection.md)
 
 ## Business
 

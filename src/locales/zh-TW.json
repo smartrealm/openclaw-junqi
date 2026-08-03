@@ -4430,7 +4430,44 @@
       "untitled": "未命名協作"
     },
     "details": {
-      "title": "協作詳情"
+      "title": "協作詳情",
+      "office": "辦公室"
+    },
+    "office": {
+      "title": "Agent 辦公室",
+      "authorityNotice": "此檢視只讀投影權威協作快照；工位位置不會改變編排狀態。",
+      "agentCount": "{{count}} 個 Agent",
+      "empty": "目前執行尚無權威 Agent 指派資訊。",
+      "coordinator": "協調 Agent",
+      "agentDeskLabel": "{{agent}}，{{state}}",
+      "workItemProgress": "已結算 {{completed}}/{{total}}",
+      "noAssignedWork": "尚未指派工作項",
+      "runtime": "執行階段",
+      "runtimeUnknown": "未投影",
+      "desk": "工位",
+      "states": {
+        "COORDINATING": "正在協調",
+        "ACTIVE": "正在執行",
+        "WAITING": "等待中",
+        "ATTENTION": "需要處理",
+        "UNKNOWN": "狀態未確認",
+        "COMPLETED": "已完成",
+        "IDLE": "目前無活動工作"
+      },
+      "zones": {
+        "coordination": "協調工位",
+        "active": "執行工位",
+        "waiting": "等待工位",
+        "attention": "介入工位",
+        "completed": "完成工位"
+      },
+      "zoneDescriptions": {
+        "coordination": "規劃、彙整和交付協調",
+        "active": "存在權威活動執行嘗試的 Agent",
+        "waiting": "等待指派或相依工作完成的已指派工作",
+        "attention": "需要介入或執行狀態尚未確認",
+        "completed": "已指派工作項均已結算"
+      }
     },
     "drawer": {
       "title": "協作執行"

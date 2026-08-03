@@ -1116,6 +1116,8 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
                 eventTimelineIncompleteReason={selectedCursor?.incompleteReason}
                 pendingAction={pendingAction}
                 locale={i18n.language}
+                configuredAgents={capabilities?.configuredAgents}
+                coordinatorAgentId={capabilities?.coordinatorAgentId}
                 onAction={handleRunAction}
                 onRetry={() => void refreshRunTrace(selectedRunId).catch(() => undefined)}
               />

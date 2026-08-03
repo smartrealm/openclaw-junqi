@@ -18,6 +18,7 @@ specs/
 - [安装诊断](installation/2026-07-21-install-diagnostics-bugfix.md)
 - [Windows Native 安装](installation/2026-07-21-windows-native-install-bugfix.md)
 - [Windows OpenClaw Wizard](installation/2026-07-23-openclaw-windows-wizard-bugfix.md)
+- [Windows OpenClaw Wizard 可视化加固](installation/2026-08-03-windows-openclaw-wizard-visual-hardening.md)
 - [Windows 首次安装](installation/2026-07-24-openclaw-windows-first-run-bugfix.md)
 - [首次安装底部操作区响应式修复](installation/2026-08-02-setup-footer-responsive-actions.md)
 - [Windows 卸载流程](installation/2026-07-26-windows-uninstall-flow-bugfix.md)
@@ -33,6 +34,7 @@ specs/
 - [OpenClaw 多智能体协作](collaboration/2026-07-16-openclaw-agent-collaboration-bugfix.md)
 - [协作发布证据](collaboration/2026-07-18-openclaw-collaboration-release-evidence-bugfix.md)
 - [本机 System Service 协作启用归属修复](collaboration/2026-07-31-local-system-service-collaboration-enablement.md)
+- [Agent Office 只读协作投影](collaboration/2026-08-03-agent-office-read-only-projection.md)
 
 ## Business
 

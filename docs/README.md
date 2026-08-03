@@ -36,6 +36,7 @@ docs/
 - [Windows 首次安装观测复审](installation/openclaw-windows-first-run-observation-audit.md)
 - [Windows Node 探测补充审计](installation/openclaw-windows-node-probe-audit.md)
 - [Windows Wizard 链路审计](installation/openclaw-windows-wizard-audit.md)
+- [Windows OpenClaw Wizard 可视化链路复审](installation/windows-openclaw-wizard-visual-audit-2026-08-03.md)
 - [安装与 Wizard 第四轮审计](installation/openclaw-install-wizard-fourth-pass-audit-2026-07-29.md)
 - [安装与 Wizard 第五轮审计](installation/openclaw-install-wizard-fifth-pass-audit-2026-07-29.md)
 - [安装与 Wizard 第六轮审计](installation/openclaw-install-wizard-sixth-pass-audit-2026-07-29.md)
@@ -84,6 +85,7 @@ docs/
 - [协作系统审计](collaboration/openclaw-agent-collaboration-audit.md)
 - [协作实施计划](collaboration/openclaw-agent-collaboration-implementation-plan.md)
 - [本机 System Service 协作启用归属修复验证](collaboration/local-system-service-collaboration-enablement-validation-2026-07-31.md)
+- [Agent Office 只读协作投影设计与验证记录](collaboration/agent-office-read-only-projection-design-2026-08-03.md)
 - [发布证据审计](collaboration/openclaw-collaboration-release-evidence-audit.md)
 - [Workflow Template 与 Run 边界 ADR](adr/0001-workflow-template-and-run-boundary.md)
 
