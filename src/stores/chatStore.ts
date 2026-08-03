@@ -37,7 +37,6 @@ import {
   projectSessionOrganization,
   removeSessionOrganization,
   setSessionOrganizationTopic,
-  type SessionGroup,
 } from '@/services/chat/sessionOrganization';
 
 // ═══════════════════════════════════════════════════════════
@@ -457,12 +456,7 @@ interface ChatState {
   /** Archive/restore through the native Gateway protocol, with a legacy fallback. */
   setSessionArchived: (key: string, archived: boolean) => Promise<void>;
   markSessionUnread: (key: string) => Promise<void>;
-  sessionGroups: SessionGroup[];
-  refreshSessionGroups: () => Promise<void>;
-  createSessionGroup: (label: string) => Promise<SessionGroup | null>;
-  renameSessionGroup: (groupId: string, label: string) => Promise<SessionGroup | null>;
-  deleteSessionGroup: (groupId: string) => Promise<void>;
-  moveSessionToGroup: (key: string, groupId: string | null) => Promise<void>;
+  setSessionCategory: (key: string, category: string | null) => Promise<void>;
   setActiveSession: (key: string) => void;
   incrementSessionUnread: (key: string, amount?: number) => void;
   markSessionCompleted: (key: string) => void;
@@ -1283,7 +1277,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [{ key: MAIN_SESSION, label: 'Main Session' }],
   activeSessionKey: MAIN_SESSION,
   sessionProjectionRevision: 0,
-  sessionGroups: [],
 
   setSessions: (sessions, defaults, options) => {
     const stateBeforeMerge = get();
@@ -1575,75 +1568,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   },
 
-  refreshSessionGroups: async () => {
-    try {
-      const groups = await gateway.listSessionGroups();
-      set({ sessionGroups: groups.map((group) => ({
-        id: group.id,
-        label: group.label,
-        createdAt: group.position,
-      })) });
-    } catch (error) {
-      set({ sessionGroups: [] });
-      throw error;
-    }
-  },
-
-  createSessionGroup: async (label) => {
-    const normalized = label.trim();
-    if (!normalized) return null;
-    const groups = await gateway.createSessionGroup(normalized);
-    const projected = groups.map((group) => ({
-      id: group.id,
-      label: group.label,
-      createdAt: group.position,
-    }));
-    const created = projected.find((group) => group.id === normalized) ?? null;
-    set({ sessionGroups: projected });
-    return created;
-  },
-
-  renameSessionGroup: async (groupId, label) => {
-    const normalized = label.trim();
-    if (!normalized) return null;
-    const groups = await gateway.renameSessionGroup(groupId, normalized);
-    const projected = groups.map((group) => ({
-      id: group.id,
-      label: group.label,
-      createdAt: group.position,
-    }));
-    const renamed = projected.find((group) => group.id === normalized) ?? null;
-    set((state) => ({
-      sessionGroups: projected,
-      sessions: state.sessions.map((session) => session.groupId === groupId
-        ? { ...session, groupId: normalized, category: normalized }
-        : session),
-    }));
-    return renamed;
-  },
-
-  deleteSessionGroup: async (groupId) => {
-    const groups = await gateway.deleteSessionGroup(groupId);
-    set((state) => ({
-      sessionGroups: groups.map((group) => ({
-        id: group.id,
-        label: group.label,
-        createdAt: group.position,
-      })),
-      sessions: state.sessions.map((session) => session.groupId === groupId
-        ? { ...session, groupId: undefined, category: null }
-        : session),
-    }));
-  },
-
-  moveSessionToGroup: async (key, groupId) => {
+  setSessionCategory: async (key, category) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
-    await gateway.setSessionCategory(groupId, key);
+    const confirmedCategory = await gateway.setSessionCategory(category, key);
     set((state) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,
-        ...(groupId ? { groupId, category: groupId } : { groupId: undefined, category: null }),
+        ...(confirmedCategory
+          ? { groupId: confirmedCategory, category: confirmedCategory }
+          : { groupId: undefined, category: null }),
       })),
     }));
   },

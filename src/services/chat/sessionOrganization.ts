@@ -3,13 +3,6 @@ export interface SessionOrganizationSubject {
   readonly sessionId?: string;
 }
 
-/** Native OpenClaw group catalog projection used by the renderer. */
-export interface SessionGroup {
-  readonly id: string;
-  readonly label: string;
-  readonly createdAt: number;
-}
-
 interface SessionOrganizationEntry {
   readonly topic?: string;
 }

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   Archive,
   Check,
@@ -73,16 +73,23 @@ export function SessionActionsMenu({
 }: SessionActionsMenuProps) {
   const { t } = useTranslation();
   const {
-    sessionGroups,
+    sessions,
     togglePinSession,
     markSessionUnread,
     setSessionArchived,
-    createSessionGroup,
-    moveSessionToGroup,
+    setSessionCategory,
   } = useChatStore();
   const [groupsOpen, setGroupsOpen] = useState(false);
-  const [newGroupLabel, setNewGroupLabel] = useState('');
+  const [newCategory, setNewCategory] = useState('');
   const isMainSession = isAgentMainSession(session.key);
+  const sessionCategories = useMemo(() => {
+    const categories = new Map<string, string>();
+    for (const candidate of sessions) {
+      const category = typeof candidate.category === 'string' ? candidate.category.trim() : '';
+      if (category) categories.set(category, category);
+    }
+    return [...categories.values()];
+  }, [sessions]);
 
   const finish = (action: () => Promise<void>) => {
     void action().then(onDismiss).catch((error: unknown) => {
@@ -108,17 +115,17 @@ export function SessionActionsMenu({
     }
   };
 
-  const createGroup = async () => {
+  const createCategory = async () => {
     try {
-      const group = await createSessionGroup(newGroupLabel);
-      if (!group) return;
-      await moveSessionToGroup(session.key, group.id);
-      setNewGroupLabel('');
+      const category = newCategory.trim();
+      if (!category) return;
+      await setSessionCategory(session.key, category);
+      setNewCategory('');
       onDismiss();
     } catch (error) {
       useNotificationStore.getState().addToast(
         'error',
-        t('chat.createSessionGroup'),
+        t('chat.setSessionCategory'),
         error instanceof Error ? error.message : String(error),
       );
     }
@@ -146,40 +153,40 @@ export function SessionActionsMenu({
           </MenuButton>
           <MenuButton onClick={() => setGroupsOpen((current) => !current)}>
             <Folder size={13} aria-hidden="true" />
-            <span className="min-w-0 flex-1">{t('chat.moveSessionToGroup')}</span>
+            <span className="min-w-0 flex-1">{t('chat.setSessionCategory')}</span>
             <ChevronRight size={13} className={clsx('transition-transform', groupsOpen && 'rotate-90')} aria-hidden="true" />
           </MenuButton>
           {groupsOpen && (
             <div className="mx-2 mb-1 rounded-md border border-aegis-border/70 bg-aegis-elevated/60 py-1">
-              <MenuButton onClick={() => finish(() => moveSessionToGroup(session.key, null))}>
-                {t('chat.removeSessionFromGroup')}
+              <MenuButton onClick={() => finish(() => setSessionCategory(session.key, null))}>
+                {t('chat.clearSessionCategory')}
               </MenuButton>
-              {sessionGroups.map((group) => (
-                <MenuButton key={group.id} onClick={() => finish(() => moveSessionToGroup(session.key, group.id))}>
+              {sessionCategories.map((category) => (
+                <MenuButton key={category} onClick={() => finish(() => setSessionCategory(session.key, category))}>
                   <Folder size={12} aria-hidden="true" />
-                  <span className="truncate">{group.label}</span>
-                  {session.groupId === group.id && <Check size={12} className="ml-auto" aria-hidden="true" />}
+                  <span className="truncate">{category}</span>
+                  {session.category === category && <Check size={12} className="ml-auto" aria-hidden="true" />}
                 </MenuButton>
               ))}
               <div className="mx-2 my-1 border-t border-aegis-border/70" />
               <div className="flex gap-1 px-2 pb-1">
                 <input
-                  value={newGroupLabel}
-                  onChange={(event) => setNewGroupLabel(event.target.value)}
+                  value={newCategory}
+                  onChange={(event) => setNewCategory(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') void createGroup();
-                    if (event.key === 'Escape') setNewGroupLabel('');
+                    if (event.key === 'Enter') void createCategory();
+                    if (event.key === 'Escape') setNewCategory('');
                   }}
-                  placeholder={t('chat.newSessionGroupPlaceholder')}
+                  placeholder={t('chat.newSessionCategoryPlaceholder')}
                   className="h-7 min-w-0 flex-1 rounded border border-aegis-border bg-aegis-bg px-2 text-[11px] text-aegis-text outline-none focus:border-aegis-primary"
                 />
                 <button
                   type="button"
-                  onClick={() => void createGroup()}
-                  disabled={!newGroupLabel.trim()}
+                  onClick={() => void createCategory()}
+                  disabled={!newCategory.trim()}
                   className="flex h-7 w-7 items-center justify-center rounded border border-aegis-border text-aegis-text-muted hover:border-aegis-primary hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label={t('chat.createSessionGroup')}
-                  title={t('chat.createSessionGroup')}
+                  aria-label={t('chat.setSessionCategory')}
+                  title={t('chat.setSessionCategory')}
                 >
                   <Check size={12} aria-hidden="true" />
                 </button>

@@ -16,7 +16,11 @@ describe('OpenClawSessionOrganizationClient', () => {
       runMutation: (_key, operation) => operation(),
       request: async (method, params) => {
         calls.push({ method, params });
-        return { ok: true, key: SESSION_KEY, entry: {} } as never;
+        return {
+          ok: true,
+          key: SESSION_KEY,
+          entry: method === 'sessions.patch' && params.category === 'Finance' ? { category: 'Finance' } : {},
+        } as never;
       },
     });
 
@@ -33,88 +37,13 @@ describe('OpenClawSessionOrganizationClient', () => {
     ]);
   });
 
-  it('preserves the existing native group catalog when creating a group', async () => {
-    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  it('requires the returned entry to confirm a requested category', async () => {
     const client = new OpenClawSessionOrganizationClient({
       runMutation: (_key, operation) => operation(),
-      request: async (method, params) => {
-        calls.push({ method, params });
-        if (method === 'sessions.groups.list') {
-          return { groups: [{ name: 'Legal', position: 0 }] } as never;
-        }
-        if (method === 'sessions.groups.put') {
-          return {
-            ok: true,
-            groups: [{ name: 'Legal', position: 0 }, { name: 'Finance', position: 1 }],
-          } as never;
-        }
-        if (method === 'sessions.groups.rename') {
-          return {
-            ok: true,
-            groups: [{ name: 'Legal', position: 0 }, { name: 'Credit', position: 1 }],
-          } as never;
-        }
-        return { ok: true, groups: [{ name: 'Legal', position: 0 }] } as never;
-      },
+      request: async () => ({ ok: true, key: SESSION_KEY, entry: { category: 'Other' } } as never),
     });
 
-    await client.putGroup('Finance');
-    await client.renameGroup('Finance', 'Credit');
-    await client.deleteGroup('Credit');
-
-    assert.deepEqual(calls, [
-      { method: 'sessions.groups.list', params: {} },
-      { method: 'sessions.groups.put', params: { names: ['Legal', 'Finance'] } },
-      { method: 'sessions.groups.rename', params: { name: 'Finance', to: 'Credit' } },
-      { method: 'sessions.groups.delete', params: { name: 'Credit' } },
-    ]);
-  });
-
-  it('serializes catalog writes so concurrent group creation keeps prior confirmed entries', async () => {
-    const puts: string[][] = [];
-    let groups = ['Legal'];
-    let releaseFirstList: ((result: unknown) => void) | undefined;
-    let listCalls = 0;
-    const client = new OpenClawSessionOrganizationClient({
-      runMutation: (_key, operation) => operation(),
-      request: async (method, params) => {
-        if (method === 'sessions.groups.list') {
-          listCalls += 1;
-          if (listCalls === 1) {
-            return new Promise<unknown>((resolve) => { releaseFirstList = resolve; }) as never;
-          }
-          return { groups: groups.map((name, position) => ({ name, position })) } as never;
-        }
-        if (method === 'sessions.groups.put') {
-          groups = [...params.names as string[]];
-          puts.push(groups);
-          return { ok: true, groups: groups.map((name, position) => ({ name, position })) } as never;
-        }
-        throw new Error(`Unexpected method: ${method}`);
-      },
-    });
-
-    const finance = client.putGroup('Finance');
-    await Promise.resolve();
-    const research = client.putGroup('Research');
-    await Promise.resolve();
-    assert.equal(listCalls, 1);
-    releaseFirstList?.({ groups: [{ name: 'Legal', position: 0 }] });
-
-    await Promise.all([finance, research]);
-    assert.deepEqual(puts, [
-      ['Legal', 'Finance'],
-      ['Legal', 'Finance', 'Research'],
-    ]);
-  });
-
-  it('rejects incomplete native group catalog entries', async () => {
-    const client = new OpenClawSessionOrganizationClient({
-      runMutation: (_key, operation) => operation(),
-      request: async () => ({ groups: [{ name: 'Legal' }] } as never),
-    });
-
-    await assert.rejects(client.listGroups(), SessionOrganizationResponseError);
+    await assert.rejects(client.setCategory(SESSION_KEY, 'Finance'), SessionOrganizationResponseError);
   });
 
   it('identifies only explicit protocol incompatibility for capability reporting', async () => {

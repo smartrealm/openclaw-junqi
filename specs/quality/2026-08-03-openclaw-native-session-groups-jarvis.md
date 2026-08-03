@@ -2,6 +2,11 @@
 
 日期：2026-08-03
 
+> 2026-08-04 校正：该规格假定 OpenClaw 提供 `sessions.groups.*`，与当前官方 method registry、
+> schema 和 sessions handler 不符，已被
+> [`2026-08-04-openclaw-session-category-authority-alignment.md`](2026-08-04-openclaw-session-category-authority-alignment.md)
+> 取代。以下内容仅保留历史背景，不得作为当前实现契约。
+
 ## 目标
 
 让 JunQi 的会话分组和 Jarvis 唤醒词归属成为 OpenClaw group catalog 与 session

@@ -21,7 +21,7 @@ import {
 import { decideVoiceWakeRoute, hasCompatibleVoiceWakeTrigger } from '@/services/voice/VoiceWakeRoutePolicy';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { TalkConversationCoordinator } from '@/services/voice/TalkConversationCoordinator';
-import { assignJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
+import { createJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
 import { shouldAutoArmSession, subscribeAutoArmPreference } from '@/services/voice/VoiceWakePreference';
 import { useChatStore } from '@/stores/chatStore';
 import { useVoiceStore } from '@/stores/voiceStore';
@@ -278,17 +278,12 @@ export function useComposerVoice({
         return true;
       };
       if (!trigger) return acceptWake();
-      return assignJarvisSessionCategory(gateway, context.sessionKey, trigger)
-        .then((category) => {
-          if (category) {
-            void useChatStore.getState().refreshSessionGroups().catch((error) => {
-              debugError('gateway', '[ComposerVoice] Unable to refresh Jarvis group catalog:', error);
-            });
-          }
-          return acceptWake();
-        })
+      const category = createJarvisSessionCategory(trigger);
+      if (!category) return acceptWake();
+      return useChatStore.getState().setSessionCategory(context.sessionKey, category)
+        .then(() => acceptWake())
         .catch((error) => {
-          debugError('gateway', '[ComposerVoice] Unable to categorize Jarvis session:', error);
+          debugError('gateway', '[ComposerVoice] Unable to confirm Jarvis session category:', error);
           voiceModeCoordinator.reportUnavailable(activeTurnRef.current, context, 'session_category_unavailable');
           void stopVoiceWakeRef.current();
           return false;

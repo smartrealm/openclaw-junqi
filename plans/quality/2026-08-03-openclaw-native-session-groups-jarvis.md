@@ -2,6 +2,10 @@
 
 日期：2026-08-03
 
+> 2026-08-04 校正：本计划依赖不存在的 `sessions.groups.*` Gateway 方法，已由
+> [`2026-08-04-openclaw-session-category-authority-alignment.md`](2026-08-04-openclaw-session-category-authority-alignment.md)
+> 取代；不得继续执行其中的 group catalog 工作项。
+
 ## 顺序
 
 - [x] 阅读项目根文档、现有会话组织、Jarvis 唤醒与 Task checkpoint 实现。

@@ -3,12 +3,6 @@ import { GatewayRpcError } from './Connection';
 type SessionMutationRunner = <T>(sessionKey: string, operation: () => Promise<T>) => Promise<T>;
 type GatewayRequester = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
 
-export type NativeSessionGroup = {
-  readonly id: string;
-  readonly label: string;
-  readonly position: number;
-};
-
 export interface OpenClawSessionOrganizationClientDeps {
   readonly runMutation: SessionMutationRunner;
   readonly request: GatewayRequester;
@@ -42,10 +36,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function confirmedPatchResult(result: unknown, sessionKey: string): void {
+function confirmedPatchResult(result: unknown, sessionKey: string): Record<string, unknown> {
   if (!isRecord(result) || result.ok !== true || result.key !== sessionKey || !isRecord(result.entry)) {
     throw new SessionOrganizationResponseError();
   }
+  return result.entry;
 }
 
 function isUnsupportedProtocolError(error: unknown): error is GatewayRpcError {
@@ -53,35 +48,11 @@ function isUnsupportedProtocolError(error: unknown): error is GatewayRpcError {
   const code = error.code?.trim().toUpperCase();
   if (code === 'METHOD_NOT_FOUND' || code === 'UNKNOWN_METHOD' || code === 'UNKNOWN_COMMAND') return true;
   if (code !== 'INVALID_PARAMS' && code !== 'INVALID_REQUEST' && code !== 'VALIDATION_ERROR') return false;
-  return /sessions\.groups|\b(pinned|unread|archived|category)\b/i.test(error.message);
-}
-
-function normalizeGroups(result: unknown): NativeSessionGroup[] {
-  if (!isRecord(result) || !Array.isArray(result.groups)) {
-    throw new SessionOrganizationResponseError();
-  }
-  return result.groups.map((value) => {
-    const position = isRecord(value) ? value.position : undefined;
-    if (!isRecord(value) || typeof value.name !== 'string' || !value.name.trim()
-      || typeof position !== 'number' || !Number.isInteger(position) || position < 0) {
-      throw new SessionOrganizationResponseError();
-    }
-    const label = value.name.trim();
-    return { id: label, label, position };
-  });
-}
-
-function confirmedGroupMutation(result: unknown): NativeSessionGroup[] {
-  if (!isRecord(result) || result.ok !== true) {
-    throw new SessionOrganizationResponseError();
-  }
-  return normalizeGroups(result);
+  return /\b(pinned|unread|archived|category)\b/i.test(error.message);
 }
 
 /** Native OpenClaw session organization API, isolated from UI and store code. */
 export class OpenClawSessionOrganizationClient {
-  private catalogMutationTail: Promise<void> = Promise.resolve();
-
   constructor(private readonly deps: OpenClawSessionOrganizationClientDeps) {}
 
   private async request<T>(method: string, params: Record<string, unknown>): Promise<T> {
@@ -95,72 +66,36 @@ export class OpenClawSessionOrganizationClient {
     }
   }
 
-  private patch(sessionKey: string, patch: Record<string, boolean | string | null>): Promise<void> {
+  private patch(sessionKey: string, patch: Record<string, boolean | string | null>): Promise<Record<string, unknown>> {
     return this.deps.runMutation(sessionKey, async () => {
       const result = await this.request<unknown>('sessions.patch', { key: sessionKey, ...patch });
-      confirmedPatchResult(result, sessionKey);
+      return confirmedPatchResult(result, sessionKey);
     });
   }
 
-  setPinned(sessionKey: string, pinned: boolean): Promise<void> {
-    return this.patch(sessionKey, { pinned });
+  async setPinned(sessionKey: string, pinned: boolean): Promise<void> {
+    await this.patch(sessionKey, { pinned });
   }
 
-  setUnread(sessionKey: string, unread: boolean): Promise<void> {
-    return this.patch(sessionKey, { unread });
+  async setUnread(sessionKey: string, unread: boolean): Promise<void> {
+    await this.patch(sessionKey, { unread });
   }
 
-  setArchived(sessionKey: string, archived: boolean): Promise<void> {
-    return this.patch(sessionKey, { archived });
+  async setArchived(sessionKey: string, archived: boolean): Promise<void> {
+    await this.patch(sessionKey, { archived });
   }
 
-  setCategory(sessionKey: string, category: string | null): Promise<void> {
-    return this.patch(sessionKey, { category });
-  }
-
-  async listGroups(): Promise<NativeSessionGroup[]> {
-    return normalizeGroups(await this.request<unknown>('sessions.groups.list', {}));
-  }
-
-  private runCatalogMutation<T>(operation: () => Promise<T>): Promise<T> {
-    const queued = this.catalogMutationTail.then(operation, operation);
-    this.catalogMutationTail = queued.then(
-      () => undefined,
-      () => undefined,
-    );
-    return queued;
-  }
-
-  putGroup(label: string): Promise<NativeSessionGroup[]> {
-    return this.runCatalogMutation(async () => {
-      const groups = await this.listGroups();
-      const names = groups.map((group) => group.label);
-      if (!names.includes(label)) names.push(label);
-      const nextGroups = confirmedGroupMutation(await this.request<unknown>('sessions.groups.put', { names }));
-      if (!nextGroups.some((group) => group.label === label)) {
-        throw new SessionOrganizationResponseError();
-      }
-      return nextGroups;
-    });
-  }
-
-  renameGroup(from: string, to: string): Promise<NativeSessionGroup[]> {
-    return this.runCatalogMutation(async () => {
-      const nextGroups = confirmedGroupMutation(await this.request<unknown>('sessions.groups.rename', { name: from, to }));
-      if (!nextGroups.some((group) => group.label === to)) {
-        throw new SessionOrganizationResponseError();
-      }
-      return nextGroups;
-    });
-  }
-
-  deleteGroup(label: string): Promise<NativeSessionGroup[]> {
-    return this.runCatalogMutation(async () => {
-      const nextGroups = confirmedGroupMutation(await this.request<unknown>('sessions.groups.delete', { name: label }));
-      if (nextGroups.some((group) => group.label === label)) {
-        throw new SessionOrganizationResponseError();
-      }
-      return nextGroups;
-    });
+  async setCategory(sessionKey: string, category: string | null): Promise<string | null> {
+    const entry = await this.patch(sessionKey, { category });
+    const confirmed = entry.category;
+    if (category === null) {
+      if (confirmed !== undefined && confirmed !== null) throw new SessionOrganizationResponseError();
+      return null;
+    }
+    const expected = category.trim();
+    if (typeof confirmed !== 'string' || confirmed.trim() !== expected) {
+      throw new SessionOrganizationResponseError();
+    }
+    return confirmed.trim();
   }
 }

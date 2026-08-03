@@ -1480,18 +1480,6 @@ export const gateway = {
   async setSessionCategory(category: string | null, sessionKey: string) {
     return sessionOrganization.setCategory(sessionKey, category);
   },
-  async listSessionGroups() {
-    return sessionOrganization.listGroups();
-  },
-  async createSessionGroup(label: string) {
-    return sessionOrganization.putGroup(label);
-  },
-  async renameSessionGroup(from: string, to: string) {
-    return sessionOrganization.renameGroup(from, to);
-  },
-  async deleteSessionGroup(label: string) {
-    return sessionOrganization.deleteGroup(label);
-  },
   async updateAgentParams(agentId: string, params: Record<string, unknown>) {
     return requestPrivileged('agents.update', { agentId, params });
   },

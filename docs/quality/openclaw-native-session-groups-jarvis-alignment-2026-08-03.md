@@ -2,6 +2,12 @@
 
 日期：2026-08-03
 
+> 2026-08-04 校正：当前安装包的官方 method registry、schema 和 sessions handler 均没有
+> `sessions.groups.*`。本文件关于 group catalog、`sessions.groups.put`、改名和删除 handler 的
+> 结论不再有效，不能作为实现依据。当前行为与修复记录见
+> [`openclaw-session-category-authority-alignment-2026-08-04.md`](openclaw-session-category-authority-alignment-2026-08-04.md)。
+> 以下内容保留为历史审计记录。
+
 ## 结论
 
 OpenClaw 已原生提供 `sessions.groups.list`、`sessions.groups.put`、

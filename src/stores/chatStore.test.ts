@@ -418,20 +418,26 @@ test('opening or replacing the active tab does not create a local unread marker'
   __resetSessionOrganizationForTests();
 });
 
-test('an unavailable native group catalog clears rather than retaining renderer groups', async () => {
-  const listSessionGroups = gateway.listSessionGroups;
+test('session category updates only after Gateway confirms the patched entry', async () => {
+  const setSessionCategory = gateway.setSessionCategory;
+  const sessionKey = 'agent:main:jarvis';
   Object.assign(gateway, {
-    listSessionGroups: async () => { throw new Error('sessions.groups.list unavailable'); },
+    setSessionCategory: async () => 'Jarvis: JunQi',
   });
   useChatStore.setState({
-    sessionGroups: [{ id: 'Jarvis: JunQi', label: 'Jarvis: JunQi', createdAt: 0 }],
+    sessions: [{ key: sessionKey, label: 'Jarvis session' }],
   });
 
   try {
-    await assert.rejects(useChatStore.getState().refreshSessionGroups());
-    assert.deepEqual(useChatStore.getState().sessionGroups, []);
+    await useChatStore.getState().setSessionCategory(sessionKey, 'Jarvis: JunQi');
+    assert.deepEqual(useChatStore.getState().sessions, [{
+      key: sessionKey,
+      label: 'Jarvis session',
+      groupId: 'Jarvis: JunQi',
+      category: 'Jarvis: JunQi',
+    }]);
   } finally {
-    Object.assign(gateway, { listSessionGroups });
+    Object.assign(gateway, { setSessionCategory });
   }
 });
 
