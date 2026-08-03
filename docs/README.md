@@ -188,6 +188,7 @@ docs/
 - [Gateway Task Ledger 详情对齐](quality/task-ledger-details-2026-08-03.md)
 - [Windows Gateway 重启后续加固](quality/windows-gateway-restart-followup-2026-08-03.md)
 - [会话维护与 OpenClaw 官方接口对齐](quality/session-maintenance-openclaw-parity-2026-08-03.md)
+- [新建会话生命周期审计](quality/new-session-lifecycle-audit-2026-08-03.md)
 - [OpenClaw 会话上下文只读能力对齐](quality/openclaw-session-inspection-parity-2026-08-03.md)
 - [OpenClaw 会话产物能力对齐](quality/openclaw-artifacts-parity-2026-08-03.md)
 - [OpenClaw session.operation 能力对齐](quality/openclaw-session-operation-parity-2026-08-03.md)

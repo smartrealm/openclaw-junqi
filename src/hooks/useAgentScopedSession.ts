@@ -1,39 +1,58 @@
 /**
  * useAgentScopedSession — read `?agent=<id>&new=1` from the route, materialize
  * a real Gateway session for that agent, then mark the confirmed session
- * active. Fires only once per `?new=1` navigation so subsequent renders leave
- * the user alone.
+ * active. The intent is consumed only after Gateway confirmation; a failed
+ * request remains visible and can be retried explicitly.
  */
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { createNativeSession } from '@/utils/sessionCreate';
-import { useNotificationStore } from '@/stores/notificationStore';
 
-export function useAgentScopedSession(): void {
+export interface AgentScopedSessionCreationState {
+  readonly error: string | null;
+  readonly retry: () => void;
+}
+
+export function useAgentScopedSession(): AgentScopedSessionCreationState {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const agentId = params.get('agent');
   const wantNew = params.get('new') === '1';
-  const handledLocationKeyRef = useRef<string | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const handledAttemptRef = useRef<string | null>(null);
+
+  const retry = useCallback(() => {
+    setRetryAttempt((attempt) => attempt + 1);
+  }, []);
 
   useEffect(() => {
-    if (!agentId || !wantNew) return;
-    if (handledLocationKeyRef.current === location.key) return;
-    handledLocationKeyRef.current = location.key;
+    if (!agentId || !wantNew) {
+      setError(null);
+      return;
+    }
+    const attemptKey = `${location.key}:${retryAttempt}`;
+    if (handledAttemptRef.current === attemptKey) return;
+    handledAttemptRef.current = attemptKey;
+    let cancelled = false;
+    setError(null);
 
-    // Keep React Router's location state in sync with the visible URL. A later
-    // navigation to the same ?agent=...&new=1 URL receives a fresh location
-    // key and creates another session instead of being blocked forever.
-    const nextParams = new URLSearchParams(params);
-    nextParams.delete('new');
-    nextParams.delete('agent');
-    setParams(nextParams, { replace: true });
     void createNativeSession({ agentId, label: t('chat.newSessionLabel') }).then((result) => {
+      if (cancelled) return;
       if (!result.ok) {
-        useNotificationStore.getState().addToast('error', t('chat.newSession'), result.error);
+        setError(result.error);
+        return;
       }
+      const nextParams = new URLSearchParams(params);
+      nextParams.delete('new');
+      nextParams.delete('agent');
+      setParams(nextParams, { replace: true });
     });
-  }, [agentId, location.key, params, setParams, wantNew]);
+
+    return () => { cancelled = true; };
+  }, [agentId, location.key, params, retryAttempt, setParams, t, wantNew]);
+
+  return { error, retry };
 }

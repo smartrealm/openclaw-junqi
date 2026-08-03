@@ -295,11 +295,17 @@ describe('session lifecycle regression fixes', () => {
     assert.match(source, /aria-busy=\{confirming/);
   });
 
-  test('BUG-07 route-based creation consumes params through React Router and can repeat', () => {
+  test('BUG-07 route-based creation consumes params only after confirmation and can retry', () => {
     const source = readFileSync(new URL('../hooks/useAgentScopedSession.ts', import.meta.url), 'utf8');
-    assert.match(source, /handledLocationKeyRef/);
+    const page = readFileSync(new URL('../pages/ChatPage.tsx', import.meta.url), 'utf8');
+    assert.match(source, /handledAttemptRef/);
+    assert.match(source, /const attemptKey = `\$\{location\.key\}:\$\{retryAttempt\}`/);
+    assert.match(source, /if \(!result\.ok\) \{\s+setError\(result\.error\);\s+return;/);
     assert.match(source, /setParams\(nextParams, \{ replace: true \}\)/);
-    assert.doesNotMatch(source, /window\.history\.replaceState|appliedRef/);
+    assert.match(source, /void createNativeSession\(\{ agentId, label: t\('chat\.newSessionLabel'\) \}\)\.then/);
+    assert.match(page, /routeSessionCreation\.retry/);
+    assert.match(page, /common\.retry/);
+    assert.doesNotMatch(source, /window\.history\.replaceState|useNotificationStore/);
   });
 
   test('BUG-08 native pin snapshots survive reload and deletion clears legacy identity-bound organization state', () => {

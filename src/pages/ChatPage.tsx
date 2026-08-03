@@ -76,10 +76,11 @@ const attachments = useChatStore((s) => s.draftAttachments[activeKey] ?? EMPTY_A
 }
 
 export function ChatPage() {
+  const { t } = useTranslation();
   // Check for ?agent=<id>&new=1 and create a fresh per-agent session
   // before the first paint — the user sees their agent-scoped chat
   // instantly rather than landing on the main session first.
-  useAgentScopedSession();
+  const routeSessionCreation = useAgentScopedSession();
 
   // Listen for additional drops that arrive after ChatPage is mounted —
   // App.tsx sets pendingFiles + dispatches this event; we drain it into
@@ -103,6 +104,23 @@ export function ChatPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
+      {routeSessionCreation.error && (
+        <div
+          role="alert"
+          className="flex shrink-0 items-center gap-3 border-b border-aegis-danger/25 bg-aegis-danger/[0.08] px-3 py-2 text-[12px] text-aegis-text-secondary"
+        >
+          <span className="min-w-0 flex-1 truncate" title={routeSessionCreation.error}>
+            {t('chat.newSessionCreationFailed', 'Unable to create new session')}: {routeSessionCreation.error}
+          </span>
+          <button
+            type="button"
+            onClick={routeSessionCreation.retry}
+            className="shrink-0 rounded border border-aegis-danger/35 px-2 py-1 text-[11px] font-medium text-aegis-danger hover:bg-aegis-danger/[0.1]"
+          >
+            {t('common.retry', 'Retry')}
+          </button>
+        </div>
+      )}
       <Suspense fallback={null}>
         <SessionContextBar />
         <ChatTabs />

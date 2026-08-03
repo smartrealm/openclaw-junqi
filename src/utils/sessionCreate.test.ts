@@ -3,6 +3,7 @@ import { afterEach, describe, it } from 'node:test';
 import {
   createNativeSession,
   setSessionCreateDependenciesForTests,
+  type CreateNativeSessionInput,
 } from './sessionCreate';
 import { subscribeNativeSessionCommit } from './sessionLifecycle';
 import type { OpenClawCreatedSession } from '@/services/gateway/OpenClawSessionLifecycleClient';
@@ -80,5 +81,55 @@ describe('createNativeSession', () => {
     assert.deepEqual(await first, { ok: false, error: 'gateway offline' });
     assert.equal(requests, 1);
     assert.equal(commits, 0);
+  });
+
+  it('keeps distinct labels and fork semantics as separate Gateway intents', async () => {
+    const requests: CreateNativeSessionInput[] = [];
+    setSessionCreateDependenciesForTests({
+      createRemote: async (input) => {
+        requests.push(input);
+        return CREATED;
+      },
+      commit: (created, input) => ({
+        key: created.key,
+        sessionId: created.sessionId,
+        label: input.label,
+      }),
+    });
+
+    const first = createNativeSession({ agentId: 'main', label: 'First' });
+    const duplicate = createNativeSession({ agentId: ' main ', label: ' First ' });
+    const differentLabel = createNativeSession({ agentId: 'main', label: 'Second' });
+    const child = createNativeSession({
+      agentId: 'main', label: 'Branch', parentSessionKey: 'agent:main:parent',
+    });
+    const fork = createNativeSession({
+      agentId: 'main', label: 'Branch', parentSessionKey: 'agent:main:parent', fork: true,
+    });
+
+    assert.equal(first, duplicate);
+    await Promise.all([first, differentLabel, child, fork]);
+    assert.deepEqual(requests, [
+      { agentId: 'main', label: 'First' },
+      { agentId: 'main', label: 'Second' },
+      { agentId: 'main', label: 'Branch', parentSessionKey: 'agent:main:parent' },
+      { agentId: 'main', label: 'Branch', parentSessionKey: 'agent:main:parent', fork: true },
+    ]);
+  });
+
+  it('rejects a transcript fork without a parent before calling Gateway', async () => {
+    let requests = 0;
+    setSessionCreateDependenciesForTests({
+      createRemote: async () => {
+        requests += 1;
+        return CREATED;
+      },
+    });
+
+    assert.deepEqual(
+      await createNativeSession({ agentId: 'main', label: 'Fork', fork: true }),
+      { ok: false, error: 'fork requires parentSessionKey' },
+    );
+    assert.equal(requests, 0);
   });
 });

@@ -8,6 +8,8 @@ export interface CreateNativeSessionInput {
   readonly agentId: string;
   readonly label: string;
   readonly parentSessionKey?: string;
+  /** Copy the parent transcript instead of only recording a parent relation. */
+  readonly fork?: boolean;
 }
 
 export type CreateNativeSessionResult =
@@ -91,8 +93,21 @@ export function createNativeSession(input: CreateNativeSessionInput): Promise<Cr
     agentId,
     label,
     ...(input.parentSessionKey?.trim() ? { parentSessionKey: input.parentSessionKey.trim() } : {}),
+    ...(input.fork === true ? { fork: true } : {}),
   };
-  const inflightKey = `${request.agentId}:${request.parentSessionKey ?? ''}`;
+  if (request.fork === true && !request.parentSessionKey) {
+    return Promise.resolve({ ok: false, error: 'fork requires parentSessionKey' });
+  }
+
+  // A retry is duplicate work only when every protocol-visible part of its
+  // creation intent is identical. Different labels and fork semantics must
+  // remain separate Gateway operations.
+  const inflightKey = JSON.stringify([
+    request.agentId,
+    request.label,
+    request.parentSessionKey ?? null,
+    request.fork === true,
+  ]);
   const existing = creationInFlight.get(inflightKey);
   if (existing) return existing;
 

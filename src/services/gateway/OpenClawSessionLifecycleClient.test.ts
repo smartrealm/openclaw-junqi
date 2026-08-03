@@ -31,11 +31,17 @@ describe('OpenClawSessionLifecycleClient', () => {
       agentId: ' main ',
       label: ' Planning ',
       parentSessionKey: ' agent:main:parent ',
+      fork: true,
     });
 
     assert.deepEqual(calls, [{
       method: 'sessions.create',
-      params: { agentId: 'main', label: 'Planning', parentSessionKey: 'agent:main:parent' },
+      params: {
+        agentId: 'main',
+        label: 'Planning',
+        parentSessionKey: 'agent:main:parent',
+        fork: true,
+      },
     }]);
     assert.equal(created.key, SESSION_KEY);
     assert.equal(created.sessionId, SESSION_ID);
@@ -50,5 +56,19 @@ describe('OpenClawSessionLifecycleClient', () => {
       () => parseOpenClawCreatedSession(response({ entry: { sessionId: 'different' } })),
       (error: unknown) => error instanceof OpenClawSessionLifecycleResponseError && error.reason === 'missing-identity',
     );
+  });
+
+  it('rejects a transcript fork without a parent before sending an RPC', async () => {
+    let calls = 0;
+    const client = new OpenClawSessionLifecycleClient(async () => {
+      calls += 1;
+      return response() as never;
+    });
+
+    await assert.rejects(
+      client.create({ agentId: 'main', label: 'Fork', fork: true }),
+      /fork requires parentSessionKey/,
+    );
+    assert.equal(calls, 0);
   });
 });
