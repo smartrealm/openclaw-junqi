@@ -4,11 +4,13 @@ import {
   createOpenClawSkillsRuntime,
   OpenClawSkillCardUnsupportedError,
   OpenClawSkillCuratorUnsupportedError,
+  OpenClawSkillProposalInspectUnsupportedError,
   OpenClawSkillProposalsUnsupportedError,
   SKILL_ARCHIVE_CHUNK_BYTES,
   normalizeOpenClawSkillCard,
   normalizeOpenClawSkillCuratorStatus,
   normalizeOpenClawSkillProposalManifest,
+  normalizeOpenClawSkillProposalInspection,
   normalizeOpenClawSkillDetail,
   normalizeOpenClawSkillSearch,
   normalizeOpenClawSkillSecurityVerdicts,
@@ -200,6 +202,51 @@ test('normalizes only the complete documented native proposal manifest', () => {
     ...manifest,
     proposals: [{ ...manifest.proposals[0], scanState: 'unknown' }],
   }), null);
+});
+
+test('keeps only safe fields from a complete native proposal inspection', () => {
+  const inspection = {
+    record: {
+      schema: 'openclaw.skill-workshop.proposal.v1',
+      id: 'weather-1',
+      kind: 'create',
+      status: 'pending',
+      title: 'Weather briefing',
+      description: 'Prepare a weather briefing.',
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-02T00:00:00.000Z',
+      createdBy: 'gateway',
+      proposedVersion: 'v1',
+      draftFile: 'PROPOSAL.md',
+      draftHash: 'a'.repeat(64),
+      target: {
+        skillName: 'Weather Briefing',
+        skillKey: 'weather-briefing',
+        skillDir: '/workspace/skills/weather-briefing',
+        skillFile: '/workspace/skills/weather-briefing/SKILL.md',
+      },
+      scan: { state: 'clean', scannedAt: '2026-08-02T00:00:00.000Z', critical: 0, warn: 0, info: 0, findings: [] },
+    },
+    revisionHash: 'b'.repeat(64),
+    content: '# Weather Briefing\n\nUse current weather.',
+  };
+  assert.deepEqual(normalizeOpenClawSkillProposalInspection(inspection, 'weather-1'), {
+    id: 'weather-1',
+    title: 'Weather briefing',
+    description: 'Prepare a weather briefing.',
+    skillKey: 'weather-briefing',
+    status: 'pending',
+    revisionHash: 'b'.repeat(64),
+    content: '# Weather Briefing\n\nUse current weather.',
+  });
+  assert.equal(normalizeOpenClawSkillProposalInspection({
+    ...inspection,
+    record: { ...inspection.record, id: 'other' },
+  }, 'weather-1'), null);
+  assert.equal(normalizeOpenClawSkillProposalInspection({
+    ...inspection,
+    record: { ...inspection.record, target: { ...inspection.record.target, skillFile: '' } },
+  }, 'weather-1'), null);
 });
 
 test('normalizes the native security verdict envelope without inventing verdicts', () => {
@@ -469,6 +516,40 @@ test('preserves an explicitly selected proposal agent scope in the read-only Gat
 
   await runtime.proposals(' research ');
   assert.deepEqual(calls, [{ method: 'skills.proposals.list', params: { agentId: 'research' } }]);
+});
+
+test('reads a proposal inspection only through the selected agent scope', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const response = {
+    record: {
+      schema: 'openclaw.skill-workshop.proposal.v1', id: 'proposal-1', kind: 'create', status: 'pending',
+      title: 'Proposal', description: 'Description', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-02T00:00:00.000Z',
+      createdBy: 'gateway', proposedVersion: 'v1', draftFile: 'PROPOSAL.md', draftHash: 'a'.repeat(64),
+      target: { skillName: 'Proposal', skillKey: 'proposal', skillDir: '/workspace/skills/proposal', skillFile: '/workspace/skills/proposal/SKILL.md' },
+      scan: { state: 'clean', scannedAt: '2026-08-02T00:00:00.000Z', critical: 0, warn: 0, info: 0, findings: [] },
+    },
+    content: '# Proposal',
+  };
+  const runtime = createOpenClawSkillsRuntime({
+    async call(method, params = {}) { calls.push({ method, params }); return response; },
+    async callPrivileged() { return { ok: true }; },
+    hasAdvertisedMethod(method) { return method === 'skills.proposals.inspect'; },
+  });
+
+  assert.equal((await runtime.inspectProposal(' proposal-1 ', ' research ')).skillKey, 'proposal');
+  assert.deepEqual(calls, [{ method: 'skills.proposals.inspect', params: { proposalId: 'proposal-1', agentId: 'research' } }]);
+});
+
+test('does not inspect proposals when the Gateway explicitly does not advertise the method', async () => {
+  let calls = 0;
+  const runtime = createOpenClawSkillsRuntime({
+    async call() { calls += 1; return {}; },
+    async callPrivileged() { return { ok: true }; },
+    hasAdvertisedMethod() { return false; },
+  });
+
+  await assert.rejects(runtime.inspectProposal('proposal-1'), OpenClawSkillProposalInspectUnsupportedError);
+  assert.equal(calls, 0);
 });
 
 test('does not request proposal manifests that the Gateway explicitly does not advertise', async () => {

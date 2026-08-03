@@ -6,6 +6,17 @@
 
 JunQi Desktop 是基于 Tauri 2、Rust、React 18、TypeScript、Vite 6 和 OpenClaw Gateway 的跨平台桌面 AI 工作台。
 
+### OpenClaw 客户端边界
+
+- JunQi 只是 OpenClaw 的桌面客户端，不拥有独立于 OpenClaw 的 agent、任务、会话、工具、渠道、
+  语音或运行时语义。OpenClaw 原生未定义或未支持的能力，JunQi 不得自行捏造、模拟成功、以本地
+  fallback 替代，或在 UI 中暗示其可用。
+- 所有加强、扩展、UI 设计和交互都必须以最新版 OpenClaw 官方文档、官方源码或正式协议中已存在的
+  能力为依据。当前安装版本只能作为本地复现、构建和兼容性证据，不能把客户端永久绑定到该版本，
+  也不能替代对最新版官方能力的核对。
+- 官方依据不能证明时，界面和代码必须保留“不可用”或“待验证”的真实语义，并停止推断性实现；不得
+  为填补产品体验而创造新的 RPC、状态机、持久化模型或跨平台行为。
+
 - `src/`：React 前端、状态、服务和 Tauri IPC 适配。
 - `src-tauri/`：Rust 后端、系统集成、安装器和 Tauri command。
 - `packages/junqi-collab/`：OpenClaw 多智能体协作插件。

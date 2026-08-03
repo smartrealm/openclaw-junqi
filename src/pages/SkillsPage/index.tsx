@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ClipboardList, Package, Puzzle, RefreshCw, Search, ShieldAlert } from 'lucide-react';
+import { BookOpenText, ClipboardList, Package, Puzzle, RefreshCw, Search, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -13,6 +13,7 @@ import {
   type OpenClawSkillCuratorEntry,
   type OpenClawSkillCuratorStatus,
   type OpenClawSkillDetail,
+  type OpenClawSkillProposalInspection,
   type OpenClawSkillProposal,
   type OpenClawSkillSearchResult,
   type OpenClawSkillSecurityVerdict,
@@ -22,6 +23,7 @@ import {
   MySkillRow,
   SkillCardDialog,
   SkillDetailPanel,
+  SkillProposalDialog,
   type HubSkill,
   type InstallState,
   type MySkill,
@@ -174,6 +176,7 @@ export function SkillsPage() {
   const skillCardCapability = openClawSkillsRuntime.skillCardCapability();
   const curatorStatusCapability = openClawSkillsRuntime.curatorStatusCapability();
   const proposalsCapability = openClawSkillsRuntime.proposalsCapability();
+  const proposalInspectCapability = openClawSkillsRuntime.proposalInspectCapability();
   const [activeTab, setActiveTab] = useState<SkillsTab>('installed');
   const [installed, setInstalled] = useState<MySkill[]>([]);
   const [catalog, setCatalog] = useState<HubSkill[]>([]);
@@ -188,6 +191,10 @@ export function SkillsPage() {
   const [loadingProposals, setLoadingProposals] = useState(false);
   const [proposalsError, setProposalsError] = useState<string | null>(null);
   const [proposalScope, setProposalScope] = useState(GATEWAY_DEFAULT_PROPOSAL_SCOPE);
+  const [proposalInspectionOpen, setProposalInspectionOpen] = useState(false);
+  const [proposalInspectionLoading, setProposalInspectionLoading] = useState(false);
+  const [proposalInspection, setProposalInspection] = useState<OpenClawSkillProposalInspection | null>(null);
+  const [proposalInspectionError, setProposalInspectionError] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<SkillDetail | null>(null);
@@ -199,6 +206,7 @@ export function SkillsPage() {
   const [skillCardError, setSkillCardError] = useState<string | null>(null);
   const skillCardRequestGeneration = useRef(0);
   const proposalRequestGeneration = useRef(0);
+  const proposalInspectionRequestGeneration = useRef(0);
   const activeProposalSessionAgentId = activeSessionAgentId?.trim() || undefined;
   const proposalScopeAgentId = resolveProposalScopeAgentId(proposalScope, activeProposalSessionAgentId);
   const proposalScopeAgents = useMemo(
@@ -294,6 +302,14 @@ export function SkillsPage() {
     setProposals([]);
     setProposalsError(null);
   }, [proposalScopeAgentId]);
+
+  useEffect(() => {
+    proposalInspectionRequestGeneration.current += 1;
+    setProposalInspectionOpen(false);
+    setProposalInspectionLoading(false);
+    setProposalInspection(null);
+    setProposalInspectionError(null);
+  }, [proposalScopeAgentId, connected, proposalInspectCapability]);
 
   useEffect(() => {
     if (activeTab !== 'proposals') return;
@@ -415,6 +431,38 @@ export function SkillsPage() {
     setSkillCardLoading(false);
     setSkillCard(null);
     setSkillCardError(null);
+  }, []);
+
+  const openProposalInspection = useCallback(async (proposalId: string) => {
+    if (!connected || proposalInspectCapability === false) return;
+    const requestGeneration = proposalInspectionRequestGeneration.current + 1;
+    proposalInspectionRequestGeneration.current = requestGeneration;
+    setProposalInspectionOpen(true);
+    setProposalInspectionLoading(true);
+    setProposalInspection(null);
+    setProposalInspectionError(null);
+    try {
+      const inspection = await openClawSkillsRuntime.inspectProposal(proposalId, proposalScopeAgentId);
+      if (proposalInspectionRequestGeneration.current === requestGeneration) {
+        setProposalInspection(inspection);
+      }
+    } catch (error) {
+      if (proposalInspectionRequestGeneration.current === requestGeneration) {
+        setProposalInspectionError(operationError(error));
+      }
+    } finally {
+      if (proposalInspectionRequestGeneration.current === requestGeneration) {
+        setProposalInspectionLoading(false);
+      }
+    }
+  }, [connected, proposalInspectCapability, proposalScopeAgentId]);
+
+  const closeProposalInspection = useCallback(() => {
+    proposalInspectionRequestGeneration.current += 1;
+    setProposalInspectionOpen(false);
+    setProposalInspectionLoading(false);
+    setProposalInspection(null);
+    setProposalInspectionError(null);
   }, []);
 
   const tabItems = useMemo(() => [
@@ -644,6 +692,17 @@ export function SkillsPage() {
                           <span className={clsx('inline-flex shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-semibold', proposalStatusStyle(proposal.status))}>
                             {proposalStatusLabel(proposal, t)}
                           </span>
+                          {connected && proposalInspectCapability !== false && (
+                            <button
+                              type="button"
+                              onClick={() => void openProposalInspection(proposal.id)}
+                              title={t('skillsExtra.proposalInspect', 'View proposal draft')}
+                              aria-label={t('skillsExtra.proposalInspect', 'View proposal draft')}
+                              className="grid size-6 place-items-center rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04] hover:text-aegis-primary"
+                            >
+                              <BookOpenText size={12} aria-hidden="true" />
+                            </button>
+                          )}
                         </div>
                         <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-aegis-text-muted">{proposal.description}</p>
                       </div>
@@ -680,6 +739,13 @@ export function SkillsPage() {
         loading={skillCardLoading}
         error={skillCardError}
         onClose={closeSkillCard}
+      />
+      <SkillProposalDialog
+        open={proposalInspectionOpen}
+        proposal={proposalInspection}
+        loading={proposalInspectionLoading}
+        error={proposalInspectionError}
+        onClose={closeProposalInspection}
       />
     </div>
   );

@@ -2608,7 +2608,12 @@
     "proposalApplied": "Applied",
     "proposalRejected": "Rejected",
     "proposalQuarantined": "Quarantined",
-    "proposalStale": "Stale"
+    "proposalStale": "Stale",
+    "proposalInspect": "View proposal draft",
+    "proposalInspectTitle": "Proposal draft",
+    "proposalInspectPending": "Waiting for OpenClaw response",
+    "proposalRevision": "Revision {{hash}}",
+    "proposalRevisionUnavailable": "Revision unavailable"
   },
   "settingsTheme": {
     "dark": "Dark Mode",

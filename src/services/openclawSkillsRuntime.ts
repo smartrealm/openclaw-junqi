@@ -132,6 +132,17 @@ export interface OpenClawSkillProposalManifest {
   proposals: OpenClawSkillProposal[];
 }
 
+/** Read-only proposal draft with all Gateway workspace paths removed. */
+export interface OpenClawSkillProposalInspection {
+  id: string;
+  title: string;
+  description: string;
+  skillKey: string;
+  status: OpenClawSkillProposalStatus;
+  revisionHash?: string;
+  content: string;
+}
+
 export class OpenClawSkillCardUnsupportedError extends Error {
   readonly code = 'OPENCLAW_SKILL_CARD_UNSUPPORTED';
 
@@ -156,6 +167,15 @@ export class OpenClawSkillProposalsUnsupportedError extends Error {
   constructor() {
     super('The connected OpenClaw Gateway does not advertise skills.proposals.list.');
     this.name = 'OpenClawSkillProposalsUnsupportedError';
+  }
+}
+
+export class OpenClawSkillProposalInspectUnsupportedError extends Error {
+  readonly code = 'OPENCLAW_SKILL_PROPOSAL_INSPECT_UNSUPPORTED';
+
+  constructor() {
+    super('The connected OpenClaw Gateway does not advertise skills.proposals.inspect.');
+    this.name = 'OpenClawSkillProposalInspectUnsupportedError';
   }
 }
 
@@ -638,6 +658,88 @@ export function normalizeOpenClawSkillProposalManifest(payload: unknown): OpenCl
   return { updatedAt, proposals: proposals as OpenClawSkillProposal[] };
 }
 
+function proposalScanIsComplete(value: unknown): boolean {
+  const scan = record(value);
+  const critical = optionalInteger(scan?.critical);
+  const warn = optionalInteger(scan?.warn);
+  const info = optionalInteger(scan?.info);
+  if (
+    !scan
+    || (scan.state !== 'pending' && scan.state !== 'clean' && scan.state !== 'failed' && scan.state !== 'quarantined')
+    || !text(scan.scannedAt)
+    || critical === undefined || critical < 0
+    || warn === undefined || warn < 0
+    || info === undefined || info < 0
+    || !Array.isArray(scan.findings)
+  ) return false;
+  return scan.findings.every((value) => {
+    const finding = record(value);
+    const line = optionalInteger(finding?.line);
+    return Boolean(
+      finding
+      && text(finding.ruleId)
+      && (finding.severity === 'info' || finding.severity === 'warn' || finding.severity === 'critical')
+      && text(finding.file)
+      && line !== undefined && line >= 1
+      && text(finding.message)
+      && typeof finding.evidence === 'string',
+    );
+  });
+}
+
+function proposalSupportFilesAreComplete(value: unknown, includeContent: boolean): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value) || value.length > 64) return false;
+  return value.every((item) => {
+    const file = record(item);
+    if (!file || !text(file.path)) return false;
+    if (includeContent) return typeof file.content === 'string';
+    const sizeBytes = optionalInteger(file.sizeBytes);
+    return sizeBytes !== undefined && sizeBytes >= 0 && Boolean(normalizedSha256(file.hash));
+  });
+}
+
+export function normalizeOpenClawSkillProposalInspection(
+  payload: unknown,
+  requestedProposalId: string,
+): OpenClawSkillProposalInspection | null {
+  const root = record(payload);
+  const proposal = record(root?.record);
+  const id = text(proposal?.id);
+  const title = text(proposal?.title);
+  const description = text(proposal?.description);
+  const target = record(proposal?.target);
+  const skillKey = text(target?.skillKey);
+  const revisionHash = root?.revisionHash === undefined ? undefined : normalizedSha256(root.revisionHash);
+  if (
+    !root
+    || !proposal
+    || proposal.schema !== 'openclaw.skill-workshop.proposal.v1'
+    || id !== requestedProposalId
+    || (proposal.kind !== 'create' && proposal.kind !== 'update')
+    || (proposal.status !== 'pending' && proposal.status !== 'applied' && proposal.status !== 'rejected' && proposal.status !== 'quarantined' && proposal.status !== 'stale')
+    || !title
+    || !description
+    || !text(proposal.createdAt)
+    || !text(proposal.updatedAt)
+    || (proposal.createdBy !== 'skill-workshop' && proposal.createdBy !== 'cli' && proposal.createdBy !== 'gateway')
+    || !text(proposal.proposedVersion)
+    || proposal.draftFile !== 'PROPOSAL.md'
+    || !text(proposal.draftHash)
+    || !target
+    || !text(target.skillName)
+    || !skillKey
+    || !text(target.skillDir)
+    || !text(target.skillFile)
+    || !proposalScanIsComplete(proposal.scan)
+    || !proposalSupportFilesAreComplete(proposal.supportFiles, false)
+    || !proposalSupportFilesAreComplete(root.supportFiles, true)
+    || typeof root.content !== 'string'
+    || (root.revisionHash !== undefined && !revisionHash)
+  ) return null;
+  return { id, title, description, skillKey, status: proposal.status, ...(revisionHash ? { revisionHash } : {}), content: root.content };
+}
+
 function requiredIdentifier(value: string, label: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${label} is required.`);
@@ -740,6 +842,10 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
       return client.hasAdvertisedMethod?.('skills.proposals.list') ?? null;
     },
 
+    proposalInspectCapability(): boolean | null {
+      return client.hasAdvertisedMethod?.('skills.proposals.inspect') ?? null;
+    },
+
     curatorStatusCapability(): boolean | null {
       return client.hasAdvertisedMethod?.('skills.curator.status') ?? null;
     },
@@ -830,6 +936,20 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
       }));
       if (!manifest) throw new Error('OpenClaw returned an invalid skill proposal manifest response.');
       return manifest;
+    },
+
+    async inspectProposal(proposalId: string, agentId?: string): Promise<OpenClawSkillProposalInspection> {
+      const normalizedProposalId = requiredIdentifier(proposalId, 'Proposal id');
+      if (client.hasAdvertisedMethod?.('skills.proposals.inspect') === false) {
+        throw new OpenClawSkillProposalInspectUnsupportedError();
+      }
+      const normalizedAgentId = agentId?.trim();
+      const inspection = normalizeOpenClawSkillProposalInspection(await client.call('skills.proposals.inspect', {
+        proposalId: normalizedProposalId,
+        ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
+      }), normalizedProposalId);
+      if (!inspection) throw new Error('OpenClaw returned an invalid skill proposal inspection response.');
+      return inspection;
     },
 
     async installFromClawHub(request: OpenClawSkillInstallRequest): Promise<OpenClawSkillInstallResult> {

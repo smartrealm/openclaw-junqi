@@ -364,6 +364,73 @@ export function SkillCardDialog({
   );
 }
 
+export function SkillProposalDialog({
+  open,
+  proposal,
+  loading,
+  error,
+  onClose,
+}: {
+  open: boolean;
+  proposal: {
+    id: string;
+    title: string;
+    description: string;
+    skillKey: string;
+    status: 'pending' | 'applied' | 'rejected' | 'quarantined' | 'stale';
+    revisionHash?: string;
+    content: string;
+  } | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[min(760px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-lg">
+        <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
+          <DialogTitle className="truncate text-sm font-bold text-aegis-text">
+            {proposal?.title ?? t('skillsExtra.proposalInspectTitle', 'Proposal draft')}
+          </DialogTitle>
+          <DialogDescription className="mt-1 truncate font-mono text-[11px] text-aegis-text-dim">
+            {proposal?.skillKey ?? t('skillsExtra.proposalInspectPending', 'Waiting for OpenClaw response')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto px-5 py-4">
+          {loading && (
+            <div className="flex min-h-40 items-center justify-center">
+              <LoadingIndicator size={20} className="text-aegis-text-dim" />
+            </div>
+          )}
+          {!loading && error && (
+            <div className="border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[12px] leading-relaxed text-aegis-text-secondary">
+              {error}
+            </div>
+          )}
+          {!loading && !error && proposal && (
+            <div>
+              <p className="mb-3 text-[10px] text-aegis-text-dim">
+                {proposal.revisionHash
+                  ? t('skillsExtra.proposalRevision', 'Revision {{hash}}', { hash: proposal.revisionHash })
+                  : t('skillsExtra.proposalRevisionUnavailable', 'Revision unavailable')}
+              </p>
+              <pre className="max-h-[min(60dvh,580px)] overflow-auto whitespace-pre-wrap break-words rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] p-3 font-mono text-[11px] leading-5 text-aegis-text-secondary">
+                {proposal.content}
+              </pre>
+            </div>
+          )}
+        </div>
+        <DialogFooter className="border-t border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] px-5 py-3">
+          <DialogClose className="w-full rounded-lg border border-aegis-border px-3 py-2 text-[11px] font-medium text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 sm:w-auto">
+            {t('common.close', 'Close')}
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════
 // HubSkillRow — Marketplace result row
 // ═══════════════════════════════════════════════════════════

@@ -186,6 +186,7 @@ docs/
 - [OpenClaw 原生技能生命周期对齐](quality/openclaw-native-skill-curator-alignment-2026-08-03.md)
 - [OpenClaw 原生技能提案清单对齐](quality/openclaw-native-skill-proposal-manifest-alignment-2026-08-03.md)
 - [OpenClaw 原生技能提案范围对齐](quality/openclaw-native-skill-proposal-scope-alignment-2026-08-03.md)
+- [OpenClaw 原生技能提案详情对齐](quality/openclaw-native-skill-proposal-inspect-alignment-2026-08-03.md)
 - [OpenClaw 原生审批对齐](quality/openclaw-native-approvals-alignment-2026-08-03.md)
 - [OpenClaw 审批最小权限对齐](quality/openclaw-approval-scope-alignment-2026-08-03.md)
 - [OpenClaw 原生任务账本对齐](quality/openclaw-native-task-ledger-alignment-2026-08-03.md)

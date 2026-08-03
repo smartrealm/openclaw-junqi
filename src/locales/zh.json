@@ -2606,7 +2606,12 @@
     "proposalApplied": "已应用",
     "proposalRejected": "已拒绝",
     "proposalQuarantined": "已隔离",
-    "proposalStale": "已过期"
+    "proposalStale": "已过期",
+    "proposalInspect": "查看提案草稿",
+    "proposalInspectTitle": "提案草稿",
+    "proposalInspectPending": "等待 OpenClaw 返回",
+    "proposalRevision": "修订 {{hash}}",
+    "proposalRevisionUnavailable": "修订不可用"
   },
   "settingsTheme": {
     "dark": "深色模式",
