@@ -32,6 +32,9 @@ test('composer consolidates attachments and voice input into accessible menus', 
   assert.match(surface, /min-w-0/);
   assert.match(surface, /input\.addContent/);
   assert.match(surface, /input\.voiceInputMenu/);
+  assert.match(surface, /onSteer/);
+  assert.match(surface, /CornerUpRight/);
+  assert.match(surface, /input\.steer/);
   assert.match(surface, /input\.recordVoice/);
   assert.match(surface, /input\.continuousDictation/);
   assert.match(surface, /ariaLabel=\{t\('input\.voiceInputMenu'\)\}/);
@@ -67,6 +70,23 @@ test('session runtime control has a single stable top context owner beside works
   assert.match(settings, /setSessionThinking\(sessionKey, nextThinking\)/);
   assert.match(settings, /setSessionModel\(null, sessionKey\)/);
   assert.match(runtime, /input\.useDefaultModel/);
+});
+
+test('chat context exposes the Gateway effective tool set without confusing it with config', () => {
+  const topBar = source('src/components/Chat/SessionContextBar.tsx');
+  const control = source('src/components/Chat/EffectiveToolsControl.tsx');
+  const hook = source('src/hooks/useEffectiveTools.ts');
+
+  assert.match(topBar, /<EffectiveToolsControl/);
+  assert.match(control, /useEffectiveTools/);
+  assert.match(control, /role="dialog"/);
+  assert.match(control, /openConfiguration/);
+  assert.match(control, /gateway\.invokeTool/);
+  assert.match(control, /tools\.effective/);
+  assert.match(control, /invokeConfirmMessage/);
+  assert.match(control, /JSON\.parse\(argsText\)/);
+  assert.match(hook, /gateway\.getEffectiveTools/);
+  assert.match(hook, /requestId/);
 });
 
 test('composer keeps dictation observable and recoverable', () => {
@@ -139,6 +159,7 @@ test('composer menu labels are localized in every shipped language', () => {
     'sessionRuntimeModel',
     'useDefaultModel',
     'useDefaultModelHint',
+    'steer',
   ];
 
   for (const language of ['en', 'zh', 'zh-TW']) {

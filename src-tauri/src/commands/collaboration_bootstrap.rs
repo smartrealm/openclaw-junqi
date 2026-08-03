@@ -3,24 +3,17 @@ use crate::commands::openclaw_cli::{
     output_diagnostic, parse_json_with_warnings, run_openclaw_cli, OpenClawCliLimits,
     OpenClawCliOutput, PinnedOpenClawCliTarget,
 };
-use crate::commands::system;
 use crate::state::collaboration_control::{
     validate_bootstrap_operation_id, BootstrapHealthSnapshot, BootstrapJournalStatus,
     BootstrapOperationKind, BootstrapPackageSnapshot, BootstrapPluginSnapshot,
     BootstrapTargetSnapshot, CollaborationBootstrapJournal, CollaborationControlState,
     BOOTSTRAP_JOURNAL_VERSION,
 };
-use crate::state::runtime_identity::{
-    RuntimeDeploymentKind, RuntimeIdentity, RuntimeIdentityState, RuntimeInstallTarget,
-    RuntimeOwnership, RuntimePersistence,
-};
+use crate::state::runtime_identity::{RuntimeIdentity, RuntimeIdentityState, RuntimeOwnership};
 use crate::state::GatewayProcess;
-use flate2::read::GzDecoder;
 use flate2::{Compression, GzBuilder};
-use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 #[cfg(unix)]
 use std::ffi::{CString, OsStr};
@@ -34,8 +27,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
-use tauri::path::BaseDirectory;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 const PLUGIN_ID: &str = "junqi-collab";
@@ -73,7 +65,10 @@ const REQUIRED_COLLABORATION_FEATURES: [&str; 11] = [
     "WORKFLOW_TEMPLATES",
 ];
 
+mod agent_policy;
 mod contract;
+mod package;
+mod target;
 
 pub use contract::{
     BootstrapAbandonParams, BootstrapApplyParams, BootstrapConfigureParams,
@@ -84,14 +79,22 @@ pub use contract::{
     CollaborationBootstrapStatus, DurableCollaborationState,
 };
 
-#[derive(Debug)]
-struct VerifiedPackage {
-    source_path: PathBuf,
-    host_path: PathBuf,
-    cli_path: PathBuf,
-    sha256: String,
-    plugin_version: String,
-}
+use agent_policy::{
+    normalize_agent_id, normalize_requested_agent_ids, parse_agent_registry,
+    validate_agent_configuration, AgentRegistry, ValidatedAgentConfiguration,
+};
+#[cfg(test)]
+use package::verify_bundled_package_paths;
+use package::{
+    parse_archive_metadata, parse_bundled_metadata, verify_bundled_package, verify_package_path,
+    VerifiedPackage,
+};
+use target::{
+    current_identity, deployment_name, is_durable, ownership_name, resolve_mutation_target,
+    same_probe_identity, target_class, validate_current_operation_identity,
+    validate_durable_identity, validate_durable_mutation_target, validate_expected_connection,
+    validate_fingerprint, validate_probe_identity, MutationTarget,
+};
 
 #[derive(Debug)]
 struct ExactPluginBackup {
@@ -99,168 +102,6 @@ struct ExactPluginBackup {
     host_path: String,
     archive_sha256: String,
     content_sha256: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct BundledPackageMetadata {
-    format_version: u32,
-    plugin_id: String,
-    package_name: String,
-    plugin_version: String,
-    schema_version: u32,
-    sha256: String,
-    archive_file: String,
-    resource_path: String,
-}
-
-#[derive(Debug)]
-struct MutationTarget {
-    identity: RuntimeIdentity,
-    class: BootstrapTargetClass,
-    cli: PinnedOpenClawCliTarget,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AgentRegistryEntry {
-    id: String,
-    list_index: usize,
-    allow_agents: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AgentRegistry {
-    entries: HashMap<String, AgentRegistryEntry>,
-    configured_ids: Vec<String>,
-    default_allow_agents: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ValidatedAgentConfiguration {
-    coordinator_agent_id: String,
-    allowed_agent_ids: Vec<String>,
-    configured_agent_ids: Vec<String>,
-    coordinator_policy_path: Option<String>,
-    coordinator_allow_agents_update: Option<Vec<String>>,
-}
-
-fn deployment_name(kind: RuntimeDeploymentKind) -> &'static str {
-    match kind {
-        RuntimeDeploymentKind::External => "external",
-        RuntimeDeploymentKind::SystemService => "system_service",
-        RuntimeDeploymentKind::ManagedChild => "managed_child",
-        RuntimeDeploymentKind::Docker => "docker",
-    }
-}
-
-fn ownership_name(ownership: RuntimeOwnership) -> &'static str {
-    match ownership {
-        RuntimeOwnership::JunqiManaged => "junqi_managed",
-        RuntimeOwnership::UserManaged => "user_managed",
-        RuntimeOwnership::Remote => "remote",
-    }
-}
-
-fn target_class(identity: &RuntimeIdentity) -> BootstrapTargetClass {
-    match (identity.deployment_kind, identity.ownership) {
-        (RuntimeDeploymentKind::ManagedChild, RuntimeOwnership::JunqiManaged) => {
-            BootstrapTargetClass::NativeManaged
-        }
-        (RuntimeDeploymentKind::SystemService, RuntimeOwnership::JunqiManaged) => {
-            BootstrapTargetClass::SystemService
-        }
-        (RuntimeDeploymentKind::Docker, RuntimeOwnership::JunqiManaged) => {
-            BootstrapTargetClass::Docker
-        }
-        (RuntimeDeploymentKind::External, RuntimeOwnership::Remote) => {
-            BootstrapTargetClass::ExternalRemote
-        }
-        (RuntimeDeploymentKind::External, _) => BootstrapTargetClass::ExternalLocal,
-        _ => BootstrapTargetClass::Unknown,
-    }
-}
-
-fn is_durable(class: BootstrapTargetClass) -> bool {
-    matches!(
-        class,
-        BootstrapTargetClass::SystemService
-            | BootstrapTargetClass::Docker
-            | BootstrapTargetClass::ExternalLocal
-            | BootstrapTargetClass::ExternalRemote
-    )
-}
-
-fn current_identity(state: &RuntimeIdentityState) -> Result<Option<RuntimeIdentity>, String> {
-    state.current()
-}
-
-fn validate_fingerprint(identity: &RuntimeIdentity, expected: &str) -> Result<(), String> {
-    if expected.trim().is_empty() {
-        return Err("TARGET_FINGERPRINT_REQUIRED".to_string());
-    }
-    if identity.target_fingerprint != expected.trim() {
-        return Err("TARGET_CHANGED".to_string());
-    }
-    Ok(())
-}
-
-fn validate_probe_identity(
-    identity: &RuntimeIdentity,
-    params: &BootstrapProbeParams,
-) -> Result<(), (&'static str, &'static str)> {
-    match (
-        params.target_fingerprint.as_deref(),
-        params.expected_connection_id.as_deref(),
-    ) {
-        (None, None) if identity.verified => Err((
-            "PROBE_IDENTITY_INCOMPLETE",
-            "A verified Gateway probe must include target fingerprint and expected connection id",
-        )),
-        (None, None) => Ok(()),
-        (Some(fingerprint), Some(connection_id)) => {
-            if fingerprint.trim().is_empty() || connection_id.trim().is_empty() {
-                return Err((
-                    "PROBE_IDENTITY_REQUIRED",
-                    "Target fingerprint and connection id must both be non-empty",
-                ));
-            }
-            if identity.target_fingerprint != fingerprint.trim() {
-                return Err((
-                    "TARGET_CHANGED",
-                    "The active Gateway target changed; refresh before continuing",
-                ));
-            }
-            if identity.connection_id != connection_id.trim() {
-                return Err((
-                    "CONNECTION_CHANGED",
-                    "The active Gateway connection changed; refresh before continuing",
-                ));
-            }
-            Ok(())
-        }
-        _ => Err((
-            "PROBE_IDENTITY_INCOMPLETE",
-            "Target fingerprint and expected connection id must be supplied together",
-        )),
-    }
-}
-
-fn same_probe_identity(left: &RuntimeIdentity, right: &RuntimeIdentity) -> bool {
-    left.verified
-        && right.verified
-        && left.target_fingerprint == right.target_fingerprint
-        && left.connection_id == right.connection_id
-        && left.endpoint == right.endpoint
-        && left.state_dir == right.state_dir
-        && left.config_path == right.config_path
-        && left.deployment_kind == right.deployment_kind
-        && left.ownership == right.ownership
-        && left.persistence == right.persistence
-        && left.install_target == right.install_target
-        && left.endpoint_attestation == right.endpoint_attestation
-        && left.path_attestation == right.path_attestation
-        && left.local_state_dir == right.local_state_dir
-        && left.local_config_path == right.local_config_path
 }
 
 #[cfg(unix)]
@@ -403,79 +244,6 @@ fn inspect_durable_collaboration_state(local_state_dir: &Path) -> DurableCollabo
     }
 }
 
-async fn resolve_mutation_target(
-    identity: RuntimeIdentity,
-    expected_fingerprint: &str,
-) -> Result<MutationTarget, (String, String)> {
-    validate_fingerprint(&identity, expected_fingerprint).map_err(|code| {
-        let message = if code == "TARGET_CHANGED" {
-            "The active Gateway target changed; probe it again before installing the plugin"
-        } else {
-            "A target fingerprint is required"
-        };
-        (code, message.to_string())
-    })?;
-    let class = target_class(&identity);
-    if matches!(
-        class,
-        BootstrapTargetClass::ExternalLocal | BootstrapTargetClass::ExternalRemote
-    ) {
-        return Err((
-            "EXTERNAL_TARGET_READ_ONLY".to_string(),
-            "JunQi will not mutate an external or remote OpenClaw runtime; install the pinned plugin on that runtime manually"
-                .to_string(),
-        ));
-    }
-    if class == BootstrapTargetClass::Unknown {
-        return Err((
-            "TARGET_UNSUPPORTED".to_string(),
-            "The active Gateway deployment could not be classified safely".to_string(),
-        ));
-    }
-    if !identity.verified || !identity.desktop_mutation_allowed {
-        return Err((
-            "TARGET_NOT_ATTESTED".to_string(),
-            "The active Gateway identity or runtime paths are not attested for Desktop mutation"
-                .to_string(),
-        ));
-    }
-    if identity.ownership != RuntimeOwnership::JunqiManaged {
-        return Err((
-            "TARGET_NOT_OWNED".to_string(),
-            "JunQi only installs plugins into runtimes it explicitly manages".to_string(),
-        ));
-    }
-
-    let binary = system::resolve_openclaw_binary_async()
-        .await
-        .ok_or_else(|| {
-            (
-                "OPENCLAW_BINARY_MISSING".to_string(),
-                "The selected OpenClaw executable is unavailable".to_string(),
-            )
-        })?;
-    let cli = if class == BootstrapTargetClass::Docker {
-        PinnedOpenClawCliTarget::verified_container(
-            binary,
-            Path::new(&identity.local_state_dir),
-            Path::new(&identity.local_config_path),
-            OPENCLAW_CONTAINER_NAME,
-        )
-    } else {
-        PinnedOpenClawCliTarget::verified(
-            binary,
-            Path::new(&identity.local_state_dir),
-            Path::new(&identity.local_config_path),
-        )
-    }
-    .map_err(|message| ("OPENCLAW_BINARY_INVALID".to_string(), message))?;
-    Ok(MutationTarget {
-        identity,
-        class,
-        cli,
-    })
-}
-
 fn mutation_error(
     code: impl Into<String>,
     message: impl Into<String>,
@@ -559,332 +327,6 @@ fn configuration_result(
         reload_expected,
         warnings,
     }
-}
-
-fn validate_expected_connection(
-    identity: &RuntimeIdentity,
-    expected_connection_id: &str,
-) -> Result<(), (String, String)> {
-    let expected = expected_connection_id.trim();
-    if expected.is_empty() {
-        return Err((
-            "CONNECTION_ID_REQUIRED".to_string(),
-            "The current Gateway connection id is required".to_string(),
-        ));
-    }
-    if identity.connection_id != expected {
-        return Err((
-            "CONNECTION_CHANGED".to_string(),
-            "The active Gateway connection changed; refresh its identity before mutating it"
-                .to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_durable_identity(
-    identity: &RuntimeIdentity,
-    class: BootstrapTargetClass,
-) -> Result<(), (String, String)> {
-    if !matches!(
-        class,
-        BootstrapTargetClass::SystemService | BootstrapTargetClass::Docker
-    ) || !identity.verified
-        || !identity.desktop_mutation_allowed
-        || identity.ownership != RuntimeOwnership::JunqiManaged
-        || identity.persistence != RuntimePersistence::DesktopIndependent
-        || !identity.desktop_exit_continuity
-        || !matches!(
-            (class, identity.install_target),
-            (
-                BootstrapTargetClass::SystemService,
-                RuntimeInstallTarget::NativeCli
-            ) | (
-                BootstrapTargetClass::Docker,
-                RuntimeInstallTarget::DockerExec
-            )
-        )
-    {
-        return Err((
-            "DURABLE_TARGET_REQUIRED".to_string(),
-            "Collaboration mutations require an exact JunQi-owned System Service or Docker Gateway"
-                .to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_durable_mutation_target(target: &MutationTarget) -> Result<(), (String, String)> {
-    validate_durable_identity(&target.identity, target.class)
-}
-
-fn validate_current_operation_identity(
-    expected: &RuntimeIdentity,
-    current: Option<&RuntimeIdentity>,
-) -> Result<(), (String, String)> {
-    let Some(current) = current else {
-        return Err((
-            "RUNTIME_IDENTITY_UNAVAILABLE".to_string(),
-            "The Gateway disconnected during collaboration mutation preflight".to_string(),
-        ));
-    };
-    if !same_probe_identity(expected, current) {
-        return Err((
-            "TARGET_CHANGED".to_string(),
-            "The verified Gateway target, connection, deployment, or local runtime paths changed during collaboration mutation preflight; no mutation was started"
-                .to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn normalize_agent_id(value: &str) -> String {
-    let mut normalized = String::with_capacity(value.len());
-    let mut previous_hyphen = false;
-    for character in value.trim().to_ascii_lowercase().chars() {
-        let accepted = character.is_ascii_lowercase()
-            || character.is_ascii_digit()
-            || matches!(character, '_' | '-');
-        if accepted {
-            normalized.push(character);
-            previous_hyphen = character == '-';
-        } else if !normalized.is_empty() && !previous_hyphen {
-            normalized.push('-');
-            previous_hyphen = true;
-        }
-    }
-    normalized.trim_matches('-').to_string()
-}
-
-fn parse_allow_agents(
-    container: Option<&Value>,
-    label: &str,
-) -> Result<Option<Vec<String>>, String> {
-    let Some(container) = container else {
-        return Ok(None);
-    };
-    let object = container
-        .as_object()
-        .ok_or_else(|| format!("{label} must be an object"))?;
-    let Some(value) = object.get("allowAgents") else {
-        return Ok(None);
-    };
-    let list = value
-        .as_array()
-        .ok_or_else(|| format!("{label}.allowAgents must be an array"))?;
-    let mut result = Vec::with_capacity(list.len());
-    for entry in list {
-        let value = entry
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| format!("{label}.allowAgents contains an invalid agent id"))?;
-        result.push(value.to_string());
-    }
-    Ok(Some(result))
-}
-
-fn parse_agent_registry(value: &Value) -> Result<AgentRegistry, String> {
-    let agents = value
-        .as_object()
-        .ok_or_else(|| "OpenClaw agents config must be an object".to_string())?;
-    let defaults = agents
-        .get("defaults")
-        .and_then(Value::as_object)
-        .and_then(|value| value.get("subagents"));
-    let default_allow_agents = parse_allow_agents(defaults, "agents.defaults.subagents")?;
-    let list = agents
-        .get("list")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "OpenClaw agents.list must be an explicit array".to_string())?;
-    if list.is_empty() {
-        return Err("OpenClaw agents.list must contain at least one configured agent".to_string());
-    }
-
-    let mut entries = HashMap::new();
-    for (index, value) in list.iter().enumerate() {
-        let object = value
-            .as_object()
-            .ok_or_else(|| format!("agents.list[{index}] must be an object"))?;
-        let raw_id = object
-            .get("id")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| format!("agents.list[{index}].id is required"))?;
-        let id = normalize_agent_id(raw_id);
-        if id.is_empty() {
-            return Err(format!("agents.list[{index}].id is invalid"));
-        }
-        let allow_agents = parse_allow_agents(
-            object.get("subagents"),
-            &format!("agents.list[{index}].subagents"),
-        )?;
-        if entries
-            .insert(
-                id.clone(),
-                AgentRegistryEntry {
-                    id: id.clone(),
-                    list_index: index,
-                    allow_agents,
-                },
-            )
-            .is_some()
-        {
-            return Err(format!(
-                "agents.list contains duplicate normalized agent id {id}"
-            ));
-        }
-    }
-    let mut configured_ids = entries.keys().cloned().collect::<Vec<_>>();
-    configured_ids.sort();
-    Ok(AgentRegistry {
-        entries,
-        configured_ids,
-        default_allow_agents,
-    })
-}
-
-fn normalize_requested_agent_ids(values: &[String]) -> Result<Vec<String>, (String, String)> {
-    if values.is_empty() {
-        return Err((
-            "ALLOWED_AGENTS_REQUIRED".to_string(),
-            "Select at least one explicit collaboration agent".to_string(),
-        ));
-    }
-    if values.len() > 64 {
-        return Err((
-            "TOO_MANY_ALLOWED_AGENTS".to_string(),
-            "At most 64 collaboration agents can be configured".to_string(),
-        ));
-    }
-    let mut seen = HashSet::new();
-    let mut normalized = Vec::with_capacity(values.len());
-    for value in values {
-        let trimmed = value.trim();
-        if trimmed == "*" {
-            return Err((
-                "WILDCARD_AGENT_FORBIDDEN".to_string(),
-                "Collaboration requires explicit allowed agent ids; wildcard authorization is forbidden"
-                    .to_string(),
-            ));
-        }
-        let id = normalize_agent_id(trimmed);
-        if id.is_empty() || id.len() > 128 {
-            return Err((
-                "AGENT_ID_INVALID".to_string(),
-                "Every allowed agent id must be a valid OpenClaw agent id".to_string(),
-            ));
-        }
-        if !seen.insert(id.clone()) {
-            return Err((
-                "DUPLICATE_AGENT_ID".to_string(),
-                format!("Agent {id} appears more than once after OpenClaw normalization"),
-            ));
-        }
-        normalized.push(id);
-    }
-    Ok(normalized)
-}
-
-fn validate_agent_configuration(
-    params: &BootstrapConfigureParams,
-    registry: &AgentRegistry,
-) -> Result<ValidatedAgentConfiguration, (String, String)> {
-    let coordinator_agent_id = normalize_agent_id(&params.coordinator_agent_id);
-    if coordinator_agent_id.is_empty() || coordinator_agent_id.len() > 128 {
-        return Err((
-            "COORDINATOR_AGENT_INVALID".to_string(),
-            "A valid coordinator agent id is required".to_string(),
-        ));
-    }
-    let Some(coordinator) = registry.entries.get(&coordinator_agent_id) else {
-        return Err((
-            "COORDINATOR_AGENT_NOT_CONFIGURED".to_string(),
-            format!(
-                "Coordinator agent {coordinator_agent_id} is not present in OpenClaw agents.list"
-            ),
-        ));
-    };
-    let allowed_agent_ids = normalize_requested_agent_ids(&params.allowed_agent_ids)?;
-    if !allowed_agent_ids
-        .iter()
-        .any(|agent_id| agent_id == &coordinator_agent_id)
-    {
-        return Err((
-            "COORDINATOR_NOT_ALLOWED".to_string(),
-            "The coordinator must be included in the explicit plugin allowlist".to_string(),
-        ));
-    }
-    let missing = allowed_agent_ids
-        .iter()
-        .filter(|agent_id| !registry.entries.contains_key(*agent_id))
-        .cloned()
-        .collect::<Vec<_>>();
-    if !missing.is_empty() {
-        return Err((
-            "ALLOWED_AGENT_NOT_CONFIGURED".to_string(),
-            format!(
-                "The following agents are not present in OpenClaw agents.list: {}",
-                missing.join(", ")
-            ),
-        ));
-    }
-
-    let effective_policy = coordinator
-        .allow_agents
-        .as_ref()
-        .or(registry.default_allow_agents.as_ref());
-    let policy_allows_all =
-        effective_policy.is_some_and(|entries| entries.iter().any(|entry| entry.trim() == "*"));
-    let policy_ids = effective_policy
-        .map(|entries| {
-            entries
-                .iter()
-                .filter(|entry| entry.trim() != "*")
-                .map(|entry| normalize_agent_id(entry))
-                .filter(|entry| registry.entries.contains_key(entry))
-                .collect::<HashSet<_>>()
-        })
-        .unwrap_or_else(|| HashSet::from([coordinator.id.clone()]));
-    let denied = allowed_agent_ids
-        .iter()
-        .filter(|agent_id| !policy_allows_all && !policy_ids.contains(*agent_id))
-        .cloned()
-        .collect::<Vec<_>>();
-    let (coordinator_policy_path, coordinator_allow_agents_update) = if denied.is_empty() {
-        (None, None)
-    } else {
-        // An entry-level policy overrides defaults. Seed it from the effective
-        // policy so creating that override never narrows existing permissions.
-        let mut expanded = effective_policy
-            .cloned()
-            .unwrap_or_else(|| vec![coordinator.id.clone()]);
-        let mut expanded_ids = expanded
-            .iter()
-            .filter(|entry| entry.trim() != "*")
-            .map(|entry| normalize_agent_id(entry))
-            .collect::<HashSet<_>>();
-        for agent_id in &allowed_agent_ids {
-            if expanded_ids.insert(agent_id.clone()) {
-                expanded.push(agent_id.clone());
-            }
-        }
-        (
-            Some(format!(
-                "agents.list[{}].subagents.allowAgents",
-                coordinator.list_index
-            )),
-            Some(expanded),
-        )
-    };
-    Ok(ValidatedAgentConfiguration {
-        coordinator_agent_id,
-        allowed_agent_ids,
-        configured_agent_ids: registry.configured_ids.clone(),
-        coordinator_policy_path,
-        coordinator_allow_agents_update,
-    })
 }
 
 fn cli_limits(timeout_seconds: u64) -> OpenClawCliLimits {
@@ -1444,31 +886,6 @@ async fn inspect_plugin(
     Ok((snapshot, warnings))
 }
 
-fn validate_archive_path(path: &Path) -> Result<PathBuf, String> {
-    if !path.is_absolute() {
-        return Err("PLUGIN_ARCHIVE_PATH_MUST_BE_ABSOLUTE".to_string());
-    }
-    let canonical = std::fs::canonicalize(path)
-        .map_err(|error| format!("PLUGIN_ARCHIVE_UNAVAILABLE: {error}"))?;
-    let metadata = std::fs::metadata(&canonical)
-        .map_err(|error| format!("PLUGIN_ARCHIVE_UNAVAILABLE: {error}"))?;
-    if !metadata.is_file() {
-        return Err("PLUGIN_ARCHIVE_NOT_FILE".to_string());
-    }
-    if metadata.len() == 0 || metadata.len() > MAX_PACKAGE_BYTES {
-        return Err("PLUGIN_ARCHIVE_SIZE_INVALID".to_string());
-    }
-    if canonical
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(|extension| !extension.eq_ignore_ascii_case("tgz"))
-        .unwrap_or(true)
-    {
-        return Err("PLUGIN_ARCHIVE_MUST_BE_TGZ".to_string());
-    }
-    Ok(canonical)
-}
-
 fn hash_file(path: &Path, limit: u64) -> Result<String, String> {
     let metadata = std::fs::metadata(path).map_err(|error| error.to_string())?;
     if metadata.len() > limit {
@@ -1485,236 +902,6 @@ fn hash_file(path: &Path, limit: u64) -> Result<String, String> {
         hasher.update(&buffer[..count]);
     }
     Ok(format!("{:x}", hasher.finalize()))
-}
-
-fn parse_archive_metadata(path: &Path) -> Result<String, String> {
-    let file = std::fs::File::open(path)
-        .map_err(|error| format!("Failed to open plugin archive: {error}"))?;
-    let decoder = GzDecoder::new(file);
-    let mut archive = tar::Archive::new(decoder);
-    let mut package_json: Option<Value> = None;
-    let mut plugin_json: Option<Value> = None;
-    let mut entries_seen = 0usize;
-    let mut expanded_bytes = 0_u64;
-    let entries = archive
-        .entries()
-        .map_err(|error| format!("Invalid plugin archive: {error}"))?;
-    for entry in entries {
-        entries_seen += 1;
-        if entries_seen > MAX_ARCHIVE_ENTRIES {
-            return Err("Plugin archive contains too many entries".to_string());
-        }
-        let mut entry = entry.map_err(|error| format!("Invalid plugin archive entry: {error}"))?;
-        expanded_bytes = expanded_bytes
-            .checked_add(entry.size())
-            .ok_or_else(|| "Plugin archive expanded size overflowed".to_string())?;
-        if expanded_bytes > MAX_ARCHIVE_EXPANDED_BYTES {
-            return Err("Plugin archive exceeds the expanded size limit".to_string());
-        }
-        let entry_path = entry
-            .path()
-            .map_err(|error| format!("Invalid plugin archive path: {error}"))?
-            .into_owned();
-        if entry_path.components().any(|component| {
-            matches!(
-                component,
-                Component::ParentDir | Component::RootDir | Component::Prefix(_)
-            )
-        }) {
-            return Err("Plugin archive contains an unsafe path".to_string());
-        }
-        let normalized = entry_path.to_string_lossy().replace('\\', "/");
-        if normalized != "package/package.json" && normalized != "package/openclaw.plugin.json" {
-            continue;
-        }
-        if entry.size() > MAX_MANIFEST_BYTES {
-            return Err("Plugin manifest exceeds the size limit".to_string());
-        }
-        let mut raw = Vec::with_capacity(entry.size() as usize);
-        entry
-            .read_to_end(&mut raw)
-            .map_err(|error| format!("Failed to read plugin manifest: {error}"))?;
-        let value: Value = serde_json::from_slice(&raw)
-            .map_err(|error| format!("Invalid plugin manifest JSON: {error}"))?;
-        if normalized == "package/package.json" {
-            package_json = Some(value);
-        } else {
-            plugin_json = Some(value);
-        }
-    }
-
-    let package =
-        package_json.ok_or_else(|| "Plugin archive is missing package.json".to_string())?;
-    let manifest =
-        plugin_json.ok_or_else(|| "Plugin archive is missing openclaw.plugin.json".to_string())?;
-    if package.get("name").and_then(Value::as_str) != Some(PLUGIN_PACKAGE_NAME) {
-        return Err("Plugin archive contains an unexpected npm package".to_string());
-    }
-    if manifest.get("id").and_then(Value::as_str) != Some(PLUGIN_ID) {
-        return Err("Plugin archive contains an unexpected OpenClaw plugin id".to_string());
-    }
-    let package_version = package
-        .get("version")
-        .and_then(Value::as_str)
-        .filter(|version| !version.trim().is_empty())
-        .ok_or_else(|| "Plugin package version is missing".to_string())?;
-    let manifest_version = manifest
-        .get("version")
-        .and_then(Value::as_str)
-        .filter(|version| !version.trim().is_empty())
-        .ok_or_else(|| "OpenClaw plugin version is missing".to_string())?;
-    if package_version != manifest_version {
-        return Err("Plugin package and manifest versions do not match".to_string());
-    }
-    let extensions_valid = package
-        .get("openclaw")
-        .and_then(|openclaw| openclaw.get("extensions"))
-        .and_then(Value::as_array)
-        .map(|extensions| {
-            extensions
-                .iter()
-                .any(|entry| entry.as_str() == Some("./dist/index.js"))
-        })
-        .unwrap_or(false);
-    if !extensions_valid {
-        return Err("Plugin archive does not declare the expected OpenClaw entry".to_string());
-    }
-    Ok(package_version.to_string())
-}
-
-fn validate_bundled_metadata(
-    metadata: BundledPackageMetadata,
-) -> Result<BundledPackageMetadata, String> {
-    if metadata.format_version != 1
-        || metadata.plugin_id != PLUGIN_ID
-        || metadata.package_name != PLUGIN_PACKAGE_NAME
-        || metadata.archive_file != "junqi-collab.tgz"
-        || metadata.resource_path != BUNDLED_ARCHIVE_RESOURCE
-        || metadata.schema_version == 0
-        || metadata.plugin_version.trim().is_empty()
-        || metadata.plugin_version.len() > 128
-        || metadata.sha256.len() != 64
-        || !metadata
-            .sha256
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    {
-        return Err("The collaboration bundle metadata is invalid".to_string());
-    }
-    Ok(metadata)
-}
-
-fn parse_bundled_metadata(raw: &[u8]) -> Result<BundledPackageMetadata, String> {
-    if raw.is_empty() || raw.len() as u64 > MAX_MANIFEST_BYTES {
-        return Err("The collaboration bundle metadata exceeds its size limit".to_string());
-    }
-    let metadata = serde_json::from_slice(raw)
-        .map_err(|error| format!("Invalid collaboration bundle metadata: {error}"))?;
-    validate_bundled_metadata(metadata)
-}
-
-fn verify_package_path(
-    path: &Path,
-    expected_sha256: &str,
-) -> Result<VerifiedPackage, (String, String)> {
-    let expected = expected_sha256.trim().to_ascii_lowercase();
-    if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err((
-            "PLUGIN_SHA256_INVALID".to_string(),
-            "The expected plugin SHA-256 must contain exactly 64 hexadecimal characters"
-                .to_string(),
-        ));
-    }
-    let path = validate_archive_path(path).map_err(|message| {
-        (
-            message
-                .split(':')
-                .next()
-                .unwrap_or("PLUGIN_ARCHIVE_INVALID")
-                .to_string(),
-            message,
-        )
-    })?;
-    let actual = hash_file(&path, MAX_PACKAGE_BYTES).map_err(|message| {
-        (
-            "PLUGIN_ARCHIVE_HASH_FAILED".to_string(),
-            format!("Could not hash the plugin archive: {message}"),
-        )
-    })?;
-    if actual != expected {
-        return Err((
-            "PLUGIN_SHA256_MISMATCH".to_string(),
-            "The selected plugin archive does not match the pinned SHA-256".to_string(),
-        ));
-    }
-    let plugin_version = parse_archive_metadata(&path)
-        .map_err(|message| ("PLUGIN_ARCHIVE_INVALID".to_string(), message))?;
-    Ok(VerifiedPackage {
-        source_path: path.clone(),
-        host_path: path.clone(),
-        cli_path: path,
-        sha256: actual,
-        plugin_version,
-    })
-}
-
-fn verify_bundled_package_paths(
-    metadata_path: &Path,
-    archive_path: &Path,
-) -> Result<VerifiedPackage, (String, String)> {
-    let compiled_metadata =
-        parse_bundled_metadata(BUNDLED_METADATA_JSON.as_bytes()).map_err(|message| {
-            (
-                "PLUGIN_BUNDLE_EMBEDDED_METADATA_INVALID".to_string(),
-                message,
-            )
-        })?;
-    let raw = std::fs::read(metadata_path).map_err(|error| {
-        (
-            "PLUGIN_BUNDLE_METADATA_UNAVAILABLE".to_string(),
-            format!("Could not read the bundled collaboration metadata: {error}"),
-        )
-    })?;
-    let resource_metadata = parse_bundled_metadata(&raw)
-        .map_err(|message| ("PLUGIN_BUNDLE_METADATA_INVALID".to_string(), message))?;
-    if resource_metadata != compiled_metadata {
-        return Err((
-            "PLUGIN_BUNDLE_METADATA_MISMATCH".to_string(),
-            "The installed collaboration bundle metadata does not match this JunQi binary"
-                .to_string(),
-        ));
-    }
-    let package = verify_package_path(archive_path, &compiled_metadata.sha256)?;
-    if package.plugin_version != compiled_metadata.plugin_version {
-        return Err((
-            "PLUGIN_BUNDLE_VERSION_MISMATCH".to_string(),
-            "The bundled collaboration archive version does not match its embedded metadata"
-                .to_string(),
-        ));
-    }
-    Ok(package)
-}
-
-fn verify_bundled_package(app: &AppHandle) -> Result<VerifiedPackage, (String, String)> {
-    let metadata_path = app
-        .path()
-        .resolve(BUNDLED_METADATA_RESOURCE, BaseDirectory::Resource)
-        .map_err(|error| {
-            (
-                "PLUGIN_BUNDLE_RESOURCE_UNAVAILABLE".to_string(),
-                format!("Could not resolve the bundled collaboration metadata: {error}"),
-            )
-        })?;
-    let archive_path = app
-        .path()
-        .resolve(BUNDLED_ARCHIVE_RESOURCE, BaseDirectory::Resource)
-        .map_err(|error| {
-            (
-                "PLUGIN_BUNDLE_RESOURCE_UNAVAILABLE".to_string(),
-                format!("Could not resolve the bundled collaboration archive: {error}"),
-            )
-        })?;
-    verify_bundled_package_paths(&metadata_path, &archive_path)
 }
 
 #[cfg(not(unix))]
@@ -6816,6 +6003,7 @@ pub async fn collaboration_bootstrap_recover(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::runtime_identity::RuntimeDeploymentKind;
     use std::io::Write;
 
     fn create_test_tgz(root: &Path, id: &str, version: &str) -> PathBuf {

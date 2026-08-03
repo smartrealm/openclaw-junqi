@@ -44,7 +44,10 @@ export async function bindGatewayCredentialToCurrentInstance(
   expectedConnectionId: string,
   dependencies: GatewayCredentialBindingDependencies = defaultDependencies,
 ): Promise<GatewayCredentialRuntimeBinding> {
-  const activeConfig = await dependencies.detectConfig().catch(() => null);
+  // Binding must stay scoped to the selected runtime. If its config cannot be
+  // read, falling back to the endpoint key could move a Native/Docker
+  // credential across runtimes that happen to share a loopback URL.
+  const activeConfig = await dependencies.detectConfig();
   const sourceRuntimeKey = resolveGatewayConnectionCredentialRuntimeKey(gatewayUrl, activeConfig);
   const isCurrent = () => matchesExpectedIdentity(
     dependencies.currentIdentity(),

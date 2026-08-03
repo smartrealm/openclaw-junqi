@@ -16,6 +16,8 @@
 
 ## 未实现边界
 
-- “分叉”只在存在 OpenClaw 压缩检查点时可通过 `sessions.compaction.branch` 创建，不能从任意对话快照伪造分支。
+- “分叉”现在只在存在 OpenClaw 压缩检查点时通过 `sessions.compaction.branch` 创建，并在
+  JunQi 的会话上下文入口中要求显式确认；不能从任意对话快照伪造分支。恢复 checkpoint
+  同样只通过官方 `sessions.compaction.restore`，由一次性管理员连接执行。
 - 用户自定义会话分组没有当前 OpenClaw 协议字段。引入该能力需要独立的 JunQi 本机组织模型、迁移和跨窗口一致性设计，不能借用 Gateway 标签或会话 key。
 - 未使用真实渠道账号或管理员授权设备进行端到端验证；自动化验证仅覆盖请求路由、类型和静态边界。

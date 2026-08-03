@@ -117,7 +117,7 @@
 
 **FCA-08 闭环。** 明确属于产品 chrome 的启动页、终端通知面板、TopBar 状态灯、设置流程按钮、文件告警、Gateway 错误页、语音波形、日志菜单和终端主按钮均改为 Aegis 语义 token。新增 `productChromeColors.test.ts`：生产 TS/TSX/CSS 的十六进制色值默认禁止，仅允许经逐文件说明的内容色域，包括主题 token 定义、ANSI/xterm、终端搜索、Git diff、主题预览、QR bitmap、文件类型、数据可视化和宠物/SVG 绘图。该白名单是语义边界，不以“清零文本命中”为目标。
 
-**FCA-14 启动分域拆分。** 新增独立 spec/plan 与依赖顺序；第一条垂直切片将 Tauri 请求/响应 DTO 和序列化 enum 移至 `src-tauri/src/commands/collaboration_bootstrap/contract.rs`，父模块公开 re-export，八个 command 名称、注册路径、签名外形和 wire casing 均不变。3组 Rust JSON 契约测试覆盖全部序列化 enum、全部 command 参数的 camelCase/default 行为，以及全部 command 响应的精确字段集合。其余 target、agent policy、package/storage、journal/plugin、recovery 子域仍待迁移，因此 FCA-14 保持“进行中”。
+**FCA-14 分域拆分持续进行。** 请求/响应 DTO 和序列化 enum 已位于 `src-tauri/src/commands/collaboration_bootstrap/contract.rs`；`target.rs` 已迁移目标分类、身份比对、所有权/持久化门禁和 CLI target 构造；`agent_policy.rs` 已迁移 Agent ID 规范化、`agents.list` 解析、显式白名单和 coordinator policy 求值；`package.rs` 已迁移归档和 bundled metadata 校验。父模块仍公开原有 re-export，八个 command 名称、注册路径、签名外形和 wire casing 均不变。协作启动定向测试继续覆盖这些边界。journal/plugin、recovery 子域仍待迁移，因此 FCA-14 保持“进行中”。实现依据和未验证边界见 [`Collaboration Bootstrap Target 子域拆分`](collaboration-bootstrap-target-slice-2026-08-03.md)、[`Collaboration Bootstrap Agent Policy 子域拆分`](collaboration-bootstrap-agent-policy-slice-2026-08-03.md) 与 [`Collaboration Bootstrap Package 子域拆分`](collaboration-bootstrap-package-slice-2026-08-03.md)。
 
 本阶段当前自动化结果：`pnpm lint`（612 模块）、前端1887项、脚本224项、Rust658项（3项既有环境测试 ignored）、collaboration 368项、plugin package validation、55个官方 OpenClaw 链接、`pnpm build`、`cargo fmt -- --check`、`cargo check --lib` 与 `git diff --check` 通过。四主题视觉走查与目标平台真机验收仍未执行。
 

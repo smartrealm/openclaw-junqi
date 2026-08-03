@@ -114,3 +114,18 @@ test('credential binding refuses a stale Gateway identity before any mutation', 
   );
   assert.equal(called, false);
 });
+
+test('credential binding fails closed when selected-runtime config cannot be read', async () => {
+  let called = false;
+  await assert.rejects(
+    bindGatewayCredentialToCurrentInstance(gatewayUrl, instanceId, connectionId, dependencies({
+      detectConfig: async () => { throw new Error('selected runtime config unavailable'); },
+      bindCredential: async () => {
+        called = true;
+        return binding();
+      },
+    })),
+    /selected runtime config unavailable/,
+  );
+  assert.equal(called, false);
+});

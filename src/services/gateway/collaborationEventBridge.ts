@@ -2,6 +2,7 @@ import {
   parseCollaborationChangedHint,
   type CollaborationChangedHint,
 } from '@/services/collaboration/types';
+import { publishGatewayApprovalEvent } from './approvalEventBridge';
 
 export type CollaborationChangedHintListener = (hint: CollaborationChangedHint) => void;
 
@@ -77,5 +78,6 @@ export function routeGatewayEvent(
   fallback: (message: unknown) => void,
 ): void {
   if (publishCollaborationChangedEvent(message)) return;
+  if (publishGatewayApprovalEvent(message)) return;
   fallback(message);
 }

@@ -27,9 +27,12 @@ Date: 2026-07-30
    content palettes (terminal/ANSI, diff, QR/canvas, theme previews and mascot
    art) and repository tests reject unclassified hex colors.
 7. [ ] **Batch G — collaboration Rust decomposition**: FCA-14. The dependency
-   map and dedicated spec/plan are complete; the wire-contract module is the
-   first validated extraction. Target, agent-policy, package/storage,
-   journal/plugin and recovery slices remain.
+   map and dedicated spec/plan are complete; the wire-contract and target
+   modules are validated extractions. Journal/plugin and recovery slices
+   remain. Evidence is in
+   `plans/quality/2026-08-03-collaboration-bootstrap-target-slice.md` and
+   `plans/quality/2026-08-03-collaboration-bootstrap-agent-policy-slice.md` and
+   `plans/quality/2026-08-03-collaboration-bootstrap-package-slice.md`.
 8. [ ] Run complete repository validation, update the audit status and document
    all manual/target-platform boundaries.
 

@@ -449,6 +449,7 @@ mod tests {
             ownership,
             installed,
             running,
+            runtime_known: true,
         }
     }
 

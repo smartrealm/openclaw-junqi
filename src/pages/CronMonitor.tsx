@@ -11,6 +11,12 @@ import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, 
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
 import { gateway } from '@/services/gateway';
 import {
+  CronRunWaitTimeoutError,
+  type CronRunLogEntry,
+  type CronRunStatus,
+  type OpenClawCronJobDetails,
+} from '@/services/gateway/cronRuns';
+import {
   buildCronAgentTurnAddParams,
   cronAgentUpdatePatch,
   isCronAgentSelectionConfirmed,
@@ -68,8 +74,8 @@ interface CronJob {
 }
 
 interface RunEntry {
-  ts: string;
-  status: string;
+  ts: number;
+  status: CronRunStatus | 'unknown';
   summary?: string;
   error?: string;
   durationMs?: number;
@@ -78,6 +84,8 @@ interface RunEntry {
   // Gateway 2026.2.22+: split delivery status
   deliveryStatus?: string;
 }
+
+type RunFeedback = 'queued' | 'ok' | 'error' | 'skipped' | 'timeout';
 
 // ═══════════════════════════════════════════════════════════
 // Constants & Helpers
@@ -224,6 +232,15 @@ function formatDuration(ms?: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
+function toRunEntry(entry: CronRunLogEntry, fallbackJobName?: string): RunEntry {
+  return {
+    ...entry,
+    status: entry.status ?? 'unknown',
+    jobId: entry.jobId,
+    jobName: entry.jobName || fallbackJobName || entry.jobId,
+  };
+}
+
 
 
 // ═══════════════════════════════════════════════════════════
@@ -242,15 +259,20 @@ export function CronMonitorPage() {
 
   // ── State (jobs from central store) ──
   const storeJobs = useGatewayDataStore((s) => s.cronJobs) as CronJob[];
+  const cronStatus = useGatewayDataStore((s) => s.cronStatus);
+  const cronStatusError = useGatewayDataStore((s) => s.cronStatusError);
   const agents = useGatewayDataStore((s) => s.agents);
   const jobs = storeJobs;
   const loading = useGatewayDataStore((s) => s.loading.cron);
   const agentsLoading = useGatewayDataStore((s) => s.loading.agents);
   const agentsError = useGatewayDataStore((s) => s.errors.agents);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [runResult, setRunResult] = useState<Record<string, 'ok' | 'error'>>({});
+  const [runResult, setRunResult] = useState<Record<string, RunFeedback>>({});
   const [templateResult, setTemplateResult] = useState<Record<string, 'ok' | 'error'>>({});
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedJobDetails, setSelectedJobDetails] = useState<OpenClawCronJobDetails | null>(null);
+  const [selectedJobDetailLoading, setSelectedJobDetailLoading] = useState(false);
+  const [selectedJobDetailError, setSelectedJobDetailError] = useState<string | null>(null);
   const [recentRuns, setRecentRuns] = useState<RunEntry[]>([]);
   const [selectedJobRuns, setSelectedJobRuns] = useState<RunEntry[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
@@ -293,6 +315,7 @@ export function CronMonitorPage() {
 
   // Fix #3: Stale request guard for selected job fetches
   const selectedFetchId = useRef(0);
+  const selectedJobDetailFetchId = useRef(0);
 
   // Fix #6: Tick for live countdown/timeAgo updates (every 15s)
   const [, setTick] = useState(0);
@@ -321,8 +344,16 @@ export function CronMonitorPage() {
     return m;
   }, [jobs]);
 
-  const activeCount = useMemo(() => jobs.filter(j => j.enabled && j.state?.lastStatus !== 'error').length, [jobs]);
-  const selectedJob = useMemo(() => jobs.find(j => j.id === selectedJobId) || null, [jobs, selectedJobId]);
+  const activeCount = useMemo(() => jobs.filter((job) => getStatus(job) === 'active').length, [jobs]);
+  const selectedJob = useMemo(() => {
+    const listedJob = jobs.find(j => j.id === selectedJobId) || null;
+    if (!listedJob || selectedJobDetails?.id !== listedJob.id) return listedJob;
+    return {
+      ...listedJob,
+      ...selectedJobDetails,
+      state: { ...listedJob.state, ...selectedJobDetails.state },
+    };
+  }, [jobs, selectedJobId, selectedJobDetails]);
   const agentName = useCallback((agentId: string | undefined) => {
     if (!agentId) return t('cron.defaultAgent');
     return agents.find((agent) => agent.id === agentId)?.name || agentId;
@@ -347,6 +378,31 @@ export function CronMonitorPage() {
     setPendingAgentId(null);
     setAgentUpdateError(null);
   }, [selectedJobId, selectedJob?.agentId]);
+
+  useEffect(() => {
+    if (!selectedJobId || !connected) {
+      setSelectedJobDetails(null);
+      setSelectedJobDetailError(null);
+      setSelectedJobDetailLoading(false);
+      return;
+    }
+    const fetchId = ++selectedJobDetailFetchId.current;
+    setSelectedJobDetailLoading(true);
+    setSelectedJobDetailError(null);
+    void gateway.getCronJob(selectedJobId)
+      .then((details) => {
+        if (fetchId !== selectedJobDetailFetchId.current) return;
+        setSelectedJobDetails(details);
+      })
+      .catch((error: unknown) => {
+        if (fetchId !== selectedJobDetailFetchId.current) return;
+        setSelectedJobDetails(null);
+        setSelectedJobDetailError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (fetchId === selectedJobDetailFetchId.current) setSelectedJobDetailLoading(false);
+      });
+  }, [selectedJobId, connected]);
 
   // Sorted: errors, then active by next run, then paused; filtered by search
   const sortedJobs = useMemo(() => {
@@ -391,10 +447,8 @@ export function CronMonitorPage() {
         const batch = jobList.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map(async (job) => {
           try {
-            const result = await gateway.call('cron.runs', { jobId: job.id });
-            const entries = (result?.entries || []).slice(-5).map((e: any) => ({
-              ...e, jobId: job.id, jobName: job.name || job.id,
-            }));
+            const result = await gateway.listCronRuns({ jobId: job.id, limit: 5, sortDir: 'desc' });
+            const entries = result.entries.map((entry) => toRunEntry(entry, job.name || job.id));
             runsCache.current[job.id] = entries;
             all.push(...entries);
           } catch { /* silent */ }
@@ -414,10 +468,8 @@ export function CronMonitorPage() {
     if (!connected) return;
     try {
       const job = jobsRef.current.find(j => j.id === jobId);
-      const result = await gateway.call('cron.runs', { jobId });
-      const entries = (result?.entries || []).slice(-5).map((e: any) => ({
-        ...e, jobId, jobName: job?.name || jobId,
-      }));
+      const result = await gateway.listCronRuns({ jobId, limit: 5, sortDir: 'desc' });
+      const entries = result.entries.map((entry) => toRunEntry(entry, job?.name || jobId));
       runsCache.current[jobId] = entries;
 
       // Rebuild recent runs from cache
@@ -449,12 +501,10 @@ export function CronMonitorPage() {
     // Then fetch fresh data in background
     (async () => {
       try {
-        const result = await gateway.call('cron.runs', { jobId: selectedJobId });
+        const result = await gateway.listCronRuns({ jobId: selectedJobId, limit: 14, sortDir: 'desc' });
         if (fetchId !== selectedFetchId.current) return; // stale — discard
         const job = jobsRef.current.find(j => j.id === selectedJobId);
-        const entries = (result?.entries || []).slice(-14).reverse().map((e: any) => ({
-          ...e, jobId: selectedJobId, jobName: job?.name || selectedJobId,
-        }));
+        const entries = result.entries.map((entry) => toRunEntry(entry, job?.name || selectedJobId));
         setSelectedJobRuns(entries);
       } catch {
         if (fetchId !== selectedFetchId.current) return; // stale
@@ -474,14 +524,38 @@ export function CronMonitorPage() {
     setActionLoading(`run-${jobId}`);
     setRunResult(p => { const n = { ...p }; delete n[jobId]; return n; });
     try {
-      await gateway.call('cron.run', { id: jobId }); await refreshGroup('cron');
-      setRunResult(p => ({ ...p, [jobId]: 'ok' }));
-      // Only refresh this single job's runs (not all 12)
-      setTimeout(() => loadSingleJobRuns(jobId), 2000);
-    } catch { setRunResult(p => ({ ...p, [jobId]: 'error' })); }
+      const queued = await gateway.enqueueCronRun(jobId, 'force');
+      await refreshGroup('cron');
+      if (queued.enqueued === true && queued.runId) {
+        setRunResult(p => ({ ...p, [jobId]: 'queued' }));
+        try {
+          const finished = await gateway.waitForCronRun(jobId, queued.runId);
+          setRunResult(p => ({
+            ...p,
+            [jobId]: finished.status === 'ok'
+              ? 'ok'
+              : finished.status === 'skipped'
+                ? 'skipped'
+                : 'error',
+          }));
+        } catch (error) {
+          setRunResult(p => ({
+            ...p,
+            [jobId]: error instanceof CronRunWaitTimeoutError ? 'timeout' : 'error',
+          }));
+        }
+        await Promise.all([refreshGroup('cron'), loadSingleJobRuns(jobId)]);
+      } else if (queued.ran === false) {
+        setRunResult(p => ({ ...p, [jobId]: 'skipped' }));
+      } else {
+        setRunResult(p => ({ ...p, [jobId]: 'error' }));
+      }
+    } catch {
+      setRunResult(p => ({ ...p, [jobId]: 'error' }));
+    }
     finally {
       setActionLoading(null);
-      setTimeout(() => setRunResult(p => { const n = { ...p }; delete n[jobId]; return n; }), 2500);
+      setTimeout(() => setRunResult(p => { const n = { ...p }; delete n[jobId]; return n; }), 5000);
     }
   };
 
@@ -565,6 +639,24 @@ export function CronMonitorPage() {
             <div className="text-[16px] font-bold text-aegis-text">{t('cron.title', 'Scheduled tasks')}</div>
             <div className="text-[11px] text-aegis-text-dim">{t('cron.jobsCount', { count: jobs.length })} · {activeCount} {t('cronDetail.active', 'active')}</div>
           </div>
+        </div>
+        <div className="flex min-w-0 items-center gap-1.5 text-[10px] text-aegis-text-dim" aria-live="polite">
+          <span className={clsx(
+            'size-1.5 shrink-0 rounded-full',
+            loading ? 'bg-aegis-text-dim animate-pulse' : cronStatus?.enabled === true ? 'bg-aegis-success' : cronStatus?.enabled === false ? 'bg-aegis-warning' : 'bg-aegis-danger',
+          )} />
+          <span className="truncate">
+            {loading
+              ? t('cron.schedulerLoading', '正在读取调度器状态')
+              : cronStatusError || !cronStatus
+                ? t('cron.schedulerUnavailable', '调度器状态不可用')
+                : cronStatus.enabled
+                  ? t('cron.schedulerEnabled', '调度器运行中')
+                  : t('cron.schedulerDisabled', '调度器已停用')}
+          </span>
+          {cronStatus?.nextWakeAtMs !== null && cronStatus?.nextWakeAtMs !== undefined && (
+            <span className="shrink-0">· {t('cron.nextWakeIn', '下次唤醒 {{time}}', { time: formatCountdown(cronStatus.nextWakeAtMs) })}</span>
+          )}
         </div>
         <div className="flex-1" />
         <div className="relative flex-1 min-w-[180px] max-w-[280px]">
@@ -714,13 +806,15 @@ export function CronMonitorPage() {
                         className={clsx(
                           'w-7 h-7 rounded-lg flex items-center justify-center border transition-all text-[11px] shrink-0',
                           runResult[job.id] === 'ok' ? 'bg-aegis-primary/10 border-aegis-primary/30 text-aegis-primary'
-                          : runResult[job.id] === 'error' ? 'bg-aegis-danger/10 border-aegis-danger/30 text-aegis-danger'
+                          : runResult[job.id] === 'error' || runResult[job.id] === 'timeout' ? 'bg-aegis-danger/10 border-aegis-danger/30 text-aegis-danger'
+                          : runResult[job.id] === 'skipped' ? 'bg-aegis-warning/10 border-aegis-warning/30 text-aegis-warning'
                           : isError ? 'border-aegis-danger/20 text-aegis-danger/50 hover:text-aegis-danger hover:border-aegis-danger/40'
                           : 'border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim hover:text-aegis-accent hover:border-aegis-accent/30 hover:bg-aegis-accent/[0.04]',
                         )}>
                         {actionLoading === `run-${job.id}` ? <LoadingIndicator size={11} />
                           : runResult[job.id] === 'ok' ? <Check size={11} />
-                          : runResult[job.id] === 'error' ? <X size={11} />
+                          : runResult[job.id] === 'error' || runResult[job.id] === 'timeout' ? <X size={11} />
+                          : runResult[job.id] === 'skipped' ? <RotateCcw size={11} />
                           : isError ? <RotateCcw size={11} />
                           : <Play size={11} fill="currentColor" />}
                       </button>
@@ -784,6 +878,13 @@ export function CronMonitorPage() {
                     </div>
                   </div>
                 </div>
+                {(selectedJobDetailLoading || selectedJobDetailError) && (
+                  <div className="mb-2 text-[9px] text-aegis-text-dim" aria-live="polite">
+                    {selectedJobDetailLoading
+                      ? t('cron.jobDetailLoading', '正在读取 OpenClaw 任务详情')
+                      : t('cron.jobDetailUnavailable', '任务详情暂不可用，当前显示列表快照')}
+                  </div>
+                )}
                 {/* Status badge */}
                 <div className={clsx(
                   'inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold border mb-3',
@@ -905,7 +1006,12 @@ export function CronMonitorPage() {
                       hover:bg-aegis-primary/15 transition-colors disabled:opacity-40">
                     {actionLoading === `run-${selectedJob.id}`
                       ? <LoadingIndicator size={12} className="mx-auto" />
-                      : runResult[selectedJob.id] === 'ok' ? t('cronDetail.done') : t('cronDetail.runNow')}
+                      : runResult[selectedJob.id] === 'ok' ? t('cronDetail.done')
+                        : runResult[selectedJob.id] === 'queued' ? t('cronDetail.running')
+                          : runResult[selectedJob.id] === 'skipped' ? t('cronDetail.skipped', 'Skipped')
+                            : runResult[selectedJob.id] === 'timeout' ? t('cronDetail.timeout', 'Timed out')
+                              : runResult[selectedJob.id] === 'error' ? t('cronDetail.error')
+                                : t('cronDetail.runNow')}
                   </button>
                   <button onClick={() => toggleJob(selectedJob.id, !selectedJob.enabled)}
                     disabled={!!actionLoading}
@@ -953,25 +1059,28 @@ export function CronMonitorPage() {
                   {(showAllLogs ? activityRuns : activityRuns.slice(0, 5)).map((run, i) => {
                     const color = colorMap[run.jobId || ''] || dataColor(9);
                     const isOk = run.status === 'ok';
+                    const isFailure = run.status === 'error';
+                    const isSkipped = run.status === 'skipped';
+                    const runColor = isOk ? color : isFailure ? tc.danger : isSkipped ? tc.warning : 'rgb(var(--aegis-overlay) / 0.3)';
                     return (
                       <div key={`${run.jobId}-${run.ts}-${run.durationMs}-${i}`}
                         className="flex items-center gap-2 px-2.5 py-2 rounded-lg mb-0.5
                           hover:bg-[rgb(var(--aegis-overlay)/0.02)] transition-colors">
                         <div className="w-1.5 h-1.5 rounded-full shrink-0"
-                          style={{ background: isOk ? color : tc.danger }} />
+                          style={{ background: runColor }} />
                         <div className="flex-1 min-w-0">
                           <div className="text-[11px] font-semibold truncate"
-                            style={!isOk ? { color: tc.dangerA70 } : undefined}>
+                            style={!isOk ? { color: runColor } : undefined}>
                             {run.jobName || t('cron.job', 'Job')}
                           </div>
                           <div className="text-[9px] text-aegis-text-dim truncate"
-                            style={!isOk ? { color: tc.dangerA25 } : undefined}>
-                            {run.summary || run.error || (isOk ? t('cron.completed', 'Completed') : t('cron.failed', 'Failed'))}
+                            style={!isOk ? { color: runColor } : undefined}>
+                            {run.summary || run.error || (isOk ? t('cron.completed', 'Completed') : isSkipped ? t('cronDetail.skipped', 'Skipped') : run.status === 'unknown' ? t('cronDetail.unknown', 'Unknown') : t('cron.failed', 'Failed'))}
                           </div>
                         </div>
                         <div className="text-[8px] font-mono text-aegis-text-dim px-1.5 py-0.5 rounded
                           bg-[rgb(var(--aegis-overlay)/0.02)] shrink-0"
-                          style={!isOk ? { color: tc.dangerA40 } : undefined}>
+                          style={!isOk ? { color: runColor } : undefined}>
                           {formatDuration(run.durationMs)}
                         </div>
                         <div className="text-[9px] text-aegis-text-dim font-mono shrink-0 w-9 text-end">

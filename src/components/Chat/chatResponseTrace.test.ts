@@ -3,6 +3,7 @@ import test from 'node:test';
 import { buildSemanticBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
+import type { ResponseGroup } from '@/types/ResponseGroup';
 import { findTraceSourceMessage, projectChatResponseTrace } from './chatResponseTrace';
 
 function blocks(message: Record<string, unknown>) {
@@ -57,11 +58,61 @@ test('projects every structured response node in transcript order with upstream 
   ]);
   assert.equal(trace.nodes[0]?.sourceSequence, 10);
   assert.equal(trace.nodes[1]?.kind === 'tool' ? trace.nodes[1].toolCallId : null, 'call-exec-1');
+  assert.deepEqual(trace.nodes[2]?.kind === 'message' ? trace.nodes[2].context : null, undefined);
   assert.deepEqual(trace.review, {
     status: 'requested',
     recording: 'transcript-only',
     requestCount: 1,
   });
+});
+
+test('projects only bounded response usage metadata into the message node', () => {
+  const semanticBlocks = blocks({
+    id: 'assistant-with-usage',
+    role: 'assistant',
+    content: 'Usage is available.',
+    model: 'openai/gpt-5',
+    usage: { input: 120, output: 42, cacheRead: 10 },
+  });
+  const messageNode = projectChatResponseTrace(buildResponseGroups(semanticBlocks)[0]).nodes
+    .find((node) => node.kind === 'message');
+  assert.deepEqual(messageNode?.kind === 'message' ? messageNode.context : null, {
+    input: 120,
+    output: 42,
+    cacheRead: 10,
+    model: 'openai/gpt-5',
+  });
+});
+
+test('fails closed when context metadata is malformed', () => {
+  const group = {
+    id: 'group:malformed-context',
+    sessionKey: 'agent:main:main',
+    runId: 'run-malformed-context',
+    role: 'assistant',
+    timestamp: '2026-07-31T00:00:00.000Z',
+    status: 'final',
+    startedAt: Date.parse('2026-07-31T00:00:00.000Z'),
+    sourceMessageIds: ['assistant-malformed-context'],
+    blocks: [{
+      id: 'assistant-malformed-context',
+      sessionKey: 'agent:main:main',
+      runId: 'run-malformed-context',
+      sourceMessageId: 'assistant-malformed-context',
+      timestamp: '2026-07-31T00:00:00.000Z',
+      isStreaming: false,
+      responseState: 'final',
+      type: 'message-content',
+      role: 'assistant',
+      markdown: 'Still visible.',
+      artifacts: [],
+      images: [],
+      meta: [{ kind: 'context', label: 'Context', content: '{not-json' }],
+    }],
+  } satisfies ResponseGroup;
+  const messageNode = projectChatResponseTrace(group).nodes[0];
+  assert.equal(messageNode?.kind, 'message');
+  assert.equal(messageNode?.kind === 'message' ? messageNode.context : null, undefined);
 });
 
 test('does not invent run or human-review records when upstream omitted them', () => {
@@ -114,4 +165,24 @@ test('source-record drilldown only resolves an already loaded transcript identit
   assert.equal(findTraceSourceMessage([nativeMessage, localMessage], 'gateway-message-1'), nativeMessage);
   assert.equal(findTraceSourceMessage([nativeMessage, localMessage], 'local-message-1'), localMessage);
   assert.equal(findTraceSourceMessage([nativeMessage, localMessage], 'missing-gateway-message'), undefined);
+});
+
+test('keeps the Gateway compaction divider in the response trace timeline', () => {
+  const semanticBlocks = blocks({
+    id: 'compaction-1',
+    role: 'compaction',
+    content: '',
+    nativeSequence: 20,
+  });
+  const group = buildResponseGroups(semanticBlocks)[0];
+  assert.equal(group?.role, 'system');
+  assert.deepEqual(projectChatResponseTrace(group).nodes.map((node) => ({
+    kind: node.kind,
+    sourceMessageId: node.sourceMessageId,
+    sourceSequence: node.sourceSequence,
+  })), [{
+    kind: 'compaction',
+    sourceMessageId: 'compaction-1',
+    sourceSequence: 20,
+  }]);
 });

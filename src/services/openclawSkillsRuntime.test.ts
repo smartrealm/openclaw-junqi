@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   createOpenClawSkillsRuntime,
+  SKILL_ARCHIVE_CHUNK_BYTES,
   normalizeOpenClawSkillDetail,
   normalizeOpenClawSkillSearch,
   normalizeOpenClawSkills,
@@ -66,4 +67,113 @@ test('uses privileged Gateway calls for every skill mutation', async () => {
     { privileged: true, method: 'skills.install', params: { source: 'clawhub', slug: 'weather', version: '1.0.0' } },
     { privileged: false, method: 'skills.search', params: { query: 'weather', limit: 20 } },
   ]);
+});
+
+test('uploads a skill archive in bounded chunks and installs only after hash confirmation', async () => {
+  const bytes = new Uint8Array(SKILL_ARCHIVE_CHUNK_BYTES + 5);
+  bytes.fill(65);
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const progress: string[] = [];
+  const runtime = createOpenClawSkillsRuntime({
+    async call() {
+      return { results: [] };
+    },
+    async callPrivileged(method, params = {}) {
+      calls.push({ method, params });
+      if (method === 'skills.upload.begin') return { uploadId: '123e4567-e89b-12d3-a456-426614174000', receivedBytes: 0, expiresAt: 9_999 };
+      if (method === 'skills.upload.chunk') {
+        const data = params.dataBase64 as string;
+        const receivedBytes = (params.offset as number) + atob(data).length;
+        return { uploadId: params.uploadId, receivedBytes, expiresAt: 9_999 };
+      }
+      if (method === 'skills.upload.commit') {
+        return {
+          uploadId: params.uploadId,
+          receivedBytes: bytes.length,
+          sha256: params.sha256,
+          expiresAt: 9_999,
+        };
+      }
+      return { ok: true, slug: 'local-skill', sha256: params.sha256, message: 'Installed local-skill' };
+    },
+  });
+
+  const result = await runtime.installArchive({
+    slug: 'local-skill',
+    bytes,
+    onProgress: ({ phase }) => progress.push(phase),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.slug, 'local-skill');
+  assert.match(result.sha256 ?? '', /^[a-f0-9]{64}$/);
+  assert.deepEqual(calls.map(({ method }) => method), [
+    'skills.upload.begin',
+    'skills.upload.chunk',
+    'skills.upload.chunk',
+    'skills.upload.commit',
+    'skills.install',
+  ]);
+  assert.equal(calls[1].params.offset, 0);
+  assert.equal(calls[2].params.offset, SKILL_ARCHIVE_CHUNK_BYTES);
+  assert.equal(calls[3].params.uploadId, calls[1].params.uploadId);
+  assert.equal(calls[3].params.sha256, calls[0].params.sha256);
+  assert.equal(calls[4].params.source, 'upload');
+  assert.deepEqual(progress, ['starting', 'uploading', 'uploading', 'committing', 'installing']);
+});
+
+test('rejects an upload when Gateway returns an unexpected chunk offset', async () => {
+  const runtime = createOpenClawSkillsRuntime({
+    async call() {
+      return { results: [] };
+    },
+    async callPrivileged(method, params = {}) {
+      if (method === 'skills.upload.begin') return { uploadId: '123e4567-e89b-12d3-a456-426614174000', receivedBytes: 0, expiresAt: 9_999 };
+      if (method === 'skills.upload.chunk') return { uploadId: params.uploadId, receivedBytes: 0, expiresAt: 9_999 };
+      throw new Error(`unexpected ${method}`);
+    },
+  });
+
+  await assert.rejects(
+    runtime.installArchive({ slug: 'local-skill', bytes: new Uint8Array([1, 2, 3]) }),
+    /unexpected upload offset/,
+  );
+});
+
+test('does not accept a malformed installed archive hash', async () => {
+  const runtime = createOpenClawSkillsRuntime({
+    async call() {
+      return { results: [] };
+    },
+    async callPrivileged(method, params = {}) {
+      if (method === 'skills.upload.begin') return { uploadId: '123e4567-e89b-12d3-a456-426614174000', receivedBytes: 0, expiresAt: 9_999 };
+      if (method === 'skills.upload.chunk') return { uploadId: params.uploadId, receivedBytes: 1, expiresAt: 9_999 };
+      if (method === 'skills.upload.commit') return { uploadId: params.uploadId, receivedBytes: 1, sha256: params.sha256, expiresAt: 9_999 };
+      return { ok: true, slug: 'local-skill', sha256: 'not-a-sha256' };
+    },
+  });
+
+  await assert.rejects(
+    runtime.installArchive({ slug: 'local-skill', bytes: new Uint8Array([1]) }),
+    /invalid installed skill archive hash/,
+  );
+});
+
+test('rejects invalid skill archive slugs before opening a privileged upload', async () => {
+  let calls = 0;
+  const runtime = createOpenClawSkillsRuntime({
+    async call() {
+      return { results: [] };
+    },
+    async callPrivileged() {
+      calls += 1;
+      return {};
+    },
+  });
+
+  await assert.rejects(
+    runtime.installArchive({ slug: '../unsafe', bytes: new Uint8Array([1]) }),
+    /Skill slug is invalid/,
+  );
+  assert.equal(calls, 0);
 });

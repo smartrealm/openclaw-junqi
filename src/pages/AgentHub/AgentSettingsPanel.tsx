@@ -17,7 +17,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Save,
   Cpu, Check, ChevronDown, Activity, AlertCircle,
-  Search, FolderOpen, Clock, Zap, MessageSquare, Puzzle, Plus, ArrowUp, ArrowDown,
+  Search, FolderOpen, Clock, Zap, MessageSquare, Puzzle, Plus, ArrowUp, ArrowDown, Target,
 } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
@@ -45,6 +45,12 @@ import {
   readActiveOpenclawConfig,
   validateActiveOpenclawConfig,
 } from '@/services/openclawConfigRuntime';
+import {
+  AGENT_PROFILE_DOMAIN_MAX_CHARS,
+  AGENT_PROFILE_SCOPE_MAX_CHARS,
+  loadAgentProfile,
+  saveAgentProfile,
+} from '@/services/agentProfiles';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -112,6 +118,119 @@ interface ConfigGetResponse {
 }
 
 type ChannelGroupForPanel = ChannelGroupView & { name: string };
+
+interface AgentProfileSectionProps {
+  primaryColor: string;
+  profileDomain: string;
+  profileScope: string;
+  profileError: string | null;
+  profileLoading: boolean;
+  profileSaved: boolean;
+  profileSaving: boolean;
+  profileChanged: boolean;
+  onDomainChange: (value: string) => void;
+  onScopeChange: (value: string) => void;
+  onSave: () => void;
+}
+
+function AgentProfileSection({
+  primaryColor,
+  profileDomain,
+  profileScope,
+  profileError,
+  profileLoading,
+  profileSaved,
+  profileSaving,
+  profileChanged,
+  onDomainChange,
+  onScopeChange,
+  onSave,
+}: AgentProfileSectionProps) {
+  const { t } = useTranslation();
+
+  return (
+    <div data-testid="agent-profile-section">
+      <div className="flex items-center gap-1.5 text-[9px] text-aegis-text-muted uppercase tracking-widest font-bold mb-2">
+        <Target size={10} />
+        {t('agentSettings.profileTitle', '业务画像')}
+      </div>
+      <p className="mb-2.5 text-[9px] leading-relaxed text-aegis-text-dim">
+        {t('agentSettings.profileHint', 'JunQi 本地元数据，不会写入 OpenClaw 运行时配置。')}
+      </p>
+
+      {profileLoading ? (
+        <div className="flex items-center gap-2 rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3.5 py-3 text-[10px] text-aegis-text-dim">
+          <LoadingIndicator size={13} style={{ color: primaryColor }} />
+          {t('agentSettings.profileLoading', '正在加载业务画像…')}
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          <div>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label htmlFor="agent-profile-domain" className="text-[9px] text-aegis-text-dim">
+                {t('agentSettings.profileDomain', '业务域')}
+              </label>
+              <span className="text-[8px] text-aegis-text-dim">
+                {Array.from(profileDomain).length}/{AGENT_PROFILE_DOMAIN_MAX_CHARS}
+              </span>
+            </div>
+            <input
+              id="agent-profile-domain"
+              value={profileDomain}
+              maxLength={AGENT_PROFILE_DOMAIN_MAX_CHARS}
+              onChange={(event) => onDomainChange(event.target.value)}
+              placeholder={t('agentSettings.profileDomainPlaceholder', '例如：客户支持、研发交付')}
+              className="w-full rounded-xl border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3.5 py-2.5 text-[11px] text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/40 focus:outline-none"
+            />
+          </div>
+          <div>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label htmlFor="agent-profile-scope" className="text-[9px] text-aegis-text-dim">
+                {t('agentSettings.profileScope', '职责范围')}
+              </label>
+              <span className="text-[8px] text-aegis-text-dim">
+                {Array.from(profileScope).length}/{AGENT_PROFILE_SCOPE_MAX_CHARS}
+              </span>
+            </div>
+            <textarea
+              id="agent-profile-scope"
+              value={profileScope}
+              maxLength={AGENT_PROFILE_SCOPE_MAX_CHARS}
+              onChange={(event) => onScopeChange(event.target.value)}
+              placeholder={t('agentSettings.profileScopePlaceholder', '描述这个 Agent 可以负责的业务边界和交付内容')}
+              rows={3}
+              className="w-full resize-y rounded-xl border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3.5 py-2.5 text-[11px] leading-relaxed text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/40 focus:outline-none"
+            />
+          </div>
+          {profileError && (
+            <div className="flex items-start gap-2 rounded-lg border border-red-400/20 bg-red-400/5 px-2.5 py-2 text-[9px] text-red-300">
+              <AlertCircle size={12} className="mt-0.5 shrink-0" />
+              <span className="min-w-0 break-words">{profileError}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[9px] text-aegis-text-dim">
+              {profileSaved ? t('agentSettings.profileSaved', '业务画像已保存') : t('agentSettings.profileLocalOnly', '仅保存在本机设置')}
+            </span>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={!profileChanged || profileSaving || profileLoading}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 px-2.5 py-1.5 text-[10px] font-bold text-aegis-primary transition-colors hover:bg-aegis-primary/15 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {profileSaving ? <LoadingIndicator size={11} /> : profileSaved ? <Check size={11} /> : <Save size={11} />}
+              {profileSaving
+                ? t('agentSettings.profileSaving', '保存中…')
+                : profileSaved
+                  ? t('agentSettings.profileSaved', '已保存')
+                  : t('agentSettings.profileSave', '保存画像')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
@@ -237,6 +356,10 @@ export function AgentSettingsPanel({
   // ── Save state ──
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   // ── Channel binding state ──
   const [channelConfig, setChannelConfig] = useState<GatewayRuntimeConfig | null>(null);
@@ -258,6 +381,10 @@ export function AgentSettingsPanel({
   const [fallbackCandidate, setFallbackCandidate] = useState('');
   const [modelInherited, setModelInherited] = useState(false);
   const [channelsExpanded, setChannelsExpanded] = useState(false);
+  const [profileDomain, setProfileDomain] = useState('');
+  const [profileScope, setProfileScope] = useState('');
+  const [originalProfileDomain, setOriginalProfileDomain] = useState('');
+  const [originalProfileScope, setOriginalProfileScope] = useState('');
 
   // ── Original values (from config.get) — used for hasChanges ──
   const [origName, setOrigName] = useState('');
@@ -308,6 +435,49 @@ export function AgentSettingsPanel({
     window.addEventListener('aegis:config-saved', handler);
     return () => window.removeEventListener('aegis:config-saved', handler);
   }, [loadChannelConfig]);
+
+  // JunQi business metadata is persisted locally and is intentionally kept
+  // separate from OpenClaw's runtime config.
+  useEffect(() => {
+    if (!agent) {
+      setProfileDomain('');
+      setProfileScope('');
+      setOriginalProfileDomain('');
+      setOriginalProfileScope('');
+      setProfileError(null);
+      setProfileLoading(false);
+      setProfileSaved(false);
+      return;
+    }
+
+    let cancelled = false;
+    setProfileDomain('');
+    setProfileScope('');
+    setOriginalProfileDomain('');
+    setOriginalProfileScope('');
+    setProfileLoading(true);
+    setProfileError(null);
+    setProfileSaved(false);
+    loadAgentProfile(agent.id)
+      .then((profile) => {
+        if (cancelled) return;
+        const domain = profile?.domain ?? '';
+        const scope = profile?.scope ?? '';
+        setProfileDomain(domain);
+        setProfileScope(scope);
+        setOriginalProfileDomain(domain);
+        setOriginalProfileScope(scope);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setProfileError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (!cancelled) setProfileLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [agent?.id]);
 
   // ── Fetch config on open (or when agent changes) ──
   useEffect(() => {
@@ -421,6 +591,8 @@ export function AgentSettingsPanel({
   const workspaceChanged = trimmedWorkspace !== origWorkspace;
   const modelChanged = !modelsMatch(selectedModel, origModel);
   const fallbackChanged = !sameModelReferences(selectedFallbacks, getModelFallbacks(storedModelConfig));
+  const profileChanged = profileDomain.trim() !== originalProfileDomain
+    || profileScope.trim() !== originalProfileScope;
   const agentRef = useRef(agent);
   const agentSessionsRef = useRef(agentSessions);
   const selectedModelRef = useRef(selectedModel);
@@ -540,9 +712,36 @@ export function AgentSettingsPanel({
     workspaceChanged,
   ]);
 
+  const handleProfileSave = useCallback(async () => {
+    if (!agent || profileSaving || profileLoading || !profileChanged) return;
+    setProfileSaving(true);
+    setProfileError(null);
+    try {
+      const persisted = await saveAgentProfile({
+        agentId: agent.id,
+        domain: profileDomain,
+        scope: profileScope,
+      });
+      const domain = persisted?.domain ?? '';
+      const scope = persisted?.scope ?? '';
+      setProfileDomain(domain);
+      setProfileScope(scope);
+      setOriginalProfileDomain(domain);
+      setOriginalProfileScope(scope);
+      setProfileSaved(true);
+      window.setTimeout(() => setProfileSaved(false), 2500);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setProfileError(message);
+      showAlert(t('agentSettings.profileSaveFailed', '业务画像保存失败'), message, 'error');
+    } finally {
+      setProfileSaving(false);
+    }
+  }, [agent, profileChanged, profileDomain, profileLoading, profileSaving, profileScope, t]);
+
   const requestClose = useCallback(() => {
-    if (saving) return;
-    if (hasChanges) {
+    if (saving || profileSaving) return;
+    if (hasChanges || profileChanged) {
       showConfirm(
         t('agentSettings.unsavedTitle', 'Unsaved changes'),
         t('agentSettings.unsavedMessage', 'Close without saving your changes?'),
@@ -551,7 +750,7 @@ export function AgentSettingsPanel({
       return;
     }
     onClose();
-  }, [saving, hasChanges, onClose, t]);
+  }, [saving, profileSaving, hasChanges, profileChanged, onClose, t]);
 
   // ── Escape key closes the panel ──
   useEffect(() => {
@@ -834,6 +1033,22 @@ export function AgentSettingsPanel({
                     </button>
                   </div>
                 </div>
+              )}
+
+              {!loadingConfig && (
+                <AgentProfileSection
+                  primaryColor={primaryColor}
+                  profileDomain={profileDomain}
+                  profileScope={profileScope}
+                  profileError={profileError}
+                  profileLoading={profileLoading}
+                  profileSaved={profileSaved}
+                  profileSaving={profileSaving}
+                  profileChanged={profileChanged}
+                  onDomainChange={setProfileDomain}
+                  onScopeChange={setProfileScope}
+                  onSave={() => { void handleProfileSave(); }}
+                />
               )}
 
               {/* ── Main form (shown once config is loaded) ── */}
@@ -1485,6 +1700,7 @@ export function AgentSettingsPanel({
 
                 </>
               )}
+
             </div>
 
             {/* ═══ Footer ═══ */}

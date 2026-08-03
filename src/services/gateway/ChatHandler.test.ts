@@ -21,6 +21,7 @@ function resetChatStore() {
     quickRepliesBySession: {},
     thinkingBySession: {},
     typingBySession: {},
+    compactionStatusBySession: {},
     typingStartedAtBySession: {},
   });
 }
@@ -124,6 +125,48 @@ test('chat.final replaces a longer streamed draft with OpenClaw canonical text',
   assert.ok(streamEnds[0].messageId.length > 0);
   assert.equal(streamEnds[0].content, 'Corrected answer.');
   assert.equal(streamEnds[0].meta?.runId, runId);
+});
+
+test('official session.operation compaction events inject one divider per session', async () => {
+  installWindowMock();
+  const { ChatHandler, useChatStore } = await loadDeps();
+  resetChatStore();
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+    },
+  } as any);
+  const sessionKey = 'agent:main:operation-compaction';
+  const start = {
+    operation: 'compact',
+    phase: 'start',
+    sessionKey,
+    ts: Date.now(),
+  };
+  handler.handleEvent({ event: 'session.operation', payload: { ...start, operationId: 'operation-1' } });
+  assert.equal(useChatStore.getState().compactionStatusBySession[sessionKey]?.phase, 'active');
+
+  const end = {
+    operation: 'compact',
+    phase: 'end',
+    sessionKey,
+    ts: Date.now(),
+    completed: true,
+  };
+  handler.handleEvent({ event: 'session.operation', payload: { ...end, operationId: 'operation-1' } });
+  handler.handleEvent({ event: 'session.operation', payload: { ...end, operationId: 'operation-1' } });
+  handler.handleEvent({
+    event: 'agent',
+    payload: { sessionKey, runId: 'run-compaction', seq: 1, stream: 'compaction', data: { phase: 'end' } },
+  });
+
+  assert.equal(
+    useChatStore.getState().messagesPerSession[sessionKey]
+      ?.filter((message: { role: string }) => message.role === 'compaction').length,
+    1,
+  );
+  assert.equal(useChatStore.getState().compactionStatusBySession[sessionKey], undefined);
 });
 
 test('a final event sharing the last delta sequence still settles the run', async () => {

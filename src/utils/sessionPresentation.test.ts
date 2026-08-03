@@ -4,8 +4,10 @@ import { readFileSync } from 'node:fs';
 import type { Session } from '@/stores/chatStore';
 import {
   agentIdFromSessionKey,
+  classifyAgentSessionKind,
   classifySessionPresentation,
   cronJobIdFromSessionKey,
+  findCanonicalAgentMainSession,
   isIsolatedExecutionSessionKey,
   isSessionExecutionActive,
   partitionSessionsForPresentation,
@@ -17,6 +19,26 @@ import {
 function session(partial: Partial<Session> & { key: string }): Session {
   return { label: partial.key, ...partial };
 }
+
+test('AgentHub distinguishes the canonical main session from ordinary conversations', () => {
+  assert.equal(classifyAgentSessionKind('agent:main:main'), 'main');
+  assert.equal(classifyAgentSessionKind('agent:writer:main'), 'main');
+  assert.equal(classifyAgentSessionKind('agent:main:telegram:dm:42'), 'conversation');
+  assert.equal(classifyAgentSessionKind('agent:main:cron:job-1:run:run-1'), 'cron');
+  assert.equal(classifyAgentSessionKind('agent:main:subagent:run-1'), 'subagent');
+});
+
+test('canonical main lookup does not select the newest ordinary conversation', () => {
+  const sessions = [
+    { key: 'agent:main:telegram:dm:42', agentId: 'main' },
+    { key: 'agent:main:main' },
+    { key: 'agent:writer:main', agentId: 'writer' },
+  ];
+
+  assert.equal(findCanonicalAgentMainSession(sessions, 'main')?.key, 'agent:main:main');
+  assert.equal(findCanonicalAgentMainSession(sessions, 'writer')?.key, 'agent:writer:main');
+  assert.equal(findCanonicalAgentMainSession(sessions, 'missing'), undefined);
+});
 
 test('classifies official cron and subagent keys without hiding normal channel sessions', () => {
   assert.equal(classifySessionPresentation(session({ key: 'agent:main:cron:job-1:run:run-1' })), 'cron');

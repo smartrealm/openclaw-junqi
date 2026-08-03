@@ -1,5 +1,6 @@
 import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
+import type { MessageSemanticBlock } from '@/types/SemanticBlock';
 import type { ExecutionPlanSnapshot } from '@/agent-execution-plan/domain';
 import type { ChatMessage } from '@/stores/chatStore';
 
@@ -8,6 +9,15 @@ interface TraceNodeBase {
   sourceMessageId: string;
   timestamp: string;
   sourceSequence?: number;
+}
+
+export interface ChatResponseTraceContext {
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  contextPercent?: number;
+  model?: string;
 }
 
 export type ChatResponseTraceNode =
@@ -26,12 +36,18 @@ export type ChatResponseTraceNode =
       outputOriginalLength?: number;
     })
   | (TraceNodeBase & { kind: 'review-request'; options: DecisionOption[] })
-  | (TraceNodeBase & { kind: 'message'; role: 'user' | 'assistant'; characterCount: number })
+  | (TraceNodeBase & {
+      kind: 'message';
+      role: 'user' | 'assistant';
+      characterCount: number;
+      context?: ChatResponseTraceContext;
+    })
   | (TraceNodeBase & { kind: 'file-output'; files: FileRef[] })
   | (TraceNodeBase & { kind: 'workshop-event'; events: WorkshopEvent[] })
   | (TraceNodeBase & { kind: 'session-event'; event: SessionEvent })
   | (TraceNodeBase & { kind: 'action'; actions: Array<{ text: string; callbackData: string }> })
-  | (TraceNodeBase & { kind: 'artifact'; artifactType: string; title: string });
+  | (TraceNodeBase & { kind: 'artifact'; artifactType: string; title: string })
+  | (TraceNodeBase & { kind: 'compaction' });
 
 export interface ChatResponseTrace {
   id: string;
@@ -59,6 +75,47 @@ export function findTraceSourceMessage(
   return messages.find((message) => (
     message.nativeMessageId === sourceMessageId || message.id === sourceMessageId
   ));
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function positiveNumber(value: unknown): number | undefined {
+  const number = finiteNumber(value);
+  return number !== undefined && number > 0 ? number : undefined;
+}
+
+function contextFromMeta(meta: MessageSemanticBlock['meta']): ChatResponseTraceContext | undefined {
+  const context = meta?.find((item) => item.kind === 'context');
+  if (!context) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(context.content);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+    const record = parsed as Record<string, unknown>;
+    const input = positiveNumber(record.input);
+    const output = positiveNumber(record.output);
+    const cacheRead = positiveNumber(record.cacheRead);
+    const cacheWrite = positiveNumber(record.cacheWrite);
+    const contextPercent = finiteNumber(record.contextPercent);
+    const model = typeof record.model === 'string' && record.model.trim()
+      ? record.model.trim()
+      : undefined;
+    if (input === undefined && output === undefined && cacheRead === undefined
+      && cacheWrite === undefined && contextPercent === undefined && !model) {
+      return undefined;
+    }
+    return {
+      ...(input !== undefined ? { input } : {}),
+      ...(output !== undefined ? { output } : {}),
+      ...(cacheRead !== undefined ? { cacheRead } : {}),
+      ...(cacheWrite !== undefined ? { cacheWrite } : {}),
+      ...(contextPercent !== undefined ? { contextPercent } : {}),
+      ...(model ? { model } : {}),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrace {
@@ -95,8 +152,16 @@ export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrac
         }];
       case 'decision':
         return [{ ...base, kind: 'review-request', options: block.options }];
-      case 'message-content':
-        return [{ ...base, kind: 'message', role: block.role, characterCount: block.markdown.length }];
+      case 'message-content': {
+        const context = contextFromMeta(block.meta);
+        return [{
+          ...base,
+          kind: 'message',
+          role: block.role,
+          characterCount: block.markdown.length,
+          ...(context ? { context } : {}),
+        }];
+      }
       case 'file-output':
         return [{ ...base, kind: 'file-output', files: block.files }];
       case 'workshop-event':
@@ -119,8 +184,9 @@ export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrac
           artifactType: block.artifact.type,
           title: block.artifact.title,
         }];
-      case 'system-note':
       case 'compaction':
+        return [{ ...base, kind: 'compaction' }];
+      case 'system-note':
         return [];
     }
   });

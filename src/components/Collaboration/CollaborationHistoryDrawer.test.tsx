@@ -3,6 +3,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type {
+  CollaborationRunSnapshot,
   CollaborationRunSummary,
   CollaborationTombstone,
   CollaborationWorkflowTemplate,
@@ -89,6 +90,18 @@ function template(overrides: Partial<CollaborationWorkflowTemplate> = {}): Colla
   };
 }
 
+function snapshot(overrides: Partial<CollaborationRunSnapshot> = {}): CollaborationRunSnapshot {
+  return {
+    ...run(),
+    snapshotRevision: 1,
+    workItems: [],
+    attempts: [],
+    interventions: [],
+    deliveries: [],
+    ...overrides,
+  };
+}
+
 test('closed drawer does not leave an interactive surface in the document', () => {
   const html = renderToStaticMarkup(createElement(CollaborationHistoryDrawer, {
     open: false,
@@ -146,6 +159,51 @@ test('renders loading, empty, and recoverable error states', () => {
   assert.match(error, /role="alert"/);
   assert.match(error, /Gateway unavailable/);
   assert.match(error, />Retry</);
+});
+
+test('projects only authoritative pending decisions into the global review section', () => {
+  const html = renderToStaticMarkup(createElement(CollaborationHistoryDrawer, {
+    open: true,
+    runs: [
+      run({ runId: 'approval', status: 'AWAITING_APPROVAL', updatedAt: 30 }),
+      run({ runId: 'intervention', status: 'AWAITING_INTERVENTION', updatedAt: 20 }),
+      run({ runId: 'delivery', status: 'DELIVERY_PENDING', updatedAt: 10 }),
+      run({ runId: 'running', status: 'RUNNING', updatedAt: 40 }),
+    ],
+    snapshots: {
+      intervention: snapshot({
+        runId: 'intervention',
+        status: 'AWAITING_INTERVENTION',
+        interventions: [{
+          id: 'intervention-1',
+          code: 'WORKER_FAILED',
+          requiredAction: 'Choose a replacement reviewer or accept the partial result.',
+          resumeStatus: 'RUNNING',
+          createdAt: 50,
+        }],
+      }),
+    },
+    onClose: () => undefined,
+    onSelectRun: () => undefined,
+  }));
+
+  assert.match(html, />Needs your decision</);
+  assert.match(html, />Plan approval required</);
+  assert.match(html, />WORKER_FAILED</);
+  assert.match(html, /Choose a replacement reviewer or accept the partial result\./);
+  assert.match(html, />Delivery requires attention</);
+  assert.equal((html.match(/>Review<\/button>/g) ?? []).length, 3);
+  assert.doesNotMatch(html, /running:intervention/);
+});
+
+test('omits the decision section when no run is waiting for an operator', () => {
+  const html = renderToStaticMarkup(createElement(CollaborationHistoryDrawer, {
+    open: true,
+    runs: [run({ status: 'RUNNING' }), run({ runId: 'completed', status: 'COMPLETED' })],
+    onClose: () => undefined,
+  }));
+
+  assert.doesNotMatch(html, /Needs your decision/);
 });
 
 test('places reusable workflow templates in durable history with an explicit run control', () => {

@@ -3,13 +3,16 @@ import test from 'node:test';
 import {
   GATEWAY_DATA_GROUPS,
   createGatewayRequestFence,
+  handleGatewayEvent,
   isRunningSubagentSession,
   parseGatewayAgentList,
   parseGatewayCostSummary,
   parseGatewayCronJobList,
   parseGatewaySessionsUsage,
   resolveGatewayConnectionStartedAt,
+  useGatewayDataStore,
 } from './gatewayDataStore';
+import { parseCronStatus } from '@/services/gateway/cronStatus';
 
 const NOW = Date.UTC(2026, 6, 21, 12, 0, 0);
 
@@ -84,6 +87,22 @@ test('Gateway polling decoders reject malformed responses instead of inventing e
   assert.deepEqual(parseGatewayCronJobList([{ id: 'daily', agentId: 'ops' }]), [{ id: 'daily', agentId: 'ops' }]);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', agentId: '' }] }), null);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: '' }] }), null);
+  assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', state: 'running' }] }), null);
+  assert.deepEqual(parseCronStatus({
+    enabled: true,
+    storePath: '/runtime/cron.sqlite',
+    storage: 'sqlite',
+    sqlitePath: '/runtime/cron.sqlite',
+    jobs: 1,
+    nextWakeAtMs: null,
+  }), {
+    enabled: true,
+    storePath: '/runtime/cron.sqlite',
+    storage: 'sqlite',
+    sqlitePath: '/runtime/cron.sqlite',
+    jobs: 1,
+    nextWakeAtMs: null,
+  });
 
   const metrics = {
     totalCost: 1,
@@ -106,4 +125,82 @@ test('Gateway polling decoders reject malformed responses instead of inventing e
     aggregates: { byAgent: [] },
   });
   assert.equal(parseGatewaySessionsUsage({ sessions: {} }), null);
+});
+
+test('cron run events preserve the Gateway state object and project official runtime fields', () => {
+  const initialJob = {
+    id: 'daily',
+    name: 'Daily briefing',
+    enabled: true,
+    state: {
+      nextRunAtMs: 1_754_000_100_000,
+      lastRunStatus: 'error',
+      lastDurationMs: 900,
+    },
+  };
+  useGatewayDataStore.setState({ cronJobs: [initialJob] });
+
+  try {
+    handleGatewayEvent('cron', {
+      jobId: 'daily',
+      action: 'started',
+      runAtMs: 1_754_000_000_000,
+    });
+
+    const started = useGatewayDataStore.getState().cronJobs[0];
+    assert.equal(typeof started.state, 'object');
+    assert.equal(started.state?.nextRunAtMs, 1_754_000_100_000);
+    assert.equal(started.state?.lastRunStatus, 'error');
+    assert.equal(started.state?.lastDurationMs, 900);
+    assert.equal(started.state?.runningAtMs, 1_754_000_000_000);
+
+    handleGatewayEvent('cron', {
+      jobId: 'daily',
+      action: 'finished',
+      status: 'ok',
+      runAtMs: 1_754_000_000_000,
+      durationMs: 2_100,
+      nextRunAtMs: 1_754_000_200_000,
+      deliveryStatus: 'delivered',
+    });
+
+    const finished = useGatewayDataStore.getState().cronJobs[0];
+    assert.equal(typeof finished.state, 'object');
+    assert.equal(finished.state?.runningAtMs, undefined);
+    assert.equal(finished.state?.nextRunAtMs, 1_754_000_200_000);
+    assert.equal(finished.state?.lastRunAtMs, 1_754_000_000_000);
+    assert.equal(finished.state?.lastRunStatus, 'ok');
+    assert.equal(finished.state?.lastStatus, 'ok');
+    assert.equal(finished.state?.lastDurationMs, 2_100);
+    assert.equal(finished.state?.lastDeliveryStatus, 'delivered');
+    assert.equal(finished.lastRun, new Date(1_754_000_000_000).toISOString());
+    assert.equal(finished.lastRunStatus, 'ok');
+    assert.equal(finished.lastDeliveryStatus, 'delivered');
+  } finally {
+    useGatewayDataStore.setState({ cronJobs: [] });
+  }
+});
+
+test('legacy dotted cron run events keep the same state projection contract', () => {
+  useGatewayDataStore.setState({
+    cronJobs: [{ id: 'legacy', state: { nextRunAtMs: 10_000 } }],
+  });
+
+  try {
+    handleGatewayEvent('cron.run.started', { id: 'legacy', runAtMs: 5_000 });
+    assert.equal(useGatewayDataStore.getState().cronJobs[0].state?.runningAtMs, 5_000);
+
+    handleGatewayEvent('cron.run.completed', {
+      id: 'legacy',
+      status: 'skipped',
+      runAtMs: 5_000,
+    });
+    const job = useGatewayDataStore.getState().cronJobs[0];
+    assert.equal(typeof job.state, 'object');
+    assert.equal(job.state?.runningAtMs, undefined);
+    assert.equal(job.state?.lastRunStatus, 'skipped');
+    assert.equal(job.state?.nextRunAtMs, 10_000);
+  } finally {
+    useGatewayDataStore.setState({ cronJobs: [] });
+  }
 });

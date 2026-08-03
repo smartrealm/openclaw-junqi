@@ -21,6 +21,7 @@ import {
   type MySkill,
   type SkillDetail,
 } from './components';
+import { SkillArchiveUploadPanel } from './SkillArchiveUploadPanel';
 
 type SkillsTab = 'installed' | 'catalog';
 
@@ -263,6 +264,7 @@ export function SkillsPage() {
         <AnimatedTabPanel transitionKey={activeTab}>
         {activeTab === 'installed' && (
           <section>
+            <SkillArchiveUploadPanel connected={connected} onInstalled={loadInstalled} />
             <div className="mb-4 flex items-center justify-between gap-4">
               <p className="text-[11px] text-aegis-text-dim">
                 {installed.length > 0 ? t('skills.installedCount', { count: installed.length }) : t('skills.noSkillsHint')}

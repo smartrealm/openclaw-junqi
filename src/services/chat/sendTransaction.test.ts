@@ -108,6 +108,50 @@ test('CHAT-02 active sessions use the visible session queue without touching the
   }]);
 });
 
+test('native session steering bypasses the visible queue and calls the interrupt-and-steer lane', async () => {
+  const messages = new Map<string, ChatMessage>();
+  const typing: boolean[] = [];
+  const calls: Array<{ message: string; sessionKey: string; clientMessageId?: string }> = [];
+  const queued: unknown[] = [];
+  const coordinator = new ChatSendCoordinator(
+    {
+      sendMessage: async () => { throw new Error('normal send must not run'); },
+      steerMessage: async (message, _attachments, sessionKey, identity) => {
+        const clientMessageId = identity?.clientMessageId ?? '';
+        calls.push({ message, sessionKey: sessionKey ?? '', clientMessageId });
+        return { runId: clientMessageId, status: 'started', interruptedActiveRun: true };
+      },
+    },
+    () => ({
+      addMessage(message) { messages.set(message.id, message); },
+      updateMessage(_sessionKey, id, patch) {
+        const current = messages.get(id);
+        if (current) messages.set(id, { ...current, ...patch });
+      },
+      setIsTyping(value) { typing.push(value); },
+      typingBySession: { 'session-a': true },
+      enqueueMessage(_sessionKey, message) { queued.push(message); },
+    }),
+  );
+
+  await coordinator.send({
+    sessionKey: 'session-a',
+    message: 'focus on the failing Windows path',
+    clientMessageId: 'client-steer',
+    steer: true,
+    queueIfBusy: false,
+  });
+
+  assert.deepEqual(calls, [{
+    message: 'focus on the failing Windows path',
+    sessionKey: 'session-a',
+    clientMessageId: 'client-steer',
+  }]);
+  assert.equal(messages.get('client-steer')?.status, 'sent');
+  assert.deepEqual(queued, []);
+  assert.deepEqual(typing, [true]);
+});
+
 test('CHAT-02 attachment failures retain the complete payload for lossless retry', async () => {
   const messages = new Map<string, ChatMessage>();
   const attachment = { mimeType: 'application/pdf', content: 'base64-data', fileName: 'brief.pdf' };

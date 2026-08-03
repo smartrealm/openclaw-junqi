@@ -34,13 +34,21 @@ import { shortModelName, formatActivityTimeTitle } from '@/pages/Dashboard/dashb
 import { activitySessionMetrics, mergeActivitySessions, type ActivitySessionRecord } from '@/utils/activitySessions';
 import { resolveStatusLabel } from '@/utils/taskStatusLabels';
 import { createAgentRunTaskRoute } from '@/utils/agentTaskRoute';
+import { GatewayTaskLedgerPanel } from '@/components/Activity/GatewayTaskLedgerPanel';
+import { GatewayApprovalPanel } from '@/components/Activity/GatewayApprovalPanel';
+import { GatewayAuditLedgerPanel } from '@/components/Activity/GatewayAuditLedgerPanel';
+import { useCollaborationStore } from '@/stores/collaborationStore';
+import {
+  collaborationNeedsYouItems,
+  type CollaborationNeedsYouItem,
+} from '@/utils/collaborationNeedsYou';
 
 type ActivityFilter = 'all' | 'running' | 'attention' | 'done' | 'failed';
 
 interface ActivityEntry {
   id: string;
   title: string;
-  kind: 'session' | 'workspace';
+  kind: 'session' | 'workspace' | 'collaboration';
   agent: string;
   model?: string;
   runtime?: string;
@@ -59,6 +67,8 @@ interface ActivityEntry {
 interface ActivityLabels {
   mainSession: string;
   genericSession: string;
+  collaborationUntitled: string;
+  collaborationRuntime: string;
   /** Only the derived "needs attention" state; plain statuses use the shared vocabulary. */
   attention: string;
   t: (key: string, options?: Record<string, unknown>) => string;
@@ -115,6 +125,29 @@ function workspaceEntry(task: AgentWorkspaceTask, labels: ActivityLabels): Activ
     durationMs,
     attention,
     href: createAgentRunTaskRoute(task.id),
+  };
+}
+
+function collaborationEntry(
+  item: CollaborationNeedsYouItem,
+  agents: Array<{ id: string; name?: string }>,
+  labels: ActivityLabels,
+): ActivityEntry {
+  const agentId = item.run.origin.agentId;
+  const agent = agents.find((candidate) => candidate.id === agentId);
+  return {
+    id: `collaboration:${item.run.runId}`,
+    title: item.run.goal || labels.collaborationUntitled,
+    kind: 'collaboration',
+    agent: getAgentDisplayName(agent, agentId),
+    runtime: labels.collaborationRuntime,
+    project: item.detail,
+    status: item.run.status,
+    statusLabel: item.title,
+    lifecycle: 'attention',
+    timestamp: item.run.updatedAt,
+    attention: true,
+    href: `/chat?collaborationRun=${encodeURIComponent(item.run.runId)}`,
   };
 }
 
@@ -194,11 +227,16 @@ export function ActivityCenterPage() {
   const workspaceTasks = useAgentWorkspaceStore((state) => state.tasks);
   const skills = useSkillsStore((state) => state.skills);
   const refreshSkills = useSkillsStore((state) => state.refresh);
+  const collaborationRunsById = useCollaborationStore((state) => state.runsById);
+  const collaborationSnapshotsByRunId = useCollaborationStore((state) => state.snapshotsByRunId);
+  const collaborationTombstones = useCollaborationStore((state) => state.tombstones);
   const [filter, setFilter] = useState<ActivityFilter>('all');
   const [refreshing, setRefreshing] = useState(false);
   const labels = useMemo<ActivityLabels>(() => ({
     mainSession: t('dashboard.mainSession', 'Main Session'),
     genericSession: t('dashboard.session', 'Session'),
+    collaborationUntitled: t('collaboration.card.untitled', 'Untitled collaboration'),
+    collaborationRuntime: t('activity.collaborationRuntime', 'Collaboration'),
     attention: t('lifecycle.attention', 'Needs attention'),
     t,
   }), [t]);
@@ -224,6 +262,16 @@ export function ActivityCenterPage() {
     sendingBySession,
   }), [activeSessionKey, sendingBySession, sessionRecords, thinkingBySession, typingBySession, typingStartedAtBySession]);
 
+  const collaborationNeedsYou = useMemo(() => {
+    const deletedRunIds = new Set(collaborationTombstones.map((tombstone) => tombstone.runId));
+    const runs = Object.values(collaborationRunsById).filter((run) => !deletedRunIds.has(run.runId));
+    return collaborationNeedsYouItems(
+      runs,
+      collaborationSnapshotsByRunId,
+      (key, fallback) => t(key, fallback),
+    );
+  }, [collaborationRunsById, collaborationSnapshotsByRunId, collaborationTombstones, t]);
+
   const entries = useMemo(() => {
     const sessionEntries = sessionRecords
       .map((record) => {
@@ -234,6 +282,7 @@ export function ActivityCenterPage() {
     return [
       ...workspaceTasks.filter((task) => !task.isDraft).map((task) => workspaceEntry(task, labels)),
       ...sessionEntries,
+      ...collaborationNeedsYou.map((item) => collaborationEntry(item, agents, labels)),
     ]
       .sort((left, right) => {
         if (left.attention !== right.attention) return left.attention ? -1 : 1;
@@ -241,7 +290,7 @@ export function ActivityCenterPage() {
         if (right.status === 'running' && left.status !== 'running') return 1;
         return right.timestamp - left.timestamp;
       });
-  }, [activityProjection, agents, labels, sessionRecords, workspaceTasks]);
+  }, [activityProjection, agents, collaborationNeedsYou, labels, sessionRecords, workspaceTasks]);
 
   const visibleEntries = useMemo(() => entries.filter((entry) => entryMatches(entry, filter)), [entries, filter]);
   const attentionEntries = useMemo(() => entries.filter((entry) => entry.attention), [entries]);
@@ -263,6 +312,10 @@ export function ActivityCenterPage() {
 
   const openEntry = (entry: ActivityEntry) => {
     if (entry.kind === 'workspace') {
+      navigate(entry.href);
+      return;
+    }
+    if (entry.kind === 'collaboration') {
       navigate(entry.href);
       return;
     }
@@ -403,6 +456,10 @@ export function ActivityCenterPage() {
           </div>
         </aside>
       </section>
+
+      <GatewayTaskLedgerPanel />
+      <GatewayApprovalPanel />
+      <GatewayAuditLedgerPanel />
     </SceneTransition>
   );
 }
