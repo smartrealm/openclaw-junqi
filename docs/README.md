@@ -74,6 +74,7 @@ docs/
 4. [Windows Gateway 重启等待契约加固](quality/windows-gateway-restart-hardening-2026-08-03.md)
 5. [Tauri Adapter IPC 契约加固](quality/tauri-adapter-ipc-contract-hardening-2026-08-03.md)
 6. [Gateway 凭据绑定失败关闭](quality/gateway-credential-binding-fail-closed-2026-08-03.md)
+7. [Gateway Client 平台身份对齐](quality/gateway-client-platform-identity-alignment-2026-08-03.md)
 
 对应规格与计划：
 

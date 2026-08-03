@@ -10,6 +10,12 @@
 4. 补充解码器、事件路由和未报告终态的回归测试，更新三种语言文案。
 5. 更新历史分析、规格、验证边界和索引，执行 TypeScript、测试、构建与差异检查。
 
+## 复审补充
+
+对完全相同的官方 `session.operation` 重放在 ChatHandler 边界做有界去重，覆盖外部
+callback、临时状态和分隔线投影；不得按 operationId 单独去重，以免抑制同一操作的
+合法 start/end 阶段。
+
 ## 文件范围
 
 - `src/services/gateway/sessionOperation.ts`

@@ -26,6 +26,7 @@ import {
 import { storeGatewayConnectionDeviceCredential } from './GatewayConnectionTargetResolver';
 import { signGatewayDeviceChallenge } from './deviceAuthentication';
 import type { OpenClawSessionOperationEvent } from './sessionOperation';
+import { getNativePlatformInfo } from '@/api/tauri-commands';
 
 // OpenClaw 2026.5.x introduced a newer WS protocol while older installs still
 // negotiate protocol 3. Advertise a compatible range so Desktop can connect to
@@ -53,11 +54,62 @@ export interface GatewayConnectionOptions {
 }
 
 // ── Platform Detection (cross-platform) ──
-export function detectPlatform(): string {
-  const ua = (navigator.userAgent || '').toLowerCase();
-  if (ua.includes('mac')) return 'macos';
-  if (ua.includes('linux')) return 'linux';
-  return 'windows';
+export type GatewayClientPlatform = 'macos' | 'windows' | 'linux' | 'unknown';
+
+export interface GatewayPlatformHints {
+  userAgent?: string;
+  platform?: string;
+}
+
+export function platformFromNativeOs(os: string): GatewayClientPlatform {
+  switch (os.trim().toLowerCase()) {
+    case 'darwin':
+    case 'macos':
+      return 'macos';
+    case 'windows':
+    case 'win32':
+      return 'windows';
+    case 'linux':
+      return 'linux';
+    default:
+      return 'unknown';
+  }
+}
+
+export function platformFromWebView(hints: GatewayPlatformHints | null | undefined): GatewayClientPlatform {
+  const description = `${hints?.platform ?? ''} ${hints?.userAgent ?? ''}`.toLowerCase();
+  if (description.includes('win')) return 'windows';
+  if (description.includes('mac')) return 'macos';
+  if (description.includes('linux')) return 'linux';
+  return 'unknown';
+}
+
+function currentPlatformHints(): GatewayPlatformHints | null {
+  if (typeof navigator === 'undefined') return null;
+  return { userAgent: navigator.userAgent, platform: navigator.platform };
+}
+
+export async function resolveGatewayClientPlatform(
+  readNativePlatform: () => Promise<{ os: string; arch: string }> = getNativePlatformInfo,
+  hints: GatewayPlatformHints | null | undefined = currentPlatformHints(),
+): Promise<GatewayClientPlatform> {
+  try {
+    return platformFromNativeOs((await readNativePlatform()).os);
+  } catch {
+    return platformFromWebView(hints);
+  }
+}
+
+export function isCurrentGatewayHandshake(
+  currentSocket: unknown,
+  expectedSocket: unknown,
+  connecting: boolean,
+  currentHandshakeId: string | null,
+  expectedHandshakeId: string,
+): boolean {
+  return currentSocket === expectedSocket
+    && connecting
+    && currentHandshakeId === expectedHandshakeId;
 }
 
 // ── Locale from app language ──
@@ -163,6 +215,10 @@ interface PendingRequest {
   reject: (reason: any) => void;
   timer: ReturnType<typeof setTimeout> | null;
   abortCleanup: (() => void) | null;
+}
+
+interface GatewayConnectionDependencies {
+  resolvePlatform: () => Promise<GatewayClientPlatform>;
 }
 
 export interface GatewayRequestOptions {
@@ -281,15 +337,20 @@ export class GatewayConnection {
   token = '';
   deviceToken = '';
   private readonly persistDeviceCredential: (gatewayUrl: string, token: string) => Promise<unknown>;
+  private readonly resolvePlatform: () => Promise<GatewayClientPlatform>;
 
   // ── Event callback (set by ChatHandler) ──
   /** Called for every incoming non-response event from the WebSocket. */
   onEvent: (msg: any) => void = () => {};
 
-  constructor(options: GatewayConnectionOptions = {}) {
+  constructor(
+    options: GatewayConnectionOptions = {},
+    dependencies: Partial<GatewayConnectionDependencies> = {},
+  ) {
     this.requestedScopes = [...new Set(options.scopes?.length ? options.scopes : DAILY_OPERATOR_SCOPES)];
     this.transient = options.transient === true;
     this.persistDeviceCredential = options.persistDeviceCredential ?? storeGatewayConnectionDeviceCredential;
+    this.resolvePlatform = dependencies.resolvePlatform ?? resolveGatewayClientPlatform;
     // Register message handlers once — they never change and MessageRouter
     // uses set() semantics, so calling this in connect() would be a no-op,
     // but initializing here is the correct ownership model.
@@ -574,6 +635,11 @@ export class GatewayConnection {
     const scopes = [...this.requestedScopes];
     const clientId = 'openclaw-control-ui';
     const clientMode = 'ui';
+    const challengeNonce = this.challengeNonce;
+    const sharedToken = this.token.trim();
+    const storedDeviceToken = this.deviceToken.trim();
+    const authToken = sharedToken || storedDeviceToken;
+    const authDeviceToken = sharedToken ? '' : storedDeviceToken;
 
     this.registerCallback(
       id,
@@ -661,27 +727,29 @@ export class GatewayConnection {
       { timeoutMs: this.CONNECTION_ATTEMPT_TIMEOUT_MS },
     );
 
-    // Build device identity if available (Electron IPC)
-    // Gateway 2026.2.22+ requires v2 signatures.
+    // Build device identity when the Gateway provides a challenge nonce.
     // If no challenge nonce arrived, skip device and use token-only auth.
-    const sharedToken = this.token.trim();
-    const storedDeviceToken = this.deviceToken.trim();
-    const authToken = sharedToken || storedDeviceToken;
     // Match OpenClaw's client precedence: try the explicit shared token first.
     // A stored device token is sent as deviceToken only when no shared token is
     // available; a successful shared-token handshake rotates it via hello-ok.
-    const authDeviceToken = sharedToken ? '' : storedDeviceToken;
     let device: any = undefined;
     try {
-      if (this.challengeNonce) {
+      if (challengeNonce) {
         const signed = await signGatewayDeviceChallenge({
-          nonce: this.challengeNonce,
+          nonce: challengeNonce,
           clientId,
           clientMode,
           role: 'operator',
           scopes,
           token: authToken,
         });
+        if (!isCurrentGatewayHandshake(
+          this.ws,
+          handshakeSocket,
+          this.connecting,
+          this.handshakeRequestId,
+          id,
+        )) return;
         if (signed.signature) {
           device = {
             id: signed.deviceId,
@@ -694,14 +762,29 @@ export class GatewayConnection {
         } else {
           debugWarn('gateway', '[GW] Device signing returned no signature — skipping device auth');
         }
-      } else if (!this.challengeNonce) {
+      } else if (!challengeNonce) {
         debugLog('gateway', '[GW] No challenge nonce — using token-only auth');
       }
     } catch (err) {
       debugWarn('gateway', '[GW] Device identity unavailable:', err);
     }
 
-    const platform = detectPlatform();
+    if (!isCurrentGatewayHandshake(
+      this.ws,
+      handshakeSocket,
+      this.connecting,
+      this.handshakeRequestId,
+      id,
+    )) return;
+
+    const platform = await this.resolvePlatform().catch((): GatewayClientPlatform => 'unknown');
+    if (!isCurrentGatewayHandshake(
+      this.ws,
+      handshakeSocket,
+      this.connecting,
+      this.handshakeRequestId,
+      id,
+    )) return;
     const locale = getAppLocale();
 
     this.send({

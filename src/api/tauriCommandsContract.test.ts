@@ -172,6 +172,8 @@ test('Tauri command wrappers match the Rust Gateway result contracts', () => {
   assert.doesNotMatch(performancePage, /window\.aegis as any/);
   assert.match(performancePage, /window\.aegis\?\.systemMetrics\?\.onMetrics/);
   assert.match(adapter, /parseTauriPlatformInfo\(await invoke<unknown>\("get_platform_info"\)\)/);
+  assert.match(commands, /export const getNativePlatformInfo = async \(\): Promise<NativePlatformInfo>/);
+  assert.match(commands, /parseTauriPlatformInfo\(await invoke<unknown>\('get_platform_info'\)\)/);
   assert.match(commands, /invoke<GatewayDeviceChallengeSignature>\('sign_gateway_device_challenge', \{ params \}\)/);
   assert.match(deviceIdentity, /store_system_credential/);
   assert.doesNotMatch(deviceIdentity, /private_key/i);

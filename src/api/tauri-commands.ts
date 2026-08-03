@@ -1,6 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { presentVoiceWakeWindow } from '@/services/voice/VoiceWakeWindowPresenter';
+import {
+  parseTauriPlatformInfo,
+  type TauriPlatformInfo,
+} from './tauriAdapterContracts';
 import type {
   ClearRuntimeIdentityParams,
   GatewayHelloObservation,
@@ -24,6 +28,12 @@ import type {
 import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
 
 export type VoiceWakeCaptureMode = 'dictation' | 'wake_word';
+
+export type NativePlatformInfo = TauriPlatformInfo;
+
+export const getNativePlatformInfo = async (): Promise<NativePlatformInfo> => (
+  parseTauriPlatformInfo(await invoke<unknown>('get_platform_info'))
+);
 
 export interface VoiceWakeStatus {
   listening: boolean;

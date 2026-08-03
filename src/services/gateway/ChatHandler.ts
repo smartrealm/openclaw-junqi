@@ -37,7 +37,10 @@ import {
   OpenClawPendingChatSendRegistry,
   type OpenClawPendingChatSendPhase,
 } from './OpenClawPendingChatSend';
-import { parseOpenClawSessionOperationEvent } from './sessionOperation';
+import {
+  parseOpenClawSessionOperationEvent,
+  type OpenClawSessionOperationEvent,
+} from './sessionOperation';
 
 // ── Workshop Command Parser ──
 // Parses [[workshop:action ...]] commands from agent messages
@@ -130,6 +133,7 @@ export class ChatHandler {
   private toolStartedAtByKey = new Map<string, number>();
   private lastCompactionTsBySession = new Map<string, number>();
   private seenCompactionOperationIds = new Set<string>();
+  private seenSessionOperationEvents = new Set<string>();
 
   // ── Stream micro-batching ──
   // Buffer WebSocket chunks and flush to React every STREAM_FLUSH_MS
@@ -138,6 +142,7 @@ export class ChatHandler {
   private static readonly MAX_RUN_SESSION_BINDINGS = 512;
   private static readonly RECENT_TERMINAL_REPLY_TTL_MS = 120_000;
   private static readonly MAX_RECENT_TERMINAL_REPLIES = 512;
+  private static readonly MAX_SESSION_OPERATION_EVENTS = 512;
   private streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingStreams = new Map<string, { id: string; content: string; media?: MediaInfo; runId?: string | null }>();
   private sessionKeyByRunId = new Map<string, string>();
@@ -146,6 +151,28 @@ export class ChatHandler {
   private recentTerminalAssistantReplies = new Map<string, RecentTerminalAssistantReply>();
 
   constructor(private conn: ChatHandlerConnection) {}
+
+  private rememberSessionOperationEvent(
+    sessionKey: string,
+    operation: OpenClawSessionOperationEvent,
+  ): boolean {
+    const marker = JSON.stringify([
+      sessionKey,
+      operation.operationId,
+      operation.phase,
+      operation.ts,
+      operation.completed ?? null,
+      operation.reason ?? null,
+      operation.agentId ?? null,
+    ]);
+    if (this.seenSessionOperationEvents.has(marker)) return false;
+    this.seenSessionOperationEvents.add(marker);
+    if (this.seenSessionOperationEvents.size > ChatHandler.MAX_SESSION_OPERATION_EVENTS) {
+      const oldest = this.seenSessionOperationEvents.values().next().value;
+      if (typeof oldest === 'string') this.seenSessionOperationEvents.delete(oldest);
+    }
+    return true;
+  }
 
   private injectCompactionDivider(sessionKey: string, operationId?: string): void {
     if (!sessionKey || isIsolatedExecutionSessionKey(sessionKey)) return;
@@ -1281,6 +1308,7 @@ export class ChatHandler {
       }
       const operationSessionKey = this.resolveSessionKey(operation.sessionKey);
       if (!operationSessionKey || isIsolatedExecutionSessionKey(operationSessionKey)) return;
+      if (!this.rememberSessionOperationEvent(operationSessionKey, operation)) return;
       this.conn.callbacks?.onSessionOperation?.({
         ...operation,
         sessionKey: operationSessionKey,

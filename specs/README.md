@@ -142,6 +142,7 @@ specs/
 - [定时任务 OpenClaw Agent 路由](quality/2026-08-02-cron-openclaw-agent-routing.md)
 - [Cron 事件状态投影](quality/2026-08-03-cron-event-state-projection.md)
 - [Gateway 凭据绑定失败关闭](quality/2026-08-03-gateway-credential-binding-fail-closed.md)
+- [Gateway Client 平台身份](quality/2026-08-03-gateway-client-platform-identity.md)
 - [Gateway Task Ledger 详情](quality/2026-08-03-task-ledger-details.md)
 - [Windows Gateway 重启后续规格](quality/2026-08-03-windows-gateway-restart-followup.md)
 - [Agent Profile 本地元数据](quality/2026-08-03-agent-profile-metadata.md)

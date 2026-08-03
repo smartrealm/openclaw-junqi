@@ -268,27 +268,29 @@ test('BUG-GSO-04 service restart uses the official command and native readiness 
 
 test('OpenClaw session steering uses the official interrupt lane', () => {
   const gateway = source('src/services/gateway/index.ts');
+  const steering = source('src/services/gateway/OpenClawSessionSteerClient.ts');
   const sendTransaction = source('src/services/chat/sendTransaction.ts');
-  assert.match(gateway, /buildSessionsSteerParams/);
-  assert.match(gateway, /connection\.request\(method, steerParams\)/);
-  assert.match(gateway, /async steerMessage\(/);
-  assert.match(gateway, /sendGatewayMessage\('sessions\.steer'/);
-  assert.match(sendTransaction, /request\.steer/);
-  assert.match(sendTransaction, /steerMessage/);
-  assert.match(sendTransaction, /request\.queueIfBusy !== false && sessionCannotSend/);
+  assert.match(gateway, /new OpenClawSessionSteerClient\(/);
+  assert.match(gateway, /sessionSteer\.steer\(/);
+  assert.match(steering, /this\.request\('sessions\.steer', params\)/);
+  assert.match(sendTransaction, /request\.delivery === 'steer'/);
+  assert.match(sendTransaction, /delivery: 'steer' as const/);
+  assert.match(sendTransaction, /request\.delivery !== 'steer'/);
 });
 
 test('OpenClaw session inspection and checkpoint controls use official session RPCs', () => {
   const gateway = source('src/services/gateway/index.ts');
   const compaction = source('src/services/gateway/SessionCompactionClient.ts');
+  const checkpoints = source('src/services/gateway/OpenClawSessionCompactionCheckpointsClient.ts');
   const contextBar = source('src/components/Chat/SessionContextBar.tsx');
   const hook = source('src/hooks/useSessionInspection.ts');
   assert.match(gateway, /connection\.request\('sessions\.preview'/);
   assert.match(gateway, /connection\.request\(\s*'sessions\.resolve'/);
-  assert.match(gateway, /connection\.request\('sessions\.compaction\.list'/);
+  assert.match(gateway, /new OpenClawSessionCompactionCheckpointsClient\(/);
+  assert.match(gateway, /sessionCompactionCheckpoints\.list\(sessionKey\)/);
   assert.match(gateway, /parseSessionsPreviewResult/);
   assert.match(gateway, /parseSessionsResolveResult/);
-  assert.match(gateway, /parseSessionsCompactionListResult/);
+  assert.match(checkpoints, /OPENCLAW_COMPACTION_CHECKPOINT_LIST_METHOD/);
   assert.match(compaction, /sessions\.compaction\.get/);
   assert.match(compaction, /sessions\.compaction\.branch/);
   assert.match(compaction, /sessions\.compaction\.restore/);

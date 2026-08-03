@@ -6,6 +6,9 @@ import {
   GatewayConnectionFenceError,
   GatewayRequestAbortedError,
   GatewayRpcError,
+  platformFromNativeOs,
+  platformFromWebView,
+  resolveGatewayClientPlatform,
 } from './Connection';
 import { GatewayTransportLifecycleError } from './GatewayTransportError';
 
@@ -21,6 +24,51 @@ function failedGatewayCall(
 }
 
 describe('GatewayConnection request identity', () => {
+  it('prefers the native desktop platform and never guesses an unknown host is Windows', async () => {
+    assert.equal(platformFromNativeOs('darwin'), 'macos');
+    assert.equal(platformFromNativeOs('windows'), 'windows');
+    assert.equal(platformFromNativeOs('linux'), 'linux');
+    assert.equal(platformFromNativeOs('freebsd'), 'unknown');
+    assert.equal(platformFromWebView({ userAgent: 'unrecognized host', platform: 'unknown' }), 'unknown');
+    assert.equal(
+      await resolveGatewayClientPlatform(
+        async () => ({ os: 'linux', arch: 'x86_64' }),
+        { userAgent: 'Windows WebView', platform: 'Win32' },
+      ),
+      'linux',
+    );
+    assert.equal(
+      await resolveGatewayClientPlatform(
+        async () => { throw new Error('Tauri unavailable'); },
+        { userAgent: 'Mozilla/5.0 (X11; Linux x86_64)', platform: 'Linux x86_64' },
+      ),
+      'linux',
+    );
+  });
+
+  it('does not send an old handshake after its socket is replaced during platform lookup', async () => {
+    let resolvePlatform!: (platform: 'linux') => void;
+    const platform = new Promise<'linux'>((resolve) => { resolvePlatform = resolve; });
+    const connection = new GatewayConnection({}, { resolvePlatform: () => platform }) as any;
+    const sent: unknown[] = [];
+    const originalSocket = { send: (value: string) => sent.push(JSON.parse(value)), close: () => undefined };
+    const replacementSocket = { send: (value: string) => sent.push(JSON.parse(value)), close: () => undefined };
+    connection.ws = originalSocket;
+    connection.connecting = true;
+    connection.challengeNonce = null;
+    connection.token = 'old-target-token';
+
+    const pending = connection.sendHandshake();
+    await Promise.resolve();
+    connection.ws = replacementSocket;
+    connection.handshakeRequestId = 'replacement-handshake';
+    resolvePlatform('linux');
+    await pending;
+
+    assert.deepEqual(sent, []);
+    connection.disconnect();
+  });
+
   it('keeps advertised Gateway methods tri-state across a socket lifecycle', () => {
     const connection = new GatewayConnection() as any;
     assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), null);
