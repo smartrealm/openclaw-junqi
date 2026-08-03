@@ -1,7 +1,7 @@
 import {
   includesVoiceWakeTrigger,
   MAX_VOICE_WAKE_TRIGGERS,
-  normalizeVoiceWakeTrigger,
+  normalizeVoiceWakeListTrigger,
 } from '@/services/gateway/voiceWakeTypes';
 
 /** Projects Gateway phrases onto the exact labels the local model can recognize. */
@@ -21,10 +21,10 @@ export function resolveModelWakeKeywordSelection(
   const resolved: string[] = [];
   const seen = new Set<string>();
   for (const requested of requestedKeywords) {
-    const normalized = normalizeVoiceWakeTrigger(requested);
+    const normalized = normalizeVoiceWakeListTrigger(requested);
     if (!normalized || seen.has(normalized)) return null;
     const modelKeyword = modelKeywords.find((candidate) => (
-      normalizeVoiceWakeTrigger(candidate) === normalized
+      normalizeVoiceWakeListTrigger(candidate) === normalized
     ));
     if (!modelKeyword) return null;
     seen.add(normalized);
@@ -41,11 +41,11 @@ export function mergeGatewayTriggersForModelSelection(
 ): string[] | null {
   const modelTriggerKeys = new Set(
     modelKeywords
-      .map((keyword) => normalizeVoiceWakeTrigger(keyword))
+      .map((keyword) => normalizeVoiceWakeListTrigger(keyword))
       .filter(Boolean),
   );
   const preservedGatewayTriggers = gatewayTriggers.filter((trigger) => (
-    !modelTriggerKeys.has(normalizeVoiceWakeTrigger(trigger))
+    !modelTriggerKeys.has(normalizeVoiceWakeListTrigger(trigger))
   ));
   const merged = [...preservedGatewayTriggers, ...selectedModelKeywords];
   return merged.length <= MAX_VOICE_WAKE_TRIGGERS ? merged : null;

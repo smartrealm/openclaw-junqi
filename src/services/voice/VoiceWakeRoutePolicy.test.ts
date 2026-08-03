@@ -3,11 +3,14 @@ import test from 'node:test';
 import { decideVoiceWakeRoute, hasCompatibleVoiceWakeTrigger } from './VoiceWakeRoutePolicy';
 
 const configuration = {
-  triggers: { triggers: ['Hey, JunQi!!', 'other agent'] },
+  triggers: { triggers: ['Jarvis', 'other agent'] },
   routing: {
     version: 1 as const,
     defaultTarget: { mode: 'current' as const },
-    routes: [{ trigger: 'other agent', target: { sessionKey: 'agent:main:other' } }],
+    routes: [
+      { trigger: 'JARVIS!!', target: { mode: 'current' as const } },
+      { trigger: 'other agent', target: { sessionKey: 'agent:main:other' } },
+    ],
     updatedAtMs: 1,
   },
 };
@@ -17,7 +20,11 @@ test('wake route policy rejects a local keyword absent from the Gateway trigger 
 });
 
 test('wake route policy allows the configured current route', () => {
-  assert.equal(decideVoiceWakeRoute(configuration, 'hey junqi', 'agent:main:main'), 'accepted');
+  assert.equal(decideVoiceWakeRoute(configuration, 'Jarvis', 'agent:main:main'), 'accepted');
+});
+
+test('wake route policy never broadens a global trigger into a route-normalized match', () => {
+  assert.equal(decideVoiceWakeRoute(configuration, 'jarvis', 'agent:main:main'), 'unknown_trigger');
 });
 
 test('wake route policy fails closed for another session target', () => {

@@ -21,8 +21,8 @@ export interface VoiceWakeRoutingConfig {
   updatedAtMs: number;
 }
 
-/** Match the installed Gateway's route-key normalization exactly. */
-export function normalizeVoiceWakeTrigger(value: string): string {
+/** Match the Gateway routing-key normalization exactly. */
+export function normalizeVoiceWakeRouteTrigger(value: string): string {
   return value
     .toLowerCase()
     .split(/\s+/)
@@ -31,13 +31,18 @@ export function normalizeVoiceWakeTrigger(value: string): string {
     .join(' ');
 }
 
+/** Global trigger-list values retain their exact spelling after trim. */
+export function normalizeVoiceWakeListTrigger(value: string): string {
+  return value.trim();
+}
+
 export function includesVoiceWakeTrigger(
   triggers: readonly string[],
   recognizedTrigger: string,
 ): boolean {
-  const normalized = normalizeVoiceWakeTrigger(recognizedTrigger);
+  const normalized = normalizeVoiceWakeListTrigger(recognizedTrigger);
   return normalized.length > 0 && triggers.some((trigger) => (
-    normalizeVoiceWakeTrigger(trigger) === normalized
+    normalizeVoiceWakeListTrigger(trigger) === normalized
   ));
 }
 
@@ -45,9 +50,9 @@ export function resolveVoiceWakeRoute(
   config: VoiceWakeRoutingConfig,
   recognizedTrigger: string,
 ): VoiceWakeRouteTarget {
-  const normalized = normalizeVoiceWakeTrigger(recognizedTrigger);
+  const normalized = normalizeVoiceWakeRouteTrigger(recognizedTrigger);
   return config.routes.find((route) => (
-    normalizeVoiceWakeTrigger(route.trigger) === normalized
+    normalizeVoiceWakeRouteTrigger(route.trigger) === normalized
   ))?.target ?? config.defaultTarget;
 }
 

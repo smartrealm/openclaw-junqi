@@ -2,14 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   includesVoiceWakeTrigger,
-  normalizeVoiceWakeTrigger,
+  normalizeVoiceWakeListTrigger,
+  normalizeVoiceWakeRouteTrigger,
   resolveVoiceWakeRoute,
   type VoiceWakeRoutingConfig,
 } from './voiceWakeTypes';
 
-test('voice wake trigger matching follows the Gateway route normalization', () => {
-  assert.equal(normalizeVoiceWakeTrigger(' Hey,  JunQi!! '), 'hey junqi');
-  assert.equal(includesVoiceWakeTrigger(['Hey, JunQi!!'], 'hey junqi'), true);
+test('voice wake keeps global triggers exact while routing normalizes route keys', () => {
+  assert.equal(normalizeVoiceWakeListTrigger(' Hey,  JunQi!! '), 'Hey,  JunQi!!');
+  assert.equal(normalizeVoiceWakeRouteTrigger(' Hey,  JunQi!! '), 'hey junqi');
+  assert.equal(includesVoiceWakeTrigger(['Hey, JunQi!!'], 'hey junqi'), false);
+  assert.equal(includesVoiceWakeTrigger(['Hey, JunQi!!'], ' Hey, JunQi!! '), true);
   assert.equal(includesVoiceWakeTrigger(['junqi'], 'another assistant'), false);
 });
 

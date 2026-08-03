@@ -6,15 +6,20 @@ import {
   selectedModelWakeKeywords,
 } from './VoiceWakeKeywordSelection';
 
-test('model phrase selection preserves the exact local labels after Gateway normalization', () => {
+test('model phrase selection preserves exact local labels after Gateway trim', () => {
   assert.deepEqual(
     selectedModelWakeKeywords(['Jarvis', 'Hello JunQi'], ['jarvis', 'unrelated']),
+    [],
+  );
+  assert.deepEqual(
+    selectedModelWakeKeywords(['Jarvis', 'Hello JunQi'], [' Jarvis ', 'unrelated']),
     ['Jarvis'],
   );
   assert.deepEqual(
-    resolveModelWakeKeywordSelection(['Jarvis', 'Hello JunQi'], ['hello junqi']),
+    resolveModelWakeKeywordSelection(['Jarvis', 'Hello JunQi'], [' Hello JunQi ']),
     ['Hello JunQi'],
   );
+  assert.equal(resolveModelWakeKeywordSelection(['Jarvis', 'Hello JunQi'], ['hello junqi']), null);
 });
 
 test('model phrase selection rejects empty, duplicated, and unrecognized phrases', () => {
@@ -24,14 +29,14 @@ test('model phrase selection rejects empty, duplicated, and unrecognized phrases
   assert.equal(resolveModelWakeKeywordSelection(labels, ['arbitrary phrase']), null);
 });
 
-test('model phrase selection preserves Gateway triggers owned by other models and nodes', () => {
+test('model phrase selection preserves case variants owned by other models and nodes', () => {
   assert.deepEqual(
     mergeGatewayTriggersForModelSelection(
       ['Jarvis', 'Hello JunQi'],
-      ['openclaw', 'other node', 'jarvis'],
+      ['openclaw', 'other node', 'jarvis', 'Jarvis'],
       ['Hello JunQi'],
     ),
-    ['openclaw', 'other node', 'Hello JunQi'],
+    ['openclaw', 'other node', 'jarvis', 'Hello JunQi'],
   );
 });
 

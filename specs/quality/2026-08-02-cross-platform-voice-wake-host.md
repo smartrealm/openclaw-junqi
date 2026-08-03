@@ -15,7 +15,7 @@
 
 - Dictation continues to use VAD.
 - Wake-word mode starts only when the user has selected a local model directory containing the fixed Sherpa model files, `tokens.txt`, and a generated `keywords.txt`.
-- The selected `phone+ppinyin` model must expose at least one official `@original_phrase` keyword label, no longer than the installed Gateway's 64 UTF-16-code-unit trigger limit, that exactly matches a configured Gateway trigger before wake-word mode can arm.
+- The selected `phone+ppinyin` model must expose at least one official `@original_phrase` keyword label, no longer than the official Gateway protocol's 64 UTF-16-code-unit trigger limit, that exactly matches a configured Gateway trigger before wake-word mode can arm.
 - The full-window Jarvis surface may select one or more labels declared by the selected local model and save only those labels through `voicewake.set`. Free-form text is not presented as a local wake phrase because the selected model requires an externally generated official keyword file.
 - Jarvis configuration is available only at `/settings?tab=jarvis`. It owns model-directory selection, declared wake-phrase selection, and the explicit desktop-standby choice. Enabling desktop standby uses the Tauri autostart contract and binds the selected OpenClaw session key; it never persists a connection ID, credential, audio, or guessed target.
 - The application root owns the armed listener, Talk relay, full-window Jarvis surface, and confirmed-draft lifecycle. Navigating away from chat must not unmount or stop an already armed listener. The conversation composer consumes that controller only for current-session start/stop and ordinary recorder controls.
@@ -49,7 +49,7 @@
 - The official-model audio fixture test is an explicit opt-in check that requires `JUNQI_WAKE_MODEL_DIR`; an environment without that fixture must report the test as ignored rather than passing without detection.
 - A wake listener cannot be activated by VAD alone.
 - A model whose labels have no intersection with the selected Gateway trigger list remains unavailable and does not capture audio.
-- On an explicit user command, JunQi may replace only the selected Gateway's trigger list with the labels declared by the selected local model. It must not mutate voice-wake routing as part of that operation and must re-read the normal arm preconditions afterwards.
+- On an explicit user command, JunQi may replace only Gateway trigger items whose trim-exact labels are declared by the selected local model. It must preserve all other items, must not mutate voice-wake routing as part of that operation, and must re-read the normal arm preconditions afterwards.
 - Existing dictation, session ownership, draft confirmation, and Gateway connection fences remain in force.
 - A Gateway without the explicit realtime relay capability remains in the current confirmation-required voice-draft path; it is never presented as continuous Talk.
 - A Talk session remains explicitly bound to its selected session key because the installed `talk.session.create` contract does not accept `voiceWakeTrigger`.
