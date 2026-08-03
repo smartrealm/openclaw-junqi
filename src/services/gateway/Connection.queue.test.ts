@@ -4,6 +4,7 @@ import { CollaborationClient, CollaborationClientError } from '@/services/collab
 import {
   GatewayConnection,
   GatewayConnectionFenceError,
+  GatewayMethodNotAdvertisedError,
   GatewayRequestAbortedError,
   GatewayRpcError,
   platformFromNativeOs,
@@ -117,6 +118,39 @@ describe('GatewayConnection request identity', () => {
         && error.actualConnectionId === 'connection-new',
     );
     assert.equal(sends, 0);
+    connection.disconnect();
+  });
+
+  it('does not send regular or fenced RPCs explicitly absent from hello-ok methods', async () => {
+    const connection = new GatewayConnection() as any;
+    const sent: unknown[] = [];
+    connection.ws = {
+      readyState: WebSocket.OPEN,
+      send: (value: string) => { sent.push(JSON.parse(value)); },
+      close: () => undefined,
+    };
+    connection.connected = true;
+    connection.runtimeIdentityConnectionId = 'connection-1';
+    connection.advertisedMethods = new Set(['sessions.list']);
+
+    await assert.rejects(
+      connection.request('sessions.delete', { key: 'session' }),
+      (error: unknown) => error instanceof GatewayMethodNotAdvertisedError
+        && error.method === 'sessions.delete',
+    );
+    await assert.rejects(
+      connection.requestFenced('sessions.delete', { key: 'session' }, 'connection-1'),
+      (error: unknown) => error instanceof GatewayMethodNotAdvertisedError
+        && error.method === 'sessions.delete',
+    );
+    assert.deepEqual(sent, []);
+    assert.equal(connection.pendingRequests.size, 0);
+    assert.equal(connection.msgCounter, 0);
+
+    const allowed = connection.request('sessions.list', {});
+    assert.equal(sent.length, 1);
+    connection.handleMessage({ type: 'res', id: (sent[0] as { id: string }).id, ok: true, payload: {} });
+    await allowed;
     connection.disconnect();
   });
 

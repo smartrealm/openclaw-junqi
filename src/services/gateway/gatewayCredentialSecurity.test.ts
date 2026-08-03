@@ -388,7 +388,7 @@ describe('Gateway credential security regression gates', () => {
           'policy-connection',
           ['operator.read', 'operator.write'],
           undefined,
-          [],
+          ['sessions.list'],
           4,
           30_000,
           100,
@@ -622,7 +622,7 @@ describe('Gateway credential security regression gates', () => {
     socket.onSend = (message) => {
       if (message.method === 'connect') {
         assert.deepEqual(message.params.scopes, ['operator.admin']);
-        acceptHandshake(socket, message, 'privileged-1', ['operator.admin'], 'admin-device-token');
+        acceptHandshake(socket, message, 'privileged-1', ['operator.admin'], 'admin-device-token', ['agents.create']);
         return;
       }
       assert.equal(message.method, 'agents.create');
@@ -659,7 +659,7 @@ describe('Gateway credential security regression gates', () => {
     socket.onSend = (message) => {
       if (message.method === 'connect') {
         assert.deepEqual(message.params.scopes, ['operator.approvals']);
-        acceptHandshake(socket, message, 'approval-1', ['operator.approvals'], 'approval-device-token');
+        acceptHandshake(socket, message, 'approval-1', ['operator.approvals'], 'approval-device-token', ['approval.history']);
         return;
       }
       assert.equal(message.method, 'approval.history');
@@ -713,7 +713,7 @@ describe('Gateway credential security regression gates', () => {
     const approvedSocket = MemoryWebSocket.instances[1];
     approvedSocket.onSend = (message) => {
       if (message.method === 'connect') {
-        acceptHandshake(approvedSocket, message, 'privileged-approved', ['operator.admin']);
+        acceptHandshake(approvedSocket, message, 'privileged-approved', ['operator.admin'], undefined, ['wizard.start']);
         return;
       }
       assert.equal(message.method, 'wizard.start');
@@ -768,7 +768,7 @@ describe('Gateway credential security regression gates', () => {
     const approvedSocket = MemoryWebSocket.instances[1];
     approvedSocket.onSend = (message) => {
       if (message.method === 'connect') {
-        acceptHandshake(approvedSocket, message, 'approved-immediately', ['operator.admin']);
+        acceptHandshake(approvedSocket, message, 'approved-immediately', ['operator.admin'], undefined, ['wizard.start']);
         return;
       }
       approvedSocket.receive({ type: 'res', id: message.id, ok: true, payload: { sessionId: 'wizard-1' } });
@@ -867,7 +867,7 @@ describe('Gateway credential security regression gates', () => {
 
     const firstSocket = MemoryWebSocket.instances[0];
     firstSocket.onSend = (message) => {
-      if (message.method === 'connect') acceptHandshake(firstSocket, message, 'privileged-first');
+      if (message.method === 'connect') acceptHandshake(firstSocket, message, 'privileged-first', undefined, undefined, ['admin.first']);
     };
     challenge(firstSocket);
     const firstRpc = await waitForSocketRequest(firstSocket, 'admin.first');
@@ -881,7 +881,7 @@ describe('Gateway credential security regression gates', () => {
 
     const secondSocket = MemoryWebSocket.instances[1];
     secondSocket.onSend = (message) => {
-      if (message.method === 'connect') acceptHandshake(secondSocket, message, 'privileged-second');
+      if (message.method === 'connect') acceptHandshake(secondSocket, message, 'privileged-second', undefined, undefined, ['admin.second']);
     };
     challenge(secondSocket);
     const secondRpc = await waitForSocketRequest(secondSocket, 'admin.second');
@@ -909,7 +909,7 @@ describe('Gateway credential security regression gates', () => {
     const firstSocket = MemoryWebSocket.instances[0];
     firstSocket.onSend = (message) => {
       if (message.method === 'connect') {
-        acceptHandshake(firstSocket, message, 'privileged-stale');
+        acceptHandshake(firstSocket, message, 'privileged-stale', undefined, undefined, ['wizard.next']);
       }
       // Keep the Wizard RPC pending to reproduce a stale serialized lane.
     };
@@ -936,7 +936,7 @@ describe('Gateway credential security regression gates', () => {
 
     socket.onSend = (message) => {
       if (message.method === 'connect') {
-        acceptHandshake(socket, message, 'privileged-failure');
+        acceptHandshake(socket, message, 'privileged-failure', undefined, undefined, ['agents.delete']);
         return;
       }
       socket.receive({

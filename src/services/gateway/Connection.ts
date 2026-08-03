@@ -369,6 +369,16 @@ export class GatewayConnectionFenceError extends Error {
   }
 }
 
+/** A completed hello explicitly omitted this method; no RPC was sent. */
+export class GatewayMethodNotAdvertisedError extends Error {
+  readonly code = 'GATEWAY_METHOD_NOT_ADVERTISED';
+
+  constructor(public readonly method: string) {
+    super(`The connected Gateway does not advertise ${method}`);
+    this.name = 'GatewayMethodNotAdvertisedError';
+  }
+}
+
 export class GatewayRequestAbortedError extends Error {
   readonly code = 'GATEWAY_REQUEST_ABORTED';
 
@@ -954,6 +964,7 @@ export class GatewayConnection {
     if (!this.ws || !this.connected) {
       throw new GatewayTransportLifecycleError('Gateway is not connected');
     }
+    this.assertMethodAdvertised(method);
 
     return new Promise<T>((resolve, reject) => {
       const id = this.nextId();
@@ -992,6 +1003,7 @@ export class GatewayConnection {
     ) {
       throw new GatewayConnectionFenceError(expected, actual);
     }
+    this.assertMethodAdvertised(method);
 
     return new Promise<T>((resolve, reject) => {
       const id = this.nextId();
@@ -1023,6 +1035,12 @@ export class GatewayConnection {
         rejectFenced(error);
       }
     });
+  }
+
+  private assertMethodAdvertised(method: string): void {
+    if (this.hasAdvertisedMethod(method) === false) {
+      throw new GatewayMethodNotAdvertisedError(method);
+    }
   }
 
   registerCallback<T>(
