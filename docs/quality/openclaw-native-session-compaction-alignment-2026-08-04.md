@@ -19,7 +19,9 @@ JunQi 的手动上下文压缩已改为调用 OpenClaw 官方 `sessions.compact`
 
 - `OpenClawSessionCompactionClient` 只负责官方请求字段和最小响应解码。
 - `gateway.compactSession` 通过 `sessionCommandCoordinator` 串行化同一 session 的维护操作，再走 `requestPrivileged`；不会复用普通 `chat.send` 或生成伪造的 idempotency key。
-- `compacted: true` 才显示完成；`compacted: false` 显示 Gateway 返回的 no-op 原因；RPC 错误进入既有失败和授权提示。
+- `compacted: true` 才显示完成；当前官方 CLI 明确的
+  `result.details.pending: true` 显示为 Gateway 已接纳、等待终态；其他
+  `compacted: false` 显示 Gateway 返回的 no-op 原因；RPC 错误进入既有失败和授权提示。
 - `session.operation` 仍由主连接的会话订阅接收并投影为本地压缩事件。Native compaction RPC 的返回值与实时事件不互相替代。
 - `/compact` 仍可作为用户发给 OpenClaw 的普通文本指令存在，但 JunQi 的“压缩上下文”按钮、命令面板动作和 Dashboard 快捷动作不再依赖该文本。
 
@@ -30,8 +32,10 @@ OpenClaw 负责是否允许压缩、活动运行冲突、排队任务冲突、me
 ## 验证结果
 
 - `OpenClawSessionCompactionClient.test.ts` 覆盖官方请求字段、完成结果、no-op 原因和非法响应。
+- `OpenClawSessionCompactionClient.test.ts` 与 `sessionCompactionFeedback.test.ts` 还覆盖
+  Gateway 已接纳的异步 pending，确保它不被误报为 no-op 或完成。
 - Dashboard 交互回归确认调用 `sessions.compact`，不再发送 `message: '/compact'`。
-- TypeScript、全量测试、生产构建、官方文档链接和差异检查在本次提交后执行。
+- TypeScript、全量测试、生产构建、官方文档链接、协作插件、Rust、格式和差异检查通过。
 
 ## 未验证边界
 

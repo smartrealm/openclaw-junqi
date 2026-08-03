@@ -19,6 +19,10 @@ import { changeLanguage } from '@/i18n';
 import { nextPrimaryLanguage } from '@/i18n/languages';
 import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
 import { gateway } from '@/services/gateway';
+import {
+  notifyOpenClawSessionCompaction,
+  notifyOpenClawSessionCompactionFailure,
+} from '@/services/gateway/sessionCompactionFeedback';
 import { useNotificationStore } from '@/stores/notificationStore';
 import clsx from 'clsx';
 
@@ -89,29 +93,9 @@ export function CommandPalette() {
     { id: 'act-compact', icon: RefreshCw, name: t('palette.compactContext'), keywords: ['compact', 'ضغط', 'context'], action: () => {
       const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
       void gateway.compactSession(sessionKey).then((result) => {
-        useNotificationStore.getState().addToast(
-          !result.ok ? 'error' : result.compacted ? 'task_complete' : 'info',
-          !result.ok
-            ? t('dashboard.compactFailedTitle', 'Compaction failed')
-            : result.compacted
-            ? t('dashboard.compactCompletedTitle', 'Compaction completed')
-            : t('dashboard.compactNoopTitle', 'No compaction performed'),
-          !result.ok
-            ? t('dashboard.compactFailedBody', 'OpenClaw did not complete compaction: {{reason}}', {
-              reason: result.reason?.trim() || t('dashboard.compactFailureReason', 'No failure reason was reported.'),
-            })
-            : result.compacted
-            ? t('dashboard.compactCompletedBody', 'OpenClaw compacted the current session context.')
-            : t('dashboard.compactNoopBody', 'OpenClaw did not compact this session: {{reason}}', {
-              reason: result.reason?.trim() || t('dashboard.compactNoopReason', 'No transcript was available.'),
-            }),
-        );
+        notifyOpenClawSessionCompaction(result, t, useNotificationStore.getState().addToast);
       }).catch((error) => {
-        useNotificationStore.getState().addToast(
-          'error',
-          t('dashboard.compactFailedTitle', 'Compaction failed'),
-          String(error),
-        );
+        notifyOpenClawSessionCompactionFailure(error, t, useNotificationStore.getState().addToast);
       });
     }},
 

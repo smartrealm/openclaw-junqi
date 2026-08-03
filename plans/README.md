@@ -94,6 +94,7 @@ plans/
 - [OpenClaw 会话用量范围对齐](quality/2026-08-03-openclaw-sessions-usage-range.md)
 - [OpenClaw 会话操作事件对齐](quality/2026-08-03-openclaw-session-operation.md)
 - [OpenClaw 原生会话压缩对齐](quality/2026-08-04-openclaw-native-session-compaction.md)
+- [OpenClaw 会话压缩异步反馈](quality/2026-08-04-openclaw-session-compaction-feedback.md)
 - [OpenClaw 原生压缩检查点只读](quality/2026-08-03-openclaw-native-compaction-checkpoint-read.md)
 - [OpenClaw Session Observer 灵动岛](quality/2026-08-03-openclaw-session-observer-dynamic-island.md)
 - [OpenClaw 原生会话中止对齐](quality/2026-08-03-openclaw-native-session-abort.md)

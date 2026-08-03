@@ -463,6 +463,8 @@
     "compact": "Compact",
     "compactCompletedTitle": "Compaction completed",
     "compactCompletedBody": "OpenClaw compacted the current session context.",
+    "compactPendingTitle": "Compaction started",
+    "compactPendingBody": "OpenClaw accepted the current session compaction and is waiting to report its final state.",
     "compactNoopTitle": "No compaction performed",
     "compactNoopBody": "OpenClaw did not compact this session: {{reason}}",
     "compactNoopReason": "No transcript was available.",

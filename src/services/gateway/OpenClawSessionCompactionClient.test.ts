@@ -47,6 +47,22 @@ test('preserves an official no-op reason without claiming compaction', async () 
   });
 });
 
+test('preserves the official asynchronous pending signal without claiming completion', async () => {
+  const client = new OpenClawSessionCompactionClient(async <T>(): Promise<T> => ({
+    ok: true,
+    key: 'agent:main:main',
+    compacted: false,
+    result: { details: { pending: true, ignored: 'opaque' } },
+  } as T));
+
+  assert.deepEqual(await client.compact({ key: 'agent:main:main' }), {
+    ok: true,
+    key: 'agent:main:main',
+    compacted: false,
+    pending: true,
+  });
+});
+
 test('preserves an official inner failure separately from a no-op result', async () => {
   const client = new OpenClawSessionCompactionClient(async <T>(): Promise<T> => ({
     ok: false,

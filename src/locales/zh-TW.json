@@ -454,6 +454,8 @@
     "compact": "壓縮",
     "compactCompletedTitle": "上下文壓縮已完成",
     "compactCompletedBody": "OpenClaw 已完成當前會話上下文壓縮。",
+    "compactPendingTitle": "上下文壓縮已開始",
+    "compactPendingBody": "OpenClaw 已接受當前會話壓縮請求，正在等待 Gateway 回報最終狀態。",
     "compactNoopTitle": "未執行上下文壓縮",
     "compactNoopBody": "OpenClaw 未壓縮當前會話：{{reason}}",
     "compactNoopReason": "沒有可壓縮的會話記錄。",

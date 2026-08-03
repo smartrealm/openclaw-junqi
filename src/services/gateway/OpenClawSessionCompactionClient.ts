@@ -8,6 +8,8 @@ export interface OpenClawSessionCompactionResult {
   readonly ok: boolean;
   readonly key: string;
   readonly compacted: boolean;
+  /** Gateway accepted an asynchronous compaction; terminal state arrives separately. */
+  readonly pending?: boolean;
   readonly reason?: string;
 }
 
@@ -63,10 +65,16 @@ export function parseOpenClawSessionCompactionResult(value: unknown): OpenClawSe
   ) {
     throw new OpenClawSessionCompactionResponseError();
   }
+  const result = record(source.result);
+  const details = result ? record(result.details) : null;
+  const pending = source.ok === true
+    && source.compacted === false
+    && details?.pending === true;
   return {
     ok: source.ok,
     key,
     compacted: source.compacted,
+    ...(pending ? { pending: true } : {}),
     ...(source.reason !== undefined ? { reason: source.reason } : {}),
   };
 }

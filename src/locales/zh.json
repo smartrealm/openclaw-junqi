@@ -454,6 +454,8 @@
     "compact": "压缩",
     "compactCompletedTitle": "上下文压缩已完成",
     "compactCompletedBody": "OpenClaw 已完成当前会话上下文压缩。",
+    "compactPendingTitle": "上下文压缩已开始",
+    "compactPendingBody": "OpenClaw 已接受当前会话压缩请求，正在等待 Gateway 报告最终状态。",
     "compactNoopTitle": "未执行上下文压缩",
     "compactNoopBody": "OpenClaw 未压缩当前会话：{{reason}}",
     "compactNoopReason": "没有可压缩的会话记录。",

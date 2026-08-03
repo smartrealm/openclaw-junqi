@@ -202,6 +202,7 @@ docs/
 - [OpenClaw 会话用量范围对齐](quality/openclaw-sessions-usage-range-alignment-2026-08-03.md)
 - [OpenClaw 会话操作事件对齐](quality/openclaw-session-operation-alignment-2026-08-03.md)
 - [OpenClaw 原生会话压缩对齐](quality/openclaw-native-session-compaction-alignment-2026-08-04.md)
+- [OpenClaw 会话压缩异步反馈审计](quality/openclaw-session-compaction-feedback-audit-2026-08-04.md)
 - [OpenClaw 原生压缩检查点只读对齐](quality/openclaw-native-compaction-checkpoint-read-alignment-2026-08-03.md)
 - [OpenClaw Session Observer 与灵动岛对齐](quality/openclaw-session-observer-dynamic-island-alignment-2026-08-03.md)
 - [OpenClaw 原生会话中止对齐](quality/openclaw-native-session-abort-alignment-2026-08-03.md)

@@ -31,6 +31,10 @@ import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { useSceneRecovery } from '@/motion/sceneRecovery';
 import { useGatewayUptime } from './useGatewayUptime';
 import { gateway } from '@/services/gateway';
+import {
+  notifyOpenClawSessionCompaction,
+  notifyOpenClawSessionCompactionFailure,
+} from '@/services/gateway/sessionCompactionFeedback';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -227,35 +231,9 @@ export function DashboardPage() {
     const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
     try {
       const result = await gateway.compactSession(sessionKey);
-      if (!result.ok) {
-        useNotificationStore.getState().addToast(
-          'error',
-          t('dashboard.compactFailedTitle', 'Compaction failed'),
-          t('dashboard.compactFailedBody', 'OpenClaw did not complete compaction: {{reason}}', {
-            reason: result.reason?.trim() || t('dashboard.compactFailureReason', 'No failure reason was reported.'),
-          }),
-        );
-      } else if (result.compacted) {
-        useNotificationStore.getState().addToast(
-          'task_complete',
-          t('dashboard.compactCompletedTitle', 'Compaction completed'),
-          t('dashboard.compactCompletedBody', 'OpenClaw compacted the current session context.'),
-        );
-      } else {
-        useNotificationStore.getState().addToast(
-          'info',
-          t('dashboard.compactNoopTitle', 'No compaction performed'),
-          t('dashboard.compactNoopBody', 'OpenClaw did not compact this session: {{reason}}', {
-            reason: result.reason?.trim() || t('dashboard.compactNoopReason', 'No transcript was available.'),
-          }),
-        );
-      }
+      notifyOpenClawSessionCompaction(result, t, useNotificationStore.getState().addToast);
     } catch (error) {
-      useNotificationStore.getState().addToast(
-        'error',
-        t('dashboard.compactFailedTitle', 'Compaction failed'),
-        String(error),
-      );
+      notifyOpenClawSessionCompactionFailure(error, t, useNotificationStore.getState().addToast);
     } finally {
       setQuickActionLoading(null);
     }
