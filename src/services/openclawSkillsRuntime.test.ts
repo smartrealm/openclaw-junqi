@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   createOpenClawSkillsRuntime,
+  OpenClawSkillCardUnsupportedError,
   SKILL_ARCHIVE_CHUNK_BYTES,
+  normalizeOpenClawSkillCard,
   normalizeOpenClawSkillDetail,
   normalizeOpenClawSkillSearch,
   normalizeOpenClawSkillSecurityVerdicts,
@@ -104,6 +106,34 @@ test('preserves documented nullable native detail fields', () => {
     metadata: null,
     owner: null,
   });
+});
+
+test('normalizes only the documented native skill-card envelope', () => {
+  assert.deepEqual(normalizeOpenClawSkillCard({
+    schema: 'openclaw.skills.skill-card.v1',
+    skillKey: 'weather',
+    path: '/workspace/skills/weather/skill-card.md',
+    sizeBytes: 32,
+    content: '# Weather\n\nLocal trust card.\n',
+  }, 'weather'), {
+    skillKey: 'weather',
+    sizeBytes: 32,
+    content: '# Weather\n\nLocal trust card.\n',
+  });
+  assert.equal(normalizeOpenClawSkillCard({
+    schema: 'openclaw.skills.skill-card.v1',
+    skillKey: 'other-skill',
+    path: '/workspace/skills/other-skill/skill-card.md',
+    sizeBytes: 1,
+    content: 'x',
+  }, 'weather'), null);
+  assert.equal(normalizeOpenClawSkillCard({
+    schema: 'openclaw.skills.skill-card.v1',
+    skillKey: 'weather',
+    path: '/workspace/skills/weather/skill-card.md',
+    sizeBytes: -1,
+    content: 'x',
+  }, 'weather'), null);
 });
 
 test('normalizes the native security verdict envelope without inventing verdicts', () => {
@@ -219,6 +249,56 @@ test('uses privileged Gateway calls for every skill mutation', async () => {
     { privileged: false, method: 'skills.search', params: { query: 'weather', limit: 20 } },
     { privileged: false, method: 'skills.securityVerdicts', params: {} },
   ]);
+});
+
+test('reads an installed skill card through the read-only Gateway method', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const runtime = createOpenClawSkillsRuntime({
+    async call(method, params = {}) {
+      calls.push({ method, params });
+      return {
+        schema: 'openclaw.skills.skill-card.v1',
+        skillKey: 'weather',
+        path: '/workspace/skills/weather/skill-card.md',
+        sizeBytes: 28,
+        content: '# Weather\n\nTrust card.\n',
+      };
+    },
+    async callPrivileged() {
+      return { ok: true };
+    },
+    hasAdvertisedMethod(method) {
+      return method === 'skills.skillCard';
+    },
+  });
+
+  assert.equal(runtime.skillCardCapability(), true);
+  assert.deepEqual(await runtime.skillCard(' weather '), {
+    skillKey: 'weather',
+    sizeBytes: 28,
+    content: '# Weather\n\nTrust card.\n',
+  });
+  assert.deepEqual(calls, [{ method: 'skills.skillCard', params: { skillKey: 'weather' } }]);
+});
+
+test('does not request skill cards that the Gateway explicitly does not advertise', async () => {
+  let calls = 0;
+  const runtime = createOpenClawSkillsRuntime({
+    async call() {
+      calls += 1;
+      return {};
+    },
+    async callPrivileged() {
+      return { ok: true };
+    },
+    hasAdvertisedMethod() {
+      return false;
+    },
+  });
+
+  assert.equal(runtime.skillCardCapability(), false);
+  await assert.rejects(runtime.skillCard('weather'), OpenClawSkillCardUnsupportedError);
+  assert.equal(calls, 0);
 });
 
 test('does not claim archive upload support when Gateway advertisement is explicit', () => {

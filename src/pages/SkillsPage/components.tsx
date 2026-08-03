@@ -10,6 +10,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -149,9 +158,10 @@ function HubBadge({ badge }: { badge?: 'official' | 'featured' }) {
 // MySkillRow — Installed skill (clean list item)
 // ═══════════════════════════════════════════════════════════
 
-export function MySkillRow({ skill, onToggle, index = 0 }: {
+export function MySkillRow({ skill, onToggle, onViewCard, index = 0 }: {
   skill: MySkill;
   onToggle: () => void;
+  onViewCard?: () => void;
   index?: number;
 }) {
   const { t } = useTranslation();
@@ -219,6 +229,17 @@ export function MySkillRow({ skill, onToggle, index = 0 }: {
 
       {/* Actions — toggle + optional persona chat */}
       <div className="flex items-center gap-1.5 pe-3 shrink-0">
+        {onViewCard && (
+          <button
+            type="button"
+            onClick={onViewCard}
+            title={t('skillsExtra.viewSkillCard', 'View skill card')}
+            aria-label={t('skillsExtra.viewSkillCard', 'View skill card')}
+            className="flex size-7 items-center justify-center rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim transition-all hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04] hover:text-aegis-primary"
+          >
+            <BookOpenText size={12} aria-hidden="true" />
+          </button>
+        )}
         {(() => {
           const persona = resolvePersona(skill.persona);
           if (!persona) return null;
@@ -254,6 +275,63 @@ export function MySkillRow({ skill, onToggle, index = 0 }: {
         </button>
       </div>
     </div>
+  );
+}
+
+export function SkillCardDialog({
+  open,
+  card,
+  loading,
+  error,
+  onClose,
+}: {
+  open: boolean;
+  card: { skillKey: string; sizeBytes: number; content: string } | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[min(680px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-lg">
+        <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
+          <DialogTitle className="text-sm font-bold text-aegis-text">
+            {t('skillsExtra.skillCardTitle', 'Skill card')}
+          </DialogTitle>
+          <DialogDescription className="mt-1 truncate font-mono text-[11px] text-aegis-text-dim">
+            {card?.skillKey ?? t('skillsExtra.skillCardPending', 'Waiting for OpenClaw response')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto px-5 py-4">
+          {loading && (
+            <div className="flex min-h-40 items-center justify-center">
+              <LoadingIndicator size={20} className="text-aegis-text-dim" />
+            </div>
+          )}
+          {!loading && error && (
+            <div className="border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[12px] leading-relaxed text-aegis-text-secondary">
+              {error}
+            </div>
+          )}
+          {!loading && !error && card && (
+            <div>
+              <p className="mb-3 text-[10px] text-aegis-text-dim">
+                {t('skillsExtra.skillCardSize', '{{size}} bytes', { size: card.sizeBytes })}
+              </p>
+              <pre className="max-h-[min(60dvh,580px)] overflow-auto whitespace-pre-wrap break-words rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] p-3 font-mono text-[11px] leading-5 text-aegis-text-secondary">
+                {card.content}
+              </pre>
+            </div>
+          )}
+        </div>
+        <DialogFooter className="border-t border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] px-5 py-3">
+          <DialogClose className="w-full rounded-lg border border-aegis-border px-3 py-2 text-[11px] font-medium text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 sm:w-auto">
+            {t('common.close', 'Close')}
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

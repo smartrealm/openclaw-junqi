@@ -42,10 +42,13 @@ Gateway 技能目录已经使用原生 `skills.search/detail`，但页面模型�
 
 ## 边界
 
-本次不接入 `skills.bins`、`skills.skillCard` 或技能提案，也不把本地 SkillHub 字段投影到
+本次不接入 `skills.bins` 或技能提案，也不把本地 SkillHub 字段投影到
 Gateway 页面。`skills.securityVerdicts` 仅覆盖已安装且有 ClawHub 链接的技能，不代表目录
 搜索项的安全结论。后续能力接入必须先核对官方 handler、权限、能力广告和错误返回；没有权威
 依据时保持不可用，不猜测字段或状态。
+
+`skills.skillCard` 已在已安装列表独立接入，且只显示其官方返回的纯文本内容；具体的协议、
+路径处理和验证边界见 [OpenClaw 原生技能卡对齐](openclaw-native-skill-card-alignment-2026-08-03.md)。
 
 ## 验证
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Package, Puzzle, RefreshCw, Search, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
@@ -7,6 +7,7 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import {
   openClawSkillsRuntime,
   type OpenClawSkill,
+  type OpenClawSkillCard,
   type OpenClawSkillDetail,
   type OpenClawSkillSearchResult,
   type OpenClawSkillSecurityVerdict,
@@ -14,6 +15,7 @@ import {
 import {
   HubSkillRow,
   MySkillRow,
+  SkillCardDialog,
   SkillDetailPanel,
   type HubSkill,
   type InstallState,
@@ -87,9 +89,10 @@ function toSkillDetail(
   };
 }
 
-function SkillsList({ skills, onToggle }: {
+function SkillsList({ skills, onToggle, onViewCard }: {
   skills: MySkill[];
   onToggle: (slug: string) => void;
+  onViewCard?: (slug: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -99,6 +102,7 @@ function SkillsList({ skills, onToggle }: {
           skill={skill}
           index={index}
           onToggle={() => onToggle(skill.slug)}
+          {...(onViewCard ? { onViewCard: () => onViewCard(skill.slug) } : {})}
         />
       ))}
     </div>
@@ -109,6 +113,7 @@ export function SkillsPage() {
   const { t } = useTranslation();
   const connected = useChatStore((state) => state.connected);
   const archiveUploadCapability = openClawSkillsRuntime.archiveUploadCapability();
+  const skillCardCapability = openClawSkillsRuntime.skillCardCapability();
   const [activeTab, setActiveTab] = useState<SkillsTab>('installed');
   const [installed, setInstalled] = useState<MySkill[]>([]);
   const [catalog, setCatalog] = useState<HubSkill[]>([]);
@@ -122,6 +127,11 @@ export function SkillsPage() {
   const [detail, setDetail] = useState<SkillDetail | null>(null);
   const [installState, setInstallState] = useState<InstallState>('idle');
   const [installError, setInstallError] = useState('');
+  const [skillCardOpen, setSkillCardOpen] = useState(false);
+  const [skillCardLoading, setSkillCardLoading] = useState(false);
+  const [skillCard, setSkillCard] = useState<OpenClawSkillCard | null>(null);
+  const [skillCardError, setSkillCardError] = useState<string | null>(null);
+  const skillCardRequestGeneration = useRef(0);
 
   const loadInstalled = useCallback(async () => {
     if (!connected) return;
@@ -163,6 +173,15 @@ export function SkillsPage() {
     const timer = window.setTimeout(() => void loadCatalog(query), query ? 300 : 0);
     return () => window.clearTimeout(timer);
   }, [activeTab, loadCatalog, query]);
+
+  useEffect(() => {
+    if (connected) return;
+    skillCardRequestGeneration.current += 1;
+    setSkillCardOpen(false);
+    setSkillCardLoading(false);
+    setSkillCard(null);
+    setSkillCardError(null);
+  }, [connected]);
 
   const toggleSkill = useCallback(async (slug: string) => {
     const current = installed.find((skill) => skill.slug === slug);
@@ -227,6 +246,35 @@ export function SkillsPage() {
     setDetail(null);
     setInstallState('idle');
     setInstallError('');
+  }, []);
+
+  const openSkillCard = useCallback(async (skillKey: string) => {
+    const requestGeneration = skillCardRequestGeneration.current + 1;
+    skillCardRequestGeneration.current = requestGeneration;
+    setSkillCardOpen(true);
+    setSkillCardLoading(true);
+    setSkillCard(null);
+    setSkillCardError(null);
+    try {
+      const card = await openClawSkillsRuntime.skillCard(skillKey);
+      if (skillCardRequestGeneration.current === requestGeneration) setSkillCard(card);
+    } catch (error) {
+      if (skillCardRequestGeneration.current === requestGeneration) {
+        setSkillCardError(operationError(error));
+      }
+    } finally {
+      if (skillCardRequestGeneration.current === requestGeneration) {
+        setSkillCardLoading(false);
+      }
+    }
+  }, []);
+
+  const closeSkillCard = useCallback(() => {
+    skillCardRequestGeneration.current += 1;
+    setSkillCardOpen(false);
+    setSkillCardLoading(false);
+    setSkillCard(null);
+    setSkillCardError(null);
   }, []);
 
   const tabItems = useMemo(() => [
@@ -302,7 +350,15 @@ export function SkillsPage() {
                 <Package size={28} className="mx-auto mb-3 text-aegis-text-dim" aria-hidden="true" />
                 <p className="text-[13px] font-medium text-aegis-text-dim">{t('skills.noSkills')}</p>
               </div>
-            ) : <SkillsList skills={installed} onToggle={(slug) => void toggleSkill(slug)} />}
+            ) : (
+              <SkillsList
+                skills={installed}
+                onToggle={(slug) => void toggleSkill(slug)}
+                {...(connected && skillCardCapability !== false
+                  ? { onViewCard: (slug: string) => void openSkillCard(slug) }
+                  : {})}
+              />
+            )}
           </section>
         )}
 
@@ -360,6 +416,13 @@ export function SkillsPage() {
         doneHint={t('skills.hubInstallDoneHint')}
         errorLabel={t('skills.hubInstallError')}
         errorText={installError}
+      />
+      <SkillCardDialog
+        open={skillCardOpen}
+        card={skillCard}
+        loading={skillCardLoading}
+        error={skillCardError}
+        onClose={closeSkillCard}
       />
     </div>
   );

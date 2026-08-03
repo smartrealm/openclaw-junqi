@@ -2584,7 +2584,11 @@
     "viewExternal": "Open source page",
     "securityPassed": "Security check passed",
     "securityFailed": "Security check failed",
-    "securityUnavailable": "Security verdict unavailable"
+    "securityUnavailable": "Security verdict unavailable",
+    "viewSkillCard": "View skill card",
+    "skillCardTitle": "Skill card",
+    "skillCardPending": "Waiting for OpenClaw response",
+    "skillCardSize": "{{size}} bytes"
   },
   "settingsTheme": {
     "dark": "Dark Mode",

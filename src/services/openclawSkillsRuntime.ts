@@ -79,6 +79,22 @@ export interface OpenClawSkillSecurityVerdict {
   };
 }
 
+/** Read-only rendered card for an installed OpenClaw skill. */
+export interface OpenClawSkillCard {
+  skillKey: string;
+  sizeBytes: number;
+  content: string;
+}
+
+export class OpenClawSkillCardUnsupportedError extends Error {
+  readonly code = 'OPENCLAW_SKILL_CARD_UNSUPPORTED';
+
+  constructor() {
+    super('The connected OpenClaw Gateway does not advertise skills.skillCard.');
+    this.name = 'OpenClawSkillCardUnsupportedError';
+  }
+}
+
 export interface OpenClawSkillInstallRequest {
   slug: string;
   version?: string;
@@ -416,6 +432,28 @@ export function normalizeOpenClawSkillSecurityVerdicts(payload: unknown): OpenCl
   });
 }
 
+export function normalizeOpenClawSkillCard(
+  payload: unknown,
+  expectedSkillKey: string,
+): OpenClawSkillCard | null {
+  const root = record(payload);
+  const skillKey = text(root?.skillKey);
+  const path = text(root?.path);
+  const sizeBytes = root?.sizeBytes;
+  const content = root?.content;
+  if (
+    root?.schema !== 'openclaw.skills.skill-card.v1'
+    || !skillKey
+    || skillKey !== expectedSkillKey
+    || !path
+    || typeof sizeBytes !== 'number'
+    || !Number.isSafeInteger(sizeBytes)
+    || sizeBytes < 0
+    || typeof content !== 'string'
+  ) return null;
+  return { skillKey, sizeBytes, content };
+}
+
 function requiredIdentifier(value: string, label: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${label} is required.`);
@@ -514,6 +552,10 @@ function requiredUploadResult(payload: unknown, operation: string): OpenClawSkil
 
 export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) {
   return {
+    skillCardCapability(): boolean | null {
+      return client.hasAdvertisedMethod?.('skills.skillCard') ?? null;
+    },
+
     archiveUploadCapability(): boolean | null {
       const methods = [
         'skills.upload.begin',
@@ -561,6 +603,20 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
         'skills.securityVerdicts',
         normalizedAgentId ? { agentId: normalizedAgentId } : {},
       ));
+    },
+
+    async skillCard(skillKey: string, agentId?: string): Promise<OpenClawSkillCard> {
+      const normalizedSkillKey = requiredIdentifier(skillKey, 'Skill key');
+      if (client.hasAdvertisedMethod?.('skills.skillCard') === false) {
+        throw new OpenClawSkillCardUnsupportedError();
+      }
+      const normalizedAgentId = agentId?.trim();
+      const card = normalizeOpenClawSkillCard(await client.call('skills.skillCard', {
+        skillKey: normalizedSkillKey,
+        ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
+      }), normalizedSkillKey);
+      if (!card) throw new Error('OpenClaw returned an invalid skill card response.');
+      return card;
     },
 
     async installFromClawHub(request: OpenClawSkillInstallRequest): Promise<OpenClawSkillInstallResult> {

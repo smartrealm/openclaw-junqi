@@ -297,13 +297,13 @@ test('storage changes synchronize independent WebView settings stores', () => {
 });
 
 test('reordered release and stop controls tombstone stale claims', () => {
-  let receive: ((control: VoiceGlobalControl) => void) | null = null;
+  const subscription: { receive?: (control: VoiceGlobalControl) => void } = {};
   const runtime = createRuntime(createVoiceOutput(), {
     instanceId: 'observer',
     emitControl: () => undefined,
     subscribeControl: (handler) => {
-      receive = handler;
-      return () => { receive = null; };
+      subscription.receive = handler;
+      return () => { subscription.receive = undefined; };
     },
   });
   const staleClaim = { claimedAt: 100, sequence: 1, instanceId: 'quick', sessionKey: 'quickchat:stale' };
@@ -311,6 +311,7 @@ test('reordered release and stop controls tombstone stale claims', () => {
   const stopClaim = { claimedAt: 300, sequence: 3, instanceId: 'quick', sessionKey: '' };
 
   try {
+    const receive = subscription.receive;
     assert.ok(receive);
     receive({ type: 'claim', claim: staleClaim });
     assert.equal(useVoiceStore.getState().remoteOutput?.sessionKey, 'quickchat:stale');

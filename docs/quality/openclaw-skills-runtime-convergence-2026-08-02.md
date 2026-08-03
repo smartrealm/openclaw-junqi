@@ -58,6 +58,7 @@ Tauri adapter 中固定返回失败或空结果，但页面仍向用户显示导
 
 尚未对当前运行中的 Gateway 执行目录搜索、ClawHub 详情、实际安装、安全判定或归档上传操作。桌面真机仍需
 验证管理员配对、网络失败、风险确认和安装后技能状态刷新；这些结果不能由本机协议源码
-或单元测试替代。`skills.bins`、`skills.skillCard` 及技能提案等其他能力尚未在此页面接入；
+或单元测试替代。`skills.skillCard` 已作为已安装技能的独立只读内容入口接入，具体边界见
+[OpenClaw 原生技能卡对齐](openclaw-native-skill-card-alignment-2026-08-03.md)。`skills.bins` 及技能提案等其他能力尚未在此页面接入；
 `skills.securityVerdicts` 仅覆盖上述已安装 ClawHub 关联项，在取得其他能力的
 官方 handler、权限和交互边界前不做推断性扩展。

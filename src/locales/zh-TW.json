@@ -2551,7 +2551,11 @@
     "viewExternal": "開啟來源頁面",
     "securityPassed": "安全檢查通過",
     "securityFailed": "安全檢查未通過",
-    "securityUnavailable": "安全判定不可用"
+    "securityUnavailable": "安全判定不可用",
+    "viewSkillCard": "查看技能卡",
+    "skillCardTitle": "技能卡",
+    "skillCardPending": "等待 OpenClaw 回應",
+    "skillCardSize": "{{size}} 位元組"
   },
   "settingsTheme": {
     "dark": "深色模式",
