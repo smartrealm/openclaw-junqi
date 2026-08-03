@@ -2,12 +2,12 @@
 
 ## 实施顺序
 
-1. 依据 OpenClaw 当前官方 protocol、scope、schema 和 handler，锁定 list/resolve 的字段与
-   `operator.approvals` 权限边界。
+1. 依据 OpenClaw 当前官方 protocol、scope、schema 和 handler，锁定 pending list、统一
+   history/resolve 的字段与 `operator.approvals` 权限边界。
 2. 新增 `OpenClawApprovalClient`，集中处理能力探测、严格响应解码、method-not-found 语义和
-   resolve 回执；通过既有 `requestPrivileged` 管理员临时出口。
-3. 在活动中心增加审批面板，呈现 Gateway 原生 pending 快照、真实允许决策、过期和错误状态；
-   使用桌面轮询刷新，不伪装为事件订阅。
+   unified/legacy resolve 回执；通过既有 `requestPrivileged` 管理员临时出口。
+3. 在活动中心增加审批面板，呈现 Gateway 原生 pending 快照、真实允许决策、过期和错误状态，
+   并增加官方 terminal history 分页；使用桌面轮询刷新 pending，不伪装为事件订阅。
 4. 补充三套 locale、定向协议测试和文档索引。
 5. 执行 TypeScript、边界、完整测试、构建、官方链接校验、diff 检查和 Emoji 扫描后提交。
 
@@ -24,6 +24,14 @@
 - `docs/quality/openclaw-native-approvals-alignment-2026-08-03.md`
 - `specs/quality/2026-08-03-openclaw-native-approvals.md`
 - `plans/quality/2026-08-03-openclaw-native-approvals.md`
+
+## 本轮完成
+
+- [x] 按官方 advertised method 动态选择 `approval.resolve` 或旧 family resolve。
+- [x] 严格解码 `approval.history` / `approval.get` 的 exec、plugin、system-agent snapshot、
+  reason、source、resolver 和 cursor。
+- [x] 活动中心展示官方脱敏审批历史，并支持 `nextCursor` 分页。
+- [x] 增加统一协议、method unavailable、脱敏边界、store 分页合并回归测试。
 
 ## 验证与边界
 

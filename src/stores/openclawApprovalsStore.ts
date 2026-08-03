@@ -3,21 +3,30 @@ import {
   gateway,
   type OpenClawApproval,
   type OpenClawApprovalDecision,
+  type OpenClawApprovalHistoryResult,
   type OpenClawApprovalListResult,
 } from '@/services/gateway';
 
 export type {
   OpenClawApproval,
   OpenClawApprovalDecision,
+  OpenClawApprovalHistoryResult,
   OpenClawApprovalListResult,
+  OpenClawApprovalSnapshot,
+  OpenClawApprovalTerminalReason,
 } from '@/services/gateway';
 
 interface OpenClawApprovalsState {
   snapshot: OpenClawApprovalListResult | null;
+  history: OpenClawApprovalHistoryResult | null;
   loading: boolean;
+  historyLoading: boolean;
   error: string | null;
+  historyError: string | null;
   resolvingId: string | null;
   refresh: (connected: boolean, showLoading?: boolean) => Promise<void>;
+  refreshHistory: (connected: boolean, showLoading?: boolean) => Promise<void>;
+  loadMoreHistory: (connected: boolean) => Promise<void>;
   resolve: (
     connected: boolean,
     approval: OpenClawApproval,
@@ -26,6 +35,7 @@ interface OpenClawApprovalsState {
 }
 
 let requestSequence = 0;
+let historyRequestSequence = 0;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim()
@@ -35,13 +45,24 @@ function errorMessage(error: unknown): string {
 
 export const useOpenClawApprovalsStore = create<OpenClawApprovalsState>((set, get) => ({
   snapshot: null,
+  history: null,
   loading: false,
+  historyLoading: false,
   error: null,
+  historyError: null,
   resolvingId: null,
   refresh: async (connected, showLoading = true) => {
     if (!connected) {
       requestSequence += 1;
-      set({ snapshot: null, loading: false, error: null });
+      historyRequestSequence += 1;
+      set({
+        snapshot: null,
+        history: null,
+        loading: false,
+        historyLoading: false,
+        error: null,
+        historyError: null,
+      });
       return;
     }
     if (showLoading) set({ loading: true });
@@ -56,6 +77,47 @@ export const useOpenClawApprovalsStore = create<OpenClawApprovalsState>((set, ge
       set({ error: errorMessage(error), loading: false });
     }
   },
+  refreshHistory: async (connected, showLoading = true) => {
+    historyRequestSequence += 1;
+    const sequence = historyRequestSequence;
+    if (!connected) {
+      set({ history: null, historyLoading: false, historyError: null });
+      return;
+    }
+    if (showLoading) set({ historyLoading: true });
+    try {
+      const history = await gateway.listApprovalHistory({ limit: 25 });
+      if (sequence !== historyRequestSequence) return;
+      set({ history, historyError: null, historyLoading: false });
+    } catch (error) {
+      if (sequence !== historyRequestSequence) return;
+      set({ historyError: errorMessage(error), historyLoading: false });
+    }
+  },
+  loadMoreHistory: async (connected) => {
+    const cursor = get().history?.nextCursor;
+    if (!connected || !cursor || get().historyLoading) return;
+    const sequence = historyRequestSequence + 1;
+    historyRequestSequence = sequence;
+    set({ historyLoading: true });
+    try {
+      const page = await gateway.listApprovalHistory({ cursor, limit: 25 });
+      if (sequence !== historyRequestSequence) return;
+      const existing = get().history;
+      const merged = existing && page.availability === 'available'
+        ? {
+          ...page,
+          items: [...existing.items, ...page.items].filter((item, index, all) => (
+            all.findIndex((candidate) => candidate.id === item.id) === index
+          )),
+        }
+        : page;
+      set({ history: merged, historyError: null, historyLoading: false });
+    } catch (error) {
+      if (sequence !== historyRequestSequence) return;
+      set({ historyError: errorMessage(error), historyLoading: false });
+    }
+  },
   resolve: async (connected, approval, decision) => {
     if (!connected) {
       set({ error: 'Gateway is not connected' });
@@ -66,6 +128,9 @@ export const useOpenClawApprovalsStore = create<OpenClawApprovalsState>((set, ge
     try {
       await gateway.resolveApproval(approval, decision);
       await get().refresh(gateway.getStatus().connected, false);
+      if (get().history?.availability === 'available') {
+        await get().refreshHistory(gateway.getStatus().connected, false);
+      }
     } catch (error) {
       set({ error: errorMessage(error) });
     } finally {

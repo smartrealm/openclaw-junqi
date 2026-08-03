@@ -59,3 +59,68 @@ test('invalidates an in-flight list response when the Gateway disconnects', asyn
     gateway.listPendingApprovals = originalList;
   }
 });
+
+test('loads unified approval history and appends cursor pages without duplicates', async () => {
+  const originalHistory = gateway.listApprovalHistory;
+  let calls = 0;
+  gateway.listApprovalHistory = async (input = {}) => {
+    calls += 1;
+    if (input.cursor) {
+      return {
+        availability: 'available' as const,
+        items: [{
+          id: 'second',
+          urlPath: '/approve/second',
+          createdAtMs: 2,
+          expiresAtMs: 3,
+          resolvedAtMs: 4,
+          status: 'denied' as const,
+          reason: 'user' as const,
+          decision: 'deny' as const,
+          presentation: {
+            kind: 'plugin' as const,
+            title: 'Plugin approval',
+            description: 'Second',
+            severity: 'info' as const,
+            allowedDecisions: ['allow-once', 'deny'] as const,
+          },
+        }],
+      };
+    }
+    return {
+      availability: 'available' as const,
+      nextCursor: 'next',
+      items: [{
+        id: 'first',
+        urlPath: '/approve/first',
+        createdAtMs: 1,
+        expiresAtMs: 2,
+        resolvedAtMs: 3,
+        status: 'allowed' as const,
+        reason: 'user' as const,
+        decision: 'allow-once' as const,
+        presentation: {
+          kind: 'exec' as const,
+          commandText: 'echo first',
+          allowedDecisions: ['allow-once', 'deny'] as const,
+        },
+      }],
+    };
+  };
+  useOpenClawApprovalsStore.setState({
+    history: null,
+    historyLoading: false,
+    historyError: null,
+  });
+
+  try {
+    await useOpenClawApprovalsStore.getState().refreshHistory(true, true);
+    await useOpenClawApprovalsStore.getState().loadMoreHistory(true);
+    const history = useOpenClawApprovalsStore.getState().history;
+    assert.equal(calls, 2);
+    assert.deepEqual(history?.items.map((item) => item.id), ['first', 'second']);
+    assert.equal(history?.nextCursor, undefined);
+  } finally {
+    gateway.listApprovalHistory = originalHistory;
+  }
+});

@@ -57,6 +57,7 @@ import {
   OpenClawApprovalClient,
   type OpenClawApproval,
   type OpenClawApprovalDecision,
+  type OpenClawApprovalHistoryRequest,
 } from './OpenClawApprovalClient';
 import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
 import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
@@ -78,6 +79,18 @@ export type {
   OpenClawApprovalListResult,
   OpenClawApprovalKind,
   OpenClawApprovalAvailability,
+  OpenClawApprovalHistoryAvailability,
+  OpenClawApprovalGetResult,
+  OpenClawApprovalHistoryRequest,
+  OpenClawApprovalHistoryResult,
+  OpenClawApprovalResolveResult,
+  OpenClawApprovalSnapshot,
+  OpenClawApprovalStatus,
+  OpenClawApprovalTerminalReason,
+  OpenClawApprovalPresentation,
+  OpenClawApprovalExecPresentation,
+  OpenClawApprovalPluginPresentation,
+  OpenClawApprovalSystemAgentPresentation,
 } from './OpenClawApprovalClient';
 export {
   GatewayConnectionFenceError,
@@ -833,6 +846,10 @@ export const gateway = {
   async cancelTask(taskId: string, reason?: string) { return taskLedger.cancel(taskId, reason); },
   async listAuditEvents(input: OpenClawAuditListInput = {}) { return auditClient.list(input); },
   async listPendingApprovals() { return approvalClient.list(); },
+  async listApprovalHistory(input: OpenClawApprovalHistoryRequest = {}) {
+    return approvalClient.history(input);
+  },
+  async getApproval(id: string) { return approvalClient.get(id); },
   async resolveApproval(approval: OpenClawApproval, decision: OpenClawApprovalDecision) {
     return approvalClient.resolve(approval, decision);
   },

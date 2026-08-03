@@ -4,6 +4,7 @@ import { GatewayRpcError } from './Connection';
 import {
   OpenClawApprovalClient,
   OpenClawApprovalResponseError,
+  OPENCLAW_APPROVAL_RESOLVE_METHOD,
 } from './OpenClawApprovalClient';
 
 const execApproval = {
@@ -70,7 +71,7 @@ test('accepts the current OpenClaw plugin description limit', async () => {
         }]
         : []
     ) as T,
-    () => true,
+    (method) => method !== OPENCLAW_APPROVAL_RESOLVE_METHOD,
   );
 
   const result = await client.list();
@@ -114,7 +115,7 @@ test('resolves only a Gateway-advertised decision and confirms native success', 
       calls.push({ method, params });
       return { ok: true } as T;
     },
-    () => true,
+    (method) => method !== OPENCLAW_APPROVAL_RESOLVE_METHOD,
   );
 
   await client.resolve({
@@ -136,6 +137,147 @@ test('resolves only a Gateway-advertised decision and confirms native success', 
       request: { ...execApproval.request, allowedDecisions: ['deny'] },
     }, 'allow-once'),
   );
+});
+
+test('uses the unified approval resolver when the Gateway advertises it', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const client = new OpenClawApprovalClient(
+    async <T>(method: string, params: Record<string, unknown>): Promise<T> => {
+      calls.push({ method, params });
+      return {
+        applied: true,
+        approval: {
+          id: 'exec-1',
+          urlPath: '/approve/exec-1',
+          createdAtMs: 100,
+          expiresAtMs: 200,
+          resolvedAtMs: 150,
+          status: 'allowed',
+          reason: 'user',
+          decision: 'allow-once',
+          presentation: {
+            kind: 'exec',
+            commandText: 'git status --short',
+            allowedDecisions: ['allow-once', 'deny'],
+          },
+        },
+      } as T;
+    },
+    (method) => method === OPENCLAW_APPROVAL_RESOLVE_METHOD,
+  );
+
+  const result = await client.resolve({ kind: 'exec', ...execApproval }, 'allow-once');
+  assert.equal(result?.applied, true);
+  assert.equal(result?.approval.status, 'allowed');
+  assert.deepEqual(calls, [{
+    method: OPENCLAW_APPROVAL_RESOLVE_METHOD,
+    params: { id: 'exec-1', kind: 'exec', decision: 'allow-once' },
+  }]);
+});
+
+test('falls back to the legacy resolver when unified method discovery is stale', async () => {
+  const calls: string[] = [];
+  const client = new OpenClawApprovalClient(
+    async <T>(method: string): Promise<T> => {
+      calls.push(method);
+      if (method === OPENCLAW_APPROVAL_RESOLVE_METHOD) {
+        throw new GatewayRpcError('method not found', 'METHOD_NOT_FOUND');
+      }
+      return { ok: true } as T;
+    },
+    () => true,
+  );
+
+  await client.resolve({ kind: 'plugin', ...pluginApproval }, 'deny');
+  assert.deepEqual(calls, [OPENCLAW_APPROVAL_RESOLVE_METHOD, 'plugin.approval.resolve']);
+});
+
+test('parses the official approval history snapshots without exposing runtime details', async () => {
+  const client = new OpenClawApprovalClient(
+    async <T>(): Promise<T> => ({
+      items: [{
+        id: 'system-1',
+        urlPath: '/approve/system-1',
+        createdAtMs: 100,
+        expiresAtMs: 200,
+        resolvedAtMs: 150,
+        status: 'denied',
+        reason: 'user',
+        decision: 'deny',
+        source: { agentId: 'main', sessionKey: 'agent:main:main' },
+        resolver: { kind: 'device', id: 'device-1' },
+        presentation: {
+          kind: 'system-agent',
+          title: 'Update gateway',
+          description: 'Apply a reviewed gateway change.',
+          proposalHash: 'a'.repeat(64),
+          allowedDecisions: ['allow-once', 'deny'],
+          cwd: '/must-not-be-accepted',
+        },
+      }],
+      nextCursor: 'next-page',
+    }) as T,
+    (method) => method === 'approval.history',
+  );
+
+  const result = await client.history({ kind: 'system-agent', limit: 25 });
+  assert.equal(result.availability, 'available');
+  assert.equal(result.items[0]?.presentation.kind, 'system-agent');
+  assert.equal(result.items[0]?.resolver?.kind, 'device');
+  assert.equal(result.nextCursor, 'next-page');
+  assert.equal('cwd' in (result.items[0]?.presentation ?? {}), false);
+});
+
+test('rejects malformed unified approval history responses', async () => {
+  const client = new OpenClawApprovalClient(
+    async <T>(): Promise<T> => ({ items: [{ status: 'pending' }] } as T),
+    (method) => method === 'approval.history',
+  );
+  await assert.rejects(client.history(), OpenClawApprovalResponseError);
+});
+
+test('gets one official approval snapshot when the Gateway advertises approval.get', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const client = new OpenClawApprovalClient(
+    async <T>(method: string, params: Record<string, unknown>): Promise<T> => {
+      calls.push({ method, params });
+      return {
+        approval: {
+          id: 'plugin-1',
+          urlPath: '/approve/plugin-1',
+          createdAtMs: 100,
+          expiresAtMs: 200,
+          status: 'pending',
+          presentation: {
+            kind: 'plugin',
+            title: 'Calendar access',
+            description: 'Read calendar events.',
+            severity: 'info',
+            allowedDecisions: ['allow-once', 'deny'],
+          },
+        },
+      } as T;
+    },
+    (method) => method === 'approval.get',
+  );
+
+  const result = await client.get('plugin-1');
+  assert.equal(result.availability, 'available');
+  assert.equal(result.approval?.status, 'pending');
+  assert.deepEqual(calls, [{ method: 'approval.get', params: { id: 'plugin-1' } }]);
+});
+
+test('validates unified approval ids with the official path-safe contract', async () => {
+  const client = new OpenClawApprovalClient(
+    async <T>(): Promise<T> => {
+      throw new Error('request should not run for invalid ids');
+    },
+    () => false,
+  );
+  await assert.rejects(client.get(''), OpenClawApprovalResponseError);
+  await assert.rejects(client.get('.'), OpenClawApprovalResponseError);
+  await assert.rejects(client.get('..'), OpenClawApprovalResponseError);
+  await assert.rejects(client.get('\ud800'), OpenClawApprovalResponseError);
 });
 
 test('rejects malformed list and unresolved native responses without claiming success', async () => {
