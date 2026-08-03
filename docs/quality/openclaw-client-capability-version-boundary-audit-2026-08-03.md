@@ -14,8 +14,9 @@ invent a general OpenClaw version support policy.
 The official OpenClaw Gateway protocol's `hello-ok` response contains
 `features.methods` and `features.events`. The protocol calls this a
 conservative feature-discovery list, not a complete method enumeration. JunQi
-therefore uses advertised methods, request results, scopes, and strict response
-decoding to decide whether a Gateway interaction is available. It must not
+therefore uses request results, scopes, and strict response decoding to decide
+whether a Gateway interaction is available. The conservative discovery list is
+not a local invocation gate. It must not
 replace those runtime facts with a client-maintained version range.
 
 Official sources reviewed at commit

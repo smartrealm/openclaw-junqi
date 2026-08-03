@@ -176,12 +176,6 @@ export function SkillsPage() {
   const agents = useGatewayDataStore((state) => state.agents);
   const agentsLoading = useGatewayDataStore((state) => state.loading.agents);
   const agentsError = useGatewayDataStore((state) => state.errors.agents);
-  const archiveUploadCapability = openClawSkillsRuntime.archiveUploadCapability();
-  const skillCardCapability = openClawSkillsRuntime.skillCardCapability();
-  const curatorStatusCapability = openClawSkillsRuntime.curatorStatusCapability();
-  const proposalsCapability = openClawSkillsRuntime.proposalsCapability();
-  const proposalInspectCapability = openClawSkillsRuntime.proposalInspectCapability();
-  const proposalEventsCapability = openClawSkillsRuntime.proposalEventsCapability();
   const [activeTab, setActiveTab] = useState<SkillsTab>('installed');
   const [installed, setInstalled] = useState<MySkill[]>([]);
   const [catalog, setCatalog] = useState<HubSkill[]>([]);
@@ -235,9 +229,7 @@ export function SkillsPage() {
       const [skillsResult, verdictResult, curatorResult] = await Promise.allSettled([
         openClawSkillsRuntime.list(),
         openClawSkillsRuntime.securityVerdicts(),
-        curatorStatusCapability === false
-          ? Promise.resolve(null)
-          : openClawSkillsRuntime.curatorStatus(),
+        openClawSkillsRuntime.curatorStatus(),
       ]);
       if (skillsResult.status === 'rejected') throw skillsResult.reason;
       const verdicts = verdictResult.status === 'fulfilled' ? verdictResult.value : [];
@@ -253,7 +245,7 @@ export function SkillsPage() {
     } finally {
       setLoadingInstalled(false);
     }
-  }, [connected, curatorStatusCapability]);
+  }, [connected]);
 
   const loadCatalog = useCallback(async (nextQuery = query) => {
     if (!connected) return;
@@ -269,7 +261,7 @@ export function SkillsPage() {
   }, [connected, query]);
 
   const loadProposals = useCallback(async () => {
-    if (!connected || proposalsCapability === false) return;
+    if (!connected) return;
     const requestGeneration = proposalRequestGeneration.current + 1;
     proposalRequestGeneration.current = requestGeneration;
     setLoadingProposals(true);
@@ -290,7 +282,7 @@ export function SkillsPage() {
         setLoadingProposals(false);
       }
     }
-  }, [connected, proposalScopeAgentId, proposalsCapability]);
+  }, [connected, proposalScopeAgentId]);
 
   useEffect(() => {
     void loadInstalled();
@@ -321,7 +313,7 @@ export function SkillsPage() {
     setProposalInspectionLoading(false);
     setProposalInspection(null);
     setProposalInspectionError(null);
-  }, [proposalScopeAgentId, connected, proposalInspectCapability]);
+  }, [proposalScopeAgentId, connected]);
 
   useEffect(() => {
     proposalEventsRequestGeneration.current += 1;
@@ -331,7 +323,7 @@ export function SkillsPage() {
     setProposalEventsError(null);
     setProposalEventsNextSequence(undefined);
     setProposalEventsProposal(null);
-  }, [proposalScopeAgentId, connected, proposalEventsCapability]);
+  }, [proposalScopeAgentId, connected]);
 
   useEffect(() => {
     if (activeTab !== 'proposals') return;
@@ -339,18 +331,12 @@ export function SkillsPage() {
   }, [activeTab, loadProposals]);
 
   useEffect(() => {
-    if (activeTab === 'proposals' && proposalsCapability === false) {
-      setActiveTab('installed');
-    }
-  }, [activeTab, proposalsCapability]);
-
-  useEffect(() => {
-    if (connected && proposalsCapability !== false) return;
+    if (connected) return;
     proposalRequestGeneration.current += 1;
     setLoadingProposals(false);
     setProposals([]);
     setProposalsError(null);
-  }, [connected, proposalsCapability]);
+  }, [connected]);
 
   useEffect(() => {
     if (connected) return;
@@ -456,7 +442,7 @@ export function SkillsPage() {
   }, []);
 
   const openProposalInspection = useCallback(async (proposalId: string) => {
-    if (!connected || proposalInspectCapability === false) return;
+    if (!connected) return;
     const requestGeneration = proposalInspectionRequestGeneration.current + 1;
     proposalInspectionRequestGeneration.current = requestGeneration;
     setProposalInspectionOpen(true);
@@ -477,7 +463,7 @@ export function SkillsPage() {
         setProposalInspectionLoading(false);
       }
     }
-  }, [connected, proposalInspectCapability, proposalScopeAgentId]);
+  }, [connected, proposalScopeAgentId]);
 
   const closeProposalInspection = useCallback(() => {
     proposalInspectionRequestGeneration.current += 1;
@@ -491,7 +477,7 @@ export function SkillsPage() {
     proposal: OpenClawSkillProposal,
     afterSequence?: number,
   ) => {
-    if (!connected || proposalEventsCapability === false) return;
+    if (!connected) return;
     const requestGeneration = proposalEventsRequestGeneration.current + 1;
     proposalEventsRequestGeneration.current = requestGeneration;
     if (afterSequence === undefined) {
@@ -522,7 +508,7 @@ export function SkillsPage() {
         setProposalEventsLoading(false);
       }
     }
-  }, [connected, proposalEventsCapability, proposalScopeAgentId]);
+  }, [connected, proposalScopeAgentId]);
 
   const closeProposalEvents = useCallback(() => {
     proposalEventsRequestGeneration.current += 1;
@@ -537,8 +523,8 @@ export function SkillsPage() {
   const tabItems = useMemo(() => [
     { id: 'installed' as const, icon: Package, label: t('skills.mySkills'), count: installed.length },
     { id: 'catalog' as const, icon: Search, label: t('skills.clawHub') },
-    ...(proposalsCapability !== false ? [{ id: 'proposals' as const, icon: ClipboardList, label: t('skillsExtra.proposalsTitle', 'Workshop') }] : []),
-  ], [installed.length, proposalsCapability, t]);
+    { id: 'proposals' as const, icon: ClipboardList, label: t('skillsExtra.proposalsTitle', 'Workshop') },
+  ], [installed.length, t]);
 
   return (
     <PageTransition className="flex-1 overflow-y-auto overflow-x-hidden">
@@ -584,7 +570,6 @@ export function SkillsPage() {
         <AnimatedTabPanel transitionKey={activeTab}>
         {activeTab === 'installed' && (
           <section>
-            <SkillArchiveUploadPanel connected={connected} onInstalled={loadInstalled} />
             <div className="mb-4 flex items-center justify-between gap-4">
               <p className="text-[11px] text-aegis-text-dim">
                 {installed.length > 0 ? t('skills.installedCount', { count: installed.length }) : t('skills.noSkillsHint')}
@@ -600,9 +585,7 @@ export function SkillsPage() {
                 {loadingInstalled ? <LoadingIndicator size={13} /> : <RefreshCw size={13} aria-hidden="true" />}
               </button>
             </div>
-            {archiveUploadCapability !== false && (
-              <SkillArchiveUploadPanel connected={connected} onInstalled={loadInstalled} />
-            )}
+            <SkillArchiveUploadPanel connected={connected} onInstalled={loadInstalled} />
             {curatorStatus && (
               <div className="mb-4 border-y border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.015)] px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -652,7 +635,7 @@ export function SkillsPage() {
               <SkillsList
                 skills={installed}
                 onToggle={(slug) => void toggleSkill(slug)}
-                {...(connected && skillCardCapability !== false
+                {...(connected
                   ? { onViewCard: (slug: string) => void openSkillCard(slug) }
                   : {})}
               />
@@ -771,7 +754,7 @@ export function SkillsPage() {
                           <span className={clsx('inline-flex shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-semibold', proposalStatusStyle(proposal.status))}>
                             {proposalStatusLabel(proposal, t)}
                           </span>
-                          {connected && proposalInspectCapability !== false && (
+                          {connected && (
                             <button
                               type="button"
                               onClick={() => void openProposalInspection(proposal.id)}
@@ -782,7 +765,7 @@ export function SkillsPage() {
                               <BookOpenText size={12} aria-hidden="true" />
                             </button>
                           )}
-                          {connected && proposalEventsCapability !== false && (
+                          {connected && (
                             <button
                               type="button"
                               onClick={() => void loadProposalEvents(proposal)}

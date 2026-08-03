@@ -6,7 +6,7 @@
 
 1. 完成：核对最新官方 Gateway 协议、TTS handler、方法权限目录和 JunQi 现有 TTS status/read 与播放链路。
 2. 完成：限定为官方 enabled、provider、persona 写方法，排除 auto、convert、本地音频路径和本地 TTS。
-3. 完成：实现带 method advertisement、attested connection fencing、严格确认和状态重读的偏好客户端。
+3. 完成：实现带 Gateway 正式错误映射、attested connection fencing、严格确认和状态重读的偏好客户端。
 4. 完成：在现有通知设置页接入锁定式控件、多语言状态和回归测试。
 5. 完成：更新索引和验证记录，运行全量检查、扫描和中文提交。
 

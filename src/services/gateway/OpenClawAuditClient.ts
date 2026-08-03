@@ -79,13 +79,12 @@ export interface OpenClawAuditListPage {
 }
 
 export type OpenClawAuditRequester = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
-export type OpenClawAdvertisedMethodLookup = (method: string) => boolean | null;
 
 export class OpenClawAuditUnsupportedError extends Error {
   readonly code = 'OPENCLAW_AUDIT_UNSUPPORTED';
 
   constructor() {
-    super('The connected OpenClaw Gateway does not advertise an audit query method');
+    super('The connected OpenClaw Gateway does not support an audit query method');
     this.name = 'OpenClawAuditUnsupportedError';
   }
 }
@@ -97,6 +96,11 @@ export class OpenClawAuditResponseError extends Error {
     super('The OpenClaw Gateway returned an invalid audit response');
     this.name = 'OpenClawAuditResponseError';
   }
+}
+
+function unsupportedMethod(error: unknown): boolean {
+  return error instanceof GatewayRpcError
+    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -444,28 +448,24 @@ export function parseOpenClawAuditLegacyPage(value: unknown): OpenClawAuditListP
 }
 
 export class OpenClawAuditClient {
-  constructor(
-    private readonly request: OpenClawAuditRequester,
-    private readonly hasAdvertisedMethod: OpenClawAdvertisedMethodLookup = () => null,
-  ) {}
+  constructor(private readonly request: OpenClawAuditRequester) {}
 
   async list(input: OpenClawAuditListInput = {}): Promise<OpenClawAuditListPage> {
-    const activityCapability = this.hasAdvertisedMethod(OPENCLAW_AUDIT_ACTIVITY_METHOD);
-    const legacyCapability = this.hasAdvertisedMethod(OPENCLAW_AUDIT_LEGACY_METHOD);
     const activityParams = requestParams(input, true);
     const requiresActivity = input.kind === 'message' || input.direction !== undefined || input.channel !== undefined;
-
-    if (activityCapability === true) {
+    try {
       return parseOpenClawAuditActivityPage(await this.request(OPENCLAW_AUDIT_ACTIVITY_METHOD, activityParams));
+    } catch (error) {
+      if (!unsupportedMethod(error)) throw error;
     }
-    if (activityCapability === false && legacyCapability === false) {
-      throw new OpenClawAuditUnsupportedError();
-    }
-    if (activityCapability === false && requiresActivity) {
-      throw new OpenClawAuditUnsupportedError();
-    }
+    if (requiresActivity) throw new OpenClawAuditUnsupportedError();
     const legacyParams = requestParams(input, false);
-    if (legacyCapability === false) throw new OpenClawAuditUnsupportedError();
-    return parseOpenClawAuditLegacyPage(await this.request(OPENCLAW_AUDIT_LEGACY_METHOD, legacyParams));
+    try {
+      return parseOpenClawAuditLegacyPage(await this.request(OPENCLAW_AUDIT_LEGACY_METHOD, legacyParams));
+    } catch (error) {
+      if (unsupportedMethod(error)) throw new OpenClawAuditUnsupportedError();
+      throw error;
+    }
   }
 }
+import { GatewayRpcError } from './Connection';

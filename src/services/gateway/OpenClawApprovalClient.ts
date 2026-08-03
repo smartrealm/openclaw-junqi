@@ -190,7 +190,6 @@ export type OpenClawApprovalRequester = <T>(
   params: Record<string, unknown>,
 ) => Promise<T>;
 
-export type OpenClawApprovalAdvertisedMethodLookup = (method: string) => boolean | null;
 
 export class OpenClawApprovalResponseError extends Error {
   readonly code = 'OPENCLAW_APPROVAL_RESPONSE_INVALID';
@@ -689,7 +688,6 @@ function validateDecision(decision: OpenClawApprovalDecision): void {
 export class OpenClawApprovalClient {
   constructor(
     private readonly request: OpenClawApprovalRequester,
-    private readonly hasAdvertisedMethod: OpenClawApprovalAdvertisedMethodLookup,
   ) {}
 
   private async listKind(kind: OpenClawLegacyApprovalKind): Promise<{
@@ -697,9 +695,6 @@ export class OpenClawApprovalClient {
     availability: OpenClawApprovalAvailability;
   }> {
     const method = listMethod(kind);
-    if (this.hasAdvertisedMethod(method) === false) {
-      return { approvals: [], availability: 'unavailable' };
-    }
     try {
       return {
         approvals: parseList(await this.request<unknown>(method, {}), kind),
@@ -742,9 +737,6 @@ export class OpenClawApprovalClient {
       throw new Error('Invalid OpenClaw approval history limit');
     }
     if (request.kind !== undefined) parseApprovalKind(request.kind);
-    if (this.hasAdvertisedMethod(OPENCLAW_APPROVAL_HISTORY_METHOD) === false) {
-      return { items: [], availability: 'unavailable' };
-    }
     const params: Record<string, unknown> = {};
     if (request.cursor !== undefined) params.cursor = request.cursor;
     if (request.limit !== undefined) params.limit = request.limit;
@@ -764,9 +756,6 @@ export class OpenClawApprovalClient {
 
   async get(id: string): Promise<OpenClawApprovalGetResult> {
     const requestedId = approvalId(id);
-    if (this.hasAdvertisedMethod(OPENCLAW_APPROVAL_GET_METHOD) === false) {
-      return { approval: null, availability: 'unavailable' };
-    }
     try {
       const response = record(await this.request<unknown>(OPENCLAW_APPROVAL_GET_METHOD, {
         id: requestedId,
@@ -792,16 +781,14 @@ export class OpenClawApprovalClient {
     if (approval.request.allowedDecisions && !approval.request.allowedDecisions.includes(decision)) {
       throw new Error('The OpenClaw Gateway did not advertise this approval decision');
     }
-    if (this.hasAdvertisedMethod(OPENCLAW_APPROVAL_RESOLVE_METHOD) !== false) {
-      try {
-        return parseApprovalResolve(await this.request<unknown>(OPENCLAW_APPROVAL_RESOLVE_METHOD, {
-          id: approval.id,
-          kind: approval.kind,
-          decision,
-        }));
-      } catch (error) {
-        if (!isUnsupportedProtocolError(error)) throw error;
-      }
+    try {
+      return parseApprovalResolve(await this.request<unknown>(OPENCLAW_APPROVAL_RESOLVE_METHOD, {
+        id: approval.id,
+        kind: approval.kind,
+        decision,
+      }));
+    } catch (error) {
+      if (!isUnsupportedProtocolError(error)) throw error;
     }
     const response = await this.request<unknown>(resolveMethod(approval.kind), {
       id: approval.id,
@@ -823,13 +810,17 @@ export class OpenClawApprovalClient {
     if (!approval.presentation.allowedDecisions.some((candidate) => candidate === decision)) {
       throw new Error('The OpenClaw Gateway did not advertise this approval decision');
     }
-    if (this.hasAdvertisedMethod(OPENCLAW_APPROVAL_RESOLVE_METHOD) === false) {
-      throw new Error('The OpenClaw Gateway does not expose the unified approval resolver');
+    try {
+      return parseApprovalResolve(await this.request<unknown>(OPENCLAW_APPROVAL_RESOLVE_METHOD, {
+        id: approval.id,
+        kind: approval.presentation.kind,
+        decision,
+      }));
+    } catch (error) {
+      if (isUnsupportedProtocolError(error)) {
+        throw new Error('The connected OpenClaw Gateway does not support the unified approval resolver');
+      }
+      throw error;
     }
-    return parseApprovalResolve(await this.request<unknown>(OPENCLAW_APPROVAL_RESOLVE_METHOD, {
-      id: approval.id,
-      kind: approval.presentation.kind,
-      decision,
-    }));
   }
 }

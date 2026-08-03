@@ -34,7 +34,6 @@ export interface OpenClawCompactionCheckpoint {
 export interface OpenClawCompactionCheckpointClientDependencies {
   captureConnectionId: () => string | null;
   isConnectionCurrent: (connectionId: string) => boolean;
-  hasAdvertisedMethod: (method: string) => boolean | null;
   requestFenced: (method: string, params: Record<string, unknown>, connectionId: string) => Promise<unknown>;
 }
 
@@ -140,9 +139,6 @@ export class OpenClawSessionCompactionCheckpointsClient {
   constructor(private readonly dependencies: OpenClawCompactionCheckpointClientDependencies) {}
 
   private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
-    if (this.dependencies.hasAdvertisedMethod(method) === false) {
-      throw new OpenClawCompactionCheckpointsUnavailableError(`The connected OpenClaw Gateway does not advertise ${method}`);
-    }
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId) throw new OpenClawCompactionCheckpointsUnavailableError('No attested Gateway connection is available');
     try {

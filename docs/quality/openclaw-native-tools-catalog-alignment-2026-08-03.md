@@ -10,7 +10,7 @@ core/plugin 工具目录。这个目录用于观察配置可见的工具、工�
 `tools.effective` 面板负责。
 
 JunQi 不维护第二份工具目录，不根据配置字段本地合成插件工具；目录读取路径本身不执行
-`tools.invoke`，也不主动连接 MCP。Gateway 未广告该方法、返回不合法数据、agent 被删除或连接断开时，
+`tools.invoke`，也不主动连接 MCP。Gateway 正式拒绝该方法、返回不合法数据、agent 被删除或连接断开时，
 界面不保留旧目录作为当前事实。
 
 ## 权威依据
@@ -26,7 +26,7 @@ JunQi 不维护第二份工具目录，不根据配置字段本地合成插件�
 和必需的 `defaultProfiles`；插件目录由 Gateway 按其运行时插件注册表生成。
 
 项目实际安装的 OpenClaw 版本只用于本机复现，不作为能力开关。能力是否存在以官方文档、
-schema、handler、方法目录和当前连接的 advertised methods 为准。
+schema、handler、方法目录和 Gateway 正式响应为准；保守发现列表不作为本地发送门禁。
 
 ## 当前行为
 
@@ -43,7 +43,7 @@ schema、handler、方法目录和当前连接的 advertised methods 为准。
 
 - `OpenClawToolsCatalogClient.test.ts` 覆盖请求字段、profile、core/plugin 分组、工具
   元数据、附加字段和非法响应。
-- `gatewayDataStore.test.ts` 覆盖 agent 生命周期、未广告能力和不发送不受支持的 RPC。
+- `gatewayDataStore.test.ts` 覆盖 agent 生命周期和 Gateway 未知方法的不可用映射。
 - 已执行目标 TypeScript 测试、`pnpm lint`、完整测试、生产构建、官方链接和差异检查。
 
 ## 未验证边界

@@ -22,15 +22,15 @@ JunQi 的 Session Manager 现在通过 OpenClaw 原生 `sessions.preview` 读取
 按该上限分批；`limit: 3`、`maxChars: 160` 是桌面卡片的显示边界，不是能力开关。
 
 项目实际安装的 OpenClaw 版本只用于本机复现和验证范围记录，不作为字段、权限或
-功能是否存在的契约。能力判断以官方文档、协议 schema、handler 和当前连接的
-advertised methods 为准。
+功能是否存在的契约。能力判断以官方文档、协议 schema、handler 和 Gateway 正式响应为准；
+保守发现列表不作为本地发送门禁。
 
 ## 当前行为
 
 1. Session Manager 根据 Gateway 的 `sessions.list` key 请求 `sessions.preview`，
    每批最多 64 个 key，并严格检查响应状态、角色、文本、时间戳和 key 集合。
-2. Gateway 显式未声明 `sessions.preview` 时，不发送 RPC，界面显示“最近消息不可用”；
-   非法响应或传输失败只显示加载失败，不生成本地预览。
+2. Gateway 正式返回未知方法时，界面显示“最近消息不可用”；非法响应或传输失败只显示加载失败，
+   不生成本地预览。
 3. 预览缓存按 Gateway 连接和当前 session key 绑定。连接停止、会话删除、刷新开始
    或请求过期都会清除相关旧内容，旧连接的迟到响应不能回写新连接。
 4. 卡片只展示 `ok` 状态中最后一条非空 `text`；`empty` 显示明确的空状态，

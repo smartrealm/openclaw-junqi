@@ -27,7 +27,7 @@
 
 ## 本轮完成
 
-- [x] 按官方 advertised method 动态选择 `approval.resolve` 或旧 family resolve。
+- [x] 按 Gateway 实际未知方法错误选择 `approval.resolve` 或旧 family resolve。
 - [x] 严格解码 `approval.history` / `approval.get` 的 exec、plugin、system-agent snapshot、
   reason、source、resolver 和 cursor。
 - [x] 活动中心展示官方脱敏审批历史，并支持 `nextCursor` 分页。

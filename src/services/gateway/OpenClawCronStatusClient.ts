@@ -8,7 +8,6 @@ export interface OpenClawCronStatus {
 }
 
 export type OpenClawCronStatusRequester = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
-export type OpenClawCronStatusAdvertisedMethodLookup = (method: string) => boolean | null;
 
 const CRON_STATUS_METHOD = 'cron.status';
 
@@ -16,7 +15,7 @@ export class OpenClawCronStatusUnsupportedError extends Error {
   readonly code = 'OPENCLAW_CRON_STATUS_UNSUPPORTED';
 
   constructor() {
-    super(`The connected OpenClaw Gateway does not advertise ${CRON_STATUS_METHOD}`);
+    super(`The connected OpenClaw Gateway does not support ${CRON_STATUS_METHOD}`);
     this.name = 'OpenClawCronStatusUnsupportedError';
   }
 }
@@ -68,13 +67,9 @@ export function parseOpenClawCronStatus(value: unknown): OpenClawCronStatus {
 export class OpenClawCronStatusClient {
   constructor(
     private readonly request: OpenClawCronStatusRequester,
-    private readonly hasAdvertisedMethod: OpenClawCronStatusAdvertisedMethodLookup,
   ) {}
 
   async get(): Promise<OpenClawCronStatus> {
-    if (this.hasAdvertisedMethod(CRON_STATUS_METHOD) === false) {
-      throw new OpenClawCronStatusUnsupportedError();
-    }
     try {
       return parseOpenClawCronStatus(await this.request<unknown>(CRON_STATUS_METHOD, {}));
     } catch (error) {

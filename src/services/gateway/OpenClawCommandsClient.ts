@@ -61,7 +61,6 @@ export interface OpenClawCommandsListInput {
 export interface OpenClawCommandsClientDependencies {
   captureConnectionId: () => string | null;
   isConnectionCurrent: (connectionId: string) => boolean;
-  hasAdvertisedMethod: (method: string) => boolean | null;
   requestFenced: (method: string, params: Record<string, unknown>, connectionId: string) => Promise<unknown>;
 }
 
@@ -254,9 +253,6 @@ export class OpenClawCommandsClient {
   constructor(private readonly dependencies: OpenClawCommandsClientDependencies) {}
 
   async list(input: OpenClawCommandsListInput = {}): Promise<readonly OpenClawCommandEntry[]> {
-    if (this.dependencies.hasAdvertisedMethod(OPENCLAW_COMMANDS_LIST_METHOD) === false) {
-      throw new OpenClawCommandsUnavailableError('The connected OpenClaw Gateway does not advertise commands.list');
-    }
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId) {
       throw new OpenClawCommandsUnavailableError('No attested Gateway connection is available for commands.list');
@@ -273,7 +269,7 @@ export class OpenClawCommandsClient {
       return parseOpenClawCommandsList(response);
     } catch (error) {
       if (unsupportedMethod(error)) {
-        throw new OpenClawCommandsUnavailableError('The connected OpenClaw Gateway does not advertise commands.list');
+        throw new OpenClawCommandsUnavailableError('The connected OpenClaw Gateway does not support commands.list');
       }
       if (connectionUnavailable(error)) {
         throw new OpenClawCommandsUnavailableError('No attested Gateway connection is available for commands.list');

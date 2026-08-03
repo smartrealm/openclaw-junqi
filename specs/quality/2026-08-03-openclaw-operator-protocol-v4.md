@@ -29,4 +29,4 @@ JunQi 发送 `{ minProtocol: 4, maxProtocol: 4 }`。只有合法 `hello-ok` 的
 
 - protocol 值来自官方 Gateway protocol 常量；不得从 OpenClaw 软件包版本推断。
 - 只在 operator/UI handshake 边界执行此规则；不得影响 node 或 probe 的官方兼容路径。
-- 握手失败不得保留 device credential、identity、advertised methods 或伪造已连接状态。
+- 握手失败不得保留 device credential、identity 或伪造已连接状态。

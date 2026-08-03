@@ -4,7 +4,6 @@ import { CollaborationClient, CollaborationClientError } from '@/services/collab
 import {
   GatewayConnection,
   GatewayConnectionFenceError,
-  GatewayMethodNotAdvertisedError,
   GatewayRequestAbortedError,
   GatewayRpcError,
   platformFromNativeOs,
@@ -70,17 +69,6 @@ describe('GatewayConnection request identity', () => {
     connection.disconnect();
   });
 
-  it('keeps advertised Gateway methods tri-state across a socket lifecycle', () => {
-    const connection = new GatewayConnection() as any;
-    assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), null);
-    connection.advertisedMethods = new Set(['audit.activity.list']);
-    assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), true);
-    assert.equal(connection.hasAdvertisedMethod('audit.list'), false);
-    assert.deepEqual(connection.getAdvertisedMethods(), ['audit.activity.list']);
-    connection.disconnect();
-    assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), null);
-  });
-
   it('uses the recoverable transport contract before connect and for pending disconnects', async () => {
     const connection = new GatewayConnection();
     await assert.rejects(
@@ -121,7 +109,7 @@ describe('GatewayConnection request identity', () => {
     connection.disconnect();
   });
 
-  it('does not send regular or fenced RPCs explicitly absent from hello-ok methods', async () => {
+  it('does not treat a hello-ok method omission as a transport denial', async () => {
     const connection = new GatewayConnection() as any;
     const sent: unknown[] = [];
     connection.ws = {
@@ -131,26 +119,18 @@ describe('GatewayConnection request identity', () => {
     };
     connection.connected = true;
     connection.runtimeIdentityConnectionId = 'connection-1';
-    connection.advertisedMethods = new Set(['sessions.list']);
-
-    await assert.rejects(
-      connection.request('sessions.delete', { key: 'session' }),
-      (error: unknown) => error instanceof GatewayMethodNotAdvertisedError
-        && error.method === 'sessions.delete',
-    );
-    await assert.rejects(
-      connection.requestFenced('sessions.delete', { key: 'session' }, 'connection-1'),
-      (error: unknown) => error instanceof GatewayMethodNotAdvertisedError
-        && error.method === 'sessions.delete',
-    );
-    assert.deepEqual(sent, []);
-    assert.equal(connection.pendingRequests.size, 0);
-    assert.equal(connection.msgCounter, 0);
-
-    const allowed = connection.request('sessions.list', {});
+    const regular = connection.request('sessions.delete', { key: 'session' });
     assert.equal(sent.length, 1);
     connection.handleMessage({ type: 'res', id: (sent[0] as { id: string }).id, ok: true, payload: {} });
-    await allowed;
+    await regular;
+
+    const fenced = connection.requestFenced('sessions.delete', { key: 'session' }, 'connection-1');
+    assert.equal(sent.length, 2);
+    connection.handleMessage({ type: 'res', id: (sent[1] as { id: string }).id, ok: true, payload: {} });
+    await fenced;
+
+    assert.equal(connection.pendingRequests.size, 0);
+    assert.equal(connection.msgCounter, 2);
     connection.disconnect();
   });
 

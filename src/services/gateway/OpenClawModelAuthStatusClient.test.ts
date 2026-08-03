@@ -32,7 +32,6 @@ test('OpenClawModelAuthStatusClient fences and projects only non-secret authenti
   const client = new OpenClawModelAuthStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: (connectionId) => connectionId === 'gateway-a',
-    hasAdvertisedMethod: () => true,
     requestFenced: async (method, params, connectionId) => {
       calls.push({ method, params, connectionId });
       return response;
@@ -87,29 +86,31 @@ test('OpenClawModelAuthStatusClient preserves the native negative duration for e
   assert.equal(snapshot.providers[0]?.expiry?.remainingMs, -1);
 });
 
-test('OpenClawModelAuthStatusClient avoids unadvertised methods and maps connection failures', async () => {
+test('OpenClawModelAuthStatusClient attempts omitted methods and maps connection failures', async () => {
+  let omittedMethodSent = false;
   const unavailable = new OpenClawModelAuthStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => false,
-    requestFenced: async () => { throw new Error('request must not be sent'); },
+    requestFenced: async () => {
+      omittedMethodSent = true;
+      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+    },
   });
   const missing = new OpenClawModelAuthStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => null,
     requestFenced: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
   });
   const disconnected = new OpenClawModelAuthStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => { throw new GatewayDisconnectedError(); },
   });
 
   await assert.rejects(unavailable.get(), OpenClawModelAuthStatusUnavailableError);
   await assert.rejects(missing.get(), OpenClawModelAuthStatusUnavailableError);
   await assert.rejects(disconnected.get(), OpenClawModelAuthStatusUnavailableError);
+  assert.equal(omittedMethodSent, true);
 });
 
 test('OpenClawModelAuthStatusClient discards a status response after the Gateway changes', async () => {
@@ -117,7 +118,6 @@ test('OpenClawModelAuthStatusClient discards a status response after the Gateway
   const client = new OpenClawModelAuthStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => current,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => {
       current = false;
       return response;

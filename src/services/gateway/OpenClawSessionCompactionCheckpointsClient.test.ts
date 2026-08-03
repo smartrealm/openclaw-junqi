@@ -25,7 +25,6 @@ test('reads Gateway compaction checkpoint metadata through a fenced official req
   const client = new OpenClawSessionCompactionCheckpointsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: (connectionId) => connectionId === 'gateway-a',
-    hasAdvertisedMethod: () => true,
     requestFenced: async (method, params, connectionId) => {
       calls.push({ method, params, connectionId });
       return { ok: true, key: 'agent:main:main', checkpoints: [checkpoint] };
@@ -44,7 +43,6 @@ test('preserves an official safe-integer checkpoint timestamp for the UI to vali
   const client = new OpenClawSessionCompactionCheckpointsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => ({
       ok: true,
       key: 'agent:main:main',
@@ -60,27 +58,29 @@ test('fails closed for invalid checkpoint metadata and does not retain a local r
   const client = new OpenClawSessionCompactionCheckpointsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => ({ ok: true, key: 'agent:main:main', checkpoints: [{ ...checkpoint, reason: 'legacy' }] }),
   });
 
   await assert.rejects(client.list('agent:main:main'), OpenClawCompactionCheckpointsResponseError);
 });
 
-test('does not send unadvertised checkpoint methods and fences disconnected responses', async () => {
+test('sends despite discovery omission and fences disconnected responses', async () => {
+  let omittedMethodSent = false;
   const unsupported = new OpenClawSessionCompactionCheckpointsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => false,
-    requestFenced: async () => { throw new Error('must not request'); },
+    requestFenced: async () => {
+      omittedMethodSent = true;
+      throw new GatewayDisconnectedError();
+    },
   });
   const disconnected = new OpenClawSessionCompactionCheckpointsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => { throw new GatewayDisconnectedError(); },
   });
 
   await assert.rejects(unsupported.list('agent:main:main'), OpenClawCompactionCheckpointsUnavailableError);
   await assert.rejects(disconnected.list('agent:main:main'), OpenClawCompactionCheckpointsUnavailableError);
+  assert.equal(omittedMethodSent, true);
 });

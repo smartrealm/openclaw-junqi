@@ -201,7 +201,7 @@ function ToolsCatalogPanel() {
   const errorLabel = error === 'OPENCLAW_TOOLS_CATALOG_UNSUPPORTED'
     ? t(
       'config.toolsCatalogUnavailable',
-      'This OpenClaw Gateway does not advertise tools.catalog for the current connection.',
+      'This OpenClaw Gateway does not support tools.catalog for the current connection.',
     )
     : t('config.toolsCatalogError', 'The Gateway did not return a valid tool catalog.');
 
@@ -580,7 +580,7 @@ function EffectiveToolsPanel() {
   const errorLabel = error === 'OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED'
     ? t(
       'config.effectiveToolsUnavailable',
-      'This OpenClaw Gateway does not advertise tools.effective for the current connection.',
+      'This OpenClaw Gateway does not support tools.effective for the current connection.',
     )
     : t('config.effectiveToolsError', 'The Gateway did not return a valid effective tool snapshot.');
 

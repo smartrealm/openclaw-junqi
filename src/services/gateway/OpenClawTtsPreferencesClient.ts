@@ -9,7 +9,6 @@ export type OpenClawTtsPreferenceMutation = 'enabled' | 'provider' | 'persona';
 export interface OpenClawTtsPreferencesClientDependencies {
   captureConnectionId: () => string | null;
   isConnectionCurrent: (connectionId: string) => boolean;
-  hasAdvertisedMethod: (method: string) => boolean | null;
   requestFenced: (method: string, params: Record<string, unknown>, connectionId: string) => Promise<unknown>;
 }
 
@@ -91,9 +90,6 @@ export class OpenClawTtsPreferencesClient {
     method: string,
     params: Record<string, unknown>,
   ): Promise<{ response: unknown; connectionId: string }> {
-    if (this.dependencies.hasAdvertisedMethod(method) === false) {
-      throw new OpenClawTtsPreferencesUnavailableError(`The connected OpenClaw Gateway does not advertise ${method}`);
-    }
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId) {
       throw new OpenClawTtsPreferencesUnavailableError('No attested Gateway connection is available for TTS preferences');
@@ -106,7 +102,7 @@ export class OpenClawTtsPreferencesClient {
       return { response, connectionId };
     } catch (error) {
       if (unsupportedMethod(error)) {
-        throw new OpenClawTtsPreferencesUnavailableError(`The connected OpenClaw Gateway does not advertise ${method}`);
+        throw new OpenClawTtsPreferencesUnavailableError(`The connected OpenClaw Gateway does not support ${method}`);
       }
       if (connectionUnavailable(error)) {
         throw new OpenClawTtsPreferencesUnavailableError('No attested Gateway connection is available for TTS preferences');

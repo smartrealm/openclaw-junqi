@@ -284,7 +284,7 @@ function MemoryDiagnosticsPanel() {
   const [includePromoted, setIncludePromoted] = useState(false);
 
   const statusErrorLabel = statusError === 'OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED'
-    ? t('memoryExplorer.diagnosticsUnsupported', 'This Gateway does not advertise memory diagnostics')
+    ? t('memoryExplorer.diagnosticsUnsupported', 'This Gateway does not support memory diagnostics')
     : statusError === 'OPENCLAW_MEMORY_DIAGNOSTICS_UNAVAILABLE'
       ? t('memoryExplorer.diagnosticsUnavailable', 'Connect to an OpenClaw Gateway to inspect memory readiness')
       : statusError === 'OPENCLAW_MEMORY_DIAGNOSTICS_RESPONSE_INVALID'
@@ -292,7 +292,7 @@ function MemoryDiagnosticsPanel() {
         : t('memoryExplorer.diagnosticsFailed', 'Gateway memory diagnostics failed');
 
   const remErrorLabel = remError === 'OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED'
-    ? t('memoryExplorer.remUnsupported', 'This Gateway does not advertise the REM harness preview')
+    ? t('memoryExplorer.remUnsupported', 'This Gateway does not support the REM harness preview')
     : remError === 'OPENCLAW_MEMORY_DIAGNOSTICS_UNAVAILABLE'
       ? t('memoryExplorer.diagnosticsUnavailable', 'Connect to an OpenClaw Gateway to inspect memory readiness')
       : remError === 'OPENCLAW_MEMORY_DIAGNOSTICS_RESPONSE_INVALID'
@@ -529,7 +529,7 @@ export function MemoryExplorerPage() {
   }
 
   const nativeErrorLabel = nativeSearchError === 'OPENCLAW_MEMORY_SEARCH_UNSUPPORTED'
-    ? t('memoryExplorer.nativeUnsupported', 'This Gateway does not advertise memory.search')
+    ? t('memoryExplorer.nativeUnsupported', 'This Gateway does not support memory.search')
     : nativeSearchError === 'OPENCLAW_MEMORY_SEARCH_UNAVAILABLE'
       ? t('memoryExplorer.nativeUnavailable', 'Connect to an OpenClaw Gateway to search indexed memory')
       : nativeSearchError === 'OPENCLAW_MEMORY_SEARCH_RESPONSE_INVALID'

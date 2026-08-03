@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { GatewayRpcError } from '@/services/gateway/Connection';
 import {
   createOpenClawSkillsRuntime,
   OpenClawSkillCardUnsupportedError,
@@ -425,12 +426,8 @@ test('reads an installed skill card through the read-only Gateway method', async
     async callPrivileged() {
       return { ok: true };
     },
-    hasAdvertisedMethod(method) {
-      return method === 'skills.skillCard';
-    },
   });
 
-  assert.equal(runtime.skillCardCapability(), true);
   assert.deepEqual(await runtime.skillCard(' weather '), {
     skillKey: 'weather',
     sizeBytes: 28,
@@ -439,24 +436,20 @@ test('reads an installed skill card through the read-only Gateway method', async
   assert.deepEqual(calls, [{ method: 'skills.skillCard', params: { skillKey: 'weather' } }]);
 });
 
-test('does not request skill cards that the Gateway explicitly does not advertise', async () => {
+test('maps an actual unsupported skill card method without using method advertisement', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({
     async call() {
       calls += 1;
-      return {};
+      throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
     },
     async callPrivileged() {
       return { ok: true };
     },
-    hasAdvertisedMethod() {
-      return false;
-    },
   });
 
-  assert.equal(runtime.skillCardCapability(), false);
   await assert.rejects(runtime.skillCard('weather'), OpenClawSkillCardUnsupportedError);
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
 });
 
 test('reads curator status through the read-only Gateway method', async () => {
@@ -476,12 +469,8 @@ test('reads curator status through the read-only Gateway method', async () => {
     async callPrivileged() {
       return { ok: true };
     },
-    hasAdvertisedMethod(method) {
-      return method === 'skills.curator.status';
-    },
   });
 
-  assert.equal(runtime.curatorStatusCapability(), true);
   assert.deepEqual(await runtime.curatorStatus(), {
     lastAttemptAtMs: null,
     lastSuccessAtMs: 9,
@@ -493,24 +482,20 @@ test('reads curator status through the read-only Gateway method', async () => {
   assert.deepEqual(calls, [{ method: 'skills.curator.status', params: {} }]);
 });
 
-test('does not request curator status that the Gateway explicitly does not advertise', async () => {
+test('maps an actual unsupported curator status method without using method advertisement', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({
     async call() {
       calls += 1;
-      return {};
+      throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
     },
     async callPrivileged() {
       return { ok: true };
     },
-    hasAdvertisedMethod() {
-      return false;
-    },
   });
 
-  assert.equal(runtime.curatorStatusCapability(), false);
   await assert.rejects(runtime.curatorStatus(), OpenClawSkillCuratorUnsupportedError);
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
 });
 
 test('reads the default-scope proposal manifest through the read-only Gateway method', async () => {
@@ -527,12 +512,8 @@ test('reads the default-scope proposal manifest through the read-only Gateway me
     async callPrivileged() {
       return { ok: true };
     },
-    hasAdvertisedMethod(method) {
-      return method === 'skills.proposals.list';
-    },
   });
 
-  assert.equal(runtime.proposalsCapability(), true);
   assert.deepEqual(await runtime.proposals(), {
     updatedAt: '2026-08-03T00:00:00.000Z',
     proposals: [],
@@ -553,9 +534,6 @@ test('preserves an explicitly selected proposal agent scope in the read-only Gat
     },
     async callPrivileged() {
       return { ok: true };
-    },
-    hasAdvertisedMethod(method) {
-      return method === 'skills.proposals.list';
     },
   });
 
@@ -578,23 +556,21 @@ test('reads a proposal inspection only through the selected agent scope', async 
   const runtime = createOpenClawSkillsRuntime({
     async call(method, params = {}) { calls.push({ method, params }); return response; },
     async callPrivileged() { return { ok: true }; },
-    hasAdvertisedMethod(method) { return method === 'skills.proposals.inspect'; },
   });
 
   assert.equal((await runtime.inspectProposal(' proposal-1 ', ' research ')).skillKey, 'proposal');
   assert.deepEqual(calls, [{ method: 'skills.proposals.inspect', params: { proposalId: 'proposal-1', agentId: 'research' } }]);
 });
 
-test('does not inspect proposals when the Gateway explicitly does not advertise the method', async () => {
+test('maps an actual unsupported proposal inspection method without using method advertisement', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({
-    async call() { calls += 1; return {}; },
+    async call() { calls += 1; throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND'); },
     async callPrivileged() { return { ok: true }; },
-    hasAdvertisedMethod() { return false; },
   });
 
   await assert.rejects(runtime.inspectProposal('proposal-1'), OpenClawSkillProposalInspectUnsupportedError);
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
 });
 
 test('reads a proposal lifecycle page only through the selected agent scope and cursor', async () => {
@@ -614,7 +590,6 @@ test('reads a proposal lifecycle page only through the selected agent scope and 
   const runtime = createOpenClawSkillsRuntime({
     async call(method, params = {}) { calls.push({ method, params }); return response; },
     async callPrivileged() { return { ok: true }; },
-    hasAdvertisedMethod(method) { return method === 'skills.proposals.events.list'; },
   });
 
   assert.deepEqual(await runtime.proposalEvents(' proposal-1 ', {
@@ -631,67 +606,31 @@ test('reads a proposal lifecycle page only through the selected agent scope and 
   assert.equal(calls.length, 1);
 });
 
-test('does not read proposal lifecycle events when Gateway explicitly does not advertise the method', async () => {
+test('maps an actual unsupported proposal event method without using method advertisement', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({
-    async call() { calls += 1; return {}; },
+    async call() { calls += 1; throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND'); },
     async callPrivileged() { return { ok: true }; },
-    hasAdvertisedMethod() { return false; },
   });
 
   await assert.rejects(runtime.proposalEvents('proposal-1'), OpenClawSkillProposalEventsUnsupportedError);
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
 });
 
-test('does not request proposal manifests that the Gateway explicitly does not advertise', async () => {
+test('maps an actual unsupported proposal manifest method without using method advertisement', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({
     async call() {
       calls += 1;
-      return {};
+      throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
     },
     async callPrivileged() {
       return { ok: true };
     },
-    hasAdvertisedMethod() {
-      return false;
-    },
   });
 
-  assert.equal(runtime.proposalsCapability(), false);
   await assert.rejects(runtime.proposals(), OpenClawSkillProposalsUnsupportedError);
-  assert.equal(calls, 0);
-});
-
-test('does not claim archive upload support when Gateway advertisement is explicit', () => {
-  const runtime = createOpenClawSkillsRuntime({
-    async call() {
-      return { results: [] };
-    },
-    async callPrivileged() {
-      return { ok: true };
-    },
-    hasAdvertisedMethod(method) {
-      return method === 'skills.upload.begin' || method === 'skills.upload.chunk'
-        ? true
-        : false;
-    },
-  });
-
-  assert.equal(runtime.archiveUploadCapability(), false);
-});
-
-test('keeps archive upload capability unknown when Gateway does not advertise a methods list', () => {
-  const runtime = createOpenClawSkillsRuntime({
-    async call() {
-      return { results: [] };
-    },
-    async callPrivileged() {
-      return { ok: true };
-    },
-  });
-
-  assert.equal(runtime.archiveUploadCapability(), null);
+  assert.equal(calls, 1);
 });
 
 test('uploads a skill archive in bounded chunks and installs only after hash confirmation', async () => {

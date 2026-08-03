@@ -30,7 +30,6 @@ test('OpenClawTtsStatusClient fences and projects only the official safe TTS sta
   const client = new OpenClawTtsStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: (connectionId) => connectionId === 'gateway-a',
-    hasAdvertisedMethod: () => true,
     requestFenced: async (method, params, connectionId) => {
       calls.push({ method, params, connectionId });
       return statusResponse;
@@ -72,22 +71,25 @@ test('OpenClawTtsStatusClient rejects malformed official status fields', () => {
   }), OpenClawTtsStatusResponseError);
 });
 
-test('OpenClawTtsStatusClient does not request an unadvertised method and maps a missing method response', async () => {
+test('OpenClawTtsStatusClient requests despite discovery omission and maps a missing method response', async () => {
+  let omittedMethodSent = false;
   const unavailable = new OpenClawTtsStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => false,
-    requestFenced: async () => { throw new Error('request must not be sent'); },
+    requestFenced: async () => {
+      omittedMethodSent = true;
+      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+    },
   });
   const missing = new OpenClawTtsStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => null,
     requestFenced: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
   });
 
   await assert.rejects(unavailable.get(), OpenClawTtsStatusUnavailableError);
   await assert.rejects(missing.get(), OpenClawTtsStatusUnavailableError);
+  assert.equal(omittedMethodSent, true);
 });
 
 test('OpenClawTtsStatusClient discards a result after the Gateway connection changes', async () => {
@@ -95,7 +97,6 @@ test('OpenClawTtsStatusClient discards a result after the Gateway connection cha
   const client = new OpenClawTtsStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => current,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => {
       current = false;
       return statusResponse;
@@ -110,7 +111,6 @@ test('OpenClawTtsStatusClient uses an explicit connection identity for a mutatio
   const client = new OpenClawTtsStatusClient({
     captureConnectionId: () => 'gateway-b',
     isConnectionCurrent: (connectionId) => connectionId === 'gateway-a',
-    hasAdvertisedMethod: () => true,
     requestFenced: async (method, _params, connectionId) => {
       calls.push({ method, connectionId });
       return statusResponse;
@@ -127,7 +127,6 @@ test('OpenClawTtsStatusClient maps a disconnected fenced request to unavailable'
   const client = new OpenClawTtsStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => { throw new GatewayDisconnectedError(); },
   });
 

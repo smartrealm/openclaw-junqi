@@ -40,7 +40,6 @@ export interface OpenClawModelAuthStatusSnapshot {
 export interface OpenClawModelAuthStatusClientDependencies {
   captureConnectionId: () => string | null;
   isConnectionCurrent: (connectionId: string) => boolean;
-  hasAdvertisedMethod: (method: string) => boolean | null;
   requestFenced: (method: string, params: Record<string, unknown>, connectionId: string) => Promise<unknown>;
 }
 
@@ -145,9 +144,6 @@ export class OpenClawModelAuthStatusClient {
   constructor(private readonly dependencies: OpenClawModelAuthStatusClientDependencies) {}
 
   async get(): Promise<OpenClawModelAuthStatusSnapshot> {
-    if (this.dependencies.hasAdvertisedMethod(OPENCLAW_MODEL_AUTH_STATUS_METHOD) === false) {
-      throw new OpenClawModelAuthStatusUnavailableError('The connected OpenClaw Gateway does not advertise models.authStatus');
-    }
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId) {
       throw new OpenClawModelAuthStatusUnavailableError('No attested Gateway connection is available for model authentication status');
@@ -160,7 +156,7 @@ export class OpenClawModelAuthStatusClient {
       return parseOpenClawModelAuthStatus(response);
     } catch (error) {
       if (unsupportedMethod(error)) {
-        throw new OpenClawModelAuthStatusUnavailableError('The connected OpenClaw Gateway does not advertise models.authStatus');
+        throw new OpenClawModelAuthStatusUnavailableError('The connected OpenClaw Gateway does not support models.authStatus');
       }
       if (connectionUnavailable(error)) {
         throw new OpenClawModelAuthStatusUnavailableError('No attested Gateway connection is available for model authentication status');

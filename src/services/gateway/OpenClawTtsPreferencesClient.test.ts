@@ -12,7 +12,6 @@ test('OpenClawTtsPreferencesClient fences the official TTS preference mutations'
   const client = new OpenClawTtsPreferencesClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: (connectionId) => connectionId === 'gateway-a',
-    hasAdvertisedMethod: () => true,
     requestFenced: async (method, params, connectionId) => {
       calls.push({ method, params, connectionId });
       if (method === 'tts.enable') return { enabled: true };
@@ -39,7 +38,6 @@ test('OpenClawTtsPreferencesClient validates preference acknowledgements', async
   const client = new OpenClawTtsPreferencesClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => ({ enabled: false }),
   });
 
@@ -47,29 +45,31 @@ test('OpenClawTtsPreferencesClient validates preference acknowledgements', async
   await assert.rejects(client.setProvider('   '), OpenClawTtsPreferencesResponseError);
 });
 
-test('OpenClawTtsPreferencesClient avoids unadvertised methods and maps connection failures', async () => {
+test('OpenClawTtsPreferencesClient attempts omitted methods and maps connection failures', async () => {
+  let omittedMethodSent = false;
   const unavailable = new OpenClawTtsPreferencesClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => false,
-    requestFenced: async () => { throw new Error('request must not be sent'); },
+    requestFenced: async () => {
+      omittedMethodSent = true;
+      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+    },
   });
   const missing = new OpenClawTtsPreferencesClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => null,
     requestFenced: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
   });
   const disconnected = new OpenClawTtsPreferencesClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => { throw new GatewayDisconnectedError(); },
   });
 
   await assert.rejects(unavailable.setEnabled(true), OpenClawTtsPreferencesUnavailableError);
   await assert.rejects(missing.setEnabled(true), OpenClawTtsPreferencesUnavailableError);
   await assert.rejects(disconnected.setEnabled(true), OpenClawTtsPreferencesUnavailableError);
+  assert.equal(omittedMethodSent, true);
 });
 
 test('OpenClawTtsPreferencesClient discards acknowledgements after a Gateway switch', async () => {
@@ -77,7 +77,6 @@ test('OpenClawTtsPreferencesClient discards acknowledgements after a Gateway swi
   const client = new OpenClawTtsPreferencesClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => current,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => {
       current = false;
       return { enabled: true };

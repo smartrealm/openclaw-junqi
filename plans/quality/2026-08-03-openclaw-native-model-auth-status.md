@@ -5,7 +5,7 @@
 ## 实施顺序
 
 1. 完成：核对当前官方 methods descriptor、`models.authStatus` handler/types、广播 scope 与 JunQi Provider 页面。
-2. 完成：确定 read-only 安全投影、method advertisement、attested connection fencing 和敏感字段排除。
+2. 完成：确定 read-only 安全投影、Gateway 正式错误映射、attested connection fencing 和敏感字段排除。
 3. 完成：实现 Gateway client、状态 hook、Provider 页面呈现与定向回归。
 4. 完成：更新索引和验证记录，执行完整检查、扫描和中文提交。
 

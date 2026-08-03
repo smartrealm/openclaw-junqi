@@ -26,7 +26,6 @@ export interface OpenClawProviderUsageSnapshot {
 export interface OpenClawProviderUsageClientDependencies {
   captureConnectionId: () => string | null;
   isConnectionCurrent: (connectionId: string) => boolean;
-  hasAdvertisedMethod: (method: string) => boolean | null;
   requestFenced: (method: string, params: Record<string, unknown>, connectionId: string) => Promise<unknown>;
 }
 
@@ -109,9 +108,6 @@ export class OpenClawProviderUsageClient {
   constructor(private readonly dependencies: OpenClawProviderUsageClientDependencies) {}
 
   async get(): Promise<OpenClawProviderUsageSnapshot> {
-    if (this.dependencies.hasAdvertisedMethod(OPENCLAW_PROVIDER_USAGE_METHOD) === false) {
-      throw new OpenClawProviderUsageUnavailableError('The connected OpenClaw Gateway does not advertise usage.status');
-    }
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId) {
       throw new OpenClawProviderUsageUnavailableError('No attested Gateway connection is available for provider usage');
@@ -124,7 +120,7 @@ export class OpenClawProviderUsageClient {
       return parseOpenClawProviderUsage(response);
     } catch (error) {
       if (unsupportedMethod(error)) {
-        throw new OpenClawProviderUsageUnavailableError('The connected OpenClaw Gateway does not advertise usage.status');
+        throw new OpenClawProviderUsageUnavailableError('The connected OpenClaw Gateway does not support usage.status');
       }
       if (connectionUnavailable(error)) {
         throw new OpenClawProviderUsageUnavailableError('No attested Gateway connection is available for provider usage');

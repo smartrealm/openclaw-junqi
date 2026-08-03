@@ -11,7 +11,6 @@ export interface OpenClawCronMutationPatch {
 }
 
 export type OpenClawCronManagementRequester = <T>(method: string, params: object) => Promise<T>;
-export type OpenClawCronManagementAdvertisedMethodLookup = (method: string) => boolean | null;
 
 const CRON_ADD_METHOD = 'cron.add';
 const CRON_UPDATE_METHOD = 'cron.update';
@@ -21,7 +20,7 @@ export class OpenClawCronManagementUnsupportedError extends Error {
   readonly code = 'OPENCLAW_CRON_MANAGEMENT_UNSUPPORTED';
 
   constructor(method: string) {
-    super(`The connected OpenClaw Gateway does not advertise ${method}`);
+    super(`The connected OpenClaw Gateway does not support ${method}`);
     this.name = 'OpenClawCronManagementUnsupportedError';
   }
 }
@@ -100,13 +99,9 @@ function unsupportedMethod(error: unknown): boolean {
 export class OpenClawCronManagementClient {
   constructor(
     private readonly request: OpenClawCronManagementRequester,
-    private readonly hasAdvertisedMethod: OpenClawCronManagementAdvertisedMethodLookup,
   ) {}
 
   async addAgentTurn(params: CronAgentTurnAddParams): Promise<OpenClawCronManagedJob> {
-    if (this.hasAdvertisedMethod(CRON_ADD_METHOD) === false) {
-      throw new OpenClawCronManagementUnsupportedError(CRON_ADD_METHOD);
-    }
     try {
       return parseAddResult(await this.request<unknown>(CRON_ADD_METHOD, params));
     } catch (error) {
@@ -118,9 +113,6 @@ export class OpenClawCronManagementClient {
   async update(jobId: string, patch: OpenClawCronMutationPatch): Promise<OpenClawCronManagedJob> {
     const id = requiredInputString(jobId, 'Invalid OpenClaw cron job id');
     const validatedPatch = validatePatch(patch);
-    if (this.hasAdvertisedMethod(CRON_UPDATE_METHOD) === false) {
-      throw new OpenClawCronManagementUnsupportedError(CRON_UPDATE_METHOD);
-    }
     try {
       return parseJob(await this.request<unknown>(CRON_UPDATE_METHOD, { id, patch: validatedPatch }));
     } catch (error) {
@@ -131,9 +123,6 @@ export class OpenClawCronManagementClient {
 
   async remove(jobId: string): Promise<void> {
     const id = requiredInputString(jobId, 'Invalid OpenClaw cron job id');
-    if (this.hasAdvertisedMethod(CRON_REMOVE_METHOD) === false) {
-      throw new OpenClawCronManagementUnsupportedError(CRON_REMOVE_METHOD);
-    }
     try {
       parseRemoveResult(await this.request<unknown>(CRON_REMOVE_METHOD, { id }));
     } catch (error) {

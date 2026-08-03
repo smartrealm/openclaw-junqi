@@ -6,12 +6,11 @@ import {
   OpenClawSessionObserverClient,
 } from './OpenClawSessionObserverClient';
 
-test('declares observer visibility only through the advertised fenced Gateway method', async () => {
+test('declares observer visibility through the fenced Gateway method', async () => {
   const calls: Array<{ method: string; params: Record<string, unknown>; connectionId: string }> = [];
   const client = new OpenClawSessionObserverClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: (connectionId) => connectionId === 'gateway-a',
-    hasAdvertisedMethod: () => true,
     requestFenced: async (method, params, connectionId) => {
       calls.push({ method, params, connectionId });
       return { ok: true };
@@ -27,23 +26,21 @@ test('declares observer visibility only through the advertised fenced Gateway me
   ]);
 });
 
-test('fails closed without an advertised method or current Gateway connection', async () => {
+test('treats an unavailable connection as unapplied only when visibility is required', async () => {
   const client = new OpenClawSessionObserverClient({
     captureConnectionId: () => null,
     isConnectionCurrent: () => false,
-    hasAdvertisedMethod: () => false,
     requestFenced: async () => { throw new Error('must not request'); },
   });
 
   assert.equal(await client.setVisible(true), 'unavailable');
-  assert.equal(await client.setVisible(false), 'unavailable');
+  assert.equal(await client.setVisible(false), 'applied');
 });
 
 test('does not retain visibility after a fenced disconnect response', async () => {
   const client = new OpenClawSessionObserverClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => { throw new GatewayDisconnectedError(); },
   });
 

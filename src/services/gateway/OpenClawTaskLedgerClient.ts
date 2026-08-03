@@ -57,7 +57,6 @@ export interface OpenClawTaskCancelResult {
 }
 
 export type OpenClawTaskRequester = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
-export type OpenClawTaskAdvertisedMethodLookup = (method: string) => boolean | null;
 
 const TASKS_LIST_METHOD = 'tasks.list';
 const TASKS_GET_METHOD = 'tasks.get';
@@ -70,7 +69,7 @@ export class OpenClawTaskLedgerUnsupportedError extends Error {
   readonly code = 'OPENCLAW_TASK_LEDGER_UNSUPPORTED';
 
   constructor(method: string) {
-    super(`The connected OpenClaw Gateway does not advertise ${method}`);
+    super(`The connected OpenClaw Gateway does not support ${method}`);
     this.name = 'OpenClawTaskLedgerUnsupportedError';
   }
 }
@@ -226,13 +225,9 @@ function listParams(input: OpenClawTaskListInput): Record<string, unknown> {
 export class OpenClawTaskLedgerClient {
   constructor(
     private readonly request: OpenClawTaskRequester,
-    private readonly hasAdvertisedMethod: OpenClawTaskAdvertisedMethodLookup,
   ) {}
 
   async list(input: OpenClawTaskListInput = {}): Promise<OpenClawTaskListPage> {
-    if (this.hasAdvertisedMethod(TASKS_LIST_METHOD) === false) {
-      return { tasks: [], availability: 'unavailable' };
-    }
     try {
       return { ...parseOpenClawTaskListPage(await this.request<unknown>(TASKS_LIST_METHOD, listParams(input))), availability: 'available' };
     } catch (error) {
@@ -243,9 +238,6 @@ export class OpenClawTaskLedgerClient {
 
   async get(taskId: string): Promise<OpenClawTaskSummary> {
     const normalizedTaskId = requiredInputString(taskId, 'Invalid OpenClaw task id');
-    if (this.hasAdvertisedMethod(TASKS_GET_METHOD) === false) {
-      throw new OpenClawTaskLedgerUnsupportedError(TASKS_GET_METHOD);
-    }
     try {
       const result = record(await this.request<unknown>(TASKS_GET_METHOD, { taskId: normalizedTaskId }));
       if (!result) throw new OpenClawTaskLedgerResponseError();
@@ -259,9 +251,6 @@ export class OpenClawTaskLedgerClient {
   async cancel(taskId: string, reason?: string): Promise<OpenClawTaskCancelResult> {
     const normalizedTaskId = requiredInputString(taskId, 'Invalid OpenClaw task id');
     if (reason !== undefined && typeof reason !== 'string') throw new Error('Invalid OpenClaw task cancellation reason');
-    if (this.hasAdvertisedMethod(TASKS_CANCEL_METHOD) === false) {
-      throw new OpenClawTaskLedgerUnsupportedError(TASKS_CANCEL_METHOD);
-    }
     try {
       const result = record(await this.request<unknown>(TASKS_CANCEL_METHOD, {
         taskId: normalizedTaskId,

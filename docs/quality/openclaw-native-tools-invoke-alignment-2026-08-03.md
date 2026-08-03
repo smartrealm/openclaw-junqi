@@ -28,13 +28,13 @@ Task ledger 或本地伪造的工具消息。网络层没有收到可验证响�
 schema 中定义的字段。
 
 项目实际安装的 OpenClaw 版本只用于本机复现 schema 和 handler，不作为能力开关。能力是否
-可用以官方文档、schema、handler、方法目录和当前连接的 advertised methods 为准。
+可用以官方文档、schema、handler、方法目录和 Gateway 正式响应为准；保守发现列表不作为本地发送门禁。
 
 ## 当前行为
 
 1. Tools 页面从真实 `sessions.list` 和 `tools.effective` 快照生成 Session、工具和描述选项；
    JunQi 不维护第二份工具目录，也不让用户调用未被 Gateway 报告为有效的工具。
-2. 调用前检查 `tools.invoke` 的能力广告、Session 仍存在、有效快照仍可取得、工具没有
+2. 调用前检查 Session 仍存在、有效快照仍可取得、工具没有
    `deniedBySession`，并把 Gateway 计算出的 `agentId` 作为官方可选字段透传。
 3. 当前连接若提供运行时身份，调用使用 `requestFenced` 锁定该身份；无法取得已验证身份
    时不发送副作用 RPC。测试桩没有该能力时只用于覆盖协议行为，不代表生产连接可跳过身份门禁。
@@ -49,8 +49,8 @@ schema 中定义的字段。
 
 - `OpenClawToolsInvokeClient.test.ts` 覆盖官方请求字段、成功结果、审批失败结果、非法
   响应和输入校验。
-- `gatewayDataStore.test.ts` 覆盖有效工具门禁、连接 fence、幂等键透传、未广告能力和
-  不发送不受支持的 RPC。
+- `gatewayDataStore.test.ts` 覆盖有效工具门禁、连接 fence、幂等键透传和 Gateway 未知方法的
+  不可用映射。
 - 已执行目标测试、`pnpm lint`、完整测试、TypeScript、生产构建、官方链接、差异和无
   Emoji 检查（结果记录在提交前更新）。
 

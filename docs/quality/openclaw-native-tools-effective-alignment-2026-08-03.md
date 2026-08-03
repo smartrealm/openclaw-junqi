@@ -10,7 +10,7 @@ JunQi 的 Tools 页面现在可以按真实 Session 展示 OpenClaw Gateway 返�
 渠道、插件和 MCP 策略实际计算出的结果。
 
 JunQi 不在本地计算 allow/deny、profile、插件或 MCP 权限；有效工具读取路径不调用工具，
-也不主动连接或列举 MCP 服务。Gateway 未广告该方法、响应不符合官方结构、连接断开或 Session 被删除
+也不主动连接或列举 MCP 服务。Gateway 正式拒绝该方法、响应不符合官方结构、连接断开或 Session 被删除
 时，界面保持不可用或清空旧快照，不用配置字段拼出伪造的权限结果。
 
 ## 权威依据
@@ -27,14 +27,14 @@ JunQi 不在本地计算 allow/deny、profile、插件或 MCP 权限；有效工
 来源标识、风险等级、标签和 `deniedBySession`；MCP 相关提示由 Gateway 返回。
 
 项目实际安装的 OpenClaw 版本只用于本机复现和验证记录，不作为能力开关或字段契约。
-能力是否存在以官方文档、协议 schema、handler、方法目录和当前连接的 advertised
-methods 为准。
+能力是否存在以官方文档、协议 schema、handler、方法目录和 Gateway 正式响应为准；保守发现
+列表不作为本地发送门禁。
 
 ## 当前行为
 
 1. Tools 页面从 Gateway data store 取得实际 `sessions.list` Session，用户选择一个
    Session 后按需请求 `tools.effective`。
-2. 请求通过当前 Gateway 连接发送；显式未广告能力时不会发送 RPC。响应由严格客户端
+2. 请求通过当前 Gateway 连接发送；Gateway 返回未知方法时显示不可用。响应由严格客户端
    校验必需字段、来源、风险、拒绝标记、标签和 notices，未知的附加字段不改变已知语义。
 3. 快照按 Session key 和 Gateway 连接绑定，30 秒仅是界面缓存新鲜度边界。请求代次、
    连接身份和 Session 存在性共同决定是否允许写回；迟到响应不能覆盖新连接或已删除
@@ -47,8 +47,7 @@ methods 为准。
 
 - `OpenClawToolsEffectiveClient.test.ts` 覆盖请求字段、官方分组/条目/notices、附加字段、
   非法来源/拒绝标记和无效响应。
-- `gatewayDataStore.test.ts` 覆盖 Session 删除时快照和加载态清理，以及未广告能力时
-  不发送 `tools.effective` RPC。
+- `gatewayDataStore.test.ts` 覆盖 Session 删除时快照和加载态清理，以及未知方法响应的不可用映射。
 - 已执行 `pnpm lint` 和 `pnpm exec tsc --noEmit`。
 
 ## 未验证边界

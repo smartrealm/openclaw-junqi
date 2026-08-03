@@ -18,7 +18,7 @@ test('OpenClawCronStatusClient requests and decodes the official read-only sched
       nextWakeAtMs: 100,
       sqlitePath: '/private/gateway.sqlite',
     } as never;
-  }, () => true);
+  });
 
   assert.deepEqual(await client.get(), {
     enabled: true,
@@ -35,7 +35,7 @@ test('OpenClawCronStatusClient preserves disabled scheduler state and an absent 
     storage: 'sqlite',
     jobs: 0,
     nextWakeAtMs: null,
-  }) as never, () => true);
+  }) as never);
 
   assert.deepEqual(await client.get(), {
     enabled: false,
@@ -45,21 +45,24 @@ test('OpenClawCronStatusClient preserves disabled scheduler state and an absent 
   });
 });
 
-test('OpenClawCronStatusClient refuses unsupported and malformed status results', async () => {
+test('OpenClawCronStatusClient requests despite discovery omission and refuses malformed status results', async () => {
+  let calls = 0;
   const unavailable = new OpenClawCronStatusClient(async () => {
-    throw new Error('request should not be called');
-  }, () => false);
+    calls += 1;
+    throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+  });
   const missing = new OpenClawCronStatusClient(async () => {
     throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
-  }, () => null);
+  });
   const malformed = new OpenClawCronStatusClient(async () => ({
     enabled: true,
     storage: 'json',
     jobs: 1,
     nextWakeAtMs: 1,
-  }) as never, () => true);
+  }) as never);
 
   await assert.rejects(unavailable.get(), OpenClawCronStatusUnsupportedError);
   await assert.rejects(missing.get(), OpenClawCronStatusUnsupportedError);
   await assert.rejects(malformed.get(), OpenClawCronStatusResponseError);
+  assert.equal(calls, 1);
 });

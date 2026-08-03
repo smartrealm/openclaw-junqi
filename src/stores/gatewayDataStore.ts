@@ -11,40 +11,33 @@ import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawCha
 import { GatewayRpcError } from '@/services/gateway/Connection';
 import {
   OPENCLAW_SESSIONS_PREVIEW_MAX_KEYS,
-  OPENCLAW_SESSIONS_PREVIEW_METHOD,
   OpenClawSessionPreviewClient,
   OpenClawSessionPreviewResponseError,
   type OpenClawSessionPreviewEntry,
 } from '@/services/gateway/OpenClawSessionPreviewClient';
 import {
-  OPENCLAW_TOOLS_EFFECTIVE_METHOD,
   OpenClawToolsEffectiveClient,
   OpenClawToolsEffectiveResponseError,
   type OpenClawToolsEffectiveEntry,
   type OpenClawToolsEffectiveResult,
 } from '@/services/gateway/OpenClawToolsEffectiveClient';
 import {
-  OPENCLAW_TOOLS_CATALOG_METHOD,
   OpenClawToolsCatalogClient,
   OpenClawToolsCatalogResponseError,
   type OpenClawToolsCatalogResult,
 } from '@/services/gateway/OpenClawToolsCatalogClient';
 import {
-  OPENCLAW_TOOLS_INVOKE_METHOD,
   OpenClawToolsInvokeClient,
   type OpenClawToolsInvokeInput,
   type OpenClawToolsInvokeResult,
 } from '@/services/gateway/OpenClawToolsInvokeClient';
 import {
-  OPENCLAW_ARTIFACTS_DOWNLOAD_METHOD,
-  OPENCLAW_ARTIFACTS_LIST_METHOD,
   OpenClawArtifactsClient,
   OpenClawArtifactsResponseError,
   type OpenClawArtifactSummary,
   type OpenClawArtifactsDownloadResult,
 } from '@/services/gateway/OpenClawArtifactsClient';
 import {
-  OPENCLAW_MEMORY_SEARCH_METHOD,
   OpenClawMemorySearchClient,
   OpenClawMemorySearchResponseError,
   type OpenClawMemorySearchResponse,
@@ -60,7 +53,6 @@ import {
   type OpenClawMemoryStatusInput,
 } from '@/services/gateway/OpenClawMemoryDiagnosticsClient';
 import {
-  OPENCLAW_SESSIONS_SEARCH_METHOD,
   OpenClawSessionSearchClient,
   OpenClawSessionSearchResponseError,
   type OpenClawSessionSearchResult,
@@ -845,7 +837,6 @@ const SESSION_ARTIFACTS_FRESHNESS_MS = 30_000;
 type GatewayRequestParams = Record<string, unknown>;
 type GatewayRequester = {
   request: (method: string, params: GatewayRequestParams) => Promise<unknown>;
-  hasAdvertisedMethod?: (method: string) => boolean | null;
   getAttestedConnectionId?: () => string | null;
   requestFenced?: (
     method: string,
@@ -1566,8 +1557,9 @@ function chunkSessionPreviewKeys(keys: readonly string[]): string[][] {
 }
 
 function sessionPreviewFailureCode(error: unknown): string {
-  return error instanceof OpenClawSessionPreviewResponseError
-    ? error.code
+  if (error instanceof OpenClawSessionPreviewResponseError) return error.code;
+  return isUnsupportedGatewayMethodError(error)
+    ? 'OPENCLAW_SESSIONS_PREVIEW_UNSUPPORTED'
     : 'OPENCLAW_SESSIONS_PREVIEW_FAILED';
 }
 
@@ -1583,15 +1575,6 @@ export async function refreshSessionPreviews(keys: readonly string[]): Promise<b
     return false;
   }
   if (!gw) return false;
-
-  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_SESSIONS_PREVIEW_METHOD);
-  if (advertised === false) {
-    sessionPreviewRequestGate.invalidate();
-    store.clearSessionPreviews(normalizedKeys);
-    store.setSessionPreviewsLoading(false);
-    store.setSessionPreviewsError('OPENCLAW_SESSIONS_PREVIEW_UNSUPPORTED');
-    return false;
-  }
 
   const ticket = beginSessionPreviewRequest();
   if (!ticket) return false;
@@ -1649,8 +1632,9 @@ export async function ensureSessionPreviewsFresh(
 }
 
 function toolsEffectiveFailureCode(error: unknown): string {
-  return error instanceof OpenClawToolsEffectiveResponseError
-    ? error.code
+  if (error instanceof OpenClawToolsEffectiveResponseError) return error.code;
+  return isUnsupportedGatewayMethodError(error)
+    ? 'OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED'
     : 'OPENCLAW_TOOLS_EFFECTIVE_FAILED';
 }
 
@@ -1669,15 +1653,6 @@ export async function refreshToolsEffective(
     return false;
   }
   if (!gw) return false;
-
-  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_TOOLS_EFFECTIVE_METHOD);
-  if (advertised === false) {
-    toolsEffectiveRequestGate.invalidate();
-    store.clearToolsEffective(normalizedSessionKey);
-    store.setToolsEffectiveLoading(null);
-    store.setToolsEffectiveError('OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED');
-    return false;
-  }
 
   const ticket = beginToolsEffectiveRequest(normalizedSessionKey);
   if (!ticket) return false;
@@ -1800,14 +1775,6 @@ export async function invokeOpenClawTool(
     );
   }
 
-  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_TOOLS_INVOKE_METHOD);
-  if (advertised === false) {
-    throw new OpenClawToolsInvokeUnavailableError(
-      'OPENCLAW_TOOLS_INVOKE_UNSUPPORTED',
-      'The OpenClaw Gateway does not advertise tools.invoke',
-    );
-  }
-
   const session = useGatewayDataStore.getState().sessions.find(
     (entry) => entry.key === normalizedSessionKey,
   );
@@ -1864,32 +1831,45 @@ export async function invokeOpenClawTool(
   const client = new OpenClawToolsInvokeClient(
     <T>(method: string, params: Record<string, unknown>) => request(method, params) as Promise<T>,
   );
-  return client.invoke({
-    ...input,
-    name: normalizedToolName,
-    sessionKey: normalizedSessionKey,
-    agentId: typeof input.agentId === 'string' && input.agentId.trim()
-      ? input.agentId.trim()
-      : effectiveSnapshot.agentId,
-    idempotencyKey: input.idempotencyKey?.trim() || createToolsInvokeIdempotencyKey(),
-  });
+  try {
+    return await client.invoke({
+      ...input,
+      name: normalizedToolName,
+      sessionKey: normalizedSessionKey,
+      agentId: typeof input.agentId === 'string' && input.agentId.trim()
+        ? input.agentId.trim()
+        : effectiveSnapshot.agentId,
+      idempotencyKey: input.idempotencyKey?.trim() || createToolsInvokeIdempotencyKey(),
+    });
+  } catch (error) {
+    if (isUnsupportedGatewayMethodError(error)) {
+      throw new OpenClawToolsInvokeUnavailableError(
+        'OPENCLAW_TOOLS_INVOKE_UNSUPPORTED',
+        'The OpenClaw Gateway does not support tools.invoke',
+      );
+    }
+    throw error;
+  }
 }
 
 function toolsCatalogFailureCode(error: unknown): string {
-  return error instanceof OpenClawToolsCatalogResponseError
-    ? error.code
+  if (error instanceof OpenClawToolsCatalogResponseError) return error.code;
+  return isUnsupportedGatewayMethodError(error)
+    ? 'OPENCLAW_TOOLS_CATALOG_UNSUPPORTED'
     : 'OPENCLAW_TOOLS_CATALOG_FAILED';
 }
 
 function sessionArtifactsFailureCode(error: unknown): string {
-  return error instanceof OpenClawArtifactsResponseError
-    ? error.code
+  if (error instanceof OpenClawArtifactsResponseError) return error.code;
+  return isUnsupportedGatewayMethodError(error)
+    ? 'OPENCLAW_ARTIFACTS_UNSUPPORTED'
     : 'OPENCLAW_ARTIFACTS_FAILED';
 }
 
 function memorySearchFailureCode(error: unknown): string {
-  return error instanceof OpenClawMemorySearchResponseError
-    ? error.code
+  if (error instanceof OpenClawMemorySearchResponseError) return error.code;
+  return isUnsupportedGatewayMethodError(error)
+    ? 'OPENCLAW_MEMORY_SEARCH_UNSUPPORTED'
     : 'OPENCLAW_MEMORY_SEARCH_FAILED';
 }
 
@@ -1912,8 +1892,9 @@ function memoryDiagnosticsFailureCode(error: unknown, method: string): string {
 }
 
 function sessionSearchFailureCode(error: unknown): string {
-  return error instanceof OpenClawSessionSearchResponseError
-    ? error.code
+  if (error instanceof OpenClawSessionSearchResponseError) return error.code;
+  return isUnsupportedGatewayMethodError(error)
+    ? 'OPENCLAW_SESSIONS_SEARCH_UNSUPPORTED'
     : 'OPENCLAW_SESSIONS_SEARCH_FAILED';
 }
 
@@ -1968,15 +1949,6 @@ export async function refreshSessionArtifacts(
     return false;
   }
   if (!gw) return false;
-
-  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_ARTIFACTS_LIST_METHOD);
-  if (advertised === false) {
-    sessionArtifactsRequestGate.invalidate();
-    store.clearSessionArtifacts(normalizedSessionKey);
-    store.setSessionArtifactsLoading(null);
-    store.setSessionArtifactsError('OPENCLAW_ARTIFACTS_UNSUPPORTED');
-    return false;
-  }
 
   const ticket = beginSessionArtifactsRequest(normalizedSessionKey);
   if (!ticket) return false;
@@ -2065,15 +2037,6 @@ export async function searchOpenClawMemory(
     return false;
   }
 
-  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_MEMORY_SEARCH_METHOD);
-  if (advertised === false) {
-    memorySearchRequestGate.invalidate();
-    store.clearMemorySearch();
-    store.setMemorySearchLoading(null);
-    store.setMemorySearchError('OPENCLAW_MEMORY_SEARCH_UNSUPPORTED');
-    return false;
-  }
-
   const ticket = beginMemorySearchRequest(normalizedQuery);
   if (!ticket) return false;
   store.clearMemorySearch();
@@ -2117,15 +2080,6 @@ export async function refreshOpenClawMemoryDiagnostics(
     return false;
   }
 
-  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_MEMORY_STATUS_METHOD);
-  if (advertised === false) {
-    memoryDiagnosticsRequestGate.invalidate();
-    store.clearMemoryDiagnostics();
-    store.setMemoryDiagnosticsLoading(false);
-    store.setMemoryDiagnosticsError('OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED');
-    return false;
-  }
-
   const ticket = beginMemoryDiagnosticsRequest();
   if (!ticket) return false;
   store.clearMemoryDiagnostics();
@@ -2161,15 +2115,6 @@ export async function previewOpenClawMemoryRemHarness(
     store.clearMemoryRemHarness();
     store.setMemoryRemHarnessLoading(false);
     store.setMemoryRemHarnessError('OPENCLAW_MEMORY_DIAGNOSTICS_UNAVAILABLE');
-    return false;
-  }
-
-  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_MEMORY_REM_HARNESS_METHOD);
-  if (advertised === false) {
-    memoryRemHarnessRequestGate.invalidate();
-    store.clearMemoryRemHarness();
-    store.setMemoryRemHarnessLoading(false);
-    store.setMemoryRemHarnessError('OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED');
     return false;
   }
 
@@ -2224,15 +2169,6 @@ export async function searchOpenClawSessions(
     return false;
   }
 
-  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_SESSIONS_SEARCH_METHOD);
-  if (advertised === false) {
-    sessionSearchRequestGate.invalidate();
-    store.clearSessionSearch();
-    store.setSessionSearchLoading(null);
-    store.setSessionSearchError('OPENCLAW_SESSIONS_SEARCH_UNSUPPORTED');
-    return false;
-  }
-
   const ticket = beginSessionSearchRequest(normalizedQuery);
   if (!ticket) return false;
   store.clearSessionSearch();
@@ -2273,10 +2209,6 @@ export async function saveSessionArtifact(
   const normalizedArtifactId = typeof artifactId === 'string' ? artifactId.trim() : '';
   if (!normalizedSessionKey || !normalizedArtifactId || !gw) {
     return { success: false, errorCode: 'OPENCLAW_ARTIFACT_SAVE_UNAVAILABLE' };
-  }
-  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_ARTIFACTS_DOWNLOAD_METHOD);
-  if (advertised === false) {
-    return { success: false, errorCode: 'OPENCLAW_ARTIFACT_DOWNLOAD_UNSUPPORTED' };
   }
   const connection = gw;
   const client = new OpenClawArtifactsClient(
@@ -2334,15 +2266,6 @@ export async function refreshToolsCatalog(
     return false;
   }
   if (!gw) return false;
-
-  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_TOOLS_CATALOG_METHOD);
-  if (advertised === false) {
-    toolsCatalogRequestGate.invalidate();
-    store.clearToolsCatalog(normalizedAgentId);
-    store.setToolsCatalogLoading(null);
-    store.setToolsCatalogError('OPENCLAW_TOOLS_CATALOG_UNSUPPORTED');
-    return false;
-  }
 
   const ticket = beginToolsCatalogRequest(normalizedAgentId);
   if (!ticket) return false;

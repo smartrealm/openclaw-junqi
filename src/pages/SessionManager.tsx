@@ -649,7 +649,7 @@ export function SessionManagerPage() {
       : null;
 
   const transcriptSearchErrorMessage = sessionSearchError === 'OPENCLAW_SESSIONS_SEARCH_UNSUPPORTED'
-    ? t('sessions.transcriptSearchUnsupported', 'This Gateway does not advertise transcript search.')
+    ? t('sessions.transcriptSearchUnsupported', 'This Gateway does not support transcript search.')
     : sessionSearchError === 'OPENCLAW_SESSIONS_SEARCH_UNAVAILABLE'
       ? t('sessions.transcriptSearchUnavailable', 'Transcript search is unavailable while Gateway is disconnected.')
       : sessionSearchError

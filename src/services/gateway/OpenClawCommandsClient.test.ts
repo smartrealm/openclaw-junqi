@@ -46,7 +46,6 @@ test('OpenClawCommandsClient fences the official agent-scoped text command reque
   const client = new OpenClawCommandsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: (connectionId) => connectionId === 'gateway-a',
-    hasAdvertisedMethod: () => true,
     requestFenced: async (method, params, connectionId) => {
       calls.push({ method, params, connectionId });
       return response;
@@ -79,22 +78,25 @@ test('command catalog parsing rejects invalid protocol enums and shapes without 
   assert.throws(() => parseOpenClawCommandsList({ commands: 'status' }), OpenClawCommandsResponseError);
 });
 
-test('commands.list is never sent when the Gateway does not advertise it and missing responses remain unavailable', async () => {
+test('commands.list is sent despite discovery omission and maps a missing method response', async () => {
+  let omittedMethodSent = false;
   const unavailable = new OpenClawCommandsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => false,
-    requestFenced: async () => { throw new Error('request must not be sent'); },
+    requestFenced: async () => {
+      omittedMethodSent = true;
+      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+    },
   });
   const missing = new OpenClawCommandsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => null,
     requestFenced: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
   });
 
   await assert.rejects(unavailable.list(), OpenClawCommandsUnavailableError);
   await assert.rejects(missing.list(), OpenClawCommandsUnavailableError);
+  assert.equal(omittedMethodSent, true);
 });
 
 test('commands.list discards a response after connection identity changes or disconnects', async () => {
@@ -102,7 +104,6 @@ test('commands.list discards a response after connection identity changes or dis
   const stale = new OpenClawCommandsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => current,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => {
       current = false;
       return response;
@@ -111,7 +112,6 @@ test('commands.list discards a response after connection identity changes or dis
   const disconnected = new OpenClawCommandsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => { throw new GatewayDisconnectedError(); },
   });
 

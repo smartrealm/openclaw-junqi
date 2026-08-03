@@ -60,16 +60,15 @@ ReAct checkpoint、协作插件的 workflow graph，也不是 Chat transcript �
 
 位置：`src/services/gateway/OpenClawTaskLedgerClient.ts`
 
-当前 adapter 不读取 `hello-ok.features.methods`，Gateway 明确未广告或返回 method-not-found 时，
-UI 无法区分“不支持”和临时错误。
+当前 adapter 未将 Gateway 的正式未知方法错误映射为“不支持”，UI 无法区分该结果和临时错误。
 
-修复：使用已有 capability advertisement；明确未广告时不调用 RPC，未知时只真实尝试一次，
-method-not-found 映射为 unavailable，认证、网络和响应错误保持错误。
+修复：真实请求一次，由 Gateway 的 `method-not-found` 映射为 unavailable；认证、网络和响应错误
+保持错误。`hello-ok.features.methods` 是保守发现列表，不作为本地发送门禁。
 
 ## 目标行为
 
 - 日常连接以 `operator.read` 查询，以 `operator.write` 取消，不扩大为 `operator.admin`。
-- 任务列表、详情与取消只使用官方 `tasks.*` 协议，动态尊重 Gateway 能力广告。
+- 任务列表、详情与取消只使用官方 `tasks.*` 协议，并由 Gateway 正式响应确认支持状态。
 - 活动中心将 Gateway task ledger 独立呈现，不并入 JunQi 本地任务、Chat transcript 或协作图。
 - 详情仅展示 `tasks.get` 返回的官方 prompt 和摘要字段；不从其他数据源补全。
 - 取消只在 Gateway 返回 `found: true` 且 `cancelled: true` 后刷新；任何否定结果和错误都明确呈现。

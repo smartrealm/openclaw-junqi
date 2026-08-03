@@ -27,7 +27,6 @@ test('OpenClawProviderUsageClient fences and projects only provider quota window
   const client = new OpenClawProviderUsageClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: (connectionId) => connectionId === 'gateway-a',
-    hasAdvertisedMethod: () => true,
     requestFenced: async (method, params, connectionId) => {
       calls.push({ method, params, connectionId });
       return response;
@@ -63,29 +62,31 @@ test('OpenClawProviderUsageClient rejects malformed quota windows', () => {
   }), OpenClawProviderUsageResponseError);
 });
 
-test('OpenClawProviderUsageClient avoids unadvertised methods and maps connection failures', async () => {
+test('OpenClawProviderUsageClient attempts omitted methods and maps connection failures', async () => {
+  let omittedMethodSent = false;
   const unavailable = new OpenClawProviderUsageClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => false,
-    requestFenced: async () => { throw new Error('request must not be sent'); },
+    requestFenced: async () => {
+      omittedMethodSent = true;
+      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+    },
   });
   const missing = new OpenClawProviderUsageClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => null,
     requestFenced: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
   });
   const disconnected = new OpenClawProviderUsageClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => { throw new GatewayDisconnectedError(); },
   });
 
   await assert.rejects(unavailable.get(), OpenClawProviderUsageUnavailableError);
   await assert.rejects(missing.get(), OpenClawProviderUsageUnavailableError);
   await assert.rejects(disconnected.get(), OpenClawProviderUsageUnavailableError);
+  assert.equal(omittedMethodSent, true);
 });
 
 test('OpenClawProviderUsageClient discards a quota response after the Gateway changes', async () => {
@@ -93,7 +94,6 @@ test('OpenClawProviderUsageClient discards a quota response after the Gateway ch
   const client = new OpenClawProviderUsageClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => current,
-    hasAdvertisedMethod: () => true,
     requestFenced: async () => {
       current = false;
       return response;

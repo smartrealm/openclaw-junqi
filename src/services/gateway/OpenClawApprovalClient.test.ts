@@ -44,7 +44,6 @@ test('lists native exec and plugin approvals with strict typed fields', async ()
       calls.push({ method, params });
       return (method === 'exec.approval.list' ? [execApproval] : [pluginApproval]) as T;
     },
-    () => null,
   );
 
   const result = await client.list();
@@ -71,26 +70,24 @@ test('accepts the current OpenClaw plugin description limit', async () => {
         }]
         : []
     ) as T,
-    (method) => method !== OPENCLAW_APPROVAL_RESOLVE_METHOD,
   );
 
   const result = await client.list();
   assert.equal(result.approvals[0]?.kind, 'plugin');
 });
 
-test('does not call a family explicitly absent from hello-ok methods', async () => {
+test('requests approval families despite discovery omission', async () => {
   const calls: string[] = [];
   const client = new OpenClawApprovalClient(
     async <T>(method: string): Promise<T> => {
       calls.push(method);
-      return [execApproval] as T;
+      return (method === 'exec.approval.list' ? [execApproval] : [pluginApproval]) as T;
     },
-    (method) => method === 'exec.approval.list',
   );
 
   const result = await client.list();
-  assert.deepEqual(result.availability, { exec: 'available', plugin: 'unavailable' });
-  assert.deepEqual(calls, ['exec.approval.list']);
+  assert.deepEqual(result.availability, { exec: 'available', plugin: 'available' });
+  assert.deepEqual(calls, ['exec.approval.list', 'plugin.approval.list']);
 });
 
 test('treats an authoritative method-not-found response as unavailable', async () => {
@@ -101,7 +98,6 @@ test('treats an authoritative method-not-found response as unavailable', async (
       }
       return [pluginApproval] as T;
     },
-    () => null,
   );
 
   const result = await client.list();
@@ -113,9 +109,11 @@ test('resolves only a Gateway-advertised decision and confirms native success', 
   const client = new OpenClawApprovalClient(
     async <T>(method: string, params: Record<string, unknown>): Promise<T> => {
       calls.push({ method, params });
+      if (method === OPENCLAW_APPROVAL_RESOLVE_METHOD) {
+        throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      }
       return { ok: true } as T;
     },
-    (method) => method !== OPENCLAW_APPROVAL_RESOLVE_METHOD,
   );
 
   await client.resolve({
@@ -126,10 +124,10 @@ test('resolves only a Gateway-advertised decision and confirms native success', 
       allowedDecisions: ['allow-once', 'deny'],
     },
   }, 'deny');
-  assert.deepEqual(calls, [{
-    method: 'exec.approval.resolve',
-    params: { id: 'exec-1', decision: 'deny' },
-  }]);
+  assert.deepEqual(calls, [
+    { method: OPENCLAW_APPROVAL_RESOLVE_METHOD, params: { id: 'exec-1', kind: 'exec', decision: 'deny' } },
+    { method: 'exec.approval.resolve', params: { id: 'exec-1', decision: 'deny' } },
+  ]);
   await assert.rejects(
     client.resolve({
       kind: 'exec',
@@ -163,7 +161,6 @@ test('uses the unified approval resolver when the Gateway advertises it', async 
         },
       } as T;
     },
-    (method) => method === OPENCLAW_APPROVAL_RESOLVE_METHOD,
   );
 
   const result = await client.resolve({ kind: 'exec', ...execApproval }, 'allow-once');
@@ -185,7 +182,6 @@ test('falls back to the legacy resolver when unified method discovery is stale',
       }
       return { ok: true } as T;
     },
-    () => true,
   );
 
   await client.resolve({ kind: 'plugin', ...pluginApproval }, 'deny');
@@ -217,7 +213,6 @@ test('parses the official approval history snapshots without exposing runtime de
       }],
       nextCursor: 'next-page',
     }) as T,
-    (method) => method === 'approval.history',
   );
 
   const result = await client.history({ kind: 'system-agent', limit: 25 });
@@ -231,7 +226,6 @@ test('parses the official approval history snapshots without exposing runtime de
 test('rejects malformed unified approval history responses', async () => {
   const client = new OpenClawApprovalClient(
     async <T>(): Promise<T> => ({ items: [{ status: 'pending' }] } as T),
-    (method) => method === 'approval.history',
   );
   await assert.rejects(client.history(), OpenClawApprovalResponseError);
 });
@@ -258,7 +252,6 @@ test('gets one official approval snapshot when the Gateway advertises approval.g
         },
       } as T;
     },
-    (method) => method === 'approval.get',
   );
 
   const result = await client.get('plugin-1');
@@ -272,7 +265,6 @@ test('validates unified approval ids with the official path-safe contract', asyn
     async <T>(): Promise<T> => {
       throw new Error('request should not run for invalid ids');
     },
-    () => false,
   );
   await assert.rejects(client.get(''), OpenClawApprovalResponseError);
   await assert.rejects(client.get('.'), OpenClawApprovalResponseError);
@@ -283,7 +275,6 @@ test('validates unified approval ids with the official path-safe contract', asyn
 test('rejects malformed list and unresolved native responses without claiming success', async () => {
   const malformed = new OpenClawApprovalClient(
     async <T>(): Promise<T> => ({ bad: true } as T),
-    () => true,
   );
   await assert.rejects(malformed.list(), OpenClawApprovalResponseError);
 
@@ -292,13 +283,11 @@ test('rejects malformed list and unresolved native responses without claiming su
       ...execApproval,
       request: { ...execApproval.request, allowedDecisions: [] },
     }] as T,
-    () => true,
   );
   await assert.rejects(emptyDecisionSet.list(), OpenClawApprovalResponseError);
 
   const invalidResolve = new OpenClawApprovalClient(
     async <T>(): Promise<T> => ({ ok: false } as T),
-    () => true,
   );
   await assert.rejects(
     invalidResolve.resolve({ kind: 'plugin', ...pluginApproval }, 'deny'),
@@ -310,7 +299,6 @@ test('keeps transport or authorization errors distinct from unsupported method h
   const error = new GatewayRpcError('approval scope required', 'UNAUTHORIZED');
   const client = new OpenClawApprovalClient(
     async <T>(): Promise<T> => { throw error; },
-    () => null,
   );
   await assert.rejects(client.list(), (received: unknown) => received === error);
 });

@@ -24,7 +24,7 @@ describe('OpenClawTaskLedgerClient', () => {
       return method === 'tasks.list'
         ? { tasks: [task], nextCursor: '' } as never
         : { task: { ...task, prompt: 'preserved task prompt' } } as never;
-    }, () => true);
+    });
 
     assert.deepEqual(await client.list({ status: ['queued', 'running'], sessionKey: 'agent:main:main', limit: 50, cursor: '' }), {
       tasks: [task], nextCursor: '', availability: 'available',
@@ -41,7 +41,7 @@ describe('OpenClawTaskLedgerClient', () => {
     const client = new OpenClawTaskLedgerClient(async (method, params) => {
       calls.push({ method, params });
       return { found: true, cancelled: true, task: { ...task, status: 'cancelled' } } as never;
-    }, () => true);
+    });
 
     assert.deepEqual(await client.cancel('task-1'), {
       found: true, cancelled: true, task: { ...task, status: 'cancelled' },
@@ -49,20 +49,23 @@ describe('OpenClawTaskLedgerClient', () => {
     assert.deepEqual(calls, [{ method: 'tasks.cancel', params: { taskId: 'task-1' } }]);
   });
 
-  it('does not call Gateway methods that the connected Gateway does not advertise', async () => {
+  it('requests methods despite discovery omission and trusts Gateway unsupported responses', async () => {
+    let calls = 0;
     const client = new OpenClawTaskLedgerClient(async () => {
-      throw new Error('request should not be called');
-    }, () => false);
+      calls += 1;
+      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+    });
 
     assert.deepEqual(await client.list(), { tasks: [], availability: 'unavailable' });
     await assert.rejects(client.get('task-1'), OpenClawTaskLedgerUnsupportedError);
     await assert.rejects(client.cancel('task-1'), OpenClawTaskLedgerUnsupportedError);
+    assert.equal(calls, 3);
   });
 
   it('treats an unadvertised-method protocol response as unavailable', async () => {
     const client = new OpenClawTaskLedgerClient(async () => {
       throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
-    }, () => null);
+    });
 
     assert.deepEqual(await client.list(), { tasks: [], availability: 'unavailable' });
     await assert.rejects(client.get('task-1'), OpenClawTaskLedgerUnsupportedError);
@@ -71,7 +74,7 @@ describe('OpenClawTaskLedgerClient', () => {
   it('rejects fields that do not satisfy the official response schema', async () => {
     const client = new OpenClawTaskLedgerClient(async () => ({
       tasks: [{ id: 'task-1', status: 'running', updatedAt: -1 }],
-    }) as never, () => true);
+    }) as never);
 
     await assert.rejects(client.list(), OpenClawTaskLedgerResponseError);
   });
@@ -79,7 +82,7 @@ describe('OpenClawTaskLedgerClient', () => {
   it('preserves official empty optional strings without trimming or omitting them', async () => {
     const client = new OpenClawTaskLedgerClient(async () => ({
       tasks: [{ id: 'task-1', status: 'queued', title: '', progressSummary: '', toolUseCount: 0 }],
-    }) as never, () => true);
+    }) as never);
 
     assert.deepEqual(await client.list(), {
       availability: 'available',

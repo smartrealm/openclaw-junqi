@@ -3,7 +3,6 @@ export const OPENCLAW_SESSION_OBSERVER_VISIBILITY_METHOD = 'sessions.observer.vi
 export interface OpenClawSessionObserverVisibilityDependencies {
   captureConnectionId: () => string | null;
   isConnectionCurrent: (connectionId: string) => boolean;
-  hasAdvertisedMethod: (method: string) => boolean | null;
   requestFenced: (method: string, params: Record<string, unknown>, connectionId: string) => Promise<unknown>;
 }
 
@@ -41,10 +40,6 @@ export class OpenClawSessionObserverClient {
   private async drain(): Promise<OpenClawSessionObserverVisibilityResult> {
     for (;;) {
       const visible = this.desired;
-      if (this.dependencies.hasAdvertisedMethod(OPENCLAW_SESSION_OBSERVER_VISIBILITY_METHOD) !== true) {
-        this.applied = null;
-        return 'unavailable';
-      }
       const connectionId = this.dependencies.captureConnectionId();
       if (!connectionId) {
         this.applied = null;

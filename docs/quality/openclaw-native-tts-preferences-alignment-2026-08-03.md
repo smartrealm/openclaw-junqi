@@ -23,9 +23,9 @@ provider 与 persona 偏好，但不会创建本地语音配置、推断 provide
 
 ## 当前实现
 
-- 新增 TTS 偏好 Gateway client，且每个写请求都绑定当前 attested connection。连接切换、断线或未广告的
-  方法均不更新 UI 状态。
-- 对 method advertisement 明确为 false 的方法绝不发送 RPC；Gateway 返回未知方法也归类为不可用。
+- 新增 TTS 偏好 Gateway client，且每个写请求都绑定当前 attested connection。连接切换、断线或
+  Gateway 正式拒绝的方法均不更新 UI 状态。
+- 不把 method advertisement 作为本地门禁；Gateway 返回未知方法才归类为不可用。
 - enabled 写入只接受与目标值一致的确认。provider/persona 写入只接受非空或 null 的官方确认，随后立即重读
   `tts.status`，以重读结果作为 UI 的唯一状态来源。
 - 通知设置中的 Gateway TTS 面板使用开关选择 enabled，使用下拉菜单选择 Gateway 报告的已配置 provider 和

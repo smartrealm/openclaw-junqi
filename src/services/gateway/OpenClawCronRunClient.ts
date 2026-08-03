@@ -26,7 +26,6 @@ export interface OpenClawCronRunAcknowledgement {
 }
 
 export type OpenClawCronRunRequester = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
-export type OpenClawCronRunAdvertisedMethodLookup = (method: string) => boolean | null;
 
 const CRON_RUN_METHOD = 'cron.run';
 const CRON_RUNS_METHOD = 'cron.runs';
@@ -35,7 +34,7 @@ export class OpenClawCronRunUnsupportedError extends Error {
   readonly code = 'OPENCLAW_CRON_RUN_UNSUPPORTED';
 
   constructor(method: string) {
-    super(`The connected OpenClaw Gateway does not advertise ${method}`);
+    super(`The connected OpenClaw Gateway does not support ${method}`);
     this.name = 'OpenClawCronRunUnsupportedError';
   }
 }
@@ -127,14 +126,10 @@ export function parseOpenClawCronRunPage(value: unknown): OpenClawCronRunPage {
 export class OpenClawCronRunClient {
   constructor(
     private readonly request: OpenClawCronRunRequester,
-    private readonly hasAdvertisedMethod: OpenClawCronRunAdvertisedMethodLookup,
   ) {}
 
   async enqueue(jobId: string): Promise<OpenClawCronRunAcknowledgement> {
     const id = requiredInputString(jobId, 'Invalid OpenClaw cron job id');
-    if (this.hasAdvertisedMethod(CRON_RUN_METHOD) === false) {
-      throw new OpenClawCronRunUnsupportedError(CRON_RUN_METHOD);
-    }
     try {
       const source = record(await this.request<unknown>(CRON_RUN_METHOD, { id, mode: 'force' }));
       if (!source || typeof source.ok !== 'boolean') throw new OpenClawCronRunResponseError();
@@ -152,9 +147,6 @@ export class OpenClawCronRunClient {
   async list(jobId: string, runId?: string): Promise<OpenClawCronRunPage> {
     const id = requiredInputString(jobId, 'Invalid OpenClaw cron job id');
     if (runId !== undefined) requiredInputString(runId, 'Invalid OpenClaw cron run id');
-    if (this.hasAdvertisedMethod(CRON_RUNS_METHOD) === false) {
-      throw new OpenClawCronRunUnsupportedError(CRON_RUNS_METHOD);
-    }
     try {
       return parseOpenClawCronRunPage(await this.request<unknown>(CRON_RUNS_METHOD, {
         id,

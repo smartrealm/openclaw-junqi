@@ -388,7 +388,7 @@ describe('Gateway credential security regression gates', () => {
           'policy-connection',
           ['operator.read', 'operator.write'],
           undefined,
-          ['sessions.list'],
+          [],
           4,
           30_000,
           100,
@@ -456,7 +456,6 @@ describe('Gateway credential security regression gates', () => {
     assert.equal(connection.isConnected(), false);
     assert.equal(helloCount, 0);
     assert.deepEqual(savedDeviceTokens, []);
-    assert.equal(connection.getAdvertisedMethods(), null);
     assert.deepEqual(socket.closeCalls, [{ code: 4001, reason: 'Gateway handshake failed' }]);
 
     connection.disconnect();
@@ -464,7 +463,7 @@ describe('Gateway credential security regression gates', () => {
     await turn();
   });
 
-  it('records the hello-ok method advertisement and clears it on disconnect', async () => {
+  it('accepts a complete hello-ok method discovery payload', async () => {
     resetSockets();
     const connection = createMemoryGatewayConnection();
     connection.connect('ws://127.0.0.1:18789', 'daily-token');
@@ -483,10 +482,7 @@ describe('Gateway credential security regression gates', () => {
     };
     challenge(socket);
     await waitForSocketRequest(socket, 'connect');
-    assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), true);
-    assert.equal(connection.hasAdvertisedMethod('audit.list'), true);
     connection.disconnect();
-    assert.equal(connection.hasAdvertisedMethod('audit.activity.list'), null);
     stopPolling();
     await turn();
   });
@@ -571,7 +567,6 @@ describe('Gateway credential security regression gates', () => {
     assert.equal(helloCount, 0);
     assert.equal(attestedIdentityCount, 0);
     assert.deepEqual(savedDeviceTokens, []);
-    assert.equal(connection.getAdvertisedMethods(), null);
     assert.deepEqual(socket.sent.map((message) => message.method), ['connect']);
     assert.deepEqual(socket.closeCalls, [{ code: 4001, reason: 'Gateway protocol mismatch' }]);
 
@@ -622,7 +617,7 @@ describe('Gateway credential security regression gates', () => {
     socket.onSend = (message) => {
       if (message.method === 'connect') {
         assert.deepEqual(message.params.scopes, ['operator.admin']);
-        acceptHandshake(socket, message, 'privileged-1', ['operator.admin'], 'admin-device-token', ['agents.create']);
+        acceptHandshake(socket, message, 'privileged-1', ['operator.admin'], 'admin-device-token');
         return;
       }
       assert.equal(message.method, 'agents.create');
@@ -659,7 +654,7 @@ describe('Gateway credential security regression gates', () => {
     socket.onSend = (message) => {
       if (message.method === 'connect') {
         assert.deepEqual(message.params.scopes, ['operator.approvals']);
-        acceptHandshake(socket, message, 'approval-1', ['operator.approvals'], 'approval-device-token', ['approval.history']);
+        acceptHandshake(socket, message, 'approval-1', ['operator.approvals'], 'approval-device-token');
         return;
       }
       assert.equal(message.method, 'approval.history');
@@ -713,7 +708,7 @@ describe('Gateway credential security regression gates', () => {
     const approvedSocket = MemoryWebSocket.instances[1];
     approvedSocket.onSend = (message) => {
       if (message.method === 'connect') {
-        acceptHandshake(approvedSocket, message, 'privileged-approved', ['operator.admin'], undefined, ['wizard.start']);
+        acceptHandshake(approvedSocket, message, 'privileged-approved', ['operator.admin']);
         return;
       }
       assert.equal(message.method, 'wizard.start');
@@ -768,7 +763,7 @@ describe('Gateway credential security regression gates', () => {
     const approvedSocket = MemoryWebSocket.instances[1];
     approvedSocket.onSend = (message) => {
       if (message.method === 'connect') {
-        acceptHandshake(approvedSocket, message, 'approved-immediately', ['operator.admin'], undefined, ['wizard.start']);
+        acceptHandshake(approvedSocket, message, 'approved-immediately', ['operator.admin']);
         return;
       }
       approvedSocket.receive({ type: 'res', id: message.id, ok: true, payload: { sessionId: 'wizard-1' } });
@@ -867,7 +862,7 @@ describe('Gateway credential security regression gates', () => {
 
     const firstSocket = MemoryWebSocket.instances[0];
     firstSocket.onSend = (message) => {
-      if (message.method === 'connect') acceptHandshake(firstSocket, message, 'privileged-first', undefined, undefined, ['admin.first']);
+      if (message.method === 'connect') acceptHandshake(firstSocket, message, 'privileged-first');
     };
     challenge(firstSocket);
     const firstRpc = await waitForSocketRequest(firstSocket, 'admin.first');
@@ -881,7 +876,7 @@ describe('Gateway credential security regression gates', () => {
 
     const secondSocket = MemoryWebSocket.instances[1];
     secondSocket.onSend = (message) => {
-      if (message.method === 'connect') acceptHandshake(secondSocket, message, 'privileged-second', undefined, undefined, ['admin.second']);
+      if (message.method === 'connect') acceptHandshake(secondSocket, message, 'privileged-second');
     };
     challenge(secondSocket);
     const secondRpc = await waitForSocketRequest(secondSocket, 'admin.second');
@@ -909,7 +904,7 @@ describe('Gateway credential security regression gates', () => {
     const firstSocket = MemoryWebSocket.instances[0];
     firstSocket.onSend = (message) => {
       if (message.method === 'connect') {
-        acceptHandshake(firstSocket, message, 'privileged-stale', undefined, undefined, ['wizard.next']);
+        acceptHandshake(firstSocket, message, 'privileged-stale');
       }
       // Keep the Wizard RPC pending to reproduce a stale serialized lane.
     };
@@ -936,7 +931,7 @@ describe('Gateway credential security regression gates', () => {
 
     socket.onSend = (message) => {
       if (message.method === 'connect') {
-        acceptHandshake(socket, message, 'privileged-failure', undefined, undefined, ['agents.delete']);
+        acceptHandshake(socket, message, 'privileged-failure');
         return;
       }
       socket.receive({

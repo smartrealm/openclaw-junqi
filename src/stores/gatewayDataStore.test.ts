@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { GatewayRpcError } from '@/services/gateway/Connection';
 import {
   GATEWAY_DATA_GROUPS,
   buildSessionsUsageRequest,
@@ -213,7 +214,7 @@ test('sessions.usage accepts official family rows without a concrete session id'
   assert.deepEqual(parseGatewaySessionsUsage(usage), usage);
 });
 
-test('effective tool snapshots follow Session lifecycle and capability advertisement', async () => {
+test('effective tool snapshots follow Session lifecycle and actual Gateway support', async () => {
   const store = useGatewayDataStore.getState();
   store.setSessions([{ key: 'agent:main:main' }]);
   store.setToolsEffective('agent:main:main', {
@@ -232,11 +233,11 @@ test('effective tool snapshots follow Session lifecycle and capability advertise
 
   const calls: string[] = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'tools.effective' ? false : true,
     request: async (method: string) => {
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      if (method === 'tools.effective') throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -246,7 +247,7 @@ test('effective tool snapshots follow Session lifecycle and capability advertise
   try {
     assert.equal(await refreshToolsEffective('agent:main:main'), false);
     assert.equal(useGatewayDataStore.getState().toolsEffectiveError, 'OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED');
-    assert.equal(calls.includes('tools.effective'), false);
+    assert.equal(calls.includes('tools.effective'), true);
   } finally {
     stopPolling();
   }
@@ -255,7 +256,6 @@ test('effective tool snapshots follow Session lifecycle and capability advertise
 test('tools.invoke is restricted to the current effective Session tool set and uses a connection fence', async () => {
   const calls: Array<{ method: string; params: Record<string, unknown>; connectionId?: string }> = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'tools.invoke' || method === 'tools.effective',
     getAttestedConnectionId: () => 'connection-1',
     request: async (method: string, params: Record<string, unknown>) => {
       calls.push({ method, params });
@@ -317,14 +317,14 @@ test('tools.invoke is restricted to the current effective Session tool set and u
   }
 });
 
-test('tools.invoke refuses an explicitly omitted capability and an ineffective tool', async () => {
+test('tools.invoke maps an actual unsupported Gateway method after its effective snapshot is verified', async () => {
   const calls: string[] = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'tools.invoke' ? false : true,
     request: async (method: string) => {
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [{ key: 'agent:main:main' }], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      if (method === 'tools.invoke') throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -333,12 +333,28 @@ test('tools.invoke refuses an explicitly omitted capability and an ineffective t
   startPolling(gateway);
   try {
     useGatewayDataStore.getState().setSessions([{ key: 'agent:main:main' }]);
+    useGatewayDataStore.getState().setToolsEffective('agent:main:main', {
+      agentId: 'main',
+      profile: 'coding',
+      groups: [{
+        id: 'core',
+        label: 'Core',
+        source: 'core',
+        tools: [{
+          id: 'exec',
+          label: 'Exec',
+          description: '',
+          rawDescription: '',
+          source: 'core',
+        }],
+      }],
+    });
     await assert.rejects(
       invokeOpenClawTool({ name: 'exec', sessionKey: 'agent:main:main' }),
       (error: unknown) => error instanceof OpenClawToolsInvokeUnavailableError
         && error.code === 'OPENCLAW_TOOLS_INVOKE_UNSUPPORTED',
     );
-    assert.equal(calls.includes('tools.invoke'), false);
+    assert.equal(calls.includes('tools.invoke'), true);
   } finally {
     stopPolling();
   }
@@ -347,7 +363,6 @@ test('tools.invoke refuses an explicitly omitted capability and an ineffective t
 test('tools.invoke never bypasses an effective snapshot that omits the requested tool', async () => {
   const calls: string[] = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'tools.invoke' || method === 'tools.effective',
     request: async (method: string) => {
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [{ key: 'agent:main:main' }], hasMore: false };
@@ -375,7 +390,7 @@ test('tools.invoke never bypasses an effective snapshot that omits the requested
   }
 });
 
-test('tool catalogs follow Agent lifecycle and capability advertisement', async () => {
+test('tool catalogs follow Agent lifecycle and actual Gateway support', async () => {
   const store = useGatewayDataStore.getState();
   store.setAgents([{ id: 'main' }]);
   store.setToolsCatalog('main', {
@@ -394,11 +409,11 @@ test('tool catalogs follow Agent lifecycle and capability advertisement', async 
 
   const calls: string[] = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'tools.catalog' ? false : true,
     request: async (method: string) => {
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      if (method === 'tools.catalog') throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -408,7 +423,7 @@ test('tool catalogs follow Agent lifecycle and capability advertisement', async 
   try {
     assert.equal(await refreshToolsCatalog('main'), false);
     assert.equal(useGatewayDataStore.getState().toolsCatalogError, 'OPENCLAW_TOOLS_CATALOG_UNSUPPORTED');
-    assert.equal(calls.includes('tools.catalog'), false);
+    assert.equal(calls.includes('tools.catalog'), true);
   } finally {
     stopPolling();
   }
@@ -419,7 +434,6 @@ test('refreshToolsCatalog commits only the current Gateway result for the select
   store.setAgents([{ id: 'main' }]);
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'tools.catalog' ? true : null,
     request: async (method: string, params: Record<string, unknown>) => {
       calls.push({ method, params });
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
@@ -449,7 +463,7 @@ test('refreshToolsCatalog commits only the current Gateway result for the select
   }
 });
 
-test('session artifacts follow Session lifecycle and capability advertisement', async () => {
+test('session artifacts follow Session lifecycle and actual Gateway support', async () => {
   const store = useGatewayDataStore.getState();
   store.setSessions([{ key: 'agent:main:main' }]);
   store.setSessionArtifacts('agent:main:main', []);
@@ -462,11 +476,13 @@ test('session artifacts follow Session lifecycle and capability advertisement', 
 
   const calls: string[] = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'artifacts.download' ? true : false,
     request: async (method: string) => {
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      if (method === 'artifacts.list' || method === 'artifacts.download') {
+        throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+      }
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -476,8 +492,12 @@ test('session artifacts follow Session lifecycle and capability advertisement', 
   try {
     assert.equal(await refreshSessionArtifacts('agent:main:main'), false);
     assert.equal(useGatewayDataStore.getState().sessionArtifactsError, 'OPENCLAW_ARTIFACTS_UNSUPPORTED');
-    assert.equal(calls.includes('artifacts.list'), false);
-    assert.equal((await saveSessionArtifact('agent:main:main', 'artifact-1')).success, false);
+    assert.equal(calls.includes('artifacts.list'), true);
+    assert.deepEqual(await saveSessionArtifact('agent:main:main', 'artifact-1'), {
+      success: false,
+      errorCode: 'OPENCLAW_ARTIFACTS_UNSUPPORTED',
+    });
+    assert.equal(calls.includes('artifacts.download'), true);
   } finally {
     stopPolling();
   }
@@ -507,7 +527,6 @@ test('session artifacts are not discarded before the first authoritative session
     lastFetch: { ...store.lastFetch, sessions: 0 },
   });
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'artifacts.list' ? true : null,
     request: async (method: string) => {
       if (method === 'sessions.list') return new Promise<never>(() => {});
       if (method === 'agents.list') return { agents: [] };
@@ -540,7 +559,6 @@ test('refreshSessionArtifacts commits only a current Gateway result for an activ
   store.setSessions([{ key: 'agent:main:main' }]);
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'artifacts.list' ? true : null,
     request: async (method: string, params: Record<string, unknown>) => {
       calls.push({ method, params });
       if (method === 'sessions.list') return { sessions: [{ key: 'agent:main:main' }], hasMore: false };
@@ -580,14 +598,14 @@ test('refreshSessionArtifacts commits only a current Gateway result for an activ
   }
 });
 
-test('memory.search follows capability advertisement and never fabricates an unsupported result', async () => {
+test('memory.search maps actual Gateway rejection and never fabricates a result', async () => {
   const calls: string[] = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'memory.search' ? false : true,
     request: async (method: string) => {
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      if (method === 'memory.search') throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -598,7 +616,7 @@ test('memory.search follows capability advertisement and never fabricates an uns
     assert.equal(await searchOpenClawMemory('release notes'), false);
     assert.equal(useGatewayDataStore.getState().memorySearchError, 'OPENCLAW_MEMORY_SEARCH_UNSUPPORTED');
     assert.equal(useGatewayDataStore.getState().memorySearch, null);
-    assert.equal(calls.includes('memory.search'), false);
+    assert.equal(calls.includes('memory.search'), true);
   } finally {
     stopPolling();
   }
@@ -607,7 +625,6 @@ test('memory.search follows capability advertisement and never fabricates an uns
 test('memory.search commits only the latest query and preserves Gateway metadata', async () => {
   const pending = new Map<string, (value: unknown) => void>();
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'memory.search' ? true : null,
     request: (method: string, params: Record<string, unknown>) => {
       if (method === 'sessions.list') return Promise.resolve({ sessions: [], hasMore: false });
       if (method === 'agents.list') return Promise.resolve({ agents: [] });
@@ -673,7 +690,6 @@ test('memory.search commits only the latest query and preserves Gateway metadata
 
 test('disconnect clears the Gateway-owned memory snapshot and invalidates its request', async () => {
   const gateway = {
-    hasAdvertisedMethod: () => true,
     request: async (method: string) => {
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [] };
@@ -699,12 +715,9 @@ test('disconnect clears the Gateway-owned memory snapshot and invalidates its re
   assert.equal(useGatewayDataStore.getState().memorySearchError, null);
 });
 
-test('memory diagnostics follows capability advertisement and keeps REM preview separate', async () => {
+test('memory diagnostics keeps REM preview separate', async () => {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => (
-      method === 'doctor.memory.status' || method === 'doctor.memory.remHarness' ? true : null
-    ),
     request: async (method: string, params: Record<string, unknown>) => {
       calls.push({ method, params });
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
@@ -748,16 +761,16 @@ test('memory diagnostics follows capability advertisement and keeps REM preview 
   }
 });
 
-test('memory diagnostics does not call methods that the Gateway explicitly omits', async () => {
+test('memory diagnostics maps actual Gateway rejection without fabricating state', async () => {
   const calls: string[] = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => (
-      method === 'doctor.memory.status' || method === 'doctor.memory.remHarness' ? false : true
-    ),
     request: async (method: string) => {
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [] };
+      if (method === 'doctor.memory.status' || method === 'doctor.memory.remHarness') {
+        throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+      }
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -769,8 +782,8 @@ test('memory diagnostics does not call methods that the Gateway explicitly omits
     assert.equal(await previewOpenClawMemoryRemHarness(), false);
     assert.equal(useGatewayDataStore.getState().memoryDiagnosticsError, 'OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED');
     assert.equal(useGatewayDataStore.getState().memoryRemHarnessError, 'OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED');
-    assert.equal(calls.includes('doctor.memory.status'), false);
-    assert.equal(calls.includes('doctor.memory.remHarness'), false);
+    assert.equal(calls.includes('doctor.memory.status'), true);
+    assert.equal(calls.includes('doctor.memory.remHarness'), true);
   } finally {
     stopPolling();
   }
@@ -779,7 +792,6 @@ test('memory diagnostics does not call methods that the Gateway explicitly omits
 test('disconnect clears native memory diagnostics and invalidates late results', async () => {
   let resolveStatus: ((value: unknown) => void) | undefined;
   const gateway = {
-    hasAdvertisedMethod: () => true,
     request: (method: string) => {
       if (method === 'sessions.list') return Promise.resolve({ sessions: [], hasMore: false });
       if (method === 'agents.list') return Promise.resolve({ agents: [] });
@@ -802,14 +814,14 @@ test('disconnect clears native memory diagnostics and invalidates late results',
   assert.equal(useGatewayDataStore.getState().memoryDiagnosticsError, null);
 });
 
-test('sessions.search follows capability advertisement and never fabricates unsupported hits', async () => {
+test('sessions.search maps actual Gateway rejection and never fabricates hits', async () => {
   const calls: string[] = [];
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'sessions.search' ? false : true,
     request: async (method: string) => {
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [] };
+      if (method === 'sessions.search') throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -820,7 +832,7 @@ test('sessions.search follows capability advertisement and never fabricates unsu
     assert.equal(await searchOpenClawSessions('release notes'), false);
     assert.equal(useGatewayDataStore.getState().sessionSearchError, 'OPENCLAW_SESSIONS_SEARCH_UNSUPPORTED');
     assert.equal(useGatewayDataStore.getState().sessionSearch, null);
-    assert.equal(calls.includes('sessions.search'), false);
+    assert.equal(calls.includes('sessions.search'), true);
   } finally {
     stopPolling();
   }
@@ -829,7 +841,6 @@ test('sessions.search follows capability advertisement and never fabricates unsu
 test('sessions.search commits only the latest query and preserves native indexing flags', async () => {
   const pending = new Map<string, (value: unknown) => void>();
   const gateway = {
-    hasAdvertisedMethod: (method: string) => method === 'sessions.search' ? true : null,
     request: (method: string, params: Record<string, unknown>) => {
       if (method === 'sessions.list') return Promise.resolve({ sessions: [], hasMore: false });
       if (method === 'agents.list') return Promise.resolve({ agents: [] });
@@ -884,7 +895,6 @@ test('sessions.search commits only the latest query and preserves native indexin
 
 test('disconnect clears the Gateway-owned session search snapshot', async () => {
   const gateway = {
-    hasAdvertisedMethod: () => true,
     request: async (method: string) => {
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [] };

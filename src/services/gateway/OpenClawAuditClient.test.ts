@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { GatewayRpcError } from './Connection';
 import {
   OpenClawAuditClient,
   OpenClawAuditResponseError,
@@ -45,14 +46,13 @@ const activityEvent = {
 };
 
 describe('OpenClawAuditClient', () => {
-  it('prefers the versioned activity ledger when the Gateway advertises it', async () => {
+  it('prefers the versioned activity ledger before compatibility fallback', async () => {
     const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
     const client = new OpenClawAuditClient(
       async <T>(method: string, params: Record<string, unknown>) => {
         requests.push({ method, params });
         return { events: [activityEvent] } as T;
       },
-      (method) => method === 'audit.activity.list',
     );
 
     const page = await client.list({ runId: 'run-1', kind: 'tool_action', limit: 10 });
@@ -63,17 +63,20 @@ describe('OpenClawAuditClient', () => {
     assert.equal(page.events[0]?.errorCode, 'tool_cancelled');
   });
 
-  it('uses the compatibility audit.list method when capabilities are unknown', async () => {
+  it('uses compatibility audit.list after Gateway rejects the newer method', async () => {
     const methods: string[] = [];
     const client = new OpenClawAuditClient(
       async <T>(method: string) => {
         methods.push(method);
+        if (method === 'audit.activity.list') {
+          throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+        }
         return { events: [legacyEvent], nextCursor: 'next-1' } as T;
       },
     );
 
     const page = await client.list({ runId: 'run-1', kind: 'agent_run' });
-    assert.deepEqual(methods, ['audit.list']);
+    assert.deepEqual(methods, ['audit.activity.list', 'audit.list']);
     assert.equal(page.source, 'legacy');
     assert.equal(page.nextCursor, 'next-1');
     assert.equal(page.events[0]?.sessionId, 'session-1');
@@ -81,8 +84,7 @@ describe('OpenClawAuditClient', () => {
 
   it('does not pretend that a legacy Gateway supports activity-only filters', async () => {
     const client = new OpenClawAuditClient(
-      async <T>() => ({ events: [] } as unknown as T),
-      (method) => method === 'audit.list',
+      async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
     );
 
     await assert.rejects(
@@ -95,8 +97,8 @@ describe('OpenClawAuditClient', () => {
     );
   });
 
-  it('fails closed when neither audit method is advertised', async () => {
-    const client = new OpenClawAuditClient(async <T>() => ({ events: [] } as unknown as T), () => false);
+  it('fails closed when Gateway rejects both audit methods', async () => {
+    const client = new OpenClawAuditClient(async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); });
     await assert.rejects(
       client.list({ runId: 'run-1' }),
       (error: unknown) => error instanceof OpenClawAuditUnsupportedError,

@@ -156,7 +156,7 @@ specs/
 - [OpenClaw 模型目录权威性](quality/2026-08-04-openclaw-model-catalog-authority-alignment.md)
 - [OpenClaw Talk 事件契约](quality/2026-08-04-openclaw-talk-event-contract-alignment.md)
 - [OpenClaw 会话 category 权威性](quality/2026-08-04-openclaw-session-category-authority-alignment.md)
-- [OpenClaw Gateway 方法广告发送门禁](quality/2026-08-04-openclaw-gateway-method-advertisement-gate.md)
+- [OpenClaw Gateway 方法广告发现边界修正](quality/2026-08-04-openclaw-gateway-method-advertisement-gate.md)
 - [OpenClaw Operator Protocol v4](quality/2026-08-03-openclaw-operator-protocol-v4.md)
 - [Gateway Task Ledger 详情](quality/2026-08-03-task-ledger-details.md)
 - [Windows Gateway 重启后续规格](quality/2026-08-03-windows-gateway-restart-followup.md)

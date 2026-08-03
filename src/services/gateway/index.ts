@@ -345,7 +345,6 @@ export const openClawSessionObserverClient = new OpenClawSessionObserverClient({
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
   ),
-  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
   requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
     method,
     params,
@@ -354,7 +353,6 @@ export const openClawSessionObserverClient = new OpenClawSessionObserverClient({
 });
 const auditClient = new OpenClawAuditClient(
   (method, params) => connection.request(method, params),
-  (method) => connection.hasAdvertisedMethod(method),
 );
 const SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS = 5_000;
 const RUN_STATE_LOOKUP_TIMEOUT_MS = 5_000;
@@ -381,7 +379,6 @@ export const openClawTtsStatusClient = new OpenClawTtsStatusClient({
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
   ),
-  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
   requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
     method,
     params,
@@ -394,7 +391,6 @@ export const openClawTtsPreferencesClient = new OpenClawTtsPreferencesClient({
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
   ),
-  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
   requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
     method,
     params,
@@ -407,7 +403,6 @@ export const openClawModelAuthStatusClient = new OpenClawModelAuthStatusClient({
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
   ),
-  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
   requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
     method,
     params,
@@ -420,7 +415,6 @@ export const openClawProviderUsageClient = new OpenClawProviderUsageClient({
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
   ),
-  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
   requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
     method,
     params,
@@ -433,7 +427,6 @@ export const openClawCommandsClient = new OpenClawCommandsClient({
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
   ),
-  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
   requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
     method,
     params,
@@ -876,7 +869,6 @@ const requestPrivileged = createPrivilegedRequester(connection);
 const requestApprovals = createApprovalRequester(connection);
 const approvalClient = new OpenClawApprovalClient(
   (method, params) => requestApprovals(method, params),
-  (method) => connection.hasAdvertisedMethod(method),
 );
 const legacyApprovalClient = new LegacyOpenClawApprovalClient({
   requestPrivileged: (method, params) => requestApprovals(method, params),
@@ -911,19 +903,15 @@ const sessionLifecycle = new OpenClawSessionLifecycleClient(
 );
 const taskLedger = new OpenClawTaskLedgerClient(
   (method, params) => connection.request(method, params),
-  (method) => connection.hasAdvertisedMethod(method),
 );
 const cronRunClient = new OpenClawCronRunClient(
   (method, params) => connection.request(method, params),
-  (method) => connection.hasAdvertisedMethod(method),
 );
 const cronStatusClient = new OpenClawCronStatusClient(
   (method, params) => connection.request(method, params),
-  (method) => connection.hasAdvertisedMethod(method),
 );
 const cronManagementClient = new OpenClawCronManagementClient(
   (method, params) => requestPrivileged(method, { ...params }),
-  (method) => connection.hasAdvertisedMethod(method),
 );
 const sessionSteer = new OpenClawSessionSteerClient(
   (method, params) => connection.request(method, params),
@@ -939,7 +927,6 @@ const sessionCompactionCheckpoints = new OpenClawSessionCompactionCheckpointsCli
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
   ),
-  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
   requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
     method,
     params,
@@ -1059,7 +1046,6 @@ export const gateway = {
   },
   acquireGatewayApprovalEvents() { return acquireGatewayApprovalEvents(); },
   getStatus() { return connection.getStatus(); },
-  hasAdvertisedMethod(method: string) { return connection.hasAdvertisedMethod(method); },
   getLastError() { return connection.getLastError(); },
   captureConnectionId() { return connection.getAttestedConnectionId(); },
   isConnectionCurrent(connectionId: string) {

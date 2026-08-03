@@ -27,4 +27,4 @@
 - 不在 JunQi 本地读取 transcript 文件或合成最近消息。
 - 不调用未由官方 schema、handler 和方法目录证明存在的 RPC。
 - 不把 `sessions.preview` 变成会话分组、Task 状态机、Stop 恢复或工具结果来源。
-- 不把安装版本号写成能力开关；连接能力以 Gateway 当前 advertised methods 为准。
+- 不把安装版本号或 Gateway 保守发现列表写成能力开关；连接能力以 Gateway 正式响应为准。
