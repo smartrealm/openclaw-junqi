@@ -731,7 +731,6 @@ test('BUG-07 WebSocket retry has one owner, deadline, and routes exhaustion into
   assert.match(connection, /connect\(\s*url: string,\s*token: string,\s*deviceToken = '',\s*resetReconnectAttempts = true/);
   assert.match(connection, /connect\(this\.url, this\.token, this\.deviceToken, false\)/);
   assert.match(connection, /new ConnectionRetryPolicy\(3\)/);
-  assert.match(connection, /CONNECTION_ATTEMPT_TIMEOUT_MS = 8_000/);
   assert.match(connection, /emitRetryState\('exhausted'/);
   assert.doesNotMatch(app, /scheduleReconnectRetries|bootRecoveryTimersRef/);
   assert.match(app, /onRetryState:[\s\S]*retry\.phase === 'exhausted'[\s\S]*surfaceVerifiedGatewayHandoffFailure\(\)/);

@@ -3,7 +3,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { after, describe, it } from 'node:test';
 import { stopPolling, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
+import type { GatewayDeviceChallengeParams } from '@/api/tauri-commands';
 import { GatewayConnection, type GatewayConnectionOptions } from './Connection';
+import { GatewayTransportLifecycleError } from './GatewayTransportError';
 import type { GatewayAuthorizationIssue } from './messageRouter';
 import {
   createApprovalRequester,
@@ -44,6 +46,7 @@ class MemoryWebSocket {
 
   readonly url: string;
   readyState = MemoryWebSocket.CONNECTING;
+  bufferedAmount = 0;
   sent: WireRequest[] = [];
   closeCalls: Array<{ code: number; reason: string }> = [];
   onSend: (message: WireRequest) => void = () => {};
@@ -117,12 +120,15 @@ async function waitForSocketRequest(socket: MemoryWebSocket, method: string): Pr
   assert.fail(`Expected ${method} request before the handshake deadline`);
 }
 
-function challenge(socket: MemoryWebSocket) {
+function challenge(socket: MemoryWebSocket, timestamp = 1_735_000_000_123) {
   socket.open();
   socket.receive({
     type: 'event',
     event: 'connect.challenge',
-    payload: { nonce: `nonce-${MemoryWebSocket.instances.indexOf(socket)}` },
+    payload: {
+      nonce: `nonce-${MemoryWebSocket.instances.indexOf(socket)}`,
+      ts: timestamp,
+    },
   });
 }
 
@@ -134,6 +140,9 @@ function acceptHandshake(
   deviceToken?: string,
   methods: string[] = [],
   protocol = 4,
+  tickIntervalMs = 30_000,
+  maxPayload = 1_024,
+  maxBufferedBytes = 2_048,
 ) {
   socket.receive({
     type: 'res',
@@ -144,7 +153,18 @@ function acceptHandshake(
       protocol,
       server: { version: '2026.7.1', connId: connectionId },
       features: { methods, events: [] },
+      snapshot: {
+        presence: [],
+        health: {},
+        stateVersion: { presence: 0, health: 0 },
+        uptimeMs: 0,
+      },
       auth: { role: 'operator', scopes, ...(deviceToken ? { deviceToken } : {}) },
+      policy: {
+        maxPayload,
+        maxBufferedBytes,
+        tickIntervalMs,
+      },
     },
   });
 }
@@ -159,10 +179,23 @@ function sourceConnection() {
   };
 }
 
+function createMemoryGatewayConnection(options: GatewayConnectionOptions = {}) {
+  return new GatewayConnection(options, {
+    resolvePlatform: async () => 'linux',
+    signDeviceChallenge: async (params) => ({
+      deviceId: 'memory-device',
+      publicKey: 'memory-public-key',
+      signature: 'memory-signature',
+      signedAt: params.signedAt,
+      nonce: params.nonce,
+    }),
+  });
+}
+
 function requesterWithRealTransientConnections(options: GatewayConnectionOptions[] = []) {
   return createPrivilegedRequester(sourceConnection(), (connectionOptions) => {
     options.push(connectionOptions);
-    return new GatewayConnection(connectionOptions);
+    return createMemoryGatewayConnection(connectionOptions);
   }, { pairingRetryMs: 0, pairingTimeoutMs: 1_000 });
 }
 
@@ -176,9 +209,264 @@ function resetSockets() {
 }
 
 describe('Gateway credential security regression gates', () => {
+  it('does not fall back to token-only connect before a Gateway challenge', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection();
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.open();
+    await turn();
+
+    assert.deepEqual(socket.sent, []);
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('closes an incomplete handshake at its connection deadline', async () => {
+    resetSockets();
+    const connection = new GatewayConnection({ transient: true }, {
+      resolvePlatform: async () => 'linux',
+      signDeviceChallenge: async () => ({
+        deviceId: 'deadline-device',
+        publicKey: 'deadline-public-key',
+        signature: 'deadline-signature',
+        signedAt: 0,
+        nonce: 'deadline-nonce',
+      }),
+      connectTimeoutMs: 5,
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.open();
+    await wait(20);
+
+    assert.deepEqual(socket.sent, []);
+    assert.deepEqual(socket.closeCalls, [{ code: 4000, reason: 'Gateway handshake timeout' }]);
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('rejects an invalid Gateway challenge before it can send connect', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection();
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.open();
+    socket.receive({
+      type: 'event',
+      event: 'connect.challenge',
+      payload: { nonce: 'nonce-without-timestamp' },
+    });
+    await turn();
+
+    assert.deepEqual(socket.sent, []);
+    assert.deepEqual(socket.closeCalls, [{ code: 1008, reason: 'Gateway connect challenge invalid' }]);
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('passes Gateway challenge facts into the v3 device signature and connect frame', async () => {
+    resetSockets();
+    const signedRequests: GatewayDeviceChallengeParams[] = [];
+    const connection = new GatewayConnection({}, {
+      resolvePlatform: async () => 'windows',
+      signDeviceChallenge: async (params) => {
+        signedRequests.push(params);
+        return {
+          deviceId: 'device-id',
+          publicKey: 'public-key',
+          signature: 'signature',
+          signedAt: params.signedAt,
+          nonce: params.nonce,
+        };
+      },
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(socket, message, 'daily-connection', ['operator.read', 'operator.write']);
+      }
+    };
+    challenge(socket, 1_735_000_000_456);
+
+    const handshake = await waitForSocketRequest(socket, 'connect');
+    assert.deepEqual(signedRequests, [{
+      nonce: 'nonce-0',
+      signedAt: 1_735_000_000_456,
+      clientId: 'openclaw-control-ui',
+      clientMode: 'ui',
+      role: 'operator',
+      scopes: ['operator.read', 'operator.write'],
+      token: 'daily-token',
+      platform: 'windows',
+      deviceFamily: null,
+    }]);
+    assert.deepEqual(handshake.params.device, {
+      id: 'device-id',
+      publicKey: 'public-key',
+      signature: 'signature',
+      signedAt: 1_735_000_000_456,
+      nonce: 'nonce-0',
+    });
+
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('fails closed instead of sending connect when device signing is unavailable', async () => {
+    resetSockets();
+    const connection = new GatewayConnection({}, {
+      resolvePlatform: async () => 'linux',
+      signDeviceChallenge: async () => { throw new Error('credential store unavailable'); },
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    challenge(socket);
+    await turn();
+
+    assert.deepEqual(socket.sent, []);
+    assert.deepEqual(socket.closeCalls, [{ code: 4001, reason: 'Gateway handshake failed' }]);
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('uses the server tick policy to close a silent socket without sending a ping RPC', async () => {
+    resetSockets();
+    const connection = new GatewayConnection({ transient: true }, {
+      resolvePlatform: async () => 'linux',
+      signDeviceChallenge: async (params) => ({
+        deviceId: 'watchdog-device',
+        publicKey: 'watchdog-public-key',
+        signature: 'watchdog-signature',
+        signedAt: params.signedAt,
+        nonce: params.nonce,
+      }),
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(
+          socket,
+          message,
+          'daily-connection',
+          ['operator.read', 'operator.write'],
+          undefined,
+          [],
+          4,
+          1,
+        );
+      }
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await wait(2_100);
+
+    assert.equal(socket.sent.some((message) => message.method === 'ping'), false);
+    assert.deepEqual(socket.closeCalls, [{ code: 4000, reason: 'Gateway tick timeout' }]);
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('rejects payload and buffer overflow before an RPC reaches the Gateway', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection({ transient: true });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(
+          socket,
+          message,
+          'policy-connection',
+          ['operator.read', 'operator.write'],
+          undefined,
+          [],
+          4,
+          30_000,
+          100,
+          10,
+        );
+      }
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+
+    await assert.rejects(
+      connection.request('sessions.list', { note: 'x'.repeat(200) }),
+      (error: unknown) => error instanceof GatewayTransportLifecycleError
+        && error.message === 'Gateway request exceeds the server payload limit',
+    );
+    socket.bufferedAmount = 11;
+    await assert.rejects(
+      connection.request('sessions.list', {}),
+      (error: unknown) => error instanceof GatewayTransportLifecycleError
+        && error.message === 'Gateway send buffer exceeds the server limit',
+    );
+    assert.deepEqual(socket.sent.map((message) => message.method), ['connect']);
+
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('does not commit state for an incomplete Gateway hello-ok', async () => {
+    resetSockets();
+    let helloCount = 0;
+    const connection = createMemoryGatewayConnection({
+      persistDeviceCredential: async (url, token) => {
+        savedDeviceTokens.push({ url, token });
+      },
+    });
+    connection.setCallbacks({
+      onMessage: () => {},
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onStatusChange: () => {},
+      onHello: () => { helloCount += 1; },
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      socket.receive({
+        type: 'res',
+        id: message.id,
+        ok: true,
+        payload: {
+          type: 'hello-ok',
+          protocol: 4,
+          server: { version: '2026.7.1', connId: 'incomplete' },
+          features: { methods: [], events: [] },
+          auth: { role: 'operator', scopes: ['operator.read'], deviceToken: 'must-not-save' },
+        },
+      });
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await turn();
+
+    assert.equal(connection.isConnected(), false);
+    assert.equal(helloCount, 0);
+    assert.deepEqual(savedDeviceTokens, []);
+    assert.equal(connection.getAdvertisedMethods(), null);
+    assert.deepEqual(socket.closeCalls, [{ code: 4001, reason: 'Gateway handshake failed' }]);
+
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
   it('records the hello-ok method advertisement and clears it on disconnect', async () => {
     resetSockets();
-    const connection = new GatewayConnection();
+    const connection = createMemoryGatewayConnection();
     connection.connect('ws://127.0.0.1:18789', 'daily-token');
     const socket = MemoryWebSocket.instances[0];
     socket.onSend = (message) => {
@@ -205,7 +493,7 @@ describe('Gateway credential security regression gates', () => {
 
   it('requests only read/write scopes in the daily socket handshake', async () => {
     resetSockets();
-    const connection = new GatewayConnection({
+    const connection = createMemoryGatewayConnection({
       persistDeviceCredential: async (url, token) => {
         savedDeviceTokens.push({ url, token });
       },
@@ -242,7 +530,7 @@ describe('Gateway credential security regression gates', () => {
     resetSockets();
     let helloCount = 0;
     let attestedIdentityCount = 0;
-    const connection = new GatewayConnection({
+    const connection = createMemoryGatewayConnection({
       persistDeviceCredential: async (url, token) => {
         savedDeviceTokens.push({ url, token });
       },
@@ -301,7 +589,7 @@ describe('Gateway credential security regression gates', () => {
 
   it('sends a stored device credential through the official deviceToken field', async () => {
     resetSockets();
-    const connection = new GatewayConnection();
+    const connection = createMemoryGatewayConnection();
     connection.connect('ws://127.0.0.1:18789', '', 'paired-device-token');
     const socket = MemoryWebSocket.instances[0];
     socket.onSend = (message) => {
@@ -360,7 +648,7 @@ describe('Gateway credential security regression gates', () => {
       sourceConnection(),
       (options) => {
         connectionOptions.push(options);
-        return new GatewayConnection(options);
+        return createMemoryGatewayConnection(options);
       },
       { pairingRetryMs: 0, pairingTimeoutMs: 1_000 },
     );
@@ -447,7 +735,7 @@ describe('Gateway credential security regression gates', () => {
     resetSockets();
     const requestPrivileged = createPrivilegedRequester(
       sourceConnection(),
-      (connectionOptions) => new GatewayConnection(connectionOptions),
+      (connectionOptions) => createMemoryGatewayConnection(connectionOptions),
       { pairingRetryMs: 60_000, pairingTimeoutMs: 120_000 },
     );
     let pairingSurfaced = false;
@@ -501,7 +789,7 @@ describe('Gateway credential security regression gates', () => {
     };
     const requestPrivileged = createPrivilegedRequester(
       source,
-      (connectionOptions) => new GatewayConnection(connectionOptions),
+      (connectionOptions) => createMemoryGatewayConnection(connectionOptions),
       { pairingRetryMs: 0, pairingTimeoutMs: 1_000 },
     );
     const resultPromise = requestPrivileged('wizard.start', { mode: 'local' });
@@ -532,7 +820,7 @@ describe('Gateway credential security regression gates', () => {
     resetSockets();
     const requestPrivileged = createPrivilegedRequester(
       sourceConnection(),
-      (connectionOptions) => new GatewayConnection(connectionOptions),
+      (connectionOptions) => createMemoryGatewayConnection(connectionOptions),
       { pairingRetryMs: 60_000, pairingTimeoutMs: 120_000 },
     );
     const resultPromise = requestPrivileged('wizard.next', { sessionId: 'wizard-1' }, null);

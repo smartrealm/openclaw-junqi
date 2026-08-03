@@ -878,11 +878,14 @@ export interface GatewayDeviceIdentityReference {
 
 export interface GatewayDeviceChallengeParams {
   nonce: string;
+  signedAt: number;
   clientId: string;
   clientMode: string;
   role: string;
   scopes: readonly string[];
   token: string;
+  platform: string;
+  deviceFamily: string | null;
 }
 
 export interface GatewayDeviceChallengeSignature extends GatewayDeviceIdentityReference {

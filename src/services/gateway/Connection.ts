@@ -33,9 +33,88 @@ import { getNativePlatformInfo } from '@/api/tauri-commands';
 export const GATEWAY_OPERATOR_PROTOCOL_VERSION = 4;
 const GATEWAY_PROTOCOL_MIN = GATEWAY_OPERATOR_PROTOCOL_VERSION;
 const GATEWAY_PROTOCOL_MAX = GATEWAY_OPERATOR_PROTOCOL_VERSION;
+const GATEWAY_CONNECT_TIMEOUT_MS = 15_000;
+const DEFAULT_GATEWAY_TICK_INTERVAL_MS = 30_000;
+const MIN_GATEWAY_TICK_WATCH_INTERVAL_MS = 1_000;
 
 function isGatewayOperatorProtocol(value: unknown): value is typeof GATEWAY_OPERATOR_PROTOCOL_VERSION {
   return value === GATEWAY_OPERATOR_PROTOCOL_VERSION;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function isNonEmptyStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonEmptyString);
+}
+
+interface GatewayHelloPolicy {
+  maxPayload: number;
+  maxBufferedBytes: number;
+  tickIntervalMs: number;
+}
+
+interface ValidatedGatewayHello {
+  payload: Record<string, unknown>;
+  methods: string[];
+  authDeviceToken: string | null;
+  policy: GatewayHelloPolicy;
+}
+
+function validateGatewayHello(value: unknown): ValidatedGatewayHello | null {
+  if (!isRecord(value) || value.type !== 'hello-ok' || !isGatewayOperatorProtocol(value.protocol)) {
+    return null;
+  }
+  const server = value.server;
+  const features = value.features;
+  const snapshot = value.snapshot;
+  const auth = value.auth;
+  const policy = value.policy;
+  if (!isRecord(server) || !isNonEmptyString(server.version) || !isNonEmptyString(server.connId)) return null;
+  if (
+    !isRecord(features)
+    || !isNonEmptyStringArray(features.methods)
+    || !isNonEmptyStringArray(features.events)
+  ) return null;
+  if (
+    !isRecord(snapshot)
+    || !Array.isArray(snapshot.presence)
+    || !isRecord(snapshot.health)
+    || !isRecord(snapshot.stateVersion)
+    || !isNonNegativeSafeInteger(snapshot.stateVersion.presence)
+    || !isNonNegativeSafeInteger(snapshot.stateVersion.health)
+    || !isNonNegativeSafeInteger(snapshot.uptimeMs)
+  ) return null;
+  if (!isRecord(auth) || !isNonEmptyString(auth.role) || !isNonEmptyStringArray(auth.scopes)) return null;
+  if (
+    !isRecord(policy)
+    || !isPositiveSafeInteger(policy.maxPayload)
+    || !isPositiveSafeInteger(policy.maxBufferedBytes)
+    || !isPositiveSafeInteger(policy.tickIntervalMs)
+  ) return null;
+  return {
+    payload: value,
+    methods: features.methods,
+    authDeviceToken: isNonEmptyString(auth.deviceToken) ? auth.deviceToken : null,
+    policy: {
+      maxPayload: policy.maxPayload,
+      maxBufferedBytes: policy.maxBufferedBytes,
+      tickIntervalMs: policy.tickIntervalMs,
+    },
+  };
 }
 export type GatewayOperatorScope =
   | 'operator.read'
@@ -223,6 +302,8 @@ interface PendingRequest {
 
 interface GatewayConnectionDependencies {
   resolvePlatform: () => Promise<GatewayClientPlatform>;
+  signDeviceChallenge: typeof signGatewayDeviceChallenge;
+  connectTimeoutMs: number;
 }
 
 /** JSON object parameters accepted by an OpenClaw RPC request. */
@@ -320,27 +401,27 @@ export class GatewayConnection {
   private msgCounter = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly retryPolicy = new ConnectionRetryPolicy(3);
-  private readonly CONNECTION_ATTEMPT_TIMEOUT_MS = 8_000;
   private attemptTimer: ReturnType<typeof setTimeout> | null = null;
   private handshakeRequestId: string | null = null;
   private runtimeIdentityConnectionId: string | null = null;
   private advertisedMethods: Set<string> | null = null;
+  private helloPolicy: GatewayHelloPolicy | null = null;
 
   // ── Pairing detection (gentle retry instead of exponential backoff) ──
   private pairingRequired = false;
   private pairingRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly PAIRING_RETRY_MS = 5_000;
 
-  // Device identity challenge nonce (from connect.challenge event)
+  // Device identity challenge facts are owned by the active socket only.
   private challengeNonce: string | null = null;
-  private connectTimer: ReturnType<typeof setTimeout> | null = null;
+  private challengeTimestamp: number | null = null;
 
 
-  // ── Heartbeat (activity-based dead connection detection) ──
+  // ── Server-policy activity watchdog ──
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
-  private heartbeatPingTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastGatewayActivityAt: number | null = null;
+  private gatewayTickIntervalMs = DEFAULT_GATEWAY_TICK_INTERVAL_MS;
   private msgRouter = new MessageRouter();
-  private readonly HEARTBEAT_DEAD_MS = 90_000; // No traffic for 90s = dead
 
   // ── Last error for diagnostics and recovery surfaces ──
   private lastError: string | null = null;
@@ -353,6 +434,8 @@ export class GatewayConnection {
   deviceToken = '';
   private readonly persistDeviceCredential: (gatewayUrl: string, token: string) => Promise<unknown>;
   private readonly resolvePlatform: () => Promise<GatewayClientPlatform>;
+  private readonly signDeviceChallenge: typeof signGatewayDeviceChallenge;
+  private readonly connectTimeoutMs: number;
 
   // ── Event callback (set by ChatHandler) ──
   /** Called for every incoming non-response event from the WebSocket. */
@@ -366,6 +449,8 @@ export class GatewayConnection {
     this.transient = options.transient === true;
     this.persistDeviceCredential = options.persistDeviceCredential ?? storeGatewayConnectionDeviceCredential;
     this.resolvePlatform = dependencies.resolvePlatform ?? resolveGatewayClientPlatform;
+    this.signDeviceChallenge = dependencies.signDeviceChallenge ?? signGatewayDeviceChallenge;
+    this.connectTimeoutMs = dependencies.connectTimeoutMs ?? GATEWAY_CONNECT_TIMEOUT_MS;
     // Register message handlers once — they never change and MessageRouter
     // uses set() semantics, so calling this in connect() would be a no-op,
     // but initializing here is the correct ownership model.
@@ -373,36 +458,47 @@ export class GatewayConnection {
   }
 
   // ══════════════════════════════════════════════════════
-  // Heartbeat Management
+  // Gateway Activity Watchdog
   // ══════════════════════════════════════════════════════
 
-  private startHeartbeat() {
-    this.resetHeartbeat();
+  private startHeartbeat(policy: GatewayHelloPolicy) {
+    this.helloPolicy = policy;
+    this.gatewayTickIntervalMs = policy.tickIntervalMs;
+    this.lastGatewayActivityAt = Date.now();
+    this.scheduleHeartbeatWatch();
   }
 
-  private resetHeartbeat() {
-    if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
-    if (this.heartbeatPingTimer) clearTimeout(this.heartbeatPingTimer);
+  private recordGatewayActivity() {
     if (!this.connected) return;
+    this.lastGatewayActivityAt = Date.now();
+    this.scheduleHeartbeatWatch();
+  }
 
-    // Send a keepalive ping halfway through to provoke traffic
-    this.heartbeatPingTimer = setTimeout(() => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        try {
-          this.ws.send(JSON.stringify({ method: 'ping', id: this.nextId() }));
-        } catch {}
-      }
-    }, this.HEARTBEAT_DEAD_MS / 2);
-
+  private scheduleHeartbeatWatch() {
+    if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
+    if (!this.connected || this.lastGatewayActivityAt === null) return;
+    const intervalMs = Math.max(this.gatewayTickIntervalMs, MIN_GATEWAY_TICK_WATCH_INTERVAL_MS);
     this.heartbeatTimer = setTimeout(() => {
-      debugWarn('gateway', '[GW] No traffic for', this.HEARTBEAT_DEAD_MS / 1000, 's; connection dead');
-      this.ws?.close(4000, 'Heartbeat timeout');
-    }, this.HEARTBEAT_DEAD_MS);
+      if (!this.connected || this.lastGatewayActivityAt === null) return;
+      const allPendingRequestsHaveTimeouts = this.pendingRequests.size > 0
+        && [...this.pendingRequests.values()].every((request) => request.timer !== null);
+      if (!allPendingRequestsHaveTimeouts) {
+        const inactiveForMs = Date.now() - this.lastGatewayActivityAt;
+        if (inactiveForMs > this.gatewayTickIntervalMs * 2) {
+          debugWarn('gateway', '[GW] Gateway tick watchdog expired after', inactiveForMs, 'ms');
+          this.ws?.close(4000, 'Gateway tick timeout');
+          return;
+        }
+      }
+      this.scheduleHeartbeatWatch();
+    }, intervalMs);
   }
 
   private stopHeartbeat() {
     if (this.heartbeatTimer) { clearTimeout(this.heartbeatTimer); this.heartbeatTimer = null; }
-    if (this.heartbeatPingTimer) { clearTimeout(this.heartbeatPingTimer); this.heartbeatPingTimer = null; }
+    this.lastGatewayActivityAt = null;
+    this.gatewayTickIntervalMs = DEFAULT_GATEWAY_TICK_INTERVAL_MS;
+    this.helloPolicy = null;
   }
 
   /** Returns true when the WebSocket is established and handshake succeeded */
@@ -463,6 +559,9 @@ export class GatewayConnection {
       this.ws = null;
     }
     this.advertisedMethods = null;
+    this.helloPolicy = null;
+    this.challengeNonce = null;
+    this.challengeTimestamp = null;
 
     this.connecting = true;
     this.lastError = null;
@@ -474,8 +573,7 @@ export class GatewayConnection {
     // close/open events from a previous connection being replaced mid-flight.
     // Without this guard, disconnect() + immediate connect() causes the old
     // onclose to fire AFTER the new WS is created, setting this.ws = null and
-    // this.connecting = false on the new connection — silently killing the
-    // token-only handshake timer.
+    // this.connecting = false on the new connection before its challenge arrives.
     const ws = new WebSocket(url);
     this.ws = ws;
     this.startAttemptDeadline(ws);
@@ -485,15 +583,7 @@ export class GatewayConnection {
       if (this.ws !== ws) return; // stale — a newer connection replaced us
       debugLog('gateway', '[GW] Open — waiting for connect.challenge...');
       this.challengeNonce = null;
-      // Wait up to 2s for challenge nonce (v2 auth).
-      // If it doesn't arrive, proceed with token-only auth.
-      this.connectTimer = setTimeout(() => {
-        if (this.ws !== ws) return; // stale
-        if (this.connecting) {
-          debugLog('gateway', '[GW] No challenge received — proceeding with token-only auth');
-          this.sendHandshake();
-        }
-      }, 2000);
+      this.challengeTimestamp = null;
     };
 
     ws.onmessage = (event) => {
@@ -516,6 +606,8 @@ export class GatewayConnection {
       this.connecting = false;
       this.ws = null;
       this.advertisedMethods = null;
+      this.challengeNonce = null;
+      this.challengeTimestamp = null;
       if (!this.transient) this.invalidateObservedRuntimeIdentity();
       this.rejectAllPending(new GatewayTransportLifecycleError(
         event.reason || 'Gateway connection closed',
@@ -565,6 +657,9 @@ export class GatewayConnection {
       this.ws = null;
     }
     this.advertisedMethods = null;
+    this.helloPolicy = null;
+    this.challengeNonce = null;
+    this.challengeTimestamp = null;
     this.rejectAllPending(new GatewayTransportLifecycleError());
     this.connected = false;
     this.connecting = false;
@@ -594,16 +689,30 @@ export class GatewayConnection {
     this.clearAttemptTimers();
     this.attemptTimer = setTimeout(() => {
       if (this.ws !== ws || this.connected) return;
-      this.lastError = `Gateway handshake timed out after ${this.CONNECTION_ATTEMPT_TIMEOUT_MS}ms`;
+      this.lastError = `Gateway handshake timed out after ${this.connectTimeoutMs}ms`;
       debugWarn('gateway', `[GW] ${this.lastError}`);
       ws.close(4000, 'Gateway handshake timeout');
-    }, this.CONNECTION_ATTEMPT_TIMEOUT_MS);
+    }, this.connectTimeoutMs);
   }
 
   private clearAttemptTimers() {
-    if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
     if (this.attemptTimer) { clearTimeout(this.attemptTimer); this.attemptTimer = null; }
     this.handshakeRequestId = null;
+  }
+
+  private failHandshake(
+    socket: WebSocket | null,
+    error: string,
+    reason = 'Gateway handshake failed',
+    closeCode = 4001,
+  ): void {
+    debugError('gateway', '[GW] Handshake failed:', error);
+    this.connected = false;
+    this.connecting = false;
+    this.advertisedMethods = null;
+    this.lastError = error;
+    this.emitStatus({ error });
+    if (socket && this.ws === socket) socket.close(closeCode, reason);
   }
 
   private emitRetryState(
@@ -644,13 +753,15 @@ export class GatewayConnection {
 
   private async sendHandshake() {
     if (this.handshakeRequestId) return;
+    const challengeNonce = this.challengeNonce;
+    const challengeTimestamp = this.challengeTimestamp;
+    if (!challengeNonce || challengeTimestamp === null) return;
     const id = this.nextId();
     this.handshakeRequestId = id;
     const handshakeSocket = this.ws;
     const scopes = [...this.requestedScopes];
     const clientId = 'openclaw-control-ui';
     const clientMode = 'ui';
-    const challengeNonce = this.challengeNonce;
     const sharedToken = this.token.trim();
     const storedDeviceToken = this.deviceToken.trim();
     const authToken = sharedToken || storedDeviceToken;
@@ -660,112 +771,64 @@ export class GatewayConnection {
       id,
       {
       resolve: (response: unknown) => {
-        const responseRecord = response !== null && typeof response === 'object' && !Array.isArray(response)
-          ? response as Record<string, unknown>
-          : null;
-        const payload = responseRecord?.payload !== null
-          && typeof responseRecord?.payload === 'object'
-          && !Array.isArray(responseRecord.payload)
-          ? responseRecord.payload as Record<string, unknown>
-          : null;
-        if (!responseRecord) {
-          debugError('gateway', '[GW] Handshake returned an invalid response:', response);
-          this.connecting = false;
-          this.emitStatus({ error: 'Gateway handshake returned an invalid response' });
+        const responseRecord = isRecord(response) ? response : null;
+        if (responseRecord?.type === 'hello-ok' && !isGatewayOperatorProtocol(responseRecord.protocol)) {
+          const receivedProtocol = typeof responseRecord.protocol === 'number'
+            ? `v${responseRecord.protocol}`
+            : 'an unknown protocol';
+          this.failHandshake(
+            handshakeSocket,
+            `Gateway protocol mismatch: JunQi requires v${GATEWAY_OPERATOR_PROTOCOL_VERSION}, received ${receivedProtocol}`,
+            'Gateway protocol mismatch',
+          );
           return;
         }
-        debugLog('gateway', '[GW] Handshake response:', JSON.stringify(response).substring(0, 200));
-        if (responseRecord.ok !== false && (payload?.type === 'hello-ok' || responseRecord.type === 'hello-ok')) {
-          const helloPayload = payload?.type === 'hello-ok' ? payload : responseRecord;
-          if (!isGatewayOperatorProtocol(helloPayload.protocol)) {
-            const receivedProtocol = typeof helloPayload.protocol === 'number'
-              ? `v${helloPayload.protocol}`
-              : 'an unknown protocol';
-            const error = `Gateway protocol mismatch: JunQi requires v${GATEWAY_OPERATOR_PROTOCOL_VERSION}, received ${receivedProtocol}`;
-            debugError('gateway', '[GW] Handshake failed:', error);
-            this.connected = false;
-            this.connecting = false;
-            this.advertisedMethods = null;
-            this.emitStatus({ error });
-            if (handshakeSocket && this.ws === handshakeSocket) {
-              handshakeSocket.close(4001, 'Gateway protocol mismatch');
-            }
-            return;
-          }
-
-          debugLog('gateway', '[GW] Connected');
-          const features = helloPayload.features !== null
-            && typeof helloPayload.features === 'object'
-            && !Array.isArray(helloPayload.features)
-            ? helloPayload.features as Record<string, unknown>
-            : null;
-          const advertisedMethods = features?.methods;
-          this.advertisedMethods = Array.isArray(advertisedMethods)
-            ? new Set(advertisedMethods.filter((method: unknown): method is string => (
-              typeof method === 'string' && method.trim().length > 0
-            )))
-            : null;
-          const auth = helloPayload.auth !== null
-            && typeof helloPayload.auth === 'object'
-            && !Array.isArray(helloPayload.auth)
-            ? helloPayload.auth as Record<string, unknown>
-            : null;
-          if (!this.transient) {
-            const helloObservation = buildGatewayHelloObservation(this.url, helloPayload);
-            this.runtimeIdentityConnectionId = helloObservation.connectionId || null;
-            this.callbacks?.onHello?.(helloObservation);
-            void observeGatewayHello(helloObservation)
-              .then((identity) => {
-                if (this.ws === handshakeSocket && identity) {
-                  this.callbacks?.onRuntimeIdentity?.(identity);
-                }
-              })
-              .catch((error) => {
-                debugWarn('gateway', '[GW] Runtime identity attestation failed:', error);
-            });
-          }
-          if (!this.transient && typeof auth?.deviceToken === 'string' && auth.deviceToken) {
-            this.deviceToken = auth.deviceToken;
-            void this.persistDeviceCredential(this.url, auth.deviceToken)
-              .catch(() => {});
-          }
-          this.connected = true;
-          this.connecting = false;
-          this.lastError = null;
-          this.clearAttemptTimers();
-          this.pairingRequired = false;
-          if (this.pairingRetryTimer) {
-            clearTimeout(this.pairingRetryTimer);
-            this.pairingRetryTimer = null;
-          }
-          this.startHeartbeat();
-          this.emitRetryState('connected');
-          this.emitStatus();
-          if (!this.transient) {
-            startPolling(this);
-            // Labels and deletes may be initiated by another OpenClaw client.
-            // Subscribe once per connected socket so those mutations propagate
-            // immediately instead of waiting for the 10s polling interval.
-            void this.request('sessions.subscribe', {}).catch((error) => {
-              debugWarn('gateway', '[GW] Unable to subscribe to session changes:', error);
-            });
-          }
-        } else {
-          const responseError = responseRecord.error !== null
-            && typeof responseRecord.error === 'object'
-            && !Array.isArray(responseRecord.error)
-            ? responseRecord.error as Record<string, unknown>
-            : null;
-          const err = typeof responseError?.message === 'string'
-            ? responseError.message
-            : JSON.stringify(responseRecord);
-          debugError('gateway', '[GW] Handshake failed:', err);
-          this.connected = false;
-          this.connecting = false;
-          this.emitStatus({ error: err });
-          if (handshakeSocket && this.ws === handshakeSocket) {
-            handshakeSocket.close(4001, 'Gateway handshake failed');
-          }
+        const hello = validateGatewayHello(response);
+        if (!hello) {
+          this.failHandshake(handshakeSocket, 'Gateway handshake returned an invalid hello-ok');
+          return;
+        }
+        debugLog('gateway', '[GW] Connected');
+        this.advertisedMethods = new Set(hello.methods);
+        if (!this.transient) {
+          const helloObservation = buildGatewayHelloObservation(this.url, hello.payload);
+          this.runtimeIdentityConnectionId = helloObservation.connectionId || null;
+          this.callbacks?.onHello?.(helloObservation);
+          void observeGatewayHello(helloObservation)
+            .then((identity) => {
+              if (this.ws === handshakeSocket && identity) {
+                this.callbacks?.onRuntimeIdentity?.(identity);
+              }
+            })
+            .catch((error) => {
+              debugWarn('gateway', '[GW] Runtime identity attestation failed:', error);
+          });
+        }
+        if (!this.transient && hello.authDeviceToken) {
+          this.deviceToken = hello.authDeviceToken;
+          void this.persistDeviceCredential(this.url, hello.authDeviceToken)
+            .catch(() => {});
+        }
+        this.connected = true;
+        this.connecting = false;
+        this.lastError = null;
+        this.clearAttemptTimers();
+        this.pairingRequired = false;
+        if (this.pairingRetryTimer) {
+          clearTimeout(this.pairingRetryTimer);
+          this.pairingRetryTimer = null;
+        }
+        this.startHeartbeat(hello.policy);
+        this.emitRetryState('connected');
+        this.emitStatus();
+        if (!this.transient) {
+          startPolling(this);
+          // Labels and deletes may be initiated by another OpenClaw client.
+          // Subscribe once per connected socket so those mutations propagate
+          // immediately instead of waiting for the 10s polling interval.
+          void this.request('sessions.subscribe', {}).catch((error) => {
+            debugWarn('gateway', '[GW] Unable to subscribe to session changes:', error);
+          });
         }
       },
       reject: (err: unknown) => {
@@ -785,49 +848,59 @@ export class GatewayConnection {
         }
       },
     },
-      { timeoutMs: this.CONNECTION_ATTEMPT_TIMEOUT_MS },
+      { timeoutMs: this.connectTimeoutMs },
     );
 
-    // Build device identity when the Gateway provides a challenge nonce.
-    // If no challenge nonce arrived, skip device and use token-only auth.
+    // The challenge timestamp is part of the Gateway-signed device proof.
     // Match OpenClaw's client precedence: try the explicit shared token first.
     // A stored device token is sent as deviceToken only when no shared token is
     // available; a successful shared-token handshake rotates it via hello-ok.
+    const platform = await this.resolvePlatform().catch((): GatewayClientPlatform => 'unknown');
+    if (!isCurrentGatewayHandshake(
+      this.ws,
+      handshakeSocket,
+      this.connecting,
+      this.handshakeRequestId,
+      id,
+    )) return;
+
     let device: GatewayDeviceIdentity | undefined;
     try {
-      if (challengeNonce) {
-        const signed = await signGatewayDeviceChallenge({
-          nonce: challengeNonce,
-          clientId,
-          clientMode,
-          role: 'operator',
-          scopes,
-          token: authToken,
-        });
-        if (!isCurrentGatewayHandshake(
-          this.ws,
-          handshakeSocket,
-          this.connecting,
-          this.handshakeRequestId,
-          id,
-        )) return;
-        if (signed.signature) {
-          device = {
-            id: signed.deviceId,
-            publicKey: signed.publicKey,
-            signature: signed.signature,
-            signedAt: signed.signedAt,
-            nonce: signed.nonce,
-          };
-          debugLog('gateway', '[GW] Device identity attached (v2):', signed.deviceId.substring(0, 16) + '...');
-        } else {
-          debugWarn('gateway', '[GW] Device signing returned no signature — skipping device auth');
-        }
-      } else if (!challengeNonce) {
-        debugLog('gateway', '[GW] No challenge nonce — using token-only auth');
+      const signed = await this.signDeviceChallenge({
+        nonce: challengeNonce,
+        signedAt: challengeTimestamp,
+        clientId,
+        clientMode,
+        role: 'operator',
+        scopes,
+        token: authToken,
+        platform,
+        deviceFamily: null,
+      });
+      if (!isCurrentGatewayHandshake(
+        this.ws,
+        handshakeSocket,
+        this.connecting,
+        this.handshakeRequestId,
+        id,
+      )) return;
+      if (signed.signature) {
+        device = {
+          id: signed.deviceId,
+          publicKey: signed.publicKey,
+          signature: signed.signature,
+          signedAt: signed.signedAt,
+          nonce: signed.nonce,
+        };
+        debugLog('gateway', '[GW] Device identity attached (v3):', signed.deviceId.substring(0, 16) + '...');
+      } else {
+        this.failHandshake(handshakeSocket, 'Gateway device signing returned no signature');
+        return;
       }
     } catch (err) {
       debugWarn('gateway', '[GW] Device identity unavailable:', err);
+      this.failHandshake(handshakeSocket, 'Gateway device signing is unavailable');
+      return;
     }
 
     if (!isCurrentGatewayHandshake(
@@ -838,14 +911,6 @@ export class GatewayConnection {
       id,
     )) return;
 
-    const platform = await this.resolvePlatform().catch((): GatewayClientPlatform => 'unknown');
-    if (!isCurrentGatewayHandshake(
-      this.ws,
-      handshakeSocket,
-      this.connecting,
-      this.handshakeRequestId,
-      id,
-    )) return;
     const locale = getAppLocale();
 
     this.send({
@@ -893,7 +958,13 @@ export class GatewayConnection {
     return new Promise<T>((resolve, reject) => {
       const id = this.nextId();
       if (!this.registerCallback(id, { resolve, reject }, options)) return;
-      this.send({ type: 'req', id, method, params });
+      try {
+        this.send({ type: 'req', id, method, params });
+      } catch (error) {
+        const pending = this.pendingRequests.get(id);
+        if (pending) this.clearPendingRequest(id, pending);
+        reject(error);
+      }
     });
   }
 
@@ -945,7 +1016,7 @@ export class GatewayConnection {
         reject: rejectFenced,
       }, options)) return;
       try {
-        socket.send(JSON.stringify({ type: 'req', id, method, params }));
+        this.send({ type: 'req', id, method, params });
       } catch (error) {
         const pending = this.pendingRequests.get(id);
         if (pending) this.clearPendingRequest(id, pending);
@@ -997,9 +1068,22 @@ export class GatewayConnection {
   }
 
   send(msg: Record<string, unknown>) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
+    const socket = this.ws;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      throw new GatewayTransportLifecycleError('Gateway is not connected');
     }
+    const serialized = JSON.stringify(msg);
+    const policy = this.helloPolicy;
+    if (policy) {
+      const payloadBytes = new TextEncoder().encode(serialized).byteLength;
+      if (payloadBytes > policy.maxPayload) {
+        throw new GatewayTransportLifecycleError('Gateway request exceeds the server payload limit');
+      }
+      if (socket.bufferedAmount > policy.maxBufferedBytes) {
+        throw new GatewayTransportLifecycleError('Gateway send buffer exceeds the server limit');
+      }
+    }
+    socket.send(serialized);
   }
 
   nextId(): string {
@@ -1013,20 +1097,25 @@ export class GatewayConnection {
   /** Initialize the message router with all handler registrations. */
   private initMessageRouter(): void {
     this.msgRouter
-      // connect.challenge — extract nonce, trigger handshake
+      // connect.challenge owns both nonce and signing timestamp for this socket.
       .on('event', (msg) => {
-        const payload = msg.payload !== null
-          && typeof msg.payload === 'object'
-          && !Array.isArray(msg.payload)
-          ? msg.payload as Record<string, unknown>
-          : null;
+        if (!this.connecting || this.handshakeRequestId) return;
+        const payload = isRecord(msg.payload) ? msg.payload : null;
         const nonce = payload?.nonce;
-        if (nonce && typeof nonce === 'string') {
-          debugLog('gateway', '[GW] Received connect.challenge with nonce');
-          this.challengeNonce = nonce;
-          if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
-          this.sendHandshake();
+        const timestamp = payload?.ts;
+        if (!isNonEmptyString(nonce) || !isNonNegativeSafeInteger(timestamp)) {
+          this.failHandshake(
+            this.ws,
+            'Gateway connect challenge is invalid',
+            'Gateway connect challenge invalid',
+            1008,
+          );
+          return;
         }
+        debugLog('gateway', '[GW] Received connect.challenge');
+        this.challengeNonce = nonce;
+        this.challengeTimestamp = timestamp;
+        void this.sendHandshake();
       }, 'connect.challenge')
       // Response — resolve/reject pending requests
       .on('res', (msg) => {
@@ -1052,8 +1141,11 @@ export class GatewayConnection {
   }
 
   private handleMessage(msg: unknown) {
-    // Any incoming message = connection alive — reset heartbeat timer
-    this.resetHeartbeat();
+    if (
+      isRecord(msg)
+      && ((msg.type === 'event' && typeof msg.event === 'string')
+        || (msg.type === 'res' && typeof msg.id === 'string' && typeof msg.ok === 'boolean'))
+    ) this.recordGatewayActivity();
     this.msgRouter.route(msg);
   }
 
