@@ -3118,6 +3118,17 @@
         "static": "Static"
       }
     },
+    "gatewayUsageStatus": {
+      "title": "OpenClaw provider quota",
+      "description": "Quota windows reported by the connected Gateway. They do not represent local CLI usage or a billing statement.",
+      "refresh": "Refresh OpenClaw provider quota",
+      "unavailable": "The current Gateway does not provide OpenClaw provider quota status.",
+      "invalid": "The Gateway returned provider quota status that could not be verified.",
+      "empty": "The Gateway reported no provider quota data.",
+      "noWindows": "No quota windows were reported for this provider.",
+      "used": "{{value}}% used",
+      "resetAt": "Resets {{value}}"
+    },
     "providersRuntimeSuppliedNote": "{{count}} providers use runtime-managed credentials.",
     "modelCostTitle": "Model pricing",
     "modelCostHint": "USD per 1 million tokens. Used by OpenClaw for local cost estimates, not as a provider invoice.",

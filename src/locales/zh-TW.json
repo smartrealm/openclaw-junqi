@@ -3080,6 +3080,17 @@
         "static": "靜態憑據"
       }
     },
+    "gatewayUsageStatus": {
+      "title": "OpenClaw 提供方配額",
+      "description": "由目前連接 Gateway 回報的配額視窗，不代表本機 CLI 用量或供應商帳單。",
+      "refresh": "刷新 OpenClaw 提供方配額",
+      "unavailable": "目前 Gateway 未提供 OpenClaw 提供方配額狀態。",
+      "invalid": "Gateway 回傳的提供方配額狀態無法驗證。",
+      "empty": "Gateway 未回報提供方配額資料。",
+      "noWindows": "該提供方未回報配額視窗。",
+      "used": "已使用 {{value}}%",
+      "resetAt": "重置時間 {{value}}"
+    },
     "providersRuntimeSuppliedNote": "{{count}} 個提供方使用運行時託管憑據。",
     "modelCostTitle": "模型定價",
     "modelCostHint": "單位為美元每百萬 Token。OpenClaw 使用這些單價進行本地費用估算，不代表供應商賬單。",

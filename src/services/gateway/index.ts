@@ -75,6 +75,7 @@ import { OpenClawTtsClient } from './OpenClawTtsClient';
 import { OpenClawTtsStatusClient } from './OpenClawTtsStatusClient';
 import { OpenClawTtsPreferencesClient } from './OpenClawTtsPreferencesClient';
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
+import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
 import {
   OpenClawCommandsClient,
   type OpenClawCommandsListInput,
@@ -100,6 +101,7 @@ export type { OpenClawTtsClip, OpenClawTtsSpeakInput } from './OpenClawTtsClient
 export type { OpenClawTtsStatus } from './OpenClawTtsStatusClient';
 export type { OpenClawTtsPreferenceMutation } from './OpenClawTtsPreferencesClient';
 export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
+export type { OpenClawProviderUsageSnapshot } from './OpenClawProviderUsageClient';
 export type {
   OpenClawSessionObserverDigest,
   OpenClawSessionObserverHealth,
@@ -329,6 +331,19 @@ export const openClawTtsPreferencesClient = new OpenClawTtsPreferencesClient({
 });
 
 export const openClawModelAuthStatusClient = new OpenClawModelAuthStatusClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawProviderUsageClient = new OpenClawProviderUsageClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
