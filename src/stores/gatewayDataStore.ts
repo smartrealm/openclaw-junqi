@@ -2672,27 +2672,11 @@ export function handleGatewayEvent(event: string, payload: any) {
       break;
     }
 
-    // ── Cron events ──
-    case 'cron.run.started': {
-      const jobId = payload?.jobId || payload?.id;
-      if (!jobId) break;
-      store.setCronJobs(
-        store.cronJobs.map((j) => j.id === jobId ? { ...j, state: 'running' } : j)
-      );
-      debugLog('datastore', '[DataStore] Cron started:', jobId);
-      break;
-    }
-
-    case 'cron.run.completed':
-    case 'cron.run.finished': {
-      const jobId = payload?.jobId || payload?.id;
-      if (!jobId) break;
-      store.setCronJobs(
-        store.cronJobs.map((j) => j.id === jobId
-          ? { ...j, state: 'idle', lastRun: new Date().toISOString() }
-          : j)
-      );
-      debugLog('datastore', '[DataStore] Cron completed:', jobId);
+    // Current OpenClaw documents a `cron` event family but no public payload
+    // schema for a local state projection. Treat it as invalidation only.
+    case 'cron': {
+      void fetchCron();
+      debugLog('datastore', '[DataStore] Cron changed; refreshing Gateway projection');
       break;
     }
 

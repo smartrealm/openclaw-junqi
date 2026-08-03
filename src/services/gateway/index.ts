@@ -62,6 +62,7 @@ import {
 import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
 import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
 import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
+import { OpenClawCronRunClient } from './OpenClawCronRunClient';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 
 // Re-export types for consumers
@@ -80,6 +81,12 @@ export type {
   OpenClawTaskListPage,
   OpenClawTaskSummary,
 } from './OpenClawTaskLedgerClient';
+export type {
+  OpenClawCronRunAcknowledgement,
+  OpenClawCronRunEntry,
+  OpenClawCronRunPage,
+  OpenClawCronRunStatus,
+} from './OpenClawCronRunClient';
 export type {
   OpenClawApproval,
   OpenClawApprovalDecision,
@@ -622,6 +629,10 @@ const taskLedger = new OpenClawTaskLedgerClient(
   (method, params) => connection.request(method, params),
   (method) => connection.hasAdvertisedMethod(method),
 );
+const cronRunClient = new OpenClawCronRunClient(
+  (method, params) => connection.request(method, params),
+  (method) => connection.hasAdvertisedMethod(method),
+);
 const sessionSteer = new OpenClawSessionSteerClient(
   (method, params) => connection.request(method, params),
 );
@@ -851,6 +862,9 @@ export const gateway = {
   async listTasks(input: OpenClawTaskListInput = {}) { return taskLedger.list(input); },
   async getTask(taskId: string) { return taskLedger.get(taskId); },
   async cancelTask(taskId: string, reason?: string) { return taskLedger.cancel(taskId, reason); },
+  async enqueueCronRun(jobId: string) { return cronRunClient.enqueue(jobId); },
+  async listCronRuns(jobId: string, runId?: string) { return cronRunClient.list(jobId, runId); },
+  async findTerminalCronRun(jobId: string, runId: string) { return cronRunClient.findTerminal(jobId, runId); },
   async listAuditEvents(input: OpenClawAuditListInput = {}) { return auditClient.list(input); },
   async listPendingApprovals() { return approvalClient.list(); },
   async listApprovalHistory(input: OpenClawApprovalHistoryRequest = {}) {

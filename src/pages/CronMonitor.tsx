@@ -9,7 +9,7 @@ import { useSearchParams } from 'react-router-dom';
 import { buildCronAgentOptions, resolveCronAgentAvailability } from './cronAgentSelection';
 import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock } from 'lucide-react';
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
-import { gateway } from '@/services/gateway';
+import { gateway, type OpenClawCronRunEntry } from '@/services/gateway';
 import {
   buildCronAgentTurnAddParams,
   cronAgentUpdatePatch,
@@ -67,17 +67,12 @@ interface CronJob {
   };
 }
 
-interface RunEntry {
-  ts: string;
-  status: string;
-  summary?: string;
-  error?: string;
-  durationMs?: number;
-  jobId?: string;
-  jobName?: string;
-  // Gateway 2026.2.22+: split delivery status
-  deliveryStatus?: string;
-}
+type RunEntry = OpenClawCronRunEntry;
+
+// Current OpenClaw CLI waits at most ten minutes and polls cron.runs every two seconds.
+// These are JunQi presentation limits, not Gateway protocol fields.
+const OPENCLAW_CRON_RUN_WAIT_TIMEOUT_MS = 600_000;
+const OPENCLAW_CRON_RUN_POLL_INTERVAL_MS = 2_000;
 
 // ═══════════════════════════════════════════════════════════
 // Constants & Helpers
@@ -224,6 +219,10 @@ function formatDuration(ms?: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
+function cronRunInFlight(status: 'queued' | 'waiting' | 'ok' | 'error' | 'skipped' | undefined): boolean {
+  return status === 'queued' || status === 'waiting';
+}
+
 
 
 // ═══════════════════════════════════════════════════════════
@@ -248,12 +247,13 @@ export function CronMonitorPage() {
   const agentsLoading = useGatewayDataStore((s) => s.loading.agents);
   const agentsError = useGatewayDataStore((s) => s.errors.agents);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [runResult, setRunResult] = useState<Record<string, 'ok' | 'error'>>({});
+  const [runResult, setRunResult] = useState<Record<string, 'queued' | 'waiting' | 'ok' | 'error' | 'skipped'>>({});
   const [templateResult, setTemplateResult] = useState<Record<string, 'ok' | 'error'>>({});
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [recentRuns, setRecentRuns] = useState<RunEntry[]>([]);
   const [selectedJobRuns, setSelectedJobRuns] = useState<RunEntry[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
+  const [runsError, setRunsError] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused' | 'error'>('all');
@@ -382,6 +382,7 @@ export function CronMonitorPage() {
     const currentJobs = jobsRef.current;
     if (!connected || currentJobs.length === 0) return;
     setLoadingRuns(true);
+    setRunsError(null);
     try {
       const all: RunEntry[] = [];
       const jobList = currentJobs.slice(0, 12);
@@ -391,20 +392,20 @@ export function CronMonitorPage() {
         const batch = jobList.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map(async (job) => {
           try {
-            const result = await gateway.call('cron.runs', { jobId: job.id });
-            const entries = (result?.entries || []).slice(-5).map((e: any) => ({
+            const result = await gateway.listCronRuns(job.id);
+            const entries = result.entries.slice(-5).map((e) => ({
               ...e, jobId: job.id, jobName: job.name || job.id,
             }));
             runsCache.current[job.id] = entries;
             all.push(...entries);
-          } catch { /* silent */ }
+          } catch (error) { setRunsError(error instanceof Error ? error.message : String(error)); }
         }));
       }
 
       all.sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
       setRecentRuns(all.slice(0, 30));
       runsCacheLoaded.current = true;
-    } catch { /* silent */ }
+    } catch (error) { setRunsError(error instanceof Error ? error.message : String(error)); }
     finally { setLoadingRuns(false); }
   }, [connected]);
 
@@ -412,10 +413,11 @@ export function CronMonitorPage() {
   // Fix #1: uses jobsRef for a stable callback without rebuilds on polling
   const loadSingleJobRuns = useCallback(async (jobId: string) => {
     if (!connected) return;
+    setRunsError(null);
     try {
       const job = jobsRef.current.find(j => j.id === jobId);
-      const result = await gateway.call('cron.runs', { jobId });
-      const entries = (result?.entries || []).slice(-5).map((e: any) => ({
+      const result = await gateway.listCronRuns(jobId);
+      const entries = result.entries.slice(-5).map((e) => ({
         ...e, jobId, jobName: job?.name || jobId,
       }));
       runsCache.current[jobId] = entries;
@@ -425,7 +427,7 @@ export function CronMonitorPage() {
       Object.values(runsCache.current).forEach(arr => all.push(...arr));
       all.sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
       setRecentRuns(all.slice(0, 30));
-    } catch { /* silent */ }
+    } catch (error) { setRunsError(error instanceof Error ? error.message : String(error)); }
   }, [connected]);
 
   // Load once on first mount only
@@ -449,15 +451,17 @@ export function CronMonitorPage() {
     // Then fetch fresh data in background
     (async () => {
       try {
-        const result = await gateway.call('cron.runs', { jobId: selectedJobId });
+        const result = await gateway.listCronRuns(selectedJobId);
         if (fetchId !== selectedFetchId.current) return; // stale — discard
         const job = jobsRef.current.find(j => j.id === selectedJobId);
-        const entries = (result?.entries || []).slice(-14).reverse().map((e: any) => ({
+        const entries = result.entries.slice(-14).reverse().map((e) => ({
           ...e, jobId: selectedJobId, jobName: job?.name || selectedJobId,
         }));
         setSelectedJobRuns(entries);
-      } catch {
+        setRunsError(null);
+      } catch (error) {
         if (fetchId !== selectedFetchId.current) return; // stale
+        setRunsError(error instanceof Error ? error.message : String(error));
         if (!cached?.length) setSelectedJobRuns([]);
       }
     })();
@@ -470,18 +474,47 @@ export function CronMonitorPage() {
     catch { /* silent */ } finally { setActionLoading(null); }
   };
 
+  const runPollEpoch = useRef(0);
+  useEffect(() => () => { runPollEpoch.current += 1; }, []);
+
   const runJob = async (jobId: string) => {
+    const epoch = runPollEpoch.current + 1;
+    runPollEpoch.current = epoch;
     setActionLoading(`run-${jobId}`);
     setRunResult(p => { const n = { ...p }; delete n[jobId]; return n; });
+    setRunsError(null);
     try {
-      await gateway.call('cron.run', { id: jobId }); await refreshGroup('cron');
-      setRunResult(p => ({ ...p, [jobId]: 'ok' }));
-      // Only refresh this single job's runs (not all 12)
-      setTimeout(() => loadSingleJobRuns(jobId), 2000);
-    } catch { setRunResult(p => ({ ...p, [jobId]: 'error' })); }
+      const acknowledgement = await gateway.enqueueCronRun(jobId);
+      const runId = acknowledgement.runId;
+      if (!acknowledgement.ok || !acknowledgement.enqueued || !runId) {
+        throw new Error(acknowledgement.reason || t('cron.runNotQueued'));
+      }
+      setRunResult(p => ({ ...p, [jobId]: 'queued' }));
+      await refreshGroup('cron');
+      const startedAt = Date.now();
+      for (;;) {
+        const terminal = await gateway.findTerminalCronRun(jobId, runId);
+        if (epoch !== runPollEpoch.current) return;
+        if (terminal) {
+          setRunResult(p => ({ ...p, [jobId]: terminal.status ?? 'error' }));
+          await loadSingleJobRuns(jobId);
+          return;
+        }
+        if (Date.now() - startedAt >= OPENCLAW_CRON_RUN_WAIT_TIMEOUT_MS) {
+          throw new Error(t('cron.runWaitTimedOut'));
+        }
+        setRunResult(p => ({ ...p, [jobId]: 'waiting' }));
+        await new Promise<void>((resolve) => window.setTimeout(resolve, OPENCLAW_CRON_RUN_POLL_INTERVAL_MS));
+        if (epoch !== runPollEpoch.current) return;
+      }
+    } catch (error) {
+      if (epoch === runPollEpoch.current) {
+        setRunResult(p => ({ ...p, [jobId]: 'error' }));
+        setRunsError(error instanceof Error ? error.message : String(error));
+      }
+    }
     finally {
-      setActionLoading(null);
-      setTimeout(() => setRunResult(p => { const n = { ...p }; delete n[jobId]; return n; }), 2500);
+      if (epoch === runPollEpoch.current) setActionLoading(null);
     }
   };
 
@@ -710,17 +743,23 @@ export function CronMonitorPage() {
                       </button>
                       {/* Run */}
                       <button onClick={(e) => { e.stopPropagation(); runJob(job.id); }}
-                        disabled={!!actionLoading || !!runResult[job.id]}
+                        disabled={!!actionLoading || cronRunInFlight(runResult[job.id])}
+                        title={runResult[job.id] === 'queued' ? t('cron.runQueued')
+                          : runResult[job.id] === 'waiting' ? t('cron.runWaiting')
+                            : t('cron.runNow')}
+                        aria-label={runResult[job.id] === 'queued' ? t('cron.runQueued')
+                          : runResult[job.id] === 'waiting' ? t('cron.runWaiting')
+                            : t('cron.runNow')}
                         className={clsx(
                           'w-7 h-7 rounded-lg flex items-center justify-center border transition-all text-[11px] shrink-0',
                           runResult[job.id] === 'ok' ? 'bg-aegis-primary/10 border-aegis-primary/30 text-aegis-primary'
-                          : runResult[job.id] === 'error' ? 'bg-aegis-danger/10 border-aegis-danger/30 text-aegis-danger'
+                          : runResult[job.id] === 'error' || runResult[job.id] === 'skipped' ? 'bg-aegis-danger/10 border-aegis-danger/30 text-aegis-danger'
                           : isError ? 'border-aegis-danger/20 text-aegis-danger/50 hover:text-aegis-danger hover:border-aegis-danger/40'
                           : 'border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim hover:text-aegis-accent hover:border-aegis-accent/30 hover:bg-aegis-accent/[0.04]',
                         )}>
-                        {actionLoading === `run-${job.id}` ? <LoadingIndicator size={11} />
+                        {actionLoading === `run-${job.id}` || cronRunInFlight(runResult[job.id]) ? <LoadingIndicator size={11} />
                           : runResult[job.id] === 'ok' ? <Check size={11} />
-                          : runResult[job.id] === 'error' ? <X size={11} />
+                          : runResult[job.id] === 'error' || runResult[job.id] === 'skipped' ? <X size={11} />
                           : isError ? <RotateCcw size={11} />
                           : <Play size={11} fill="currentColor" />}
                       </button>
@@ -899,13 +938,16 @@ export function CronMonitorPage() {
                 {/* Actions */}
                 <div className="flex gap-1.5">
                   <button onClick={() => runJob(selectedJob.id)}
-                    disabled={!!actionLoading}
+                    disabled={!!actionLoading || cronRunInFlight(runResult[selectedJob.id])}
                     className="flex-1 py-2 rounded-md text-center text-[11px] font-semibold
                       bg-aegis-primary/[0.08] border border-aegis-primary/20 text-aegis-primary
                       hover:bg-aegis-primary/15 transition-colors disabled:opacity-40">
-                    {actionLoading === `run-${selectedJob.id}`
-                      ? <LoadingIndicator size={12} className="mx-auto" />
-                      : runResult[selectedJob.id] === 'ok' ? t('cronDetail.done') : t('cronDetail.runNow')}
+                    {actionLoading === `run-${selectedJob.id}` || cronRunInFlight(runResult[selectedJob.id])
+                      ? <span className="flex items-center justify-center gap-1.5"><LoadingIndicator size={12} />
+                        {runResult[selectedJob.id] === 'queued' ? t('cron.runQueued') : t('cron.runWaiting')}</span>
+                      : runResult[selectedJob.id] === 'ok' ? t('cronDetail.done')
+                        : runResult[selectedJob.id] === 'skipped' ? t('cron.runSkipped')
+                          : runResult[selectedJob.id] === 'error' ? t('cron.failed') : t('cronDetail.runNow')}
                   </button>
                   <button onClick={() => toggleJob(selectedJob.id, !selectedJob.enabled)}
                     disabled={!!actionLoading}
@@ -940,7 +982,9 @@ export function CronMonitorPage() {
               )}
             </div>
             <div className={clsx('px-2 py-1', showAllLogs ? 'flex-1 overflow-y-auto' : 'overflow-hidden')}>
-              {loadingRuns ? (
+              {runsError ? (
+                <div className="text-[10px] text-aegis-danger py-4 px-3" role="alert">{runsError}</div>
+              ) : loadingRuns ? (
                 <div className="flex items-center gap-2 py-4 px-3 text-[10px] text-aegis-text-dim">
                   <LoadingIndicator size={12} /> Loading...
                 </div>

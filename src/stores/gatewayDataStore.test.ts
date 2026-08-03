@@ -4,6 +4,7 @@ import {
   GATEWAY_DATA_GROUPS,
   buildSessionsUsageRequest,
   createGatewayRequestFence,
+  handleGatewayEvent,
   isRunningSubagentSession,
   parseGatewayAgentList,
   parseGatewayCostSummary,
@@ -104,6 +105,39 @@ test('Gateway connection start time survives polling restarts only while connect
   assert.equal(resolveGatewayConnectionStartedAt(100, true, 200), 100);
   assert.equal(resolveGatewayConnectionStartedAt(100, false, 300), null);
   assert.equal(resolveGatewayConnectionStartedAt(null, true, 400), 400);
+});
+
+test('cron events refresh the authoritative list without manufacturing local run state', async () => {
+  const calls: string[] = [];
+  const gateway = {
+    request: async (method: string) => {
+      calls.push(method);
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [{ id: 'main' }] };
+      if (method === 'cron.list') return [{ id: 'daily', agentId: 'main', state: { nextRunAtMs: 100 } }];
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    useGatewayDataStore.getState().setCronJobs([{
+      id: 'daily',
+      agentId: 'main',
+      state: { nextRunAtMs: 1 },
+    }]);
+
+    handleGatewayEvent('cron.run.started', { jobId: 'daily' });
+    assert.deepEqual(useGatewayDataStore.getState().cronJobs[0]?.state, { nextRunAtMs: 1 });
+
+    handleGatewayEvent('cron', {});
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.equal(calls.filter((method) => method === 'cron.list').length, 1);
+    assert.deepEqual(useGatewayDataStore.getState().cronJobs[0]?.state, { nextRunAtMs: 100 });
+  } finally {
+    stopPolling();
+  }
 });
 
 test('Gateway polling decoders reject malformed responses instead of inventing empty data', () => {
