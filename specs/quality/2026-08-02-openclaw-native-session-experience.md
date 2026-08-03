@@ -14,7 +14,7 @@
 
 1. 新建和分叉必须调用 `sessions.create`，仅在返回 `{ ok: true, key, sessionId, entry }` 后向界面提交会话。
 2. 重命名必须调用 `sessions.patch`；重置、删除必须调用其对应管理员权限方法。失败不得修改本地生命周期状态。
-3. 普通分叉使用 `sessions.create({ parentSessionKey })`；压缩检查点分叉仅在已选择 checkpoint 后调用 `sessions.compaction.branch`，两种语义不得混用。
+3. 普通 transcript 分叉使用 `sessions.create({ parentSessionKey, fork: true })`；仅传 `parentSessionKey` 的普通子会话不复制 transcript。压缩检查点分叉仅在已选择 checkpoint 后调用 `sessions.compaction.branch`，两种语义不得混用。
 4. 置顶、显式未读、归档和用户分组优先写入 Gateway 原生字段；仅当 Gateway 明确返回未知方法或未知组织字段时，降级为按 `session key + sessionId` 绑定的桌面元数据。推导标题始终是桌面展示元数据。
 5. 侧栏行和标签页右键必须复用同一会话操作菜单与能力判断。
 6. 侧栏顺序为置顶会话、命名分组、未分组时间桶、归档会话；删除分组只能解除归属，不得删除会话。

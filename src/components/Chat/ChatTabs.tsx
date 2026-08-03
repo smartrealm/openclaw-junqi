@@ -981,7 +981,7 @@ export function ChatTabs() {
     try {
       const result = await createNativeSession({
         agentId,
-        label: t('sidebar.newSession'),
+        label: t('chat.newSessionLabel'),
       });
       if (!result.ok) {
         useNotificationStore.getState().addToast('error', t('chat.newSession'), result.error);

@@ -99,6 +99,7 @@ export function SessionActionsMenu({
       agentId: agentIdForSession(session),
       label: t('chat.forkedSessionLabel'),
       parentSessionKey: session.key,
+      fork: true,
     });
     if (result.ok) {
       onOpenSession?.(result.session.key);

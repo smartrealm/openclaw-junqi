@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { lazy, Suspense, useEffect } from 'react';
-import { Paperclip, X } from 'lucide-react';
+import { AlertCircle, Paperclip, RotateCcw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const ChatTabs = lazy(() => import('@/components/Chat/ChatTabs').then((m) => ({ default: m.ChatTabs })));
@@ -76,10 +76,11 @@ const attachments = useChatStore((s) => s.draftAttachments[activeKey] ?? EMPTY_A
 }
 
 export function ChatPage() {
+  const { t } = useTranslation();
   // Check for ?agent=<id>&new=1 and create a fresh per-agent session
   // before the first paint — the user sees their agent-scoped chat
   // instantly rather than landing on the main session first.
-  useAgentScopedSession();
+  const scopedSession = useAgentScopedSession();
 
   // Listen for additional drops that arrive after ChatPage is mounted —
   // App.tsx sets pendingFiles + dispatches this event; we drain it into
@@ -103,6 +104,25 @@ export function ChatPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
+      {scopedSession.error && (
+        <div
+          role="alert"
+          className="mx-3 mt-2 flex items-center gap-2 rounded-lg border border-aegis-danger/25 bg-aegis-danger/[0.08] px-3 py-2 text-[12px] text-aegis-text"
+        >
+          <AlertCircle size={14} className="shrink-0 text-aegis-danger" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate">{scopedSession.error}</span>
+          <button
+            type="button"
+            onClick={scopedSession.retry}
+            disabled={scopedSession.retrying}
+            aria-busy={scopedSession.retrying}
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-aegis-danger/25 px-2.5 font-medium text-aegis-danger transition-colors hover:bg-aegis-danger/10 disabled:cursor-wait disabled:opacity-60"
+          >
+            <RotateCcw size={12} aria-hidden="true" />
+            {t('common.retry', '重试')}
+          </button>
+        </div>
+      )}
       <Suspense fallback={null}>
         <SessionContextBar />
         <ChatTabs />
