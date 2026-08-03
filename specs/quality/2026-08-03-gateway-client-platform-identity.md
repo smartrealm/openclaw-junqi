@@ -22,10 +22,21 @@
 
 ## 验收条件
 
-- [ ] Tauri wrapper 调用 `get_platform_info` 并严格校验 `os` 与 `arch`。
-- [ ] Gateway 连接在原生返回可用时优先使用该平台值。
-- [ ] 无原生平台信息时，macOS、Windows、Linux 的显式 WebView 标识可识别，其他值保持
+- [x] Tauri wrapper 调用 `get_platform_info` 并严格校验 `os` 与 `arch`。
+- [x] Gateway 连接在原生返回可用时优先使用该平台值。
+- [x] 无原生平台信息时，macOS、Windows、Linux 的显式 WebView 标识可识别，其他值保持
   `unknown`。
-- [ ] 回归测试证明未知宿主不会发送 `windows`。
-- [ ] 回归测试证明连接切换会使旧握手失效，且不发送旧 `connect` 请求。
-- [ ] Tauri command 注册、TypeScript wrapper、握手 payload 和测试通过。
+- [x] 回归测试证明未知宿主不会发送 `windows`。
+- [x] 回归测试证明连接切换会使旧握手失效，且不发送旧 `connect` 请求。
+- [x] Tauri command 注册、TypeScript wrapper、握手 payload 和测试通过。
+
+## 验证记录
+
+当前代码以 `get_platform_info` 的 `os` 值优先构建 `client.platform`；仅在 Tauri 信息不可
+用时读取 WebView hints，未知值保持 `unknown`。`Connection.queue.test.ts` 覆盖原生优先、
+未知宿主与异步握手轮换围栏；`tauriCommandsContract.test.ts` 覆盖前端 command wrapper 和
+Rust 注册契约。2026-08-04 全量 `pnpm lint`、`pnpm test`、`pnpm test:rust`、`pnpm build` 与
+`git diff --check` 均通过。
+
+真实 macOS、Windows、CentOS、Ubuntu 的设备配对、系统凭据库与断连恢复仍需在目标主机连接
+真实 Gateway 后单独验收，不能由上述自动化替代。

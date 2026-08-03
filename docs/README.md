@@ -129,6 +129,7 @@ docs/
 - [P0 IPC 与 Gateway 边界收敛验证](quality/p0-ipc-and-gateway-boundary-validation-2026-08-03.md)
 - [本地 main 对齐与客户端边界审计](quality/local-main-alignment-and-client-boundary-audit-2026-08-04.md)
 - [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
+- [OpenClaw 模型目录权威性审计](quality/openclaw-model-catalog-authority-alignment-2026-08-04.md)
 - [维护中心审计](quality/maintenance-center-audit.md)
 - [定时任务与 OpenClaw Agent 路由审计](quality/cron-openclaw-agent-routing-audit-2026-08-02.md)
 - [定时任务 OpenClaw Agent 路由验证](quality/cron-openclaw-agent-routing-validation-2026-08-02.md)

@@ -403,41 +403,22 @@ export default function App() {
   }), [loadSessions]);
 
   // ── Load Available Models from Gateway ──
-  // Uses Chain of Responsibility: models.list(WS) → config.get(WS) → openclaw.json(file) → agents+sessions.
-  // Each strategy returns models or null (delegate to next).
+  // The configured Gateway view is the only authority for selectable models.
   const loadAvailableModels = useCallback(async () => {
     const [
-      { ModelLoaderChain, GatewayModelsListLoader, ConfigGetLoader, FileReadLoader, AgentsSessionLoader },
+      { loadConfiguredGatewayModels },
       {
-        extractAvailableModelsFromConfig,
         extractAvailableModelsFromGatewayResult,
-        hasConfiguredModelProviders,
       },
     ] = await Promise.all([
       import('@/services/gateway/modelLoaders'),
       import('@/services/gateway/modelCatalog'),
     ]);
 
-    const ctx = {
-      hasProviders: hasConfiguredModelProviders,
-      extractModels: extractAvailableModelsFromConfig,
-      extractRuntimeModels: extractAvailableModelsFromGatewayResult,
-    };
-
-    // The configured runtime view applies OpenClaw's current policy, provider
-    // plugins, and `models.mode` semantics. File inference only protects a
-    // disconnected gateway during recovery.
-    const chain = new ModelLoaderChain([
-      new GatewayModelsListLoader((m, p) => gateway.call(m, p)),
-      new ConfigGetLoader((m, p) => gateway.call(m, p)),
-      new FileReadLoader(async () => {
-        const { data } = await readActiveOpenclawConfig();
-        return { data };
-      }),
-      new AgentsSessionLoader(() => gateway.getSessions(), () => gateway.getAgents()),
-    ]);
-
-    const models = await chain.load(ctx);
+    const models = await loadConfiguredGatewayModels(
+      (method, params) => gateway.call(method, params),
+      extractAvailableModelsFromGatewayResult,
+    );
     try {
       const { data } = await readActiveOpenclawConfig();
       const profiles = Object.keys(data?.auth?.profiles ?? {}).length;
