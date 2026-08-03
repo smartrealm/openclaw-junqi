@@ -100,6 +100,20 @@ JunQi Desktop 是基于 Tauri 2、Rust、React 18、TypeScript、Vite 6 和 Open
 - JunQi 的本地增强必须是可追溯的派生状态，并保留对应的 OpenClaw 引用、runtime identity、session identity、revision 和证据来源。任何本地 checkpoint、缓存、任务图或 UI 投影都不能向 OpenClaw transcript 伪造消息、Tool Result、审批结果或完成状态。
 - 当 OpenClaw 协议不支持某项需求时，优先通过官方扩展点、插件协议或明确的 JunQi 本地层实现，并在 `docs/`、`specs/` 或 `plans/` 中记录“上游契约、JunQi 增强、验证证据和未验证边界”。无法证明兼容性时停止推断性修改，不添加猜测性 fallback。
 
+### 运行中断、任务投影与工具副作用
+
+- 一个 OpenClaw Task 对应一个稳定的 `sessionId`。Stop 只中断当前一次 run 或输出，绝不把 Stop 实现为清空会话、删除 transcript 或丢弃该 Task 的上下文；恢复必须以同一 `sessionId` 和 Gateway 可核验的会话历史为准。
+- 对支持取消的官方操作，网络层使用对应的取消/中止请求；在发起远端中止前，JunQi 的本地派生 checkpoint 必须已持久化并绑定 runtime identity、session identity、run identity 与 revision。连接恢复、应用冷启动或模型切换后，只能通过 OpenClaw 的历史、运行状态和事件重新核验，不能把本地快照当作 Gateway 成功事实。
+- 若中断发生在 Tool Call 已产生但结果尚未回传，JunQi 不得向 OpenClaw transcript 伪造 Tool Result、System 消息或完成状态。只能将本地投影标记为待核验，并在官方 transcript、审计或任务账本给出终态后收敛；无法核验时保留未知状态。
+- 任务图、步骤图和并发视图只能是 OpenClaw Task Ledger、会话事件、运行事件和审计记录的派生投影。图可随官方事件变化，并可持久化其 UI 视图和核验 checkpoint；不得自行定义任务依赖、调度、重试、完成条件或跨模型迁移语义。
+- 对有副作用的官方写操作，调用方必须遵守协议要求的幂等键、权限和结果核验。客户端不得因超时、断线或重启自动重放未知结果的写操作；必须显示待核验，并由用户或官方恢复流程决定后续操作。
+
+### 桌面与协议适配
+
+- JunQi 的运行目标是 Tauri 桌面应用。核心能力必须通过 Tauri、Rust、系统 API 或 OpenClaw Gateway 的桌面可用契约实现；浏览器/WebView API 只能作为非权威展示层或经验证的降级信息来源，不能成为语音唤醒、窗口控制、凭据、路径、进程、设备身份或后台常驻能力的唯一实现。
+- 任何平台能力都必须至少按 macOS、Windows 和 Linux 的发行版差异审查。不得将当前机器、浏览器 user agent、单一窗口管理器、单一音频设备或单一安装方式推断为其他平台可用；未知平台能力必须明确为未知或不可用。
+- Gateway `hello-ok.features.methods` 是保守发现信息，不是完整可调用方法清单。不得仅因该列表未列出某方法而隐藏、拒绝或伪报不支持；应在已完成身份与权限校验后按官方请求契约调用，并仅根据该次结构化 Gateway 响应判定实际不支持、未授权、失败或待重试。
+
 ## 常用命令
 
 环境版本由 `.tool-versions`、`package.json#packageManager` 和 `rust-toolchain.toml` 锁定。
