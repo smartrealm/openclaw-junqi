@@ -74,6 +74,13 @@ export type {
 };
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
 export type {
+  OpenClawTaskCancelResult,
+  OpenClawTaskLedgerStatus,
+  OpenClawTaskListInput,
+  OpenClawTaskListPage,
+  OpenClawTaskSummary,
+} from './OpenClawTaskLedgerClient';
+export type {
   OpenClawApproval,
   OpenClawApprovalDecision,
   OpenClawApprovalListResult,
@@ -613,7 +620,7 @@ const sessionLifecycle = new OpenClawSessionLifecycleClient(
 );
 const taskLedger = new OpenClawTaskLedgerClient(
   (method, params) => connection.request(method, params),
-  (method, params) => requestPrivileged(method, params),
+  (method) => connection.hasAdvertisedMethod(method),
 );
 const sessionSteer = new OpenClawSessionSteerClient(
   (method, params) => connection.request(method, params),

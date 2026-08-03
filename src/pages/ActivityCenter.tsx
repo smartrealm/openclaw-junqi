@@ -35,6 +35,7 @@ import { activitySessionMetrics, mergeActivitySessions, type ActivitySessionReco
 import { resolveStatusLabel } from '@/utils/taskStatusLabels';
 import { createAgentRunTaskRoute } from '@/utils/agentTaskRoute';
 import { OpenClawApprovalsPanel } from '@/components/Activity/OpenClawApprovalsPanel';
+import { OpenClawTaskLedgerPanel } from '@/components/Activity/OpenClawTaskLedgerPanel';
 
 type ActivityFilter = 'all' | 'running' | 'attention' | 'done' | 'failed';
 
@@ -320,6 +321,7 @@ export function ActivityCenterPage() {
       </section>
 
       <OpenClawApprovalsPanel connected={connected} />
+      <OpenClawTaskLedgerPanel connected={connected} />
 
       <section className="flex flex-wrap items-center justify-between gap-2 border-b border-aegis-border pb-3">
         <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-md border border-aegis-border bg-aegis-card p-1 scrollbar-hidden">
