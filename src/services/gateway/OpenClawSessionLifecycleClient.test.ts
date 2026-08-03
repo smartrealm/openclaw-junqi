@@ -47,6 +47,36 @@ describe('OpenClawSessionLifecycleClient', () => {
     assert.equal(created.sessionId, SESSION_ID);
   });
 
+  it('sends the official transcript fork flag and rejects fork without a parent', async () => {
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const client = new OpenClawSessionLifecycleClient(async (method, params) => {
+      calls.push({ method, params });
+      return response() as never;
+    });
+
+    await client.create({
+      agentId: 'main',
+      label: 'Forked',
+      parentSessionKey: ' agent:main:parent ',
+      fork: true,
+    });
+
+    assert.deepEqual(calls, [{
+      method: 'sessions.create',
+      params: {
+        agentId: 'main',
+        label: 'Forked',
+        parentSessionKey: 'agent:main:parent',
+        fork: true,
+      },
+    }]);
+    await assert.rejects(
+      () => client.create({ agentId: 'main', label: 'Forked', fork: true }),
+      /fork requires parentSessionKey/,
+    );
+    assert.equal(calls.length, 1);
+  });
+
   it('rejects an unconfirmed or identity-inconsistent response', () => {
     assert.throws(
       () => parseOpenClawCreatedSession({ ok: false }),

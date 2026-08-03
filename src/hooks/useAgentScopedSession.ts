@@ -1,58 +1,62 @@
 /**
  * useAgentScopedSession — read `?agent=<id>&new=1` from the route, materialize
  * a real Gateway session for that agent, then mark the confirmed session
- * active. The intent is consumed only after Gateway confirmation; a failed
- * request remains visible and can be retried explicitly.
+ * active. Fires only once per `?new=1` navigation so subsequent renders leave
+ * the user alone.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { createNativeSession } from '@/utils/sessionCreate';
+import { useNotificationStore } from '@/stores/notificationStore';
 
-export interface AgentScopedSessionCreationState {
+export interface AgentScopedSessionState {
   readonly error: string | null;
+  readonly retrying: boolean;
   readonly retry: () => void;
 }
 
-export function useAgentScopedSession(): AgentScopedSessionCreationState {
+export function useAgentScopedSession(): AgentScopedSessionState {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const agentId = params.get('agent');
   const wantNew = params.get('new') === '1';
-  const [retryAttempt, setRetryAttempt] = useState(0);
+  const handledLocationKeyRef = useRef<string | null>(null);
+  const operationRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
-  const handledAttemptRef = useRef<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
-  const retry = useCallback(() => {
-    setRetryAttempt((attempt) => attempt + 1);
-  }, []);
-
-  useEffect(() => {
-    if (!agentId || !wantNew) {
-      setError(null);
-      return;
-    }
-    const attemptKey = `${location.key}:${retryAttempt}`;
-    if (handledAttemptRef.current === attemptKey) return;
-    handledAttemptRef.current = attemptKey;
-    let cancelled = false;
+  const createForRoute = useCallback(() => {
+    if (!agentId || !wantNew) return;
+    const operation = ++operationRef.current;
     setError(null);
-
+    setRetrying(true);
     void createNativeSession({ agentId, label: t('chat.newSessionLabel') }).then((result) => {
-      if (cancelled) return;
+      if (operation !== operationRef.current) return;
+      setRetrying(false);
       if (!result.ok) {
         setError(result.error);
+        useNotificationStore.getState().addToast('error', t('chat.newSession'), result.error);
         return;
       }
+
+      // Consume the one-shot route intent only after Gateway confirms the new
+      // session. Failed intents remain visible and can be retried explicitly.
       const nextParams = new URLSearchParams(params);
       nextParams.delete('new');
       nextParams.delete('agent');
       setParams(nextParams, { replace: true });
     });
+  }, [agentId, params, setParams, t, wantNew]);
 
-    return () => { cancelled = true; };
-  }, [agentId, location.key, params, retryAttempt, setParams, t, wantNew]);
+  useEffect(() => {
+    if (!agentId || !wantNew) return;
+    if (handledLocationKeyRef.current === location.key) return;
+    handledLocationKeyRef.current = location.key;
+    setError(null);
+    createForRoute();
+  }, [agentId, createForRoute, location.key, wantNew]);
 
-  return { error, retry };
+  return { error, retrying, retry: createForRoute };
 }

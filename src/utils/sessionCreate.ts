@@ -3,6 +3,7 @@ import type { OpenClawCreatedSession } from '@/services/gateway/OpenClawSessionL
 import { useChatStore, type Session } from '@/stores/chatStore';
 import { useGatewayDataStore, type SessionInfo } from '@/stores/gatewayDataStore';
 import { notifyNativeSessionCommit } from '@/utils/sessionLifecycle';
+import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
 
 export interface CreateNativeSessionInput {
   readonly agentId: string;
@@ -114,6 +115,7 @@ export function createNativeSession(input: CreateNativeSessionInput): Promise<Cr
   const task = dependencies.createRemote(request)
     .then((created) => {
       const session = dependencies.commit(created, request);
+      sessionListMutationFence.invalidate();
       notifyNativeSessionCommit();
       return { ok: true as const, session };
     })

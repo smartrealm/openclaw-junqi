@@ -295,17 +295,15 @@ describe('session lifecycle regression fixes', () => {
     assert.match(source, /aria-busy=\{confirming/);
   });
 
-  test('BUG-07 route-based creation consumes params only after confirmation and can retry', () => {
+  test('BUG-07 route-based creation consumes params only after success and exposes manual retry', () => {
     const source = readFileSync(new URL('../hooks/useAgentScopedSession.ts', import.meta.url), 'utf8');
-    const page = readFileSync(new URL('../pages/ChatPage.tsx', import.meta.url), 'utf8');
-    assert.match(source, /handledAttemptRef/);
-    assert.match(source, /const attemptKey = `\$\{location\.key\}:\$\{retryAttempt\}`/);
-    assert.match(source, /if \(!result\.ok\) \{\s+setError\(result\.error\);\s+return;/);
-    assert.match(source, /setParams\(nextParams, \{ replace: true \}\)/);
-    assert.match(source, /void createNativeSession\(\{ agentId, label: t\('chat\.newSessionLabel'\) \}\)\.then/);
-    assert.match(page, /routeSessionCreation\.retry/);
-    assert.match(page, /common\.retry/);
-    assert.doesNotMatch(source, /window\.history\.replaceState|useNotificationStore/);
+    const creationIndex = source.indexOf('createNativeSession({ agentId');
+    const successIndex = source.indexOf('if (!result.ok)');
+    const consumeIndex = source.indexOf('setParams(nextParams, { replace: true })');
+    assert.match(source, /handledLocationKeyRef/);
+    assert.ok(creationIndex >= 0 && successIndex > creationIndex && consumeIndex > successIndex);
+    assert.match(source, /return \{ error, retrying, retry: createForRoute \}/);
+    assert.doesNotMatch(source, /window\.history\.replaceState|appliedRef/);
   });
 
   test('BUG-08 native pin snapshots survive reload and deletion clears legacy identity-bound organization state', () => {

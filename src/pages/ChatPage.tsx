@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { lazy, Suspense, useEffect } from 'react';
-import { Paperclip, X } from 'lucide-react';
+import { AlertCircle, Paperclip, RotateCcw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const ChatTabs = lazy(() => import('@/components/Chat/ChatTabs').then((m) => ({ default: m.ChatTabs })));
@@ -80,7 +80,7 @@ export function ChatPage() {
   // Check for ?agent=<id>&new=1 and create a fresh per-agent session
   // before the first paint — the user sees their agent-scoped chat
   // instantly rather than landing on the main session first.
-  const routeSessionCreation = useAgentScopedSession();
+  const scopedSession = useAgentScopedSession();
 
   // Listen for additional drops that arrive after ChatPage is mounted —
   // App.tsx sets pendingFiles + dispatches this event; we drain it into
@@ -104,20 +104,22 @@ export function ChatPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      {routeSessionCreation.error && (
+      {scopedSession.error && (
         <div
           role="alert"
-          className="flex shrink-0 items-center gap-3 border-b border-aegis-danger/25 bg-aegis-danger/[0.08] px-3 py-2 text-[12px] text-aegis-text-secondary"
+          className="mx-3 mt-2 flex items-center gap-2 rounded-lg border border-aegis-danger/25 bg-aegis-danger/[0.08] px-3 py-2 text-[12px] text-aegis-text"
         >
-          <span className="min-w-0 flex-1 truncate" title={routeSessionCreation.error}>
-            {t('chat.newSessionCreationFailed', 'Unable to create new session')}: {routeSessionCreation.error}
-          </span>
+          <AlertCircle size={14} className="shrink-0 text-aegis-danger" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate">{scopedSession.error}</span>
           <button
             type="button"
-            onClick={routeSessionCreation.retry}
-            className="shrink-0 rounded border border-aegis-danger/35 px-2 py-1 text-[11px] font-medium text-aegis-danger hover:bg-aegis-danger/[0.1]"
+            onClick={scopedSession.retry}
+            disabled={scopedSession.retrying}
+            aria-busy={scopedSession.retrying}
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-aegis-danger/25 px-2.5 font-medium text-aegis-danger transition-colors hover:bg-aegis-danger/10 disabled:cursor-wait disabled:opacity-60"
           >
-            {t('common.retry', 'Retry')}
+            <RotateCcw size={12} aria-hidden="true" />
+            {t('common.retry', '重试')}
           </button>
         </div>
       )}

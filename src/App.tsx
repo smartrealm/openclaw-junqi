@@ -57,6 +57,7 @@ import {
   isSessionDeleted,
   subscribeNativeSessionCommit,
 } from '@/utils/sessionLifecycle';
+import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
 import { startRecoverableTask } from '@/utils/recoverableTask';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
@@ -299,12 +300,15 @@ export default function App() {
     const requestGate = sessionListRequestGateRef.current;
     const requestId = requestGate.begin();
     const sourceProjectionRevision = useChatStore.getState().sessionProjectionRevision;
+    const mutationRevision = sessionListMutationFence.capture();
     try {
       // Compatibility only: prior Desktop builds wrote labels to a local JSON
       // file. Copy confirmed entries to OpenClaw before this read, then let
       // Gateway labels remain the sole source of truth.
       await migrateLegacySessionLabelsOnce();
-      if (!requestGate.isCurrent(requestId)) return 'superseded';
+      if (!requestGate.isCurrent(requestId) || !sessionListMutationFence.isCurrent(mutationRevision)) {
+        return 'superseded';
+      }
       const runObservations = options.reconcileChatRuns
         ? gateway.capturePendingChatSessionRunObservations()
         : undefined;
@@ -376,7 +380,9 @@ export default function App() {
       }
       return 'loaded';
     } catch {
-      return requestGate.isCurrent(requestId) ? 'failed' : 'superseded';
+      return requestGate.isCurrent(requestId) && sessionListMutationFence.isCurrent(mutationRevision)
+        ? 'failed'
+        : 'superseded';
     }
   }, [setSessions]);
 
