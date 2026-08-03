@@ -9,6 +9,8 @@ import {
   coalesceSessionsByKey,
   createLatestRequestGate,
   isSessionDeleted,
+  notifyNativeSessionCommit,
+  subscribeNativeSessionCommit,
 } from '@/utils/sessionLifecycle';
 import {
   __setSessionDeleteDepsForTest,
@@ -150,6 +152,23 @@ describe('session lifecycle regression fixes', () => {
 
     assert.equal(useChatStore.getState().sessions.some((session) => session.key === SESSION_KEY), false);
     assert.equal(useGatewayDataStore.getState().sessions.some((session) => session.key === SESSION_KEY), false);
+  });
+
+  test('NEW-SESSION-RACE a confirmed native create invalidates an older sessions.list request', () => {
+    const gate = createLatestRequestGate();
+    const staleRequest = gate.begin();
+    const unsubscribe = subscribeNativeSessionCommit(() => gate.invalidate());
+    try {
+      notifyNativeSessionCommit();
+      assert.equal(gate.isCurrent(staleRequest), false);
+    } finally {
+      unsubscribe();
+    }
+
+    const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+    assert.match(appSource, /subscribeNativeSessionCommit/);
+    assert.match(appSource, /sessionListRequestGateRef\.current\.invalidate\(\)/);
+    assert.match(appSource, /void loadSessions\(\)/);
   });
 
   test('BUG-03 a deleted identity does not hide a replacement with the same key', () => {

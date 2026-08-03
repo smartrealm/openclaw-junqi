@@ -52,7 +52,11 @@ import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIden
 import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { applyConfirmedSessionDeletion } from '@/utils/sessionDelete';
-import { createLatestRequestGate, isSessionDeleted } from '@/utils/sessionLifecycle';
+import {
+  createLatestRequestGate,
+  isSessionDeleted,
+  subscribeNativeSessionCommit,
+} from '@/utils/sessionLifecycle';
 import { startRecoverableTask } from '@/utils/recoverableTask';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
@@ -371,6 +375,13 @@ export default function App() {
       return requestGate.isCurrent(requestId) ? 'failed' : 'superseded';
     }
   }, [setSessions]);
+
+  useEffect(() => subscribeNativeSessionCommit(() => {
+    // A sessions.list request issued before sessions.create can return after
+    // the create commit. It cannot authoritatively remove the new session.
+    sessionListRequestGateRef.current.invalidate();
+    void loadSessions();
+  }), [loadSessions]);
 
   // ── Load Available Models from Gateway ──
   // Uses Chain of Responsibility: models.list(WS) → config.get(WS) → openclaw.json(file) → agents+sessions.

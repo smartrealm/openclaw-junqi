@@ -6,6 +6,7 @@ import { useSessionInspection } from '@/hooks/useSessionInspection';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { notifyNativeSessionCommit } from '@/utils/sessionLifecycle';
 import type {
   SessionCompactionCheckpoint,
   SessionPreviewItem,
@@ -91,6 +92,7 @@ export function SessionInspectionControl({ sessionKey, agentId }: SessionInspect
         createdAt: result.entry.updatedAt,
       },
     ]);
+    notifyNativeSessionCommit();
   };
 
   const updateRestoredSessionInStores = (result: { key: string; sessionId: string }) => {

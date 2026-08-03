@@ -2,6 +2,7 @@ import { gateway } from '@/services/gateway';
 import type { OpenClawCreatedSession } from '@/services/gateway/OpenClawSessionLifecycleClient';
 import { useChatStore, type Session } from '@/stores/chatStore';
 import { useGatewayDataStore, type SessionInfo } from '@/stores/gatewayDataStore';
+import { notifyNativeSessionCommit } from '@/utils/sessionLifecycle';
 
 export interface CreateNativeSessionInput {
   readonly agentId: string;
@@ -96,7 +97,11 @@ export function createNativeSession(input: CreateNativeSessionInput): Promise<Cr
   if (existing) return existing;
 
   const task = dependencies.createRemote(request)
-    .then((created) => ({ ok: true as const, session: dependencies.commit(created, request) }))
+    .then((created) => {
+      const session = dependencies.commit(created, request);
+      notifyNativeSessionCommit();
+      return { ok: true as const, session };
+    })
     .catch((error) => ({ ok: false as const, error: errorMessage(error) }))
     .finally(() => {
       if (creationInFlight.get(inflightKey) === task) creationInFlight.delete(inflightKey);
