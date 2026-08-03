@@ -47,7 +47,7 @@ const RULES = [
   },
   {
     pattern: /^pages\//,
-    forbid: ['@/state/**'],
+    forbid: ['@/state/**', '@tauri-apps/api/core'],
   },
 ];
 
@@ -82,6 +82,13 @@ function checkSynthetic(files) {
   const violations = [];
   for (const [rel, content] of Object.entries(files)) {
     const imports = extractImports(content);
+    if (/^pages\//.test(rel) && /(?:^|[^\w$.])invoke\s*\(/m.test(content)) {
+      violations.push({
+        file: rel,
+        import: 'invoke(...)',
+        target: 'src/api/tauri-commands.ts',
+      });
+    }
     for (const rule of RULES) {
       if (!rule.pattern.test(rel)) continue;
       for (const imp of imports) {
@@ -89,10 +96,9 @@ function checkSynthetic(files) {
           ? imp                         // keep @/ prefix — matches glob
           : imp.startsWith('./') || imp.startsWith('../')
             ? join(dirname(rel), imp).replace(/\\/g, '/')
-            : null;
-        if (target == null) continue;
+            : imp;
         for (const forbidden of rule.forbid) {
-          if (matchGlob(forbidden, target)) {
+          if (imp === forbidden || matchGlob(forbidden, target)) {
             violations.push({ file: rel, import: imp, target });
           }
         }
@@ -186,6 +192,22 @@ describe('check-boundaries.mjs violation detection', () => {
       'pages/Foo.tsx': `import { something } from '@/state/something';`,
     });
     assert.equal(violations.length, 1);
+  });
+
+  test('flags pages/* importing Tauri core IPC', () => {
+    const violations = checkSynthetic({
+      'pages/Foo.tsx': `import { invoke } from '@tauri-apps/api/core';`,
+    });
+    assert.equal(violations.length, 1);
+    assert.equal(violations[0].import, '@tauri-apps/api/core');
+  });
+
+  test('flags direct invoke() calls in pages even when the import is indirect', () => {
+    const violations = checkSynthetic({
+      'pages/Foo.tsx': `import { nativeInvoke } from '@/api/native';\nvoid invoke('dangerous_command');`,
+    });
+    assert.equal(violations.length, 1);
+    assert.equal(violations[0].import, 'invoke(...)');
   });
 
   test('allows relative imports within theme/', () => {

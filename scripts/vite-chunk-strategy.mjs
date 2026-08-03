@@ -10,7 +10,17 @@ const PACKAGE_CHUNKS = [
   },
   { chunk: "i18n-vendor", packages: ["i18next", "react-i18next"] },
   { chunk: "pdfjs", packages: ["pdfjs-dist"] },
-  { chunk: "xterm", packages: ["@xterm"] },
+  { chunk: "xterm-core", packages: ["@xterm/xterm"] },
+  {
+    chunk: "xterm-addons",
+    packages: [
+      "@xterm/addon-fit",
+      "@xterm/addon-search",
+      "@xterm/addon-serialize",
+      "@xterm/addon-unicode11",
+      "@xterm/addon-webgl",
+    ],
+  },
   {
     chunk: "codemirror-ui",
     packages: ["@uiw/react-codemirror", "@uiw/codemirror"],

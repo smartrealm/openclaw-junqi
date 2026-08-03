@@ -45,6 +45,9 @@ plans/
 
 ## Quality
 
+- [P0 IPC 与 Gateway 边界收敛](quality/2026-08-03-p0-ipc-and-gateway-boundary.md)
+- [本地 main 对齐与客户端边界](quality/2026-08-04-local-main-alignment-and-client-boundary.md)
+
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
 - [Session origin aggregation](quality/2026-07-20-session-origin-aggregation.md)
 - [会话分组与后台活动下钻](quality/2026-07-31-session-background-activity-drilldown.md)

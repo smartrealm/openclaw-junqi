@@ -10,6 +10,7 @@ import {
   GatewayRpcError,
   type GatewayCallbacks,
   type GatewayRequestOptions,
+  type GatewayRequestParams,
   type GatewayConnectionOptions,
   type GatewayOperatorScope,
   type ChatMessage,
@@ -306,6 +307,33 @@ function historyTaskObservation(response: unknown): {
     hasActiveRun: info.hasActiveRun,
     activeRunIds,
   };
+}
+
+export interface GatewaySessionDefaults extends Record<string, unknown> {
+  modelProvider?: unknown;
+  model?: unknown;
+  contextTokens?: number;
+}
+
+export interface GatewaySessionListResponse extends Record<string, unknown> {
+  sessions?: unknown[];
+  defaults?: GatewaySessionDefaults;
+}
+
+export interface GatewayHistorySessionInfo extends Record<string, unknown> {
+  agentId?: unknown;
+}
+
+export interface GatewayHistoryResponse extends Record<string, unknown> {
+  sessionId?: string;
+  messages?: unknown[];
+  sessionInfo?: GatewayHistorySessionInfo;
+}
+
+export interface GatewayMessageResponse extends Record<string, unknown> {
+  ok?: boolean;
+  message?: unknown;
+  unavailableReason?: string;
 }
 
 // ── Create instances ──
@@ -1145,7 +1173,9 @@ export const gateway = {
   },
 
   // Sessions & Agents
-  async getSessions() { return connection.request('sessions.list', {}); },
+  async getSessions(): Promise<GatewaySessionListResponse> {
+    return connection.request<GatewaySessionListResponse>('sessions.list', {});
+  },
   async createSession(input: {
     agentId: string;
     label?: string;
@@ -1305,16 +1335,20 @@ export const gateway = {
     limit = 200,
     timeoutMs = 15_000,
     options: GatewayHistoryOptions = {},
-  ) {
-    return connection.request('chat.history', {
+  ): Promise<GatewayHistoryResponse> {
+    return connection.request<GatewayHistoryResponse>('chat.history', {
       sessionKey,
       limit,
       ...(options.offset !== undefined ? { offset: options.offset } : {}),
       ...(options.maxChars !== undefined ? { maxChars: options.maxChars } : {}),
     }, { timeoutMs });
   },
-  async getMessage(sessionKey: string, messageId: string, agentId?: string) {
-    return connection.request('chat.message.get', {
+  async getMessage(
+    sessionKey: string,
+    messageId: string,
+    agentId?: string,
+  ): Promise<GatewayMessageResponse> {
+    return connection.request<GatewayMessageResponse>('chat.message.get', {
       sessionKey,
       messageId,
       ...(agentId ? { agentId } : {}),
@@ -1458,7 +1492,7 @@ export const gateway = {
   async deleteSessionGroup(label: string) {
     return sessionOrganization.deleteGroup(label);
   },
-  async updateAgentParams(agentId: string, params: Record<string, any>) {
+  async updateAgentParams(agentId: string, params: Record<string, unknown>) {
     return requestPrivileged('agents.update', { agentId, params });
   },
 
@@ -1467,11 +1501,19 @@ export const gateway = {
   async getAvailableModels(view: 'default' | 'configured' | 'all' = 'configured') {
     return connection.request('models.list', { view });
   },
-  async call(method: string, params: any = {}, options?: GatewayRequestOptions) {
-    return connection.request(method, params, options);
+  async call<T = unknown>(
+    method: string,
+    params: GatewayRequestParams = {},
+    options?: GatewayRequestOptions,
+  ): Promise<T> {
+    return connection.request<T>(method, params, options);
   },
-  async callFenced(method: string, params: any, expectedConnectionId: string) {
-    return connection.requestFenced(method, params, expectedConnectionId);
+  async callFenced<T = unknown>(
+    method: string,
+    params: GatewayRequestParams,
+    expectedConnectionId: string,
+  ): Promise<T> {
+    return connection.requestFenced<T>(method, params, expectedConnectionId);
   },
   async callPrivileged(
     method: string,
@@ -1483,7 +1525,7 @@ export const gateway = {
   // Skills — list installed skills with status (input for the @skill picker)
   async getSkills(agentId?: string) { return connection.request('skills.status', agentId ? { agentId } : {}); },
   async getCostSummary(days = 30) { return connection.request('usage.cost', { days, agentScope: 'all' }); },
-  async getSessionsUsage(params: any = {}) {
+  async getSessionsUsage(params: Record<string, unknown> = {}) {
     const scope = params.agentId || params.key ? {} : { agentScope: 'all' };
     return connection.request('sessions.usage', { limit: 50, ...scope, ...params });
   },

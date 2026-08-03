@@ -33,7 +33,6 @@ import { openRuntimeDataDirectory } from '@/services/runtimeDataDirectory';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { PET_SKIN_OPTIONS } from '@/pet/skins';
 import { SkinPreview } from '@/pet/SkinPreview';
-import { invoke } from '@tauri-apps/api/core';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
@@ -49,6 +48,17 @@ import { FontPanel } from '@/components/settings/FontPanel';
 import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
 import { JarvisVoiceSettingsPanel } from '@/components/settings/JarvisVoiceSettingsPanel';
 import { OpenClawTtsStatusPanel } from '@/components/settings/OpenClawTtsStatusPanel';
+import {
+  clearPetAsset,
+  clearPetPackage,
+  closePetWindow,
+  importPetPackage,
+  listPetPackages,
+  loadPetPackage,
+  installBuiltinSkillForChat,
+  openPetWindow,
+  savePetAsset,
+} from '@/api/tauri-commands';
 import { StructuredPlanSettingsPanel } from '@/components/settings/StructuredPlanSettingsPanel';
 import { useJarvisVoiceSettings } from '@/hooks/useJarvisVoiceSettings';
 import { useOpenClawTtsStatus } from '@/hooks/useOpenClawTtsStatus';
@@ -117,7 +127,7 @@ export function SettingsPageFull() {
         filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
       });
       if (!selected || Array.isArray(selected)) return;
-      const url = await invoke<string>('save_pet_asset', { srcPath: selected });
+      const url = await savePetAsset(selected);
       setPetCustomAsset(url);
       setCustomPet(null);
     } catch (e) {
@@ -136,10 +146,7 @@ export function SettingsPageFull() {
         if (!picked || Array.isArray(picked)) return;
         selected = picked;
       }
-      const pet = await invoke<import('@/stores/petStore').CustomPetPackage>('import_pet_package', {
-        manifestPath: selected,
-        locale: i18n.resolvedLanguage ?? i18n.language,
-      });
+      const pet = await importPetPackage(selected, i18n.resolvedLanguage ?? i18n.language);
       setCustomPet(pet);
       setPetCustomAsset(null);
     } catch (e) {
@@ -149,7 +156,7 @@ export function SettingsPageFull() {
   const refreshPetPackages = async () => {
     setPetUploadError(null);
     try {
-      const pets = await invoke<typeof availablePets>('list_pet_packages');
+      const pets = await listPetPackages();
       setAvailablePets(pets);
       setSelectedPetManifest((current) => current || pets[0]?.manifestPath || '');
     } catch (e) {
@@ -168,9 +175,7 @@ export function SettingsPageFull() {
       // PetWindow uses this timestamp to promote only the package generated
       // by this chat request, never an older library item the user selected.
       localStorage.setItem('junqi:pet-package-pending-after', String(Date.now()));
-      await invoke('install_builtin_skill_for_chat', {
-        skillId: 'hatch-pet',
-      });
+      await installBuiltinSkillForChat('hatch-pet');
       const { activeSessionKey, setDraft } = useChatStore.getState();
       setDraft(activeSessionKey, `@hatch-pet ${idea}`);
       navigate('/chat');
@@ -187,8 +192,8 @@ export function SettingsPageFull() {
     setPetUploadError(null);
     try {
       await Promise.all([
-        invoke('clear_pet_asset'),
-        invoke('clear_pet_package'),
+        clearPetAsset(),
+        clearPetPackage(),
       ]);
       setPetCustomAsset(null);
       setCustomPet(null);
@@ -239,7 +244,7 @@ export function SettingsPageFull() {
 
   useEffect(() => {
     if (activeTab !== 'pet') return;
-    void invoke<import('@/stores/petStore').CustomPetPackage | null>('load_pet_package')
+    void loadPetPackage()
       .then((pet) => {
         setCustomPet(pet);
         if (pet) setPetCustomAsset(null);
@@ -803,7 +808,7 @@ export function SettingsPageFull() {
             disabled={!petEnabled}
             onClick={() => {
               setPetUploadError(null);
-              void invoke(petVisible ? 'close_pet_window' : 'open_pet_window').catch((error) => {
+              void (petVisible ? closePetWindow() : openPetWindow()).catch((error) => {
                 setPetUploadError(error instanceof Error ? error.message : String(error));
               });
             }}

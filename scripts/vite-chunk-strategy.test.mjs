@@ -33,7 +33,11 @@ describe("Vite manual chunk strategy", () => {
     );
     assert.equal(
       resolveManualChunk("/repo/node_modules/@xterm/xterm/lib/xterm.js"),
-      "xterm",
+      "xterm-core",
+    );
+    assert.equal(
+      resolveManualChunk("/repo/node_modules/@xterm/addon-fit/lib/addon-fit.js"),
+      "xterm-addons",
     );
   });
 

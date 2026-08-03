@@ -184,7 +184,7 @@ test('CHAT-09 voice paths use an official attachment and never truncated base64 
 test('CHAT-11 truncated history has a chat.message.get recovery action', () => {
   const gateway = source('src/services/gateway/index.ts');
   const view = source('src/components/Chat/ChatView.tsx');
-  assert.match(gateway, /connection\.request\('chat\.message\.get'/);
+  assert.match(gateway, /connection\.request<GatewayMessageResponse>\('chat\.message\.get'/);
   assert.match(view, /handleLoadFullMessage/);
 });
 

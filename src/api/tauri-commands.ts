@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { presentVoiceWakeWindow } from '@/services/voice/VoiceWakeWindowPresenter';
 import {
@@ -26,6 +26,8 @@ import type {
   CollaborationBootstrapStatus,
 } from '@/types/collaborationBootstrap';
 import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
+
+export { Channel };
 
 export type VoiceWakeCaptureMode = 'dictation' | 'wake_word';
 
@@ -894,3 +896,333 @@ export const getGatewayDeviceIdentityReference = () =>
 
 export const signGatewayDeviceChallenge = (params: GatewayDeviceChallengeParams) =>
   invoke<GatewayDeviceChallengeSignature>('sign_gateway_device_challenge', { params });
+// ── Page-facing native runtime commands ────────────────────────────────────
+// Keep page code independent from Tauri's raw invoke surface. These wrappers
+// mirror the Rust command names and serde field casing so IPC drift is found
+// at this single, typed boundary.
+
+export interface AgentTaskLaunchRequest {
+  taskId: string;
+  projectPath: string;
+  prompt: string;
+  agent: string;
+  permissionMode: string;
+  images?: readonly string[];
+  texts?: readonly string[];
+  cols?: number;
+  rows?: number;
+  resumeId?: string | null;
+}
+
+export interface AgentTaskWorktreeResult {
+  worktreePath: string;
+  worktreeBranch: string;
+  baseBranch: string;
+}
+
+export interface WorktreeDiffStats {
+  additions: number;
+  deletions: number;
+}
+
+export interface TaskWorktreeParams {
+  projectPath: string;
+  worktreePath: string;
+  branch: string;
+}
+
+export interface MergeTaskWorktreeParams extends TaskWorktreeParams {
+  baseBranch: string;
+}
+
+export const runAgentTask = (
+  request: AgentTaskLaunchRequest,
+  onOutput: Channel<string>,
+) => invoke<void>('run_task', { request, onOutput });
+
+export const sendAgentTaskInput = (taskId: string, data: string) => (
+  invoke<void>('agent_send_input', { taskId, data })
+);
+
+export const resizeAgentTaskPty = (taskId: string, cols: number, rows: number) => (
+  invoke<void>('agent_resize_pty', { taskId, cols, rows })
+);
+
+export const cancelAgentTask = (taskId: string, projectPath?: string | null) => (
+  invoke<void>('cancel_task', { taskId, projectPath: projectPath ?? null })
+);
+
+export const completeAgentTask = (taskId: string) => invoke<void>('complete_task', { taskId });
+export const resetAgentTaskProcess = (taskId: string) => invoke<void>('reset_task_process', { taskId });
+
+export const createAgentTaskWorktree = (params: {
+  projectPath: string;
+  taskId: string;
+  baseBranch: string;
+}) => invoke<AgentTaskWorktreeResult>('create_task_worktree', params);
+
+export const mergeAgentTaskWorktree = (params: MergeTaskWorktreeParams) => (
+  invoke<string>('merge_task_worktree', { ...params })
+);
+
+export const removeAgentTaskWorktree = (params: TaskWorktreeParams) => (
+  invoke<void>('remove_task_worktree', { ...params })
+);
+
+export const getAgentTaskWorktreeDiffStats = (params: {
+  projectPath: string;
+  worktreePath: string;
+  baseBranch: string;
+}) => invoke<WorktreeDiffStats>('worktree_diff_stats', params);
+
+export interface NativeSessionContent {
+  type: 'text' | 'tool_use' | 'thinking';
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: string;
+  thinking?: string;
+}
+
+export interface NativeSessionMessage {
+  role: 'user' | 'assistant';
+  content: NativeSessionContent[];
+  timestamp?: string;
+}
+
+export interface SessionExportTaskMeta {
+  name: string | null;
+  prompt: string;
+  agent: string;
+  created_at?: number;
+  session_id?: string | null;
+}
+
+export const readSessionMessages = (sessionPath: string) => (
+  invoke<NativeSessionMessage[]>('read_session_messages', { sessionPath })
+);
+
+export const exportSessionMarkdown = (params: {
+  sessionPath: string;
+  outputPath: string;
+  taskMeta: SessionExportTaskMeta;
+}) => invoke<string>('export_session_markdown', params);
+
+export interface TerminalWorkspaceDirectory {
+  path: string;
+  name: string;
+}
+
+export interface TerminalWorkspaceWorktree {
+  path: string;
+  branch: string;
+  name: string;
+}
+
+export interface TerminalGitFileChange {
+  path: string;
+  status: string;
+  staged: boolean;
+}
+
+export interface TerminalGitBranch {
+  name: string;
+  current: boolean;
+  remote: string | null;
+}
+
+export const getTerminalGitStatus = (projectPath: string) => (
+  invoke<TerminalGitFileChange[]>('git_status', { projectPath })
+);
+
+export const listTerminalGitBranches = (projectPath: string) => (
+  invoke<TerminalGitBranch[]>('git_list_branches', { projectPath })
+);
+
+export const listTerminalWorkspaceWorktrees = (projectPath: string) => (
+  invoke<TerminalWorkspaceWorktree[]>('list_terminal_workspace_worktrees', { projectPath })
+);
+
+export const listTerminalRecentWorkspaces = () => (
+  invoke<TerminalWorkspaceDirectory[]>('list_terminal_recent_workspaces')
+);
+
+export const recordTerminalWorkspaceDirectory = (path: string) => (
+  invoke<void>('record_terminal_workspace_directory', { path })
+);
+
+export const removeTerminalWorkspaceWorktree = (params: TaskWorktreeParams) => (
+  invoke<void>('remove_terminal_workspace_worktree', { ...params })
+);
+
+export const openFolder = (path: string) => invoke<void>('open_folder', { path });
+
+export const openTerminalWorkspaceDirectory = (path: string) => (
+  invoke<TerminalWorkspaceDirectory>('open_terminal_workspace_directory', { path })
+);
+
+export const createTerminalWorkspaceWorktree = (params: {
+  projectPath: string;
+  branch: string;
+  startPoint?: string;
+}) => invoke<TerminalWorkspaceWorktree>('create_terminal_workspace_worktree', params);
+
+export const clearTerminalRecentWorkspaces = () => invoke<void>('clear_terminal_recent_workspaces');
+
+export interface TerminalWindowHandoff {
+  shell: {
+    id: string;
+    generatedTitle: string;
+    customTitle?: string;
+    cwd?: string;
+    proxy?: { summary: string; entries: string[] } | null;
+    launcherAgent?: string;
+  };
+  runId: string;
+  snapshot: string;
+  sshHost?: string;
+}
+
+export const takeTerminalWindowHandoff = (label: string) => (
+  invoke<TerminalWindowHandoff | null>('take_terminal_window_handoff', { label })
+);
+
+export interface ProjectConfigSnapshot {
+  agent: {
+    default: string;
+    default_permission_mode: string;
+    prompt_prefix: string;
+  };
+  git: {
+    commit_prompt: string;
+    commit_message_timeout_secs: number;
+  };
+}
+
+export const initProjectConfig = (projectPath: string) => (
+  invoke<ProjectConfigSnapshot>('init_project_config', { projectPath })
+);
+
+export interface AppSettingsSnapshot {
+  terminal_shift_enter_newline?: unknown;
+}
+
+export const loadAppSettings = () => invoke<AppSettingsSnapshot>('load_app_settings');
+
+export const readProjectConfig = (projectPath: string) => (
+  invoke<ProjectConfigSnapshot>('read_project_config', { projectPath })
+);
+
+export interface TaskHookReadiness {
+  agent: 'claude' | 'codex';
+  usable: boolean;
+  reason?: 'version_too_low' | 'no_node' | 'not_installed';
+  detected_version?: string;
+  min_version?: string;
+}
+
+export const getTaskHookReadiness = () => invoke<TaskHookReadiness[]>('get_hook_readiness');
+export const getAgentTaskOutputSnapshot = (taskId: string) => (
+  invoke<string>('get_task_output_snapshot', { taskId })
+);
+
+export interface NativeDirectoryEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  is_symlink: boolean;
+  extension: string | null;
+  is_gitignored: boolean;
+}
+
+export const readProjectDirectoryEntries = (path: string, projectPath: string) => (
+  invoke<NativeDirectoryEntry[]>('read_dir_entries', { path, projectPath })
+);
+
+export interface SessionMetricsSnapshot {
+  tool_calls: number;
+  duration_secs: number;
+  session_file_bytes: number;
+  total_tokens: number;
+  context_tokens: number;
+  context_window: number;
+}
+
+export const readSessionMetrics = (sessionPath: string) => (
+  invoke<SessionMetricsSnapshot>('read_session_metrics', { sessionPath })
+);
+
+export const generateTaskName = (params: {
+  projectPath: string;
+  agent: string;
+  sessionPath?: string | null;
+  originalPrompt: string;
+}) => invoke<string>('generate_task_name', params);
+
+export const getQuickChatSeed = () => invoke<string[]>('get_quickchat_seed');
+
+export interface ChatSkillInstallation {
+  skillName: string;
+  workspacePath: string;
+  skillPath: string;
+}
+
+export const installBuiltinSkillForChat = (skillId: string) => (
+  invoke<ChatSkillInstallation>('install_builtin_skill_for_chat', { skillId })
+);
+
+export const clearPetAsset = () => invoke<void>('clear_pet_asset');
+export const clearPetPackage = () => invoke<void>('clear_pet_package');
+export const openDynamicIsland = () => invoke<void>('open_dynamic_island');
+export const openPetWindow = () => invoke<void>('open_pet_window');
+export const closePetWindow = () => invoke<void>('close_pet_window');
+export const closeQuickChat = () => invoke<void>('close_quickchat');
+
+export interface LoadedPetPackageWire {
+  id: string;
+  display_name: string;
+  description: string;
+  sprite_version_number: 2;
+  spritesheet_data_url: string;
+}
+
+export interface PetPackage {
+  id: string;
+  displayName: string;
+  description: string;
+  spriteVersionNumber: 2;
+  spritesheetDataUrl: string;
+}
+
+export interface AvailablePetPackage {
+  id: string;
+  displayName: string;
+  description: string;
+  manifestPath: string;
+}
+
+function normalizeLoadedPetPackage(value: LoadedPetPackageWire): PetPackage {
+  return {
+    id: value.id,
+    displayName: value.display_name,
+    description: value.description,
+    spriteVersionNumber: value.sprite_version_number,
+    spritesheetDataUrl: value.spritesheet_data_url,
+  };
+}
+
+export const savePetAsset = (srcPath: string) => invoke<string>('save_pet_asset', { srcPath });
+
+export const importPetPackage = (manifestPath: string, locale?: string | null) => (
+  invoke<LoadedPetPackageWire>('import_pet_package', {
+    manifestPath,
+    locale: locale ?? null,
+  }).then(normalizeLoadedPetPackage)
+);
+
+export const listPetPackages = () => invoke<AvailablePetPackage[]>('list_pet_packages');
+
+export const loadPetPackage = () => (
+  invoke<LoadedPetPackageWire | null>('load_pet_package')
+    .then((value) => (value ? normalizeLoadedPetPackage(value) : null))
+);

@@ -13,8 +13,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Channel } from '@tauri-apps/api/core';
-import { invoke } from '@tauri-apps/api/core';
 import { confirm, save } from '@tauri-apps/plugin-dialog';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
@@ -85,6 +83,28 @@ import {
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { useFocusContextStore } from '@/stores/focusContextStore';
 import { resolveAgentRunTask } from './agentRunRoute';
+import {
+  Channel,
+  cancelAgentTask,
+  completeAgentTask,
+  createAgentTaskWorktree,
+  exportSessionMarkdown,
+  generateTaskName,
+  getAgentTaskOutputSnapshot,
+  getAgentTaskWorktreeDiffStats,
+  getTaskHookReadiness,
+  listTerminalGitBranches,
+  loadAppSettings,
+  mergeAgentTaskWorktree,
+  readProjectConfig,
+  readProjectDirectoryEntries,
+  readSessionMetrics,
+  removeAgentTaskWorktree,
+  resetAgentTaskProcess,
+  resizeAgentTaskPty,
+  runAgentTask,
+  sendAgentTaskInput,
+} from '@/api/tauri-commands';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -289,7 +309,7 @@ function LaunchSelector({ mode, baseBranch, onMode, onBranch, disabled, projectP
     if (!projectPath) return;
     setLoading(true);
     try {
-      const list = await invoke<{ name: string; current: boolean; remote: string | null }[]>('git_list_branches', { projectPath });
+      const list = await listTerminalGitBranches(projectPath);
       setBranches(list);
       if (!baseBranchRef.current) {
         const cur = list.find((b) => b.current);
@@ -528,7 +548,7 @@ export function AgentRunView({
   useEffect(() => {
     if (!initialIsDraft || initialPrompt.trim() || !projectPath) return;
     let cancelled = false;
-    void invoke<{ agent?: { default?: string; default_permission_mode?: string } }>('read_project_config', { projectPath })
+    void readProjectConfig(projectPath)
       .then((config) => {
         if (cancelled || draftUserEditedRef.current) return;
         const defaultAgent = config.agent?.default;
@@ -713,7 +733,7 @@ export function AgentRunView({
 
         const sendTerminalInput = (data: string) => {
           if (!runningRef.current) return;
-          invoke('agent_send_input', { taskId, data }).catch((err) => {
+          sendAgentTaskInput(taskId, data).catch((err) => {
             debugWarn('terminal', '[AgentRunView] terminal input failed:', err);
           });
         };
@@ -750,9 +770,7 @@ export function AgentRunView({
           try {
             fit!.fit();
             if (runningRef.current && term) {
-              invoke('agent_resize_pty', {
-                taskId, cols: term.cols, rows: term.rows,
-              }).catch(() => {});
+              resizeAgentTaskPty(taskId, term.cols, term.rows).catch(() => {});
             }
           } catch { /* */ }
         };
@@ -806,7 +824,7 @@ export function AgentRunView({
     if (!xtermRef.current || !fitRef.current || !termRef.current) return;
     const size = applyTerminalFontSize(xtermRef.current, fitRef.current, terminalFontSize, termRef.current);
     if (size && runningRef.current) {
-      void invoke('agent_resize_pty', { taskId, cols: size.cols, rows: size.rows }).catch(() => undefined);
+      void resizeAgentTaskPty(taskId, size.cols, size.rows).catch(() => undefined);
     }
   }, [taskId, terminalFontSize]);
 
@@ -814,11 +832,11 @@ export function AgentRunView({
     if (!xtermRef.current || !fitRef.current || !termRef.current) return;
     const result = applyTerminalFontFamily(xtermRef.current, fitRef.current, monoFontFamily, termRef.current);
     if (result?.immediate && runningRef.current) {
-      void invoke('agent_resize_pty', { taskId, cols: result.immediate.cols, rows: result.immediate.rows }).catch(() => undefined);
+      void resizeAgentTaskPty(taskId, result.immediate.cols, result.immediate.rows).catch(() => undefined);
     }
     void result?.whenSettled.then((size) => {
       if (size && runningRef.current) {
-        void invoke('agent_resize_pty', { taskId, cols: size.cols, rows: size.rows }).catch(() => undefined);
+        void resizeAgentTaskPty(taskId, size.cols, size.rows).catch(() => undefined);
       }
     }).catch(() => undefined);
   }, [monoFontFamily, taskId]);
@@ -842,7 +860,7 @@ export function AgentRunView({
 
   useEffect(() => {
     const loadNewlineSetting = () => {
-      void invoke<{ terminal_shift_enter_newline?: unknown }>('load_app_settings')
+      void loadAppSettings()
         .then((settings) => {
           shiftEnterNewlineRef.current = normalizeShiftEnterNewline(settings.terminal_shift_enter_newline);
         })
@@ -870,7 +888,7 @@ export function AgentRunView({
   useEffect(() => {
     if (!workspaceTaskId || !initiallyActive || outputChannelOwnedRef.current) return;
     let disposed = false;
-    void invoke<string>('get_task_output_snapshot', { taskId }).then((snapshot) => {
+    void getAgentTaskOutputSnapshot(taskId).then((snapshot) => {
       if (!disposed && snapshot) writeTerm(snapshot);
     }).catch(() => undefined);
     const unlisten = subscribeTauriEvent<{ task_id: string; output: string }>('task-output', (event) => {
@@ -887,10 +905,10 @@ export function AgentRunView({
     if (!projectPath || projectPath === '.') return;
     let cancelled = false;
     const instructionsFile = agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md';
-    invoke<string[]>('read_dir_entries', { path: projectPath, maxDepth: 1 })
+    readProjectDirectoryEntries(projectPath, projectPath)
       .then((entries) => {
         if (cancelled) return;
-        const names = new Set((entries ?? []).map((e) => e.split(/[\\/]/).pop() || ''));
+        const names = new Set((entries ?? []).map((entry) => entry.name));
         setMissingInstructionsFile(!names.has(instructionsFile));
       }).catch(() => {});
     return () => { cancelled = true; };
@@ -900,7 +918,7 @@ export function AgentRunView({
   // agents still run through the PTY fallback when they are unavailable.
   useEffect(() => {
     let cancelled = false;
-    void invoke<HookAgentReadiness[]>('get_hook_readiness')
+    void getTaskHookReadiness()
       .then((readiness) => {
         if (!cancelled) setHookReadiness(readiness);
       })
@@ -993,9 +1011,7 @@ export function AgentRunView({
       updateWorkspaceTaskState(nextStatus);
 
       if (nextStatus !== 'done' || !worktreePathRef.current) return;
-      void invoke<{ additions: number; deletions: number }>('worktree_diff_stats', {
-        ...worktreeDiffStatsArgs(projectPath, worktreePathRef.current, baseBranch),
-      }).then((stats) => {
+      void getAgentTaskWorktreeDiffStats(worktreeDiffStatsArgs(projectPath, worktreePathRef.current, baseBranch)).then((stats) => {
         setDiffStats(stats);
         if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, stats);
       }).catch(() => undefined);
@@ -1012,7 +1028,7 @@ export function AgentRunView({
     let cancelled = false;
     const fetch = async () => {
       try {
-        const next = await invoke<SessionMetrics>('read_session_metrics', { sessionPath });
+        const next = await readSessionMetrics(sessionPath);
         if (!cancelled) setMetrics(next);
       } catch { /* Session files may still be appearing while hooks settle. */ }
     };
@@ -1075,10 +1091,7 @@ export function AgentRunView({
         if (resumeIdRef.current && worktreePathRef.current) {
           actualPath = worktreePathRef.current;
         } else {
-          const result = await invoke<{ worktreePath: string; worktreeBranch: string; baseBranch: string }>(
-            'create_task_worktree',
-            createTaskWorktreeArgs(actualPath, taskId, baseBranch),
-          );
+          const result = await createAgentTaskWorktree(createTaskWorktreeArgs(actualPath, taskId, baseBranch));
           actualPath = result.worktreePath;
           setWorktreePath(result.worktreePath);
           worktreePathRef.current = result.worktreePath;
@@ -1095,21 +1108,18 @@ export function AgentRunView({
           }
         }
       }
-      await invoke('run_task', {
-        request: {
-          taskId,
-          projectPath: actualPath,
-          prompt: taskPrompt,
-          agent,
-          permissionMode: perm,
-          images: attachedImages.map((image) => image.src),
-          texts: textAttachments.map((attachment) => attachment.text),
-          cols: 220,
-          rows: 50,
-          resumeId: resumeIdRef.current,
-        },
-        onOutput,
-      });
+      await runAgentTask({
+        taskId,
+        projectPath: actualPath,
+        prompt: taskPrompt,
+        agent,
+        permissionMode: perm,
+        images: attachedImages.map((image) => image.src),
+        texts: textAttachments.map((attachment) => attachment.text),
+        cols: 220,
+        rows: 50,
+        resumeId: resumeIdRef.current,
+      }, onOutput);
     } catch (e) {
       const failureReason = String(e);
       setError(failureReason);
@@ -1128,7 +1138,7 @@ export function AgentRunView({
 
   const handleCancel = useCallback(async () => {
     try {
-      await invoke('cancel_task', { taskId, projectPath: worktreePath || projectPath });
+      await cancelAgentTask(taskId, worktreePath || projectPath);
       setStatus('cancelled');
       updateWorkspaceTaskState('cancelled');
     } catch (e) {
@@ -1140,7 +1150,7 @@ export function AgentRunView({
 
   const handleMarkDone = useCallback(async () => {
     try {
-      await invoke('complete_task', { taskId });
+      await completeAgentTask(taskId);
       setStatus('done');
       setRunning(false);
       updateWorkspaceTaskState('done');
@@ -1155,8 +1165,8 @@ export function AgentRunView({
     setWorktreeBusy('merge');
     try {
       await mergeAndRemoveTaskWorktree(
-        () => invoke('merge_task_worktree', mergeTaskWorktreeArgs(projectPath, worktreePath, worktreeBranch, baseBranch)),
-        () => invoke('remove_task_worktree', taskWorktreeArgs(projectPath, worktreePath, worktreeBranch)),
+        async () => { await mergeAgentTaskWorktree(mergeTaskWorktreeArgs(projectPath, worktreePath, worktreeBranch, baseBranch)); },
+        () => removeAgentTaskWorktree(taskWorktreeArgs(projectPath, worktreePath, worktreeBranch)),
       );
       setDiffStats(null);
       setWorktreePath(null);
@@ -1178,7 +1188,7 @@ export function AgentRunView({
     if (!accepted) return;
     setWorktreeBusy('discard');
     try {
-      await invoke('remove_task_worktree', taskWorktreeArgs(projectPath, worktreePath, worktreeBranch));
+      await removeAgentTaskWorktree(taskWorktreeArgs(projectPath, worktreePath, worktreeBranch));
       setDiffStats(null);
       setWorktreePath(null);
       worktreePathRef.current = null;
@@ -1242,7 +1252,7 @@ export function AgentRunView({
   useEffect(() => {
     if (!isDone || !worktreePath) return;
     let cancelled = false;
-    void invoke<{ additions: number; deletions: number }>('worktree_diff_stats', worktreeDiffStatsArgs(projectPath, worktreePath, baseBranch)).then((stats) => {
+    void getAgentTaskWorktreeDiffStats(worktreeDiffStatsArgs(projectPath, worktreePath, baseBranch)).then((stats) => {
       if (!cancelled) setDiffStats(stats);
     }).catch(() => {
       if (!cancelled) setDiffStats(null);
@@ -1279,7 +1289,7 @@ export function AgentRunView({
     if (!recoverySessionId) return;
     setError(null);
     try {
-      await invoke('reset_task_process', { taskId });
+      await resetAgentTaskProcess(taskId);
       handleResume();
     } catch (reason) {
       setError(t('agentWorkspace.run.resetProcessFailed', {
@@ -1301,7 +1311,7 @@ export function AgentRunView({
         filters: [{ name: 'Markdown', extensions: ['md'] }],
       });
       if (!outputPath) return;
-      await invoke('export_session_markdown', {
+      await exportSessionMarkdown({
         sessionPath,
         outputPath,
         taskMeta: {
@@ -1340,7 +1350,7 @@ export function AgentRunView({
     const snapshot = captureTaskNameSnapshot(expectedTask);
     setGeneratingTitle(true);
     try {
-      const nextTitle = await invoke<string>('generate_task_name', {
+      const nextTitle = await generateTaskName({
         projectPath,
         agent,
         sessionPath: snapshot.sessionPath,
@@ -1657,7 +1667,7 @@ export function AgentRunView({
               agent={agent}
               onSend={(text) => {
                 if (!text.trim()) return;
-                invoke('agent_send_input', { taskId, data: text + '\n' }).catch((err) => {
+                sendAgentTaskInput(taskId, text + '\n').catch((err) => {
                   debugWarn('terminal', '[AgentRunView] follow-up send failed:', err);
                 });
               }}

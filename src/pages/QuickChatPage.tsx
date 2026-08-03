@@ -17,7 +17,6 @@
  */
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { X, FileText, Folder, Sparkles, GripVertical, Square } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
@@ -43,6 +42,7 @@ import { projectQuickChatResponseGroups } from './quickChatProjection';
 import { ChatMessagePreviewPanel } from '@/components/Chat/ChatMessagePreviewPanel';
 import { ChatResponseTracePanel } from '@/components/Chat/ChatResponseTracePanel';
 import { findTraceSourceMessage, projectChatResponseTrace } from '@/components/Chat/chatResponseTrace';
+import { closeQuickChat, getQuickChatSeed } from '@/api/tauri-commands';
 import { ChatTraceSourceMessagePanel } from '@/components/Chat/ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from '@/components/Chat/useChatSidePanel';
 import { TaskExecutionRecoveryBanner } from '@/components/Chat/TaskExecutionRecoveryBanner';
@@ -163,7 +163,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     const unlisten = subscribeTauriEvent<string[]>('quickchat:seed', (e) => {
       if (!disposed) void applySeed(e.payload);
     });
-    void invoke<string[]>('get_quickchat_seed')
+    void getQuickChatSeed()
       .then((initial) => {
         if (!disposed && initial.length > 0) void applySeed(initial);
       })
@@ -410,7 +410,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     } else {
       useChatStore.getState().clearQueue(sessionKey);
     }
-    try { await invoke('close_quickchat'); } catch {}
+    try { await closeQuickChat(); } catch {}
   }, [handleStop, sessionKey]);
 
   useEffect(() => {

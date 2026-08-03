@@ -24,6 +24,13 @@ interface HistoryMessage {
   ts?: string;
 }
 
+function isHistoryMessage(value: unknown): value is HistoryMessage {
+  return value !== null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof (value as { role?: unknown }).role === 'string';
+}
+
 // ═══════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════
@@ -204,11 +211,7 @@ export function MultiAgentViewPage() {
     try {
       const res = await gateway.getHistory(key, 50);
       if (fetchId !== fetchIdRef.current) return; // stale
-      const msgs: HistoryMessage[] = Array.isArray(res?.messages)
-        ? res.messages
-        : Array.isArray(res)
-        ? res
-        : [];
+      const msgs = (res.messages ?? []).filter(isHistoryMessage);
       setHistory(msgs);
     } catch {
       if (fetchId !== fetchIdRef.current) return;

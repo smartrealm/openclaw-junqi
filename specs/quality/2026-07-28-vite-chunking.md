@@ -23,6 +23,7 @@
 - [x] Vite 生产构建没有 circular chunk warning。
 - [x] Vite 生产构建没有 chunk size warning。
 - [x] 最大 JavaScript chunk 为按需加载的 `pdfjs` 513.31 kB，低于 550 kB。
+- [x] xterm 核心与插件按 npm 包边界拆分，当前分别为 291.38 kB 和 187.81 kB。
 - [x] circular chunk 或 JavaScript chunk 超预算会让构建失败，而不是留下可忽略的 warning。
 - [x] locale 资源加载器按语言拆分 JSON chunk，启动等待初始语言与英文回退。
 - [x] 懒加载语言失败时不改变当前语言或持久化偏好。

@@ -124,7 +124,24 @@ export function isAuthError(error: unknown): boolean {
   return classifyGatewayAuthorizationError(error) !== null;
 }
 
-export type MessageHandler = (msg: any) => void;
+export interface GatewayMessage {
+  type: string;
+  event?: string;
+  id?: string;
+  ok?: boolean;
+  payload?: unknown;
+  error?: unknown;
+  [key: string]: unknown;
+}
+
+function isGatewayMessage(value: unknown): value is GatewayMessage {
+  return value !== null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof (value as Record<string, unknown>).type === 'string';
+}
+
+export type MessageHandler = (msg: GatewayMessage) => void;
 
 /**
  * Registry-based message dispatcher. Register handlers by (type, event?).
@@ -148,8 +165,8 @@ export class MessageRouter {
   }
 
   /** Dispatch a message to the appropriate handler. */
-  route(msg: any): void {
-    if (!msg || typeof msg.type !== 'string') return;
+  route(msg: unknown): void {
+    if (!isGatewayMessage(msg)) return;
 
     // Try specific handler: type:event (e.g. "event:connect.challenge")
     if (msg.event) {

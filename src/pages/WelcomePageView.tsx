@@ -1,4 +1,3 @@
-import { invoke } from '@tauri-apps/api/core';
 import { useNavigate } from 'react-router-dom';
 import {
   WelcomePage,
@@ -9,6 +8,7 @@ import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { debugWarn } from '@/utils/debugLog';
 import { findWorkspaceForDirectory } from '@/workspace/projectWorkspace';
+import { initProjectConfig, openTerminalWorkspaceDirectory } from '@/api/tauri-commands';
 
 export default function WelcomePageView() {
   const navigate = useNavigate();
@@ -16,9 +16,7 @@ export default function WelcomePageView() {
   return (
     <WelcomePage
       onOpenProject={async (project: WorkspaceProject) => {
-        const directory = await invoke<WorkspaceProject>('open_terminal_workspace_directory', {
-          path: project.path,
-        });
+        const directory = await openTerminalWorkspaceDirectory(project.path);
         const store = useWorkspaceStore.getState();
         const existing = findWorkspaceForDirectory(store.workspaces, directory.path);
         if (existing) {
@@ -27,7 +25,7 @@ export default function WelcomePageView() {
           store.createWorkspace(directory.name, directory.path);
         }
 
-        void invoke('init_project_config', { projectPath: directory.path }).catch((error) => {
+        void initProjectConfig(directory.path).catch((error) => {
           debugWarn('app', '[WelcomePageView] project config initialization failed', error);
         });
         navigate('/terminal');

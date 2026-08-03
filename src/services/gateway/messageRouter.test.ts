@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyGatewayAuthorizationError, isAuthError } from './messageRouter';
+import {
+  classifyGatewayAuthorizationError,
+  isAuthError,
+  MessageRouter,
+} from './messageRouter';
 
 test('nested OpenClaw pairing details retain the official request id', () => {
   const issue = classifyGatewayAuthorizationError({
@@ -64,4 +68,19 @@ test('structured OpenClaw missing-scope details are preserved for actionable dia
 test('generic policy errors do not enter the authorization flow', () => {
   assert.equal(isAuthError({ code: 'INVALID_REQUEST', message: 'policy rejected request' }), false);
   assert.equal(classifyGatewayAuthorizationError('Gateway connection closed'), null);
+});
+
+test('message router ignores malformed WebSocket payloads before dispatch', () => {
+  const routed: string[] = [];
+  const router = new MessageRouter()
+    .on('event', (message) => routed.push(`event:${message.event ?? 'unknown'}`))
+    .onDefault((message) => routed.push(`default:${message.type}`));
+
+  router.route(null);
+  router.route({ event: 'connect.challenge' });
+  router.route(['event', 'connect.challenge']);
+  router.route({ type: 'event', event: 'connect.challenge' });
+  router.route({ type: 'res', id: 'request-1', ok: true });
+
+  assert.deepEqual(routed, ['event:connect.challenge', 'default:res']);
 });

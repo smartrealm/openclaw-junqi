@@ -1,24 +1,9 @@
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { TerminalPage } from './TerminalPage';
 import { debugError } from '@/utils/debugLog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import type { TerminalAgentId } from '@/components/Terminal/terminalAgentCatalog';
-
-interface TerminalWindowHandoff {
-  shell: {
-    id: string;
-    generatedTitle: string;
-    customTitle?: string;
-    cwd?: string;
-    proxy?: { summary: string; entries: string[] } | null;
-    launcherAgent?: TerminalAgentId;
-  };
-  runId: string;
-  snapshot: string;
-  sshHost?: string;
-}
+import { takeTerminalWindowHandoff, type TerminalWindowHandoff } from '@/api/tauri-commands';
 
 /**
  * A standalone Kooky-style terminal workspace window.
@@ -33,7 +18,7 @@ export default function TerminalWindowRoot() {
     const receiveHandoff = async () => {
       try {
         const label = getCurrentWindow().label;
-        const received = await invoke<TerminalWindowHandoff | null>('take_terminal_window_handoff', { label });
+        const received = await takeTerminalWindowHandoff(label);
         if (received?.sshHost?.trim()) {
           // Build the matching remote workspace before TerminalPage mounts.
           // The transferred live PTY must never spend a frame in a local pane.
