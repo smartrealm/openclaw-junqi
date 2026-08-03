@@ -4,12 +4,14 @@ import {
   createOpenClawSkillsRuntime,
   OpenClawSkillCardUnsupportedError,
   OpenClawSkillCuratorUnsupportedError,
+  OpenClawSkillProposalEventsUnsupportedError,
   OpenClawSkillProposalInspectUnsupportedError,
   OpenClawSkillProposalsUnsupportedError,
   SKILL_ARCHIVE_CHUNK_BYTES,
   normalizeOpenClawSkillCard,
   normalizeOpenClawSkillCuratorStatus,
   normalizeOpenClawSkillProposalManifest,
+  normalizeOpenClawSkillProposalEventsPage,
   normalizeOpenClawSkillProposalInspection,
   normalizeOpenClawSkillDetail,
   normalizeOpenClawSkillSearch,
@@ -246,6 +248,49 @@ test('keeps only safe fields from a complete native proposal inspection', () => 
   assert.equal(normalizeOpenClawSkillProposalInspection({
     ...inspection,
     record: { ...inspection.record, target: { ...inspection.record.target, skillFile: '' } },
+  }, 'weather-1'), null);
+});
+
+test('keeps only safe fields from ordered native proposal lifecycle events', () => {
+  const page = {
+    events: [{
+      sequence: 4,
+      eventId: 'event-4',
+      proposalId: 'weather-1',
+      proposedVersion: 'v1',
+      revisionHash: 'a'.repeat(64),
+      type: 'revised',
+      occurredAt: '2026-08-03T00:00:00.000Z',
+      actor: { type: 'agent', id: 'research' },
+      correlationId: 'run-42',
+      payload: { instruction: 'do not project this' },
+      evaluation: { shouldNotReachUi: true },
+    }, {
+      sequence: 8,
+      eventId: 'event-8',
+      proposalId: 'weather-1',
+      proposedVersion: 'v2',
+      revisionHash: 'b'.repeat(64),
+      type: 'evaluation_completed',
+      occurredAt: '2026-08-03T01:00:00.000Z',
+      actor: { type: 'plugin', id: 'quality' },
+    }],
+    nextSequence: 8,
+  };
+  assert.deepEqual(normalizeOpenClawSkillProposalEventsPage(page, 'weather-1'), {
+    events: [
+      { sequence: 4, type: 'revised', occurredAt: '2026-08-03T00:00:00.000Z', actorType: 'agent' },
+      { sequence: 8, type: 'evaluation_completed', occurredAt: '2026-08-03T01:00:00.000Z', actorType: 'plugin' },
+    ],
+    nextSequence: 8,
+  });
+  assert.equal(normalizeOpenClawSkillProposalEventsPage({
+    ...page,
+    events: [{ ...page.events[0], proposalId: 'other' }],
+  }, 'weather-1'), null);
+  assert.equal(normalizeOpenClawSkillProposalEventsPage({
+    ...page,
+    events: [page.events[1], page.events[0]],
   }, 'weather-1'), null);
 });
 
@@ -549,6 +594,52 @@ test('does not inspect proposals when the Gateway explicitly does not advertise 
   });
 
   await assert.rejects(runtime.inspectProposal('proposal-1'), OpenClawSkillProposalInspectUnsupportedError);
+  assert.equal(calls, 0);
+});
+
+test('reads a proposal lifecycle page only through the selected agent scope and cursor', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const response = {
+    events: [{
+      sequence: 8,
+      eventId: 'event-8',
+      proposalId: 'proposal-1',
+      proposedVersion: 'v1',
+      revisionHash: 'a'.repeat(64),
+      type: 'created',
+      occurredAt: '2026-08-03T00:00:00.000Z',
+      actor: { type: 'gateway' },
+    }],
+  };
+  const runtime = createOpenClawSkillsRuntime({
+    async call(method, params = {}) { calls.push({ method, params }); return response; },
+    async callPrivileged() { return { ok: true }; },
+    hasAdvertisedMethod(method) { return method === 'skills.proposals.events.list'; },
+  });
+
+  assert.deepEqual(await runtime.proposalEvents(' proposal-1 ', {
+    agentId: ' research ', afterSequence: 7, limit: 5,
+  }), {
+    events: [{ sequence: 8, type: 'created', occurredAt: '2026-08-03T00:00:00.000Z', actorType: 'gateway' }],
+  });
+  assert.deepEqual(calls, [{
+    method: 'skills.proposals.events.list',
+    params: { proposalId: 'proposal-1', agentId: 'research', afterSequence: 7, limit: 5 },
+  }]);
+  await assert.rejects(runtime.proposalEvents('proposal-1', { afterSequence: -1 }));
+  await assert.rejects(runtime.proposalEvents('proposal-1', { limit: 201 }));
+  assert.equal(calls.length, 1);
+});
+
+test('does not read proposal lifecycle events when Gateway explicitly does not advertise the method', async () => {
+  let calls = 0;
+  const runtime = createOpenClawSkillsRuntime({
+    async call() { calls += 1; return {}; },
+    async callPrivileged() { return { ok: true }; },
+    hasAdvertisedMethod() { return false; },
+  });
+
+  await assert.rejects(runtime.proposalEvents('proposal-1'), OpenClawSkillProposalEventsUnsupportedError);
   assert.equal(calls, 0);
 });
 

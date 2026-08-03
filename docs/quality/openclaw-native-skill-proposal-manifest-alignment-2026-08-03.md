@@ -61,7 +61,8 @@ CentOS 和 Ubuntu 共享同一协议路径，不依赖浏览器 HTTP、本地文
 
 - 尚未连接真实 Gateway，未验证默认 agent 的解析结果、operator.read 拒绝、空清单、远端
   Gateway 或列表在提案状态变化时的实际表现。
-- 尚未实装 proposal history、事件流或任一管理员写操作：create、update、revise、evaluate、apply、
-  reject、quarantine。
+- 尚未实装 proposal history 或任一管理员写操作：create、update、revise、evaluate、apply、reject、
+  quarantine。只读事件流的 scope、cursor 和字段边界见
+  [OpenClaw 原生技能提案事件对齐](openclaw-native-skill-proposal-events-alignment-2026-08-03.md)。
 - `/skill-hub` 仍是单独的 JunQi 本地目录与符号链接工具，本次未把它或任何本地文件投影为
   OpenClaw Skill Workshop 数据。

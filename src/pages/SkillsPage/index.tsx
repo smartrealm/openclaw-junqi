@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BookOpenText, ClipboardList, Package, Puzzle, RefreshCw, Search, ShieldAlert } from 'lucide-react';
+import { BookOpenText, ClipboardList, History, Package, Puzzle, RefreshCw, Search, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -14,6 +14,7 @@ import {
   type OpenClawSkillCuratorStatus,
   type OpenClawSkillDetail,
   type OpenClawSkillProposalInspection,
+  type OpenClawSkillProposalLifecycleEvent,
   type OpenClawSkillProposal,
   type OpenClawSkillSearchResult,
   type OpenClawSkillSecurityVerdict,
@@ -24,6 +25,7 @@ import {
   SkillCardDialog,
   SkillDetailPanel,
   SkillProposalDialog,
+  SkillProposalEventsDialog,
   type HubSkill,
   type InstallState,
   type MySkill,
@@ -177,6 +179,7 @@ export function SkillsPage() {
   const curatorStatusCapability = openClawSkillsRuntime.curatorStatusCapability();
   const proposalsCapability = openClawSkillsRuntime.proposalsCapability();
   const proposalInspectCapability = openClawSkillsRuntime.proposalInspectCapability();
+  const proposalEventsCapability = openClawSkillsRuntime.proposalEventsCapability();
   const [activeTab, setActiveTab] = useState<SkillsTab>('installed');
   const [installed, setInstalled] = useState<MySkill[]>([]);
   const [catalog, setCatalog] = useState<HubSkill[]>([]);
@@ -195,6 +198,12 @@ export function SkillsPage() {
   const [proposalInspectionLoading, setProposalInspectionLoading] = useState(false);
   const [proposalInspection, setProposalInspection] = useState<OpenClawSkillProposalInspection | null>(null);
   const [proposalInspectionError, setProposalInspectionError] = useState<string | null>(null);
+  const [proposalEventsOpen, setProposalEventsOpen] = useState(false);
+  const [proposalEventsLoading, setProposalEventsLoading] = useState(false);
+  const [proposalEvents, setProposalEvents] = useState<OpenClawSkillProposalLifecycleEvent[]>([]);
+  const [proposalEventsError, setProposalEventsError] = useState<string | null>(null);
+  const [proposalEventsNextSequence, setProposalEventsNextSequence] = useState<number | undefined>();
+  const [proposalEventsProposal, setProposalEventsProposal] = useState<OpenClawSkillProposal | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<SkillDetail | null>(null);
@@ -207,6 +216,7 @@ export function SkillsPage() {
   const skillCardRequestGeneration = useRef(0);
   const proposalRequestGeneration = useRef(0);
   const proposalInspectionRequestGeneration = useRef(0);
+  const proposalEventsRequestGeneration = useRef(0);
   const activeProposalSessionAgentId = activeSessionAgentId?.trim() || undefined;
   const proposalScopeAgentId = resolveProposalScopeAgentId(proposalScope, activeProposalSessionAgentId);
   const proposalScopeAgents = useMemo(
@@ -310,6 +320,16 @@ export function SkillsPage() {
     setProposalInspection(null);
     setProposalInspectionError(null);
   }, [proposalScopeAgentId, connected, proposalInspectCapability]);
+
+  useEffect(() => {
+    proposalEventsRequestGeneration.current += 1;
+    setProposalEventsOpen(false);
+    setProposalEventsLoading(false);
+    setProposalEvents([]);
+    setProposalEventsError(null);
+    setProposalEventsNextSequence(undefined);
+    setProposalEventsProposal(null);
+  }, [proposalScopeAgentId, connected, proposalEventsCapability]);
 
   useEffect(() => {
     if (activeTab !== 'proposals') return;
@@ -463,6 +483,53 @@ export function SkillsPage() {
     setProposalInspectionLoading(false);
     setProposalInspection(null);
     setProposalInspectionError(null);
+  }, []);
+
+  const loadProposalEvents = useCallback(async (
+    proposal: OpenClawSkillProposal,
+    afterSequence?: number,
+  ) => {
+    if (!connected || proposalEventsCapability === false) return;
+    const requestGeneration = proposalEventsRequestGeneration.current + 1;
+    proposalEventsRequestGeneration.current = requestGeneration;
+    if (afterSequence === undefined) {
+      setProposalEventsOpen(true);
+      setProposalEventsProposal(proposal);
+      setProposalEvents([]);
+      setProposalEventsNextSequence(undefined);
+    }
+    setProposalEventsLoading(true);
+    setProposalEventsError(null);
+    try {
+      const page = await openClawSkillsRuntime.proposalEvents(proposal.id, {
+        ...(proposalScopeAgentId ? { agentId: proposalScopeAgentId } : {}),
+        ...(afterSequence === undefined ? {} : { afterSequence }),
+      });
+      if (proposalEventsRequestGeneration.current === requestGeneration) {
+        setProposalEvents((currentEvents) => (
+          afterSequence === undefined ? page.events : [...currentEvents, ...page.events]
+        ));
+        setProposalEventsNextSequence(page.nextSequence);
+      }
+    } catch (error) {
+      if (proposalEventsRequestGeneration.current === requestGeneration) {
+        setProposalEventsError(operationError(error));
+      }
+    } finally {
+      if (proposalEventsRequestGeneration.current === requestGeneration) {
+        setProposalEventsLoading(false);
+      }
+    }
+  }, [connected, proposalEventsCapability, proposalScopeAgentId]);
+
+  const closeProposalEvents = useCallback(() => {
+    proposalEventsRequestGeneration.current += 1;
+    setProposalEventsOpen(false);
+    setProposalEventsLoading(false);
+    setProposalEvents([]);
+    setProposalEventsError(null);
+    setProposalEventsNextSequence(undefined);
+    setProposalEventsProposal(null);
   }, []);
 
   const tabItems = useMemo(() => [
@@ -703,6 +770,17 @@ export function SkillsPage() {
                               <BookOpenText size={12} aria-hidden="true" />
                             </button>
                           )}
+                          {connected && proposalEventsCapability !== false && (
+                            <button
+                              type="button"
+                              onClick={() => void loadProposalEvents(proposal)}
+                              title={t('skillsExtra.proposalEvents', 'View proposal activity')}
+                              aria-label={t('skillsExtra.proposalEvents', 'View proposal activity')}
+                              className="grid size-6 place-items-center rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04] hover:text-aegis-primary"
+                            >
+                              <History size={12} aria-hidden="true" />
+                            </button>
+                          )}
                         </div>
                         <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-aegis-text-muted">{proposal.description}</p>
                       </div>
@@ -746,6 +824,17 @@ export function SkillsPage() {
         loading={proposalInspectionLoading}
         error={proposalInspectionError}
         onClose={closeProposalInspection}
+      />
+      <SkillProposalEventsDialog
+        open={proposalEventsOpen}
+        proposal={proposalEventsProposal}
+        events={proposalEvents}
+        loading={proposalEventsLoading}
+        error={proposalEventsError}
+        onClose={closeProposalEvents}
+        {...(proposalEventsProposal && proposalEventsNextSequence !== undefined
+          ? { onLoadMore: () => void loadProposalEvents(proposalEventsProposal, proposalEventsNextSequence) }
+          : {})}
       />
     </div>
   );

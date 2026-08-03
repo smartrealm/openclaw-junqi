@@ -431,6 +431,151 @@ export function SkillProposalDialog({
   );
 }
 
+type SkillProposalLifecycleEvent = {
+  sequence: number;
+  type: 'created' | 'revised' | 'evaluation_completed' | 'applied' | 'rejected' | 'quarantined' | 'stale';
+  occurredAt: string;
+  actorType: 'agent' | 'gateway' | 'plugin' | 'system';
+};
+
+function proposalEventDate(value: string): string {
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString() : value;
+}
+
+function proposalEventTypeLabel(
+  type: SkillProposalLifecycleEvent['type'],
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (type === 'created') return t('skillsExtra.proposalEventCreated', 'Created');
+  if (type === 'revised') return t('skillsExtra.proposalEventRevised', 'Revised');
+  if (type === 'evaluation_completed') return t('skillsExtra.proposalEventEvaluationCompleted', 'Evaluation completed');
+  if (type === 'applied') return t('skillsExtra.proposalEventApplied', 'Applied');
+  if (type === 'rejected') return t('skillsExtra.proposalEventRejected', 'Rejected');
+  if (type === 'quarantined') return t('skillsExtra.proposalEventQuarantined', 'Quarantined');
+  return t('skillsExtra.proposalEventStale', 'Stale');
+}
+
+function proposalEventActorLabel(
+  actorType: SkillProposalLifecycleEvent['actorType'],
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (actorType === 'agent') return t('skillsExtra.proposalEventActorAgent', 'Agent');
+  if (actorType === 'gateway') return t('skillsExtra.proposalEventActorGateway', 'Gateway');
+  if (actorType === 'plugin') return t('skillsExtra.proposalEventActorPlugin', 'Plugin');
+  return t('skillsExtra.proposalEventActorSystem', 'System');
+}
+
+export function SkillProposalEventsContent({
+  events,
+  loading,
+  error,
+  onLoadMore,
+}: {
+  events: SkillProposalLifecycleEvent[];
+  loading: boolean;
+  error: string | null;
+  onLoadMore?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {loading && events.length === 0 && (
+        <div className="flex min-h-40 items-center justify-center">
+          <LoadingIndicator size={20} className="text-aegis-text-dim" />
+        </div>
+      )}
+      {!loading && error && events.length === 0 && (
+        <div className="border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[12px] leading-relaxed text-aegis-text-secondary">
+          {error}
+        </div>
+      )}
+      {events.length > 0 && (
+        <div className="divide-y divide-[rgb(var(--aegis-overlay)/0.07)] border-y border-[rgb(var(--aegis-overlay)/0.07)]">
+          {events.map((event) => (
+            <div key={event.sequence} className="grid grid-cols-[auto_1fr] gap-x-3 px-1 py-3">
+              <span className="pt-0.5 font-mono text-[10px] text-aegis-text-dim">{event.sequence}</span>
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-aegis-text-secondary">
+                  {proposalEventTypeLabel(event.type, t)}
+                </p>
+                <p className="mt-1 text-[10px] text-aegis-text-dim">
+                  {proposalEventDate(event.occurredAt)} · {proposalEventActorLabel(event.actorType, t)}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!loading && !error && events.length === 0 && (
+        <p className="py-12 text-center text-[12px] text-aegis-text-dim">
+          {t('skillsExtra.proposalEventsEmpty', 'No lifecycle events')}
+        </p>
+      )}
+      {error && events.length > 0 && (
+        <p className="mt-3 break-words text-[11px] text-aegis-warning">{error}</p>
+      )}
+      {onLoadMore && (
+        <button
+          type="button"
+          onClick={onLoadMore}
+          disabled={loading}
+          className="mt-4 w-full rounded-lg border border-aegis-border px-3 py-2 text-[11px] font-medium text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text disabled:cursor-wait disabled:opacity-50"
+        >
+          {loading ? t('common.loading', 'Loading') : t('skillsExtra.proposalEventsLoadMore', 'Load more')}
+        </button>
+      )}
+    </>
+  );
+}
+
+export function SkillProposalEventsDialog({
+  open,
+  proposal,
+  events,
+  loading,
+  error,
+  onClose,
+  onLoadMore,
+}: {
+  open: boolean;
+  proposal: { title: string; skillKey: string } | null;
+  events: SkillProposalLifecycleEvent[];
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onLoadMore?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[min(680px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-lg">
+        <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
+          <DialogTitle className="truncate text-sm font-bold text-aegis-text">
+            {proposal?.title ?? t('skillsExtra.proposalEventsTitle', 'Proposal activity')}
+          </DialogTitle>
+          <DialogDescription className="mt-1 truncate font-mono text-[11px] text-aegis-text-dim">
+            {proposal?.skillKey ?? t('skillsExtra.proposalEventsPending', 'Waiting for OpenClaw response')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto px-5 py-4">
+          <SkillProposalEventsContent
+            events={events}
+            loading={loading}
+            error={error}
+            {...(onLoadMore ? { onLoadMore } : {})}
+          />
+        </div>
+        <DialogFooter className="border-t border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] px-5 py-3">
+          <DialogClose className="w-full rounded-lg border border-aegis-border px-3 py-2 text-[11px] font-medium text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 sm:w-auto">
+            {t('common.close', 'Close')}
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════
 // HubSkillRow — Marketplace result row
 // ═══════════════════════════════════════════════════════════

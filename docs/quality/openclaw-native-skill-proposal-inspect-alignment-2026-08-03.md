@@ -36,9 +36,11 @@ agent。官方方法目录将 inspect 标为 `operator.read`，不构成提案�
 
 ## 保留边界
 
-本项未接入 proposal history、events、evaluate、create、update、revise、apply、reject 或 quarantine。
-这些方法各有独立权限和状态机契约，不能由 inspect 推断。JunQi 不读取 `/skill-hub`、本地 proposal
-目录或本地 agent workspace，也不把它们映射为 OpenClaw 数据。
+`skills.proposals.events.list` 已作为独立的只读生命周期投影接入，详见
+[OpenClaw 原生技能提案事件对齐](openclaw-native-skill-proposal-events-alignment-2026-08-03.md)。
+proposal history、evaluate、create、update、revise、apply、reject 和 quarantine 仍未接入；这些方法
+各有独立权限和状态机契约，不能由 inspect 推断。JunQi 不读取 `/skill-hub`、本地 proposal 目录或本地
+agent workspace，也不把它们映射为 OpenClaw 数据。
 
 ## 跨平台边界
 

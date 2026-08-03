@@ -143,6 +143,30 @@ export interface OpenClawSkillProposalInspection {
   content: string;
 }
 
+export type OpenClawSkillProposalLifecycleEventType =
+  | 'created'
+  | 'revised'
+  | 'evaluation_completed'
+  | 'applied'
+  | 'rejected'
+  | 'quarantined'
+  | 'stale';
+
+export type OpenClawSkillProposalLifecycleActorType = 'agent' | 'gateway' | 'plugin' | 'system';
+
+/** Read-only lifecycle projection with event payload and identity details removed. */
+export interface OpenClawSkillProposalLifecycleEvent {
+  sequence: number;
+  type: OpenClawSkillProposalLifecycleEventType;
+  occurredAt: string;
+  actorType: OpenClawSkillProposalLifecycleActorType;
+}
+
+export interface OpenClawSkillProposalEventsPage {
+  events: OpenClawSkillProposalLifecycleEvent[];
+  nextSequence?: number;
+}
+
 export class OpenClawSkillCardUnsupportedError extends Error {
   readonly code = 'OPENCLAW_SKILL_CARD_UNSUPPORTED';
 
@@ -176,6 +200,15 @@ export class OpenClawSkillProposalInspectUnsupportedError extends Error {
   constructor() {
     super('The connected OpenClaw Gateway does not advertise skills.proposals.inspect.');
     this.name = 'OpenClawSkillProposalInspectUnsupportedError';
+  }
+}
+
+export class OpenClawSkillProposalEventsUnsupportedError extends Error {
+  readonly code = 'OPENCLAW_SKILL_PROPOSAL_EVENTS_UNSUPPORTED';
+
+  constructor() {
+    super('The connected OpenClaw Gateway does not advertise skills.proposals.events.list.');
+    this.name = 'OpenClawSkillProposalEventsUnsupportedError';
   }
 }
 
@@ -241,6 +274,10 @@ function requiredFiniteNumber(value: unknown): number | null {
 
 function optionalInteger(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
+}
+
+function optionalSafeInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) ? value : undefined;
 }
 
 function optionalNullableInteger(value: unknown): number | null | undefined {
@@ -740,6 +777,74 @@ export function normalizeOpenClawSkillProposalInspection(
   return { id, title, description, skillKey, status: proposal.status, ...(revisionHash ? { revisionHash } : {}), content: root.content };
 }
 
+function normalizeProposalEventType(value: unknown): OpenClawSkillProposalLifecycleEventType | undefined {
+  return value === 'created'
+    || value === 'revised'
+    || value === 'evaluation_completed'
+    || value === 'applied'
+    || value === 'rejected'
+    || value === 'quarantined'
+    || value === 'stale'
+    ? value
+    : undefined;
+}
+
+function normalizeProposalEventActorType(value: unknown): OpenClawSkillProposalLifecycleActorType | undefined {
+  return value === 'agent' || value === 'gateway' || value === 'plugin' || value === 'system'
+    ? value
+    : undefined;
+}
+
+function normalizeOpenClawSkillProposalLifecycleEvent(
+  value: unknown,
+  requestedProposalId: string,
+): OpenClawSkillProposalLifecycleEvent | null {
+  const event = record(value);
+  const actor = record(event?.actor);
+  const sequence = optionalSafeInteger(event?.sequence);
+  const type = normalizeProposalEventType(event?.type);
+  const occurredAt = text(event?.occurredAt);
+  const actorType = normalizeProposalEventActorType(actor?.type);
+  const actorId = actor?.id;
+  const correlationId = event?.correlationId;
+  if (
+    !event
+    || sequence === undefined || sequence < 1
+    || !text(event.eventId)
+    || event.proposalId !== requestedProposalId
+    || !text(event.proposedVersion)
+    || !normalizedSha256(event.revisionHash)
+    || !type
+    || !occurredAt
+    || !actor
+    || !actorType
+    || (actorId !== undefined && !text(actorId))
+    || (correlationId !== undefined && !text(correlationId))
+  ) return null;
+  return { sequence, type, occurredAt, actorType };
+}
+
+export function normalizeOpenClawSkillProposalEventsPage(
+  payload: unknown,
+  requestedProposalId: string,
+): OpenClawSkillProposalEventsPage | null {
+  const root = record(payload);
+  const nextSequence = root?.nextSequence === undefined ? undefined : optionalSafeInteger(root.nextSequence);
+  if (
+    !root
+    || !Array.isArray(root.events)
+    || root.events.length > 200
+    || (root.nextSequence !== undefined && (nextSequence === undefined || nextSequence < 1))
+  ) return null;
+  const events = root.events.map((event) => normalizeOpenClawSkillProposalLifecycleEvent(event, requestedProposalId));
+  if (events.some((event) => event === null)) return null;
+  const projectedEvents = events as OpenClawSkillProposalLifecycleEvent[];
+  if (projectedEvents.some((event, index) => index > 0 && event.sequence <= projectedEvents[index - 1]!.sequence)) {
+    return null;
+  }
+  return { events: projectedEvents, ...(nextSequence === undefined ? {} : { nextSequence }) };
+}
+
 function requiredIdentifier(value: string, label: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${label} is required.`);
@@ -752,6 +857,22 @@ function normalizedSearchLimit(limit?: number): number | undefined {
     throw new Error('Skill search limit must be an integer between 1 and 100.');
   }
   return limit;
+}
+
+function normalizedProposalEventsAfterSequence(value?: number): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error('Proposal event cursor must be a non-negative integer.');
+  }
+  return value;
+}
+
+function normalizedProposalEventsLimit(value?: number): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 200) {
+    throw new Error('Proposal event limit must be an integer between 1 and 200.');
+  }
+  return value;
 }
 
 const SKILL_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i;
@@ -844,6 +965,10 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
 
     proposalInspectCapability(): boolean | null {
       return client.hasAdvertisedMethod?.('skills.proposals.inspect') ?? null;
+    },
+
+    proposalEventsCapability(): boolean | null {
+      return client.hasAdvertisedMethod?.('skills.proposals.events.list') ?? null;
     },
 
     curatorStatusCapability(): boolean | null {
@@ -950,6 +1075,34 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
       }), normalizedProposalId);
       if (!inspection) throw new Error('OpenClaw returned an invalid skill proposal inspection response.');
       return inspection;
+    },
+
+    async proposalEvents(
+      proposalId: string,
+      options: { agentId?: string; afterSequence?: number; limit?: number } = {},
+    ): Promise<OpenClawSkillProposalEventsPage> {
+      const normalizedProposalId = requiredIdentifier(proposalId, 'Proposal id');
+      if (client.hasAdvertisedMethod?.('skills.proposals.events.list') === false) {
+        throw new OpenClawSkillProposalEventsUnsupportedError();
+      }
+      const agentId = options.agentId?.trim();
+      const afterSequence = normalizedProposalEventsAfterSequence(options.afterSequence);
+      const limit = normalizedProposalEventsLimit(options.limit);
+      const page = normalizeOpenClawSkillProposalEventsPage(await client.call('skills.proposals.events.list', {
+        proposalId: normalizedProposalId,
+        ...(agentId ? { agentId } : {}),
+        ...(afterSequence === undefined ? {} : { afterSequence }),
+        ...(limit === undefined ? {} : { limit }),
+      }), normalizedProposalId);
+      if (!page) throw new Error('OpenClaw returned an invalid skill proposal events response.');
+      const lastSequence = page.events.at(-1)?.sequence;
+      if (
+        (afterSequence !== undefined && page.events.some((event) => event.sequence <= afterSequence))
+        || (page.nextSequence !== undefined && (lastSequence === undefined || page.nextSequence !== lastSequence))
+      ) {
+        throw new Error('OpenClaw returned an invalid skill proposal events cursor.');
+      }
+      return page;
     },
 
     async installFromClawHub(request: OpenClawSkillInstallRequest): Promise<OpenClawSkillInstallResult> {

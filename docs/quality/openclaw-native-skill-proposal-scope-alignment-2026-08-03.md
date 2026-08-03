@@ -40,9 +40,10 @@ agent 得出一个 agent id，并将同一个 id 同时传给 list 和 inspect�
 
 ## 保留边界
 
-`skills.proposals.inspect` 已在同一受控 scope 上作为独立的只读草稿详情接入，详见
-[OpenClaw 原生技能提案详情对齐](openclaw-native-skill-proposal-inspect-alignment-2026-08-03.md)。
-history、events、evaluate 和任何管理员写方法仍未接入；它们不能从清单或详情状态推断。
+`skills.proposals.inspect` 和 `skills.proposals.events.list` 已在同一受控 scope 上作为独立只读投影
+接入，详见 [OpenClaw 原生技能提案详情对齐](openclaw-native-skill-proposal-inspect-alignment-2026-08-03.md)
+与 [OpenClaw 原生技能提案事件对齐](openclaw-native-skill-proposal-events-alignment-2026-08-03.md)。
+history、evaluate 和任何管理员写方法仍未接入；它们不能从清单、详情或事件状态推断。
 
 `/skill-hub` 仍是 JunQi 的本地目录与符号链接工具，不是 Skill Workshop scope 或 agent
 workspace。本次没有读取或写入任何本地技能、proposal 或 Gateway 配置文件。
