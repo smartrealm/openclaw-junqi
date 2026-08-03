@@ -6,11 +6,12 @@ type GatewayRequester = <T>(method: string, params: Record<string, unknown>) => 
 export type NativeSessionGroup = {
   readonly id: string;
   readonly label: string;
+  readonly position: number;
 };
 
 export interface OpenClawSessionOrganizationClientDeps {
   readonly runMutation: SessionMutationRunner;
-  readonly requestPrivileged: GatewayRequester;
+  readonly request: GatewayRequester;
 }
 
 export class SessionOrganizationResponseError extends Error {
@@ -24,7 +25,9 @@ export class SessionOrganizationResponseError extends Error {
 
 /**
  * Signals an installed Gateway that predates the native organization protocol.
- * Authentication and transport failures deliberately do not use this error.
+ * Callers use it to report the unavailable native capability; it never authorizes
+ * a client-owned organization fallback. Authentication and transport failures
+ * deliberately do not use this error.
  */
 export class SessionOrganizationProtocolUnsupportedError extends Error {
   readonly code = 'SESSION_ORGANIZATION_PROTOCOL_UNSUPPORTED';
@@ -57,28 +60,33 @@ function normalizeGroups(result: unknown): NativeSessionGroup[] {
   if (!isRecord(result) || !Array.isArray(result.groups)) {
     throw new SessionOrganizationResponseError();
   }
-  return result.groups.flatMap((value) => {
-    if (isRecord(value) && typeof value.name === 'string' && value.name.trim()) {
-      const label = value.name.trim();
-      return [{ id: label, label }];
+  return result.groups.map((value) => {
+    const position = isRecord(value) ? value.position : undefined;
+    if (!isRecord(value) || typeof value.name !== 'string' || !value.name.trim()
+      || typeof position !== 'number' || !Number.isInteger(position) || position < 0) {
+      throw new SessionOrganizationResponseError();
     }
-    return [];
+    const label = value.name.trim();
+    return { id: label, label, position };
   });
 }
 
-function confirmedGroupMutation(result: unknown): void {
-  if (!isRecord(result) || result.ok !== true || !Array.isArray(result.groups)) {
+function confirmedGroupMutation(result: unknown): NativeSessionGroup[] {
+  if (!isRecord(result) || result.ok !== true) {
     throw new SessionOrganizationResponseError();
   }
+  return normalizeGroups(result);
 }
 
 /** Native OpenClaw session organization API, isolated from UI and store code. */
 export class OpenClawSessionOrganizationClient {
+  private catalogMutationTail: Promise<void> = Promise.resolve();
+
   constructor(private readonly deps: OpenClawSessionOrganizationClientDeps) {}
 
   private async request<T>(method: string, params: Record<string, unknown>): Promise<T> {
     try {
-      return await this.deps.requestPrivileged<T>(method, params);
+      return await this.deps.request<T>(method, params);
     } catch (error) {
       if (isUnsupportedProtocolError(error)) {
         throw new SessionOrganizationProtocolUnsupportedError(error);
@@ -114,18 +122,45 @@ export class OpenClawSessionOrganizationClient {
     return normalizeGroups(await this.request<unknown>('sessions.groups.list', {}));
   }
 
-  async putGroup(label: string): Promise<void> {
-    const groups = await this.listGroups();
-    const names = groups.map((group) => group.label);
-    if (!names.includes(label)) names.push(label);
-    confirmedGroupMutation(await this.request<unknown>('sessions.groups.put', { names }));
+  private runCatalogMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const queued = this.catalogMutationTail.then(operation, operation);
+    this.catalogMutationTail = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
   }
 
-  async renameGroup(from: string, to: string): Promise<void> {
-    confirmedGroupMutation(await this.request<unknown>('sessions.groups.rename', { name: from, to }));
+  putGroup(label: string): Promise<NativeSessionGroup[]> {
+    return this.runCatalogMutation(async () => {
+      const groups = await this.listGroups();
+      const names = groups.map((group) => group.label);
+      if (!names.includes(label)) names.push(label);
+      const nextGroups = confirmedGroupMutation(await this.request<unknown>('sessions.groups.put', { names }));
+      if (!nextGroups.some((group) => group.label === label)) {
+        throw new SessionOrganizationResponseError();
+      }
+      return nextGroups;
+    });
   }
 
-  async deleteGroup(label: string): Promise<void> {
-    confirmedGroupMutation(await this.request<unknown>('sessions.groups.delete', { name: label }));
+  renameGroup(from: string, to: string): Promise<NativeSessionGroup[]> {
+    return this.runCatalogMutation(async () => {
+      const nextGroups = confirmedGroupMutation(await this.request<unknown>('sessions.groups.rename', { name: from, to }));
+      if (!nextGroups.some((group) => group.label === to)) {
+        throw new SessionOrganizationResponseError();
+      }
+      return nextGroups;
+    });
+  }
+
+  deleteGroup(label: string): Promise<NativeSessionGroup[]> {
+    return this.runCatalogMutation(async () => {
+      const nextGroups = confirmedGroupMutation(await this.request<unknown>('sessions.groups.delete', { name: label }));
+      if (nextGroups.some((group) => group.label === label)) {
+        throw new SessionOrganizationResponseError();
+      }
+      return nextGroups;
+    });
   }
 }

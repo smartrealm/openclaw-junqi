@@ -11,8 +11,6 @@ import { gateway } from '@/services/gateway';
 import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
 import {
   __resetSessionOrganizationForTests,
-  projectSessionOrganization,
-  setSessionOrganizationFlag,
 } from '@/services/chat/sessionOrganization';
 
 const MAIN_KEY = 'agent:main:main';
@@ -223,7 +221,7 @@ test('sessionId rotation atomically replaces transcript state and resets identit
   assert.equal(state.messageQueue[OTHER_KEY], undefined);
   assert.deepEqual(state.messages, []);
   assert.equal(state.drafts[OTHER_KEY], 'keep this draft');
-  assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.pinned, false);
+  assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.pinned, undefined);
   assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.sessionId, 'new-id');
   assert.deepEqual(transitions, [{
     sessionKey: OTHER_KEY,
@@ -313,12 +311,11 @@ test('removeSession closes the tab, switches active session, and persists tab or
   assert.equal(localStorage.getItem('aegis-open-tabs'), JSON.stringify([MAIN_KEY]));
 });
 
-test('opening or replacing the active tab clears the persisted unread marker', () => {
+test('opening or replacing the active tab does not create a local unread marker', () => {
   const unreadKey = 'agent:worker:unread-target';
   const unreadSession = { key: unreadKey, sessionId: 'gateway-session-id', label: 'Unread target' };
   const mainSession = { key: MAIN_KEY, sessionId: 'main-gateway-session-id', label: 'Main' };
   __resetSessionOrganizationForTests();
-  setSessionOrganizationFlag(unreadSession, 'unread', true);
   useChatStore.setState({
     sessions: [mainSession, unreadSession],
     openTabs: [MAIN_KEY],
@@ -327,12 +324,28 @@ test('opening or replacing the active tab clears the persisted unread marker', (
 
   useChatStore.getState().openTab(unreadKey);
 
-  assert.equal(projectSessionOrganization(unreadSession).unread, false);
+  assert.equal(localStorage.getItem('junqi:session-organization:v1'), null);
 
-  setSessionOrganizationFlag(mainSession, 'unread', true);
   useChatStore.getState().closeTab(unreadKey);
-  assert.equal(projectSessionOrganization(mainSession).unread, false);
+  assert.equal(localStorage.getItem('junqi:session-organization:v1'), null);
   __resetSessionOrganizationForTests();
+});
+
+test('an unavailable native group catalog clears rather than retaining renderer groups', async () => {
+  const listSessionGroups = gateway.listSessionGroups;
+  Object.assign(gateway, {
+    listSessionGroups: async () => { throw new Error('sessions.groups.list unavailable'); },
+  });
+  useChatStore.setState({
+    sessionGroups: [{ id: 'Jarvis: JunQi', label: 'Jarvis: JunQi', createdAt: 0 }],
+  });
+
+  try {
+    await assert.rejects(useChatStore.getState().refreshSessionGroups());
+    assert.deepEqual(useChatStore.getState().sessionGroups, []);
+  } finally {
+    Object.assign(gateway, { listSessionGroups });
+  }
 });
 
 test('history cache preserves structured Gateway blocks through ChatStore projection', () => {

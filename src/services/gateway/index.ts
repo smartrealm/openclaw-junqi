@@ -620,7 +620,7 @@ const sessionSettings = new SessionSettingsClient({
 });
 const sessionOrganization = new OpenClawSessionOrganizationClient({
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
-  requestPrivileged: (method, params) => requestPrivileged(method, params),
+  request: (method, params) => connection.request(method, params),
 });
 const sessionLifecycle = new OpenClawSessionLifecycleClient(
   (method, params) => connection.request(method, params),

@@ -467,9 +467,7 @@ function WorkbenchPanel() {
   const refreshSessionGroups = useChatStore((state) => state.refreshSessionGroups);
 
   useEffect(() => {
-    void refreshSessionGroups().catch(() => {
-      // The store retains its identity-bound desktop fallback for legacy Gateway versions.
-    });
+    void refreshSessionGroups().catch(() => undefined);
   }, [refreshSessionGroups]);
 
   // Per-session first user message, keyed for O(1) lookups during render.
