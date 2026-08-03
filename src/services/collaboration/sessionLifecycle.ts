@@ -159,7 +159,7 @@ async function executeNativeSessionMutation(
   sessionId: string | null,
 ): Promise<SessionLifecycleMutationOutcome> {
   if (useChatStore.getState().typingBySession[sessionKey]) {
-    await gateway.abortChat(sessionKey);
+    await gateway.abortChat(sessionKey, sessionId ?? undefined);
   }
   if (action === 'delete' && !sessionId) {
     throw new Error('The native OpenClaw session identity is unavailable. Refresh sessions and try again.');

@@ -7,6 +7,7 @@ import type { ComposerMenuId } from './useComposerMenu';
 
 interface UseComposerInterruptionOptions {
   activeSessionKey: string;
+  activeSessionId?: string;
   activeMenu: ComposerMenuId;
   closeMenu: () => void;
   voiceOutputActive: boolean;
@@ -16,6 +17,7 @@ interface UseComposerInterruptionOptions {
 
 export function useComposerInterruption({
   activeSessionKey,
+  activeSessionId,
   activeMenu,
   closeMenu,
   voiceOutputActive,
@@ -26,9 +28,9 @@ export function useComposerInterruption({
     voiceRuntime.interruptGlobally(activeSessionKey);
     const state = useChatStore.getState();
     if (!state.typingBySession[activeSessionKey] && !state.sendingBySession[activeSessionKey]) return;
-    await gateway.abortChat(activeSessionKey)
+    await gateway.abortChat(activeSessionKey, activeSessionId)
       .catch((error) => debugError('gateway', '[ComposerInterruption] Unable to stop response:', error));
-  }, [activeSessionKey]);
+  }, [activeSessionId, activeSessionKey]);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {

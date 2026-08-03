@@ -1,7 +1,6 @@
 import { getCurrentRuntimeIdentity } from '@/services/gateway/runtimeIdentity';
 import { debugWarn } from '@/utils/debugLog';
 import {
-  beginTaskRun,
   cloneTaskExecutionCheckpoint,
   emptyTaskExecutionSnapshot,
   mergeTaskExecutionSnapshots,
@@ -141,19 +140,6 @@ export class TaskExecutionCoordinator {
     };
     this.writeTail = this.writeTail.then(write, write);
     await this.writeTail;
-  }
-
-  async beginRun(params: {
-    sessionKey: string;
-    sessionId?: string;
-    runId: string;
-    source: TaskExecutionSource;
-    model?: string | null;
-  }): Promise<void> {
-    const binding = verifiedBinding(params.sessionKey, params.sessionId);
-    if (!binding) return;
-    await this.hydrate();
-    await this.commit(beginTaskRun(this.snapshot, { ...params, binding }));
   }
 
   async prepareSend(params: {

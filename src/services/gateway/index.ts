@@ -1320,14 +1320,14 @@ export const gateway = {
       ...(agentId ? { agentId } : {}),
     });
   },
-  async abortChat(sessionKey = 'agent:main:main') {
+  async abortChat(sessionKey = 'agent:main:main', sessionId?: string) {
     // Abort is a control-plane request. Waiting behind a long-running
     // chat.send request makes it impossible to stop a response whose send
     // acknowledgement was lost or delayed.
     return abortAfterTaskCheckpoint(
       async () => {
         try {
-          await taskExecutionCoordinator.requestStop(sessionKey);
+          await taskExecutionCoordinator.requestStop(sessionKey, sessionId);
         } catch (error) {
           taskExecutionCoordinator.reportPersistenceFailure('persist Stop checkpoint', error);
           throw error;

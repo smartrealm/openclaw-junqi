@@ -241,13 +241,13 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     voiceRuntime.interruptGlobally(sessionKey);
     if (!useChatStore.getState().typingBySession[sessionKey]) return;
     try {
-      await gateway.abortChat(sessionKey);
+      await gateway.abortChat(sessionKey, sessionId);
     } catch (error) {
       setSendError(t('pet.quickChat.sendError', {
         error: error instanceof Error ? error.message : String(error),
       }));
     }
-  }, [sessionKey, t]);
+  }, [sessionId, sessionKey, t]);
 
   const reconcileTask = useCallback(async () => {
     if (!connected) return;

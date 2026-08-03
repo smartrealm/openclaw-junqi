@@ -80,6 +80,7 @@ export function MessageInput() {
   });
   const stop = useComposerInterruption({
     activeSessionKey,
+    activeSessionId,
     activeMenu: menu.active,
     closeMenu: menu.close,
     voiceOutputActive: voice.outputActive,

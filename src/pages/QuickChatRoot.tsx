@@ -164,7 +164,8 @@ export default function QuickChatRoot() {
       const store = useChatStore.getState();
       store.clearQueue(sessionKey);
       if (store.typingBySession[sessionKey]) {
-        void gateway.abortChat(sessionKey)
+        const sessionId = store.sessions.find((session) => session.key === sessionKey)?.sessionId;
+        void gateway.abortChat(sessionKey, sessionId)
           .catch(() => undefined)
           .finally(() => lease.release());
       } else {

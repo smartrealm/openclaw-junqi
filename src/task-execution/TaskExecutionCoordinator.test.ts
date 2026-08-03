@@ -50,3 +50,23 @@ test('does not guess between rotated session identities for a key-only event', (
     null,
   );
 });
+
+test('uses the caller session identity instead of a stored checkpoint for a rotated key', () => {
+  const first = beginTaskRun(emptyTaskExecutionSnapshot(), {
+    binding: baseBinding,
+    runId: 'run-1',
+    source: 'chat',
+    now: 10,
+  });
+  const rotated = beginTaskRun(first, {
+    binding: { ...baseBinding, sessionId: 'session-2' },
+    runId: 'run-2',
+    source: 'chat',
+    now: 20,
+  });
+
+  assert.deepEqual(
+    resolveTaskExecutionBinding(rotated.tasks, baseBinding.sessionKey, 'session-2', identity, true),
+    { ...baseBinding, sessionId: 'session-2' },
+  );
+});
