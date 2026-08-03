@@ -74,6 +74,7 @@ plans/
 - [ReAct 任务检查点与恢复](quality/2026-08-02-react-task-checkpoint-recovery.md)
 - [OpenClaw Stop 检查点与队列对齐](quality/2026-08-03-openclaw-stop-checkpoint-queue-alignment.md)
 - [OpenClaw Stop 会话身份围栏](quality/2026-08-03-openclaw-stop-session-identity-fence.md)
+- [OpenClaw Composer 队列权威对齐](quality/2026-08-03-openclaw-composer-queue-authority.md)
 - [Gateway AI 诊断](quality/2026-07-30-gateway-ai-diagnostics.md)
 - [终端与工作台 Chrome 一致性](quality/2026-07-30-terminal-workbench-chrome-convergence.md)
 - [Chat 消息预览与 OpenClaw 对齐](quality/2026-07-30-chat-message-preview-openclaw-parity.md)

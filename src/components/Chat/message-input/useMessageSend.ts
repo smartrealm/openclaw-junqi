@@ -2,7 +2,7 @@ import { useCallback, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { showAlert } from '@/components/shared/AlertDialog';
 import { displayAttachments, toGatewayAttachments } from '@/services/chat/attachments';
-import { chatSendCoordinator } from '@/services/chat/sendTransaction';
+import { chatSendCoordinator, type ChatSendRequest } from '@/services/chat/sendTransaction';
 import type { PreparedAttachment } from '@/services/chat/types';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
@@ -24,6 +24,13 @@ interface UseMessageSendOptions {
   textareaRef: RefObject<HTMLTextAreaElement>;
   setIsSending: (sending: boolean, sessionKey?: string) => void;
   deliveryMode?: 'normal' | 'steer';
+}
+
+/** Normal Composer sends let the Gateway apply its current session queue mode. */
+export function composerDeliveryOptions(
+  deliveryMode: NonNullable<UseMessageSendOptions['deliveryMode']>,
+): Pick<ChatSendRequest, 'delivery'> {
+  return deliveryMode === 'steer' ? { delivery: 'steer' } : {};
 }
 
 export function useMessageSend({
@@ -96,8 +103,7 @@ export function useMessageSend({
         attachments: attachments.length ? attachments : undefined,
         displayAttachments: displayAttachments(sendFiles),
         optimisticMessage: { timestamp: new Date().toISOString() },
-        queueIfBusy: deliveryMode !== 'steer',
-        ...(deliveryMode === 'steer' ? { delivery: 'steer' as const } : {}),
+        ...composerDeliveryOptions(deliveryMode),
       });
       const state = useChatStore.getState();
       state.consumeComposerSnapshot(sessionKey, {

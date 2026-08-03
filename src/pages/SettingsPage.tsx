@@ -56,6 +56,8 @@ import { useOpenClawPlanToolSetting } from '@/hooks/useOpenClawPlanToolSetting';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
+import { emitTauriEvent } from '@/utils/tauriEvents';
+import { requestDynamicIslandPreview } from '@/dynamic-island/DynamicIslandPreview';
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
@@ -749,7 +751,7 @@ export function SettingsPageFull() {
             type="button"
             disabled={!dynamicIslandEnabled}
             onClick={() => {
-              void invoke('open_dynamic_island').catch((error) => {
+              void requestDynamicIslandPreview(emitTauriEvent).catch((error) => {
                 notifyError(
                   t('settings.dynamicIslandPreview', '预览灵动岛'),
                   error instanceof Error ? error.message : String(error),

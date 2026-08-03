@@ -11,6 +11,7 @@ import { useVoiceStore } from '@/stores/voiceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import type { DynamicIslandAction } from './DynamicIslandActions';
+import { DYNAMIC_ISLAND_PREVIEW_EVENT, DynamicIslandPreview } from './DynamicIslandPreview';
 import { voiceModeCoordinator } from '@/services/voice/VoiceModeCoordinator';
 import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
@@ -65,10 +66,19 @@ export default function DynamicIslandRuntime() {
   const latestToast = useNotificationStore((state) => state.toasts.at(-1) ?? null);
   const revisionRef = useRef(0);
   const [mainMinimized, setMainMinimized] = useState(false);
+  const [previewActive, setPreviewActive] = useState(false);
   const [resourceDrop, setResourceDrop] = useState<DynamicIslandDrop | null>(null);
   const [terminalPulse, setTerminalPulse] = useState(false);
   const resourceDropRef = useRef(resourceDrop);
   const resourceDropTimerRef = useRef<number | null>(null);
+  const previewRef = useRef<DynamicIslandPreview | null>(null);
+  if (!previewRef.current) {
+    previewRef.current = new DynamicIslandPreview({
+      schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+      clear: (timer) => window.clearTimeout(timer),
+      onChange: setPreviewActive,
+    });
+  }
   const terminalPulseTimerRef = useRef<number | null>(null);
   const previousTaskStatusesRef = useRef<Map<string, string> | null>(null);
   resourceDropRef.current = resourceDrop;
@@ -157,6 +167,7 @@ export default function DynamicIslandRuntime() {
   const voiceActive = isVoiceActivePhase(voicePhase) || isDynamicIslandVoiceInputActive(voiceInput);
   const shouldShow = shouldShowDynamicIsland({
     enabled,
+    preview: previewActive,
     mainMinimized,
     sessionRunning,
     voiceActive,
@@ -185,6 +196,7 @@ export default function DynamicIslandRuntime() {
 
   const snapshot = useMemo<DynamicIslandSnapshot>(() => ({
     revision: ++revisionRef.current,
+    preview: previewActive,
     sessionKey: activeSessionKey,
     connected,
     connecting,
@@ -214,7 +226,7 @@ export default function DynamicIslandRuntime() {
       body: latestToast.body,
     } : null,
     resourceDrop,
-  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, executionPlan, focus, latestToast, petEnabled, pomodoro, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
+  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, executionPlan, focus, latestToast, petEnabled, pomodoro, previewActive, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
 
@@ -265,6 +277,10 @@ export default function DynamicIslandRuntime() {
     subscribeTauriEvent('dynamic-island:ready', () => {
       void emitTauriEvent('dynamic-island:update', latestSnapshotRef.current).catch(() => undefined);
     }),
+    subscribeTauriEvent(DYNAMIC_ISLAND_PREVIEW_EVENT, () => {
+      if (!useSettingsStore.getState().dynamicIslandEnabled) return;
+      previewRef.current?.start();
+    }),
     subscribeTauriEvent<string>('dynamic-island:navigate', (event) => {
       if (event.payload.startsWith('/') && !event.payload.includes('..')) {
         window.location.hash = event.payload;
@@ -308,7 +324,11 @@ export default function DynamicIslandRuntime() {
           voiceRuntime.interruptAll();
           break;
         case 'hide':
-          useSettingsStore.getState().setDynamicIslandEnabled(false);
+          if (latestSnapshotRef.current.preview) {
+            previewRef.current?.stop();
+          } else {
+            useSettingsStore.getState().setDynamicIslandEnabled(false);
+          }
           break;
       }
     }),
@@ -338,6 +358,7 @@ export default function DynamicIslandRuntime() {
 
   useEffect(() => () => {
     if (resourceDropTimerRef.current !== null) window.clearTimeout(resourceDropTimerRef.current);
+    previewRef.current?.dispose();
     if (terminalPulseTimerRef.current !== null) window.clearTimeout(terminalPulseTimerRef.current);
   }, []);
 

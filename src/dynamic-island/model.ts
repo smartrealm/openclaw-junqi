@@ -78,6 +78,7 @@ export interface DynamicIslandExecutionPlan {
 
 export interface DynamicIslandSnapshot {
   revision: number;
+  preview: boolean;
   sessionKey: string;
   connected: boolean;
   connecting: boolean;
@@ -127,6 +128,7 @@ export function isDynamicIslandVoiceInputActive(input: DynamicIslandVoiceInput):
 
 export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   revision: 0,
+  preview: false,
   sessionKey: '',
   connected: false,
   connecting: false,
@@ -200,6 +202,7 @@ export function selectDynamicIslandTasks(tasks: AgentWorkspaceTask[], limit = 4)
 
 export function shouldShowDynamicIsland(input: {
   enabled: boolean;
+  preview?: boolean;
   mainMinimized: boolean;
   sessionRunning: boolean;
   voiceActive?: boolean;
@@ -209,6 +212,7 @@ export function shouldShowDynamicIsland(input: {
   terminalPulse: boolean;
 }): boolean {
   if (!input.enabled) return false;
+  if (input.preview) return true;
   if (input.resourceDrop) return true;
   if (!input.mainMinimized) return false;
   return Boolean(input.focus)

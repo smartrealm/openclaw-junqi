@@ -156,6 +156,7 @@ test('the island is conditional unless a file drag needs immediate feedback', ()
     terminalPulse: false,
   };
   assert.equal(shouldShowDynamicIsland(base), false);
+  assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], preview: true }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, mainMinimized: true }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], mainMinimized: true }), false);
   assert.equal(shouldShowDynamicIsland({
@@ -180,6 +181,7 @@ test('the island is conditional unless a file drag needs immediate feedback', ()
     resourceDrop: { phase: 'dragging', count: 1, labels: ['brief.pdf'] },
   }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, enabled: false, mainMinimized: true }), false);
+  assert.equal(shouldShowDynamicIsland({ ...base, enabled: false, preview: true }), false);
 });
 
 test('a plan advancing to the next step earns one peek', () => {
