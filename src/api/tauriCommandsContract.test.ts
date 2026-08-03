@@ -206,6 +206,8 @@ test('shared Gateway commands have one renderer invocation boundary', () => {
   assert.match(commands, /export const getGatewayProcessStatus = \(\) => invoke<GatewayProcessStatus>\('gateway_status'\)/);
   assert.match(commands, /export const getGatewayToken = \(\) => invoke<string>\('get_gateway_token'\)/);
   assert.match(commands, /export const repairOpenclaw = \(\) => invoke<boolean>\('repair_openclaw'\)/);
+  assert.match(commands, /invoke<void>\("approve_selected_gateway_device", \{ requestId \}\)/);
+  assert.match(appSource, /await approveSelectedGatewayDevice\(requestId\)/);
   assert.match(commands, /export const diagnoseGatewayRecovery = \(error: string\)/);
   assert.match(commands, /export const listGatewayRescueTargets/);
   assert.match(commands, /export const gatewayRescueChat/);

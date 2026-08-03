@@ -86,9 +86,29 @@ fn catalog_entry_is_installed(payload: &Value, channel: &str) -> bool {
 /// sole authority for which channel id maps to which reviewed npm package.
 fn catalog_payload_with_managed_install_capability(payload: &Value) -> Value {
     let mut catalog = payload.clone();
-    let Some(chat) = catalog.get_mut("chat").and_then(Value::as_object_mut) else {
-        return catalog;
-    };
+    if !catalog.is_object() {
+        catalog = json!({});
+    }
+    if catalog.get("chat").and_then(Value::as_object).is_none() {
+        catalog["chat"] = json!({});
+    }
+    let chat = catalog["chat"]
+        .as_object_mut()
+        .expect("chat catalog was normalized to an object");
+
+    // DingTalk is a reviewed JunQi-managed external plugin. OpenClaw does not
+    // list absent third-party plugins, so inject only this install capability;
+    // its schema, status, accounts and behavior remain unavailable until the
+    // selected runtime installs and reports the real plugin.
+    chat.entry(DINGTALK_CONNECTOR.channel_id.to_string())
+        .or_insert_with(|| {
+            json!({
+                "accounts": [],
+                "installed": false,
+                "origin": "installable"
+            })
+        });
+
     for (channel, entry) in chat {
         let Some(entry) = entry.as_object_mut() else {
             continue;
@@ -274,13 +294,16 @@ mod tests {
     fn catalog_exposes_managed_install_capability_without_exposing_package_selection() {
         let catalog = catalog_payload_with_managed_install_capability(&json!({
             "chat": {
-                "dingtalk-connector": { "installed": false },
                 "telegram": { "installed": false }
             }
         }));
         assert_eq!(
             catalog["chat"]["dingtalk-connector"]["managedInstall"],
             Value::Bool(true)
+        );
+        assert_eq!(
+            catalog["chat"]["dingtalk-connector"]["installed"],
+            Value::Bool(false)
         );
         assert!(catalog["chat"]["telegram"].get("managedInstall").is_none());
         assert!(

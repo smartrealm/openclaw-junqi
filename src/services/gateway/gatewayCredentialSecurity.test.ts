@@ -358,6 +358,55 @@ describe('Gateway credential security regression gates', () => {
     assert.deepEqual(approvedSocket.sent.map((message) => message.method), ['connect', 'wizard.start']);
   });
 
+  it('can retry privileged authorization immediately after JunQi confirms local approval', async () => {
+    resetSockets();
+    const requestPrivileged = createPrivilegedRequester(
+      sourceConnection(),
+      (connectionOptions) => new GatewayConnection(connectionOptions),
+      { pairingRetryMs: 60_000, pairingTimeoutMs: 120_000 },
+    );
+    let pairingSurfaced = false;
+    const unsubscribe = subscribePrivilegedAuthorizationIssues(() => {
+      pairingSurfaced = true;
+    });
+    const resultPromise = requestPrivileged('wizard.start', { mode: 'local' });
+    await waitForSocketCount(1);
+    const pairingSocket = MemoryWebSocket.instances[0];
+    pairingSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      pairingSocket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'pairing required',
+          details: { code: 'PAIRING_REQUIRED', requestId: 'local-approval' },
+        },
+      });
+    };
+    challenge(pairingSocket);
+    const issueDeadline = Date.now() + 2_000;
+    while (!pairingSurfaced && Date.now() < issueDeadline) await wait(5);
+    assert.equal(pairingSurfaced, true);
+
+    requestPrivileged.retryPairingNow();
+    await waitForSocketCount(2);
+    const approvedSocket = MemoryWebSocket.instances[1];
+    approvedSocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(approvedSocket, message, 'approved-immediately', ['operator.admin']);
+        return;
+      }
+      approvedSocket.receive({ type: 'res', id: message.id, ok: true, payload: { sessionId: 'wizard-1' } });
+    };
+    challenge(approvedSocket);
+
+    assert.deepEqual(await resultPromise, { sessionId: 'wizard-1' });
+    unsubscribe();
+    assert.deepEqual(approvedSocket.sent.map((message) => message.method), ['connect', 'wizard.start']);
+  });
+
   it('fails closed when the daily Gateway identity changes during privileged pairing', async () => {
     resetSockets();
     let connectionId = 'daily-connection';

@@ -283,7 +283,7 @@
     <div class="section-head"><span class="number">AUDIT</span><h2>关键风险处置状态</h2><p class="section-note">“已修复”表示源代码与自动化回归已经通过；不等于真实环境验收。FIG. 03 本轮变更仍需在 Windows、真实 OpenClaw Gateway、设备配对及 operator.admin scope 升级环境中验证。</p></div>
     <div class="risk-grid">
       <article class="risk resolved"><p class="level">代码已修复 · NATIVE ENDPOINT REUSE</p><h3>已认证 selected Native 服务不会在 Docker 释放检查中被提前拒绝</h3><p>Native 启动前的共享端口门禁现在区分“managed Docker owner”与“已接受 selected config/token 的非 Docker endpoint”。后者保持运行并交给 Native 启动链继续执行 token/config、健康与 service ownership 验证；未知端口占用、foreign config 和真正的 Docker owner 仍按原契约 fail-closed。自动化与本地 ARM64 构建通过，待用首次设置界面重试验证完整日志和页面推进。</p></article>
-      <article class="risk resolved"><p class="level">已修复 · CONCURRENCY</p><h3>开机自启交接期间锁定 Ready 导航</h3><p>自启动组件会将 busy 状态提升到 Ready 页；系统服务交接期间“上一步”和“进入仪表盘”均禁用，避免设置页与工作台同时操作 Gateway 生命周期。</p></article>
+      <article class="risk resolved"><p class="level">代码已修复 · READY NAVIGATION</p><h3>后台自启动偏好不再困住已就绪用户</h3><p>Gateway 已验证 Ready 后，自启动交接继续显示真实进度并锁定返回操作，但不再禁用“进入仪表盘”。进入动作仍重新验证 selected Gateway、配置与实时模型，后台偏好操作不能绕过完成门禁。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · WIZARD HANDOFF FENCING</p><h3>过期 Wizard 完成任务不得提交交接结果</h3><p>official-service handoff、交接后 Gateway probe、模型 live probe 与连接目标刷新之后均重新验证同一 Wizard operation identity。页面返回或新操作接管后，旧任务即使完成 Rust 交接，也不得修改设置 UI、进入 Ready 或继续后续探测。待 Windows 官方服务交接真机实测。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · RUNTIME CREDENTIAL / PROBE FENCING</p><h3>同端口 Native/Docker 不再共享设备凭据或完成条件</h3><p>后端为 selected runtime/config 输出非敏感 credential scope；设备 token 的预认证存储键绑定 scope + endpoint，Native 与 Docker 即使共用 127.0.0.1:18789 也不会读取对方 token，且 selected runtime 不再回退到无 scope 的旧 endpoint 凭据。模型 live probe 固定使用启动时的 selected config，并在 CLI 返回后复核 runtime mode 与 config path。待真实配对、模型调用和切换竞态实测。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · ATTESTED CREDENTIAL PROMOTION</p><h3>selected-scope token 仅向当前已证明 instance 提升</h3><p>collaboration instance 可用后，迁移事务读取 selected runtime token，先写入 instance key，再发布非敏感 endpoint alias，最后删除旧安全副本；每个不可逆边界均复核 verified connectionId、endpoint 与 runtimeId。身份漂移时不发布 alias、不删除来源，允许保留安全重复副本。待真实 Gateway instance 与 token rotation 实测。</p></article>
@@ -294,7 +294,9 @@
       <article class="risk resolved"><p class="level">代码已修复 · SETUP STATE OWNERSHIP</p><h3>刷新与缓存不再复用过期安装判断</h3><p>运行时刷新会重新读取 selected-runtime 配置并返回新的 onboarding requirement，再由页面选择 Ready 或官方 Wizard；任何非完成状态都经 app store 唯一入口删除持久完成标记，重启后不会继续消费同一失效缓存。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · CONFIRMED CANCELLATION</p><h3>显式取消先确认 IPC，再等待原生清理</h3><p>用户取消安装时保留当前 operation id，等待 Tauri 接受取消请求后再等待 npm、安装器或 Docker 原任务返回；IPC 失败留在当前页面并允许用同一 id 重试。普通页面离开只做单独命名的 best-effort run 失效，不再伪装成确认取消。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · DIAGNOSTIC REDACTION</p><h3>所有安装诊断 UI 入口统一清洗凭据</h3><p>Setup store 与本地展示边界统一清洗日志、错误、状态、步骤详情和继续操作错误中的 Authorization、命名 token/key/password、URL user-info、常见 secret token 与 JWT；官方 Wizard 步骤对象保持原样，不以清洗器改写 Runtime 所有的交互。</p></article>
-      <article class="risk resolved"><p class="level">代码已修复 · AUTHORIZATION DIAGNOSTICS</p><h3>保留 OpenClaw 结构化 scope 错误</h3><p>Gateway 现在保留 details.missingScope 与 details.requiredScopes，并将 MISSING_SCOPE 与 PAIRING_REQUIRED 分开传播；避免把 scope 拒绝误报成设备配对。已通过模拟协议响应测试，待真实 Gateway scope upgrade 实测。</p></article>
+      <article class="risk resolved"><p class="level">代码已修复 · DEVICE APPROVAL</p><h3>设备审批由用户确认后自动执行并恢复</h3><p>Gateway 保留结构化 requestId；本机 selected runtime 上，用户点击确认后 JunQi 通过官方 OpenClaw CLI 批准准确请求并立即唤醒原管理操作。手工命令与 Token 降为高级回退，等待预算不再被默认 30 秒 RPC 超时提前截断。待 Windows 真实 scope upgrade 复测。</p></article>
+      <article class="risk resolved"><p class="level">代码已修复 · CHANNEL LOADING</p><h3>渠道目录加载不再伪装为空结果</h3><p>OpenClaw 渠道目录与 runtime status 拥有独立 loading、骨架和失败状态；调用失败不再吞成空目录。未安装的受审 DingTalk connector 显示 managed install 入口，安装后的 schema、状态与账户仍由 selected runtime 权威返回。</p></article>
+      <article class="risk resolved"><p class="level">代码已修复 · GATEWAY REQUEST BINDING</p><h3>智能体首批数据请求保留连接 receiver</h3><p>session lifecycle 通过闭包调用 Gateway request，避免裸方法丢失 this.ws 后让智能体页加载失败。定向守护、完整前端测试和 Rust 库测试已通过，Windows 首次进入工作台仍待真机复测。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · SECRETREF CONNECTION</p><h3>连接前通过 OpenClaw 官方 resolver 解析 bootstrap token</h3><p>selected openclaw.json 未提供 literal token 时，FileReadResolver 调用 get_gateway_token，并由 OpenClaw secrets.resolve 临时解析 gateway.auth.token；解析失败仍保留 selected endpoint，禁止回退到旧 runtime 缓存。自动化测试已通过，待真实 env/file/exec SecretRef 后端验证。</p></article>
     </div>
     <div class="cards">
@@ -304,7 +306,7 @@
     </div>
   </section>
 
-  <footer><span>JunQi Desktop · First-run to Workspace</span><span>Updated code audit visualization · 2026-08-02</span></footer>
+  <footer><span>JunQi Desktop · First-run to Workspace</span><span>Updated code audit visualization · 2026-08-03</span></footer>
 </main>
 </body>
 </html>

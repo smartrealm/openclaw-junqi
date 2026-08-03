@@ -617,7 +617,9 @@ async function fetchSessions(): Promise<boolean> {
   const store = useGatewayDataStore.getState();
   store.setLoading('sessions', true);
   try {
-    const responses = await listOpenClawSessionLifecycle(ticket.connection.request);
+    const responses = await listOpenClawSessionLifecycle(
+      (method, params) => ticket.connection.request(method, params),
+    );
     if (!isCurrentGatewayRequest(ticket)) return false;
     const activeSnapshot = parseOpenClawSessionListSnapshot(responses.active);
     const archivedSnapshot = responses.archived === undefined

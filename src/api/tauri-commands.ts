@@ -393,6 +393,9 @@ export const repairSetupNodeRuntime = (operationId?: string) => (
 );
 export const checkGit = () => invoke<GitStatus>("check_git");
 export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");
+export const approveSelectedGatewayDevice = (requestId: string) => (
+  invoke<void>("approve_selected_gateway_device", { requestId })
+);
 export const checkOpenclawUpdate = () => invoke<OpenclawUpdateStatus>("check_openclaw_update");
 export const updateOpenclaw = () => invoke<OpenclawUpdateResult>("update_openclaw");
 export const repairOpenclaw = () => invoke<boolean>('repair_openclaw');

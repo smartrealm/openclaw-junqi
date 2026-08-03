@@ -19,7 +19,9 @@ plans/
 - [Setup onboarding 二次复审](installation/2026-07-20-setup-onboarding-second-pass.md)
 - [安装诊断完整性](installation/2026-07-21-install-diagnostics-completeness.md)
 - [Windows OpenClaw Wizard](installation/2026-07-23-openclaw-windows-wizard.md)
+- [Windows OpenClaw Wizard 可视化加固](installation/2026-08-03-windows-openclaw-wizard-visual-hardening.md)
 - [Windows 首次安装](installation/2026-07-24-openclaw-windows-first-run.md)
+- [设备审批与首次进入体验](installation/2026-08-03-device-approval-experience.md)
 - [首次安装底部操作区响应式修复](installation/2026-08-02-setup-footer-responsive-actions.md)
 - [Windows 卸载流程](installation/2026-07-26-windows-uninstall-flow.md)
 - [Setup runtime 与渠道兼容](installation/2026-07-27-setup-runtime-and-channel-compatibility.md)
@@ -31,6 +33,7 @@ plans/
 ## Collaboration
 
 - [本机 System Service 协作启用归属修复](collaboration/2026-07-31-local-system-service-collaboration-enablement.md)
+- [Agent Office 只读协作投影](collaboration/2026-08-03-agent-office-read-only-projection.md)
 
 ## Business
 
@@ -47,6 +50,7 @@ plans/
 - [会话分组与后台活动下钻](quality/2026-07-31-session-background-activity-drilldown.md)
 - [会话渠道来源呈现](quality/2026-07-31-session-channel-presentation.md)
 - [OpenClaw 原生会话体验对齐](quality/2026-08-02-openclaw-native-session-experience.md)
+- [Chat 流式渲染性能](quality/2026-08-03-chat-stream-rendering-performance.md)
 - [Tauri listener lifecycle](quality/2026-07-22-tauri-listener-lifecycle.md)
 - [Tauri command boundary](quality/2026-07-27-tauri-command-boundary.md)
 - [字体设置与 Orca 对齐](quality/2026-07-28-font-settings-orca-parity.md)

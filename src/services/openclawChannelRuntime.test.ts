@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildChannelSetupCommand,
+  channelErrorMessage,
   channelLinkMode,
   isOpenClawChannelIdentifier,
   normalizeOfficialChannelCapability,
@@ -11,6 +12,12 @@ import {
 } from './openclawChannelRuntime';
 
 describe('openclawChannelRuntime', () => {
+  test('formats structured runtime failures without relying on any-typed errors', () => {
+    assert.equal(channelErrorMessage({ message: 'Gateway unavailable' }), 'Gateway unavailable');
+    assert.equal(channelErrorMessage(new Error('Request failed')), 'Request failed');
+    assert.equal(channelErrorMessage('timeout'), 'timeout');
+  });
+
   test('normalizes the official dynamic catalog without a static allowlist', () => {
     const catalog = normalizeOfficialChannelCatalog({
       version: 'OpenClaw 2026.7.1',

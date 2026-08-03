@@ -280,6 +280,7 @@ export interface PrivilegedRequester {
   ): Promise<T>;
   cancelActiveRequest(): void;
   cancelPairingRetry(): void;
+  retryPairingNow(): void;
 }
 
 interface PrivilegedRequesterOptions {
@@ -403,6 +404,7 @@ export function createPrivilegedRequester(
 ): PrivilegedRequester {
   let lane: Promise<void> = Promise.resolve();
   let cancelActivePairingRetry: (() => void) | null = null;
+  let retryActivePairingNow: (() => void) | null = null;
   const pairingRetryMs = options.pairingRetryMs ?? 5_000;
   const pairingTimeoutMs = options.pairingTimeoutMs ?? 5 * 60_000;
 
@@ -483,8 +485,10 @@ export function createPrivilegedRequester(
     params: Record<string, unknown>,
     timeoutMs: number | null = 30_000,
     enqueuedAt = Date.now(),
+    rpcTimeoutMs: number | null = timeoutMs,
   ): Promise<T> => {
     const normalizedTimeoutMs = timeoutMs === null ? null : Math.max(1_000, timeoutMs);
+    const normalizedRpcTimeoutMs = rpcTimeoutMs === null ? null : Math.max(1_000, rpcTimeoutMs);
     const requestDeadline = normalizedTimeoutMs === null ? null : enqueuedAt + normalizedTimeoutMs;
     const remainingBudget = () => requestDeadline === null
       ? null
@@ -521,7 +525,12 @@ export function createPrivilegedRequester(
 
     try {
       for (;;) {
-        const attemptTimeoutMs = requireRemainingBudget();
+        const remainingBudgetMs = requireRemainingBudget();
+        const attemptTimeoutMs = remainingBudgetMs === null
+          ? normalizedRpcTimeoutMs
+          : normalizedRpcTimeoutMs === null
+            ? remainingBudgetMs
+            : Math.min(remainingBudgetMs, normalizedRpcTimeoutMs);
         assertSourceCurrent();
         const result = await attempt<T>(
           target,
@@ -552,32 +561,49 @@ export function createPrivilegedRequester(
           await Promise.resolve();
         } else {
           await new Promise<void>((resolve, reject) => {
-            const timer = window.setTimeout(resolve, pairingRetryMs);
-            cancelActivePairingRetry = () => {
+            let settled = false;
+            const finish = (outcome: 'retry' | 'cancel') => {
+              if (settled) return;
+              settled = true;
               window.clearTimeout(timer);
-              reject(new Error('Privileged Gateway authorization was cancelled'));
+              retryActivePairingNow = null;
+              if (outcome === 'retry') resolve();
+              else reject(new Error('Privileged Gateway authorization was cancelled'));
             };
+            const timer = window.setTimeout(() => finish('retry'), pairingRetryMs);
+            retryActivePairingNow = () => finish('retry');
+            cancelActivePairingRetry = () => finish('cancel');
           });
         }
         cancelActivePairingRetry = null;
+        retryActivePairingNow = null;
         assertSourceCurrent();
       }
     } finally {
       cancelActivePairingRetry = null;
+      retryActivePairingNow = null;
     }
   };
 
   const request = (<T>(method: string, params: Record<string, unknown>, timeoutMs?: number | null) => {
     const enqueuedAt = Date.now();
-    const normalizedTimeoutMs = timeoutMs === null
+    const rpcTimeoutMs = timeoutMs === null
       ? null
       : Math.max(1_000, timeoutMs ?? 30_000);
+    // Normal short queue deadlines remain exact. Interactive/admin operations
+    // with a regular request budget reserve an additional pairing window, but
+    // every connected RPC attempt still uses only the caller's original budget.
+    const normalizedTimeoutMs = rpcTimeoutMs === null
+      ? null
+      : rpcTimeoutMs >= 30_000
+        ? rpcTimeoutMs + pairingTimeoutMs
+        : rpcTimeoutMs;
     let expiredInQueue = false;
     const execution = lane.then(() => {
       if (expiredInQueue && normalizedTimeoutMs !== null) {
         throw requestTimeoutError(normalizedTimeoutMs);
       }
-      return execute<T>(method, params, normalizedTimeoutMs, enqueuedAt);
+      return execute<T>(method, params, normalizedTimeoutMs, enqueuedAt, rpcTimeoutMs);
     });
     lane = execution.then(() => undefined, () => undefined);
     if (normalizedTimeoutMs === null) return execution;
@@ -601,6 +627,7 @@ export function createPrivilegedRequester(
   }) as PrivilegedRequester;
   request.cancelActiveRequest = () => cancelActivePairingRetry?.();
   request.cancelPairingRetry = () => cancelActivePairingRetry?.();
+  request.retryPairingNow = () => retryActivePairingNow?.();
   return request;
 }
 
@@ -1166,5 +1193,6 @@ export const gateway = {
   cancelActivePrivilegedRequest() { requestPrivileged.cancelActiveRequest(); },
   cancelPrivilegedAuthorizationRetry() { requestPrivileged.cancelPairingRetry(); },
   cancelApprovalAuthorizationRetry() { requestApprovals.cancelPairingRetry(); },
+  retryPrivilegedAuthorizationNow() { requestPrivileged.retryPairingNow(); },
   reconnectWithToken(newToken: string) { connection.reconnectWithToken(newToken); },
 };

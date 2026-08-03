@@ -134,6 +134,7 @@ pub fn run() {
             commands::setup::repair_setup_node_runtime,
             commands::system::check_git,
             commands::system::check_openclaw,
+            commands::device_pairing::approve_selected_gateway_device,
             commands::openclaw_update::check_openclaw_update,
             commands::openclaw_update::update_openclaw,
             commands::system::open_folder,
