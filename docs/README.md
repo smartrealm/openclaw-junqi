@@ -183,6 +183,7 @@ docs/
 - [OpenClaw 原生技能目录字段对齐](quality/openclaw-native-skill-catalog-fidelity-2026-08-03.md)
 - [OpenClaw 技能归档上传能力对齐](quality/openclaw-skills-upload-parity-2026-08-03.md)
 - [OpenClaw 原生技能卡对齐](quality/openclaw-native-skill-card-alignment-2026-08-03.md)
+- [OpenClaw 原生技能生命周期对齐](quality/openclaw-native-skill-curator-alignment-2026-08-03.md)
 - [OpenClaw 原生审批对齐](quality/openclaw-native-approvals-alignment-2026-08-03.md)
 - [OpenClaw 审批最小权限对齐](quality/openclaw-approval-scope-alignment-2026-08-03.md)
 - [OpenClaw 原生任务账本对齐](quality/openclaw-native-task-ledger-alignment-2026-08-03.md)

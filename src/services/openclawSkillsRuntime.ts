@@ -86,12 +86,45 @@ export interface OpenClawSkillCard {
   content: string;
 }
 
+export type OpenClawSkillCuratorState = 'active' | 'stale' | 'archived';
+
+export interface OpenClawSkillCuratorEntry {
+  skillFile: string;
+  skillKey: string;
+  skillName: string;
+  state: OpenClawSkillCuratorState;
+  pinned: boolean;
+  createdAtMs: number;
+  stateChangedAtMs: number;
+  lastUsedAtMs: number | null;
+  useCount: number;
+  archivedReason: string | null;
+}
+
+export interface OpenClawSkillCuratorStatus {
+  lastAttemptAtMs: number | null;
+  lastSuccessAtMs: number | null;
+  lastError: string | null;
+  counts: Record<OpenClawSkillCuratorState, number>;
+  skills: OpenClawSkillCuratorEntry[];
+  overlaps: Array<{ left: string; right: string; score: number }>;
+}
+
 export class OpenClawSkillCardUnsupportedError extends Error {
   readonly code = 'OPENCLAW_SKILL_CARD_UNSUPPORTED';
 
   constructor() {
     super('The connected OpenClaw Gateway does not advertise skills.skillCard.');
     this.name = 'OpenClawSkillCardUnsupportedError';
+  }
+}
+
+export class OpenClawSkillCuratorUnsupportedError extends Error {
+  readonly code = 'OPENCLAW_SKILL_CURATOR_UNSUPPORTED';
+
+  constructor() {
+    super('The connected OpenClaw Gateway does not advertise skills.curator.status.');
+    this.name = 'OpenClawSkillCuratorUnsupportedError';
   }
 }
 
@@ -149,6 +182,10 @@ function text(value: unknown): string | undefined {
 
 function optionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function requiredFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function optionalInteger(value: unknown): number | undefined {
@@ -454,6 +491,82 @@ export function normalizeOpenClawSkillCard(
   return { skillKey, sizeBytes, content };
 }
 
+function normalizeOpenClawSkillCuratorEntry(value: unknown): OpenClawSkillCuratorEntry | null {
+  const entry = record(value);
+  const skillFile = text(entry?.skillFile);
+  const skillKey = text(entry?.skillKey);
+  const skillName = text(entry?.skillName);
+  const state = entry?.state;
+  const createdAtMs = requiredFiniteNumber(entry?.createdAtMs);
+  const stateChangedAtMs = requiredFiniteNumber(entry?.stateChangedAtMs);
+  const lastUsedAtMs = entry?.lastUsedAtMs;
+  const useCount = requiredFiniteNumber(entry?.useCount);
+  const archivedReason = entry?.archivedReason;
+  if (
+    !skillFile
+    || !skillKey
+    || !skillName
+    || (state !== 'active' && state !== 'stale' && state !== 'archived')
+    || typeof entry?.pinned !== 'boolean'
+    || createdAtMs === null
+    || stateChangedAtMs === null
+    || (lastUsedAtMs !== null && requiredFiniteNumber(lastUsedAtMs) === null)
+    || useCount === null
+    || (archivedReason !== null && typeof archivedReason !== 'string')
+  ) return null;
+  return {
+    skillFile,
+    skillKey,
+    skillName,
+    state,
+    pinned: entry.pinned,
+    createdAtMs,
+    stateChangedAtMs,
+    lastUsedAtMs: lastUsedAtMs === null ? null : requiredFiniteNumber(lastUsedAtMs)!,
+    useCount,
+    archivedReason: archivedReason as string | null,
+  };
+}
+
+export function normalizeOpenClawSkillCuratorStatus(payload: unknown): OpenClawSkillCuratorStatus | null {
+  const root = record(payload);
+  const counts = record(root?.counts);
+  const lastAttemptAtMs = root?.lastAttemptAtMs;
+  const lastSuccessAtMs = root?.lastSuccessAtMs;
+  const lastError = root?.lastError;
+  if (
+    !root
+    || !counts
+    || !Array.isArray(root.skills)
+    || !Array.isArray(root.overlaps)
+    || (lastAttemptAtMs !== null && requiredFiniteNumber(lastAttemptAtMs) === null)
+    || (lastSuccessAtMs !== null && requiredFiniteNumber(lastSuccessAtMs) === null)
+    || (lastError !== null && typeof lastError !== 'string')
+  ) return null;
+  const active = requiredFiniteNumber(counts.active);
+  const stale = requiredFiniteNumber(counts.stale);
+  const archived = requiredFiniteNumber(counts.archived);
+  if (active === null || stale === null || archived === null) return null;
+  const skills = root.skills.map(normalizeOpenClawSkillCuratorEntry);
+  if (skills.some((skill) => skill === null)) return null;
+  const overlaps = root.overlaps.map((value) => {
+    const overlap = record(value);
+    const left = text(overlap?.left);
+    const right = text(overlap?.right);
+    const score = requiredFiniteNumber(overlap?.score);
+    return left && right && score !== null ? { left, right, score } : null;
+  });
+  if (overlaps.some((overlap) => overlap === null)) return null;
+  return {
+    lastAttemptAtMs: lastAttemptAtMs === null ? null : requiredFiniteNumber(lastAttemptAtMs)!,
+    lastSuccessAtMs: lastSuccessAtMs === null ? null : requiredFiniteNumber(lastSuccessAtMs)!,
+    lastError: lastError as string | null,
+    counts: { active, stale, archived },
+    skills: skills as OpenClawSkillCuratorEntry[],
+    overlaps: overlaps as Array<{ left: string; right: string; score: number }>,
+  };
+}
+
 function requiredIdentifier(value: string, label: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${label} is required.`);
@@ -552,6 +665,10 @@ function requiredUploadResult(payload: unknown, operation: string): OpenClawSkil
 
 export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) {
   return {
+    curatorStatusCapability(): boolean | null {
+      return client.hasAdvertisedMethod?.('skills.curator.status') ?? null;
+    },
+
     skillCardCapability(): boolean | null {
       return client.hasAdvertisedMethod?.('skills.skillCard') ?? null;
     },
@@ -617,6 +734,15 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
       }), normalizedSkillKey);
       if (!card) throw new Error('OpenClaw returned an invalid skill card response.');
       return card;
+    },
+
+    async curatorStatus(): Promise<OpenClawSkillCuratorStatus> {
+      if (client.hasAdvertisedMethod?.('skills.curator.status') === false) {
+        throw new OpenClawSkillCuratorUnsupportedError();
+      }
+      const status = normalizeOpenClawSkillCuratorStatus(await client.call('skills.curator.status', {}));
+      if (!status) throw new Error('OpenClaw returned an invalid skill curator status response.');
+      return status;
     },
 
     async installFromClawHub(request: OpenClawSkillInstallRequest): Promise<OpenClawSkillInstallResult> {

@@ -3,8 +3,10 @@ import test from 'node:test';
 import {
   createOpenClawSkillsRuntime,
   OpenClawSkillCardUnsupportedError,
+  OpenClawSkillCuratorUnsupportedError,
   SKILL_ARCHIVE_CHUNK_BYTES,
   normalizeOpenClawSkillCard,
+  normalizeOpenClawSkillCuratorStatus,
   normalizeOpenClawSkillDetail,
   normalizeOpenClawSkillSearch,
   normalizeOpenClawSkillSecurityVerdicts,
@@ -134,6 +136,37 @@ test('normalizes only the documented native skill-card envelope', () => {
     sizeBytes: -1,
     content: 'x',
   }, 'weather'), null);
+});
+
+test('normalizes only the complete documented native curator status', () => {
+  const status = {
+    lastAttemptAtMs: 10,
+    lastSuccessAtMs: 9,
+    lastError: null,
+    counts: { active: 1, stale: 0, archived: 0 },
+    skills: [{
+      skillFile: '/workspace/skills/weather/SKILL.md',
+      skillKey: 'weather',
+      skillName: 'Weather',
+      state: 'active',
+      pinned: false,
+      createdAtMs: 1,
+      stateChangedAtMs: 2,
+      lastUsedAtMs: null,
+      useCount: 3,
+      archivedReason: null,
+    }],
+    overlaps: [{ left: 'weather', right: 'forecast', score: 0.8 }],
+  };
+  assert.deepEqual(normalizeOpenClawSkillCuratorStatus(status), status);
+  assert.equal(normalizeOpenClawSkillCuratorStatus({
+    ...status,
+    skills: [{ ...status.skills[0], state: 'unknown' }],
+  }), null);
+  assert.equal(normalizeOpenClawSkillCuratorStatus({
+    ...status,
+    overlaps: [{ left: 'weather', right: 'forecast', score: '0.8' }],
+  }), null);
 });
 
 test('normalizes the native security verdict envelope without inventing verdicts', () => {
@@ -298,6 +331,60 @@ test('does not request skill cards that the Gateway explicitly does not advertis
 
   assert.equal(runtime.skillCardCapability(), false);
   await assert.rejects(runtime.skillCard('weather'), OpenClawSkillCardUnsupportedError);
+  assert.equal(calls, 0);
+});
+
+test('reads curator status through the read-only Gateway method', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const runtime = createOpenClawSkillsRuntime({
+    async call(method, params = {}) {
+      calls.push({ method, params });
+      return {
+        lastAttemptAtMs: null,
+        lastSuccessAtMs: 9,
+        lastError: null,
+        counts: { active: 1, stale: 0, archived: 0 },
+        skills: [],
+        overlaps: [],
+      };
+    },
+    async callPrivileged() {
+      return { ok: true };
+    },
+    hasAdvertisedMethod(method) {
+      return method === 'skills.curator.status';
+    },
+  });
+
+  assert.equal(runtime.curatorStatusCapability(), true);
+  assert.deepEqual(await runtime.curatorStatus(), {
+    lastAttemptAtMs: null,
+    lastSuccessAtMs: 9,
+    lastError: null,
+    counts: { active: 1, stale: 0, archived: 0 },
+    skills: [],
+    overlaps: [],
+  });
+  assert.deepEqual(calls, [{ method: 'skills.curator.status', params: {} }]);
+});
+
+test('does not request curator status that the Gateway explicitly does not advertise', async () => {
+  let calls = 0;
+  const runtime = createOpenClawSkillsRuntime({
+    async call() {
+      calls += 1;
+      return {};
+    },
+    async callPrivileged() {
+      return { ok: true };
+    },
+    hasAdvertisedMethod() {
+      return false;
+    },
+  });
+
+  assert.equal(runtime.curatorStatusCapability(), false);
+  await assert.rejects(runtime.curatorStatus(), OpenClawSkillCuratorUnsupportedError);
   assert.equal(calls, 0);
 });
 

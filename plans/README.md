@@ -96,6 +96,7 @@ plans/
 - [OpenClaw 原生技能目录字段对齐](quality/2026-08-03-openclaw-native-skill-catalog-fidelity.md)
 - [OpenClaw 技能归档上传](quality/2026-08-03-openclaw-skills-upload.md)
 - [OpenClaw 原生技能卡对齐](quality/2026-08-03-openclaw-native-skill-card.md)
+- [OpenClaw 原生技能生命周期对齐](quality/2026-08-03-openclaw-native-skill-curator.md)
 - [OpenClaw 原生审批](quality/2026-08-03-openclaw-native-approvals.md)
 - [OpenClaw 审批最小权限对齐](quality/2026-08-03-openclaw-approval-scope-alignment.md)
 - [OpenClaw 原生任务账本](quality/2026-08-03-openclaw-native-task-ledger.md)

@@ -49,6 +49,8 @@ Gateway 页面。`skills.securityVerdicts` 仅覆盖已安装且有 ClawHub 链�
 
 `skills.skillCard` 已在已安装列表独立接入，且只显示其官方返回的纯文本内容；具体的协议、
 路径处理和验证边界见 [OpenClaw 原生技能卡对齐](openclaw-native-skill-card-alignment-2026-08-03.md)。
+`skills.curator.status` 同样只读接入，不能与本地 SkillHub 或 curator 写操作混淆；具体边界见
+[OpenClaw 原生技能生命周期对齐](openclaw-native-skill-curator-alignment-2026-08-03.md)。
 
 ## 验证
 

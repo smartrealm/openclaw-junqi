@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
-import { X, Copy, ExternalLink, Download, MessageSquare, FileText, BadgeCheck, BookOpenText, CheckCircle2, ShieldAlert, ShieldCheck, Star } from 'lucide-react';
+import { X, Copy, ExternalLink, Download, MessageSquare, FileText, BadgeCheck, BookOpenText, CheckCircle2, ShieldAlert, ShieldCheck, Star, Pin } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
@@ -36,6 +36,11 @@ export interface MySkill extends SkillPersonaFields {
   security?: {
     passed: boolean | null | undefined;
     decision: string;
+  };
+  curator?: {
+    state: 'active' | 'stale' | 'archived';
+    pinned: boolean;
+    useCount: number;
   };
 }
 
@@ -119,6 +124,29 @@ function SourceBadge({ source }: { source: string }) {
   );
 }
 
+function CuratorBadge({ curator }: { curator: NonNullable<MySkill['curator']> }) {
+  const { t } = useTranslation();
+  const style = curator.state === 'active'
+    ? 'border-aegis-success/20 bg-aegis-success/[0.07] text-aegis-success'
+    : curator.state === 'stale'
+      ? 'border-aegis-warning/20 bg-aegis-warning/[0.07] text-aegis-warning'
+      : 'border-aegis-text-dim/20 bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim';
+  const label = curator.state === 'active'
+    ? t('skillsExtra.curatorActive', 'Active')
+    : curator.state === 'stale'
+      ? t('skillsExtra.curatorStale', 'Stale')
+      : t('skillsExtra.curatorArchived', 'Archived');
+  return (
+    <span
+      className={clsx('inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold', style)}
+      title={t('skillsExtra.curatorUseCount', '{{count}} uses', { count: curator.useCount })}
+    >
+      {curator.pinned && <Pin size={9} aria-hidden="true" />}
+      {label}
+    </span>
+  );
+}
+
 /** Color bar palette — matches CronMonitor style */
 const SKILL_COLORS = [
   'rgb(var(--aegis-data-1))',
@@ -196,6 +224,7 @@ export function MySkillRow({ skill, onToggle, onViewCard, index = 0 }: {
         <div className="text-[10px] text-aegis-text-muted flex items-center gap-2 flex-wrap">
           <span className="truncate max-w-[260px]">{skill.description}</span>
           <SourceBadge source={skill.source} />
+          {skill.curator && <CuratorBadge curator={skill.curator} />}
           {skill.security?.passed === true && (
             <span
               className="inline-flex items-center text-aegis-success"

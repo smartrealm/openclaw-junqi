@@ -2588,7 +2588,14 @@
     "viewSkillCard": "View skill card",
     "skillCardTitle": "Skill card",
     "skillCardPending": "Waiting for OpenClaw response",
-    "skillCardSize": "{{size}} bytes"
+    "skillCardSize": "{{size}} bytes",
+    "curatorTitle": "Skill lifecycle",
+    "curatorActive": "Active",
+    "curatorStale": "Stale",
+    "curatorArchived": "Archived",
+    "curatorUseCount": "{{count}} uses",
+    "curatorOverlaps": "{{count}} overlap candidates",
+    "curatorUnavailable": "Skill lifecycle status unavailable"
   },
   "settingsTheme": {
     "dark": "Dark Mode",

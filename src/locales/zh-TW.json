@@ -2555,7 +2555,14 @@
     "viewSkillCard": "查看技能卡",
     "skillCardTitle": "技能卡",
     "skillCardPending": "等待 OpenClaw 回應",
-    "skillCardSize": "{{size}} 位元組"
+    "skillCardSize": "{{size}} 位元組",
+    "curatorTitle": "技能生命週期",
+    "curatorActive": "活躍",
+    "curatorStale": "陳舊",
+    "curatorArchived": "已封存",
+    "curatorUseCount": "使用 {{count}} 次",
+    "curatorOverlaps": "{{count}} 個重疊候選",
+    "curatorUnavailable": "技能生命週期狀態不可用"
   },
   "settingsTheme": {
     "dark": "深色模式",

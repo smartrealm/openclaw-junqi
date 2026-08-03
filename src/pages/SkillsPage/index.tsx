@@ -8,6 +8,8 @@ import {
   openClawSkillsRuntime,
   type OpenClawSkill,
   type OpenClawSkillCard,
+  type OpenClawSkillCuratorEntry,
+  type OpenClawSkillCuratorStatus,
   type OpenClawSkillDetail,
   type OpenClawSkillSearchResult,
   type OpenClawSkillSecurityVerdict,
@@ -34,7 +36,18 @@ function skillIcon() {
   return <Puzzle size={15} strokeWidth={1.75} aria-hidden="true" />;
 }
 
-function toMySkill(skill: OpenClawSkill, verdict?: OpenClawSkillSecurityVerdict): MySkill {
+function curatorEntryForSkill(
+  skill: OpenClawSkill,
+  entries: OpenClawSkillCuratorEntry[],
+): OpenClawSkillCuratorEntry | undefined {
+  return entries.find((entry) => entry.skillKey === skill.key);
+}
+
+function toMySkill(
+  skill: OpenClawSkill,
+  verdict?: OpenClawSkillSecurityVerdict,
+  curator?: OpenClawSkillCuratorEntry,
+): MySkill {
   return {
     slug: skill.key,
     name: skill.name,
@@ -47,6 +60,13 @@ function toMySkill(skill: OpenClawSkill, verdict?: OpenClawSkillSecurityVerdict)
       security: {
         passed: verdict.securityPassed,
         decision: verdict.decision,
+      },
+    } : {}),
+    ...(curator ? {
+      curator: {
+        state: curator.state,
+        pinned: curator.pinned,
+        useCount: curator.useCount,
       },
     } : {}),
   };
@@ -114,6 +134,7 @@ export function SkillsPage() {
   const connected = useChatStore((state) => state.connected);
   const archiveUploadCapability = openClawSkillsRuntime.archiveUploadCapability();
   const skillCardCapability = openClawSkillsRuntime.skillCardCapability();
+  const curatorStatusCapability = openClawSkillsRuntime.curatorStatusCapability();
   const [activeTab, setActiveTab] = useState<SkillsTab>('installed');
   const [installed, setInstalled] = useState<MySkill[]>([]);
   const [catalog, setCatalog] = useState<HubSkill[]>([]);
@@ -122,6 +143,8 @@ export function SkillsPage() {
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [securityError, setSecurityError] = useState<string | null>(null);
+  const [curatorStatus, setCuratorStatus] = useState<OpenClawSkillCuratorStatus | null>(null);
+  const [curatorError, setCuratorError] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<SkillDetail | null>(null);
@@ -137,19 +160,30 @@ export function SkillsPage() {
     if (!connected) return;
     setLoadingInstalled(true);
     setSecurityError(null);
+    setCuratorError(null);
     try {
-      const [skillsResult, verdictResult] = await Promise.allSettled([
+      const [skillsResult, verdictResult, curatorResult] = await Promise.allSettled([
         openClawSkillsRuntime.list(),
         openClawSkillsRuntime.securityVerdicts(),
+        curatorStatusCapability === false
+          ? Promise.resolve(null)
+          : openClawSkillsRuntime.curatorStatus(),
       ]);
       if (skillsResult.status === 'rejected') throw skillsResult.reason;
       const verdicts = verdictResult.status === 'fulfilled' ? verdictResult.value : [];
+      const curator = curatorResult.status === 'fulfilled' ? curatorResult.value : null;
       setSecurityError(verdictResult.status === 'rejected' ? operationError(verdictResult.reason) : null);
-      setInstalled(skillsResult.value.map((skill) => toMySkill(skill, verdictForSkill(skill, verdicts))));
+      setCuratorStatus(curator);
+      setCuratorError(curatorResult.status === 'rejected' ? operationError(curatorResult.reason) : null);
+      setInstalled(skillsResult.value.map((skill) => toMySkill(
+        skill,
+        verdictForSkill(skill, verdicts),
+        curator ? curatorEntryForSkill(skill, curator.skills) : undefined,
+      )));
     } finally {
       setLoadingInstalled(false);
     }
-  }, [connected]);
+  }, [connected, curatorStatusCapability]);
 
   const loadCatalog = useCallback(async (nextQuery = query) => {
     if (!connected) return;
@@ -334,12 +368,41 @@ export function SkillsPage() {
             {archiveUploadCapability !== false && (
               <SkillArchiveUploadPanel connected={connected} onInstalled={loadInstalled} />
             )}
+            {curatorStatus && (
+              <div className="mb-4 border-y border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.015)] px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-[11px] font-semibold text-aegis-text-secondary">
+                    {t('skillsExtra.curatorTitle', 'Skill lifecycle')}
+                  </p>
+                  <div className="flex items-center gap-3 text-[10px] text-aegis-text-dim">
+                    <span>{t('skillsExtra.curatorActive', 'Active')}: {curatorStatus.counts.active}</span>
+                    <span>{t('skillsExtra.curatorStale', 'Stale')}: {curatorStatus.counts.stale}</span>
+                    <span>{t('skillsExtra.curatorArchived', 'Archived')}: {curatorStatus.counts.archived}</span>
+                    {curatorStatus.overlaps.length > 0 && (
+                      <span>{t('skillsExtra.curatorOverlaps', '{{count}} overlap candidates', { count: curatorStatus.overlaps.length })}</span>
+                    )}
+                  </div>
+                </div>
+                {curatorStatus.lastError && (
+                  <p className="mt-2 break-words text-[10px] text-aegis-warning">{curatorStatus.lastError}</p>
+                )}
+              </div>
+            )}
             {securityError && (
               <div className="mb-4 flex items-start gap-2 border-s-2 border-aegis-warning/60 bg-aegis-warning/[0.04] px-4 py-3 text-[12px] text-aegis-text-secondary">
                 <ShieldAlert size={14} className="mt-0.5 shrink-0 text-aegis-warning" aria-hidden="true" />
                 <div className="min-w-0">
                   <p>{t('skillsExtra.securityUnavailable', 'Security verdict unavailable')}</p>
                   <p className="mt-1 break-words text-[11px] text-aegis-text-dim">{securityError}</p>
+                </div>
+              </div>
+            )}
+            {curatorError && (
+              <div className="mb-4 flex items-start gap-2 border-s-2 border-aegis-warning/60 bg-aegis-warning/[0.04] px-4 py-3 text-[12px] text-aegis-text-secondary">
+                <ShieldAlert size={14} className="mt-0.5 shrink-0 text-aegis-warning" aria-hidden="true" />
+                <div className="min-w-0">
+                  <p>{t('skillsExtra.curatorUnavailable', 'Skill lifecycle status unavailable')}</p>
+                  <p className="mt-1 break-words text-[11px] text-aegis-text-dim">{curatorError}</p>
                 </div>
               </div>
             )}

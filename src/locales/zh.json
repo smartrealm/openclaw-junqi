@@ -2586,7 +2586,14 @@
     "viewSkillCard": "查看技能卡",
     "skillCardTitle": "技能卡",
     "skillCardPending": "等待 OpenClaw 返回",
-    "skillCardSize": "{{size}} 字节"
+    "skillCardSize": "{{size}} 字节",
+    "curatorTitle": "技能生命周期",
+    "curatorActive": "活跃",
+    "curatorStale": "陈旧",
+    "curatorArchived": "已归档",
+    "curatorUseCount": "使用 {{count}} 次",
+    "curatorOverlaps": "{{count}} 个重叠候选",
+    "curatorUnavailable": "技能生命周期状态不可用"
   },
   "settingsTheme": {
     "dark": "深色模式",
