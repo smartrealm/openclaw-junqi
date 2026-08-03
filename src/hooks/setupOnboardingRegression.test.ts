@@ -150,7 +150,7 @@ test('BUG-ONB-37 dashboard completion revalidates Gateway, config, and model bef
   assert.match(entry, /dashboardEntryInFlightRef\.current/);
 });
 
-test('BUG-ONB-38 Ready navigation is locked during either autostart operation and final Gateway verification', () => {
+test('BUG-PAIR-03 Ready entry is not blocked by background autostart preference work', () => {
   const readyFile = screen('ReadyScreen');
   const ready = readyFile.slice(readyFile.indexOf('function ReadyScreen'));
   const autostart = readyFile.slice(
@@ -159,9 +159,11 @@ test('BUG-ONB-38 Ready navigation is locked during either autostart operation an
   );
 
   assert.match(autostart, /onOperationStateChange\(busy\)/);
-  assert.match(ready, /blockNavigation = gatewayAutostartBusy \|\| appAutostartBusy \|\| flow\.enteringDashboard/);
-  assert.match(ready, /previousAction=\{\{ onClick: flow\.goBack, disabled: blockNavigation \}\}/);
-  assert.match(ready, /disabled: blockNavigation/);
+  assert.match(ready, /const blockNavigation = flow\.enteringDashboard/);
+  assert.match(ready, /disabled: blockNavigation \|\| gatewayAutostartBusy \|\| appAutostartBusy/);
+  const nextAction = ready.slice(ready.indexOf('nextAction={{'), ready.indexOf('>\n      <div'));
+  assert.match(nextAction, /disabled: blockNavigation/);
+  assert.doesNotMatch(nextAction, /gatewayAutostartBusy|appAutostartBusy/);
 });
 
 test('BUG-ONB-35 notification permission waits until onboarding is complete', () => {

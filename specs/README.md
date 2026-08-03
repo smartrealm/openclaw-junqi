@@ -20,6 +20,7 @@ specs/
 - [Windows OpenClaw Wizard](installation/2026-07-23-openclaw-windows-wizard-bugfix.md)
 - [Windows OpenClaw Wizard 可视化加固](installation/2026-08-03-windows-openclaw-wizard-visual-hardening.md)
 - [Windows 首次安装](installation/2026-07-24-openclaw-windows-first-run-bugfix.md)
+- [设备审批与首次进入体验](installation/2026-08-03-device-approval-experience.md)
 - [首次安装底部操作区响应式修复](installation/2026-08-02-setup-footer-responsive-actions.md)
 - [Windows 卸载流程](installation/2026-07-26-windows-uninstall-flow-bugfix.md)
 - [Setup runtime 与渠道兼容](installation/2026-07-27-setup-runtime-and-channel-compatibility.md)

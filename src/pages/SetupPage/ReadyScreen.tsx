@@ -243,7 +243,11 @@ export function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] 
   const { t } = useTranslation();
   const [gatewayAutostartBusy, setGatewayAutostartBusy] = useState(false);
   const [appAutostartBusy, setAppAutostartBusy] = useState(false);
-  const blockNavigation = gatewayAutostartBusy || appAutostartBusy || flow.enteringDashboard;
+  // Ready means the selected Gateway has already passed setup verification.
+  // Background preference handoff must remain observable, but it must not trap
+  // the user on this screen; entering the workspace performs its own final
+  // identity probe and can safely proceed while a preference operation settles.
+  const blockNavigation = flow.enteringDashboard;
   const settledCount = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || settledCount || 1;
 
@@ -253,7 +257,10 @@ export function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] 
       title={t("setup.ready")}
       subtitle={t("setup.readySubtitle")}
       logs={logs}
-      previousAction={{ onClick: flow.goBack, disabled: blockNavigation }}
+      previousAction={{
+        onClick: flow.goBack,
+        disabled: blockNavigation || gatewayAutostartBusy || appAutostartBusy,
+      }}
       nextAction={{
         label: flow.enteringDashboard
           ? t("setup.verifyingDashboardEntry", "正在验证 Gateway…")

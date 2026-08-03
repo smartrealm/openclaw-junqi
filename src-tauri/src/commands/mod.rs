@@ -14,6 +14,7 @@ pub mod app_settings;
 pub mod builtin_skills;
 pub mod config;
 pub mod console;
+pub mod device_pairing;
 pub mod diagnostic_output;
 pub(crate) mod directory_transaction;
 pub mod docker;
