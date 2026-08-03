@@ -385,12 +385,12 @@
   background: var(--wb-editor);
 }
 
-.junqi-wb-tab.is-active::before {
+.junqi-wb-tab-indicator {
   position: absolute;
+  z-index: 1;
   inset: 0 0 auto;
   height: 1px;
   background: var(--wb-primary);
-  content: "";
 }
 
 .junqi-wb-tab-close {
@@ -449,6 +449,14 @@
   min-height: 0;
   flex: 1;
   overflow: hidden;
+}
+
+.junqi-wb-pane-transition {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
 }
 
 .junqi-wb-split-handle {
@@ -612,12 +620,23 @@
   color: var(--wb-text);
 }
 
-.junqi-wb-right-header nav button.is-active::after {
+.junqi-wb-right-tab-indicator {
   position: absolute;
   inset: auto 7px 0;
   height: 1px;
   background: var(--wb-primary);
-  content: "";
+}
+
+.junqi-wb-right-header nav button,
+.junqi-wb-tab-select {
+  transition:
+    color var(--aegis-duration-normal) var(--aegis-ease-standard),
+    transform var(--aegis-duration-normal) var(--aegis-ease-standard);
+}
+
+.junqi-wb-right-header nav button:active,
+.junqi-wb-tab-select:active {
+  transform: scale(0.98);
 }
 
 .junqi-wb-right-header nav button span {
@@ -635,8 +654,10 @@
   line-height: 13px;
 }
 
+.junqi-wb-panel-transition,
 .junqi-wb-panel-content {
   display: flex;
+  min-height: 0;
   flex: 1;
   flex-direction: column;
 }

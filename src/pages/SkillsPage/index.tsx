@@ -6,6 +6,8 @@ import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
+import { PageTransition } from '@/components/shared/PageTransition';
 import {
   openClawSkillsRuntime,
   type OpenClawSkill,
@@ -539,26 +541,35 @@ export function SkillsPage() {
   ], [installed.length, proposalsCapability, t]);
 
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden">
+    <PageTransition className="flex-1 overflow-y-auto overflow-x-hidden">
       <div className="mx-auto max-w-[900px] px-9 py-8 pb-16">
         <header className="mb-6 flex items-center gap-3">
           <Puzzle size={20} className="text-aegis-primary" aria-hidden="true" />
           <h1 className="text-[21px] font-bold">{t('skills.title')}</h1>
         </header>
 
-        <nav className="mb-7 inline-flex gap-0.5 rounded-xl border border-[rgb(var(--aegis-overlay)/0.05)] p-[3px]" aria-label={t('skills.title')}>
+        <nav className="mb-7 inline-flex gap-0.5 rounded-xl border border-[rgb(var(--aegis-overlay)/0.05)] p-[3px]" role="tablist" aria-label={t('skills.title')}>
           {tabItems.map((tab) => (
             <button
               key={tab.id}
               type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
-                'flex items-center gap-2 rounded-[9px] px-5 py-2.5 text-[13px] font-medium transition-colors',
+                'relative isolate flex items-center gap-2 rounded-[9px] px-5 py-2.5 text-[13px] font-medium',
+                'transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98]',
                 activeTab === tab.id
-                  ? 'bg-aegis-primary/[0.08] font-semibold text-aegis-primary'
+                  ? 'font-semibold text-aegis-primary'
                   : 'text-aegis-text-muted hover:text-aegis-text-secondary',
               )}
             >
+              {activeTab === tab.id && (
+                <ActiveTabIndicator
+                  layoutId="skills-active-tab"
+                  className="inset-0 -z-10 rounded-[9px] bg-aegis-primary/[0.08]"
+                />
+              )}
               <tab.icon size={14} aria-hidden="true" />
               {tab.label}
               {tab.count !== undefined && (
@@ -570,8 +581,10 @@ export function SkillsPage() {
           ))}
         </nav>
 
+        <AnimatedTabPanel transitionKey={activeTab}>
         {activeTab === 'installed' && (
           <section>
+            <SkillArchiveUploadPanel connected={connected} onInstalled={loadInstalled} />
             <div className="mb-4 flex items-center justify-between gap-4">
               <p className="text-[11px] text-aegis-text-dim">
                 {installed.length > 0 ? t('skills.installedCount', { count: installed.length }) : t('skills.noSkillsHint')}
@@ -686,7 +699,6 @@ export function SkillsPage() {
             )}
           </section>
         )}
-
         {activeTab === 'proposals' && (
           <section>
             <div className="mb-4 flex items-center justify-between gap-4">
@@ -795,6 +807,7 @@ export function SkillsPage() {
             )}
           </section>
         )}
+        </AnimatedTabPanel>
       </div>
 
       <SkillDetailPanel
@@ -836,6 +849,6 @@ export function SkillsPage() {
           ? { onLoadMore: () => void loadProposalEvents(proposalEventsProposal, proposalEventsNextSequence) }
           : {})}
       />
-    </div>
+    </PageTransition>
   );
 }

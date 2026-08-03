@@ -724,7 +724,7 @@ export function ToolsTab({ config, onChange }: ToolsTabProps) {
 
   if (error || Object.keys(fields).length === 0) {
     return (
-      <>
+      <div className="space-y-4">
         <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
           {t(
             'config.runtimeSchemaRequired',
@@ -735,12 +735,13 @@ export function ToolsTab({ config, onChange }: ToolsTabProps) {
         <ToolsCatalogPanel />
         <EffectiveToolsPanel />
         <ToolInvokePanel />
-      </>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="space-y-4">
+      <ToolsCatalogPanel />
       <div className="rounded-xl border border-aegis-border bg-aegis-elevated p-4">
         <p className="mb-3 text-xs text-aegis-text-muted">
           {t('config.runtimeSchemaAuthorityHint', 'Fields and accepted values come from the selected OpenClaw Runtime.')}
@@ -753,10 +754,9 @@ export function ToolsTab({ config, onChange }: ToolsTabProps) {
           onChange={(tools) => onChange((prev) => ({ ...prev, tools }))}
         />
       </div>
-      <ToolsCatalogPanel />
       <EffectiveToolsPanel />
       <ToolInvokePanel />
-    </>
+    </div>
   );
 }
 

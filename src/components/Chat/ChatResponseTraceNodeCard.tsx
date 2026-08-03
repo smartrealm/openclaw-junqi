@@ -111,7 +111,21 @@ function TraceNodeDetails({ node }: { node: ChatResponseTraceNode }) {
     return <div className="mt-2 space-y-1 text-[10px] text-aegis-text-muted">{node.files.map((file, index) => <div key={`${file.path}-${index}`} className="break-all font-mono">{file.path}</div>)}</div>;
   }
   if (node.kind === 'message') {
-    return <p className="mt-2 text-[10.5px] text-aegis-text-muted">{t('chat.trace.characterCount', { count: node.characterCount })}</p>;
+    return (
+      <div className="mt-2 space-y-1.5 text-[10.5px] text-aegis-text-muted">
+        <p>{t('chat.trace.characterCount', { count: node.characterCount })}</p>
+        {node.context && (
+          <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md bg-[rgb(var(--aegis-overlay)/0.04)] px-2 py-1.5 font-mono text-[9.5px]">
+            {node.context.model && <><dt className="text-aegis-text-dim">{t('chat.trace.model')}</dt><dd className="break-words">{node.context.model}</dd></>}
+            {node.context.input !== undefined && <><dt className="text-aegis-text-dim">{t('chat.trace.inputTokens')}</dt><dd>{node.context.input}</dd></>}
+            {node.context.output !== undefined && <><dt className="text-aegis-text-dim">{t('chat.trace.outputTokens')}</dt><dd>{node.context.output}</dd></>}
+            {node.context.cacheRead !== undefined && <><dt className="text-aegis-text-dim">{t('chat.trace.cacheRead')}</dt><dd>{node.context.cacheRead}</dd></>}
+            {node.context.cacheWrite !== undefined && <><dt className="text-aegis-text-dim">{t('chat.trace.cacheWrite')}</dt><dd>{node.context.cacheWrite}</dd></>}
+            {node.context.contextPercent !== undefined && <><dt className="text-aegis-text-dim">{t('chat.trace.contextPercent')}</dt><dd>{node.context.contextPercent}%</dd></>}
+          </dl>
+        )}
+      </div>
+    );
   }
   if (node.kind === 'action') {
     return (

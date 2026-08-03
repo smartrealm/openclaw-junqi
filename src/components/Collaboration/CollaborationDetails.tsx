@@ -10,6 +10,7 @@ import {
   Library,
   List,
   Network,
+  PanelsTopLeft,
   RefreshCw,
   Send,
   ShieldAlert,
@@ -24,6 +25,7 @@ import {
 } from '@/services/collaboration/workflowGraph';
 import type {
   CollaborationAttemptSnapshot,
+  CollaborationCapabilityAgent,
   CollaborationDeliverySnapshot,
   CollaborationEvent,
   CollaborationInterventionSnapshot,
@@ -42,8 +44,9 @@ import {
   type CollaborationTranslate,
 } from './CollaborationCard';
 import { CollaborationAttemptIdentity } from './CollaborationAttemptIdentity';
+import { AgentOfficeView } from './AgentOfficeView';
 
-export type CollaborationWorkItemView = 'graph' | 'list';
+export type CollaborationWorkItemView = 'graph' | 'list' | 'office';
 
 export interface CollaborationDetailsProps {
   snapshot?: CollaborationRunSnapshot | null;
@@ -58,6 +61,8 @@ export interface CollaborationDetailsProps {
   disabledActions?: readonly string[];
   translate?: CollaborationTranslate;
   locale?: string;
+  configuredAgents?: readonly CollaborationCapabilityAgent[];
+  coordinatorAgentId?: string | null;
   onWorkItemViewChange?: (view: CollaborationWorkItemView) => void;
   onAction?: (context: CollaborationActionContext) => void;
   onRetry?: () => void;
@@ -350,6 +355,54 @@ function EvidenceList({ evidence, text }: { evidence: Array<Record<string, unkno
   );
 }
 
+function FinalArtifact({
+  artifact,
+  text,
+  locale,
+}: {
+  artifact: Record<string, unknown>;
+  text: CollaborationTranslate;
+  locale?: string;
+}) {
+  const content = readString(artifact, 'content');
+  const digest = readString(artifact, 'digest');
+  const sourceAttemptId = readString(artifact, 'sourceAttemptId', 'source_attempt_id');
+  const createdAt = typeof artifact.createdAt === 'number' ? artifact.createdAt : null;
+
+  return (
+    <div className="min-w-0">
+      {content && (
+        <pre
+          className="max-h-[42vh] min-w-0 overflow-auto whitespace-pre-wrap break-words rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.018)] px-3 py-2.5 font-sans text-[11px] leading-5 text-aegis-text-secondary"
+          data-collaboration-final-artifact-content
+        >
+          {content}
+        </pre>
+      )}
+      <dl className="mt-2 grid min-w-0 grid-cols-1 gap-x-4 gap-y-1.5 text-[9.5px] sm:grid-cols-2">
+        {sourceAttemptId && (
+          <div className="min-w-0">
+            <dt className="text-aegis-text-dim">{text('collaboration.details.sourceAttempt', 'Source attempt')}</dt>
+            <dd className="mt-0.5 break-all font-mono text-aegis-text-muted">{sourceAttemptId}</dd>
+          </div>
+        )}
+        {digest && (
+          <div className="min-w-0">
+            <dt className="text-aegis-text-dim">{text('collaboration.details.artifactDigest', 'Artifact digest')}</dt>
+            <dd className="mt-0.5 break-all font-mono text-aegis-text-muted">{digest}</dd>
+          </div>
+        )}
+        {createdAt && (
+          <div className="min-w-0">
+            <dt className="text-aegis-text-dim">{text('collaboration.details.createdAt', 'Created')}</dt>
+            <dd className="mt-0.5 text-aegis-text-muted">{formatDateTime(createdAt, locale)}</dd>
+          </div>
+        )}
+      </dl>
+    </div>
+  );
+}
+
 function Interventions({
   interventions,
   text,
@@ -597,6 +650,8 @@ export function CollaborationDetails({
   disabledActions,
   translate,
   locale,
+  configuredAgents = [],
+  coordinatorAgentId = null,
   onWorkItemViewChange,
   onAction,
   onRetry,
@@ -710,12 +765,30 @@ export function CollaborationDetails({
             <List size={12} aria-hidden />
             {text('collaboration.details.list', 'List')}
           </button>
+          <button
+            type="button"
+            onClick={() => changeView('office')}
+            aria-pressed={activeView === 'office'}
+            className={cn('inline-flex min-h-7 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 py-1 text-[10.5px]', activeView === 'office' ? 'bg-aegis-elevated-solid text-aegis-text' : 'text-aegis-text-muted hover:text-aegis-text-secondary')}
+          >
+            <PanelsTopLeft size={12} aria-hidden />
+            {text('collaboration.details.office', 'Office')}
+          </button>
         </div>
-        {snapshot.workItems.length === 0
-          ? <EmptySection>{text('collaboration.details.noWorkItems', 'No work items recorded.')}</EmptySection>
-          : activeView === 'graph'
-            ? <WorkItemGraph items={snapshot.workItems} text={text} />
-            : <WorkItemList items={snapshot.workItems} text={text} />}
+        {activeView === 'office'
+          ? (
+              <AgentOfficeView
+                snapshot={snapshot}
+                configuredAgents={configuredAgents}
+                coordinatorAgentId={coordinatorAgentId}
+                text={text}
+              />
+            )
+          : snapshot.workItems.length === 0
+            ? <EmptySection>{text('collaboration.details.noWorkItems', 'No work items recorded.')}</EmptySection>
+            : activeView === 'graph'
+              ? <WorkItemGraph items={snapshot.workItems} text={text} />
+              : <WorkItemList items={snapshot.workItems} text={text} />}
       </DetailSection>
 
       {snapshot.planRevisions && snapshot.planRevisions.length > 0 && (
@@ -760,16 +833,9 @@ export function CollaborationDetails({
           : <Deliveries deliveries={snapshot.deliveries} text={text} />}
       </DetailSection>
 
-      {snapshot.finalArtifact && primitiveEntries(snapshot.finalArtifact, 8).length > 0 && (
+      {snapshot.finalArtifact && readString(snapshot.finalArtifact, 'content') && (
         <DetailSection title={text('collaboration.details.finalResult', 'Final result')} icon={<CheckCircle2 size={14} />}>
-          <dl className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-2 text-[10.5px] sm:grid-cols-2">
-            {primitiveEntries(snapshot.finalArtifact, 8).map(([key, value]) => (
-              <div key={key} className="min-w-0">
-                <dt className="text-aegis-text-dim">{key}</dt>
-                <dd className="mt-0.5 break-words text-aegis-text-muted">{value}</dd>
-              </div>
-            ))}
-          </dl>
+          <FinalArtifact artifact={snapshot.finalArtifact} text={text} locale={locale} />
         </DetailSection>
       )}
 

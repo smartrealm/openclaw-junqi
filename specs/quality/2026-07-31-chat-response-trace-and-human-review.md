@@ -16,9 +16,13 @@
 12. 简体中文、繁体中文和英文文案完整，视觉只使用现有 Aegis token。
 13. 工具来源记录默认展示可读结果；可解析内容块、多层完整 JSON 和对象/数组不得以转义传输文本作为默认内容。
 14. 原始载荷必须可展开查看；上游截断、不可信外部内容和无法解析的载荷不得被猜测、静默修复或伪装成完整结果。
+15. OpenClaw exec/plugin approval 只能在获得 `operator.approvals` 且收到 Gateway 确认后标记为正式解析；Chat 内联按钮仍为 transcript-only。
+16. 存在同一 `runId` 的 `agent.run.finished` 审计事件时，追溯顶部必须显示其 `blocked`、`timed_out`、`unknown` 等终态；没有该事件时不得覆盖 transcript 状态。
 
 ## 失败关闭
 
 - 缺少 `runId`、`sourceSequence` 或 `toolCallId` 时显示上游未提供，不构造伪标识。
 - 无法确认人工选择已被正式记录时，不显示已审核或已批准。
 - Collaboration 不可用时不显示可操作的正式审核入口。
+- 审批 scope 缺失或 Gateway 未确认解析时，不显示已批准，不执行默认决策。
+- 审计查询失败、无记录或只有工具终态时，不猜测 Agent 终态；保留 transcript 状态并标记审计不可用或无记录。

@@ -1,4 +1,4 @@
-import { AtSign, Camera, Mic, Paperclip, Plus, Radio, Send, Square } from 'lucide-react';
+import { AtSign, Camera, CornerUpRight, Mic, Paperclip, Plus, Radio, Send, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { ComposerActionMenu, ComposerActionMenuItem } from './ComposerActionMenu';
@@ -25,6 +25,7 @@ interface ComposerInputSurfaceProps {
   onToggleDictation: () => void;
   onRequestWakeWord: () => void;
   onSend: () => Promise<void>;
+  onSteer: () => Promise<void>;
   onStop: () => Promise<void>;
 }
 
@@ -46,11 +47,13 @@ export function ComposerInputSurface({
   onToggleDictation,
   onRequestWakeWord,
   onSend,
+  onSteer,
   onStop,
 }: ComposerInputSurfaceProps) {
   const { t } = useTranslation();
   const disabled = !connected || historyLoading;
   const canSend = Boolean(text.trim() || attachments.files.length > 0);
+  const canSteer = isTyping && canSend && !isSending && !disabled;
 
   return (
     <div className="mx-auto flex w-full max-w-[784px] min-w-0 items-end gap-2 p-3" dir={dir}>
@@ -196,6 +199,18 @@ export function ComposerInputSurface({
               </span>
             )}
           </button>
+
+          {canSteer && (
+            <button
+              type="button"
+              onClick={() => { void onSteer(); }}
+              className="grid size-[34px] shrink-0 place-items-center rounded-lg bg-aegis-warning/12 text-aegis-warning transition-colors hover:bg-aegis-warning/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-warning/60"
+              title={t('input.steer')}
+              aria-label={t('input.steer')}
+            >
+              <CornerUpRight size={16} />
+            </button>
+          )}
 
           {(isTyping || isSending || voiceOutputActive) && (
             <button

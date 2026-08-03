@@ -956,7 +956,6 @@ function requiredUploadResult(payload: unknown, operation: string): OpenClawSkil
     ...(hash !== undefined ? { sha256: normalizedSha256(hash)! } : {}),
   };
 }
-
 export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) {
   return {
     proposalsCapability(): boolean | null {
@@ -1198,7 +1197,6 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
       if (!result || result.ok !== true) {
         throw new Error(text(result?.error) ?? text(result?.message) ?? 'OpenClaw did not confirm skill archive installation.');
       }
-
       const reportedSlug = result.slug;
       if (reportedSlug !== undefined && (typeof reportedSlug !== 'string' || reportedSlug.trim() !== slug)) {
         throw new Error('OpenClaw returned a different installed skill slug.');

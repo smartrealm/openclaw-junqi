@@ -9,6 +9,13 @@ OpenClaw Web UI 已提供置顶、未读、重命名、分叉、移动分组、�
 结果确认；只有方法或字段被明确识别为不支持时，才使用 identity-bound 的桌面
 兼容仓库。
 
+### `sessions.list` 协议校正
+
+锁定依赖 `openclaw@2026.7.1-2` 的实际 schema 规定 `archived` 为可选布尔值：
+省略或 `false` 返回活跃会话，`true` 返回归档会话。JunQi 因而分别请求活跃和
+归档投影后按会话 key 合并，绝不发送非布尔的三态值。旧 Gateway 只有在明确拒绝
+`archived` 字段时才降级为活跃列表；权限、连接或其他协议错误保持可见。
+
 | 操作 | Gateway 方法 | 权限 | JunQi 行为 |
 | --- | --- | --- | --- |
 | 新建 | `sessions.create` | `operator.write` | 仅在确认返回身份后展示 |
@@ -32,6 +39,7 @@ OpenClaw Web UI 已提供置顶、未读、重命名、分叉、移动分组、�
 - `OpenClawSessionLifecycleClient.test.ts`：确认响应与 identity 不一致拒绝。
 - `sessionCreate.test.ts`：确认前不提交界面会话、重复创建请求去重、失败不污染状态。
 - `OpenClawSessionOrganizationClient.test.ts`：原生字段、分组完整目录写入和兼容错误分类。
+- `OpenClawSessionListClient.test.ts`：只发送合法的布尔 `archived` 筛选，并确认旧协议降级不吞掉权限错误。
 - `sessionOrganization.test.ts`：identity 隔离、遗留偏好迁移、旧 Gateway 分组生命周期。
 - `chatStore.test.ts`：会话 identity 轮换不继承组织状态；打开或替换活动标签会同步清除持久未读标记。
 - 定向回归集（46 项）、`pnpm exec tsc --noEmit`、`pnpm check:boundaries` 与 `pnpm build` 已通过。

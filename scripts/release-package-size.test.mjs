@@ -103,11 +103,10 @@ test('version tags retain a CI-gated desktop release path for every supported ar
     'aarch64-apple-darwin',
     'x86_64-apple-darwin',
     'x86_64-pc-windows-msvc',
-    'i686-pc-windows-msvc',
-    'aarch64-pc-windows-msvc',
   ]) {
     assert.match(taggedRelease, new RegExp(`target: '${target}'`));
   }
+  assert.doesNotMatch(taggedRelease, /i686-pc-windows-msvc|aarch64-pc-windows-msvc/);
   assert.match(taggedRelease, /generate-updater-manifest\.mjs/);
   assert.match(taggedRelease, /gh release create "\$RELEASE_TAG"/);
   assert.doesNotMatch(taggedRelease, /--clobber/);

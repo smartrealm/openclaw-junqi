@@ -30,6 +30,7 @@ import { debugWarn } from '@/utils/debugLog';
 import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
 import type { GatewayAgentCreatePayload } from '@/utils/gatewayAgentFlow';
 import { routeGatewayEvent } from './collaborationEventBridge';
+import { GatewayApprovalEventSubscription } from './approvalEventBridge';
 import { VoiceWakeGatewayClient } from './VoiceWakeGatewayClient';
 import {
   routeVoiceWakeGatewayEvent,
@@ -87,6 +88,49 @@ import {
 } from './OpenClawCronManagementClient';
 import type { CronAgentTurnAddParams } from './cronContract';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
+import { SessionCompactionClient } from './SessionCompactionClient';
+import {
+  OpenClawApprovalClient as LegacyOpenClawApprovalClient,
+  type ApprovalDecision,
+  type ApprovalRecord,
+  type ApprovalResolveResult,
+} from './approvals';
+import { buildToolsEffectiveParams, parseToolsEffectiveResult, type ToolsEffectiveResult } from './toolsEffective';
+import { buildToolsCatalogParams, parseToolsCatalogResult, type ToolsCatalogResult } from './toolsCatalog';
+import { buildToolsInvokeParams, parseToolsInvokeResult, type ToolsInvokeParams, type ToolsInvokeResult } from './toolsInvoke';
+import {
+  buildSessionsPreviewParams,
+  buildSessionsResolveParams,
+  parseSessionsPreviewResult,
+  parseSessionsResolveResult,
+  requireSessionPreview,
+  type SessionPreview,
+  type SessionsPreviewParams,
+  type SessionsResolveResult,
+} from './sessionInspection';
+import {
+  buildArtifactsDownloadParams,
+  buildArtifactsGetParams,
+  buildArtifactsListParams,
+  parseArtifactDownloadResult,
+  parseArtifactGetResult,
+  parseArtifactsListResult,
+  type ArtifactDownloadResult,
+  type ArtifactSummary,
+} from './artifacts';
+import {
+  buildMemoryRemHarnessParams,
+  buildMemoryStatusParams,
+  parseMemoryRemHarnessResult,
+  parseMemoryStatusResult,
+  type MemoryRemHarnessParams,
+  type MemoryRemHarnessResult,
+  type MemoryStatusResult,
+} from './memoryDoctor';
+import {
+  getCronJob,
+  type OpenClawCronJobDetails,
+} from './cronRuns';
 
 // Re-export types for consumers
 export type {
@@ -432,6 +476,7 @@ export interface PrivilegedRequester {
   ): Promise<T>;
   cancelActiveRequest(): void;
   cancelPairingRetry(): void;
+  retryPairingNow(): void;
 }
 
 export interface PrivilegedRequesterOptions {
@@ -561,6 +606,7 @@ export function createPrivilegedRequester(
   if (scopes.length === 0) {
     throw new Error('A transient Gateway requester requires at least one operator scope');
   }
+  let retryActivePairingNow: (() => void) | null = null;
   const pairingRetryMs = options.pairingRetryMs ?? 5_000;
   const pairingTimeoutMs = options.pairingTimeoutMs ?? 5 * 60_000;
 
@@ -638,8 +684,10 @@ export function createPrivilegedRequester(
     params: Record<string, unknown>,
     timeoutMs: number | null = 30_000,
     enqueuedAt = Date.now(),
+    rpcTimeoutMs: number | null = timeoutMs,
   ): Promise<T> => {
     const normalizedTimeoutMs = timeoutMs === null ? null : Math.max(1_000, timeoutMs);
+    const normalizedRpcTimeoutMs = rpcTimeoutMs === null ? null : Math.max(1_000, rpcTimeoutMs);
     const requestDeadline = normalizedTimeoutMs === null ? null : enqueuedAt + normalizedTimeoutMs;
     const remainingBudget = () => requestDeadline === null
       ? null
@@ -676,7 +724,12 @@ export function createPrivilegedRequester(
 
     try {
       for (;;) {
-        const attemptTimeoutMs = requireRemainingBudget();
+        const remainingBudgetMs = requireRemainingBudget();
+        const attemptTimeoutMs = remainingBudgetMs === null
+          ? normalizedRpcTimeoutMs
+          : normalizedRpcTimeoutMs === null
+            ? remainingBudgetMs
+            : Math.min(remainingBudgetMs, normalizedRpcTimeoutMs);
         assertSourceCurrent();
         const result = await attempt<T>(
           target,
@@ -707,32 +760,49 @@ export function createPrivilegedRequester(
           await Promise.resolve();
         } else {
           await new Promise<void>((resolve, reject) => {
-            const timer = window.setTimeout(resolve, pairingRetryMs);
-            cancelActivePairingRetry = () => {
+            let settled = false;
+            const finish = (outcome: 'retry' | 'cancel') => {
+              if (settled) return;
+              settled = true;
               window.clearTimeout(timer);
-              reject(new Error('Privileged Gateway authorization was cancelled'));
+              retryActivePairingNow = null;
+              if (outcome === 'retry') resolve();
+              else reject(new Error('Privileged Gateway authorization was cancelled'));
             };
+            const timer = window.setTimeout(() => finish('retry'), pairingRetryMs);
+            retryActivePairingNow = () => finish('retry');
+            cancelActivePairingRetry = () => finish('cancel');
           });
         }
         cancelActivePairingRetry = null;
+        retryActivePairingNow = null;
         assertSourceCurrent();
       }
     } finally {
       cancelActivePairingRetry = null;
+      retryActivePairingNow = null;
     }
   };
 
   const request = (<T>(method: string, params: Record<string, unknown>, timeoutMs?: number | null) => {
     const enqueuedAt = Date.now();
-    const normalizedTimeoutMs = timeoutMs === null
+    const rpcTimeoutMs = timeoutMs === null
       ? null
       : Math.max(1_000, timeoutMs ?? 30_000);
+    // Normal short queue deadlines remain exact. Interactive/admin operations
+    // with a regular request budget reserve an additional pairing window, but
+    // every connected RPC attempt still uses only the caller's original budget.
+    const normalizedTimeoutMs = rpcTimeoutMs === null
+      ? null
+      : rpcTimeoutMs >= 30_000
+        ? rpcTimeoutMs + pairingTimeoutMs
+        : rpcTimeoutMs;
     let expiredInQueue = false;
     const execution = lane.then(() => {
       if (expiredInQueue && normalizedTimeoutMs !== null) {
         throw requestTimeoutError(normalizedTimeoutMs);
       }
-      return execute<T>(method, params, normalizedTimeoutMs, enqueuedAt);
+      return execute<T>(method, params, normalizedTimeoutMs, enqueuedAt, rpcTimeoutMs);
     });
     lane = execution.then(() => undefined, () => undefined);
     if (normalizedTimeoutMs === null) return execution;
@@ -756,6 +826,7 @@ export function createPrivilegedRequester(
   }) as PrivilegedRequester;
   request.cancelActiveRequest = () => cancelActivePairingRetry?.();
   request.cancelPairingRetry = () => cancelActivePairingRetry?.();
+  request.retryPairingNow = () => retryActivePairingNow?.();
   return request;
 }
 
@@ -779,6 +850,25 @@ const approvalClient = new OpenClawApprovalClient(
   (method, params) => requestApprovals(method, params),
   (method) => connection.hasAdvertisedMethod(method),
 );
+const legacyApprovalClient = new LegacyOpenClawApprovalClient({
+  requestPrivileged: (method, params) => requestApprovals(method, params),
+});
+const approvalEventSubscription = new GatewayApprovalEventSubscription({
+  source: connection,
+});
+let approvalEventConsumers = 0;
+
+function acquireGatewayApprovalEvents(): () => void {
+  approvalEventConsumers += 1;
+  if (approvalEventConsumers === 1) approvalEventSubscription.start();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    approvalEventConsumers = Math.max(0, approvalEventConsumers - 1);
+    if (approvalEventConsumers === 0) approvalEventSubscription.stop();
+  };
+}
 const sessionSettings = new SessionSettingsClient({
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
   request: (method, params) => connection.request(method, params),
@@ -827,6 +917,11 @@ const sessionCompactionCheckpoints = new OpenClawSessionCompactionCheckpointsCli
     params,
     expectedConnectionId,
   ),
+});
+const sessionCompactionOperations = new SessionCompactionClient({
+  request: (method, params) => connection.request(method, params),
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+  runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
 });
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
@@ -928,11 +1023,13 @@ export const gateway = {
   // Connection
   connect(url: string, token: string, deviceToken = '') { connection.connect(url, token, deviceToken); },
   disconnect() {
+    approvalEventSubscription.stop();
     transcriptSubscription.resetTransport();
     openClawSessionObserverClient.resetTransport();
     openClawSessionObserverStream.clear();
     connection.disconnect();
   },
+  acquireGatewayApprovalEvents() { return acquireGatewayApprovalEvents(); },
   getStatus() { return connection.getStatus(); },
   hasAdvertisedMethod(method: string) { return connection.hasAdvertisedMethod(method); },
   getLastError() { return connection.getLastError(); },
@@ -1054,6 +1151,115 @@ export const gateway = {
   },
   async describeSession(sessionKey: string) {
     return connection.request('sessions.describe', { key: sessionKey });
+  },
+  async getEffectiveTools(sessionKey = 'agent:main:main', agentId?: string): Promise<ToolsEffectiveResult> {
+    return parseToolsEffectiveResult(
+      await connection.request('tools.effective', buildToolsEffectiveParams(sessionKey, agentId)),
+    );
+  },
+  async invokeTool(params: ToolsInvokeParams): Promise<ToolsInvokeResult> {
+    return parseToolsInvokeResult(
+      await connection.request('tools.invoke', buildToolsInvokeParams(params)),
+    );
+  },
+  async getToolsCatalog(agentId?: string, includePlugins?: boolean): Promise<ToolsCatalogResult> {
+    return parseToolsCatalogResult(
+      await connection.request('tools.catalog', buildToolsCatalogParams(agentId, includePlugins)),
+    );
+  },
+  async getSessionPreview(
+    sessionKey = 'agent:main:main',
+    options: Pick<SessionsPreviewParams, 'limit' | 'maxChars'> = {},
+  ): Promise<SessionPreview> {
+    const result = parseSessionsPreviewResult(
+      await connection.request('sessions.preview', buildSessionsPreviewParams([sessionKey], options)),
+    );
+    return requireSessionPreview(result, sessionKey);
+  },
+  async resolveSessionKey(sessionKey = 'agent:main:main', agentId?: string): Promise<SessionsResolveResult> {
+    return parseSessionsResolveResult(
+      await connection.request(
+        'sessions.resolve',
+        buildSessionsResolveParams(sessionKey, { agentId, allowMissing: true }),
+      ),
+    );
+  },
+  async getSessionCompactionCheckpoint(
+    sessionKey: string,
+    checkpointId: string,
+    agentId?: string,
+  ) {
+    return sessionCompactionOperations.get(sessionKey, checkpointId, agentId);
+  },
+  async branchSessionCompactionCheckpoint(
+    sessionKey: string,
+    checkpointId: string,
+    agentId?: string,
+  ) {
+    return sessionCompactionOperations.branch(sessionKey, checkpointId, agentId);
+  },
+  async restoreSessionCompactionCheckpoint(
+    sessionKey: string,
+    checkpointId: string,
+    agentId?: string,
+  ) {
+    return sessionCompactionOperations.restore(sessionKey, checkpointId, agentId);
+  },
+  async listSessionArtifacts(sessionKey = 'agent:main:main', agentId?: string): Promise<ArtifactSummary[]> {
+    return parseArtifactsListResult(
+      await connection.request('artifacts.list', buildArtifactsListParams({ sessionKey, agentId })),
+      sessionKey,
+    ).artifacts;
+  },
+  async getSessionArtifact(
+    artifactId: string,
+    sessionKey = 'agent:main:main',
+    agentId?: string,
+  ): Promise<ArtifactSummary> {
+    return parseArtifactGetResult(
+      await connection.request('artifacts.get', buildArtifactsGetParams(artifactId, { sessionKey, agentId })),
+      artifactId,
+      sessionKey,
+    ).artifact;
+  },
+  async downloadSessionArtifact(
+    artifactId: string,
+    sessionKey = 'agent:main:main',
+    agentId?: string,
+  ): Promise<ArtifactDownloadResult> {
+    return parseArtifactDownloadResult(
+      await connection.request(
+        'artifacts.download',
+        buildArtifactsDownloadParams(artifactId, { sessionKey, agentId }),
+      ),
+      artifactId,
+      sessionKey,
+    );
+  },
+  async getCronJob(jobId: string): Promise<OpenClawCronJobDetails> {
+    return getCronJob(
+      (method, params) => connection.request(method, params),
+      jobId,
+    );
+  },
+  async getMemoryStatus(agentId?: string, deep = false): Promise<MemoryStatusResult> {
+    return parseMemoryStatusResult(
+      await connection.request('doctor.memory.status', buildMemoryStatusParams(agentId, deep)),
+    );
+  },
+  async getMemoryRemHarness(options: MemoryRemHarnessParams = {}): Promise<MemoryRemHarnessResult> {
+    return parseMemoryRemHarnessResult(
+      await connection.request('doctor.memory.remHarness', buildMemoryRemHarnessParams(options)),
+    );
+  },
+  async listGatewayApprovals(): Promise<ApprovalRecord[]> {
+    return legacyApprovalClient.list();
+  },
+  async resolveGatewayApproval(
+    record: ApprovalRecord,
+    decision: ApprovalDecision,
+  ): Promise<ApprovalResolveResult> {
+    return legacyApprovalClient.resolve(record, decision);
   },
   async getAgents() { return connection.request('agents.list', {}); },
   async listCommands(input: OpenClawCommandsListInput = {}) { return openClawCommandsClient.list(input); },
@@ -1286,5 +1492,7 @@ export const gateway = {
   stopPairingRetry() { connection.stopPairingRetry(); },
   cancelActivePrivilegedRequest() { requestPrivileged.cancelActiveRequest(); },
   cancelPrivilegedAuthorizationRetry() { requestPrivileged.cancelPairingRetry(); },
+  cancelApprovalAuthorizationRetry() { requestApprovals.cancelPairingRetry(); },
+  retryPrivilegedAuthorizationNow() { requestPrivileged.retryPairingNow(); },
   reconnectWithToken(newToken: string) { connection.reconnectWithToken(newToken); },
 };

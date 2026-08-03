@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { BusinessCapabilityDescriptor, BusinessIntegrationDescriptor } from '@/business-applications/types';
 import { BusinessApplicationIcon } from './BusinessApplicationIcon';
 import { CapabilityAvailability, CapabilityEffectBadge, IntegrationStatus } from './IntegrationStatus';
+import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 
 export type BusinessApplicationsView = 'overview' | 'capabilities' | 'operations';
 
@@ -22,10 +23,15 @@ function DetailTabs({ activeView, onChange }: {
           role="tab"
           aria-selected={activeView === view}
           onClick={() => onChange(view)}
-          className={`relative h-10 px-3 text-[11.5px] font-medium transition-colors ${activeView === view ? 'text-aegis-primary' : 'text-aegis-text-dim hover:text-aegis-text-secondary'}`}
+          className={`relative h-10 px-3 text-[11.5px] font-medium transition-[color,transform] duration-200 active:scale-[0.98] ${activeView === view ? 'text-aegis-primary' : 'text-aegis-text-dim hover:text-aegis-text-secondary'}`}
         >
           {t(`businessApplications.tabs.${view}`)}
-          {activeView === view && <span className="absolute inset-x-2 bottom-0 h-0.5 bg-aegis-primary" />}
+          {activeView === view && (
+            <ActiveTabIndicator
+              layoutId="business-application-active-tab"
+              className="inset-x-2 bottom-0 h-0.5 bg-aegis-primary"
+            />
+          )}
         </button>
       ))}
     </div>
@@ -188,9 +194,11 @@ export function ApplicationDetail({
       </header>
       <DetailTabs activeView={activeView} onChange={onViewChange} />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {activeView === 'overview' && <Overview integration={integration} onSelectCapabilities={() => onViewChange('capabilities')} />}
-        {activeView === 'capabilities' && <Capabilities integration={integration} onPlan={onPlan} />}
-        {activeView === 'operations' && <Operations />}
+        <AnimatedTabPanel transitionKey={activeView}>
+          {activeView === 'overview' && <Overview integration={integration} onSelectCapabilities={() => onViewChange('capabilities')} />}
+          {activeView === 'capabilities' && <Capabilities integration={integration} onPlan={onPlan} />}
+          {activeView === 'operations' && <Operations />}
+        </AnimatedTabPanel>
       </div>
       <footer className="flex items-center gap-2 border-t border-aegis-border px-5 py-2.5 text-[10.5px] text-aegis-text-dim">
         <Bot size={13} aria-hidden="true" />

@@ -240,12 +240,80 @@ test('BUG-GSO-04 service restart uses the official command and native readiness 
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const restart = rustFnBody(gateway, 'restart_gateway');
 
-  assert.match(restart, /cmd\.args\(\["gateway", "restart"\]\)/);
+  assert.match(restart, /native_gateway_service_lifecycle_action\(\s*inspection\.running,\s*inspection\.runtime_known\s*\)/);
+  assert.match(restart, /cmd\.args\(\["gateway", lifecycle_action\]\)/);
+  assert.match(gateway, /native_gateway_service_lifecycle_action\(\s*running: bool,\s*runtime_known: bool,/);
+  assert.match(restart, /runtime_known/);
+  assert.match(restart, /start_selected_gateway_service_with_path/);
+  assert.match(source('src-tauri/src/commands/gateway_service.rs'), /schtasks\.exe/);
+  assert.match(source('src-tauri/src/commands/gateway_service.rs'), /"\/Run", "\/TN"/);
+  assert.match(source('src-tauri/src/commands/gateway_service.rs'), /stop_windows_gateway_before_task_run/);
+  assert.match(source('src-tauri/src/commands/gateway_service.rs'), /\["gateway", "stop"\]/);
+  assert.match(source('src-tauri/src/commands/gateway_service.rs'), /let task_name = windows_gateway_task_name\(\);/);
   assert.doesNotMatch(restart, /\["gateway", "--port", &port\.to_string\(\), "restart"\]/);
   assert.match(
     restart,
     /wait_for_selected_gateway\([\s\S]*native_gateway_readiness_timeout_secs\(\)[\s\S]*\)\s*\.await/,
   );
+  assert.match(restart, /native_gateway_restart_command_timeout_secs\(\)/);
+  assert.doesNotMatch(restart, /Duration::from_secs\(45\)/);
+  const readiness = restart.indexOf('if wait_for_selected_gateway');
+  const serviceRecheck = restart.indexOf('inspect_gateway_service_state', readiness);
+  const successTransition = restart.indexOf('GatewayLifecycle::Running', serviceRecheck);
+  assert.ok(readiness >= 0, 'restart must wait for selected endpoint readiness');
+  assert.ok(serviceRecheck > readiness, 'restart must re-attest the official service after readiness');
+  assert.ok(successTransition > serviceRecheck, 'restart must not report Running before service re-attestation');
+  assert.match(restart, /is_running_current_selected_service\(after\)/);
+});
+
+test('OpenClaw session steering uses the official interrupt lane', () => {
+  const gateway = source('src/services/gateway/index.ts');
+  const sendTransaction = source('src/services/chat/sendTransaction.ts');
+  assert.match(gateway, /buildSessionsSteerParams/);
+  assert.match(gateway, /connection\.request\(method, steerParams\)/);
+  assert.match(gateway, /async steerMessage\(/);
+  assert.match(gateway, /sendGatewayMessage\('sessions\.steer'/);
+  assert.match(sendTransaction, /request\.steer/);
+  assert.match(sendTransaction, /steerMessage/);
+  assert.match(sendTransaction, /request\.queueIfBusy !== false && sessionCannotSend/);
+});
+
+test('OpenClaw session inspection and checkpoint controls use official session RPCs', () => {
+  const gateway = source('src/services/gateway/index.ts');
+  const compaction = source('src/services/gateway/SessionCompactionClient.ts');
+  const contextBar = source('src/components/Chat/SessionContextBar.tsx');
+  const hook = source('src/hooks/useSessionInspection.ts');
+  assert.match(gateway, /connection\.request\('sessions\.preview'/);
+  assert.match(gateway, /connection\.request\(\s*'sessions\.resolve'/);
+  assert.match(gateway, /connection\.request\('sessions\.compaction\.list'/);
+  assert.match(gateway, /parseSessionsPreviewResult/);
+  assert.match(gateway, /parseSessionsResolveResult/);
+  assert.match(gateway, /parseSessionsCompactionListResult/);
+  assert.match(compaction, /sessions\.compaction\.get/);
+  assert.match(compaction, /sessions\.compaction\.branch/);
+  assert.match(compaction, /sessions\.compaction\.restore/);
+  assert.match(contextBar, /<SessionInspectionControl sessionKey=\{activeSessionKey\}/);
+  assert.match(hook, /gateway\.getSessionPreview/);
+  assert.match(hook, /gateway\.resolveSessionKey/);
+  assert.match(hook, /gateway\.listSessionCompactionCheckpoints/);
+  assert.match(hook, /gateway\.branchSessionCompactionCheckpoint/);
+  assert.match(hook, /gateway\.restoreSessionCompactionCheckpoint/);
+});
+
+test('OpenClaw transcript artifacts use the official scoped list/get/download RPCs', () => {
+  const gateway = source('src/services/gateway/index.ts');
+  const artifacts = source('src/services/gateway/artifacts.ts');
+  const contextBar = source('src/components/Chat/SessionContextBar.tsx');
+  assert.match(gateway, /connection\.request\('artifacts\.list'/);
+  assert.match(gateway, /connection\.request\('artifacts\.get'/);
+  assert.match(gateway, /connection\.request\([\s\S]*'artifacts\.download'/);
+  assert.match(gateway, /parseArtifactsListResult/);
+  assert.match(gateway, /parseArtifactGetResult/);
+  assert.match(gateway, /parseArtifactDownloadResult/);
+  assert.match(artifacts, /requires sessionKey, runId, or taskId/);
+  assert.match(artifacts, /outside the requested session/);
+  assert.match(artifacts, /isSafeArtifactUrl/);
+  assert.match(contextBar, /<SessionArtifactsControl sessionKey=\{activeSessionKey\}/);
 });
 
 // BUG-WIN-CWD-01: state_dir (data directory) and Gateway cwd must be decoupled.

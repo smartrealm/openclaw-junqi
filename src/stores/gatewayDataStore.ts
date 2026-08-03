@@ -121,6 +121,8 @@ export type {
   OpenClawSessionSearchResult,
   OpenClawSessionSearchRole,
 } from '@/services/gateway/OpenClawSessionSearchClient';
+import { listOpenClawSessionLifecycle } from '@/services/gateway/OpenClawSessionListClient';
+import { parseCronStatus, type OpenClawCronStatusSummary } from '@/services/gateway/cronStatus';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -331,6 +333,8 @@ interface GatewayDataState {
   costSummary: CostSummary | null;
   sessionsUsage: SessionsUsage | null;
   cronJobs: CronJob[];
+  cronStatus: OpenClawCronStatusSummary | null;
+  cronStatusError: string | null;
   runningSubAgents: RunningSubAgent[];
 
   // Timestamps (ms) — when each group was last fetched
@@ -404,6 +408,8 @@ interface GatewayDataState {
   setCostSummary: (data: CostSummary) => void;
   setSessionsUsage: (data: SessionsUsage) => void;
   setCronJobs: (jobs: CronJob[]) => void;
+  setCronStatus: (status: OpenClawCronStatusSummary | null) => void;
+  setCronStatusError: (error: string | null) => void;
 
   setLoading: (group: keyof GatewayDataState['loading'], val: boolean) => void;
   setError: (group: keyof GatewayDataState['errors'], err: string | null) => void;
@@ -464,6 +470,8 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   costSummary: null,
   sessionsUsage: null,
   cronJobs: [],
+  cronStatus: null,
+  cronStatusError: null,
   runningSubAgents: [],
 
   // Timestamps
@@ -767,6 +775,10 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
       errors: { ...get().errors, cron: null },
     }),
 
+  setCronStatus: (status) => set({ cronStatus: status }),
+
+  setCronStatusError: (error) => set({ cronStatusError: error }),
+
   setLoading: (group, val) =>
     set({ loading: { ...get().loading, [group]: val } }),
 
@@ -862,7 +874,8 @@ function isCronJob(value: unknown): value is CronJob {
   return isGatewayRecord(value)
     && typeof value.id === 'string'
     && value.id.trim().length > 0
-    && (value.agentId === undefined || (typeof value.agentId === 'string' && value.agentId.trim().length > 0));
+    && (value.agentId === undefined || (typeof value.agentId === 'string' && value.agentId.trim().length > 0))
+    && (value.state === undefined || isGatewayRecord(value.state));
 }
 
 function gatewayCollectionOf<T>(
@@ -1193,22 +1206,22 @@ async function fetchSessions(): Promise<boolean> {
   const store = useGatewayDataStore.getState();
   store.setLoading('sessions', true);
   try {
-    let res: unknown;
-    try {
-      // Current OpenClaw hides archived rows by default. Request the complete
-      // lifecycle projection so the sidebar can render native archives.
-      res = await ticket.connection.request('sessions.list', { archived: 'all' });
-    } catch (error) {
-      const code = error instanceof GatewayRpcError ? error.code?.toUpperCase() : undefined;
-      const legacyArchivedFilter = (code === 'INVALID_PARAMS' || code === 'VALIDATION_ERROR')
-        && error instanceof GatewayRpcError
-        && /archived/i.test(error.message);
-      if (!legacyArchivedFilter) throw error;
-      res = await ticket.connection.request('sessions.list', {});
-    }
+    const responses = await listOpenClawSessionLifecycle(
+      (method, params) => ticket.connection.request(method, params),
+    );
     if (!isCurrentGatewayRequest(ticket)) return false;
-    const sessionListSnapshot = parseOpenClawSessionListSnapshot(res);
-    const rawList = sessionListSnapshot.sessions as SessionInfo[];
+    const activeSnapshot = parseOpenClawSessionListSnapshot(responses.active);
+    const archivedSnapshot = responses.archived === undefined
+      ? undefined
+      : parseOpenClawSessionListSnapshot(responses.archived);
+    const sessionListSnapshot = {
+      sessions: coalesceSessionsByKey([
+        ...(activeSnapshot.sessions as SessionInfo[]),
+        ...((archivedSnapshot?.sessions as SessionInfo[] | undefined) ?? []),
+      ]),
+      complete: activeSnapshot.complete && (archivedSnapshot?.complete ?? true),
+    };
+    const rawList = sessionListSnapshot.sessions;
 
     // Merge: preserve event-enriched runningUpdatedAt that the server does not return.
     // IMPORTANT: polling must NEVER generate a new runningUpdatedAt timestamp by itself.
@@ -1327,14 +1340,32 @@ async function fetchCron(): Promise<boolean> {
   const store = useGatewayDataStore.getState();
   store.setLoading('cron', true);
   try {
-    const res = await ticket.connection.request('cron.list', { includeDisabled: true });
+    const [jobsResponse, statusResponse] = await Promise.allSettled([
+      ticket.connection.request('cron.list', { includeDisabled: true }),
+      ticket.connection.request('cron.status', {}),
+    ]);
     if (!isCurrentGatewayRequest(ticket)) return false;
-    const list = parseGatewayCronJobList(res);
+    if (jobsResponse.status === 'rejected') {
+      throw jobsResponse.reason;
+    }
+    const list = parseGatewayCronJobList(jobsResponse.value);
     if (!list) {
       rejectGatewayResponse(store, 'cron', 'cron.list');
       return false;
     }
     store.setCronJobs(list);
+    if (statusResponse.status === 'fulfilled') {
+      try {
+        store.setCronStatus(parseCronStatus(statusResponse.value));
+        store.setCronStatusError(null);
+      } catch {
+        store.setCronStatus(null);
+        store.setCronStatusError('Gateway returned an invalid cron.status response');
+      }
+    } else {
+      store.setCronStatus(null);
+      store.setCronStatusError(statusResponse.reason?.message || String(statusResponse.reason));
+    }
     return true;
   } catch (e: any) {
     if (!isCurrentGatewayRequest(ticket)) return false;

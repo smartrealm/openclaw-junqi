@@ -44,6 +44,12 @@ fn streams() -> &'static Mutex<HashMap<String, StreamHandle>> {
     STREAMS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 static ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 fn next_id() -> String {
     format!("pty-{}", ID_COUNTER.fetch_add(1, Ordering::Relaxed))
@@ -72,7 +78,7 @@ fn invalid_id(id: &str) -> String {
 }
 
 fn remove_stream(id: &str) -> Option<StreamHandle> {
-    streams().lock().unwrap().remove(id)
+    lock_or_recover(streams()).remove(id)
 }
 
 fn build_shell(cwd: Option<&str>) -> CommandBuilder {
@@ -241,13 +247,12 @@ pub async fn terminal_create(
 
     // Per-user / per-server limits (junqi model)
     let id = next_id();
-    let map = streams().lock().unwrap();
+    let map = lock_or_recover(streams());
 
     let per_user = map
         .values()
         .filter(|h| {
-            h.lock()
-                .unwrap()
+            lock_or_recover(h)
                 .as_ref()
                 .is_some_and(|ctx| ctx.creator_user_id != 0)
         })
@@ -255,8 +260,7 @@ pub async fn terminal_create(
     let per_server = map
         .values()
         .filter(|h| {
-            h.lock()
-                .unwrap()
+            lock_or_recover(h)
                 .as_ref()
                 .is_some_and(|ctx| ctx.target_server_id == 0)
         })
@@ -283,7 +287,7 @@ pub async fn terminal_create(
         closed,
     };
     let handle: StreamHandle = Arc::new(Mutex::new(Some(ctx)));
-    streams().lock().unwrap().insert(id.clone(), handle);
+    lock_or_recover(streams()).insert(id.clone(), handle);
 
     // Register before threads start: a short-lived process may reach EOF
     // immediately, and its cleanup must be able to remove the registry entry.
@@ -298,14 +302,14 @@ pub async fn terminal_create(
 #[tauri::command]
 pub async fn terminal_write(id: String, data: String) -> Result<(), String> {
     let handle = {
-        let map = streams().lock().unwrap();
+        let map = lock_or_recover(streams());
         map.get(&id).cloned()
     };
     let handle = handle.ok_or_else(|| invalid_id(&id))?;
 
     // Hold the lock only to read the sender clone, then release before send.
     let tx = {
-        let guard = handle.lock().unwrap();
+        let guard = lock_or_recover(&handle);
         match guard.as_ref() {
             Some(ctx) => ctx.user_input_tx.clone(),
             None => return Err("stream closed".to_string()),
@@ -320,14 +324,14 @@ pub async fn terminal_write(id: String, data: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn terminal_resize(id: String, cols: u16, rows: u16) -> Result<(), String> {
     let handle = {
-        let map = streams().lock().unwrap();
+        let map = lock_or_recover(streams());
         map.get(&id).cloned()
     };
     let handle = handle.ok_or_else(|| invalid_id(&id))?;
 
-    let guard = handle.lock().unwrap();
+    let guard = lock_or_recover(&handle);
     let ctx = guard.as_ref().ok_or_else(|| "stream closed".to_string())?;
-    let master_guard = ctx.pty_master.lock().unwrap();
+    let master_guard = lock_or_recover(&ctx.pty_master);
     let master = master_guard
         .as_ref()
         .ok_or_else(|| "stream closed".to_string())?;
@@ -349,13 +353,13 @@ pub async fn terminal_kill(id: String) -> Result<(), String> {
     let handle = handle.ok_or_else(|| invalid_id(&id))?;
 
     // Take context so all fields can be dropped cleanly.
-    let ctx_opt = handle.lock().unwrap().take();
+    let ctx_opt = lock_or_recover(&handle).take();
 
     if let Some(ctx) = ctx_opt {
         ctx.closed.store(true, Ordering::Relaxed);
         // Kill the child explicitly so the reader thread sees EOF promptly
         // (mirrors junqi's CloseStream closing the underlying IO pipes).
-        if let Some(mut child) = ctx.child.lock().unwrap().take() {
+        if let Some(mut child) = lock_or_recover(&ctx.child).take() {
             let _ = child.kill();
         }
         // user_input_tx dropped here -> writer's recv() returns Disconnected -> exits.
@@ -375,12 +379,20 @@ mod tests {
     #[test]
     fn natural_exit_cleanup_releases_the_registry_slot() {
         let id = format!("cleanup-test-{}", next_id());
-        streams()
-            .lock()
-            .unwrap()
-            .insert(id.clone(), Arc::new(Mutex::new(None)));
+        lock_or_recover(streams()).insert(id.clone(), Arc::new(Mutex::new(None)));
 
         assert!(remove_stream(&id).is_some());
-        assert!(!streams().lock().unwrap().contains_key(&id));
+        assert!(!lock_or_recover(streams()).contains_key(&id));
+    }
+
+    #[test]
+    fn poisoned_stream_registry_lock_is_recovered() {
+        let lock = Mutex::new(HashMap::<String, StreamHandle>::new());
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = lock.lock().unwrap();
+            panic!("intentional stream registry poison");
+        }));
+
+        assert!(lock_or_recover(&lock).is_empty());
     }
 }

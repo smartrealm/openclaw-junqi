@@ -10,18 +10,6 @@ const RELEASE_ASSET_CATALOG = Object.freeze([
     updaterPlatforms: Object.freeze(['windows-x86_64', 'windows-x86_64-nsis']),
   }),
   Object.freeze({
-    label: 'Windows x86 NSIS installer',
-    pattern: /_x86-setup\.exe$/i,
-    signatureRequired: true,
-    updaterPlatforms: Object.freeze(['windows-i686', 'windows-i686-nsis']),
-  }),
-  Object.freeze({
-    label: 'Windows ARM64 NSIS installer',
-    pattern: /_arm64-setup\.exe$/i,
-    signatureRequired: true,
-    updaterPlatforms: Object.freeze(['windows-aarch64', 'windows-aarch64-nsis']),
-  }),
-  Object.freeze({
     label: 'macOS ARM64 disk image',
     pattern: /_aarch64\.dmg$/i,
     signatureRequired: false,

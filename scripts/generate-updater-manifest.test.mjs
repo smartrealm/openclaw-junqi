@@ -7,8 +7,6 @@ import { generateUpdaterManifest } from './generate-updater-manifest.mjs';
 
 const releaseFixtures = [
   { filename: 'JunQi Desktop_2.0.0_x64-setup.exe', signed: true },
-  { filename: 'JunQi Desktop_2.0.0_x86-setup.exe', signed: true },
-  { filename: 'JunQi Desktop_2.0.0_arm64-setup.exe', signed: true },
   { filename: 'JunQi Desktop_2.0.0_aarch64.dmg', signed: false },
   { filename: 'JunQi Desktop_2.0.0_x64.dmg', signed: false },
   { filename: 'JunQi Desktop_2.0.0_aarch64.app.tar.gz', signed: true },
@@ -38,11 +36,11 @@ test('generates an NSIS-only updater manifest from final signed artifacts', asyn
     });
 
     assert.equal(manifest.platforms['windows-x86_64'].signature, 'signature-0');
-    assert.equal(manifest.platforms['windows-i686'].signature, 'signature-1');
-    assert.equal(manifest.platforms['windows-aarch64'].signature, 'signature-2');
+    assert.equal(manifest.platforms['windows-i686'], undefined);
+    assert.equal(manifest.platforms['windows-aarch64'], undefined);
     assert.equal(manifest.platforms['windows-x86_64-msi'], undefined);
-    assert.equal(manifest.platforms['darwin-aarch64'].signature, 'signature-5');
-    assert.equal(manifest.platforms['darwin-x86_64'].signature, 'signature-6');
+    assert.equal(manifest.platforms['darwin-aarch64'].signature, 'signature-3');
+    assert.equal(manifest.platforms['darwin-x86_64'].signature, 'signature-4');
     assert.notEqual(
       manifest.platforms['darwin-aarch64'].url,
       manifest.platforms['darwin-x86_64'].url,
@@ -87,6 +85,27 @@ test('rejects obsolete installer artifacts instead of publishing an ambiguous se
         output: join(root, 'latest.json'),
       }),
       /Unexpected release artifact: JunQi Desktop_2\.0\.0_x64_zh-CN\.msi/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('rejects Windows installers for unsupported architectures', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'junqi-updater-unsupported-'));
+  try {
+    await writeReleaseFixtures(root);
+    await writeFile(join(root, 'JunQi Desktop_2.0.0_x86-setup.exe'), 'obsolete');
+    await writeFile(join(root, 'JunQi Desktop_2.0.0_x86-setup.exe.sig'), 'signature\n');
+    await assert.rejects(
+      generateUpdaterManifest({
+        assetsDir: root,
+        repo: 'smartrealm/openclaw-junqi',
+        tag: 'v2.0.0',
+        version: '2.0.0',
+        output: join(root, 'latest.json'),
+      }),
+      /Unexpected release artifact: JunQi Desktop_2\.0\.0_x86-setup\.exe, JunQi Desktop_2\.0\.0_x86-setup\.exe\.sig/,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

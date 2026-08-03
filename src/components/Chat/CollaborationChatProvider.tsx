@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { GitFork, History, RefreshCw, TriangleAlert, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { useModalFocusScope } from '@/hooks/useModalFocusScope';
 import {
   CollaborationCard,
@@ -403,6 +404,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionPreviewing, setActionPreviewing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const capabilityCheckGeneration = useRef(0);
   const capabilityCheckInFlight = useRef(false);
   const disconnectedProjectionInvalidated = useRef(false);
@@ -625,6 +627,18 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     setHistoryOpen(false);
     void refreshRunTrace(runId).catch(() => undefined);
   }, [refreshRunTrace]);
+
+  const collaborationRunFromRoute = searchParams.get('collaborationRun');
+  useEffect(() => {
+    if (!projectionCurrent || !collaborationRunFromRoute) return;
+    if (!allRuns.some((run) => run.runId === collaborationRunFromRoute)) return;
+    openRun(collaborationRunFromRoute);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete('collaborationRun');
+      return next;
+    }, { replace: true });
+  }, [allRuns, collaborationRunFromRoute, openRun, projectionCurrent, setSearchParams]);
 
   const showSetup = useCallback((reason?: CollaborationSetupReason) => {
     requestCollaborationRuntimeSetup(reason ?? 'error');
@@ -984,11 +998,18 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
     setHistoryLoading(true);
     try {
       await runCollaborationUiOperation(
-        () => Promise.all([
-          syncGlobalRuns({ includeArchived: true }),
-          syncTombstones(),
-          refreshWorkflowTemplates(),
-        ]),
+        async () => {
+          const [globalRuns] = await Promise.all([
+            syncGlobalRuns({ includeArchived: true }),
+            syncTombstones(),
+            refreshWorkflowTemplates(),
+          ]);
+          await Promise.allSettled(
+            globalRuns
+              .filter((run) => ['AWAITING_APPROVAL', 'AWAITING_INTERVENTION', 'DELIVERY_PENDING'].includes(run.status))
+              .map((run) => refreshRun(run.runId)),
+          );
+        },
         setLocalError,
       );
     } catch {
@@ -1062,6 +1083,7 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
       <CollaborationHistoryDrawer
         open={projectionCurrent && historyOpen}
         runs={allRuns}
+        snapshots={projectionCurrent ? snapshotsByRunId : {}}
         tombstones={projectionCurrent ? tombstones : []}
         templates={projectionCurrent ? workflowTemplates : []}
         loading={historyLoading}
@@ -1116,6 +1138,8 @@ export function CollaborationChatProvider({ children }: { children: ReactNode })
                 eventTimelineIncompleteReason={selectedCursor?.incompleteReason}
                 pendingAction={pendingAction}
                 locale={i18n.language}
+                configuredAgents={capabilities?.configuredAgents}
+                coordinatorAgentId={capabilities?.coordinatorAgentId}
                 onAction={handleRunAction}
                 onRetry={() => void refreshRunTrace(selectedRunId).catch(() => undefined)}
               />

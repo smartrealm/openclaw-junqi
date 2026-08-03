@@ -29,6 +29,7 @@ import {
 } from './configUtils';
 import { deriveProviderApiKeyEnvKey, preserveProviderSecretsFromDisk } from './providerSecretResolver';
 import { FloatingSaveButton, ChangesPill } from './components';
+import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { readConfigNavigationIntent, type ConfigTab } from './configNavigation';
@@ -828,19 +829,27 @@ export function ConfigManagerPage() {
       </div>
 
       {/* ── Tabs bar ── */}
-      <div className="border-b border-aegis-border flex gap-0 overflow-x-auto flex-shrink-0 bg-aegis-card/60 backdrop-blur-sm">
+      <div className="border-b border-aegis-border flex gap-0 overflow-x-auto flex-shrink-0 bg-aegis-card/60 backdrop-blur-sm" role="tablist" aria-label={t('config.title')}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
+            role="tab"
+            aria-selected={activeTab === tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={clsx(
-              'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap',
-              'border-b-2 transition-all duration-200',
+              'relative isolate flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap',
+              'transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98]',
               activeTab === tab.id
-                ? 'text-aegis-primary border-aegis-primary bg-white/[0.02]'
-                : 'text-aegis-text-muted border-transparent hover:text-aegis-text-secondary hover:bg-white/[0.02]'
+                ? 'text-aegis-primary'
+                : 'text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-white/[0.02]'
             )}
           >
+            {activeTab === tab.id && (
+              <ActiveTabIndicator
+                layoutId="config-manager-active-tab"
+                className="inset-0 -z-10 border-b-2 border-aegis-primary bg-white/[0.025]"
+              />
+            )}
             <tab.icon size={15} strokeWidth={1.75} />
             <span>{t(tab.labelKey)}</span>
             {tab.badge != null && (typeof tab.badge === 'string' || tab.badge > 0) && (
@@ -924,26 +933,28 @@ export function ConfigManagerPage() {
               </div>
             }
           >
-            {activeTab === 'providers' ? (
-              <ProvidersTab
-                config={config}
-                onChange={handleChange}
-                onApplyAndSave={handleApplyAndSave}
-                onProbeProvider={probeProviderCandidate}
-                saving={saving}
-                addRequestId={providerAddRequestId}
-              />
-            ) : activeTab === 'agents' ? (
-              <AgentsTab config={config} onChange={handleChange} />
-            ) : activeTab === 'channels' ? (
-              <ChannelsTab config={config} onChange={handleChange} />
-            ) : activeTab === 'tools' ? (
-              <ToolsTab config={config} onChange={handleChange} />
-            ) : activeTab === 'advanced' ? (
-              <AdvancedTab config={config} onChange={handleChange} />
-            ) : activeTab === 'secrets' ? (
-              <SecretsTab config={config} />
-            ) : null}
+            <AnimatedTabPanel transitionKey={activeTab}>
+              {activeTab === 'providers' ? (
+                <ProvidersTab
+                  config={config}
+                  onChange={handleChange}
+                  onApplyAndSave={handleApplyAndSave}
+                  onProbeProvider={probeProviderCandidate}
+                  saving={saving}
+                  addRequestId={providerAddRequestId}
+                />
+              ) : activeTab === 'agents' ? (
+                <AgentsTab config={config} onChange={handleChange} />
+              ) : activeTab === 'channels' ? (
+                <ChannelsTab config={config} onChange={handleChange} />
+              ) : activeTab === 'tools' ? (
+                <ToolsTab config={config} onChange={handleChange} />
+              ) : activeTab === 'advanced' ? (
+                <AdvancedTab config={config} onChange={handleChange} />
+              ) : activeTab === 'secrets' ? (
+                <SecretsTab config={config} />
+              ) : null}
+            </AnimatedTabPanel>
           </Suspense>
         )}
 

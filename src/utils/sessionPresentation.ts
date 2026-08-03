@@ -1,7 +1,9 @@
 import type { Session } from '@/stores/chatStore';
+import { isAgentMainSession } from '@/utils/sessionLifecycle';
 
 export type BackgroundActivityKind = 'dreaming' | 'cron' | 'subagent' | 'system';
 export type SessionPresentationKind = 'conversation' | BackgroundActivityKind;
+export type AgentSessionKind = 'main' | 'cron' | 'subagent' | 'conversation';
 export type SessionExecutionState = 'running' | 'done' | 'failed' | 'stopped' | 'unknown';
 export type SessionActivityPhase = 'thinking' | 'sending' | 'generating' | 'background';
 
@@ -79,6 +81,28 @@ function agentSessionRest(sessionKey: string): string | null {
 
 export function agentIdFromSessionKey(sessionKey: string): string | null {
   return /^agent:([^:]+):/i.exec(normalized(sessionKey))?.[1] ?? null;
+}
+
+/** Classify the four session shapes used by AgentHub without treating every
+ * ordinary conversation as the agent's canonical main session. */
+export function classifyAgentSessionKind(sessionKey: string): AgentSessionKind {
+  if (isAgentMainSession(sessionKey)) return 'main';
+  if (isCronSessionKey(sessionKey)) return 'cron';
+  if (isSubagentSessionKey(sessionKey)) return 'subagent';
+  return 'conversation';
+}
+
+/** Return the Gateway-owned main session for one agent, if it is present. */
+export function findCanonicalAgentMainSession<T extends { key: string; agentId?: string }>(
+  sessions: readonly T[],
+  agentId: string,
+): T | undefined {
+  const normalizedAgentId = normalized(agentId);
+  if (!normalizedAgentId) return undefined;
+  return sessions.find((session) => (
+    isAgentMainSession(session.key)
+    && (normalized(session.agentId) || agentIdFromSessionKey(session.key)) === normalizedAgentId
+  ));
 }
 
 /** Parent ownership is authoritative only when OpenClaw returns a session key. */

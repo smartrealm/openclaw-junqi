@@ -8,6 +8,9 @@
 | B | BUG-WUF-02 | `src-tauri/installer-hooks.nsh` | Gate NSIS uninstall on helper exit code; abort with an actionable message on failure. |
 | C | Both | Rust and Node regression tests | Prove selected managed cleanup, foreign preservation, nonzero propagation, and NSIS fail-closed behavior. |
 | D | Both | validation | Run format, TypeScript, focused frontend tests, full Rust tests, Windows installer script tests, and diff hygiene. |
+| E | BUG-WUF-03 | `src-tauri/src/commands/uninstall.rs` | Prove Windows service artifact absence before paying Native runtime discovery cost; retain full verification for present or unverifiable artifacts. |
+| F | BUG-WUF-04 | `src-tauri/src/commands/gateway_service.rs` | After ownership status, rely on the pinned official uninstall lifecycle and retain JunQi's port-release postcondition instead of issuing duplicate stop/status commands. |
+| G | Performance regressions | Rust tests and `scripts/windows-uninstall-performance.test.mjs` | Guard the fast absent-artifact path and the bounded two-command Native lifecycle. |
 
 ## Constraints
 

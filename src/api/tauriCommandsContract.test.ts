@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const commands = readFileSync(new URL('./tauri-commands.ts', import.meta.url), 'utf8');
 const adapter = readFileSync(new URL('./tauri-adapter.ts', import.meta.url), 'utf8');
+const performancePage = readFileSync(new URL('../pages/Performance.tsx', import.meta.url), 'utf8');
 const logPanel = readFileSync(
   new URL('../components/settings/GatewayLogPanel.tsx', import.meta.url),
   'utf8',
@@ -146,6 +147,10 @@ const gatewayProcess = readFileSync(
   new URL('../../src-tauri/src/state/gateway_process.rs', import.meta.url),
   'utf8',
 );
+const deviceIdentity = readFileSync(
+  new URL('../../src-tauri/src/commands/device_identity.rs', import.meta.url),
+  'utf8',
+);
 
 test('Tauri command wrappers match the Rust Gateway result contracts', () => {
   assert.match(gateway, /pub async fn start_gateway\([\s\S]*?Result<GatewayStatus, String>/);
@@ -163,6 +168,14 @@ test('Tauri command wrappers match the Rust Gateway result contracts', () => {
   assert.match(rustLogLevel, /Error/);
   assert.doesNotMatch(rustLogLevel, /\n\s+(?:Trace|Debug),/);
   assert.match(commands, /export type LogLevel = 'info' \| 'warn' \| 'error'/);
+  assert.doesNotMatch(adapter, /\bany\b/);
+  assert.doesNotMatch(performancePage, /window\.aegis as any/);
+  assert.match(performancePage, /window\.aegis\?\.systemMetrics\?\.onMetrics/);
+  assert.match(adapter, /parseTauriPlatformInfo\(await invoke<unknown>\("get_platform_info"\)\)/);
+  assert.match(commands, /invoke<GatewayDeviceChallengeSignature>\('sign_gateway_device_challenge', \{ params \}\)/);
+  assert.match(deviceIdentity, /store_system_credential/);
+  assert.doesNotMatch(deviceIdentity, /private_key/i);
+  assert.doesNotMatch(adapter, /sign: async \(params: DeviceSignParams\)/);
 });
 
 test('ensure documentation follows the selected-runtime-only Rust policy', () => {
@@ -200,6 +213,8 @@ test('shared Gateway commands have one renderer invocation boundary', () => {
   assert.match(commands, /export const getGatewayProcessStatus = \(\) => invoke<GatewayProcessStatus>\('gateway_status'\)/);
   assert.match(commands, /export const getGatewayToken = \(\) => invoke<string>\('get_gateway_token'\)/);
   assert.match(commands, /export const repairOpenclaw = \(\) => invoke<boolean>\('repair_openclaw'\)/);
+  assert.match(commands, /invoke<void>\("approve_selected_gateway_device", \{ requestId \}\)/);
+  assert.match(appSource, /await approveSelectedGatewayDevice\(requestId\)/);
   assert.match(commands, /export const diagnoseGatewayRecovery = \(error: string\)/);
   assert.match(commands, /export const listGatewayRescueTargets/);
   assert.match(commands, /export const gatewayRescueChat/);

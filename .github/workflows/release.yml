@@ -9,7 +9,7 @@
 #
 # Why all desktop platforms in one workflow rather than separate files:
 #   - one place to read the matrix, cache strategy, artifact naming
-#   - the '✅ Release Summary' job at the end gives a single status
+#   - the 'Release Summary' job at the end gives a single status
 #     banner for the whole release in the Actions tab
 #
 # Why use the pinned tauri-apps/tauri-action (v1):
@@ -469,24 +469,6 @@ jobs:
             stage_prefix: windows-x86_64
             asset_specs: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis|.exe
-          - name: Windows x86
-            artifact_name: windows-i686
-            platform: windows-latest
-            target: 'i686-pc-windows-msvc'
-            rust_targets: 'i686-pc-windows-msvc'
-            bundle_args: '--bundles nsis'
-            stage_prefix: windows-i686
-            asset_specs: |
-              src-tauri/target/i686-pc-windows-msvc/release/bundle/nsis|.exe
-          - name: Windows ARM64
-            artifact_name: windows-arm64
-            platform: windows-11-arm
-            target: 'aarch64-pc-windows-msvc'
-            rust_targets: 'aarch64-pc-windows-msvc'
-            bundle_args: '--bundles nsis'
-            stage_prefix: windows-arm64
-            asset_specs: |
-              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis|.exe
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -1381,7 +1363,7 @@ jobs:
             --expected-sha "$EXPECTED_SOURCE_SHA"
 
   release:
-    name: ✅ Release Summary
+    name: Release Summary
     needs: [verify-version, quality-node, quality-rust, quality-evidence, quality-evidence-attest, gateway-structural-smoke, gateway-structural-smoke-attest, build, release-asset-manifest, release-asset-manifest-attest, external-release-gate, external-release-decision-attest, publish]
     if: always()
     runs-on: ubuntu-latest
@@ -1395,7 +1377,7 @@ jobs:
             echo ""
             echo "| Build matrix | Targets | Status |"
             echo "|--------------|---------|--------|"
-            echo "| Desktop installers | macOS ARM64/x64, Windows x86/x64/ARM64 | ${{ needs.build.result }} |"
+            echo "| Desktop installers | macOS ARM64/x64, Windows x64 | ${{ needs.build.result }} |"
             echo "| Release asset manifest | source/bundle/digest binding | ${{ needs.release-asset-manifest.result }} |"
             echo "| Quality evidence attestation | immutable subject attestation | ${{ needs.quality-evidence-attest.result }} |"
             echo "| Structural smoke attestation | immutable subject attestation | ${{ needs.gateway-structural-smoke-attest.result }} |"
@@ -1448,7 +1430,7 @@ jobs:
               echo "::error::Tagged build passed prerequisites but GitHub Release publication did not succeed"
               exit 1
             fi
-            echo "✅ Tagged release published successfully" >> "$GITHUB_STEP_SUMMARY"
+            echo "Tagged release published successfully" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "✅ Candidate build completed; no public release was requested" >> "$GITHUB_STEP_SUMMARY"
+            echo "Candidate build completed; no public release was requested" >> "$GITHUB_STEP_SUMMARY"
           fi

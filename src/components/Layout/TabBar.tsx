@@ -6,6 +6,7 @@ import type { SidebarTab } from './tab-utils';
 import { LayoutDashboard, BookOpenText, Bot, Blocks, Wrench, Settings } from 'lucide-react';
 import clsx from 'clsx';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
+import { ActiveTabIndicator } from '@/components/shared/TabMotion';
 
 const TABS = [
   { id: 'workbench', labelKey: 'nav.dashboard', labelFallback: '仪表盘', path: '/', Icon: LayoutDashboard },
@@ -37,14 +38,21 @@ export function TabBar() {
               type="button"
               onClick={() => { setActiveTab(tab.id as SidebarTab); navigate(tab.path); }}
               className={clsx(
-                'h-[32px] whitespace-nowrap px-2.5 rounded text-[11.5px] font-medium transition-colors flex items-center gap-1.5',
+                'relative isolate h-[32px] whitespace-nowrap px-2.5 rounded text-[11.5px] font-medium flex items-center gap-1.5',
+                'transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98]',
                 active
-                  ? 'bg-aegis-primary/10 text-aegis-text shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.18)]'
+                  ? 'text-aegis-text'
                   : 'text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-hover/40',
               )}
             >
-              <tab.Icon size={13} />
-              {t(tab.labelKey, tab.labelFallback)}
+              {active && (
+                <ActiveTabIndicator
+                  layoutId="product-navigation-active-tab"
+                  className="inset-0 -z-10 rounded bg-aegis-primary/10 shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.18)]"
+                />
+              )}
+              <tab.Icon size={13} className="relative z-[1]" />
+              <span className="relative z-[1]">{t(tab.labelKey, tab.labelFallback)}</span>
             </button>
           );
         })}

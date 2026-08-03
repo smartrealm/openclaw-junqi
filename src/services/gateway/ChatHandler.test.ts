@@ -21,6 +21,7 @@ function resetChatStore() {
     quickRepliesBySession: {},
     thinkingBySession: {},
     typingBySession: {},
+    compactionStatusBySession: {},
     typingStartedAtBySession: {},
   });
 }
@@ -128,7 +129,7 @@ test('chat.final replaces a longer streamed draft with OpenClaw canonical text',
 
 test('session.operation forwards only the official compact operation projection', async () => {
   installWindowMock();
-  const { ChatHandler } = await loadDeps();
+  const { ChatHandler, useChatStore } = await loadDeps();
   resetChatStore();
 
   const operations: Array<{
@@ -153,12 +154,22 @@ test('session.operation forwards only the official compact operation projection'
       }) => operations.push(operation),
     },
   } as any);
+  const sessionKey = 'agent:main:operation-forwarded';
+
+  handler.handleEvent({ event: 'session.operation', payload: {
+    operationId: 'operation-forwarded',
+    operation: 'compact',
+    phase: 'start',
+    sessionKey,
+    ts: 9,
+  } });
+  assert.equal(useChatStore.getState().compactionStatusBySession[sessionKey]?.phase, 'active');
 
   handler.handleEvent({ event: 'session.operation', payload: {
     operationId: 'operation-forwarded',
     operation: 'compact',
     phase: 'end',
-    sessionKey: 'agent:main:operation-forwarded',
+    sessionKey,
     ts: 10,
     completed: true,
   } });
@@ -166,18 +177,47 @@ test('session.operation forwards only the official compact operation projection'
     operationId: 'operation-invalid',
     operation: 'reset',
     phase: 'end',
-    sessionKey: 'agent:main:operation-forwarded',
+    sessionKey,
     ts: 11,
   } });
 
-  assert.deepEqual(operations, [{
+  handler.handleEvent({ event: 'session.operation', payload: {
     operationId: 'operation-forwarded',
     operation: 'compact',
     phase: 'end',
-    sessionKey: 'agent:main:operation-forwarded',
+    sessionKey,
     ts: 10,
     completed: true,
-  }]);
+  } });
+  handler.handleEvent({
+    event: 'agent',
+    payload: { sessionKey, runId: 'run-compaction', seq: 1, stream: 'compaction', data: { phase: 'end' } },
+  });
+
+  assert.deepEqual(operations, [
+    {
+      operationId: 'operation-forwarded',
+      operation: 'compact',
+      phase: 'start',
+      sessionKey,
+      ts: 9,
+    },
+    {
+      operationId: 'operation-forwarded',
+      operation: 'compact',
+      phase: 'end',
+      sessionKey,
+      ts: 10,
+      completed: true,
+    },
+  ]);
+
+  assert.equal(
+    useChatStore.getState().messagesPerSession[sessionKey]
+      ?.filter((message: { role: string }) => message.role === 'compaction').length,
+    1,
+  );
+  assert.equal(useChatStore.getState().compactionStatusBySession[sessionKey], undefined);
 });
 
 test('a final event sharing the last delta sequence still settles the run', async () => {

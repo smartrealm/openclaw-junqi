@@ -576,7 +576,6 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
       )}
 
       {!terminalChrome && <FocusControl />}
-      <BusinessGuideTrigger />
       {terminalChrome && (
         <TerminalOpenInControl directory={terminalOpenDirectory} />
       )}
@@ -588,7 +587,9 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
           <LayoutGrid size={16} />
         </WorkspaceChromeIconButton>
       )}
-      <div ref={notifRef} className={clsx('relative shrink-0', !terminalChrome && 'ml-auto')}>
+      <div className={clsx('flex shrink-0 items-center gap-1', !terminalChrome && 'ml-auto')}>
+        <BusinessGuideTrigger />
+        <div ref={notifRef} className="relative shrink-0">
         <WorkspaceChromeIconButton
           onClick={() => setPanelOpen((value) => {
             const next = !value;
@@ -631,6 +632,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
             />
           </Suspense>
         ))}
+        </div>
       </div>
       {terminalChrome && <TerminalKeepAwakeControl />}
     </div>

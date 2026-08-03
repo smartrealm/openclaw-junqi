@@ -14,7 +14,12 @@ import {
 import { cn } from '@/lib/utils';
 import { useModalFocusScope } from '@/hooks/useModalFocusScope';
 import { flowReconciliationAbandonmentAudit } from '@/services/collaboration/tombstoneAudit';
+import {
+  collaborationNeedsYouItems,
+  type CollaborationNeedsYouItem,
+} from '@/utils/collaborationNeedsYou';
 import type {
+  CollaborationRunSnapshot,
   CollaborationRunSummary,
   CollaborationTombstone,
   CollaborationWorkflowTemplate,
@@ -29,6 +34,7 @@ import {
 export interface CollaborationHistoryDrawerProps {
   open: boolean;
   runs: CollaborationRunSummary[];
+  snapshots?: Record<string, CollaborationRunSnapshot | undefined>;
   tombstones?: CollaborationTombstone[];
   templates?: CollaborationWorkflowTemplate[];
   loading?: boolean;
@@ -71,11 +77,55 @@ function applicationOverlayPortalTarget(): HTMLElement | null {
   return body && typeof body.appendChild === 'function' ? body : null;
 }
 
+function NeedsYouSection({
+  runs,
+  snapshots,
+  text,
+  onSelectRun,
+}: {
+  runs: CollaborationRunSummary[];
+  snapshots: Record<string, CollaborationRunSnapshot | undefined>;
+  text: CollaborationTranslate;
+  onSelectRun?: (runId: string) => void;
+}) {
+  const items: CollaborationNeedsYouItem[] = collaborationNeedsYouItems(runs, snapshots, text);
+  if (items.length === 0) return null;
+
+  return (
+    <section aria-labelledby="collaboration-needs-you-heading">
+      <h3 id="collaboration-needs-you-heading" className="border-b border-aegis-border bg-aegis-warning/[0.055] px-4 py-2 text-[10px] font-medium text-aegis-warning">
+        {text('collaboration.drawer.needsYou.heading', 'Needs your decision')}
+      </h3>
+      <div role="list" aria-label={text('collaboration.drawer.needsYou.list', 'Collaboration decisions requiring attention')}>
+        {items.map((item) => (
+          <div key={item.id} role="listitem" className="grid min-w-0 grid-cols-[18px_minmax(0,1fr)_auto] gap-x-2 border-b border-aegis-border px-4 py-3">
+            <TriangleAlert size={13} className="mt-0.5 text-aegis-warning" aria-hidden />
+            <div className="min-w-0">
+              <div className="line-clamp-2 break-words text-[11.5px] font-medium leading-4 text-aegis-text-secondary">{item.title}</div>
+              <div className="mt-1 break-words text-[10px] leading-4 text-aegis-text-muted">{item.detail}</div>
+              <div className="mt-1 min-w-0 truncate text-[9.5px] text-aegis-text-dim">{item.run.goal || text('collaboration.card.untitled', 'Untitled collaboration')}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onSelectRun?.(item.run.runId)}
+              disabled={!onSelectRun}
+              className="inline-flex min-h-7 shrink-0 self-center items-center rounded-md border border-aegis-warning/30 px-2 py-1 text-[10px] font-medium text-aegis-warning transition-colors hover:bg-aegis-warning/[0.08] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {text('collaboration.drawer.needsYou.review', 'Review')}
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 const DRAWER_EXIT_DURATION_MS = 160;
 
 export function CollaborationHistoryDrawer({
   open,
   runs,
+  snapshots = {},
   tombstones = [],
   templates = [],
   loading = false,
@@ -213,6 +263,7 @@ export function CollaborationHistoryDrawer({
             </div>
           ) : (
             <div>
+              <NeedsYouSection runs={sortedRuns} snapshots={snapshots} text={text} onSelectRun={onSelectRun} />
               {sortedTemplates.length > 0 && (
                 <section aria-labelledby="collaboration-templates-heading">
                   <h3 id="collaboration-templates-heading" className="border-b border-aegis-border bg-[rgb(var(--aegis-overlay)/0.025)] px-4 py-2 text-[10px] font-medium text-aegis-text-dim">

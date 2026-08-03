@@ -32,7 +32,7 @@ export interface ChatSendRequest {
   /**
    * Opt into the JunQi-local visible queue while a Gateway run is active.
    * Normal sends leave this unset so OpenClaw applies the session queue mode.
-   */
+  */
   queueIfBusy?: boolean;
   delivery?: 'queue' | 'steer';
   source?: TaskExecutionSource;

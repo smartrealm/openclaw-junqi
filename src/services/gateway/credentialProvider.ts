@@ -9,7 +9,7 @@ import {
   type MigrateGatewayCredentialParams,
   type StoreGatewayCredentialParams,
 } from '@/api/tauri-commands';
-import { getDeviceIdentityReference } from '@/api/device-identity';
+import { getGatewayDeviceIdentityReference } from '@/api/tauri-commands';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 
 export const LEGACY_GATEWAY_TOKEN_KEY = 'aegis-gateway-token';
@@ -106,7 +106,7 @@ function credentialMapKey(runtimeKey: string, deviceId: string): string {
 async function deviceId(options: ProviderOptions): Promise<string> {
   const value = options.resolveDeviceId
     ? await options.resolveDeviceId()
-    : (await getDeviceIdentityReference()).deviceId;
+    : (await getGatewayDeviceIdentityReference()).deviceId;
   if (!value.trim()) throw new Error('deviceId must not be empty');
   return value.trim();
 }

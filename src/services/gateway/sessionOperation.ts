@@ -1,16 +1,20 @@
 import type { SessionEvent } from '@/types/RenderBlock';
 
+export type SessionOperationPhase = 'start' | 'end';
+
 /** The current OpenClaw gateway-protocol SessionOperationEvent contract. */
 export interface OpenClawSessionOperationEvent {
   operationId: string;
   operation: 'compact';
-  phase: 'start' | 'end';
+  phase: SessionOperationPhase;
   sessionKey: string;
   agentId?: string;
   ts: number;
   completed?: boolean;
   reason?: string;
 }
+
+export type SessionOperationEvent = OpenClawSessionOperationEvent;
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -56,7 +60,7 @@ export function parseOpenClawSessionOperationEvent(value: unknown): OpenClawSess
     || !sessionKey
     || (source.agentId !== undefined && !agentId)
     || typeof source.ts !== 'number'
-    || !Number.isInteger(source.ts)
+    || !Number.isSafeInteger(source.ts)
     || source.ts < 0
     || reason === null
     || (source.completed !== undefined && typeof source.completed !== 'boolean')
@@ -75,6 +79,8 @@ export function parseOpenClawSessionOperationEvent(value: unknown): OpenClawSess
     ...(reason !== undefined ? { reason } : {}),
   };
 }
+
+export const parseSessionOperationEvent = parseOpenClawSessionOperationEvent;
 
 export type SessionOperationTranslator = (
   key: string,

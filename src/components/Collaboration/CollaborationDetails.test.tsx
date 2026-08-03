@@ -144,7 +144,14 @@ function snapshot(): CollaborationRunSnapshot {
       parameterDigest: 'b'.repeat(64),
       instantiatedAt: NOW - 45_000,
     },
-    finalArtifact: { summary: 'Partial decision memo', confidence: 'medium' },
+    finalArtifact: {
+      id: 'artifact-1',
+      runId: 'run-details',
+      sourceAttemptId: 'attempt-synthesis',
+      content: `Partial decision memo: ${'evidence remains traceable. '.repeat(12)}`,
+      digest: 'sha256:artifact-digest',
+      createdAt: NOW - 5_000,
+    },
   };
 }
 
@@ -199,6 +206,11 @@ test('renders the graph and every traceability section from the canonical snapsh
   assert.match(html, /Approval history/);
   assert.match(html, /Plan approved/);
   assert.match(html, /Partial decision memo/);
+  assert.match(html, /evidence remains traceable\. evidence remains traceable\./);
+  assert.doesNotMatch(html, /evidence remains traceable\.\.\./);
+  assert.match(html, /data-collaboration-final-artifact-content/);
+  assert.match(html, /attempt-synthesis/);
+  assert.match(html, /sha256:artifact-digest/);
   assert.match(html, /INTERVENTION_CREATED/);
   assert.match(html, /data-collaboration-action="WORK_ITEM_RETRY"/);
 });
@@ -213,6 +225,52 @@ test('supports a list projection without changing the workflow data', () => {
   assert.match(html, /Work item/);
   assert.match(html, /risk-reviewer/);
   assert.doesNotMatch(html, /data-work-item-view="graph"/);
+});
+
+test('renders an Agent Office projection from the same authoritative snapshot', () => {
+  const html = renderToStaticMarkup(createElement(CollaborationDetails, {
+    snapshot: snapshot(),
+    workItemView: 'office',
+    configuredAgents: [
+      {
+        id: 'researcher',
+        name: 'Research Agent',
+        runtimeType: 'native',
+        allowed: true,
+        coordinator: false,
+      },
+      {
+        id: 'risk-reviewer',
+        name: 'Risk Review Agent',
+        runtimeType: 'acp',
+        allowed: true,
+        coordinator: false,
+      },
+    ],
+    coordinatorAgentId: 'planner',
+  }));
+
+  assert.match(html, /data-work-item-view="office"/);
+  assert.match(html, /data-agent-office="run-details"/);
+  assert.match(html, /data-office-agent-id="researcher"/);
+  assert.match(html, /data-office-agent-id="risk-reviewer"/);
+  assert.match(html, /data-office-agent-state="ATTENTION"/);
+  assert.match(html, /Read-only projection from the authoritative collaboration snapshot/);
+  assert.doesNotMatch(html, /online/i);
+  assert.doesNotMatch(html, /data-work-item-view="graph"/);
+});
+
+test('renders the Office empty state when the run has no authoritative participants', () => {
+  const value = snapshot();
+  value.workItems = [];
+  value.attempts = [];
+  const html = renderToStaticMarkup(createElement(CollaborationDetails, {
+    snapshot: value,
+    workItemView: 'office',
+  }));
+
+  assert.match(html, /data-work-item-view="office"/);
+  assert.match(html, /No authoritative Agent assignment is available/);
 });
 
 test('renders loading and recoverable error states', () => {

@@ -84,6 +84,21 @@ export interface ChannelsRuntimeSnapshot {
 
 export type ChannelLinkMode = 'embedded_qr' | 'terminal_setup' | 'none';
 const CLI_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+type JsonObject = Record<string, unknown>;
+
+function asJsonObject(value: unknown): JsonObject | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as JsonObject
+    : undefined;
+}
+
+export function channelErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  const object = asJsonObject(error);
+  const message = object?.message;
+  return typeof message === 'string' && message.trim() ? message.trim() : String(error);
+}
 
 export function isOpenClawChannelIdentifier(value: string): boolean {
   return CLI_IDENTIFIER.test(value.trim());
@@ -133,42 +148,39 @@ export async function loadOfficialChannelCatalog(_force = false): Promise<Offici
   // Never substitute a JunQi-maintained channel list. The selected OpenClaw
   // runtime is the sole catalog authority, and every load re-reads it so an
   // OpenClaw upgrade/plugin change is reflected without restarting JunQi.
-  try {
-    return normalizeOfficialChannelCatalog(await getOpenclawChannelCatalog());
-  } catch {
-    return { source: 'unavailable', entries: [] };
-  }
+  // Failures must reach the page: turning them into an empty catalog makes a
+  // loading or runtime error indistinguishable from "OpenClaw has no channels".
+  return normalizeOfficialChannelCatalog(await getOpenclawChannelCatalog());
 }
 
-function firstCapabilityRow(payload: unknown): Record<string, any> | undefined {
-  if (!payload || typeof payload !== 'object') return undefined;
-  const rows = (payload as Record<string, unknown>).channels;
+function firstCapabilityRow(payload: unknown): JsonObject | undefined {
+  const root = asJsonObject(payload);
+  const rows = root?.channels;
   return Array.isArray(rows) && rows[0] && typeof rows[0] === 'object'
-    ? rows[0] as Record<string, any>
+    ? asJsonObject(rows[0])
     : undefined;
 }
 
 export function normalizeOfficialChannelCapability(payload: unknown): OfficialChannelCapability | null {
   const row = firstCapabilityRow(payload);
   if (!row || typeof row.channel !== 'string') return null;
-  const plugin = row.plugin && typeof row.plugin === 'object' ? row.plugin : {};
-  const meta = plugin.meta && typeof plugin.meta === 'object' ? plugin.meta : {};
-  const schemaRoot = plugin.configSchema?.schema;
-  const schema = schemaRoot?.properties && typeof schemaRoot.properties === 'object'
-    ? schemaRoot.properties as Record<string, OpenClawFieldSchema>
-    : {};
+  const plugin = asJsonObject(row.plugin);
+  const meta = asJsonObject(plugin?.meta);
+  const configSchema = asJsonObject(plugin?.configSchema);
+  const schemaRoot = asJsonObject(configSchema?.schema);
+  const schema = asJsonObject(schemaRoot?.properties) as Record<string, OpenClawFieldSchema> | undefined;
   return {
     channel: row.channel,
     accountId: typeof row.accountId === 'string' ? row.accountId : undefined,
     configured: row.configured === true,
     enabled: row.enabled !== false,
-    label: typeof meta.label === 'string' ? meta.label : undefined,
-    selectionLabel: typeof meta.selectionLabel === 'string' ? meta.selectionLabel : undefined,
-    schema,
+    label: typeof meta?.label === 'string' ? meta.label : undefined,
+    selectionLabel: typeof meta?.selectionLabel === 'string' ? meta.selectionLabel : undefined,
+    schema: schema ?? {},
     required: Array.isArray(schemaRoot?.required)
       ? schemaRoot.required.filter((field: unknown): field is string => typeof field === 'string')
       : [],
-    support: row.support && typeof row.support === 'object' ? row.support : {},
+    support: asJsonObject(row.support) ?? {},
     actions: Array.isArray(row.actions)
       ? row.actions.filter((action: unknown): action is string => typeof action === 'string')
       : [],

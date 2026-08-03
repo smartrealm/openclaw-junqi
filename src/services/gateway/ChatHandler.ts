@@ -128,7 +128,8 @@ export class ChatHandler {
   private completedStreamTextBySession = new Map<string, string>();
   private textStreamSnapshotsBySession = new Map<string, TextStreamSnapshots>();
   private toolStartedAtByKey = new Map<string, number>();
-  private lastCompactionTs: number = 0;
+  private lastCompactionTsBySession = new Map<string, number>();
+  private seenCompactionOperationIds = new Set<string>();
 
   // ── Stream micro-batching ──
   // Buffer WebSocket chunks and flush to React every STREAM_FLUSH_MS
@@ -145,6 +146,37 @@ export class ChatHandler {
   private recentTerminalAssistantReplies = new Map<string, RecentTerminalAssistantReply>();
 
   constructor(private conn: ChatHandlerConnection) {}
+
+  private injectCompactionDivider(sessionKey: string, operationId?: string): void {
+    if (!sessionKey || isIsolatedExecutionSessionKey(sessionKey)) return;
+    if (operationId && this.seenCompactionOperationIds.has(operationId)) return;
+
+    const now = Date.now();
+    const last = this.lastCompactionTsBySession.get(sessionKey) ?? 0;
+    if (now - last <= 10_000) {
+      if (operationId) this.seenCompactionOperationIds.add(operationId);
+      return;
+    }
+    this.lastCompactionTsBySession.set(sessionKey, now);
+    if (operationId) {
+      this.seenCompactionOperationIds.add(operationId);
+      if (this.seenCompactionOperationIds.size > 512) {
+        const oldest = this.seenCompactionOperationIds.values().next().value;
+        if (typeof oldest === 'string') this.seenCompactionOperationIds.delete(oldest);
+      }
+    }
+    if (this.lastCompactionTsBySession.size > 512) {
+      const oldest = this.lastCompactionTsBySession.keys().next().value;
+      if (typeof oldest === 'string') this.lastCompactionTsBySession.delete(oldest);
+    }
+    useChatStore.getState().addMessage({
+      id: operationId ? `compaction-operation-${operationId}` : `compaction-live-${now}`,
+      role: 'compaction',
+      content: '',
+      timestamp: new Date(now).toISOString(),
+    }, sessionKey);
+    debugLog('gateway', '[GW] Compaction detected - divider injected');
+  }
 
   /** Drop a locally invalidated run after a confirmed reset or deletion. */
   invalidateSession(sessionKey: string): void {
@@ -1253,6 +1285,21 @@ export class ChatHandler {
         ...operation,
         sessionKey: operationSessionKey,
       });
+      const store = useChatStore.getState();
+      const current = store.compactionStatusBySession[operationSessionKey];
+      if (operation.phase === 'start') {
+        store.setCompactionStatus(operationSessionKey, {
+          operationId: operation.operationId,
+          phase: 'active',
+          startedAt: operation.ts,
+        });
+        return;
+      }
+      if (current && current.operationId !== operation.operationId) return;
+      if (operation.completed === true) {
+        this.injectCompactionDivider(operationSessionKey, operation.operationId);
+      }
+      store.setCompactionStatus(operationSessionKey, null);
       return;
     }
 
@@ -1367,19 +1414,7 @@ export class ChatHandler {
     // Instead of relying on polling tokenUsage.compactions (unreliable timing),
     // intercept the agent compaction event and inject CompactDivider immediately.
     if (event === 'agent' && p.stream === 'compaction' && p.data?.phase === 'end' && !p.data?.willRetry) {
-      if (sessionKey && !isIsolatedExecutionSessionKey(sessionKey)) {
-        const now = Date.now();
-        if (now - this.lastCompactionTs > 10_000) { // Dedup: max 1 per 10s
-          this.lastCompactionTs = now;
-          useChatStore.getState().addMessage({
-            id: `compaction-live-${now}`,
-            role: 'compaction',
-            content: '',
-            timestamp: new Date().toISOString(),
-          }, sessionKey);
-          debugLog('gateway', '[GW] Compaction detected - divider injected');
-        }
-      }
+      if (sessionKey) this.injectCompactionDivider(sessionKey);
     }
 
     if (event === 'agent' && p.stream === 'assistant') {

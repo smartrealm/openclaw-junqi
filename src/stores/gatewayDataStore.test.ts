@@ -26,6 +26,7 @@ import {
   searchOpenClawSessions,
   useGatewayDataStore,
 } from './gatewayDataStore';
+import { parseCronStatus } from '@/services/gateway/cronStatus';
 
 const NOW = Date.UTC(2026, 6, 21, 12, 0, 0);
 const METRICS = {
@@ -146,6 +147,22 @@ test('Gateway polling decoders reject malformed responses instead of inventing e
   assert.deepEqual(parseGatewayCronJobList([{ id: 'daily', agentId: 'ops' }]), [{ id: 'daily', agentId: 'ops' }]);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', agentId: '' }] }), null);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: '' }] }), null);
+  assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', state: 'running' }] }), null);
+  assert.deepEqual(parseCronStatus({
+    enabled: true,
+    storePath: '/runtime/cron.sqlite',
+    storage: 'sqlite',
+    sqlitePath: '/runtime/cron.sqlite',
+    jobs: 1,
+    nextWakeAtMs: null,
+  }), {
+    enabled: true,
+    storePath: '/runtime/cron.sqlite',
+    storage: 'sqlite',
+    sqlitePath: '/runtime/cron.sqlite',
+    jobs: 1,
+    nextWakeAtMs: null,
+  });
 
   const cost = { days: 30, daily: [{ date: '2026-07-31', ...METRICS }], totals: METRICS };
   assert.deepEqual(parseGatewayCostSummary(cost), cost);

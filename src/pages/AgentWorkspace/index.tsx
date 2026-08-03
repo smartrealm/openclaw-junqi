@@ -56,6 +56,7 @@ import { GitChanges, GitDiffViewer } from '@/components/Git';
 import { localWorkspaceFiles } from '@/workspace-files/adapters/localWorkspaceFiles';
 import type { WorkspaceFileScope } from '@/workspace-files/domain/types';
 import { useFocusContextStore } from '@/stores/focusContextStore';
+import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import './workbench.css';
 
 type WorktreeState = 'idle' | 'active' | 'unavailable';
@@ -189,9 +190,10 @@ function WorktreeSidebar({
   );
 }
 
-function WorkbenchTabBar({ tabs, activeTab, onSelect, onClose, onAdd, onSplit, onCloseGroup }: {
+function WorkbenchTabBar({ tabs, activeTab, indicatorId, onSelect, onClose, onAdd, onSplit, onCloseGroup }: {
   tabs: WorkbenchTab[];
   activeTab: string;
+  indicatorId: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onAdd: () => void;
@@ -207,6 +209,12 @@ function WorkbenchTabBar({ tabs, activeTab, onSelect, onClose, onAdd, onSplit, o
             role="presentation"
             className={`junqi-wb-tab${tab.id === activeTab ? ' is-active' : ''}`}
           >
+            {tab.id === activeTab ? (
+              <ActiveTabIndicator
+                layoutId={indicatorId}
+                className="junqi-wb-tab-indicator"
+              />
+            ) : null}
             <button
               type="button"
               role="tab"
@@ -309,6 +317,36 @@ function BrowserPreview() {
   );
 }
 
+function RightPanelTabs({ activePanel, onPanelChange }: {
+  activePanel: RightPanel;
+  onPanelChange: (panel: RightPanel) => void;
+}) {
+  return (
+    <nav role="tablist" aria-label="工作区辅助面板">
+      {rightPanels.map((panel) => (
+        <button
+          key={panel.id}
+          type="button"
+          role="tab"
+          aria-selected={panel.id === activePanel}
+          className={panel.id === activePanel ? 'is-active' : ''}
+          aria-label={panel.label}
+          title={panel.label}
+          onClick={() => onPanelChange(panel.id)}
+        >
+          {panel.id === activePanel ? (
+            <ActiveTabIndicator
+              layoutId="agent-workspace-right-panel-tab"
+              className="junqi-wb-right-tab-indicator"
+            />
+          ) : null}
+          {panel.icon}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 function RightSidebar({ activePanel, onPanelChange, collapsed, onToggle, projectPath, projectName, onFileSelect, onDiffSelect }: {
   activePanel: RightPanel;
   onPanelChange: (panel: RightPanel) => void;
@@ -333,24 +371,12 @@ function RightSidebar({ activePanel, onPanelChange, collapsed, onToggle, project
   return (
     <aside className="junqi-wb-rightbar">
       <header className="junqi-wb-right-header">
-        <nav>
-          {rightPanels.map((panel) => (
-            <button
-              key={panel.id}
-              type="button"
-              className={panel.id === activePanel ? 'is-active' : ''}
-              aria-label={panel.label}
-              title={panel.label}
-              onClick={() => onPanelChange(panel.id)}
-            >
-              {panel.icon}
-
-            </button>
-          ))}
-        </nav>
+        <RightPanelTabs activePanel={activePanel} onPanelChange={onPanelChange} />
         <IconButton label="收起右侧栏" onClick={onToggle}><SidebarSimple size={16} /></IconButton>
       </header>
-      <RightPanelContent panel={activePanel} projectPath={projectPath} projectName={projectName} onFileSelect={onFileSelect} onDiffSelect={onDiffSelect} />
+      <AnimatedTabPanel transitionKey={activePanel} className="junqi-wb-panel-transition">
+        <RightPanelContent panel={activePanel} projectPath={projectPath} projectName={projectName} onFileSelect={onFileSelect} onDiffSelect={onDiffSelect} />
+      </AnimatedTabPanel>
     </aside>
   );
 }
@@ -489,14 +515,24 @@ function WorkbenchContent({ activeTab, domainTab, projectPath, onClose }: {
   projectPath: string | null;
   onClose: () => void;
 }) {
-  if (!activeTab) return <div className="junqi-wb-empty-panel">选择项目后新建 Shell，或从文件与 Git 面板打开标签</div>;
-  if (activeTab.kind === 'editor' && domainTab && projectPath) return <WorkbenchEditor tab={domainTab} projectPath={projectPath} onMissing={onClose} />;
-  if (activeTab.kind === 'editor') return <EditorPreview />;
-  if (activeTab.kind === 'diff' && domainTab && projectPath) return <WorkbenchDiff tab={domainTab} projectPath={projectPath} onClose={onClose} />;
-  if (activeTab.kind === 'diff') return <DiffPreview />;
-  if (activeTab.kind === 'browser') return <BrowserPreview />;
-  if (domainTab?.kind === 'terminal' && projectPath) return <WorkbenchTerminalPane tab={domainTab} cwd={projectPath} />;
-  return <AgentTerminal />;
+  let content: ReactNode;
+  if (!activeTab) content = <div className="junqi-wb-empty-panel">选择项目后新建 Shell，或从文件与 Git 面板打开标签</div>;
+  else if (activeTab.kind === 'editor' && domainTab && projectPath) content = <WorkbenchEditor tab={domainTab} projectPath={projectPath} onMissing={onClose} />;
+  else if (activeTab.kind === 'editor') content = <EditorPreview />;
+  else if (activeTab.kind === 'diff' && domainTab && projectPath) content = <WorkbenchDiff tab={domainTab} projectPath={projectPath} onClose={onClose} />;
+  else if (activeTab.kind === 'diff') content = <DiffPreview />;
+  else if (activeTab.kind === 'browser') content = <BrowserPreview />;
+  else if (domainTab?.kind === 'terminal' && projectPath) content = <WorkbenchTerminalPane tab={domainTab} cwd={projectPath} />;
+  else content = <AgentTerminal />;
+
+  return (
+    <AnimatedTabPanel
+      transitionKey={activeTab?.id ?? 'empty'}
+      className="junqi-wb-pane-transition"
+    >
+      {content}
+    </AnimatedTabPanel>
+  );
 }
 
 function presentationTab(tab: DomainWorkbenchTab): WorkbenchTab {
@@ -858,6 +894,7 @@ export function AgentWorkspacePage() {
                   <WorkbenchTabBar
                     tabs={targetTabs}
                     activeTab={targetActiveId ?? ''}
+                    indicatorId={`agent-workspace-active-tab-${groupId}`}
                     onSelect={(id) => activateTab(groupId, id)}
                     onClose={(id) => { void closeTab(groupId, id); }}
                     onAdd={() => addTab(groupId)}

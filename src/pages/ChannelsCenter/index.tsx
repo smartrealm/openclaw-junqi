@@ -33,6 +33,7 @@ import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
 import {
   buildChannelSetupCommand,
   channelAccountStatus,
+  channelErrorMessage,
   channelLinkMode,
   isOpenClawChannelIdentifier,
   installManagedExternalChannelPlugin,
@@ -329,9 +330,11 @@ export function ChannelsCenterPage() {
   const [gatewayActionBusy, setGatewayActionBusy] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>('all');
-  const [catalog, setCatalog] = useState<OfficialChannelCatalog>({ source: 'openclaw-cli', entries: [] });
+  const [catalog, setCatalog] = useState<OfficialChannelCatalog>({ source: 'unavailable', entries: [] });
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ChannelsRuntimeSnapshot | null>(null);
-  const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const [runtimeLoading, setRuntimeLoading] = useState(true);
+  const [runtimeLoaded, setRuntimeLoaded] = useState(false);
+  const [runtimeError, setRuntimeError] = useState('');
   const [accountActionBusy, setAccountActionBusy] = useState('');
   const [channelLogPayloads, setChannelLogPayloads] = useState<Record<string, unknown>>({});
   const [channelLogsBusy, setChannelLogsBusy] = useState('');
@@ -382,6 +385,7 @@ export function ChannelsCenterPage() {
 
   const loadOfficialState = useCallback(async (probe = false, channelId?: string) => {
     setRuntimeLoading(true);
+    setRuntimeError('');
     try {
       const [nextCatalog, nextSnapshot] = await Promise.all([
         loadOfficialChannelCatalog(probe),
@@ -403,9 +407,11 @@ export function ChannelsCenterPage() {
       } else {
         setRuntimeSnapshot(nextSnapshot as ChannelsRuntimeSnapshot);
       }
-    } catch (reason: any) {
-      setError(reason?.message || String(reason));
+    } catch (reason: unknown) {
+      setCatalog({ source: 'unavailable', entries: [] });
+      setRuntimeError(channelErrorMessage(reason));
     } finally {
+      setRuntimeLoaded(true);
       setRuntimeLoading(false);
     }
   }, []);
@@ -574,8 +580,8 @@ export function ChannelsCenterPage() {
         accountId: account.id,
       });
       await loadOfficialState(true, group.id);
-    } catch (reason: any) {
-      showAlert(t('channelsCenter.channelActionFailed', 'Channel action failed'), reason?.message || String(reason), 'error');
+    } catch (reason: unknown) {
+      showAlert(t('channelsCenter.channelActionFailed', 'Channel action failed'), channelErrorMessage(reason), 'error');
     } finally {
       setAccountActionBusy('');
     }
@@ -595,8 +601,8 @@ export function ChannelsCenterPage() {
     try {
       const payload = await loadOfficialChannelLogs(channelId, 200);
       setChannelLogPayloads((current) => ({ ...current, [channelId]: redactChannelSecrets(payload) }));
-    } catch (reason: any) {
-      showAlert(t('channelsCenter.logsFailed', 'Unable to load channel logs'), reason?.message || String(reason), 'error');
+    } catch (reason: unknown) {
+      showAlert(t('channelsCenter.logsFailed', 'Unable to load channel logs'), channelErrorMessage(reason), 'error');
     } finally {
       setChannelLogsBusy('');
     }
@@ -777,10 +783,10 @@ export function ChannelsCenterPage() {
         }),
         'success',
       );
-    } catch (reason: any) {
+    } catch (reason: unknown) {
       showAlert(
         t('channelsCenter.pluginInstallFailed', 'Plugin installation failed'),
-        reason?.message || String(reason),
+        channelErrorMessage(reason),
         'error',
       );
     } finally {
@@ -806,7 +812,14 @@ export function ChannelsCenterPage() {
           </h1>
           <p className="text-[12px] text-aegis-text-dim mt-0.5">
             {t('channelsCenter.subtitle', 'Connect agents to channels provided by the selected OpenClaw Runtime.')}
-            <span className="ml-2 font-mono text-[10px] text-aegis-text-muted">{catalog.version || catalog.source}</span>
+            {runtimeLoading ? (
+              <span className="ml-2 inline-flex items-center gap-1.5 text-[10px] text-aegis-text-muted">
+                <LoadingIndicator size={10} />
+                {t('channelsCenter.loadingRuntime', 'Loading OpenClaw channel catalog...')}
+              </span>
+            ) : (
+              <span className="ml-2 font-mono text-[10px] text-aegis-text-muted">{catalog.version || catalog.source}</span>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -828,16 +841,29 @@ export function ChannelsCenterPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="flex items-start gap-2 rounded-xl border border-aegis-danger/20 bg-aegis-danger/10 px-4 py-3 text-[12px] text-aegis-danger">
+      {(error || runtimeError) && (
+        <div className="flex items-start gap-2 rounded-xl border border-aegis-danger/20 bg-aegis-danger/10 px-4 py-3 text-[12px] text-aegis-danger" role="alert">
           <AlertCircle size={15} className="mt-0.5 shrink-0" />
-          <span>{error}</span>
+          <div className="min-w-0 space-y-1">
+            {error && <div className="break-words">{error}</div>}
+            {runtimeError && (
+              <div className="break-words">
+                {t('channelsCenter.runtimeLoadFailed', 'Unable to load channels from the selected OpenClaw Runtime')}: {runtimeError}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {loading ? (
-        <div className="flex items-center justify-center py-24 text-aegis-text-dim">
-          <LoadingIndicator size={24} label={t('common.loading', 'Loading...')} />
+      {loading || !runtimeLoaded ? (
+        <div className="space-y-4 py-4" aria-busy="true" aria-label={t('channelsCenter.loadingRuntime', 'Loading OpenClaw channel catalog...')}>
+          <div className="flex items-center justify-center gap-2 py-4 text-sm text-aegis-text-muted">
+            <LoadingIndicator size={18} />
+            {t('channelsCenter.loadingRuntime', 'Loading OpenClaw channel catalog...')}
+          </div>
+          {[0, 1, 2].map((item) => (
+            <div key={item} className="h-16 animate-pulse rounded-md border border-aegis-border bg-aegis-surface" />
+          ))}
         </div>
       ) : (
         <>

@@ -61,6 +61,7 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
       <VoiceWakeOverlay
         snapshot={controller.voiceMode}
         talkPhase={controller.talkConversation.phase}
+        talkError={controller.talkConversation.error}
         onStop={controller.stopVoiceMode}
         onConfirmDraft={controller.confirmVoiceDraft}
         onDiscardDraft={controller.discardVoiceDraft}

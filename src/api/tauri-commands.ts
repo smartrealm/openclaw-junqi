@@ -390,6 +390,9 @@ export const repairSetupNodeRuntime = (operationId?: string) => (
 );
 export const checkGit = () => invoke<GitStatus>("check_git");
 export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");
+export const approveSelectedGatewayDevice = (requestId: string) => (
+  invoke<void>("approve_selected_gateway_device", { requestId })
+);
 export const checkOpenclawUpdate = () => invoke<OpenclawUpdateStatus>("check_openclaw_update");
 export const updateOpenclaw = () => invoke<OpenclawUpdateResult>("update_openclaw");
 export const repairOpenclaw = () => invoke<boolean>('repair_openclaw');
@@ -855,3 +858,29 @@ export const deleteGatewayCredential = (params: GatewayCredentialKeyParams) =>
 
 export const migrateGatewayCredential = (params: MigrateGatewayCredentialParams) =>
   invoke<GatewayCredentialResult>('migrate_gateway_credential', { params });
+
+export interface GatewayDeviceIdentityReference {
+  deviceId: string;
+  publicKey: string;
+}
+
+export interface GatewayDeviceChallengeParams {
+  nonce: string;
+  clientId: string;
+  clientMode: string;
+  role: string;
+  scopes: readonly string[];
+  token: string;
+}
+
+export interface GatewayDeviceChallengeSignature extends GatewayDeviceIdentityReference {
+  signature: string;
+  signedAt: number;
+  nonce: string;
+}
+
+export const getGatewayDeviceIdentityReference = () =>
+  invoke<GatewayDeviceIdentityReference>('get_gateway_device_identity_reference');
+
+export const signGatewayDeviceChallenge = (params: GatewayDeviceChallengeParams) =>
+  invoke<GatewayDeviceChallengeSignature>('sign_gateway_device_challenge', { params });

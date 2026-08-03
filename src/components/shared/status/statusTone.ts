@@ -82,6 +82,9 @@ const TONE_ALIASES: Record<string, StatusTone> = {
   detached: 'warning',
   skipped: 'neutral',
   cancelled: 'neutral',
+  blocked: 'attention',
+  timed_out: 'warning',
+  unknown: 'neutral',
   // A sent message has completed its delivery transition. Keep the historical
   // success meaning used by StatusIcon rather than repainting it as info.
   sent: 'success',

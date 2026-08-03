@@ -76,3 +76,24 @@ test('agent settings edits ordered fallback configuration through config.patch',
   assert.match(panel, /replacePaths: \['agents\.list'\]/);
   assert.match(panel, /getModelFallbacks\(nextModel\)/);
 });
+
+test('agent settings exposes a separate local business profile save path', async () => {
+  const panel = await read('./AgentSettingsPanel.tsx');
+
+  assert.match(panel, /data-testid="agent-profile-section"/);
+  assert.match(panel, /loadAgentProfile\(agent\.id\)/);
+  assert.match(panel, /saveAgentProfile\(\{/);
+  assert.match(panel, /profileDomain/);
+  assert.match(panel, /profileScope/);
+  assert.match(panel, /profileChanged/);
+  assert.match(panel, /profileSaveFailed/);
+  assert.match(panel, /\{!loadingConfig && \(\s*<AgentProfileSection/s);
+});
+
+test('deleting an agent attempts to remove its JunQi-local profile', async () => {
+  const page = await read('./index.tsx');
+
+  assert.match(page, /await gateway\.deleteAgent\(agentId\)/);
+  assert.match(page, /await deleteAgentProfile\(agentId\)/);
+  assert.match(page, /profileCleanupWarningTitle/);
+});

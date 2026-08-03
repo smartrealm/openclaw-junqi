@@ -13,24 +13,58 @@ const runIfMissingOnly = process.argv.includes('--if-missing');
 const allowTemplateFallback = process.argv.includes('--allow-template-fallback');
 
 const workspaceOpenClawRoot = path.join(repoRoot, 'packages', 'junqi-collab', 'node_modules', 'openclaw');
+const workspaceCollaborationManifestPath = path.join(repoRoot, 'packages', 'junqi-collab', 'package.json');
 
-function resolveOpenClawBin() {
-  if (process.env.OPENCLAW_BIN) return process.env.OPENCLAW_BIN;
-  const workspacePackage = path.join(workspaceOpenClawRoot, 'package.json');
-  if (fs.existsSync(workspacePackage)) {
-    const manifest = JSON.parse(fs.readFileSync(workspacePackage, 'utf8'));
-    const relativeBin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.openclaw;
-    if (relativeBin) return path.join(workspaceOpenClawRoot, relativeBin);
+function readJsonFile(filePath, description) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Unable to read ${description} at ${filePath}: ${error.message}`);
   }
-  const executable = process.platform === 'win32' ? 'openclaw.cmd' : 'openclaw';
-  const candidates = String(process.env.PATH || '')
-    .split(path.delimiter)
-    .filter((directory) => directory && !directory.replaceAll('\\', '/').includes('/node_modules/.bin'))
-    .map((directory) => path.join(directory, executable));
-  return candidates.find((candidate) => fs.existsSync(candidate)) || executable;
 }
 
-const openclawBin = resolveOpenClawBin();
+export function assertPinnedOpenClawVersion(expectedVersion, installedVersion) {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(expectedVersion)) {
+    throw new Error(
+      `packages/junqi-collab/package.json must pin OpenClaw to an exact version; received ${JSON.stringify(expectedVersion)}.`,
+    );
+  }
+  if (installedVersion !== expectedVersion) {
+    throw new Error(
+      `Workspace OpenClaw version mismatch: package manifest pins ${expectedVersion}, but node_modules contains ${JSON.stringify(installedVersion)}. Run pnpm install --frozen-lockfile before regenerating catalogs.`,
+    );
+  }
+}
+
+function resolveWorkspaceOpenClaw() {
+  const workspacePackagePath = path.join(workspaceOpenClawRoot, 'package.json');
+  if (!fs.existsSync(workspacePackagePath)) {
+    throw new Error(
+      `Workspace-pinned OpenClaw package is missing at ${workspacePackagePath}. Run pnpm install --frozen-lockfile before regenerating catalogs.`,
+    );
+  }
+  const collaborationManifest = readJsonFile(workspaceCollaborationManifestPath, 'the collaboration package manifest');
+  const expectedVersion = collaborationManifest.devDependencies?.openclaw;
+  const workspaceManifest = readJsonFile(workspacePackagePath, 'the workspace OpenClaw package manifest');
+  assertPinnedOpenClawVersion(expectedVersion, workspaceManifest.version);
+  const relativeBin = typeof workspaceManifest.bin === 'string'
+    ? workspaceManifest.bin
+    : workspaceManifest.bin?.openclaw;
+  if (!relativeBin) {
+    throw new Error(`Workspace-pinned OpenClaw package does not declare an openclaw binary: ${workspacePackagePath}`);
+  }
+  return {
+    bin: path.join(workspaceOpenClawRoot, relativeBin),
+    version: expectedVersion,
+  };
+}
+
+function resolveOpenClawBin() {
+  if (process.env.OPENCLAW_BIN) {
+    return { bin: process.env.OPENCLAW_BIN, version: null };
+  }
+  return resolveWorkspaceOpenClaw();
+}
 
 const bundledOpenClawRoot = (() => {
   const candidates = [
@@ -141,11 +175,13 @@ function getSupportsImage(input) {
 }
 
 function loadOfficialCliCatalog() {
+  // Resolve before the fallback boundary: a stale workspace package is not an acceptable catalog source.
+  const openclaw = resolveOpenClawBin();
   const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'junqi-provider-catalog-'));
   const isolatedConfig = path.join(isolatedRoot, 'openclaw.json');
   fs.writeFileSync(isolatedConfig, '{}', 'utf8');
   try {
-    const raw = execFileSync(openclawBin, ['models', 'list', '--all', '--json'], {
+    const raw = execFileSync(openclaw.bin, ['models', 'list', '--all', '--json'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 60_000,
@@ -161,7 +197,7 @@ function loadOfficialCliCatalog() {
     if (!Array.isArray(payload.models) || payload.models.length === 0) {
       throw new Error('OpenClaw returned an empty model catalog');
     }
-    const version = execFileSync(openclawBin, ['--version'], {
+    const cliVersion = execFileSync(openclaw.bin, ['--version'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 15_000,
@@ -181,7 +217,7 @@ function loadOfficialCliCatalog() {
         supportsImage: String(model.input || '').toLowerCase().includes('image'),
       });
     }
-    return { version, providers: byProvider };
+    return { version: openclaw.version ?? cliVersion, providers: byProvider };
   } catch (error) {
     if (!allowTemplateFallback) {
       throw new Error(
@@ -474,7 +510,9 @@ async function generate() {
   if (wroteMediaCatalog) console.log(`Generated: ${mediaOutputPath}`);
 }
 
-generate().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  generate().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

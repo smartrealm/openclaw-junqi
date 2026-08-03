@@ -64,6 +64,20 @@ export function MessageInput() {
     textareaRef: suggestions.textareaRef,
     setIsSending,
   });
+  const steer = useMessageSend({
+    activeSessionKey,
+    activeSessionId,
+    connected,
+    historyLoading,
+    historyLoader: historyLoader ?? undefined,
+    isSending,
+    messageCount: messages.length,
+    files: attachments.files,
+    text,
+    textareaRef: suggestions.textareaRef,
+    setIsSending,
+    deliveryMode: 'steer',
+  });
   const stop = useComposerInterruption({
     activeSessionKey,
     activeMenu: menu.active,
@@ -129,6 +143,7 @@ export function MessageInput() {
           onToggleDictation={voice.toggleDictation}
           onRequestWakeWord={voice.requestWakeWord}
           onSend={send}
+          onSteer={steer}
           onStop={stop}
         />
       )}

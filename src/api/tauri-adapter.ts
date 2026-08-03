@@ -33,6 +33,10 @@ function clearLegacyOpenClawConfigBackups(): void {
 
 clearLegacyOpenClawConfigBackups();
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function detectPlatform(): string {
   const ua = navigator.userAgent;
   if (ua.includes("Mac")) return "darwin";
@@ -95,10 +99,10 @@ const aegisBridge: AegisAPI = {
     const paths = await readStorageRuntimePaths();
     if (!paths?.stateDir) return { success: false, error: 'Storage location is unavailable' };
     try {
-      await invoke("open_folder", { path: paths.stateDir });
+      await invoke<void>("open_folder", { path: paths.stateDir });
       return { success: true, path: paths.stateDir };
     } catch (error) {
-      return { success: false, path: paths.stateDir, error: String(error) };
+      return { success: false, path: paths.stateDir, error: errorMessage(error) };
     }
   } },
   // JunQi-style system metrics event stream (background thread emits every 1s)

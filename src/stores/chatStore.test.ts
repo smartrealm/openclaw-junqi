@@ -406,6 +406,126 @@ test('history cache preserves structured Gateway blocks through ChatStore projec
   )));
 });
 
+test('streaming tail updates preserve historical projections and match a canonical rebuild', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    messages: [],
+    renderBlocks: [],
+    responseGroups: [],
+    messagesPerSession: {},
+    _blocksCache: {},
+    _groupsCache: {},
+    thinkingBySession: {},
+  });
+
+  const store = useChatStore.getState();
+  store.setMessages([
+    {
+      id: 'history-user',
+      role: 'user',
+      content: 'Historical question',
+      timestamp: '2026-08-03T00:00:00.000Z',
+    },
+    {
+      id: 'history-assistant',
+      role: 'assistant',
+      content: 'Historical answer',
+      timestamp: '2026-08-03T00:00:01.000Z',
+      runId: 'run-history',
+      isStreaming: false,
+      responseState: 'final',
+    },
+    {
+      id: 'current-user',
+      role: 'user',
+      content: 'Current question',
+      timestamp: '2026-08-03T00:00:02.000Z',
+    },
+  ], MAIN_KEY);
+  store.updateStreamingMessage(
+    'current-assistant',
+    'Partial answer',
+    { runId: 'run-current' },
+    MAIN_KEY,
+  );
+
+  const before = useChatStore.getState();
+  const historicalGroups = before.responseGroups.slice(0, -1);
+  const historicalBlocks = before.renderBlocks.slice(0, -1);
+
+  store.updateStreamingMessage(
+    'current-assistant',
+    'Partial answer with more text',
+    { runId: 'run-current' },
+    MAIN_KEY,
+  );
+
+  const incremental = useChatStore.getState();
+  historicalGroups.forEach((group, index) => assert.equal(incremental.responseGroups[index], group));
+  historicalBlocks.forEach((block, index) => assert.equal(incremental.renderBlocks[index], block));
+  assert.equal(incremental.messages.at(-1)?.content, 'Partial answer with more text');
+  assert.notEqual(incremental.responseGroups.at(-1), before.responseGroups.at(-1));
+
+  const incrementalGroups = structuredClone(incremental.responseGroups);
+  const incrementalBlocks = structuredClone(incremental.renderBlocks);
+  store.setMessages(incremental.messages, MAIN_KEY);
+
+  const canonical = useChatStore.getState();
+  assert.deepEqual(canonical.responseGroups, incrementalGroups);
+  assert.deepEqual(canonical.renderBlocks, incrementalBlocks);
+});
+
+test('a non-tail streaming update falls back to the canonical full projection', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.setState({
+    messages: [],
+    renderBlocks: [],
+    responseGroups: [],
+    messagesPerSession: {},
+    _blocksCache: {},
+    _groupsCache: {},
+    thinkingBySession: {},
+  });
+
+  const store = useChatStore.getState();
+  store.setMessages([
+    {
+      id: 'earlier-assistant',
+      role: 'assistant',
+      content: 'Earlier answer',
+      timestamp: '2026-08-03T00:00:00.000Z',
+      runId: 'run-earlier',
+      isStreaming: false,
+      responseState: 'final',
+    },
+    {
+      id: 'later-user',
+      role: 'user',
+      content: 'Later question',
+      timestamp: '2026-08-03T00:00:01.000Z',
+    },
+  ], MAIN_KEY);
+  const previousFirstGroup = useChatStore.getState().responseGroups[0];
+
+  store.updateStreamingMessage(
+    'earlier-assistant',
+    'Corrected earlier answer',
+    { runId: 'run-earlier' },
+    MAIN_KEY,
+  );
+
+  const state = useChatStore.getState();
+  assert.equal(state.messages[0].content, 'Corrected earlier answer');
+  assert.equal(state.responseGroups[0].blocks[0]?.type, 'message-content');
+  assert.equal(
+    state.responseGroups[0].blocks[0]?.type === 'message-content'
+      ? state.responseGroups[0].blocks[0].markdown
+      : '',
+    'Corrected earlier answer',
+  );
+  assert.notEqual(state.responseGroups[0], previousFirstGroup);
+});
+
 test('thinking-prefix removal does not restore a stale streaming fragment', () => {
   seedSessions(MAIN_KEY);
   useChatStore.setState({

@@ -10,6 +10,8 @@ OpenClaw Agent 协作的代码层领域状态和自动化回归已完成：Plugi
 
 ## 2. 实施状态
 
+2026-08-02：Desktop 在协作运行历史抽屉顶部新增“需要你决定”只读投影。它只读取插件既有的 `AWAITING_APPROVAL`、`AWAITING_INTERVENTION` 和 `DELIVERY_PENDING` Run 与快照，并复用原有详情/动作边界；不新增 Workboard、调度器或前端决定事实。验证记录见 `docs/collaboration/2026-08-02-needs-you-projection.md`。
+
 | 状态 | 阶段 | 能力 | 验收事实 |
 | --- | --- | --- | --- |
 | [x] | A | State Machine | Run 迁移受领域状态机约束；Attempt recovery reducer 对 Task 观察生成显式决策 |

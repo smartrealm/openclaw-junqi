@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════
-// PageTransition — CSS-only enter animation (no framer-motion)
-// exit removed: AnimatePresence was removed from AppLayout
+// PageTransition — shared route-scene entrance
+// The route viewport owns scrolling, so only the page scene moves.
 // ═══════════════════════════════════════════════════════════
 
 import type { ReactNode } from 'react';
@@ -12,7 +12,7 @@ interface PageTransitionProps {
 
 export function PageTransition({ children, className = '' }: PageTransitionProps) {
   return (
-    <div className={`animate-fade-in ${className}`}>
+    <div className={`aegis-page-transition animate-fade-in ${className}`}>
       {children}
     </div>
   );

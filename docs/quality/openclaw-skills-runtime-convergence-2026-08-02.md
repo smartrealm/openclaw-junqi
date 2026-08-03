@@ -15,7 +15,7 @@
 - `skills.upload.begin`、`skills.upload.chunk`、`skills.upload.commit` 与 `skills.install` 的 upload 分支是 `operator.admin` 操作，且归档安装受 `skills.install.allowUploadedArchives` 控制，默认关闭；
 - `skills.update` 的配置模式只接受 `skillKey`、`enabled`、`apiKey` 与 `env`；
 - `skills.install` 的 ClawHub 模式只接受 `source: "clawhub"`、`slug`、可选版本、强制安装与风险确认字段；
-- 当前协议没有技能删除、上传取消、远端上传删除、目录导入、SkillHub CLI 安装或 ClawHub 登录 command。
+- 当前协议没有技能删除、上传取消、远端上传删除、目录导入、SkillHub CLI 安装或 ClawHub 登录 command；官方 ZIP 归档上传能力在独立记录中说明。
 
 ## 原问题
 
@@ -61,6 +61,13 @@ Tauri adapter 中固定返回失败或空结果，但页面仍向用户显示导
 - `openclawSkillsRuntime.test.ts` 覆盖协议字段解析、异常条目拒绝和管理员变更出口。
 - `SkillsPage/components.test.ts` 覆盖 README 清洗及伪造 marketplace 字段回归边界。
 - `pnpm exec tsc --noEmit`、定向测试与 `git diff --check` 通过。
+
+## 后续归档上传增量
+
+2026-08-03 已在独立记录 [`OpenClaw 技能归档上传能力对齐`](openclaw-skills-upload-parity-2026-08-03.md)
+接入当前 OpenClaw 版本的 `skills.upload.*` 与 `skills.install(source: "upload")`。本文描述的
+status/search/detail/update/install 运行时出口仍然有效；ZIP 归档上传的哈希、分块、策略门禁和
+未实现的远端删除边界以新记录为准。
 
 ## 未验证边界
 

@@ -1,6 +1,35 @@
 export type TalkMode = 'realtime' | 'stt-tts' | 'transcription';
 export type TalkTransport = 'webrtc' | 'provider-websocket' | 'gateway-relay' | 'managed-room';
 export type TalkBrain = 'agent-consult' | 'direct-tools' | 'none';
+export type TalkEventType =
+  | 'session.started'
+  | 'session.ready'
+  | 'session.closed'
+  | 'session.error'
+  | 'session.replaced'
+  | 'turn.started'
+  | 'turn.ended'
+  | 'turn.cancelled'
+  | 'capture.started'
+  | 'capture.stopped'
+  | 'capture.cancelled'
+  | 'capture.once'
+  | 'input.audio.delta'
+  | 'input.audio.committed'
+  | 'transcript.delta'
+  | 'transcript.done'
+  | 'output.text.delta'
+  | 'output.text.done'
+  | 'output.audio.started'
+  | 'output.audio.delta'
+  | 'output.audio.done'
+  | 'tool.call'
+  | 'tool.progress'
+  | 'tool.result'
+  | 'tool.error'
+  | 'usage.metrics'
+  | 'latency.metrics'
+  | 'health.changed';
 
 export interface TalkAudioFormat {
   encoding: 'pcm16' | 'g711_ulaw';
@@ -43,7 +72,7 @@ export interface TalkSession {
 
 export interface TalkEvent {
   id: string;
-  type: string;
+  type: TalkEventType;
   sessionId: string;
   turnId: string | null;
   seq: number;
@@ -51,6 +80,13 @@ export interface TalkEvent {
   transport: TalkTransport;
   brain: TalkBrain;
   payload: unknown;
+}
+
+export interface TalkSessionReplacedPayload {
+  handoffId: string;
+  roomId: string;
+  previousClientId: string;
+  nextClientId: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -70,6 +106,36 @@ function enumValue<T extends string>(value: unknown, allowed: readonly T[]): T |
 const MODES = ['realtime', 'stt-tts', 'transcription'] as const;
 const TRANSPORTS = ['webrtc', 'provider-websocket', 'gateway-relay', 'managed-room'] as const;
 const BRAINS = ['agent-consult', 'direct-tools', 'none'] as const;
+const EVENT_TYPES: readonly TalkEventType[] = [
+  'session.started',
+  'session.ready',
+  'session.closed',
+  'session.error',
+  'session.replaced',
+  'turn.started',
+  'turn.ended',
+  'turn.cancelled',
+  'capture.started',
+  'capture.stopped',
+  'capture.cancelled',
+  'capture.once',
+  'input.audio.delta',
+  'input.audio.committed',
+  'transcript.delta',
+  'transcript.done',
+  'output.text.delta',
+  'output.text.done',
+  'output.audio.started',
+  'output.audio.delta',
+  'output.audio.done',
+  'tool.call',
+  'tool.progress',
+  'tool.result',
+  'tool.error',
+  'usage.metrics',
+  'latency.metrics',
+  'health.changed',
+];
 
 function enumArray<T extends string>(value: unknown, allowed: readonly T[]): T[] | null {
   if (!Array.isArray(value)) return null;
@@ -218,7 +284,7 @@ export function decodeTalkSession(value: unknown): TalkSession | null {
 export function decodeTalkEvent(value: unknown): TalkEvent | null {
   if (!isRecord(value)) return null;
   const id = string(value.id);
-  const type = string(value.type);
+  const type = enumValue(value.type, EVENT_TYPES);
   const sessionId = string(value.sessionId);
   const mode = enumValue(value.mode, MODES);
   const transport = enumValue(value.transport, TRANSPORTS);
@@ -229,4 +295,14 @@ export function decodeTalkEvent(value: unknown): TalkEvent | null {
   const turnId = value.turnId === undefined ? null : string(value.turnId);
   if (value.turnId !== undefined && !turnId) return null;
   return { id, type, sessionId, turnId, seq: value.seq, mode, transport, brain, payload: value.payload };
+}
+
+export function decodeTalkSessionReplacedPayload(value: unknown): TalkSessionReplacedPayload | null {
+  if (!isRecord(value)) return null;
+  const handoffId = string(value.handoffId);
+  const roomId = string(value.roomId);
+  const previousClientId = string(value.previousClientId);
+  const nextClientId = string(value.nextClientId);
+  if (!handoffId || !roomId || !previousClientId || !nextClientId) return null;
+  return { handoffId, roomId, previousClientId, nextClientId };
 }

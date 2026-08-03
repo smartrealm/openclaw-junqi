@@ -52,7 +52,10 @@ OpenClaw 内置一个 metadata-only 的审计账本，通过 `audit.list` 暴露
 - 每条事件包含：**稳定 event id、单调 ledger sequence、source event sequence、时间戳、actor、agent/session/run 归属、action、status、规范化 error code**；工具事件另含 `toolCallId` 与工具名
 - 权限：`operator.read`
 
-**当前行为**：JunQi 从未调用 `audit.list`（全仓检索 0 处）。追溯节点 ID 直接复用前端 block ID，`ChatResponseTrace.id` 复用本地 `group.id`。
+**当前行为**：JunQi 已在存在 `runId` 的追溯面板中按运行范围调用 `audit.list`。追溯节点
+ID 仍直接复用前端 block ID，`ChatResponseTrace.id` 仍复用本地 `group.id`；Gateway
+的稳定 event id、ledger sequence 和 source sequence 只作为审计元数据展示，不改写本地
+transcript 身份。
 
 **可拓展行为**：
 
@@ -75,20 +78,25 @@ OpenClaw 内置一个 metadata-only 的审计账本，通过 `audit.list` 暴露
 
 OpenClaw 审计状态为 7 值：`started`、`succeeded`、`failed`、`cancelled`、`timed_out`、`blocked`、`unknown`。
 
-**当前行为**：`src/types/ResponseGroup.ts:9` 定义 `status: 'streaming' | 'final' | 'error' | 'aborted'`，共 4 值。
+**当前行为**：`ResponseGroup` 的 transcript 状态仍保持 4 值，避免把未确认的审计状态写回
+消息状态；追溯面板会在同一 `runId` 的 `agent.run.finished` 审计记录存在时，显示
+`blocked`、`timed_out` 或 `unknown` 等 OpenClaw 终态。
 
 **差距**：
 
 | OpenClaw | JunQi 现状 |
 | --- | --- |
-| `blocked` | 无对应值，会被压成 `error` |
-| `timed_out` | 无对应值，会被压成 `error` |
+| `blocked` | 追溯顶部按权威 Agent 终态单独显示 |
+| `timed_out` | 追溯顶部按权威 Agent 终态单独显示 |
 | `cancelled` | 近似对应 `aborted` |
-| `unknown` | 无对应值 |
+| `unknown` | 追溯顶部按权威 Agent 终态单独显示 |
 
-`blocked` 的丢失影响最大：策略或审批拦截与模型自身出错是完全不同的因果，用户看到的都是「错误」，无法判断该去调审批策略还是重试。`timed_out` 同理，超时与失败的处置方式不同。
+`blocked` 的区分影响最大：策略或审批拦截与模型自身出错是完全不同的因果，用户可以
+判断该去调审批策略还是重试。`timed_out` 同理，超时与失败的处置方式不同。
 
-**可拓展行为**：扩展状态词汇并在追溯节点上区分展示。若前端事件流本身不携带这些状态，可由 EXT-01 的审计记录补足。
+**已实现行为**：不扩展 `ResponseGroup` 的持久化状态词汇，而是在追溯面板读取同一运行的
+`agent.run.finished` 审计记录。仅 `blocked`、`timed_out`、`unknown` 等明确终态覆盖顶部
+展示；未拿到审计终态时保持 transcript 语义。`StatusIcon` 和三种语言文案已同步。
 
 ### EXT-03 · 接入 exec / plugin approval，把「transcript-only」升级为可确认的正式审批
 
@@ -103,18 +111,29 @@ OpenClaw 提供两套并行的审批协议：
 
 `exec.approval.list` 支持 pending 查询与重放，`waitDecision` 返回最终决定或超时 `null`。解析需要 `operator.approvals` scope。协议还规定：审批通过后转发的 `node.invoke system.run` 必须复用审批时的 canonical `systemRunPlan`，若调用方在准备与最终转发之间篡改 `command`、`rawCommand`、`cwd`、`agentId` 或 `sessionKey`，Gateway 拒绝执行。
 
-**当前行为**：JunQi 全仓没有任何 `exec.approval` 或 `plugin.approval` 调用。`ChatResponseTrace.review.recording` 硬编码为 `'transcript-only'`（`chatResponseTrace.ts:150`），`formalReviewId` 仅来自 Collaboration 插件的 decision block。`GatewayOperatorScope` 类型已声明 `'operator.approvals'`（`Connection.ts:36`），但 `DAILY_OPERATOR_SCOPES` 不包含它，日常连接拿不到该权限。
+**当前行为**：JunQi 已在活动中心接入 `exec.approval.list`、`plugin.approval.list` 以及对应的
+`resolve`。审批客户端使用单独的 `operator.approvals` 临时连接，`DAILY_OPERATOR_SCOPES`
+仍不包含该权限。`ChatResponseTrace.review.recording` 对普通 Chat 仍为
+`'transcript-only'`，`formalReviewId` 仍仅来自 Collaboration 插件的 decision block；
+活动中心的 Gateway 审批控制不会改写这两种既有语义。
 
 **可拓展行为**：
 
-- 追溯面板订阅 `exec.approval.requested` / `resolved`，把审批请求与决议作为一等追溯节点，携带真实的 decision 与 actor。
-- 对 exec / plugin 审批，`review.recording` 可以从 `transcript-only` 升级为有据可查的正式记录。spec 中「无法确认人工选择已被正式记录时，不显示已审核」的失败关闭条件仍然成立，只是对这一类审批而言，**确认现在是可能的**。
-- `exec.approval.list` 可用于面板重新打开时重放 pending 审批，避免错过事件窗口。
+- 活动中心已按 `exec.approval.list` / `plugin.approval.list` 重放 pending 审批，并通过
+  `resolve` 得到 Gateway 的正式确认；审批事件桥已保留 requested/resolved 的严格解析。
+- 活动中心打开期间现在维持一条只声明 `operator.approvals` 的 page-lifetime 专用 socket，
+  事件只进入审批桥，页面关闭立即释放；失效后按固定次数重试，列表重放仍是权威恢复路径。
+- 响应级追溯仍不把审批记录合并进 `ChatResponseTrace`，因为当前安装版的审批事件没有取得
+  可验证的 runId 关联样本。未验证边界不能被本地按钮或事件到达顺序替代。
+- 普通 Chat 的 `transcript-only` 语义保持不变。
 
 **必须保留的边界**：
 
 - 这与 Chat 内的 `inline-buttons` / `decision` block 是**两套不同机制**。inline buttons 仍然是 transcript-only，不能因为接入了 exec approval 就把二者混为一谈。现有的区分是正确的，拓展只应新增一类节点，不应改写既有语义。
-- 解析审批需要 `operator.approvals`，属于权限提升。JunQi 已有 admin scope 升级机制（见 `docs/installation/openclaw-windows-wizard-audit.md` 中 BUG-WIZ-01 的处理），应复用而不是把该 scope 加进日常连接。**只读展示审批节点与执行解析操作应分开授权**：展示走现有 scope，解析才升级。
+- 审批列表和解析都需要 `operator.approvals`，属于权限提升。JunQi 已有临时 scope 升级机制
+  （见 `docs/installation/openclaw-windows-wizard-audit.md` 中 BUG-WIZ-01 的处理），应复用而
+  不是把该 scope 加进日常连接。审计账本的只读展示仍走 `operator.read`；审批控制单独走
+  `operator.approvals`。
 
 ### EXT-04 · 订阅 `session.operation`
 
@@ -141,9 +160,13 @@ OpenClaw 提供两套并行的审批协议：
 - `/usage full` 展示 model、reasoning、fast/slow、context window 与 cost（字段可用时）
 - 协议侧 `sessions.usage`、`sessions.usage.timeseries`、`sessions.usage.logs` 提供会话级用量（`protocol.md:352-354`）
 
-**当前行为**：追溯面板对 token、cost、model 三个关键词命中 0 处。JunQi 已经在 `src/stores/gatewayDataStore.ts`、`src/utils/activitySessions.ts`、`src/pages/LogsViewer.tsx`、`src/services/gateway/index.ts` 调用了 `sessions.usage` 系列，但这些数据没有进入追溯。
+**当前行为**：追溯消息节点已投影当前已加载消息中的 model、input/output token、cache
+read/write 和 context 百分比。JunQi 仍在 `src/stores/gatewayDataStore.ts`、
+`src/utils/activitySessions.ts`、`src/pages/LogsViewer.tsx`、`src/services/gateway/index.ts`
+调用 `sessions.usage` 系列，但这些会话汇总没有被标记为单次响应用量。
 
-**可拓展行为**：追溯是「这次响应到底发生了什么」的视图，「用了哪个模型、消耗多少、花了多少钱」属于该问题的核心部分。已有的 usage 数据接入追溯的边际成本很低。
+**已实现行为**：追溯消息节点显示已验证的响应级 model 和 token 元数据。cost、reasoning、
+context window 只有在当前消息契约和官方字段完成核对后才能继续接入，不能从会话汇总推断。
 
 **必须保留的边界**：
 
@@ -159,9 +182,13 @@ OpenClaw 提供两套并行的审批协议：
 
 压缩前 OpenClaw 会提醒 agent 把要点存入 memory 以防上下文丢失。`notifyUser` 为 true 时，压缩开始与完成都会显示状态消息，**预压缩 memory flush 耗尽但回复仍继续时会给出 degraded 通知**。
 
-**当前行为**：`src/components/Chat/chatResponseTrace.ts:122-124` 对 `system-note` 与 `compaction` 两类 block 直接返回空数组，它们不会出现在追溯中。
+**当前行为**：`system-note` 仍不进入追溯；`compaction` 已由
+`src/components/Chat/chatResponseTrace.ts` 投影为独立节点，并保留来源消息标识、来源序号和时间。
 
-**可拓展行为**：压缩是真实的执行事件，会改变模型可见的上下文，是解释「为什么后面的回答忘了前面的内容」的关键线索。追溯应保留 compaction 节点，尤其是 degraded 那一类通知。这与主消息流是否显示压缩提示是两个独立决定——主流可以安静，追溯不该失忆。
+**已实现行为**：压缩是真实的执行事件，会改变模型可见的上下文。追溯现在保留
+`compaction` 节点，且主消息流继续使用现有压缩分隔线。当前节点只展示协议已提供的标识和时间，
+不会猜测压缩原因、token 数、摘要或 degraded 结果。未来只有在上游明确提供并完成协议核对后，
+才能扩展这些字段。
 
 ### EXT-07 · 跨响应与跨会话的追溯查询
 
@@ -171,9 +198,9 @@ OpenClaw 提供两套并行的审批协议：
 
 `audit.list` 支持按 `agentId` / `sessionKey` / `runId` / `kind` / `status` / 时间区间过滤，`limit` 最大 500，`cursor` 分页，newest-first。
 
-**当前行为**：追溯的作用域是单个 `ResponseGroup`，无法回答跨响应的问题。
+**当前行为**：单个 `ResponseGroup` 的 Chat 追溯仍保持精确 `runId` 作用域；活动中心已新增独立的跨运行审计区，不把跨运行记录混入单响应 transcript。
 
-**可拓展行为**：「这个 agent 今天失败了几次」「这个会话里哪些工具调用被 blocked」这类问题，官方账本已经能直接回答。可作为追溯面板之上的一个运维视图，或并入现有 `LogsViewer`。
+**已实现行为**：活动中心默认查询最近一页 `audit.list`，支持 `agent_run` / `tool_action`、七种官方状态筛选，并用官方 `nextCursor` 读取更早记录。该区只展示 metadata-only 字段，与 Chat transcript、任务账本、Cron 历史和日志分离。实现与边界见 [`OpenClaw 跨运行审计账本`](openclaw-cross-run-audit-ledger-2026-08-03.md)。
 
 **边界**：仍受 30 天保留期与 metadata-only 限制。
 
@@ -197,11 +224,11 @@ OpenClaw 提供两套并行的审批协议：
 ## 建议顺序
 
 1. EXT-01 与 EXT-02 一起做。二者共用 `audit.list` 的接入，且不需要 scope 变更，是解除现有 spec 自我约束的最短路径。
-2. EXT-06 单独做，改动最小，只是停止丢弃已有数据。
+2. EXT-06 已完成；后续只在取得新的官方压缩字段证据后扩展。
 3. EXT-05 接入已有的 usage 数据。
 4. EXT-04 已按官方当前 schema 接入；真实 Gateway 联机验证单独记录在 [会话操作事件对齐记录](openclaw-session-operation-alignment-2026-08-03.md)。
 5. EXT-03 涉及权限提升与安全语义，独立立项，需要 spec 与 plan 三层记录。
-6. EXT-07 与 EXT-08 依赖 EXT-01。
+6. EXT-07 已完成低风险跨运行只读子集；EXT-08 仍需将 cron/task 的 runId 归属接入同一追溯视图。
 
 ## 未验证边界
 
@@ -210,4 +237,4 @@ OpenClaw 提供两套并行的审批协议：
 - 未验证 `audit.enabled` 在当前本机配置中的实际取值，也未验证本机账本中是否已有可查询记录。
 - 未评估接入 `audit.list` 后的性能影响，包括每次打开追溯面板发起查询的频率与缓存策略。
 - 状态词汇扩展会影响 `ResponseGroup` 的既有消费方，本文未清点全部调用点，实际改动前需要完整核对。
-- 本文未做任何实现改动，因此不涉及测试与构建验证。
+- `session.operation` 的实现与验证记录见 [`OpenClaw session.operation 能力对齐`](openclaw-session-operation-parity-2026-08-03.md)；本文其他 EXT 项仍保持原有未实现边界。

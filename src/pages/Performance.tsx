@@ -83,7 +83,7 @@ export function Performance() {
   });
 
   useEffect(() => {
-    const unsub = window.aegis.systemMetrics.onMetrics((metrics) => setM(metrics));
+    const unsub = window.aegis?.systemMetrics?.onMetrics?.((metrics: SystemMetricsPayload) => setM(metrics));
     return () => { unsub?.(); };
   }, []);
 

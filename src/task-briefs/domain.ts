@@ -1,5 +1,5 @@
 export type TaskBriefCardKind = 'goal' | 'background' | 'constraint' | 'acceptance' | 'note';
-export type TaskBriefReferenceKind = 'file' | 'directory' | 'chat-session' | 'agent-task' | 'worktree' | 'url';
+export type TaskBriefReferenceKind = 'file' | 'directory' | 'chat-session' | 'agent-task' | 'worktree' | 'collaboration-run' | 'url';
 export type TaskBriefStatus = 'draft' | 'ready' | 'launched' | 'archived';
 
 export const TASK_BRIEF_TEXT_LIMITS = {
@@ -41,7 +41,7 @@ export interface TaskBrief {
 }
 
 export const TASK_BRIEF_CARD_KINDS: readonly TaskBriefCardKind[] = ['goal', 'background', 'constraint', 'acceptance', 'note'];
-export const TASK_BRIEF_REFERENCE_KINDS: readonly TaskBriefReferenceKind[] = ['file', 'directory', 'chat-session', 'agent-task', 'worktree', 'url'];
+export const TASK_BRIEF_REFERENCE_KINDS: readonly TaskBriefReferenceKind[] = ['file', 'directory', 'chat-session', 'agent-task', 'worktree', 'collaboration-run', 'url'];
 
 export function createTaskBriefEntityId(prefix: 'brief' | 'card' | 'ref', now = Date.now()): string {
   const suffix = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'

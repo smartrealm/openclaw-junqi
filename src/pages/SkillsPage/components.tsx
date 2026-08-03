@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
 import { X, Copy, ExternalLink, Download, MessageSquare, FileText, BadgeCheck, BookOpenText, CheckCircle2, ShieldAlert, ShieldCheck, Star, Pin } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
@@ -741,12 +742,18 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                     aria-selected={activePane === tab.id}
                     onClick={() => setActivePane(tab.id)}
                     className={clsx(
-                      'border-b-2 px-2.5 py-2 text-[10.5px] font-medium transition-colors',
+                      'relative px-2.5 py-2 text-[10.5px] font-medium transition-[color,transform] duration-200 active:scale-[0.98]',
                       activePane === tab.id
-                        ? 'border-aegis-primary text-aegis-primary'
-                        : 'border-transparent text-aegis-text-dim hover:text-aegis-text-secondary',
+                        ? 'text-aegis-primary'
+                        : 'text-aegis-text-dim hover:text-aegis-text-secondary',
                     )}
                   >
+                    {activePane === tab.id && (
+                      <ActiveTabIndicator
+                        layoutId="skill-detail-active-tab"
+                        className="inset-x-0 bottom-0 h-0.5 bg-aegis-primary"
+                      />
+                    )}
                     {tab.label}
                   </button>
                 ))}
@@ -754,6 +761,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto">
+            <AnimatedTabPanel transitionKey={activePane}>
             {activePane === 'overview' && <>
             <div className="px-4 py-4">
               {skill.owner && (
@@ -870,6 +878,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                 </div>
               </div>
             )}
+            </AnimatedTabPanel>
             </div>
 
             <footer className="shrink-0 border-t border-[rgb(var(--aegis-overlay)/0.08)] bg-aegis-bg px-4 py-3">

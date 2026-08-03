@@ -7,6 +7,7 @@
 //   - claude_force_default_tui: bool
 //   - language: native menu locale synchronized from the webview
 //
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -112,6 +113,53 @@ fn clamp_terminal_scrollback(value: u32) -> u32 {
     ((clamped + 250) / 500) * 500
 }
 
+const AGENT_PROFILE_ID_MAX_CHARS: usize = 128;
+const AGENT_PROFILE_DOMAIN_MAX_CHARS: usize = 160;
+const AGENT_PROFILE_SCOPE_MAX_CHARS: usize = 1000;
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentProfileMetadata {
+    #[serde(default)]
+    pub domain: String,
+    #[serde(default)]
+    pub scope: String,
+}
+
+fn normalize_agent_profile_id(value: &str) -> Result<String, String> {
+    if value.chars().any(char::is_control) {
+        return Err("Agent profile agent id cannot contain control characters".to_string());
+    }
+    let normalized = value.trim();
+    if normalized.is_empty() {
+        return Err("Agent profile requires a non-empty agent id".to_string());
+    }
+    if normalized.chars().count() > AGENT_PROFILE_ID_MAX_CHARS {
+        return Err(format!(
+            "Agent profile agent id exceeds {AGENT_PROFILE_ID_MAX_CHARS} characters"
+        ));
+    }
+    Ok(normalized.to_string())
+}
+
+fn normalize_agent_profile_field(
+    value: &str,
+    field: &str,
+    max_chars: usize,
+) -> Result<String, String> {
+    let normalized = value.trim();
+    if normalized.chars().count() > max_chars {
+        return Err(format!(
+            "Agent profile {field} exceeds {max_chars} characters"
+        ));
+    }
+    if normalized.chars().any(|character| character == '\0') {
+        return Err(format!(
+            "Agent profile {field} cannot contain NUL characters"
+        ));
+    }
+    Ok(normalized.to_string())
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AppSettings {
     #[serde(default = "default_application_language")]
@@ -128,6 +176,8 @@ pub struct AppSettings {
     pub claude_force_default_tui: bool,
     #[serde(default = "default_terminal_scrollback")]
     pub terminal_scrollback: u32,
+    #[serde(default)]
+    pub agent_profiles: BTreeMap<String, AgentProfileMetadata>,
 }
 
 impl Default for AppSettings {
@@ -140,6 +190,7 @@ impl Default for AppSettings {
             terminal_shift_enter_newline: default_shift_enter_newline(),
             claude_force_default_tui: default_claude_force_default_tui(),
             terminal_scrollback: default_terminal_scrollback(),
+            agent_profiles: BTreeMap::new(),
         }
     }
 }
@@ -242,6 +293,7 @@ fn load_settings_unlocked() -> AppSettings {
             terminal_shift_enter_newline: default_shift_enter_newline(),
             claude_force_default_tui: default_claude_force_default_tui(),
             terminal_scrollback: default_terminal_scrollback(),
+            agent_profiles: BTreeMap::new(),
         };
         let _ = persist_settings(&settings);
         return settings;
@@ -292,8 +344,73 @@ pub async fn load_app_settings() -> Result<AppSettings, String> {
 }
 
 #[tauri::command]
+pub async fn load_agent_profiles() -> Result<BTreeMap<String, AgentProfileMetadata>, String> {
+    tokio::task::spawn_blocking(|| {
+        let _guard = settings_lock()
+            .lock()
+            .map_err(|_| "settings lock poisoned".to_string())?;
+        Ok::<BTreeMap<String, AgentProfileMetadata>, String>(
+            load_settings_unlocked().agent_profiles,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_agent_profile(
+    agent_id: String,
+    domain: String,
+    scope: String,
+) -> Result<Option<AgentProfileMetadata>, String> {
+    tokio::task::spawn_blocking(move || {
+        let agent_id = normalize_agent_profile_id(&agent_id)?;
+        let profile = AgentProfileMetadata {
+            domain: normalize_agent_profile_field(
+                &domain,
+                "domain",
+                AGENT_PROFILE_DOMAIN_MAX_CHARS,
+            )?,
+            scope: normalize_agent_profile_field(&scope, "scope", AGENT_PROFILE_SCOPE_MAX_CHARS)?,
+        };
+        let _guard = settings_lock()
+            .lock()
+            .map_err(|_| "settings lock poisoned".to_string())?;
+        let mut settings = load_settings_unlocked();
+        let saved = if profile.domain.is_empty() && profile.scope.is_empty() {
+            settings.agent_profiles.remove(&agent_id)
+        } else {
+            settings.agent_profiles.insert(agent_id, profile.clone());
+            Some(profile)
+        };
+        persist_settings(&settings)?;
+        Ok::<Option<AgentProfileMetadata>, String>(saved)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn delete_agent_profile(agent_id: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let agent_id = normalize_agent_profile_id(&agent_id)?;
+        let _guard = settings_lock()
+            .lock()
+            .map_err(|_| "settings lock poisoned".to_string())?;
+        let mut settings = load_settings_unlocked();
+        settings.agent_profiles.remove(&agent_id);
+        persist_settings(&settings)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub fn save_app_settings(mut settings: AppSettings) -> Result<(), String> {
     let _guard = settings_lock().lock();
+    // Agent profiles have their own command boundary. Preserve them when an
+    // older settings writer sends an AppSettings payload without that field.
+    settings.agent_profiles = load_settings_unlocked().agent_profiles;
     settings.language = normalize_application_language(&settings.language)
         .unwrap_or(FALLBACK_APPLICATION_LANGUAGE)
         .to_string();
@@ -435,6 +552,51 @@ mod tests {
     fn missing_scrollback_uses_the_current_default() {
         let settings: AppSettings = serde_json::from_str(r#"{"send_shortcut":"enter"}"#).unwrap();
         assert_eq!(settings.terminal_scrollback, 1000);
+    }
+
+    #[test]
+    fn app_settings_keep_agent_profiles_backward_compatible() {
+        let settings: AppSettings = serde_json::from_str(r#"{"send_shortcut":"enter"}"#).unwrap();
+        assert!(settings.agent_profiles.is_empty());
+    }
+
+    #[test]
+    fn agent_profile_fields_are_trimmed_and_empty_profiles_are_valid_for_deletion() {
+        let id = normalize_agent_profile_id("  research  ").unwrap();
+        let domain =
+            normalize_agent_profile_field("  research  ", "domain", AGENT_PROFILE_DOMAIN_MAX_CHARS)
+                .unwrap();
+        let scope = normalize_agent_profile_field(
+            "  internal tools  ",
+            "scope",
+            AGENT_PROFILE_SCOPE_MAX_CHARS,
+        )
+        .unwrap();
+        assert_eq!(id, "research");
+        assert_eq!(domain, "research");
+        assert_eq!(scope, "internal tools");
+        assert!(
+            normalize_agent_profile_field("   ", "domain", AGENT_PROFILE_DOMAIN_MAX_CHARS)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn agent_profile_limits_reject_oversized_or_controlled_values() {
+        assert!(normalize_agent_profile_id(&"a".repeat(AGENT_PROFILE_ID_MAX_CHARS + 1)).is_err());
+        assert!(normalize_agent_profile_field(
+            &"a".repeat(AGENT_PROFILE_DOMAIN_MAX_CHARS + 1),
+            "domain",
+            AGENT_PROFILE_DOMAIN_MAX_CHARS,
+        )
+        .is_err());
+        assert!(normalize_agent_profile_field(
+            "scope\0value",
+            "scope",
+            AGENT_PROFILE_SCOPE_MAX_CHARS
+        )
+        .is_err());
     }
 
     #[test]
