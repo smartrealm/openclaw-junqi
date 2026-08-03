@@ -12,6 +12,7 @@ import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIden
 import {
   __resetSessionOrganizationForTests,
 } from '@/services/chat/sessionOrganization';
+import { markSessionDeleted, restoreSessionKey } from '@/utils/sessionLifecycle';
 
 const MAIN_KEY = 'agent:main:main';
 const OTHER_KEY = 'agent:worker:main';
@@ -847,6 +848,116 @@ test('a cached terminal acknowledgement re-arms the queue pump after its guard r
     assert.deepEqual(delivered, ['first', 'second']);
     assert.deepEqual(useChatStore.getState().messageQueue[MAIN_KEY], []);
   } finally {
+    gateway.sendMessage = originalSend;
+  }
+});
+
+test('CHAT-02 clearing a local queue cannot cancel an item already claimed for Gateway delivery', async () => {
+  seedSessions(MAIN_KEY);
+  const secondMessage = {
+    id: 'clear-race-second',
+    role: 'user' as const,
+    content: 'second',
+    timestamp: new Date(1).toISOString(),
+    status: 'queued' as const,
+    retryPayload: { text: 'second' },
+  };
+  useChatStore.setState({
+    messages: [secondMessage],
+    messagesPerSession: { [MAIN_KEY]: [secondMessage] },
+    renderBlocks: [],
+    responseGroups: [],
+    _blocksCache: {},
+    _groupsCache: {},
+    typingBySession: { [MAIN_KEY]: false },
+    connected: true,
+    messageQueue: {
+      [MAIN_KEY]: [
+        { id: 'clear-race-first', text: 'first', timestamp: new Date(0).toISOString() },
+        { id: 'clear-race-second', text: 'second', timestamp: new Date(1).toISOString() },
+      ],
+    },
+  });
+
+  const originalSend = gateway.sendMessage;
+  const delivered: string[] = [];
+  let releaseDelivery!: () => void;
+  let enteredGateway!: () => void;
+  const deliveryStarted = new Promise<void>((resolve) => { enteredGateway = resolve; });
+  try {
+    gateway.sendMessage = async (message) => {
+      delivered.push(message);
+      enteredGateway();
+      await new Promise<void>((resolve) => { releaseDelivery = resolve; });
+      return { runId: 'clear-race-first', status: 'started' };
+    };
+
+    const draining = useChatStore.getState().drainQueue(MAIN_KEY);
+    await deliveryStarted;
+
+    let state = useChatStore.getState();
+    assert.deepEqual(state.messageQueue[MAIN_KEY].map((item) => item.id), ['clear-race-second']);
+
+    state.clearQueue(MAIN_KEY);
+    state = useChatStore.getState();
+    assert.deepEqual(state.messageQueue[MAIN_KEY], []);
+    assert.equal(
+      state.messagesPerSession[MAIN_KEY]?.find((message) => message.id === 'clear-race-first')?.status,
+      'pending',
+    );
+    assert.equal(state.messages.find((message) => message.id === 'clear-race-second')?.status, 'cancelled');
+
+    releaseDelivery();
+    await draining;
+
+    state = useChatStore.getState();
+    assert.deepEqual(delivered, ['first']);
+    assert.equal(
+      state.messagesPerSession[MAIN_KEY]?.find((message) => message.id === 'clear-race-first')?.status,
+      'sent',
+    );
+  } finally {
+    gateway.sendMessage = originalSend;
+  }
+});
+
+test('CHAT-02 failed claimed delivery does not restore a deleted session queue', async () => {
+  const sessionKey = 'agent:worker:deleted-queue';
+  seedSessions(sessionKey);
+  useChatStore.setState({
+    messages: [],
+    messagesPerSession: { [sessionKey]: [] },
+    renderBlocks: [],
+    responseGroups: [],
+    _blocksCache: {},
+    _groupsCache: {},
+    typingBySession: { [sessionKey]: false },
+    connected: true,
+    messageQueue: {
+      [sessionKey]: [{ id: 'deleted-during-send', text: 'do not restore', timestamp: new Date(0).toISOString() }],
+    },
+  });
+
+  const originalSend = gateway.sendMessage;
+  let releaseDelivery!: () => void;
+  let enteredGateway!: () => void;
+  const deliveryStarted = new Promise<void>((resolve) => { enteredGateway = resolve; });
+  try {
+    gateway.sendMessage = async () => {
+      enteredGateway();
+      await new Promise<void>((resolve) => { releaseDelivery = resolve; });
+      throw new Error('network failed');
+    };
+
+    const draining = useChatStore.getState().drainQueue(sessionKey);
+    await deliveryStarted;
+    markSessionDeleted(sessionKey, 'worker-session-id');
+    releaseDelivery();
+    await draining;
+
+    assert.deepEqual(useChatStore.getState().messageQueue[sessionKey], []);
+  } finally {
+    restoreSessionKey(sessionKey);
     gateway.sendMessage = originalSend;
   }
 });

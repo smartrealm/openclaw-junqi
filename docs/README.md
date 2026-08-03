@@ -124,6 +124,7 @@ docs/
 - [OpenClaw Stop 检查点与队列对齐](quality/openclaw-stop-checkpoint-queue-alignment-2026-08-03.md)
 - [OpenClaw Stop 会话身份围栏审计](quality/openclaw-stop-session-identity-fence-2026-08-03.md)
 - [OpenClaw Composer 队列权威与灵动岛预览可见性审计](quality/openclaw-composer-queue-authority-2026-08-03.md)
+- [OpenClaw 本地发送队列交付原子性审计](quality/openclaw-local-send-queue-dispatch-atomicity-audit-2026-08-04.md)
 - [维护中心审计](quality/maintenance-center-audit.md)
 - [定时任务与 OpenClaw Agent 路由审计](quality/cron-openclaw-agent-routing-audit-2026-08-02.md)
 - [定时任务 OpenClaw Agent 路由验证](quality/cron-openclaw-agent-routing-validation-2026-08-02.md)

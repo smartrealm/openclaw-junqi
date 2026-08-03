@@ -1933,6 +1933,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     ) return;
     const next = get().messageQueue[sessionKey]?.[0];
     if (!next || next.failed) return;
+
+    // Claim the renderer-owned item before any await. A local clear/edit action
+    // can only affect items that have not crossed this handoff boundary.
+    set((state) => {
+      const queue = state.messageQueue[sessionKey] || [];
+      if (queue[0]?.id !== next.id) return state;
+      return {
+        messageQueue: {
+          ...state.messageQueue,
+          [sessionKey]: queue.slice(1),
+        },
+      };
+    });
     drainingQueueSessions.add(sessionKey);
     const retryPayload = outboundPayloadFromQueue(next);
     // Mark typing so the drained reply is tracked through its lifecycle — its
@@ -1978,12 +1991,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         sessionId: next.sessionId,
       }) as { queued?: boolean } | undefined;
       const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
-      set((state) => ({
-        messageQueue: {
-          ...state.messageQueue,
-          [sessionKey]: (state.messageQueue[sessionKey] || []).filter((item) => item.id !== next.id),
-        },
-      }));
       get().updateMessage(sessionKey, next.id, deliveryUncertain
         ? { status: 'pending', deliveryError: undefined, retryPayload }
         : {
@@ -1995,12 +2002,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'Message delivery failed');
       set((state) => ({
-        messageQueue: {
-          ...state.messageQueue,
-          [sessionKey]: (state.messageQueue[sessionKey] || []).map((item) => (
-            item.id === next.id ? { ...item, failed: true, error: message } : item
-          )),
-        },
+        ...(isSessionDeleted(sessionKey) ? {} : {
+          messageQueue: {
+            ...state.messageQueue,
+            [sessionKey]: [{ ...next, failed: true, error: message }, ...(state.messageQueue[sessionKey] || [])],
+          },
+        }),
       }));
       get().updateMessage(sessionKey, next.id, {
         status: 'failed',
