@@ -8,13 +8,16 @@ JunQi 现在为普通 Chat、Quick Chat 和 Jarvis 语音路径持久化本地 T
 
 这满足“一个 Task 一个 Session，Stop 停输出但保留 Task 记忆”的客户端侧持久化边界，但不声称 JunQi 获得了 OpenClaw 未提供的工具幂等、自动恢复或后台 Task 关联能力。
 
-不能由 JunQi 向 Gateway transcript 写入猜测性的 Tool Result。当前安装的 OpenClaw `2026.7.1-2` 对中断 assistant turn 采用回滚式闭合：重放时丢弃中断 turn 的未配对工具链；仅当当前模型的传输策略允许时，OpenClaw 才在发送给模型的重放载荷中合成缺失工具结果。JunQi 必须保存中断与核验状态、重新读取权威 transcript，而不是复制这一修复到客户端或伪造工具完成结果。
+不能由 JunQi 向 Gateway transcript 写入猜测性的 Tool Result。中断 turn 的工具链闭合和模型重放
+载荷是 OpenClaw 的内部运行时行为，不是桌面客户端可以固化的字段或状态机。JunQi 必须保存
+中断与核验状态、重新读取权威 transcript，而不是复制任何上游修复到客户端或伪造工具完成结果。
 
 LiveKit Agents 可作为语音会话监督、打断语义、回合检测、测试与可观测性的参考；它是服务端 WebRTC Agent 框架，不应引入为 JunQi 的第二套任务、会话、工具或媒体运行时。OpenClaw 继续是 Chat、Agent、工具调用和持久 transcript 的唯一权威。
 
 ## 依据
 
-- 当前复现环境：`pnpm-lock.yaml` 锁定 `openclaw@2026.7.1-2`；该版本只界定本次运行验证范围，不作为能力开关或字段契约。
+- 本地 lockfile 和安装包只界定历史复现范围；每次新增或变更集成都必须重新核对 OpenClaw
+  当前官方文档、协议和 handler，不把版本号当作能力开关或字段契约。
 - `src/services/gateway/index.ts` 以 `chat.send` 的 `idempotencyKey` 作为 Chat Run 身份；`abortChat` 按已知 `runId` 调用官方 `sessions.abort`。能力依据是 OpenClaw 官方文档、schema 和 handler。
 - `src/services/gateway/ChatHandler.ts` 只在 Gateway 确认中断后结算该 Run，并触发 `refreshHistory`；`src/App.tsx` 读取持久 transcript 进行重协调。
 - 安装包 `docs/web/control-ui.md` 说明中断会保留可展示的部分输出，并将其及中断元数据写入 transcript。

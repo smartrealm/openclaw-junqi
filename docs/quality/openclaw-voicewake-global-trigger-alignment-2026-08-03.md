@@ -18,12 +18,13 @@ JunQi 窗口、本地唤醒模型或单个节点。JunQi 只能读取、更新�
 - [OpenClaw Voice Wake](https://docs.openclaw.ai/nodes/voicewake)
 - [OpenClaw macOS Voice Wake](https://docs.openclaw.ai/platforms/mac/voicewake)
 - [OpenClaw Gateway voice wake handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/voicewake.ts)
-- [OpenClaw Gateway voice wake schema](https://github.com/openclaw/openclaw/blob/main/packages/gateway-protocol/src/schema/voicewake.ts)
+- [OpenClaw Gateway voice wake routing handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/voicewake-routing.ts)
+- [OpenClaw Gateway voice wake routing persistence](https://github.com/openclaw/openclaw/blob/main/src/infra/voicewake-routing.ts)
 
-官方协议声明 `voicewake.get` 返回 `{ triggers }`，`voicewake.set({ triggers })` 更新
-同一份 Gateway 全局触发词列表。列表最多 32 项，单项最多 64 个 UTF-16 code unit；
-`voicewake.changed` 会广播给具备 read scope 的连接。路由配置另由
-`voicewake.routing.get/set` 管理，不能由触发词保存隐式改写。
+官方文档和 Gateway handler 声明 `voicewake.get` 返回 `{ triggers }`，
+`voicewake.set({ triggers })` 更新同一份 Gateway 全局触发词列表。列表最多 32 项，单项
+最多 64 个 UTF-16 code unit；`voicewake.changed` 会广播给具备 read scope 的连接。路由
+配置由 `voicewake.routing.get/set` 和独立 handler 管理，不能由触发词保存隐式改写。
 
 官方文档当前对常驻识别给出明确平台承诺的是 macOS companion 与 Android node。JunQi
 的 CPAL 和本地 Sherpa 采集是桌面客户端层增强，不是 Windows、CentOS 或 Ubuntu 已获
