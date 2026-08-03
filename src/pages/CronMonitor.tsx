@@ -9,7 +9,8 @@ import { useSearchParams } from 'react-router-dom';
 import { buildCronAgentOptions, resolveCronAgentAvailability } from './cronAgentSelection';
 import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock } from 'lucide-react';
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
-import { gateway, type OpenClawCronRunEntry } from '@/services/gateway';
+import { gateway, type OpenClawCronRunEntry, type OpenClawCronStatus } from '@/services/gateway';
+import { OpenClawCronStatusUnsupportedError } from '@/services/gateway/OpenClawCronStatusClient';
 import {
   buildCronAgentTurnAddParams,
   cronAgentUpdatePatch,
@@ -254,6 +255,9 @@ export function CronMonitorPage() {
   const [selectedJobRuns, setSelectedJobRuns] = useState<RunEntry[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState<string | null>(null);
+  const [schedulerStatus, setSchedulerStatus] = useState<OpenClawCronStatus | null>(null);
+  const [schedulerStatusLoading, setSchedulerStatusLoading] = useState(false);
+  const [schedulerStatusError, setSchedulerStatusError] = useState<'unsupported' | 'failed' | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused' | 'error'>('all');
@@ -268,6 +272,7 @@ export function CronMonitorPage() {
   const [agentUpdateError, setAgentUpdateError] = useState<string | null>(null);
   const [pendingAgentId, setPendingAgentId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const schedulerStatusRequest = useRef(0);
   const requestedJobId = searchParams.get('job')?.trim() || null;
   useEffect(() => {
     if (!connected) return;
@@ -276,6 +281,32 @@ export function CronMonitorPage() {
       ensureGroupFresh('cron'),
     ]);
   }, [connected]);
+
+  const refreshSchedulerStatus = useCallback(async () => {
+    const requestId = ++schedulerStatusRequest.current;
+    if (!connected) {
+      setSchedulerStatus(null);
+      setSchedulerStatusError(null);
+      setSchedulerStatusLoading(false);
+      return;
+    }
+    setSchedulerStatusLoading(true);
+    setSchedulerStatusError(null);
+    try {
+      const status = await gateway.getCronStatus();
+      if (requestId !== schedulerStatusRequest.current) return;
+      setSchedulerStatus(status);
+    } catch (error) {
+      if (requestId !== schedulerStatusRequest.current) return;
+      setSchedulerStatusError(error instanceof OpenClawCronStatusUnsupportedError ? 'unsupported' : 'failed');
+    } finally {
+      if (requestId === schedulerStatusRequest.current) setSchedulerStatusLoading(false);
+    }
+  }, [connected]);
+
+  useEffect(() => {
+    void refreshSchedulerStatus();
+  }, [refreshSchedulerStatus]);
 
   useEffect(() => {
     if (searchParams.get('new') === '1') {
@@ -610,7 +641,7 @@ export function CronMonitorPage() {
               outline-none focus:border-aegis-accent/30 focus:bg-aegis-accent/[0.03] transition-all"
           />
         </div>
-        <button onClick={() => { refreshGroup('cron'); loadAllRuns(); }}
+        <button onClick={() => { void refreshGroup('cron'); void loadAllRuns(); void refreshSchedulerStatus(); }}
           className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)]
             text-[11px] font-semibold text-aegis-text-muted hover:text-aegis-text-secondary transition-colors">
           <RotateCcw size={12} className={loading ? 'animate-spin' : ''} /> {t('common.refresh', 'Refresh')}
@@ -620,6 +651,22 @@ export function CronMonitorPage() {
             text-[11px] font-semibold hover:opacity-90 transition-opacity">
           <Plus size={12} /> {t('cron.newJob', 'New Job')}
         </button>
+        <div className="flex items-center gap-1.5 text-[10px] text-aegis-text-dim min-w-0" aria-live="polite">
+          {schedulerStatusLoading ? (
+            <><LoadingIndicator size={10} /> <span>{t('cron.schedulerStatusLoading')}</span></>
+          ) : schedulerStatusError ? (
+            <span className="text-aegis-danger">{t(schedulerStatusError === 'unsupported' ? 'cron.schedulerStatusUnsupported' : 'cron.schedulerStatusFailed')}</span>
+          ) : schedulerStatus ? (
+            <>
+              <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', schedulerStatus.enabled ? 'bg-aegis-success' : 'bg-aegis-text-dim')} />
+              <span>{t(schedulerStatus.enabled ? 'cron.schedulerEnabled' : 'cron.schedulerDisabled')}</span>
+              <span>{t('cron.schedulerJobs', { count: schedulerStatus.jobs })}</span>
+              {schedulerStatus.enabled && schedulerStatus.nextWakeAtMs !== null && (
+                <span>{t('cron.nextWake')}: {formatCountdown(schedulerStatus.nextWakeAtMs)}</span>
+              )}
+            </>
+          ) : null}
+        </div>
       </div>
 
       {/* Master-detail maintenance layout */}

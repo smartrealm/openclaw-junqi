@@ -281,7 +281,8 @@ RPC 不可用时保留技能列表并显示非阻断提示，未知状态不被�
 
 优先级：低
 
-`tasks.list`、`tasks.cancel`、`cron.get`、`cron.status` 未使用（`tasks.get` 仅出现在协作测试的 mock 中）。JunQi 有 `CronMonitor.tsx`（1022 行），但缺 `cron.status` 这一权威状态来源。
+`cron.get` 未使用。`tasks.list`、`tasks.cancel`、`tasks.get` 已通过原生任务账本接入；`cron.status` 已通过
+Cron 调度器状态对齐接入 `CronMonitor`。这份路线图保留为 2026-07-31 的审计基线，后续完成项以链接的专项审计为准。
 
 ## 排期建议
 

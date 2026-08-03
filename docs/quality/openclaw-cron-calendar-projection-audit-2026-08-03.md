@@ -8,7 +8,8 @@
 - OpenClaw 官方 [`server-methods/cron.ts`](https://raw.githubusercontent.com/openclaw/openclaw/main/src/gateway/server-methods/cron.ts) 中 `cronJobReadView` 将调度器维护的 `state.nextRunAtMs` 投影为顶层 `nextRunAtMs`；`cron.list` 的默认 full response 使用此 read view。
 - OpenClaw 官方 [`cron-jobs.md`](https://docs.openclaw.ai/automation/cron-jobs) 将 Cron 定义为 Gateway 内置调度器，任务运行状态由 Gateway 持久化与维护。
 
-`cron.status` 只有空请求 schema，当前未取得可安全投影的结果 schema。因此本轮不把它接入 UI，也不以本地状态替代 Gateway 调度器状态。
+本轮日历投影不使用 `cron.status`，也不以本地状态替代 Gateway 调度器状态。后续审计已从官方
+Cron service source 取得其结果模型，并在独立的调度器状态对齐中处理。
 
 ## 当前行为
 
@@ -33,7 +34,7 @@
 
 ## 未纳入本轮
 
-- `cron.status`、运行中状态、事件 payload 的本地投影。
+- 运行中状态、事件 payload 的本地投影。
 - cron 表达式的客户端解析、重复任务的多次未来实例推断。
 - Cron 创建、更新、运行、取消或调度器服务开关。
 - 真实 Gateway 及 Windows、macOS、CentOS、Ubuntu 桌面真机验收。

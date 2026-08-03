@@ -64,6 +64,7 @@ import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
 import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
 import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
 import { OpenClawCronRunClient } from './OpenClawCronRunClient';
+import { OpenClawCronStatusClient } from './OpenClawCronStatusClient';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 
 // Re-export types for consumers
@@ -88,6 +89,7 @@ export type {
   OpenClawCronRunPage,
   OpenClawCronRunStatus,
 } from './OpenClawCronRunClient';
+export type { OpenClawCronStatus } from './OpenClawCronStatusClient';
 export type {
   OpenClawApproval,
   OpenClawApprovalDecision,
@@ -668,6 +670,10 @@ const cronRunClient = new OpenClawCronRunClient(
   (method, params) => connection.request(method, params),
   (method) => connection.hasAdvertisedMethod(method),
 );
+const cronStatusClient = new OpenClawCronStatusClient(
+  (method, params) => connection.request(method, params),
+  (method) => connection.hasAdvertisedMethod(method),
+);
 const sessionSteer = new OpenClawSessionSteerClient(
   (method, params) => connection.request(method, params),
 );
@@ -906,6 +912,7 @@ export const gateway = {
   async enqueueCronRun(jobId: string) { return cronRunClient.enqueue(jobId); },
   async listCronRuns(jobId: string, runId?: string) { return cronRunClient.list(jobId, runId); },
   async findTerminalCronRun(jobId: string, runId: string) { return cronRunClient.findTerminal(jobId, runId); },
+  async getCronStatus() { return cronStatusClient.get(); },
   async listAuditEvents(input: OpenClawAuditListInput = {}) { return auditClient.list(input); },
   async listPendingApprovals() { return approvalClient.list(); },
   async listApprovalHistory(input: OpenClawApprovalHistoryRequest = {}) {

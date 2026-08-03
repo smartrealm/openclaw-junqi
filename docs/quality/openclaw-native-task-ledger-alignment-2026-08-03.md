@@ -80,7 +80,8 @@ method-not-found 映射为 unavailable，认证、网络和响应错误保持错
 - JunQi 自行创建、重试、恢复、编排或持久化 Gateway background task。
 - 以本地 checkpoint、协作 workflow 或 Chat transcript 合成 task ledger 条目。
 - 自动取消、批量取消、取消 reason 伪造或对副作用任务的自动补偿。
-- 未取得当前官方字段证据的任务事件订阅、Cron run history、`cron.status` 或后台调度扩展。
+- 未取得当前官方字段证据的任务事件订阅或后台调度扩展。Cron run history 与 `cron.status` 已在各自的
+  原生对齐审计中取得字段证据并单独实现。
 
 ## 验证边界
 

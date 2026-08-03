@@ -67,7 +67,8 @@
 - `cron` event 只用于刷新当前 Gateway projection；不根据未验证 payload 制造 local state。
 - 当前界面以官方 CLI 的默认十分钟上限、两秒轮询周期等待终态；这是 JunQi 的等待界面策略，不是
   Gateway 协议字段或对 Gateway 执行时长的承诺。
-- 本轮不接入 `cron.status` UI，因为当前官方 schema 虽确认空参数 RPC，但尚未取得可安全投影的 status result schema。
+- 本轮不接入 `cron.status` UI；后续审计已从官方 Cron service source 取得结果模型，并在
+  [Cron 调度器状态对齐](openclaw-cron-scheduler-status-alignment-2026-08-03.md) 中单独实现。
 
 ## 未纳入本轮
 

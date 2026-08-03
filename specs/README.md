@@ -100,6 +100,7 @@ specs/
 - [OpenClaw 原生任务账本](quality/2026-08-03-openclaw-native-task-ledger.md)
 - [OpenClaw 原生 Cron 运行语义](quality/2026-08-03-openclaw-native-cron-run.md)
 - [OpenClaw Cron 日历投影](quality/2026-08-03-openclaw-cron-calendar-projection.md)
+- [OpenClaw Cron 调度器状态](quality/2026-08-03-openclaw-cron-scheduler-status.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界](quality/2026-07-31-installation-dashboard-chat-provider-channel-runtime-boundaries.md)
 - [语音唤醒工作台](quality/2026-07-31-voice-wake-workspace.md)
 - [业务引导平台](quality/2026-07-31-business-onboarding-platform.md)
