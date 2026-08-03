@@ -41,6 +41,7 @@ import {
 import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
 import { parseAgentWorkspaceSkills, type AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import { persistAgentCreationOverrides } from './agentCreationConfig';
+import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
 import { ModelDropdown } from '@/components/shared/ModelDropdown';
 import {
   buildAgentShareMetadata,
@@ -751,9 +752,9 @@ export function AgentHubPage() {
 
   const loadAgentConfigMeta = useCallback(() => {
     if (!connected) return Promise.resolve();
-    return gateway.call('config.get', {}).then((snap: any) => {
-      const config = snap?.config ?? snap;
-      const cfgList: any[] = config?.agents?.list ?? [];
+    return gateway.call('config.get', {}).then((response: unknown) => {
+      const config = readOpenClawConfigSnapshot(response).config;
+      const cfgList = config.agents?.list ?? [];
       const models: Record<string, string> = {};
       const explicit: Record<string, boolean> = {};
       const definitions: Record<string, Record<string, unknown>> = {};
@@ -908,20 +909,16 @@ export function AgentHubPage() {
     imported: ImportedAgentShareDefinition,
     targetPath: string,
   ) => {
-    const snap: any = await gateway.call('config.get', {});
-    const config = snap?.config ?? snap;
-    const currentList = Array.isArray(config?.agents?.list)
-      ? [...config.agents.list]
-      : [];
-    if (currentList.some((entry: any) => String(entry?.id ?? '').trim().toLowerCase() === imported.id.toLowerCase())) {
+    const snapshot = readOpenClawConfigSnapshot(await gateway.call('config.get', {}));
+    const currentList = snapshot.config.agents?.list ?? [];
+    if (currentList.some((entry) => entry.id.trim().toLowerCase() === imported.id.toLowerCase())) {
       throw new Error(`An Agent named "${imported.id}" already exists.`);
     }
 
     const entry = buildImportedAgentConfigEntry(imported, targetPath);
     await gateway.callPrivileged('config.patch', {
-      raw: JSON.stringify({ agents: { list: [...currentList, entry] } }),
-      ...(snap?.baseHash || snap?.hash ? { baseHash: snap.baseHash ?? snap.hash } : {}),
-      replacePaths: ['agents.list'],
+      raw: JSON.stringify({ agents: { list: [entry] } }),
+      ...(snapshot.hash ? { baseHash: snapshot.hash } : {}),
     });
     return entry;
   }, []);

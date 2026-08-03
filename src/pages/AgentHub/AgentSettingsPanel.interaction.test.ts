@@ -73,7 +73,9 @@ test('agent settings edits ordered fallback configuration through config.patch',
   assert.match(panel, /selectedFallbacks/);
   assert.match(panel, /Fallback chain/);
   assert.match(panel, /gateway\.callPrivileged\('config\.patch'/);
-  assert.match(panel, /replacePaths: \['agents\.list'\]/);
+  assert.match(panel, /readOpenClawConfigSnapshot\(res\)/);
+  assert.match(panel, /agents: \{ list: \[nextEntry\] \}/);
+  assert.doesNotMatch(panel, /replacePaths: \['agents\.list'\]/);
   assert.match(panel, /getModelFallbacks\(nextModel\)/);
 });
 

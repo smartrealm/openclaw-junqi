@@ -96,6 +96,10 @@ JunQi Desktop 是基于 Tauri 2、Rust、React 18、TypeScript、Vite 6 和 Open
 - OpenClaw 原生不支持的功能不得在 JunQi 中伪造、包装成已支持或以乐观 UI 掩盖缺失。若需求超出官方能力，必须标记为不支持或待验证，只有在存在官方插件、协议扩展或明确的客户端层契约时才可实现。
 - 禁止硬编码来模拟 OpenClaw 能力：不得把工具名称、工具副作用、参数结构、状态、命令、版本、会话身份、任务结果或平台能力写成未经上游契约证明的业务常量。展示文案也不能用来掩盖未知、未授权、未连接或未核验状态。
 - 每个新增 OpenClaw 集成必须先依据 OpenClaw 官方文档、官方源码、协议 schema、Gateway handler 或可复现 RPC/capability 结果确认“是否支持以及如何支持”。`package.json`、lockfile 和实际安装版本只用于确认当前运行环境、复现实验和记录验证范围，不得把版本号写成能力开关、字段契约或实现分支。上游未来版本、其他项目的实现和模型常识只能作为检索线索，不能作为当前实现契约。
+- OpenClaw 配置控制面必须先按当前官方 `config.get` envelope 验证 `exists`、`valid`、`config` 和
+  `hash`；配置文件存在时，写入必须将该 `hash` 原样作为 `baseHash`。不得把裸配置、`baseHash`
+  响应字段、`resolved`、`sourceConfig` 或其他未证明别名当作兼容 fallback。涉及按 id 的配置数组时，
+  优先提交最小条目 patch；只有明确且经协议允许的整段替换或删除才使用 `replacePaths`。
 - 上游没有提供的字段、状态转换、能力声明、工具结果或恢复结论必须保留为未知或待核验。JunQi 不得从 UI 事件、超时、空结果、文本内容或本地乐观状态推断 Gateway 已成功、工具已执行、工具未执行或副作用已回滚。
 - JunQi 的本地增强必须是可追溯的派生状态，并保留对应的 OpenClaw 引用、runtime identity、session identity、revision 和证据来源。任何本地 checkpoint、缓存、任务图或 UI 投影都不能向 OpenClaw transcript 伪造消息、Tool Result、审批结果或完成状态。
 - 当 OpenClaw 协议不支持某项需求时，优先通过官方扩展点、插件协议或明确的 JunQi 本地层实现，并在 `docs/`、`specs/` 或 `plans/` 中记录“上游契约、JunQi 增强、验证证据和未验证边界”。无法证明兼容性时停止推断性修改，不添加猜测性 fallback。

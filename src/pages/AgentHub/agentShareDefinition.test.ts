@@ -70,7 +70,9 @@ test('Agent Hub restores imported definitions with a guarded agents.list config 
 
   assert.match(source, /buildAgentShareMetadata\(/);
   assert.match(source, /buildImportedAgentConfigEntry\(imported, targetPath\)/);
+  assert.match(source, /readOpenClawConfigSnapshot\(await gateway\.call\('config\.get', \{\}\)\)/);
   assert.match(source, /gateway\.callPrivileged\('config\.patch'/);
-  assert.match(source, /replacePaths: \['agents\.list'\]/);
-  assert.match(source, /baseHash: snap\.baseHash \?\? snap\.hash/);
+  assert.match(source, /agents: \{ list: \[entry\] \}/);
+  assert.match(source, /baseHash: snapshot\.hash/);
+  assert.doesNotMatch(source, /replacePaths: \['agents\.list'\]/);
 });

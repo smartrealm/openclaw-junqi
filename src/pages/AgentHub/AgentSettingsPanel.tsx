@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { themeHex, themeAlpha } from '@/utils/theme-colors';
@@ -107,14 +108,6 @@ interface ConfigAgent {
     context1m?: boolean;
   };
   [k: string]: unknown;
-}
-
-// Shape of the config.get response
-interface ConfigGetResponse {
-  baseHash?: string;
-  hash?: string;
-  config?: GatewayRuntimeConfig;
-  agents?: GatewayRuntimeConfig['agents'];
 }
 
 type ChannelGroupForPanel = ChannelGroupView & { name: string };
@@ -501,8 +494,8 @@ export function AgentSettingsPanel({
       .then((res: unknown) => {
         if (cancelled) return;
 
-        const snap = res as ConfigGetResponse;
-        const runtimeConfig = snap.config ?? (snap.agents ? snap as GatewayRuntimeConfig : undefined);
+        const snapshot = readOpenClawConfigSnapshot(res);
+        const runtimeConfig = snapshot.config;
 
         // Find this agent's entry in config.agents.list
         const agentConfig = runtimeConfig?.agents?.list?.find(
@@ -538,8 +531,8 @@ export function AgentSettingsPanel({
         setStoredModelConfig(rawModel);
         setSelectedFallbacks(getModelFallbacks(rawModel));
         setFallbackCandidate('');
-        setConfigSnapshot(runtimeConfig ?? null);
-        setConfigBaseHash(snap.baseHash ?? snap.hash);
+        setConfigSnapshot(runtimeConfig);
+        setConfigBaseHash(snapshot.hash);
         setModelInherited(!cfgModel && !!defaultModel);
         setInitializedForId(currentAgent.id);
       })
@@ -653,9 +646,8 @@ export function AgentSettingsPanel({
           // list with a base-hash guard when an existing fallback chain must be
           // retained.
           await gateway.callPrivileged('config.patch', {
-            raw: JSON.stringify({ agents: { list } }),
+            raw: JSON.stringify({ agents: { list: [nextEntry] } }),
             ...(configBaseHash ? { baseHash: configBaseHash } : {}),
-            replacePaths: ['agents.list'],
           });
           setStoredModelConfig(nextModel);
           setSelectedFallbacks(getModelFallbacks(nextModel));
