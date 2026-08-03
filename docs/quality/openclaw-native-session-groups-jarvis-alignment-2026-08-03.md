@@ -20,6 +20,7 @@ Jarvis 唤醒只写 session `category`、不确保它存在于 Gateway group cat
 - [OpenClaw Gateway protocol](https://github.com/openclaw/openclaw/blob/main/docs/gateway/protocol.md)
 - [OpenClaw sessions schema](https://github.com/openclaw/openclaw/blob/main/packages/gateway-protocol/src/schema/sessions.ts)
 - [OpenClaw session groups handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/sessions-groups.ts)
+- [OpenClaw session patch handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/sessions-mutations.ts)
 - [OpenClaw method descriptors](https://github.com/openclaw/openclaw/blob/main/src/gateway/methods/core-descriptors.ts)
 
 官方 schema 将 catalog entry 定义为 `{ name, position }`；`category` 是 session
@@ -38,8 +39,9 @@ Jarvis 唤醒只写 session `category`、不确保它存在于 Gateway group cat
 3. 手动创建、改名、删除 group 后，JunQi 用 Gateway 返回的完整 catalog 刷新 UI；
    不根据用户输入构造成功的 group 快照。
 4. Jarvis 识别到 Gateway-owned wake trigger 时，先确保同名 `Jarvis: <trigger>`
-   catalog entry 存在，再通过官方 `sessions.patch.category` 归属当前 session。任一
-   写入未获 Gateway 确认，唤醒流程失败关闭。
+   category 通过官方 `sessions.patch.category` 归属当前 session。当前官方 patch handler
+   会登记非空 category，因此 JunQi 不再发起前置的 `sessions.groups.list/put` 读改写；任一
+   category mutation 未获 Gateway 确认，唤醒流程失败关闭。
 5. session list 只使用 Gateway 的 `category` 形成 group membership；既有本地标题
    展示缓存不参与 group/category 归属，也不被描述为 OpenClaw 状态。
 6. `pinned`、`unread`、`archived` 只取自 Gateway session record 或已确认的原生 patch，
@@ -53,7 +55,9 @@ Jarvis 唤醒只写 session `category`、不确保它存在于 Gateway group cat
   renderer 的 catalog 写入串行化。
 - chat store 回归覆盖不支持 protocol 时不创建本地 group、membership、pin、unread 或
   archive 状态。
-- Jarvis wake 回归覆盖先确保 catalog、后设置 category 的顺序，以及失败关闭。
+- Jarvis wake 回归覆盖单次 category mutation、触发词命名与失败关闭。
+- 本次依据最新版官方 `sessions-mutations` handler 的收敛已通过 Jarvis 分类、语音协调器与
+  语音回归守护定向测试、`pnpm lint`、`pnpm test` 与 `pnpm verify:openclaw-docs`。
 - 2026-08-03 已通过 `pnpm lint`、`pnpm test`、`pnpm build`、
   `pnpm verify:openclaw-docs`、`pnpm test:rust`、`pnpm collab:test`、
   `pnpm collab:validate` 和 `git diff --check`。

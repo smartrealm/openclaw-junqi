@@ -9,7 +9,7 @@
 - [x] 审计分组 UI、store、Gateway adapter 与 Jarvis 唤醒调用链。
 - [x] 将 group client 切换到普通连接，并严格解码官方 catalog/mutation 返回。
 - [x] 移除 group/category/pin/unread/archive localStorage fallback，保持能力缺失时失败关闭。
-- [x] 让 Jarvis 在写 category 前确保原生 group catalog entry。
+- [x] 让 Jarvis 只写原生 category，并依赖当前官方 patch handler 登记非空 catalog entry。
 - [x] 补充回归测试、全量验证、Unicode 扫描与中文提交。
 
 ## 文件范围

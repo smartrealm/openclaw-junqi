@@ -17,25 +17,18 @@ test('only non-empty Jarvis categories join the Jarvis session filter', () => {
   assert.equal(isJarvisSessionCategory('Planning'), false);
 });
 
-test('Jarvis creates the native catalog entry before assigning session category', async () => {
+test('Jarvis assigns the native session category in one Gateway mutation', async () => {
   const calls: string[] = [];
   const category = await assignJarvisSessionCategory({
-    createSessionGroup: async (label) => { calls.push(`group:${label}`); },
     setSessionCategory: async (label, sessionKey) => { calls.push(`category:${label}:${sessionKey}`); },
   }, 'agent:main:main', 'JunQi');
 
   assert.equal(category, 'Jarvis: JunQi');
-  assert.deepEqual(calls, [
-    'group:Jarvis: JunQi',
-    'category:Jarvis: JunQi:agent:main:main',
-  ]);
+  assert.deepEqual(calls, ['category:Jarvis: JunQi:agent:main:main']);
 });
 
-test('Jarvis does not assign category when native catalog creation fails', async () => {
-  let assigned = false;
+test('Jarvis fails closed when the native category mutation fails', async () => {
   await assert.rejects(assignJarvisSessionCategory({
-    createSessionGroup: async () => { throw new Error('Gateway unavailable'); },
-    setSessionCategory: async () => { assigned = true; },
+    setSessionCategory: async () => { throw new Error('Gateway unavailable'); },
   }, 'agent:main:main', 'JunQi'));
-  assert.equal(assigned, false);
 });

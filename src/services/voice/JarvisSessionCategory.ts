@@ -1,7 +1,6 @@
 export const JARVIS_SESSION_CATEGORY_PREFIX = 'Jarvis: ';
 
 export interface JarvisSessionCategoryGateway {
-  createSessionGroup(label: string): Promise<unknown>;
   setSessionCategory(category: string | null, sessionKey: string): Promise<unknown>;
 }
 
@@ -16,7 +15,7 @@ export function isJarvisSessionCategory(category: unknown): category is string {
     && category.length > JARVIS_SESSION_CATEGORY_PREFIX.length;
 }
 
-/** Creates the native catalog entry before assigning an OpenClaw session category. */
+/** Assigns a Gateway-owned category; the official patch handler registers non-empty categories. */
 export async function assignJarvisSessionCategory(
   gateway: JarvisSessionCategoryGateway,
   sessionKey: string,
@@ -24,7 +23,6 @@ export async function assignJarvisSessionCategory(
 ): Promise<string | null> {
   const category = createJarvisSessionCategory(trigger);
   if (!category) return null;
-  await gateway.createSessionGroup(category);
   await gateway.setSessionCategory(category, sessionKey);
   return category;
 }
