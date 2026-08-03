@@ -4185,7 +4185,18 @@
     "transcriptSearchRoleUser": "用户",
     "transcriptSearchRoleAssistant": "助手",
     "transcriptSearchScore": "相关度 {{score}}",
-    "transcriptSearchOpen": "打开会话 {{sessionKey}}"
+    "transcriptSearchOpen": "打开会话 {{sessionKey}}",
+    "compactionCheckpoints": "检查点",
+    "compactionCheckpointsLoading": "正在读取 Gateway 检查点...",
+    "compactionCheckpointsUnavailable": "当前 Gateway 未提供压缩检查点。",
+    "compactionCheckpointsInvalid": "Gateway 返回的检查点无法验证。",
+    "compactionCheckpointsEmpty": "Gateway 未返回压缩检查点。",
+    "compactionCheckpointReasons": {
+      "manual": "手动压缩",
+      "auto-threshold": "自动阈值",
+      "overflow-retry": "溢出重试",
+      "timeout-retry": "超时重试"
+    }
   },
   "sidebar.pinned": "已置顶",
   "sidebar.showArchived": "显示已归档 ({{count}})",

@@ -170,6 +170,7 @@ docs/
 - [OpenClaw 会话用量范围对齐](quality/openclaw-sessions-usage-range-alignment-2026-08-03.md)
 - [OpenClaw 会话操作事件对齐](quality/openclaw-session-operation-alignment-2026-08-03.md)
 - [OpenClaw 原生会话压缩对齐](quality/openclaw-native-session-compaction-alignment-2026-08-04.md)
+- [OpenClaw 原生压缩检查点只读对齐](quality/openclaw-native-compaction-checkpoint-read-alignment-2026-08-03.md)
 - [OpenClaw 原生会话中止对齐](quality/openclaw-native-session-abort-alignment-2026-08-03.md)
 - [OpenClaw 原生会话分组与 Jarvis 对齐](quality/openclaw-native-session-groups-jarvis-alignment-2026-08-03.md)
 - [OpenClaw 全局语音唤醒触发词与 JunQi 对齐](quality/openclaw-voicewake-global-trigger-alignment-2026-08-03.md)

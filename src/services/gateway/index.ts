@@ -62,6 +62,7 @@ import {
 } from './OpenClawApprovalClient';
 import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
 import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
+import { OpenClawSessionCompactionCheckpointsClient } from './OpenClawSessionCompactionCheckpointsClient';
 import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
 import { OpenClawCronRunClient } from './OpenClawCronRunClient';
 import { OpenClawCronStatusClient } from './OpenClawCronStatusClient';
@@ -90,6 +91,11 @@ export type {
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
 export type { OpenClawTtsClip, OpenClawTtsSpeakInput } from './OpenClawTtsClient';
 export type { OpenClawTtsStatus } from './OpenClawTtsStatusClient';
+export type {
+  OpenClawCompactionCheckpoint,
+  OpenClawCompactionCheckpointReason,
+  OpenClawCompactionTranscriptReference,
+} from './OpenClawSessionCompactionCheckpointsClient';
 export type {
   OpenClawCommandArgument,
   OpenClawCommandArgumentChoice,
@@ -744,6 +750,18 @@ const sessionAbort = new OpenClawSessionAbortClient(
 const sessionCompaction = new OpenClawSessionCompactionClient(
   (method, params) => requestPrivileged(method, params),
 );
+const sessionCompactionCheckpoints = new OpenClawSessionCompactionCheckpointsClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
 });
@@ -1050,6 +1068,9 @@ export const gateway = {
       key,
       () => sessionCompaction.compact({ key }),
     );
+  },
+  async listSessionCompactionCheckpoints(sessionKey: string) {
+    return sessionCompactionCheckpoints.list(sessionKey);
   },
 
   // Session Lifecycle

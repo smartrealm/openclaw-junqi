@@ -4162,7 +4162,18 @@
     "transcriptSearchRoleUser": "User",
     "transcriptSearchRoleAssistant": "Assistant",
     "transcriptSearchScore": "Score {{score}}",
-    "transcriptSearchOpen": "Open session {{sessionKey}}"
+    "transcriptSearchOpen": "Open session {{sessionKey}}",
+    "compactionCheckpoints": "Checkpoints",
+    "compactionCheckpointsLoading": "Loading Gateway checkpoints...",
+    "compactionCheckpointsUnavailable": "This Gateway does not provide compaction checkpoints.",
+    "compactionCheckpointsInvalid": "The Gateway checkpoint response could not be verified.",
+    "compactionCheckpointsEmpty": "No compaction checkpoints returned by Gateway.",
+    "compactionCheckpointReasons": {
+      "manual": "Manual",
+      "auto-threshold": "Automatic threshold",
+      "overflow-retry": "Overflow retry",
+      "timeout-retry": "Timeout retry"
+    }
   },
   "sidebar.pinned": "Pinned",
   "sidebar.showArchived": "Show archived ({{count}})",

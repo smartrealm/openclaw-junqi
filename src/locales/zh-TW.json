@@ -4154,7 +4154,18 @@
     "transcriptSearchRoleUser": "用戶",
     "transcriptSearchRoleAssistant": "助手",
     "transcriptSearchScore": "相關度 {{score}}",
-    "transcriptSearchOpen": "打開會話 {{sessionKey}}"
+    "transcriptSearchOpen": "打開會話 {{sessionKey}}",
+    "compactionCheckpoints": "檢查點",
+    "compactionCheckpointsLoading": "正在讀取 Gateway 檢查點...",
+    "compactionCheckpointsUnavailable": "目前 Gateway 未提供壓縮檢查點。",
+    "compactionCheckpointsInvalid": "Gateway 返回的檢查點無法驗證。",
+    "compactionCheckpointsEmpty": "Gateway 未返回壓縮檢查點。",
+    "compactionCheckpointReasons": {
+      "manual": "手動壓縮",
+      "auto-threshold": "自動閾值",
+      "overflow-retry": "溢出重試",
+      "timeout-retry": "逾時重試"
+    }
   },
   "sidebar.pinned": "已置頂",
   "sidebar.showArchived": "顯示已歸檔 ({{count}})",

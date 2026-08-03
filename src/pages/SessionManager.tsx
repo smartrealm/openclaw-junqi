@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Users, RefreshCw, Zap, Clock, Bot, Activity, Search, Pencil, Trash2, Check, X, MessageSquare } from 'lucide-react';
+import { Users, RefreshCw, Zap, Clock, Bot, Activity, Search, Pencil, Trash2, Check, X, MessageSquare, History } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import {
   ensureSessionPreviewsFresh,
@@ -34,6 +34,7 @@ import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import { IconButton } from '@/components/shared/button';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { useOpenClawSessionCompactionCheckpoints } from '@/hooks/useOpenClawSessionCompactionCheckpoints';
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
@@ -140,6 +141,8 @@ function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
   const [draftLabel, setDraftLabel] = useState('');
   const [savingRename, setSavingRename] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [checkpointsOpen, setCheckpointsOpen] = useState(false);
+  const { checkpoints, clear: clearCheckpoints, failure: checkpointsFailure, load: loadCheckpoints, loading: checkpointsLoading } = useOpenClawSessionCompactionCheckpoints(session.key);
   const isRunning = session.running === true;
   const kind = getSessionKind(session);
   const isSubAgent = kind === 'subagent';
@@ -216,6 +219,16 @@ function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
       },
     );
   }, [session.key, t]);
+
+  const toggleCheckpoints = useCallback(() => {
+    if (checkpointsOpen) {
+      setCheckpointsOpen(false);
+      clearCheckpoints();
+      return;
+    }
+    setCheckpointsOpen(true);
+    void loadCheckpoints();
+  }, [checkpointsOpen, clearCheckpoints, loadCheckpoints]);
 
   return (
     <div
@@ -388,7 +401,49 @@ function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
             {session.compactions}
           </Badge>
         )}
+        <button
+          type="button"
+          onClick={toggleCheckpoints}
+          className={clsx(
+            'inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[9px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40',
+            checkpointsOpen
+              ? 'border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
+              : 'border-aegis-border text-aegis-text-dim hover:border-aegis-primary/25 hover:text-aegis-text-secondary',
+          )}
+          aria-expanded={checkpointsOpen}
+          aria-label={t('sessions.compactionCheckpoints')}
+        >
+          <History size={10} aria-hidden="true" />
+          {t('sessions.compactionCheckpoints')}
+        </button>
       </div>
+
+      {checkpointsOpen && (
+        <section className="space-y-2 rounded-lg border border-aegis-border bg-aegis-overlay/[0.02] p-2.5" aria-live="polite" aria-busy={checkpointsLoading}>
+          {checkpointsLoading ? (
+            <div className="flex items-center gap-2 text-[10px] text-aegis-text-dim"><LoadingIndicator size={12} />{t('sessions.compactionCheckpointsLoading')}</div>
+          ) : checkpointsFailure ? (
+            <p className="text-[10px] leading-4 text-aegis-text-dim">{t(checkpointsFailure === 'unavailable' ? 'sessions.compactionCheckpointsUnavailable' : 'sessions.compactionCheckpointsInvalid')}</p>
+          ) : checkpoints.length === 0 ? (
+            <p className="text-[10px] leading-4 text-aegis-text-dim">{t('sessions.compactionCheckpointsEmpty')}</p>
+          ) : (
+            <div className="space-y-2">
+              {checkpoints.map((checkpoint) => (
+                <div key={checkpoint.checkpointId} className="min-w-0 border-s border-aegis-primary/35 ps-2 text-[10px] text-aegis-text-secondary">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="font-medium text-aegis-text">{t(`sessions.compactionCheckpointReasons.${checkpoint.reason}`)}</span>
+                    <span className="font-mono text-aegis-text-dim">{formatTimeAgo(new Date(checkpoint.createdAt).toISOString(), t)}</span>
+                    {checkpoint.tokensBefore !== undefined && checkpoint.tokensAfter !== undefined && (
+                      <span className="font-mono text-aegis-text-dim">{fmtTokens(checkpoint.tokensBefore)} to {fmtTokens(checkpoint.tokensAfter)}</span>
+                    )}
+                  </div>
+                  {checkpoint.summary && <p className="mt-1 line-clamp-3 break-words leading-4 text-aegis-text-dim">{checkpoint.summary}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {(previewText || preview?.status === 'empty') && (
         <div className="flex min-h-7 items-start gap-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.02)] px-2 py-1.5 text-[10px] text-aegis-text-muted">

@@ -82,6 +82,7 @@ plans/
 - [OpenClaw 会话用量范围对齐](quality/2026-08-03-openclaw-sessions-usage-range.md)
 - [OpenClaw 会话操作事件对齐](quality/2026-08-03-openclaw-session-operation.md)
 - [OpenClaw 原生会话压缩对齐](quality/2026-08-04-openclaw-native-session-compaction.md)
+- [OpenClaw 原生压缩检查点只读](quality/2026-08-03-openclaw-native-compaction-checkpoint-read.md)
 - [OpenClaw 原生会话中止对齐](quality/2026-08-03-openclaw-native-session-abort.md)
 - [OpenClaw 原生会话分组与 Jarvis 对齐](quality/2026-08-03-openclaw-native-session-groups-jarvis.md)
 - [OpenClaw 全局语音唤醒触发词对齐](quality/2026-08-03-openclaw-voicewake-global-triggers.md)
