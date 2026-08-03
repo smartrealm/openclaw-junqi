@@ -49,6 +49,7 @@ specs/
 - [会话分组与后台活动下钻](quality/2026-07-31-session-background-activity-drilldown.md)
 - [会话渠道来源呈现](quality/2026-07-31-session-channel-presentation.md)
 - [OpenClaw 原生会话体验对齐](quality/2026-08-02-openclaw-native-session-experience.md)
+- [新建会话生命周期加固](quality/2026-08-03-new-session-lifecycle-hardening.md)
 - [Chat production hardening](quality/2026-07-21-chat-production-hardening.md)
 - [Chat 流式渲染性能](quality/2026-08-03-chat-stream-rendering-performance.md)
 - [JunQi namespace](quality/2026-07-21-junqi-namespace-bugfix.md)
