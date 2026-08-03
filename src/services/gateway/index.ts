@@ -76,6 +76,7 @@ import { OpenClawCronStatusClient } from './OpenClawCronStatusClient';
 import { OpenClawTtsClient } from './OpenClawTtsClient';
 import { OpenClawTtsStatusClient } from './OpenClawTtsStatusClient';
 import { OpenClawTtsPreferencesClient } from './OpenClawTtsPreferencesClient';
+import { OpenClawDiagnosticStabilityClient } from './OpenClawDiagnosticStabilityClient';
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
 import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
 import {
@@ -145,6 +146,10 @@ export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
 export type { OpenClawTtsClip, OpenClawTtsSpeakInput } from './OpenClawTtsClient';
 export type { OpenClawTtsStatus } from './OpenClawTtsStatusClient';
 export type { OpenClawTtsPreferenceMutation } from './OpenClawTtsPreferencesClient';
+export type {
+  OpenClawDiagnosticStabilityEvent,
+  OpenClawDiagnosticStabilitySnapshot,
+} from './OpenClawDiagnosticStabilityClient';
 export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
 export type { OpenClawProviderUsageSnapshot } from './OpenClawProviderUsageClient';
 export type {
@@ -387,6 +392,18 @@ export const openClawTtsStatusClient = new OpenClawTtsStatusClient({
 });
 
 export const openClawTtsPreferencesClient = new OpenClawTtsPreferencesClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawDiagnosticStabilityClient = new OpenClawDiagnosticStabilityClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
