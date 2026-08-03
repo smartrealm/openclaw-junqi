@@ -8,7 +8,7 @@
    语义和当前方法广告。
 2. 新增严格的 `OpenClawToolsCatalogClient`，保留官方 core/plugin、risk、optional、tags
    和 default profile 字段。
-3. 在 Gateway data store 中按连接、请求代次和 agent 管理目录，处理能力未广告、断线、
+3. 在 Gateway data store 中按连接、请求代次和 agent 管理目录，处理发现遗漏、实际未知方法、断线、
    agent 删除、迟到响应和 UI 缓存新鲜度。
 4. 在 Config Manager Tools 页面把 agent 级全局目录和 Session 级有效工具分开呈现，补充
    三种语言文案。
@@ -31,4 +31,4 @@
 
 - 不在 JunQi 本地推断 agent profile 或插件工具，不把 catalog 当作 Session 最终权限。
 - 本计划对应的目录读取路径不调用 `tools.invoke`，不主动连接或列举 MCP 工具；工具调用另由独立原生对齐计划负责。
-- 不把 OpenClaw 安装版本写成能力开关，不在 Gateway 未广告或响应无法验证时伪造目录。
+- 不把 OpenClaw 安装版本或方法发现列表写成能力开关；响应无法验证时不伪造目录。

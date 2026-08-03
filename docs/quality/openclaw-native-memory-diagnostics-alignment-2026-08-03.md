@@ -31,7 +31,7 @@
    promoted 候选只有在用户显式勾选后才请求；候选、路径、渲染 Markdown、配置和 Gateway
    返回的 `ok: false` 错误均保持 native 语义。JunQi 不创建本地 REM 记录，也不把预览写回
    工作区或会话。
-4. Gateway 明确未广告方法时不发 RPC；能力列表未知时按协议真实尝试。Gateway 返回
+4. 方法是否列入 Gateway 发现列表不决定是否发送 RPC；按协议真实尝试，并由 Gateway 返回
    method-not-found、权限、传输或 malformed response 时，store 保留明确错误状态，不降级
    成空结果或伪造“不可用”以外的诊断结论。
 5. 诊断请求绑定当前 Gateway 连接和最新请求栅栏。断线、连接替换或旧响应到达时，旧结果

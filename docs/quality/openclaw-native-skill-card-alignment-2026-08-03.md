@@ -27,8 +27,8 @@ OpenClaw 为已安装技能提供 `skills.skillCard` 的只读 Gateway 方法。
 ## 当前实现
 
 - `src/services/openclawSkillsRuntime.ts` 新增 `skillCardCapability()` 与 `skillCard()`。只有
-  Gateway 明确未广告 `skills.skillCard` 时才将能力标为不可用；未提供 methods 广告时保持未知，
-  允许按官方 RPC 真实请求，绝不以版本号推断支持情况。
+  `features.methods` 不作为 `skills.skillCard` 的本地许可表；始终按官方 RPC 真实请求，并仅按
+  Gateway 返回的未知方法、授权或其他结构化错误呈现实际状态，绝不以版本号推断支持情况。
 - 响应解码要求固定 schema、请求对应的 `skillKey`、非空 `path`、安全整数 `sizeBytes` 与字符串
   `content`。路径仅用于验证官方回包完整性，未进入返回模型、状态或 UI，避免暴露 Gateway
   workspace 的主机信息。
@@ -48,7 +48,7 @@ Windows、CentOS 和 Ubuntu 使用相同协议与 UI 路径，不依赖浏览器
 ## 验证结果
 
 - `openclawSkillsRuntime.test.ts` 覆盖严格卡片 envelope 解码、skillKey 回包一致性、只读 RPC
-  参数与明确未广告时不发送请求。
+  参数与 Gateway 实际返回未知方法时的不可用语义。
 - 技能页已有 Gateway 边界回归确认页面只通过共享 `openClawSkillsRuntime` 访问能力，未使用
   WebView adapter、直接 Gateway 调用或浏览器 HTTP。
 - `pnpm exec tsc --noEmit`、技能页与语音定向回归 30 项、`pnpm lint`、`pnpm test`、

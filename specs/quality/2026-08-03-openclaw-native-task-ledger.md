@@ -13,8 +13,8 @@
 - `TaskSummary` 必须完整投影官方已知字段：身份、状态、可选归属、时间、工具统计、摘要、错误和
   lookup-only prompt。未知扩展字段不得进入 JunQi 领域模型。
 - 字符串、时间、计数、状态、分页和取消结果按官方 schema 解码；不得 trim、截断或补造字段。
-- `hello-ok.features.methods` 明确缺少 task 方法时不发 RPC；未知能力仅真实尝试；method-not-found
-  显示 unavailable，其他错误不得被伪装为 empty 或 success。
+- `hello-ok.features.methods` 的遗漏不阻止 task RPC；method-not-found 显示 unavailable，其他错误
+  不得被伪装为 empty 或 success。
 - task ledger 与 JunQi 本地 Task checkpoint、协作 workflow graph、Chat transcript 独立展示和存储。
 - UI 只在 Gateway 已返回 `queued` 或 `running` 时提供取消；取消后必须等 `found` 与 `cancelled`
   明确为 true 才刷新。

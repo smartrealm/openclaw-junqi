@@ -27,7 +27,7 @@ JunQi `CronMonitor` 只读取 `cron.list` 和 run history。列表可说明任�
 - 通过严格解码的 `cron.status {}` 只读 RPC 呈现 Gateway 调度器快照。
 - 只展示 `enabled`、`jobs` 与 `nextWakeAtMs`；不将主机 SQLite 文件路径传入 UI、日志或持久化。
 - 仅在页面连接建立和用户点击刷新时读取。未取得事件 payload 或订阅契约前，不制造实时状态。
-- Gateway 未广告该方法、method-not-found、无效响应、断线和读取错误应保持真实错误语义，不伪装成 disabled 或零任务。
+- 方法发现遗漏时仍发起官方请求；Gateway 实际 method-not-found、无效响应、断线和读取错误应保持真实错误语义，不伪装成 disabled 或零任务。
 
 ## 未纳入本轮
 

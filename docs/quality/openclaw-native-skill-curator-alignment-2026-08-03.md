@@ -29,8 +29,8 @@ OpenClaw Skill Workshop 会对由自动捕获创建的 workspace 技能维护生
 - `src/services/openclawSkillsRuntime.ts` 为 curator status 增加 capability 查询、严格 decoder 和
   普通 Gateway 读取。响应必须包含所有官方字段和合法状态；畸形嵌套条目、错误数值或未知状态
   会整体拒绝，不生成部分本地结论。
-- 已安装列表同时读取 `skills.status`、`skills.securityVerdicts` 和 curator status。curator
-  method 被 Gateway 明确不广告时不发请求；广告未知时才按官方 RPC 请求，并如实呈现失败。
+- 已安装列表同时读取 `skills.status`、`skills.securityVerdicts` 和 curator status。`features.methods`
+  不作为 curator 请求门禁；按官方 RPC 请求，并按 Gateway 的结构化响应如实呈现失败。
 - 页面只按完全相等的 `skillKey` 将状态、固定标记与使用次数关联到技能行。汇总区显示 Gateway
   原始计数和重叠候选数量；Gateway 的 `lastError` 与 RPC 失败分别作为非阻断状态显示。
 - 没有接入 `skills.curator.pin`、`skills.curator.unpin`、`skills.curator.restore`，也没有接入
@@ -46,7 +46,7 @@ operator.read 授权、长列表和窄窗口显示仍需真机验证。
 ## 验证结果
 
 - `openclawSkillsRuntime.test.ts` 覆盖完整 status decoder、未知状态和畸形 overlap 拒绝、
-  只读调用参数及明确未广告时不发送请求。
+  只读调用参数及方法发现遗漏时仍请求 Gateway 的边界。
 - 技能页 Gateway 边界回归继续证明页面未绕过统一 runtime 调用 Gateway、WebView adapter 或
   浏览器 HTTP。
 - `pnpm lint`、`pnpm test`、`pnpm verify:openclaw-docs`、`pnpm collab:test`、

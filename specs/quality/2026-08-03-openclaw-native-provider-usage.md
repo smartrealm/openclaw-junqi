@@ -9,7 +9,7 @@
 
 ## 契约
 
-1. 只能调用官方只读 `usage.status`；明确未广告时不得发送 RPC，也不得调用 provider API 或本机 CLI。
+1. 只能调用官方只读 `usage.status`；methods 发现列表遗漏时仍发送官方 RPC，不得调用 provider API 或本机 CLI。
 2. 请求必须绑定当前 attested Gateway connection；断线、未知方法、连接切换和畸形回包不得更新 UI。
 3. 请求不传 Agent 参数，作用域为官方 handler 选择的 Gateway 默认 Agent。
 4. 只投影 `updatedAt`、provider id/display name、窗口 label、0 到 100 的 `usedPercent` 与可选 `resetAt`。

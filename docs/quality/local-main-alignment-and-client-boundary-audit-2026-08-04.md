@@ -31,4 +31,4 @@
 ## 未验证边界
 
 - Windows、Linux 与 macOS 打包后的 Tauri IPC 和 Gateway 连接仍需目标平台真机验证。
-- 本记录不声明 OpenClaw Gateway 或浏览器工具在未连接、未授权或未广告能力时可用。
+- 本记录不声明 OpenClaw Gateway 或浏览器工具在未连接、未授权或 Gateway 实际未知方法时可用；方法发现遗漏本身不决定调用资格。

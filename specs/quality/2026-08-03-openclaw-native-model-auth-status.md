@@ -9,7 +9,7 @@ Secret 和实际模型调用结果相互独立。
 
 ## 契约
 
-1. 只能调用官方只读 `models.authStatus`，明确未广告时不得发送 RPC。
+1. 只能调用官方只读 `models.authStatus`；methods 发现列表遗漏时仍发送官方 RPC，实际未知方法才显示不可用。
    不传 `agentId` 时，状态范围为官方 handler 选择的 Gateway 默认 Agent。
 2. 请求必须绑定当前 attested Gateway connection；断线、未知方法、连接切换和畸形回包不得更新 UI。
 3. 只接受官方 provider/profile status 和 profile type 枚举，expiry 必须具有完整的合法 timestamp、remainingMs

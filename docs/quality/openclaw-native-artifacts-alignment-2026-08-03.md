@@ -30,7 +30,7 @@ JunQi 通过 OpenClaw Gateway 原生 `artifacts.list`、`artifacts.get` 和
    `unsupported` 不提供虚假的保存动作。响应字段和摘要字段严格校验，未知附加字段可被忽略
    但已知字段类型错误会拒绝进入 UI 状态。
 3. 产物快照按 Gateway 连接、请求代次和 session key 绑定。断线、会话删除、迟到响应和
-   Gateway 未广告能力都会清理旧状态。
+   Gateway 实际未知方法都会清理旧状态；方法发现遗漏不阻止官方 RPC。
 4. 内联 XML artifact 仍是 transcript 内容投影；它不被转换成 `artifacts.*` 结果，
    `artifacts.*` 也不被伪造为 transcript 消息。
 
@@ -38,7 +38,7 @@ JunQi 通过 OpenClaw Gateway 原生 `artifacts.list`、`artifacts.get` 和
 
 - `OpenClawArtifactsClient.test.ts` 覆盖官方查询参数、摘要、下载模式、附加字段和非法
   响应。
-- `gatewayDataStore.test.ts` 覆盖会话生命周期、能力未广告、迟到响应和下载保存边界。
+- `gatewayDataStore.test.ts` 覆盖会话生命周期、发现遗漏时仍请求、实际未知方法、迟到响应和下载保存边界。
 - 目标 TypeScript 测试、lint、完整测试、生产构建、官方链接和差异检查在提交前执行。
 
 ## 未验证边界

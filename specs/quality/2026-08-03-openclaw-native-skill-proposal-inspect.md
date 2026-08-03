@@ -11,7 +11,7 @@
 
 1. 调用使用官方 `skills.proposals.inspect`，参数为非空 proposal id 和可选 agent id。
 2. agent id 只能由现有 proposal scope 解析器给出；详情必须使用发起清单时当前选择的相同 scope。
-3. Gateway methods 明确不含 inspect 时不显示入口且不得调用；methods 未广告时可按官方 RPC 尝试读取。
+3. Gateway methods 发现列表不决定 inspect 入口或调用；按官方 RPC 读取，并仅根据结构化 Gateway 响应呈现不支持、未授权或失败。
 4. 成功回包必须包含匹配请求 id 的 `openclaw.skill-workshop.proposal.v1` record、完整 target、scan 和
    support file 结构及 string 正文；缺失或未知枚举必须失败。
 5. React 状态和 UI 只保留安全投影：id、title、description、skill key、status、可选 revision hash 和
@@ -29,5 +29,5 @@
 
 1. 完整官方样式回包可得到安全投影，错误 id 或缺失嵌套字段被拒绝。
 2. 显式 agent scope 原样进入 inspect RPC；默认 scope 省略 `agentId`。
-3. 明确未广告 inspect 时无 RPC 调用。
+3. methods 发现列表遗漏 inspect 时仍发生官方 RPC；实际未知方法响应显示不可用。
 4. 类型检查、服务回归、全量验证、文档链接和 Emoji 扫描通过。

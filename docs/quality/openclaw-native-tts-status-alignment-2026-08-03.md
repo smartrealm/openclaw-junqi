@@ -25,7 +25,7 @@ persona metadata，也会返回 Gateway 本地 prefsPath。方法目录将其标
 
 ## 当前实现
 
-- 仅在已连接且 Gateway 未明确不广告 `tts.status` 时读取；明确未广告时显示为不可用并绝不发送 RPC。
+- 在已连接时读取 `tts.status`；方法发现遗漏不会阻止请求，只有 Gateway 实际返回未知方法时才显示不可用。
 - 请求绑定当前 attested Gateway connection；连接在请求途中变化时丢弃结果，不把旧 Gateway 的状态写入
   新连接。
 - 严格验证 auto 为 `off`、`always`、`inbound`、`tagged` 之一，provider/persona、provider states 和
@@ -49,7 +49,7 @@ persona metadata，也会返回 Gateway 本地 prefsPath。方法目录将其标
 
 ## 验证结果
 
-- 新增 7 项定向回归通过，覆盖完整安全投影、畸形 enum/嵌套字段拒绝、未广告零请求、未知方法、连接变化、
+- 新增 7 项定向回归通过，覆盖完整安全投影、畸形 enum/嵌套字段拒绝、方法发现遗漏仍请求、未知方法、连接变化、
   fenced 请求断线和页面断线呈现。
 - `pnpm lint`、`pnpm test`、`pnpm verify:openclaw-docs`、`pnpm collab:test`、`pnpm collab:validate` 通过。
 - `OPENCLAW_BIN=/Users/wei/.npm-global/bin/openclaw pnpm build` 成功结束；生产入口与构建资源存在。

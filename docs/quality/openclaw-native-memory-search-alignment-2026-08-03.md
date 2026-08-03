@@ -34,15 +34,15 @@ JunQi 已在现有 Memory Explorer 中增加 Gateway 检索视图，调用 OpenC
    `agentId` 时由 Gateway 按官方 handler 解析默认 agent，界面展示响应中的实际 `agentId`。
 3. 结果卡片只展示 Gateway 返回的 path、line range、source、score、snippet 和可选
    citation。provider、search mode、stale、warning、action 都直接来自响应。
-4. Gateway 未在握手能力中广告 `memory.search` 时不发送 RPC，而是显示明确的 unsupported
-   状态。断线、连接替换、重复查询和迟到响应由请求栅栏处理，不得覆盖当前结果。
+4. `features.methods` 未列出 `memory.search` 时仍发送官方 RPC；只有 Gateway 实际返回未知方法时
+   显示明确的 unsupported 状态。断线、连接替换、重复查询和迟到响应由请求栅栏处理，不得覆盖当前结果。
 5. 记忆片段只存在于当前 store 快照，不写入 localStorage、日志、文件或自定义 Memory API。
 
 ## 验证
 
 - `OpenClawMemorySearchClient.test.ts` 覆盖官方请求参数、响应字段、可选元数据、来源和
   搜索模式校验，以及 Gateway 的 `maxResults` 边界。
-- `gatewayDataStore.test.ts` 覆盖能力广告、未支持方法不发 RPC、最新查询提交、Gateway
+- `gatewayDataStore.test.ts` 覆盖发现遗漏时仍请求、实际未知方法、最新查询提交、Gateway
   元数据保留和断线清理。
 - Memory Explorer 保留无 `fetch`、无浏览器桥接和无 CRUD 调用的页面边界测试。
 - 提交前运行定向测试、TypeScript、lint、完整测试、生产构建、官方链接校验和差异检查。

@@ -34,5 +34,5 @@
 1. 已确认 list 的可选 `agentId`、完整 manifest schema、workspace resolver、`operator.read`
    权限以及官方控制台依赖 selected agent scope 后才 inspect 的行为。
 2. 已完成严格只读 runtime、条件标签和三语状态呈现；默认读取刻意省略 `agentId`。
-3. 已补充完整 decoder、非法枚举、只读调用和明确未广告回归。
+3. 已补充完整 decoder、非法枚举、只读调用和方法发现遗漏仍请求的回归。
 4. 最终命令验证和目标平台真机边界将在提交记录中按实际结果报告。

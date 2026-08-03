@@ -37,8 +37,8 @@ JunQi 已经通过 `skills.status`、`skills.search`、`skills.detail` 和 ClawH
   `skills.install` 的 `source: "upload"` 分支。
 - 上传的所有阶段均通过 `callPrivileged` 发出；slug、uploadId、大小、偏移、哈希和安装回执
   都严格校验，Gateway 返回错误或不一致时不显示成功。
-- 如果 Gateway 的 `hello-ok.features.methods` 明确缺少任一上传方法，技能页不展示上传入口；
-  如果 Gateway 没有提供方法列表，JunQi 保持未知并允许一次真实 RPC 尝试，不把未知当成支持。
+- `hello-ok.features.methods` 的遗漏不决定上传入口或调用资格；上传只在用户显式提交后按官方顺序真实请求，
+  Gateway 的正式错误决定是否可用，不把发现信息当成支持结论。
 - `src/pages/SkillsPage/SkillArchiveUploadPanel.tsx` 使用桌面 Tauri WebView 的文件选择器
   读取 ZIP 字节，显示阶段进度、slug、显式替换选项和真实错误；不发起浏览器 HTTP 请求，
   不写本地技能目录，也不持久化归档内容或凭据。

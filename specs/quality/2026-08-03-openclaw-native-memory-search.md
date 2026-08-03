@@ -16,7 +16,7 @@
    Gateway 路径，不从本地文件、聊天 transcript 或自定义 API 合成结果。
 4. 响应必须验证 `agentId`、`provider`、`searchMode`、`results` 及结果的官方字段；已知
    字段类型错误不得进入 UI，未来附加字段可以忽略。
-5. 结果状态必须绑定当前 Gateway 连接和最新查询；断线、未广告能力、查询替换和迟到
+5. 结果状态必须绑定当前 Gateway 连接和最新查询；断线、Gateway 实际未知方法、查询替换和迟到
    响应不能留下旧结果。
 
 ## 验收条件
@@ -24,7 +24,7 @@
 - Memory Explorer 能在工作区文件和 Gateway 检索之间切换。
 - Gateway 检索提交后只通过 data store 发出原生 `memory.search`，并展示 Gateway 返回
   的来源、路径、行号、片段和元数据。
-- 未广告 `memory.search`、未连接、非法响应或 RPC 失败时，显示明确状态且不提供虚假
+- `memory.search` 实际未知、未连接、非法响应或 RPC 失败时，显示明确状态且不提供虚假
   本地替代结果。
 - Gateway 结果不会写入持久化前端状态、日志或文件；工作区本地视图不受影响。
 - TypeScript、边界、定向回归、完整测试和构建验证通过，文档记录实际与未验证边界。

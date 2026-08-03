@@ -17,7 +17,7 @@ Gateway 已标记的 stale、archived 或 pinned 条目与未被 curator 管理�
 1. 只调用 `skills.curator.status`，不调用 pin、unpin、restore 或任一 proposal 写方法。
 2. 只接受完整官方 status：最近执行字段、错误、三个计数、完整 lifecycle entry 与 overlap。
    遇到未知状态、缺少字段、无效数值或畸形嵌套条目时拒绝整个回包，不补默认值。
-3. Gateway 明确未广告该方法时不得发送请求；广告未知时允许真实请求并显示实际错误，不能由
+3. Gateway methods 发现列表不决定是否发送请求；按官方 RPC 请求并显示实际结构化错误，不能由
    OpenClaw 版本、系统平台或本地目录推断支持情况。
 4. 技能标签只按 status 与 curator 的 `skillKey` 精确关联。没有匹配项必须保持未知，不能显示
    active、stale、archived、pinned 或使用次数。
@@ -29,4 +29,4 @@ Gateway 已标记的 stale、archived 或 pinned 条目与未被 curator 管理�
 - Gateway 返回的 lifecycle 标签、固定状态、使用次数、汇总计数和 overlap 数量可在已安装页显示。
 - 显式不支持、回包畸形或 RPC 失败不会伪造 lifecycle 结果，也不影响技能列表读取。
 - status 与安全判定、技能卡、启停和上传路径保持各自权限边界。
-- 回归覆盖读取请求、严格解码和明确未广告场景；文档保留真实 Gateway 与四平台真机边界。
+- 回归覆盖读取请求、严格解码和方法发现遗漏仍请求的场景；文档保留真实 Gateway 与四平台真机边界。

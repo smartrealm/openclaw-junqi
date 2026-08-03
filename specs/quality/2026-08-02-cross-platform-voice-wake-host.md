@@ -30,7 +30,7 @@
 
 ## Talk Relay Extension
 
-- Continuous Jarvis Talk is available only when the selected, authenticated Gateway returns a `talk.catalog` payload with `speech.ready: true` and a configured provider that explicitly supports `realtime`, `gateway-relay`, `agent-consult`, PCM16 input, and barge-in.
+- Continuous Jarvis Talk is available only when the selected, authenticated Gateway returns a `talk.catalog` payload with `realtime.ready: true` and a configured provider that explicitly supports `realtime`, `gateway-relay`, `agent-consult`, PCM16 input, and barge-in. `speech.ready` is not a current relay capability signal.
 - JunQi creates only `talk.session.create({ mode: 'realtime', transport: 'gateway-relay', brain: 'agent-consult' })` sessions. It does not use browser-owned WebRTC or provider WebSocket paths for the desktop host.
 - Audio is sent only as native PCM16 chunks. A complete WAV capture must not be submitted to `talk.session.appendAudio`.
 - Gateway `talk.event` envelopes are validated and ordered per Talk session. Repeated or stale sequence numbers cannot update a newer voice turn.

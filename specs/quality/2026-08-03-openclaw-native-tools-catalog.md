@@ -26,7 +26,7 @@ Tools 页面以 OpenClaw Gateway 为权威，展示指定 agent 的全局 core/p
 
 - Gateway 广告能力且返回合法结果时，用户可选择真实 agent，看到 profiles、core/plugin
   分组、工具 ID/标签、风险、optional、tags 和 default profiles。
-- Gateway 未广告、响应非法、连接失败或 agent 被删除时，不发送不受支持的 RPC、不显示
+- Gateway 返回未知方法、响应非法、连接失败或 agent 被删除时，不显示
   旧目录，并呈现明确不可用或失败状态。
 - 切换 agent、刷新和重连不会让迟到响应写入当前目录；Session 级有效工具面板继续独立
   使用 `tools.effective`。

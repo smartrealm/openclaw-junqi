@@ -23,8 +23,8 @@ agent。官方方法目录将 inspect 标为 `operator.read`，不构成提案�
 ## 当前实现
 
 - `openClawSkillsRuntime.inspectProposal()` 仅调用 `skills.proposals.inspect`，参数由已验证的 proposal
-  id 和当前选定 scope 构成。Gateway 明确未广告该方法时，入口隐藏且 runtime 拒绝发送请求；广告未知
-  时发起官方 RPC，不按本机版本推断能力。
+  id 和当前选定 scope 构成。`features.methods` 不决定入口或发送；始终发起官方 RPC，并按 Gateway
+  的结构化响应显示不支持、授权或失败，不按本机版本推断能力。
 - decoder 核对 record 标识、提案 id、枚举、时间、target、扫描统计和 findings、support file 结构、
   revision hash 与正文。回包不完整或与请求 id 不一致时整体拒绝，不使用局部字段补造详情。
 - decoder 只向页面投影 id、标题、描述、skill key、状态、可选 revision hash 与草稿正文。target 路径、
@@ -51,7 +51,7 @@ Gateway 配对、operator.read 授权、超长草稿和窄窗口仍需各目标�
 ## 验证结果
 
 - `openclawSkillsRuntime.test.ts` 覆盖完整详情 envelope、请求 id 不匹配和畸形嵌套字段拒绝、受控
-  agent scope 参数，以及明确未广告时不调用 Gateway。
+  agent scope 参数，以及方法发现遗漏时仍调用 Gateway 的边界。
 - `pnpm exec tsc --noEmit` 与该服务定向回归 25 项通过；`pnpm lint`、`pnpm test`、
   `pnpm verify:openclaw-docs`、`pnpm collab:test` 与 `pnpm collab:validate` 通过。
 - `OPENCLAW_BIN=/Users/wei/.npm-global/bin/openclaw pnpm build` 零退出，未改写 provider catalog 或协作

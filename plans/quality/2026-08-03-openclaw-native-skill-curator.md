@@ -7,7 +7,7 @@
 1. 核对官方 Skill Workshop 文档、schema、handler、curator source、权限目录与现有技能页。
 2. 在统一技能 runtime 增加 capability 检查、完整 status decoder 与只读请求。
 3. 将精确匹配的生命周期状态和 Gateway 汇总投影到已安装列表，保持错误非阻断。
-4. 补充 decoder、读取路径和未广告边界的回归测试，验证页面未绕过 Gateway runtime。
+4. 补充 decoder、方法发现遗漏仍请求及实际未知方法边界的回归测试，验证页面未绕过 Gateway runtime。
 5. 执行 TypeScript、定向回归、locale、lint、完整测试、链接校验、构建和 diff 检查。
 
 ## 文件范围
@@ -35,6 +35,6 @@
 
 1. 已确认 `skills.curator.status` 的 schema、handler、`operator.read` 权限和状态语义。
 2. 已完成严格只读 runtime 与已安装技能生命周期投影。
-3. 已补充 decoder 与明确未广告边界回归，并记录未验证范围。
+3. 已补充 decoder 与方法发现遗漏仍请求的边界回归，并记录未验证范围。
 4. 已通过 TypeScript、定向回归、lint、完整前端测试、官方文档链接、协作包校验、生产构建和
    diff 检查；目标操作系统真机验收仍以验证记录中的未验证边界为准。

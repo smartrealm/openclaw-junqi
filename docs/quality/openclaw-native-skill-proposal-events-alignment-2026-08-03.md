@@ -22,8 +22,8 @@ revision hash、事件类型、发生时间、actor 与可选 payload/evaluation
 
 ## 当前实现
 
-- Gateway 明确未广告 `skills.proposals.events.list` 时隐藏入口并拒绝调用；广告未知或已广告时才按
-  官方 RPC 请求。
+- `features.methods` 不作为 `skills.proposals.events.list` 的入口或发送门禁；按官方 RPC 请求，并由
+  Gateway 的结构化响应决定是否显示不支持、未授权或失败。
 - 从已验证的 proposal 详情入口传入相同 scope 的 proposal id 和 agent id。每一页 event 都必须属于
   请求的 proposal，sequence 必须严格递增；不匹配或畸形回包整体失败。
 - UI 只保存并显示 sequence、原生 event type、发生时间与 actor type。revision hash、event id、actor
@@ -46,7 +46,7 @@ CentOS 和 Ubuntu 共享该协议路径，不依赖浏览器 HTTP、本地 works
 ## 验证目标
 
 - `openclawSkillsRuntime.test.ts` 覆盖完整安全投影、跨 proposal event 与乱序 sequence 拒绝、scope、
-  cursor、非法 cursor/limit，以及明确未广告时不调用 Gateway。
+  cursor、非法 cursor/limit，以及方法发现遗漏时仍调用 Gateway 的边界。
 - `proposalEventsDialog.test.tsx` 覆盖时间线只渲染安全投影及分页入口，不渲染 actor id 或 event payload。
 - `pnpm lint`、`pnpm test`、`pnpm verify:openclaw-docs`、`pnpm collab:test`、`pnpm collab:validate`
   通过。`OPENCLAW_BIN=/Users/wei/.npm-global/bin/openclaw pnpm build` 零退出；由于该命令没有打印

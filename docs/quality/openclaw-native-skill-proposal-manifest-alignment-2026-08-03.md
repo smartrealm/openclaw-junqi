@@ -27,9 +27,9 @@ workspace scope resolver 选择 agent workspace。
 
 ## 当前实现
 
-- `src/services/openclawSkillsRuntime.ts` 新增 `proposalsCapability()` 与 `proposals()`。只有
-  Gateway 明确未广告 `skills.proposals.list` 时才隐藏入口并拒绝调用；广告未知时按官方 RPC
-  发起真实读取，不以本机 OpenClaw 版本推断功能。
+- `src/services/openclawSkillsRuntime.ts` 新增 `proposalsCapability()` 与 `proposals()`。`features.methods`
+  不作为 `skills.proposals.list` 的入口或发送门禁；按官方 RPC 发起真实读取，并由 Gateway 的结构化响应
+  呈现不支持、授权或失败，不以本机 OpenClaw 版本推断功能。
 - decoder 要求完整官方 envelope 和每个嵌套字段的合法枚举。未知状态、未知扫描状态、缺失字段
   或畸形条目会整体拒绝回包，不从部分数据生成本地提案结论。
 - `src/pages/SkillsPage/index.tsx` 仅显示标题、描述、技能 key、更新时间和 Gateway 生命周期
@@ -50,7 +50,7 @@ CentOS 和 Ubuntu 共享同一协议路径，不依赖浏览器 HTTP、本地文
 ## 验证结果
 
 - `openclawSkillsRuntime.test.ts` 覆盖完整 manifest decoder、未知枚举拒绝、默认 scope 的只读
-  调用参数，以及明确未广告时不发送请求。
+  调用参数，以及方法发现遗漏时仍请求 Gateway 的边界。
 - `pnpm exec tsc --noEmit`、技能页定向回归 23 项、`pnpm lint`、`pnpm test`、
   `pnpm verify:openclaw-docs`、`pnpm collab:test` 与 `pnpm collab:validate` 通过。
 - `OPENCLAW_BIN=/Users/wei/.npm-global/bin/openclaw pnpm build` 完成，未产生 provider catalog 或

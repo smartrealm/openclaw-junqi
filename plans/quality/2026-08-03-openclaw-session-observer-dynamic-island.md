@@ -11,4 +11,4 @@
 
 - 不向 OpenClaw 写入会话、任务、工具结果、Transcript、checkpoint 或 Observer digest。
 - 不让萌宠作为 Observer 可见性消费者，不使用 assessment、plan progress 或其他未投影字段。
-- 不在未广告、未连接或错误 Gateway 上显示本地模拟状态。
+- 不在 Gateway 实际未知方法、未连接或错误时显示本地模拟状态；发现列表遗漏不阻止真实请求。

@@ -22,7 +22,7 @@ provider/profile health status、可选 expiry、API-key 来源和可选 usage�
 
 ## 当前实现
 
-- 新增 identity-fenced `models.authStatus` client。明确未广告、未知方法、断线和连接切换均归类为不可用，
+- 新增 identity-fenced `models.authStatus` client。Gateway 返回未知方法、断线和连接切换均归类为不可用，
   且不会写入旧 Gateway 的结果。
 - 严格验证 timestamp、provider/profile status、profile type 和 expiry 的完整形状。expiry 的 `remainingMs` 保留官方
   expired 状态可返回的负值；畸形回包不会生成健康状态。
@@ -46,7 +46,7 @@ CentOS 和 Ubuntu 不依赖系统特定认证实现。
 ## 验证结果
 
 - TypeScript 无输出类型检查通过。
-- 7 项定向回归通过，覆盖安全投影、敏感字段剔除、畸形 enum/expiry 拒绝、过期负 duration 保留、未广告零请求、未知方法、断线、
+- 7 项定向回归通过，覆盖安全投影、敏感字段剔除、畸形 enum/expiry 拒绝、过期负 duration 保留、方法发现遗漏仍请求、未知方法、断线、
   connection fence、已切换 Gateway 的旧响应丢弃，以及 UI 不可用状态。
 - `pnpm lint`、`pnpm test`、`pnpm verify:openclaw-docs`、`pnpm collab:test`、`pnpm collab:validate` 和
   `pnpm build` 均通过。

@@ -25,7 +25,7 @@ JunQi 原有 `/openclaw-commands` 页面把 55 条 CLI 示例、分类、参数�
 
 ## 目标实现
 
-- 新增受已认证 Gateway connection fence 保护的 `commands.list` client，方法未广告时不发送请求。
+- 新增受已认证 Gateway connection fence 保护的 `commands.list` client；方法发现遗漏不会阻止请求，实际 Gateway 响应决定结果。
 - `/openclaw-commands` 展示当前 Gateway 返回的运行时命令，不执行、安装、配置或拼接任何 CLI 命令。
 - 聊天输入框按当前 session key 中的 agent ID 请求真实的 text-scope 命令；参数补全只使用 Gateway 返回的静态
   choices。动态参数保留为 Gateway 标记，JunQi 不猜测候选值。
@@ -38,7 +38,7 @@ JunQi 原有 `/openclaw-commands` 页面把 55 条 CLI 示例、分类、参数�
 - 不把 `commands.list` 当作 CLI 命令、插件安装清单、模型目录、工具权限或 Gateway 健康检查。
 - 不从 session key 构造不存在的 agent。无法从 key 验证 agent ID 时，目录请求省略 `agentId`，由 Gateway 解析其
   默认 agent；响应中的真实目录仍是唯一呈现依据。
-- Gateway 未广告、断线、响应无效或指定 agent 被拒绝时显示不可用或失败状态，不保留旧 catalog，不回退到
+- Gateway 返回未知方法、断线、响应无效或指定 agent 被拒绝时显示不可用或失败状态，不保留旧 catalog，不回退到
   写死命令，也不要求浏览器或系统 shell。
 
 ## 验证结果

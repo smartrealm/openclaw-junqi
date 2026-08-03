@@ -29,11 +29,11 @@ JunQi 会话管理器现在把会话元数据筛选与 OpenClaw Gateway 的只�
 
 1. 会话管理器的筛选栏继续在本地按真实 `sessions.list` 元数据筛选，并保留运行状态、
    Agent、模型、类型和 Jarvis 分类过滤。
-2. 查询非空时，data store 只在 Gateway 广告 `sessions.search` 后发送原生 RPC。页面
+2. 查询非空时，data store 发送原生 `sessions.search` RPC；发现列表遗漏不会阻止请求。页面
    展示官方返回的片段、会话 key、消息 id、角色、时间和分数。
 3. `indexing` 与 `truncated` 原样显示为 Gateway 状态；空结果只表示 Gateway 返回了
    空命中，不代表 JunQi 进行了本地全文扫描。
-4. 未连接、未广告能力、非法响应、连接替换和迟到响应都有明确状态；最新查询栅栏只
+4. 未连接、Gateway 实际未知方法、非法响应、连接替换和迟到响应都有明确状态；最新查询栅栏只
    允许当前连接和当前查询提交结果。
 5. 点击命中卡片只按官方 `sessionKey` 打开现有 Chat tab，不创建新的会话身份，也不
    修改 Gateway 会话内容。
@@ -42,7 +42,7 @@ JunQi 会话管理器现在把会话元数据筛选与 OpenClaw Gateway 的只�
 
 - `OpenClawSessionSearchClient.test.ts` 覆盖官方请求边界、字段校验、可选布尔状态、
   空片段和未来附加字段。
-- `gatewayDataStore.test.ts` 覆盖能力广告、未支持方法不发 RPC、最新查询提交、
+- `gatewayDataStore.test.ts` 覆盖发现遗漏时仍请求、实际未知方法、最新查询提交、
   Gateway 状态保留和断线清理。
 - TypeScript 检查、模块边界、版本一致性、定向 Gateway 测试、完整测试、生产构建、
   官方链接校验和 `git diff --check` 均已通过。

@@ -11,8 +11,8 @@ agent/run identity、递增 revision、更新时间、headline、health 和可�
 
 JunQi 只把此能力投影到灵动岛，不创建本地 Agent、Task、Transcript 或 checkpoint。开关默认关闭；用户
 启用后，只有灵动岛已启用、主窗口最小化且当前 Gateway 已连接时才发送 `visible: true`。关闭、恢复主窗口、
-断线或连接更换时清空内存摘要并发送或准备发送 `visible: false`。未广告方法、无连接、权限或响应错误均
-失败关闭，不显示旧摘要。
+断线或连接更换时清空内存摘要并发送或准备发送 `visible: false`。发现列表遗漏不阻止请求；实际未知方法、无连接、
+权限或响应错误均失败关闭，不显示旧摘要。
 
 ## 边界
 

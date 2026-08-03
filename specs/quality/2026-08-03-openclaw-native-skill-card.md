@@ -19,8 +19,8 @@ JunQi 已显示 OpenClaw 已安装技能的 status 摘要，但没有忠实呈�
 2. 客户端只接受 `openclaw.skills.skill-card.v1`、请求对应 `skillKey`、非空 `path`、非负安全整数
    `sizeBytes` 与字符串 `content`；任何字段不符即报告无效回包，不能补默认值。
 3. `path` 仅用于协议完整性验证，不能展示、持久化或用于 JunQi 本地文件访问。
-4. Gateway 明确不广告该方法时不得显示或请求；方法广告未知时可以请求并如实展示实际错误，
-   不得用版本号推断支持情况。
+4. `features.methods` 的遗漏不阻止请求；Gateway 实际未知方法或拒绝时如实展示错误，不得用版本号
+   或发现列表推断支持情况。
 5. 内容必须作为转义纯文本显示，不得以 Markdown/HTML 注入 DOM，不能执行内容中的链接或脚本。
 6. 断开连接、关闭对话框、切换窗口或选择另一技能时清除或失效旧请求；晚到回包不得覆盖当前
    内容，不将内容作为另一个 Gateway 的缓存或 OpenClaw transcript 数据。

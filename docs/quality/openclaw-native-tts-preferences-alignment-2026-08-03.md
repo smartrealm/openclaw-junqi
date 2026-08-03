@@ -50,7 +50,7 @@ provider 与 persona 偏好，但不会创建本地语音配置、推断 provide
 ## 验证结果
 
 - `pnpm lint` 通过，包含模块边界、版本一致性和 TypeScript 无输出类型检查。
-- 13 项定向回归通过，覆盖 TTS status 安全投影、写方法与参数、确认校验、未广告零请求、未知方法、断线、连接
+- 13 项定向回归通过，覆盖 TTS status 安全投影、写方法与参数、确认校验、方法发现遗漏仍请求、未知方法、断线、连接
   切换、同一连接状态重读和保存期间的 UI 锁定。
 - `pnpm test` 通过，2508 项测试成功。既有 React 服务端渲染 `useLayoutEffect` 警告仍存在，但未造成测试失败。
 - `pnpm verify:openclaw-docs`、`pnpm collab:test`、`pnpm collab:validate` 和 `pnpm build` 通过。

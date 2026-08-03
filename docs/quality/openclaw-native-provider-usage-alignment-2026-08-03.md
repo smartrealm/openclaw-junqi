@@ -26,7 +26,7 @@ Gateway 访问任何 provider 或本机 CLI。
 
 ## 当前实现
 
-- 新增 identity-fenced `usage.status` client。未广告、未知方法、断线和连接切换均归类为不可用，旧 Gateway 结果不会写入
+- 新增 identity-fenced `usage.status` client。Gateway 返回未知方法、断线和连接切换均归类为不可用，旧 Gateway 结果不会写入
   当前页面。
 - 只严格投影 `updatedAt`、provider id/display name 与窗口 label、0 到 100 的 `usedPercent`、可选毫秒时间戳
   `resetAt`。畸形回包不会生成配额展示。
@@ -44,7 +44,7 @@ CentOS、Ubuntu 的文件路径、凭据库、浏览器 API 或本机 CLI。平�
 ## 验证结果
 
 - TypeScript 无输出类型检查通过。
-- 6 项定向回归通过，覆盖安全投影、账户/套餐/账单/错误文本剔除、畸形窗口拒绝、未广告零请求、未知方法、断线和
+- 6 项定向回归通过，覆盖安全投影、账户/套餐/账单/错误文本剔除、畸形窗口拒绝、方法发现遗漏仍请求、未知方法、断线和
   connection fence。
 - `pnpm lint`、`pnpm test`、`pnpm verify:openclaw-docs`、`pnpm collab:test`、`pnpm collab:validate` 和
   `pnpm build` 均通过。

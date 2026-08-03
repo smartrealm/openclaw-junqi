@@ -4,8 +4,8 @@
 
 ## 实施顺序
 
-1. 读取 `hello-ok.features.methods` 并在连接生命周期清除旧能力集合。
-2. 建立独立 `OpenClawAuditClient`，实现官方 activity/legacy 方法选择、请求校验和响应解析。
+1. 核对 `hello-ok.features.methods` 的保守发现语义，确保它不成为连接生命周期内的发送门禁。
+2. 建立独立 `OpenClawAuditClient`，实现 activity 优先、正式未知方法后的 legacy 回退、请求校验和响应解析。
 3. 在 Gateway facade 暴露只读 `listAuditEvents`，保持 `operator.read` 权限边界。
 4. 让主 Chat 与 QuickChat 将 Gateway 返回的 metadata-only 事件映射到共享追溯面板。
 5. 增加三语言文案、协议单元测试、连接生命周期测试和 UI 契约测试。

@@ -10,7 +10,7 @@ scope 隔离和敏感字段最小化。
 ## 契约
 
 1. 仅调用官方 `skills.proposals.events.list`；proposal id 非空，agent id 仅来自现有受控 scope。
-2. methods 明确不含该方法时不得出现入口或发送 RPC；未知广告状态可尝试官方读取。
+2. methods 发现列表不决定入口或 RPC；按官方读取并仅由 Gateway 的结构化响应判定不支持、未授权或失败。
 3. 事件页必须具有 events 数组和可选合法 nextSequence；每个 event 必须具有合法 sequence、请求的
    proposal id、版本、SHA-256 revision hash、原生类型、时间和 actor type。
 4. 返回 event sequence 必须严格递增；afterSequence 必须为非负整数，limit 必须在官方 1 至 200 范围。
@@ -28,6 +28,6 @@ scope 隔离和敏感字段最小化。
 ## 验收
 
 1. 正常 event page 产生最小只读投影，跨 proposal、乱序或畸形项被拒绝。
-2. scope、cursor 和 limit 与官方参数契约一致；明确未广告时无调用。
+2. scope、cursor 和 limit 与官方参数契约一致；methods 发现遗漏时仍有官方调用。
 3. 页面可查看首页并在存在 nextSequence 时请求后页，不在 scope 切换后显示旧页。
 4. 相关自动化检查与文档验证通过，真机未验证边界明确记录。

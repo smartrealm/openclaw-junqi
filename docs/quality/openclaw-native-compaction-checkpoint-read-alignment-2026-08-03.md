@@ -28,7 +28,7 @@ restore、rewind 或修改 transcript。
 
 - 仅在用户展开一个 Session 卡片时请求其 checkpoint 列表，并直接呈现列表返回的官方 metadata。
 - 请求与返回绑定当前已认证 Gateway connection；重连、会话切换、关闭面板或请求代次变化后，迟到结果不得写入 UI。
-- 未广告方法、断线、拒绝访问或无效列表响应时显示当前失败状态并清空该次数据；不显示旧缓存或本地伪 checkpoint。
+- Gateway 返回未知方法、断线、拒绝访问或无效列表响应时显示当前失败状态并清空该次数据；不显示旧缓存或本地伪 checkpoint。
 - Session Manager 只呈现 Gateway 元数据。任何 branch、restore、自动恢复、token 估算或 transcript 修改均不在本轮范围内。
 
 ## 未验证边界
@@ -38,7 +38,7 @@ restore、rewind 或修改 transcript。
 
 ## 验证结果
 
-- checkpoint client 回归覆盖官方请求字段、合法 metadata、schema 允许的极端安全整数时间值、未知 reason 拒绝、未广告方法和断线围栏；Session Manager 时间格式化回归覆盖超出 JavaScript `Date` 范围的值。
+- checkpoint client 回归覆盖官方请求字段、合法 metadata、schema 允许的极端安全整数时间值、未知 reason 拒绝、方法发现遗漏仍请求和断线围栏；Session Manager 时间格式化回归覆盖超出 JavaScript `Date` 范围的值。
 - Session Manager 复用既有会话状态层回归；定向 checkpoint、时间范围回归、Jarvis、语音和 Gateway data store 测试通过，
   `pnpm lint`、`pnpm test`（2,494 项）和 `pnpm verify:openclaw-docs` 已通过。
 - 真实 Gateway、目标平台和 checkpoint 生命周期竞态仍按上述边界待验证。
