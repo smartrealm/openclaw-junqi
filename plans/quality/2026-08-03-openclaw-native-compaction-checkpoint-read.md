@@ -4,7 +4,7 @@
 
 1. 核对最新版官方 schema、query handler、权限与 Session Manager 现状。
 2. 新增严格、连接围栏保护的 checkpoint reader 和回归测试。
-3. 在 Session Manager 按用户显式操作呈现列表和详情，不接入写操作。
+3. 在 Session Manager 按用户显式操作呈现官方列表返回的 metadata，不接入详情或写操作。
 4. 补充文案、验证记录、全量检查和中文提交。
 
 ## 文件范围

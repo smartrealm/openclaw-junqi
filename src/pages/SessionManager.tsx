@@ -17,6 +17,7 @@ import {
 } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { formatTokens } from '@/utils/format';
+import { toSafeIsoTimestamp } from '@/utils/isoTimestamp';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
@@ -119,9 +120,8 @@ function formatSearchTimestamp(
   timestamp: number,
   t: ReturnType<typeof useTranslation>['t'],
 ): string {
-  const date = new Date(timestamp);
-  if (!Number.isFinite(date.getTime())) return '—';
-  return formatTimeAgo(date.toISOString(), t);
+  const isoTimestamp = toSafeIsoTimestamp(timestamp);
+  return isoTimestamp ? formatTimeAgo(isoTimestamp, t) : '—';
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -432,7 +432,7 @@ function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
                 <div key={checkpoint.checkpointId} className="min-w-0 border-s border-aegis-primary/35 ps-2 text-[10px] text-aegis-text-secondary">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="font-medium text-aegis-text">{t(`sessions.compactionCheckpointReasons.${checkpoint.reason}`)}</span>
-                    <span className="font-mono text-aegis-text-dim">{formatTimeAgo(new Date(checkpoint.createdAt).toISOString(), t)}</span>
+                    <span className="font-mono text-aegis-text-dim">{formatSearchTimestamp(checkpoint.createdAt, t)}</span>
                     {checkpoint.tokensBefore !== undefined && checkpoint.tokensAfter !== undefined && (
                       <span className="font-mono text-aegis-text-dim">{fmtTokens(checkpoint.tokensBefore)} to {fmtTokens(checkpoint.tokensAfter)}</span>
                     )}

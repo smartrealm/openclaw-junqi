@@ -5,7 +5,6 @@ import {
 } from './Connection';
 
 export const OPENCLAW_COMPACTION_CHECKPOINT_LIST_METHOD = 'sessions.compaction.list' as const;
-export const OPENCLAW_COMPACTION_CHECKPOINT_GET_METHOD = 'sessions.compaction.get' as const;
 
 const CHECKPOINT_REASONS = ['manual', 'auto-threshold', 'overflow-retry', 'timeout-retry'] as const;
 

@@ -40,6 +40,22 @@ test('reads Gateway compaction checkpoint metadata through a fenced official req
   }]);
 });
 
+test('preserves an official safe-integer checkpoint timestamp for the UI to validate', async () => {
+  const client = new OpenClawSessionCompactionCheckpointsClient({
+    captureConnectionId: () => 'gateway-a',
+    isConnectionCurrent: () => true,
+    hasAdvertisedMethod: () => true,
+    requestFenced: async () => ({
+      ok: true,
+      key: 'agent:main:main',
+      checkpoints: [{ ...checkpoint, createdAt: Number.MAX_SAFE_INTEGER }],
+    }),
+  });
+
+  const [result] = await client.list('agent:main:main');
+  assert.equal(result?.createdAt, Number.MAX_SAFE_INTEGER);
+});
+
 test('fails closed for invalid checkpoint metadata and does not retain a local replacement', async () => {
   const client = new OpenClawSessionCompactionCheckpointsClient({
     captureConnectionId: () => 'gateway-a',
