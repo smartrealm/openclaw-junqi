@@ -2,6 +2,8 @@ export interface VoiceWakeTriggerSnapshot {
   triggers: string[];
 }
 
+export const MAX_VOICE_WAKE_TRIGGERS = 32;
+
 export type VoiceWakeRouteTarget =
   | { mode: 'current' }
   | { agentId: string }
@@ -86,7 +88,11 @@ export function decodeVoiceWakeRouteTarget(value: unknown): VoiceWakeRouteTarget
 export function decodeVoiceWakeTriggerSnapshot(value: unknown): VoiceWakeTriggerSnapshot | null {
   if (!isRecord(value)) return null;
   const rawTriggers = value.triggers;
-  if (!Array.isArray(rawTriggers) || rawTriggers.length === 0 || rawTriggers.length > 32) return null;
+  if (
+    !Array.isArray(rawTriggers)
+    || rawTriggers.length === 0
+    || rawTriggers.length > MAX_VOICE_WAKE_TRIGGERS
+  ) return null;
 
   const triggers: string[] = [];
   for (const entry of rawTriggers) {
@@ -103,7 +109,7 @@ export function decodeVoiceWakeRoutingConfig(value: unknown): VoiceWakeRoutingCo
   }
   const record = value;
   const rawRoutes = record.routes;
-  if (!Array.isArray(rawRoutes) || rawRoutes.length > 32) return null;
+  if (!Array.isArray(rawRoutes) || rawRoutes.length > MAX_VOICE_WAKE_TRIGGERS) return null;
   if (typeof record.updatedAtMs !== 'number' || !Number.isFinite(record.updatedAtMs) || record.updatedAtMs < 0) {
     return null;
   }

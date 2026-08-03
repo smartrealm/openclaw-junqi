@@ -4,7 +4,7 @@
 
 本记录中的 OpenClaw Talk 目录表述已按官方当前 schema 校正：就绪状态来自 `realtime.ready`，provider 的音频格式与 barge-in 能力是可选声明；JunQi 只有在当前 Gateway 明确提供完整的桌面 PCM 能力时才启用 relay。`package.json`、lockfile 和本机安装包只作为复现实验与验证范围证据，不作为协议契约或版本分支条件。详见 [Talk 目录对齐记录](openclaw-talk-catalog-alignment-2026-08-03.md)。
 
-The native host uses CPAL for microphone capture and Sherpa-ONNX for local keyword spotting. It does not introduce an OpenJarvis, Kiwi Voice, browser VAD, or proxy runtime. After a keyword result, the existing JunQi capture flow creates a local WAV draft and retains explicit user confirmation before the existing OpenClaw attachment transaction is invoked. OpenClaw remains the selected Gateway authority.
+The native host uses CPAL for microphone capture and Sherpa-ONNX for local keyword spotting. It does not introduce an OpenJarvis, Kiwi Voice, browser VAD, or proxy runtime. OpenClaw remains the selected Gateway authority. A verified keyword may enter the separately catalog-gated Talk path when the Gateway advertises that capability; otherwise the existing WAV fallback retains its explicit confirmation boundary. This JunQi local detector integration is not a claim that OpenClaw natively guarantees persistent recognition on every desktop platform.
 
 The local detector requires the extracted official bilingual model directory with these files:
 
@@ -46,9 +46,9 @@ Before a wake listener starts, JunQi reads both `voicewake.get` and `voicewake.r
 
 Arming also requires at least one Gateway trigger to exactly match a label actually present in the selected local model. A mismatch is shown as `wake_trigger_model_mismatch`, leaves capture stopped, and offers the existing model-directory selection control. JunQi does not translate arbitrary user text into pinyin or phoneme tokens: the upstream model requires `phone+ppinyin`, `en.phone`, and an `@original_phrase` marker, so unverified local rewriting would make a custom wake word appear configured while the detector could not reliably recognize it.
 
-When this mismatch is visible, the user can explicitly choose `Use local model wake phrases`. JunQi sends only `voicewake.set({ triggers: modelKeywords })` to the selected authenticated Gateway, waits for the fenced response, and then retries the normal arm sequence. It intentionally does not call `voicewake.routing.set`, so existing Gateway routes and their target sessions remain unchanged. The model keyword file remains the source of this explicit synchronization; JunQi never accepts a free-form phrase and claims it is tokenized.
+When this mismatch is visible, the user can explicitly choose `Use local model wake phrases`. JunQi first reads the selected authenticated Gateway's current global trigger list, replaces only labels declared by the local model, preserves every other trigger, and waits for the fenced `voicewake.set` response before retrying the normal arm sequence. It intentionally does not call `voicewake.routing.set`, so existing Gateway routes and their target sessions remain unchanged. The model keyword file remains the source of this explicit synchronization; JunQi never accepts a free-form phrase and claims it is tokenized.
 
-The full-window Jarvis surface also lets the user select a non-empty subset of labels declared by the chosen local model. The selection is normalized against those exact labels before one fenced `voicewake.set` request; the Gateway response becomes the new live trigger snapshot and re-arms through the normal configuration gate. This makes supported custom model phrases selectable without claiming that arbitrary text has been tokenized locally.
+The full-window Jarvis surface also lets the user select a non-empty subset of labels declared by the chosen local model. The selection is normalized against those exact labels, merged with the latest Gateway snapshot, and rejected before write when the official global-list capacity would be exceeded. The Gateway response becomes the new live trigger snapshot and re-arms through the normal configuration gate. This makes supported custom model phrases selectable without claiming that arbitrary text has been tokenized locally.
 
 ## Talk Relay Boundary
 

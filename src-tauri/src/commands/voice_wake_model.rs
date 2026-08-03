@@ -11,8 +11,7 @@ const DECODER_FILE: &str = "decoder-epoch-13-avg-2-chunk-16-left-64.onnx";
 const JOINER_FILE: &str = "joiner-epoch-13-avg-2-chunk-16-left-64.int8.onnx";
 const TOKENS_FILE: &str = "tokens.txt";
 const KEYWORDS_FILE: &str = "keywords.txt";
-// OpenClaw v2026.7.1-2 validates voice-wake triggers with JavaScript's
-// UTF-16 `String.length`, capped at 64 code units.
+// The OpenClaw voice-wake protocol caps triggers at 64 JavaScript UTF-16 code units.
 const MAX_GATEWAY_TRIGGER_UTF16_CODE_UNITS: usize = 64;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

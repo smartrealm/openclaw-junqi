@@ -1,4 +1,8 @@
-import { includesVoiceWakeTrigger, normalizeVoiceWakeTrigger } from '@/services/gateway/voiceWakeTypes';
+import {
+  includesVoiceWakeTrigger,
+  MAX_VOICE_WAKE_TRIGGERS,
+  normalizeVoiceWakeTrigger,
+} from '@/services/gateway/voiceWakeTypes';
 
 /** Projects Gateway phrases onto the exact labels the local model can recognize. */
 export function selectedModelWakeKeywords(
@@ -27,4 +31,22 @@ export function resolveModelWakeKeywordSelection(
     resolved.push(modelKeyword);
   }
   return resolved;
+}
+
+/** Replaces only the current model's labels in Gateway's shared trigger list. */
+export function mergeGatewayTriggersForModelSelection(
+  modelKeywords: readonly string[],
+  gatewayTriggers: readonly string[],
+  selectedModelKeywords: readonly string[],
+): string[] | null {
+  const modelTriggerKeys = new Set(
+    modelKeywords
+      .map((keyword) => normalizeVoiceWakeTrigger(keyword))
+      .filter(Boolean),
+  );
+  const preservedGatewayTriggers = gatewayTriggers.filter((trigger) => (
+    !modelTriggerKeys.has(normalizeVoiceWakeTrigger(trigger))
+  ));
+  const merged = [...preservedGatewayTriggers, ...selectedModelKeywords];
+  return merged.length <= MAX_VOICE_WAKE_TRIGGERS ? merged : null;
 }

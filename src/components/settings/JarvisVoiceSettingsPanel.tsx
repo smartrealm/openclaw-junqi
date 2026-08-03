@@ -119,7 +119,13 @@ export function JarvisVoiceSettingsPanel({ settings }: JarvisVoiceSettingsPanelP
             <div className="mt-4 flex justify-end">
               <button
                 type="button"
-                onClick={() => { void settings.saveKeywords(draftKeywords, t('input.voiceWakePhraseSelectionInvalid')); }}
+                onClick={() => {
+                  void settings.saveKeywords(
+                    draftKeywords,
+                    t('input.voiceWakePhraseSelectionInvalid'),
+                    t('input.voiceWakeTriggerCapacityExceeded'),
+                  );
+                }}
                 disabled={settings.saving || draftKeywords.length === 0}
                 className="inline-flex h-9 items-center gap-2 bg-aegis-primary px-3 text-[12px] font-semibold text-white transition-colors hover:bg-aegis-primary/85 disabled:opacity-40"
               >

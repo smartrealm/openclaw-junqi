@@ -10,6 +10,7 @@ import {
 } from '@/api/tauri-commands';
 import { voiceWakeGatewayClient } from '@/services/gateway';
 import {
+  mergeGatewayTriggersForModelSelection,
   resolveModelWakeKeywordSelection,
   selectedModelWakeKeywords,
 } from '@/services/voice/VoiceWakeKeywordSelection';
@@ -27,7 +28,11 @@ export interface JarvisVoiceSettingsState {
   standbySessionKey: string | null;
   error: string | null;
   configureModel: (title: string) => Promise<void>;
-  saveKeywords: (requestedKeywords: readonly string[], invalidSelection: string) => Promise<boolean>;
+  saveKeywords: (
+    requestedKeywords: readonly string[],
+    invalidSelection: string,
+    triggerCapacityExceeded: string,
+  ) => Promise<boolean>;
   refresh: () => Promise<void>;
   toggleStandby: () => Promise<void>;
 }
@@ -87,16 +92,27 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
   const saveKeywords = useCallback(async (
     requestedKeywords: readonly string[],
     invalidSelection: string,
+    triggerCapacityExceeded: string,
   ): Promise<boolean> => {
     if (saving || !detector?.available) return false;
-    const triggers = resolveModelWakeKeywordSelection(detector.keywords, requestedKeywords);
-    if (!triggers) {
+    const selectedModelKeywords = resolveModelWakeKeywordSelection(detector.keywords, requestedKeywords);
+    if (!selectedModelKeywords) {
       setError(invalidSelection);
       return false;
     }
     setSaving(true);
     setError(null);
     try {
+      const current = await voiceWakeGatewayClient.getTriggers();
+      const triggers = mergeGatewayTriggersForModelSelection(
+        detector.keywords,
+        current.triggers,
+        selectedModelKeywords,
+      );
+      if (!triggers) {
+        setError(triggerCapacityExceeded);
+        return false;
+      }
       const updated = await voiceWakeGatewayClient.setTriggers(triggers);
       setGatewayTriggers(updated.triggers);
       return true;
