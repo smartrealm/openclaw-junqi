@@ -33,6 +33,7 @@ import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
 import {
   buildChannelSetupCommand,
   channelAccountStatus,
+  channelErrorMessage,
   channelLinkMode,
   isOpenClawChannelIdentifier,
   installManagedExternalChannelPlugin,
@@ -406,9 +407,9 @@ export function ChannelsCenterPage() {
       } else {
         setRuntimeSnapshot(nextSnapshot as ChannelsRuntimeSnapshot);
       }
-    } catch (reason: any) {
+    } catch (reason: unknown) {
       setCatalog({ source: 'unavailable', entries: [] });
-      setRuntimeError(reason?.message || String(reason));
+      setRuntimeError(channelErrorMessage(reason));
     } finally {
       setRuntimeLoaded(true);
       setRuntimeLoading(false);
@@ -579,8 +580,8 @@ export function ChannelsCenterPage() {
         accountId: account.id,
       });
       await loadOfficialState(true, group.id);
-    } catch (reason: any) {
-      showAlert(t('channelsCenter.channelActionFailed', 'Channel action failed'), reason?.message || String(reason), 'error');
+    } catch (reason: unknown) {
+      showAlert(t('channelsCenter.channelActionFailed', 'Channel action failed'), channelErrorMessage(reason), 'error');
     } finally {
       setAccountActionBusy('');
     }
@@ -600,8 +601,8 @@ export function ChannelsCenterPage() {
     try {
       const payload = await loadOfficialChannelLogs(channelId, 200);
       setChannelLogPayloads((current) => ({ ...current, [channelId]: redactChannelSecrets(payload) }));
-    } catch (reason: any) {
-      showAlert(t('channelsCenter.logsFailed', 'Unable to load channel logs'), reason?.message || String(reason), 'error');
+    } catch (reason: unknown) {
+      showAlert(t('channelsCenter.logsFailed', 'Unable to load channel logs'), channelErrorMessage(reason), 'error');
     } finally {
       setChannelLogsBusy('');
     }
@@ -782,10 +783,10 @@ export function ChannelsCenterPage() {
         }),
         'success',
       );
-    } catch (reason: any) {
+    } catch (reason: unknown) {
       showAlert(
         t('channelsCenter.pluginInstallFailed', 'Plugin installation failed'),
-        reason?.message || String(reason),
+        channelErrorMessage(reason),
         'error',
       );
     } finally {
