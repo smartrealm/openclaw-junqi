@@ -2,6 +2,7 @@ import { lazy } from 'react';
 import { Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import { FeatureRoute } from '@/components/FeatureRoute';
 import { getFirstEnabledAppPath } from '@/config/edition';
+import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { canonicalizeLegacyAgentWorkspaceTaskRoute } from '@/utils/agentTaskRoute';
 
 const AppLayout = lazy(() => import('@/components/Layout/AppLayout').then(m => ({ default: m.AppLayout })));
@@ -33,7 +34,6 @@ const MultiAgentViewPage = lazy(() => import('@/pages/MultiAgentView').then(m =>
 const FileManagerPage = lazy(() => import('@/pages/FileManager').then(m => ({ default: m.FileManagerPage })));
 const CalendarPage = lazy(() => import('@/pages/Calendar'));
 const CodeInterpreterPage = lazy(() => import('@/pages/CodeInterpreter').then(m => ({ default: m.CodeInterpreterPage })));
-const McpToolsPage = lazy(() => import('@/pages/McpTools').then(m => ({ default: m.McpToolsPage })));
 const PerformancePage = lazy(() => import('@/pages/Performance').then(m => ({ default: m.Performance })));
 const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.Kanban })));
 const GitPage = lazy(() => import('@/pages/GitPage'));
@@ -93,7 +93,7 @@ export default function AppRouteTree() {
         <Route path="/git" element={<FeatureRoute feature="git"><GitPage /></FeatureRoute>} />
         <Route path="/calendar" element={<FeatureRoute feature="calendar"><CalendarPage /></FeatureRoute>} />
         <Route path="/sandbox" element={<FeatureRoute feature="sandbox"><CodeInterpreterPage /></FeatureRoute>} />
-        <Route path="/tools" element={<FeatureRoute feature="tools"><McpToolsPage /></FeatureRoute>} />
+        <Route path="/tools" element={<FeatureRoute feature="configManager"><Navigate replace to={OPENCLAW_TOOLS_ROUTE} /></FeatureRoute>} />
         <Route path="/openclaw-commands" element={<FeatureRoute feature="tools"><OpenClawCommandsPage /></FeatureRoute>} />
         <Route path="/perf" element={<PerformancePage />} />
         <Route path="/kanban" element={<FeatureRoute feature="workshop"><KanbanPage /></FeatureRoute>} />

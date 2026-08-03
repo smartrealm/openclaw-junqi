@@ -31,7 +31,7 @@ JunQi 提供产品级创作工作台，ComfyUI 作为独立执行引擎存在。
 - 本机失败时禁止自动切换云端，防止隐私数据和费用失控。
 - JunQi 安装包不包含 ComfyUI、Python、PyTorch、模型或 Custom Nodes。
 - 不提供节点画布，不复制 ComfyUI 前端。
-- 不在 `/tools` 中承载创作界面。该页面继续负责工具调用监控。
+- 不在 `/tools` 中承载创作界面。该兼容地址会进入 OpenClaw 原生工具配置页，不承担客户端推断的工具调用监控。
 - 所有 ComfyUI HTTP、WebSocket 和密钥操作收敛到 Rust 后端。
 
 ### 1.1 业务闭环不变量
@@ -138,7 +138,8 @@ JunQi 提供产品级创作工作台，ComfyUI 作为独立执行引擎存在。
 
 - Dashboard 快捷动作「生成媒体」跳转 `/create`。
 - 生成结果中的「发送到对话」跳转 `/chat` 并写入当前草稿附件。
-- `/tools` 仅展示 `comfy_run_workflow` 等工具的调用统计和结果，不展示连接配置。
+- `/tools` 兼容地址只进入 OpenClaw 原生工具配置页；创作工具的调用事实由 Gateway transcript、任务或其他
+  官方结果协议呈现，不由 JunQi 的本地统计推断。
 
 ## 5. 主页面布局
 

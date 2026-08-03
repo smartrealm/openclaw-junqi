@@ -15,10 +15,10 @@ test('the legacy welcome route is named as a project launcher', () => {
   assert.equal(en.nav.agentWorkspace, 'Project launcher');
 });
 
-test('the tool catalog has localized Chinese primary text', () => {
-  assert.equal(zh.mcpTools.title, '工具与集成');
-  assert.equal(zh.mcpTools.toolDescription.exec, '执行 Shell 命令');
-  assert.equal(zh.mcpTools.category.system, '系统');
+test('the tool entry identifies the OpenClaw-native tool surface', () => {
+  assert.equal(zh.nav.openClawTools, 'OpenClaw 工具');
+  assert.equal(en.nav.openClawTools, 'OpenClaw Tools');
+  assert.equal(zh.activity.openClawToolsHint, '查看 OpenClaw 工具');
 });
 
 test('the workbench model service label stays concise', () => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { useTranslation } from 'react-i18next';
 import {
   Activity,
@@ -394,7 +395,7 @@ export function ActivityCenterPage() {
             </div>
             <div className="space-y-1">
               <button type="button" onClick={() => navigate('/skills')} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-hover hover:text-aegis-text"><Puzzle size={12} className="text-aegis-primary" /><span className="flex-1">{t('activity.skills', 'Skills')}</span><span className="font-mono text-[10px] text-aegis-text-dim">{enabledSkills}</span></button>
-              <button type="button" onClick={() => navigate('/tools')} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-hover hover:text-aegis-text"><Wrench size={12} className="text-aegis-accent" /><span className="flex-1">{t('activity.mcp', 'MCP / 工具')}</span><span className="text-[10px] text-aegis-text-dim">{t('activity.open', '打开')}</span></button>
+              <button type="button" onClick={() => navigate(OPENCLAW_TOOLS_ROUTE)} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-hover hover:text-aegis-text"><Wrench size={12} className="text-aegis-accent" /><span className="flex-1">{t('activity.mcp', 'OpenClaw 工具')}</span><span className="text-[10px] text-aegis-text-dim">{t('activity.open', '打开')}</span></button>
               <button type="button" onClick={() => navigate('/memory')} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-hover hover:text-aegis-text"><MemoryStick size={12} className="text-aegis-success" /><span className="flex-1">{t('activity.memory', 'Memory')}</span><span className="text-[10px] text-aegis-text-dim">{t('activity.open', '打开')}</span></button>
             </div>
           </div>

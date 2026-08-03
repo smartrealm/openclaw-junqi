@@ -8,6 +8,7 @@ import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Blocks, Bot, Termina
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { useChatStore, type Session } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showConfirm } from '@/components/shared/alertStore';
@@ -986,7 +987,7 @@ function miniItemsFor(
       { to: '/briefs', icon: <BookOpenText size={20} />, label: t('nav.taskBriefs'), feature: 'agentRun' },
       { to: '/terminal', icon: <Terminal size={20} />, label: t('nav.terminal', 'Terminal'), feature: 'terminal' },
       { to: '/files', icon: <Folder size={20} />, label: t('nav.files', 'Files'), feature: 'files' },
-      { to: '/tools', icon: <Cpu size={20} />, label: t('nav.mcpTools', 'MCP Tools'), feature: 'tools' },
+      { to: OPENCLAW_TOOLS_ROUTE, icon: <Cpu size={20} />, label: t('nav.openClawTools', 'OpenClaw Tools'), feature: 'configManager' },
     ];
     case 'commands': return [
       { to: '/openclaw-commands', icon: <BookOpenText size={20} />, label: t('nav.openclawCommands', 'OpenClaw commands'), feature: 'tools' },

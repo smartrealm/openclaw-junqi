@@ -4,6 +4,7 @@ import { Activity, ArrowUpRight, BarChart3, Blocks, BookOpenText, Bot, Brain, Ca
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
+import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
 import { SidebarRow, SidebarSection } from './SidebarRow';
@@ -22,7 +23,7 @@ function toolCategories(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
     { to: '/briefs', icon: <BookOpenText size={14} />, label: t('nav.taskBriefs'), feature: 'agentRun' },
     { to: '/terminal', icon: <Terminal size={14} />,  label: t('nav.terminal', '终端'), feature: 'terminal' },
     { to: '/files',    icon: <FileText size={14} />,  label: t('nav.files', '文件管理'), feature: 'files' },
-    { to: '/tools',    icon: <Database size={14} />,  label: t('nav.mcpTools', 'MCP 工具'), feature: 'tools' },
+    { to: OPENCLAW_TOOLS_ROUTE, icon: <Database size={14} />, label: t('nav.openClawTools', 'OpenClaw 工具'), feature: 'configManager' },
     { to: '/cron',     icon: <Clock size={14} />,     label: t('nav.cron', '定时任务'), feature: 'cron' },
     { to: '/calendar', icon: <Calendar size={14} />,  label: t('nav.calendar', '日历'), feature: 'calendar' },
     { to: '/sandbox',  icon: <Wrench size={14} />,    label: t('nav.sandbox', '代码沙盒'), feature: 'sandbox' },

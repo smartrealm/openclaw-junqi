@@ -16,6 +16,7 @@ import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { debugError } from '@/utils/debugLog';
 import { useSkillsStore } from '@/stores/skillsStore';
 import { useFocusContextStore } from '@/stores/focusContextStore';
+import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { SessionRuntimeControl } from './session-runtime/SessionRuntimeControl';
 import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
 
@@ -315,9 +316,9 @@ export function SessionContextBar() {
           </button>
           <button
             type="button"
-            onClick={() => navigate('/tools')}
+            onClick={() => navigate(OPENCLAW_TOOLS_ROUTE)}
             className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('activity.mcpHint')}
+            title={t('activity.openClawToolsHint')}
           >
             <Wrench size={11} />
           </button>

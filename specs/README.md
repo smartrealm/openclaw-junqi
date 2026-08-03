@@ -79,6 +79,7 @@ specs/
 - [OpenClaw Talk 能力目录对齐](quality/2026-08-03-openclaw-talk-catalog.md)
 - [OpenClaw 原生 TTS 客户端对齐](quality/2026-08-03-openclaw-native-tts-client.md)
 - [OpenClaw 原生 TTS 状态对齐](quality/2026-08-03-openclaw-native-tts-status.md)
+- [OpenClaw 工具入口权威对齐](quality/2026-08-03-openclaw-tools-route-authority.md)
 - [OpenClaw 会话用量范围对齐](quality/2026-08-03-openclaw-sessions-usage-range.md)
 - [OpenClaw 会话操作事件对齐](quality/2026-08-03-openclaw-session-operation.md)
 - [OpenClaw 原生会话压缩对齐](quality/2026-08-04-openclaw-native-session-compaction.md)
