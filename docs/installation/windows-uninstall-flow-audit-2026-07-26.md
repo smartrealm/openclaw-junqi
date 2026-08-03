@@ -57,6 +57,37 @@ Docker Gateway 由 JunQi 创建并带完整 ownership/state labels，同时使�
 - Windows 架构/安装包脚本：21/21 通过；
 - TypeScript 与模块边界检查通过。
 
+## 2026-08-03 性能复审
+
+用户反馈 Windows 卸载阶段长时间停留，表现为安装器像卡住一样。按仓库锁定的 OpenClaw `2026.7.1-2` 源码重新核对后，确认 Native 路径存在两个串行冗余点。
+
+### BUG-WUF-03 · MEDIUM — 未安装 Gateway 服务时仍启动完整 Node/OpenClaw 探测
+
+**位置**：`src-tauri/src/commands/uninstall.rs`
+
+持久化 runtime 为 Native 时，cleanup 无条件解析 OpenClaw binary、探测兼容 Node，再执行 `openclaw gateway status --json --no-probe`。大多数未启用系统服务的用户不需要这些步骤。Windows PATH、npm prefix 或版本管理器候选较多时，探测预算会叠加，NSIS 又在 `ExecWait` 期间缺少阶段反馈，因此呈现为无响应。
+
+**修复**：先使用既有只读 Windows Scheduled Task 与 Startup entry 探测。明确无服务 artifact 时立即完成；存在或无法验证时才进入完整 runtime 与 ownership 证明，不能因性能优化降低 foreign service 保护。
+
+### BUG-WUF-04 · MEDIUM — 已证明归属后重复启动四次 OpenClaw CLI
+
+**位置**：`src-tauri/src/commands/gateway_service.rs`
+
+旧路径依次执行 status、stop、uninstall、status。锁定版本的官方 `gateway uninstall --json` 已通过 `runServiceUninstall` 在同一进程内执行 stop-before-uninstall，并在结束前检查 service 不再 loaded。JunQi 额外的独立 stop 和第二次 status 重复支付 Node/OpenClaw 启动及配置加载成本。
+
+**修复**：首次 status 仍负责 JunQi selected state/config/runtime ownership 门禁；通过后调用一次官方 uninstall。保留 JunQi 的端口释放后置条件，避免官方 stop 失败被内部 best-effort 处理后留下监听进程；删除重复的独立 stop 与第二次 status。
+
+### 自动验证
+
+- `pnpm lint` 通过；
+- `pnpm test` 通过：前端与源码契约 2302 项、脚本 237 项；
+- `cargo fmt -- --check` 与 `cargo check --lib` 通过；
+- `cargo test --lib` 通过：700 项通过、4 项环境依赖测试忽略；
+- 新增卸载性能守护，证明无 artifact 快速返回，以及已安装服务只启动一次 ownership status 与一次官方 uninstall；
+- `git diff --check` 与修改文件 Emoji 扫描通过。
+
+上述结果证明代码契约、编译与自动化行为，不代表 Windows NSIS 真机耗时已经取得实测数据。
+
 ## 真实 Windows 边界
 
-代码回归不能替代真实 NSIS 验收。修复后仍需在 ARM64 Windows 上分别验证 Native 与 Docker：安装、开启/关闭自启动、卸载失败重试、成功卸载、重装和端口/任务/容器残留。
+代码回归不能替代真实 NSIS 验收。修复后仍需在 x64 Windows 上分别记录 Native 无服务、Native 已运行服务和 Docker managed container 三条卸载耗时，并验证卸载失败重试、成功卸载、重装和端口/任务/容器残留。ARM64 Windows 仍属于未验证目标边界。
