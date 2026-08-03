@@ -77,6 +77,7 @@ import { OpenClawTtsClient } from './OpenClawTtsClient';
 import { OpenClawTtsStatusClient } from './OpenClawTtsStatusClient';
 import { OpenClawTtsPreferencesClient } from './OpenClawTtsPreferencesClient';
 import { OpenClawDiagnosticStabilityClient } from './OpenClawDiagnosticStabilityClient';
+import { OpenClawSessionUsageLogsClient } from './OpenClawSessionUsageLogsClient';
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
 import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
 import {
@@ -150,6 +151,10 @@ export type {
   OpenClawDiagnosticStabilityEvent,
   OpenClawDiagnosticStabilitySnapshot,
 } from './OpenClawDiagnosticStabilityClient';
+export type {
+  OpenClawSessionUsageLogEntry,
+  OpenClawSessionUsageLogRole,
+} from './OpenClawSessionUsageLogsClient';
 export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
 export type { OpenClawProviderUsageSnapshot } from './OpenClawProviderUsageClient';
 export type {
@@ -404,6 +409,18 @@ export const openClawTtsPreferencesClient = new OpenClawTtsPreferencesClient({
 });
 
 export const openClawDiagnosticStabilityClient = new OpenClawDiagnosticStabilityClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawSessionUsageLogsClient = new OpenClawSessionUsageLogsClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
@@ -1521,7 +1538,6 @@ export const gateway = {
     return connection.request('sessions.usage', { limit: 50, ...scope, ...params });
   },
   async getSessionTimeseries(key: string) { return connection.request('sessions.usage.timeseries', { key }); },
-  async getSessionLogs(key: string, limit = 200) { return connection.request('sessions.usage.logs', { key, limit }); },
 
   // Pairing
   getHttpBaseUrl() { return connection.getHttpBaseUrl(); },

@@ -2116,6 +2116,25 @@
       "doctor": "Doctor"
     }
   },
+  "logsViewer": {
+    "title": "會話用量項目",
+    "description": "來自所選 OpenClaw 會話的唯讀用量項目。",
+    "session": "會話",
+    "noSession": "沒有可用的目前會話或 Gateway 已知會話。",
+    "refresh": "重新整理會話用量項目",
+    "loading": "正在載入會話用量項目",
+    "unavailable": "目前 Gateway 連線無法提供會話用量項目。",
+    "invalid": "Gateway 回傳的會話用量項目無效。",
+    "empty": "此會話沒有用量項目。",
+    "entries": "{{count}} 項",
+    "tokens": "{{value}} tokens",
+    "roles": {
+      "user": "使用者",
+      "assistant": "助手",
+      "tool": "工具",
+      "toolResult": "工具結果"
+    }
+  },
   "offline": {
     "title": "未連接",
     "description": "無法連接到 OpenClaw Gateway。當 Gateway 可用時，應用會自動重連。",

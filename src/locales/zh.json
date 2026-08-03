@@ -2147,6 +2147,25 @@
       "doctor": "Doctor"
     }
   },
+  "logsViewer": {
+    "title": "会话用量条目",
+    "description": "来自所选 OpenClaw 会话的只读用量条目。",
+    "session": "会话",
+    "noSession": "没有可用的当前会话或 Gateway 已知会话。",
+    "refresh": "刷新会话用量条目",
+    "loading": "正在加载会话用量条目",
+    "unavailable": "当前 Gateway 连接无法提供会话用量条目。",
+    "invalid": "Gateway 返回的会话用量条目无效。",
+    "empty": "此会话没有用量条目。",
+    "entries": "{{count}} 条",
+    "tokens": "{{value}} tokens",
+    "roles": {
+      "user": "用户",
+      "assistant": "助手",
+      "tool": "工具",
+      "toolResult": "工具结果"
+    }
+  },
   "offline": {
     "title": "未连接",
     "description": "无法连接到 OpenClaw Gateway。当 Gateway 可用时，应用会自动重连。",

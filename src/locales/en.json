@@ -2158,6 +2158,25 @@
       "doctor": "Doctor"
     }
   },
+  "logsViewer": {
+    "title": "Session usage entries",
+    "description": "Read-only usage entries from the selected OpenClaw session.",
+    "session": "Session",
+    "noSession": "No active or known Gateway session is available.",
+    "refresh": "Refresh session usage entries",
+    "loading": "Loading session usage entries",
+    "unavailable": "Session usage entries are unavailable from the current Gateway connection.",
+    "invalid": "The Gateway returned invalid session usage entries.",
+    "empty": "This session has no usage entries.",
+    "entries": "{{count}} entries",
+    "tokens": "{{value}} tokens",
+    "roles": {
+      "user": "User",
+      "assistant": "Assistant",
+      "tool": "Tool",
+      "toolResult": "Tool result"
+    }
+  },
   "offline": {
     "title": "Not Connected",
     "description": "Unable to connect to OpenClaw Gateway. The app will reconnect automatically when the gateway becomes available.",
