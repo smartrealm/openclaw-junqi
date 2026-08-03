@@ -5,20 +5,20 @@
     "stopFailed": "停止 Gateway 失败"
   },
   "taskStatus": {
-      "todo": "待办",
-      "pending": "排队中",
-      "running": "运行中",
-      "input_required": "等待输入",
-      "awaiting_review": "等待审阅",
-      "detached": "已分离",
-      "interrupted": "已中断",
-      "done": "已完成",
-      "failed": "失败",
-      "cancelled": "已取消",
-      "queued": "排队中",
-      "idle": "空闲",
-      "stopped": "已停止",
-      "unknown": "未知"
+    "todo": "待办",
+    "pending": "排队中",
+    "running": "运行中",
+    "input_required": "等待输入",
+    "awaiting_review": "等待审阅",
+    "detached": "已分离",
+    "interrupted": "已中断",
+    "done": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "queued": "排队中",
+    "idle": "空闲",
+    "stopped": "已停止",
+    "unknown": "未知"
   },
   "app": {
     "name": "JunQi Desktop",
@@ -87,99 +87,42 @@
     "subPages": "子页面",
     "workbench": "工作台",
     "tools": "工具",
-    "openclawCommands": "常用命令",
+    "openclawCommands": "OpenClaw 命令",
     "activity": "活动中心"
   },
   "openclawCommands": {
-    "title": "OpenClaw 常用命令",
-    "subtitle": "按官方 CLI 参考整理的常用命令。每一项都可复制，并直达对应的官方命令页面或章节。",
-    "officialIndex": "CLI 官方索引",
+    "title": "OpenClaw 运行时命令",
+    "subtitle": "由当前 OpenClaw Gateway 为会话智能体返回的命令目录。",
     "searchPlaceholder": "搜索命令、用途或参数…",
     "searchLabel": "搜索 OpenClaw 命令",
-    "clearSearch": "清空搜索",
-    "categoryLabel": "命令分类",
-    "resultCount": "{{count}} 条命令",
-    "verifiedSource": "内容与链接均对照官方文档",
     "empty": "没有匹配的命令",
+    "loading": "正在从当前 OpenClaw Gateway 读取命令目录。",
+    "disconnected": "连接 OpenClaw Gateway 后才能读取当前运行时命令。",
+    "unavailable": "当前 OpenClaw Gateway 未提供运行时命令目录。",
+    "invalidResponse": "OpenClaw Gateway 返回的命令目录无法验证。",
+    "currentAgent": "当前会话智能体：{{agentId}}",
+    "defaultAgent": "由 OpenClaw Gateway 解析默认智能体",
     "copyCommand": "复制命令",
-    "copySafeTemplate": "复制 Shell 安全参数模板",
-    "copySuccess": "命令已复制",
-    "copyFailed": "复制失败",
-    "copyFailedBody": "无法写入剪贴板，请重试。",
-    "openOfficialDocs": "打开对应的官方文档章节",
     "docsLink": "官方文档",
     "categories": {
-      "all": "全部",
-      "setup": "设置与配置",
-      "gateway": "Gateway 运维",
-      "diagnostics": "诊断与安全",
-      "models": "模型选择与回退",
-      "auth": "认证档案",
-      "channels": "渠道与智能体",
-      "automation": "会话与自动化"
+      "session": "会话",
+      "options": "选项",
+      "status": "状态",
+      "management": "管理",
+      "media": "媒体",
+      "tools": "工具",
+      "docks": "扩展",
+      "uncategorized": "未分类"
     },
-    "impacts": {
-      "read": "只读",
-      "live": "实时查询",
-      "action": "会改动",
-      "mixed": "依参数而定"
+    "sources": {
+      "native": "原生",
+      "skill": "技能",
+      "plugin": "插件"
     },
-    "items": {
-      "setup": "运行首次设置流程；--baseline 仅创建基础配置和工作区，不进入完整引导。",
-      "configGet": "读取脱敏后的配置快照；密钥不会被打印。",
-      "configSet": "预演按路径写入配置；确认结果后移除 --dry-run 才会实际应用。值优先按 JSON5 解析。",
-      "configValidate": "按当前配置 schema 做校验，不会启动 Gateway。",
-      "updateStatus": "查看当前更新通道、版本来源和是否有可用更新。",
-      "gatewayInstall": "安装并注册受管 Gateway 服务；会为当前平台写入 launchd、systemd 或 schtasks 服务定义。",
-      "gatewayStart": "启动已经安装的 Gateway 后台服务；如果服务尚未注册，应先运行 gateway install。",
-      "gatewayStop": "停止受管 Gateway 服务；macOS 默认只对本次开机有效，需要持续禁用时使用 --disable。",
-      "gatewaySafeRestart": "先检查活跃工作并等待排空，再执行一次合并重启；等待超时后会强制重启。",
-      "gatewayRunVerbose": "在前台运行 Gateway，并把详细启动信息写到当前终端；适合定位服务启动失败或配置错误。",
-      "gatewayStatus": "检查服务管理器、连接和只读 RPC；--require-rpc 会在 RPC 不可用时返回非零，探测不会创建身份或配对。",
-      "gatewayProbe": "同时探测已配置的远端地址和本机回环地址，分开报告可达性、认证和只读 RPC，适合定位连接层故障。",
-      "gatewayStability": "读取最近持久化的稳定性记录；即使 Gateway 崩溃或启动失败，也能检查最后一个 bundle。",
-      "gatewayDiagnosticsExport": "生成脱敏的支持 ZIP，汇集配置、状态、健康、日志和稳定性记录；会在指定路径写入文件。",
-      "statusAll": "执行完整只读状态汇总，包括安全审计、插件兼容性以及内存和向量能力状态。",
-      "statusDeep": "对当前 OpenClaw Runtime 返回的渠道执行实时探测和安全审计。",
-      "healthVerbose": "通过 WebSocket RPC 获取健康快照，并对所有账号和智能体强制执行实时健康探测。",
-      "logsFollow": "通过 RPC 持续读取 Gateway 日志，显示本地时间，并在断线后按指数退避自动重连。",
-      "doctorLint": "以 JSON 输出结构化诊断结果；不会提示交互、应用修复或写入文件，适合 CI 和只读排查。",
-      "doctorFix": "对 Gateway、渠道、插件、技能、模型、状态和迁移应用官方支持的引导式修复。",
-      "securityAuditDeep": "在静态配置和文件系统检查之外，增加 Gateway 实时探测及插件采集器；整个审计仍为只读。",
-      "secretsAudit": "检查明文密钥、未解析 SecretRef、认证优先级漂移和旧版残留；发现问题退出 1，未解析引用退出 2。",
-      "secretsReload": "让 Gateway 重新解析 SecretRef，并仅在全部成功时原子替换运行时快照；失败会保留最后可用版本且不写配置。",
-      "modelsStatus": "显示解析后的默认模型、回退模型和认证概览；提供商支持时还显示用量与配额。不带 --probe 不做真实模型请求。",
-      "modelsStatusCheck": "用作认证健康门禁：缺失或过期退出 1，即将过期退出 2，正常退出 0；不会自动修复配置。",
-      "modelsStatusProbe": "向指定提供商发出真实模型请求；可能消耗 token、触发限流或计费，并区分认证、限流、账单和超时错误。",
-      "modelsListProvider": "按准确的提供商 ID 读取完整目录；未认证的静态条目可能显示为不可用，不会写 models.json，也不证明模型可调用。",
-      "modelsListLocal": "只显示本地模型；读取现有配置和目录状态，不会重写 models.json。",
-      "modelsSet": "把 provider/model 或别名写入全局 agents.defaults.model.primary；不接受 --agent，必要时会修复 Codex/Copilot 运行时插件。",
-      "modelsSetImage": "把图像模型写入全局 agents.defaults.imageModel.primary；不接受 --agent，也不会修复运行时插件。",
-      "modelsAliasesList": "以 JSON 列出模型别名到规范 provider/model 的映射。",
-      "modelsAliasesAdd": "新增或更新别名；目标会先解析成规范模型键，修改已有别名会直接改指向而不会形成别名链。",
-      "modelsAliasesRemove": "删除配置中保存的别名而不删除模型；未写入配置的内置别名不能删除，只能重新指定。",
-      "modelsFallbacksList": "以 JSON 查看 agents.defaults.model.fallbacks 中的文本模型回退顺序。",
-      "modelsFallbacksAdd": "向文本模型回退列表添加规范模型或已配置别名；同组还提供 remove 和 clear。",
-      "modelsImageFallbacksAdd": "向独立的图像模型回退列表添加模型；同样支持 list、remove 和 clear。",
-      "modelsAuthList": "列出指定提供商保存的认证档案；官方保证不会输出 token、API Key 或 OAuth secret。",
-      "modelsAuthAdd": "启动交互式认证助手，根据提供商进入 OAuth、API Key 或手动 token 流程，并写入认证配置。",
-      "modelsAuthLogin": "运行已安装提供商插件的认证流程并应用推荐默认模型；openai 默认使用 ChatGPT/Codex，API Key 需明确指定 --method api-key。",
-      "modelsAuthPasteApiKey": "在终端提示中读取 API Key，默认写入 <provider>:manual；不要把密钥放进命令参数，自动化时应通过 stdin 输入。",
-      "modelsAuthOrderGet": "查看当前智能体对该提供商的认证档案顺序覆盖；数据来自 auth-state.json，与 auth.order 配置分开。",
-      "modelsAuthOrderSet": "校验档案 ID 后按参数顺序设置优先级；未列出的档案不会参与探测，并会标记 excluded_by_auth_order。",
-      "modelsAuthOrderClear": "清除当前智能体的认证顺序覆盖，恢复配置顺序或轮询策略；不会删除任何认证档案。",
-      "channelsList": "列出渠道账号及 installed、configured、enabled 状态；--all 也显示未配置或可安装渠道。",
-      "channelsProbe": "对各渠道账号执行实时 probe 和可用时的 audit；Gateway 不可达时退回配置摘要。",
-      "channelsAdd": "添加渠道账号；不带参数时进入交互式设置向导。",
-      "channelsLogin": "为支持交互登录的渠道执行登录；应在 Gateway 所在主机的终端中运行。",
-      "agentsList": "列出隔离智能体；--bindings 同时显示完整的渠道路由规则。",
-      "sessions": "列出持久化会话并按最近活动过滤；会话记录不能用来判断渠道是否在线。",
-      "messageSend": "向支持的外部渠道发送单条消息；目标格式因渠道而异。",
-      "cronList": "列出 Gateway 定时任务及其解析后的投递目标。",
-      "cronCreate": "用 cron 表达式和提示词创建新的 Gateway 定时任务。",
-      "cronRun": "手动将指定任务加入运行队列；--wait 会等待该次运行进入终态。",
-      "skillsList": "列出当前工作区可见的技能；可用 --eligible 只显示已满足运行条件的技能。",
-      "skillsCheck": "检查技能所需的二进制、环境变量和配置是否已经就绪。"
+    "scopes": {
+      "text": "文本",
+      "native": "原生命令",
+      "both": "双作用域"
     }
   },
   "welcome": {
@@ -5230,12 +5173,25 @@
     "doNotDisturb": "请勿打扰",
     "muted": "静音",
     "alerts": "通知",
-    "agent": { "thinking": "{{agent}} 正在思考", "generating": "{{agent}} 正在回复" },
-    "elapsed": { "thinking": "已响应 {{elapsed}} · 思考中", "generating": "已响应 {{elapsed}} · 生成中" },
+    "agent": {
+      "thinking": "{{agent}} 正在思考",
+      "generating": "{{agent}} 正在回复"
+    },
+    "elapsed": {
+      "thinking": "已响应 {{elapsed}} · 思考中",
+      "generating": "已响应 {{elapsed}} · 生成中"
+    },
     "statuses": {
-      "todo": "待办", "pending": "排队中", "running": "执行中", "input_required": "等待输入",
-      "awaiting_review": "等待审阅", "detached": "已分离", "interrupted": "已中断",
-      "done": "已完成", "failed": "失败", "cancelled": "已取消"
+      "todo": "待办",
+      "pending": "排队中",
+      "running": "执行中",
+      "input_required": "等待输入",
+      "awaiting_review": "等待审阅",
+      "detached": "已分离",
+      "interrupted": "已中断",
+      "done": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消"
     }
   },
   "file.confirmDeleteTitle": "删除 {{name}}？",
@@ -5264,11 +5220,26 @@
     "addApplication": "添加业务应用",
     "addDisabledHint": "新的平台通过已验证的适配器注册后才会显示在目录中。",
     "detailTabsAriaLabel": "业务应用视图",
-    "tabs": { "overview": "概览", "capabilities": "能力", "operations": "操作" },
-    "states": { "requiresRuntime": "需要运行时", "requiresConfiguration": "需要配置", "requiresAuthorization": "等待授权" },
-    "effects": { "read": "读取", "write": "写入", "highImpact": "需确认" },
+    "tabs": {
+      "overview": "概览",
+      "capabilities": "能力",
+      "operations": "操作"
+    },
+    "states": {
+      "requiresRuntime": "需要运行时",
+      "requiresConfiguration": "需要配置",
+      "requiresAuthorization": "等待授权"
+    },
+    "effects": {
+      "read": "读取",
+      "write": "写入",
+      "highImpact": "需确认"
+    },
     "runtime": "运行时",
-    "runtimeKinds": { "cli": "本地命令行适配器", "native-api": "受控原生 API 适配器" },
+    "runtimeKinds": {
+      "cli": "本地命令行适配器",
+      "native-api": "受控原生 API 适配器"
+    },
     "identity": "当前身份",
     "identityUnverified": "尚未选择已验证身份",
     "authorization": "授权状态",
@@ -5293,17 +5264,84 @@
     "journalBoundary": "AI 不读取密钥或原始业务正文，只接收完成计划所需的脱敏结构化上下文。",
     "chatPrompt": "请为 {{integration}} 的“{{capability}}”整理一个操作计划。先说明所需身份、权限、输入字段和影响范围；不要执行任何写入操作，等待我确认。",
     "integrations": {
-      "dingtalk": { "name": "钉钉工作台", "description": "通过 DWS 发现企业协作能力。", "prerequisites": "需要已验证的 DWS 运行时、登录状态和精确选择的 profile。" },
-      "feishu": { "name": "飞书", "description": "以用户授权和租户应用权限接入。", "prerequisites": "需要受控应用配置、管理员权限和用户授权回调验证。" },
-      "google": { "name": "Google Workspace", "description": "通过桌面 OAuth 连接日历、文件和邮件。", "prerequisites": "需要已注册的桌面 OAuth 客户端、启用的 API 与最小授权范围。" }
+      "dingtalk": {
+        "name": "钉钉工作台",
+        "description": "通过 DWS 发现企业协作能力。",
+        "prerequisites": "需要已验证的 DWS 运行时、登录状态和精确选择的 profile。"
+      },
+      "feishu": {
+        "name": "飞书",
+        "description": "以用户授权和租户应用权限接入。",
+        "prerequisites": "需要受控应用配置、管理员权限和用户授权回调验证。"
+      },
+      "google": {
+        "name": "Google Workspace",
+        "description": "通过桌面 OAuth 连接日历、文件和邮件。",
+        "prerequisites": "需要已注册的桌面 OAuth 客户端、启用的 API 与最小授权范围。"
+      }
     },
     "capabilities": {
-      "approvals": { "title": "审批与待办", "description": "读取审批状态，并在条件满足后创建或处理审批草稿。" },
-      "attendance": { "title": "考勤查询", "description": "读取当前身份有权查看的考勤摘要。" },
-      "calendar": { "title": "日程", "description": "读取可用日程，并在授权后生成日程草稿。" },
-      "documents": { "title": "文档与文件", "description": "按已授权范围检索和引用业务文件。" },
-      "mail": { "title": "邮件", "description": "在明确确认后生成外发邮件草稿。" }
+      "approvals": {
+        "title": "审批与待办",
+        "description": "读取审批状态，并在条件满足后创建或处理审批草稿。"
+      },
+      "attendance": {
+        "title": "考勤查询",
+        "description": "读取当前身份有权查看的考勤摘要。"
+      },
+      "calendar": {
+        "title": "日程",
+        "description": "读取可用日程，并在授权后生成日程草稿。"
+      },
+      "documents": {
+        "title": "文档与文件",
+        "description": "按已授权范围检索和引用业务文件。"
+      },
+      "mail": {
+        "title": "邮件",
+        "description": "在明确确认后生成外发邮件草稿。"
+      }
     }
   },
-  "businessGuide": { "title": "开始使用", "progress": "已确认完成 {{completed}} / {{total}} 项", "dismiss": "隐藏开始使用引导", "reopen": "显示开始使用引导", "blocked": "请先连接 Gateway 后继续", "step": "第 {{current}} / {{total}} 步", "welcomeTitle": "欢迎使用 JunQi", "welcomeDescription": "快速了解已验证工作台的核心能力。", "skip": "跳过", "skipStep": "跳过本步", "finish": "完成", "tour": { "newSession": "点击高亮的新建会话控件继续。", "addChannel": "点击高亮的添加渠道控件，继续官方配置流程。", "finished": "可随时通过指南图标重新打开引导。", "clickToContinue": "点击高亮控件继续" }, "tasks": { "startChat": { "title": "开始对话", "description": "打开聊天并创建会话。" }, "chooseModel": { "title": "确认模型", "description": "查看当前运行时的模型配置。" }, "reviewAgents": { "title": "查看智能体", "description": "查看 Gateway 返回的智能体。" }, "connectChannel": { "title": "连接渠道", "description": "继续官方渠道授权流程。" }, "openWorkspace": { "title": "打开工作区", "description": "选择项目并打开它的终端工作区。" } } }
+  "businessGuide": {
+    "title": "开始使用",
+    "progress": "已确认完成 {{completed}} / {{total}} 项",
+    "dismiss": "隐藏开始使用引导",
+    "reopen": "显示开始使用引导",
+    "blocked": "请先连接 Gateway 后继续",
+    "step": "第 {{current}} / {{total}} 步",
+    "welcomeTitle": "欢迎使用 JunQi",
+    "welcomeDescription": "快速了解已验证工作台的核心能力。",
+    "skip": "跳过",
+    "skipStep": "跳过本步",
+    "finish": "完成",
+    "tour": {
+      "newSession": "点击高亮的新建会话控件继续。",
+      "addChannel": "点击高亮的添加渠道控件，继续官方配置流程。",
+      "finished": "可随时通过指南图标重新打开引导。",
+      "clickToContinue": "点击高亮控件继续"
+    },
+    "tasks": {
+      "startChat": {
+        "title": "开始对话",
+        "description": "打开聊天并创建会话。"
+      },
+      "chooseModel": {
+        "title": "确认模型",
+        "description": "查看当前运行时的模型配置。"
+      },
+      "reviewAgents": {
+        "title": "查看智能体",
+        "description": "查看 Gateway 返回的智能体。"
+      },
+      "connectChannel": {
+        "title": "连接渠道",
+        "description": "继续官方渠道授权流程。"
+      },
+      "openWorkspace": {
+        "title": "打开工作区",
+        "description": "选择项目并打开它的终端工作区。"
+      }
+    }
+  }
 }

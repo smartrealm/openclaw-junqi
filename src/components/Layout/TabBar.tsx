@@ -12,7 +12,7 @@ const TABS = [
   { id: 'agents',    labelKey: 'nav.agents',     labelFallback: '智能体', path: '/agents', Icon: Bot },
   { id: 'businessApplications', labelKey: 'nav.businessApplications', labelFallback: '业务应用', path: '/business-applications', Icon: Blocks },
   { id: 'tools',     labelKey: 'nav.tools',      labelFallback: '工具',   path: '/tools', Icon: Wrench },
-  { id: 'commands',  labelKey: 'nav.openclawCommands', labelFallback: '常用命令', path: '/openclaw-commands', Icon: BookOpenText },
+  { id: 'commands',  labelKey: 'nav.openclawCommands', labelFallback: 'OpenClaw commands', path: '/openclaw-commands', Icon: BookOpenText },
   { id: 'settings',  labelKey: 'nav.settings',   labelFallback: '设置',   path: '/settings', Icon: Settings },
 ] as const;
 

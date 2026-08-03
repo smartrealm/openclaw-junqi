@@ -27,13 +27,13 @@ test('the workbench model service label stays concise', () => {
   assert.equal(zh.config.addModelService, '添加模型服务');
 });
 
-test('OpenClaw command reference has localized navigation and page labels', () => {
-  assert.equal(zh.nav.openclawCommands, '常用命令');
+test('OpenClaw runtime command catalog has localized navigation and state labels', () => {
+  assert.equal(zh.nav.openclawCommands, 'OpenClaw 命令');
   assert.equal(en.nav.openclawCommands, 'OpenClaw Commands');
-  assert.equal(zh.openclawCommands.docsLink, '官方文档');
-  assert.equal(en.openclawCommands.docsLink, 'Official docs');
-  assert.equal(zh.openclawCommands.copySuccess, '命令已复制');
-  assert.equal(en.openclawCommands.copySuccess, 'Command copied');
+  assert.equal(zh.openclawCommands.title, 'OpenClaw 运行时命令');
+  assert.equal(en.openclawCommands.title, 'OpenClaw Runtime Commands');
+  assert.equal(zh.openclawCommands.unavailable, '当前 OpenClaw Gateway 未提供运行时命令目录。');
+  assert.equal(en.openclawCommands.unavailable, 'The current OpenClaw Gateway does not provide a runtime command catalog.');
 });
 
 test('agent hub view labels remain localized in Chinese', () => {

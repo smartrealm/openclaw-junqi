@@ -5,20 +5,20 @@
     "stopFailed": "Failed to stop Gateway"
   },
   "taskStatus": {
-      "todo": "Todo",
-      "pending": "Pending",
-      "running": "Running",
-      "input_required": "Needs input",
-      "awaiting_review": "Awaiting review",
-      "detached": "Detached",
-      "interrupted": "Interrupted",
-      "done": "Completed",
-      "failed": "Failed",
-      "cancelled": "Cancelled",
-      "queued": "Queued",
-      "idle": "Idle",
-      "stopped": "Stopped",
-      "unknown": "Unknown"
+    "todo": "Todo",
+    "pending": "Pending",
+    "running": "Running",
+    "input_required": "Needs input",
+    "awaiting_review": "Awaiting review",
+    "detached": "Detached",
+    "interrupted": "Interrupted",
+    "done": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "queued": "Queued",
+    "idle": "Idle",
+    "stopped": "Stopped",
+    "unknown": "Unknown"
   },
   "app": {
     "name": "JunQi Desktop",
@@ -91,95 +91,38 @@
     "activity": "Activity Center"
   },
   "openclawCommands": {
-    "title": "OpenClaw Command Reference",
-    "subtitle": "Common commands curated from the official CLI reference. Copy any command or open its exact official page or section.",
-    "officialIndex": "Official CLI index",
+    "title": "OpenClaw Runtime Commands",
+    "subtitle": "Command catalog returned by the current OpenClaw Gateway for this session agent.",
     "searchPlaceholder": "Search commands, purposes, or flags...",
     "searchLabel": "Search OpenClaw commands",
-    "clearSearch": "Clear search",
-    "categoryLabel": "Command categories",
-    "resultCount": "{{count}} commands",
-    "verifiedSource": "Content and links verified against official docs",
     "empty": "No matching commands",
+    "loading": "Loading the command catalog from the current OpenClaw Gateway.",
+    "disconnected": "Connect to the OpenClaw Gateway to read runtime commands.",
+    "unavailable": "The current OpenClaw Gateway does not provide a runtime command catalog.",
+    "invalidResponse": "The command catalog returned by the OpenClaw Gateway could not be verified.",
+    "currentAgent": "Current session agent: {{agentId}}",
+    "defaultAgent": "Default agent resolved by the OpenClaw Gateway",
     "copyCommand": "Copy command",
-    "copySafeTemplate": "Copy shell-safe parameter template",
-    "copySuccess": "Command copied",
-    "copyFailed": "Copy failed",
-    "copyFailedBody": "Could not write to the clipboard. Please try again.",
-    "openOfficialDocs": "Open the matching official documentation section",
     "docsLink": "Official docs",
     "categories": {
-      "all": "All",
-      "setup": "Setup & config",
-      "gateway": "Gateway operations",
-      "diagnostics": "Diagnostics & security",
-      "models": "Models & fallbacks",
-      "auth": "Authentication",
-      "channels": "Channels & agents",
-      "automation": "Sessions & automation"
+      "session": "Session",
+      "options": "Options",
+      "status": "Status",
+      "management": "Management",
+      "media": "Media",
+      "tools": "Tools",
+      "docks": "Extensions",
+      "uncategorized": "Uncategorized"
     },
-    "impacts": {
-      "read": "Read-only",
-      "live": "Live query",
-      "action": "Changes state",
-      "mixed": "Depends on flags"
+    "sources": {
+      "native": "Native",
+      "skill": "Skill",
+      "plugin": "Plugin"
     },
-    "items": {
-      "setup": "Run first-time setup; --baseline creates only the baseline config and workspace without the full guided flow.",
-      "configGet": "Read the redacted configuration snapshot; secrets are never printed.",
-      "configSet": "Preview a path-based configuration write; remove --dry-run only after reviewing it. Values parse as JSON5 when possible.",
-      "configValidate": "Validate the current configuration against its active schema without starting the Gateway.",
-      "updateStatus": "Show the active update channel, version source, and update availability.",
-      "gatewayInstall": "Install and register the managed Gateway service, writing a launchd, systemd, or schtasks service definition for the current platform.",
-      "gatewayStart": "Start the installed Gateway background service; run gateway install first if the service has not been registered.",
-      "gatewayStop": "Stop the managed Gateway service. On macOS this lasts for the current boot by default; use --disable to keep it disabled.",
-      "gatewaySafeRestart": "Check active work and wait for it to drain before one coalesced restart; force restart after the configured timeout.",
-      "gatewayRunVerbose": "Run the Gateway in the foreground with detailed startup output in the current terminal, useful for diagnosing service startup and configuration failures.",
-      "gatewayStatus": "Check the service manager, connection, and read-only RPC. --require-rpc exits nonzero when RPC is unavailable and does not create an identity or pairing.",
-      "gatewayProbe": "Probe both the configured remote endpoint and loopback, reporting reachability, authentication, and read-only RPC separately to isolate connection failures.",
-      "gatewayStability": "Read the latest persisted stability record, even after the Gateway crashes or fails to start.",
-      "gatewayDiagnosticsExport": "Create a redacted support ZIP containing configuration, status, health, logs, and stability records at the requested output path.",
-      "statusAll": "Run the complete read-only status report, including the security audit, plugin compatibility, and memory/vector capability status.",
-      "statusDeep": "Run live probes and the security audit for channels returned by the current OpenClaw Runtime.",
-      "healthVerbose": "Fetch health over WebSocket RPC and force live health probes for every account and agent.",
-      "logsFollow": "Tail Gateway logs over RPC in local time, reconnecting automatically with exponential backoff after interruptions.",
-      "doctorLint": "Emit structured JSON diagnostics without prompts, repairs, or file writes; suitable for CI and read-only troubleshooting.",
-      "doctorFix": "Apply supported guided repairs across the Gateway, channels, plugins, skills, models, state, and migrations.",
-      "securityAuditDeep": "Add live Gateway probes and plugin collectors to cold configuration and filesystem checks; the entire audit remains read-only.",
-      "secretsAudit": "Check plaintext secrets, unresolved SecretRefs, auth precedence drift, and legacy residue; exits 1 for findings and 2 for unresolved references.",
-      "secretsReload": "Re-resolve SecretRefs and atomically replace the runtime snapshot only when all succeed; failures retain the last known good snapshot and never write config.",
-      "modelsStatus": "Show the resolved default, fallbacks, and auth overview, plus usage and quota snapshots when supported. Without --probe it makes no real model request.",
-      "modelsStatusCheck": "Use as an auth health gate: missing or expired exits 1, expiring soon exits 2, and healthy exits 0; it never repairs configuration.",
-      "modelsStatusProbe": "Make a real model request to one provider. It may use tokens, hit rate limits, or incur charges, and distinguishes auth, rate-limit, billing, and timeout failures.",
-      "modelsListProvider": "Read the full catalog for an exact provider ID. Unauthenticated static entries may appear unavailable; this writes no models.json and does not prove callability.",
-      "modelsListLocal": "Show local models only, reading existing configuration and catalog state without rewriting models.json.",
-      "modelsSet": "Write a provider/model or alias to global agents.defaults.model.primary. It rejects --agent and may repair the Codex or Copilot runtime plugin.",
-      "modelsSetImage": "Write the image model to global agents.defaults.imageModel.primary. It rejects --agent and does not repair runtime plugins.",
-      "modelsAliasesList": "List the JSON mapping from model aliases to canonical provider/model identifiers.",
-      "modelsAliasesAdd": "Add or update an alias after resolving its target to a canonical model key; updating an alias repoints it instead of creating an alias chain.",
-      "modelsAliasesRemove": "Remove a configured alias without deleting a model. Built-in aliases absent from config cannot be removed, only repointed.",
-      "modelsFallbacksList": "Show the text-model fallback order from agents.defaults.model.fallbacks as JSON.",
-      "modelsFallbacksAdd": "Add a canonical model or configured alias to text-model fallbacks; the same group also supports remove and clear.",
-      "modelsImageFallbacksAdd": "Add a model to the separate image-model fallback list; list, remove, and clear are also supported.",
-      "modelsAuthList": "List saved auth profiles for a provider; the official command never prints tokens, API keys, or OAuth secrets.",
-      "modelsAuthAdd": "Start the interactive auth helper, enter the provider's OAuth, API-key, or manual-token flow, and write the resulting auth configuration.",
-      "modelsAuthLogin": "Run an installed provider plugin's auth flow and apply its recommended default. openai defaults to ChatGPT/Codex; API keys require --method api-key.",
-      "modelsAuthPasteApiKey": "Read an API key from the terminal prompt and default to <provider>:manual. Never place the key in arguments; automation should provide it over stdin.",
-      "modelsAuthOrderGet": "Read the current agent's auth-profile order override for a provider from auth-state.json, which is separate from auth.order configuration.",
-      "modelsAuthOrderSet": "Validate profile IDs and set their priority in argument order. Omitted profiles are not probed and report excluded_by_auth_order.",
-      "modelsAuthOrderClear": "Clear the current agent's auth-order override and restore configured ordering or round robin without deleting any auth profiles.",
-      "channelsList": "List channel accounts with installed, configured, and enabled states; --all also shows unconfigured or installable channels.",
-      "channelsProbe": "Run live probes and available audits for channel accounts; fall back to configuration summaries if the Gateway is unreachable.",
-      "channelsAdd": "Add a channel account; run without flags to enter the interactive setup wizard.",
-      "channelsLogin": "Run interactive login for a supported channel from a terminal on the Gateway host.",
-      "agentsList": "List isolated agents; --bindings includes their complete channel routing rules.",
-      "sessions": "List persisted sessions filtered by recent activity; session rows are not a channel liveness check.",
-      "messageSend": "Send one message to a supported external channel; target formats vary by channel.",
-      "cronList": "List Gateway scheduled jobs with their resolved delivery targets.",
-      "cronCreate": "Create a Gateway scheduled job from a cron expression and prompt.",
-      "cronRun": "Queue a manual run for one job; --wait blocks until that run reaches a terminal state.",
-      "skillsList": "List skills visible to the current workspace; use --eligible to show only skills that are ready to run.",
-      "skillsCheck": "Check whether each skill's required binaries, environment variables, and configuration are ready."
+    "scopes": {
+      "text": "Text",
+      "native": "Native",
+      "both": "Both"
     }
   },
   "welcome": {
@@ -5207,12 +5150,25 @@
     "doNotDisturb": "Do not disturb",
     "muted": "Muted",
     "alerts": "Alerts",
-    "agent": { "thinking": "{{agent}} is thinking", "generating": "{{agent}} is responding" },
-    "elapsed": { "thinking": "{{elapsed}} · THINKING", "generating": "{{elapsed}} · GENERATING" },
+    "agent": {
+      "thinking": "{{agent}} is thinking",
+      "generating": "{{agent}} is responding"
+    },
+    "elapsed": {
+      "thinking": "{{elapsed}} · THINKING",
+      "generating": "{{elapsed}} · GENERATING"
+    },
     "statuses": {
-      "todo": "Todo", "pending": "Pending", "running": "Running", "input_required": "Needs input",
-      "awaiting_review": "Needs review", "detached": "Detached", "interrupted": "Interrupted",
-      "done": "Done", "failed": "Failed", "cancelled": "Cancelled"
+      "todo": "Todo",
+      "pending": "Pending",
+      "running": "Running",
+      "input_required": "Needs input",
+      "awaiting_review": "Needs review",
+      "detached": "Detached",
+      "interrupted": "Interrupted",
+      "done": "Done",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
     }
   },
   "file.confirmDeleteTitle": "Delete {{name}}?",
@@ -5241,11 +5197,26 @@
     "addApplication": "Add business application",
     "addDisabledHint": "A platform appears here only after its verified adapter is registered.",
     "detailTabsAriaLabel": "Business application views",
-    "tabs": { "overview": "Overview", "capabilities": "Capabilities", "operations": "Operations" },
-    "states": { "requiresRuntime": "Runtime required", "requiresConfiguration": "Configuration required", "requiresAuthorization": "Authorization required" },
-    "effects": { "read": "Read", "write": "Write", "highImpact": "Confirm required" },
+    "tabs": {
+      "overview": "Overview",
+      "capabilities": "Capabilities",
+      "operations": "Operations"
+    },
+    "states": {
+      "requiresRuntime": "Runtime required",
+      "requiresConfiguration": "Configuration required",
+      "requiresAuthorization": "Authorization required"
+    },
+    "effects": {
+      "read": "Read",
+      "write": "Write",
+      "highImpact": "Confirm required"
+    },
     "runtime": "Runtime",
-    "runtimeKinds": { "cli": "Local command line adapter", "native-api": "Managed native API adapter" },
+    "runtimeKinds": {
+      "cli": "Local command line adapter",
+      "native-api": "Managed native API adapter"
+    },
     "identity": "Current identity",
     "identityUnverified": "No verified identity selected",
     "authorization": "Authorization",
@@ -5270,17 +5241,84 @@
     "journalBoundary": "AI does not read secrets or raw business content. It receives only the redacted structured context needed for a plan.",
     "chatPrompt": "Create an operation plan for {{integration}} capability \"{{capability}}\". First state the required identity, permissions, input fields, and impact. Do not perform any write. Wait for my confirmation.",
     "integrations": {
-      "dingtalk": { "name": "DingTalk Workspace", "description": "Discover enterprise collaboration capabilities through DWS.", "prerequisites": "A verified DWS runtime, login state, and explicitly selected profile are required." },
-      "feishu": { "name": "Feishu", "description": "Connect through user authorization and tenant application permissions.", "prerequisites": "Managed application configuration, administrator permissions, and a verified user authorization callback are required." },
-      "google": { "name": "Google Workspace", "description": "Connect calendars, files, and mail through desktop OAuth.", "prerequisites": "A registered desktop OAuth client, enabled APIs, and minimal authorization scopes are required." }
+      "dingtalk": {
+        "name": "DingTalk Workspace",
+        "description": "Discover enterprise collaboration capabilities through DWS.",
+        "prerequisites": "A verified DWS runtime, login state, and explicitly selected profile are required."
+      },
+      "feishu": {
+        "name": "Feishu",
+        "description": "Connect through user authorization and tenant application permissions.",
+        "prerequisites": "Managed application configuration, administrator permissions, and a verified user authorization callback are required."
+      },
+      "google": {
+        "name": "Google Workspace",
+        "description": "Connect calendars, files, and mail through desktop OAuth.",
+        "prerequisites": "A registered desktop OAuth client, enabled APIs, and minimal authorization scopes are required."
+      }
     },
     "capabilities": {
-      "approvals": { "title": "Approvals and tasks", "description": "Read approval state and create or handle approval drafts only when conditions are met." },
-      "attendance": { "title": "Attendance lookup", "description": "Read attendance summaries available to the current identity." },
-      "calendar": { "title": "Calendar", "description": "Read available calendars and create event drafts after authorization." },
-      "documents": { "title": "Documents and files", "description": "Search and reference business files within the authorized scope." },
-      "mail": { "title": "Mail", "description": "Create an outbound mail draft only after explicit confirmation." }
+      "approvals": {
+        "title": "Approvals and tasks",
+        "description": "Read approval state and create or handle approval drafts only when conditions are met."
+      },
+      "attendance": {
+        "title": "Attendance lookup",
+        "description": "Read attendance summaries available to the current identity."
+      },
+      "calendar": {
+        "title": "Calendar",
+        "description": "Read available calendars and create event drafts after authorization."
+      },
+      "documents": {
+        "title": "Documents and files",
+        "description": "Search and reference business files within the authorized scope."
+      },
+      "mail": {
+        "title": "Mail",
+        "description": "Create an outbound mail draft only after explicit confirmation."
+      }
     }
   },
-  "businessGuide": { "title": "Get started", "progress": "{{completed}} of {{total}} verified tasks complete", "dismiss": "Hide getting started", "reopen": "Show getting started", "blocked": "Connect to the Gateway to continue", "step": "Step {{current}} of {{total}}", "welcomeTitle": "Welcome to JunQi", "welcomeDescription": "A short tour of the verified workspace capabilities.", "skip": "Skip", "skipStep": "Skip this step", "finish": "Finish", "tour": { "newSession": "Click the highlighted New session control to continue.", "addChannel": "Click the highlighted Add channel control to continue with the official setup flow.", "finished": "You can reopen this guide at any time from the compass control.", "clickToContinue": "Click the highlighted control" }, "tasks": { "startChat": { "title": "Start a conversation", "description": "Open Chat and create a session." }, "chooseModel": { "title": "Verify a model", "description": "Review the current runtime model configuration." }, "reviewAgents": { "title": "Review agents", "description": "See the agents reported by the Gateway." }, "connectChannel": { "title": "Connect a channel", "description": "Continue with the official channel authorization flow." }, "openWorkspace": { "title": "Open a workspace", "description": "Choose a project and open its terminal workspace." } } }
+  "businessGuide": {
+    "title": "Get started",
+    "progress": "{{completed}} of {{total}} verified tasks complete",
+    "dismiss": "Hide getting started",
+    "reopen": "Show getting started",
+    "blocked": "Connect to the Gateway to continue",
+    "step": "Step {{current}} of {{total}}",
+    "welcomeTitle": "Welcome to JunQi",
+    "welcomeDescription": "A short tour of the verified workspace capabilities.",
+    "skip": "Skip",
+    "skipStep": "Skip this step",
+    "finish": "Finish",
+    "tour": {
+      "newSession": "Click the highlighted New session control to continue.",
+      "addChannel": "Click the highlighted Add channel control to continue with the official setup flow.",
+      "finished": "You can reopen this guide at any time from the compass control.",
+      "clickToContinue": "Click the highlighted control"
+    },
+    "tasks": {
+      "startChat": {
+        "title": "Start a conversation",
+        "description": "Open Chat and create a session."
+      },
+      "chooseModel": {
+        "title": "Verify a model",
+        "description": "Review the current runtime model configuration."
+      },
+      "reviewAgents": {
+        "title": "Review agents",
+        "description": "See the agents reported by the Gateway."
+      },
+      "connectChannel": {
+        "title": "Connect a channel",
+        "description": "Continue with the official channel authorization flow."
+      },
+      "openWorkspace": {
+        "title": "Open a workspace",
+        "description": "Choose a project and open its terminal workspace."
+      }
+    }
+  }
 }

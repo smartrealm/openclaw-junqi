@@ -68,6 +68,10 @@ import { OpenClawCronStatusClient } from './OpenClawCronStatusClient';
 import { OpenClawTtsClient } from './OpenClawTtsClient';
 import { OpenClawTtsStatusClient } from './OpenClawTtsStatusClient';
 import {
+  OpenClawCommandsClient,
+  type OpenClawCommandsListInput,
+} from './OpenClawCommandsClient';
+import {
   OpenClawCronManagementClient,
   type OpenClawCronManagedJob,
   type OpenClawCronMutationPatch,
@@ -86,6 +90,15 @@ export type {
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
 export type { OpenClawTtsClip, OpenClawTtsSpeakInput } from './OpenClawTtsClient';
 export type { OpenClawTtsStatus } from './OpenClawTtsStatusClient';
+export type {
+  OpenClawCommandArgument,
+  OpenClawCommandArgumentChoice,
+  OpenClawCommandCategory,
+  OpenClawCommandEntry,
+  OpenClawCommandScope,
+  OpenClawCommandSource,
+  OpenClawCommandsListInput,
+} from './OpenClawCommandsClient';
 export type {
   OpenClawTaskCancelResult,
   OpenClawTaskLedgerStatus,
@@ -259,6 +272,19 @@ export const openClawTtsClient = new OpenClawTtsClient(
 );
 
 export const openClawTtsStatusClient = new OpenClawTtsStatusClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawCommandsClient = new OpenClawCommandsClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
@@ -941,6 +967,7 @@ export const gateway = {
     return connection.request('sessions.describe', { key: sessionKey });
   },
   async getAgents() { return connection.request('agents.list', {}); },
+  async listCommands(input: OpenClawCommandsListInput = {}) { return openClawCommandsClient.list(input); },
   async listTasks(input: OpenClawTaskListInput = {}) { return taskLedger.list(input); },
   async getTask(taskId: string) { return taskLedger.get(taskId); },
   async cancelTask(taskId: string, reason?: string) { return taskLedger.cancel(taskId, reason); },

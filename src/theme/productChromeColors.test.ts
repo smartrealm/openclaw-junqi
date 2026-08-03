@@ -26,7 +26,6 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'components/Terminal/terminalShared.ts': 24, // xterm ANSI palette and fallback contract
   'components/settings/ThemePicker.tsx': 11, // renders theme swatches and preview canvases
   'pages/AgentRunView.tsx': 2, // xterm fallback palette
-  'pages/OpenClawCommands/commands-core.ts': 1, // URL fragment syntax, not a color
   'pages/SetupPage/WizardScreen.tsx': 2, // generated QR bitmap foreground/background
   'pages/SetupPage/shared.tsx': 10, // renders theme swatches
   'pet/PetBubble.tsx': 1,

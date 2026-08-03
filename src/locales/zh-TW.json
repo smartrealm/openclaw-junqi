@@ -5,20 +5,20 @@
     "stopFailed": "停止 Gateway 失敗"
   },
   "taskStatus": {
-      "todo": "待辦",
-      "pending": "排隊中",
-      "running": "執行中",
-      "input_required": "等待輸入",
-      "awaiting_review": "等待審閱",
-      "detached": "已分離",
-      "interrupted": "已中斷",
-      "done": "已完成",
-      "failed": "失敗",
-      "cancelled": "已取消",
-      "queued": "排隊中",
-      "idle": "閒置",
-      "stopped": "已停止",
-      "unknown": "未知"
+    "todo": "待辦",
+    "pending": "排隊中",
+    "running": "執行中",
+    "input_required": "等待輸入",
+    "awaiting_review": "等待審閱",
+    "detached": "已分離",
+    "interrupted": "已中斷",
+    "done": "已完成",
+    "failed": "失敗",
+    "cancelled": "已取消",
+    "queued": "排隊中",
+    "idle": "閒置",
+    "stopped": "已停止",
+    "unknown": "未知"
   },
   "app": {
     "name": "JunQi Desktop",
@@ -87,99 +87,42 @@
     "subPages": "子頁面",
     "workbench": "工作臺",
     "tools": "工具",
-    "openclawCommands": "常用命令",
+    "openclawCommands": "OpenClaw 命令",
     "activity": "活動中心"
   },
   "openclawCommands": {
-    "title": "OpenClaw 常用命令",
-    "subtitle": "按官方 CLI 參考整理的常用命令。每一項都可複製，並直達對應的官方命令頁面或章節。",
-    "officialIndex": "CLI 官方索引",
+    "title": "OpenClaw 執行階段命令",
+    "subtitle": "由目前 OpenClaw Gateway 為會話智能體返回的命令目錄。",
     "searchPlaceholder": "搜索命令、用途或參數…",
     "searchLabel": "搜索 OpenClaw 命令",
-    "clearSearch": "清空搜索",
-    "categoryLabel": "命令分類",
-    "resultCount": "{{count}} 條命令",
-    "verifiedSource": "內容與鏈接均對照官方文檔",
     "empty": "沒有匹配的命令",
+    "loading": "正在從目前 OpenClaw Gateway 讀取命令目錄。",
+    "disconnected": "連線 OpenClaw Gateway 後才能讀取目前執行階段命令。",
+    "unavailable": "目前 OpenClaw Gateway 未提供執行階段命令目錄。",
+    "invalidResponse": "OpenClaw Gateway 返回的命令目錄無法驗證。",
+    "currentAgent": "目前會話智能體：{{agentId}}",
+    "defaultAgent": "由 OpenClaw Gateway 解析預設智能體",
     "copyCommand": "複製命令",
-    "copySafeTemplate": "複製 Shell 安全參數模板",
-    "copySuccess": "命令已複製",
-    "copyFailed": "複製失敗",
-    "copyFailedBody": "無法寫入剪貼板，請重試。",
-    "openOfficialDocs": "打開對應的官方文檔章節",
     "docsLink": "官方文檔",
     "categories": {
-      "all": "全部",
-      "setup": "設置與配置",
-      "gateway": "Gateway 運維",
-      "diagnostics": "診斷與安全",
-      "models": "模型選擇與回退",
-      "auth": "認證檔案",
-      "channels": "渠道與智能體",
-      "automation": "會話與自動化"
+      "session": "會話",
+      "options": "選項",
+      "status": "狀態",
+      "management": "管理",
+      "media": "媒體",
+      "tools": "工具",
+      "docks": "擴充",
+      "uncategorized": "未分類"
     },
-    "impacts": {
-      "read": "只讀",
-      "live": "實時查詢",
-      "action": "會改動",
-      "mixed": "依參數而定"
+    "sources": {
+      "native": "原生",
+      "skill": "技能",
+      "plugin": "插件"
     },
-    "items": {
-      "setup": "運行首次設置流程；--baseline 僅創建基礎配置和工作區，不進入完整引導。",
-      "configGet": "讀取脫敏後的配置快照；密鑰不會被打印。",
-      "configSet": "預演按路徑寫入配置；確認結果後移除 --dry-run 才會實際應用。值優先按 JSON5 解析。",
-      "configValidate": "按當前配置 schema 做校驗，不會啟動 Gateway。",
-      "updateStatus": "查看當前更新通道、版本來源和是否有可用更新。",
-      "gatewayInstall": "安裝並註冊受管 Gateway 服務；會為當前平臺寫入 launchd、systemd 或 schtasks 服務定義。",
-      "gatewayStart": "啟動已經安裝的 Gateway 後臺服務；如果服務尚未註冊，應先運行 gateway install。",
-      "gatewayStop": "停止受管 Gateway 服務；macOS 默認只對本次開機有效，需要持續禁用時使用 --disable。",
-      "gatewaySafeRestart": "先檢查活躍工作並等待排空，再執行一次合併重啟；等待超時後會強制重啟。",
-      "gatewayRunVerbose": "在前臺運行 Gateway，並把詳細啟動信息寫到當前終端；適合定位服務啟動失敗或配置錯誤。",
-      "gatewayStatus": "檢查服務管理器、連接和只讀 RPC；--require-rpc 會在 RPC 不可用時返回非零，探測不會創建身份或配對。",
-      "gatewayProbe": "同時探測已配置的遠端地址和本機迴環地址，分開報告可達性、認證和只讀 RPC，適合定位連接層故障。",
-      "gatewayStability": "讀取最近持久化的穩定性記錄；即使 Gateway 崩潰或啟動失敗，也能檢查最後一個 bundle。",
-      "gatewayDiagnosticsExport": "生成脫敏的支持 ZIP，彙集配置、狀態、健康、日誌和穩定性記錄；會在指定路徑寫入文件。",
-      "statusAll": "執行完整隻讀狀態彙總，包括安全審計、插件兼容性以及內存和向量能力狀態。",
-      "statusDeep": "对当前 OpenClaw Runtime 返回的渠道执行实时探测和安全审计。",
-      "healthVerbose": "通過 WebSocket RPC 獲取健康快照，並對所有賬號和智能體強制執行實時健康探測。",
-      "logsFollow": "通過 RPC 持續讀取 Gateway 日誌，顯示本地時間，並在斷線後按指數退避自動重連。",
-      "doctorLint": "以 JSON 輸出結構化診斷結果；不會提示交互、應用修復或寫入文件，適合 CI 和只讀排查。",
-      "doctorFix": "對 Gateway、渠道、插件、技能、模型、狀態和遷移應用官方支持的引導式修復。",
-      "securityAuditDeep": "在靜態配置和文件系統檢查之外，增加 Gateway 實時探測及插件採集器；整個審計仍為只讀。",
-      "secretsAudit": "檢查明文密鑰、未解析 SecretRef、認證優先級漂移和舊版殘留；發現問題退出 1，未解析引用退出 2。",
-      "secretsReload": "讓 Gateway 重新解析 SecretRef，並僅在全部成功時原子替換運行時快照；失敗會保留最後可用版本且不寫配置。",
-      "modelsStatus": "顯示解析後的默認模型、回退模型和認證概覽；提供商支持時還顯示用量與配額。不帶 --probe 不做真實模型請求。",
-      "modelsStatusCheck": "用作認證健康門禁：缺失或過期退出 1，即將過期退出 2，正常退出 0；不會自動修復配置。",
-      "modelsStatusProbe": "向指定提供商發出真實模型請求；可能消耗 token、觸發限流或計費，並區分認證、限流、賬單和超時錯誤。",
-      "modelsListProvider": "按準確的提供商 ID 讀取完整目錄；未認證的靜態條目可能顯示為不可用，不會寫 models.json，也不證明模型可調用。",
-      "modelsListLocal": "只顯示本地模型；讀取現有配置和目錄狀態，不會重寫 models.json。",
-      "modelsSet": "把 provider/model 或別名寫入全局 agents.defaults.model.primary；不接受 --agent，必要時會修復 Codex/Copilot 運行時插件。",
-      "modelsSetImage": "把圖像模型寫入全局 agents.defaults.imageModel.primary；不接受 --agent，也不會修復運行時插件。",
-      "modelsAliasesList": "以 JSON 列出模型別名到規範 provider/model 的映射。",
-      "modelsAliasesAdd": "新增或更新別名；目標會先解析成規範模型鍵，修改已有別名會直接改指向而不會形成別名鏈。",
-      "modelsAliasesRemove": "刪除配置中保存的別名而不刪除模型；未寫入配置的內置別名不能刪除，只能重新指定。",
-      "modelsFallbacksList": "以 JSON 查看 agents.defaults.model.fallbacks 中的文本模型回退順序。",
-      "modelsFallbacksAdd": "向文本模型回退列表添加規範模型或已配置別名；同組還提供 remove 和 clear。",
-      "modelsImageFallbacksAdd": "向獨立的圖像模型回退列表添加模型；同樣支持 list、remove 和 clear。",
-      "modelsAuthList": "列出指定提供商保存的認證檔案；官方保證不會輸出 token、API Key 或 OAuth secret。",
-      "modelsAuthAdd": "啟動交互式認證助手，根據提供商進入 OAuth、API Key 或手動 token 流程，並寫入認證配置。",
-      "modelsAuthLogin": "運行已安裝提供商插件的認證流程並應用推薦默認模型；openai 默認使用 ChatGPT/Codex，API Key 需明確指定 --method api-key。",
-      "modelsAuthPasteApiKey": "在終端提示中讀取 API Key，默認寫入 <provider>:manual；不要把密鑰放進命令參數，自動化時應通過 stdin 輸入。",
-      "modelsAuthOrderGet": "查看當前智能體對該提供商的認證檔案順序覆蓋；數據來自 auth-state.json，與 auth.order 配置分開。",
-      "modelsAuthOrderSet": "校驗檔案 ID 後按參數順序設置優先級；未列出的檔案不會參與探測，並會標記 excluded_by_auth_order。",
-      "modelsAuthOrderClear": "清除當前智能體的認證順序覆蓋，恢復配置順序或輪詢策略；不會刪除任何認證檔案。",
-      "channelsList": "列出渠道賬號及 installed、configured、enabled 狀態；--all 也顯示未配置或可安裝渠道。",
-      "channelsProbe": "對各渠道賬號執行實時 probe 和可用時的 audit；Gateway 不可達時退回配置摘要。",
-      "channelsAdd": "添加渠道賬號；不帶參數時進入交互式設置嚮導。",
-      "channelsLogin": "為支持交互登錄的渠道執行登錄；應在 Gateway 所在主機的終端中運行。",
-      "agentsList": "列出隔離智能體；--bindings 同時顯示完整的渠道路由規則。",
-      "sessions": "列出持久化會話並按最近活動過濾；會話記錄不能用來判斷渠道是否在線。",
-      "messageSend": "向支持的外部渠道發送單條消息；目標格式因渠道而異。",
-      "cronList": "列出 Gateway 定時任務及其解析後的投遞目標。",
-      "cronCreate": "用 cron 表達式和提示詞創建新的 Gateway 定時任務。",
-      "cronRun": "手動將指定任務加入運行隊列；--wait 會等待該次運行進入終態。",
-      "skillsList": "列出當前工作區可見的技能；可用 --eligible 只顯示已滿足運行條件的技能。",
-      "skillsCheck": "檢查技能所需的二進制、環境變量和配置是否已經就緒。"
+    "scopes": {
+      "text": "文字",
+      "native": "原生命令",
+      "both": "雙作用域"
     }
   },
   "welcome": {
@@ -4798,12 +4741,25 @@
     "doNotDisturb": "請勿打擾",
     "muted": "靜音",
     "alerts": "通知",
-    "agent": { "thinking": "{{agent}} 正在思考", "generating": "{{agent}} 正在回覆" },
-    "elapsed": { "thinking": "已回應 {{elapsed}} · 思考中", "generating": "已回應 {{elapsed}} · 生成中" },
+    "agent": {
+      "thinking": "{{agent}} 正在思考",
+      "generating": "{{agent}} 正在回覆"
+    },
+    "elapsed": {
+      "thinking": "已回應 {{elapsed}} · 思考中",
+      "generating": "已回應 {{elapsed}} · 生成中"
+    },
     "statuses": {
-      "todo": "待辦", "pending": "排隊中", "running": "執行中", "input_required": "等待輸入",
-      "awaiting_review": "等待審閱", "detached": "已分離", "interrupted": "已中斷",
-      "done": "已完成", "failed": "失敗", "cancelled": "已取消"
+      "todo": "待辦",
+      "pending": "排隊中",
+      "running": "執行中",
+      "input_required": "等待輸入",
+      "awaiting_review": "等待審閱",
+      "detached": "已分離",
+      "interrupted": "已中斷",
+      "done": "已完成",
+      "failed": "失敗",
+      "cancelled": "已取消"
     }
   },
   "file.confirmDeleteTitle": "刪除 {{name}}？",
@@ -4832,11 +4788,26 @@
     "addApplication": "新增業務應用",
     "addDisabledHint": "新的平台通過已驗證的適配器註冊後才會顯示在目錄中。",
     "detailTabsAriaLabel": "業務應用視圖",
-    "tabs": { "overview": "概覽", "capabilities": "能力", "operations": "操作" },
-    "states": { "requiresRuntime": "需要執行階段", "requiresConfiguration": "需要設定", "requiresAuthorization": "等待授權" },
-    "effects": { "read": "讀取", "write": "寫入", "highImpact": "需確認" },
+    "tabs": {
+      "overview": "概覽",
+      "capabilities": "能力",
+      "operations": "操作"
+    },
+    "states": {
+      "requiresRuntime": "需要執行階段",
+      "requiresConfiguration": "需要設定",
+      "requiresAuthorization": "等待授權"
+    },
+    "effects": {
+      "read": "讀取",
+      "write": "寫入",
+      "highImpact": "需確認"
+    },
     "runtime": "執行階段",
-    "runtimeKinds": { "cli": "本機命令列適配器", "native-api": "受控原生 API 適配器" },
+    "runtimeKinds": {
+      "cli": "本機命令列適配器",
+      "native-api": "受控原生 API 適配器"
+    },
     "identity": "目前身份",
     "identityUnverified": "尚未選擇已驗證身份",
     "authorization": "授權狀態",
@@ -4861,17 +4832,84 @@
     "journalBoundary": "AI 不讀取金鑰或原始業務正文，只接收完成計畫所需的脫敏結構化上下文。",
     "chatPrompt": "請為 {{integration}} 的「{{capability}}」整理一個操作計畫。先說明所需身份、權限、輸入欄位和影響範圍；不要執行任何寫入操作，等待我確認。",
     "integrations": {
-      "dingtalk": { "name": "釘釘工作台", "description": "透過 DWS 發現企業協作能力。", "prerequisites": "需要已驗證的 DWS 執行階段、登入狀態和精確選擇的 profile。" },
-      "feishu": { "name": "飛書", "description": "以使用者授權和租戶應用權限接入。", "prerequisites": "需要受控應用設定、管理員權限和使用者授權回調驗證。" },
-      "google": { "name": "Google Workspace", "description": "透過桌面 OAuth 連接日曆、檔案和郵件。", "prerequisites": "需要已註冊的桌面 OAuth 用戶端、已啟用的 API 與最小授權範圍。" }
+      "dingtalk": {
+        "name": "釘釘工作台",
+        "description": "透過 DWS 發現企業協作能力。",
+        "prerequisites": "需要已驗證的 DWS 執行階段、登入狀態和精確選擇的 profile。"
+      },
+      "feishu": {
+        "name": "飛書",
+        "description": "以使用者授權和租戶應用權限接入。",
+        "prerequisites": "需要受控應用設定、管理員權限和使用者授權回調驗證。"
+      },
+      "google": {
+        "name": "Google Workspace",
+        "description": "透過桌面 OAuth 連接日曆、檔案和郵件。",
+        "prerequisites": "需要已註冊的桌面 OAuth 用戶端、已啟用的 API 與最小授權範圍。"
+      }
     },
     "capabilities": {
-      "approvals": { "title": "審批與待辦", "description": "讀取審批狀態，並在條件滿足後建立或處理審批草稿。" },
-      "attendance": { "title": "考勤查詢", "description": "讀取目前身份有權查看的考勤摘要。" },
-      "calendar": { "title": "日程", "description": "讀取可用日程，並在授權後產生日程草稿。" },
-      "documents": { "title": "文件與檔案", "description": "按已授權範圍檢索和引用業務檔案。" },
-      "mail": { "title": "郵件", "description": "在明確確認後產生外發郵件草稿。" }
+      "approvals": {
+        "title": "審批與待辦",
+        "description": "讀取審批狀態，並在條件滿足後建立或處理審批草稿。"
+      },
+      "attendance": {
+        "title": "考勤查詢",
+        "description": "讀取目前身份有權查看的考勤摘要。"
+      },
+      "calendar": {
+        "title": "日程",
+        "description": "讀取可用日程，並在授權後產生日程草稿。"
+      },
+      "documents": {
+        "title": "文件與檔案",
+        "description": "按已授權範圍檢索和引用業務檔案。"
+      },
+      "mail": {
+        "title": "郵件",
+        "description": "在明確確認後產生外發郵件草稿。"
+      }
     }
   },
-  "businessGuide": { "title": "開始使用", "progress": "已確認完成 {{completed}} / {{total}} 項", "dismiss": "隱藏開始使用引導", "reopen": "顯示開始使用引導", "blocked": "請先連線 Gateway 後繼續", "step": "第 {{current}} / {{total}} 步", "welcomeTitle": "歡迎使用 JunQi", "welcomeDescription": "快速了解已驗證工作台的核心能力。", "skip": "跳過", "skipStep": "跳過本步", "finish": "完成", "tour": { "newSession": "點擊高亮的新建會話控制項以繼續。", "addChannel": "點擊高亮的新增渠道控制項，繼續官方設定流程。", "finished": "可隨時透過指南圖示重新開啟引導。", "clickToContinue": "點擊高亮控制項繼續" }, "tasks": { "startChat": { "title": "開始對話", "description": "開啟聊天並建立工作階段。" }, "chooseModel": { "title": "確認模型", "description": "查看目前執行階段的模型設定。" }, "reviewAgents": { "title": "查看智能體", "description": "查看 Gateway 回傳的智能體。" }, "connectChannel": { "title": "連接渠道", "description": "繼續官方渠道授權流程。" }, "openWorkspace": { "title": "開啟工作區", "description": "選擇專案並開啟它的終端工作區。" } } }
+  "businessGuide": {
+    "title": "開始使用",
+    "progress": "已確認完成 {{completed}} / {{total}} 項",
+    "dismiss": "隱藏開始使用引導",
+    "reopen": "顯示開始使用引導",
+    "blocked": "請先連線 Gateway 後繼續",
+    "step": "第 {{current}} / {{total}} 步",
+    "welcomeTitle": "歡迎使用 JunQi",
+    "welcomeDescription": "快速了解已驗證工作台的核心能力。",
+    "skip": "跳過",
+    "skipStep": "跳過本步",
+    "finish": "完成",
+    "tour": {
+      "newSession": "點擊高亮的新建會話控制項以繼續。",
+      "addChannel": "點擊高亮的新增渠道控制項，繼續官方設定流程。",
+      "finished": "可隨時透過指南圖示重新開啟引導。",
+      "clickToContinue": "點擊高亮控制項繼續"
+    },
+    "tasks": {
+      "startChat": {
+        "title": "開始對話",
+        "description": "開啟聊天並建立工作階段。"
+      },
+      "chooseModel": {
+        "title": "確認模型",
+        "description": "查看目前執行階段的模型設定。"
+      },
+      "reviewAgents": {
+        "title": "查看智能體",
+        "description": "查看 Gateway 回傳的智能體。"
+      },
+      "connectChannel": {
+        "title": "連接渠道",
+        "description": "繼續官方渠道授權流程。"
+      },
+      "openWorkspace": {
+        "title": "開啟工作區",
+        "description": "選擇專案並開啟它的終端工作區。"
+      }
+    }
+  }
 }
