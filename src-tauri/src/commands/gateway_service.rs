@@ -1243,6 +1243,7 @@ mod tests {
                 ownership,
                 installed: true,
                 running: false,
+                runtime_known: true,
             }));
         }
         for ownership in [
@@ -1254,12 +1255,14 @@ mod tests {
                 ownership,
                 installed: true,
                 running: true,
+                runtime_known: true,
             }));
         }
         assert!(!service_uninstall_is_permitted(GatewayServiceInspection {
             ownership: GatewayServiceOwnership::SelectedState,
             installed: false,
             running: false,
+            runtime_known: true,
         }));
     }
 
