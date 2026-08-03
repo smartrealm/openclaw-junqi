@@ -57,7 +57,10 @@ import {
   isSessionDeleted,
   subscribeNativeSessionCommit,
 } from '@/utils/sessionLifecycle';
-import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
+import {
+  classifySessionListLoadFailure,
+  sessionListMutationFence,
+} from '@/utils/sessionListMutationFence';
 import { startRecoverableTask } from '@/utils/recoverableTask';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
@@ -385,9 +388,10 @@ export default function App() {
       }
       return 'loaded';
     } catch {
-      return requestGate.isCurrent(requestId) && sessionListMutationFence.isCurrent(mutationRevision)
-        ? 'failed'
-        : 'superseded';
+      return classifySessionListLoadFailure(
+        requestGate.isCurrent(requestId),
+        sessionListMutationFence.isCurrent(mutationRevision),
+      );
     }
   }, [setSessions]);
 

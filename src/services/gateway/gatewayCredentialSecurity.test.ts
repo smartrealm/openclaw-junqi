@@ -133,6 +133,7 @@ function acceptHandshake(
   scopes = ['operator.admin'],
   deviceToken?: string,
   methods: string[] = [],
+  protocol = 4,
 ) {
   socket.receive({
     type: 'res',
@@ -140,7 +141,7 @@ function acceptHandshake(
     ok: true,
     payload: {
       type: 'hello-ok',
-      protocol: 4,
+      protocol,
       server: { version: '2026.7.1', connId: connectionId },
       features: { methods, events: [] },
       auth: { role: 'operator', scopes, ...(deviceToken ? { deviceToken } : {}) },
@@ -231,6 +232,60 @@ describe('Gateway credential security regression gates', () => {
       token: 'daily-device-token',
       url: 'ws://127.0.0.1:18789',
     }]);
+
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('rejects a node-only protocol hello before credential or identity state commits', async () => {
+    resetSockets();
+    let helloCount = 0;
+    let attestedIdentityCount = 0;
+    const connection = new GatewayConnection({
+      persistDeviceCredential: async (url, token) => {
+        savedDeviceTokens.push({ url, token });
+      },
+    });
+    connection.setCallbacks({
+      onMessage: () => {},
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onStatusChange: () => {},
+      onHello: () => { helloCount += 1; },
+      onRuntimeIdentity: (identity) => {
+        if (identity) attestedIdentityCount += 1;
+      },
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(
+          socket,
+          message,
+          'incompatible-connection',
+          ['operator.read', 'operator.write'],
+          'incompatible-device-token',
+          ['sessions.subscribe'],
+          3,
+        );
+      }
+    };
+    challenge(socket);
+
+    const handshake = await waitForSocketRequest(socket, 'connect');
+    assert.equal(handshake.params.minProtocol, 4);
+    assert.equal(handshake.params.maxProtocol, 4);
+    await turn();
+
+    assert.equal(connection.isConnected(), false);
+    assert.equal(helloCount, 0);
+    assert.equal(attestedIdentityCount, 0);
+    assert.deepEqual(savedDeviceTokens, []);
+    assert.equal(connection.getAdvertisedMethods(), null);
+    assert.deepEqual(socket.sent.map((message) => message.method), ['connect']);
+    assert.deepEqual(socket.closeCalls, [{ code: 4001, reason: 'Gateway protocol mismatch' }]);
 
     connection.disconnect();
     stopPolling();

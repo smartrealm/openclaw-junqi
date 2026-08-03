@@ -4,6 +4,15 @@ export interface SessionListMutationFence {
   readonly isCurrent: (revision: number) => boolean;
 }
 
+export type SessionListLoadResult = 'failed' | 'superseded';
+
+export function classifySessionListLoadFailure(
+  requestIsCurrent: boolean,
+  mutationIsCurrent: boolean,
+): SessionListLoadResult {
+  return requestIsCurrent && mutationIsCurrent ? 'failed' : 'superseded';
+}
+
 export function createSessionListMutationFence(): SessionListMutationFence {
   let revision = 0;
   return {

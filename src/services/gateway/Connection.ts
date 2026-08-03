@@ -28,11 +28,15 @@ import { signGatewayDeviceChallenge } from './deviceAuthentication';
 import type { OpenClawSessionOperationEvent } from './sessionOperation';
 import { getNativePlatformInfo } from '@/api/tauri-commands';
 
-// OpenClaw 2026.5.x introduced a newer WS protocol while older installs still
-// negotiate protocol 3. Advertise a compatible range so Desktop can connect to
-// both without pinning the bundled gateway to one exact revision.
-const GATEWAY_PROTOCOL_MIN = 3;
-const GATEWAY_PROTOCOL_MAX = 4;
+// OpenClaw reserves protocol v3 compatibility for node/probe clients. JunQi
+// connects as an operator/UI client, whose current wire contract is v4.
+export const GATEWAY_OPERATOR_PROTOCOL_VERSION = 4;
+const GATEWAY_PROTOCOL_MIN = GATEWAY_OPERATOR_PROTOCOL_VERSION;
+const GATEWAY_PROTOCOL_MAX = GATEWAY_OPERATOR_PROTOCOL_VERSION;
+
+function isGatewayOperatorProtocol(value: unknown): value is typeof GATEWAY_OPERATOR_PROTOCOL_VERSION {
+  return value === GATEWAY_OPERATOR_PROTOCOL_VERSION;
+}
 export type GatewayOperatorScope =
   | 'operator.read'
   | 'operator.write'
@@ -647,8 +651,24 @@ export class GatewayConnection {
       resolve: (response: any) => {
         debugLog('gateway', '[GW] Handshake response:', JSON.stringify(response).substring(0, 200));
         if (response.ok !== false && (response.payload?.type === 'hello-ok' || response.type === 'hello-ok')) {
-          debugLog('gateway', '[GW] Connected');
           const helloPayload = response.payload?.type === 'hello-ok' ? response.payload : response;
+          if (!isGatewayOperatorProtocol(helloPayload.protocol)) {
+            const receivedProtocol = typeof helloPayload.protocol === 'number'
+              ? `v${helloPayload.protocol}`
+              : 'an unknown protocol';
+            const error = `Gateway protocol mismatch: JunQi requires v${GATEWAY_OPERATOR_PROTOCOL_VERSION}, received ${receivedProtocol}`;
+            debugError('gateway', '[GW] Handshake failed:', error);
+            this.connected = false;
+            this.connecting = false;
+            this.advertisedMethods = null;
+            this.emitStatus({ error });
+            if (handshakeSocket && this.ws === handshakeSocket) {
+              handshakeSocket.close(4001, 'Gateway protocol mismatch');
+            }
+            return;
+          }
+
+          debugLog('gateway', '[GW] Connected');
           const advertisedMethods = helloPayload.features?.methods;
           this.advertisedMethods = Array.isArray(advertisedMethods)
             ? new Set(advertisedMethods.filter((method: unknown): method is string => (

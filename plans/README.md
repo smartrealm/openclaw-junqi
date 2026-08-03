@@ -146,6 +146,7 @@ plans/
 - [Cron 事件状态投影](quality/2026-08-03-cron-event-state-projection.md)
 - [Gateway 凭据绑定失败关闭](quality/2026-08-03-gateway-credential-binding-fail-closed.md)
 - [Gateway Client 平台身份](quality/2026-08-03-gateway-client-platform-identity.md)
+- [OpenClaw Operator Protocol v4](quality/2026-08-03-openclaw-operator-protocol-v4.md)
 - [Gateway Task Ledger 详情](quality/2026-08-03-task-ledger-details.md)
 - [Windows Gateway 重启后续加固计划](quality/2026-08-03-windows-gateway-restart-followup.md)
 - [Agent Profile 本地元数据](quality/2026-08-03-agent-profile-metadata.md)
