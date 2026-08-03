@@ -6,7 +6,7 @@ import { Activity, RefreshCw, Cpu, MemoryStick, HardDrive, Network, Server, User
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { gateway } from '@/services/gateway';
-import type { SystemMetricsPayload } from '@/api/tauri-adapter';
+import type { SystemMetricsPayload } from '@/api/tauriAdapterContracts';
 import clsx from 'clsx';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { themeHex } from '@/utils/theme-colors';
@@ -83,7 +83,7 @@ export function Performance() {
   });
 
   useEffect(() => {
-    const unsub = (window.aegis as any)?.systemMetrics?.onMetrics?.((metrics: SystemMetricsPayload) => setM(metrics));
+    const unsub = window.aegis.systemMetrics.onMetrics((metrics) => setM(metrics));
     return () => { unsub?.(); };
   }, []);
 

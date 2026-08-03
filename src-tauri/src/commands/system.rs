@@ -36,8 +36,6 @@ const NODE_RUNTIME_PROBE_ATTEMPTS: usize = 3;
 pub struct PlatformInfo {
     pub os: String,
     pub arch: String,
-    pub home_dir: String,
-    pub desktop_dir: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -997,14 +995,9 @@ pub(crate) fn npm_cli_for_node(node: &Path) -> Option<PathBuf> {
 
 #[tauri::command]
 pub async fn get_platform_info() -> Result<PlatformInfo, String> {
-    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-    let ma_dir = paths::desktop_dir();
-
     Ok(PlatformInfo {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
-        home_dir: home.to_string_lossy().to_string(),
-        desktop_dir: ma_dir.to_string_lossy().to_string(),
     })
 }
 
@@ -2352,7 +2345,22 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 
 #[cfg(test)]
 mod tests {
+    use super::PlatformInfo;
     use super::{openclaw_version_support, parse_openclaw_version_triple};
+
+    #[test]
+    fn platform_info_serialization_does_not_expose_local_paths() {
+        let value = serde_json::to_value(PlatformInfo {
+            os: "linux".to_string(),
+            arch: "x86_64".to_string(),
+        })
+        .expect("platform info must serialize");
+
+        assert_eq!(
+            value,
+            serde_json::json!({ "os": "linux", "arch": "x86_64" })
+        );
+    }
 
     // AUD-02: install validation accepted any parsable version while the collab
     // plugin declared >=2026.7.1 <2027.0.0. The two halves must agree.

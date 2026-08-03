@@ -247,7 +247,7 @@ export function SettingsPageFull() {
 
   useEffect(() => {
     window.aegis?.app?.versions()
-      .then((v) => setOpenclawVersion(v.openclaw ?? (v as any).runtime ?? null))
+      .then((v) => setOpenclawVersion(v.openclaw))
       .catch(() => {});
     window.aegis?.app?.platformInfo?.().then(setPlatformLabel).catch(() => {});
   }, []);
