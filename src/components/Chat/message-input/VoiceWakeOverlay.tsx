@@ -9,6 +9,7 @@ import type { TalkConversationPhase } from '@/services/voice/TalkConversationCoo
 interface VoiceWakeOverlayProps {
   snapshot: VoiceModeSnapshot;
   talkPhase: TalkConversationPhase;
+  talkError?: string | null;
   onStop: () => void;
   onConfirmDraft: () => void;
   onDiscardDraft: () => void;
@@ -20,7 +21,14 @@ export function shouldShowVoiceWakeOverlay(snapshot: VoiceModeSnapshot): boolean
   return snapshot.mode === 'wake_word' && snapshot.phase !== 'off';
 }
 
-function phaseCopy(snapshot: VoiceModeSnapshot, talkPhase: TalkConversationPhase, t: TFunction): string {
+function phaseCopy(
+  snapshot: VoiceModeSnapshot,
+  talkPhase: TalkConversationPhase,
+  talkError: string | null | undefined,
+  t: TFunction,
+): string {
+  if (talkError === 'talk_session_replaced') return t('input.voiceTalkSessionReplaced');
+  if (talkPhase === 'error') return t('input.voiceTalkSessionUnavailable');
   if (talkPhase === 'speaking') return t('input.voiceWorkspaceSpeaking');
   if (talkPhase === 'connecting') return t('input.voiceWorkspaceThinking');
   if (snapshot.error === 'wake_detector_unavailable') return t('input.voiceWakeUnavailable');
@@ -43,6 +51,7 @@ function phaseCopy(snapshot: VoiceModeSnapshot, talkPhase: TalkConversationPhase
 export function VoiceWakeOverlay({
   snapshot,
   talkPhase,
+  talkError,
   onStop,
   onConfirmDraft,
   onDiscardDraft,
@@ -74,7 +83,7 @@ export function VoiceWakeOverlay({
   const ready = snapshot.phase === 'ready_to_send' && snapshot.draft !== null && snapshot.error === null;
   const unavailable = snapshot.error === 'wake_detector_unavailable'
     || snapshot.error === 'wake_trigger_model_mismatch';
-  const failed = snapshot.phase === 'error' || unavailable;
+  const failed = snapshot.phase === 'error' || unavailable || talkPhase === 'error';
 
   return (
     <section
@@ -118,7 +127,7 @@ export function VoiceWakeOverlay({
           </div>
 
           <h2 className="mt-8 text-2xl font-semibold text-aegis-text sm:text-3xl">
-            {phaseCopy(snapshot, talkPhase, t)}
+            {phaseCopy(snapshot, talkPhase, talkError, t)}
           </h2>
           <p className="mx-auto mt-3 max-w-md text-[13px] leading-6 text-aegis-text-muted">
             {ready ? t('input.voiceWorkspaceLocalOnly') : t('input.voiceWorkspacePreparing')}

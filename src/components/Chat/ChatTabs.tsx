@@ -34,8 +34,6 @@ import { ActiveTabIndicator } from '@/components/shared/TabMotion';
 // Layout: [Main ●] [Session A ×] [Session B ×]   [↺] [+]
 // ═══════════════════════════════════════════════════════════
 
-const MAIN_SESSION = 'agent:main:main';
-
 /**
  * Renaming helper lives in src/utils/sessionRename.ts — shared with the
  * NavSidebar session list so both surfaces call the same gateway + store
@@ -1154,7 +1152,7 @@ export function ChatTabs() {
         <SortableContext items={openTabs} strategy={horizontalListSortingStrategy}>
         {openTabs.map((key) => {
           const isActive = key === activeSessionKey;
-          const isMain = key === MAIN_SESSION;
+          const isMain = isAgentMainSession(key);
           const { isMainSession } = parseSessionKey(key);
           const session = sessions.find((s) => s.key === key);
           const label = sessionLabel(session, key, agents, mainAgentName, messagesPerSession[key]);

@@ -251,6 +251,16 @@ impl OpenclawCommandContext {
             .env("OPENCLAW_LOCALE", &self.locale)
             .env("OPENCLAW_NO_RESPAWN", "1")
             .env("NO_COLOR", "1");
+        // OpenClaw resolves the Windows Scheduled Task from this process
+        // environment. Preserve an explicit task-name override for every
+        // service operation; otherwise status may inspect one task while
+        // start/stop/restart silently targets the default task.
+        #[cfg(windows)]
+        if let Ok(task_name) = std::env::var("OPENCLAW_WINDOWS_TASK_NAME") {
+            if !task_name.trim().is_empty() {
+                command.env("OPENCLAW_WINDOWS_TASK_NAME", task_name);
+            }
+        }
         if openclaw_debug_enabled() {
             command.env("OPENCLAW_DEBUG", "1");
         }

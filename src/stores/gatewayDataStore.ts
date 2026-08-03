@@ -8,6 +8,7 @@ import {
 } from '@/utils/sessionLifecycle';
 import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
 import { listOpenClawSessionLifecycle } from '@/services/gateway/OpenClawSessionListClient';
+import { parseCronStatus, type OpenClawCronStatusSummary } from '@/services/gateway/cronStatus';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -155,6 +156,8 @@ interface GatewayDataState {
   costSummary: CostSummary | null;
   sessionsUsage: SessionsUsage | null;
   cronJobs: CronJob[];
+  cronStatus: OpenClawCronStatusSummary | null;
+  cronStatusError: string | null;
   runningSubAgents: RunningSubAgent[];
 
   // Timestamps (ms) — when each group was last fetched
@@ -196,6 +199,8 @@ interface GatewayDataState {
   setCostSummary: (data: CostSummary) => void;
   setSessionsUsage: (data: SessionsUsage) => void;
   setCronJobs: (jobs: CronJob[]) => void;
+  setCronStatus: (status: OpenClawCronStatusSummary | null) => void;
+  setCronStatusError: (error: string | null) => void;
 
   setLoading: (group: keyof GatewayDataState['loading'], val: boolean) => void;
   setError: (group: keyof GatewayDataState['errors'], err: string | null) => void;
@@ -219,6 +224,8 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   costSummary: null,
   sessionsUsage: null,
   cronJobs: [],
+  cronStatus: null,
+  cronStatusError: null,
   runningSubAgents: [],
 
   // Timestamps
@@ -292,6 +299,10 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
       loading: { ...get().loading, cron: false },
       errors: { ...get().errors, cron: null },
     }),
+
+  setCronStatus: (status) => set({ cronStatus: status }),
+
+  setCronStatusError: (error) => set({ cronStatusError: error }),
 
   setLoading: (group, val) =>
     set({ loading: { ...get().loading, [group]: val } }),
@@ -369,7 +380,95 @@ function isCronJob(value: unknown): value is CronJob {
   return isGatewayRecord(value)
     && typeof value.id === 'string'
     && value.id.trim().length > 0
-    && (value.agentId === undefined || (typeof value.agentId === 'string' && value.agentId.trim().length > 0));
+    && (value.agentId === undefined || (typeof value.agentId === 'string' && value.agentId.trim().length > 0))
+    && (value.state === undefined || isGatewayRecord(value.state));
+}
+
+function optionalSafeInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) ? value : undefined;
+}
+
+function optionalCronRunStatus(value: unknown): 'ok' | 'error' | 'skipped' | undefined {
+  return value === 'ok' || value === 'error' || value === 'skipped' ? value : undefined;
+}
+
+function optionalCronDeliveryStatus(value: unknown): 'delivered' | 'not-delivered' | 'unknown' | 'not-requested' | undefined {
+  return value === 'delivered'
+    || value === 'not-delivered'
+    || value === 'unknown'
+    || value === 'not-requested'
+    ? value
+    : undefined;
+}
+
+type CronRunEventPhase = 'started' | 'finished';
+
+function cronRunEventPhase(event: string, payload: unknown): CronRunEventPhase | null {
+  if (event === 'cron.run.started') return 'started';
+  if (event === 'cron.run.completed' || event === 'cron.run.finished') return 'finished';
+  if (event !== 'cron' || !isGatewayRecord(payload)) return null;
+  if (payload.action === 'started') return 'started';
+  if (payload.action === 'finished') return 'finished';
+  return null;
+}
+
+function projectCronRunEvent(job: CronJob, phase: CronRunEventPhase, payload: Record<string, unknown>): CronJob {
+  const state = isGatewayRecord(job.state) ? { ...job.state } : {};
+  const runAtMs = optionalSafeInteger(payload.runAtMs);
+
+  if (phase === 'started') {
+    state.runningAtMs = runAtMs ?? Date.now();
+    return { ...job, state };
+  }
+
+  delete state.runningAtMs;
+  if (runAtMs !== undefined) {
+    state.lastRunAtMs = runAtMs;
+  }
+  const nextRunAtMs = optionalSafeInteger(payload.nextRunAtMs);
+  if (nextRunAtMs !== undefined) {
+    state.nextRunAtMs = nextRunAtMs;
+  }
+  const status = optionalCronRunStatus(payload.status);
+  if (status) {
+    state.lastRunStatus = status;
+    state.lastStatus = status;
+  }
+  const durationMs = optionalSafeInteger(payload.durationMs);
+  if (durationMs !== undefined && durationMs >= 0) {
+    state.lastDurationMs = durationMs;
+  }
+  if (typeof payload.error === 'string') {
+    state.lastError = payload.error;
+  } else if (status === 'ok') {
+    delete state.lastError;
+  }
+  const deliveryStatus = optionalCronDeliveryStatus(payload.deliveryStatus);
+  if (deliveryStatus) {
+    state.lastDeliveryStatus = deliveryStatus;
+  }
+
+  return {
+    ...job,
+    state,
+    ...(runAtMs !== undefined ? { lastRun: new Date(runAtMs).toISOString() } : {}),
+    ...(status ? { lastRunStatus: status } : {}),
+    ...(deliveryStatus ? { lastDeliveryStatus: deliveryStatus } : {}),
+  };
+}
+
+function applyCronRunEvent(
+  store: ReturnType<typeof useGatewayDataStore.getState>,
+  phase: CronRunEventPhase,
+  payload: Record<string, unknown>,
+): void {
+  const rawJobId = payload.jobId ?? payload.id;
+  const jobId = typeof rawJobId === 'string' ? rawJobId.trim() : '';
+  if (!jobId) return;
+  store.setCronJobs(
+    store.cronJobs.map((job) => job.id === jobId ? projectCronRunEvent(job, phase, payload) : job),
+  );
+  debugLog('datastore', `[DataStore] Cron ${phase}:`, jobId);
 }
 
 function gatewayCollectionOf<T>(
@@ -652,14 +751,32 @@ async function fetchCron(): Promise<boolean> {
   const store = useGatewayDataStore.getState();
   store.setLoading('cron', true);
   try {
-    const res = await ticket.connection.request('cron.list', { includeDisabled: true });
+    const [jobsResponse, statusResponse] = await Promise.allSettled([
+      ticket.connection.request('cron.list', { includeDisabled: true }),
+      ticket.connection.request('cron.status', {}),
+    ]);
     if (!isCurrentGatewayRequest(ticket)) return false;
-    const list = parseGatewayCronJobList(res);
+    if (jobsResponse.status === 'rejected') {
+      throw jobsResponse.reason;
+    }
+    const list = parseGatewayCronJobList(jobsResponse.value);
     if (!list) {
       rejectGatewayResponse(store, 'cron', 'cron.list');
       return false;
     }
     store.setCronJobs(list);
+    if (statusResponse.status === 'fulfilled') {
+      try {
+        store.setCronStatus(parseCronStatus(statusResponse.value));
+        store.setCronStatusError(null);
+      } catch {
+        store.setCronStatus(null);
+        store.setCronStatusError('Gateway returned an invalid cron.status response');
+      }
+    } else {
+      store.setCronStatus(null);
+      store.setCronStatusError(statusResponse.reason?.message || String(statusResponse.reason));
+    }
     return true;
   } catch (e: any) {
     if (!isCurrentGatewayRequest(ticket)) return false;
@@ -1097,26 +1214,16 @@ export function handleGatewayEvent(event: string, payload: any) {
     }
 
     // ── Cron events ──
-    case 'cron.run.started': {
-      const jobId = payload?.jobId || payload?.id;
-      if (!jobId) break;
-      store.setCronJobs(
-        store.cronJobs.map((j) => j.id === jobId ? { ...j, state: 'running' } : j)
-      );
-      debugLog('datastore', '[DataStore] Cron started:', jobId);
-      break;
-    }
-
+    // OpenClaw 2026.7.1-2 broadcasts the cron event with action started/finished.
+    // Keep the older dotted names as a compatibility read path, but never
+    // replace the official CronJob state object with a display string.
+    case 'cron':
+    case 'cron.run.started':
     case 'cron.run.completed':
     case 'cron.run.finished': {
-      const jobId = payload?.jobId || payload?.id;
-      if (!jobId) break;
-      store.setCronJobs(
-        store.cronJobs.map((j) => j.id === jobId
-          ? { ...j, state: 'idle', lastRun: new Date().toISOString() }
-          : j)
-      );
-      debugLog('datastore', '[DataStore] Cron completed:', jobId);
+      if (!isGatewayRecord(payload)) break;
+      const phase = cronRunEventPhase(event, payload);
+      if (phase) applyCronRunEvent(store, phase, payload);
       break;
     }
 

@@ -1,10 +1,20 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, FolderOpen, RefreshCw, Search, X } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  FileText,
+  FolderOpen,
+  RefreshCw,
+  Search,
+  X,
+} from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import type { OpenClawWorkspaceMemoryItem } from '@/services/openclawWorkspaceMemory';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { useOpenClawWorkspaceMemories } from './useOpenClawWorkspaceMemories';
+import { useOpenClawMemoryDiagnostics } from './useOpenClawMemoryDiagnostics';
+import type { MemoryRemHarnessResult, MemoryStatusResult } from '@/services/gateway/memoryDoctor';
 
 function displayTitle(item: OpenClawWorkspaceMemoryItem): string {
   const firstLine = item.content
@@ -20,6 +30,182 @@ function displayTimestamp(value: string | undefined, language: string): string |
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return null;
   return new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function formatCount(value: number | undefined, language: string): string {
+  if (value === undefined) return '-';
+  return new Intl.NumberFormat(language).format(value);
+}
+
+function MemoryDiagnosticsPanel({
+  status,
+  remHarness,
+  loading,
+  statusError,
+  remHarnessError,
+  language,
+}: {
+  status: MemoryStatusResult | null;
+  remHarness: MemoryRemHarnessResult | null;
+  loading: boolean;
+  statusError: string | null;
+  remHarnessError: string | null;
+  language: string;
+}) {
+  const { t } = useTranslation();
+  const dreaming = status?.dreaming;
+  const remSuccess = remHarness?.ok === true ? remHarness : null;
+  const remFailure = remHarness?.ok === false ? remHarness : null;
+  const phaseRows = dreaming
+    ? [
+      ['light', dreaming.phases.light],
+      ['deep', dreaming.phases.deep],
+      ['rem', dreaming.phases.rem],
+    ] as const
+    : [];
+
+  return (
+    <section className="shrink-0 border-b border-aegis-border bg-aegis-surface px-6 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.08em] text-aegis-text-dim">
+            {t('memoryExplorer.gatewayDiagnostics', 'OpenClaw Gateway diagnostics')}
+          </p>
+          <p className="mt-1 text-sm text-aegis-text-dim">
+            {status?.agentId
+              ? t('memoryExplorer.gatewayAgent', 'Agent: {{agentId}}', { agentId: status.agentId })
+              : t('memoryExplorer.gatewayDiagnosticsReadOnly', 'Read-only status from the selected Gateway')}
+          </p>
+        </div>
+        {loading && <LoadingIndicator size={18} />}
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="min-w-0 rounded-md border border-aegis-border bg-aegis-bg p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-aegis-text">
+            {status?.embedding.ok ? (
+              <CheckCircle2 size={16} className="text-aegis-success" aria-hidden="true" />
+            ) : (
+              <AlertCircle size={16} className="text-aegis-danger" aria-hidden="true" />
+            )}
+            {t('memoryExplorer.embeddingStatus', 'Embedding readiness')}
+          </div>
+          <p className="mt-2 text-sm text-aegis-text-dim">
+            {status
+              ? status.embedding.ok
+                ? t('memoryExplorer.embeddingReady', 'Ready')
+                : status.embedding.error || t('memoryExplorer.embeddingUnavailable', 'Unavailable')
+              : statusError || t('memoryExplorer.gatewayUnavailable', 'Gateway diagnostics unavailable')}
+          </p>
+          {status?.provider && (
+            <p className="mt-1 text-xs text-aegis-text-dim">
+              {t('memoryExplorer.embeddingProvider', 'Provider: {{provider}}', { provider: status.provider })}
+            </p>
+          )}
+          {dreaming && (
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-aegis-border pt-3 text-xs text-aegis-text-dim">
+              <span>{t('memoryExplorer.totalSignals', 'Signals')}</span>
+              <span className="text-end text-aegis-text">{formatCount(dreaming.totalSignalCount, language)}</span>
+              <span>{t('memoryExplorer.promotedMemory', 'Promoted')}</span>
+              <span className="text-end text-aegis-text">{formatCount(dreaming.promotedTotal, language)}</span>
+              <span>{t('memoryExplorer.promotedToday', 'Promoted today')}</span>
+              <span className="text-end text-aegis-text">{formatCount(dreaming.promotedToday, language)}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 rounded-md border border-aegis-border bg-aegis-bg p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-aegis-text">
+              {t('memoryExplorer.dreamingPhases', 'Dreaming phases')}
+            </p>
+            {dreaming && (
+              <span className="text-xs text-aegis-text-dim">
+                {dreaming.enabled ? t('memoryExplorer.enabled', 'Enabled') : t('memoryExplorer.disabled', 'Disabled')}
+              </span>
+            )}
+          </div>
+          {phaseRows.length > 0 ? (
+            <div className="mt-3 divide-y divide-aegis-border text-xs">
+              {phaseRows.map(([name, phase]) => (
+                <div key={name} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                  <span className="text-aegis-text-dim">{name}</span>
+                  <span className={phase.enabled ? 'text-aegis-success' : 'text-aegis-text-dim'}>
+                    {phase.enabled ? t('memoryExplorer.phaseReady', 'enabled') : t('memoryExplorer.phaseDisabled', 'disabled')}
+                    {phase.managedCronPresent ? ` · ${t('memoryExplorer.cronManaged', 'cron managed')}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-aegis-text-dim">
+              {statusError || t('memoryExplorer.noDreamingStatus', 'Dreaming status was not returned by Gateway')}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-md border border-aegis-border bg-aegis-bg p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium text-aegis-text">
+            {t('memoryExplorer.remHarnessPreview', 'REM harness preview')}
+          </p>
+          {remSuccess && (
+            <span className="text-xs text-aegis-text-dim">
+              {t('memoryExplorer.remCandidateCount', '{{count}} candidates', {
+                count: remSuccess.deep.candidates.length,
+              })}
+            </span>
+          )}
+        </div>
+        {remSuccess ? (
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            <div className="min-w-0">
+              <p className="text-xs text-aegis-text-dim">
+                {t('memoryExplorer.remTruths', 'Candidate truths')}
+              </p>
+              {remSuccess.rem.candidateTruths.length > 0 ? (
+                <ul className="mt-2 space-y-2 text-sm text-aegis-text">
+                  {remSuccess.rem.candidateTruths.slice(0, 3).map((entry, index) => (
+                    <li key={`${entry.snippet}-${index}`} className="line-clamp-2">
+                      {entry.snippet}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-aegis-text-dim">{t('memoryExplorer.noRemTruths', 'No candidate truths')}</p>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-aegis-text-dim">
+                {t('memoryExplorer.deepCandidates', 'Deep candidates')}
+              </p>
+              {remSuccess.deep.candidates.length > 0 ? (
+                <ul className="mt-2 space-y-2 text-sm text-aegis-text">
+                  {remSuccess.deep.candidates.slice(0, 3).map((candidate) => (
+                    <li key={candidate.key} className="min-w-0">
+                      <p className="truncate">{candidate.snippet || candidate.path}</p>
+                      <p className="mt-0.5 truncate text-xs text-aegis-text-dim" title={candidate.path}>
+                        {candidate.path} · {t('memoryExplorer.recallCount', '{{count}} recalls', { count: candidate.recallCount })}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-aegis-text-dim">{t('memoryExplorer.noDeepCandidates', 'No deep candidates')}</p>
+              )}
+            </div>
+          </div>
+        ) : remFailure ? (
+          <p className="mt-2 text-sm text-aegis-danger">{remFailure.error}</p>
+        ) : (
+          <p className="mt-2 text-sm text-aegis-text-dim">
+            {remHarnessError || t('memoryExplorer.remUnavailable', 'REM preview unavailable')}
+          </p>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function MemoryDetail({
@@ -69,6 +255,14 @@ function MemoryDetail({
 export function MemoryExplorerPage() {
   const { t, i18n } = useTranslation();
   const { snapshot, loading, error, refresh } = useOpenClawWorkspaceMemories();
+  const {
+    status: diagnosticsStatus,
+    remHarness,
+    loading: diagnosticsLoading,
+    statusError: diagnosticsStatusError,
+    remHarnessError: diagnosticsRemHarnessError,
+    refresh: refreshDiagnostics,
+  } = useOpenClawMemoryDiagnostics();
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const items = snapshot?.items ?? [];
@@ -94,8 +288,11 @@ export function MemoryExplorerPage() {
           </div>
           <button
             type="button"
-            onClick={() => void refresh()}
-            disabled={loading}
+            onClick={() => {
+              void refresh();
+              void refreshDiagnostics();
+            }}
+            disabled={loading || diagnosticsLoading}
             title={t('common.refresh', 'Refresh')}
             aria-label={t('common.refresh', 'Refresh')}
             className="grid h-9 w-9 place-items-center rounded-md border border-aegis-border text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-50"
@@ -103,6 +300,15 @@ export function MemoryExplorerPage() {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
         </header>
+
+        <MemoryDiagnosticsPanel
+          status={diagnosticsStatus}
+          remHarness={remHarness}
+          loading={diagnosticsLoading}
+          statusError={diagnosticsStatusError}
+          remHarnessError={diagnosticsRemHarnessError}
+          language={i18n.language}
+        />
 
         <div className="flex min-h-0 flex-1">
           <section className="min-w-0 flex-1 overflow-y-auto px-6 py-5">

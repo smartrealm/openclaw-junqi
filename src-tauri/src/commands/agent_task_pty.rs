@@ -38,6 +38,12 @@ fn pty_registry() -> &'static Mutex<HashMap<String, PtyHandle>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn cancelled_tasks() -> &'static Mutex<std::collections::HashSet<String>> {
     static CANCELLED: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
     CANCELLED.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
@@ -49,16 +55,16 @@ fn manually_completed_tasks() -> &'static Mutex<std::collections::HashSet<String
 }
 
 fn reset_task_process_inner(task_id: &str) {
-    let _ = cancelled_tasks().lock().unwrap().remove(task_id);
-    let _ = manually_completed_tasks().lock().unwrap().remove(task_id);
-    let handle = pty_registry().lock().unwrap().remove(task_id);
+    let _ = lock_or_recover(cancelled_tasks()).remove(task_id);
+    let _ = lock_or_recover(manually_completed_tasks()).remove(task_id);
+    let handle = lock_or_recover(pty_registry()).remove(task_id);
     if let Some(handle) = handle {
-        if let Some(handles) = handle.lock().unwrap().as_ref() {
+        if let Some(handles) = lock_or_recover(handle.as_ref()).as_ref() {
             handles.closed.store(true, Ordering::Relaxed);
-            let _ = handles.child.lock().unwrap().kill();
+            let _ = lock_or_recover(&handles.child).kill();
         }
     }
-    task_output_buffers().lock().unwrap().remove(task_id);
+    lock_or_recover(task_output_buffers()).remove(task_id);
 }
 
 fn task_output_buffers() -> &'static Mutex<HashMap<String, String>> {
@@ -76,7 +82,7 @@ const MAX_TASK_TEXT_ATTACHMENTS: usize = 10;
 const MAX_TASK_TEXT_BYTES: usize = 256 * 1024;
 
 fn append_task_output(task_id: &str, output: &str) {
-    let mut buffers = task_output_buffers().lock().unwrap();
+    let mut buffers = lock_or_recover(task_output_buffers());
     let buffer = buffers.entry(task_id.to_string()).or_default();
     buffer.push_str(output);
     if buffer.len() <= MAX_TASK_OUTPUT_SNAPSHOT_BYTES {
@@ -640,11 +646,11 @@ pub async fn run_task(
 
         // Determine exit status from the child process result.
         let child_exited_ok = {
-            if let Some(handles) = handle_for_reader.lock().unwrap().as_ref() {
+            if let Some(handles) = lock_or_recover(handle_for_reader.as_ref()).as_ref() {
                 handles
                     .child
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
                     .try_wait()
                     .ok()
                     .flatten()
@@ -657,7 +663,7 @@ pub async fn run_task(
 
         let manually_completed = manually_completed_tasks()
             .lock()
-            .unwrap()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(&task_id_for_reader);
         let final_status = task_final_status(
             manually_completed,
@@ -668,7 +674,7 @@ pub async fn run_task(
         // Cleanup and status emission belong only to this PTY generation. A
         // retry may already have installed another handle under the same id.
         let owns_registry = {
-            let mut registry = pty_registry().lock().unwrap();
+            let mut registry = lock_or_recover(pty_registry());
             let owns = registry
                 .get(&task_id_for_reader)
                 .is_some_and(|current| Arc::ptr_eq(current, &handle_for_reader));
@@ -682,7 +688,7 @@ pub async fn run_task(
         }
         task_output_buffers()
             .lock()
-            .unwrap()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(&task_id_for_reader);
         super::agent_event_watcher::cleanup_task_events(&task_id_for_reader);
         let _ = app_for_reader.emit(
@@ -990,16 +996,16 @@ fn dirs_next() -> Option<std::path::PathBuf> {
 
 #[tauri::command]
 pub async fn agent_send_input(task_id: String, data: String) -> Result<(), String> {
-    let registry = pty_registry().lock().unwrap();
+    let registry = lock_or_recover(pty_registry());
     let Some(handle) = registry.get(&task_id) else {
         return Ok(()); // PTY closed; silently drop.
     };
     {
-        let handle_guard = handle.lock().unwrap();
+        let handle_guard = lock_or_recover(handle.as_ref());
         let Some(handles) = handle_guard.as_ref() else {
             return Ok(());
         };
-        let mut writer = handles.writer.lock().unwrap();
+        let mut writer = lock_or_recover(&handles.writer);
         writer
             .write_all(data.as_bytes())
             .map_err(|e| e.to_string())?;
@@ -1015,9 +1021,9 @@ pub async fn agent_resize_pty(task_id: String, cols: u16, rows: u16) -> Result<(
     if cols < 2 || rows < 2 || cols > 10_000 || rows > 10_000 {
         return Ok(());
     }
-    let registry = pty_registry().lock().unwrap();
+    let registry = lock_or_recover(pty_registry());
     if let Some(handle) = registry.get(&task_id) {
-        let handle_guard = handle.lock().unwrap();
+        let handle_guard = lock_or_recover(handle.as_ref());
         if let Some(handles) = handle_guard.as_ref() {
             handles
                 .master
@@ -1035,13 +1041,13 @@ pub async fn agent_resize_pty(task_id: String, cols: u16, rows: u16) -> Result<(
 
 #[tauri::command]
 pub async fn cancel_task(task_id: String, project_path: Option<String>) -> Result<(), String> {
-    let _ = cancelled_tasks().lock().unwrap().insert(task_id.clone());
-    let _ = manually_completed_tasks().lock().unwrap().remove(&task_id);
-    let registry = pty_registry().lock().unwrap();
+    let _ = lock_or_recover(cancelled_tasks()).insert(task_id.clone());
+    let _ = lock_or_recover(manually_completed_tasks()).remove(&task_id);
+    let registry = lock_or_recover(pty_registry());
     if let Some(handle) = registry.get(&task_id) {
-        if let Some(handles) = handle.lock().unwrap().as_ref() {
+        if let Some(handles) = lock_or_recover(handle.as_ref()).as_ref() {
             handles.closed.store(true, Ordering::Relaxed);
-            let mut child = handles.child.lock().unwrap();
+            let mut child = lock_or_recover(&handles.child);
             let _ = child.kill();
         }
     }
@@ -1056,20 +1062,17 @@ pub async fn cancel_task(task_id: String, project_path: Option<String>) -> Resul
 /// user-confirmed completion with `cancelled` or `failed`.
 #[tauri::command]
 pub async fn complete_task(task_id: String) -> Result<(), String> {
-    manually_completed_tasks()
-        .lock()
-        .unwrap()
-        .insert(task_id.clone());
-    let _ = cancelled_tasks().lock().unwrap().remove(&task_id);
+    lock_or_recover(manually_completed_tasks()).insert(task_id.clone());
+    let _ = lock_or_recover(cancelled_tasks()).remove(&task_id);
 
-    let registry = pty_registry().lock().unwrap();
+    let registry = lock_or_recover(pty_registry());
     if let Some(handle) = registry.get(&task_id) {
-        if let Some(handles) = handle.lock().unwrap().as_ref() {
-            let mut child = handles.child.lock().unwrap();
+        if let Some(handles) = lock_or_recover(handle.as_ref()).as_ref() {
+            let mut child = lock_or_recover(&handles.child);
             let _ = child.kill();
         }
     } else {
-        let _ = manually_completed_tasks().lock().unwrap().remove(&task_id);
+        let _ = lock_or_recover(manually_completed_tasks()).remove(&task_id);
     }
     Ok(())
 }
@@ -1083,9 +1086,7 @@ pub fn reset_task_process(task_id: String) -> Result<(), String> {
 /// Return a bounded active-task terminal snapshot for a workbench remount.
 #[tauri::command]
 pub fn get_task_output_snapshot(task_id: String) -> String {
-    task_output_buffers()
-        .lock()
-        .unwrap()
+    lock_or_recover(task_output_buffers())
         .get(&task_id)
         .cloned()
         .unwrap_or_default()
@@ -1095,24 +1096,24 @@ pub fn get_task_output_snapshot(task_id: String) -> String {
 /// for the frontend's "active task" indicator.
 #[tauri::command]
 pub fn get_active_task_ids() -> Vec<String> {
-    pty_registry().lock().unwrap().keys().cloned().collect()
+    lock_or_recover(pty_registry()).keys().cloned().collect()
 }
 
 pub(crate) fn is_task_active(task_id: &str) -> bool {
-    pty_registry()
-        .lock()
-        .map(|registry| registry.contains_key(task_id))
-        .unwrap_or(false)
+    lock_or_recover(pty_registry()).contains_key(task_id)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         append_task_output, claude_project_directory_name, cleanup_task_attachments,
-        decode_task_image, permission_flag, prompt_with_attachments, prompt_with_project_prefix,
-        resume_arguments, safe_task_id, task_final_status, task_notification_url,
-        task_output_buffers, TaskLaunchRequest, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
+        decode_task_image, lock_or_recover, permission_flag, prompt_with_attachments,
+        prompt_with_project_prefix, resume_arguments, safe_task_id, task_final_status,
+        task_notification_url, task_output_buffers, PtyHandle, TaskLaunchRequest,
+        MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
     };
+    use std::collections::HashMap;
+    use std::sync::Mutex;
 
     #[test]
     fn tool_call_watcher_is_task_scoped_without_global_session_scan() {
@@ -1291,15 +1292,24 @@ mod tests {
     #[test]
     fn output_snapshot_is_bounded_without_breaking_utf8() {
         let task_id = "task-output-test";
-        task_output_buffers().lock().unwrap().remove(task_id);
+        lock_or_recover(task_output_buffers()).remove(task_id);
         append_task_output(task_id, &"a".repeat(MAX_TASK_OUTPUT_SNAPSHOT_BYTES + 5));
         append_task_output(task_id, "你好");
-        let snapshot = task_output_buffers()
-            .lock()
-            .unwrap()
+        let snapshot = lock_or_recover(task_output_buffers())
             .remove(task_id)
             .unwrap();
         assert!(snapshot.len() <= MAX_TASK_OUTPUT_SNAPSHOT_BYTES);
         assert!(snapshot.ends_with("你好"));
+    }
+
+    #[test]
+    fn poisoned_task_registry_lock_is_recovered() {
+        let lock = Mutex::new(HashMap::<String, PtyHandle>::new());
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = lock.lock().unwrap();
+            panic!("intentional task registry poison");
+        }));
+
+        assert!(lock_or_recover(&lock).is_empty());
     }
 }

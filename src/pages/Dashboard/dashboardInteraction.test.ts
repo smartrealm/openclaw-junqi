@@ -12,7 +12,8 @@ const gatewayStore = fs.readFileSync(path.join(here, '../../stores/gatewayDataSt
 
 test('dashboard compaction calls the canonical Gateway operation with real feedback', () => {
   assert.match(gateway, /async compactSession\(sessionKey/);
-  assert.match(gateway, /message: '\/compact'/);
+  assert.match(gateway, /sessions\.compact/);
+  assert.match(gateway, /buildSessionsCompactParams\(sessionKey\)/);
   assert.match(dashboard, /await gateway\.compactSession\(sessionKey\)/);
   assert.doesNotMatch(dashboard, /aegis:compress-session/);
 });

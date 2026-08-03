@@ -1,4 +1,5 @@
 import type { TalkGatewayEvent } from '@/services/gateway/talkEventBridge';
+import { decodeTalkSessionReplacedPayload } from '@/services/gateway/talkTypes';
 import type { TalkGatewayClient } from '@/services/gateway/TalkGatewayClient';
 import { MAX_VOICE_WAKE_PCM_FRAMES } from './VoiceWakeAudioLimits';
 
@@ -184,7 +185,15 @@ export class TalkConversationCoordinator {
 
   private handleEvent(event: TalkGatewayEvent): void {
     if (event.sessionId !== this.snapshot.sessionId || !this.ownsSession()) return;
-    if (event.type === 'output.audio.started' || event.type === 'output.audio.delta') {
+    if (event.type === 'session.ready') {
+      this.set({ ...this.snapshot, phase: 'listening', error: null });
+    } else if (event.type === 'session.replaced') {
+      // OpenClaw emits this to the previous managed-room client after another
+      // client takes ownership. Treat the payload as a terminal ownership
+      // fence so no queued PCM can continue on the old session.
+      if (!decodeTalkSessionReplacedPayload(event.payload)) return;
+      this.terminateWithError('talk_session_replaced');
+    } else if (event.type === 'output.audio.started' || event.type === 'output.audio.delta') {
       this.set({ ...this.snapshot, phase: 'speaking', error: null });
       if (event.audioBase64) this.enqueueOutput(event.sessionId, event.audioBase64);
     } else if (event.type === 'output.audio.done') {
@@ -193,9 +202,19 @@ export class TalkConversationCoordinator {
       void this.stopNativeOutput();
       this.set({ ...this.snapshot, phase: 'listening', error: null });
     } else if (event.type === 'session.error' || event.type === 'session.closed') {
-      void this.stopNativeOutput();
-      this.set({ ...INITIAL, phase: 'error', error: `Talk session ${event.type}` });
+      this.terminateWithError(`talk_session_${event.type === 'session.error' ? 'error' : 'closed'}`);
     }
+  }
+
+  private terminateWithError(error: string): void {
+    this.generation += 1;
+    this.pendingFrames = [];
+    this.appendQueue = Promise.resolve();
+    this.unsubscribeEvents?.();
+    this.unsubscribeEvents = null;
+    this.sessionKey = null;
+    void this.stopNativeOutput();
+    this.set({ ...INITIAL, phase: 'error', error });
   }
 
   private enqueueOutput(sessionId: string, audioBase64: string): void {

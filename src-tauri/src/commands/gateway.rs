@@ -633,6 +633,41 @@ mod runtime_observation_tests {
     }
 
     #[test]
+    fn bug_win_restart_cli_wait_covers_the_native_service_readiness_contract() {
+        assert_eq!(
+            native_gateway_restart_command_timeout_secs(),
+            native_gateway_readiness_timeout_secs()
+        );
+        let windows_policy = GatewayStartupPolicy::for_platform(true);
+        assert_eq!(windows_policy.first_output_timeout.as_secs(), 120);
+        assert_eq!(windows_policy.readiness_after_output.as_secs(), 90);
+        assert_eq!(
+            windows_policy.first_output_timeout.as_secs()
+                + windows_policy.readiness_after_output.as_secs(),
+            210
+        );
+        assert!(
+            native_gateway_restart_command_timeout_secs() >= if cfg!(windows) { 180 } else { 60 }
+        );
+    }
+
+    #[test]
+    fn bug_win_stopped_selected_service_uses_start_transition() {
+        assert_eq!(
+            native_gateway_service_lifecycle_action(true, true),
+            "restart"
+        );
+        assert_eq!(
+            native_gateway_service_lifecycle_action(false, true),
+            "start"
+        );
+        assert_eq!(
+            native_gateway_service_lifecycle_action(true, false),
+            "start"
+        );
+    }
+
+    #[test]
     fn missing_official_service_is_restored_only_for_explicit_system_service_intent() {
         use crate::{
             commands::gateway_service::{GatewayServiceInspection, GatewayServiceOwnership},
@@ -643,6 +678,7 @@ mod runtime_observation_tests {
             ownership: GatewayServiceOwnership::Absent,
             installed: false,
             running: false,
+            runtime_known: true,
         };
         assert!(should_restore_preferred_official_service(
             GatewayLifecyclePreference::SystemService,
@@ -674,6 +710,7 @@ mod runtime_observation_tests {
                 ownership: GatewayServiceOwnership::SelectedState,
                 installed: true,
                 running: false,
+                runtime_known: true,
             },
         ));
     }
@@ -686,6 +723,7 @@ mod runtime_observation_tests {
             ownership: GatewayServiceOwnership::SelectedState,
             installed: true,
             running: true,
+            runtime_known: true,
         };
         assert_eq!(
             official_gateway_handoff(selected_running).unwrap(),
@@ -720,6 +758,7 @@ mod runtime_observation_tests {
                 ownership: GatewayServiceOwnership::Absent,
                 installed: false,
                 running: false,
+                runtime_known: true,
             })
             .unwrap(),
             None
@@ -1800,12 +1839,12 @@ struct GatewayStartupPolicy {
 
 impl GatewayStartupPolicy {
     fn current() -> Self {
+        Self::for_platform(cfg!(windows))
+    }
+
+    fn for_platform(is_windows: bool) -> Self {
         Self {
-            first_output_timeout: std::time::Duration::from_secs(if cfg!(windows) {
-                120
-            } else {
-                90
-            }),
+            first_output_timeout: std::time::Duration::from_secs(if is_windows { 120 } else { 90 }),
             readiness_after_output: std::time::Duration::from_secs(90),
             heartbeat_interval: std::time::Duration::from_secs(15),
         }
@@ -1818,6 +1857,29 @@ impl GatewayStartupPolicy {
 pub(crate) fn native_gateway_readiness_timeout_secs() -> u64 {
     let policy = GatewayStartupPolicy::current();
     policy.first_output_timeout.as_secs() + policy.readiness_after_output.as_secs()
+}
+
+/// OpenClaw's official `gateway restart` command performs its own post-restart
+/// health wait. The bundled Windows CLI bounds that phase at 180 seconds, so
+/// JunQi must not terminate the CLI after the old 45-second wrapper timeout
+/// while the selected Scheduled Task is still starting.
+pub(crate) fn native_gateway_restart_command_timeout_secs() -> u64 {
+    native_gateway_readiness_timeout_secs()
+}
+
+/// OpenClaw's Windows service restart path first ends the Scheduled Task. The
+/// installed 2026.7.1-2 CLI also routes `gateway start` through that restart
+/// path for an already-registered task, so the caller handles a stopped
+/// Windows task with a selected-task `schtasks /Run` operation.
+pub(crate) fn native_gateway_service_lifecycle_action(
+    running: bool,
+    runtime_known: bool,
+) -> &'static str {
+    if runtime_known && running {
+        "restart"
+    } else {
+        "start"
+    }
 }
 
 fn managed_gateway_diagnostics(state: &GatewayProcess, started_at_ms: i64, limit: usize) -> String {
@@ -2324,9 +2386,19 @@ pub async fn restart_gateway(
         return restart_managed_gateway_without_service(app, state.clone(), port, reason).await;
     }
 
+    let lifecycle_action =
+        native_gateway_service_lifecycle_action(inspection.running, inspection.runtime_known);
     emit_restart_progress(
         &app,
-        format!("Restarting OpenClaw Gateway service on port {}...", port),
+        format!(
+            "{} OpenClaw Gateway service on port {}...",
+            if lifecycle_action == "restart" {
+                "Restarting"
+            } else {
+                "Starting"
+            },
+            port
+        ),
     );
 
     if stale_service_running == Some(true) {
@@ -2400,84 +2472,135 @@ pub async fn restart_gateway(
     // simply return success when an external listener is already serving.
     let context = service_identity.command_context(Some(&gw_path));
     let mut cmd = runtime.command(&context);
-    cmd.args(["gateway", "restart"])
+    cmd.args(["gateway", lifecycle_action])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
-    let mut child = match cmd.spawn() {
-        Ok(child) => child,
-        Err(error) => {
-            let reason = format!("Failed to restart gateway service: {}", error);
-            return Err(selected_service_restart_error(&state, reason));
-        }
-    };
-    let restart_pid = child.id();
-    let restart_started = std::time::Instant::now();
-    crate::commands::setup_diagnostics::record_process_started(
-        &app,
-        "gateway",
-        "openclaw-gateway-restart",
-        restart_pid,
-        "openclaw gateway restart",
-    );
-
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-
-    if let Some(out) = stdout {
-        spawn_restart_log_reader(
-            app.clone(),
-            out,
-            crate::state::gateway_process::LogSource::ChildStdout,
+    // OpenClaw 2026.7.1-2 implements `gateway start` for an installed Windows
+    // task by calling the same restart helper as `gateway restart`. That helper
+    // begins with `schtasks /End`, which fails when the task is already stopped.
+    // The selected-task wrapper uses the official task identity and invokes
+    // `schtasks /Run` directly for this one stopped-task transition.
+    let use_selected_windows_task_start = cfg!(windows) && lifecycle_action == "start";
+    if use_selected_windows_task_start {
+        crate::commands::gateway_service::start_selected_gateway_service_with_path(
+            &runtime,
+            &paths::desktop_dir(),
+            &config_path,
+            Some(&gw_path),
+        )
+        .await
+        .map_err(|error| selected_service_restart_error(&state, error))?;
+    } else {
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                let reason = format!("Failed to restart gateway service: {}", error);
+                return Err(selected_service_restart_error(&state, reason));
+            }
+        };
+        let restart_pid = child.id();
+        let restart_started = std::time::Instant::now();
+        crate::commands::setup_diagnostics::record_process_started(
+            &app,
+            "gateway",
             "openclaw-gateway-restart",
+            restart_pid,
+            &format!("openclaw gateway {lifecycle_action}"),
         );
-    }
-    if let Some(err) = stderr {
-        spawn_restart_log_reader(
-            app.clone(),
-            err,
-            crate::state::gateway_process::LogSource::ChildStderr,
-            "openclaw-gateway-restart",
-        );
-    }
 
-    let status = match tokio::time::timeout(std::time::Duration::from_secs(45), child.wait()).await
-    {
-        Ok(Ok(status)) => status,
-        Ok(Err(error)) => {
-            let reason = format!("Failed waiting for gateway restart: {}", error);
-            crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
-            return Err(selected_service_restart_error(&state, reason));
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        if let Some(out) = stdout {
+            spawn_restart_log_reader(
+                app.clone(),
+                out,
+                crate::state::gateway_process::LogSource::ChildStdout,
+                "openclaw-gateway-restart",
+            );
         }
-        Err(_) => {
-            let reason = "Timed out while restarting gateway service".to_string();
-            crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
-            return Err(selected_service_restart_error(&state, reason));
+        if let Some(err) = stderr {
+            spawn_restart_log_reader(
+                app.clone(),
+                err,
+                crate::state::gateway_process::LogSource::ChildStderr,
+                "openclaw-gateway-restart",
+            );
         }
-    };
-    crate::commands::setup_diagnostics::record_process_finished(
-        &app,
-        "gateway",
-        "openclaw-gateway-restart",
-        restart_pid,
-        status.code().map(i64::from),
-        restart_started.elapsed(),
-    );
-    if !status.success() {
-        let msg = format!("openclaw gateway restart exited with {}", status);
-        emit_restart_progress(&app, &msg);
-        return Err(selected_service_restart_error(&state, msg));
+
+        let status = match tokio::time::timeout(
+            std::time::Duration::from_secs(native_gateway_restart_command_timeout_secs()),
+            child.wait(),
+        )
+        .await
+        {
+            Ok(Ok(status)) => status,
+            Ok(Err(error)) => {
+                let reason = format!("Failed waiting for gateway {lifecycle_action}: {}", error);
+                crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
+                return Err(selected_service_restart_error(&state, reason));
+            }
+            Err(_) => {
+                let reason =
+                    format!("Timed out while running gateway {lifecycle_action} service command");
+                crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
+                return Err(selected_service_restart_error(&state, reason));
+            }
+        };
+        crate::commands::setup_diagnostics::record_process_finished(
+            &app,
+            "gateway",
+            "openclaw-gateway-restart",
+            restart_pid,
+            status.code().map(i64::from),
+            restart_started.elapsed(),
+        );
+        if !status.success() {
+            let msg = format!("openclaw gateway {lifecycle_action} exited with {}", status);
+            emit_restart_progress(&app, &msg);
+            return Err(selected_service_restart_error(&state, msg));
+        }
     }
 
     emit_restart_progress(
         &app,
-        "Gateway service restart command completed; waiting for health check...",
+        format!(
+            "Gateway service {lifecycle_action} command completed; waiting for health check..."
+        ),
     );
 
     emit_restart_progress(&app, "Waiting for Gateway to become reachable...");
     if wait_for_selected_gateway(port, &config_path, native_gateway_readiness_timeout_secs()).await
     {
+        // A healthy authenticated listener is necessary but not sufficient on
+        // Windows: a stale process can survive a Scheduled Task transition and
+        // briefly answer on the same port. Re-read the official service after
+        // readiness so the result is bound to the selected task and its current
+        // runtime state, not only to a shared TCP endpoint.
+        emit_restart_progress(
+            &app,
+            "Rechecking the selected OpenClaw Gateway service after readiness...",
+        );
+        let after = crate::commands::gateway_service::inspect_gateway_service_state(
+            &runtime,
+            &service_identity,
+            Some(&gw_path),
+        )
+        .await
+        .map_err(|error| {
+            selected_service_restart_error(
+                &state,
+                format!("Could not verify the Gateway service after restart: {error}"),
+            )
+        })?;
+        if !crate::commands::gateway_service::is_running_current_selected_service(after) {
+            return Err(selected_service_restart_error(
+                &state,
+                "Gateway endpoint became reachable, but the selected OpenClaw service was not verified as installed and running; restart was not reported as successful",
+            ));
+        }
         let token = read_gateway_token(&config_path);
         emit_restart_progress(&app, "Gateway health check passed.");
         state.transition(

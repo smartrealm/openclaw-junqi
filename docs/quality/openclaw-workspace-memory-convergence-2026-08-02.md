@@ -26,4 +26,4 @@ Gateway `doctor.memory.status` 与 `doctor.memory.remHarness` 是诊断协议，
 ## 未验证边界
 
 - 未做含深层 `memory/` 目录和两百个以上文件的桌面真机验收；服务会在该上限停止读取，不应阻塞界面。
-- 本次未接入需要 `operator.read` 的 REM harness，也未触发 `doctor.memory.status` 的 provider 探测；后续若增加诊断卡片，必须独立声明权限、探测成本和失败状态。
+- Gateway 诊断已单独接入 `doctor.memory.status` 与 `doctor.memory.remHarness`，实现依据、探测成本、失败状态和未验证边界见 [`OpenClaw Memory 只读诊断能力对齐`](openclaw-memory-diagnostics-parity-2026-08-03.md)。本页的工作区文件读取边界不因此扩大。

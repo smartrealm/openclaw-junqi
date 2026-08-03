@@ -6,6 +6,7 @@ import { sessionMutationGate } from './sessionMutationGate';
 
 interface ChatSendGateway {
   sendMessage: typeof gateway.sendMessage;
+  steerMessage?: typeof gateway.steerMessage;
 }
 
 interface ChatSendState {
@@ -25,6 +26,8 @@ export interface ChatSendRequest {
   clientMessageId?: string;
   optimisticMessage?: Partial<ChatMessage> | false;
   queueIfBusy?: boolean;
+  /** Use OpenClaw's interrupt-and-steer session RPC instead of chat.send. */
+  steer?: boolean;
 }
 
 function errorMessage(error: unknown): string {
@@ -59,6 +62,9 @@ export class ChatSendCoordinator {
 
     const sessionCannotSend = state.typingBySession[request.sessionKey]
       || sessionMutationGate.isBlocked(request.sessionKey);
+    if (request.steer && sessionMutationGate.isBlocked(request.sessionKey)) {
+      throw new Error('Session control is busy with a maintenance operation');
+    }
     if (request.queueIfBusy !== false && sessionCannotSend) {
       try {
         state.enqueueMessage(request.sessionKey, {
@@ -137,12 +143,19 @@ export class ChatSendCoordinator {
     state.setIsTyping(true, request.sessionKey);
 
     try {
-      const result = await this.gatewayPort.sendMessage(
-        request.message,
-        request.attachments,
-        request.sessionKey,
-        { clientMessageId, sessionId: request.sessionId },
-      ) as { queued?: boolean } | undefined;
+      const result = (request.steer
+        ? await (this.gatewayPort.steerMessage?.(
+          request.message,
+          request.attachments,
+          request.sessionKey,
+          { clientMessageId },
+        ) ?? Promise.reject(new Error('Session steering is unavailable')))
+        : await this.gatewayPort.sendMessage(
+          request.message,
+          request.attachments,
+          request.sessionKey,
+          { clientMessageId, sessionId: request.sessionId },
+        )) as { queued?: boolean } | undefined;
       const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
       if (!deliveryUncertain) {
         state.updateMessage(request.sessionKey, clientMessageId, {
