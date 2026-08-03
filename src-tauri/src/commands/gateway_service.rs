@@ -697,6 +697,10 @@ pub(crate) fn belongs_to_selected_state(ownership: GatewayServiceOwnership) -> b
     )
 }
 
+fn service_uninstall_is_permitted(inspection: GatewayServiceInspection) -> bool {
+    inspection.installed && belongs_to_selected_state(inspection.ownership)
+}
+
 pub(crate) fn is_running_selected_service(inspection: GatewayServiceInspection) -> bool {
     inspection.installed && inspection.running && belongs_to_selected_state(inspection.ownership)
 }
@@ -889,7 +893,7 @@ pub(crate) async fn uninstall_selected_gateway_service(
 ) -> Result<bool, String> {
     let identity = GatewayServiceIdentity::for_runtime(state_dir, config_path, runtime);
     let inspection = inspect_gateway_service_state(runtime, &identity, search_path).await?;
-    if !belongs_to_selected_state(inspection.ownership) || !inspection.installed {
+    if !service_uninstall_is_permitted(inspection) {
         return Ok(false);
     }
 
@@ -905,38 +909,17 @@ pub(crate) async fn uninstall_selected_gateway_service(
         paths::save_gateway_lifecycle_preference(paths::GatewayLifecyclePreference::SystemService)?;
     }
 
-    if !stop_installed_selected_gateway_service_verified(
-        runtime,
-        state_dir,
-        config_path,
-        search_path,
-        inspection,
-    )
-    .await?
-    {
-        return Err("The selected Gateway service changed before it could be uninstalled".into());
-    }
-
     let port = crate::commands::gateway::gateway_port_for_config(config_path);
     let uninstall_args = ["gateway", "uninstall", "--json"];
+    // OpenClaw 2026.7.1-2 owns stop-before-uninstall and verifies that the
+    // service is no longer loaded before returning success. Starting separate
+    // stop and post-status CLI processes here duplicated that lifecycle and
+    // made NSIS appear stalled. The selected identity was already attested by
+    // the status preflight above; JunQi retains an independent port postcondition
+    // because the official stop step is best-effort before artifact removal.
     let uninstall = run_service_command(runtime, &identity, search_path, &uninstall_args).await?;
     command_success(&uninstall, &uninstall_args)?;
 
-    // A zero CLI exit is not sufficient proof: lifecycle behavior and JSON
-    // output have evolved across OpenClaw versions. Re-read the official status
-    // contract under the same selected state/config context and require both
-    // service artifact absence and listener release before reporting success.
-    let after = inspect_gateway_service_state(runtime, &identity, search_path).await?;
-    // Official versions represent a missing service either as `service: null`
-    // or as an unloaded `service` object with no installed artifact. The
-    // normalized installed/running bits are the stable absence contract; the
-    // ownership enum is intentionally not used after the artifact is gone.
-    if after.installed || after.running {
-        return Err(
-            "OpenClaw reported Gateway uninstall success, but the selected service artifact is still present; user data and the remaining service were left untouched"
-                .into(),
-        );
-    }
     crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000)
         .await
         .map_err(|error| {
@@ -1093,6 +1076,37 @@ mod tests {
             }),
             "an absent installation has nothing to stop"
         );
+    }
+
+    #[test]
+    fn uninstall_requires_an_installed_selected_service() {
+        for ownership in [
+            GatewayServiceOwnership::SelectedState,
+            GatewayServiceOwnership::StaleRuntime,
+            GatewayServiceOwnership::StaleLocale,
+        ] {
+            assert!(service_uninstall_is_permitted(GatewayServiceInspection {
+                ownership,
+                installed: true,
+                running: false,
+            }));
+        }
+        for ownership in [
+            GatewayServiceOwnership::Foreign,
+            GatewayServiceOwnership::Unverifiable,
+            GatewayServiceOwnership::Absent,
+        ] {
+            assert!(!service_uninstall_is_permitted(GatewayServiceInspection {
+                ownership,
+                installed: true,
+                running: true,
+            }));
+        }
+        assert!(!service_uninstall_is_permitted(GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::SelectedState,
+            installed: false,
+            running: false,
+        }));
     }
 
     #[test]

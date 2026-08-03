@@ -21,6 +21,15 @@ pub(crate) fn run() -> Result<(), String> {
         .block_on(run_async())
 }
 
+fn native_runtime_discovery_required(
+    presence: gateway_service::GatewayServiceArtifactPresence,
+) -> bool {
+    !matches!(
+        presence,
+        gateway_service::GatewayServiceArtifactPresence::Absent
+    )
+}
+
 async fn run_async() -> Result<(), String> {
     let mut errors = Vec::new();
 
@@ -44,6 +53,16 @@ async fn run_async() -> Result<(), String> {
         {
             errors.push(format!("remove JunQi Docker Gateway container: {error}"));
         }
+        return finish(errors);
+    }
+
+    // The common Desktop-managed Native path has no official service artifact.
+    // Prove that cheaply before resolving npm prefixes, Node and OpenClaw.
+    // Present or unverifiable artifacts still cross the complete selected
+    // state/config/runtime ownership gate below.
+    if !native_runtime_discovery_required(
+        gateway_service::inspect_gateway_service_artifacts_without_runtime().await,
+    ) {
         return finish(errors);
     }
 
@@ -105,5 +124,14 @@ mod tests {
     #[test]
     fn cleanup_argument_is_explicit() {
         assert_eq!(CLEANUP_ARGUMENT, "--junqi-uninstall-cleanup");
+    }
+
+    #[test]
+    fn native_runtime_discovery_is_skipped_only_for_proven_artifact_absence() {
+        use gateway_service::GatewayServiceArtifactPresence::{Absent, Present, Unverifiable};
+
+        assert!(!native_runtime_discovery_required(Absent));
+        assert!(native_runtime_discovery_required(Present));
+        assert!(native_runtime_discovery_required(Unverifiable));
     }
 }
