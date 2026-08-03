@@ -631,7 +631,20 @@ export function reconcileTaskHistory(
     if (!isTerminalRun(run.status)) {
       run.historyVerifiedAt = now;
       run.historyActive = params.hasActiveRun && activeRunIds.has(run.runId);
-      if (!params.hasActiveRun && run.historyActive === false) {
+      if (run.historyActive && run.status === 'cancel_requested') {
+        // A local cancellation intent is not a remote terminal fact. Only an
+        // exact active Run from OpenClaw history can reopen this local model
+        // projection; incomplete tool calls remain untouched for later events.
+        run.status = 'running';
+        run.updatedAt = now;
+        for (const node of checkpoint.nodes.filter((candidate) => (
+          candidate.runId === run.runId
+          && candidate.kind === 'model_turn'
+          && candidate.status === 'cancel_requested'
+        ))) {
+          updateNodeStatus(node, 'running', now);
+        }
+      } else if (!params.hasActiveRun && run.historyActive === false) {
         run.status = 'verification_required';
         run.updatedAt = now;
         for (const node of checkpoint.nodes.filter((candidate) => (

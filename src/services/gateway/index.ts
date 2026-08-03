@@ -836,6 +836,12 @@ export const gateway = {
       }
       return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
     } catch (error) {
+      // sessions.steer can fail after its native admission has attempted to
+      // interrupt the active Run. An RPC error alone cannot distinguish that
+      // case from a rejected request, so defer to the fenced history resolver.
+      if (isSteer && requestDispatched) {
+        void sessionRunReconciler.reconcile(sessionKey);
+      }
       if (chatHandler.isSendObserved(sessionKey, clientMessageId)) {
         return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
       }

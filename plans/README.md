@@ -79,6 +79,7 @@ plans/
 - [OpenClaw 会话操作事件对齐](quality/2026-08-03-openclaw-session-operation.md)
 - [OpenClaw 原生会话压缩对齐](quality/2026-08-04-openclaw-native-session-compaction.md)
 - [OpenClaw 原生会话中止对齐](quality/2026-08-03-openclaw-native-session-abort.md)
+- [OpenClaw 原生会话转向核验对齐](quality/2026-08-03-openclaw-native-session-steer-reconciliation.md)
 - [OpenClaw 原生会话队列对齐](quality/2026-08-03-openclaw-native-session-queue-alignment.md)
 - [OpenClaw 原生会话预览对齐](quality/2026-08-03-openclaw-native-session-preview.md)
 - [OpenClaw 原生有效工具目录对齐](quality/2026-08-03-openclaw-native-tools-effective.md)

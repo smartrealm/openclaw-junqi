@@ -293,6 +293,43 @@ test('history reconciliation records authority without inventing a tool result',
   assert.equal(reconciled.tasks[0]?.nodes.find((node) => node.toolCallId === 'tool-1')?.status, 'verification_required');
 });
 
+test('history reopens only a cancel-requested Run that OpenClaw still reports as active', () => {
+  const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
+    binding,
+    runId: 'run-steer-old',
+    source: 'jarvis',
+    now: 10,
+  });
+  const toolStarted = recordTaskToolEvent(started, binding, {
+    runId: 'run-steer-old', toolCallId: 'tool-steer-old', toolName: 'Write', phase: 'start', now: 15,
+  });
+  const stopping = requestTaskRunStop(toolStarted, binding, 20);
+  const reconciled = reconcileTaskHistory(stopping, binding, {
+    sessionId: 'session-1', hasActiveRun: true, activeRunIds: ['run-steer-old'], now: 30,
+  });
+
+  assert.equal(reconciled.tasks[0]?.runs[0]?.status, 'running');
+  assert.equal(reconciled.tasks[0]?.runs[0]?.historyActive, true);
+  assert.equal(reconciled.tasks[0]?.nodes.find((node) => node.kind === 'model_turn')?.status, 'running');
+  assert.equal(reconciled.tasks[0]?.nodes.find((node) => node.toolCallId === 'tool-steer-old')?.status, 'cancel_requested');
+});
+
+test('history does not reopen a cancel-requested Run for another active Run', () => {
+  const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
+    binding,
+    runId: 'run-steer-old',
+    source: 'jarvis',
+    now: 10,
+  });
+  const stopping = requestTaskRunStop(started, binding, 20);
+  const reconciled = reconcileTaskHistory(stopping, binding, {
+    sessionId: 'session-1', hasActiveRun: true, activeRunIds: ['run-other'], now: 30,
+  });
+
+  assert.equal(reconciled.tasks[0]?.runs[0]?.status, 'cancel_requested');
+  assert.equal(reconciled.tasks[0]?.runs[0]?.historyActive, false);
+});
+
 test('history-only verification does not become cancelled when a late tool result arrives', () => {
   const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
     binding,

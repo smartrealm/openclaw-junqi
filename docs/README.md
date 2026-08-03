@@ -166,6 +166,7 @@ docs/
 - [OpenClaw 会话操作事件对齐](quality/openclaw-session-operation-alignment-2026-08-03.md)
 - [OpenClaw 原生会话压缩对齐](quality/openclaw-native-session-compaction-alignment-2026-08-04.md)
 - [OpenClaw 原生会话中止对齐](quality/openclaw-native-session-abort-alignment-2026-08-03.md)
+- [OpenClaw 原生会话转向核验对齐](quality/openclaw-native-session-steer-reconciliation-2026-08-03.md)
 - [OpenClaw 原生会话队列对齐](quality/openclaw-native-session-queue-alignment-2026-08-03.md)
 - [OpenClaw 原生会话预览对齐](quality/openclaw-native-session-preview-alignment-2026-08-03.md)
 - [OpenClaw 原生有效工具目录对齐](quality/openclaw-native-tools-effective-alignment-2026-08-03.md)
