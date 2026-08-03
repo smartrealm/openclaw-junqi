@@ -123,6 +123,7 @@ export type {
 } from '@/services/gateway/OpenClawSessionSearchClient';
 import { listOpenClawSessionLifecycle } from '@/services/gateway/OpenClawSessionListClient';
 import { parseCronStatus, type OpenClawCronStatusSummary } from '@/services/gateway/cronStatus';
+import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -1203,13 +1204,16 @@ function rejectGatewayResponse(
 async function fetchSessions(): Promise<boolean> {
   const ticket = beginGatewayRequest('sessions');
   if (!ticket) return false;
+  const mutationRevision = sessionListMutationFence.capture();
   const store = useGatewayDataStore.getState();
   store.setLoading('sessions', true);
   try {
     const responses = await listOpenClawSessionLifecycle(
       (method, params) => ticket.connection.request(method, params),
     );
-    if (!isCurrentGatewayRequest(ticket)) return false;
+    if (!isCurrentGatewayRequest(ticket) || !sessionListMutationFence.isCurrent(mutationRevision)) {
+      return false;
+    }
     const activeSnapshot = parseOpenClawSessionListSnapshot(responses.active);
     const archivedSnapshot = responses.archived === undefined
       ? undefined

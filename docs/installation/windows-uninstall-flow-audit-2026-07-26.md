@@ -82,6 +82,7 @@ Docker Gateway 由 JunQi 创建并带完整 ownership/state labels，同时使�
 - `pnpm lint` 通过；
 - `pnpm test` 通过：前端与源码契约 2302 项、脚本 237 项；
 - `cargo fmt -- --check` 与 `cargo check --lib` 通过；
+- 合并到主线后的 `GatewayServiceInspection` 新增 `runtime_known` 字段，三个卸载权限测试初始化器未同步，曾导致 Rust 测试无法编译；已补齐明确的已知 runtime 状态。
 - `cargo test --lib` 通过：700 项通过、4 项环境依赖测试忽略；
 - 新增卸载性能守护，证明无 artifact 快速返回，以及已安装服务只启动一次 ownership status 与一次官方 uninstall；
 - `git diff --check` 与修改文件 Emoji 扫描通过。

@@ -9,6 +9,8 @@ import {
   coalesceSessionsByKey,
   createLatestRequestGate,
   isSessionDeleted,
+  notifyNativeSessionCommit,
+  subscribeNativeSessionCommit,
 } from '@/utils/sessionLifecycle';
 import {
   __setSessionDeleteDepsForTest,
@@ -151,6 +153,24 @@ describe('session lifecycle regression fixes', () => {
     assert.equal(useGatewayDataStore.getState().sessions.some((session) => session.key === SESSION_KEY), false);
   });
 
+  test('NEW-SESSION-RACE a confirmed native create invalidates an older sessions.list request', () => {
+    const gate = createLatestRequestGate();
+    const staleRequest = gate.begin();
+    const unsubscribe = subscribeNativeSessionCommit(() => gate.invalidate());
+    try {
+      notifyNativeSessionCommit();
+      assert.equal(gate.isCurrent(staleRequest), false);
+    } finally {
+      unsubscribe();
+    }
+
+    const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+    assert.match(appSource, /subscribeNativeSessionCommit/);
+    assert.match(appSource, /sessionListRequestGateRef\.current\.invalidate\(\)/);
+    assert.match(appSource, /void loadSessions\(\)/);
+    assert.match(appSource, /sourceProjectionRevision/);
+  });
+
   test('BUG-03 a deleted identity does not hide a replacement with the same key', () => {
     seedSession();
     useChatStore.getState().setSessionIdentity(SESSION_KEY, 'session-old');
@@ -274,10 +294,14 @@ describe('session lifecycle regression fixes', () => {
     assert.match(source, /aria-busy=\{confirming/);
   });
 
-  test('BUG-07 route-based creation consumes params through React Router and can repeat', () => {
+  test('BUG-07 route-based creation consumes params only after success and exposes manual retry', () => {
     const source = readFileSync(new URL('../hooks/useAgentScopedSession.ts', import.meta.url), 'utf8');
+    const creationIndex = source.indexOf('createNativeSession({ agentId');
+    const successIndex = source.indexOf('if (!result.ok)');
+    const consumeIndex = source.indexOf('setParams(nextParams, { replace: true })');
     assert.match(source, /handledLocationKeyRef/);
-    assert.match(source, /setParams\(nextParams, \{ replace: true \}\)/);
+    assert.ok(creationIndex >= 0 && successIndex > creationIndex && consumeIndex > successIndex);
+    assert.match(source, /return \{ error, retrying, retry: createForRoute \}/);
     assert.doesNotMatch(source, /window\.history\.replaceState|appliedRef/);
   });
 

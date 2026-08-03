@@ -26,6 +26,7 @@ import {
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { createNativeSession } from '@/utils/sessionCreate';
+import { resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import {
@@ -455,6 +456,7 @@ function WorkbenchPanel() {
   const cronJobs = useGatewayDataStore((st) => st.cronJobs);
   const agents = useGatewayDataStore((st) => st.agents);
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
+  const newSessionAgentId = resolveNewSessionAgentId(activeKey, agents.map((agent) => agent.id));
   const typingBySession = useChatStore((st) => st.typingBySession);
   const typingStartedAtBySession = useChatStore((st) => st.typingStartedAtBySession);
   const thinkingBySession = useChatStore((st) => st.thinkingBySession);
@@ -604,8 +606,8 @@ function WorkbenchPanel() {
         icon={<Plus size={16} />}
         onClick={() => {
             void createNativeSession({
-              agentId: 'main',
-              label: t('sidebar.newChat', 'New chat'),
+              agentId: newSessionAgentId,
+              label: t('chat.newSessionLabel'),
             }).then((result) => {
               if (result.ok) {
                 navigate('/chat');

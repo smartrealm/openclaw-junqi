@@ -436,10 +436,12 @@ interface ChatState {
   // Sessions
   sessions: Session[];
   activeSessionKey: string;
+  /** Advances when local session membership, identity, or selection changes. */
+  sessionProjectionRevision: number;
   setSessions: (
     sessions: Session[],
     defaults?: { model: string | null; contextTokens: number | null },
-    options?: { completeSnapshot?: boolean },
+    options?: { completeSnapshot?: boolean; sourceProjectionRevision?: number },
   ) => void;
   setSessionIdentity: (key: string, sessionId: string, agentId?: string) => void;
   /** Commit a session only after `sessions.create` confirms its Gateway identity. */
@@ -1280,6 +1282,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Sessions ──
   sessions: [{ key: MAIN_SESSION, label: 'Main Session' }],
   activeSessionKey: MAIN_SESSION,
+  sessionProjectionRevision: 0,
   sessionGroups: [],
 
   setSessions: (sessions, defaults, options) => {
@@ -1290,19 +1293,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessionDefaults: prev,
       sessions: previousSessions,
       messagesPerSession,
+      sessionProjectionRevision,
     } = stateBeforeMerge;
     const defs = defaults ?? prev;
     const visibleIncomingSessions = coalesceSessionsByKey(withoutDeletedSessions(sessions));
     const previousByKey = new Map(previousSessions.map((session) => [session.key, session]));
+    const isSourceProjectionCurrent = options?.sourceProjectionRevision === undefined
+      || options.sourceProjectionRevision === sessionProjectionRevision;
+    // An old list may still improve display metadata, but it must not rotate a
+    // session back to an identity that was already replaced locally.
+    const lifecycleSafeIncomingSessions = isSourceProjectionCurrent
+      ? visibleIncomingSessions
+      : visibleIncomingSessions.map((session) => {
+          const previous = previousByKey.get(session.key);
+          if (!previous?.sessionId || !session.sessionId || previous.sessionId === session.sessionId) {
+            return session;
+          }
+          return { ...session, sessionId: previous.sessionId };
+        });
     const identityTransitions = collectSessionIdentityTransitions(
       previousSessions,
-      visibleIncomingSessions,
+      lifecycleSafeIncomingSessions,
     );
     const changedIdentityKeys = new Set(identityTransitions.map((transition) => transition.sessionKey));
     const transcriptReset = clearTranscriptStateForIdentityChanges(stateBeforeMerge, changedIdentityKeys);
     const retainedMessageCache = transcriptReset.messagesPerSession ?? messagesPerSession;
-    const incomingKeys = new Set(visibleIncomingSessions.map((session) => session.key));
-    const mergedSessions = visibleIncomingSessions.map((session) => {
+    const incomingKeys = new Set(lifecycleSafeIncomingSessions.map((session) => session.key));
+    const mergedSessions = lifecycleSafeIncomingSessions.map((session) => {
       const previous = previousByKey.get(session.key);
       const hasCachedMessages = Object.prototype.hasOwnProperty.call(retainedMessageCache, session.key);
       const cachedMessages = hasCachedMessages ? retainedMessageCache[session.key] ?? [] : [];
@@ -1336,12 +1353,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ? previous
         : projected;
     });
+    // The snapshot is allowed to prune only when no local selection or
+    // lifecycle transition happened after its request started. Without this
+    // fence, a late complete response can erase a confirmed new session and
+    // make removeSession fall back to a historical tab.
+    const canPruneMissingSessions = options?.completeSnapshot !== false && isSourceProjectionCurrent;
     const retainedPreviousSessions = previousSessions.filter((session) => (
-      !incomingKeys.has(session.key) && options?.completeSnapshot === false
+      !incomingKeys.has(session.key) && !canPruneMissingSessions
     ));
     const nextSessions = [...mergedSessions, ...retainedPreviousSessions];
-    const hasAuthoritativeMainSession = visibleIncomingSessions.some((session) => isAgentMainSession(session.key));
-    const removedCanonicalSessionKeys = options?.completeSnapshot !== false && hasAuthoritativeMainSession
+    const hasAuthoritativeMainSession = lifecycleSafeIncomingSessions
+      .some((session) => isAgentMainSession(session.key));
+    const removedCanonicalSessionKeys = canPruneMissingSessions && hasAuthoritativeMainSession
       ? previousSessions.flatMap((session) => {
           if (incomingKeys.has(session.key) || isAgentMainSession(session.key)) return [];
           return [session.key];
@@ -1386,6 +1409,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           category: null,
         } : {}),
       })),
+      ...(changed ? { sessionProjectionRevision: state.sessionProjectionRevision + 1 } : {}),
     }));
     if (changed) {
       publishSessionIdentityTransitions([{
@@ -1413,6 +1437,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessions: clearedSessions,
       openTabs,
       activeSessionKey: key,
+      ...(state.activeSessionKey === key ? {} : {
+        sessionProjectionRevision: state.sessionProjectionRevision + 1,
+      }),
       messages: msgs,
       renderBlocks: blocks ?? recomputeBlocks(msgs, key),
       responseGroups: groups ?? recomputeGroups(msgs, key),
@@ -1468,6 +1495,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const activeState = {
         openTabs,
         activeSessionKey: session.key,
+        sessionProjectionRevision: state.sessionProjectionRevision + 1,
         messages: msgs,
         renderBlocks: blocks ?? recomputeBlocks(msgs, session.key),
         responseGroups: groups ?? recomputeGroups(msgs, session.key),
@@ -1689,6 +1717,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return {
         sessions: clearedSessions,
         activeSessionKey: key,
+        ...(state.activeSessionKey === key ? {} : {
+          sessionProjectionRevision: state.sessionProjectionRevision + 1,
+        }),
         messages: cached,
         renderBlocks: blocks ?? recomputeBlocks(cached, key),
         responseGroups: groups ?? recomputeGroups(cached, key),
@@ -1705,6 +1736,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessions: clearedSessions,
       openTabs: newTabs,
       activeSessionKey: key,
+      ...(state.activeSessionKey === key ? {} : {
+        sessionProjectionRevision: state.sessionProjectionRevision + 1,
+      }),
       messages: msgs,
       renderBlocks: blocks ?? recomputeBlocks(msgs, key),
       responseGroups: groups ?? recomputeGroups(msgs, key),
@@ -1732,6 +1766,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessions: clearedSessions,
       openTabs: newTabs,
       activeSessionKey: newActive,
+      ...(newActive === state.activeSessionKey ? {} : {
+        sessionProjectionRevision: state.sessionProjectionRevision + 1,
+      }),
       messages: msgs,
       renderBlocks: blocks ?? recomputeBlocks(msgs, newActive),
       responseGroups: groups ?? recomputeGroups(msgs, newActive),
@@ -1782,6 +1819,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return {
       openTabs: newTabs,
       activeSessionKey: newActive,
+      sessionProjectionRevision: state.sessionProjectionRevision + 1,
       sessions: newSessions,
       messagesPerSession: restMessages,
       _blocksCache: restBlocks,

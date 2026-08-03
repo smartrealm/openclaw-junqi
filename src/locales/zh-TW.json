@@ -1384,6 +1384,7 @@
     "nextSession": "下一個會話",
     "newSession": "新增會話",
     "newSessionLabel": "新會話",
+    "newSessionCreationFailed": "無法建立新會話",
     "fullMessageUnavailable": "完整訊息無法使用",
     "sendFailed": "傳送失敗",
     "context": "上下文",

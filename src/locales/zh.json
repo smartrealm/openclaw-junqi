@@ -1413,6 +1413,7 @@
     "nextSession": "下一个会话",
     "newSession": "新建会话",
     "newSessionLabel": "新会话",
+    "newSessionCreationFailed": "无法创建新会话",
     "fullMessageUnavailable": "完整消息不可用",
     "sendFailed": "发送失败",
     "context": "上下文",

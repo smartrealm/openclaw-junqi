@@ -35,16 +35,27 @@ test('the new-session picker seeds from session context, not list order', () => 
 // action produced a different agent depending on which surface started it.
 test('every new-session entry resolves the agent the same way', () => {
   const dashboard = readFileSync('src/pages/Dashboard/index.tsx', 'utf8');
+  const sidebar = readFileSync('src/components/Layout/NavSidebar.tsx', 'utf8');
   assert.match(dashboard, /resolveNewSessionAgentId\(activeSessionKey/);
   assert.doesNotMatch(dashboard, /\/chat\?agent=main&new=1/);
+  assert.match(sidebar, /resolveNewSessionAgentId\(activeKey, agents\.map\(\(agent\) => agent\.id\)\)/);
+  assert.match(sidebar, /agentId: newSessionAgentId/);
+  assert.doesNotMatch(sidebar, /agentId: 'main'/);
 });
 
-test('the placeholder session label is localised', () => {
-  const source = readFileSync('src/hooks/useAgentScopedSession.ts', 'utf8');
-  assert.match(source, /label: t\('chat\.newSessionLabel'\)/);
-  assert.doesNotMatch(source, /label: '新会话'/);
+test('normal creation uses one localised persistent label and forks request transcript copying', () => {
+  const route = readFileSync('src/hooks/useAgentScopedSession.ts', 'utf8');
+  const picker = readFileSync('src/components/Chat/ChatTabs.tsx', 'utf8');
+  const sidebar = readFileSync('src/components/Layout/NavSidebar.tsx', 'utf8');
+  const actions = readFileSync('src/components/Chat/session-actions/SessionActionsMenu.tsx', 'utf8');
+  for (const source of [route, picker, sidebar]) {
+    assert.match(source, /label: t\('chat\.newSessionLabel'\)/);
+    assert.doesNotMatch(source, /label: '新会话'/);
+  }
+  assert.match(actions, /parentSessionKey: session\.key,\s+fork: true/);
   for (const locale of ['zh', 'zh-TW', 'en']) {
     const bundle = JSON.parse(readFileSync(`src/locales/${locale}.json`, 'utf8'));
     assert.equal(typeof bundle.chat?.newSessionLabel, 'string', `${locale} is missing chat.newSessionLabel`);
+    assert.equal(typeof bundle.chat?.newSessionCreationFailed, 'string', `${locale} is missing chat.newSessionCreationFailed`);
   }
 });

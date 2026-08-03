@@ -126,6 +126,8 @@ jobs:
             asset_paths: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
+              .artifacts/windows-tag-internal-signing/*.cer
+              .artifacts/windows-tag-internal-signing/*.txt
     steps:
       - name: Checkout exact release source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -169,6 +171,7 @@ jobs:
         run: cargo test --locked --lib --target ${{ matrix.target }} --no-fail-fast
 
       - name: Build signed updater artifacts and installers
+        if: runner.os != 'Windows'
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -179,6 +182,66 @@ jobs:
           args: >-
             --target ${{ matrix.target }} ${{ matrix.bundle_args }}
             --config src-tauri/tauri.hosted-release.conf.json
+
+      - name: Compile Windows application before internal signing
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CARGO_NET_OFFLINE: "true"
+        run: pnpm exec tauri build --target ${{ matrix.target }} --no-bundle --config src-tauri/tauri.hosted-release.conf.json --ci
+
+      - name: Create ephemeral Windows internal test certificate
+        if: runner.os == 'Windows'
+        id: internal-certificate
+        shell: pwsh
+        run: |
+          .\scripts\windows-internal-signing\New-JunQiCiInternalTestCertificate.ps1 `
+            -OutputDirectory .\.artifacts\windows-tag-internal-signing
+
+      - name: Sign compiled Windows application for controlled internal testing
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CERTIFICATE_THUMBPRINT: ${{ steps.internal-certificate.outputs.thumbprint }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+          $application = "src-tauri/target/${{ matrix.target }}/release/junqi-desktop.exe"
+          & $signtool sign /fd SHA256 /sha1 $env:CERTIFICATE_THUMBPRINT /tr http://timestamp.digicert.com /td SHA256 $application
+          if ($LASTEXITCODE -ne 0) { throw 'Internal Authenticode signing failed for junqi-desktop.exe' }
+          & $signtool verify /pa /all /tw $application
+          if ($LASTEXITCODE -ne 0) { throw 'Internal Authenticode verification failed for junqi-desktop.exe' }
+
+      - name: Bundle Windows NSIS installer around the signed application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CARGO_NET_OFFLINE: "true"
+        run: >-
+          pnpm exec tauri bundle --target ${{ matrix.target }} --bundles nsis
+          --config src-tauri/tauri.hosted-release.conf.json --ci
+
+      - name: Sign and verify Windows NSIS installer for controlled internal testing
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CERTIFICATE_THUMBPRINT: ${{ steps.internal-certificate.outputs.thumbprint }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+          $installers = @(Get-ChildItem "src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter '*.exe' -File)
+          if ($installers.Count -ne 1) { throw "Expected exactly one NSIS installer, found $($installers.Count)" }
+          & $signtool sign /fd SHA256 /sha1 $env:CERTIFICATE_THUMBPRINT /tr http://timestamp.digicert.com /td SHA256 $installers[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Internal Authenticode signing failed for the NSIS installer' }
+          & $signtool verify /pa /all /tw $installers[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Internal Authenticode verification failed for the NSIS installer' }
+          $applicationSignature = Get-AuthenticodeSignature "src-tauri/target/${{ matrix.target }}/release/junqi-desktop.exe"
+          $installerSignature = Get-AuthenticodeSignature $installers[0].FullName
+          if ($applicationSignature.Status -ne 'Valid' -or $installerSignature.Status -ne 'Valid') {
+            throw 'Internal Authenticode status is not valid for every Windows artifact'
+          }
 
       - name: Verify macOS disk image
         if: runner.os == 'macOS'
@@ -283,6 +346,15 @@ jobs:
           normalize_updater macos-arm64 aarch64
           normalize_updater macos-x86_64 x64
 
+      - name: Isolate Windows internal trust files from updater validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p internal-test-trust
+          find release-assets -type f \( -name 'junqi-internal-test-signing.cer' -o -name 'junqi-internal-test-signing-info.txt' \) -exec mv {} internal-test-trust/ \;
+          [[ -f internal-test-trust/junqi-internal-test-signing.cer ]]
+          [[ -f internal-test-trust/junqi-internal-test-signing-info.txt ]]
+
       - name: Validate signed release assets and generate updater manifest
         env:
           RELEASE_TAG: ${{ needs.verify.outputs.tag }}
@@ -297,6 +369,14 @@ jobs:
             --version "$VERSION" \
             --notes "JunQi Desktop $VERSION" \
             --output release-assets/latest.json
+
+      - name: Restore Windows internal trust files for publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          internal_dir="release-assets/junqi-tag-windows-x86_64-${GITHUB_RUN_ID}/internal-test-trust"
+          mkdir -p "$internal_dir"
+          mv internal-test-trust/* "$internal_dir/"
 
       - name: Create verified GitHub Release
         env:
@@ -320,7 +400,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "JunQi Desktop $VERSION" \
-            --notes "JunQi Desktop $VERSION。安装包包含 macOS ARM64/x64 与 Windows x64；附件 .sig 用于应用更新完整性验证。"
+            --notes "JunQi Desktop $VERSION。Windows 包使用短期内部测试证书，仅用于受控测试，不具备公共 CA 信任，Smart App Control 开启时仍可能阻止。运行前请核对并手动安装附件 CER；附件 .sig 仅用于应用更新完整性验证。"
 
   summary:
     name: Release Summary

@@ -1146,7 +1146,12 @@ export const gateway = {
 
   // Sessions & Agents
   async getSessions() { return connection.request('sessions.list', {}); },
-  async createSession(input: { agentId: string; label?: string; parentSessionKey?: string }) {
+  async createSession(input: {
+    agentId: string;
+    label?: string;
+    parentSessionKey?: string;
+    fork?: boolean;
+  }) {
     return sessionLifecycle.create(input);
   },
   async describeSession(sessionKey: string) {

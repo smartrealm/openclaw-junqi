@@ -52,7 +52,12 @@ import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIden
 import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { applyConfirmedSessionDeletion } from '@/utils/sessionDelete';
-import { createLatestRequestGate, isSessionDeleted } from '@/utils/sessionLifecycle';
+import {
+  createLatestRequestGate,
+  isSessionDeleted,
+  subscribeNativeSessionCommit,
+} from '@/utils/sessionLifecycle';
+import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
 import { startRecoverableTask } from '@/utils/recoverableTask';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
@@ -299,12 +304,16 @@ export default function App() {
   ): Promise<SessionLoadResult> => {
     const requestGate = sessionListRequestGateRef.current;
     const requestId = requestGate.begin();
+    const sourceProjectionRevision = useChatStore.getState().sessionProjectionRevision;
+    const mutationRevision = sessionListMutationFence.capture();
     try {
       // Compatibility only: prior Desktop builds wrote labels to a local JSON
       // file. Copy confirmed entries to OpenClaw before this read, then let
       // Gateway labels remain the sole source of truth.
       await migrateLegacySessionLabelsOnce();
-      if (!requestGate.isCurrent(requestId)) return 'superseded';
+      if (!requestGate.isCurrent(requestId) || !sessionListMutationFence.isCurrent(mutationRevision)) {
+        return 'superseded';
+      }
       const runObservations = options.reconcileChatRuns
         ? gateway.capturePendingChatSessionRunObservations()
         : undefined;
@@ -365,7 +374,10 @@ export default function App() {
       });
       // Always sync sessions/defaults, even when the session list is currently empty.
       // This keeps TitleBar model in sync from gateway defaults after config changes.
-      setSessions(sessions, defaults, { completeSnapshot: sessionListSnapshot.complete });
+      setSessions(sessions, defaults, {
+        completeSnapshot: sessionListSnapshot.complete,
+        sourceProjectionRevision,
+      });
       if (options.reconcileChatRuns) {
         gateway.reconcileChatSessionRuns(result, runObservations);
       } else {
@@ -373,9 +385,18 @@ export default function App() {
       }
       return 'loaded';
     } catch {
-      return requestGate.isCurrent(requestId) ? 'failed' : 'superseded';
+      return requestGate.isCurrent(requestId) && sessionListMutationFence.isCurrent(mutationRevision)
+        ? 'failed'
+        : 'superseded';
     }
   }, [setSessions]);
+
+  useEffect(() => subscribeNativeSessionCommit(() => {
+    // A sessions.list request issued before sessions.create can return after
+    // the create commit. It cannot authoritatively remove the new session.
+    sessionListRequestGateRef.current.invalidate();
+    void loadSessions();
+  }), [loadSessions]);
 
   // ── Load Available Models from Gateway ──
   // Uses Chain of Responsibility: models.list(WS) → config.get(WS) → openclaw.json(file) → agents+sessions.

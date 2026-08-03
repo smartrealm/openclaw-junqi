@@ -1424,6 +1424,7 @@
     "nextSession": "Next session",
     "newSession": "New session",
     "newSessionLabel": "New chat",
+    "newSessionCreationFailed": "Unable to create new session",
     "fullMessageUnavailable": "Full message unavailable",
     "sendFailed": "Send failed",
     "context": "Context",

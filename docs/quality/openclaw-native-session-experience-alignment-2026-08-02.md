@@ -19,7 +19,7 @@ OpenClaw Web UI 已提供置顶、未读、重命名、分叉、移动分组、�
 | 操作 | Gateway 方法 | 权限 | JunQi 行为 |
 | --- | --- | --- | --- |
 | 新建 | `sessions.create` | `operator.write` | 仅在确认返回身份后展示 |
-| 父会话分叉 | `sessions.create({ parentSessionKey })` | `operator.write` | 新会话记录父关联 |
+| 父 transcript 分叉 | `sessions.create({ parentSessionKey, fork: true })` | `operator.write` | Gateway 复制父 transcript 并记录父关联 |
 | 检查点分叉 | `sessions.compaction.branch` | `operator.write` | 仅在检查点界面可选时提供 |
 | 重命名 | `sessions.patch` | `operator.admin` | Gateway 确认后更新本地投影 |
 | 重置 | `sessions.reset` | `operator.admin` | Gateway 确认后清理当前 transcript 投影 |
