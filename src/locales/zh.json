@@ -4530,6 +4530,7 @@
       "viewMode": "工作项视图",
       "graph": "图谱",
       "list": "列表",
+      "office": "办公室",
       "dagLabel": "工作依赖图",
       "listLabel": "工作项列表",
       "workItem": "工作项",
@@ -4568,6 +4569,42 @@
       "timelineIncompleteMessage": "当前视图缺少部分审计事件。请刷新并以最新的权威运行状态为准。",
       "timelineIncompleteReason": "原因",
       "noEvents": "尚未加载审计事件。"
+    },
+    "office": {
+      "title": "Agent 办公室",
+      "authorityNotice": "此视图只读投影权威协作快照；工位位置不会改变编排状态。",
+      "agentCount": "{{count}} 个 Agent",
+      "empty": "当前运行尚无权威 Agent 分派信息。",
+      "coordinator": "协调 Agent",
+      "agentDeskLabel": "{{agent}}，{{state}}",
+      "workItemProgress": "已结算 {{completed}}/{{total}}",
+      "noAssignedWork": "尚未分派工作项",
+      "runtime": "运行时",
+      "runtimeUnknown": "未投影",
+      "desk": "工位",
+      "states": {
+        "COORDINATING": "正在协调",
+        "ACTIVE": "正在执行",
+        "WAITING": "等待中",
+        "ATTENTION": "需要处理",
+        "UNKNOWN": "状态未确认",
+        "COMPLETED": "已完成",
+        "IDLE": "当前无活动工作"
+      },
+      "zones": {
+        "coordination": "协调工位",
+        "active": "执行工位",
+        "waiting": "等待工位",
+        "attention": "介入工位",
+        "completed": "完成工位"
+      },
+      "zoneDescriptions": {
+        "coordination": "规划、汇总和交付协调",
+        "active": "存在权威活动执行尝试的 Agent",
+        "waiting": "等待分派或依赖完成的已指派工作",
+        "attention": "需要介入或执行状态尚未确认",
+        "completed": "已指派工作项均已结算"
+      }
     },
     "decision": {
       "PLAN_APPROVED": "计划已批准",

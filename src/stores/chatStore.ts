@@ -751,18 +751,19 @@ const isEmptyAssistantStreamPlaceholder = (message: ChatMessage): boolean =>
   && !message.sessionEvents?.length
   && !message.thinkingContent;
 
-const buildCanonicalSemanticBlocks = (messages: ChatMessage[], sessionKey: string) => {
-  const raw = createRawHistoryPayload(messages, sessionKey);
+const buildCanonicalSemanticBlocksForMessage = (message: ChatMessage, sessionKey: string) => {
+  const [raw] = createRawHistoryPayload([message], sessionKey);
   const settings = useSettingsStore.getState();
   const chat = useChatStore.getState();
-  return raw.flatMap((message) =>
-    buildSemanticBlocks(normalizeGatewayMessage(message), {
-      toolIntentEnabled: settings.toolIntentEnabled,
-      tokenUsage: chat.tokenUsage,
-      currentModel: chat.currentModel,
-    }),
-  );
+  return buildSemanticBlocks(normalizeGatewayMessage(raw), {
+    toolIntentEnabled: settings.toolIntentEnabled,
+    tokenUsage: chat.tokenUsage,
+    currentModel: chat.currentModel,
+  });
 };
+
+const buildCanonicalSemanticBlocks = (messages: ChatMessage[], sessionKey: string) =>
+  messages.flatMap((message) => buildCanonicalSemanticBlocksForMessage(message, sessionKey));
 
 const recomputeGroups = (messages: ChatMessage[], sessionKey: string): ResponseGroup[] =>
   buildResponseGroups(buildCanonicalSemanticBlocks(messages, sessionKey));
@@ -776,6 +777,65 @@ const recomputeDerived = (messages: ChatMessage[], sessionKey: string): { blocks
 
 const recomputeBlocks = (messages: ChatMessage[], sessionKey: string): RenderBlock[] =>
   recomputeDerived(messages, sessionKey).blocks;
+
+/**
+ * OpenClaw emits cumulative snapshots for the active response. When that
+ * response is already the final message and final response group, preserve the
+ * immutable history projection and rebuild only the affected tail. Any
+ * identity or cache mismatch falls back to the canonical full projection.
+ */
+const recomputeStreamingTail = (
+  state: ChatState,
+  messages: ChatMessage[],
+  sessionKey: string,
+  messageId: string,
+): { blocks: RenderBlock[]; groups: ResponseGroup[] } | null => {
+  const previousMessages = getSessionMessages(state, sessionKey);
+  const previousGroups = state._groupsCache[sessionKey];
+  const previousBlocks = state._blocksCache[sessionKey];
+  const previousMessage = previousMessages[previousMessages.length - 1];
+  const nextMessage = messages[messages.length - 1];
+  const lastGroup = previousGroups?.[previousGroups.length - 1];
+
+  if (
+    !previousGroups
+    || !previousBlocks
+    || previousMessages.length !== messages.length
+    || previousMessage?.id !== messageId
+    || nextMessage?.id !== messageId
+    || !lastGroup
+    || !lastGroup.sourceMessageIds.includes(messageId)
+  ) return null;
+
+  const firstTargetBlockIndex = lastGroup.blocks.findIndex((block) => block.sourceMessageId === messageId);
+  if (firstTargetBlockIndex < 0) return null;
+  if (lastGroup.blocks.slice(firstTargetBlockIndex).some((block) => block.sourceMessageId !== messageId)) {
+    return null;
+  }
+
+  const nextMessageBlocks = buildCanonicalSemanticBlocksForMessage(nextMessage, sessionKey);
+  const rebuiltTailGroups = buildResponseGroups([
+    ...lastGroup.blocks.slice(0, firstTargetBlockIndex),
+    ...nextMessageBlocks,
+  ]);
+  if (rebuiltTailGroups.length !== 1 || rebuiltTailGroups[0].id !== lastGroup.id) return null;
+
+  const previousTailBlocks = projectSemanticBlocksToRenderBlocks(lastGroup.blocks);
+  if (previousTailBlocks.length > previousBlocks.length) return null;
+  const cachedTailBlocks = previousBlocks.slice(previousBlocks.length - previousTailBlocks.length);
+  if (cachedTailBlocks.some((block, index) => (
+    block.id !== previousTailBlocks[index]?.id || block.type !== previousTailBlocks[index]?.type
+  ))) return null;
+
+  const nextTailGroup = rebuiltTailGroups[0];
+  return {
+    groups: [...previousGroups.slice(0, -1), nextTailGroup],
+    blocks: [
+      ...previousBlocks.slice(0, previousBlocks.length - previousTailBlocks.length),
+      ...projectSemanticBlocksToRenderBlocks(nextTailGroup.blocks),
+    ],
+  };
+};
 
 const projectSessionMessages = (
   state: ChatState,
@@ -913,7 +973,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ];
       }
 
-      const derived = recomputeDerived(updated, targetKey);
+      const derived = existingIdx >= 0
+        ? recomputeStreamingTail(state, updated, targetKey, id) ?? recomputeDerived(updated, targetKey)
+        : recomputeDerived(updated, targetKey);
       const isActive = targetKey === state.activeSessionKey;
       const wasTyping = state.typingBySession[targetKey] === true;
       return {

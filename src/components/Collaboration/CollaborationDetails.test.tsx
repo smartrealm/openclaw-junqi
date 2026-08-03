@@ -215,6 +215,52 @@ test('supports a list projection without changing the workflow data', () => {
   assert.doesNotMatch(html, /data-work-item-view="graph"/);
 });
 
+test('renders an Agent Office projection from the same authoritative snapshot', () => {
+  const html = renderToStaticMarkup(createElement(CollaborationDetails, {
+    snapshot: snapshot(),
+    workItemView: 'office',
+    configuredAgents: [
+      {
+        id: 'researcher',
+        name: 'Research Agent',
+        runtimeType: 'native',
+        allowed: true,
+        coordinator: false,
+      },
+      {
+        id: 'risk-reviewer',
+        name: 'Risk Review Agent',
+        runtimeType: 'acp',
+        allowed: true,
+        coordinator: false,
+      },
+    ],
+    coordinatorAgentId: 'planner',
+  }));
+
+  assert.match(html, /data-work-item-view="office"/);
+  assert.match(html, /data-agent-office="run-details"/);
+  assert.match(html, /data-office-agent-id="researcher"/);
+  assert.match(html, /data-office-agent-id="risk-reviewer"/);
+  assert.match(html, /data-office-agent-state="ATTENTION"/);
+  assert.match(html, /Read-only projection from the authoritative collaboration snapshot/);
+  assert.doesNotMatch(html, /online/i);
+  assert.doesNotMatch(html, /data-work-item-view="graph"/);
+});
+
+test('renders the Office empty state when the run has no authoritative participants', () => {
+  const value = snapshot();
+  value.workItems = [];
+  value.attempts = [];
+  const html = renderToStaticMarkup(createElement(CollaborationDetails, {
+    snapshot: value,
+    workItemView: 'office',
+  }));
+
+  assert.match(html, /data-work-item-view="office"/);
+  assert.match(html, /No authoritative Agent assignment is available/);
+});
+
 test('renders loading and recoverable error states', () => {
   const loadingHtml = renderToStaticMarkup(createElement(CollaborationDetails, { loading: true }));
   assert.match(loadingHtml, /aria-busy="true"/);

@@ -4507,6 +4507,7 @@
       "viewMode": "Work item view",
       "graph": "Graph",
       "list": "List",
+      "office": "Office",
       "dagLabel": "Work dependency graph",
       "listLabel": "Work item list",
       "workItem": "Work item",
@@ -4545,6 +4546,42 @@
       "timelineIncompleteMessage": "Some audit events are not available in this view. Refresh to confirm the latest authoritative run state.",
       "timelineIncompleteReason": "Reason",
       "noEvents": "No audit events loaded."
+    },
+    "office": {
+      "title": "Agent Office",
+      "authorityNotice": "Read-only projection from the authoritative collaboration snapshot. Desk placement does not change orchestration state.",
+      "agentCount": "{{count}} Agents",
+      "empty": "No authoritative Agent assignment is available for this run.",
+      "coordinator": "Coordinator",
+      "agentDeskLabel": "{{agent}}, {{state}}",
+      "workItemProgress": "{{completed}}/{{total}} settled",
+      "noAssignedWork": "No assigned work item",
+      "runtime": "Runtime",
+      "runtimeUnknown": "Not projected",
+      "desk": "Desk",
+      "states": {
+        "COORDINATING": "Coordinating",
+        "ACTIVE": "Executing",
+        "WAITING": "Waiting",
+        "ATTENTION": "Needs attention",
+        "UNKNOWN": "Status unconfirmed",
+        "COMPLETED": "Completed",
+        "IDLE": "No active work"
+      },
+      "zones": {
+        "coordination": "Coordination desk",
+        "active": "Active desks",
+        "waiting": "Waiting desks",
+        "attention": "Attention desk",
+        "completed": "Completed desks"
+      },
+      "zoneDescriptions": {
+        "coordination": "Planning, synthesis, and delivery coordination",
+        "active": "Agents with an active authoritative attempt",
+        "waiting": "Assigned work waiting for dispatch or dependencies",
+        "attention": "Intervention required or execution status unconfirmed",
+        "completed": "All assigned work items are settled"
+      }
     },
     "decision": {
       "PLAN_APPROVED": "Plan approved",
