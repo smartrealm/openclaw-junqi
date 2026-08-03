@@ -1537,7 +1537,6 @@ export const gateway = {
     const scope = params.agentId || params.key ? {} : { agentScope: 'all' };
     return connection.request('sessions.usage', { limit: 50, ...scope, ...params });
   },
-  async getSessionTimeseries(key: string) { return connection.request('sessions.usage.timeseries', { key }); },
 
   // Pairing
   getHttpBaseUrl() { return connection.getHttpBaseUrl(); },
