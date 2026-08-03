@@ -3701,7 +3701,6 @@
     "openclawInstallFailed": "OpenClaw 安装后校验失败",
     "openclawInstallIncomplete": "OpenClaw 安装未完整生效",
     "openclawDefect": {
-      "versionUnsupported": "版本不受支持",
       "packageInvalid": "包内容不完整",
       "gatewayCommandMissing": "gateway 命令不可用"
     },
@@ -4531,7 +4530,6 @@
   "setup.runtimeDetails.failed": "失败",
   "setup.runtimeDetails.unknown": "未知",
   "setup.runtimeDetails.binaryFound": "找到 openclaw 可执行文件",
-  "setup.runtimeDetails.versionOk": "版本可读取",
   "setup.runtimeDetails.packageValid": "npm 包信息有效",
   "setup.runtimeDetails.gatewayCommandOk": "支持 Gateway 启动命令",
   "setup.runtimeDetails.gatewayRunning": "运行中",

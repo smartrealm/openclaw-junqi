@@ -3708,7 +3708,6 @@
     "openclawInstallFailed": "OpenClaw validation failed after installation",
     "openclawInstallIncomplete": "OpenClaw install did not fully apply",
     "openclawDefect": {
-      "versionUnsupported": "Unsupported version",
       "packageInvalid": "Incomplete package",
       "gatewayCommandMissing": "gateway command unavailable"
     },
@@ -4508,7 +4507,6 @@
   "setup.runtimeDetails.failed": "Failed",
   "setup.runtimeDetails.unknown": "Unknown",
   "setup.runtimeDetails.binaryFound": "Found openclaw executable",
-  "setup.runtimeDetails.versionOk": "Version readable",
   "setup.runtimeDetails.packageValid": "npm package metadata valid",
   "setup.runtimeDetails.gatewayCommandOk": "Gateway command supported",
   "setup.runtimeDetails.gatewayRunning": "Running",

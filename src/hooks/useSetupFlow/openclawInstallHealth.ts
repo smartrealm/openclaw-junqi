@@ -4,20 +4,18 @@ import type { OpenclawStatus } from '@/api/tauri-commands';
  * One set of criteria for "is this install usable".
  *
  * The repair trigger and the post-install success check used to disagree: a
- * repair was requested when any of version/package/gateway-command was bad, but
+ * repair was requested when any package/gateway-command check was bad, but
  * success only required `installed`. A partially applied reinstall could
  * therefore report success and defer the failure to gateway startup, by which
  * point the reinstall is no longer the obvious suspect.
  */
 export type OpenclawInstallDefect =
-  | 'version-unsupported'
   | 'package-invalid'
   | 'gateway-command-missing';
 
 /** Every defect present in this status, in the order they should be reported. */
 export function openclawInstallDefects(status: OpenclawStatus): OpenclawInstallDefect[] {
   const defects: OpenclawInstallDefect[] = [];
-  if (!status.version_ok) defects.push('version-unsupported');
   if (!status.package_valid) defects.push('package-invalid');
   if (!status.gateway_command_ok) defects.push('gateway-command-missing');
   return defects;
@@ -34,7 +32,6 @@ export function isOpenclawInstallUsable(status: OpenclawStatus): boolean {
 }
 
 const DEFECT_LABEL_KEYS: Record<OpenclawInstallDefect, string> = {
-  'version-unsupported': 'setup.openclawDefect.versionUnsupported',
   'package-invalid': 'setup.openclawDefect.packageInvalid',
   'gateway-command-missing': 'setup.openclawDefect.gatewayCommandMissing',
 };
