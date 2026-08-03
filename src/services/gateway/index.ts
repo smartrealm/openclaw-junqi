@@ -53,6 +53,11 @@ import {
   OpenClawAuditClient,
   type OpenClawAuditListInput,
 } from './OpenClawAuditClient';
+import {
+  OpenClawApprovalClient,
+  type OpenClawApproval,
+  type OpenClawApprovalDecision,
+} from './OpenClawApprovalClient';
 import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
 import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
 import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
@@ -67,6 +72,13 @@ export type {
   GatewayRequestOptions,
 };
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
+export type {
+  OpenClawApproval,
+  OpenClawApprovalDecision,
+  OpenClawApprovalListResult,
+  OpenClawApprovalKind,
+  OpenClawApprovalAvailability,
+} from './OpenClawApprovalClient';
 export {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
@@ -570,6 +582,10 @@ export function createPrivilegedRequester(
 }
 
 const requestPrivileged = createPrivilegedRequester(connection);
+const approvalClient = new OpenClawApprovalClient(
+  (method, params) => requestPrivileged(method, params),
+  (method) => connection.hasAdvertisedMethod(method),
+);
 const sessionSettings = new SessionSettingsClient({
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
   request: (method, params) => connection.request(method, params),
@@ -816,6 +832,10 @@ export const gateway = {
   async getTask(taskId: string) { return taskLedger.get(taskId); },
   async cancelTask(taskId: string, reason?: string) { return taskLedger.cancel(taskId, reason); },
   async listAuditEvents(input: OpenClawAuditListInput = {}) { return auditClient.list(input); },
+  async listPendingApprovals() { return approvalClient.list(); },
+  async resolveApproval(approval: OpenClawApproval, decision: OpenClawApprovalDecision) {
+    return approvalClient.resolve(approval, decision);
+  },
   async createAgent(agent: GatewayAgentCreatePayload) { return agentManagement.create(agent); },
   async updateAgent(agentId: string, patch: GatewayAgentUpdateParams) {
     return requestPrivileged<{ ok: true; agentId: string }>('agents.update', { agentId, ...patch });

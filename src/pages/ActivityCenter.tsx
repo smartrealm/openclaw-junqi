@@ -34,6 +34,7 @@ import { shortModelName, formatActivityTimeTitle } from '@/pages/Dashboard/dashb
 import { activitySessionMetrics, mergeActivitySessions, type ActivitySessionRecord } from '@/utils/activitySessions';
 import { resolveStatusLabel } from '@/utils/taskStatusLabels';
 import { createAgentRunTaskRoute } from '@/utils/agentTaskRoute';
+import { OpenClawApprovalsPanel } from '@/components/Activity/OpenClawApprovalsPanel';
 
 type ActivityFilter = 'all' | 'running' | 'attention' | 'done' | 'failed';
 
@@ -317,6 +318,8 @@ export function ActivityCenterPage() {
           </div>
         ))}
       </section>
+
+      <OpenClawApprovalsPanel connected={connected} />
 
       <section className="flex flex-wrap items-center justify-between gap-2 border-b border-aegis-border pb-3">
         <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-md border border-aegis-border bg-aegis-card p-1 scrollbar-hidden">

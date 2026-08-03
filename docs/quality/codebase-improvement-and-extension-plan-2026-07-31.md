@@ -187,6 +187,11 @@
 - `exec.approval.*` 与 `plugin.approval.*` 提供带 actor 和 decision 的正式审批，可解除当前 `transcript-only` 的自我限制
 - 状态词汇需补 `blocked` 与 `timed_out`
 
+2026-08-03 的第一阶段已按 [OpenClaw 原生审批对齐](openclaw-native-approvals-alignment-2026-08-03.md)
+接入 `exec.approval.list/resolve` 与 `plugin.approval.list/resolve`。当前只做 Gateway 原生
+pending 队列的管理员临时读取和解析，日常 scope 不增加 `operator.approvals`；审批事件流、
+策略管理、waitDecision 和正式 trace 节点仍未接入。
+
 与 IMP-07 有交集：状态词汇统一时应直接对齐 OpenClaw 的 7 值口径，而不是先统一成 JunQi 的 4 值再改一次。
 
 ### EXT-B · 会话上下文的主动控制
@@ -299,7 +304,7 @@ RPC 不可用时保留技能列表并显示非阻断提示，未知状态不被�
 
 **第三批 · 需要独立立项**：
 
-10. EXT-A 的审批协议（涉及 `operator.approvals` 权限提升）
+10. EXT-A 的审批协议后续阶段：事件订阅、策略管理和正式 trace 对齐（pending list/resolve 已接入，仍涉及 `operator.approvals` 权限提升）
 11. EXT-D 技能协议迁移（涉及既有安装记录）
 12. EXT-E 产物协议（当前 session scope 已接入；run/task scope 待真实场景验证）
 13. EXT-F Memory 只读接入（`memory.search` 已接入；`doctor.memory.status/remHarness` 仍待独立立项）
