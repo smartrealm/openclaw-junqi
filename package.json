@@ -9,7 +9,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "build": "npm run generate:provider-catalog && npm run build:shared",
+    "build": "npm run generate:provider-catalog -- --if-missing && npm run build:shared",
     "build:shared": "npm run collab:bundle && tsc && vite build",
     "build:hosted-release": "npm run generate:provider-catalog -- --if-missing && npm run build:shared",
     "preview": "vite preview",

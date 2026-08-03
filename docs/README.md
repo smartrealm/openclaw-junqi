@@ -117,6 +117,7 @@ docs/
 - [会话 Agent 状态卡一致性记录](quality/chat-agent-status-tooltip-parity-2026-08-01.md)
 - [Chat 消息预览与 OpenClaw 对齐](quality/chat-message-preview-openclaw-parity-2026-07-30.md)
 - [Chat 输出文件预览](quality/chat-output-file-preview-2026-08-02.md)
+- [Provider Catalog 构建可复现性验证](quality/provider-catalog-build-reproducibility-2026-08-03.md)
 - [JunQi Desktop 登录自启动](quality/junqi-app-autostart-2026-08-02.md)
 - [OpenClaw 原生会话体验对齐](quality/openclaw-native-session-experience-alignment-2026-08-02.md)
 - [Chat 响应追溯与人工审核](quality/chat-response-trace-and-human-review-2026-07-31.md)
