@@ -6,6 +6,7 @@ import {
   type OpenClawApprovalHistoryResult,
   type OpenClawApprovalListResult,
 } from '@/services/gateway';
+import { subscribeGatewayApprovalEvents } from '@/services/gateway/approvalEventBridge';
 
 export type {
   OpenClawApproval,
@@ -27,6 +28,7 @@ interface OpenClawApprovalsState {
   refresh: (connected: boolean, showLoading?: boolean) => Promise<void>;
   refreshHistory: (connected: boolean, showLoading?: boolean) => Promise<void>;
   loadMoreHistory: (connected: boolean) => Promise<void>;
+  subscribeLiveUpdates: (connected: boolean) => () => void;
   resolve: (
     connected: boolean,
     approval: OpenClawApproval,
@@ -117,6 +119,20 @@ export const useOpenClawApprovalsStore = create<OpenClawApprovalsState>((set, ge
       if (sequence !== historyRequestSequence) return;
       set({ historyError: errorMessage(error), historyLoading: false });
     }
+  },
+  subscribeLiveUpdates: (connected) => {
+    if (!connected) return () => {};
+    const unsubscribe = subscribeGatewayApprovalEvents((event) => {
+      void get().refresh(gateway.getStatus().connected, false);
+      if (event.phase === 'resolved') {
+        void get().refreshHistory(gateway.getStatus().connected, false);
+      }
+    });
+    const release = gateway.acquireGatewayApprovalEvents();
+    return () => {
+      unsubscribe();
+      release();
+    };
   },
   resolve: async (connected, approval, decision) => {
     if (!connected) {

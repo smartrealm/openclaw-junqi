@@ -159,7 +159,7 @@ docs/
 - [OpenClaw 原生会话体验对齐](quality/openclaw-native-session-experience-alignment-2026-08-02.md)
 - [原生新建会话列表竞态修复验证](quality/native-session-list-race-validation-2026-08-03.md)
 - [Chat 响应追溯与人工审核](quality/chat-response-trace-and-human-review-2026-07-31.md)
-- [OpenClaw 审批控制能力对齐](quality/openclaw-approval-controls-parity-2026-08-03.md)
+- [OpenClaw 审批界面与事件收敛](quality/openclaw-approval-surface-convergence-2026-08-04.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界修复](quality/installation-dashboard-chat-provider-channel-runtime-boundary-remediation-2026-07-31.md)
 - [会话来源聚合审计](quality/session-origin-aggregation-audit.md)
 - [会话分组与后台活动下钻设计](quality/session-background-activity-drilldown-design-2026-07-31.md)

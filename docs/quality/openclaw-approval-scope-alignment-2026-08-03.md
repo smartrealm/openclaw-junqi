@@ -28,9 +28,10 @@ exec/plugin approval methods 都由 approvals scope 保护。管理员可以满�
 JunQi 的默认或必要请求。
 
 官方 client guide 同时建议具备 `operator.approvals` 的客户端在 `hello-ok` 后安装审批事件
-监听，并用 `exec.approval.list` 回填连接前的请求。当前 JunQi 日常连接只请求
-`operator.read/write`，审批访问是短生命周期连接；它没有经用户授权的常驻 approval
-observer，因此不能声称实时事件已接入。
+监听，并用 `exec.approval.list` 回填连接前的请求。日常连接继续只请求
+`operator.read/write`；审批事件使用单独的短生命周期 approvals-only 连接。该 observer 在
+2026-08-04 已按单一审批投影接入，详见
+[`OpenClaw 审批界面与事件收敛`](openclaw-approval-surface-convergence-2026-08-04.md)。
 
 ## 审计发现
 
@@ -48,7 +49,7 @@ requester 调用 `exec.approval.list`、`plugin.approval.list`、`approval.histo
 Gateway 拒绝 scope、设备 identity 缺失、配对取消、传输失败或请求失败时必须维持现有错误
 语义，不能回退到 admin 或空成功。
 
-### AS-02 - 中 - 审批面板尚无实时事件观察连接
+### AS-02 - 中 - 审批面板尚无实时事件观察连接（已于 2026-08-04 收敛）
 
 位置：`src/components/Activity/OpenClawApprovalsPanel.tsx`、
 `src/services/gateway/index.ts`
@@ -58,9 +59,9 @@ Gateway 拒绝 scope、设备 identity 缺失、配对取消、传输失败或�
 断线恢复与用户授权模型。现有代码没有可复用的、用户可见且经审批 scope 配对的 persistent
 observer 生命周期。
 
-本轮不伪造事件订阅、不会让普通 event router 猜测未被授予的 payload，也不会把轮询说成
-实时。后续仅当官方事件 payload、授权连接生命周期、一次连接的 backfill 顺序及多窗口
-ownership 都有完整设计和真机证据时才单独接入。
+该缺陷的后续实现没有提升日常 socket scope，也没有让普通 event router 解析未授予的
+payload。专用 observer 只解析官方 event name 和 approval ID，然后触发统一 list 回填；事件
+不直接成为 UI 状态。连接身份变化、页面卸载和 Gateway 断开均会释放 observer。
 
 ## 当前行为
 
@@ -69,7 +70,7 @@ ownership 都有完整设计和真机证据时才单独接入。
    `operator.approvals` socket；不会提升为 admin fallback。
 3. Gateway 的 visibility、reviewer binding、device identity、首次决策获胜和 terminal
    snapshot 仍完全由 OpenClaw 决定；JunQi 只显示成功 RPC 返回的投影。
-4. 15 秒轮询仍是本地呈现策略，不被描述成实时订阅。
+4. 15 秒轮询是本地恢复策略；approval-scope observer 提供官方 exec/plugin 事件的失效刷新。
 
 ## 验证
 
@@ -88,5 +89,6 @@ ownership 都有完整设计和真机证据时才单独接入。
 - 尚未在真实 Gateway 上用 device-token 和 token-only 身份分别验证 approvals-only 的
   reviewer visibility；缺少 device identity 时，Gateway 应按官方授权逻辑拒绝或限制可见性，
   JunQi 不使用 admin 规避。
-- 尚未实现或验收 OpenClaw approval event 的常驻观察连接、backfill、重连和多窗口 ownership。
+- 已完成 observer、backfill 和连接身份变化的自动化回归；真实 Gateway 的重连、跨窗口
+  ownership 以及平台配对仍未真机验收。
 - 未在 macOS、Windows、CentOS、Ubuntu 真机验证审批 scope 的配对、凭据与断线恢复。

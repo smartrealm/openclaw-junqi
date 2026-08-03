@@ -391,22 +391,6 @@
       "terminalSummary": "Terminal summary",
       "error": "Error"
     },
-    "approval": {
-      "title": "Gateway approvals",
-      "subtitle": "Pending exec and plugin decisions from OpenClaw",
-      "unavailable": "Approval access is unavailable. It requires an approved operator.approvals scope.",
-      "offline": "Connect to Gateway before loading approvals.",
-      "empty": "No pending approvals.",
-      "expires": "Expires {{time}}",
-      "confirmTitle": "Resolve Gateway approval",
-      "confirmMessage": "Choose {{decision}} for “{{subject}}”. The decision will be recorded by OpenClaw.",
-      "resolveFailedTitle": "Approval was not resolved",
-      "decision": {
-        "allow-once": "Allow once",
-        "allow-always": "Allow always",
-        "deny": "Deny"
-      }
-    },
     "audit": {
       "title": "Gateway audit ledger",
       "subtitle": "Cross-run metadata-only records from OpenClaw",

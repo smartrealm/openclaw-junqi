@@ -128,6 +128,7 @@ specs/
 - [OpenClaw 原生技能提案事件对齐](quality/2026-08-03-openclaw-native-skill-proposal-events.md)
 - [OpenClaw 原生审批](quality/2026-08-03-openclaw-native-approvals.md)
 - [OpenClaw 审批最小权限对齐](quality/2026-08-03-openclaw-approval-scope-alignment.md)
+- [OpenClaw 审批界面与事件收敛](quality/2026-08-04-openclaw-approval-surface-convergence.md)
 - [OpenClaw 原生任务账本](quality/2026-08-03-openclaw-native-task-ledger.md)
 - [OpenClaw 原生 Cron 运行语义](quality/2026-08-03-openclaw-native-cron-run.md)
 - [OpenClaw Cron 日历投影](quality/2026-08-03-openclaw-cron-calendar-projection.md)

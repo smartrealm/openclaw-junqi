@@ -19,8 +19,10 @@
    转换成开放或 admin 权限。
 5. Approval UI 只使用 Gateway 结果。scope 拒绝、device identity 缺失、连接切换、响应
    畸形或 RPC 失败必须传播原始错误语义。
-6. 不接入 approval event，不修改 `voicewake`、session、Talk、policy 或 Gateway pairing
-   协议。
+6. approval event 的接入以
+   [`2026-08-04 审批界面与事件收敛规格`](2026-08-04-openclaw-approval-surface-convergence.md)
+   为准：只使用 approvals-only observer 作 ID 失效刷新，不修改 `voicewake`、session、Talk、
+   policy 或 Gateway pairing 协议。
 
 ## 验收条件
 

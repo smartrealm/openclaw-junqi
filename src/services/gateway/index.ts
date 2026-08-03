@@ -92,12 +92,6 @@ import {
 import type { CronAgentTurnAddParams } from './cronContract';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import { SessionCompactionClient } from './SessionCompactionClient';
-import {
-  OpenClawApprovalClient as LegacyOpenClawApprovalClient,
-  type ApprovalDecision,
-  type ApprovalRecord,
-  type ApprovalResolveResult,
-} from './approvals';
 import { buildToolsEffectiveParams, parseToolsEffectiveResult, type ToolsEffectiveResult } from './toolsEffective';
 import { buildToolsCatalogParams, parseToolsCatalogResult, type ToolsCatalogResult } from './toolsCatalog';
 import { buildToolsInvokeParams, parseToolsInvokeResult, type ToolsInvokeParams, type ToolsInvokeResult } from './toolsInvoke';
@@ -904,9 +898,6 @@ const requestApprovals = createApprovalRequester(connection);
 const approvalClient = new OpenClawApprovalClient(
   (method, params) => requestApprovals(method, params),
 );
-const legacyApprovalClient = new LegacyOpenClawApprovalClient({
-  requestPrivileged: (method, params) => requestApprovals(method, params),
-});
 const approvalEventSubscription = new GatewayApprovalEventSubscription({
   source: connection,
 });
@@ -1306,15 +1297,6 @@ export const gateway = {
     return parseMemoryRemHarnessResult(
       await connection.request('doctor.memory.remHarness', buildMemoryRemHarnessParams(options)),
     );
-  },
-  async listGatewayApprovals(): Promise<ApprovalRecord[]> {
-    return legacyApprovalClient.list();
-  },
-  async resolveGatewayApproval(
-    record: ApprovalRecord,
-    decision: ApprovalDecision,
-  ): Promise<ApprovalResolveResult> {
-    return legacyApprovalClient.resolve(record, decision);
   },
   async getAgents() { return connection.request('agents.list', {}); },
   async listCommands(input: OpenClawCommandsListInput = {}) { return openClawCommandsClient.list(input); },

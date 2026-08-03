@@ -35,7 +35,10 @@ JunQi 需要在桌面活动中心处理 OpenClaw Gateway 已经创建的 exec/pl
 4. resolve 使用对应 family 的官方方法和 `{ id, decision }` 参数；Gateway 未返回 `ok: true`
    时不显示成功。
 5. UI 有断线、加载、错误、协议不可用、空队列、过期和按 Gateway 实际允许决策呈现的按钮状态。
-6. 轮询只作为桌面 list 快照刷新，不声称已经接入 OpenClaw approval event stream。
+6. approval-scope observer 先安装官方 exec/plugin event 监听、再执行 list 回填；事件只触发
+   严格快照刷新，轮询保留为恢复策略。具体验收以
+   [`2026-08-04 审批界面与事件收敛规格`](2026-08-04-openclaw-approval-surface-convergence.md)
+   为准。
 7. 活动中心能严格呈现官方 terminal history，并按官方 `nextCursor` 分页；Gateway 实际返回未知方法时显示 unavailable。
 8. 客户端只接受官方单条 `ApprovalSnapshot`；Gateway 实际返回未知方法时返回 unavailable，不把旧 pending envelope 当作统一 snapshot。
 9. 请求使用 `{ id, kind, decision }`，且只有官方 `applied` 与 terminal snapshot 才能更新状态；Gateway 实际返回未知方法时才走旧 family resolve。
@@ -45,6 +48,6 @@ JunQi 需要在桌面活动中心处理 OpenClaw Gateway 已经创建的 exec/pl
 
 - `exec.approval.request/get/waitDecision` 和 `plugin.approval.request/waitDecision`。
 - `exec.approvals.get/set` 或任何本地策略文件修改。
-- approval event 长连接路由（包括 `sessions.messages.subscribe({ includeApprovals: true })`）、
-  跨窗口共享审批 store、插件自定义 command action。
+- `sessions.messages.subscribe({ includeApprovals: true })`、跨窗口共享审批 store、插件自定义
+  command action。
 - JunQi 本地审批、自动审批、命令执行、超时重实现或平台专属安全策略。

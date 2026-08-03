@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { gateway } from '@/services/gateway';
+import { publishGatewayApprovalEvent } from '@/services/gateway/approvalEventBridge';
 import { useOpenClawApprovalsStore } from './openclawApprovalsStore';
 
 const snapshot = (id: string) => ({
@@ -57,6 +58,45 @@ test('invalidates an in-flight list response when the Gateway disconnects', asyn
     assert.equal(useOpenClawApprovalsStore.getState().error, null);
   } finally {
     gateway.listPendingApprovals = originalList;
+  }
+});
+
+test('revalidates the unified snapshot after an approval event and rejects an older list response', async () => {
+  const originalList = gateway.listPendingApprovals;
+  const originalStatus = gateway.getStatus;
+  const originalAcquire = gateway.acquireGatewayApprovalEvents;
+  let resolveFirst!: (value: ReturnType<typeof snapshot>) => void;
+  let resolveSecond!: (value: ReturnType<typeof snapshot>) => void;
+  let calls = 0;
+  gateway.listPendingApprovals = async () => {
+    calls += 1;
+    return new Promise((resolve) => {
+      if (calls === 1) resolveFirst = resolve;
+      else resolveSecond = resolve;
+    });
+  };
+  gateway.getStatus = () => ({ connected: true, connecting: false });
+  gateway.acquireGatewayApprovalEvents = () => () => {};
+  useOpenClawApprovalsStore.setState({ snapshot: null, loading: false, error: null, resolvingId: null });
+
+  try {
+    const first = useOpenClawApprovalsStore.getState().refresh(true, true);
+    const release = useOpenClawApprovalsStore.getState().subscribeLiveUpdates(true);
+    assert.equal(publishGatewayApprovalEvent({
+      type: 'event',
+      event: 'exec.approval.resolved',
+      payload: { id: 'approval-1' },
+    }), true);
+    resolveSecond(snapshot('current'));
+    await Promise.resolve();
+    resolveFirst(snapshot('stale'));
+    await first;
+    assert.equal(useOpenClawApprovalsStore.getState().snapshot?.approvals[0]?.id, 'current');
+    release();
+  } finally {
+    gateway.listPendingApprovals = originalList;
+    gateway.getStatus = originalStatus;
+    gateway.acquireGatewayApprovalEvents = originalAcquire;
   }
 });
 

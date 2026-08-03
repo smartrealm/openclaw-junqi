@@ -298,15 +298,20 @@ export function OpenClawApprovalsPanel({ connected }: { connected: boolean }) {
   const resolvingId = useOpenClawApprovalsStore((state) => state.resolvingId);
   const refresh = useOpenClawApprovalsStore((state) => state.refresh);
   const refreshHistory = useOpenClawApprovalsStore((state) => state.refreshHistory);
+  const subscribeLiveUpdates = useOpenClawApprovalsStore((state) => state.subscribeLiveUpdates);
   const resolve = useOpenClawApprovalsStore((state) => state.resolve);
 
   useEffect(() => {
+    const unsubscribeLiveUpdates = subscribeLiveUpdates(connected);
     void refresh(connected, true);
     void refreshHistory(connected, true);
-    if (!connected) return undefined;
+    if (!connected) return unsubscribeLiveUpdates;
     const timer = window.setInterval(() => void refresh(true, false), APPROVAL_REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [connected, refresh, refreshHistory]);
+    return () => {
+      window.clearInterval(timer);
+      unsubscribeLiveUpdates();
+    };
+  }, [connected, refresh, refreshHistory, subscribeLiveUpdates]);
 
   const unavailable = snapshot
     && snapshot.availability.exec === 'unavailable'

@@ -382,22 +382,6 @@
       "terminalSummary": "终态摘要",
       "error": "错误"
     },
-    "approval": {
-      "title": "Gateway 审批",
-      "subtitle": "来自 OpenClaw 的待处理命令和插件审批",
-      "unavailable": "审批入口当前不可用，需要已批准的 operator.approvals 权限。",
-      "offline": "连接 Gateway 后才能加载审批。",
-      "empty": "当前没有待处理审批。",
-      "expires": "{{time}}后过期",
-      "confirmTitle": "处理 Gateway 审批",
-      "confirmMessage": "确定对“{{subject}}”执行“{{decision}}”吗？决定将由 OpenClaw 正式记录。",
-      "resolveFailedTitle": "审批未处理成功",
-      "decision": {
-        "allow-once": "仅允许一次",
-        "allow-always": "始终允许",
-        "deny": "拒绝"
-      }
-    },
     "audit": {
       "title": "Gateway 审计账本",
       "subtitle": "OpenClaw 提供的跨运行 metadata-only 记录",

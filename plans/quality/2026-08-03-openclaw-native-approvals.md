@@ -7,7 +7,8 @@
 2. 新增 `OpenClawApprovalClient`，集中处理能力探测、严格响应解码、method-not-found 语义和
    unified/legacy resolve 回执；通过 approvals-only 临时出口。
 3. 在活动中心增加审批面板，呈现 Gateway 原生 pending 快照、真实允许决策、过期和错误状态，
-   并增加官方 terminal history 分页；使用桌面轮询刷新 pending，不伪装为事件订阅。
+   并增加官方 terminal history 分页；事件与 list 回填的后续收敛见
+   `2026-08-04-openclaw-approval-surface-convergence.md`。
 4. 补充三套 locale、定向协议测试和文档索引。
 5. 执行 TypeScript、边界、完整测试、构建、官方链接校验、diff 检查和 Emoji 扫描后提交。
 
@@ -37,4 +38,4 @@
 
 自动化测试只能证明 adapter 字段、权限出口和 UI 状态的代码契约。真实 Gateway 审批创建、
 approvals scope 配对、不同 host/node 的审批响应、断线重连以及 Windows、macOS、Linux 桌面行为仍需
-真机验证；未取得官方事件订阅接入证据前保持轮询方案，不实现猜测性兼容。
+真机验证；事件实现仍以官方 protocol 为准，不实现猜测性兼容。

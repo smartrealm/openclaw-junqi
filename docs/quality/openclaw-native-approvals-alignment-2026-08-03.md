@@ -52,9 +52,11 @@ OpenClaw 审批。语音常驻场景下，如果桌面只展示文本而没有�
 - 活动中心增加 OpenClaw approvals 面板，显示 exec/plugin 类型、Gateway 返回的实际元数据、
   过期时间和真实决策按钮。没有返回决策选项时不自行补全按钮；断线、加载、空队列、协议不
   可用、错误和解析中状态均单独呈现。
-- 面板使用 15 秒桌面轮询作为重新打开后的 pending 快照刷新。当前没有把
-  `exec.approval.requested/resolved` 或 `plugin.approval.requested/resolved` 接入主连接事件
-  路由，因此不声称实时事件订阅；轮询只是 JunQi 对原生 list RPC 的本地呈现策略。
+- 面板通过 approval-scope transient event socket 接收官方 exec/plugin 事件，并在收到带 ID 的
+  事件后重新读取 pending snapshot；事件 payload 不直接投影到 UI。登记监听后再执行 list
+  回填，store 拒绝旧请求响应覆盖后发刷新。15 秒桌面轮询保留为连接重建和非广播运行时的
+  恢复策略。收敛依据和回归见
+  [`OpenClaw 审批界面与事件收敛`](openclaw-approval-surface-convergence-2026-08-04.md)。
 - 面板同时按官方 `approval.history` 显示 terminal history，并按 `nextCursor` 请求后续页。
   历史只渲染官方脱敏 presentation，不把旧请求中的 cwd、环境键、system run plan 或其他
   运行时字段带入 UI。Gateway 实际返回统一 history 未知方法时，面板明确显示不可用；不会把旧 pending
