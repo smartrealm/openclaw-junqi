@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, Check, ChevronDown, Crosshair, Download, Folder, Plus, Puzzle, RotateCcw, Wrench } from 'lucide-react';
+import { Activity, Check, ChevronDown, Crosshair, Download, Folder, Plus, Puzzle, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -12,6 +12,9 @@ import { debugError } from '@/utils/debugLog';
 import { useSkillsStore } from '@/stores/skillsStore';
 import { useFocusContextStore } from '@/stores/focusContextStore';
 import { SessionRuntimeControl } from './session-runtime/SessionRuntimeControl';
+import { EffectiveToolsControl } from './EffectiveToolsControl';
+import { SessionInspectionControl } from './SessionInspectionControl';
+import { SessionArtifactsControl } from './SessionArtifactsControl';
 import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
 
 function WorkspacePicker({ agentId, current }: { agentId: string; current?: string }) {
@@ -98,7 +101,7 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
 
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, renderBlocks, activeSessionKey, sessions } = useChatStore();
+  const { tokenUsage, renderBlocks, activeSessionKey, sessions, compactionStatusBySession } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
   const skills = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
@@ -114,6 +117,7 @@ export function SessionContextBar() {
   const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
   const enabledSkillCount = Object.values(skills).filter((skill) => skill.enabled !== false).length;
   const activeSession = sessions.find((session) => session.key === activeSessionKey);
+  const compactionActive = Boolean(compactionStatusBySession[activeSessionKey]);
 
   useEffect(() => {
     void refreshSkills();
@@ -161,14 +165,13 @@ export function SessionContextBar() {
           >
             <Puzzle size={11} />{enabledSkillCount}
           </button>
-          <button
-            type="button"
-            onClick={() => navigate('/tools')}
-            className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('activity.mcpHint')}
-          >
-            <Wrench size={11} />
-          </button>
+          <EffectiveToolsControl
+            sessionKey={activeSessionKey}
+            agentId={agentId}
+            onOpenConfiguration={() => navigate('/tools')}
+          />
+          <SessionInspectionControl sessionKey={activeSessionKey} agentId={agentId} />
+          <SessionArtifactsControl sessionKey={activeSessionKey} agentId={agentId} />
           <button
             type="button"
             onClick={() => navigate('/activity')}
@@ -181,6 +184,16 @@ export function SessionContextBar() {
         {maxTokens > 0 && (
           <span className="text-[10px] text-aegis-text-muted font-mono hidden lg:inline" title={`${usedK}K / ${maxLabel} (${Math.round((usedTokens / maxTokens) * 100)}%)`}>
             {usedK}K/{maxLabel}
+          </span>
+        )}
+        {compactionActive && (
+          <span
+            className="inline-flex items-center gap-1 text-[10px] text-aegis-warning"
+            title={t('chat.compactionInProgress')}
+            aria-label={t('chat.compactionInProgress')}
+          >
+            <RotateCcw size={11} className="animate-spin" />
+            <span className="hidden xl:inline">{t('chat.compactionInProgress')}</span>
           </span>
         )}
         {renderBlocks.length > 0 && (

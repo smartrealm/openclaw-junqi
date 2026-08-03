@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const commands = readFileSync(new URL('./tauri-commands.ts', import.meta.url), 'utf8');
 const adapter = readFileSync(new URL('./tauri-adapter.ts', import.meta.url), 'utf8');
+const performancePage = readFileSync(new URL('../pages/Performance.tsx', import.meta.url), 'utf8');
 const logPanel = readFileSync(
   new URL('../components/settings/GatewayLogPanel.tsx', import.meta.url),
   'utf8',
@@ -163,6 +164,11 @@ test('Tauri command wrappers match the Rust Gateway result contracts', () => {
   assert.match(rustLogLevel, /Error/);
   assert.doesNotMatch(rustLogLevel, /\n\s+(?:Trace|Debug),/);
   assert.match(commands, /export type LogLevel = 'info' \| 'warn' \| 'error'/);
+  assert.doesNotMatch(adapter, /\bany\b/);
+  assert.doesNotMatch(performancePage, /window\.aegis as any/);
+  assert.match(performancePage, /window\.aegis\?\.systemMetrics\?\.onMetrics/);
+  assert.match(adapter, /invoke<PlatformInfoPayload>\("get_platform_info"\)/);
+  assert.match(adapter, /sign: async \(params: DeviceSignParams\)/);
 });
 
 test('ensure documentation follows the selected-runtime-only Rust policy', () => {

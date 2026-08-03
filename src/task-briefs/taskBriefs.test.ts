@@ -69,6 +69,19 @@ test('valid brief compiles stable markdown in reading order and excludes empty c
   assert.equal(output, compileTaskBrief(brief(), promptLabels));
 });
 
+test('keeps a collaboration run as explicit metadata instead of reading or expanding it', () => {
+  const output = compileTaskBrief(brief({
+    references: [{
+      id: 'ref-collaboration',
+      kind: 'collaboration-run',
+      label: 'Release review',
+      value: 'run:release-review-42',
+    }],
+  }), promptLabels);
+
+  assert.match(output, /\[collaboration-run\] Release review - run:release-review-42/);
+});
+
 test('prompt labels are caller-owned while the compiled structure remains stable', () => {
   const localized = compileTaskBrief(brief(), {
     ...promptLabels,

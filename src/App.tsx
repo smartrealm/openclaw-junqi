@@ -1104,6 +1104,7 @@ export default function App() {
     // Stop gateway pairing retry loop — user chose to dismiss
     gateway.stopPairingRetry();
     gateway.cancelPrivilegedAuthorizationRetry();
+    gateway.cancelApprovalAuthorizationRetry();
   }, []);
 
   const handleGatewayRetry = useCallback(() => {

@@ -8,6 +8,8 @@ import { formatTraceTimestamp } from './chatResponseTracePresentation';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { agentIdFromSessionKey } from '@/utils/sessionPresentation';
+import { ChatResponseTraceAuditSection } from './ChatResponseTraceAuditSection';
+import { useChatResponseAudit } from '@/hooks/useChatResponseAudit';
 
 interface ChatResponseTracePanelProps {
   trace: ChatResponseTrace;
@@ -33,14 +35,25 @@ export function ChatResponseTracePanel({
   const conversationName = sessionLabel && sessionLabel !== trace.sessionKey
     ? sessionLabel
     : t('chat.trace.currentConversation');
+  const audit = useChatResponseAudit(trace.runId);
   const titleId = `chat-trace-title-${trace.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-  const status = trace.status === 'final'
+  const transcriptStatus = trace.status === 'final'
     ? 'completed'
     : trace.status === 'streaming'
       ? 'running'
       : trace.status === 'aborted'
         ? 'cancelled'
         : 'error';
+  const auditStatus = audit.terminalStatus;
+  const status = auditStatus === 'blocked' || auditStatus === 'timed_out' || auditStatus === 'unknown'
+    ? auditStatus
+    : auditStatus === 'succeeded'
+      ? 'completed'
+      : auditStatus === 'failed'
+        ? 'error'
+        : auditStatus === 'cancelled'
+          ? 'cancelled'
+          : transcriptStatus;
 
   return (
     <ChatSidePanel
@@ -120,6 +133,8 @@ export function ChatResponseTracePanel({
             </div>
           </div>
         </section>
+
+        {trace.runId && <ChatResponseTraceAuditSection audit={audit} />}
 
         <section className="px-4 py-3" aria-label={t('chat.trace.timeline')}>
           <div className="mb-3 flex items-center gap-2">

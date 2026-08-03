@@ -379,6 +379,12 @@ export interface TokenUsage {
   compactions: number;
 }
 
+export interface SessionCompactionStatus {
+  operationId: string;
+  phase: 'active';
+  startedAt: number;
+}
+
 interface ChatState {
   // Messages (active session)
   messages: ChatMessage[];
@@ -518,6 +524,8 @@ interface ChatState {
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
   /** Atomically release every transient run indicator for one session. */
   settleSessionRunUi: (sessionKey?: string) => void;
+  compactionStatusBySession: Record<string, SessionCompactionStatus>;
+  setCompactionStatus: (sessionKey: string, status: SessionCompactionStatus | null) => void;
   messageQueue: Record<string, QueuedChatMessage[]>;
   enqueueMessage: (sessionKey: string, message: QueuedChatMessage) => void;
   drainQueue: (sessionKey: string) => Promise<void>;
@@ -633,6 +641,7 @@ function clearTranscriptStateForIdentityChanges(
     _blocksCache: withoutSessionKeys(state._blocksCache, sessionKeys),
     _groupsCache: withoutSessionKeys(state._groupsCache, sessionKeys),
     typingBySession: withoutSessionKeys(state.typingBySession, sessionKeys),
+    compactionStatusBySession: withoutSessionKeys(state.compactionStatusBySession, sessionKeys),
     typingStartedAtBySession: withoutSessionKeys(state.typingStartedAtBySession, sessionKeys),
     quickRepliesBySession: withoutSessionKeys(state.quickRepliesBySession, sessionKeys),
     thinkingBySession: withoutSessionKeys(state.thinkingBySession, sessionKeys),
@@ -1825,6 +1834,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── UI State ──
   typingBySession: {},
   typingStartedAtBySession: {},
+  compactionStatusBySession: {},
+  setCompactionStatus: (sessionKey, status) => set((state) => {
+    const normalizedKey = sessionKey.trim();
+    if (!normalizedKey || isSessionDeleted(normalizedKey)) return state;
+    const next = { ...state.compactionStatusBySession };
+    if (status) next[normalizedKey] = status;
+    else delete next[normalizedKey];
+    return { compactionStatusBySession: next };
+  }),
   messageQueue: {},
   enqueueMessage: (sessionKey, message) => set((state) => {
     const queue = state.messageQueue[sessionKey] || [];

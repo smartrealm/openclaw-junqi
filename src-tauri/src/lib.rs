@@ -341,6 +341,9 @@ pub fn run() {
             commands::project_config::write_agent_config_file,
             // App settings (ported from junqi app_settings.rs, simplified)
             commands::app_settings::load_app_settings,
+            commands::app_settings::load_agent_profiles,
+            commands::app_settings::save_agent_profile,
+            commands::app_settings::delete_agent_profile,
             commands::app_settings::set_application_language,
             commands::app_settings::save_terminal_scrollback,
             commands::app_settings::save_terminal_shift_enter_newline,

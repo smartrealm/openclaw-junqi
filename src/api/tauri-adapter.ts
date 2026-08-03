@@ -33,6 +33,7 @@ import {
   buildDeviceAuthPayload,
   signDevicePayload,
 } from "./device-identity";
+import type { DeviceIdentity } from "./device-identity";
 import { APP_VERSION } from '../version';
 
 const LEGACY_CONFIG_BACKUPS_STORAGE_KEY = 'aegis-config-backups';
@@ -48,7 +49,27 @@ function clearLegacyOpenClawConfigBackups(): void {
 
 clearLegacyOpenClawConfigBackups();
 
-let _deviceIdentity: any = null;
+interface PlatformInfoPayload {
+  os: string;
+  arch: string;
+  home_dir: string;
+  desktop_dir: string;
+}
+
+interface DeviceSignParams {
+  nonce?: string;
+  clientId: string;
+  clientMode: string;
+  role: string;
+  scopes: string[];
+  token: string;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+let _deviceIdentity: DeviceIdentity | null = null;
 async function deviceIdentity() {
   if (!_deviceIdentity) _deviceIdentity = await loadOrCreateDeviceIdentity();
   return _deviceIdentity;
@@ -80,14 +101,14 @@ async function readStorageRuntimePaths(): Promise<StorageRuntimePaths | null> {
 
 // Guard: in a plain browser (no Tauri runtime, e.g. headless screenshots),
 // getCurrentWindow()/listen() throw at module load. Wrap so the adapter boots.
-let appWindow: any = null;
+let appWindow: ReturnType<typeof getCurrentWindow> | null = null;
 try {
   appWindow = getCurrentWindow();
 } catch {
   appWindow = null;
 }
 
-(window as any).aegis = {
+window.aegis = {
   platform: detectPlatform(),
 
   app: {
@@ -103,29 +124,29 @@ try {
           openclaw = m ? m[1] : String(st.version);
         }
       } catch {}
-      return { desktop: (window as any).__APP_VERSION__ || APP_VERSION, openclaw };
+      return { desktop: window.__APP_VERSION__ || APP_VERSION, openclaw };
     },
     platformInfo: async () => {
       try {
-        const info: any = await invoke("get_platform_info");
+        const info = await invoke<PlatformInfoPayload>("get_platform_info");
         return `${info.os} (${info.arch})`;
       } catch { return `${navigator.platform}`; }
     },
   },
 
   window: {
-    minimize: () => appWindow?.minimize(),
+    minimize: async () => { await appWindow?.minimize(); },
     maximize: async () => { if (!appWindow) return false; await appWindow.toggleMaximize(); return await appWindow.isMaximized(); },
-    close: () => appWindow?.close(),
-    isMaximized: () => appWindow?.isMaximized() ?? false,
+    close: async () => { await appWindow?.close(); },
+    isMaximized: async () => appWindow ? appWindow.isMaximized() : false,
   },
 
   device: {
     getIdentity: async () => { const id = await deviceIdentity(); return { deviceId: id.deviceId, publicKey: id.publicKey }; },
-    sign: async (params: any) => {
+    sign: async (params: DeviceSignParams) => {
       const id = await deviceIdentity();
       const signedAtMs = Date.now();
-      const nonce = params.nonce || "";
+      const nonce = params.nonce ?? "";
       const payload = buildDeviceAuthPayload({ deviceId: id.deviceId, clientId: params.clientId, clientMode: params.clientMode, role: params.role, scopes: params.scopes, signedAtMs, token: params.token, nonce });
       const signature = await signDevicePayload(id.privateKey, payload);
       return { deviceId: id.deviceId, publicKey: id.publicKey, signature, signedAt: signedAtMs, nonce: params.nonce };
@@ -146,13 +167,13 @@ try {
           cwd: opts?.cwd ?? null,
         });
         return { id: r.id, pid: r.pid };
-      } catch (e: any) {
-        return { id: "", pid: 0, error: String(e?.message ?? e) };
+      } catch (error: unknown) {
+        return { id: "", pid: 0, error: errorMessage(error) };
       }
     },
-    write: (id: string, data: string) => invoke("terminal_write", { id, data }),
-    resize: (id: string, cols: number, rows: number) => invoke("terminal_resize", { id, cols, rows }),
-    kill: (id: string) => invoke("terminal_kill", { id }),
+    write: (id: string, data: string) => invoke<void>("terminal_write", { id, data }),
+    resize: (id: string, cols: number, rows: number) => invoke<void>("terminal_resize", { id, cols, rows }),
+    kill: (id: string) => invoke<void>("terminal_kill", { id }),
     onData: (callback: (id: string, data: string) => void) => {
       return subscribeTauriEvent<{ id: string; data: string }>(
         "terminal-data",
@@ -171,10 +192,10 @@ try {
     const paths = await readStorageRuntimePaths();
     if (!paths?.stateDir) return { success: false, error: 'Storage location is unavailable' };
     try {
-      await invoke("open_folder", { path: paths.stateDir });
+      await invoke<void>("open_folder", { path: paths.stateDir });
       return { success: true, path: paths.stateDir };
     } catch (error) {
-      return { success: false, path: paths.stateDir, error: String(error) };
+      return { success: false, path: paths.stateDir, error: errorMessage(error) };
     }
   } },
   // JunQi-style system metrics event stream (background thread emits every 1s)

@@ -53,7 +53,9 @@ requires implementation, regression coverage, and validation evidence.
 
 - [ ] FCA-14: collaboration bootstrap is split by documented subdomain behind
       unchanged Tauri commands and wire contracts; no secret or runtime
-      ownership behavior changes.
+      ownership behavior changes. The contract and target slices are complete;
+      journal/plugin and recovery slices remain; the agent-policy and package
+      slices are complete.
 
 ## Validation boundary
 

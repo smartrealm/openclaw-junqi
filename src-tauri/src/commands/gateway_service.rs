@@ -33,14 +33,29 @@ pub(crate) enum GatewayServiceArtifactPresence {
 
 #[cfg(any(windows, test))]
 fn windows_task_name_matches(raw: &str) -> bool {
+    windows_task_name_matches_expected(raw, WINDOWS_GATEWAY_TASK_NAME)
+}
+
+#[cfg(any(windows, test))]
+fn windows_task_name_matches_expected(raw: &str, expected: &str) -> bool {
     let name = raw.trim().trim_matches('"').trim_start_matches(['\\', '/']);
-    name.eq_ignore_ascii_case(WINDOWS_GATEWAY_TASK_NAME)
-        || name
-            .get(..WINDOWS_GATEWAY_TASK_NAME.len())
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(WINDOWS_GATEWAY_TASK_NAME))
-            && name
-                .get(WINDOWS_GATEWAY_TASK_NAME.len()..)
-                .is_some_and(|suffix| suffix.starts_with(" (") && suffix.ends_with(')'))
+    let expected = expected
+        .trim()
+        .trim_matches('"')
+        .trim_start_matches(['\\', '/']);
+    if name.eq_ignore_ascii_case(expected) {
+        return true;
+    }
+    // OpenClaw's default profile may append a profile suffix to the shared
+    // task name. A caller-provided task name is an exact identity and must not
+    // match a sibling task by prefix.
+    expected.eq_ignore_ascii_case(WINDOWS_GATEWAY_TASK_NAME)
+        && name
+            .get(..expected.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(expected))
+        && name
+            .get(expected.len()..)
+            .is_some_and(|suffix| suffix.starts_with(" (") && suffix.ends_with(')'))
 }
 
 #[cfg(any(windows, test))]
@@ -74,6 +89,11 @@ fn first_windows_csv_field(line: &str) -> Option<String> {
 
 #[cfg(any(windows, test))]
 fn windows_task_list_contains_gateway(stdout: &[u8]) -> Result<bool, String> {
+    windows_task_list_contains_named_task(stdout, WINDOWS_GATEWAY_TASK_NAME)
+}
+
+#[cfg(any(windows, test))]
+fn windows_task_list_contains_named_task(stdout: &[u8], expected: &str) -> Result<bool, String> {
     // `schtasks` uses the active Windows console code page, not guaranteed
     // UTF-8. Decode only the first CSV field (the ASCII task name) so localized
     // status columns cannot turn a successful absence probe into mojibake.
@@ -101,7 +121,7 @@ fn windows_task_list_contains_gateway(stdout: &[u8]) -> Result<bool, String> {
         })?;
         let task_name = first_windows_csv_field(field)
             .ok_or_else(|| "Windows Scheduled Task CSV did not contain a task name".to_string())?;
-        if windows_task_name_matches(&task_name) {
+        if windows_task_name_matches_expected(&task_name, expected) {
             return Ok(true);
         }
     }
@@ -109,7 +129,7 @@ fn windows_task_list_contains_gateway(stdout: &[u8]) -> Result<bool, String> {
 }
 
 #[cfg(windows)]
-fn windows_gateway_startup_entry_presence() -> Result<bool, String> {
+fn windows_gateway_startup_entry_presence(expected_task_name: &str) -> Result<bool, String> {
     let app_data = std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .or_else(dirs::data_dir)
@@ -154,14 +174,14 @@ fn windows_gateway_startup_entry_presence() -> Result<bool, String> {
                     startup.display()
                 )
             })?;
-        if windows_task_name_matches(name) {
+        if windows_task_name_matches_expected(name, expected_task_name) {
             return Ok(true);
         }
     }
     Ok(false)
 }
 
-/// Probe the shared official Windows task and OpenClaw's login-item fallback
+/// Probe the selected official Windows task and OpenClaw's login-item fallback
 /// without requiring the OpenClaw package. A failed exact query is followed by
 /// a successful full task enumeration before absence is accepted, avoiding
 /// locale-dependent parsing of `schtasks` error text.
@@ -175,8 +195,9 @@ pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
         stdout_bytes: 2 * 1024 * 1024,
         stderr_bytes: 128 * 1024,
     };
+    let task_name = windows_gateway_task_name();
     let mut exact = tokio::process::Command::new("schtasks.exe");
-    exact.args(["/Query", "/TN", WINDOWS_GATEWAY_TASK_NAME, "/XML"]);
+    exact.args(["/Query", "/TN", task_name.as_str(), "/XML"]);
     match run_command_output_confirmed(exact, limits).await {
         Ok(output) if output.status.success() => return GatewayServiceArtifactPresence::Present,
         Ok(_) => {}
@@ -187,7 +208,7 @@ pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
     list.args(["/Query", "/FO", "CSV", "/NH"]);
     let task_absent = match run_command_output_confirmed(list, limits).await {
         Ok(output) if output.status.success() => {
-            match windows_task_list_contains_gateway(&output.stdout) {
+            match windows_task_list_contains_named_task(&output.stdout, &task_name) {
                 Ok(true) => return GatewayServiceArtifactPresence::Present,
                 Ok(false) => true,
                 Err(_) => return GatewayServiceArtifactPresence::Unverifiable,
@@ -196,7 +217,7 @@ pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
         _ => return GatewayServiceArtifactPresence::Unverifiable,
     };
     debug_assert!(task_absent);
-    match windows_gateway_startup_entry_presence() {
+    match windows_gateway_startup_entry_presence(&task_name) {
         Ok(true) => GatewayServiceArtifactPresence::Present,
         Ok(false) => GatewayServiceArtifactPresence::Absent,
         Err(_) => GatewayServiceArtifactPresence::Unverifiable,
@@ -207,6 +228,92 @@ pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
 pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
 ) -> GatewayServiceArtifactPresence {
     GatewayServiceArtifactPresence::Unverifiable
+}
+
+#[cfg(windows)]
+fn windows_gateway_task_name() -> String {
+    std::env::var("OPENCLAW_WINDOWS_TASK_NAME")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| WINDOWS_GATEWAY_TASK_NAME.to_string())
+}
+
+/// Check whether the selected OpenClaw Scheduled Task is registered without
+/// interpreting localized error text. A successful exact query proves
+/// registration; a successful full listing proves absence when the task name
+/// is not present. Any command or decoding failure stays unverifiable.
+#[cfg(windows)]
+async fn windows_gateway_task_is_registered() -> Result<bool, String> {
+    use crate::commands::process_control::{run_command_output_confirmed, ControlledOutputLimits};
+
+    let limits = ControlledOutputLimits {
+        timeout: Duration::from_secs(15),
+        stdout_bytes: 2 * 1024 * 1024,
+        stderr_bytes: 128 * 1024,
+    };
+    let task_name = windows_gateway_task_name();
+    let mut exact = tokio::process::Command::new("schtasks.exe");
+    exact.args(["/Query", "/TN", task_name.as_str(), "/XML"]);
+    match run_command_output_confirmed(exact, limits).await {
+        Ok(output) if output.status.success() => return Ok(true),
+        Ok(_) => {}
+        Err(error) => {
+            return Err(format!(
+                "Could not query the OpenClaw Scheduled Task registration: {error}"
+            ));
+        }
+    }
+
+    let mut list = tokio::process::Command::new("schtasks.exe");
+    list.args(["/Query", "/FO", "CSV", "/NH"]);
+    let output = run_command_output_confirmed(list, limits)
+        .await
+        .map_err(|error| format!("Could not list Windows Scheduled Tasks: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Windows Scheduled Task listing exited with {}",
+            output.status
+        ));
+    }
+    windows_task_list_contains_named_task(&output.stdout, &task_name)
+        .map_err(|error| format!("Could not parse Windows Scheduled Task listing: {error}"))
+}
+
+#[cfg(windows)]
+async fn run_windows_gateway_task() -> Result<(), String> {
+    use crate::commands::process_control::{run_command_output_confirmed, ControlledOutputLimits};
+
+    let task_name = windows_gateway_task_name();
+    let args = ["/Run", "/TN", task_name.as_str()];
+    let mut command = tokio::process::Command::new("schtasks.exe");
+    command.args(args);
+    let output = run_command_output_confirmed(
+        command,
+        ControlledOutputLimits {
+            timeout: Duration::from_secs(15),
+            stdout_bytes: 128 * 1024,
+            stderr_bytes: 128 * 1024,
+        },
+    )
+    .await
+    .map_err(|error| format!("Could not start the OpenClaw Scheduled Task: {error}"))?;
+    command_success(&output, &args)
+}
+
+#[cfg(windows)]
+async fn stop_windows_gateway_before_task_run(
+    runtime: &system::NativeOpenclawRuntime,
+    identity: &GatewayServiceIdentity,
+    search_path: Option<&str>,
+) -> Result<(), String> {
+    // OpenClaw's official Windows stop path tolerates an already stopped task,
+    // terminates listeners left behind by a failed task transition, and waits
+    // for the configured port to be released. Reuse that cleanup contract
+    // before a direct /Run so a second process cannot race the old listener.
+    let args = ["gateway", "stop"];
+    let output = run_service_command(runtime, identity, search_path, &args).await?;
+    command_success(&output, &args)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,6 +331,10 @@ pub(crate) struct GatewayServiceInspection {
     pub ownership: GatewayServiceOwnership,
     pub installed: bool,
     pub running: bool,
+    /// `false` when the platform service adapter returned an unknown or
+    /// locale-dependent runtime state. A missing/unknown state must never be
+    /// treated as stopped before a lifecycle mutation.
+    pub runtime_known: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -663,6 +774,7 @@ fn inspect_document(
             ownership: GatewayServiceOwnership::Absent,
             installed: false,
             running: false,
+            runtime_known: true,
         };
     };
     let installed = service.installed.unwrap_or(
@@ -674,17 +786,26 @@ fn inspect_document(
                 .and_then(|command| command.source_path.as_ref())
                 .is_some(),
     );
-    let running = service
+    let (running, runtime_known) = match service
         .runtime
         .as_ref()
         .and_then(|runtime| runtime.status.as_deref())
-        .map(|status| status.eq_ignore_ascii_case("running"))
-        .unwrap_or(service.loaded.unwrap_or(false));
+    {
+        Some(status) if status.eq_ignore_ascii_case("running") => (true, true),
+        Some(status) if status.eq_ignore_ascii_case("stopped") => (false, true),
+        // OpenClaw reports `unknown` when Windows cannot derive a numeric
+        // Scheduled Task result from localized `schtasks` output. Preserve a
+        // conservative running bit for existing callers, but block lifecycle
+        // actions until a known state is available.
+        Some(_) => (service.loaded.unwrap_or(true), false),
+        None => (service.loaded.unwrap_or(false), false),
+    };
     let ownership = classify_service_ownership(&document, identity);
     GatewayServiceInspection {
         ownership,
         installed,
         running,
+        runtime_known,
     }
 }
 
@@ -699,6 +820,24 @@ pub(crate) fn belongs_to_selected_state(ownership: GatewayServiceOwnership) -> b
 
 pub(crate) fn is_running_selected_service(inspection: GatewayServiceInspection) -> bool {
     inspection.installed && inspection.running && belongs_to_selected_state(inspection.ownership)
+}
+
+/// A lifecycle operation may use a stale-but-owned service as a mutation
+/// target so it can be rebuilt safely. Restart success is stricter: the
+/// postcondition must prove that the service now matches the current runtime,
+/// not merely that it still belongs to the selected state directory.
+pub(crate) fn is_running_current_selected_service(inspection: GatewayServiceInspection) -> bool {
+    inspection.installed
+        && inspection.runtime_known
+        && inspection.running
+        && matches!(inspection.ownership, GatewayServiceOwnership::SelectedState)
+}
+
+#[cfg(any(windows, test))]
+fn windows_task_start_requires_cleanup(inspection: GatewayServiceInspection) -> bool {
+    belongs_to_selected_state(inspection.ownership)
+        && inspection.installed
+        && (!inspection.runtime_known || !inspection.running)
 }
 
 async fn run_service_command(
@@ -995,6 +1134,18 @@ pub(crate) async fn start_selected_gateway_service_with_path(
     search_path: Option<&str>,
 ) -> Result<(), String> {
     let identity = GatewayServiceIdentity::for_runtime(state_dir, config_path, runtime);
+
+    #[cfg(windows)]
+    {
+        let inspection = inspect_gateway_service_state(runtime, &identity, search_path).await?;
+        if windows_task_start_requires_cleanup(inspection) {
+            if windows_gateway_task_is_registered().await? {
+                stop_windows_gateway_before_task_run(runtime, &identity, search_path).await?;
+                return run_windows_gateway_task().await;
+            }
+        }
+    }
+
     let start_args = ["gateway", "start"];
     let start = run_service_command(runtime, &identity, search_path, &start_args).await?;
     command_success(&start, &start_args)
@@ -1067,6 +1218,7 @@ mod tests {
                     ownership,
                     installed: true,
                     running: true,
+                    runtime_known: true,
                 }),
                 "owned service {ownership:?} should be stoppable"
             );
@@ -1081,6 +1233,7 @@ mod tests {
                     ownership,
                     installed: true,
                     running: true,
+                    runtime_known: true,
                 }),
                 "{ownership:?} must never be stopped by our reinstall"
             );
@@ -1090,6 +1243,7 @@ mod tests {
                 ownership: GatewayServiceOwnership::SelectedState,
                 installed: false,
                 running: false,
+                runtime_known: true,
             }),
             "an absent installation has nothing to stop"
         );
@@ -1101,11 +1255,13 @@ mod tests {
             ownership: GatewayServiceOwnership::SelectedState,
             installed: true,
             running: true,
+            runtime_known: true,
         }));
         assert!(is_running_selected_service(GatewayServiceInspection {
             ownership: GatewayServiceOwnership::StaleRuntime,
             installed: true,
             running: true,
+            runtime_known: true,
         }));
         for ownership in [
             GatewayServiceOwnership::Foreign,
@@ -1116,13 +1272,51 @@ mod tests {
                 ownership,
                 installed: true,
                 running: true,
+                runtime_known: true,
             }));
         }
         assert!(!is_running_selected_service(GatewayServiceInspection {
             ownership: GatewayServiceOwnership::SelectedState,
             installed: true,
             running: false,
+            runtime_known: true,
         }));
+    }
+
+    #[test]
+    fn restart_success_requires_current_runtime_identity() {
+        assert!(is_running_current_selected_service(
+            GatewayServiceInspection {
+                ownership: GatewayServiceOwnership::SelectedState,
+                installed: true,
+                running: true,
+                runtime_known: true,
+            }
+        ));
+        for ownership in [
+            GatewayServiceOwnership::StaleRuntime,
+            GatewayServiceOwnership::StaleLocale,
+            GatewayServiceOwnership::Foreign,
+            GatewayServiceOwnership::Unverifiable,
+            GatewayServiceOwnership::Absent,
+        ] {
+            assert!(!is_running_current_selected_service(
+                GatewayServiceInspection {
+                    ownership,
+                    installed: true,
+                    running: true,
+                    runtime_known: true,
+                }
+            ));
+        }
+        assert!(!is_running_current_selected_service(
+            GatewayServiceInspection {
+                ownership: GatewayServiceOwnership::SelectedState,
+                installed: true,
+                running: true,
+                runtime_known: false,
+            }
+        ));
     }
 
     #[test]
@@ -1138,6 +1332,29 @@ mod tests {
         assert!(windows_task_name_matches("\\OpenClaw Gateway"));
         assert!(windows_task_name_matches("OpenClaw Gateway (work)"));
         assert!(!windows_task_name_matches("OpenClaw Gateway helper"));
+    }
+
+    #[test]
+    fn windows_task_name_override_is_an_exact_identity() {
+        assert!(windows_task_name_matches_expected(
+            "\\JunQi OpenClaw Gateway",
+            "JunQi OpenClaw Gateway"
+        ));
+        assert!(!windows_task_name_matches_expected(
+            "JunQi OpenClaw Gateway (work)",
+            "JunQi OpenClaw Gateway"
+        ));
+        assert!(windows_task_name_matches_expected(
+            "OpenClaw Gateway (work)",
+            WINDOWS_GATEWAY_TASK_NAME
+        ));
+        assert!(!windows_task_name_matches_expected(
+            "OpenClaw Gateway helper",
+            WINDOWS_GATEWAY_TASK_NAME
+        ));
+        let tasks = br#""JunQi OpenClaw Gateway","N/A","Ready"
+"OpenClaw Gateway","N/A","Ready""#;
+        assert!(windows_task_list_contains_named_task(tasks, "JunQi OpenClaw Gateway").unwrap());
     }
 
     #[test]
@@ -1163,6 +1380,35 @@ mod tests {
             service_command_timeout_for_platform(false),
             Duration::from_secs(30)
         );
+    }
+
+    #[test]
+    fn windows_task_start_cleans_stopped_or_unknown_selected_runtime() {
+        let stopped = GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::SelectedState,
+            installed: true,
+            running: false,
+            runtime_known: true,
+        };
+        let unknown = GatewayServiceInspection {
+            running: true,
+            runtime_known: false,
+            ..stopped
+        };
+        let running = GatewayServiceInspection {
+            running: true,
+            runtime_known: true,
+            ..stopped
+        };
+        assert!(windows_task_start_requires_cleanup(stopped));
+        assert!(windows_task_start_requires_cleanup(unknown));
+        assert!(!windows_task_start_requires_cleanup(running));
+        assert!(!windows_task_start_requires_cleanup(
+            GatewayServiceInspection {
+                ownership: GatewayServiceOwnership::Foreign,
+                ..stopped
+            }
+        ));
     }
 
     fn status_output(success: bool, stdout: &[u8], stderr: &[u8]) -> std::process::Output {
@@ -1392,6 +1638,52 @@ mod tests {
         assert_eq!(inspection.ownership, GatewayServiceOwnership::SelectedState);
         assert!(inspection.installed);
         assert!(!inspection.running);
+        assert!(inspection.runtime_known);
+    }
+
+    #[test]
+    fn unknown_service_runtime_is_not_reported_as_stopped() {
+        let identity = GatewayServiceIdentity::new(
+            Path::new("/tmp/junqi-selected-state"),
+            Path::new("/tmp/junqi-selected-state/openclaw.json"),
+        );
+        let document = GatewayStatusDocument {
+            service: Some(GatewayServiceDocument {
+                command: Some(GatewayServiceCommand {
+                    environment: Some(HashMap::from([
+                        (
+                            "OPENCLAW_STATE_DIR".to_string(),
+                            "/tmp/junqi-selected-state".to_string(),
+                        ),
+                        (
+                            "OPENCLAW_CONFIG_PATH".to_string(),
+                            "/tmp/junqi-selected-state/openclaw.json".to_string(),
+                        ),
+                    ])),
+                    program_arguments: None,
+                    working_directory: None,
+                    source_path: Some("/tmp/junqi-selected-state/gateway.cmd".into()),
+                }),
+                installed: Some(true),
+                loaded: Some(true),
+                runtime: Some(GatewayRuntimeDocument {
+                    status: Some("unknown".into()),
+                }),
+                source_path: Some("/tmp/junqi-selected-state/gateway.cmd".into()),
+            }),
+            config: Some(GatewayConfigDocument {
+                cli: None,
+                daemon: Some(GatewayConfigPath {
+                    path: Some("/tmp/junqi-selected-state/openclaw.json".into()),
+                }),
+            }),
+        };
+        let inspection = inspect_document(document, &identity);
+        assert_eq!(inspection.ownership, GatewayServiceOwnership::SelectedState);
+        assert!(inspection.installed);
+        assert!(inspection.running);
+        assert!(!inspection.runtime_known);
+        assert!(windows_task_start_requires_cleanup(inspection));
     }
 
     #[test]
@@ -1506,6 +1798,7 @@ mod tests {
             ownership: GatewayServiceOwnership::SelectedState,
             installed: true,
             running: false,
+            runtime_known: true,
         };
         let running = GatewayServiceInspection {
             running: true,

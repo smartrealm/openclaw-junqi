@@ -269,6 +269,38 @@ describe('Gateway credential security regression gates', () => {
     assert.equal(useGatewayDataStore.getState().polling, false);
   });
 
+  it('uses a separate approvals-only transient socket without widening the daily lane', async () => {
+    resetSockets();
+    const connectionOptions: GatewayConnectionOptions[] = [];
+    const requestApprovals = createPrivilegedRequester(
+      sourceConnection(),
+      (connectionOptionsForRequest) => {
+        connectionOptions.push(connectionOptionsForRequest);
+        return new GatewayConnection(connectionOptionsForRequest);
+      },
+      { pairingRetryMs: 0, pairingTimeoutMs: 1_000, scopes: ['operator.approvals'] },
+    );
+    const resultPromise = requestApprovals('exec.approval.list', {});
+    await waitForSocketCount(1);
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        assert.deepEqual(message.params.scopes, ['operator.approvals']);
+        acceptHandshake(socket, message, 'approvals-connection', ['operator.approvals']);
+        return;
+      }
+      assert.equal(message.method, 'exec.approval.list');
+      socket.receive({ type: 'res', id: message.id, ok: true, payload: [] });
+    };
+    challenge(socket);
+
+    assert.deepEqual(await resultPromise, []);
+    assert.deepEqual(connectionOptions, [{ scopes: ['operator.approvals'], transient: true }]);
+    assert.deepEqual(socket.sent.map((message) => message.method), ['connect', 'exec.approval.list']);
+    assert.equal(socket.closeCalls.length, 1);
+    await turn();
+  });
+
   it('preserves a Windows scope-upgrade request through the privileged handshake', async () => {
     resetSockets();
     const surfacedIssues: GatewayAuthorizationIssue[] = [];

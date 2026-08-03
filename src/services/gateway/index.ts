@@ -11,6 +11,7 @@ import {
   type GatewayCallbacks,
   type GatewayRequestOptions,
   type GatewayConnectionOptions,
+  type GatewayOperatorScope,
   type ChatMessage,
   type MediaInfo,
 } from './Connection';
@@ -29,6 +30,7 @@ import { debugWarn } from '@/utils/debugLog';
 import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
 import type { GatewayAgentCreatePayload } from '@/utils/gatewayAgentFlow';
 import { routeGatewayEvent } from './collaborationEventBridge';
+import { GatewayApprovalEventSubscription } from './approvalEventBridge';
 import { VoiceWakeGatewayClient } from './VoiceWakeGatewayClient';
 import {
   routeVoiceWakeGatewayEvent,
@@ -45,6 +47,62 @@ import type { GatewayAttachment } from '@/services/chat/types';
 import { SessionSettingsClient } from './SessionSettingsClient';
 import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
 import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
+import { SessionCompactionClient } from './SessionCompactionClient';
+import {
+  OpenClawApprovalClient,
+  type ApprovalDecision,
+  type ApprovalRecord,
+  type ApprovalResolveResult,
+} from './approvals';
+import { buildSessionsCompactParams, parseSessionsCompactResult } from './sessionMaintenance';
+import { buildSessionsSteerParams } from './sessionSteering';
+import { buildToolsEffectiveParams, parseToolsEffectiveResult, type ToolsEffectiveResult } from './toolsEffective';
+import { buildToolsCatalogParams, parseToolsCatalogResult, type ToolsCatalogResult } from './toolsCatalog';
+import { buildToolsInvokeParams, parseToolsInvokeResult, type ToolsInvokeParams, type ToolsInvokeResult } from './toolsInvoke';
+import {
+  buildSessionsCompactionListParams,
+  buildSessionsPreviewParams,
+  buildSessionsResolveParams,
+  parseSessionsCompactionListResult,
+  parseSessionsPreviewResult,
+  parseSessionsResolveResult,
+  requireSessionPreview,
+  type SessionCompactionCheckpoint,
+  type SessionPreview,
+  type SessionsPreviewParams,
+  type SessionsResolveResult,
+} from './sessionInspection';
+import {
+  buildArtifactsDownloadParams,
+  buildArtifactsGetParams,
+  buildArtifactsListParams,
+  parseArtifactDownloadResult,
+  parseArtifactGetResult,
+  parseArtifactsListResult,
+  type ArtifactDownloadResult,
+  type ArtifactSummary,
+} from './artifacts';
+import {
+  buildMemoryRemHarnessParams,
+  buildMemoryStatusParams,
+  parseMemoryRemHarnessResult,
+  parseMemoryStatusResult,
+  type MemoryRemHarnessParams,
+  type MemoryRemHarnessResult,
+  type MemoryStatusResult,
+} from './memoryDoctor';
+import {
+  enqueueCronRun,
+  getCronJob,
+  listCronRuns,
+  waitForCronRun,
+  type CronRunEnqueueResult,
+  type CronRunLogEntry,
+  type CronRunWaitOptions,
+  type CronRunsPage,
+  type OpenClawCronJobDetails,
+  type CronRunsParams,
+} from './cronRuns';
 
 // Re-export types for consumers
 export type {
@@ -123,6 +181,28 @@ const chatHandler = new ChatHandler(connection);
 const transcriptSubscription = new OpenClawSessionTranscriptSubscription(connection);
 const SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS = 5_000;
 const RUN_STATE_LOOKUP_TIMEOUT_MS = 5_000;
+
+interface GatewayMessageIdentity {
+  clientMessageId?: string;
+  sessionId?: string;
+}
+
+type GatewayMessageMethod = 'chat.send' | 'sessions.steer';
+
+function gatewayAttachmentPayload(attachments?: GatewayAttachment[]) {
+  return attachments?.map((att) => {
+    let rawBase64 = att.content || '';
+    if (rawBase64.startsWith('data:')) {
+      rawBase64 = rawBase64.replace(/^data:[^;]+;base64,/, '');
+    }
+    return {
+      type: att.mimeType?.startsWith('image/') ? 'image' : 'file',
+      mimeType: att.mimeType,
+      content: rawBase64,
+      fileName: att.fileName || 'file',
+    };
+  });
+}
 
 export const voiceWakeGatewayClient = new VoiceWakeGatewayClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
@@ -205,6 +285,7 @@ export interface PrivilegedRequester {
 interface PrivilegedRequesterOptions {
   pairingRetryMs?: number;
   pairingTimeoutMs?: number;
+  scopes?: readonly GatewayOperatorScope[];
 }
 
 type PrivilegedAuthorizationIssueListener = (issue: GatewayAuthorizationIssue) => void;
@@ -342,7 +423,10 @@ export function createPrivilegedRequester(
     registerCancel: (cancel: () => void) => void,
     onConnected: () => void,
   ): Promise<AttemptResult<T>> => {
-    const transient = createConnection({ scopes: ['operator.admin'], transient: true });
+    const transient = createConnection({
+      scopes: options.scopes?.length ? options.scopes : ['operator.admin'],
+      transient: true,
+    });
     return new Promise<AttemptResult<T>>((resolve) => {
       let settled = false;
       let requestStarted = false;
@@ -521,6 +605,28 @@ export function createPrivilegedRequester(
 }
 
 const requestPrivileged = createPrivilegedRequester(connection);
+const requestApprovals = createPrivilegedRequester(connection, undefined, {
+  scopes: ['operator.approvals'],
+});
+const approvalClient = new OpenClawApprovalClient({
+  requestPrivileged: (method, params) => requestApprovals(method, params),
+});
+const approvalEventSubscription = new GatewayApprovalEventSubscription({
+  source: connection,
+});
+let approvalEventConsumers = 0;
+
+function acquireGatewayApprovalEvents(): () => void {
+  approvalEventConsumers += 1;
+  if (approvalEventConsumers === 1) approvalEventSubscription.start();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    approvalEventConsumers = Math.max(0, approvalEventConsumers - 1);
+    if (approvalEventConsumers === 0) approvalEventSubscription.stop();
+  };
+}
 const sessionSettings = new SessionSettingsClient({
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
   request: (method, params) => connection.request(method, params),
@@ -533,6 +639,11 @@ const sessionOrganization = new OpenClawSessionOrganizationClient({
 const sessionLifecycle = new OpenClawSessionLifecycleClient(
   (method, params) => connection.request(method, params),
 );
+const sessionCompaction = new SessionCompactionClient({
+  request: (method, params) => connection.request(method, params),
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+  runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
+});
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
 });
@@ -573,6 +684,65 @@ connection.onEvent = (msg: unknown) => routeTalkGatewayEvent(
     (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
   ),
 );
+
+async function sendGatewayMessage(
+  method: GatewayMessageMethod,
+  message: string,
+  attachments: GatewayAttachment[] | undefined,
+  sessionKey: string,
+  identity: GatewayMessageIdentity = {},
+): Promise<unknown> {
+  const gwAttachments = gatewayAttachmentPayload(attachments);
+  const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
+  const steerParams = method === 'sessions.steer'
+    ? buildSessionsSteerParams(sessionKey, message, {
+      attachments: gwAttachments,
+      idempotencyKey: clientMessageId,
+    })
+    : undefined;
+  chatHandler.beginPendingSend(sessionKey, clientMessageId);
+  let requestDispatched = false;
+  try {
+    const result = await sessionCommandCoordinator.runMutation(sessionKey, async () => {
+      if (!connection.isConnected()) throw new GatewayDisconnectedError();
+      await connection.ensureReasoningStream(sessionKey);
+      if (!connection.isConnected()) throw new GatewayDisconnectedError();
+      requestDispatched = true;
+      if (method === 'sessions.steer') {
+        return connection.request(method, steerParams);
+      }
+      return connection.request(method, {
+        sessionKey,
+        ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
+        message,
+        idempotencyKey: clientMessageId,
+        ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
+      });
+    });
+    const acknowledgement = chatHandler.reconcileSendAcknowledgement(
+      sessionKey,
+      clientMessageId,
+      result,
+    );
+    if (acknowledgement !== 'unknown') return result;
+    if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
+      return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
+    }
+    return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
+  } catch (error) {
+    if (chatHandler.isSendObserved(sessionKey, clientMessageId)) {
+      return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
+    }
+    if (requestDispatched && !(error instanceof GatewayRpcError)) {
+      if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
+        return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
+      }
+      return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
+    }
+    chatHandler.failPendingSend(sessionKey, clientMessageId);
+    throw error;
+  }
+}
 
 // ── Public API (matches original gateway.ts exactly) ──
 export const gateway = {
@@ -625,9 +795,11 @@ export const gateway = {
   // Connection
   connect(url: string, token: string, deviceToken = '') { connection.connect(url, token, deviceToken); },
   disconnect() {
+    approvalEventSubscription.stop();
     transcriptSubscription.resetTransport();
     connection.disconnect();
   },
+  acquireGatewayApprovalEvents() { return acquireGatewayApprovalEvents(); },
   getStatus() { return connection.getStatus(); },
   getLastError() { return connection.getLastError(); },
   captureConnectionId() { return connection.getAttestedConnectionId(); },
@@ -640,65 +812,17 @@ export const gateway = {
     message: string,
     attachments?: GatewayAttachment[],
     sessionKey = 'agent:main:main',
-    identity: { clientMessageId?: string; sessionId?: string } = {},
+    identity: GatewayMessageIdentity = {},
   ) {
-    const gwAttachments = attachments?.map((att) => {
-      let rawBase64 = att.content || '';
-      if (rawBase64.startsWith('data:')) {
-        rawBase64 = rawBase64.replace(/^data:[^;]+;base64,/, '');
-      }
-      return {
-        type: att.mimeType?.startsWith('image/') ? 'image' : 'file',
-        mimeType: att.mimeType,
-        content: rawBase64,
-        fileName: att.fileName || 'file',
-      };
-    });
-
-    const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
-    chatHandler.beginPendingSend(sessionKey, clientMessageId);
-    let requestDispatched = false;
-    try {
-      const result = await sessionCommandCoordinator.runMutation(sessionKey, async () => {
-        // The renderer owns the only visible, cancellable retry queue. Keeping a
-        // second transport queue would acknowledge work that the UI cannot inspect.
-        if (!connection.isConnected()) throw new GatewayDisconnectedError();
-
-        // Enable reasoning stream lazily only when the user actually sends a message.
-        await connection.ensureReasoningStream(sessionKey);
-        if (!connection.isConnected()) throw new GatewayDisconnectedError();
-        requestDispatched = true;
-        return connection.request('chat.send', {
-          sessionKey,
-          ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
-          message,
-          idempotencyKey: clientMessageId,
-          ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
-        });
-      });
-      const acknowledgement = chatHandler.reconcileSendAcknowledgement(
-        sessionKey,
-        clientMessageId,
-        result,
-      );
-      if (acknowledgement !== 'unknown') return result;
-      if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
-        return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
-      }
-      return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
-    } catch (error) {
-      if (chatHandler.isSendObserved(sessionKey, clientMessageId)) {
-        return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
-      }
-      if (requestDispatched && !(error instanceof GatewayRpcError)) {
-        if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
-          return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
-        }
-        return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
-      }
-      chatHandler.failPendingSend(sessionKey, clientMessageId);
-      throw error;
-    }
+    return sendGatewayMessage('chat.send', message, attachments, sessionKey, identity);
+  },
+  async steerMessage(
+    message: string,
+    attachments?: GatewayAttachment[],
+    sessionKey = 'agent:main:main',
+    identity: Pick<GatewayMessageIdentity, 'clientMessageId'> = {},
+  ) {
+    return sendGatewayMessage('sessions.steer', message, attachments, sessionKey, identity);
   },
 
   // Sessions & Agents
@@ -708,6 +832,147 @@ export const gateway = {
   },
   async describeSession(sessionKey: string) {
     return connection.request('sessions.describe', { key: sessionKey });
+  },
+  async getEffectiveTools(sessionKey = 'agent:main:main', agentId?: string): Promise<ToolsEffectiveResult> {
+    return parseToolsEffectiveResult(
+      await connection.request('tools.effective', buildToolsEffectiveParams(sessionKey, agentId)),
+    );
+  },
+  async invokeTool(params: ToolsInvokeParams): Promise<ToolsInvokeResult> {
+    return parseToolsInvokeResult(
+      await connection.request('tools.invoke', buildToolsInvokeParams(params)),
+    );
+  },
+  async getToolsCatalog(agentId?: string, includePlugins?: boolean): Promise<ToolsCatalogResult> {
+    return parseToolsCatalogResult(
+      await connection.request('tools.catalog', buildToolsCatalogParams(agentId, includePlugins)),
+    );
+  },
+  async getSessionPreview(
+    sessionKey = 'agent:main:main',
+    options: Pick<SessionsPreviewParams, 'limit' | 'maxChars'> = {},
+  ): Promise<SessionPreview> {
+    const result = parseSessionsPreviewResult(
+      await connection.request('sessions.preview', buildSessionsPreviewParams([sessionKey], options)),
+    );
+    return requireSessionPreview(result, sessionKey);
+  },
+  async resolveSessionKey(sessionKey = 'agent:main:main', agentId?: string): Promise<SessionsResolveResult> {
+    return parseSessionsResolveResult(
+      await connection.request(
+        'sessions.resolve',
+        buildSessionsResolveParams(sessionKey, { agentId, allowMissing: true }),
+      ),
+    );
+  },
+  async listSessionCompactionCheckpoints(sessionKey = 'agent:main:main', agentId?: string): Promise<SessionCompactionCheckpoint[]> {
+    const result = parseSessionsCompactionListResult(
+      await connection.request('sessions.compaction.list', buildSessionsCompactionListParams(sessionKey, agentId)),
+      sessionKey,
+    );
+    return result.checkpoints;
+  },
+  async getSessionCompactionCheckpoint(
+    sessionKey: string,
+    checkpointId: string,
+    agentId?: string,
+  ) {
+    return sessionCompaction.get(sessionKey, checkpointId, agentId);
+  },
+  async branchSessionCompactionCheckpoint(
+    sessionKey: string,
+    checkpointId: string,
+    agentId?: string,
+  ) {
+    return sessionCompaction.branch(sessionKey, checkpointId, agentId);
+  },
+  async restoreSessionCompactionCheckpoint(
+    sessionKey: string,
+    checkpointId: string,
+    agentId?: string,
+  ) {
+    return sessionCompaction.restore(sessionKey, checkpointId, agentId);
+  },
+  async listSessionArtifacts(sessionKey = 'agent:main:main', agentId?: string): Promise<ArtifactSummary[]> {
+    return parseArtifactsListResult(
+      await connection.request('artifacts.list', buildArtifactsListParams({ sessionKey, agentId })),
+      sessionKey,
+    ).artifacts;
+  },
+  async getSessionArtifact(
+    artifactId: string,
+    sessionKey = 'agent:main:main',
+    agentId?: string,
+  ): Promise<ArtifactSummary> {
+    return parseArtifactGetResult(
+      await connection.request('artifacts.get', buildArtifactsGetParams(artifactId, { sessionKey, agentId })),
+      artifactId,
+      sessionKey,
+    ).artifact;
+  },
+  async downloadSessionArtifact(
+    artifactId: string,
+    sessionKey = 'agent:main:main',
+    agentId?: string,
+  ): Promise<ArtifactDownloadResult> {
+    return parseArtifactDownloadResult(
+      await connection.request(
+        'artifacts.download',
+        buildArtifactsDownloadParams(artifactId, { sessionKey, agentId }),
+      ),
+      artifactId,
+      sessionKey,
+    );
+  },
+  async getCronJob(jobId: string): Promise<OpenClawCronJobDetails> {
+    return getCronJob(
+      (method, params) => connection.request(method, params),
+      jobId,
+    );
+  },
+  async listCronRuns(params: CronRunsParams): Promise<CronRunsPage> {
+    return listCronRuns(
+      (method, requestParams) => connection.request(method, requestParams),
+      params,
+    );
+  },
+  async enqueueCronRun(jobId: string, mode: 'due' | 'force' = 'force'): Promise<CronRunEnqueueResult> {
+    return enqueueCronRun(
+      (method, params) => connection.request(method, params),
+      jobId,
+      mode,
+    );
+  },
+  async waitForCronRun(
+    jobId: string,
+    runId: string,
+    options?: CronRunWaitOptions,
+  ): Promise<CronRunLogEntry> {
+    return waitForCronRun(
+      (method, params) => connection.request(method, params),
+      jobId,
+      runId,
+      options,
+    );
+  },
+  async getMemoryStatus(agentId?: string, deep = false): Promise<MemoryStatusResult> {
+    return parseMemoryStatusResult(
+      await connection.request('doctor.memory.status', buildMemoryStatusParams(agentId, deep)),
+    );
+  },
+  async getMemoryRemHarness(options: MemoryRemHarnessParams = {}): Promise<MemoryRemHarnessResult> {
+    return parseMemoryRemHarnessResult(
+      await connection.request('doctor.memory.remHarness', buildMemoryRemHarnessParams(options)),
+    );
+  },
+  async listGatewayApprovals(): Promise<ApprovalRecord[]> {
+    return approvalClient.list();
+  },
+  async resolveGatewayApproval(
+    record: ApprovalRecord,
+    decision: ApprovalDecision,
+  ): Promise<ApprovalResolveResult> {
+    return approvalClient.resolve(record, decision);
   },
   async getAgents() { return connection.request('agents.list', {}); },
   async createAgent(agent: GatewayAgentCreatePayload) { return agentManagement.create(agent); },
@@ -751,11 +1016,10 @@ export const gateway = {
   async compactSession(sessionKey = 'agent:main:main') {
     return sessionCommandCoordinator.runMutation(
       sessionKey,
-      () => connection.request('chat.send', {
+      async () => parseSessionsCompactResult(
+        await connection.request('sessions.compact', buildSessionsCompactParams(sessionKey)),
         sessionKey,
-        message: '/compact',
-        idempotencyKey: `aegis-compact-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      }),
+      ),
     );
   },
 
@@ -901,5 +1165,6 @@ export const gateway = {
   stopPairingRetry() { connection.stopPairingRetry(); },
   cancelActivePrivilegedRequest() { requestPrivileged.cancelActiveRequest(); },
   cancelPrivilegedAuthorizationRetry() { requestPrivileged.cancelPairingRetry(); },
+  cancelApprovalAuthorizationRetry() { requestApprovals.cancelPairingRetry(); },
   reconnectWithToken(newToken: string) { connection.reconnectWithToken(newToken); },
 };

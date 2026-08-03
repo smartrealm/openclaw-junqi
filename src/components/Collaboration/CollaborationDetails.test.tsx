@@ -144,7 +144,14 @@ function snapshot(): CollaborationRunSnapshot {
       parameterDigest: 'b'.repeat(64),
       instantiatedAt: NOW - 45_000,
     },
-    finalArtifact: { summary: 'Partial decision memo', confidence: 'medium' },
+    finalArtifact: {
+      id: 'artifact-1',
+      runId: 'run-details',
+      sourceAttemptId: 'attempt-synthesis',
+      content: `Partial decision memo: ${'evidence remains traceable. '.repeat(12)}`,
+      digest: 'sha256:artifact-digest',
+      createdAt: NOW - 5_000,
+    },
   };
 }
 
@@ -199,6 +206,11 @@ test('renders the graph and every traceability section from the canonical snapsh
   assert.match(html, /Approval history/);
   assert.match(html, /Plan approved/);
   assert.match(html, /Partial decision memo/);
+  assert.match(html, /evidence remains traceable\. evidence remains traceable\./);
+  assert.doesNotMatch(html, /evidence remains traceable\.\.\./);
+  assert.match(html, /data-collaboration-final-artifact-content/);
+  assert.match(html, /attempt-synthesis/);
+  assert.match(html, /sha256:artifact-digest/);
   assert.match(html, /INTERVENTION_CREATED/);
   assert.match(html, /data-collaboration-action="WORK_ITEM_RETRY"/);
 });

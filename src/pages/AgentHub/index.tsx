@@ -21,6 +21,7 @@ import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayD
 import { useSkillsStore } from '@/stores/skillsStore';
 import { gateway, GatewayAgentDisplayNameUpdateError } from '@/services/gateway';
 import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
+import { deleteAgentProfile } from '@/services/agentProfiles';
 import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
 import {
   buildGatewayAgentCreatePayload,
@@ -32,7 +33,11 @@ import {
 import clsx from 'clsx';
 import { themeHex, themeAlpha, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
-import { isCronSessionKey, isSubagentSessionKey } from '@/utils/sessionPresentation';
+import {
+  classifyAgentSessionKind,
+  findCanonicalAgentMainSession,
+  type AgentSessionKind,
+} from '@/utils/sessionPresentation';
 import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
 import { parseAgentWorkspaceSkills, type AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import { persistAgentCreationOverrides } from './agentCreationConfig';
@@ -53,7 +58,7 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 interface SessionInfo {
   key: string;
   label: string;
-  type: 'main' | 'cron' | 'subagent';
+  type: AgentSessionKind;
   model: string;
   totalTokens: number;
   contextTokens: number;
@@ -141,12 +146,6 @@ const timeAgo = (ts?: number) => {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
   return `${Math.floor(diff / 86400000)}d ago`;
-};
-
-const getSessionType = (key: string): 'main' | 'cron' | 'subagent' => {
-  if (isCronSessionKey(key)) return 'cron';
-  if (isSubagentSessionKey(key)) return 'subagent';
-  return 'main';
 };
 
 /** Normalize model value — gateway may return a string or { primary } object. */
@@ -303,7 +302,7 @@ function formatChannelBinding(t: ReturnType<typeof useTranslation>['t'], binding
 function parseSessions(raw: any[]): SessionInfo[] {
   return raw.map((s) => {
     const key = s.key || '';
-    const type = getSessionType(key);
+    const type = classifyAgentSessionKind(key);
     const parts = key.split(':');
     const agentId = parts[1] || 'main';
     const label = type === 'cron'
@@ -1059,6 +1058,12 @@ export function AgentHubPage() {
     if (deletingAgentId === agentId) {
       try {
         await gateway.deleteAgent(agentId);
+        let profileCleanupError: string | null = null;
+        try {
+          await deleteAgentProfile(agentId);
+        } catch (error: unknown) {
+          profileCleanupError = error instanceof Error ? error.message : String(error);
+        }
         const removedBindings = await cleanupDeletedAgentChannelBindings(agentId);
         setDeletingAgentId(null);
         if (selectedAgentId === agentId) setSelectedAgentId(null);
@@ -1071,6 +1076,13 @@ export function AgentHubPage() {
           return next;
         });
         await refreshGroup('agents');
+        if (profileCleanupError) {
+          showAlert(
+            t('agentHub.profileCleanupWarningTitle', 'Agent 已删除，但业务画像未清理'),
+            t('agentHub.profileCleanupWarningMessage', { error: profileCleanupError, defaultValue: `本地业务画像仍保留，请检查本机设置。${profileCleanupError}` }),
+            'warning',
+          );
+        }
         if (removedBindings > 0) {
           showAlert(
             t('agentHub.deleteCleanupTitle', 'Agent deleted'),
@@ -1086,7 +1098,7 @@ export function AgentHubPage() {
   };
 
   // ── Derived data ──
-  const mainSession = sessions.find(s => s.agentId === 'main' && s.type === 'main');
+  const mainSession = findCanonicalAgentMainSession(sessions, 'main');
   const workers = sessions.filter(s => s !== mainSession && (s.type === 'cron' || s.type === 'subagent'));
   const registeredAgents = enrichedAgents.filter(a => a.id !== 'main');
   const selectedAgent = registeredAgents.find(a => a.id === selectedAgentId) ?? null;

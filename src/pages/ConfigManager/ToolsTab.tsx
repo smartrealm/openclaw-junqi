@@ -7,6 +7,7 @@ import {
   loadOpenClawConfigSchema,
   type OpenClawFieldSchema,
 } from '@/services/openclawConfigSchema';
+import { ToolsCatalogPanel } from './ToolsCatalogPanel';
 
 interface ToolsTabProps {
   config: OpenClawConfig;
@@ -45,28 +46,34 @@ export function ToolsTab({ config, onChange }: ToolsTabProps) {
 
   if (error || Object.keys(fields).length === 0) {
     return (
-      <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
-        {t(
-          'config.runtimeSchemaRequired',
-          'The selected OpenClaw Runtime schema is unavailable. Tool settings are read-only; use the raw editor or official OpenClaw Wizard after the Runtime is available.',
-        )}
-        {error ? <p className="mt-1 text-xs opacity-80">{error}</p> : null}
+      <div className="space-y-4">
+        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
+          {t(
+            'config.runtimeSchemaRequired',
+            'The selected OpenClaw Runtime schema is unavailable. Tool settings are read-only; use the raw editor or official OpenClaw Wizard after the Runtime is available.',
+          )}
+          {error ? <p className="mt-1 text-xs opacity-80">{error}</p> : null}
+        </div>
+        <ToolsCatalogPanel />
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-aegis-border bg-aegis-elevated p-4">
-      <p className="mb-3 text-xs text-aegis-text-muted">
-        {t('config.runtimeSchemaAuthorityHint', 'Fields and accepted values come from the selected OpenClaw Runtime.')}
-      </p>
-      <SchemaDrivenObjectEditor
-        title={t('config.tools', 'Tools')}
-        fields={fields}
-        value={config.tools ?? {}}
-        initiallyOpen
-        onChange={(tools) => onChange((prev) => ({ ...prev, tools }))}
-      />
+    <div className="space-y-4">
+      <ToolsCatalogPanel />
+      <div className="rounded-xl border border-aegis-border bg-aegis-elevated p-4">
+        <p className="mb-3 text-xs text-aegis-text-muted">
+          {t('config.runtimeSchemaAuthorityHint', 'Fields and accepted values come from the selected OpenClaw Runtime.')}
+        </p>
+        <SchemaDrivenObjectEditor
+          title={t('config.tools', 'Tools')}
+          fields={fields}
+          value={config.tools ?? {}}
+          initiallyOpen
+          onChange={(tools) => onChange((prev) => ({ ...prev, tools }))}
+        />
+      </div>
     </div>
   );
 }

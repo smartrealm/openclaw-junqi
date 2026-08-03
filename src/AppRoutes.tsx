@@ -7,6 +7,7 @@ import { useSessionMutationDialogStore } from '@/services/collaboration/sessionM
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { useCollaborationSetupStore } from '@/stores/collaborationSetupStore';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
+import { CollaborationActivityRuntime } from '@/components/Collaboration/CollaborationActivityRuntime';
 
 const AppRouteTree = lazy(() => import('@/AppRouteTree'));
 const ToastContainer = lazy(() => import('@/components/Toast/ToastContainer').then(m => ({ default: m.ToastContainer })));
@@ -67,6 +68,7 @@ function CollaborationSetupRuntime() {
 export default function AppRoutes() {
   return (
     <HashRouter>
+      <CollaborationActivityRuntime />
       <LazyToastHost />
       <ErrorBoundary>
         <Suspense fallback={<AppLoadingFallback />}>

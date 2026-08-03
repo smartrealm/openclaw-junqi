@@ -45,6 +45,9 @@ export type StatusIconValue =
   | "done"
   | "failed"
   | "cancelled"
+  | "blocked"
+  | "timed_out"
+  | "unknown"
   // bootSequenceStore
   | "completed"
   | "skipped"
@@ -94,6 +97,9 @@ const STATUS_GLYPH: Record<StatusIconValue, LucideIcon | "spinner"> = {
   error: XCircle,
 
   cancelled: MinusCircle,
+  blocked: AlertTriangle,
+  timed_out: Hourglass,
+  unknown: Circle,
   skipped: MinusCircle,
 
   idle: Circle,

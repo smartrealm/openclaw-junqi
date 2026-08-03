@@ -23,6 +23,7 @@ interface UseMessageSendOptions {
   text: string;
   textareaRef: RefObject<HTMLTextAreaElement>;
   setIsSending: (sending: boolean, sessionKey?: string) => void;
+  deliveryMode?: 'normal' | 'steer';
 }
 
 export function useMessageSend({
@@ -37,6 +38,7 @@ export function useMessageSend({
   text,
   textareaRef,
   setIsSending,
+  deliveryMode = 'normal',
 }: UseMessageSendOptions) {
   const { t } = useTranslation();
 
@@ -94,6 +96,8 @@ export function useMessageSend({
         attachments: attachments.length ? attachments : undefined,
         displayAttachments: displayAttachments(sendFiles),
         optimisticMessage: { timestamp: new Date().toISOString() },
+        queueIfBusy: deliveryMode !== 'steer',
+        steer: deliveryMode === 'steer',
       });
       const state = useChatStore.getState();
       state.consumeComposerSnapshot(sessionKey, {
@@ -120,5 +124,6 @@ export function useMessageSend({
     t,
     text,
     textareaRef,
+    deliveryMode,
   ]);
 }

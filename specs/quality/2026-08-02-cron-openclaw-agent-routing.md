@@ -44,5 +44,5 @@
 
 - command cron、condition trigger 和 `on-exit`；
 - 完整 delivery、failure alert、model/fallbacks/thinking/tools 表单；
-- `cron.status` 与 runId 精确轮询；
+- runId 精确轮询；`cron.status` 已在 2026-08-03 作为独立只读状态投影接入，详见 [`docs/quality/cron-status-scheduler-2026-08-03.md`](../../../docs/quality/cron-status-scheduler-2026-08-03.md)；
 - 真实 Gateway 创建和执行验收。

@@ -60,6 +60,58 @@ test('Talk interruption stops local output before requesting Gateway cancellatio
   assert.deepEqual(calls, ['local', 'gateway']);
 });
 
+test('Talk session replacement fences the previous client and queued audio', async () => {
+  const calls: string[] = [];
+  const listeners = new Set<(event: TalkGatewayEvent) => void>();
+  const coordinator = new TalkConversationCoordinator({
+    client: {
+      createRealtimeRelay: async () => ({ sessionId: 'talk-replaced', provider: 'relay' }),
+      appendAudio: async (_sessionId, audioBase64) => { calls.push(`append:${audioBase64}`); },
+      cancelOutput: async () => undefined,
+      close: async () => { calls.push('close'); },
+      subscribe: (next) => { listeners.add(next); return () => listeners.delete(next); },
+    },
+    captureConnectionId: () => 'connection-a',
+    isConnectionCurrent: () => true,
+    interruptLocalOutput: () => undefined,
+    playOutput: () => undefined,
+    finishOutput: () => undefined,
+    stopOutput: () => { calls.push('stop'); },
+  });
+
+  await coordinator.start('agent:main:main');
+  calls.length = 0;
+  for (const listener of listeners) {
+    listener({
+      id: 'replacement-1',
+      sessionId: 'talk-replaced',
+      type: 'session.replaced',
+      seq: 2,
+      turnId: null,
+      mode: 'realtime',
+      transport: 'gateway-relay',
+      brain: 'agent-consult',
+      payload: {
+        handoffId: 'handoff-1',
+        roomId: 'room-1',
+        previousClientId: 'client-old',
+        nextClientId: 'client-new',
+      },
+      audioBase64: null,
+      relayType: null,
+    });
+  }
+
+  assert.equal(coordinator.getSnapshot().phase, 'error');
+  assert.equal(coordinator.getSnapshot().error, 'talk_session_replaced');
+  assert.equal(coordinator.getSnapshot().sessionId, null);
+  assert.deepEqual(calls, ['stop']);
+  coordinator.appendPcm({ data: 'stale', sampleRateHz: 24_000, channels: 1 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ['stop']);
+  assert.equal(listeners.size, 0);
+});
+
 test('Talk replacement cancels Gateway output after local stop and before closing the prior relay', async () => {
   const calls: string[] = [];
   let count = 0;
