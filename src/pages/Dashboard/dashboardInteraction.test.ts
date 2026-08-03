@@ -36,10 +36,9 @@ test('dashboard context and budget values use canonical metric helpers', () => {
   assert.doesNotMatch(dashboard, /tokenUsage\?\.percentage/);
 });
 
-test('dashboard global usage requests cover every agent', () => {
+test('dashboard global usage store requests cover every agent', () => {
   assert.match(gatewayStore, /usage\.cost', \{ days: 30, agentScope: 'all' \}/);
   assert.match(gatewayStore, /sessions\.usage', \{ limit: 100, agentScope: 'all' \}/);
-  assert.match(gateway, /getCostSummary[\s\S]*agentScope: 'all'/);
 });
 
 test('dashboard uses the canonical agent display name and distinguishes unpriced token activity', () => {

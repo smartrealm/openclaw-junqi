@@ -1504,8 +1504,7 @@ export const gateway = {
     return requestPrivileged('agents.update', { agentId, params });
   },
 
-  // Models & Usage
-  async getSessionStatus(_sessionKey = 'agent:main:main') { return connection.request('sessions.list', {}); },
+  // Models
   async getAvailableModels(view: 'default' | 'configured' | 'all' = 'configured') {
     return connection.request('models.list', { view });
   },
@@ -1532,11 +1531,6 @@ export const gateway = {
   },
   // Skills — list installed skills with status (input for the @skill picker)
   async getSkills(agentId?: string) { return connection.request('skills.status', agentId ? { agentId } : {}); },
-  async getCostSummary(days = 30) { return connection.request('usage.cost', { days, agentScope: 'all' }); },
-  async getSessionsUsage(params: Record<string, unknown> = {}) {
-    const scope = params.agentId || params.key ? {} : { agentScope: 'all' };
-    return connection.request('sessions.usage', { limit: 50, ...scope, ...params });
-  },
 
   // Pairing
   getHttpBaseUrl() { return connection.getHttpBaseUrl(); },
