@@ -659,8 +659,13 @@ export function SettingsPageFull() {
             status={openClawTtsStatus.status}
             loading={openClawTtsStatus.loading}
             failure={openClawTtsStatus.failure}
+            mutation={openClawTtsStatus.mutation}
+            mutationFailure={openClawTtsStatus.mutationFailure}
             connected={connected}
             onRefresh={() => { void openClawTtsStatus.refresh(); }}
+            onSetEnabled={(enabled) => { void openClawTtsStatus.setEnabled(enabled); }}
+            onSetProvider={(provider) => { void openClawTtsStatus.setProvider(provider); }}
+            onSetPersona={(persona) => { void openClawTtsStatus.setPersona(persona); }}
           />
 
           <div className="flex items-center justify-between">

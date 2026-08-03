@@ -165,6 +165,7 @@ docs/
 - [OpenClaw Talk 能力目录对齐](quality/openclaw-talk-catalog-alignment-2026-08-03.md)
 - [OpenClaw 原生 TTS 客户端对齐](quality/openclaw-native-tts-client-alignment-2026-08-03.md)
 - [OpenClaw 原生 TTS 状态对齐](quality/openclaw-native-tts-status-alignment-2026-08-03.md)
+- [OpenClaw 原生 TTS 偏好对齐](quality/openclaw-native-tts-preferences-alignment-2026-08-03.md)
 - [OpenClaw 工具入口权威对齐](quality/openclaw-tools-route-authority-alignment-2026-08-03.md)
 - [OpenClaw 运行时命令目录对齐](quality/openclaw-runtime-command-catalog-alignment-2026-08-03.md)
 - [OpenClaw 会话用量范围对齐](quality/openclaw-sessions-usage-range-alignment-2026-08-03.md)

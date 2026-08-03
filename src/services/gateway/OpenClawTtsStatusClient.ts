@@ -115,11 +115,18 @@ export class OpenClawTtsStatusClient {
   constructor(private readonly dependencies: OpenClawTtsStatusClientDependencies) {}
 
   async get(): Promise<OpenClawTtsStatus> {
+    const connectionId = this.dependencies.captureConnectionId();
+    if (!connectionId) throw new OpenClawTtsStatusUnavailableError('No attested Gateway connection is available for TTS status');
+    return this.getForConnection(connectionId);
+  }
+
+  async getForConnection(connectionId: string): Promise<OpenClawTtsStatus> {
     if (this.dependencies.hasAdvertisedMethod(TTS_STATUS_METHOD) === false) {
       throw new OpenClawTtsStatusUnavailableError('The connected OpenClaw Gateway does not advertise tts.status');
     }
-    const connectionId = this.dependencies.captureConnectionId();
-    if (!connectionId) throw new OpenClawTtsStatusUnavailableError('No attested Gateway connection is available for TTS status');
+    if (!this.dependencies.isConnectionCurrent(connectionId)) {
+      throw new OpenClawTtsStatusUnavailableError('No attested Gateway connection is available for TTS status');
+    }
     try {
       const response = await this.dependencies.requestFenced(TTS_STATUS_METHOD, {}, connectionId);
       if (!this.dependencies.isConnectionCurrent(connectionId)) {

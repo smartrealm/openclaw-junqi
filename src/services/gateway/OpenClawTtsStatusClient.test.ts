@@ -105,6 +105,24 @@ test('OpenClawTtsStatusClient discards a result after the Gateway connection cha
   await assert.rejects(client.get(), OpenClawTtsStatusUnavailableError);
 });
 
+test('OpenClawTtsStatusClient uses an explicit connection identity for a mutation refresh', async () => {
+  const calls: Array<{ method: string; connectionId: string }> = [];
+  const client = new OpenClawTtsStatusClient({
+    captureConnectionId: () => 'gateway-b',
+    isConnectionCurrent: (connectionId) => connectionId === 'gateway-a',
+    hasAdvertisedMethod: () => true,
+    requestFenced: async (method, _params, connectionId) => {
+      calls.push({ method, connectionId });
+      return statusResponse;
+    },
+  });
+
+  const status = await client.getForConnection('gateway-a');
+
+  assert.equal(status.provider, 'openai');
+  assert.deepEqual(calls, [{ method: 'tts.status', connectionId: 'gateway-a' }]);
+});
+
 test('OpenClawTtsStatusClient maps a disconnected fenced request to unavailable', async () => {
   const client = new OpenClawTtsStatusClient({
     captureConnectionId: () => 'gateway-a',
