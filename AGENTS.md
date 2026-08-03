@@ -83,7 +83,7 @@ JunQi Desktop 是基于 Tauri 2、Rust、React 18、TypeScript、Vite 6 和 Open
 ### OpenClaw 对齐与 JunQi 增强边界
 
 - JunQi 的产品定位是 OpenClaw 客户端和桌面二次开发层，不是另一套 Agent、Tool Calling、Task、Transcript 或 Runtime 实现。所有功能增强、跨平台适配、语音交互、任务图和 UI 设计都必须依托 OpenClaw 官方已支持的能力、协议和扩展点展开。
-- OpenClaw 是 Chat、Agent、Tool Calling、Transcript、Task Ledger、会话生命周期和运行时协议的权威来源。JunQi 可以增加桌面编排、持久 checkpoint、跨平台 UI、语音唤醒、可观测性和人工核验，但不能重新定义或替代这些上游语义。
+- OpenClaw 是 Chat、Agent、Tool Calling、Transcript、Task Ledger、会话生命周期和运行时协议的权威来源。只有当最新版 OpenClaw 已通过正式协议、官方扩展点或官方插件定义相应能力时，JunQi 才能在桌面侧增加对应的跨平台 UI、交互、可观测性或人工核验；这些实现不得重新定义、替代或补足上游语义。
 - OpenClaw 原生不支持的功能不得在 JunQi 中伪造、包装成已支持或以乐观 UI 掩盖缺失。若需求超出官方能力，必须标记为不支持或待验证，只有在存在官方插件、协议扩展或明确的客户端层契约时才可实现。
 - 禁止硬编码来模拟 OpenClaw 能力：不得把工具名称、工具副作用、参数结构、状态、命令、版本、会话身份、任务结果或平台能力写成未经上游契约证明的业务常量。展示文案也不能用来掩盖未知、未授权、未连接或未核验状态。
 - 每个新增 OpenClaw 集成必须先依据 OpenClaw 官方文档、官方源码、协议 schema、Gateway handler 或可复现 RPC/capability 结果确认“是否支持以及如何支持”。`package.json`、lockfile 和实际安装版本只用于确认当前运行环境、复现实验和记录验证范围，不得把版本号写成能力开关、字段契约或实现分支。上游未来版本、其他项目的实现和模型常识只能作为检索线索，不能作为当前实现契约。
