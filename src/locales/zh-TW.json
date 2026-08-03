@@ -3063,6 +3063,23 @@
     "providerCredentialUnverified": "憑據未確認",
     "providerCredentialReference": "憑據引用已配置",
     "providerCredentialRuntime": "運行時憑據已配置",
+    "gatewayAuthStatus": {
+      "title": "OpenClaw 認證狀態",
+      "description": "由目前連接 Gateway 回報的憑據健康狀態，不代表下一次模型請求一定成功。",
+      "refresh": "刷新 OpenClaw 認證狀態",
+      "unavailable": "目前 Gateway 未提供 OpenClaw 模型認證狀態。",
+      "invalid": "Gateway 回傳的模型認證狀態無法驗證。",
+      "empty": "Gateway 未回報模型認證提供方。",
+      "expiresIn": "{{value}} 後到期",
+      "profileCount": "{{count}} 個設定檔",
+      "status": {
+        "ok": "可用",
+        "expiring": "即將到期",
+        "expired": "已到期",
+        "missing": "缺失",
+        "static": "靜態憑據"
+      }
+    },
     "providersRuntimeSuppliedNote": "{{count}} 個提供方使用運行時託管憑據。",
     "modelCostTitle": "模型定價",
     "modelCostHint": "單位為美元每百萬 Token。OpenClaw 使用這些單價進行本地費用估算，不代表供應商賬單。",

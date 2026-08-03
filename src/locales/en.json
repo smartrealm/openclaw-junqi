@@ -3101,6 +3101,23 @@
     "providerCredentialUnverified": "Credential not verified",
     "providerCredentialReference": "Credential reference configured",
     "providerCredentialRuntime": "Runtime credential configured",
+    "gatewayAuthStatus": {
+      "title": "OpenClaw authentication status",
+      "description": "Credential health reported by the connected Gateway. It does not guarantee the next model request will succeed.",
+      "refresh": "Refresh OpenClaw authentication status",
+      "unavailable": "The current Gateway does not provide OpenClaw model authentication status.",
+      "invalid": "The Gateway returned model authentication status that could not be verified.",
+      "empty": "The Gateway reported no model authentication providers.",
+      "expiresIn": "Expires in {{value}}",
+      "profileCount": "{{count}} profiles",
+      "status": {
+        "ok": "Ready",
+        "expiring": "Expiring",
+        "expired": "Expired",
+        "missing": "Missing",
+        "static": "Static"
+      }
+    },
     "providersRuntimeSuppliedNote": "{{count}} providers use runtime-managed credentials.",
     "modelCostTitle": "Model pricing",
     "modelCostHint": "USD per 1 million tokens. Used by OpenClaw for local cost estimates, not as a provider invoice.",

@@ -103,6 +103,8 @@ import {
 } from './providerPolicy';
 import { DefaultModelControls, modelDisplayLabel } from './DefaultModelControls';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { OpenClawModelAuthStatusPanel } from '@/components/settings/OpenClawModelAuthStatusPanel';
+import { useOpenClawModelAuthStatus } from '@/hooks/useOpenClawModelAuthStatus';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -3265,6 +3267,7 @@ export function ProvidersTab({
   addRequestId = 0,
 }: ProvidersTabProps) {
   const { t } = useTranslation();
+  const modelAuthStatus = useOpenClawModelAuthStatus(true);
   const [showModal, setShowModal]                   = useState(false);
   const [modalInitialTemplate, setModalInitialTemplate] = useState<ProviderTemplate | undefined>();
   const [apiProtocolOptions, setApiProtocolOptions] = useState<string[]>([]);
@@ -3487,6 +3490,13 @@ export function ProvidersTab({
             </span>
           ))}
         </div>
+
+        <OpenClawModelAuthStatusPanel
+          status={modelAuthStatus.status}
+          loading={modelAuthStatus.loading}
+          failure={modelAuthStatus.failure}
+          onRefresh={() => { void modelAuthStatus.refresh(); }}
+        />
 
         <div
           className="mt-4 border-t border-aegis-border pt-4"
