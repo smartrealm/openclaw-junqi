@@ -878,7 +878,7 @@
     "audioAutoPlay": "自动播放实时回复音频",
     "audioAutoPlayDesc": "自动播放助手实时回复携带的音频；历史录音仍需手动播放。",
     "voiceAutoSpeak": "自动语音回复",
-    "voiceAutoSpeakDesc": "用系统语音朗读当前会话的助手回复，可随时打断。",
+    "voiceAutoSpeakDesc": "用 OpenClaw TTS 朗读当前会话的助手回复，可随时打断。",
     "jarvisTitle": "Jarvis 语音待命",
     "jarvisDescription": "在此配置本地唤醒模型和 OpenClaw 触发词。会话输入框只保留当前会话的快捷启动。",
     "jarvisModel": "本地唤醒模型",

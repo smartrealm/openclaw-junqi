@@ -7,6 +7,7 @@ import { useVoiceStore } from '@/stores/voiceStore';
 import { debugError, debugLog } from '@/utils/debugLog';
 import { emitTauriEvent, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { SentenceSplitter, sanitizeSpeechText } from './sentenceSplitter';
+import { GatewayTtsSpeechOutput, type VoiceSpeechOutput } from './GatewayTtsSpeechOutput';
 import {
   compareVoiceGlobalClaims,
   VOICE_GLOBAL_CONTROL_EVENT,
@@ -52,6 +53,7 @@ interface VoiceRuntimeOptions {
   instanceId?: string;
   emitControl?: (control: VoiceGlobalControl) => void | Promise<void>;
   subscribeControl?: (handler: (control: VoiceGlobalControl) => void) => () => void;
+  speechOutput?: VoiceSpeechOutput;
 }
 
 function createVoiceInstanceId(): string {
@@ -71,10 +73,8 @@ function readStoredBoolean(key: string, fallback: boolean): boolean {
 /**
  * Desktop voice output coordinator.
  *
- * The default adapter deliberately uses the host WebView's speech engine so
- * JunQi remains usable without a Python/GPU sidecar. OpenTalking, Whisper, or
- * a cloud TTS provider can replace this boundary later without changing the
- * Gateway event wiring or the pet/dynamic-island state contract.
+ * Speech is synthesized by the active OpenClaw Gateway. The WebView only
+ * renders the returned audio clip and never selects a local speech engine.
  */
 export class VoiceRuntime {
   private streams = new Map<string, StreamState>();
@@ -88,6 +88,8 @@ export class VoiceRuntime {
   private readonly instanceId: string;
   private readonly emitControl: (control: VoiceGlobalControl) => void | Promise<void>;
   private readonly unsubscribeControl: () => void;
+  private readonly speechOutput: VoiceSpeechOutput;
+  private activeSyntheticAbort: AbortController | null = null;
   private latestGlobalClaim: VoiceGlobalClaim | null = null;
   private ownedGlobalClaim: VoiceGlobalClaim | null = null;
   private nativeTalkSessionKey: string | null = null;
@@ -100,9 +102,10 @@ export class VoiceRuntime {
       subscribeTauriEvent<VoiceGlobalControl>(VOICE_GLOBAL_CONTROL_EVENT, (event) => handler(event.payload))
     ));
     this.unsubscribeControl = subscribe((control) => this.handleGlobalControl(control));
+    this.speechOutput = options.speechOutput ?? new GatewayTtsSpeechOutput();
   }
 
-  private get syntheticEnabled(): boolean {
+  private get gatewayTtsEnabled(): boolean {
     const stored = useSettingsStore.getState().voiceAutoSpeak;
     return readStoredBoolean(VOICE_AUTO_SPEAK_STORAGE_KEY, stored);
   }
@@ -113,7 +116,7 @@ export class VoiceRuntime {
   }
 
   private get anyOutputEnabled(): boolean {
-    return this.syntheticEnabled || this.externalMediaEnabled;
+    return this.gatewayTtsEnabled || this.externalMediaEnabled;
   }
 
   private broadcast(control: VoiceGlobalControl) {
@@ -292,7 +295,7 @@ export class VoiceRuntime {
     if (!this.anyOutputEnabled) return;
     const state = this.streams.get(sessionKey);
     const sameStream = Boolean(state && isSameStream(state, content, normalizedRunId));
-    if (state && !sameStream && !state.externalAudio && this.syntheticEnabled) {
+    if (state && !sameStream && !state.externalAudio && this.gatewayTtsEnabled) {
       const tail = sanitizeSpeechText(state.splitter.flush() || '');
       if (tail) {
         this.queue.push({ sessionKey, text: tail, generation: this.generation });
@@ -322,7 +325,7 @@ export class VoiceRuntime {
     const delta = deriveDelta(next.speechText, sanitizedContent);
     next.rawText = content;
     next.speechText = sanitizedContent;
-    if (this.syntheticEnabled && !next.externalAudio && delta) {
+    if (this.gatewayTtsEnabled && !next.externalAudio && delta) {
       next.queue.push(...next.splitter.feed(delta).map(sanitizeSpeechText).filter(Boolean));
       this.queue.push(...next.queue.splice(0).map((text) => ({
         sessionKey,
@@ -372,7 +375,7 @@ export class VoiceRuntime {
       const delta = deriveDelta(current.speechText, sanitizedContent);
       current.rawText = content;
       current.speechText = sanitizedContent;
-      if (this.syntheticEnabled && !current.externalAudio && delta) {
+      if (this.gatewayTtsEnabled && !current.externalAudio && delta) {
         this.queue.push(...current.splitter.feed(delta).map(sanitizeSpeechText).filter(Boolean).map((text) => ({
           sessionKey,
           text,
@@ -385,7 +388,7 @@ export class VoiceRuntime {
       current.externalSource = mediaUrl;
     }
     if (!current.externalAudio) {
-      if (!this.syntheticEnabled) {
+      if (!this.gatewayTtsEnabled) {
         this.streams.delete(sessionKey);
         return;
       }
@@ -418,7 +421,7 @@ export class VoiceRuntime {
       this.requestExternalPlayback(sessionKey, mediaUrl);
       return;
     }
-    if (this.syntheticEnabled) this.finishStream(sessionKey, text, 'final');
+    if (this.gatewayTtsEnabled) this.finishStream(sessionKey, text, 'final');
   }
 
   interrupt(sessionKey?: string | null, phase: 'interrupted' | 'error' = 'interrupted') {
@@ -578,8 +581,8 @@ export class VoiceRuntime {
 
   /**
    * Cancel the active utterance without invalidating unrelated sessions.
-   * `generation` is global because speechSynthesis is global, so surviving
-   * queue entries must be rebased explicitly after a scoped cancellation.
+   * `generation` is global because one desktop output can play at a time, so
+   * surviving queue entries must be rebased explicitly after scoped cancellation.
    */
   private cancelCurrentSyntheticPlayback() {
     this.generation += 1;
@@ -601,15 +604,14 @@ export class VoiceRuntime {
   }
 
   private stopSyntheticPlayback() {
-    const synthesis = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
-    if (synthesis && typeof synthesis.cancel === 'function') {
-      synthesis.cancel();
-    }
+    this.activeSyntheticAbort?.abort();
+    this.activeSyntheticAbort = null;
+    this.speechOutput.stop();
   }
 
   private async pump(): Promise<void> {
     if (this.current || this.queue.length === 0) return;
-    if (!this.syntheticEnabled) {
+    if (!this.gatewayTtsEnabled) {
       this.queue = [];
       return;
     }
@@ -648,31 +650,13 @@ export class VoiceRuntime {
   }
 
   private speakText(text: string, generation: number): Promise<void> {
-    const synthesis = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
-    if (!synthesis || typeof synthesis.speak !== 'function' || typeof SpeechSynthesisUtterance === 'undefined') {
-      return Promise.reject(new Error('系统语音合成不可用'));
-    }
-    return new Promise((resolve, reject) => {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = resolveSpeechLanguage();
-      utterance.rate = 1;
-      utterance.pitch = 1;
-      let settled = false;
-      const settle = (error?: Error) => {
-        if (settled) return;
-        settled = true;
-        error ? reject(error) : resolve();
-      };
-      utterance.onend = () => settle();
-      utterance.onerror = (event) => {
-        if (generation !== this.generation || event.error === 'canceled' || event.error === 'interrupted') {
-          settle();
-          return;
-        }
-        settle(new Error(`speech synthesis ${event.error || 'failed'}`));
-      };
-      debugLog('media', '[VoiceRuntime] speak:', text.slice(0, 80));
-      synthesis.speak(utterance);
+    const controller = new AbortController();
+    this.activeSyntheticAbort = controller;
+    debugLog('media', '[VoiceRuntime] request OpenClaw TTS:', text.slice(0, 80));
+    return this.speechOutput.speak(text, controller.signal).finally(() => {
+      if (generation === this.generation && this.activeSyntheticAbort === controller) {
+        this.activeSyntheticAbort = null;
+      }
     });
   }
 }
@@ -690,14 +674,6 @@ function isSameStream(state: StreamState, content: string, runId: string | null)
   // Treat a monotonic cumulative payload as the same stream in that case.
   if ((!state.runId || !runId) && content.startsWith(state.rawText)) return true;
   return false;
-}
-
-function resolveSpeechLanguage(): string {
-  const language = String(useSettingsStore.getState().language);
-  if (language === 'zh') return 'zh-CN';
-  if (language === 'zh-TW') return 'zh-TW';
-  if (language === 'ar') return 'ar-SA';
-  return 'en-US';
 }
 
 export const voiceRuntime = new VoiceRuntime();

@@ -65,6 +65,7 @@ import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClie
 import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
 import { OpenClawCronRunClient } from './OpenClawCronRunClient';
 import { OpenClawCronStatusClient } from './OpenClawCronStatusClient';
+import { OpenClawTtsClient } from './OpenClawTtsClient';
 import {
   OpenClawCronManagementClient,
   type OpenClawCronManagedJob,
@@ -82,6 +83,7 @@ export type {
   GatewayRequestOptions,
 };
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
+export type { OpenClawTtsClip, OpenClawTtsSpeakInput } from './OpenClawTtsClient';
 export type {
   OpenClawTaskCancelResult,
   OpenClawTaskLedgerStatus,
@@ -249,6 +251,10 @@ export const voiceWakeGatewayClient = new VoiceWakeGatewayClient({
   ),
   subscribe: subscribeVoiceWakeGatewayEvents,
 });
+
+export const openClawTtsClient = new OpenClawTtsClient(
+  (method, params, options) => connection.request(method, params, options),
+);
 
 export const talkGatewayClient = new TalkGatewayClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),

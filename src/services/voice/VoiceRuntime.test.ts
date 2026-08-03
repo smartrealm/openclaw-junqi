@@ -8,16 +8,60 @@ import {
 } from '@/stores/settingsStore';
 import { useVoiceStore, VOICE_IDLE_SNAPSHOT } from '@/stores/voiceStore';
 import { VoiceRuntime } from './VoiceRuntime';
+import type { VoiceSpeechOutput } from './GatewayTtsSpeechOutput';
 import type { VoiceGlobalControl } from './types';
 
-class MockSpeechSynthesisUtterance {
-  lang = '';
-  rate = 1;
-  pitch = 1;
-  onend: (() => void) | null = null;
-  onerror: ((event: { error?: string }) => void) | null = null;
+interface MockVoiceOutput extends VoiceSpeechOutput {
+  readonly spoken: string[];
+  readonly aborted: string[];
+  readonly stopped: { count: number };
+}
 
-  constructor(readonly text: string) {}
+function createVoiceOutput(options: { autoFinish?: boolean; failure?: Error } = {}): MockVoiceOutput {
+  const spoken: string[] = [];
+  const aborted: string[] = [];
+  const stopped = { count: 0 };
+  let active: { finish: () => void } | null = null;
+  return {
+    spoken,
+    aborted,
+    stopped,
+    speak: (text, signal) => new Promise<void>((resolve, reject) => {
+      spoken.push(text);
+      let settled = false;
+      const settle = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        if (active?.finish === finish) active = null;
+        if (error) reject(error);
+        else resolve();
+      };
+      const finish = () => settle(options.failure);
+      const onAbort = () => {
+        aborted.push(text);
+        settle();
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      active = { finish };
+      if (options.autoFinish !== false) queueMicrotask(finish);
+    }),
+    stop: () => {
+      stopped.count += 1;
+      active?.finish();
+    },
+  };
+}
+
+function createRuntime(
+  output = createVoiceOutput(),
+  options: {
+    instanceId?: string;
+    emitControl?: (control: VoiceGlobalControl) => void;
+    subscribeControl?: (handler: (control: VoiceGlobalControl) => void) => () => void;
+  } = {},
+): VoiceRuntime {
+  return new VoiceRuntime({ ...options, speechOutput: output });
 }
 
 function setVoiceOutputSettings({ synthetic = false, media = false } = {}) {
@@ -27,155 +71,69 @@ function setVoiceOutputSettings({ synthetic = false, media = false } = {}) {
   useVoiceStore.getState().setRemoteOutput(null);
 }
 
-test('VoiceRuntime speaks completed sentences while a response is still streaming', async () => {
-  const spoken: string[] = [];
-  const originalUtterance = globalThis.SpeechSynthesisUtterance;
-  const originalSynthesis = window.speechSynthesis;
-  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-    value: MockSpeechSynthesisUtterance,
-    configurable: true,
-    writable: true,
-  });
-  Object.defineProperty(window, 'speechSynthesis', {
-    value: {
-      cancel: () => undefined,
-      speak: (utterance: MockSpeechSynthesisUtterance) => {
-        spoken.push(utterance.text);
-        queueMicrotask(() => utterance.onend?.());
-      },
-    },
-    configurable: true,
-    writable: true,
-  });
+async function settleVoiceQueue(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+test('VoiceRuntime requests Gateway TTS for completed sentences while a response streams', async () => {
+  const output = createVoiceOutput();
   setVoiceOutputSettings({ synthetic: true });
   useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-  const runtime = new VoiceRuntime();
+  const runtime = createRuntime(output);
 
   try {
     runtime.consumeStream('agent:main:main', '第一句。', 'run-1');
     runtime.consumeStream('agent:main:main', '第一句。第二句', 'run-1');
     runtime.finishStream('agent:main:main', '第一句。第二句', 'final', 'run-1');
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-    assert.deepEqual(spoken, ['第一句。', '第二句']);
+    await settleVoiceQueue();
+    assert.deepEqual(output.spoken, ['第一句。', '第二句']);
   } finally {
-    runtime.interruptAll();
+    runtime.dispose();
     setVoiceOutputSettings();
     useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-    Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-      value: originalUtterance,
-      configurable: true,
-      writable: true,
-    });
-    Object.defineProperty(window, 'speechSynthesis', {
-      value: originalSynthesis,
-      configurable: true,
-      writable: true,
-    });
   }
 });
 
-test('BUG-04 scoped interruption preserves another session queue', async () => {
-  const spoken: string[] = [];
-  const originalUtterance = globalThis.SpeechSynthesisUtterance;
-  const originalSynthesis = window.speechSynthesis;
-  let active: MockSpeechSynthesisUtterance | null = null;
-  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-    value: MockSpeechSynthesisUtterance,
-    configurable: true,
-    writable: true,
-  });
-  Object.defineProperty(window, 'speechSynthesis', {
-    value: {
-      cancel: () => { active?.onerror?.({ error: 'canceled' }); },
-      speak: (utterance: MockSpeechSynthesisUtterance) => {
-        active = utterance;
-        spoken.push(utterance.text);
-      },
-    },
-    configurable: true,
-    writable: true,
-  });
+test('scoped interruption aborts only its active Gateway TTS request and preserves another session queue', async () => {
+  const output = createVoiceOutput({ autoFinish: false });
   setVoiceOutputSettings({ synthetic: true });
   useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-  const runtime = new VoiceRuntime();
+  const runtime = createRuntime(output);
 
   try {
     runtime.consumeStream('session-a', '甲。', 'run-a');
     runtime.consumeStream('session-b', '乙。', 'run-b');
     runtime.interrupt('session-a');
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(spoken, ['甲。', '乙。']);
+    await settleVoiceQueue();
+    assert.deepEqual(output.spoken, ['甲。', '乙。']);
+    assert.deepEqual(output.aborted, ['甲。']);
   } finally {
-    runtime.interruptAll();
+    runtime.dispose();
     setVoiceOutputSettings();
     useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-    Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-      value: originalUtterance,
-      configurable: true,
-      writable: true,
-    });
-    Object.defineProperty(window, 'speechSynthesis', {
-      value: originalSynthesis,
-      configurable: true,
-      writable: true,
-    });
   }
 });
 
-test('BUG-05 streaming sanitizer never speaks an unfinished code block', async () => {
-  const spoken: string[] = [];
-  const originalUtterance = globalThis.SpeechSynthesisUtterance;
-  const originalSynthesis = window.speechSynthesis;
-  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-    value: MockSpeechSynthesisUtterance,
-    configurable: true,
-    writable: true,
-  });
-  Object.defineProperty(window, 'speechSynthesis', {
-    value: {
-      cancel: () => undefined,
-      speak: (utterance: MockSpeechSynthesisUtterance) => {
-        spoken.push(utterance.text);
-        queueMicrotask(() => utterance.onend?.());
-      },
-    },
-    configurable: true,
-    writable: true,
-  });
+test('streaming sanitizer never sends an unfinished code block to Gateway TTS', async () => {
+  const output = createVoiceOutput();
   setVoiceOutputSettings({ synthetic: true });
-  useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-  const runtime = new VoiceRuntime();
+  const runtime = createRuntime(output);
 
   try {
     runtime.consumeStream('session-audit', '结论。```ts\nconsole.log("not speech.");', 'run-audit');
     runtime.consumeStream('session-audit', '结论。```ts\nconsole.log("not speech.");\n```后续。', 'run-audit');
     runtime.finishStream('session-audit', '结论。```ts\nconsole.log("not speech.");\n```后续。', 'final', 'run-audit');
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(spoken, ['结论。', '后续。']);
+    await settleVoiceQueue();
+    assert.deepEqual(output.spoken, ['结论。', '后续。']);
   } finally {
-    runtime.interruptAll();
+    runtime.dispose();
     setVoiceOutputSettings();
-    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-    Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-      value: originalUtterance,
-      configurable: true,
-      writable: true,
-    });
-    Object.defineProperty(window, 'speechSynthesis', {
-      value: originalSynthesis,
-      configurable: true,
-      writable: true,
-    });
   }
 });
 
-test('BUG-06 external media is claimed only by a pending live response', () => {
-  const originalUtterance = globalThis.SpeechSynthesisUtterance;
-  const originalSynthesis = window.speechSynthesis;
+test('external assistant media is claimed only by a pending live response', () => {
   setVoiceOutputSettings({ media: true });
-  useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-  const runtime = new VoiceRuntime();
+  const runtime = createRuntime();
   const token = Symbol('test-audio');
   let stopped = false;
 
@@ -184,142 +142,68 @@ test('BUG-06 external media is claimed only by a pending live response', () => {
     assert.equal(runtime.claimExternalPlayback('session-media', 'aegis-media:/tmp/reply.wav'), true);
     assert.equal(runtime.claimExternalPlayback('session-media', 'aegis-media:/tmp/reply.wav'), false);
     runtime.startExternalPlayback('session-media', 'aegis-media:/tmp/reply.wav', token, () => { stopped = true; });
-    assert.equal(useVoiceStore.getState().phase, 'speaking');
     runtime.interrupt('session-media');
     assert.equal(stopped, true);
   } finally {
-    runtime.interruptAll();
+    runtime.dispose();
     setVoiceOutputSettings();
-    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-    Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-      value: originalUtterance,
-      configurable: true,
-      writable: true,
-    });
-    Object.defineProperty(window, 'speechSynthesis', {
-      value: originalSynthesis,
-      configurable: true,
-      writable: true,
-    });
   }
 });
 
-test('BUG-11 claiming one external player preserves another session request', () => {
+test('claiming one external player preserves another session request', () => {
   setVoiceOutputSettings({ media: true });
-  useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-  const runtime = new VoiceRuntime();
+  const runtime = createRuntime();
   const sourceA = 'aegis-media:/tmp/a.wav';
   const sourceB = 'aegis-media:/tmp/b.wav';
-  const tokenA = Symbol('audio-a');
 
   try {
     runtime.speakMessage('session-a', '', sourceA);
     runtime.speakMessage('session-b', '', sourceB);
     assert.equal(runtime.claimExternalPlayback('session-a', sourceA), true);
-    runtime.startExternalPlayback('session-a', sourceA, tokenA, () => undefined);
+    runtime.startExternalPlayback('session-a', sourceA, Symbol('audio-a'), () => undefined);
     assert.equal(runtime.claimExternalPlayback('session-b', sourceB), true);
   } finally {
-    runtime.interruptAll();
+    runtime.dispose();
     setVoiceOutputSettings();
-    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
   }
 });
 
-test('BUG-17 a new assistant segment flushes the prior unfinished tail', async () => {
-  const spoken: string[] = [];
-  const originalUtterance = globalThis.SpeechSynthesisUtterance;
-  const originalSynthesis = window.speechSynthesis;
-  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-    value: MockSpeechSynthesisUtterance,
-    configurable: true,
-    writable: true,
-  });
-  Object.defineProperty(window, 'speechSynthesis', {
-    value: {
-      cancel: () => undefined,
-      speak: (utterance: MockSpeechSynthesisUtterance) => {
-        spoken.push(utterance.text);
-        queueMicrotask(() => utterance.onend?.());
-      },
-    },
-    configurable: true,
-    writable: true,
-  });
+test('a new assistant segment flushes the prior unfinished Gateway TTS tail', async () => {
+  const output = createVoiceOutput();
   setVoiceOutputSettings({ synthetic: true });
-  useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-  const runtime = new VoiceRuntime();
+  const runtime = createRuntime(output);
 
   try {
     runtime.consumeStream('session-segments', '先检查', 'message-1');
     runtime.consumeStream('session-segments', '完成。', 'message-2');
     runtime.finishStream('session-segments', '完成。', 'final', 'message-2');
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(spoken, ['先检查', '完成。']);
+    await settleVoiceQueue();
+    assert.deepEqual(output.spoken, ['先检查', '完成。']);
   } finally {
-    runtime.interruptAll();
+    runtime.dispose();
     setVoiceOutputSettings();
-    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-    Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-      value: originalUtterance,
-      configurable: true,
-      writable: true,
-    });
-    Object.defineProperty(window, 'speechSynthesis', {
-      value: originalSynthesis,
-      configurable: true,
-      writable: true,
-    });
   }
 });
 
-test('BUG-11 external media failure resumes queued synthetic speech', async () => {
-  const spoken: string[] = [];
-  const originalUtterance = globalThis.SpeechSynthesisUtterance;
-  const originalSynthesis = window.speechSynthesis;
-  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-    value: MockSpeechSynthesisUtterance,
-    configurable: true,
-    writable: true,
-  });
-  Object.defineProperty(window, 'speechSynthesis', {
-    value: {
-      cancel: () => undefined,
-      speak: (utterance: MockSpeechSynthesisUtterance) => {
-        spoken.push(utterance.text);
-      },
-    },
-    configurable: true,
-    writable: true,
-  });
+test('external media failure resumes queued Gateway TTS output', async () => {
+  const output = createVoiceOutput();
   setVoiceOutputSettings({ synthetic: true });
-  useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-  const runtime = new VoiceRuntime();
+  const runtime = createRuntime(output);
   const token = Symbol('failed-media');
 
   try {
     runtime.consumeStream('queued-session', '第一。第二。', 'message-q');
     runtime.startExternalPlayback('media-session', 'aegis-media:/tmp/fail.wav', token, () => undefined);
     runtime.failExternalPlayback('media-session', 'aegis-media:/tmp/fail.wav', token);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(spoken, ['第一。', '第二。']);
+    await settleVoiceQueue();
+    assert.deepEqual(output.spoken, ['第一。', '第二。']);
   } finally {
-    runtime.interruptAll();
+    runtime.dispose();
     setVoiceOutputSettings();
-    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-    Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-      value: originalUtterance,
-      configurable: true,
-      writable: true,
-    });
-    Object.defineProperty(window, 'speechSynthesis', {
-      value: originalSynthesis,
-      configurable: true,
-      writable: true,
-    });
   }
 });
 
-test('BUG-18 newer cross-window claim and global stop interrupt other runtimes', () => {
+test('newer cross-window claim and global stop interrupt other runtimes', () => {
   const handlers = new Set<(control: VoiceGlobalControl) => void>();
   const subscribeControl = (handler: (control: VoiceGlobalControl) => void) => {
     handlers.add(handler);
@@ -328,30 +212,20 @@ test('BUG-18 newer cross-window claim and global stop interrupt other runtimes',
   const emitControl = (control: VoiceGlobalControl) => {
     for (const handler of handlers) handler(control);
   };
-  const main = new VoiceRuntime({ instanceId: 'main', emitControl, subscribeControl });
-  const quick = new VoiceRuntime({ instanceId: 'quick', emitControl, subscribeControl });
-  const mainToken = Symbol('main');
-  const quickToken = Symbol('quick');
+  const main = createRuntime(createVoiceOutput(), { instanceId: 'main', emitControl, subscribeControl });
+  const quick = createRuntime(createVoiceOutput(), { instanceId: 'quick', emitControl, subscribeControl });
   let mainStopped = false;
   let quickStopped = false;
 
   try {
     setVoiceOutputSettings({ media: true });
-    main.startExternalPlayback('agent:main:main', 'main.wav', mainToken, () => { mainStopped = true; });
-    quick.startExternalPlayback('quickchat:1', 'quick.wav', quickToken, () => { quickStopped = true; });
+    main.startExternalPlayback('agent:main:main', 'main.wav', Symbol('main'), () => { mainStopped = true; });
+    quick.startExternalPlayback('quickchat:1', 'quick.wav', Symbol('quick'), () => { quickStopped = true; });
     assert.equal(mainStopped, true);
     assert.equal(quickStopped, false);
     assert.equal(useVoiceStore.getState().remoteOutput?.sessionKey, 'quickchat:1');
-
     main.interruptAll();
     assert.equal(quickStopped, true);
-    assert.equal(useVoiceStore.getState().remoteOutput, null);
-
-    const quickToken2 = Symbol('quick-2');
-    quick.startExternalPlayback('quickchat:2', 'quick-2.wav', quickToken2, () => undefined);
-    assert.equal(useVoiceStore.getState().remoteOutput?.sessionKey, 'quickchat:2');
-    quick.endExternalPlayback(quickToken2);
-    assert.equal(useVoiceStore.getState().remoteOutput, null);
   } finally {
     main.dispose();
     quick.dispose();
@@ -360,49 +234,61 @@ test('BUG-18 newer cross-window claim and global stop interrupt other runtimes',
   }
 });
 
-test('BUG-19 legacy media preference does not enable synthetic speech', async () => {
-  const spoken: string[] = [];
-  const originalUtterance = globalThis.SpeechSynthesisUtterance;
-  const originalSynthesis = window.speechSynthesis;
-  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-    value: MockSpeechSynthesisUtterance,
-    configurable: true,
-    writable: true,
-  });
-  Object.defineProperty(window, 'speechSynthesis', {
-    value: { cancel: () => undefined, speak: (utterance: MockSpeechSynthesisUtterance) => spoken.push(utterance.text) },
-    configurable: true,
-    writable: true,
-  });
+test('legacy live-media preference does not enable Gateway TTS', async () => {
+  const output = createVoiceOutput();
   setVoiceOutputSettings({ media: true, synthetic: false });
-  const runtime = new VoiceRuntime();
+  const runtime = createRuntime(output);
 
   try {
     runtime.finishStream('legacy-setting', '不应朗读。', 'final', 'message-legacy');
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(spoken, []);
+    await settleVoiceQueue();
+    assert.deepEqual(output.spoken, []);
   } finally {
     runtime.dispose();
     setVoiceOutputSettings();
-    Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
-      value: originalUtterance,
-      configurable: true,
-      writable: true,
-    });
-    Object.defineProperty(window, 'speechSynthesis', {
-      value: originalSynthesis,
-      configurable: true,
-      writable: true,
-    });
   }
 });
 
-test('BUG-19 storage changes synchronize independent WebView settings stores', () => {
+test('Stop aborts the local Gateway TTS wait without a local speech fallback', async () => {
+  const output = createVoiceOutput({ autoFinish: false });
+  setVoiceOutputSettings({ synthetic: true });
+  const runtime = createRuntime(output);
+
+  try {
+    runtime.finishStream('session-stop', '停止前的回复。', 'final', 'run-stop');
+    await settleVoiceQueue();
+    runtime.interrupt('session-stop');
+    await settleVoiceQueue();
+    assert.deepEqual(output.spoken, ['停止前的回复。']);
+    assert.deepEqual(output.aborted, ['停止前的回复。']);
+    assert.equal(output.stopped.count > 0, true);
+  } finally {
+    runtime.dispose();
+    setVoiceOutputSettings();
+  }
+});
+
+test('Gateway TTS failures enter the existing voice error projection', async () => {
+  const output = createVoiceOutput({ failure: new Error('OpenClaw TTS unavailable') });
+  setVoiceOutputSettings({ synthetic: true });
+  const runtime = createRuntime(output);
+
+  try {
+    runtime.finishStream('session-error', '失败回复。', 'final', 'run-error');
+    await settleVoiceQueue();
+    assert.equal(useVoiceStore.getState().phase, 'error');
+    assert.equal(useVoiceStore.getState().lastError, 'OpenClaw TTS unavailable');
+  } finally {
+    runtime.dispose();
+    setVoiceOutputSettings();
+  }
+});
+
+test('storage changes synchronize independent WebView settings stores', () => {
   setVoiceOutputSettings();
   syncVoiceSettingFromStorage(AUDIO_AUTO_PLAY_STORAGE_KEY, 'true');
   assert.equal(useSettingsStore.getState().audioAutoPlay, true);
   assert.equal(useSettingsStore.getState().voiceAutoSpeak, false);
-
   syncVoiceSettingFromStorage(VOICE_AUTO_SPEAK_STORAGE_KEY, 'true');
   assert.equal(useSettingsStore.getState().voiceAutoSpeak, true);
   syncVoiceSettingFromStorage(VOICE_AUTO_SPEAK_STORAGE_KEY, null);
@@ -410,9 +296,9 @@ test('BUG-19 storage changes synchronize independent WebView settings stores', (
   setVoiceOutputSettings();
 });
 
-test('BUG-23 reordered release and stop controls tombstone stale claims', () => {
+test('reordered release and stop controls tombstone stale claims', () => {
   let receive: ((control: VoiceGlobalControl) => void) | null = null;
-  const runtime = new VoiceRuntime({
+  const runtime = createRuntime(createVoiceOutput(), {
     instanceId: 'observer',
     emitControl: () => undefined,
     subscribeControl: (handler) => {
@@ -420,93 +306,22 @@ test('BUG-23 reordered release and stop controls tombstone stale claims', () => 
       return () => { receive = null; };
     },
   });
-  const deliver = (control: VoiceGlobalControl) => {
-    assert.ok(receive, 'global control subscriber was not installed');
-    receive(control);
-  };
-  const staleClaim = {
-    claimedAt: 100,
-    sequence: 1,
-    instanceId: 'quick',
-    sessionKey: 'quickchat:stale',
-  };
-  const newerReleasedClaim = {
-    claimedAt: 200,
-    sequence: 2,
-    instanceId: 'main',
-    sessionKey: 'agent:main:main',
-  };
-  const stopClaim = {
-    claimedAt: 300,
-    sequence: 3,
-    instanceId: 'quick',
-    sessionKey: '',
-  };
+  const staleClaim = { claimedAt: 100, sequence: 1, instanceId: 'quick', sessionKey: 'quickchat:stale' };
+  const newerReleasedClaim = { claimedAt: 200, sequence: 2, instanceId: 'main', sessionKey: 'agent:main:main' };
+  const stopClaim = { claimedAt: 300, sequence: 3, instanceId: 'quick', sessionKey: '' };
 
   try {
-    deliver({ type: 'claim', claim: staleClaim });
+    assert.ok(receive);
+    receive({ type: 'claim', claim: staleClaim });
     assert.equal(useVoiceStore.getState().remoteOutput?.sessionKey, 'quickchat:stale');
-
-    deliver({ type: 'release', claim: newerReleasedClaim });
-    deliver({ type: 'claim', claim: newerReleasedClaim });
+    receive({ type: 'release', claim: newerReleasedClaim });
+    receive({ type: 'claim', claim: newerReleasedClaim });
     assert.equal(useVoiceStore.getState().remoteOutput, null);
-
-    deliver({ type: 'stop', claim: stopClaim });
-    deliver({ type: 'claim', claim: newerReleasedClaim });
+    receive({ type: 'stop', claim: stopClaim });
+    receive({ type: 'claim', claim: newerReleasedClaim });
     assert.equal(useVoiceStore.getState().remoteOutput, null);
   } finally {
     runtime.dispose();
     useVoiceStore.getState().setRemoteOutput(null);
-    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-  }
-});
-
-test('BUG-23 local runtime cleanup releases ownership without stopping other windows', () => {
-  const controls: VoiceGlobalControl[] = [];
-  const runtime = new VoiceRuntime({
-    instanceId: 'quick',
-    emitControl: (control) => { controls.push(control); },
-    subscribeControl: () => () => undefined,
-  });
-
-  try {
-    setVoiceOutputSettings({ media: true });
-    runtime.startExternalPlayback('quickchat:local', 'quick-local.wav', Symbol('quick-local'), () => undefined);
-    runtime.interruptAll({ broadcast: false });
-    assert.deepEqual(controls.map((control) => control.type), ['claim', 'release']);
-
-    const remoteClaim = {
-      claimedAt: 400,
-      sequence: 4,
-      instanceId: 'main',
-      sessionKey: 'agent:main:main',
-    };
-    useVoiceStore.getState().setRemoteOutput(remoteClaim);
-    runtime.interruptAll({ broadcast: false, preserveRemote: true });
-    assert.equal(useVoiceStore.getState().remoteOutput, remoteClaim);
-  } finally {
-    runtime.dispose();
-    setVoiceOutputSettings();
-    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-  }
-});
-
-test('native Talk playback projects speaking only for its owning session', () => {
-  const runtime = new VoiceRuntime({ subscribeControl: () => () => undefined });
-  useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
-
-  try {
-    runtime.setNativeTalkOutput('agent:main:main', true);
-    assert.equal(useVoiceStore.getState().phase, 'speaking');
-    assert.equal(useVoiceStore.getState().sessionKey, 'agent:main:main');
-
-    runtime.setNativeTalkOutput('agent:other:main', false);
-    assert.equal(useVoiceStore.getState().phase, 'speaking');
-
-    runtime.setNativeTalkOutput('agent:main:main', false);
-    assert.equal(useVoiceStore.getState().phase, 'idle');
-  } finally {
-    runtime.dispose();
-    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
   }
 });

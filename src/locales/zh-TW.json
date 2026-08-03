@@ -849,7 +849,7 @@
     "audioAutoPlay": "自動播放即時回覆音訊",
     "audioAutoPlayDesc": "自動播放助手即時回覆附帶的音訊；歷史錄音仍需手動播放。",
     "voiceAutoSpeak": "自動語音回覆",
-    "voiceAutoSpeakDesc": "使用系統語音朗讀目前會話的助手回覆，可隨時打斷。",
+    "voiceAutoSpeakDesc": "使用 OpenClaw TTS 朗讀目前會話的助手回覆，可隨時打斷。",
     "jarvisTitle": "Jarvis 語音待命",
     "jarvisDescription": "在此設定本機喚醒模型與 OpenClaw 觸發詞。會話輸入框只保留目前會話的快速啟動。",
     "jarvisModel": "本機喚醒模型",

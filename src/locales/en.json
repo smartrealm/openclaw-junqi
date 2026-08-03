@@ -878,7 +878,7 @@
     "audioAutoPlay": "Auto-play live reply audio",
     "audioAutoPlayDesc": "Play audio attached to live assistant replies; history recordings remain manual.",
     "voiceAutoSpeak": "Auto voice replies",
-    "voiceAutoSpeakDesc": "Read assistant replies aloud with the system voice; playback can be interrupted.",
+    "voiceAutoSpeakDesc": "Read assistant replies aloud with OpenClaw TTS; playback can be interrupted.",
     "jarvisTitle": "Jarvis voice standby",
     "jarvisDescription": "Configure the local wake model and OpenClaw triggers here. The conversation input keeps only the current-session shortcut.",
     "jarvisModel": "Local wake model",

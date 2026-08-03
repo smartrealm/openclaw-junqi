@@ -658,7 +658,7 @@ export function SettingsPageFull() {
                 {t('settings.voiceAutoSpeak', '自动语音回复')}
               </div>
               <div className="text-[11px] text-aegis-text-dim">
-                {t('settings.voiceAutoSpeakDesc', '用系统语音朗读当前会话的助手回复，可随时打断。')}
+                {t('settings.voiceAutoSpeakDesc', '用 OpenClaw TTS 朗读当前会话的助手回复，可随时打断。')}
               </div>
             </div>
             <SettingsSwitch checked={voiceAutoSpeak} label={t('settings.voiceAutoSpeak', '自动语音回复')} onCheckedChange={(enabled) => {
