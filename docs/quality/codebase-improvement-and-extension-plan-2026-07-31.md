@@ -205,7 +205,7 @@ pending 队列的管理员临时读取和解析，日常 scope 不增加 `operat
 **可拓展**：
 
 - 用户可以通过 Dashboard 或命令面板主动触发 OpenClaw 原生压缩，而不是依赖文本指令路径
-- `sessions.steer` 允许在排队任务执行前调整方向，JunQi 已用于 Jarvis 语音抢话，普通文本路径仍需要按官方 queue mode 继续复核
+- `sessions.steer` 允许在排队任务执行前调整方向，JunQi 已用于 Jarvis 语音抢话；2026-08-03 已完成普通文本路径的官方 queue mode 复核，活动 Run 的普通 `chat.send` 交由 Gateway，详见 [会话队列对齐记录](openclaw-native-session-queue-alignment-2026-08-03.md)
 - `sessions.abort` 为 Stop 提供当前 Run 的原生中止确认；普通请求省略 `clearQueued` 以保留 Gateway 队列
 - `sessions.preview` 已用于 Session Manager 的真实最近消息预览；`sessions.search` 已用于 Gateway 转录全文检索，具体见 [OpenClaw 原生会话检索对齐](openclaw-native-session-search-alignment-2026-08-03.md)。`sessions.resolve` 已核对但暂不接入：官方结果只返回 canonical key，而当前调用方已经持有 key 并需要 session id，增加该 RPC 不会提供新的有效能力
 

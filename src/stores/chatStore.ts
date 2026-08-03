@@ -1878,17 +1878,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }, sessionKey);
     get().updateMessage(sessionKey, next.id, { status: 'pending', deliveryError: undefined });
     get().setIsTyping(true, sessionKey);
+    let taskRunId = next.id;
+    let taskRunCreated = false;
     try {
       const observedModel = useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.model
         ?? (useChatStore.getState().activeSessionKey === sessionKey ? useChatStore.getState().currentModel : null)
         ?? null;
-      await taskExecutionCoordinator.beginRun({
+      const prepared = await taskExecutionCoordinator.prepareSend({
         sessionKey,
         sessionId: next.sessionId,
         runId: next.id,
         source: next.source ?? 'chat',
         model: observedModel,
       });
+      taskRunId = prepared.runId ?? next.id;
+      taskRunCreated = prepared.created;
       const result = await gateway.sendMessage(next.text, next.attachments, sessionKey, {
         clientMessageId: next.id,
         sessionId: next.sessionId,
@@ -1927,7 +1931,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await taskExecutionCoordinator.settleRun({
         sessionKey,
         sessionId: next.sessionId,
-        runId: next.id,
+        runId: taskRunCreated ? taskRunId : null,
         terminalReason: 'error',
       }).catch((settleError) => taskExecutionCoordinator.reportPersistenceFailure('settle queued send checkpoint', settleError));
     } finally {

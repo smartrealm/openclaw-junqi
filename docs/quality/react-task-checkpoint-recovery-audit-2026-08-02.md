@@ -103,13 +103,13 @@ LiveKit 的 AgentSession、Server、WebRTC 和独立 STT/LLM/TTS 工具链会与
 7. 跨 WebView 的 checkpoint 冲突按 Run 和 Node 合并；相同实体按更新时间和风险更高的状态取值，独立工具节点不会因整 Task 覆盖丢失。
 8. Gateway adapter 已以严格解码形式提供原生 `tasks.list`、`tasks.get` 与 `tasks.cancel`。该账本用于背景任务，不替代 Chat transcript；取消走 `operator.write` 的 privileged lane。
 
-9. 已按 OpenClaw 官方 `sessions.steer` schema 与 Gateway handler 接入语音抢话路径。请求只发送官方支持的 `key`、`message`、可选附件和 `idempotencyKey`；JunQi 先持久化旧 Run 的 cancel intent 与新 Run 的发送 intent，只有响应中的 `interruptedActiveRun: true` 才结算旧 Run。普通文本仍保留本地可见队列。
+9. 已按 OpenClaw 官方 `sessions.steer` schema 与 Gateway handler 接入语音抢话路径。请求只发送官方支持的 `key`、`message`、可选附件和 `idempotencyKey`；JunQi 先持久化旧 Run 的 cancel intent 与新 Run 的发送 intent，只有响应中的 `interruptedActiveRun: true` 才结算旧 Run。2026-08-03 起普通文本活动 Run 的 queue mode 交由 Gateway；JunQi 本地可见队列只保留显式选择和会话 mutation gate，详见 [OpenClaw 原生会话队列对齐](openclaw-native-session-queue-alignment-2026-08-03.md)。
 10. Gateway transport 支持 `AbortSignal`，其语义仅是停止 renderer 对 RPC 的等待并清理本地 pending request，不改变远端执行状态；远端中断依赖 `sessions.steer` 或 `sessions.abort` 的官方确认。
 11. checkpoint schema 已修复可选工具字段校验：`user_turn`、`model_turn` 不再因缺少 `effectKey` 被拒绝；旧 checkpoint 的历史、运行时和恢复字段会在读入时规范化。`effectKey` 仅是 JunQi 本地工具关联标识，不是 OpenClaw 工具幂等键。
 12. Task checkpoint 现在持久化最小图边：发送意图的 `user_turn -> model_turn`、OpenClaw tool event 的 `model_turn -> tool_invocation`，以及 steer 的 `supersedes` 关系。边携带证据来源，只表达已观察到的顺序或本地意图；不同工具节点没有被客户端强行串行化。
 
 13. 冷启动后的 Chat 与 Quick Chat 显示 `verification_required`、未核验工具数量和官方 history 核验入口；按钮不会自动恢复、重试或改变本地状态。
 14. 每个 Run 记录发送时可观察到的模型身份；session identity 轮换生成新的 Task checkpoint。无 sessionId 的 Stream 结束、Tool event 和 Stop 回调只在同一 attested runtime 下存在唯一 checkpoint 时解析到该任务，候选不唯一则失败关闭。
-15. 本地队列排空路径也会先创建 Task Run，再发送 OpenClaw `chat.send`；Chat、Quick Chat 和 Jarvis 不再有绕过 checkpoint 的发送入口。
+15. 本地队列排空路径也会先通过 Task checkpoint 协调器再发送 OpenClaw `chat.send`；无活动 Run 时创建新的 Run，已有活动 Run 时复用其边界，不再因排空输入创建第二个活动 Run。Chat、Quick Chat 和 Jarvis 不再有绕过 checkpoint 的发送入口。
 
 仍未完成且不能描述为已完成：真实 Gateway 中工具进程中断的复现、真实副作用工具的幂等/查询/补偿策略、将 `tasks.*` 账本自动关联到 Chat Task、自动恢复或自动重试、以及 macOS/Windows/CentOS/Ubuntu 的真机麦克风、后台常驻和发布验收。

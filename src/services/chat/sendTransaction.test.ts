@@ -61,13 +61,13 @@ test('an ambiguous transport result stays pending until official reconciliation'
   assert.deepEqual(typing, [true]);
 });
 
-test('CHAT-02 active sessions use the visible session queue without touching the transport', async () => {
+test('CHAT-02 active sessions forward normal messages to the Gateway queue authority', async () => {
   const messages = new Map<string, ChatMessage>();
   const typing: boolean[] = [];
   const queued: Array<{ sessionKey: string; message: unknown }> = [];
   let transportCalls = 0;
   const coordinator = new ChatSendCoordinator(
-    { sendMessage: async () => { transportCalls += 1; } },
+    { sendMessage: async () => { transportCalls += 1; return { runId: 'client-2', status: 'started' }; } },
     () => ({
       addMessage(message) { messages.set(message.id, message); },
       updateMessage(_sessionKey, id, patch) {
@@ -88,24 +88,41 @@ test('CHAT-02 active sessions use the visible session queue without touching the
     clientMessageId: 'client-2',
   });
 
+  assert.deepEqual(result, { runId: 'client-2', status: 'started' });
+  assert.equal(transportCalls, 1);
+  assert.equal(messages.get('client-2')?.status, 'sent');
+  assert.deepEqual(typing, [true]);
+  assert.deepEqual(queued, []);
+});
+
+test('CHAT-02 local queue remains opt-in while a Gateway run is active', async () => {
+  const queued: Array<{ sessionKey: string; message: unknown }> = [];
+  let transportCalls = 0;
+  const coordinator = new ChatSendCoordinator(
+    { sendMessage: async () => { transportCalls += 1; } },
+    () => ({
+      addMessage() {},
+      updateMessage() {},
+      setIsTyping() {},
+      typingBySession: { 'session-a': true },
+      enqueueMessage(sessionKey, message) { queued.push({ sessionKey, message }); },
+    }),
+  );
+
+  const result = await coordinator.send({
+    sessionKey: 'session-a',
+    message: 'keep this local',
+    clientMessageId: 'client-local-queue',
+    queueIfBusy: true,
+  });
+
   assert.deepEqual(result, {
     queued: true,
     queue: 'session',
-    clientMessageId: 'client-2',
+    clientMessageId: 'client-local-queue',
   });
   assert.equal(transportCalls, 0);
-  assert.equal(messages.size, 0);
-  assert.deepEqual(typing, []);
-  assert.deepEqual(queued, [{
-    sessionKey: 'session-a',
-    message: {
-      id: 'client-2',
-      timestamp: (queued[0]?.message as { timestamp: string }).timestamp,
-      text: 'hello',
-      sessionId: 'native-session-a',
-      attachments: [{ mimeType: 'text/plain', content: 'payload', fileName: 'note.txt' }],
-    },
-  }]);
+  assert.equal(queued.length, 1);
 });
 
 test('CHAT-02 attachment failures retain the complete payload for lossless retry', async () => {
@@ -194,6 +211,7 @@ test('CHAT-02 queue overflow becomes a visible retryable failure', async () => {
     sessionKey: 'session-a',
     message: 'keep this text',
     clientMessageId: 'client-overflow',
+    queueIfBusy: true,
   }), /queue is full/);
   assert.equal(messages.get('client-overflow')?.status, 'failed');
   assert.deepEqual(messages.get('client-overflow')?.retryPayload, { text: 'keep this text' });

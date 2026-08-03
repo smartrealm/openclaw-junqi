@@ -4,6 +4,7 @@ import {
   beginTaskRun,
   emptyTaskExecutionSnapshot,
   mergeTaskExecutionSnapshots,
+  prepareTaskRunSend,
   prepareTaskRunSteer,
   requestTaskRunStop,
   recordTaskToolEvent,
@@ -63,6 +64,40 @@ test('a Task session refuses a second active Run', () => {
     source: 'chat',
     now: 20,
   }), /already has an active Run/);
+});
+
+test('normal send joins an active Task Run instead of creating a second Run', () => {
+  const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
+    binding,
+    runId: 'run-active',
+    source: 'chat',
+    now: 10,
+  });
+  const prepared = prepareTaskRunSend(started, {
+    binding,
+    runId: 'run-queued-message',
+    source: 'chat',
+    now: 20,
+  });
+
+  assert.equal(prepared.created, false);
+  assert.equal(prepared.taskRunId, 'run-active');
+  assert.strictEqual(prepared.snapshot, started);
+  assert.deepEqual(prepared.snapshot.tasks[0]?.runs.map((run) => run.runId), ['run-active']);
+});
+
+test('normal send can wait for Gateway authority without creating a local Run', () => {
+  const prepared = prepareTaskRunSend(emptyTaskExecutionSnapshot(), {
+    binding,
+    runId: 'run-unknown-queue',
+    source: 'chat',
+    allowCreate: false,
+    now: 10,
+  });
+
+  assert.equal(prepared.created, false);
+  assert.equal(prepared.taskRunId, null);
+  assert.deepEqual(prepared.snapshot, emptyTaskExecutionSnapshot());
 });
 
 test('a rotated OpenClaw session identity starts a new Task checkpoint', () => {

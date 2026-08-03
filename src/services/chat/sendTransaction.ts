@@ -29,6 +29,10 @@ export interface ChatSendRequest {
   displayAttachments?: ChatMessage['attachments'];
   clientMessageId?: string;
   optimisticMessage?: Partial<ChatMessage> | false;
+  /**
+   * Opt into the JunQi-local visible queue while a Gateway run is active.
+   * Normal sends leave this unset so OpenClaw applies the session queue mode.
+   */
   queueIfBusy?: boolean;
   delivery?: 'queue' | 'steer';
   source?: TaskExecutionSource;
@@ -65,11 +69,16 @@ export class ChatSendCoordinator {
         : {}),
     };
 
-    const sessionCannotSend = request.delivery !== 'steer' && (
-      state.typingBySession[request.sessionKey]
-      || sessionMutationGate.isBlocked(request.sessionKey)
-    );
-    if (request.delivery !== 'steer' && request.queueIfBusy !== false && sessionCannotSend) {
+    const activeGatewayRun = state.typingBySession[request.sessionKey] === true;
+    const sessionMutationBlocked = sessionMutationGate.isBlocked(request.sessionKey);
+    // OpenClaw is the authority for active-run queue semantics. Only a
+    // destructive JunQi session mutation, or an explicit local queue choice,
+    // may keep a normal message in the renderer-owned queue.
+    const localQueueRequested = request.queueIfBusy === true || request.delivery === 'queue';
+    const queueLocally = request.delivery !== 'steer'
+      && request.queueIfBusy !== false
+      && (sessionMutationBlocked || (localQueueRequested && activeGatewayRun));
+    if (queueLocally) {
       try {
         state.enqueueMessage(request.sessionKey, {
           id: clientMessageId,
@@ -146,27 +155,37 @@ export class ChatSendCoordinator {
       retryPayload,
     });
     state.setIsTyping(true, request.sessionKey);
+    let taskRunId = clientMessageId;
+    let taskRunCreated = request.delivery === 'steer';
 
     try {
       const observedModel = request.model
         ?? state.sessions?.find((session) => session.key === request.sessionKey)?.model
         ?? (state.activeSessionKey === request.sessionKey ? state.currentModel : null)
         ?? null;
-      const supersededRunId = request.delivery === 'steer'
-        ? await taskExecutionCoordinator.prepareSteer({
-            sessionKey: request.sessionKey,
-            sessionId: request.sessionId,
-            runId: clientMessageId,
-            source: request.source ?? 'chat',
-            model: observedModel,
-          })
-        : (await taskExecutionCoordinator.beginRun({
-            sessionKey: request.sessionKey,
-            sessionId: request.sessionId,
-            runId: clientMessageId,
-            source: request.source ?? 'chat',
-            model: observedModel,
-          }), null);
+      let supersededRunId: string | null = null;
+      if (request.delivery === 'steer') {
+        supersededRunId = await taskExecutionCoordinator.prepareSteer({
+          sessionKey: request.sessionKey,
+          sessionId: request.sessionId,
+          runId: clientMessageId,
+          source: request.source ?? 'chat',
+          model: observedModel,
+        });
+      } else {
+        const prepared = await taskExecutionCoordinator.prepareSend({
+          sessionKey: request.sessionKey,
+          sessionId: request.sessionId,
+          runId: clientMessageId,
+          source: request.source ?? 'chat',
+          model: observedModel,
+          // If the UI already observes a live Gateway run, do not create a
+          // local Run before OpenClaw acknowledges which queue mode applies.
+          allowCreate: !activeGatewayRun,
+        });
+        taskRunId = prepared.runId ?? clientMessageId;
+        taskRunCreated = prepared.created;
+      }
       const result = await this.gatewayPort.sendMessage(
         request.message,
         request.attachments,
@@ -199,11 +218,11 @@ export class ChatSendCoordinator {
         error.name === 'GatewayDisconnectedError'
         || error.name === 'GatewayRpcError'
         || error.message === 'Gateway is not connected'
-      )) {
+      ) && taskRunCreated) {
         await taskExecutionCoordinator.settleRun({
           sessionKey: request.sessionKey,
           sessionId: request.sessionId,
-          runId: clientMessageId,
+          runId: taskRunId,
           terminalReason: 'error',
         }).catch((settleError) => taskExecutionCoordinator.reportPersistenceFailure('settle rejected send checkpoint', settleError));
       }

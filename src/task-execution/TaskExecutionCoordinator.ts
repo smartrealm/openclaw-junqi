@@ -5,6 +5,7 @@ import {
   cloneTaskExecutionCheckpoint,
   emptyTaskExecutionSnapshot,
   mergeTaskExecutionSnapshots,
+  prepareTaskRunSend,
   prepareTaskRunSteer,
   requestTaskRunStop,
   recordTaskToolEvent,
@@ -153,6 +154,22 @@ export class TaskExecutionCoordinator {
     if (!binding) return;
     await this.hydrate();
     await this.commit(beginTaskRun(this.snapshot, { ...params, binding }));
+  }
+
+  async prepareSend(params: {
+    sessionKey: string;
+    sessionId?: string;
+    runId: string;
+    source: TaskExecutionSource;
+    model?: string | null;
+    allowCreate?: boolean;
+  }): Promise<{ runId: string | null; created: boolean }> {
+    const binding = verifiedBinding(params.sessionKey, params.sessionId);
+    if (!binding) return { runId: null, created: false };
+    await this.hydrate();
+    const prepared = prepareTaskRunSend(this.snapshot, { ...params, binding });
+    if (prepared.created) await this.commit(prepared.snapshot);
+    return { runId: prepared.taskRunId, created: prepared.created };
   }
 
   async prepareSteer(params: {

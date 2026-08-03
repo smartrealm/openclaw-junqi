@@ -378,6 +378,40 @@ export function beginTaskRun(
 }
 
 /**
+ * Prepare a normal OpenClaw chat.send intent without inventing a second Run
+ * while the bound Task is already active. OpenClaw owns the queue mode for
+ * that case; the local ledger only creates a Run when no active Run exists.
+ */
+export function prepareTaskRunSend(
+  snapshot: TaskExecutionSnapshot,
+  params: {
+    binding: TaskExecutionRuntimeBinding;
+    runId: string;
+    source: TaskExecutionSource;
+    model?: string | null;
+    allowCreate?: boolean;
+    now?: number;
+  },
+): { snapshot: TaskExecutionSnapshot; taskRunId: string | null; created: boolean } {
+  const taskId = taskExecutionId(params.binding);
+  const existing = snapshot.tasks.find((task) => task.taskId === taskId);
+  const active = existing
+    ? [...existing.runs].reverse().find((run) => !isTerminalRun(run.status))
+    : undefined;
+  if (active) {
+    return { snapshot, taskRunId: active.runId, created: false };
+  }
+  if (params.allowCreate === false) {
+    return { snapshot, taskRunId: null, created: false };
+  }
+  return {
+    snapshot: beginTaskRun(snapshot, params),
+    taskRunId: params.runId.trim(),
+    created: true,
+  };
+}
+
+/**
  * Persist the two sides of an OpenClaw sessions.steer operation together.
  * The previous Run remains cancel_requested until the Gateway confirms that
  * its active work was interrupted; the replacement Run is only a local send

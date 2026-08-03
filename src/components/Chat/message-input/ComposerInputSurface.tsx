@@ -186,8 +186,8 @@ export function ComposerInputSurface({
                 : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text',
               'disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none',
             )}
-            title={historyLoading ? t('input.historyLoading') : isTyping ? t('input.queue') : t('input.send')}
-            aria-label={historyLoading ? t('input.historyLoading') : isTyping ? t('input.queue') : t('input.send')}
+            title={historyLoading ? t('input.historyLoading') : t('input.send')}
+            aria-label={historyLoading ? t('input.historyLoading') : t('input.send')}
           >
             <Send size={16} className={dir === 'rtl' ? 'rotate-180' : ''} />
             {isTyping && pendingCount > 0 && (
