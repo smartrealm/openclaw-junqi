@@ -14,22 +14,19 @@ import { Clock, Bell } from "lucide-react";
 import { useGatewayDataStore } from "@/stores/gatewayDataStore";
 import { useCalendarStore } from "@/stores/calendarStore";
 import { toDateStr } from "./calendarUtils";
+import { projectUpcomingCronJobs } from "./cronProjection";
+
+const MAX_UPCOMING_CRON_JOBS = 6;
 
 export function CronStrip() {
   const { t } = useTranslation();
   const cronJobs = useGatewayDataStore((s) => s.cronJobs);
   const { events } = useCalendarStore();
 
-  // ── Upcoming cron runs (next 7 days) ──
+  // Gateway returns the next scheduler-owned occurrence. JunQi does not infer
+  // additional occurrences from the cron expression.
   const upcomingCrons = useMemo(() => {
-    return cronJobs
-      .filter((j) => j.enabled !== false && j.lastRun)
-      .map((j) => {
-        const last = new Date(j.lastRun!);
-        const label = j.name || j.id;
-        return { id: j.id, label, lastRun: last, status: j.lastRunStatus };
-      })
-      .slice(0, 6);
+    return projectUpcomingCronJobs(cronJobs, Date.now()).slice(0, MAX_UPCOMING_CRON_JOBS);
   }, [cronJobs]);
 
   // ── Upcoming reminders ──
@@ -63,13 +60,13 @@ export function CronStrip() {
               <span
                 key={cr.id}
                 className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono border border-aegis-border bg-aegis-card whitespace-nowrap"
-                title={`${cr.label}\nLast: ${cr.lastRun.toLocaleString()}`}
+                title={`${cr.label}\n${t("cron.nextRun")}: ${new Date(cr.nextRunAtMs).toLocaleString()}`}
               >
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
-                    cr.status === "ok"
+                    cr.lastRunStatus === "ok"
                       ? "bg-aegis-success"
-                      : cr.status === "error"
+                      : cr.lastRunStatus === "error"
                         ? "bg-aegis-danger"
                         : "bg-aegis-text-dim"
                   }`}
