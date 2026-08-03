@@ -81,6 +81,7 @@ plans/
 - [OpenClaw 原生 TTS 偏好对齐](quality/2026-08-03-openclaw-native-tts-preferences.md)
 - [OpenClaw 原生模型认证状态对齐](quality/2026-08-03-openclaw-native-model-auth-status.md)
 - [OpenClaw 原生提供方配额对齐](quality/2026-08-03-openclaw-native-provider-usage.md)
+- [OpenClaw 客户端本机用量旁路退役](quality/2026-08-03-openclaw-client-local-usage-sidechannel-retirement.md)
 - [OpenClaw 工具入口权威对齐](quality/2026-08-03-openclaw-tools-route-authority.md)
 - [OpenClaw 会话用量范围对齐](quality/2026-08-03-openclaw-sessions-usage-range.md)
 - [OpenClaw 会话操作事件对齐](quality/2026-08-03-openclaw-session-operation.md)

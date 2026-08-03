@@ -165,9 +165,8 @@ function setMacWebKitTextareaAttrs(term: Terminal): void {
 // - 曾用 textarea.blur()。2026-05-27 用户 A/B 实测拼音卡 / 英文不卡，印证 IME
 //   路径是真因；blur 后 textarea 仍 focusable（可能被 RAF / 内部回调夺回焦点），
 //   改为 disabled 是硬性禁用，更彻底。
-// - 曾叠加 user-select:none 抑制 + window.getSelection().removeAllRanges() +
-//   TERMINAL_SELECTION_ACTIVE_EVENT 广播给 RunningView/useUsageSnapshot 暂停
-//   IPC 轮询。2026-05-27 disabled 升级实测拼音不卡，旁支防御全部移除。
+// - 曾叠加 user-select:none 抑制和 window.getSelection().removeAllRanges()；
+//   2026-05-27 disabled 升级实测拼音不卡，旁支防御全部移除。
 export function attachMacWebKitTerminalGuard({
   term,
   container,

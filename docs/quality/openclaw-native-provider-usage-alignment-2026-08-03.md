@@ -55,5 +55,6 @@ CentOS、Ubuntu 的文件路径、凭据库、浏览器 API 或本机 CLI。平�
 - 当前工作区未连接真实 Gateway，尚未验证冷缓存的 provider usage 请求、第三方 provider 限流、过期认证和配额窗口
   刷新后的真机呈现。
 - 未在 macOS、Windows、CentOS、Ubuntu 的 Tauri 安装包上完成真机验收。
-- `useUsageSnapshot` 的本机 CLI 路径尚未在本轮删除或作为 Gateway 配额 fallback；需在独立 AgentRunView 范围审计中
-  评估其是否仍符合“JunQi 仅作为 OpenClaw 客户端”的全局边界。
+- AgentRunView 的本机 CLI 用量旁路已在后续的
+  [`OpenClaw 客户端本机用量旁路退役记录`](openclaw-client-local-usage-sidechannel-retirement-2026-08-03.md) 中移除；它不再是
+  Gateway 配额的 fallback。
