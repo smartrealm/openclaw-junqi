@@ -169,6 +169,7 @@ describe('session lifecycle regression fixes', () => {
     assert.match(appSource, /subscribeNativeSessionCommit/);
     assert.match(appSource, /sessionListRequestGateRef\.current\.invalidate\(\)/);
     assert.match(appSource, /void loadSessions\(\)/);
+    assert.match(appSource, /sourceProjectionRevision/);
   });
 
   test('BUG-03 a deleted identity does not hide a replacement with the same key', () => {

@@ -298,6 +298,7 @@ export default function App() {
   ): Promise<SessionLoadResult> => {
     const requestGate = sessionListRequestGateRef.current;
     const requestId = requestGate.begin();
+    const sourceProjectionRevision = useChatStore.getState().sessionProjectionRevision;
     try {
       // Compatibility only: prior Desktop builds wrote labels to a local JSON
       // file. Copy confirmed entries to OpenClaw before this read, then let
@@ -364,7 +365,10 @@ export default function App() {
       });
       // Always sync sessions/defaults, even when the session list is currently empty.
       // This keeps TitleBar model in sync from gateway defaults after config changes.
-      setSessions(sessions, defaults, { completeSnapshot: sessionListSnapshot.complete });
+      setSessions(sessions, defaults, {
+        completeSnapshot: sessionListSnapshot.complete,
+        sourceProjectionRevision,
+      });
       if (options.reconcileChatRuns) {
         gateway.reconcileChatSessionRuns(result, runObservations);
       } else {

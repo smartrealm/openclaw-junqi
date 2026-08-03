@@ -132,6 +132,92 @@ test('a partial sessions.list page preserves sessions outside the current page',
   assert.equal(state.activeSessionKey, outsidePageKey);
 });
 
+test('a complete snapshot started before a confirmed new session cannot select a historical fallback', () => {
+  const createdKey = 'agent:main:dashboard-created';
+  useChatStore.setState({
+    sessions: [
+      { key: MAIN_KEY, label: 'Main' },
+      { key: OTHER_KEY, label: 'History' },
+    ],
+    openTabs: [MAIN_KEY, OTHER_KEY],
+    activeSessionKey: OTHER_KEY,
+    sessionProjectionRevision: 40,
+  });
+  const sourceProjectionRevision = useChatStore.getState().sessionProjectionRevision;
+
+  useChatStore.getState().addNativeSession({
+    key: createdKey,
+    sessionId: 'created-id',
+    label: 'Created',
+  });
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main' },
+    { key: OTHER_KEY, label: 'History' },
+  ], undefined, {
+    completeSnapshot: true,
+    sourceProjectionRevision,
+  });
+
+  const state = useChatStore.getState();
+  assert.equal(state.activeSessionKey, createdKey);
+  assert.equal(state.openTabs.includes(createdKey), true);
+  assert.equal(state.sessions.some((session) => session.key === createdKey), true);
+});
+
+test('a complete snapshot started after a native create can reconcile a missing session', () => {
+  const createdKey = 'agent:main:dashboard-deleted';
+  useChatStore.setState({
+    sessions: [
+      { key: MAIN_KEY, label: 'Main' },
+      { key: OTHER_KEY, label: 'History' },
+    ],
+    openTabs: [MAIN_KEY, OTHER_KEY],
+    activeSessionKey: OTHER_KEY,
+    sessionProjectionRevision: 50,
+  });
+  useChatStore.getState().addNativeSession({
+    key: createdKey,
+    sessionId: 'created-id',
+    label: 'Created',
+  });
+  const sourceProjectionRevision = useChatStore.getState().sessionProjectionRevision;
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main' },
+    { key: OTHER_KEY, label: 'History' },
+  ], undefined, {
+    completeSnapshot: true,
+    sourceProjectionRevision,
+  });
+
+  const state = useChatStore.getState();
+  assert.equal(state.sessions.some((session) => session.key === createdKey), false);
+  assert.equal(state.activeSessionKey, OTHER_KEY);
+});
+
+test('a stale snapshot cannot rotate a locally replaced session identity backward', () => {
+  useChatStore.setState({
+    sessions: [
+      { key: MAIN_KEY, label: 'Main', sessionId: 'main-id' },
+      { key: OTHER_KEY, label: 'Replacement', sessionId: 'new-id' },
+    ],
+    activeSessionKey: OTHER_KEY,
+    sessionProjectionRevision: 60,
+  });
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main', sessionId: 'main-id' },
+    { key: OTHER_KEY, label: 'Old snapshot', sessionId: 'old-id' },
+  ], undefined, {
+    completeSnapshot: true,
+    sourceProjectionRevision: 59,
+  });
+
+  const session = useChatStore.getState().sessions.find((candidate) => candidate.key === OTHER_KEY);
+  assert.equal(session?.sessionId, 'new-id');
+  assert.equal(session?.label, 'Old snapshot');
+});
+
 test('setSessions stores metadata without bypassing the run projection', () => {
   useChatStore.setState({
     sessions: [{ key: MAIN_KEY, label: 'Main', hasActiveRun: true }],
