@@ -84,6 +84,7 @@ plans/
 - [OpenClaw 原生工具目录对齐](quality/2026-08-03-openclaw-native-tools-catalog.md)
 - [OpenClaw 原生产物协议对齐](quality/2026-08-03-openclaw-native-artifacts.md)
 - [OpenClaw 原生记忆检索对齐](quality/2026-08-03-openclaw-native-memory-search.md)
+- [OpenClaw 原生记忆诊断](quality/2026-08-03-openclaw-native-memory-diagnostics.md)
 - [OpenClaw 原生会话检索对齐](quality/2026-08-03-openclaw-native-session-search.md)
 - [OpenClaw 原生技能目录字段对齐](quality/2026-08-03-openclaw-native-skill-catalog-fidelity.md)
 - [OpenClaw 技能归档上传](quality/2026-08-03-openclaw-skills-upload.md)

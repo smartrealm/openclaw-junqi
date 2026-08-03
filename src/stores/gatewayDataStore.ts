@@ -43,6 +43,16 @@ import {
   type OpenClawMemorySearchResponse,
 } from '@/services/gateway/OpenClawMemorySearchClient';
 import {
+  OPENCLAW_MEMORY_REM_HARNESS_METHOD,
+  OPENCLAW_MEMORY_STATUS_METHOD,
+  OpenClawMemoryDiagnosticsClient,
+  OpenClawMemoryDiagnosticsResponseError,
+  type OpenClawMemoryRemHarness,
+  type OpenClawMemoryRemHarnessInput,
+  type OpenClawMemoryStatus,
+  type OpenClawMemoryStatusInput,
+} from '@/services/gateway/OpenClawMemoryDiagnosticsClient';
+import {
   OPENCLAW_SESSIONS_SEARCH_METHOD,
   OpenClawSessionSearchClient,
   OpenClawSessionSearchResponseError,
@@ -78,6 +88,21 @@ export type {
   OpenClawMemorySearchResponse,
   OpenClawMemorySource,
 } from '@/services/gateway/OpenClawMemorySearchClient';
+export type {
+  OpenClawMemoryDeepConfig,
+  OpenClawMemoryEmbeddingRuntime,
+  OpenClawMemoryEmbeddingStatus,
+  OpenClawMemoryGroundedFile,
+  OpenClawMemoryRemCandidateTruth,
+  OpenClawMemoryRemConfig,
+  OpenClawMemoryRemHarness,
+  OpenClawMemoryRemHarnessCandidate,
+  OpenClawMemoryRemHarnessError,
+  OpenClawMemoryRemHarnessInput,
+  OpenClawMemoryRemHarnessSuccess,
+  OpenClawMemoryStatus,
+  OpenClawMemoryStatusInput,
+} from '@/services/gateway/OpenClawMemoryDiagnosticsClient';
 export type {
   OpenClawSessionSearchHit,
   OpenClawSessionSearchInput,
@@ -277,6 +302,14 @@ interface GatewayDataState {
   memorySearchUpdatedAt: number;
   memorySearchLoading: boolean;
   memorySearchError: string | null;
+  memoryDiagnostics: OpenClawMemoryStatus | null;
+  memoryDiagnosticsUpdatedAt: number;
+  memoryDiagnosticsLoading: boolean;
+  memoryDiagnosticsError: string | null;
+  memoryRemHarness: OpenClawMemoryRemHarness | null;
+  memoryRemHarnessUpdatedAt: number;
+  memoryRemHarnessLoading: boolean;
+  memoryRemHarnessError: string | null;
   sessionSearch: OpenClawSessionSearchResult | null;
   sessionSearchQuery: string;
   sessionSearchUpdatedAt: number;
@@ -343,6 +376,14 @@ interface GatewayDataState {
   clearMemorySearch: () => void;
   setMemorySearchLoading: (query: string | null) => void;
   setMemorySearchError: (value: string | null) => void;
+  setMemoryDiagnostics: (result: OpenClawMemoryStatus) => void;
+  clearMemoryDiagnostics: () => void;
+  setMemoryDiagnosticsLoading: (value: boolean) => void;
+  setMemoryDiagnosticsError: (value: string | null) => void;
+  setMemoryRemHarness: (result: OpenClawMemoryRemHarness) => void;
+  clearMemoryRemHarness: () => void;
+  setMemoryRemHarnessLoading: (value: boolean) => void;
+  setMemoryRemHarnessError: (value: string | null) => void;
   setSessionSearch: (query: string, result: OpenClawSessionSearchResult) => void;
   clearSessionSearch: () => void;
   setSessionSearchLoading: (query: string | null) => void;
@@ -394,6 +435,14 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   memorySearchUpdatedAt: 0,
   memorySearchLoading: false,
   memorySearchError: null,
+  memoryDiagnostics: null,
+  memoryDiagnosticsUpdatedAt: 0,
+  memoryDiagnosticsLoading: false,
+  memoryDiagnosticsError: null,
+  memoryRemHarness: null,
+  memoryRemHarnessUpdatedAt: 0,
+  memoryRemHarnessLoading: false,
+  memoryRemHarnessError: null,
   sessionSearch: null,
   sessionSearchQuery: '',
   sessionSearchUpdatedAt: 0,
@@ -607,6 +656,38 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   })),
 
   setMemorySearchError: (value) => set({ memorySearchError: value }),
+
+  setMemoryDiagnostics: (result) => set({
+    memoryDiagnostics: result,
+    memoryDiagnosticsUpdatedAt: Date.now(),
+    memoryDiagnosticsLoading: false,
+    memoryDiagnosticsError: null,
+  }),
+
+  clearMemoryDiagnostics: () => set({
+    memoryDiagnostics: null,
+    memoryDiagnosticsUpdatedAt: 0,
+  }),
+
+  setMemoryDiagnosticsLoading: (value) => set({ memoryDiagnosticsLoading: value }),
+
+  setMemoryDiagnosticsError: (value) => set({ memoryDiagnosticsError: value }),
+
+  setMemoryRemHarness: (result) => set({
+    memoryRemHarness: result,
+    memoryRemHarnessUpdatedAt: Date.now(),
+    memoryRemHarnessLoading: false,
+    memoryRemHarnessError: null,
+  }),
+
+  clearMemoryRemHarness: () => set({
+    memoryRemHarness: null,
+    memoryRemHarnessUpdatedAt: 0,
+  }),
+
+  setMemoryRemHarnessLoading: (value) => set({ memoryRemHarnessLoading: value }),
+
+  setMemoryRemHarnessError: (value) => set({ memoryRemHarnessError: value }),
 
   setSessionSearch: (query, result) => set({
     sessionSearch: result,
@@ -911,6 +992,8 @@ const toolsEffectiveRequestGate = createLatestRequestGate();
 const toolsCatalogRequestGate = createLatestRequestGate();
 const sessionArtifactsRequestGate = createLatestRequestGate();
 const memorySearchRequestGate = createLatestRequestGate();
+const memoryDiagnosticsRequestGate = createLatestRequestGate();
+const memoryRemHarnessRequestGate = createLatestRequestGate();
 const sessionSearchRequestGate = createLatestRequestGate();
 
 interface SessionPreviewRequestTicket {
@@ -1010,6 +1093,39 @@ function isCurrentMemorySearchRequest(ticket: MemorySearchRequestTicket): boolea
     && memorySearchRequestGate.isCurrent(ticket.requestId)
     && useGatewayDataStore.getState().memorySearchLoading
     && useGatewayDataStore.getState().memorySearchQuery === ticket.query;
+}
+
+interface MemoryDiagnosticsRequestTicket {
+  connection: GatewayRequester;
+  requestId: number;
+}
+
+function beginMemoryDiagnosticsRequest(): MemoryDiagnosticsRequestTicket | null {
+  if (!gw) return null;
+  return {
+    connection: gw,
+    requestId: memoryDiagnosticsRequestGate.begin(),
+  };
+}
+
+function isCurrentMemoryDiagnosticsRequest(ticket: MemoryDiagnosticsRequestTicket): boolean {
+  return ticket.connection === gw
+    && memoryDiagnosticsRequestGate.isCurrent(ticket.requestId)
+    && useGatewayDataStore.getState().memoryDiagnosticsLoading;
+}
+
+function beginMemoryRemHarnessRequest(): MemoryDiagnosticsRequestTicket | null {
+  if (!gw) return null;
+  return {
+    connection: gw,
+    requestId: memoryRemHarnessRequestGate.begin(),
+  };
+}
+
+function isCurrentMemoryRemHarnessRequest(ticket: MemoryDiagnosticsRequestTicket): boolean {
+  return ticket.connection === gw
+    && memoryRemHarnessRequestGate.isCurrent(ticket.requestId)
+    && useGatewayDataStore.getState().memoryRemHarnessLoading;
 }
 
 interface SessionSearchRequestTicket {
@@ -1271,6 +1387,8 @@ export function startPolling(gateway: GatewayRequester) {
   toolsCatalogRequestGate.invalidate();
   sessionArtifactsRequestGate.invalidate();
   memorySearchRequestGate.invalidate();
+  memoryDiagnosticsRequestGate.invalidate();
+  memoryRemHarnessRequestGate.invalidate();
   sessionSearchRequestGate.invalidate();
   gw = gateway;
   useGatewayDataStore.getState().setPolling(true);
@@ -1301,6 +1419,8 @@ export function stopPolling() {
   toolsCatalogRequestGate.invalidate();
   sessionArtifactsRequestGate.invalidate();
   memorySearchRequestGate.invalidate();
+  memoryDiagnosticsRequestGate.invalidate();
+  memoryRemHarnessRequestGate.invalidate();
   sessionSearchRequestGate.invalidate();
   gw = null;
   const store = useGatewayDataStore.getState();
@@ -1321,6 +1441,12 @@ export function stopPolling() {
   store.clearMemorySearch();
   store.setMemorySearchLoading(null);
   store.setMemorySearchError(null);
+  store.clearMemoryDiagnostics();
+  store.setMemoryDiagnosticsLoading(false);
+  store.setMemoryDiagnosticsError(null);
+  store.clearMemoryRemHarness();
+  store.setMemoryRemHarnessLoading(false);
+  store.setMemoryRemHarnessError(null);
   store.clearSessionSearch();
   store.setSessionSearchLoading(null);
   store.setSessionSearchError(null);
@@ -1578,6 +1704,24 @@ function memorySearchFailureCode(error: unknown): string {
     : 'OPENCLAW_MEMORY_SEARCH_FAILED';
 }
 
+function isUnsupportedGatewayMethodError(error: unknown): boolean {
+  if (!(error instanceof GatewayRpcError)) return false;
+  const code = error.code?.trim().toUpperCase();
+  return code === 'METHOD_NOT_FOUND' || code === 'UNKNOWN_METHOD' || code === 'UNKNOWN_COMMAND';
+}
+
+function memoryDiagnosticsFailureCode(error: unknown, method: string): string {
+  if (error instanceof OpenClawMemoryDiagnosticsResponseError) {
+    return error.code;
+  }
+  if (isUnsupportedGatewayMethodError(error)) {
+    return 'OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED';
+  }
+  return method === OPENCLAW_MEMORY_STATUS_METHOD
+    ? 'OPENCLAW_MEMORY_STATUS_FAILED'
+    : 'OPENCLAW_MEMORY_REM_HARNESS_FAILED';
+}
+
 function sessionSearchFailureCode(error: unknown): string {
   return error instanceof OpenClawSessionSearchResponseError
     ? error.code
@@ -1767,6 +1911,100 @@ export async function searchOpenClawMemory(
     store.clearMemorySearch();
     store.setMemorySearchLoading(null);
     store.setMemorySearchError(memorySearchFailureCode(error));
+    return false;
+  }
+}
+
+/** Read Gateway-owned memory readiness without probing the embedding provider by default. */
+export async function refreshOpenClawMemoryDiagnostics(
+  options: OpenClawMemoryStatusInput = {},
+): Promise<boolean> {
+  const store = useGatewayDataStore.getState();
+  if (!gw) {
+    memoryDiagnosticsRequestGate.invalidate();
+    store.clearMemoryDiagnostics();
+    store.setMemoryDiagnosticsLoading(false);
+    store.setMemoryDiagnosticsError('OPENCLAW_MEMORY_DIAGNOSTICS_UNAVAILABLE');
+    return false;
+  }
+
+  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_MEMORY_STATUS_METHOD);
+  if (advertised === false) {
+    memoryDiagnosticsRequestGate.invalidate();
+    store.clearMemoryDiagnostics();
+    store.setMemoryDiagnosticsLoading(false);
+    store.setMemoryDiagnosticsError('OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED');
+    return false;
+  }
+
+  const ticket = beginMemoryDiagnosticsRequest();
+  if (!ticket) return false;
+  store.clearMemoryDiagnostics();
+  store.setMemoryDiagnosticsLoading(true);
+  store.setMemoryDiagnosticsError(null);
+
+  const client = new OpenClawMemoryDiagnosticsClient(
+    <T>(method: string, params: Record<string, unknown>) => (
+      ticket.connection.request(method, params) as Promise<T>
+    ),
+  );
+  try {
+    const result = await client.status(options);
+    if (!isCurrentMemoryDiagnosticsRequest(ticket)) return false;
+    store.setMemoryDiagnostics(result);
+    return true;
+  } catch (error) {
+    if (!isCurrentMemoryDiagnosticsRequest(ticket)) return false;
+    store.clearMemoryDiagnostics();
+    store.setMemoryDiagnosticsLoading(false);
+    store.setMemoryDiagnosticsError(memoryDiagnosticsFailureCode(error, OPENCLAW_MEMORY_STATUS_METHOD));
+    return false;
+  }
+}
+
+/** Request the Gateway's bounded, read-only REM harness preview on demand. */
+export async function previewOpenClawMemoryRemHarness(
+  options: OpenClawMemoryRemHarnessInput = {},
+): Promise<boolean> {
+  const store = useGatewayDataStore.getState();
+  if (!gw) {
+    memoryRemHarnessRequestGate.invalidate();
+    store.clearMemoryRemHarness();
+    store.setMemoryRemHarnessLoading(false);
+    store.setMemoryRemHarnessError('OPENCLAW_MEMORY_DIAGNOSTICS_UNAVAILABLE');
+    return false;
+  }
+
+  const advertised = gw.hasAdvertisedMethod?.(OPENCLAW_MEMORY_REM_HARNESS_METHOD);
+  if (advertised === false) {
+    memoryRemHarnessRequestGate.invalidate();
+    store.clearMemoryRemHarness();
+    store.setMemoryRemHarnessLoading(false);
+    store.setMemoryRemHarnessError('OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED');
+    return false;
+  }
+
+  const ticket = beginMemoryRemHarnessRequest();
+  if (!ticket) return false;
+  store.clearMemoryRemHarness();
+  store.setMemoryRemHarnessLoading(true);
+  store.setMemoryRemHarnessError(null);
+
+  const client = new OpenClawMemoryDiagnosticsClient(
+    <T>(method: string, params: Record<string, unknown>) => (
+      ticket.connection.request(method, params) as Promise<T>
+    ),
+  );
+  try {
+    const result = await client.remHarness(options);
+    if (!isCurrentMemoryRemHarnessRequest(ticket)) return false;
+    store.setMemoryRemHarness(result);
+    return true;
+  } catch (error) {
+    if (!isCurrentMemoryRemHarnessRequest(ticket)) return false;
+    store.clearMemoryRemHarness();
+    store.setMemoryRemHarnessLoading(false);
+    store.setMemoryRemHarnessError(memoryDiagnosticsFailureCode(error, OPENCLAW_MEMORY_REM_HARNESS_METHOD));
     return false;
   }
 }

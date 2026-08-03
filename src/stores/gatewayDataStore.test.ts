@@ -11,6 +11,8 @@ import {
   parseGatewaySessionsUsage,
   refreshSessionArtifacts,
   searchOpenClawMemory,
+  refreshOpenClawMemoryDiagnostics,
+  previewOpenClawMemoryRemHarness,
   refreshToolsCatalog,
   refreshToolsEffective,
   resolveOpenClawArtifactDownloadUrl,
@@ -519,6 +521,109 @@ test('disconnect clears the Gateway-owned memory snapshot and invalidates its re
   assert.equal(useGatewayDataStore.getState().memorySearchQuery, '');
   assert.equal(useGatewayDataStore.getState().memorySearchLoading, false);
   assert.equal(useGatewayDataStore.getState().memorySearchError, null);
+});
+
+test('memory diagnostics follows capability advertisement and keeps REM preview separate', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => (
+      method === 'doctor.memory.status' || method === 'doctor.memory.remHarness' ? true : null
+    ),
+    request: async (method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params });
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [] };
+      if (method === 'doctor.memory.status') return {
+        agentId: 'main',
+        provider: 'local',
+        embedding: { ok: false, checked: false, error: 'memory embedding readiness not checked' },
+      };
+      if (method === 'doctor.memory.remHarness') return {
+        ok: true,
+        agentId: 'main',
+        workspaceDir: '/workspace/main',
+        remConfig: { enabled: false, lookbackDays: 7, limit: 25, minPatternStrength: 0.5 },
+        deepConfig: { minScore: 0.7, minRecallCount: 2, minUniqueQueries: 2, recencyHalfLifeDays: 14, maxAgeDays: null },
+        rem: { skipped: true, sourceEntryCount: 0, reflections: [], candidateTruths: [], bodyLines: [] },
+        grounded: null,
+        deep: { candidateLimit: 25, truncated: false, candidates: [] },
+      };
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    assert.equal(await refreshOpenClawMemoryDiagnostics(), true);
+    assert.equal(await previewOpenClawMemoryRemHarness({ grounded: true }), true);
+    assert.deepEqual(useGatewayDataStore.getState().memoryDiagnostics?.embedding, {
+      ok: false,
+      checked: false,
+      error: 'memory embedding readiness not checked',
+    });
+    assert.equal(useGatewayDataStore.getState().memoryRemHarness?.ok, true);
+    assert.deepEqual(calls.filter((call) => call.method.startsWith('doctor.memory')), [
+      { method: 'doctor.memory.status', params: {} },
+      { method: 'doctor.memory.remHarness', params: { grounded: true } },
+    ]);
+  } finally {
+    stopPolling();
+  }
+});
+
+test('memory diagnostics does not call methods that the Gateway explicitly omits', async () => {
+  const calls: string[] = [];
+  const gateway = {
+    hasAdvertisedMethod: (method: string) => (
+      method === 'doctor.memory.status' || method === 'doctor.memory.remHarness' ? false : true
+    ),
+    request: async (method: string) => {
+      calls.push(method);
+      if (method === 'sessions.list') return { sessions: [], hasMore: false };
+      if (method === 'agents.list') return { agents: [] };
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    assert.equal(await refreshOpenClawMemoryDiagnostics(), false);
+    assert.equal(await previewOpenClawMemoryRemHarness(), false);
+    assert.equal(useGatewayDataStore.getState().memoryDiagnosticsError, 'OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED');
+    assert.equal(useGatewayDataStore.getState().memoryRemHarnessError, 'OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED');
+    assert.equal(calls.includes('doctor.memory.status'), false);
+    assert.equal(calls.includes('doctor.memory.remHarness'), false);
+  } finally {
+    stopPolling();
+  }
+});
+
+test('disconnect clears native memory diagnostics and invalidates late results', async () => {
+  let resolveStatus: ((value: unknown) => void) | undefined;
+  const gateway = {
+    hasAdvertisedMethod: () => true,
+    request: (method: string) => {
+      if (method === 'sessions.list') return Promise.resolve({ sessions: [], hasMore: false });
+      if (method === 'agents.list') return Promise.resolve({ agents: [] });
+      if (method === 'doctor.memory.status') {
+        return new Promise<unknown>((resolve) => { resolveStatus = resolve; });
+      }
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  const pending = refreshOpenClawMemoryDiagnostics();
+  await Promise.resolve();
+  stopPolling();
+  resolveStatus?.({ agentId: 'main', embedding: { ok: true } });
+  assert.equal(await pending, false);
+  assert.equal(useGatewayDataStore.getState().memoryDiagnostics, null);
+  assert.equal(useGatewayDataStore.getState().memoryDiagnosticsLoading, false);
+  assert.equal(useGatewayDataStore.getState().memoryDiagnosticsError, null);
 });
 
 test('sessions.search follows capability advertisement and never fabricates unsupported hits', async () => {

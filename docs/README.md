@@ -172,6 +172,7 @@ docs/
 - [OpenClaw 原生产物协议对齐](quality/openclaw-native-artifacts-alignment-2026-08-03.md)
 - [OpenClaw 原生记忆检索对齐](quality/openclaw-native-memory-search-alignment-2026-08-03.md)
 - [OpenClaw 原生会话检索对齐](quality/openclaw-native-session-search-alignment-2026-08-03.md)
+- [OpenClaw 原生记忆诊断对齐](quality/openclaw-native-memory-diagnostics-alignment-2026-08-03.md)
 - [OpenClaw 原生技能目录字段对齐](quality/openclaw-native-skill-catalog-fidelity-2026-08-03.md)
 - [OpenClaw 技能归档上传能力对齐](quality/openclaw-skills-upload-parity-2026-08-03.md)
 - [OpenClaw 原生审批对齐](quality/openclaw-native-approvals-alignment-2026-08-03.md)

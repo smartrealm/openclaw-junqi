@@ -263,9 +263,9 @@ RPC 不可用时保留技能列表并显示非阻断提示，未知状态不被�
 
 **官方依据**：`protocol.md` 的 `doctor.memory.status`、`doctor.memory.remHarness`（后者明确标注 requires `operator.read`，返回 bounded read-only 预览）；当前官方 `core-descriptors.ts`、`server-methods/memory-search.ts` 和 `memory-host-sdk/host/types.ts` 对 `memory.search` 的权限、请求和结果类型定义。
 
-**当前行为**：`src/pages/memory-explorer/MemoryExplorerPage.tsx` 保留通过受保护桌面 IPC 浏览当前 OpenClaw 工作区 `MEMORY.md` 与 `memory/` Markdown 的只读视图，并增加显式 Gateway 检索视图。Gateway 视图只调用官方 `memory.search`，按能力广告、连接和最新查询管理结果；`doctor.memory.*` 仍未接入。
+**当前行为**：`src/pages/memory-explorer/MemoryExplorerPage.tsx` 保留通过受保护桌面 IPC 浏览当前 OpenClaw 工作区 `MEMORY.md` 与 `memory/` Markdown 的只读视图，并增加显式 Gateway 检索和 Gateway diagnostics 视图。Gateway 视图只调用官方 `memory.search`；diagnostics 视图按能力广告、连接和最新请求栅栏调用只读的 `doctor.memory.status` 与 `doctor.memory.remHarness`，不接入修复类方法。具体见 [OpenClaw 原生记忆诊断对齐](openclaw-native-memory-diagnostics-alignment-2026-08-03.md)。
 
-**可拓展**：OpenClaw 自身就是 memory 的权威持有者。当前已接入 `memory.search`，让 Gateway 返回持久记忆和会话来源的检索结果；后续如接入 `doctor.memory.status` 或 `doctor.memory.remHarness`，必须继续保持诊断只读、权限明确和状态独立，不得把它们扩展成 JunQi 私有 CRUD。
+**可拓展**：OpenClaw 自身就是 memory 的权威持有者。当前已接入 `memory.search`、`doctor.memory.status` 和 `doctor.memory.remHarness`，让 Gateway 返回持久记忆检索与显式只读诊断；后续只能在取得官方字段、权限和生命周期证据后继续扩展，不得把它们扩展成 JunQi 私有 CRUD。
 
 **边界**：`doctor.memory.*` 家族中大部分是修复类操作（`resetDreamDiary`、`repairDreamingArtifacts` 等），属于破坏性动作，只应接入只读的 `status` 与 `remHarness`，不应把修复操作放进浏览界面。
 
@@ -307,7 +307,7 @@ RPC 不可用时保留技能列表并显示非阻断提示，未知状态不被�
 10. EXT-A 的审批协议后续阶段：事件订阅、策略管理和正式 trace 对齐（pending list/resolve 已接入，仍涉及 `operator.approvals` 权限提升）
 11. EXT-D 技能协议迁移（涉及既有安装记录）
 12. EXT-E 产物协议（当前 session scope 已接入；run/task scope 待真实场景验证）
-13. EXT-F Memory 只读接入（`memory.search` 已接入；`doctor.memory.status/remHarness` 仍待独立立项）
+13. EXT-F Memory 只读接入（`memory.search`、`doctor.memory.status/remHarness` 已接入；写入/修复方法保持禁止）
 14. IMP-02 大文件拆分，只在其他任务顺带触及时进行
 
 ## 不建议做的
