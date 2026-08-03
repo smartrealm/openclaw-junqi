@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { buildCronAgentOptions, resolveCronAgentAvailability } from './cronAgentSelection';
-import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock } from 'lucide-react';
+import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock, Trash2 } from 'lucide-react';
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
 import { gateway, type OpenClawCronRunEntry, type OpenClawCronStatus } from '@/services/gateway';
 import { OpenClawCronStatusUnsupportedError } from '@/services/gateway/OpenClawCronStatusClient';
@@ -270,6 +270,8 @@ export function CronMonitorPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [agentUpdateError, setAgentUpdateError] = useState<string | null>(null);
+  const [cronMutationError, setCronMutationError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [pendingAgentId, setPendingAgentId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const schedulerStatusRequest = useRef(0);
@@ -501,8 +503,15 @@ export function CronMonitorPage() {
   // ── Actions ──
   const toggleJob = async (jobId: string, enabled: boolean) => {
     setActionLoading(jobId);
-    try { await gateway.call('cron.update', { jobId, patch: { enabled } }); await refreshGroup('cron'); }
-    catch { /* silent */ } finally { setActionLoading(null); }
+    setCronMutationError(null);
+    try {
+      await gateway.updateCronJob(jobId, { enabled });
+      if (!await refreshGroup('cron')) throw new Error(t('cron.updateReadbackFailed'));
+    } catch (error) {
+      setCronMutationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const runPollEpoch = useRef(0);
@@ -554,7 +563,7 @@ export function CronMonitorPage() {
   const addTemplate = async (tpl: ReturnType<typeof getCronTemplates>[0]) => {
     setActionLoading(`tpl-${tpl.id}`);
     try {
-      await gateway.call('cron.add', buildCronAgentTurnAddParams({
+      await gateway.addCronAgentTurn(buildCronAgentTurnAddParams({
         ...tpl.job,
         agentId: createJob.agentId,
       }));
@@ -573,10 +582,7 @@ export function CronMonitorPage() {
     setActionLoading(`agent-${jobId}`);
     setAgentUpdateError(null);
     try {
-      await gateway.call('cron.update', {
-        jobId,
-        patch: cronAgentUpdatePatch(agentId),
-      });
+      await gateway.updateCronJob(jobId, cronAgentUpdatePatch(agentId));
       const refreshed = await refreshGroup('cron');
       const confirmed = refreshed
         && isCronAgentSelectionConfirmed(
@@ -589,6 +595,30 @@ export function CronMonitorPage() {
     } catch (error) {
       setPendingAgentId(null);
       setAgentUpdateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const deleteJob = async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    setActionLoading(`delete-${target.id}`);
+    setCronMutationError(null);
+    try {
+      await gateway.removeCronJob(target.id);
+      setDeleteTarget(null);
+      if (!await refreshGroup('cron')) {
+        setCronMutationError(t('cron.deleteReadbackFailed'));
+        return;
+      }
+      if (useGatewayDataStore.getState().cronJobs.some((job) => job.id === target.id)) {
+        setCronMutationError(t('cron.deleteReadbackFailed'));
+        return;
+      }
+      if (selectedJobId === target.id) setSelectedJobId(null);
+    } catch (error) {
+      setCronMutationError(error instanceof Error ? error.message : String(error));
     } finally {
       setActionLoading(null);
     }
@@ -667,6 +697,11 @@ export function CronMonitorPage() {
             </>
           ) : null}
         </div>
+        {cronMutationError && (
+          <div className="basis-full text-[10px] text-aegis-danger" role="alert">
+            {t('cron.updateFailed')}: {cronMutationError}
+          </div>
+        )}
       </div>
 
       {/* Master-detail maintenance layout */}
@@ -869,6 +904,16 @@ export function CronMonitorPage() {
                       )}
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget({ id: selectedJob.id, name: selectedJob.name || selectedJob.id })}
+                    disabled={actionLoading !== null}
+                    title={t('cron.deleteJob')}
+                    aria-label={t('cron.deleteJob')}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-aegis-danger/25 text-aegis-danger transition-colors hover:bg-aegis-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/40 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
                 {/* Status badge */}
                 <div className={clsx(
@@ -1219,7 +1264,7 @@ export function CronMonitorPage() {
                 setCreating(true);
                 setCreateError(null);
                 try {
-                  await gateway.call('cron.add', buildCronAgentTurnAddParams({
+                  await gateway.addCronAgentTurn(buildCronAgentTurnAddParams({
                     name: createJob.name,
                     agentId: createJob.agentId,
                     schedule: { kind: 'cron', expr: createJob.cronExpr.trim(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
@@ -1241,6 +1286,49 @@ export function CronMonitorPage() {
             >
               {creating ? <LoadingIndicator size={11} className="inline" /> : null}
               {t('common.create', '创建')}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && deleteTarget && actionLoading !== `delete-${deleteTarget.id}`) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <DialogContent
+          onEscapeKeyDown={(event) => {
+            if (deleteTarget && actionLoading === `delete-${deleteTarget.id}`) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (deleteTarget && actionLoading === `delete-${deleteTarget.id}`) event.preventDefault();
+          }}
+          className="w-[min(420px,calc(100vw-2rem))] max-w-none gap-0 border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-lg"
+        >
+          <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
+            <DialogTitle className="text-sm font-bold text-aegis-text">{t('cron.deleteJob')}</DialogTitle>
+            <DialogDescription className="text-[11px] text-aegis-text-dim">
+              {t('cron.deleteJobDescription', { name: deleteTarget?.name ?? '' })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="border-t border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] px-5 py-3">
+            <DialogClose
+              disabled={deleteTarget !== null && actionLoading === `delete-${deleteTarget.id}`}
+              className="px-3 py-1.5 text-[11.5px] text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 disabled:opacity-50"
+            >
+              {t('common.cancel')}
+            </DialogClose>
+            <button
+              type="button"
+              onClick={() => { void deleteJob(); }}
+              disabled={deleteTarget === null || actionLoading === `delete-${deleteTarget?.id}`}
+              className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-md bg-aegis-danger px-3 py-1.5 text-[11.5px] font-semibold text-aegis-btn-primary-text transition-[filter,transform] hover:brightness-110 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/45 disabled:opacity-50"
+            >
+              {deleteTarget && actionLoading === `delete-${deleteTarget.id}` ? <LoadingIndicator size={11} /> : <Trash2 size={11} />}
+              {t('cron.deleteJob')}
             </button>
           </DialogFooter>
         </DialogContent>

@@ -65,6 +65,12 @@ import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClie
 import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
 import { OpenClawCronRunClient } from './OpenClawCronRunClient';
 import { OpenClawCronStatusClient } from './OpenClawCronStatusClient';
+import {
+  OpenClawCronManagementClient,
+  type OpenClawCronManagedJob,
+  type OpenClawCronMutationPatch,
+} from './OpenClawCronManagementClient';
+import type { CronAgentTurnAddParams } from './cronContract';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 
 // Re-export types for consumers
@@ -90,6 +96,10 @@ export type {
   OpenClawCronRunStatus,
 } from './OpenClawCronRunClient';
 export type { OpenClawCronStatus } from './OpenClawCronStatusClient';
+export type {
+  OpenClawCronManagedJob,
+  OpenClawCronMutationPatch,
+} from './OpenClawCronManagementClient';
 export type {
   OpenClawApproval,
   OpenClawApprovalDecision,
@@ -674,6 +684,10 @@ const cronStatusClient = new OpenClawCronStatusClient(
   (method, params) => connection.request(method, params),
   (method) => connection.hasAdvertisedMethod(method),
 );
+const cronManagementClient = new OpenClawCronManagementClient(
+  (method, params) => requestPrivileged(method, { ...params }),
+  (method) => connection.hasAdvertisedMethod(method),
+);
 const sessionSteer = new OpenClawSessionSteerClient(
   (method, params) => connection.request(method, params),
 );
@@ -913,6 +927,15 @@ export const gateway = {
   async listCronRuns(jobId: string, runId?: string) { return cronRunClient.list(jobId, runId); },
   async findTerminalCronRun(jobId: string, runId: string) { return cronRunClient.findTerminal(jobId, runId); },
   async getCronStatus() { return cronStatusClient.get(); },
+  async addCronAgentTurn(params: CronAgentTurnAddParams): Promise<OpenClawCronManagedJob> {
+    return cronManagementClient.addAgentTurn(params);
+  },
+  async updateCronJob(jobId: string, patch: OpenClawCronMutationPatch): Promise<OpenClawCronManagedJob> {
+    return cronManagementClient.update(jobId, patch);
+  },
+  async removeCronJob(jobId: string): Promise<void> {
+    return cronManagementClient.remove(jobId);
+  },
   async listAuditEvents(input: OpenClawAuditListInput = {}) { return auditClient.list(input); },
   async listPendingApprovals() { return approvalClient.list(); },
   async listApprovalHistory(input: OpenClawApprovalHistoryRequest = {}) {
