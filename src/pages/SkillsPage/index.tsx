@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Package, Puzzle, RefreshCw, Search, ShieldAlert } from 'lucide-react';
+import { ClipboardList, Package, Puzzle, RefreshCw, Search, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
@@ -11,6 +11,7 @@ import {
   type OpenClawSkillCuratorEntry,
   type OpenClawSkillCuratorStatus,
   type OpenClawSkillDetail,
+  type OpenClawSkillProposal,
   type OpenClawSkillSearchResult,
   type OpenClawSkillSecurityVerdict,
 } from '@/services/openclawSkillsRuntime';
@@ -26,10 +27,33 @@ import {
 } from './components';
 import { SkillArchiveUploadPanel } from './SkillArchiveUploadPanel';
 
-type SkillsTab = 'installed' | 'catalog';
+type SkillsTab = 'installed' | 'catalog' | 'proposals';
 
 function operationError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function proposalDate(value: string): string {
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString() : value;
+}
+
+function proposalStatusLabel(
+  proposal: OpenClawSkillProposal,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (proposal.status === 'pending') return t('skillsExtra.proposalPending', 'Pending');
+  if (proposal.status === 'applied') return t('skillsExtra.proposalApplied', 'Applied');
+  if (proposal.status === 'rejected') return t('skillsExtra.proposalRejected', 'Rejected');
+  if (proposal.status === 'quarantined') return t('skillsExtra.proposalQuarantined', 'Quarantined');
+  return t('skillsExtra.proposalStale', 'Stale');
+}
+
+function proposalStatusStyle(status: OpenClawSkillProposal['status']): string {
+  if (status === 'pending') return 'border-aegis-warning/20 bg-aegis-warning/[0.07] text-aegis-warning';
+  if (status === 'applied') return 'border-aegis-success/20 bg-aegis-success/[0.07] text-aegis-success';
+  if (status === 'rejected' || status === 'quarantined') return 'border-aegis-danger/20 bg-aegis-danger/[0.07] text-aegis-danger';
+  return 'border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim';
 }
 
 function skillIcon() {
@@ -135,6 +159,7 @@ export function SkillsPage() {
   const archiveUploadCapability = openClawSkillsRuntime.archiveUploadCapability();
   const skillCardCapability = openClawSkillsRuntime.skillCardCapability();
   const curatorStatusCapability = openClawSkillsRuntime.curatorStatusCapability();
+  const proposalsCapability = openClawSkillsRuntime.proposalsCapability();
   const [activeTab, setActiveTab] = useState<SkillsTab>('installed');
   const [installed, setInstalled] = useState<MySkill[]>([]);
   const [catalog, setCatalog] = useState<HubSkill[]>([]);
@@ -145,6 +170,9 @@ export function SkillsPage() {
   const [securityError, setSecurityError] = useState<string | null>(null);
   const [curatorStatus, setCuratorStatus] = useState<OpenClawSkillCuratorStatus | null>(null);
   const [curatorError, setCuratorError] = useState<string | null>(null);
+  const [proposals, setProposals] = useState<OpenClawSkillProposal[]>([]);
+  const [loadingProposals, setLoadingProposals] = useState(false);
+  const [proposalsError, setProposalsError] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<SkillDetail | null>(null);
@@ -198,6 +226,22 @@ export function SkillsPage() {
     }
   }, [connected, query]);
 
+  const loadProposals = useCallback(async () => {
+    if (!connected || proposalsCapability === false) return;
+    setLoadingProposals(true);
+    setProposalsError(null);
+    try {
+      const manifest = await openClawSkillsRuntime.proposals();
+      setProposals([...manifest.proposals].sort((left, right) => (
+        Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+      )));
+    } catch (error) {
+      setProposalsError(operationError(error));
+    } finally {
+      setLoadingProposals(false);
+    }
+  }, [connected, proposalsCapability]);
+
   useEffect(() => {
     void loadInstalled();
   }, [loadInstalled]);
@@ -207,6 +251,17 @@ export function SkillsPage() {
     const timer = window.setTimeout(() => void loadCatalog(query), query ? 300 : 0);
     return () => window.clearTimeout(timer);
   }, [activeTab, loadCatalog, query]);
+
+  useEffect(() => {
+    if (activeTab !== 'proposals') return;
+    void loadProposals();
+  }, [activeTab, loadProposals]);
+
+  useEffect(() => {
+    if (activeTab === 'proposals' && proposalsCapability === false) {
+      setActiveTab('installed');
+    }
+  }, [activeTab, proposalsCapability]);
 
   useEffect(() => {
     if (connected) return;
@@ -314,7 +369,8 @@ export function SkillsPage() {
   const tabItems = useMemo(() => [
     { id: 'installed' as const, icon: Package, label: t('skills.mySkills'), count: installed.length },
     { id: 'catalog' as const, icon: Search, label: t('skills.clawHub') },
-  ], [installed.length, t]);
+    ...(proposalsCapability !== false ? [{ id: 'proposals' as const, icon: ClipboardList, label: t('skillsExtra.proposalsTitle', 'Workshop') }] : []),
+  ], [installed.length, proposalsCapability, t]);
 
   return (
     <div className="flex-1 overflow-y-auto overflow-x-hidden">
@@ -460,6 +516,59 @@ export function SkillsPage() {
             ) : (
               <div className="flex flex-col gap-px">
                 {catalog.map((skill) => <HubSkillRow key={skill.slug} skill={skill} onClick={() => void openDetail(skill.slug)} />)}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeTab === 'proposals' && (
+          <section>
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <p className="text-[11px] text-aegis-text-dim">{t('skillsExtra.proposalsHint', 'OpenClaw Skill Workshop proposals')}</p>
+              <button
+                type="button"
+                onClick={() => void loadProposals()}
+                disabled={loadingProposals || !connected}
+                title={t('common.refresh', 'Refresh')}
+                aria-label={t('common.refresh', 'Refresh')}
+                className="grid size-8 place-items-center rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.06] hover:text-aegis-primary disabled:cursor-wait disabled:opacity-50"
+              >
+                {loadingProposals ? <LoadingIndicator size={13} /> : <RefreshCw size={13} aria-hidden="true" />}
+              </button>
+            </div>
+            {proposalsError ? (
+              <div className="border-s-2 border-aegis-warning/60 bg-aegis-warning/[0.04] px-4 py-3 text-[12px] text-aegis-text-secondary">
+                <p>{t('skillsExtra.proposalsUnavailable', 'Skill Workshop proposals unavailable')}</p>
+                <p className="mt-1 break-words text-[11px] text-aegis-text-dim">{proposalsError}</p>
+              </div>
+            ) : loadingProposals ? (
+              <div className="flex justify-center py-20"><LoadingIndicator size={22} className="text-aegis-text-dim" /></div>
+            ) : proposals.length === 0 ? (
+              <div className="py-20 text-center">
+                <ClipboardList size={28} className="mx-auto mb-3 text-aegis-text-dim" aria-hidden="true" />
+                <p className="text-[13px] font-medium text-aegis-text-dim">{t('skillsExtra.proposalsEmpty', 'No Skill Workshop proposals')}</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {proposals.map((proposal) => (
+                  <div key={proposal.id} className="border border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.02)] px-4 py-3">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-[13px] font-semibold text-aegis-text">{proposal.title}</p>
+                          <span className={clsx('inline-flex shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-semibold', proposalStatusStyle(proposal.status))}>
+                            {proposalStatusLabel(proposal, t)}
+                          </span>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-aegis-text-muted">{proposal.description}</p>
+                      </div>
+                      <div className="shrink-0 text-end font-mono text-[10px] text-aegis-text-dim">
+                        <p>{proposal.skillKey}</p>
+                        <p className="mt-1">{proposalDate(proposal.updatedAt)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </section>

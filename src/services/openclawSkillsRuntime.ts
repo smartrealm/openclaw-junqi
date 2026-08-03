@@ -110,6 +110,28 @@ export interface OpenClawSkillCuratorStatus {
   overlaps: Array<{ left: string; right: string; score: number }>;
 }
 
+export type OpenClawSkillProposalKind = 'create' | 'update';
+export type OpenClawSkillProposalStatus = 'pending' | 'applied' | 'rejected' | 'quarantined' | 'stale';
+export type OpenClawSkillProposalScanState = 'pending' | 'clean' | 'failed' | 'quarantined';
+
+export interface OpenClawSkillProposal {
+  id: string;
+  kind: OpenClawSkillProposalKind;
+  status: OpenClawSkillProposalStatus;
+  title: string;
+  description: string;
+  skillName: string;
+  skillKey: string;
+  createdAt: string;
+  updatedAt: string;
+  scanState: OpenClawSkillProposalScanState;
+}
+
+export interface OpenClawSkillProposalManifest {
+  updatedAt: string;
+  proposals: OpenClawSkillProposal[];
+}
+
 export class OpenClawSkillCardUnsupportedError extends Error {
   readonly code = 'OPENCLAW_SKILL_CARD_UNSUPPORTED';
 
@@ -125,6 +147,15 @@ export class OpenClawSkillCuratorUnsupportedError extends Error {
   constructor() {
     super('The connected OpenClaw Gateway does not advertise skills.curator.status.');
     this.name = 'OpenClawSkillCuratorUnsupportedError';
+  }
+}
+
+export class OpenClawSkillProposalsUnsupportedError extends Error {
+  readonly code = 'OPENCLAW_SKILL_PROPOSALS_UNSUPPORTED';
+
+  constructor() {
+    super('The connected OpenClaw Gateway does not advertise skills.proposals.list.');
+    this.name = 'OpenClawSkillProposalsUnsupportedError';
   }
 }
 
@@ -567,6 +598,46 @@ export function normalizeOpenClawSkillCuratorStatus(payload: unknown): OpenClawS
   };
 }
 
+function normalizeOpenClawSkillProposal(value: unknown): OpenClawSkillProposal | null {
+  const proposal = record(value);
+  const id = text(proposal?.id);
+  const kind = proposal?.kind;
+  const status = proposal?.status;
+  const title = text(proposal?.title);
+  const description = text(proposal?.description);
+  const skillName = text(proposal?.skillName);
+  const skillKey = text(proposal?.skillKey);
+  const createdAt = text(proposal?.createdAt);
+  const updatedAt = text(proposal?.updatedAt);
+  const scanState = proposal?.scanState;
+  if (
+    !id
+    || (kind !== 'create' && kind !== 'update')
+    || (status !== 'pending' && status !== 'applied' && status !== 'rejected' && status !== 'quarantined' && status !== 'stale')
+    || !title
+    || !description
+    || !skillName
+    || !skillKey
+    || !createdAt
+    || !updatedAt
+    || (scanState !== 'pending' && scanState !== 'clean' && scanState !== 'failed' && scanState !== 'quarantined')
+  ) return null;
+  return { id, kind, status, title, description, skillName, skillKey, createdAt, updatedAt, scanState };
+}
+
+export function normalizeOpenClawSkillProposalManifest(payload: unknown): OpenClawSkillProposalManifest | null {
+  const root = record(payload);
+  const updatedAt = text(root?.updatedAt);
+  if (
+    root?.schema !== 'openclaw.skill-workshop.proposals-manifest.v1'
+    || !updatedAt
+    || !Array.isArray(root.proposals)
+  ) return null;
+  const proposals = root.proposals.map(normalizeOpenClawSkillProposal);
+  if (proposals.some((proposal) => proposal === null)) return null;
+  return { updatedAt, proposals: proposals as OpenClawSkillProposal[] };
+}
+
 function requiredIdentifier(value: string, label: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${label} is required.`);
@@ -665,6 +736,10 @@ function requiredUploadResult(payload: unknown, operation: string): OpenClawSkil
 
 export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) {
   return {
+    proposalsCapability(): boolean | null {
+      return client.hasAdvertisedMethod?.('skills.proposals.list') ?? null;
+    },
+
     curatorStatusCapability(): boolean | null {
       return client.hasAdvertisedMethod?.('skills.curator.status') ?? null;
     },
@@ -743,6 +818,18 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
       const status = normalizeOpenClawSkillCuratorStatus(await client.call('skills.curator.status', {}));
       if (!status) throw new Error('OpenClaw returned an invalid skill curator status response.');
       return status;
+    },
+
+    async proposals(agentId?: string): Promise<OpenClawSkillProposalManifest> {
+      if (client.hasAdvertisedMethod?.('skills.proposals.list') === false) {
+        throw new OpenClawSkillProposalsUnsupportedError();
+      }
+      const normalizedAgentId = agentId?.trim();
+      const manifest = normalizeOpenClawSkillProposalManifest(await client.call('skills.proposals.list', {
+        ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
+      }));
+      if (!manifest) throw new Error('OpenClaw returned an invalid skill proposal manifest response.');
+      return manifest;
     },
 
     async installFromClawHub(request: OpenClawSkillInstallRequest): Promise<OpenClawSkillInstallResult> {

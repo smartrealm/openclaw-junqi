@@ -47,6 +47,10 @@ Tauri adapter 中固定返回失败或空结果，但页面仍向用户显示导
   `skillKey` 精确相等时才显示 active、stale、archived、pinned 和使用次数；汇总和 overlap
   candidates 均来自 Gateway，不执行 sweep 或 curator 管理动作。具体边界见
   [OpenClaw 原生技能生命周期对齐](openclaw-native-skill-curator-alignment-2026-08-03.md)。
+- 技能页的“技能工作坊”标签只读取 `skills.proposals.list` 的默认 Gateway scope manifest，严格
+  保留原生 proposal lifecycle 与 scanner 状态。当前没有 agent-scope 选择器，因此不把该清单称为
+  当前会话或本地工作区，也不接入 inspect 与任何 proposal 动作；具体边界见
+  [OpenClaw 原生技能提案清单对齐](openclaw-native-skill-proposal-manifest-alignment-2026-08-03.md)。
 - `src/api/tauri-adapter.ts` 与 `src/types/global.d.ts` 删除了固定失败的 skills、
   skillshub、clawhub adapter 声明。
 - `/skill-hub` 保留为 JunQi 本地目录与项目符号链接工具，不成为 Gateway 技能安装的

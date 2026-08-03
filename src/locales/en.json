@@ -2595,7 +2595,16 @@
     "curatorArchived": "Archived",
     "curatorUseCount": "{{count}} uses",
     "curatorOverlaps": "{{count}} overlap candidates",
-    "curatorUnavailable": "Skill lifecycle status unavailable"
+    "curatorUnavailable": "Skill lifecycle status unavailable",
+    "proposalsTitle": "Workshop",
+    "proposalsHint": "OpenClaw Skill Workshop proposals",
+    "proposalsUnavailable": "Skill Workshop proposals unavailable",
+    "proposalsEmpty": "No Skill Workshop proposals",
+    "proposalPending": "Pending",
+    "proposalApplied": "Applied",
+    "proposalRejected": "Rejected",
+    "proposalQuarantined": "Quarantined",
+    "proposalStale": "Stale"
   },
   "settingsTheme": {
     "dark": "Dark Mode",

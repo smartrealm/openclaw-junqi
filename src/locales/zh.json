@@ -2593,7 +2593,16 @@
     "curatorArchived": "已归档",
     "curatorUseCount": "使用 {{count}} 次",
     "curatorOverlaps": "{{count}} 个重叠候选",
-    "curatorUnavailable": "技能生命周期状态不可用"
+    "curatorUnavailable": "技能生命周期状态不可用",
+    "proposalsTitle": "技能工作坊",
+    "proposalsHint": "OpenClaw 技能工作坊提案",
+    "proposalsUnavailable": "技能工作坊提案不可用",
+    "proposalsEmpty": "没有技能工作坊提案",
+    "proposalPending": "待处理",
+    "proposalApplied": "已应用",
+    "proposalRejected": "已拒绝",
+    "proposalQuarantined": "已隔离",
+    "proposalStale": "已过期"
   },
   "settingsTheme": {
     "dark": "深色模式",

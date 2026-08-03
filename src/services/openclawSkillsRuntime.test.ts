@@ -4,9 +4,11 @@ import {
   createOpenClawSkillsRuntime,
   OpenClawSkillCardUnsupportedError,
   OpenClawSkillCuratorUnsupportedError,
+  OpenClawSkillProposalsUnsupportedError,
   SKILL_ARCHIVE_CHUNK_BYTES,
   normalizeOpenClawSkillCard,
   normalizeOpenClawSkillCuratorStatus,
+  normalizeOpenClawSkillProposalManifest,
   normalizeOpenClawSkillDetail,
   normalizeOpenClawSkillSearch,
   normalizeOpenClawSkillSecurityVerdicts,
@@ -166,6 +168,37 @@ test('normalizes only the complete documented native curator status', () => {
   assert.equal(normalizeOpenClawSkillCuratorStatus({
     ...status,
     overlaps: [{ left: 'weather', right: 'forecast', score: '0.8' }],
+  }), null);
+});
+
+test('normalizes only the complete documented native proposal manifest', () => {
+  const manifest = {
+    schema: 'openclaw.skill-workshop.proposals-manifest.v1',
+    updatedAt: '2026-08-03T00:00:00.000Z',
+    proposals: [{
+      id: 'weather-1',
+      kind: 'create',
+      status: 'pending',
+      title: 'Weather briefing',
+      description: 'Prepare a weather briefing.',
+      skillName: 'Weather Briefing',
+      skillKey: 'weather-briefing',
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-02T00:00:00.000Z',
+      scanState: 'clean',
+    }],
+  };
+  assert.deepEqual(normalizeOpenClawSkillProposalManifest(manifest), {
+    updatedAt: manifest.updatedAt,
+    proposals: manifest.proposals,
+  });
+  assert.equal(normalizeOpenClawSkillProposalManifest({
+    ...manifest,
+    proposals: [{ ...manifest.proposals[0], status: 'unknown' }],
+  }), null);
+  assert.equal(normalizeOpenClawSkillProposalManifest({
+    ...manifest,
+    proposals: [{ ...manifest.proposals[0], scanState: 'unknown' }],
   }), null);
 });
 
@@ -385,6 +418,53 @@ test('does not request curator status that the Gateway explicitly does not adver
 
   assert.equal(runtime.curatorStatusCapability(), false);
   await assert.rejects(runtime.curatorStatus(), OpenClawSkillCuratorUnsupportedError);
+  assert.equal(calls, 0);
+});
+
+test('reads the default-scope proposal manifest through the read-only Gateway method', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const runtime = createOpenClawSkillsRuntime({
+    async call(method, params = {}) {
+      calls.push({ method, params });
+      return {
+        schema: 'openclaw.skill-workshop.proposals-manifest.v1',
+        updatedAt: '2026-08-03T00:00:00.000Z',
+        proposals: [],
+      };
+    },
+    async callPrivileged() {
+      return { ok: true };
+    },
+    hasAdvertisedMethod(method) {
+      return method === 'skills.proposals.list';
+    },
+  });
+
+  assert.equal(runtime.proposalsCapability(), true);
+  assert.deepEqual(await runtime.proposals(), {
+    updatedAt: '2026-08-03T00:00:00.000Z',
+    proposals: [],
+  });
+  assert.deepEqual(calls, [{ method: 'skills.proposals.list', params: {} }]);
+});
+
+test('does not request proposal manifests that the Gateway explicitly does not advertise', async () => {
+  let calls = 0;
+  const runtime = createOpenClawSkillsRuntime({
+    async call() {
+      calls += 1;
+      return {};
+    },
+    async callPrivileged() {
+      return { ok: true };
+    },
+    hasAdvertisedMethod() {
+      return false;
+    },
+  });
+
+  assert.equal(runtime.proposalsCapability(), false);
+  await assert.rejects(runtime.proposals(), OpenClawSkillProposalsUnsupportedError);
   assert.equal(calls, 0);
 });
 
