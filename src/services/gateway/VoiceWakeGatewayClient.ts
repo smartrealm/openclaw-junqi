@@ -76,15 +76,6 @@ export class VoiceWakeGatewayClient {
     return config;
   }
 
-  async setRouting(config: VoiceWakeRoutingConfig): Promise<VoiceWakeRoutingConfig> {
-    const response = await this.request('voicewake.routing.set', { config });
-    const updated = decodeVoiceWakeRoutingSnapshot(response);
-    if (!updated) {
-      throw new VoiceWakeGatewayUnavailableError('Gateway returned an invalid voice wake routing update');
-    }
-    return updated;
-  }
-
   async getConfiguration(): Promise<VoiceWakeGatewayConfiguration> {
     const [triggers, routing] = await Promise.all([this.getTriggers(), this.getRouting()]);
     return { triggers, routing };

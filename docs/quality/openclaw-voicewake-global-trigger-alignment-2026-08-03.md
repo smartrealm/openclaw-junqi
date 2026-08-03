@@ -76,6 +76,17 @@ JunQi 窗口、本地唤醒模型或单个节点。JunQi 只能读取、更新�
 解析继续使用官方路由键归一化。因而大小写或标点变体会保留为独立的 Gateway 项，不能
 被 JunQi 误删或误授权。
 
+### VW-04 - 中 - 无消费者的路由写包装扩大控制面
+
+位置：`src/services/gateway/VoiceWakeGatewayClient.ts`
+
+`setRouting` 没有运行时调用方；Settings 和唤醒运行时都只读取路由，并且当前规格明确
+禁止本页修改 `voicewake.routing.set`。保留该包装会让无 UI、无授权流程、无回归消费者的
+高权限写入口继续存在。
+
+经全局引用图核对静态导入、测试、文档与调用点后删除该方法。JunQi 保留官方
+`voicewake.routing.get` 用于唤醒路由核验，不伪造路由编辑能力。
+
 ## 当前行为
 
 1. 本地模型目录和关键词标签只存于 JunQi 原生应用数据；Gateway 触发词与路由仅存于
@@ -102,6 +113,8 @@ JunQi 窗口、本地唤醒模型或单个节点。JunQi 只能读取、更新�
   `src/commands/system.rs` 未使用变量警告。两者均未造成失败，本次未修改相关文件。
 - 2026-08-04 已执行 trigger、route policy、keyword selection 与 Gateway client 定向测试、
   `pnpm lint` 和 `git diff --check`。
+- 2026-08-04 已确认 `voicewake.routing.set` 包装无消费者并删除；读取和事件投影回归
+  保持覆盖。
 
 ## 未验证边界
 

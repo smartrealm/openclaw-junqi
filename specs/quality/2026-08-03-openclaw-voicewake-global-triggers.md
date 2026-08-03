@@ -10,9 +10,8 @@
 
 ## 约束
 
-1. `voicewake.get`、`voicewake.set`、`voicewake.routing.get` 与
-   `voicewake.routing.set` 均严格使用官方 Gateway 协议；不得添加本地 RPC、版本分支或
-   猜测性字段。
+1. `voicewake.get`、`voicewake.set` 与 `voicewake.routing.get` 均严格使用官方 Gateway
+   协议；本页面不暴露 `voicewake.routing.set`。不得添加本地 RPC、版本分支或猜测性字段。
 2. 保存前必须通过当前 authenticated/fenced Gateway 重新读取完整触发词列表，不能用
    React 旧快照或本地模型标签作为完整列表。
 3. 仅在裁剪首尾空白后与当前本地模型标签完全相同的 Gateway 项可被本页替换；全局

@@ -310,7 +310,7 @@ Dynamic Island 只能获得以下派生字段：mode、phase、turn 是否当前
 2. DI-01 与 PET-01 至 PET-06：Dynamic Island 的 close intent 优先于排队 expand；宠物的可见性、展示偏好、声音 authority、失败重试和 ready snapshot 已统一到跨窗口协议。
 3. 语音 authority：`VoiceModeCoordinator` 为每轮输入保有 mode、phase、turn、session key、attested Gateway identity、草稿和错误。停止、组件卸载、切换 target 或 Gateway 后，旧回调不能复活该轮；捕获 owner 的释放由 coordinator 向主窗口 hook 发出请求。异步启动和确认草稿前都会重检当前 session 与 attested connection，卸载只可释放其拥有的 turn。
 4. 语音输入：浏览器识别和 native VAD capture 都只生成确认草稿。文本确认写入普通 composer，音频确认才经既有 `chatSendCoordinator` 发送普通附件；手动录音的原行为未改变。语音层没有调用协作 RPC。
-5. Gateway 协议：`VoiceWakeGatewayClient` 严格解码 `voicewake.get`、`voicewake.set`、`voicewake.routing.get`、`voicewake.routing.set` 和两种 change event，并用当前 attested connection fence 请求。routing target 必须恰好是一种 target discriminator，畸形 payload 不会被静默解释。当前 UI 仅用读取结果验证 Gateway 可用性；没有 detector 时 Wake 保持 unavailable。
+5. Gateway 协议：`VoiceWakeGatewayClient` 严格解码 `voicewake.get`、`voicewake.set`、`voicewake.routing.get` 和两种 change event，并用当前 attested connection fence 请求。JunQi 当前不暴露 `voicewake.routing.set`；routing target 必须恰好是一种 target discriminator，畸形 payload 不会被静默解释。当前 UI 仅用读取结果验证 Gateway 可用性；没有 detector 时 Wake 保持 unavailable。
 6. 视图投影：聊天内工作台提供 Off、Dictation、Wake、状态、确认、丢弃和 stop。Dynamic Island 只获得 mode、phase、是否需要确认和错误类别；宠物只把 active capture phase 映射到已有非文本 thinking cue。二者均不能发送、捕获或调用 Gateway。
 
 ### 当前验证与边界
