@@ -850,6 +850,28 @@
     "audioAutoPlayDesc": "自動播放助手即時回覆附帶的音訊；歷史錄音仍需手動播放。",
     "voiceAutoSpeak": "自動語音回覆",
     "voiceAutoSpeakDesc": "使用 OpenClaw TTS 朗讀目前會話的助手回覆，可隨時打斷。",
+    "openClawTtsStatus": {
+      "title": "OpenClaw TTS 狀態",
+      "description": "目前 Gateway 回傳的唯讀設定事實，不代表下一次語音合成一定成功。",
+      "refresh": "刷新 OpenClaw TTS 狀態",
+      "disconnected": "連接 Gateway 後可讀取 OpenClaw TTS 狀態。",
+      "unavailable": "目前 Gateway 未提供 OpenClaw TTS 狀態。",
+      "invalid": "Gateway 回傳的 OpenClaw TTS 狀態無法驗證。",
+      "enabled": "TTS",
+      "enabledValue": "已啟用",
+      "disabledValue": "已關閉",
+      "auto": "自動模式",
+      "provider": "提供方",
+      "persona": "角色",
+      "configuredProviders": "已設定提供方",
+      "none": "無",
+      "autoValues": {
+        "off": "關閉",
+        "always": "始終",
+        "inbound": "僅入站",
+        "tagged": "僅標記"
+      }
+    },
     "jarvisTitle": "Jarvis 語音待命",
     "jarvisDescription": "在此設定本機喚醒模型與 OpenClaw 觸發詞。會話輸入框只保留目前會話的快速啟動。",
     "jarvisModel": "本機喚醒模型",

@@ -47,8 +47,10 @@ import { ManagedRuntimeSettingsPanel } from '@/components/settings/ManagedRuntim
 import { FontPanel } from '@/components/settings/FontPanel';
 import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
 import { JarvisVoiceSettingsPanel } from '@/components/settings/JarvisVoiceSettingsPanel';
+import { OpenClawTtsStatusPanel } from '@/components/settings/OpenClawTtsStatusPanel';
 import { StructuredPlanSettingsPanel } from '@/components/settings/StructuredPlanSettingsPanel';
 import { useJarvisVoiceSettings } from '@/hooks/useJarvisVoiceSettings';
+import { useOpenClawTtsStatus } from '@/hooks/useOpenClawTtsStatus';
 import { useOpenClawPlanToolSetting } from '@/hooks/useOpenClawPlanToolSetting';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
@@ -206,6 +208,7 @@ export function SettingsPageFull() {
     : 'appearance';
   const jarvisVoiceSettings = useJarvisVoiceSettings(activeTab === 'jarvis');
   const structuredPlans = useOpenClawPlanToolSetting(activeTab === 'connect' && connected);
+  const openClawTtsStatus = useOpenClawTtsStatus(activeTab === 'notify' && connected);
 
   useEffect(() => {
     if (activeTab !== 'connect') return;
@@ -650,6 +653,14 @@ export function SettingsPageFull() {
               if (!enabled) voiceRuntime.interruptAll();
             }} />
           </div>
+
+          <OpenClawTtsStatusPanel
+            status={openClawTtsStatus.status}
+            loading={openClawTtsStatus.loading}
+            failure={openClawTtsStatus.failure}
+            connected={connected}
+            onRefresh={() => { void openClawTtsStatus.refresh(); }}
+          />
 
           <div className="flex items-center justify-between">
             <div>

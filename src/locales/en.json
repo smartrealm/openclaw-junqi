@@ -879,6 +879,28 @@
     "audioAutoPlayDesc": "Play audio attached to live assistant replies; history recordings remain manual.",
     "voiceAutoSpeak": "Auto voice replies",
     "voiceAutoSpeakDesc": "Read assistant replies aloud with OpenClaw TTS; playback can be interrupted.",
+    "openClawTtsStatus": {
+      "title": "OpenClaw TTS status",
+      "description": "Read-only facts returned by the current Gateway; they do not guarantee the next speech request will succeed.",
+      "refresh": "Refresh OpenClaw TTS status",
+      "disconnected": "Connect to the Gateway to read OpenClaw TTS status.",
+      "unavailable": "The current Gateway does not provide OpenClaw TTS status.",
+      "invalid": "The Gateway returned an OpenClaw TTS status that could not be verified.",
+      "enabled": "TTS",
+      "enabledValue": "Enabled",
+      "disabledValue": "Disabled",
+      "auto": "Automatic mode",
+      "provider": "Provider",
+      "persona": "Persona",
+      "configuredProviders": "Configured providers",
+      "none": "None",
+      "autoValues": {
+        "off": "Off",
+        "always": "Always",
+        "inbound": "Inbound only",
+        "tagged": "Tagged only"
+      }
+    },
     "jarvisTitle": "Jarvis voice standby",
     "jarvisDescription": "Configure the local wake model and OpenClaw triggers here. The conversation input keeps only the current-session shortcut.",
     "jarvisModel": "Local wake model",

@@ -23,6 +23,8 @@ JunQi 是 OpenClaw Gateway 的桌面客户端，不拥有另一套文本合成�
 - 发送请求时附加 `AbortSignal`。Stop、会话中断、连接切换或窗口销毁只中止本地等待和播放，不把本地取消伪称为 Gateway 已取消合成。
 - 只有 Gateway 提供明确的 `mimeType` 时才在 Tauri WebView 播放返回的二进制音频。WebView 在此仅为桌面渲染层的音频解码器，不参与文本合成、provider 选择或任何网络回退。
 - Gateway 请求失败、权限不足、连接断开、响应畸形或缺少可播放 MIME 时显示真实错误并停止该语音队列；不得回退到 `speechSynthesis`、第三方网页 TTS、本地假音频或猜测格式。
+- Gateway 当前 TTS 配置由独立的只读 `tts.status` 对齐记录呈现；该状态不会改写自动语音回复偏好，也不构成
+  后续 `tts.speak` 的成功承诺。见[原生 TTS 状态对齐](openclaw-native-tts-status-alignment-2026-08-03.md)。
 
 ## 跨平台边界
 

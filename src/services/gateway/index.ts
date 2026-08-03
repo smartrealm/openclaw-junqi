@@ -66,6 +66,7 @@ import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
 import { OpenClawCronRunClient } from './OpenClawCronRunClient';
 import { OpenClawCronStatusClient } from './OpenClawCronStatusClient';
 import { OpenClawTtsClient } from './OpenClawTtsClient';
+import { OpenClawTtsStatusClient } from './OpenClawTtsStatusClient';
 import {
   OpenClawCronManagementClient,
   type OpenClawCronManagedJob,
@@ -84,6 +85,7 @@ export type {
 };
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
 export type { OpenClawTtsClip, OpenClawTtsSpeakInput } from './OpenClawTtsClient';
+export type { OpenClawTtsStatus } from './OpenClawTtsStatusClient';
 export type {
   OpenClawTaskCancelResult,
   OpenClawTaskLedgerStatus,
@@ -255,6 +257,19 @@ export const voiceWakeGatewayClient = new VoiceWakeGatewayClient({
 export const openClawTtsClient = new OpenClawTtsClient(
   (method, params, options) => connection.request(method, params, options),
 );
+
+export const openClawTtsStatusClient = new OpenClawTtsStatusClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  hasAdvertisedMethod: (method) => connection.hasAdvertisedMethod(method),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
 
 export const talkGatewayClient = new TalkGatewayClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
