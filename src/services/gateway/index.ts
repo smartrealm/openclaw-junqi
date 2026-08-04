@@ -1295,7 +1295,8 @@ export const gateway = {
     return sessionLifecycle.create(input);
   },
   async describeSession(sessionKey: string) {
-    return connection.request('sessions.describe', { key: sessionKey });
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    return connection.request('sessions.describe', { key: targetSessionKey });
   },
   async getEffectiveTools(sessionKey: string, agentId?: string): Promise<ToolsEffectiveResult> {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
@@ -1449,8 +1450,9 @@ export const gateway = {
     timeoutMs = 15_000,
     options: GatewayHistoryOptions = {},
   ): Promise<GatewayHistoryResponse> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return connection.request<GatewayHistoryResponse>('chat.history', {
-      sessionKey,
+      sessionKey: targetSessionKey,
       limit,
       ...(options.offset !== undefined ? { offset: options.offset } : {}),
       ...(options.maxChars !== undefined ? { maxChars: options.maxChars } : {}),
@@ -1461,8 +1463,9 @@ export const gateway = {
     messageId: string,
     agentId?: string,
   ): Promise<GatewayMessageResponse> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return connection.request<GatewayMessageResponse>('chat.message.get', {
-      sessionKey,
+      sessionKey: targetSessionKey,
       messageId,
       ...(agentId ? { agentId } : {}),
     });
@@ -1491,8 +1494,7 @@ export const gateway = {
     );
   },
   async compactSession(sessionKey: string) {
-    const key = sessionKey.trim();
-    if (!key) throw new Error('A session key is required for OpenClaw compaction');
+    const key = requireOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
       key,
       () => sessionCompaction.compact({ key }),
@@ -1504,27 +1506,29 @@ export const gateway = {
 
   // Session Lifecycle
   async deleteSession(sessionKey: string, deleteTranscript = true, expectedSessionId?: string) {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      sessionKey,
+      targetSessionKey,
       async () => {
         const result = await requestPrivileged<Record<string, unknown>>('sessions.delete', {
-          key: sessionKey,
+          key: targetSessionKey,
           deleteTranscript,
           ...(expectedSessionId ? { expectedSessionId } : {}),
         });
-        assertVerifiedSessionMutationResult(result, 'delete', sessionKey);
-        await cleanupSessionArtifacts(sessionKey);
+        assertVerifiedSessionMutationResult(result, 'delete', targetSessionKey);
+        await cleanupSessionArtifacts(targetSessionKey);
         return result;
       },
     );
   },
   async resetSession(sessionKey: string) {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      sessionKey,
+      targetSessionKey,
       async () => {
-        const result = await requestPrivileged<Record<string, unknown>>('sessions.reset', { key: sessionKey });
-        assertVerifiedSessionMutationResult(result, 'reset', sessionKey);
-        await cleanupSessionArtifacts(sessionKey);
+        const result = await requestPrivileged<Record<string, unknown>>('sessions.reset', { key: targetSessionKey });
+        assertVerifiedSessionMutationResult(result, 'reset', targetSessionKey);
+        await cleanupSessionArtifacts(targetSessionKey);
         return result;
       },
     );
@@ -1535,37 +1539,39 @@ export const gateway = {
     expectedSessionId: string,
     expectedConnectionId: string,
   ) {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      sessionKey,
+      targetSessionKey,
       async () => {
         if (connection.getAttestedConnectionId() !== expectedConnectionId) {
           throw new Error('The verified Gateway connection changed before session deletion');
         }
         const result = await requestPrivileged<Record<string, unknown>>('sessions.delete', {
-          key: sessionKey,
+          key: targetSessionKey,
           deleteTranscript,
           expectedSessionId,
         });
         if (connection.getAttestedConnectionId() !== expectedConnectionId) {
           throw new Error('The verified Gateway connection changed while session deletion was completing');
         }
-        assertVerifiedSessionMutationResult(result, 'delete', sessionKey);
-        await cleanupSessionArtifacts(sessionKey);
+        assertVerifiedSessionMutationResult(result, 'delete', targetSessionKey);
+        await cleanupSessionArtifacts(targetSessionKey);
         return result;
       },
     );
   },
   async resetSessionFenced(sessionKey: string, expectedConnectionId: string) {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      sessionKey,
+      targetSessionKey,
       async () => {
         const result = await connection.requestFenced(
           'sessions.reset',
-          { key: sessionKey },
+          { key: targetSessionKey },
           expectedConnectionId,
         );
-        assertVerifiedSessionMutationResult(result, 'reset', sessionKey);
-        await cleanupSessionArtifacts(sessionKey);
+        assertVerifiedSessionMutationResult(result, 'reset', targetSessionKey);
+        await cleanupSessionArtifacts(targetSessionKey);
         return result;
       },
     );

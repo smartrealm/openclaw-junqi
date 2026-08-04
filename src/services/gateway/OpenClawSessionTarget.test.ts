@@ -20,15 +20,23 @@ test('Gateway 发送外观在连接或 pending-send 状态之前拒绝空会话�
   );
 });
 
-test('Gateway 会话读取外观在连接请求前拒绝缺失目标', async () => {
+test('Gateway 会话定向外观在连接或 mutation 协调器前拒绝缺失目标', async () => {
   const missingTarget = undefined as unknown as string;
   const requests = [
+    gateway.describeSession(missingTarget),
     gateway.getEffectiveTools(missingTarget),
     gateway.getSessionPreview(missingTarget),
     gateway.resolveSessionKey(missingTarget),
     gateway.listSessionArtifacts(missingTarget),
     gateway.getSessionArtifact('artifact-1', missingTarget),
     gateway.downloadSessionArtifact('artifact-1', missingTarget),
+    gateway.getHistory(missingTarget),
+    gateway.getMessage(missingTarget, 'message-1'),
+    gateway.compactSession(missingTarget),
+    gateway.deleteSession(missingTarget),
+    gateway.resetSession(missingTarget),
+    gateway.deleteSessionFenced(missingTarget, true, 'session-1', 'connection-1'),
+    gateway.resetSessionFenced(missingTarget, 'connection-1'),
   ];
 
   for (const request of requests) {

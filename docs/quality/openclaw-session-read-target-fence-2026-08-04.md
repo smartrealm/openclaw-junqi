@@ -1,15 +1,18 @@
-# OpenClaw 会话读取目标围栏
+# OpenClaw 会话目标入口围栏
 
 日期：2026-08-04
 
 ## 结论
 
 `gateway` facade 曾为 `tools.effective`、`sessions.preview`、`sessions.resolve` 和
-`artifacts.list/get/download` 隐式填入主会话 key。即使当前 React 调用方均已传入已选择的
-Session，这个默认值仍允许遗漏参数的 JavaScript 调用把读取操作静默定向到其他会话。
+`artifacts.list/get/download` 隐式填入主会话 key。其他直接入口也可能把空 key 传入
+`sessions.describe`、`chat.history`、`chat.message.get`、`sessions.compact`、`sessions.delete`
+或 `sessions.reset`，其中 delete/reset 会先进入本地 mutation coordinator。即使当前 React
+调用方均已传入已选择的 Session，这些路径仍允许遗漏参数的 JavaScript 调用把操作静默定向或
+排队到错误的会话。
 
-现在上述入口都要求显式 session key，并在建立 Gateway 请求前复用
-`requireOpenClawSessionTarget`。空白、缺失或非字符串目标统一返回
+现在上述入口及 fenced delete/reset 都要求显式 session key，并在建立 Gateway 请求或进入
+本地 mutation coordinator 前复用 `requireOpenClawSessionTarget`。空白、缺失或非字符串目标统一返回
 `OPENCLAW_SESSION_TARGET_REQUIRED`；不会触发默认会话请求，也不会把本地错误伪装成
 Gateway 的读取结果。
 
@@ -26,13 +29,13 @@ Gateway 的读取结果。
 
 ## 验证
 
-- `OpenClawSessionTarget.test.ts` 覆盖六个 facade 入口在连接请求前拒绝缺失目标。
+- `OpenClawSessionTarget.test.ts` 覆盖十四个 facade 入口在连接请求或 mutation coordinator 前拒绝缺失目标。
 - 所有现有 React 调用方已审查并显式传入选中的 session key。
 - 本轮执行 `pnpm lint`、`pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs` 与
   `git diff --check`。
 
 ## 未验证边界
 
-- 未在真实 Gateway 上分别验证每个只读方法的多会话响应；本修复不改变其请求字段、权限或
+- 未在真实 Gateway 上分别验证每个会话定向方法的多会话响应；本修复不改变其请求字段、权限或
   响应解码。
 - 未进行 macOS、Windows、CentOS 或 Ubuntu 的目标平台真机验收。
