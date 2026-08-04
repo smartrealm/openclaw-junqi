@@ -8,11 +8,9 @@ export type DynamicIslandAction =
   | { type: 'voice-stop' }
   | { type: 'hide' };
 
-/** Hides immediately in the auxiliary window, then persists the user's intent in main. */
+/** Returns the hide request to the main-window visibility owner. */
 export function hideDynamicIsland(
-  close: () => Promise<unknown>,
   emitAction: (action: DynamicIslandAction) => void,
 ): void {
-  void close().catch(() => undefined);
   emitAction({ type: 'hide' });
 }

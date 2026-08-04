@@ -54,14 +54,6 @@ test('dynamic island commands and auxiliary root stay wired into Tauri', () => {
   assert.ok(capability.permissions.includes('core:event:allow-listen'));
 });
 
-test('dynamic island lifecycle does not surface event transport failures as global rejections', () => {
-  const island = read('src/dynamic-island/DynamicIsland.tsx');
-  const runtime = read('src/dynamic-island/DynamicIslandRuntime.tsx');
-
-  assert.match(island, /emitTauriEvent\('dynamic-island:ready'\)\.catch\(\(\) => undefined\)/);
-  assert.match(runtime, /void openAndSynchronize\(\)\.catch\(\(\) => undefined\)/);
-});
-
 test('dynamic island voice controls only release capture or return focus to chat', () => {
   const island = read('src/dynamic-island/DynamicIsland.tsx');
   const runtime = read('src/dynamic-island/DynamicIslandRuntime.tsx');

@@ -314,10 +314,7 @@ export default function DynamicIsland() {
                 <button type="button" onClick={() => setIslandExpanded(false)} title={t('dynamicIsland.collapse')}><ChevronUp size={15} /></button>
                 <button
                   type="button"
-                  onClick={() => hideDynamicIsland(
-                    () => invoke('close_dynamic_island'),
-                    action,
-                  )}
+                  onClick={() => hideDynamicIsland(action)}
                   title={t('dynamicIsland.hide')}
                 ><X size={15} /></button>
               </div>

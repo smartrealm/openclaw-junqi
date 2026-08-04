@@ -58,6 +58,27 @@ test('Dynamic Island preview closes without changing a persisted setting', () =>
   assert.deepEqual(active, [true, false]);
 });
 
+test('an expired preview callback cannot close a newer preview generation', () => {
+  const active: boolean[] = [];
+  const callbacks: Array<() => void> = [];
+  const preview = new DynamicIslandPreview({
+    schedule: (callback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    },
+    clear: () => {},
+    onChange: (value) => { active.push(value); },
+  });
+
+  preview.start();
+  preview.start();
+  callbacks[0]();
+  assert.deepEqual(active, [true, true]);
+
+  callbacks[1]();
+  assert.deepEqual(active, [true, true, false]);
+});
+
 test('Dynamic Island preview emits only the runtime-owned preview intent', async () => {
   const events: string[] = [];
   await requestDynamicIslandPreview(async (event) => {

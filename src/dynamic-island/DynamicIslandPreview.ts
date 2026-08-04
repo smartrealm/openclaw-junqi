@@ -10,19 +10,23 @@ interface DynamicIslandPreviewDependencies {
 /** Owns the bounded local preview state; it never persists a user preference. */
 export class DynamicIslandPreview {
   private timer: number | null = null;
+  private generation = 0;
 
   constructor(private readonly dependencies: DynamicIslandPreviewDependencies) {}
 
   start(): void {
+    const generation = ++this.generation;
     this.clearTimer();
     this.dependencies.onChange(true);
     this.timer = this.dependencies.schedule(() => {
+      if (generation !== this.generation) return;
       this.timer = null;
       this.dependencies.onChange(false);
     }, DYNAMIC_ISLAND_PREVIEW_DURATION_MS);
   }
 
   stop(): void {
+    this.generation += 1;
     this.clearTimer();
     this.dependencies.onChange(false);
   }

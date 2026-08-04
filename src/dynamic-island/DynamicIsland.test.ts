@@ -2,11 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { hideDynamicIsland } from './DynamicIslandActions';
 
-test('Dynamic Island close hides locally before the main-window preference sync', () => {
+test('Dynamic Island close returns its intent to the main-window owner', () => {
   const calls: string[] = [];
   hideDynamicIsland(
-    async () => { calls.push('close'); },
     (action) => { calls.push(action.type); },
   );
-  assert.deepEqual(calls, ['close', 'hide']);
+  assert.deepEqual(calls, ['hide']);
 });

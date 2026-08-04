@@ -12,6 +12,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import type { DynamicIslandAction } from './DynamicIslandActions';
 import { DYNAMIC_ISLAND_PREVIEW_EVENT, DynamicIslandPreview } from './DynamicIslandPreview';
+import { DynamicIslandVisibilityController } from './DynamicIslandVisibilityController';
 import { voiceModeCoordinator } from '@/services/voice/VoiceModeCoordinator';
 import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
@@ -72,11 +73,22 @@ export default function DynamicIslandRuntime() {
   const resourceDropRef = useRef(resourceDrop);
   const resourceDropTimerRef = useRef<number | null>(null);
   const previewRef = useRef<DynamicIslandPreview | null>(null);
+  const visibilityControllerRef = useRef<DynamicIslandVisibilityController<DynamicIslandSnapshot> | null>(null);
   if (!previewRef.current) {
     previewRef.current = new DynamicIslandPreview({
       schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
       clear: (timer) => window.clearTimeout(timer),
       onChange: setPreviewActive,
+    });
+  }
+  if (!visibilityControllerRef.current) {
+    visibilityControllerRef.current = new DynamicIslandVisibilityController({
+      open: () => invoke('open_dynamic_island'),
+      close: () => invoke('close_dynamic_island'),
+      synchronize: async (nextSnapshot, ignorePointerEvents) => {
+        await invoke('set_dynamic_island_click_through', { ignore: ignorePointerEvents }).catch(() => undefined);
+        await emitTauriEvent('dynamic-island:update', nextSnapshot);
+      },
     });
   }
   const terminalPulseTimerRef = useRef<number | null>(null);
@@ -231,16 +243,11 @@ export default function DynamicIslandRuntime() {
   latestSnapshotRef.current = snapshot;
 
   useEffect(() => {
-    if (shouldShow) {
-      const openAndSynchronize = async () => {
-        await invoke('open_dynamic_island');
-        await invoke('set_dynamic_island_click_through', { ignore: resourceDropRef.current?.phase === 'dragging' }).catch(() => undefined);
-        await emitTauriEvent('dynamic-island:update', latestSnapshotRef.current);
-      };
-      void openAndSynchronize().catch(() => undefined);
-    } else {
-      void invoke('close_dynamic_island').catch(() => undefined);
-    }
+    visibilityControllerRef.current?.reconcile({
+      visible: shouldShow,
+      snapshot: latestSnapshotRef.current,
+      ignorePointerEvents: resourceDropRef.current?.phase === 'dragging',
+    });
   }, [shouldShow]);
 
   useEffect(() => {
@@ -329,6 +336,11 @@ export default function DynamicIslandRuntime() {
           } else {
             useSettingsStore.getState().setDynamicIslandEnabled(false);
           }
+          visibilityControllerRef.current?.reconcile({
+            visible: false,
+            snapshot: latestSnapshotRef.current,
+            ignorePointerEvents: false,
+          });
           break;
       }
     }),
@@ -359,6 +371,7 @@ export default function DynamicIslandRuntime() {
   useEffect(() => () => {
     if (resourceDropTimerRef.current !== null) window.clearTimeout(resourceDropTimerRef.current);
     previewRef.current?.dispose();
+    visibilityControllerRef.current?.dispose();
     if (terminalPulseTimerRef.current !== null) window.clearTimeout(terminalPulseTimerRef.current);
   }, []);
 
