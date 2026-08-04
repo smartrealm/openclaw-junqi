@@ -36,9 +36,15 @@ $certificate = New-SelfSignedCertificate `
   -NotAfter (Get-Date).AddDays($ValidDays)
 
 Export-Certificate -Cert $certificate -FilePath $cerPath -Type CERT | Out-Null
+foreach ($store in @('Root', 'TrustedPublisher')) {
+  Import-Certificate `
+    -FilePath $cerPath `
+    -CertStoreLocation "Cert:\CurrentUser\$store" | Out-Null
+}
 @(
   'Purpose=JunQi controlled internal testing only'
   'PublicTrust=None'
+  'CiRunnerTrust=CurrentUserOnly'
   'SmartAppControlCompatibility=Not guaranteed; public CA signing is required by Microsoft policy'
   "Subject=$($certificate.Subject)"
   "Thumbprint=$($certificate.Thumbprint)"

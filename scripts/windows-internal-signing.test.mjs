@@ -49,6 +49,9 @@ test('ephemeral CI certificate is non-exportable, short-lived, and emits public 
   assert.match(ciCertificate, /Export-Certificate/);
   assert.doesNotMatch(ciCertificate, /Export-PfxCertificate|\.pfx/iu);
   assert.match(ciCertificate, /PublicTrust=None/);
+  assert.match(ciCertificate, /Cert:\\CurrentUser\\\$store/);
+  assert.match(ciCertificate, /'Root', 'TrustedPublisher'/);
+  assert.doesNotMatch(ciCertificate, /LocalMachine/);
 });
 
 test('internal build signs the app before NSIS bundling and verifies both artifacts', () => {
@@ -82,11 +85,15 @@ test('tagged Windows test release signs the application before NSIS and publishe
   const appSign = taggedRelease.indexOf('Sign compiled Windows application for controlled internal testing');
   const bundle = taggedRelease.indexOf('Bundle Windows NSIS installer around the signed application');
   const installerSign = taggedRelease.indexOf('Sign and verify Windows NSIS installer for controlled internal testing');
+  const cleanup = taggedRelease.indexOf('Remove ephemeral Windows signing certificate');
   assert.ok(compile >= 0 && compile < appSign && appSign < bundle && bundle < installerSign);
+  assert.ok(installerSign < cleanup);
   assert.match(taggedRelease, /New-JunQiCiInternalTestCertificate\.ps1/);
   assert.equal(taggedRelease.match(/Resolve-JunQiSignTool\.ps1/g)?.length, 2);
   assert.match(taggedRelease, /\.artifacts\/windows-tag-internal-signing\/\*\.cer/);
   assert.match(taggedRelease, /\.artifacts\/windows-tag-internal-signing\/\*\.txt/);
   assert.doesNotMatch(taggedRelease, /windows-tag-internal-signing\/\*\.pfx/);
   assert.match(taggedRelease, /Smart App Control 开启时仍可能阻止/);
+  assert.match(taggedRelease, /always\(\) && runner\.os == 'Windows'/);
+  assert.match(taggedRelease, /'My', 'Root', 'TrustedPublisher'/);
 });

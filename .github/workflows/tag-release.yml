@@ -264,6 +264,21 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+      - name: Remove ephemeral Windows signing certificate
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CERTIFICATE_THUMBPRINT: ${{ steps.internal-certificate.outputs.thumbprint }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_THUMBPRINT)) { exit 0 }
+          foreach ($store in @('My', 'Root', 'TrustedPublisher')) {
+            $certificatePath = "Cert:\CurrentUser\$store\$env:CERTIFICATE_THUMBPRINT"
+            if (Test-Path -LiteralPath $certificatePath) {
+              Remove-Item -LiteralPath $certificatePath -Force
+            }
+          }
+
   publish:
     name: Publish GitHub Release
     needs: [verify, build]
