@@ -1050,6 +1050,7 @@ const sessionCompactionOperations = new SessionCompactionClient({
 });
 const sessionBranches = new OpenClawSessionBranchesClient({
   request: (method, params) => connection.request(method, params),
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
 });
 const agentManagement = new OpenClawAgentManagement({

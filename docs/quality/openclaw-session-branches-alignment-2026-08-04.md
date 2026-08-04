@@ -27,10 +27,12 @@ JunQi 在会话上下文栏新增按需分支面板。面板只读取 OpenClaw
   `messageCount`、`updatedAt` 和 `active`；不由 JunQi 推断、生成或持久化分支。
 - 分支切换与 `chat.send`、会话设置和其他会话 mutation 共用会话级串行器，避免本地并发请求
   跨越同一个 Gateway 生命周期边界。
+- 分支切换使用一次性 `operator.admin` Gateway 授权通道；读取列表仍使用当前日常连接，不能把
+  管理权限扩展为常驻客户端权限。
 - 列表在用户打开面板时才请求。没有分支与读取失败分别展示，不以方法广告、版本号或空本地
   数据伪装为支持。
-- 不接入 `sessions.rewind` 与 `sessions.fork`。JunQi 当前消息显示模型没有完整保存官方持久化
-  transcript entryId，不能为破坏性操作猜测目标 entry。
+- 本次范围不接入 `sessions.rewind` 与 `sessions.fork`。这两个独立的消息截断操作需要单独核对
+  官方 entryId、编辑器恢复和权限契约；本组件不会为其猜测目标或伪造调用。
 
 ## 验证
 

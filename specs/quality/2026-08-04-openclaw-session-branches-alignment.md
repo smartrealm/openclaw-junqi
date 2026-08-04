@@ -11,10 +11,11 @@
    必须失败关闭。
 2. 仅在用户打开会话上下文栏的分支控件时请求列表，并明确显示空列表、加载和错误状态。
 3. 非活动分支必须经明确确认才调用 `sessions.branches.switch`，参数仅来自当前会话身份和 Gateway
-   返回的 `leafEntryId`。
+   返回的 `leafEntryId`；调用必须使用一次性 `operator.admin` 授权通道，不能扩大为常驻权限。
 4. 分支切换必须与同会话的发送和设置 mutation 串行；成功后重载该会话 history 与分支列表，且绝不
    自动重发草稿、失败消息或附件。
-5. 不为 `sessions.rewind`、`sessions.fork`、本地 entryId 或分支恢复伪造 UI 或调用。
+5. 本次范围不接入 `sessions.rewind`、`sessions.fork` 或分支恢复；后续若扩展，必须另行核对官方
+   entryId、编辑器恢复和权限契约，不能伪造 UI 或调用。
 
 ## 验收条件
 

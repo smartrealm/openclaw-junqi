@@ -13,6 +13,7 @@ export interface OpenClawSessionBranch {
 
 export interface OpenClawSessionBranchesClientDependencies {
   request: (method: string, params: Record<string, unknown>) => Promise<unknown>;
+  requestPrivileged: (method: string, params: Record<string, unknown>) => Promise<unknown>;
   runMutation: <T>(sessionKey: string, operation: () => Promise<T>) => Promise<T>;
 }
 
@@ -100,7 +101,7 @@ export class OpenClawSessionBranchesClient {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     const targetLeafEntryId = requiredText(leafEntryId, OPENCLAW_SESSION_BRANCHES_SWITCH_METHOD);
     await this.dependencies.runMutation(targetSessionKey, async () => {
-      const response = await this.dependencies.request(OPENCLAW_SESSION_BRANCHES_SWITCH_METHOD, {
+      const response = await this.dependencies.requestPrivileged(OPENCLAW_SESSION_BRANCHES_SWITCH_METHOD, {
         ...params(targetSessionKey, agentId),
         leafEntryId: targetLeafEntryId,
       });

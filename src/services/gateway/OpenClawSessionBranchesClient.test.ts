@@ -22,6 +22,7 @@ test('OpenClawSessionBranchesClient 只投影官方分支目录并保留会话�
         }],
       };
     },
+    requestPrivileged: async () => { throw new Error('列表不应请求管理员权限'); },
     runMutation: async (_sessionKey, operation) => operation(),
   });
 
@@ -45,6 +46,10 @@ test('OpenClawSessionBranchesClient 将分支切换放入同一会话的串行 m
   const mutations: string[] = [];
   const client = new OpenClawSessionBranchesClient({
     request: async (method, params) => {
+      calls.push({ method, params });
+      throw new Error(`普通连接不应写入：${method}`);
+    },
+    requestPrivileged: async (method, params) => {
       calls.push({ method, params });
       return {};
     },
@@ -76,6 +81,7 @@ test('OpenClawSessionBranchesClient 拒绝猜测的分支响应和切换确认',
   );
   const client = new OpenClawSessionBranchesClient({
     request: async () => null,
+    requestPrivileged: async () => null,
     runMutation: async (_sessionKey, operation) => operation(),
   });
   await assert.rejects(client.switch('agent:main:desk', 'leaf-1'), OpenClawSessionBranchesResponseError);
