@@ -1,6 +1,7 @@
 import type { ArtifactDownloadResult, ArtifactSummary } from '@/services/gateway/artifacts';
 import type { ManagedFilePreview } from './filePreviewCapabilities';
 import { decodeBase64Utf8 } from '@/services/chat/filePreview';
+import { fileExtension } from '@/workspace-files/domain/fileKinds';
 
 const MAX_INLINE_ARTIFACT_BYTES = 8 * 1024 * 1024;
 
@@ -27,6 +28,10 @@ function isTextArtifact(artifact: ArtifactSummary): boolean {
 function isMarkdownArtifact(artifact: ArtifactSummary): boolean {
   return ['md', 'mdx', 'markdown'].includes(extension(artifact.title))
     || normalizedMime(artifact) === 'text/markdown';
+}
+
+function isJsonArtifact(artifact: ArtifactSummary): boolean {
+  return fileExtension(artifact.title) === 'json' || normalizedMime(artifact) === 'application/json';
 }
 
 function isHtmlArtifact(artifact: ArtifactSummary): boolean {
@@ -68,6 +73,7 @@ export function artifactDownloadToPreview(
   const content = decodeBase64Utf8(download.data);
   if (isHtmlArtifact(artifact)) return { kind: 'html', mode: 'static', content, truncated: false };
   if (isMarkdownArtifact(artifact)) return { kind: 'markdown', content, truncated: false };
+  if (isJsonArtifact(artifact)) return { kind: 'json', content, truncated: false };
   return { kind: 'text', content, truncated: false };
 }
 

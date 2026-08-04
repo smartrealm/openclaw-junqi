@@ -71,6 +71,9 @@ importers:
       '@junqi/shared-tokens':
         specifier: workspace:*
         version: link:packages/shared-tokens
+      '@lezer/json':
+        specifier: ^1.0.3
+        version: 1.0.3
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

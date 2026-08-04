@@ -38,6 +38,7 @@ function ViewButton({
 export function FileViewerToolbar({
   relativePath,
   isMarkdown,
+  isPreviewable,
   viewMode,
   tableOfContentsVisible,
   tableOfContentsAvailable,
@@ -51,6 +52,7 @@ export function FileViewerToolbar({
 }: {
   relativePath: string;
   isMarkdown: boolean;
+  isPreviewable: boolean;
   viewMode: FileViewMode;
   tableOfContentsVisible: boolean;
   tableOfContentsAvailable: boolean;
@@ -67,7 +69,7 @@ export function FileViewerToolbar({
     <div className="file-viewer-toolbar">
       <span className="file-viewer-toolbar-path" title={relativePath}>{relativePath}</span>
       <div className="file-viewer-toolbar-actions">
-        {isMarkdown && (
+        {isPreviewable && (
           <div className="file-viewer-mode-switch" role="group" aria-label={t("file.viewMode", "View mode")}>
             <ViewButton
               active={viewMode === "source"}

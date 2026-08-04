@@ -6,6 +6,7 @@ import { aegisCodeMirrorBaseTheme, getCodeMirrorColorTheme } from "@/utils/codeM
 import { ExternalFileChangeBanner } from "./ExternalFileChangeBanner";
 import { FileReadOnlyPreview } from "./FileReadOnlyPreview";
 import { FileUnavailableBanner } from "./FileUnavailableBanner";
+import { ManagedFilePreview } from "./ManagedFilePreview";
 import { MarkdownPreview, extractMarkdownHeadings } from "./MarkdownPreview";
 import { MarkdownTableOfContents } from "./MarkdownTableOfContents";
 import { FilePreviewStatusBar } from "./FilePreviewStatusBar";
@@ -61,6 +62,7 @@ export function FilePreviewPane({
     error,
     diskReadError,
     isMarkdown,
+    isJson,
     edit,
     saveNow,
     reloadFromDisk,
@@ -180,6 +182,11 @@ export function FilePreviewPane({
               />
             ) : null}
           </>
+        ) : content !== null && isJson && previewMode ? (
+          <ManagedFilePreview
+            fileName={fileName}
+            preview={{ kind: "json", content, truncated: false }}
+          />
         ) : content !== null ? (
           <ReactCodeMirror
             className="file-source-editor"

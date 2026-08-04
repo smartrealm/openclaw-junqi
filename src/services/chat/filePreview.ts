@@ -71,6 +71,7 @@ export function getFilePreviewKind(fileName: string): FilePreviewKind | null {
     interactiveHtml: true,
   });
   if (resolution.mode === 'editor') return 'text';
+  if (resolution.mode === 'json') return 'json';
   if (resolution.mode === 'markdown') return 'markdown';
   if (resolution.mode === 'isolated-html' || resolution.mode === 'static-html') return 'html';
   if (resolution.mode === 'scoped-pdf') return 'pdf';

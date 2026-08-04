@@ -55,6 +55,11 @@ import {
 } from './agentShareDefinition';
 import { ExportSharePackageDialog, ImportSharePackageDialog, type SharePackageManifest, type SharePackageSubject } from '@/components/shared/SharePackageDialog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import {
+  AgentHubViewPanel,
+  hasAgentHubSnapshot,
+  shouldShowAgentHubInitialLoading,
+} from './viewStability';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -719,7 +724,11 @@ export function AgentHubPage() {
   const agents = useGatewayDataStore((s) => s.agents) as AgentInfo[];
   const runningSubAgents = useGatewayDataStore((s) => s.runningSubAgents);
   const loading = useGatewayDataStore((s) => s.loading.sessions || s.loading.agents);
+  const hasHydratedAgentData = useGatewayDataStore(
+    (s) => hasAgentHubSnapshot(s.lastFetch),
+  );
   const dataError = useGatewayDataStore((s) => s.errors.agents || s.errors.sessions);
+  const initialLoading = shouldShowAgentHubInitialLoading(loading, hasHydratedAgentData);
   const skillList = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
 
@@ -1342,7 +1351,7 @@ export function AgentHubPage() {
         </div>
       )}
 
-      {loading ? (
+      {initialLoading ? (
         <div className="flex items-center justify-center py-20">
           <LoadingIndicator
             size={24}
@@ -1353,30 +1362,30 @@ export function AgentHubPage() {
       ) : (
         <>
           {/* ══════════════════════════════════════════════ */}
-          {/* TREE VIEW                                     */}
+          {/* 树状视图 */}
           {/* ══════════════════════════════════════════════ */}
-          {viewMode === 'tree' && (
+          <AgentHubViewPanel active={viewMode === 'tree'}>
             <TreeView mainSession={mainSession} registeredAgents={registeredAgents} workers={workers} agents={enrichedAgents} onAgentClick={setSettingsAgent} />
-          )}
+          </AgentHubViewPanel>
 
           {/* ══════════════════════════════════════════════ */}
-          {/* ACTIVITY VIEW                                 */}
+          {/* 活动视图 */}
           {/* ══════════════════════════════════════════════ */}
-          {viewMode === 'activity' && (
+          <AgentHubViewPanel active={viewMode === 'activity'}>
             <GlassCard delay={0}>
               <div className="text-[10px] text-aegis-text-dim uppercase tracking-widest font-bold mb-2 px-3 pt-2">
                 {t('agentHub.liveActivityFeed', 'Live Activity Feed')}
               </div>
               <ActivityFeed sessions={sessions} agents={enrichedAgents} />
             </GlassCard>
-          )}
+          </AgentHubViewPanel>
 
           {/* ══════════════════════════════════════════════ */}
-          {/* GRID VIEW (original layout)                   */}
+          {/* 原有网格视图 */}
           {/* ══════════════════════════════════════════════ */}
-          {viewMode === 'grid' && (
+          <AgentHubViewPanel active={viewMode === 'grid'}>
             <div className="space-y-8">
-              {/* Section 1: Main Agent Hero */}
+              {/* 主智能体 */}
               <div>
                 <div className="text-[11px] text-aegis-text-muted uppercase tracking-wider font-semibold mb-3">{t('agents.mainAgent', 'Main Agent')}</div>
                 {mainSession ? (
@@ -1427,7 +1436,7 @@ export function AgentHubPage() {
                 )}
               </div>
 
-              {/* Section 2: Registered Agents */}
+              {/* 已注册智能体 */}
               <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="text-[11px] text-aegis-text-muted uppercase tracking-wider font-semibold">
@@ -1450,7 +1459,7 @@ export function AgentHubPage() {
                     </button>
                   </div>
 
-                  {/* Add form */}
+                  {/* 新增表单 */}
                   <AnimatePresence>
                     {showAddForm && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-3">
@@ -2077,7 +2086,7 @@ export function AgentHubPage() {
                                   )}
                                   {lastActive > 0 && <><span className="text-aegis-text-dim">·</span><span>{timeAgo(lastActive)}</span></>}
                                 </div>
-                                {/* Task label when spawned */}
+                                {/* 派生任务标签 */}
                                 {spawned && spawnedLabel && (
                                   <div className="mt-1.5 flex max-w-[200px] items-center gap-1 text-[9px] text-aegis-primary/70" title={spawnedLabel}>
                                     <ClipboardList size={10} className="shrink-0" aria-hidden="true" />
@@ -2151,7 +2160,7 @@ export function AgentHubPage() {
                   </div>
               </div>
 
-              {/* Section 3: Workers */}
+              {/* 工作智能体 */}
               <div>
                 <div className="text-[11px] text-aegis-text-muted uppercase tracking-wider font-semibold mb-3">
                   {t('agents.workers', 'Active Workers')}
@@ -2170,7 +2179,7 @@ export function AgentHubPage() {
                 )}
               </div>
             </div>
-          )}
+          </AgentHubViewPanel>
         </>
       )}
 

@@ -1,9 +1,10 @@
-import { describeWorkspaceFile, type WorkspaceFileKind } from '../domain/fileKinds';
+import { describeWorkspaceFile, fileExtension, type WorkspaceFileKind } from '../domain/fileKinds';
 import type { WorkspaceFileCapabilities, WorkspaceFilePolicy } from '../domain/types';
 
 export type WorkspacePreviewMode =
   | 'editor'
   | 'markdown'
+  | 'json'
   | 'static-html'
   | 'isolated-html'
   | 'scoped-media'
@@ -42,6 +43,9 @@ export function resolveWorkspacePreview(request: WorkspacePreviewRequest): Works
   const editable = descriptor.editable
     && request.policy === 'workspace'
     && request.capabilities.write;
+  if (descriptor.kind === 'code' && fileExtension(request.path) === 'json') {
+    return { kind: descriptor.kind, mode: 'json', editable };
+  }
   if (descriptor.kind === 'code' || descriptor.kind === 'text') {
     return { kind: descriptor.kind, mode: 'editor', editable };
   }

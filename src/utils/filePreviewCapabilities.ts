@@ -45,7 +45,7 @@ export type ManagedFilePreview =
       url: string;
     }
   | {
-      kind: "markdown" | "text";
+      kind: "json" | "markdown" | "text";
       content: string;
       truncated: boolean;
     };
