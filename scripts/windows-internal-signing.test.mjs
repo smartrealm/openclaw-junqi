@@ -44,21 +44,18 @@ test('certificate removal is pinned to both subject and thumbprint', () => {
 
 test('ephemeral CI certificate is non-exportable, short-lived, and emits public trust material only', () => {
   const thumbprintOutput = ciCertificate.indexOf('"thumbprint=$($certificate.Thumbprint)"');
-  const trustStoreWrite = ciCertificate.indexOf('X509Store]::new');
+  const trustStoreWrite = ciCertificate.indexOf('certutil.exe -user -f -addstore');
   assert.match(ciCertificate, /\$env:CI -ne 'true'/);
   assert.match(ciCertificate, /-KeyExportPolicy NonExportable/);
   assert.match(ciCertificate, /ValidDays must be between 1 and 30/);
   assert.match(ciCertificate, /Export-Certificate/);
   assert.doesNotMatch(ciCertificate, /Export-PfxCertificate|\.pfx/iu);
   assert.match(ciCertificate, /PublicTrust=None/);
-  assert.match(ciCertificate, /X509Store/);
-  assert.match(ciCertificate, /StoreLocation\]::CurrentUser/);
-  assert.match(ciCertificate, /OpenFlags\]::ReadWrite/);
-  assert.match(ciCertificate, /\$store\.Add\(\$publicCertificate\)/);
-  assert.match(ciCertificate, /\$store\.Close\(\)/);
+  assert.match(ciCertificate, /certutil\.exe -user -f -addstore \$storeName \$cerPath/);
+  assert.match(ciCertificate, /if \(\$LASTEXITCODE -ne 0\)/);
   assert.ok(thumbprintOutput >= 0 && thumbprintOutput < trustStoreWrite);
   assert.match(ciCertificate, /'Root', 'TrustedPublisher'/);
-  assert.doesNotMatch(ciCertificate, /Import-Certificate/);
+  assert.doesNotMatch(ciCertificate, /Import-Certificate|X509Store/);
   assert.doesNotMatch(ciCertificate, /LocalMachine/);
 });
 

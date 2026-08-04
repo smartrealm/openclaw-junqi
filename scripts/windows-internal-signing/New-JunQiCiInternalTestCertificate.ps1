@@ -40,22 +40,11 @@ Export-Certificate -Cert $certificate -FilePath $cerPath -Type CERT | Out-Null
 "certificate_path=$cerPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 "metadata_path=$metadataPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-$publicCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($cerPath)
-try {
-  foreach ($storeName in @('Root', 'TrustedPublisher')) {
-    $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-      $storeName,
-      [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-    )
-    try {
-      $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-      $store.Add($publicCertificate)
-    } finally {
-      $store.Close()
-    }
+foreach ($storeName in @('Root', 'TrustedPublisher')) {
+  & certutil.exe -user -f -addstore $storeName $cerPath | Out-Host
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to trust the ephemeral certificate in CurrentUser\$storeName."
   }
-} finally {
-  $publicCertificate.Dispose()
 }
 @(
   'Purpose=JunQi controlled internal testing only'

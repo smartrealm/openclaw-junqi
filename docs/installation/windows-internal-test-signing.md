@@ -197,9 +197,10 @@ CI 私钥只存在于临时 runner 的当前用户证书存储，不导出、不
 ## 2026-08-05 非交互证书存储验证
 
 - `v2.2.5` 的 `Import-Certificate` 在非交互 Windows Runner 写入自签根存储时持续阻塞，工作流已主动取消，未创建公开 Release。
-- 当前实现按 Microsoft `X509Store` 契约，以 `StoreLocation.CurrentUser` 和 `OpenFlags.ReadWrite` 直接写入公开证书，并始终关闭证书存储。
-- thumbprint 在信任操作前写入 job output，确保后续失败时 `always()` 清理仍有精确目标；最终结果以 `v2.2.6` 标签工作流为准。
+- `v2.2.6` 改用 .NET `X509Store` 后仍在 Windows 2025 Runner 的根存储写入阶段持续阻塞，工作流已主动取消，未创建公开 Release。
+- 当前实现改用 Windows 自带的 `certutil -user -f -addstore` 写入当前用户 `Root` 与 `TrustedPublisher`。每次调用都检查退出码，避免把未建立的信任误判为成功。
+- thumbprint 在信任操作前写入 job output，确保后续失败时 `always()` 清理仍有精确目标；最终结果以 `v2.2.7` 标签工作流为准。
 
-官方依据：Microsoft Learn, [X509Store.Open](https://learn.microsoft.com/dotnet/api/system.security.cryptography.x509certificates.x509store.open) 与 [X509Store.Add](https://learn.microsoft.com/dotnet/api/system.security.cryptography.x509certificates.x509store.add)。
+官方依据：Microsoft Learn, [certutil](https://learn.microsoft.com/windows-server/administration/windows-commands/certutil)。该契约明确列出 `-addstore`、`-user` 与 `-f` 参数。
 
 官方依据：Microsoft Learn, [Smart App Control overview](https://learn.microsoft.com/windows/apps/develop/smart-app-control/overview)。
