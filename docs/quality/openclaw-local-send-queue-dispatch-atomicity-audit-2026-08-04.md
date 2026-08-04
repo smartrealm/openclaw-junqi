@@ -8,6 +8,10 @@ JunQi 是 OpenClaw 的桌面客户端。Gateway 已接收的 turn 由 OpenClaw �
 `chat.send`、per-session lane 和 followup/collect queue 管理；JunQi 不得把本地
 待发队列伪装成 Gateway 队列，也不得以本地清空操作影响已经交给 Gateway 的 turn。
 
+`chat.send` 是 OpenClaw 对既有会话的执行入口。JunQi 发送路径必须使用调用方已经选定的
+会话键，不能在缺少活动会话时以 `agent:main:main` 代替用户选择；否则快捷指令可能把消息、
+中断和本地任务状态投射到无关会话。
+
 本轮审计发现 JunQi 本地队列的首项在 `drainQueue` 发起异步交付期间仍保留在
 `messageQueue` 中。用户的清空操作可先删除该项并将消息写为 `cancelled`，而先前的
 drain 仍会继续调用 `chat.send`，随后回写为 `sent`。这使本地队列的“清空”承诺与实际
@@ -24,6 +28,10 @@ drain 仍会继续调用 `chat.send`，随后回写为 `sent`。这使本地队�
 `idempotencyKey` 预留并在 admitted turn 上维护 abort identity；其 `started` ack 仅说明
 Gateway 已接收该 run，不是 renderer 本地队列的可编辑状态。Gateway 的 queued-turn
 registry 也只管理已 admitted 的 followup/collect turn。
+
+当前官方 Gateway protocol 说明会话执行继续使用 `chat.history`、`chat.send`、`chat.abort`
+和 `chat.inject`，并要求副作用方法带幂等键。JunQi 已有的 `clientMessageId` 是该发送路径的
+幂等键来源；会话键则必须由当前 UI 选择或队列归属明确提供，不能由客户端猜测。
 
 ## 发现
 
@@ -46,12 +54,27 @@ registry 也只管理已 admitted 的 followup/collect turn。
 正在提交的消息，不再属于可编辑、可清空的本地待发队列；成功不会再次移除，失败时仅在
 会话仍有效时将原项以失败状态放回队首，保持 FIFO 与显式重试语义。
 
+### LQ-02 - 严重 - 快捷指令与发送外观会回落到主会话
+
+位置：`src/components/Chat/ChatView.tsx`、`src/services/gateway/index.ts`
+
+原实现中 Dashboard/命令面板快捷指令在没有活动会话时使用 `agent:main:main`，Gateway
+`sendMessage` 外观也为同一键提供默认值。缺少会话上下文的操作因而仍会启动语音中断、创建
+乐观消息或进入发送流程，无法证明该写操作属于用户当前任务。
+
+修复：新增共享会话目标校验，发送协调器在读取本地状态、写入乐观消息、创建 Task checkpoint
+或调用 Gateway 前拒绝空目标；Gateway 外观也在创建 pending-send 状态前执行相同校验。快捷
+指令不再回落到主会话，而是向用户显示本地化的“选择会话”错误。合法目标会去除首尾空白，
+使本地状态、Task checkpoint、Gateway dispatch 与回执跟踪使用同一会话键。
+
 ## 非问题
 
 - 不为 Gateway followup/collect queue 新增本地位置、容量、状态或取消协议。OpenClaw
   的 ack、流事件、历史和 `chat.abort` 仍是远端权威。
 - 不改变 OpenClaw `messages.queue` 配置、`/queue` 命令、drop policy 或跨客户端所有权。
 - 不将已经发送中的本地消息错误标为可清空；这类请求已经跨过 renderer 所有权边界。
+- 不新增会话、`chat.send` 参数、远端队列状态或回退会话。OpenClaw 仍是 session 创建、选择、
+  运行、取消和回执的唯一权威。
 
 ## 验证目标
 
@@ -60,11 +83,19 @@ registry 也只管理已 admitted 的 followup/collect turn。
   恢复本地待发数据。
 - 正常 Gateway 发送继续保留调用方 idempotency key，并由 OpenClaw 决定 active-run queue
   mode 与 queued-turn 生命周期。
+- 空、仅空白或未选择的会话目标不得写入 renderer 状态、创建 Task checkpoint 或触发 Gateway
+  请求；快捷指令必须报告该错误，不得静默投递到主会话。
 
 ## 验证结果
 
 - `src/stores/chatStore.test.ts` 覆盖首项认领后清空后续项，以及已删除 Session 的失败回调
   不恢复本地队列；定向测试 31 通过。
+- `src/services/chat/sendTransaction.test.ts` 与
+  `src/services/gateway/OpenClawChatSessionTarget.test.ts` 覆盖空会话目标在本地状态、Task
+  checkpoint、Gateway 连接和 pending-send 状态前失败，以及合法键的空白规范化；定向测试
+  13 通过。
+- 本次 LQ-02 修改执行 `pnpm lint`、`pnpm test`、`pnpm build` 与
+  `pnpm verify:openclaw-docs`，均通过。
 - `pnpm lint`、`pnpm test`、`pnpm test:rust`、`pnpm build`、
   `pnpm verify:openclaw-docs`、`pnpm collab:test`、`pnpm collab:validate` 通过。
 - Rust 额外执行 `cargo fmt -- --check` 与 `cargo check --lib` 通过；`pnpm test:rust` 为

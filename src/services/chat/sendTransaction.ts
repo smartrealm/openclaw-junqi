@@ -6,6 +6,7 @@ import { sessionMutationGate } from './sessionMutationGate';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import type { TaskExecutionSource } from '@/task-execution/types';
 import { isOpenClawBtwRequestText } from '@/services/gateway/openClawBtw';
+import { requireOpenClawChatSessionTarget } from '@/services/gateway/OpenClawChatSessionTarget';
 
 interface ChatSendGateway {
   sendMessage: typeof gateway.sendMessage;
@@ -34,9 +35,9 @@ export interface ChatSendRequest {
   clientMessageId?: string;
   optimisticMessage?: Partial<ChatMessage> | false;
   /**
-   * Opt into the JunQi-local visible queue while a Gateway run is active.
-   * Normal sends leave this unset so OpenClaw applies the session queue mode.
-  */
+   * Gateway 运行期间，显式选择 JunQi 本地可见队列。
+   * 常规发送不设置此项，由 OpenClaw 应用会话队列模式。
+   */
   queueIfBusy?: boolean;
   delivery?: 'queue' | 'steer';
   source?: TaskExecutionSource;
@@ -69,6 +70,7 @@ export class ChatSendCoordinator {
   ) {}
 
   async send(request: ChatSendRequest): Promise<unknown> {
+    const sessionKey = requireOpenClawChatSessionTarget(request.sessionKey);
     const clientMessageId = request.clientMessageId ?? createClientMessageId();
     const state = this.state();
     const isSideQuestion = request.delivery !== 'steer' && isOpenClawBtwRequestText(request.message);
@@ -87,11 +89,10 @@ export class ChatSendCoordinator {
         : {}),
     };
 
-    const activeGatewayRun = state.typingBySession[request.sessionKey] === true;
-    const sessionMutationBlocked = sessionMutationGate.isBlocked(request.sessionKey);
-    // OpenClaw is the authority for active-run queue semantics. Only a
-    // destructive JunQi session mutation, or an explicit local queue choice,
-    // may keep a normal message in the renderer-owned queue.
+    const activeGatewayRun = state.typingBySession[sessionKey] === true;
+    const sessionMutationBlocked = sessionMutationGate.isBlocked(sessionKey);
+    // OpenClaw 是运行中任务队列语义的权威。仅破坏性会话变更或显式本地队列选择，
+    // 才能让常规消息停留在渲染层拥有的队列中。
     const localQueueRequested = request.queueIfBusy === true || request.delivery === 'queue';
     const queueLocally = !isSideQuestion
       && request.delivery !== 'steer'
@@ -99,7 +100,7 @@ export class ChatSendCoordinator {
       && (sessionMutationBlocked || (localQueueRequested && activeGatewayRun));
     if (queueLocally) {
       try {
-        state.enqueueMessage(request.sessionKey, {
+        state.enqueueMessage(sessionKey, {
           id: clientMessageId,
           timestamp,
           ...(request.source && request.source !== 'chat' ? { source: request.source } : {}),
@@ -112,7 +113,7 @@ export class ChatSendCoordinator {
           retryPayload,
         };
         if (request.optimisticMessage === false) {
-          state.updateMessage(request.sessionKey, clientMessageId, failure);
+          state.updateMessage(sessionKey, clientMessageId, failure);
         } else {
           state.addMessage({
             ...optimisticPatch,
@@ -133,12 +134,12 @@ export class ChatSendCoordinator {
                   })),
                 }
               : {}),
-          }, request.sessionKey);
+          }, sessionKey);
         }
         throw error;
       }
       if (request.optimisticMessage === false) {
-        state.updateMessage(request.sessionKey, clientMessageId, {
+        state.updateMessage(sessionKey, clientMessageId, {
           status: 'queued',
           deliveryError: undefined,
           retryPayload,
@@ -151,7 +152,7 @@ export class ChatSendCoordinator {
       return this.gatewayPort.sendMessage(
         request.message,
         request.attachments,
-        request.sessionKey,
+        sessionKey,
         {
           clientMessageId,
           sessionId: request.sessionId,
@@ -179,26 +180,26 @@ export class ChatSendCoordinator {
               retryPayload,
             }
           : {}),
-      }, request.sessionKey);
+      }, sessionKey);
     }
-    state.updateMessage(request.sessionKey, clientMessageId, {
+    state.updateMessage(sessionKey, clientMessageId, {
       status: 'pending',
       deliveryError: undefined,
       retryPayload,
     });
-    state.setIsTyping(true, request.sessionKey);
+    state.setIsTyping(true, sessionKey);
     let taskRunId = clientMessageId;
     let taskRunCreated = false;
 
     try {
       const observedModel = request.model
-        ?? state.sessions?.find((session) => session.key === request.sessionKey)?.model
-        ?? (state.activeSessionKey === request.sessionKey ? state.currentModel : null)
+        ?? state.sessions?.find((session) => session.key === sessionKey)?.model
+        ?? (state.activeSessionKey === sessionKey ? state.currentModel : null)
         ?? null;
       let supersededRunId: string | null = null;
       if (request.delivery === 'steer') {
         const prepared = await this.taskExecutionPort.prepareSteer({
-          sessionKey: request.sessionKey,
+          sessionKey,
           sessionId: request.sessionId,
           runId: clientMessageId,
           source: request.source ?? 'chat',
@@ -208,35 +209,35 @@ export class ChatSendCoordinator {
         taskRunCreated = prepared.created;
       } else {
         const prepared = await this.taskExecutionPort.prepareSend({
-          sessionKey: request.sessionKey,
+          sessionKey,
           sessionId: request.sessionId,
           runId: clientMessageId,
           source: request.source ?? 'chat',
           model: observedModel,
-          // If the UI already observes a live Gateway run, do not create a
-          // local Run before OpenClaw acknowledges which queue mode applies.
+          // UI 已观察到 Gateway 运行时，须等待 OpenClaw 确认队列模式，
+          // 不能提前创建本地 Run。
           allowCreate: !activeGatewayRun,
         });
         taskRunId = prepared.runId ?? clientMessageId;
         taskRunCreated = prepared.created;
       }
       if (taskRunCreated && await this.taskExecutionPort.isRunStopRequested({
-        sessionKey: request.sessionKey,
+        sessionKey,
         sessionId: request.sessionId,
         runId: taskRunId,
       })) {
-        state.updateMessage(request.sessionKey, clientMessageId, {
+        state.updateMessage(sessionKey, clientMessageId, {
           status: 'cancelled',
           deliveryError: undefined,
           retryPayload,
         });
-        state.setIsTyping(false, request.sessionKey);
+        state.setIsTyping(false, sessionKey);
         return { cancelled: true, clientMessageId };
       }
       const result = await this.gatewayPort.sendMessage(
         request.message,
         request.attachments,
-        request.sessionKey,
+        sessionKey,
         {
           clientMessageId,
           sessionId: request.sessionId,
@@ -246,28 +247,28 @@ export class ChatSendCoordinator {
       ) as { queued?: boolean } | undefined;
       const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
       if (!deliveryUncertain) {
-        state.updateMessage(request.sessionKey, clientMessageId, {
+        state.updateMessage(sessionKey, clientMessageId, {
           status: result?.queued ? 'queued' : 'sent',
           deliveryError: undefined,
           retryPayload: result?.queued ? retryPayload : undefined,
         });
       }
-      if (result?.queued) state.setIsTyping(false, request.sessionKey);
+      if (result?.queued) state.setIsTyping(false, sessionKey);
       return result;
     } catch (error) {
-      state.updateMessage(request.sessionKey, clientMessageId, {
+      state.updateMessage(sessionKey, clientMessageId, {
         status: 'failed',
         deliveryError: errorMessage(error),
         retryPayload,
       });
-      state.setIsTyping(false, request.sessionKey);
+      state.setIsTyping(false, sessionKey);
       if (error instanceof Error && (
         error.name === 'GatewayDisconnectedError'
         || error.name === 'GatewayRpcError'
         || error.message === 'Gateway is not connected'
       ) && taskRunCreated) {
         await this.taskExecutionPort.settleRun({
-          sessionKey: request.sessionKey,
+          sessionKey,
           sessionId: request.sessionId,
           runId: taskRunId,
           terminalReason: 'error',

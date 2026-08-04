@@ -16,9 +16,13 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
-import { showConfirm } from '@/components/shared/AlertDialog';
+import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
+import {
+  OpenClawChatSessionTargetError,
+  requireOpenClawChatSessionTarget,
+} from '@/services/gateway/OpenClawChatSessionTarget';
 import { resolveHistoryPageMetadata } from '@/services/chat/historyPagination';
 import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
@@ -856,13 +860,13 @@ function ChatViewContent() {
     return () => window.removeEventListener('aegis:refresh', handler);
   }, [handleRefresh]);
 
-  // Quick actions from Dashboard / CommandPalette → gateway chat
+  // 仪表盘和命令面板的快捷指令统一发送到当前活动会话。
   const handleQuickAction = useCallback(async (e: Event) => {
     const detail = (e as CustomEvent<{ message: string; autoSend?: boolean }>).detail;
     if (!detail?.message) return;
-    const key = activeSessionKey || 'agent:main:main';
-    const clientMessageId = createClientMessageId();
     try {
+      const key = requireOpenClawChatSessionTarget(activeSessionKey);
+      const clientMessageId = createClientMessageId();
       voiceRuntime.interruptGlobally(key);
       await chatSendCoordinator.send({
         sessionKey: key,
@@ -871,9 +875,13 @@ function ChatViewContent() {
         sessionId: activeSessionId,
       });
     } catch (error) {
+      if (error instanceof OpenClawChatSessionTargetError) {
+        showAlert(t('chat.sendError'), t('chat.sessionTargetRequired'), 'error');
+        return;
+      }
       debugError('app', '[Quick action] Send error:', error);
     }
-  }, [activeSessionKey, activeSessionId]);
+  }, [activeSessionKey, activeSessionId, t]);
   useEffect(() => {
     window.addEventListener('aegis:quick-action', handleQuickAction as EventListener);
     return () => window.removeEventListener('aegis:quick-action', handleQuickAction as EventListener);

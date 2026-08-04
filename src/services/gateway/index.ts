@@ -46,6 +46,7 @@ import type { GatewayAuthorizationIssue } from './messageRouter';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
 import type { GatewayAttachment } from '@/services/chat/types';
 import { SessionSettingsClient } from './SessionSettingsClient';
+import { requireOpenClawChatSessionTarget } from './OpenClawChatSessionTarget';
 import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
 import { OpenClawSessionGroupsClient } from './OpenClawSessionGroupsClient';
 import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
@@ -1178,11 +1179,11 @@ export const gateway = {
     return connection.isConnected() && connection.getAttestedConnectionId() === connectionId;
   },
 
-  // Messaging
+  // 消息发送
   async sendMessage(
     message: string,
-    attachments?: GatewayAttachment[],
-    sessionKey = 'agent:main:main',
+    attachments: GatewayAttachment[] | undefined,
+    sessionKey: string,
     identity: {
       clientMessageId?: string;
       sessionId?: string;
@@ -1191,6 +1192,7 @@ export const gateway = {
       supersededRunId?: string;
     } = {},
   ) {
+    const targetSessionKey = requireOpenClawChatSessionTarget(sessionKey);
     const gwAttachments = attachments?.map((att) => {
       let rawBase64 = att.content || '';
       if (rawBase64.startsWith('data:')) {
@@ -1207,8 +1209,8 @@ export const gateway = {
     const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
     const isSteer = identity.delivery === 'steer';
     const isSideQuestion = identity.sideQuestion === true;
-    if (isSideQuestion) chatHandler.registerSideQuestionRun(sessionKey, clientMessageId);
-    else chatHandler.beginPendingSend(sessionKey, clientMessageId);
+    if (isSideQuestion) chatHandler.registerSideQuestionRun(targetSessionKey, clientMessageId);
+    else chatHandler.beginPendingSend(targetSessionKey, clientMessageId);
     let requestDispatched = false;
     try {
       const dispatch = async () => {
@@ -1217,7 +1219,7 @@ export const gateway = {
         return dispatchGatewayChatMessage(connection, sessionSteer, {
           message,
           attachments: gwAttachments,
-          sessionKey,
+          sessionKey: targetSessionKey,
           clientMessageId,
           sessionId: identity.sessionId,
           delivery: isSteer ? 'steer' : 'send',
@@ -1226,13 +1228,13 @@ export const gateway = {
       // sessions.steer 自身即为 OpenClaw 的中断并发送控制操作，不能等待长时间 chat.send 请求。
       const dispatched = isSteer || isSideQuestion
         ? await dispatch()
-        : await sessionCommandCoordinator.runMutation(sessionKey, dispatch);
+        : await sessionCommandCoordinator.runMutation(targetSessionKey, dispatch);
       const result = isSteer
         ? (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).response
         : dispatched;
       if (isSideQuestion) return result;
       const acknowledgement = chatHandler.reconcileSendAcknowledgement(
-        sessionKey,
+        targetSessionKey,
         clientMessageId,
         result,
       );
@@ -1242,14 +1244,14 @@ export const gateway = {
         && (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).interruptedActiveRun === true
       ) {
         await taskExecutionCoordinator.settleRun({
-          sessionKey,
+          sessionKey: targetSessionKey,
           sessionId: identity.sessionId,
           runId: identity.supersededRunId,
           terminalReason: 'aborted',
         }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('settle steered Run checkpoint', error));
       }
       if (acknowledgement !== 'unknown') return result;
-      if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
+      if (chatHandler.markPendingSendUncertain(targetSessionKey, clientMessageId)) {
         return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
       }
       return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
@@ -1258,25 +1260,24 @@ export const gateway = {
         if (requestDispatched && !(error instanceof GatewayRpcError)) {
           return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
         }
-        chatHandler.discardSideQuestionRun(sessionKey, clientMessageId);
+        chatHandler.discardSideQuestionRun(targetSessionKey, clientMessageId);
         throw error;
       }
-      // sessions.steer can fail after its native admission has attempted to
-      // interrupt the active Run. An RPC error alone cannot distinguish that
-      // case from a rejected request, so defer to the fenced history resolver.
+      // sessions.steer 的原生准入可能已经尝试中断活动 Run 后才失败。
+      // 单独的 RPC 错误无法区分该情况与请求被拒绝，故交由带围栏的历史解析器确认。
       if (isSteer && requestDispatched) {
-        void sessionRunReconciler.reconcile(sessionKey);
+        void sessionRunReconciler.reconcile(targetSessionKey);
       }
-      if (chatHandler.isSendObserved(sessionKey, clientMessageId)) {
+      if (chatHandler.isSendObserved(targetSessionKey, clientMessageId)) {
         return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
       }
       if (requestDispatched && !(error instanceof GatewayRpcError)) {
-        if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
+        if (chatHandler.markPendingSendUncertain(targetSessionKey, clientMessageId)) {
           return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
         }
         return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
       }
-      chatHandler.failPendingSend(sessionKey, clientMessageId);
+      chatHandler.failPendingSend(targetSessionKey, clientMessageId);
       throw error;
     }
   },

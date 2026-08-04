@@ -19,6 +19,9 @@
    失败项；Session 已删除时不得复活本地队列项。
 5. 保留既有附件、display attachment、source、idempotency key、Task checkpoint、重试和
    `typingBySession` 语义。
+6. 所有 `chat.send` 路径必须接收明确、非空的会话键。不得以 `agent:main:main` 或任何客户端
+   默认值替代缺失的活动会话；校验必须发生在 renderer 状态、Task checkpoint 和 Gateway
+   pending-send 状态之前。
 
 ## 验收条件
 
@@ -29,8 +32,12 @@
 - [x] Session 在请求期间已删除时，失败回调不恢复本地队列项。
 - [x] 现有 OpenClaw normal send、explicit local queue、session mutation gate、附件和
   delivery-uncertain 回归继续通过。
+- [x] 空会话目标在发送协调器与 Gateway 外观均被拒绝，且不会写入本地消息、创建 Task
+  checkpoint 或触发 Gateway 请求。
+- [x] Dashboard/命令面板快捷指令在未选中会话时显示本地化错误，不会发送到主会话。
 
 ## 非目标
 
 - 不新增 OpenClaw RPC、配置、状态字段或用于展示远端队列的本地模型。
 - 不改变 Stop、`sessions.abort` 或 Gateway queued-turn cancel 的既有行为。
+- 不以 JunQi 生成的默认会话键作为 OpenClaw 会话选择、创建或路由的替代品。

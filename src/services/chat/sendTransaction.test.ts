@@ -3,6 +3,41 @@ import test from 'node:test';
 import type { ChatMessage } from '@/stores/chatStore';
 import { ChatSendCoordinator } from './sendTransaction';
 import { sessionMutationGate } from './sessionMutationGate';
+import { OpenClawChatSessionTargetError } from '@/services/gateway/OpenClawChatSessionTarget';
+
+test('空会话目标会在写入本地状态、任务检查点和 Gateway 请求前失败', async () => {
+  let stateReads = 0;
+  let gatewayCalls = 0;
+  let checkpointCalls = 0;
+  const coordinator = new ChatSendCoordinator(
+    { sendMessage: async () => { gatewayCalls += 1; } },
+    () => {
+      stateReads += 1;
+      return {
+        addMessage() {},
+        updateMessage() {},
+        setIsTyping() {},
+        typingBySession: {},
+        enqueueMessage() {},
+      };
+    },
+    {
+      prepareSend: async () => { checkpointCalls += 1; return { runId: 'empty-session', created: true }; },
+      prepareSteer: async () => { checkpointCalls += 1; return { supersededRunId: null, created: true }; },
+      isRunStopRequested: async () => false,
+      settleRun: async () => {},
+      reportPersistenceFailure() {},
+    },
+  );
+
+  await assert.rejects(
+    coordinator.send({ sessionKey: '   ', message: '不能发送', clientMessageId: 'empty-session' }),
+    OpenClawChatSessionTargetError,
+  );
+  assert.equal(stateReads, 0);
+  assert.equal(checkpointCalls, 0);
+  assert.equal(gatewayCalls, 0);
+});
 
 test('STOP-04 a checkpointed Stop prevents normal and steer sends from reaching the Gateway', async () => {
   const messages = new Map<string, ChatMessage>();
