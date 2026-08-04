@@ -2,9 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Bell,
-  Browser,
-  CheckCircle,
-  ClockCounterClockwise,
   Crosshair,
   Code,
   FileCode,
@@ -18,7 +15,6 @@ import {
   SidebarSimple,
   SplitHorizontal,
   TerminalWindow,
-  TreeStructure,
   User,
   WarningCircle,
   X,
@@ -60,8 +56,8 @@ import './workbench.css';
 import { openTerminalWorkspaceDirectory } from '@/api/tauri-commands';
 
 type WorktreeState = 'idle' | 'active' | 'unavailable';
-type WorkbenchTabKind = 'terminal' | 'editor' | 'diff' | 'browser';
-type RightPanel = 'files' | 'search' | 'source' | 'checks' | 'ports' | 'vault';
+type WorkbenchTabKind = 'terminal' | 'editor' | 'diff';
+type RightPanel = 'files' | 'search' | 'source';
 
 interface WorktreeItem {
   id: string;
@@ -82,16 +78,12 @@ const rightPanels: Array<{ id: RightPanel; label: string; icon: ReactNode }> = [
   { id: 'files', label: '文件', icon: <Files size={16} weight="regular" /> },
   { id: 'search', label: '搜索', icon: <MagnifyingGlass size={16} /> },
   { id: 'source', label: '源代码管理', icon: <GitBranch size={16} /> },
-  { id: 'checks', label: '检查', icon: <CheckCircle size={16} /> },
-  { id: 'ports', label: '端口', icon: <TreeStructure size={16} /> },
-  { id: 'vault', label: 'AI Vault', icon: <ClockCounterClockwise size={16} /> },
 ];
 
 function TabIcon({ kind }: { kind: WorkbenchTabKind }) {
   if (kind === 'terminal') return <TerminalWindow size={14} />;
   if (kind === 'editor') return <FileCode size={14} />;
-  if (kind === 'diff') return <GitDiff size={14} />;
-  return <Browser size={14} />;
+  return <GitDiff size={14} />;
 }
 
 function StateDot({ state }: { state: WorktreeState }) {
@@ -246,18 +238,6 @@ function WorkbenchTabBar({ tabs, activeTab, indicatorId, onSelect, onClose, onAd
   );
 }
 
-function AgentTerminal() {
-  return (
-    <section className="junqi-wb-pane junqi-wb-terminal-pane">
-      <div className="junqi-wb-browser-empty">
-        <TerminalWindow size={44} weight="thin" />
-        <strong>Agent Provider 未连接</strong>
-        <span>Workbench PTY 已可用；Provider claim、会话恢复和 Agent 状态解析完成后才能启动 Agent。</span>
-      </div>
-    </section>
-  );
-}
-
 function WorkbenchEditor({ tab, projectPath, onMissing }: {
   tab: DomainWorkbenchTab;
   projectPath: string;
@@ -305,16 +285,6 @@ function WorkbenchDiff({ tab, projectPath, onClose }: { tab: DomainWorkbenchTab;
 
 function DiffPreview() {
   return <div className="junqi-wb-empty-panel">Diff 标签不可用：文件路径缺失</div>;
-}
-
-function BrowserPreview() {
-  return (
-    <div className="junqi-wb-empty-panel">
-      <Browser size={28} weight="thin" />
-      <strong>Browser Pane 不可用</strong>
-      <span>Tauri 隔离浏览器后端尚未实现；当前不会创建模拟页面或本机文件权限。</span>
-    </div>
-  );
 }
 
 function RightPanelTabs({ activePanel, onPanelChange }: {
@@ -389,9 +359,6 @@ function RightPanelContent({ panel, projectPath, projectName, onFileSelect, onDi
   onDiffSelect: (path: string, staged: boolean, label: string) => void;
 }) {
   if (panel === 'source') return <SourceControlPanel projectPath={projectPath} onFileSelect={onDiffSelect} />;
-  if (panel === 'checks') return <ChecksPanel />;
-  if (panel === 'ports') return <PortsPanel />;
-  if (panel === 'vault') return <VaultPanel />;
   if (panel === 'search') return <SearchPanel projectPath={projectPath} onFileSelect={onFileSelect} />;
   return <FilesPanel projectPath={projectPath} projectName={projectName} onFileSelect={onFileSelect} />;
 }
@@ -431,18 +398,6 @@ function SourceControlPanel({ projectPath, onFileSelect }: {
       width={350}
     />
   );
-}
-
-function ChecksPanel() {
-  return <div className="junqi-wb-empty-panel">Checks 与 Hosted Review Adapter 尚未连接</div>;
-}
-
-function PortsPanel() {
-  return <div className="junqi-wb-empty-panel">端口发现 Adapter 尚未连接</div>;
-}
-
-function VaultPanel() {
-  return <div className="junqi-wb-empty-panel">AI Vault Host-local scanner 尚未连接</div>;
 }
 
 function SearchPanel({ projectPath, onFileSelect }: {
@@ -521,9 +476,8 @@ function WorkbenchContent({ activeTab, domainTab, projectPath, onClose }: {
   else if (activeTab.kind === 'editor') content = <EditorPreview />;
   else if (activeTab.kind === 'diff' && domainTab && projectPath) content = <WorkbenchDiff tab={domainTab} projectPath={projectPath} onClose={onClose} />;
   else if (activeTab.kind === 'diff') content = <DiffPreview />;
-  else if (activeTab.kind === 'browser') content = <BrowserPreview />;
   else if (domainTab?.kind === 'terminal' && projectPath) content = <WorkbenchTerminalPane tab={domainTab} cwd={projectPath} />;
-  else content = <AgentTerminal />;
+  else content = <div className="junqi-wb-empty-panel">当前标签无法在所选本机 Worktree 中恢复</div>;
 
   return (
     <AnimatedTabPanel
@@ -536,13 +490,11 @@ function WorkbenchContent({ activeTab, domainTab, projectPath, onClose }: {
 }
 
 function presentationTab(tab: DomainWorkbenchTab): WorkbenchTab {
-  const kind: WorkbenchTabKind = tab.kind === 'agent-terminal' || tab.kind === 'terminal'
+  const kind: WorkbenchTabKind = tab.kind === 'terminal'
     ? 'terminal'
     : tab.kind === 'editor'
       ? 'editor'
-      : tab.kind === 'browser'
-        ? 'browser'
-        : 'diff';
+      : 'diff';
   return { id: tab.id, label: tab.title, kind, dirty: tab.dirty };
 }
 

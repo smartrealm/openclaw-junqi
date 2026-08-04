@@ -1,7 +1,7 @@
 import { listTabGroupIds } from '../domain/tabGroupLayout';
 import type { TabGroup, TabGroupId, TabGroupLayoutNode, TabId, WorkbenchTab, WorkbenchTabKind, WorkbenchWorktree, WorktreeId } from '../domain/types';
 
-export const WORKBENCH_SESSION_SCHEMA_VERSION = 3;
+export const WORKBENCH_SESSION_SCHEMA_VERSION = 4;
 
 export interface WorkbenchSessionSnapshot {
   schemaVersion: typeof WORKBENCH_SESSION_SCHEMA_VERSION;
@@ -13,14 +13,16 @@ export interface WorkbenchSessionSnapshot {
   groups: Record<TabGroupId, TabGroup>;
   tabs: Record<TabId, WorkbenchTab>;
   sidebarMode: 'full' | 'compact' | 'hidden';
-  rightSidebarPanel: 'files' | 'search' | 'source' | 'checks' | 'ports' | 'vault';
+  rightSidebarPanel: 'files' | 'search' | 'source';
   rightSidebarCollapsed: boolean;
 }
 
 const TAB_KINDS: ReadonlySet<WorkbenchTabKind> = new Set([
-  'terminal', 'agent-terminal', 'editor', 'diff', 'browser', 'conflict-review', 'check-details',
+  'terminal', 'editor', 'diff',
 ]);
-const RIGHT_PANELS = new Set(['files', 'search', 'source', 'checks', 'ports', 'vault']);
+const RIGHT_PANELS = new Set(['files', 'search', 'source']);
+const RETIRED_TAB_KINDS = new Set(['agent-terminal', 'browser', 'conflict-review', 'check-details']);
+const RETIRED_RIGHT_PANELS = new Set(['checks', 'ports', 'vault']);
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -59,7 +61,7 @@ function validTab(id: string, value: unknown): value is WorkbenchTab {
     || (tab.ptyId !== undefined && typeof tab.ptyId !== 'string')
     || (tab.ptyRunId !== undefined && typeof tab.ptyRunId !== 'string')
     || (tab.ptyCreatePending !== undefined && tab.ptyCreatePending !== false)) return false;
-  const processTab = tab.kind === 'terminal' || tab.kind === 'agent-terminal';
+  const processTab = tab.kind === 'terminal';
   if (processTab !== (typeof tab.ptyId === 'string' && tab.ptyId.length > 0
     && typeof tab.ptyRunId === 'string' && tab.ptyRunId.length > 0)) return false;
   if ((tab.kind === 'editor' || tab.kind === 'diff')
@@ -68,10 +70,51 @@ function validTab(id: string, value: unknown): value is WorkbenchTab {
   return true;
 }
 
-export function migrateWorkbenchSessionSnapshot(value: unknown): unknown {
+function migrateWorkbenchSessionSnapshotV2(value: unknown): unknown {
   const candidate = record(value);
   if (!candidate || candidate.schemaVersion !== 2) return value;
-  return { ...candidate, schemaVersion: WORKBENCH_SESSION_SCHEMA_VERSION, forgottenLegacyWorktreeIds: [] };
+  return { ...candidate, schemaVersion: 3, forgottenLegacyWorktreeIds: [] };
+}
+
+function migrateWorkbenchSessionSnapshotV3(value: unknown): unknown {
+  const candidate = record(value);
+  if (!candidate || candidate.schemaVersion !== 3) return value;
+  const tabs = record(candidate.tabs);
+  const groups = record(candidate.groups);
+  if (!tabs || !groups) return value;
+
+  const migratedTabs = Object.fromEntries(
+    Object.entries(tabs).filter(([, tab]) => {
+      const tabRecord = record(tab);
+      return !tabRecord || !RETIRED_TAB_KINDS.has(tabRecord.kind as string);
+    }),
+  );
+  const migratedGroups: Record<string, unknown> = {};
+  for (const [groupId, group] of Object.entries(groups)) {
+    const groupRecord = record(group);
+    if (!groupRecord || !Array.isArray(groupRecord.tabIds)
+      || !groupRecord.tabIds.every((tabId) => typeof tabId === 'string')) return value;
+    const tabIds = groupRecord.tabIds.filter((tabId) => Object.prototype.hasOwnProperty.call(migratedTabs, tabId));
+    const activeTabId = typeof groupRecord.activeTabId === 'string' && tabIds.includes(groupRecord.activeTabId)
+      ? groupRecord.activeTabId
+      : tabIds[0] ?? null;
+    migratedGroups[groupId] = { ...groupRecord, tabIds, activeTabId };
+  }
+
+  const rightSidebarPanel = RETIRED_RIGHT_PANELS.has(candidate.rightSidebarPanel as string)
+    ? 'files'
+    : candidate.rightSidebarPanel;
+  return {
+    ...candidate,
+    schemaVersion: WORKBENCH_SESSION_SCHEMA_VERSION,
+    tabs: migratedTabs,
+    groups: migratedGroups,
+    rightSidebarPanel,
+  };
+}
+
+export function migrateWorkbenchSessionSnapshot(value: unknown): unknown {
+  return migrateWorkbenchSessionSnapshotV3(migrateWorkbenchSessionSnapshotV2(value));
 }
 
 export function isWorkbenchSessionSnapshot(value: unknown): value is WorkbenchSessionSnapshot {

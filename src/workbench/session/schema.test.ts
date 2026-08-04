@@ -35,6 +35,37 @@ test('session schema deterministically migrates v2 tombstones to an empty set', 
   assert.deepEqual((migrated as WorkbenchSessionSnapshot).forgottenLegacyWorktreeIds, []);
 });
 
+test('session schema removes retired capability placeholders without breaking group ownership', () => {
+  const legacy = snapshot() as unknown as Record<string, unknown>;
+  legacy.schemaVersion = 3;
+  legacy.rightSidebarPanel = 'vault';
+  legacy.tabs = {
+    tab: (snapshot().tabs.tab),
+    retired: {
+      id: 'retired', worktreeId: 'worktree', paneId: 'retired-pane', kind: 'browser',
+      title: 'Browser', preview: false, pinned: false, dirty: false,
+    },
+  };
+  legacy.groups = {
+    main: { id: 'main', tabIds: ['tab', 'retired'], activeTabId: 'retired' },
+  };
+
+  const migrated = migrateWorkbenchSessionSnapshot(legacy);
+  assert.equal(isWorkbenchSessionSnapshot(migrated), true);
+  const snapshotAfterMigration = migrated as WorkbenchSessionSnapshot;
+  assert.equal(snapshotAfterMigration.rightSidebarPanel, 'files');
+  assert.deepEqual(snapshotAfterMigration.groups.main?.tabIds, ['tab']);
+  assert.equal(snapshotAfterMigration.groups.main?.activeTabId, 'tab');
+  assert.equal(snapshotAfterMigration.tabs.retired, undefined);
+});
+
+test('session schema keeps unknown legacy state invalid instead of normalizing it', () => {
+  const legacy = snapshot() as unknown as Record<string, unknown>;
+  legacy.schemaVersion = 3;
+  legacy.rightSidebarPanel = 'unverified';
+  assert.equal(isWorkbenchSessionSnapshot(migrateWorkbenchSessionSnapshot(legacy)), false);
+});
+
 test('session schema rejects durable PTY process-create authorization', () => {
   const authorized = snapshot();
   authorized.tabs.tab.ptyCreatePending = true;

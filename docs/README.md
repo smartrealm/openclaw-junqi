@@ -121,6 +121,7 @@ docs/
 
 目录：[`quality/`](quality/)
 
+- [Agent Workspace 能力权威性收敛](quality/agent-workspace-capability-authority-2026-08-04.md)
 - [ReAct 任务中断与恢复审计](quality/react-task-checkpoint-recovery-audit-2026-08-02.md)
 - [OpenClaw Stop 检查点与队列对齐](quality/openclaw-stop-checkpoint-queue-alignment-2026-08-03.md)
 - [OpenClaw Stop 会话身份围栏审计](quality/openclaw-stop-session-identity-fence-2026-08-03.md)
