@@ -2244,6 +2244,22 @@
       "recentEvents": "Recent event metadata",
       "empty": "No diagnostic event metadata is available."
     },
+    "openClawHooks": {
+      "title": "OpenClaw hook status",
+      "description": "Read-only hook availability from the current Gateway. JunQi does not install, enable, disable, or reload hooks here.",
+      "refresh": "Read Gateway hook status",
+      "ready": "Read the current Gateway hook status when you need it.",
+      "unavailable": "Hook status is not available from the current Gateway connection.",
+      "invalid": "The Gateway returned an invalid hook status report.",
+      "empty": "The Gateway reported no hooks.",
+      "loadable": "Loadable",
+      "blocked": "Blocked",
+      "disabledInConfig": "Disabled in OpenClaw configuration",
+      "workspaceDisabled": "Workspace hook is disabled by default",
+      "missingRequirements": "Requirements are not satisfied",
+      "noEventsDefined": "No events are defined",
+      "unknownEvents": "Events without a known core trigger: {{events}}"
+    },
     "collaborationGate": "Collaboration maintenance gate",
     "collaborationGateActive": "Collaboration dispatch is paused for maintenance",
     "collaborationGateUnknown": "Unable to confirm collaboration maintenance state",

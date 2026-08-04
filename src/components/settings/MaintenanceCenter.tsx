@@ -25,9 +25,11 @@ import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { GatewayLifecyclePanel } from './GatewayLifecyclePanel';
 import { OpenClawDiagnosticStabilityPanel } from './OpenClawDiagnosticStabilityPanel';
+import { OpenClawHooksStatusPanel } from './OpenClawHooksStatusPanel';
 import { runOpenClawRepair, useOpenClawRepairing } from '@/services/gateway/openclawRepair';
 import { useCollaborationMaintenance } from '@/hooks/useCollaborationMaintenance';
 import { useOpenClawDiagnosticStability } from '@/hooks/useOpenClawDiagnosticStability';
+import { useOpenClawHooksStatus } from '@/hooks/useOpenClawHooksStatus';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 const CATEGORY_ORDER: MaintenanceCategory[] = ['config', 'plugin', 'mcp', 'security', 'gateway', 'doctor'];
@@ -74,6 +76,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
   const [requestError, setRequestError] = useState<string | null>(null);
   const collaborationMaintenance = useCollaborationMaintenance();
   const stability = useOpenClawDiagnosticStability();
+  const hooksStatus = useOpenClawHooksStatus();
 
   const scan = useCallback(async () => {
     if (scanning || repairing) return;
@@ -340,6 +343,12 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
           loading={stability.loading}
           failure={stability.failure}
           onRefresh={stability.refresh}
+        />
+        <OpenClawHooksStatusPanel
+          snapshot={hooksStatus.snapshot}
+          loading={hooksStatus.loading}
+          failure={hooksStatus.failure}
+          onRefresh={hooksStatus.refresh}
         />
         {onRecoverGateway && (
           <div className="flex flex-wrap items-center justify-end gap-2">

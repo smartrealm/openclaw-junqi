@@ -2202,6 +2202,22 @@
       "recentEvents": "最近事件中繼資料",
       "empty": "暫無診斷事件中繼資料。"
     },
+    "openClawHooks": {
+      "title": "OpenClaw Hook 狀態",
+      "description": "來自目前 Gateway 的唯讀 Hook 可用性。JunQi 不會在此安裝、啟用、停用或重新載入 Hook。",
+      "refresh": "讀取 Gateway Hook 狀態",
+      "ready": "需要時可讀取目前 Gateway 的 Hook 狀態。",
+      "unavailable": "目前 Gateway 連線無法提供 Hook 狀態。",
+      "invalid": "Gateway 回傳的 Hook 狀態報告無效。",
+      "empty": "Gateway 未回報任何 Hook。",
+      "loadable": "可載入",
+      "blocked": "已阻塞",
+      "disabledInConfig": "已在 OpenClaw 設定中停用",
+      "workspaceDisabled": "工作區 Hook 預設停用",
+      "missingRequirements": "執行條件未滿足",
+      "noEventsDefined": "未定義事件",
+      "unknownEvents": "沒有已知核心觸發點的事件：{{events}}"
+    },
     "collaborationGate": "協作維護閘門",
     "collaborationGateActive": "協作分派已因維護暫停",
     "collaborationGateUnknown": "無法確認協作維護狀態",

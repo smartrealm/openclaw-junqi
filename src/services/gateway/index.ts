@@ -85,6 +85,7 @@ import { OpenClawTtsClient } from './OpenClawTtsClient';
 import { OpenClawTtsStatusClient } from './OpenClawTtsStatusClient';
 import { OpenClawTtsPreferencesClient } from './OpenClawTtsPreferencesClient';
 import { OpenClawDiagnosticStabilityClient } from './OpenClawDiagnosticStabilityClient';
+import { OpenClawHooksStatusClient } from './OpenClawHooksStatusClient';
 import { OpenClawSessionUsageLogsClient } from './OpenClawSessionUsageLogsClient';
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
 import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
@@ -161,6 +162,11 @@ export type {
   OpenClawDiagnosticStabilityEvent,
   OpenClawDiagnosticStabilitySnapshot,
 } from './OpenClawDiagnosticStabilityClient';
+export type {
+  OpenClawHookBlockedReason,
+  OpenClawHookStatusEntry,
+  OpenClawHooksStatusSnapshot,
+} from './OpenClawHooksStatusClient';
 export type {
   OpenClawSessionUsageLogEntry,
   OpenClawSessionUsageLogRole,
@@ -518,6 +524,18 @@ export const openClawTtsPreferencesClient = new OpenClawTtsPreferencesClient({
 });
 
 export const openClawDiagnosticStabilityClient = new OpenClawDiagnosticStabilityClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawHooksStatusClient = new OpenClawHooksStatusClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId

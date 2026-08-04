@@ -198,6 +198,7 @@ plans/
 - [OpenClaw 原生会话组目录投影](quality/2026-08-04-openclaw-native-session-group-catalog-projection.md)
 - [OpenClaw Gateway 方法广告发现边界修正](quality/2026-08-04-openclaw-gateway-method-advertisement-gate.md)
 - [OpenClaw 稳定性诊断只读投影](quality/2026-08-04-openclaw-diagnostic-stability.md)
+- [OpenClaw Hook 状态只读投影](quality/2026-08-04-openclaw-hooks-status-readonly-projection.md)
 - [OpenClaw 会话用量条目对齐](quality/2026-08-04-openclaw-session-usage-logs.md)
 - [OpenClaw Operator Protocol v4](quality/2026-08-03-openclaw-operator-protocol-v4.md)
 - [Gateway Task Ledger 详情](quality/2026-08-03-task-ledger-details.md)
