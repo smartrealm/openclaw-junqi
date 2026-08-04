@@ -36,7 +36,7 @@ Microsoft 的 Smart App Control 官方契约要求应用由 Windows Trusted Root
 要求：
 
 - Windows 10 或 Windows 11；
-- Visual Studio Build Tools 和 Windows SDK，确保 `signtool.exe` 可从 `PATH` 找到；
+- Visual Studio Build Tools 和 Windows SDK；脚本会从 `PATH`、Windows Kits 注册表及标准 SDK 目录定位 `signtool.exe`；
 - 仓库锁定的 Node.js、pnpm 与 Rust 工具链；
 - 专用签名机或受控 Windows VM；
 - `.artifacts/` 不被同步到公开位置。
@@ -178,5 +178,12 @@ CI 私钥只存在于临时 runner 的当前用户证书存储，不导出、不
 该 tag 路径是内部测试发布，不是公共可信正式发布。Release 说明必须保留 Smart App Control 限制，不能将 Tauri updater 的 `.sig` 描述为 Authenticode 公共信任。
 
 在取得这些真机证据前，本流程状态为“内部 Authenticode 测试方案已实现，Windows 真机行为待验证”；不得把它描述为 Smart App Control 解决方案。
+
+## 2026-08-05 GitHub Runner 兼容性验证
+
+- `v2.2.3` 已在 Windows 2025 Runner 通过 678 项 Rust 测试并完成 release 模式编译。
+- 该 Runner 未把 Windows SDK 的 `signtool.exe` 加入 `PATH`，旧工作流因此在应用签名步骤失败。
+- 当前实现统一通过 `Resolve-JunQiSignTool.ps1` 解析工具位置，并由标签发布、正式发布与本地内部签名共同使用。
+- Windows x64 的签名、NSIS 打包与 Release 发布结果以 `v2.2.4` 标签工作流为最终验证依据。
 
 官方依据：Microsoft Learn, [Smart App Control overview](https://learn.microsoft.com/windows/apps/develop/smart-app-control/overview)。

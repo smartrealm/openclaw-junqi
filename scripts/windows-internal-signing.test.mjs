@@ -8,7 +8,9 @@ const install = read('Install-JunQiInternalTestCertificate.ps1');
 const remove = read('Remove-JunQiInternalTestCertificate.ps1');
 const build = read('Invoke-JunQiInternalSignedBuild.ps1');
 const ciCertificate = read('New-JunQiCiInternalTestCertificate.ps1');
+const signToolResolver = read('Resolve-JunQiSignTool.ps1');
 const taggedRelease = readFileSync(new URL('../.github/workflows/tag-release.yml', import.meta.url), 'utf8');
+const releaseWorkflow = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 const profile = JSON.parse(readFileSync(new URL('../src-tauri/tauri.internal-test.conf.json', import.meta.url), 'utf8'));
 const ignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
 
@@ -63,6 +65,18 @@ test('internal build signs the app before NSIS bundling and verifies both artifa
   assert.equal(profile.bundle.createUpdaterArtifacts, false);
 });
 
+test('SignTool discovery supports PATH and registered Windows SDK locations', () => {
+  assert.match(signToolResolver, /Get-Command signtool\.exe/);
+  assert.match(signToolResolver, /Windows Kits\\Installed Roots/);
+  assert.match(signToolResolver, /KitsRoot10/);
+  assert.match(signToolResolver, /Windows Kits\\10/);
+  assert.match(signToolResolver, /Resolve-Path -LiteralPath \$candidate/);
+  assert.match(build, /Resolve-JunQiSignTool\.ps1/);
+  assert.doesNotMatch(build, /Get-Command signtool\.exe/);
+  assert.equal(releaseWorkflow.match(/Resolve-JunQiSignTool\.ps1/g)?.length, 1);
+  assert.doesNotMatch(releaseWorkflow, /Get-Command signtool\.exe/);
+});
+
 test('tagged Windows test release signs the application before NSIS and publishes only public trust files', () => {
   const compile = taggedRelease.indexOf('Compile Windows application before internal signing');
   const appSign = taggedRelease.indexOf('Sign compiled Windows application for controlled internal testing');
@@ -70,6 +84,7 @@ test('tagged Windows test release signs the application before NSIS and publishe
   const installerSign = taggedRelease.indexOf('Sign and verify Windows NSIS installer for controlled internal testing');
   assert.ok(compile >= 0 && compile < appSign && appSign < bundle && bundle < installerSign);
   assert.match(taggedRelease, /New-JunQiCiInternalTestCertificate\.ps1/);
+  assert.equal(taggedRelease.match(/Resolve-JunQiSignTool\.ps1/g)?.length, 2);
   assert.match(taggedRelease, /\.artifacts\/windows-tag-internal-signing\/\*\.cer/);
   assert.match(taggedRelease, /\.artifacts\/windows-tag-internal-signing\/\*\.txt/);
   assert.doesNotMatch(taggedRelease, /windows-tag-internal-signing\/\*\.pfx/);

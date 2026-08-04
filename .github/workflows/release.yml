@@ -9,7 +9,7 @@
 #
 # Why all desktop platforms in one workflow rather than separate files:
 #   - one place to read the matrix, cache strategy, artifact naming
-#   - the '✅ Release Summary' job at the end gives a single status
+#   - the 'Release Summary' job at the end gives a single status
 #     banner for the whole release in the Actions tab
 #
 # Why use the pinned tauri-apps/tauri-action (v1):
@@ -596,7 +596,7 @@ jobs:
           $certificatePath = Join-Path $env:RUNNER_TEMP 'junqi-release-signing.pfx'
           try {
             [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
-            $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+            $signtool = & .\scripts\windows-internal-signing\Resolve-JunQiSignTool.ps1
             $installerRoot = "src-tauri/target/${{ matrix.target }}/release/bundle"
             $installers = Get-ChildItem -Path $installerRoot -Recurse -File | Where-Object { $_.Extension -in '.exe', '.msi' }
             if ($installers.Count -eq 0) { throw "No Windows installers found under $installerRoot" }
@@ -1363,7 +1363,7 @@ jobs:
             --expected-sha "$EXPECTED_SOURCE_SHA"
 
   release:
-    name: ✅ Release Summary
+    name: Release Summary
     needs: [verify-version, quality-node, quality-rust, quality-evidence, quality-evidence-attest, gateway-structural-smoke, gateway-structural-smoke-attest, build, release-asset-manifest, release-asset-manifest-attest, external-release-gate, external-release-decision-attest, publish]
     if: always()
     runs-on: ubuntu-latest
@@ -1430,7 +1430,7 @@ jobs:
               echo "::error::Tagged build passed prerequisites but GitHub Release publication did not succeed"
               exit 1
             fi
-            echo "✅ Tagged release published successfully" >> "$GITHUB_STEP_SUMMARY"
+            echo "Tagged release published successfully" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "✅ Candidate build completed; no public release was requested" >> "$GITHUB_STEP_SUMMARY"
+            echo "Candidate build completed; no public release was requested" >> "$GITHUB_STEP_SUMMARY"
           fi

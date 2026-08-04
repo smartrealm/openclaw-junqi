@@ -10,6 +10,7 @@
 
 - 使用 Tauri `--no-bundle` 先生成主程序。
 - 使用 SignTool 对主程序执行 SHA-256 Authenticode 和 RFC 3161 时间戳签名。
+- 通过共享解析器从 `PATH`、Windows Kits 注册表和标准 SDK 目录定位 SignTool，避免依赖 Runner 的临时 `PATH` 布局。
 - 验证主程序后执行 Tauri NSIS bundle。
 - 签署并验证最终 NSIS 安装器。
 - 内部测试配置关闭 updater artifacts。
@@ -19,6 +20,7 @@
 
 - 记录测试人员先安装 CER、后运行安装包的明确流程。
 - 新增源码契约测试，防止安装器静默安装根证书或签名顺序回退。
+- 标签发布、正式发布和本地内部签名必须复用同一 SignTool 解析器。
 - 更新文档索引。
 
 ## 验证

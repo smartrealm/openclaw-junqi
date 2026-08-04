@@ -205,7 +205,7 @@ jobs:
           CERTIFICATE_THUMBPRINT: ${{ steps.internal-certificate.outputs.thumbprint }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+          $signtool = & .\scripts\windows-internal-signing\Resolve-JunQiSignTool.ps1
           $application = "src-tauri/target/${{ matrix.target }}/release/junqi-desktop.exe"
           & $signtool sign /fd SHA256 /sha1 $env:CERTIFICATE_THUMBPRINT /tr http://timestamp.digicert.com /td SHA256 $application
           if ($LASTEXITCODE -ne 0) { throw 'Internal Authenticode signing failed for junqi-desktop.exe' }
@@ -230,7 +230,7 @@ jobs:
           CERTIFICATE_THUMBPRINT: ${{ steps.internal-certificate.outputs.thumbprint }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+          $signtool = & .\scripts\windows-internal-signing\Resolve-JunQiSignTool.ps1
           $installers = @(Get-ChildItem "src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter '*.exe' -File)
           if ($installers.Count -ne 1) { throw "Expected exactly one NSIS installer, found $($installers.Count)" }
           & $signtool sign /fd SHA256 /sha1 $env:CERTIFICATE_THUMBPRINT /tr http://timestamp.digicert.com /td SHA256 $installers[0].FullName
