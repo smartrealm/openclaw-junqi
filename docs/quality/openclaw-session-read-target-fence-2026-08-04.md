@@ -11,6 +11,9 @@
 调用方均已传入已选择的 Session，这些路径仍允许遗漏参数的 JavaScript 调用把操作静默定向或
 排队到错误的会话。
 
+会话组织的 `pinned`、`unread`、`archived` 与 `category` 也通过原生 `sessions.patch` 写入。
+此前其客户端会在验证 key 前进入 mutation coordinator；现在同样在排队和请求前验证目标。
+
 现在上述入口及 fenced delete/reset 都要求显式 session key，并在建立 Gateway 请求或进入
 本地 mutation coordinator 前复用 `requireOpenClawSessionTarget`。空白、缺失或非字符串目标统一返回
 `OPENCLAW_SESSION_TARGET_REQUIRED`；不会触发默认会话请求，也不会把本地错误伪装成
@@ -23,13 +26,15 @@ Gateway 的读取结果。
 - [OpenClaw artifacts handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/artifacts.ts)
 - [OpenClaw sessions preview handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/sessions-preview.ts)
 - [OpenClaw sessions resolve handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/sessions-resolve.ts)
+- [OpenClaw sessions.patch handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/sessions-patch.ts)
 
 这些协议都以请求中明确给出的会话范围作为 Gateway 处理的输入。JunQi 只保留其桌面客户端
 投影职责，不从主会话名称、当前开发环境或参数缺失推断一个目标。
 
 ## 验证
 
-- `OpenClawSessionTarget.test.ts` 覆盖十四个 facade 入口在连接请求或 mutation coordinator 前拒绝缺失目标。
+- `OpenClawSessionTarget.test.ts` 覆盖十八个 facade 入口在连接请求或 mutation coordinator 前拒绝缺失目标。
+- `OpenClawSessionOrganizationClient.test.ts` 证明四种 `sessions.patch` 组织写入均不会在缺失目标时进入 mutation coordinator 或 Gateway 请求。
 - 所有现有 React 调用方已审查并显式传入选中的 session key。
 - 本轮执行 `pnpm lint`、`pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs` 与
   `git diff --check`。

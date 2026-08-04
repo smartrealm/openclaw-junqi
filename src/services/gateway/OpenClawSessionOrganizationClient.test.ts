@@ -6,6 +6,7 @@ import {
   SessionOrganizationResponseError,
   SessionOrganizationProtocolUnsupportedError,
 } from './OpenClawSessionOrganizationClient';
+import { OpenClawSessionTargetError } from './OpenClawSessionTarget';
 
 const SESSION_KEY = 'agent:main:main';
 
@@ -35,6 +36,29 @@ describe('OpenClawSessionOrganizationClient', () => {
       { method: 'sessions.patch', params: { key: SESSION_KEY, archived: true } },
       { method: 'sessions.patch', params: { key: SESSION_KEY, category: 'Finance' } },
     ]);
+  });
+
+  it('在进入 mutation coordinator 或发起 Gateway 请求前拒绝缺失会话目标', async () => {
+    let mutationStarted = false;
+    let requestStarted = false;
+    const client = new OpenClawSessionOrganizationClient({
+      runMutation: async (_key, operation) => {
+        mutationStarted = true;
+        return operation();
+      },
+      request: async () => {
+        requestStarted = true;
+        return {} as never;
+      },
+    });
+    const missingTarget = '   ';
+
+    await assert.rejects(client.setPinned(missingTarget, true), OpenClawSessionTargetError);
+    await assert.rejects(client.setUnread(missingTarget, true), OpenClawSessionTargetError);
+    await assert.rejects(client.setArchived(missingTarget, true), OpenClawSessionTargetError);
+    await assert.rejects(client.setCategory(missingTarget, 'Finance'), OpenClawSessionTargetError);
+    assert.equal(mutationStarted, false);
+    assert.equal(requestStarted, false);
   });
 
   it('requires the returned entry to confirm a requested category', async () => {

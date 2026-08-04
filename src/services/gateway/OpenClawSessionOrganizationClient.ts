@@ -1,4 +1,5 @@
 import { GatewayRpcError } from './Connection';
+import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 type SessionMutationRunner = <T>(sessionKey: string, operation: () => Promise<T>) => Promise<T>;
 type GatewayRequester = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
@@ -18,10 +19,9 @@ export class SessionOrganizationResponseError extends Error {
 }
 
 /**
- * Signals an installed Gateway that predates the native organization protocol.
- * Callers use it to report the unavailable native capability; it never authorizes
- * a client-owned organization fallback. Authentication and transport failures
- * deliberately do not use this error.
+ * 表示已安装的 Gateway 早于原生会话组织协议。
+ * 调用方据此展示不可用的原生能力；不得以此授权客户端自建组织功能。
+ * 鉴权和传输失败不使用此错误。
  */
 export class SessionOrganizationProtocolUnsupportedError extends Error {
   readonly code = 'SESSION_ORGANIZATION_PROTOCOL_UNSUPPORTED';
@@ -51,7 +51,7 @@ function isUnsupportedProtocolError(error: unknown): error is GatewayRpcError {
   return /\b(pinned|unread|archived|category)\b/i.test(error.message);
 }
 
-/** Native OpenClaw session organization API, isolated from UI and store code. */
+/** 原生 OpenClaw 会话组织 API，与 UI 和状态仓隔离。 */
 export class OpenClawSessionOrganizationClient {
   constructor(private readonly deps: OpenClawSessionOrganizationClientDeps) {}
 
@@ -67,9 +67,10 @@ export class OpenClawSessionOrganizationClient {
   }
 
   private patch(sessionKey: string, patch: Record<string, boolean | string | null>): Promise<Record<string, unknown>> {
-    return this.deps.runMutation(sessionKey, async () => {
-      const result = await this.request<unknown>('sessions.patch', { key: sessionKey, ...patch });
-      return confirmedPatchResult(result, sessionKey);
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    return this.deps.runMutation(targetSessionKey, async () => {
+      const result = await this.request<unknown>('sessions.patch', { key: targetSessionKey, ...patch });
+      return confirmedPatchResult(result, targetSessionKey);
     });
   }
 
