@@ -59,6 +59,7 @@ function createRuntime(
     instanceId?: string;
     emitControl?: (control: VoiceGlobalControl) => void;
     subscribeControl?: (handler: (control: VoiceGlobalControl) => void) => () => void;
+    stopNativeTalkPlayback?: () => void | Promise<void>;
   } = {},
 ): VoiceRuntime {
   return new VoiceRuntime({ ...options, speechOutput: output });
@@ -230,6 +231,53 @@ test('newer cross-window claim and global stop interrupt other runtimes', () => 
     main.dispose();
     quick.dispose();
     setVoiceOutputSettings();
+    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
+  }
+});
+
+test('Talk PCM output claims the desktop-wide voice slot and is preempted by a newer window claim', () => {
+  const handlers = new Set<(control: VoiceGlobalControl) => void>();
+  const subscribeControl = (handler: (control: VoiceGlobalControl) => void) => {
+    handlers.add(handler);
+    return () => handlers.delete(handler);
+  };
+  const emitControl = (control: VoiceGlobalControl) => {
+    for (const handler of handlers) handler(control);
+  };
+  let stoppedNativeTalk = 0;
+  const talk = createRuntime(createVoiceOutput(), {
+    instanceId: 'talk', emitControl, subscribeControl,
+    stopNativeTalkPlayback: () => { stoppedNativeTalk += 1; },
+  });
+  const other = createRuntime(createVoiceOutput(), { instanceId: 'other', emitControl, subscribeControl });
+
+  try {
+    talk.setNativeTalkOutput('agent:talk:main', true);
+    assert.equal(useVoiceStore.getState().remoteOutput?.sessionKey, 'agent:talk:main');
+    other.startExternalPlayback('agent:main:main', 'reply.wav', Symbol('reply'), () => undefined);
+    assert.equal(stoppedNativeTalk, 1);
+  } finally {
+    talk.dispose();
+    other.dispose();
+    useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
+    useVoiceStore.getState().setRemoteOutput(null);
+  }
+});
+
+test('stopping Talk output releases its claim when no replacement output starts', () => {
+  const controls: VoiceGlobalControl[] = [];
+  const runtime = createRuntime(createVoiceOutput(), {
+    instanceId: 'talk',
+    emitControl: (control) => { controls.push(control); },
+    stopNativeTalkPlayback: () => undefined,
+  });
+
+  try {
+    runtime.setNativeTalkOutput('agent:talk:main', true);
+    runtime.interrupt('agent:talk:main');
+    assert.deepEqual(controls.map((control) => control.type), ['claim', 'release']);
+  } finally {
+    runtime.dispose();
     useVoiceStore.getState().setSnapshot(VOICE_IDLE_SNAPSHOT);
   }
 });

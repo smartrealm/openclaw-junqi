@@ -3,6 +3,7 @@ import {
   VOICE_AUTO_SPEAK_STORAGE_KEY,
   useSettingsStore,
 } from '@/stores/settingsStore';
+import { stopTalkPlayback } from '@/api/tauri-commands';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { debugError, debugLog } from '@/utils/debugLog';
 import { emitTauriEvent, subscribeTauriEvent } from '@/utils/tauriEvents';
@@ -15,6 +16,7 @@ import {
   VOICE_MEDIA_REQUEST_EVENT,
   type VoiceGlobalClaim,
   type VoiceGlobalControl,
+  type VoiceInterruptControl,
   type VoicePhase,
   type VoiceRuntimeSnapshot,
 } from './types';
@@ -54,6 +56,7 @@ interface VoiceRuntimeOptions {
   emitControl?: (control: VoiceGlobalControl) => void | Promise<void>;
   subscribeControl?: (handler: (control: VoiceGlobalControl) => void) => () => void;
   speechOutput?: VoiceSpeechOutput;
+  stopNativeTalkPlayback?: () => void | Promise<void>;
 }
 
 function createVoiceInstanceId(): string {
@@ -89,10 +92,12 @@ export class VoiceRuntime {
   private readonly emitControl: (control: VoiceGlobalControl) => void | Promise<void>;
   private readonly unsubscribeControl: () => void;
   private readonly speechOutput: VoiceSpeechOutput;
+  private readonly stopNativeTalkPlayback: () => void | Promise<void>;
   private activeSyntheticAbort: AbortController | null = null;
   private latestGlobalClaim: VoiceGlobalClaim | null = null;
   private ownedGlobalClaim: VoiceGlobalClaim | null = null;
   private nativeTalkSessionKey: string | null = null;
+  private nativeTalkClaim: VoiceGlobalClaim | null = null;
   private claimSequence = 0;
 
   constructor(options: VoiceRuntimeOptions = {}) {
@@ -103,6 +108,7 @@ export class VoiceRuntime {
     ));
     this.unsubscribeControl = subscribe((control) => this.handleGlobalControl(control));
     this.speechOutput = options.speechOutput ?? new GatewayTtsSpeechOutput();
+    this.stopNativeTalkPlayback = options.stopNativeTalkPlayback ?? stopTalkPlayback;
   }
 
   private get gatewayTtsEnabled(): boolean {
@@ -141,11 +147,12 @@ export class VoiceRuntime {
     return claim;
   }
 
-  private publishGlobalClaim(sessionKey: string) {
+  private publishGlobalClaim(sessionKey: string): VoiceGlobalClaim {
     const claim = this.nextGlobalClaim(sessionKey);
     this.ownedGlobalClaim = claim;
     useVoiceStore.getState().setRemoteOutput(null);
     this.broadcast({ type: 'claim', claim });
+    return claim;
   }
 
   private publishGlobalStop() {
@@ -191,7 +198,8 @@ export class VoiceRuntime {
       || this.externalPlayback
       || this.queue.length
       || this.pendingExternal.size
-      || this.streams.size,
+      || this.streams.size
+      || this.nativeTalkSessionKey,
     );
   }
 
@@ -211,7 +219,7 @@ export class VoiceRuntime {
   dispose() {
     this.releaseGlobalClaim();
     this.unsubscribeControl();
-    this.interruptAll({ broadcast: false });
+    this.interruptAll({ broadcast: false, cancelTalk: false });
   }
 
   private snapshot(): VoiceRuntimeSnapshot {
@@ -277,12 +285,20 @@ export class VoiceRuntime {
   setNativeTalkOutput(sessionKey: string, speaking: boolean) {
     if (!sessionKey) return;
     if (speaking) {
-      this.nativeTalkSessionKey = sessionKey;
+      if (this.nativeTalkSessionKey !== sessionKey) {
+        const interrupted = this.stopNativeTalkOutput();
+        if (interrupted) this.signalInterrupt(interrupted, true);
+        this.nativeTalkSessionKey = sessionKey;
+        this.nativeTalkClaim = this.publishGlobalClaim(sessionKey);
+      }
       this.setPhase('speaking', { sessionKey, startedAt: Date.now(), lastError: null });
       return;
     }
     if (this.nativeTalkSessionKey !== sessionKey) return;
     this.nativeTalkSessionKey = null;
+    const claim = this.nativeTalkClaim;
+    this.nativeTalkClaim = null;
+    if (claim && this.ownedGlobalClaim === claim) this.releaseGlobalClaim();
     const current = useVoiceStore.getState();
     if (current.sessionKey === sessionKey && current.phase === 'speaking' && !this.hasLocalOutput()) {
       this.setPhase('idle', { sessionKey, startedAt: null, lastError: null });
@@ -424,7 +440,11 @@ export class VoiceRuntime {
     if (this.gatewayTtsEnabled) this.finishStream(sessionKey, text, 'final');
   }
 
-  interrupt(sessionKey?: string | null, phase: 'interrupted' | 'error' = 'interrupted') {
+  interrupt(
+    sessionKey?: string | null,
+    phase: 'interrupted' | 'error' = 'interrupted',
+    options: { cancelTalk?: boolean } = {},
+  ) {
     const target = sessionKey || this.current?.sessionKey || null;
     const visibleSession = useVoiceStore.getState().sessionKey;
     const shouldUpdatePhase = !target
@@ -435,9 +455,10 @@ export class VoiceRuntime {
       else this.blockedStreams.delete(target);
       this.clearQueuedSession(target);
     }
+    if (!target || this.nativeTalkSessionKey === target) this.stopNativeTalkOutput();
     this.stopExternalPlayback(target);
     // Notify rendered media players as well as the synthetic speech engine.
-    if (target) this.signalInterrupt(target);
+    if (target) this.signalInterrupt(target, options.cancelTalk !== false);
     if (!target || this.current?.sessionKey === target) {
       this.cancelCurrentSyntheticPlayback();
     }
@@ -449,18 +470,18 @@ export class VoiceRuntime {
     if (!this.current && this.queue.length > 0) {
       void this.pump();
     } else if (!this.current && !this.externalPlayback) {
-      this.releaseGlobalClaim();
+      if (!this.nativeTalkSessionKey) this.releaseGlobalClaim();
     }
   }
 
   /** User-originated barge-in: preserve local session scoping and stop output in companion WebViews. */
-  interruptGlobally(sessionKey?: string | null) {
-    this.interrupt(sessionKey);
+  interruptGlobally(sessionKey?: string | null, options: { cancelTalk?: boolean } = {}) {
+    this.interrupt(sessionKey, 'interrupted', options);
     useVoiceStore.getState().setRemoteOutput(null);
     this.publishGlobalStop();
   }
 
-  interruptAll(options: { broadcast?: boolean; preserveRemote?: boolean } = {}) {
+  interruptAll(options: { broadcast?: boolean; preserveRemote?: boolean; cancelTalk?: boolean } = {}) {
     const broadcast = options.broadcast !== false;
     const previousPhase = useVoiceStore.getState().phase;
     const previousSessionKey = useVoiceStore.getState().sessionKey;
@@ -470,8 +491,9 @@ export class VoiceRuntime {
     this.streams.clear();
     this.pendingExternal.forEach(({ timer }) => clearTimeout(timer));
     this.pendingExternal.clear();
+    this.stopNativeTalkOutput();
     this.stopExternalPlayback(null);
-    this.stopPlayback();
+    this.stopPlayback(options.cancelTalk !== false);
     this.current = null;
     this.releaseGlobalClaim(!broadcast);
     if (!options.preserveRemote) useVoiceStore.getState().setRemoteOutput(null);
@@ -490,6 +512,8 @@ export class VoiceRuntime {
 
   private requestExternalPlayback(sessionKey: string, source: string) {
     if (!this.externalMediaEnabled || !sessionKey || !source) return;
+    const interruptedTalk = this.stopNativeTalkOutput();
+    if (interruptedTalk) this.signalInterrupt(interruptedTalk, true);
     this.clearQueuedSession(sessionKey);
     if (this.current?.sessionKey === sessionKey) this.cancelCurrentSyntheticPlayback();
     const previous = this.pendingExternal.get(sessionKey);
@@ -537,9 +561,13 @@ export class VoiceRuntime {
       this.setPhase('queued', { sessionKey: this.queue[0].sessionKey });
       void this.pump();
     } else {
-      this.releaseGlobalClaim();
-      this.setPhase('idle', { sessionKey, startedAt: null });
-      this.scheduleIdle(sessionKey);
+      if (this.nativeTalkSessionKey) {
+        this.setPhase('speaking', { sessionKey: this.nativeTalkSessionKey });
+      } else {
+        this.releaseGlobalClaim();
+        this.setPhase('idle', { sessionKey, startedAt: null });
+        this.scheduleIdle(sessionKey);
+      }
     }
   }
 
@@ -557,6 +585,10 @@ export class VoiceRuntime {
     if (this.queue.length > 0) {
       this.setPhase('queued', { sessionKey: this.queue[0].sessionKey });
       void this.pump();
+      return;
+    }
+    if (this.nativeTalkSessionKey) {
+      this.setPhase('speaking', { sessionKey: this.nativeTalkSessionKey });
       return;
     }
     this.releaseGlobalClaim();
@@ -591,16 +623,35 @@ export class VoiceRuntime {
     this.queue = this.queue.map((item) => ({ ...item, generation: this.generation }));
   }
 
-  private stopPlayback() {
+  private stopPlayback(cancelTalk: boolean) {
     this.stopSyntheticPlayback();
     this.stopExternalPlayback(null, undefined, false);
-    this.signalInterrupt();
+    this.signalInterrupt(null, cancelTalk);
   }
 
-  private signalInterrupt(sessionKey: string | null = null) {
+  private signalInterrupt(sessionKey: string | null = null, cancelTalk = true) {
     if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
-      window.dispatchEvent(new CustomEvent(VOICE_INTERRUPT_EVENT, { detail: { sessionKey } }));
+      const detail: VoiceInterruptControl = { sessionKey, cancelTalk };
+      window.dispatchEvent(new CustomEvent(VOICE_INTERRUPT_EVENT, { detail }));
     }
+  }
+
+  /** Stops the process-wide PCM worker; Gateway cancellation stays with the Talk session owner. */
+  private stopNativeTalkOutput(): string | null {
+    const sessionKey = this.nativeTalkSessionKey;
+    if (!sessionKey) return null;
+    const claim = this.nativeTalkClaim;
+    this.nativeTalkSessionKey = null;
+    this.nativeTalkClaim = null;
+    if (claim && this.ownedGlobalClaim === claim) this.releaseGlobalClaim();
+    try {
+      void Promise.resolve(this.stopNativeTalkPlayback()).catch((error) => {
+        debugError('media', '[VoiceRuntime] native Talk playback stop failed:', error);
+      });
+    } catch (error) {
+      debugError('media', '[VoiceRuntime] native Talk playback stop failed:', error);
+    }
+    return sessionKey;
   }
 
   private stopSyntheticPlayback() {
@@ -621,6 +672,8 @@ export class VoiceRuntime {
       void this.pump();
       return;
     }
+    const interruptedTalk = this.stopNativeTalkOutput();
+    if (interruptedTalk) this.signalInterrupt(interruptedTalk, true);
     this.current = item;
     this.publishGlobalClaim(item.sessionKey);
     this.setPhase('speaking', { sessionKey: item.sessionKey, startedAt: Date.now() });
@@ -642,8 +695,10 @@ export class VoiceRuntime {
         if (this.queue.length) {
           void this.pump();
         } else {
-          if (!this.externalPlayback) this.releaseGlobalClaim();
-          this.scheduleIdle(item.sessionKey);
+          if (!this.externalPlayback && !this.nativeTalkSessionKey) {
+            this.releaseGlobalClaim();
+            this.scheduleIdle(item.sessionKey);
+          }
         }
       }
     }

@@ -2,6 +2,7 @@ import type { TalkGatewayEvent } from '@/services/gateway/talkEventBridge';
 import { decodeTalkSessionReplacedPayload } from '@/services/gateway/talkTypes';
 import type { TalkGatewayClient } from '@/services/gateway/TalkGatewayClient';
 import { MAX_VOICE_WAKE_PCM_FRAMES } from './VoiceWakeAudioLimits';
+import type { VoiceInterruptControl } from './types';
 
 export type TalkConversationPhase = 'idle' | 'connecting' | 'listening' | 'speaking' | 'error';
 
@@ -29,6 +30,19 @@ type Listener = (snapshot: TalkConversationSnapshot) => void;
 const INITIAL: TalkConversationSnapshot = {
   phase: 'idle', sessionId: null, sessionKey: null, connectionId: null, error: null,
 };
+
+/** Restrict external output preemption to the live Talk turn that owns the matching session. */
+export function shouldCancelTalkOutput(
+  snapshot: TalkConversationSnapshot,
+  control: VoiceInterruptControl | null | undefined,
+): boolean {
+  return Boolean(
+    control?.cancelTalk
+    && snapshot.phase === 'speaking'
+    && snapshot.sessionKey
+    && (!control.sessionKey || control.sessionKey === snapshot.sessionKey),
+  );
+}
 
 export class TalkConversationCoordinator {
   private snapshot = INITIAL;

@@ -20,7 +20,8 @@ import {
 } from '@/services/voice/VoiceModeCoordinator';
 import { decideVoiceWakeRoute, hasCompatibleVoiceWakeTrigger } from '@/services/voice/VoiceWakeRoutePolicy';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
-import { TalkConversationCoordinator } from '@/services/voice/TalkConversationCoordinator';
+import { TalkConversationCoordinator, shouldCancelTalkOutput } from '@/services/voice/TalkConversationCoordinator';
+import { VOICE_INTERRUPT_EVENT, type VoiceInterruptControl } from '@/services/voice/types';
 import { createJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
 import { shouldAutoArmSession, subscribeAutoArmPreference } from '@/services/voice/VoiceWakePreference';
 import { useChatStore } from '@/stores/chatStore';
@@ -101,7 +102,7 @@ export function useComposerVoice({
       client: talkGatewayClient,
       captureConnectionId: () => gateway.captureConnectionId(),
       isConnectionCurrent: (candidate) => gateway.isConnectionCurrent(candidate),
-      interruptLocalOutput: (sessionKey) => voiceRuntime.interruptGlobally(sessionKey),
+      interruptLocalOutput: (sessionKey) => voiceRuntime.interruptGlobally(sessionKey, { cancelTalk: false }),
       playOutput: playTalkPcm,
       finishOutput: finishTalkPlayback,
       stopOutput: stopTalkPlayback,
@@ -125,6 +126,18 @@ export function useComposerVoice({
       projectedTalkOutputSessionRef.current = sessionKey;
     }
   }, [talkConversation.phase, talkConversation.sessionKey]);
+  useEffect(() => {
+    const cancelTalkOutput = (event: Event) => {
+      const detail = (event as CustomEvent<VoiceInterruptControl>).detail;
+      if (!detail || !detail.cancelTalk) return;
+      const coordinator = talkConversationRef.current;
+      const snapshot = coordinator?.getSnapshot();
+      if (!coordinator || !snapshot || !shouldCancelTalkOutput(snapshot, detail)) return;
+      void coordinator.interrupt();
+    };
+    window.addEventListener(VOICE_INTERRUPT_EVENT, cancelTalkOutput);
+    return () => window.removeEventListener(VOICE_INTERRUPT_EVENT, cancelTalkOutput);
+  }, []);
   const currentContextRef = useRef<VoiceModeContext | null>(null);
   const connectionId = gateway.captureConnectionId();
   currentContextRef.current = connectionId && activeSessionKey

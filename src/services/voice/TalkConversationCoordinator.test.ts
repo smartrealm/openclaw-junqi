@@ -1,7 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { TalkConversationCoordinator } from './TalkConversationCoordinator';
+import { TalkConversationCoordinator, shouldCancelTalkOutput } from './TalkConversationCoordinator';
 import type { TalkGatewayEvent } from '@/services/gateway/talkEventBridge';
+
+test('Talk interruption eligibility requires a matching active output turn', () => {
+  const speaking = {
+    phase: 'speaking' as const,
+    sessionId: 'talk-1',
+    sessionKey: 'agent:main:main',
+    connectionId: 'connection-a',
+    error: null,
+  };
+  assert.equal(shouldCancelTalkOutput(speaking, { sessionKey: 'agent:main:main', cancelTalk: true }), true);
+  assert.equal(shouldCancelTalkOutput(speaking, { sessionKey: 'agent:other:main', cancelTalk: true }), false);
+  assert.equal(shouldCancelTalkOutput({ ...speaking, phase: 'listening' }, { sessionKey: null, cancelTalk: true }), false);
+  assert.equal(shouldCancelTalkOutput(speaking, { sessionKey: null, cancelTalk: false }), false);
+});
 
 test('Talk conversation serializes PCM frames on its attested session', async () => {
   const calls: string[] = [];
