@@ -15,6 +15,13 @@ import {
 import { shouldAcceptVoiceWakeDuringOutput } from '@/services/voice/VoiceWakeBargeInPolicy';
 import { useVoiceStore } from '@/stores/voiceStore';
 
+let nextVoiceWakeOwner = 0;
+
+function createVoiceWakeOwnerId(): string {
+  nextVoiceWakeOwner += 1;
+  return `voice-wake-owner-${nextVoiceWakeOwner}`;
+}
+
 export type WakePhase = 'idle' | 'listening' | 'wake_detected' | 'transcribing' | 'error';
 export type { VoiceWakeCaptureMode } from '@/api/tauri-commands';
 
@@ -120,6 +127,8 @@ export function useVoiceWake({
   const captureDrainingRef = useRef(false);
   const suppressNativeCaptureRef = useRef(false);
   const wakeAcceptanceGateRef = useRef(new VoiceWakeAcceptanceGate());
+  const ownerIdRef = useRef<string | null>(null);
+  if (ownerIdRef.current === null) ownerIdRef.current = createVoiceWakeOwnerId();
   const callbacksRef = useRef({ onTranscript, onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey });
   callbacksRef.current = { onTranscript, onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey };
 
@@ -162,9 +171,9 @@ export function useVoiceWake({
     if (nativeVADRef.current || stoppedRef.current) return;
     nativeVADRef.current = true;
     try {
-      await startVoiceWake(mode, { streamPcm });
+      await startVoiceWake(mode, { streamPcm, ownerId: ownerIdRef.current });
       if (stoppedRef.current) {
-        await stopVoiceWake().catch(() => undefined);
+        await stopVoiceWake(ownerIdRef.current).catch(() => undefined);
         nativeVADRef.current = false;
         return;
       }
@@ -283,7 +292,7 @@ export function useVoiceWake({
       restartTimerRef.current = null;
     }
     if (nativeVADRef.current) {
-      try { await stopVoiceWake(); } catch {}
+      try { await stopVoiceWake(ownerIdRef.current); } catch {}
     }
     nativeVADRef.current = false;
     const recognition = recognitionRef.current;
@@ -303,7 +312,7 @@ export function useVoiceWake({
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     if (recognition) { try { recognition.stop(); } catch {} }
-    if (nativeVADRef.current) void stopVoiceWake().catch(() => undefined);
+    if (nativeVADRef.current) void stopVoiceWake(ownerIdRef.current).catch(() => undefined);
     nativeVADRef.current = false;
     voiceRuntime.setIdle(callbacksRef.current.sessionKey);
   }, []);

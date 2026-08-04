@@ -30,13 +30,18 @@ pub enum VoiceWakeMode {
 
 struct WakeState {
     worker_id: u64,
+    owner_id: String,
     tx: Option<mpsc::Sender<WakeCmd>>,
     worker: Option<JoinHandle<()>>,
     running: bool,
     mode: VoiceWakeMode,
+    stream_pcm: bool,
 }
 
 static WAKE: Mutex<Option<WakeState>> = Mutex::new(None);
+// Start and stop may join a worker outside WAKE. Serialize those ownership
+// transitions so a second start cannot overwrite a newly installed worker.
+static WAKE_CONTROL: Mutex<()> = Mutex::new(());
 static NEXT_WORKER_ID: AtomicU64 = AtomicU64::new(1);
 
 fn is_current_worker(worker_id: u64) -> bool {
@@ -65,6 +70,22 @@ fn mark_worker_stopped(state: &mut Option<WakeState>, worker_id: u64) -> bool {
 
 fn should_emit_command_stop(state: &Option<WakeState>) -> bool {
     state.is_none()
+}
+
+fn can_reuse_listener(
+    state: &WakeState,
+    mode: VoiceWakeMode,
+    stream_pcm: bool,
+    owner_id: &str,
+) -> bool {
+    state.running
+        && state.mode == mode
+        && state.stream_pcm == stream_pcm
+        && state.owner_id == owner_id
+}
+
+fn can_stop_listener(state: &WakeState, owner_id: &str) -> bool {
+    state.owner_id == owner_id
 }
 
 fn report_stream_error(error_tx: &mpsc::Sender<String>, error: impl std::fmt::Display) {
@@ -256,12 +277,17 @@ pub fn voice_wake_start(
     app: AppHandle,
     mode: VoiceWakeMode,
     stream_pcm: Option<bool>,
+    owner_id: String,
 ) -> Result<serde_json::Value, String> {
     let stream_pcm = stream_pcm.unwrap_or(false);
+    if owner_id.trim().is_empty() {
+        return Err("voice wake listener owner is required".to_string());
+    }
+    let _control = WAKE_CONTROL.lock().map_err(|e| format!("Lock: {}", e))?;
     let stale_worker = {
         let mut guard = WAKE.lock().map_err(|e| format!("Lock: {}", e))?;
         if let Some(ref st) = *guard {
-            if st.running {
+            if can_reuse_listener(st, mode, stream_pcm, &owner_id) {
                 return Ok(
                     serde_json::json!({ "listening": true, "already": true, "mode": st.mode }),
                 );
@@ -280,7 +306,7 @@ pub fn voice_wake_start(
 
     let mut guard = WAKE.lock().map_err(|e| format!("Lock: {}", e))?;
     if let Some(ref st) = *guard {
-        if st.running {
+        if can_reuse_listener(st, mode, stream_pcm, &owner_id) {
             return Ok(serde_json::json!({ "listening": true, "already": true, "mode": st.mode }));
         }
     }
@@ -302,10 +328,12 @@ pub fn voice_wake_start(
 
     *guard = Some(WakeState {
         worker_id,
+        owner_id,
         tx: Some(cmd_tx),
         worker: Some(worker),
         running: true,
         mode,
+        stream_pcm,
     });
     drop(guard);
 
@@ -373,9 +401,22 @@ fn stop_worker_by_id(worker_id: u64) {
 
 /// Stop continuous wake listening.
 #[tauri::command]
-pub fn voice_wake_stop(app: AppHandle) -> Result<serde_json::Value, String> {
+pub fn voice_wake_stop(app: AppHandle, owner_id: String) -> Result<serde_json::Value, String> {
+    if owner_id.trim().is_empty() {
+        return Err("voice wake listener owner is required".to_string());
+    }
+    let _control = WAKE_CONTROL.lock().map_err(|e| format!("Lock: {}", e))?;
     let mut state = {
         let mut guard = WAKE.lock().map_err(|e| format!("Lock: {}", e))?;
+        if let Some(active) = guard.as_ref() {
+            if !can_stop_listener(active, &owner_id) {
+                return Ok(serde_json::json!({
+                    "listening": active.running,
+                    "stopped": false,
+                    "mode": active.mode,
+                }));
+            }
+        }
         guard.take()
     };
     let stopped = if let Some(ref mut st) = state {
@@ -717,19 +758,59 @@ fn resample_pcm16_mono(
 #[cfg(test)]
 mod tests {
     use super::{
-        mark_worker_stopped, resample_pcm16_mono, rms_u16, should_emit_command_stop,
-        stream_failure, CaptureState, VoiceWakeMode, WakeState,
+        can_reuse_listener, can_stop_listener, mark_worker_stopped, resample_pcm16_mono, rms_u16,
+        should_emit_command_stop, stream_failure, CaptureState, VoiceWakeMode, WakeState,
     };
 
-    #[test]
-    fn test_bug_01_old_worker_cannot_stop_replacement() {
-        let mut state = Some(WakeState {
-            worker_id: 2,
+    fn wake_state(mode: VoiceWakeMode, stream_pcm: bool, owner_id: &str) -> WakeState {
+        WakeState {
+            worker_id: 1,
+            owner_id: owner_id.to_string(),
             tx: None,
             worker: None,
             running: true,
-            mode: VoiceWakeMode::Dictation,
-        });
+            mode,
+            stream_pcm,
+        }
+    }
+
+    #[test]
+    fn listener_reuse_requires_matching_configuration_and_owner() {
+        let active = wake_state(VoiceWakeMode::WakeWord, true, "owner-a");
+
+        assert!(can_reuse_listener(
+            &active,
+            VoiceWakeMode::WakeWord,
+            true,
+            "owner-a"
+        ));
+        assert!(!can_reuse_listener(
+            &active,
+            VoiceWakeMode::Dictation,
+            true,
+            "owner-a"
+        ));
+        assert!(!can_reuse_listener(
+            &active,
+            VoiceWakeMode::WakeWord,
+            false,
+            "owner-a"
+        ));
+        assert!(!can_reuse_listener(
+            &active,
+            VoiceWakeMode::WakeWord,
+            true,
+            "owner-b"
+        ));
+        assert!(can_stop_listener(&active, "owner-a"));
+        assert!(!can_stop_listener(&active, "owner-b"));
+    }
+
+    #[test]
+    fn test_bug_01_old_worker_cannot_stop_replacement() {
+        let mut active = wake_state(VoiceWakeMode::Dictation, false, "owner-a");
+        active.worker_id = 2;
+        let mut state = Some(active);
 
         assert!(!mark_worker_stopped(&mut state, 1));
         assert!(state.as_ref().is_some_and(|active| active.running));
@@ -772,13 +853,9 @@ mod tests {
 
     #[test]
     fn test_bug_12_replacement_suppresses_stale_command_stop() {
-        let replacement = Some(WakeState {
-            worker_id: 9,
-            tx: None,
-            worker: None,
-            running: true,
-            mode: VoiceWakeMode::Dictation,
-        });
+        let mut active = wake_state(VoiceWakeMode::Dictation, false, "owner-a");
+        active.worker_id = 9;
+        let replacement = Some(active);
         assert!(!should_emit_command_stop(&replacement));
         assert!(should_emit_command_stop(&None));
     }

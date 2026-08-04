@@ -141,6 +141,7 @@ plans/
 - [安装、仪表盘、聊天、模型与渠道运行时边界](quality/2026-07-31-installation-dashboard-chat-provider-channel-runtime-boundaries.md)
 - [语音唤醒工作台](quality/2026-07-31-voice-wake-workspace.md)
 - [跨平台语音唤醒宿主](quality/2026-08-02-cross-platform-voice-wake-host.md)
+- [语音唤醒监听配置围栏](quality/2026-08-04-voice-wake-listener-configuration-fence.md)
 - [业务引导平台](quality/2026-07-31-business-onboarding-platform.md)
 - [发布 CI 与安装包构建收敛](quality/2026-08-01-release-ci-build-convergence.md)
 - [Chat 通知幂等与消息操作栏](quality/2026-08-01-chat-notification-idempotency-and-message-actions.md)

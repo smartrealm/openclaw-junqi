@@ -2,6 +2,11 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { presentVoiceWakeWindow } from '@/services/voice/VoiceWakeWindowPresenter';
 import {
+  isRequestedVoiceWakeListener,
+  type VoiceWakeCaptureMode,
+  type VoiceWakeStatus,
+} from './voiceWakeContract';
+import {
   parseTauriPlatformInfo,
   type TauriPlatformInfo,
 } from './tauriAdapterContracts';
@@ -29,18 +34,13 @@ import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
 
 export { Channel };
 
-export type VoiceWakeCaptureMode = 'dictation' | 'wake_word';
+export type { VoiceWakeCaptureMode, VoiceWakeStatus } from './voiceWakeContract';
 
 export type NativePlatformInfo = TauriPlatformInfo;
 
 export const getNativePlatformInfo = async (): Promise<NativePlatformInfo> => (
   parseTauriPlatformInfo(await invoke<unknown>('get_platform_info'))
 );
-
-export interface VoiceWakeStatus {
-  listening: boolean;
-  mode: VoiceWakeCaptureMode | null;
-}
 
 export interface VoiceWakeDetectorStatus {
   available: boolean;
@@ -104,17 +104,22 @@ export const getVoiceWakeStatus = async (): Promise<VoiceWakeStatus> => (
 
 export const startVoiceWake = async (
   mode: VoiceWakeCaptureMode,
-  options: { streamPcm?: boolean } = {},
-): Promise<VoiceWakeStatus> => (
-  parseVoiceWakeStatus('voice_wake_start', await invoke<unknown>('voice_wake_start', {
+  options: { streamPcm?: boolean; ownerId: string },
+): Promise<VoiceWakeStatus> => {
+  if (!options.ownerId.trim()) throw voiceWakeContractError('voice_wake_start');
+  const status = parseVoiceWakeStatus('voice_wake_start', await invoke<unknown>('voice_wake_start', {
     mode,
     streamPcm: options.streamPcm ?? false,
-  }))
-);
+    ownerId: options.ownerId,
+  }));
+  if (!isRequestedVoiceWakeListener(status, mode)) throw voiceWakeContractError('voice_wake_start');
+  return status;
+};
 
-export const stopVoiceWake = async (): Promise<VoiceWakeStatus> => (
-  parseVoiceWakeStatus('voice_wake_stop', await invoke<unknown>('voice_wake_stop'))
-);
+export const stopVoiceWake = async (ownerId: string): Promise<VoiceWakeStatus> => {
+  if (!ownerId.trim()) throw voiceWakeContractError('voice_wake_stop');
+  return parseVoiceWakeStatus('voice_wake_stop', await invoke<unknown>('voice_wake_stop', { ownerId }));
+};
 
 export const playTalkPcm = (audioBase64: string) => invoke<void>('voice_talk_play_pcm', {
   audioBase64,
