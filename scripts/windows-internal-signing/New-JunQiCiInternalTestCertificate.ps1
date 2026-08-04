@@ -36,10 +36,26 @@ $certificate = New-SelfSignedCertificate `
   -NotAfter (Get-Date).AddDays($ValidDays)
 
 Export-Certificate -Cert $certificate -FilePath $cerPath -Type CERT | Out-Null
-foreach ($store in @('Root', 'TrustedPublisher')) {
-  Import-Certificate `
-    -FilePath $cerPath `
-    -CertStoreLocation "Cert:\CurrentUser\$store" | Out-Null
+"thumbprint=$($certificate.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+"certificate_path=$cerPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+"metadata_path=$metadataPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+$publicCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($cerPath)
+try {
+  foreach ($storeName in @('Root', 'TrustedPublisher')) {
+    $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+      $storeName,
+      [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+    )
+    try {
+      $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+      $store.Add($publicCertificate)
+    } finally {
+      $store.Close()
+    }
+  }
+} finally {
+  $publicCertificate.Dispose()
 }
 @(
   'Purpose=JunQi controlled internal testing only'
@@ -52,7 +68,3 @@ foreach ($store in @('Root', 'TrustedPublisher')) {
   "NotAfter=$($certificate.NotAfter.ToUniversalTime().ToString('o'))"
   "PublicCertificateSha256=$((Get-FileHash -Algorithm SHA256 -LiteralPath $cerPath).Hash)"
 ) | Set-Content -LiteralPath $metadataPath -Encoding UTF8
-
-"thumbprint=$($certificate.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-"certificate_path=$cerPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-"metadata_path=$metadataPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
