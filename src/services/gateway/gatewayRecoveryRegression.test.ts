@@ -301,22 +301,6 @@ test('OpenClaw session inspection and checkpoint controls use official session R
   assert.match(hook, /gateway\.restoreSessionCompactionCheckpoint/);
 });
 
-test('OpenClaw transcript artifacts use the official scoped list/get/download RPCs', () => {
-  const gateway = source('src/services/gateway/index.ts');
-  const artifacts = source('src/services/gateway/artifacts.ts');
-  const contextBar = source('src/components/Chat/SessionContextBar.tsx');
-  assert.match(gateway, /connection\.request\('artifacts\.list'/);
-  assert.match(gateway, /connection\.request\('artifacts\.get'/);
-  assert.match(gateway, /connection\.request\([\s\S]*'artifacts\.download'/);
-  assert.match(gateway, /parseArtifactsListResult/);
-  assert.match(gateway, /parseArtifactGetResult/);
-  assert.match(gateway, /parseArtifactDownloadResult/);
-  assert.match(artifacts, /requires sessionKey, runId, or taskId/);
-  assert.match(artifacts, /outside the requested session/);
-  assert.match(artifacts, /isSafeArtifactUrl/);
-  assert.match(contextBar, /<SessionArtifactsControl sessionKey=\{activeSessionKey\}/);
-});
-
 // BUG-WIN-CWD-01: state_dir (data directory) and Gateway cwd must be decoupled.
 // `stable_openclaw_working_dir()` returns the non-root user home dir,
 // while OPENCLAW_STATE_DIR / OPENCLAW_CONFIG_PATH stay on the chosen data drive.

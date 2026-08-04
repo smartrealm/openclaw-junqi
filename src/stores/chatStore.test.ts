@@ -57,6 +57,22 @@ test('setSessionModel updates the session row and active currentModel', () => {
   );
 });
 
+test('active transcript leaf 只由 Gateway 投影更新，身份轮换时清除', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.getState().setSessionIdentity(MAIN_KEY, 'session-before');
+  useChatStore.getState().setSessionActiveLeafEntryId(MAIN_KEY, 'leaf-before');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.activeLeafEntryId,
+    'leaf-before',
+  );
+
+  useChatStore.getState().setSessionIdentity(MAIN_KEY, 'session-after');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.activeLeafEntryId,
+    undefined,
+  );
+});
+
 test('setSessionAgentRuntime updates only an existing matching session', () => {
   seedSessions(MAIN_KEY);
 

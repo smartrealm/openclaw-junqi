@@ -21,7 +21,11 @@ interface ChatSendState {
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
   typingBySession: Record<string, boolean>;
   enqueueMessage: (sessionKey: string, message: QueuedChatMessage) => void;
-  sessions?: Array<{ key: string; model?: string | null }>;
+  sessions?: Array<{
+    key: string;
+    model?: string | null;
+    activeLeafEntryId?: string | null;
+  }>;
   activeSessionKey?: string;
   currentModel?: string | null;
 }
@@ -192,8 +196,9 @@ export class ChatSendCoordinator {
     let taskRunCreated = false;
 
     try {
+      const session = state.sessions?.find((candidate) => candidate.key === sessionKey);
       const observedModel = request.model
-        ?? state.sessions?.find((session) => session.key === sessionKey)?.model
+        ?? session?.model
         ?? (state.activeSessionKey === sessionKey ? state.currentModel : null)
         ?? null;
       let supersededRunId: string | null = null;
@@ -241,6 +246,9 @@ export class ChatSendCoordinator {
         {
           clientMessageId,
           sessionId: request.sessionId,
+          ...(request.delivery !== 'steer' && session?.activeLeafEntryId !== undefined
+            ? { expectedLeafEntryId: session.activeLeafEntryId }
+            : {}),
           ...(request.delivery === 'steer' ? { delivery: 'steer' as const } : {}),
           ...(supersededRunId ? { supersededRunId } : {}),
         },

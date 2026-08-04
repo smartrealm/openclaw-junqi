@@ -272,6 +272,7 @@ export interface GatewayChatMessageDispatchInput {
   sessionKey: string;
   clientMessageId: string;
   sessionId?: string;
+  expectedLeafEntryId?: string | null;
   delivery?: 'send' | 'steer';
 }
 
@@ -297,6 +298,9 @@ export async function dispatchGatewayChatMessage(
   return transport.request('chat.send', {
     sessionKey: input.sessionKey,
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.expectedLeafEntryId !== undefined
+      ? { expectedLeafEntryId: input.expectedLeafEntryId }
+      : {}),
     message: input.message,
     idempotencyKey: input.clientMessageId,
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
@@ -1187,6 +1191,7 @@ export const gateway = {
     identity: {
       clientMessageId?: string;
       sessionId?: string;
+      expectedLeafEntryId?: string | null;
       delivery?: 'send' | 'steer';
       sideQuestion?: boolean;
       supersededRunId?: string;
@@ -1222,6 +1227,7 @@ export const gateway = {
           sessionKey: targetSessionKey,
           clientMessageId,
           sessionId: identity.sessionId,
+          expectedLeafEntryId: identity.expectedLeafEntryId,
           delivery: isSteer ? 'steer' : 'send',
         });
       };

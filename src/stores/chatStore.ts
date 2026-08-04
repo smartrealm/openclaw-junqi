@@ -340,6 +340,8 @@ export interface Session {
   goal?: GatewaySessionGoal | null;
   /** Gateway 记录的最近失败或超时运行摘要；缺失时不保留旧值。 */
   lastRunError?: string | null;
+  /** Gateway 当前 transcript 分支 leaf；缺失表示当前客户端尚未取得该事实。 */
+  activeLeafEntryId?: string | null;
   hasActiveRun?: boolean;
   hasActiveSubagentRun?: boolean;
   subagentRunState?: string;
@@ -479,6 +481,8 @@ interface ChatState {
     options?: { completeSnapshot?: boolean; sourceProjectionRevision?: number },
   ) => void;
   setSessionIdentity: (key: string, sessionId: string, agentId?: string) => void;
+  /** 仅接受 Gateway 的历史或会话列表投影，不能由客户端推导。 */
+  setSessionActiveLeafEntryId: (key: string, activeLeafEntryId: string | null | undefined) => void;
   /** Commit a session only after `sessions.create` confirms its Gateway identity. */
   addNativeSession: (session: Session) => void;
   /** Update a single session's label locally without a full sessions.list refetch. */
@@ -1479,6 +1483,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           archived: undefined,
           groupId: undefined,
           category: null,
+          activeLeafEntryId: undefined,
         } : {}),
       })),
       ...(changed ? { sessionProjectionRevision: state.sessionProjectionRevision + 1 } : {}),
@@ -1491,6 +1496,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }]);
     }
   },
+
+  setSessionActiveLeafEntryId: (key, activeLeafEntryId) => set((state) => {
+    if (isSessionDeleted(key)) return state;
+    return {
+      sessions: updateSession(state.sessions, key, (session) => (
+        session.activeLeafEntryId === activeLeafEntryId
+          ? session
+          : { ...session, activeLeafEntryId }
+      )),
+    };
+  }),
 
   setActiveSession: (key) => {
     if (isSessionDeleted(key)) return;

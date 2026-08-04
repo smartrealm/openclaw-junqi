@@ -10,17 +10,18 @@ import {
 import type { PreparedAttachment } from '@/services/chat/types';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
-import { useChatStore } from '@/stores/chatStore';
+import { useChatStore, type HistoryLoaderOptions } from '@/stores/chatStore';
 import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { debugError } from '@/utils/debugLog';
+import { isOpenClawActiveLeafChangedError } from '@/services/gateway/activeLeafEntryId';
 
 interface UseMessageSendOptions {
   activeSessionKey: string;
   activeSessionId?: string;
   connected: boolean;
   historyLoading: boolean;
-  historyLoader?: (sessionKey: string) => Promise<unknown>;
+  historyLoader?: (sessionKey?: string, options?: HistoryLoaderOptions) => Promise<void>;
   isSending: boolean;
   messageCount: number;
   files: PreparedAttachment[];
@@ -118,6 +119,10 @@ export function useMessageSend({
         state.setQuickReplies([], sessionKey);
       }
     } catch (error) {
+      if (isOpenClawActiveLeafChangedError(error)) {
+        void historyLoader?.(sessionKey, { force: true, background: true })
+          .catch((refreshError) => debugError('app', '[MessageSend] Active leaf refresh failed:', refreshError));
+      }
       debugError('app', '[MessageSend] Delivery failed:', error);
     } finally {
       setIsSending(false, sessionKey);

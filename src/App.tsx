@@ -51,6 +51,7 @@ import { parseGatewaySessionContextBudgetStatus } from '@/services/gateway/sessi
 import { parseGatewaySessionGoal } from '@/services/gateway/sessionGoal';
 import { parseGatewaySessionLastRunError } from '@/services/gateway/sessionLastRunError';
 import { parseGatewaySessionThinkingProfile } from '@/services/gateway/sessionThinkingProfile';
+import { parseOpenClawActiveLeafEntryId } from '@/services/gateway/activeLeafEntryId';
 import {
   OPENCLAW_UPDATE_MAINTENANCE_FINISHED,
   OPENCLAW_UPDATE_MAINTENANCE_STARTED,
@@ -351,6 +352,7 @@ export default function App() {
         const gatewayModel = resolveGatewaySessionModelId(s.modelProvider, s.model);
         const agentRuntime = parseGatewaySessionAgentRuntime(s.agentRuntime);
         const thinkingProfile = parseGatewaySessionThinkingProfile(s);
+        const activeLeafEntryId = parseOpenClawActiveLeafEntryId(s.activeLeafEntryId);
         return [{
           key,
           sessionId: typeof s.sessionId === 'string' ? s.sessionId : undefined,
@@ -374,6 +376,7 @@ export default function App() {
           contextBudgetStatus: parseGatewaySessionContextBudgetStatus(s.contextBudgetStatus),
           goal: parseGatewaySessionGoal(s.goal),
           lastRunError: parseGatewaySessionLastRunError(s.lastRunError),
+          ...(activeLeafEntryId !== undefined ? { activeLeafEntryId } : {}),
           // 缺失运行字段时保持未知；将其视为 false 会与旧 Gateway 的本地流式状态竞争。
           hasActiveRun: typeof s.hasActiveRun === 'boolean' ? s.hasActiveRun : undefined,
           hasActiveSubagentRun: typeof s.hasActiveSubagentRun === 'boolean' ? s.hasActiveSubagentRun : undefined,

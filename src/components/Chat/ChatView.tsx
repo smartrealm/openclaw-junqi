@@ -14,6 +14,10 @@ import { useAppStore } from '@/stores/app-store';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { gateway } from '@/services/gateway';
+import {
+  isOpenClawActiveLeafChangedError,
+  parseOpenClawActiveLeafEntryId,
+} from '@/services/gateway/activeLeafEntryId';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
@@ -298,6 +302,7 @@ function ChatViewContent() {
   const setHistoryLoader = useChatStore((s) => s.setHistoryLoader);
   const setQuickReplies = useChatStore((s) => s.setQuickReplies);
   const setSessionIdentity = useChatStore((s) => s.setSessionIdentity);
+  const setSessionActiveLeafEntryId = useChatStore((s) => s.setSessionActiveLeafEntryId);
 
   const { timelineItems, anchoredRunIds } = useMemo(
     () => buildCollaborationChatTimeline(responseGroups, messages, collaboration.runs),
@@ -576,6 +581,8 @@ function ChatViewContent() {
             ? result.sessionInfo.agentId
             : undefined;
           if (historySessionId) setSessionIdentity(sessionKey, historySessionId, historyAgentId);
+          const activeLeafEntryId = parseOpenClawActiveLeafEntryId(result?.sessionInfo?.activeLeafEntryId);
+          setSessionActiveLeafEntryId(sessionKey, activeLeafEntryId);
           const { hasMore, nextOffset } = resolveHistoryPageMetadata(result, 0);
           const mappedMessages = normalizeHistoryMessages(rawMessages);
           const canonicalMessages = dedupeHistoryMessages(mappedMessages);
@@ -737,6 +744,7 @@ function ChatViewContent() {
       setIsLoadingHistory,
       setMessages,
       setSessionIdentity,
+      setSessionActiveLeafEntryId,
       t,
     ],
   );
@@ -860,6 +868,11 @@ function ChatViewContent() {
     return () => window.removeEventListener('aegis:refresh', handler);
   }, [handleRefresh]);
 
+  const refreshActiveLeaf = useCallback((sessionKey: string) => {
+    void loadHistory(sessionKey, { force: true, background: true })
+      .catch((error) => debugError('app', '[ChatView] Active leaf refresh failed:', error));
+  }, [loadHistory]);
+
   // 仪表盘和命令面板的快捷指令统一发送到当前活动会话。
   const handleQuickAction = useCallback(async (e: Event) => {
     const detail = (e as CustomEvent<{ message: string; autoSend?: boolean }>).detail;
@@ -879,9 +892,10 @@ function ChatViewContent() {
         showAlert(t('chat.sendError'), t('chat.sessionTargetRequired'), 'error');
         return;
       }
+      if (isOpenClawActiveLeafChangedError(error)) refreshActiveLeaf(activeSessionKey);
       debugError('app', '[Quick action] Send error:', error);
     }
-  }, [activeSessionKey, activeSessionId, t]);
+  }, [activeSessionKey, activeSessionId, refreshActiveLeaf, t]);
   useEffect(() => {
     window.addEventListener('aegis:quick-action', handleQuickAction as EventListener);
     return () => window.removeEventListener('aegis:quick-action', handleQuickAction as EventListener);
@@ -920,9 +934,10 @@ function ChatViewContent() {
     try {
       await retryMessageDelivery(sourceMessage);
     } catch (error) {
+      if (isOpenClawActiveLeafChangedError(error)) refreshActiveLeaf(activeSessionKey);
       debugError('app', '[Retry] Send error:', error);
     }
-  }, [retryMessageDelivery]);
+  }, [activeSessionKey, refreshActiveLeaf, retryMessageDelivery]);
 
   const handleEditFailedMessage = useCallback(async (
     sourceMessage: ChatMessage,
@@ -933,8 +948,13 @@ function ChatViewContent() {
       content: edited.content,
       retryPayload: edited.retryPayload,
     });
-    await retryMessageDelivery(edited);
-  }, [activeSessionKey, retryMessageDelivery]);
+    try {
+      await retryMessageDelivery(edited);
+    } catch (error) {
+      if (isOpenClawActiveLeafChangedError(error)) refreshActiveLeaf(activeSessionKey);
+      throw error;
+    }
+  }, [activeSessionKey, refreshActiveLeaf, retryMessageDelivery]);
 
   const handleDeleteLocalMessage = useCallback((sourceMessage: ChatMessage) => {
     showConfirm(
@@ -976,9 +996,10 @@ function ChatViewContent() {
         sessionId: activeSessionId,
       });
     } catch (err) {
+      if (isOpenClawActiveLeafChangedError(err)) refreshActiveLeaf(activeSessionKey);
       debugError('app', '[InlineButtons] Send error:', err);
     }
-  }, [activeSessionKey, activeSessionId]);
+  }, [activeSessionKey, activeSessionId, refreshActiveLeaf]);
 
   const handleDecisionSelect = useCallback(async (value: string) => {
     const text = value;
@@ -993,9 +1014,10 @@ function ChatViewContent() {
         sessionId: activeSessionId,
       });
     } catch (err) {
+      if (isOpenClawActiveLeafChangedError(err)) refreshActiveLeaf(activeSessionKey);
       debugError('app', '[DecisionCard] Send error:', err);
     }
-  }, [activeSessionKey, activeSessionId, setQuickReplies]);
+  }, [activeSessionKey, activeSessionId, refreshActiveLeaf, setQuickReplies]);
 
   const handleLoadFullMessage = useCallback(async (sourceMessage: ChatMessage) => {
     if (!sourceMessage.nativeMessageId) {
@@ -1475,6 +1497,7 @@ function ChatViewContent() {
                   sessionId: activeSessionId,
                 });
               } catch (err) {
+                if (isOpenClawActiveLeafChangedError(err)) refreshActiveLeaf(activeSessionKey);
                 debugError('app', '[QuickReplyBar] Send error:', err);
               }
             }}

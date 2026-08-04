@@ -220,6 +220,36 @@ test('CHAT-02 active sessions forward normal messages to the Gateway queue autho
   assert.deepEqual(queued, []);
 });
 
+test('普通发送使用当前 Gateway transcript leaf，steer 不伪造该围栏', async () => {
+  const identities: Array<Record<string, unknown> | undefined> = [];
+  const coordinator = new ChatSendCoordinator(
+    {
+      sendMessage: async (_message, _attachments, _sessionKey, identity) => {
+        identities.push(identity);
+        return { runId: identity?.clientMessageId, status: 'started' };
+      },
+    },
+    () => ({
+      addMessage() {},
+      updateMessage() {},
+      setIsTyping() {},
+      typingBySession: {},
+      enqueueMessage() {},
+      sessions: [{ key: 'session-a', activeLeafEntryId: 'leaf-current' }],
+    }),
+  );
+
+  await coordinator.send({
+    sessionKey: 'session-a', message: 'continue', clientMessageId: 'leaf-normal',
+  });
+  await coordinator.send({
+    sessionKey: 'session-a', message: 'redirect', clientMessageId: 'leaf-steer', delivery: 'steer',
+  });
+
+  assert.equal(identities[0]?.expectedLeafEntryId, 'leaf-current');
+  assert.equal(identities[1]?.expectedLeafEntryId, undefined);
+});
+
 test('CHAT-02 local queue remains opt-in while a Gateway run is active', async () => {
   const queued: Array<{ sessionKey: string; message: unknown }> = [];
   let transportCalls = 0;

@@ -40,6 +40,36 @@ test('普通发送不会改写会话推理可见性', async () => {
   }]);
 });
 
+test('普通发送将已验证的 transcript leaf 原样交给 OpenClaw', async () => {
+  const requests: Array<{ method: string; params: GatewayRequestParams }> = [];
+  await dispatchGatewayChatMessage(
+    {
+      isConnected: () => true,
+      request: async (method, params) => {
+        requests.push({ method, params });
+        return { runId: 'run-leaf' };
+      },
+    },
+    { steer: async () => { throw new Error('不应执行 steering'); } },
+    {
+      message: 'keep this on the displayed branch',
+      sessionKey: 'agent:main:desktop',
+      clientMessageId: 'message-leaf',
+      expectedLeafEntryId: 'leaf-current',
+    },
+  );
+
+  assert.deepEqual(requests, [{
+    method: 'chat.send',
+    params: {
+      sessionKey: 'agent:main:desktop',
+      expectedLeafEntryId: 'leaf-current',
+      message: 'keep this on the displayed branch',
+      idempotencyKey: 'message-leaf',
+    },
+  }]);
+});
+
 test('转向发送使用 OpenClaw 的 sessions.steer 且不会退回 chat.send', async () => {
   const requests: Array<{ method: string; params: GatewayRequestParams }> = [];
   const steerCalls: OpenClawSessionSteerInput[] = [];
