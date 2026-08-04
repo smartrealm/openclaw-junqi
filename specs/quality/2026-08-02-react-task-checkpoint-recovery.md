@@ -37,6 +37,8 @@
 - 图的 revision、事件时间和资源锁能够重建确定性只读投影。
 - Jarvis 的打断延迟、abort 到终态延迟、history 核验延迟可观测，但日志不包含密钥、原始音频或完整工具载荷。
 - 通用 Chat、Quick Chat、Jarvis、Dynamic Island 与宠物只通过定义的 intent/projection 边界访问任务状态。
+- 会话切换期间，恢复视图在新 `sessionKey` 或 session identity 的 checkpoint 读取完成前保持为空；
+  不得展示或操作上一会话的 checkpoint。
 
 ## 实施状态
 
@@ -57,5 +59,7 @@
 - 2026-08-03 起，Task Stop checkpoint 写入失败会终止本次 Stop transaction，不能在无持久
   Stop intent 时继续发送 `sessions.abort`；普通 Composer、Jarvis 和 Quick Chat Stop 不再
   清除本地待发送队列。该约束不改变显式队列清理、Session reset/delete 或窗口销毁语义。
+- 2026-08-04 起，恢复视图将其内存结果与目标 `sessionKey`、session identity 严格绑定；
+  React 在 effect 执行前的会话切换首帧不会复用旧 checkpoint。
 
 以下验收条件仍未完成且不能被客户端伪造：真实 Gateway 中工具进程中断的复现、真实副作用工具的幂等/查询/补偿策略、`tasks.*` 账本与 Chat Task 的自动关联、自动恢复或自动重试，以及 macOS/Windows/CentOS/Ubuntu 的真机麦克风、后台常驻和发布验收。

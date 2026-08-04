@@ -119,5 +119,8 @@ LiveKit 的 AgentSession、Server、WebRTC 和独立 STT/LLM/TTS 工具链会与
     `sessions.abort`，不会记录错误后继续中止 Run；普通 Composer、Jarvis 与 Quick Chat 的
     Stop 不再清除 JunQi 本地待发送队列。Gateway 的 run-scoped abort 仍默认省略
     `clearQueued`，显式 queue 清理、Session reset/delete 和 Quick Chat 窗口销毁保持独立语义。
+17. 2026-08-04 的恢复视图补充保证：检查点视图以 `sessionKey` 和 OpenClaw session identity
+    组成的目标身份为界。会话切换的首帧立即隐藏旧 checkpoint，异步读取只在身份仍匹配时显示，
+    因此恢复横幅及其 history 核验动作不会短暂指向上一个 Task。
 
 仍未完成且不能描述为已完成：真实 Gateway 中工具进程中断的复现、真实副作用工具的幂等/查询/补偿策略、将 `tasks.*` 账本自动关联到 Chat Task、自动恢复或自动重试、以及 macOS/Windows/CentOS/Ubuntu 的真机麦克风、后台常驻和发布验收。

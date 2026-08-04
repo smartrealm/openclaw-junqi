@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 import { taskExecutionCoordinator } from './TaskExecutionCoordinator';
+import {
+  projectTaskExecutionCheckpointState,
+  taskExecutionCheckpointTarget,
+  type StoredTaskExecutionCheckpointState,
+} from './checkpointViewState';
 import type { TaskExecutionCheckpoint } from './types';
 
 export interface TaskExecutionCheckpointState {
@@ -11,20 +16,23 @@ export function useTaskExecutionCheckpoint(
   sessionKey: string,
   sessionId?: string,
 ): TaskExecutionCheckpointState {
-  const [state, setState] = useState<TaskExecutionCheckpointState>({
+  const target = taskExecutionCheckpointTarget(sessionKey, sessionId);
+  const [state, setState] = useState<StoredTaskExecutionCheckpointState>({
+    target,
     loading: true,
     checkpoint: null,
   });
 
   useEffect(() => {
     let active = true;
+    setState({ target, loading: true, checkpoint: null });
     const refresh = () => {
       void taskExecutionCoordinator.checkpointForSession(sessionKey, sessionId)
         .then((checkpoint) => {
-          if (active) setState({ loading: false, checkpoint });
+          if (active) setState({ target, loading: false, checkpoint });
         })
         .catch(() => {
-          if (active) setState({ loading: false, checkpoint: null });
+          if (active) setState({ target, loading: false, checkpoint: null });
         });
     };
     const unsubscribe = taskExecutionCoordinator.subscribe(refresh);
@@ -33,7 +41,7 @@ export function useTaskExecutionCheckpoint(
       active = false;
       unsubscribe();
     };
-  }, [sessionId, sessionKey]);
+  }, [sessionId, sessionKey, target]);
 
-  return state;
+  return projectTaskExecutionCheckpointState(state, target);
 }

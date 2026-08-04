@@ -13,6 +13,7 @@
 7. 将协作插件现有的 revision、command lease、UNKNOWN、取消和依赖解锁模式抽取为可复用原则，不将 Workflow Run 或只读 Graph Projection 作为普通 Chat 的状态源。
 8. 建立可观测指标和回归场景：打断、半截 tool call、AbortSignal 竞态、冷启动、session identity 轮换、队列排空、并发独立节点和副作用工具。自动化场景已覆盖前六项的本地状态机边界；真实 Gateway、模型切换和副作用工具仍需外部验收。
 9. 完成 TypeScript、Rust、插件契约、真实 Gateway 及 macOS/Windows/CentOS/Ubuntu 桌面验收。自动化验证已完成；真实 Gateway、副作用工具、麦克风、后台常驻、签名与发布验收仍未执行。
+10. 将检查点 UI 结果与请求的会话目标身份绑定，防止异步冷启动读取或 React 会话切换首帧展示旧 Task 的恢复入口。已于 2026-08-04 完成；回归测试覆盖旧目标结果在新目标下被隐藏。
 
 ## 预计文件范围
 
