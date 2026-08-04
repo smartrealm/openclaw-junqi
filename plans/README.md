@@ -47,6 +47,7 @@ plans/
 
 - [Agent Workspace 能力权威性收敛计划](quality/2026-08-04-agent-workspace-capability-authority.md)
 - [OpenClaw Agent 工作区只读投影计划](quality/2026-08-04-openclaw-agent-workspace-readonly-projection.md)
+- [OpenClaw Agent 引导文件只读投影计划](quality/2026-08-04-openclaw-agent-bootstrap-files-readonly-projection.md)
 - [P0 IPC 与 Gateway 边界收敛](quality/2026-08-03-p0-ipc-and-gateway-boundary.md)
 - [本地 main 对齐与客户端边界](quality/2026-08-04-local-main-alignment-and-client-boundary.md)
 - [OpenClaw Agent 配置快照与并发写入对齐](quality/2026-08-04-openclaw-agent-config-snapshot-alignment.md)

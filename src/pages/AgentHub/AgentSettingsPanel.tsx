@@ -40,6 +40,8 @@ import {
   type ChannelGroupView,
 } from '@/services/channelConfig';
 import type { AgentWorkspaceSkill } from './agentWorkspaceSkills';
+import { AgentBootstrapFilesPanel } from './AgentBootstrapFilesPanel';
+import type { OpenClawAgentBootstrapFile, OpenClawAgentBootstrapFileGet } from '@/services/gateway';
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import {
@@ -87,10 +89,15 @@ interface AgentSettingsPanelProps {
   agentSkills: AgentWorkspaceSkill[];
   loadingAgentSkills: boolean;
   agentSkillsError: string | null;
+  agentBootstrapFiles: readonly OpenClawAgentBootstrapFile[];
+  loadingAgentBootstrapFiles: boolean;
+  agentBootstrapFilesError: string | null;
   workspaceOpen: boolean;
   onClose: () => void;
   onOpenWorkspace: (agent: AgentForPanel) => void;
   onRetryAgentSkills: () => void;
+  onRetryAgentBootstrapFiles: () => void;
+  onGetAgentBootstrapFile: (agentId: string, name: string) => Promise<OpenClawAgentBootstrapFileGet>;
   onSaved: (patch?: Partial<AgentForPanel>) => void;
 }
 
@@ -329,10 +336,15 @@ export function AgentSettingsPanel({
   agentSkills,
   loadingAgentSkills,
   agentSkillsError,
+  agentBootstrapFiles,
+  loadingAgentBootstrapFiles,
+  agentBootstrapFilesError,
   workspaceOpen,
   onClose,
   onOpenWorkspace,
   onRetryAgentSkills,
+  onRetryAgentBootstrapFiles,
+  onGetAgentBootstrapFile,
   onSaved,
 }: AgentSettingsPanelProps) {
   const { t } = useTranslation();
@@ -1327,6 +1339,15 @@ export function AgentSettingsPanel({
                       )}
                     </div>
                   </div>
+
+                  <AgentBootstrapFilesPanel
+                    agentId={agent.id}
+                    files={agentBootstrapFiles}
+                    loading={loadingAgentBootstrapFiles}
+                    error={agentBootstrapFilesError}
+                    onRetry={onRetryAgentBootstrapFiles}
+                    getFile={onGetAgentBootstrapFile}
+                  />
 
                   {/* ── Section: Agent-owned workspace skills ── */}
                   <div>

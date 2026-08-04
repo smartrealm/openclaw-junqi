@@ -35,6 +35,18 @@ test('the drawer presents only parsed agent workspace skills', async () => {
   assert.doesNotMatch(panel, /useSkillsStore/);
 });
 
+test('agent settings presents official bootstrap files through a read-only child panel', async () => {
+  const panel = await read('./AgentSettingsPanel.tsx');
+  const page = await read('./index.tsx');
+
+  assert.match(panel, /<AgentBootstrapFilesPanel/);
+  assert.match(panel, /getFile=\{onGetAgentBootstrapFile\}/);
+  assert.match(page, /gateway\.listAgentBootstrapFiles\(agentId\)/);
+  assert.match(page, /onGetAgentBootstrapFile=\{gateway\.getAgentBootstrapFile\}/);
+  assert.match(page, /agentBootstrapFileRequestRef\.current\[agentId\] !== requestId/);
+  assert.doesNotMatch(panel, /agents\.files\.set/);
+});
+
 test('creating an agent persists skill and fallback overrides through a guarded Gateway patch', async () => {
   const page = await read('./index.tsx');
 

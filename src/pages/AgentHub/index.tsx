@@ -3,7 +3,7 @@
 // Dynamic from Gateway API with animated SVG connections
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
@@ -19,7 +19,11 @@ import { StatusDot } from '@/components/shared/badge';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
-import { gateway, GatewayAgentDisplayNameUpdateError } from '@/services/gateway';
+import {
+  gateway,
+  GatewayAgentDisplayNameUpdateError,
+  type OpenClawAgentBootstrapFile,
+} from '@/services/gateway';
 import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
 import { deleteAgentProfile } from '@/services/agentProfiles';
 import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
@@ -740,6 +744,10 @@ export function AgentHubPage() {
   const [agentWorkspaceSkills, setAgentWorkspaceSkills] = useState<Record<string, AgentWorkspaceSkill[]>>({});
   const [loadingAgentSkills, setLoadingAgentSkills] = useState<Record<string, boolean>>({});
   const [agentSkillErrors, setAgentSkillErrors] = useState<Record<string, string | null>>({});
+  const [agentBootstrapFiles, setAgentBootstrapFiles] = useState<Record<string, readonly OpenClawAgentBootstrapFile[]>>({});
+  const [loadingAgentBootstrapFiles, setLoadingAgentBootstrapFiles] = useState<Record<string, boolean>>({});
+  const [agentBootstrapFileErrors, setAgentBootstrapFileErrors] = useState<Record<string, string | null>>({});
+  const agentBootstrapFileRequestRef = useRef<Record<string, number>>({});
 
   // ── Stable model map from config.get (agents.list never returns models) ──
   // Stored in local state so polling refreshes of agents.list can't overwrite it.
@@ -822,10 +830,36 @@ export function AgentHubPage() {
     }
   }, []);
 
+  const loadAgentBootstrapFiles = useCallback(async (agentId: string) => {
+    const requestId = (agentBootstrapFileRequestRef.current[agentId] ?? 0) + 1;
+    agentBootstrapFileRequestRef.current[agentId] = requestId;
+    setLoadingAgentBootstrapFiles((current) => ({ ...current, [agentId]: true }));
+    setAgentBootstrapFileErrors((current) => ({ ...current, [agentId]: null }));
+    try {
+      const response = await gateway.listAgentBootstrapFiles(agentId);
+      if (agentBootstrapFileRequestRef.current[agentId] !== requestId) return;
+      setAgentBootstrapFiles((current) => ({ ...current, [agentId]: response.files }));
+    } catch (error) {
+      if (agentBootstrapFileRequestRef.current[agentId] !== requestId) return;
+      setAgentBootstrapFileErrors((current) => ({
+        ...current,
+        [agentId]: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      if (agentBootstrapFileRequestRef.current[agentId] !== requestId) return;
+      setLoadingAgentBootstrapFiles((current) => ({ ...current, [agentId]: false }));
+    }
+  }, []);
+
   useEffect(() => {
     const agentId = settingsAgent?.id || selectedAgentId;
     if (agentId) void loadAgentWorkspaceSkills(agentId);
   }, [settingsAgent?.id, selectedAgentId, loadAgentWorkspaceSkills]);
+
+  useEffect(() => {
+    const agentId = settingsAgent?.id || selectedAgentId;
+    if (agentId) void loadAgentBootstrapFiles(agentId);
+  }, [settingsAgent?.id, selectedAgentId, loadAgentBootstrapFiles]);
 
   useEffect(() => {
     const onConfigSaved = () => { void loadAgentConfigMeta(); };
@@ -1067,6 +1101,25 @@ export function AgentHubPage() {
         setSettingsAgent((prev) => prev?.id === agentId ? null : prev);
         setWorkspaceView((current) => current?.id === agentId ? null : current);
         setAgentChannels((prev) => {
+          if (!prev[agentId]) return prev;
+          const next = { ...prev };
+          delete next[agentId];
+          return next;
+        });
+        agentBootstrapFileRequestRef.current[agentId] = (agentBootstrapFileRequestRef.current[agentId] ?? 0) + 1;
+        setAgentBootstrapFiles((prev) => {
+          if (!prev[agentId]) return prev;
+          const next = { ...prev };
+          delete next[agentId];
+          return next;
+        });
+        setLoadingAgentBootstrapFiles((prev) => {
+          if (!prev[agentId]) return prev;
+          const next = { ...prev };
+          delete next[agentId];
+          return next;
+        });
+        setAgentBootstrapFileErrors((prev) => {
           if (!prev[agentId]) return prev;
           const next = { ...prev };
           delete next[agentId];
@@ -2166,6 +2219,9 @@ export function AgentHubPage() {
         agentSkills={settingsAgent ? agentWorkspaceSkills[settingsAgent.id] ?? [] : []}
         loadingAgentSkills={settingsAgent ? loadingAgentSkills[settingsAgent.id] ?? false : false}
         agentSkillsError={settingsAgent ? agentSkillErrors[settingsAgent.id] ?? null : null}
+        agentBootstrapFiles={settingsAgent ? agentBootstrapFiles[settingsAgent.id] ?? [] : []}
+        loadingAgentBootstrapFiles={settingsAgent ? loadingAgentBootstrapFiles[settingsAgent.id] ?? false : false}
+        agentBootstrapFilesError={settingsAgent ? agentBootstrapFileErrors[settingsAgent.id] ?? null : null}
         workspaceOpen={workspaceView !== null}
         agentSessions={
           settingsAgent
@@ -2177,6 +2233,10 @@ export function AgentHubPage() {
         onRetryAgentSkills={() => {
           if (settingsAgent) void loadAgentWorkspaceSkills(settingsAgent.id);
         }}
+        onRetryAgentBootstrapFiles={() => {
+          if (settingsAgent) void loadAgentBootstrapFiles(settingsAgent.id);
+        }}
+        onGetAgentBootstrapFile={gateway.getAgentBootstrapFile}
         onSaved={(patch) => {
           if (settingsAgent && patch) {
             setSettingsAgent((prev) => prev ? { ...prev, ...patch } : prev);
