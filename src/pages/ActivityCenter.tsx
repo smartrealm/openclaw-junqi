@@ -37,7 +37,6 @@ import { resolveStatusLabel } from '@/utils/taskStatusLabels';
 import { createAgentRunTaskRoute } from '@/utils/agentTaskRoute';
 import { OpenClawApprovalsPanel } from '@/components/Activity/OpenClawApprovalsPanel';
 import { OpenClawTaskLedgerPanel } from '@/components/Activity/OpenClawTaskLedgerPanel';
-import { GatewayTaskLedgerPanel } from '@/components/Activity/GatewayTaskLedgerPanel';
 import { GatewayAuditLedgerPanel } from '@/components/Activity/GatewayAuditLedgerPanel';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import {
@@ -462,7 +461,6 @@ export function ActivityCenterPage() {
         </aside>
       </section>
 
-      <GatewayTaskLedgerPanel />
       <GatewayAuditLedgerPanel />
     </SceneTransition>
   );

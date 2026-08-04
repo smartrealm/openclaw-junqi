@@ -149,6 +149,7 @@ docs/
 - [OpenClaw 会话最近中止状态投影](quality/openclaw-session-aborted-last-run-projection-2026-08-04.md)
 - [OpenClaw 会话上下文预算状态投影](quality/openclaw-session-context-budget-status-2026-08-04.md)
 - [OpenClaw 会话目标只读投影](quality/openclaw-session-goal-projection-2026-08-04.md)
+- [OpenClaw 任务账本唯一链路收敛](quality/openclaw-task-ledger-unification-2026-08-04.md)
 - [OpenClaw 模型目录权威性审计](quality/openclaw-model-catalog-authority-alignment-2026-08-04.md)
 - [OpenClaw Talk 事件契约对齐](quality/openclaw-talk-event-contract-alignment-2026-08-04.md)
 - [OpenClaw Talk Barge-in Turn 围栏](quality/openclaw-talk-barge-in-turn-fence-2026-08-04.md)

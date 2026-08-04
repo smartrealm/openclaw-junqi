@@ -331,7 +331,6 @@
       "updatedAt": "Updated",
       "startedAt": "Started",
       "endedAt": "Ended",
-      "toolUseCount": "Tool uses",
       "prompt": "Prompt"
     },
     "attentionTitle": "Needs action",
@@ -357,39 +356,6 @@
       "attention": "Needs action",
       "done": "Completed",
       "failed": "Failed"
-    },
-    "gatewayTasksTitle": "Gateway background tasks",
-    "gatewayTasksSubtitle": "Run summaries from the OpenClaw task ledger",
-    "gatewayTasksUnavailable": "The Gateway task ledger is currently unavailable; loaded summaries are retained.",
-    "gatewayTasksEmpty": "Gateway returned no background tasks.",
-    "inspectTask": "View task details",
-    "taskDetailsUnavailable": "Task details are temporarily unavailable. Try again later.",
-    "cancelTask": "Cancel task",
-    "taskCancelTitle": "Cancel background task",
-    "taskCancelMessage": "JunQi will ask Gateway to cancel “{{title}}”. The final state comes from Gateway.",
-    "taskCancelFailed": "Gateway did not confirm that the task was cancelled.",
-    "taskDetail": {
-      "id": "Task ID",
-      "status": "Status",
-      "title": "Title",
-      "kind": "Kind",
-      "runtime": "Runtime",
-      "agent": "Agent",
-      "run": "Run ID",
-      "session": "Session",
-      "childSession": "Child session",
-      "owner": "Owner",
-      "task": "Related task",
-      "flow": "Flow ID",
-      "parent": "Parent task",
-      "source": "Source ID",
-      "created": "Created",
-      "updated": "Updated",
-      "started": "Started",
-      "ended": "Ended",
-      "progress": "Progress",
-      "terminalSummary": "Terminal summary",
-      "error": "Error"
     },
     "audit": {
       "title": "Gateway audit ledger",
@@ -418,14 +384,6 @@
         "blocked": "Blocked",
         "unknown": "Unknown result"
       }
-    },
-    "taskStatus": {
-      "queued": "Queued",
-      "running": "Running",
-      "completed": "Completed",
-      "failed": "Failed",
-      "cancelled": "Cancelled",
-      "timed_out": "Timed out"
     }
   },
   "dashboard": {

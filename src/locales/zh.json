@@ -322,7 +322,6 @@
       "updatedAt": "更新时间",
       "startedAt": "开始时间",
       "endedAt": "结束时间",
-      "toolUseCount": "工具调用次数",
       "prompt": "提示词"
     },
     "attentionTitle": "需要处理",
@@ -348,39 +347,6 @@
       "attention": "待关注",
       "done": "已完成",
       "failed": "失败"
-    },
-    "gatewayTasksTitle": "Gateway 后台任务",
-    "gatewayTasksSubtitle": "来自 OpenClaw task ledger 的运行摘要",
-    "gatewayTasksUnavailable": "Gateway task ledger 当前不可用，保留已加载的摘要。",
-    "gatewayTasksEmpty": "Gateway 没有返回后台任务。",
-    "inspectTask": "查看任务详情",
-    "taskDetailsUnavailable": "任务详情暂时不可用，请稍后重试。",
-    "cancelTask": "取消任务",
-    "taskCancelTitle": "取消后台任务",
-    "taskCancelMessage": "将向 Gateway 请求取消“{{title}}”。最终状态以 Gateway 返回为准。",
-    "taskCancelFailed": "Gateway 未确认任务已取消。",
-    "taskDetail": {
-      "id": "任务 ID",
-      "status": "状态",
-      "title": "标题",
-      "kind": "类型",
-      "runtime": "运行时",
-      "agent": "Agent",
-      "run": "运行 ID",
-      "session": "会话",
-      "childSession": "子会话",
-      "owner": "所有者",
-      "task": "关联任务",
-      "flow": "流程 ID",
-      "parent": "父任务",
-      "source": "来源 ID",
-      "created": "创建时间",
-      "updated": "更新时间",
-      "started": "开始时间",
-      "ended": "结束时间",
-      "progress": "进度",
-      "terminalSummary": "终态摘要",
-      "error": "错误"
     },
     "audit": {
       "title": "Gateway 审计账本",
@@ -409,14 +375,6 @@
         "blocked": "已阻断",
         "unknown": "未知结果"
       }
-    },
-    "taskStatus": {
-      "queued": "排队中",
-      "running": "运行中",
-      "completed": "已完成",
-      "failed": "失败",
-      "cancelled": "已取消",
-      "timed_out": "已超时"
     }
   },
   "dashboard": {

@@ -148,6 +148,7 @@ plans/
 - [OpenClaw 审批最小权限对齐](quality/2026-08-03-openclaw-approval-scope-alignment.md)
 - [OpenClaw 审批界面与事件收敛](quality/2026-08-04-openclaw-approval-surface-convergence.md)
 - [OpenClaw 原生任务账本](quality/2026-08-03-openclaw-native-task-ledger.md)
+- [OpenClaw 任务账本唯一链路收敛](quality/2026-08-04-openclaw-task-ledger-unification.md)
 - [OpenClaw 原生 Cron 运行语义](quality/2026-08-03-openclaw-native-cron-run.md)
 - [OpenClaw Cron 日历投影](quality/2026-08-03-openclaw-cron-calendar-projection.md)
 - [OpenClaw Cron 调度器状态](quality/2026-08-03-openclaw-cron-scheduler-status.md)

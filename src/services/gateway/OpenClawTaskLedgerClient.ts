@@ -27,8 +27,6 @@ export interface OpenClawTaskSummary {
   readonly updatedAt?: string | number;
   readonly startedAt?: string | number;
   readonly endedAt?: string | number;
-  readonly toolUseCount?: number;
-  readonly lastToolName?: string;
   readonly progressSummary?: string;
   readonly terminalSummary?: string;
   readonly error?: string;
@@ -107,14 +105,6 @@ function optionalTimestamp(value: unknown): string | number | undefined {
   throw new OpenClawTaskLedgerResponseError();
 }
 
-function optionalCount(value: unknown): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new OpenClawTaskLedgerResponseError();
-  }
-  return value;
-}
-
 function isTaskStatus(value: string): value is OpenClawTaskLedgerStatus {
   return TASK_STATUSES.some((status) => status === value);
 }
@@ -136,9 +126,21 @@ function requiredInputString(value: string, message: string): string {
   return value;
 }
 
-export function parseOpenClawTaskSummary(value: unknown): OpenClawTaskSummary {
+const SUMMARY_FIELDS = new Set([
+  'id', 'status', 'kind', 'runtime', 'title', 'agentId', 'sessionKey', 'childSessionKey',
+  'ownerKey', 'runId', 'taskId', 'flowId', 'parentTaskId', 'sourceId', 'createdAt',
+  'updatedAt', 'startedAt', 'endedAt', 'progressSummary', 'terminalSummary', 'error',
+]);
+
+/**
+ * `tasks.get` 的当前 Gateway handler 明确返回 lookup-only prompt；
+ * list 与 cancel 仍严格遵循稳定 TaskSummary schema，不能接纳该扩展字段。
+ */
+export function parseOpenClawTaskSummary(value: unknown, allowPrompt = false): OpenClawTaskSummary {
   const source = record(value);
-  if (!source) throw new OpenClawTaskLedgerResponseError();
+  if (!source || Object.keys(source).some((key) => !SUMMARY_FIELDS.has(key) && !(allowPrompt && key === 'prompt'))) {
+    throw new OpenClawTaskLedgerResponseError();
+  }
   const id = requiredString(source.id);
   const status = taskStatus(source.status);
   const kind = optionalString(source.kind);
@@ -157,8 +159,6 @@ export function parseOpenClawTaskSummary(value: unknown): OpenClawTaskSummary {
   const updatedAt = optionalTimestamp(source.updatedAt);
   const startedAt = optionalTimestamp(source.startedAt);
   const endedAt = optionalTimestamp(source.endedAt);
-  const toolUseCount = optionalCount(source.toolUseCount);
-  const lastToolName = optionalString(source.lastToolName);
   const progressSummary = optionalString(source.progressSummary);
   const terminalSummary = optionalString(source.terminalSummary);
   const error = optionalString(source.error);
@@ -182,8 +182,6 @@ export function parseOpenClawTaskSummary(value: unknown): OpenClawTaskSummary {
     ...(updatedAt === undefined ? {} : { updatedAt }),
     ...(startedAt === undefined ? {} : { startedAt }),
     ...(endedAt === undefined ? {} : { endedAt }),
-    ...(toolUseCount === undefined ? {} : { toolUseCount }),
-    ...(lastToolName === undefined ? {} : { lastToolName }),
     ...(progressSummary === undefined ? {} : { progressSummary }),
     ...(terminalSummary === undefined ? {} : { terminalSummary }),
     ...(error === undefined ? {} : { error }),
@@ -196,7 +194,7 @@ export function parseOpenClawTaskListPage(value: unknown): Omit<OpenClawTaskList
   if (!source || !Array.isArray(source.tasks)) throw new OpenClawTaskLedgerResponseError();
   const nextCursor = optionalString(source.nextCursor);
   return {
-    tasks: source.tasks.map(parseOpenClawTaskSummary),
+    tasks: source.tasks.map((task) => parseOpenClawTaskSummary(task)),
     ...(nextCursor === undefined ? {} : { nextCursor }),
   };
 }
@@ -241,7 +239,7 @@ export class OpenClawTaskLedgerClient {
     try {
       const result = record(await this.request<unknown>(TASKS_GET_METHOD, { taskId: normalizedTaskId }));
       if (!result) throw new OpenClawTaskLedgerResponseError();
-      return parseOpenClawTaskSummary(result.task);
+      return parseOpenClawTaskSummary(result.task, true);
     } catch (error) {
       if (unsupportedMethod(error)) throw new OpenClawTaskLedgerUnsupportedError(TASKS_GET_METHOD);
       throw error;

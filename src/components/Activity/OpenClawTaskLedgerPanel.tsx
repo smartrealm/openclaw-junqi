@@ -9,7 +9,6 @@ import {
   LoaderCircle,
   RefreshCw,
   TerminalSquare,
-  Wrench,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { showConfirm } from '@/components/shared/AlertDialog';
@@ -61,7 +60,6 @@ function metadata(task: OpenClawTaskSummary): Array<{ label: string; value: stri
     ['flowId', task.flowId],
     ['parentTaskId', task.parentTaskId],
     ['sourceId', task.sourceId],
-    ['lastToolName', task.lastToolName],
   ];
   return fields.flatMap(([label, value]) => value === undefined ? [] : [{ label, value }]);
 }
@@ -100,12 +98,6 @@ function TaskDetails({ task }: { task: OpenClawTaskSummary }) {
                 <dd className="font-mono text-aegis-text-secondary">{field.value}</dd>
               </div>
             ))}
-            {task.toolUseCount !== undefined && (
-              <div className="contents">
-                <dt>{t('activity.tasks.toolUseCount', 'Tool uses')}</dt>
-                <dd className="font-mono text-aegis-text-secondary">{task.toolUseCount}</dd>
-              </div>
-            )}
           </dl>
         )}
       </div>
@@ -163,7 +155,6 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-aegis-text-dim">
             <span className="max-w-[230px] truncate font-mono" title={task.id}>{task.id}</span>
             {task.agentId && <span className="inline-flex items-center gap-1"><Bot size={10} />{task.agentId}</span>}
-            {task.lastToolName && <span className="inline-flex items-center gap-1 font-mono"><Wrench size={10} />{task.lastToolName}</span>}
             {time && <span className="inline-flex items-center gap-1"><Clock3 size={10} />{time}</span>}
           </div>
           {task.progressSummary && <p className="mt-1.5 line-clamp-2 whitespace-pre-wrap break-words text-[11px] leading-5 text-aegis-text-secondary">{task.progressSummary}</p>}

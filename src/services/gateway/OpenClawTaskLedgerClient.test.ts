@@ -12,8 +12,6 @@ const task = {
   status: 'running',
   sessionKey: 'agent:main:main',
   updatedAt: 100,
-  toolUseCount: 2,
-  lastToolName: 'read_file',
 };
 
 describe('OpenClawTaskLedgerClient', () => {
@@ -79,14 +77,28 @@ describe('OpenClawTaskLedgerClient', () => {
     await assert.rejects(client.list(), OpenClawTaskLedgerResponseError);
   });
 
+  it('only accepts lookup-only prompt from tasks.get and rejects retired summary fields', async () => {
+    const client = new OpenClawTaskLedgerClient(async (method) => method === 'tasks.get'
+      ? { task: { ...task, prompt: 'preserved task prompt' } } as never
+      : { tasks: [{ ...task, prompt: 'not valid in a list response' }] } as never);
+
+    assert.deepEqual(await client.get('task-1'), { ...task, prompt: 'preserved task prompt' });
+    await assert.rejects(client.list(), OpenClawTaskLedgerResponseError);
+
+    const retiredFieldClient = new OpenClawTaskLedgerClient(async () => ({
+      tasks: [{ ...task, toolUseCount: 1 }],
+    }) as never);
+    await assert.rejects(retiredFieldClient.list(), OpenClawTaskLedgerResponseError);
+  });
+
   it('preserves official empty optional strings without trimming or omitting them', async () => {
     const client = new OpenClawTaskLedgerClient(async () => ({
-      tasks: [{ id: 'task-1', status: 'queued', title: '', progressSummary: '', toolUseCount: 0 }],
+      tasks: [{ id: 'task-1', status: 'queued', title: '', progressSummary: '' }],
     }) as never);
 
     assert.deepEqual(await client.list(), {
       availability: 'available',
-      tasks: [{ id: 'task-1', status: 'queued', title: '', progressSummary: '', toolUseCount: 0 }],
+      tasks: [{ id: 'task-1', status: 'queued', title: '', progressSummary: '' }],
     });
   });
 });

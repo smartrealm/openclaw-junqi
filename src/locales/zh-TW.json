@@ -322,7 +322,6 @@
       "updatedAt": "更新時間",
       "startedAt": "開始時間",
       "endedAt": "結束時間",
-      "toolUseCount": "工具呼叫次數",
       "prompt": "提示詞"
     },
     "attentionTitle": "需要處理",
@@ -348,39 +347,6 @@
       "attention": "待關注",
       "done": "已完成",
       "failed": "失敗"
-    },
-    "gatewayTasksTitle": "Gateway 後台任務",
-    "gatewayTasksSubtitle": "來自 OpenClaw task ledger 的運行摘要",
-    "gatewayTasksUnavailable": "Gateway task ledger 目前不可用，保留已載入的摘要。",
-    "gatewayTasksEmpty": "Gateway 沒有返回後台任務。",
-    "inspectTask": "查看任務詳情",
-    "taskDetailsUnavailable": "任務詳情暫時不可用，請稍後重試。",
-    "cancelTask": "取消任務",
-    "taskCancelTitle": "取消後台任務",
-    "taskCancelMessage": "將向 Gateway 請求取消「{{title}}」。最終狀態以 Gateway 返回為準。",
-    "taskCancelFailed": "Gateway 未確認任務已取消。",
-    "taskDetail": {
-      "id": "任務 ID",
-      "status": "狀態",
-      "title": "標題",
-      "kind": "類型",
-      "runtime": "運行時",
-      "agent": "Agent",
-      "run": "運行 ID",
-      "session": "會話",
-      "childSession": "子會話",
-      "owner": "所有者",
-      "task": "關聯任務",
-      "flow": "流程 ID",
-      "parent": "父任務",
-      "source": "來源 ID",
-      "created": "建立時間",
-      "updated": "更新時間",
-      "started": "開始時間",
-      "ended": "結束時間",
-      "progress": "進度",
-      "terminalSummary": "終態摘要",
-      "error": "錯誤"
     },
     "audit": {
       "title": "Gateway 稽核帳本",
@@ -409,14 +375,6 @@
         "blocked": "已阻斷",
         "unknown": "未知結果"
       }
-    },
-    "taskStatus": {
-      "queued": "排隊中",
-      "running": "運行中",
-      "completed": "已完成",
-      "failed": "失敗",
-      "cancelled": "已取消",
-      "timed_out": "已逾時"
     }
   },
   "dashboard": {
