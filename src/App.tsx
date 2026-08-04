@@ -45,6 +45,7 @@ import {
 } from '@/services/gateway/recoveryProgress';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
 import { parseGatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
+import { parseGatewaySessionAgentStatus } from '@/services/gateway/sessionAgentStatus';
 import { parseGatewaySessionLastRunError } from '@/services/gateway/sessionLastRunError';
 import { parseGatewaySessionThinkingProfile } from '@/services/gateway/sessionThinkingProfile';
 import {
@@ -365,6 +366,7 @@ export default function App() {
           spawnedBy: typeof s.spawnedBy === 'string' ? s.spawnedBy : undefined,
           parentSessionKey: typeof s.parentSessionKey === 'string' ? s.parentSessionKey : undefined,
           status: typeof s.status === 'string' ? s.status : undefined,
+          agentStatus: parseGatewaySessionAgentStatus(s.agentStatus),
           lastRunError: parseGatewaySessionLastRunError(s.lastRunError),
           // Keep an omitted run field as unknown. Treating it as `false`
           // races local streaming state on older Gateway versions.

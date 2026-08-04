@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, AlertCircle, Check, ChevronDown, Crosshair, Download, FileDown, FileText, Folder, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
+import { Activity, AlertCircle, Check, ChevronDown, Crosshair, Download, FileDown, FileText, Folder, MessageSquareText, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -289,6 +289,19 @@ export function SessionContextBar() {
       </span>
       <WorkspacePicker agentId={agentId} current={agent?.workspace} />
       <SessionRuntimeControl />
+      {activeSession?.agentStatus && (
+        <span
+          role="status"
+          className="inline-flex min-w-0 max-w-[min(38vw,340px)] items-center gap-1 text-aegis-text-muted"
+          aria-label={t('chat.sessionAgentStatus', { note: activeSession.agentStatus.note })}
+          title={t('chat.sessionAgentStatus', { note: activeSession.agentStatus.note })}
+        >
+          <MessageSquareText size={11} className="shrink-0" aria-hidden="true" />
+          <span className="hidden truncate text-[10px] lg:inline">
+            {activeSession.agentStatus.note}
+          </span>
+        </span>
+      )}
       {activeSession?.lastRunError && (
         <span
           role="status"

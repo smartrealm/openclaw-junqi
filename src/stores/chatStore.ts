@@ -43,6 +43,7 @@ import type { OpenClawChatSendTiming } from '@/services/gateway/chatSendTiming';
 import type { OpenClawBtwSideResult } from '@/services/gateway/openClawBtw';
 import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
 import type { GatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
+import type { GatewaySessionAgentStatus } from '@/services/gateway/sessionAgentStatus';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -327,6 +328,8 @@ export interface Session {
   spawnedBy?: string;
   parentSessionKey?: string;
   status?: string;
+  /** Gateway 已过滤有效期的会话 Agent 状态说明；缺失时不保留旧值。 */
+  agentStatus?: GatewaySessionAgentStatus | null;
   /** Gateway 记录的最近失败或超时运行摘要；缺失时不保留旧值。 */
   lastRunError?: string | null;
   hasActiveRun?: boolean;
