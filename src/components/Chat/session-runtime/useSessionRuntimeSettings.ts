@@ -14,11 +14,14 @@ import {
   normalizeFastMode,
   normalizeReasoningLevel,
   normalizeThinkingLevel,
+  normalizeVerboseLevel,
   reasoningLevelForGateway,
   thinkingLevelForGateway,
+  verboseLevelForGateway,
   type SessionFastMode,
   type SessionReasoningLevel,
   type SessionThinkingLevel,
+  type SessionVerboseLevel,
 } from './sessionRuntimeDomain';
 
 function settingErrorMessage(error: unknown, fallback: string, invalidResponse: string): string {
@@ -37,6 +40,7 @@ export interface SessionRuntimeSnapshot {
   modelId: string | null;
   thinking: SessionThinkingLevel;
   fastMode: SessionFastMode;
+  verbose: SessionVerboseLevel;
   reasoning: SessionReasoningLevel;
 }
 
@@ -79,6 +83,14 @@ function resolvedPatchFastMode(result: SessionPatchResult): boolean | 'auto' | n
   throw new SessionSettingsResponseError('invalid-payload');
 }
 
+function resolvedPatchVerboseLevel(result: SessionPatchResult): 'on' | 'full' | 'off' | null {
+  const value = result.entry.verboseLevel;
+  if (value === undefined || value === null || value === 'on' || value === 'full' || value === 'off') {
+    return value ?? null;
+  }
+  throw new SessionSettingsResponseError('invalid-payload');
+}
+
 function resolvedPatchReasoningLevel(result: SessionPatchResult): 'on' | 'off' | 'stream' | null {
   const value = result.entry.reasoningLevel;
   if (value === undefined || value === null || value === 'on' || value === 'off' || value === 'stream') {
@@ -97,6 +109,9 @@ export function useSessionRuntimeSettings() {
   const currentFastMode = useChatStore((state) => (
     state.sessions.find((session) => session.key === state.activeSessionKey)?.fastMode ?? null
   ));
+  const currentVerbose = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.verboseLevel ?? null
+  ));
   const currentReasoning = useChatStore((state) => (
     state.sessions.find((session) => session.key === state.activeSessionKey)?.reasoningLevel ?? null
   ));
@@ -107,6 +122,7 @@ export function useSessionRuntimeSettings() {
     modelId: manualModelOverride ?? currentModel,
     thinking: normalizeThinkingLevel(currentThinking),
     fastMode: normalizeFastMode(currentFastMode),
+    verbose: normalizeVerboseLevel(currentVerbose),
     reasoning: normalizeReasoningLevel(currentReasoning),
   };
 
@@ -144,6 +160,9 @@ export function useSessionRuntimeSettings() {
       const previousFastMode = normalizeFastMode(
         stateBefore.sessions.find((session) => session.key === sessionKey)?.fastMode ?? null,
       );
+      const previousVerbose = normalizeVerboseLevel(
+        stateBefore.sessions.find((session) => session.key === sessionKey)?.verboseLevel ?? null,
+      );
       const previousReasoning = normalizeReasoningLevel(
         stateBefore.sessions.find((session) => session.key === sessionKey)?.reasoningLevel ?? null,
       );
@@ -162,6 +181,11 @@ export function useSessionRuntimeSettings() {
       if (draft.fastMode !== previousFastMode) {
         const result = await gateway.setSessionFastMode(fastModeForGateway(draft.fastMode), sessionKey);
         useChatStore.getState().setSessionFastMode(sessionKey, resolvedPatchFastMode(result));
+      }
+
+      if (draft.verbose !== previousVerbose) {
+        const result = await gateway.setSessionVerbose(verboseLevelForGateway(draft.verbose), sessionKey);
+        useChatStore.getState().setSessionVerbose(sessionKey, resolvedPatchVerboseLevel(result));
       }
 
       if (draft.reasoning !== previousReasoning) {

@@ -91,6 +91,26 @@ test('setSessionFastMode updates only the matching session', () => {
   );
 });
 
+test('setSessionVerbose updates only the matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionVerbose(OTHER_KEY, 'full');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.verboseLevel,
+    'full',
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.verboseLevel,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionVerbose(MAIN_KEY, 'off');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.verboseLevel,
+    'off',
+  );
+});
+
 test('setSessionReasoning updates only the matching session', () => {
   seedSessions(MAIN_KEY);
 

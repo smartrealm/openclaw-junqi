@@ -1568,6 +1568,9 @@ export const gateway = {
   async setSessionFastMode(mode: boolean | 'auto' | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setFastMode(sessionKey, mode);
   },
+  async setSessionVerbose(level: 'on' | 'full' | 'off' | null, sessionKey = 'agent:main:main') {
+    return sessionSettings.setVerbose(sessionKey, level);
+  },
   async setSessionReasoning(level: 'on' | 'off' | 'stream' | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setReasoning(sessionKey, level);
   },

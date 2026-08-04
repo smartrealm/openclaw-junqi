@@ -1933,15 +1933,22 @@
       "close": "Esc 关闭",
       "chooseArgument": "选择…"
     },
-    "sessionRuntimeTitle": "会话模型、思考、快速模式与推理可见性",
+    "sessionRuntimeTitle": "会话模型与运行时控制",
     "sessionRuntimeProvider": "供应商",
     "sessionRuntimeModel": "模型",
-    "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}，快速模式 {{fastMode}}，推理可见性 {{reasoning}}",
+    "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}，快速模式 {{fastMode}}，工具输出 {{verbose}}，推理可见性 {{reasoning}}",
     "sessionRuntimeFastMode": "快速模式",
     "sessionRuntimeFastModes": {
       "inherit": "继承",
       "auto": "自动",
       "on": "开启",
+      "off": "关闭"
+    },
+    "sessionRuntimeVerbose": "工具输出详情",
+    "sessionRuntimeVerboseModes": {
+      "inherit": "继承",
+      "on": "开启",
+      "full": "完整",
       "off": "关闭"
     },
     "sessionRuntimeReasoning": "推理可见性",

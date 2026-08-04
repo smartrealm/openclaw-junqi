@@ -1944,15 +1944,22 @@
       "close": "Esc Close",
       "chooseArgument": "Choose…"
     },
-    "sessionRuntimeTitle": "Session model, thinking, fast mode, and reasoning",
+    "sessionRuntimeTitle": "Session model and runtime controls",
     "sessionRuntimeProvider": "Provider",
     "sessionRuntimeModel": "Model",
-    "sessionRuntimeSummary": "{{model}}, thinking {{thinking}}, fast {{fastMode}}, reasoning {{reasoning}}",
+    "sessionRuntimeSummary": "{{model}}, thinking {{thinking}}, fast {{fastMode}}, verbose {{verbose}}, reasoning {{reasoning}}",
     "sessionRuntimeFastMode": "Fast mode",
     "sessionRuntimeFastModes": {
       "inherit": "Inherit",
       "auto": "Auto",
       "on": "On",
+      "off": "Off"
+    },
+    "sessionRuntimeVerbose": "Tool output detail",
+    "sessionRuntimeVerboseModes": {
+      "inherit": "Inherit",
+      "on": "On",
+      "full": "Full",
       "off": "Off"
     },
     "sessionRuntimeReasoning": "Reasoning visibility",

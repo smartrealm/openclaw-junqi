@@ -11,9 +11,11 @@ import {
   SESSION_FAST_MODES,
   SESSION_REASONING_LEVELS,
   SESSION_THINKING_LEVELS,
+  SESSION_VERBOSE_LEVELS,
   type SessionFastMode,
   type SessionReasoningLevel,
   type SessionThinkingLevel,
+  type SessionVerboseLevel,
 } from './sessionRuntimeDomain';
 import { useSessionRuntimeSettings } from './useSessionRuntimeSettings';
 
@@ -25,6 +27,7 @@ export function SessionRuntimeControl() {
   const [draftModelId, setDraftModelId] = useState<string | null>(committed.modelId);
   const [draftThinking, setDraftThinking] = useState<SessionThinkingLevel>(committed.thinking);
   const [draftFastMode, setDraftFastMode] = useState<SessionFastMode>(committed.fastMode);
+  const [draftVerbose, setDraftVerbose] = useState<SessionVerboseLevel>(committed.verbose);
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningLevel>(committed.reasoning);
   const [providerId, setProviderId] = useState(() => committed.modelId ? modelProviderId(committed.modelId) : '');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -34,6 +37,7 @@ export function SessionRuntimeControl() {
   const hasChanges = draftModelId !== committed.modelId
     || draftThinking !== committed.thinking
     || draftFastMode !== committed.fastMode
+    || draftVerbose !== committed.verbose
     || draftReasoning !== committed.reasoning;
 
   useEffect(() => {
@@ -41,9 +45,10 @@ export function SessionRuntimeControl() {
     setDraftModelId(committed.modelId);
     setDraftThinking(committed.thinking);
     setDraftFastMode(committed.fastMode);
+    setDraftVerbose(committed.verbose);
     setDraftReasoning(committed.reasoning);
     setProviderId(committed.modelId ? modelProviderId(committed.modelId) : (groups[0]?.providerId ?? ''));
-  }, [committed.fastMode, committed.modelId, committed.reasoning, committed.thinking, groups, open]);
+  }, [committed.fastMode, committed.modelId, committed.reasoning, committed.thinking, committed.verbose, groups, open]);
 
   useEffect(() => {
     setOpen(false);
@@ -70,6 +75,7 @@ export function SessionRuntimeControl() {
   const modelLabel = modelDisplayName(activeModel, committed.modelId) || t('config.notSet');
   const thinkingLabel = t(`titlebar.thinking.levels.${committed.thinking}`);
   const fastModeLabel = t(`input.sessionRuntimeFastModes.${committed.fastMode}`);
+  const verboseLabel = t(`input.sessionRuntimeVerboseModes.${committed.verbose}`);
   const reasoningLabel = t(`input.sessionRuntimeReasoningModes.${committed.reasoning}`);
   const committedProviderId = committed.modelId ? modelProviderId(committed.modelId) : 'other';
   return (
@@ -88,6 +94,7 @@ export function SessionRuntimeControl() {
           model: modelLabel,
           thinking: thinkingLabel,
           fastMode: fastModeLabel,
+          verbose: verboseLabel,
           reasoning: reasoningLabel,
         })}
       >
@@ -95,10 +102,6 @@ export function SessionRuntimeControl() {
         <span className="min-w-0 truncate font-mono">{modelLabel}</span>
         <span aria-hidden className="text-aegis-text-dim">·</span>
         <span className="shrink-0">{thinkingLabel}</span>
-        <span aria-hidden className="text-aegis-text-dim">·</span>
-        <span className="shrink-0">{fastModeLabel}</span>
-        <span aria-hidden className="text-aegis-text-dim">·</span>
-        <span className="shrink-0">{reasoningLabel}</span>
         <span className="grid size-3 shrink-0 place-items-center">
           {saving
             ? <LoaderCircle size={11} className="animate-spin" />
@@ -224,6 +227,31 @@ export function SessionRuntimeControl() {
 
             <div className="border-t border-aegis-menu-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
+                {t('input.sessionRuntimeVerbose')}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                {SESSION_VERBOSE_LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setDraftVerbose(level)}
+                    disabled={draftVerbose === level}
+                    aria-current={draftVerbose === level ? 'true' : undefined}
+                    className={clsx(
+                      'h-8 rounded-md border px-2 text-[11px] transition-colors',
+                      draftVerbose === level
+                        ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
+                        : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
+                    )}
+                  >
+                    {t(`input.sessionRuntimeVerboseModes.${level}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-aegis-menu-border px-3 py-2.5">
+              <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
                 {t('input.sessionRuntimeReasoning')}
               </div>
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
@@ -278,6 +306,7 @@ export function SessionRuntimeControl() {
                     modelId: draftModelId,
                     thinking: draftThinking,
                     fastMode: draftFastMode,
+                    verbose: draftVerbose,
                     reasoning: draftReasoning,
                   })
                     .then((updated) => { if (updated) setOpen(false); });

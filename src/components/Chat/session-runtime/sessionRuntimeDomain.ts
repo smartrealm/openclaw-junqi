@@ -16,6 +16,10 @@ export const SESSION_FAST_MODES = ['inherit', 'auto', 'on', 'off'] as const;
 
 export type SessionFastMode = (typeof SESSION_FAST_MODES)[number];
 
+export const SESSION_VERBOSE_LEVELS = ['inherit', 'on', 'full', 'off'] as const;
+
+export type SessionVerboseLevel = (typeof SESSION_VERBOSE_LEVELS)[number];
+
 export const SESSION_REASONING_LEVELS = ['inherit', 'on', 'off', 'stream'] as const;
 
 export type SessionReasoningLevel = (typeof SESSION_REASONING_LEVELS)[number];
@@ -74,6 +78,14 @@ export function fastModeForGateway(mode: SessionFastMode): boolean | 'auto' | nu
   if (mode === 'on') return true;
   if (mode === 'off') return false;
   return null;
+}
+
+export function normalizeVerboseLevel(value: unknown): SessionVerboseLevel {
+  return value === 'on' || value === 'full' || value === 'off' ? value : 'inherit';
+}
+
+export function verboseLevelForGateway(mode: SessionVerboseLevel): 'on' | 'full' | 'off' | null {
+  return mode === 'inherit' ? null : mode;
 }
 
 export function normalizeReasoningLevel(value: unknown): SessionReasoningLevel {

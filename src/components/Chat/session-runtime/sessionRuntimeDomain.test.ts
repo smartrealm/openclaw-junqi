@@ -8,10 +8,13 @@ import {
   normalizeFastMode,
   normalizeReasoningLevel,
   normalizeThinkingLevel,
+  normalizeVerboseLevel,
   SESSION_FAST_MODES,
   SESSION_REASONING_LEVELS,
+  SESSION_VERBOSE_LEVELS,
   reasoningLevelForGateway,
   thinkingLevelForGateway,
+  verboseLevelForGateway,
 } from './sessionRuntimeDomain';
 
 test('groupSessionModels derives providers from gateway model ids', () => {
@@ -59,6 +62,20 @@ test('fast modes map exactly to the documented session override values', () => {
   assert.equal(fastModeForGateway('off'), false);
 });
 
+test('verbose tool output maps exactly to the documented session override values', () => {
+  assert.deepEqual(SESSION_VERBOSE_LEVELS, ['inherit', 'on', 'full', 'off']);
+  assert.equal(normalizeVerboseLevel(null), 'inherit');
+  assert.equal(normalizeVerboseLevel(undefined), 'inherit');
+  assert.equal(normalizeVerboseLevel('on'), 'on');
+  assert.equal(normalizeVerboseLevel('full'), 'full');
+  assert.equal(normalizeVerboseLevel('off'), 'off');
+  assert.equal(normalizeVerboseLevel('unexpected'), 'inherit');
+  assert.equal(verboseLevelForGateway('inherit'), null);
+  assert.equal(verboseLevelForGateway('on'), 'on');
+  assert.equal(verboseLevelForGateway('full'), 'full');
+  assert.equal(verboseLevelForGateway('off'), 'off');
+});
+
 test('reasoning visibility maps exactly to the documented session override values', () => {
   assert.deepEqual(SESSION_REASONING_LEVELS, ['inherit', 'on', 'off', 'stream']);
   assert.equal(normalizeReasoningLevel(null), 'inherit');
@@ -78,6 +95,8 @@ test('session runtime picker follows the compact shared provider identity contra
   assert.match(source, /from '@\/components\/shared\/provider-identity'/);
   assert.match(source, /w-\[min\(420px,calc\(100vw-24px\)\)\]/);
   assert.match(source, /grid-cols-\[136px_minmax\(0,1fr\)\]/);
+  assert.match(source, /SESSION_VERBOSE_LEVELS/);
+  assert.doesNotMatch(source, /<span className="shrink-0">\{fastModeLabel\}<\/span>/);
   assert.doesNotMatch(source, /w-\[min\(620px/);
   assert.doesNotMatch(source, /Icon\.provider/);
 });

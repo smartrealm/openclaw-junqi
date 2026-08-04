@@ -98,6 +98,10 @@ export class SessionSettingsClient {
     return this.patch(sessionKey, { fastMode }, true);
   }
 
+  setVerbose(sessionKey: string, verboseLevel: 'on' | 'full' | 'off' | null): Promise<SessionPatchResult> {
+    return this.patch(sessionKey, { verboseLevel }, true);
+  }
+
   setReasoning(sessionKey: string, reasoningLevel: 'on' | 'off' | 'stream' | null): Promise<SessionPatchResult> {
     return this.patch(sessionKey, { reasoningLevel }, true);
   }

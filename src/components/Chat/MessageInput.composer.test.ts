@@ -158,6 +158,7 @@ test('composer menu labels are localized in every shipped language', () => {
     'sessionRuntimeProvider',
     'sessionRuntimeModel',
     'sessionRuntimeFastMode',
+    'sessionRuntimeVerbose',
     'sessionRuntimeReasoning',
     'useDefaultModel',
     'useDefaultModelHint',
@@ -179,6 +180,18 @@ test('composer menu labels are localized in every shipped language', () => {
         typeof locale.input?.sessionRuntimeFastModes?.[mode],
         'string',
         `${language} is missing input.sessionRuntimeFastModes.${mode}`,
+      );
+    }
+    assert.deepEqual(
+      Object.keys(locale.input?.sessionRuntimeVerboseModes ?? {}).sort(),
+      ['full', 'inherit', 'off', 'on'],
+      `${language} is missing an input.sessionRuntimeVerboseModes value`,
+    );
+    for (const level of ['inherit', 'on', 'full', 'off']) {
+      assert.equal(
+        typeof locale.input?.sessionRuntimeVerboseModes?.[level],
+        'string',
+        `${language} is missing input.sessionRuntimeVerboseModes.${level}`,
       );
     }
     assert.deepEqual(

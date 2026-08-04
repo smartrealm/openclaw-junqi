@@ -34,6 +34,8 @@ describe('SessionSettingsClient', () => {
     await client.setThinking(SESSION_KEY, 'high');
     await client.setFastMode(SESSION_KEY, 'auto');
     await client.setFastMode(SESSION_KEY, null);
+    await client.setVerbose(SESSION_KEY, 'full');
+    await client.setVerbose(SESSION_KEY, null);
     await client.setReasoning(SESSION_KEY, 'stream');
     await client.setReasoning(SESSION_KEY, null);
     await client.setLabel(SESSION_KEY, 'Planning');
@@ -44,6 +46,8 @@ describe('SessionSettingsClient', () => {
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, thinkingLevel: 'high' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, fastMode: 'auto' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, fastMode: null } },
+      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, verboseLevel: 'full' } },
+      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, verboseLevel: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, reasoningLevel: 'stream' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, reasoningLevel: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, label: 'Planning' } },

@@ -52,6 +52,7 @@ plans/
 - [OpenClaw `/btw` 临时侧问对齐](quality/2026-08-04-openclaw-btw-side-question.md)
 - [OpenClaw 会话快速模式对齐](quality/2026-08-04-openclaw-session-fast-mode.md)
 - [OpenClaw 会话推理可见性对齐](quality/2026-08-04-openclaw-session-reasoning-visibility.md)
+- [OpenClaw 会话详细工具输出对齐](quality/2026-08-04-openclaw-session-verbose.md)
 
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
 - [Session origin aggregation](quality/2026-07-20-session-origin-aggregation.md)
