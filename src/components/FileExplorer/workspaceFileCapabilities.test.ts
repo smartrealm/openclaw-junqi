@@ -12,7 +12,6 @@ const viewerToolbarSource = readFileSync(new URL("./FileViewerToolbar.tsx", impo
 const markdownPreviewSource = readFileSync(new URL("./MarkdownPreview.tsx", import.meta.url), "utf8");
 const localEditorDocumentsSource = readFileSync(new URL("../../workspace-files/services/localEditorDocuments.ts", import.meta.url), "utf8");
 const managerSource = readFileSync(new URL("../../pages/file-manager/WorkspaceFileManager.tsx", import.meta.url), "utf8");
-const workspacePanelSource = readFileSync(new URL("../Workspace/WorkspacePanel.tsx", import.meta.url), "utf8");
 const editorThemeSource = readFileSync(new URL("../../utils/codeMirrorTheme.ts", import.meta.url), "utf8");
 const stylesSource = readFileSync(new URL("../../styles/index.css", import.meta.url), "utf8");
 const tauriLibSource = readFileSync(new URL("../../../src-tauri/src/lib.rs", import.meta.url), "utf8");
@@ -49,8 +48,6 @@ test("file viewer defaults markdown to preview and supports explicit durable sav
 test("file viewer keeps editor and Markdown preview readable in every application theme", () => {
   assert.match(managerSource, /const resolvedTheme = useTheme\(\)/);
   assert.match(managerSource, /themeVariant=\{themeVariant\}/);
-  assert.match(workspacePanelSource, /const resolvedTheme = useTheme\(\)/);
-  assert.match(workspacePanelSource, /<FileViewer[\s\S]*themeVariant=\{themeVariant\}/);
   assert.match(previewPaneSource, /const extensions = useMemo\([\s\S]*languageExtension,[\s\S]*aegisCodeMirrorBaseTheme/);
   assert.match(editorThemeSource, /color: 'rgb\(var\(--aegis-text\)\)'/);
   assert.match(editorThemeSource, /color: 'rgb\(var\(--aegis-text-dim\)\)'/);
@@ -69,9 +66,7 @@ test("guarded file writes stay registered across the TypeScript and Rust IPC bou
   assert.match(fsCommandSource, /pub async fn write_file_content_if_unchanged\([\s\S]*expected_content: String/);
 });
 
-test("workspace previews share one typed IPC contract and never edit unknown binary files", () => {
-  assert.match(workspacePanelSource, /<FileViewer/);
-  assert.doesNotMatch(workspacePanelSource, /readFilePreview|writeFileText|FileReadOnlyPreview/);
+test("local workspace previews share one typed IPC contract and never edit unknown binary files", () => {
   assert.match(previewPaneSource, /<FileReadOnlyPreview/);
   assert.match(documentHookSource, /readFilePreview\(filePath, projectPath\)/);
   assert.match(tauriLibSource, /commands::fs_neu::read_file_preview/);

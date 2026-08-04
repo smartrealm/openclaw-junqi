@@ -2794,6 +2794,18 @@
     "saveFailed": "Failed to save",
     "selectRuntimeChannel": "Select a channel from the current OpenClaw Runtime"
   },
+  "agentWorkspaceBrowser": {
+    "title": "Agent workspace",
+    "readOnly": "Read-only Gateway view",
+    "parent": "Parent directory",
+    "loading": "Loading workspace",
+    "unavailable": "Gateway workspace is unavailable",
+    "empty": "This directory is empty",
+    "root": "Root",
+    "loadingFile": "Loading file",
+    "fileUnavailable": "File preview is unavailable",
+    "selectFile": "Select a file to preview"
+  },
   "channelsCenter": {
     "title": "Channel Center",
     "subtitle": "Connect agents to channels provided by the selected OpenClaw Runtime.",

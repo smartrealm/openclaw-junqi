@@ -2726,6 +2726,18 @@
     "saveFailed": "保存失敗",
     "selectRuntimeChannel": "从当前 OpenClaw Runtime 选择渠道"
   },
+  "agentWorkspaceBrowser": {
+    "title": "智能體工作區",
+    "readOnly": "Gateway 唯讀檢視",
+    "parent": "上層目錄",
+    "loading": "正在載入工作區",
+    "unavailable": "Gateway 工作區無法使用",
+    "empty": "此目錄為空",
+    "root": "根目錄",
+    "loadingFile": "正在載入檔案",
+    "fileUnavailable": "檔案預覽無法使用",
+    "selectFile": "選擇檔案以預覽"
+  },
   "channelsCenter": {
     "title": "通道",
     "subtitle": "连接当前所选 OpenClaw Runtime 提供的渠道。",

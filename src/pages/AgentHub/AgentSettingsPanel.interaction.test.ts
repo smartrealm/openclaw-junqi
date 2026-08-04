@@ -17,10 +17,12 @@ test('workspace opens in the parent content area instead of inside the drawer', 
   const panel = await read('./AgentSettingsPanel.tsx');
   const page = await read('./index.tsx');
 
-  assert.match(panel, /onOpenWorkspace\(agent, trimmedWorkspace \|\| undefined\)/);
-  assert.doesNotMatch(panel, /<WorkspacePanel/);
+  assert.match(panel, /onOpenWorkspace\(agent\)/);
+  assert.doesNotMatch(panel, /<OpenClawAgentWorkspacePanel/);
   assert.match(page, /workspaceView \? \(/);
-  assert.match(page, /<WorkspacePanel/);
+  assert.match(page, /<OpenClawAgentWorkspacePanel/);
+  assert.match(page, /listWorkspace=\{gateway\.listAgentWorkspace\}/);
+  assert.doesNotMatch(page, /rootOverride=/);
   assert.match(page, /settingsAgent && 'pe-\[340px\]'/);
 });
 

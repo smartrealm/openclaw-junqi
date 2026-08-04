@@ -89,6 +89,10 @@ import { OpenClawSessionUsageLogsClient } from './OpenClawSessionUsageLogsClient
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
 import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
 import { OpenClawAgentIdentityClient } from './OpenClawAgentIdentityClient';
+import {
+  OpenClawAgentsWorkspaceClient,
+  type OpenClawAgentsWorkspaceListInput,
+} from './OpenClawAgentsWorkspaceClient';
 import { OpenClawAgentWaitClient } from './OpenClawAgentWaitClient';
 import { OpenClawPendingRunWaitReconciler } from './OpenClawPendingRunWaitReconciler';
 import {
@@ -183,6 +187,12 @@ export type {
   OpenClawAgentIdentity,
   OpenClawAgentIdentityInput,
 } from './OpenClawAgentIdentityClient';
+export type {
+  OpenClawAgentWorkspaceEntry,
+  OpenClawAgentWorkspaceFile,
+  OpenClawAgentWorkspaceList,
+  OpenClawAgentsWorkspaceListInput,
+} from './OpenClawAgentsWorkspaceClient';
 export type {
   OpenClawAgentWaitResult,
   OpenClawAgentWaitStatus,
@@ -562,6 +572,18 @@ export const openClawCommandsClient = new OpenClawCommandsClient({
 });
 
 export const openClawAgentIdentityClient = new OpenClawAgentIdentityClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawAgentsWorkspaceClient = new OpenClawAgentsWorkspaceClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
@@ -1469,6 +1491,12 @@ export const gateway = {
     expectedConnectionId?: string,
   ) {
     return sessionFiles.set(sessionKey, path, content, expectedHash, agentId, expectedConnectionId);
+  },
+  async listAgentWorkspace(input: OpenClawAgentsWorkspaceListInput) {
+    return openClawAgentsWorkspaceClient.list(input);
+  },
+  async getAgentWorkspaceFile(agentId: string, path: string) {
+    return openClawAgentsWorkspaceClient.get(agentId, path);
   },
   async listSessionArtifacts(sessionKey: string, agentId?: string): Promise<ArtifactSummary[]> {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);

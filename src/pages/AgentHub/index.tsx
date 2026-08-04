@@ -38,7 +38,7 @@ import {
   findCanonicalAgentMainSession,
   type AgentSessionKind,
 } from '@/utils/sessionPresentation';
-import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
+import { OpenClawAgentWorkspacePanel } from '@/components/Workspace/OpenClawAgentWorkspacePanel';
 import { parseAgentWorkspaceSkills, type AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import { persistAgentCreationOverrides } from './agentCreationConfig';
 import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
@@ -733,7 +733,7 @@ export function AgentHubPage() {
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentFormError, setAgentFormError] = useState<string | null>(null);
   const [settingsAgent, setSettingsAgent] = useState<AgentInfo | null>(null);
-  const [workspaceView, setWorkspaceView] = useState<{ agent: AgentInfo; root?: string } | null>(null);
+  const [workspaceView, setWorkspaceView] = useState<AgentInfo | null>(null);
   const [shareExportAgent, setShareExportAgent] = useState<AgentInfo | null>(null);
   const [shareImportOpen, setShareImportOpen] = useState(false);
   const [newAgentSkillKeys, setNewAgentSkillKeys] = useState<string[]>([]);
@@ -1065,7 +1065,7 @@ export function AgentHubPage() {
         setDeletingAgentId(null);
         if (selectedAgentId === agentId) setSelectedAgentId(null);
         setSettingsAgent((prev) => prev?.id === agentId ? null : prev);
-        setWorkspaceView((current) => current?.agent.id === agentId ? null : current);
+        setWorkspaceView((current) => current?.id === agentId ? null : current);
         setAgentChannels((prev) => {
           if (!prev[agentId]) return prev;
           const next = { ...prev };
@@ -1228,9 +1228,10 @@ export function AgentHubPage() {
     <PageTransition className={workspaceView ? 'h-full min-h-0' : 'p-6 space-y-6 max-w-[1200px] mx-auto'}>
       {workspaceView ? (
         <div className={clsx('h-full min-h-0', settingsAgent && 'pe-[340px]')}>
-          <WorkspacePanel
-            agentId={workspaceView.agent.id}
-            rootOverride={workspaceView.root}
+          <OpenClawAgentWorkspacePanel
+            agentId={workspaceView.id}
+            listWorkspace={gateway.listAgentWorkspace}
+            getWorkspaceFile={gateway.getAgentWorkspaceFile}
             onClose={() => setWorkspaceView(null)}
           />
         </div>
@@ -1880,28 +1881,26 @@ export function AgentHubPage() {
                                 <div className="mt-1 text-[11px] font-semibold text-aegis-text truncate">{previewLast ? timeAgo(previewLast) : t('agentHub.idle', 'Idle')}</div>
                               </div>
                             </div>
-                            {selectedAgent.workspace && (
-                              <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
-                                    <FolderOpen size={11} />
-                                    {t('agentSettings.workspace', 'Workspace')}
-                                  </div>
-                                  <div className="mt-1 text-[10px] text-aegis-text-dim font-mono truncate">
-                                    {selectedAgent.workspace}
-                                  </div>
+                            <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
+                                  <FolderOpen size={11} />
+                                  {t('agentSettings.workspace', 'Workspace')}
                                 </div>
-                                <button
-                                  onClick={() => {
-                                    setWorkspaceView({ agent: selectedAgent, root: selectedAgent.workspace });
-                                    setSettingsAgent(selectedAgent);
-                                  }}
-                                  className="shrink-0 px-3 py-1.5 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-bold text-aegis-primary"
-                                >
-                                  {t('agentSettings.showWorkspaceFiles', 'Open workspace files')}
-                                </button>
+                                <div className="mt-1 text-[10px] text-aegis-text-dim">
+                                  {t('agentWorkspaceBrowser.readOnly', 'Read-only Gateway view')}
+                                </div>
                               </div>
-                            )}
+                              <button
+                                onClick={() => {
+                                  setWorkspaceView(selectedAgent);
+                                  setSettingsAgent(selectedAgent);
+                                }}
+                                className="shrink-0 px-3 py-1.5 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-bold text-aegis-primary"
+                              >
+                                {t('agentSettings.showWorkspaceFiles', 'Open workspace files')}
+                              </button>
+                            </div>
                             <div className="mt-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
@@ -2174,7 +2173,7 @@ export function AgentHubPage() {
             : []
         }
         onClose={() => setSettingsAgent(null)}
-        onOpenWorkspace={(agent, root) => setWorkspaceView({ agent: agent as AgentInfo, root })}
+        onOpenWorkspace={(agent) => setWorkspaceView(agent as AgentInfo)}
         onRetryAgentSkills={() => {
           if (settingsAgent) void loadAgentWorkspaceSkills(settingsAgent.id);
         }}

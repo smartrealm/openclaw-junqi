@@ -89,7 +89,7 @@ interface AgentSettingsPanelProps {
   agentSkillsError: string | null;
   workspaceOpen: boolean;
   onClose: () => void;
-  onOpenWorkspace: (agent: AgentForPanel, workspace?: string) => void;
+  onOpenWorkspace: (agent: AgentForPanel) => void;
   onRetryAgentSkills: () => void;
   onSaved: (patch?: Partial<AgentForPanel>) => void;
 }
@@ -1081,7 +1081,7 @@ export function AgentSettingsPanel({
                         />
                         <button
                           type="button"
-                          onClick={() => onOpenWorkspace(agent, trimmedWorkspace || undefined)}
+                          onClick={() => onOpenWorkspace(agent)}
                           className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-aegis-border px-2.5 py-1.5 text-[10px] font-bold text-aegis-text-muted hover:border-aegis-primary/35 hover:bg-aegis-primary/10 hover:text-aegis-primary transition-colors"
                         >
                           <FolderOpen size={12} />
