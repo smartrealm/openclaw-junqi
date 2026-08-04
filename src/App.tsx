@@ -15,6 +15,7 @@ const PairingScreen = lazy(() => import('@/components/PairingScreen').then(m => 
 const GatewayErrorScreen = lazy(() => import('@/components/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
 const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
 const DynamicIslandRuntime = lazy(() => import('@/dynamic-island/DynamicIslandRuntime'));
+const OpenClawSessionViewerPresenceRuntime = lazy(() => import('@/runtime/OpenClawSessionViewerPresenceRuntime'));
 const NotificationPreferencesRuntime = lazy(() => import('@/runtime/NotificationPreferencesRuntime'));
 import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
@@ -1150,6 +1151,7 @@ export default function App() {
       window.removeEventListener('aegis:sessions-changed', handleSessionsChanged);
       window.removeEventListener('aegis:manual-reconnect', handleManualReconnect);
       gateway.forgetSessionTranscript();
+      gateway.forgetSessionViewerPresence();
       gatewayManager.destroy();
     };
   }, [loadAvailableModels, setupComplete, cachedSetupValidationPending, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure, markInitialWorkspaceDataReady]);
@@ -1248,6 +1250,11 @@ export default function App() {
           <NotificationPreferencesRuntime />
         </Suspense>
         <LazyPetRuntimeHost />
+        {hasTauriEventBridge() && (
+          <Suspense fallback={null}>
+            <OpenClawSessionViewerPresenceRuntime setupComplete={setupComplete === true} />
+          </Suspense>
+        )}
         {hasTauriEventBridge() && (
           <Suspense fallback={null}>
             <DynamicIslandRuntime />

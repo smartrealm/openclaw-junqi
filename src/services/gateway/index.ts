@@ -71,6 +71,7 @@ import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
 import { OpenClawSessionBranchesClient } from './OpenClawSessionBranchesClient';
 import { OpenClawSessionMessageCutClient } from './OpenClawSessionMessageCutClient';
 import { OpenClawSessionObserverClient } from './OpenClawSessionObserverClient';
+import { OpenClawSessionViewerPresenceClient } from './OpenClawSessionViewerPresenceClient';
 import {
   openClawSessionObserverStream,
   routeOpenClawSessionObserverEvent,
@@ -162,6 +163,7 @@ export type {
   OpenClawSessionForkResult,
   OpenClawSessionRewindResult,
 } from './OpenClawSessionMessageCutClient';
+export type { OpenClawSessionViewerPresenceResult } from './OpenClawSessionViewerPresenceClient';
 export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
 export type { OpenClawProviderUsageSnapshot } from './OpenClawProviderUsageClient';
 export type {
@@ -408,6 +410,17 @@ const connection = new GatewayConnection();
 const chatHandler = new ChatHandler(connection);
 const transcriptSubscription = new OpenClawSessionTranscriptSubscription(connection);
 export const openClawSessionObserverClient = new OpenClawSessionObserverClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+const sessionViewerPresence = new OpenClawSessionViewerPresenceClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
@@ -1183,12 +1196,17 @@ export const gateway = {
   },
   resetSessionTranscriptTransport() { transcriptSubscription.resetTransport(); },
   forgetSessionTranscript() { transcriptSubscription.forget(); },
+  async setVisibleSessionKeys(sessionKeys: readonly string[]) {
+    return sessionViewerPresence.setVisibleSessions(sessionKeys);
+  },
+  forgetSessionViewerPresence() { sessionViewerPresence.resetTransport(); },
 
   // Connection
   connect(url: string, token: string, deviceToken = '') { connection.connect(url, token, deviceToken); },
   disconnect() {
     approvalEventSubscription.stop();
     transcriptSubscription.resetTransport();
+    sessionViewerPresence.resetTransport();
     openClawSessionObserverClient.resetTransport();
     openClawSessionObserverStream.clear();
     connection.disconnect();
