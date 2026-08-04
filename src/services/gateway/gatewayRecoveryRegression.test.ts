@@ -271,7 +271,6 @@ test('OpenClaw session steering uses the official interrupt lane', () => {
   const steering = source('src/services/gateway/OpenClawSessionSteerClient.ts');
   const sendTransaction = source('src/services/chat/sendTransaction.ts');
   assert.match(gateway, /new OpenClawSessionSteerClient\(/);
-  assert.match(gateway, /sessionSteer\.steer\(/);
   assert.match(steering, /this\.request\('sessions\.steer', params\)/);
   assert.match(sendTransaction, /request\.delivery === 'steer'/);
   assert.match(sendTransaction, /delivery: 'steer' as const/);

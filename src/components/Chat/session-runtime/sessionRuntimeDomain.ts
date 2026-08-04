@@ -26,6 +26,12 @@ export type SessionTraceWriteLevel = (typeof SESSION_TRACE_LEVELS)[number];
 
 export type SessionTraceLevel = SessionTraceWriteLevel | 'unsupported';
 
+export const SESSION_RESPONSE_USAGE_LEVELS = ['inherit', 'off', 'tokens', 'full'] as const;
+
+export type SessionResponseUsageWriteLevel = (typeof SESSION_RESPONSE_USAGE_LEVELS)[number];
+
+export type SessionResponseUsageLevel = SessionResponseUsageWriteLevel | 'unsupported';
+
 export const SESSION_REASONING_LEVELS = ['inherit', 'on', 'off', 'stream'] as const;
 
 export type SessionReasoningLevel = (typeof SESSION_REASONING_LEVELS)[number];
@@ -100,6 +106,16 @@ export function normalizeTraceLevel(value: unknown): SessionTraceLevel {
 }
 
 export function traceLevelForGateway(mode: SessionTraceWriteLevel): 'on' | 'off' | null {
+  return mode === 'inherit' ? null : mode;
+}
+
+export function normalizeResponseUsage(value: unknown): SessionResponseUsageLevel {
+  if (value === undefined || value === null) return 'inherit';
+  if (value === 'on') return 'tokens';
+  return value === 'off' || value === 'tokens' || value === 'full' ? value : 'unsupported';
+}
+
+export function responseUsageForGateway(mode: SessionResponseUsageWriteLevel): 'off' | 'tokens' | 'full' | null {
   return mode === 'inherit' ? null : mode;
 }
 

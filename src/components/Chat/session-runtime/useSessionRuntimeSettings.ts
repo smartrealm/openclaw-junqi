@@ -13,15 +13,18 @@ import {
   fastModeForGateway,
   normalizeFastMode,
   normalizeReasoningLevel,
+  normalizeResponseUsage,
   normalizeTraceLevel,
   normalizeThinkingLevel,
   normalizeVerboseLevel,
   reasoningLevelForGateway,
+  responseUsageForGateway,
   traceLevelForGateway,
   thinkingLevelForGateway,
   verboseLevelForGateway,
   type SessionFastMode,
   type SessionReasoningLevel,
+  type SessionResponseUsageLevel,
   type SessionTraceLevel,
   type SessionThinkingLevel,
   type SessionVerboseLevel,
@@ -45,6 +48,7 @@ export interface SessionRuntimeSnapshot {
   fastMode: SessionFastMode;
   verbose: SessionVerboseLevel;
   trace: SessionTraceLevel;
+  responseUsage: SessionResponseUsageLevel;
   reasoning: SessionReasoningLevel;
 }
 
@@ -102,6 +106,13 @@ function resolvedPatchTraceLevel(result: SessionPatchResult): string | null {
   throw new SessionSettingsResponseError('invalid-payload');
 }
 
+function resolvedPatchResponseUsage(result: SessionPatchResult): string | null {
+  const value = result.entry.responseUsage;
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string' && value.trim()) return value;
+  throw new SessionSettingsResponseError('invalid-payload');
+}
+
 function resolvedPatchReasoningLevel(result: SessionPatchResult): 'on' | 'off' | 'stream' | null {
   const value = result.entry.reasoningLevel;
   if (value === undefined || value === null || value === 'on' || value === 'off' || value === 'stream') {
@@ -126,6 +137,9 @@ export function useSessionRuntimeSettings() {
   const currentTrace = useChatStore((state) => (
     state.sessions.find((session) => session.key === state.activeSessionKey)?.traceLevel ?? null
   ));
+  const currentResponseUsage = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.responseUsage ?? null
+  ));
   const currentReasoning = useChatStore((state) => (
     state.sessions.find((session) => session.key === state.activeSessionKey)?.reasoningLevel ?? null
   ));
@@ -138,6 +152,7 @@ export function useSessionRuntimeSettings() {
     fastMode: normalizeFastMode(currentFastMode),
     verbose: normalizeVerboseLevel(currentVerbose),
     trace: normalizeTraceLevel(currentTrace),
+    responseUsage: normalizeResponseUsage(currentResponseUsage),
     reasoning: normalizeReasoningLevel(currentReasoning),
   };
 
@@ -181,6 +196,9 @@ export function useSessionRuntimeSettings() {
       const previousTrace = normalizeTraceLevel(
         stateBefore.sessions.find((session) => session.key === sessionKey)?.traceLevel ?? null,
       );
+      const previousResponseUsage = normalizeResponseUsage(
+        stateBefore.sessions.find((session) => session.key === sessionKey)?.responseUsage ?? null,
+      );
       const previousReasoning = normalizeReasoningLevel(
         stateBefore.sessions.find((session) => session.key === sessionKey)?.reasoningLevel ?? null,
       );
@@ -213,6 +231,15 @@ export function useSessionRuntimeSettings() {
           sessionKey,
         );
         useChatStore.getState().setSessionTrace(sessionKey, resolvedPatchTraceLevel(result));
+      }
+
+      if (draft.responseUsage !== previousResponseUsage) {
+        if (draft.responseUsage === 'unsupported') throw new SessionSettingsResponseError('invalid-payload');
+        const result = await gateway.setSessionResponseUsage(
+          responseUsageForGateway(draft.responseUsage),
+          sessionKey,
+        );
+        useChatStore.getState().setSessionResponseUsage(sessionKey, resolvedPatchResponseUsage(result));
       }
 
       if (draft.reasoning !== previousReasoning) {

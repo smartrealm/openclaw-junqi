@@ -161,6 +161,8 @@ test('composer menu labels are localized in every shipped language', () => {
     'sessionRuntimeVerbose',
     'sessionRuntimeTrace',
     'sessionRuntimeTraceUnsupported',
+    'sessionRuntimeResponseUsage',
+    'sessionRuntimeResponseUsageUnsupported',
     'sessionRuntimeReasoning',
     'useDefaultModel',
     'useDefaultModelHint',
@@ -206,6 +208,18 @@ test('composer menu labels are localized in every shipped language', () => {
         typeof locale.input?.sessionRuntimeTraceModes?.[level],
         'string',
         `${language} is missing input.sessionRuntimeTraceModes.${level}`,
+      );
+    }
+    assert.deepEqual(
+      Object.keys(locale.input?.sessionRuntimeResponseUsageModes ?? {}).sort(),
+      ['full', 'inherit', 'off', 'tokens', 'unsupported'],
+      `${language} is missing an input.sessionRuntimeResponseUsageModes value`,
+    );
+    for (const level of ['inherit', 'off', 'tokens', 'full', 'unsupported']) {
+      assert.equal(
+        typeof locale.input?.sessionRuntimeResponseUsageModes?.[level],
+        'string',
+        `${language} is missing input.sessionRuntimeResponseUsageModes.${level}`,
       );
     }
     assert.deepEqual(

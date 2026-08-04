@@ -52,6 +52,7 @@ JunQi Desktop 是基于 Tauri 2、Rust、React 18、TypeScript、Vite 6 和 Open
 
 ## 工程边界
 
+- 代码注释必须使用中文。新增注释一律使用中文；修改现有注释的语义时必须同步改为中文。不得为翻译注释进行与当前任务无关的批量重构。
 - 遵守 `scripts/check-boundaries.mjs`：`services/` 不依赖 `stores/` 或 `theme/`；`components/` 不直接依赖 `services/`；`pages/` 不跨过服务与 IPC 边界访问后端状态。
 - Tauri IPC 必须跨文件核对：前端 command 名、参数外层、参数大小写和返回类型要与 `src-tauri/src/lib.rs` 注册项及对应 `#[tauri::command]` 完全一致。
 - Rust `serde(rename_all = ...)` 是前端字段命名的契约。禁止用 `any`、强制断言或静默默认值掩盖 IPC 契约漂移。

@@ -1936,7 +1936,7 @@
     "sessionRuntimeTitle": "会话模型与运行时控制",
     "sessionRuntimeProvider": "供应商",
     "sessionRuntimeModel": "模型",
-    "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}，快速模式 {{fastMode}}，工具输出 {{verbose}}，插件追踪 {{trace}}，推理可见性 {{reasoning}}",
+    "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}，快速模式 {{fastMode}}，工具输出 {{verbose}}，插件追踪 {{trace}}，响应使用量 {{responseUsage}}，推理可见性 {{reasoning}}",
     "sessionRuntimeFastMode": "快速模式",
     "sessionRuntimeFastModes": {
       "inherit": "继承",
@@ -1957,6 +1957,15 @@
       "inherit": "继承",
       "on": "开启",
       "off": "关闭",
+      "unsupported": "Gateway 值不可用"
+    },
+    "sessionRuntimeResponseUsage": "响应使用量详情",
+    "sessionRuntimeResponseUsageUnsupported": "Gateway 返回了当前客户端无法修改的响应使用量值。请选择受支持状态后再覆盖。",
+    "sessionRuntimeResponseUsageModes": {
+      "inherit": "继承",
+      "off": "关闭",
+      "tokens": "令牌",
+      "full": "完整",
       "unsupported": "Gateway 值不可用"
     },
     "sessionRuntimeReasoning": "推理可见性",

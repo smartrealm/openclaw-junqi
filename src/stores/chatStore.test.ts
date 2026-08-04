@@ -131,6 +131,26 @@ test('setSessionTrace preserves an unrecognized Gateway value on the matching se
   );
 });
 
+test('setSessionResponseUsage preserves the legacy alias and updates only the matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionResponseUsage(OTHER_KEY, 'on');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.responseUsage,
+    'on',
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.responseUsage,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionResponseUsage(MAIN_KEY, 'full');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.responseUsage,
+    'full',
+  );
+});
+
 test('setSessionReasoning updates only the matching session', () => {
   seedSessions(MAIN_KEY);
 

@@ -1574,6 +1574,9 @@ export const gateway = {
   async setSessionTrace(level: 'on' | 'off' | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setTrace(sessionKey, level);
   },
+  async setSessionResponseUsage(level: 'off' | 'tokens' | 'full' | null, sessionKey = 'agent:main:main') {
+    return sessionSettings.setResponseUsage(sessionKey, level);
+  },
   async setSessionReasoning(level: 'on' | 'off' | 'stream' | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setReasoning(sessionKey, level);
   },

@@ -38,6 +38,8 @@ describe('SessionSettingsClient', () => {
     await client.setVerbose(SESSION_KEY, null);
     await client.setTrace(SESSION_KEY, 'on');
     await client.setTrace(SESSION_KEY, null);
+    await client.setResponseUsage(SESSION_KEY, 'full');
+    await client.setResponseUsage(SESSION_KEY, null);
     await client.setReasoning(SESSION_KEY, 'stream');
     await client.setReasoning(SESSION_KEY, null);
     await client.setLabel(SESSION_KEY, 'Planning');
@@ -52,6 +54,8 @@ describe('SessionSettingsClient', () => {
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, verboseLevel: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, traceLevel: 'on' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, traceLevel: null } },
+      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, responseUsage: 'full' } },
+      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, responseUsage: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, reasoningLevel: 'stream' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, reasoningLevel: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, label: 'Planning' } },

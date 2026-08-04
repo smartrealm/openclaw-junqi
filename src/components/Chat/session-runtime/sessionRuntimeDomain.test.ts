@@ -7,14 +7,17 @@ import {
   modelDisplayName,
   normalizeFastMode,
   normalizeReasoningLevel,
+  normalizeResponseUsage,
   normalizeTraceLevel,
   normalizeThinkingLevel,
   normalizeVerboseLevel,
   SESSION_FAST_MODES,
   SESSION_REASONING_LEVELS,
+  SESSION_RESPONSE_USAGE_LEVELS,
   SESSION_TRACE_LEVELS,
   SESSION_VERBOSE_LEVELS,
   reasoningLevelForGateway,
+  responseUsageForGateway,
   traceLevelForGateway,
   thinkingLevelForGateway,
   verboseLevelForGateway,
@@ -92,6 +95,21 @@ test('plugin trace writes only documented overrides and preserves unknown Gatewa
   assert.equal(traceLevelForGateway('off'), 'off');
 });
 
+test('response usage preserves the session override distinction and normalizes only the documented alias', () => {
+  assert.deepEqual(SESSION_RESPONSE_USAGE_LEVELS, ['inherit', 'off', 'tokens', 'full']);
+  assert.equal(normalizeResponseUsage(null), 'inherit');
+  assert.equal(normalizeResponseUsage(undefined), 'inherit');
+  assert.equal(normalizeResponseUsage('off'), 'off');
+  assert.equal(normalizeResponseUsage('tokens'), 'tokens');
+  assert.equal(normalizeResponseUsage('full'), 'full');
+  assert.equal(normalizeResponseUsage('on'), 'tokens');
+  assert.equal(normalizeResponseUsage('unexpected'), 'unsupported');
+  assert.equal(responseUsageForGateway('inherit'), null);
+  assert.equal(responseUsageForGateway('off'), 'off');
+  assert.equal(responseUsageForGateway('tokens'), 'tokens');
+  assert.equal(responseUsageForGateway('full'), 'full');
+});
+
 test('reasoning visibility maps exactly to the documented session override values', () => {
   assert.deepEqual(SESSION_REASONING_LEVELS, ['inherit', 'on', 'off', 'stream']);
   assert.equal(normalizeReasoningLevel(null), 'inherit');
@@ -114,6 +132,8 @@ test('session runtime picker follows the compact shared provider identity contra
   assert.match(source, /SESSION_VERBOSE_LEVELS/);
   assert.match(source, /SESSION_TRACE_LEVELS/);
   assert.match(source, /sessionRuntimeTraceUnsupported/);
+  assert.match(source, /SESSION_RESPONSE_USAGE_LEVELS/);
+  assert.match(source, /sessionRuntimeResponseUsageUnsupported/);
   assert.doesNotMatch(source, /<span className="shrink-0">\{fastModeLabel\}<\/span>/);
   assert.doesNotMatch(source, /w-\[min\(620px/);
   assert.doesNotMatch(source, /Icon\.provider/);

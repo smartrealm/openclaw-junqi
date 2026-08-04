@@ -378,6 +378,9 @@ export default function App() {
           traceLevel: typeof s.traceLevel === 'string' && s.traceLevel.trim()
             ? s.traceLevel
             : null,
+          responseUsage: typeof s.responseUsage === 'string' && s.responseUsage.trim()
+            ? s.responseUsage
+            : null,
           reasoningLevel: s.reasoningLevel === 'on' || s.reasoningLevel === 'off' || s.reasoningLevel === 'stream'
             ? s.reasoningLevel
             : null,

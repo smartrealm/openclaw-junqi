@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { dispatchGatewayChatMessage } from './index';
 import type { GatewayRequestParams } from './Connection';
+import type { OpenClawSessionSteerInput } from './OpenClawSessionSteerClient';
 
 test('普通发送不会改写会话推理可见性', async () => {
   const requests: Array<{ method: string; params: GatewayRequestParams }> = [];
@@ -36,5 +37,47 @@ test('普通发送不会改写会话推理可见性', async () => {
       message: 'continue the task',
       idempotencyKey: 'message-1',
     },
+  }]);
+});
+
+test('转向发送使用 OpenClaw 的 sessions.steer 且不会退回 chat.send', async () => {
+  const requests: Array<{ method: string; params: GatewayRequestParams }> = [];
+  const steerCalls: OpenClawSessionSteerInput[] = [];
+  const expected = {
+    response: { runId: 'run-2' },
+    acknowledgement: { state: 'active' as const, runId: 'run-2' },
+    interruptedActiveRun: true,
+  };
+
+  const result = await dispatchGatewayChatMessage(
+    {
+      isConnected: () => true,
+      request: async (method, params) => {
+        requests.push({ method, params });
+        return { runId: 'unexpected' };
+      },
+    },
+    {
+      steer: async (input) => {
+        steerCalls.push(input);
+        return expected;
+      },
+    },
+    {
+      message: 'interrupt and continue',
+      attachments: [{ type: 'file', content: 'payload' }],
+      sessionKey: 'agent:main:desktop',
+      clientMessageId: 'message-2',
+      delivery: 'steer',
+    },
+  );
+
+  assert.equal(result, expected);
+  assert.deepEqual(requests, []);
+  assert.deepEqual(steerCalls, [{
+    key: 'agent:main:desktop',
+    message: 'interrupt and continue',
+    idempotencyKey: 'message-2',
+    attachments: [{ type: 'file', content: 'payload' }],
   }]);
 });

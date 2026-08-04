@@ -1947,7 +1947,7 @@
     "sessionRuntimeTitle": "Session model and runtime controls",
     "sessionRuntimeProvider": "Provider",
     "sessionRuntimeModel": "Model",
-    "sessionRuntimeSummary": "{{model}}, thinking {{thinking}}, fast {{fastMode}}, verbose {{verbose}}, plugin trace {{trace}}, reasoning {{reasoning}}",
+    "sessionRuntimeSummary": "{{model}}, thinking {{thinking}}, fast {{fastMode}}, verbose {{verbose}}, plugin trace {{trace}}, response usage {{responseUsage}}, reasoning {{reasoning}}",
     "sessionRuntimeFastMode": "Fast mode",
     "sessionRuntimeFastModes": {
       "inherit": "Inherit",
@@ -1968,6 +1968,15 @@
       "inherit": "Inherit",
       "on": "On",
       "off": "Off",
+      "unsupported": "Gateway value unavailable"
+    },
+    "sessionRuntimeResponseUsage": "Response usage detail",
+    "sessionRuntimeResponseUsageUnsupported": "The Gateway returned a response usage value this client cannot change. Choose a supported value to replace it.",
+    "sessionRuntimeResponseUsageModes": {
+      "inherit": "Inherit",
+      "off": "Off",
+      "tokens": "Tokens",
+      "full": "Full",
       "unsupported": "Gateway value unavailable"
     },
     "sessionRuntimeReasoning": "Reasoning visibility",

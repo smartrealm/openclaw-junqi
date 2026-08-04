@@ -54,6 +54,7 @@ plans/
 - [OpenClaw 会话推理可见性对齐](quality/2026-08-04-openclaw-session-reasoning-visibility.md)
 - [OpenClaw 会话详细工具输出对齐](quality/2026-08-04-openclaw-session-verbose.md)
 - [OpenClaw 会话插件追踪对齐](quality/2026-08-04-openclaw-session-plugin-trace.md)
+- [OpenClaw 会话响应使用量详情对齐](quality/2026-08-04-openclaw-session-response-usage.md)
 
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
 - [Session origin aggregation](quality/2026-07-20-session-origin-aggregation.md)
