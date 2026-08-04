@@ -138,6 +138,7 @@ docs/
 - [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
 - [OpenClaw `/btw` 临时侧问对齐验证](quality/openclaw-btw-side-question-alignment-2026-08-04.md)
 - [OpenClaw 会话快速模式对齐](quality/openclaw-session-fast-mode-alignment-2026-08-04.md)
+- [OpenClaw 会话推理可见性对齐](quality/openclaw-session-reasoning-visibility-alignment-2026-08-04.md)
 - [OpenClaw 模型目录权威性审计](quality/openclaw-model-catalog-authority-alignment-2026-08-04.md)
 - [OpenClaw Talk 事件契约对齐](quality/openclaw-talk-event-contract-alignment-2026-08-04.md)
 - [OpenClaw Talk Barge-in Turn 围栏](quality/openclaw-talk-barge-in-turn-fence-2026-08-04.md)

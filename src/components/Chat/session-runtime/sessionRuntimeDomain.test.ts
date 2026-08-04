@@ -6,8 +6,11 @@ import {
   groupSessionModels,
   modelDisplayName,
   normalizeFastMode,
+  normalizeReasoningLevel,
   normalizeThinkingLevel,
   SESSION_FAST_MODES,
+  SESSION_REASONING_LEVELS,
+  reasoningLevelForGateway,
   thinkingLevelForGateway,
 } from './sessionRuntimeDomain';
 
@@ -54,6 +57,20 @@ test('fast modes map exactly to the documented session override values', () => {
   assert.equal(fastModeForGateway('auto'), 'auto');
   assert.equal(fastModeForGateway('on'), true);
   assert.equal(fastModeForGateway('off'), false);
+});
+
+test('reasoning visibility maps exactly to the documented session override values', () => {
+  assert.deepEqual(SESSION_REASONING_LEVELS, ['inherit', 'on', 'off', 'stream']);
+  assert.equal(normalizeReasoningLevel(null), 'inherit');
+  assert.equal(normalizeReasoningLevel(undefined), 'inherit');
+  assert.equal(normalizeReasoningLevel('on'), 'on');
+  assert.equal(normalizeReasoningLevel('off'), 'off');
+  assert.equal(normalizeReasoningLevel('stream'), 'stream');
+  assert.equal(normalizeReasoningLevel('unexpected'), 'inherit');
+  assert.equal(reasoningLevelForGateway('inherit'), null);
+  assert.equal(reasoningLevelForGateway('on'), 'on');
+  assert.equal(reasoningLevelForGateway('off'), 'off');
+  assert.equal(reasoningLevelForGateway('stream'), 'stream');
 });
 
 test('session runtime picker follows the compact shared provider identity contract', () => {

@@ -91,6 +91,26 @@ test('setSessionFastMode updates only the matching session', () => {
   );
 });
 
+test('setSessionReasoning updates only the matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionReasoning(OTHER_KEY, 'stream');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.reasoningLevel,
+    'stream',
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.reasoningLevel,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionReasoning(MAIN_KEY, 'off');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.reasoningLevel,
+    'off',
+  );
+});
+
 test('setSessionModel does not overwrite currentModel for inactive sessions', () => {
   seedSessions(MAIN_KEY);
 

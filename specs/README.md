@@ -49,6 +49,7 @@ specs/
 - [OpenClaw Gateway 挑战与策略对齐](quality/2026-08-04-openclaw-gateway-challenge-policy-alignment.md)
 - [OpenClaw `/btw` 临时侧问对齐](quality/2026-08-04-openclaw-btw-side-question.md)
 - [OpenClaw 会话快速模式对齐](quality/2026-08-04-openclaw-session-fast-mode.md)
+- [OpenClaw 会话推理可见性对齐](quality/2026-08-04-openclaw-session-reasoning-visibility.md)
 
 - [维护中心](quality/2026-07-14-maintenance-center-hardening.md)
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)

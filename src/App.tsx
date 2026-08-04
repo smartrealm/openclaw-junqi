@@ -372,6 +372,9 @@ export default function App() {
           fastMode: s.fastMode === true || s.fastMode === false || s.fastMode === 'auto'
             ? s.fastMode
             : null,
+          reasoningLevel: s.reasoningLevel === 'on' || s.reasoningLevel === 'off' || s.reasoningLevel === 'stream'
+            ? s.reasoningLevel
+            : null,
           totalTokens: s.totalTokens,
           contextTokens: s.contextTokens,
           compactionCount: s.compactionCount,

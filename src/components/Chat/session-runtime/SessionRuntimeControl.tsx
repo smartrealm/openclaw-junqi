@@ -9,8 +9,10 @@ import {
   modelDisplayName,
   modelProviderId,
   SESSION_FAST_MODES,
+  SESSION_REASONING_LEVELS,
   SESSION_THINKING_LEVELS,
   type SessionFastMode,
+  type SessionReasoningLevel,
   type SessionThinkingLevel,
 } from './sessionRuntimeDomain';
 import { useSessionRuntimeSettings } from './useSessionRuntimeSettings';
@@ -23,6 +25,7 @@ export function SessionRuntimeControl() {
   const [draftModelId, setDraftModelId] = useState<string | null>(committed.modelId);
   const [draftThinking, setDraftThinking] = useState<SessionThinkingLevel>(committed.thinking);
   const [draftFastMode, setDraftFastMode] = useState<SessionFastMode>(committed.fastMode);
+  const [draftReasoning, setDraftReasoning] = useState<SessionReasoningLevel>(committed.reasoning);
   const [providerId, setProviderId] = useState(() => committed.modelId ? modelProviderId(committed.modelId) : '');
   const rootRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => groupSessionModels(availableModels), [availableModels]);
@@ -30,15 +33,17 @@ export function SessionRuntimeControl() {
   const selectedGroup = groups.find((group) => group.providerId === providerId) ?? groups[0];
   const hasChanges = draftModelId !== committed.modelId
     || draftThinking !== committed.thinking
-    || draftFastMode !== committed.fastMode;
+    || draftFastMode !== committed.fastMode
+    || draftReasoning !== committed.reasoning;
 
   useEffect(() => {
     if (open) return;
     setDraftModelId(committed.modelId);
     setDraftThinking(committed.thinking);
     setDraftFastMode(committed.fastMode);
+    setDraftReasoning(committed.reasoning);
     setProviderId(committed.modelId ? modelProviderId(committed.modelId) : (groups[0]?.providerId ?? ''));
-  }, [committed.fastMode, committed.modelId, committed.thinking, groups, open]);
+  }, [committed.fastMode, committed.modelId, committed.reasoning, committed.thinking, groups, open]);
 
   useEffect(() => {
     setOpen(false);
@@ -65,6 +70,7 @@ export function SessionRuntimeControl() {
   const modelLabel = modelDisplayName(activeModel, committed.modelId) || t('config.notSet');
   const thinkingLabel = t(`titlebar.thinking.levels.${committed.thinking}`);
   const fastModeLabel = t(`input.sessionRuntimeFastModes.${committed.fastMode}`);
+  const reasoningLabel = t(`input.sessionRuntimeReasoningModes.${committed.reasoning}`);
   const committedProviderId = committed.modelId ? modelProviderId(committed.modelId) : 'other';
   return (
     <div ref={rootRef} className="relative min-w-0 no-drag">
@@ -82,6 +88,7 @@ export function SessionRuntimeControl() {
           model: modelLabel,
           thinking: thinkingLabel,
           fastMode: fastModeLabel,
+          reasoning: reasoningLabel,
         })}
       >
         <ProviderIcon providerId={committedProviderId} size={14} className="text-aegis-text-dim" />
@@ -90,6 +97,8 @@ export function SessionRuntimeControl() {
         <span className="shrink-0">{thinkingLabel}</span>
         <span aria-hidden className="text-aegis-text-dim">·</span>
         <span className="shrink-0">{fastModeLabel}</span>
+        <span aria-hidden className="text-aegis-text-dim">·</span>
+        <span className="shrink-0">{reasoningLabel}</span>
         <span className="grid size-3 shrink-0 place-items-center">
           {saving
             ? <LoaderCircle size={11} className="animate-spin" />
@@ -104,111 +113,138 @@ export function SessionRuntimeControl() {
           className="absolute top-full start-0 z-50 mt-2 flex w-[min(420px,calc(100vw-24px))] max-h-[min(460px,calc(100vh-96px))] flex-col overflow-hidden rounded-lg border border-aegis-menu-border bg-aegis-menu-bg"
           style={{ boxShadow: 'var(--aegis-menu-shadow)' }}
         >
-          <div className="grid min-h-[132px] max-h-[236px] grid-cols-[136px_minmax(0,1fr)] overflow-hidden">
-            <div className="overflow-y-auto border-e border-aegis-menu-border p-1.5">
-              <div className="px-1.5 pb-1 text-[10px] font-semibold uppercase text-aegis-text-dim">
-                {t('input.sessionRuntimeProvider')}
-              </div>
-              {groups.map((group) => (
-                <button
-                  key={group.providerId}
-                  type="button"
-                  onClick={() => setProviderId(group.providerId)}
-                  className={clsx(
-                    'flex min-h-8 w-full items-center gap-1.5 rounded-md border border-transparent px-1.5 text-start text-[12px] font-medium transition-colors',
-                    selectedGroup?.providerId === group.providerId
-                      ? 'border-aegis-border bg-[rgb(var(--aegis-overlay)/0.055)] text-aegis-text'
-                      : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.05)]',
-                  )}
-                >
-                  <ProviderIcon providerId={group.providerId} size={16} className="text-aegis-text-muted" />
-                  <span className="truncate">{providerDisplayLabel(group.providerId)}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="min-h-0 overflow-y-auto p-2">
-              <div className="px-1 pb-1 text-[10px] font-semibold uppercase text-aegis-text-dim">
-                {t('input.sessionRuntimeModel')}
-              </div>
-              {selectedGroup?.models.map((model) => {
-                const selected = model.id === draftModelId;
-                return (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="grid min-h-[132px] max-h-[236px] grid-cols-[136px_minmax(0,1fr)] overflow-hidden">
+              <div className="overflow-y-auto border-e border-aegis-menu-border p-1.5">
+                <div className="px-1.5 pb-1 text-[10px] font-semibold uppercase text-aegis-text-dim">
+                  {t('input.sessionRuntimeProvider')}
+                </div>
+                {groups.map((group) => (
                   <button
-                    key={model.id}
+                    key={group.providerId}
                     type="button"
-                    onClick={() => setDraftModelId(model.id)}
-                    disabled={selected}
-                    aria-current={selected ? 'true' : undefined}
+                    onClick={() => setProviderId(group.providerId)}
                     className={clsx(
-                      'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1.5 text-start transition-colors',
-                      selected
-                        ? 'cursor-default border-aegis-border bg-[rgb(var(--aegis-overlay)/0.055)] text-aegis-text'
+                      'flex min-h-8 w-full items-center gap-1.5 rounded-md border border-transparent px-1.5 text-start text-[12px] font-medium transition-colors',
+                      selectedGroup?.providerId === group.providerId
+                        ? 'border-aegis-border bg-[rgb(var(--aegis-overlay)/0.055)] text-aegis-text'
                         : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.05)]',
                     )}
                   >
-                    <span className="min-w-0">
-                      <span className="block truncate text-[12px] font-medium">
-                        {modelDisplayName(model, model.id)}
-                      </span>
-                      {(model.alias || model.label) && (
-                        <span className="block truncate font-mono text-[10px] text-aegis-text-dim">{model.id}</span>
-                      )}
-                    </span>
-                    {selected && <Check size={13} className="shrink-0" />}
+                    <ProviderIcon providerId={group.providerId} size={16} className="text-aegis-text-muted" />
+                    <span className="truncate">{providerDisplayLabel(group.providerId)}</span>
                   </button>
-                );
-              })}
-            </div>
-          </div>
+                ))}
+              </div>
 
-          <div className="border-t border-aegis-menu-border px-3 py-2.5">
-            <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
-              {t('titlebar.thinking.label')}
+              <div className="min-h-0 overflow-y-auto p-2">
+                <div className="px-1 pb-1 text-[10px] font-semibold uppercase text-aegis-text-dim">
+                  {t('input.sessionRuntimeModel')}
+                </div>
+                {selectedGroup?.models.map((model) => {
+                  const selected = model.id === draftModelId;
+                  return (
+                    <button
+                      key={model.id}
+                      type="button"
+                      onClick={() => setDraftModelId(model.id)}
+                      disabled={selected}
+                      aria-current={selected ? 'true' : undefined}
+                      className={clsx(
+                        'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1.5 text-start transition-colors',
+                        selected
+                          ? 'cursor-default border-aegis-border bg-[rgb(var(--aegis-overlay)/0.055)] text-aegis-text'
+                          : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.05)]',
+                      )}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-[12px] font-medium">
+                          {modelDisplayName(model, model.id)}
+                        </span>
+                        {(model.alias || model.label) && (
+                          <span className="block truncate font-mono text-[10px] text-aegis-text-dim">{model.id}</span>
+                        )}
+                      </span>
+                      {selected && <Check size={13} className="shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
-              {SESSION_THINKING_LEVELS.map((level) => (
-                <button
-                  key={level}
-                  type="button"
-                  onClick={() => setDraftThinking(level)}
-                  disabled={draftThinking === level}
-                  aria-current={draftThinking === level ? 'true' : undefined}
-                  className={clsx(
-                    'h-8 rounded-md border px-2 text-[11px] transition-colors',
-                    draftThinking === level
-                      ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
-                      : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
-                  )}
-                >
-                  {t(`titlebar.thinking.levels.${level}`)}
-                </button>
-              ))}
-            </div>
-          </div>
 
-          <div className="border-t border-aegis-menu-border px-3 py-2.5">
-            <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
-              {t('input.sessionRuntimeFastMode')}
+            <div className="border-t border-aegis-menu-border px-3 py-2.5">
+              <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
+                {t('titlebar.thinking.label')}
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+                {SESSION_THINKING_LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setDraftThinking(level)}
+                    disabled={draftThinking === level}
+                    aria-current={draftThinking === level ? 'true' : undefined}
+                    className={clsx(
+                      'h-8 rounded-md border px-2 text-[11px] transition-colors',
+                      draftThinking === level
+                        ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
+                        : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
+                    )}
+                  >
+                    {t(`titlebar.thinking.levels.${level}`)}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-              {SESSION_FAST_MODES.map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setDraftFastMode(mode)}
-                  disabled={draftFastMode === mode}
-                  aria-current={draftFastMode === mode ? 'true' : undefined}
-                  className={clsx(
-                    'h-8 rounded-md border px-2 text-[11px] transition-colors',
-                    draftFastMode === mode
-                      ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
-                      : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
-                  )}
-                >
-                  {t(`input.sessionRuntimeFastModes.${mode}`)}
-                </button>
-              ))}
+
+            <div className="border-t border-aegis-menu-border px-3 py-2.5">
+              <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
+                {t('input.sessionRuntimeFastMode')}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                {SESSION_FAST_MODES.map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setDraftFastMode(mode)}
+                    disabled={draftFastMode === mode}
+                    aria-current={draftFastMode === mode ? 'true' : undefined}
+                    className={clsx(
+                      'h-8 rounded-md border px-2 text-[11px] transition-colors',
+                      draftFastMode === mode
+                        ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
+                        : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
+                    )}
+                  >
+                    {t(`input.sessionRuntimeFastModes.${mode}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-aegis-menu-border px-3 py-2.5">
+              <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
+                {t('input.sessionRuntimeReasoning')}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                {SESSION_REASONING_LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setDraftReasoning(level)}
+                    disabled={draftReasoning === level}
+                    aria-current={draftReasoning === level ? 'true' : undefined}
+                    className={clsx(
+                      'h-8 rounded-md border px-2 text-[11px] transition-colors',
+                      draftReasoning === level
+                        ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
+                        : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
+                    )}
+                  >
+                    {t(`input.sessionRuntimeReasoningModes.${level}`)}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -238,7 +274,12 @@ export function SessionRuntimeControl() {
               <button
                 type="button"
                 onClick={() => {
-                  void apply({ modelId: draftModelId, thinking: draftThinking, fastMode: draftFastMode })
+                  void apply({
+                    modelId: draftModelId,
+                    thinking: draftThinking,
+                    fastMode: draftFastMode,
+                    reasoning: draftReasoning,
+                  })
                     .then((updated) => { if (updated) setOpen(false); });
                 }}
                 disabled={!draftModelId || !hasChanges || saving}

@@ -98,6 +98,10 @@ export class SessionSettingsClient {
     return this.patch(sessionKey, { fastMode }, true);
   }
 
+  setReasoning(sessionKey: string, reasoningLevel: 'on' | 'off' | 'stream' | null): Promise<SessionPatchResult> {
+    return this.patch(sessionKey, { reasoningLevel }, true);
+  }
+
   setLabel(sessionKey: string, label: string | null): Promise<SessionPatchResult> {
     return this.patch(sessionKey, { label }, true);
   }

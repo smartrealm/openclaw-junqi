@@ -16,6 +16,10 @@ export const SESSION_FAST_MODES = ['inherit', 'auto', 'on', 'off'] as const;
 
 export type SessionFastMode = (typeof SESSION_FAST_MODES)[number];
 
+export const SESSION_REASONING_LEVELS = ['inherit', 'on', 'off', 'stream'] as const;
+
+export type SessionReasoningLevel = (typeof SESSION_REASONING_LEVELS)[number];
+
 export interface SessionModelGroup {
   providerId: string;
   models: ModelEntry[];
@@ -70,4 +74,12 @@ export function fastModeForGateway(mode: SessionFastMode): boolean | 'auto' | nu
   if (mode === 'on') return true;
   if (mode === 'off') return false;
   return null;
+}
+
+export function normalizeReasoningLevel(value: unknown): SessionReasoningLevel {
+  return value === 'on' || value === 'off' || value === 'stream' ? value : 'inherit';
+}
+
+export function reasoningLevelForGateway(mode: SessionReasoningLevel): 'on' | 'off' | 'stream' | null {
+  return mode === 'inherit' ? null : mode;
 }

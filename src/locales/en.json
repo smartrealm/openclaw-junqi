@@ -1944,16 +1944,23 @@
       "close": "Esc Close",
       "chooseArgument": "Choose…"
     },
-    "sessionRuntimeTitle": "Session model, thinking, and fast mode",
+    "sessionRuntimeTitle": "Session model, thinking, fast mode, and reasoning",
     "sessionRuntimeProvider": "Provider",
     "sessionRuntimeModel": "Model",
-    "sessionRuntimeSummary": "{{model}}, thinking {{thinking}}, fast {{fastMode}}",
+    "sessionRuntimeSummary": "{{model}}, thinking {{thinking}}, fast {{fastMode}}, reasoning {{reasoning}}",
     "sessionRuntimeFastMode": "Fast mode",
     "sessionRuntimeFastModes": {
       "inherit": "Inherit",
       "auto": "Auto",
       "on": "On",
       "off": "Off"
+    },
+    "sessionRuntimeReasoning": "Reasoning visibility",
+    "sessionRuntimeReasoningModes": {
+      "inherit": "Inherit",
+      "on": "On",
+      "off": "Off",
+      "stream": "Stream"
     },
     "useDefaultModel": "Use default model",
     "useDefaultModelHint": "Clear this session override and follow the configured model routing"

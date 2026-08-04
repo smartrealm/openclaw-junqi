@@ -265,6 +265,43 @@ interface GatewayChatSendDeliveryObserved {
   runId: string;
 }
 
+export interface GatewayChatMessageDispatchInput {
+  message: string;
+  attachments?: readonly unknown[];
+  sessionKey: string;
+  clientMessageId: string;
+  sessionId?: string;
+  delivery?: 'send' | 'steer';
+}
+
+export interface GatewayChatDispatchTransport {
+  isConnected(): boolean;
+  request(method: string, params: GatewayRequestParams): Promise<unknown>;
+}
+
+export async function dispatchGatewayChatMessage(
+  transport: GatewayChatDispatchTransport,
+  steerClient: Pick<OpenClawSessionSteerClient, 'steer'>,
+  input: GatewayChatMessageDispatchInput,
+): Promise<unknown> {
+  if (!transport.isConnected()) throw new GatewayDisconnectedError();
+  if (input.delivery === 'steer') {
+    return steerClient.steer({
+      key: input.sessionKey,
+      message: input.message,
+      idempotencyKey: input.clientMessageId,
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    });
+  }
+  return transport.request('chat.send', {
+    sessionKey: input.sessionKey,
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    message: input.message,
+    idempotencyKey: input.clientMessageId,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+  });
+}
+
 export function isGatewayChatSendDeliveryUncertain(
   value: unknown,
 ): value is GatewayChatSendDeliveryUncertain {
@@ -1175,32 +1212,18 @@ export const gateway = {
     let requestDispatched = false;
     try {
       const dispatch = async () => {
-        // The renderer owns the only visible, cancellable retry queue. Keeping a
-        // second transport queue would acknowledge work that the UI cannot inspect.
-        if (!connection.isConnected()) throw new GatewayDisconnectedError();
-
-        // Enable reasoning stream lazily only when the user actually sends a message.
-        await connection.ensureReasoningStream(sessionKey);
-        if (!connection.isConnected()) throw new GatewayDisconnectedError();
+        // 渲染层拥有唯一可见、可取消的重试队列，传输层不得另建 UI 无法检查的队列。
         requestDispatched = true;
-        if (isSteer) {
-          return sessionSteer.steer({
-            key: sessionKey,
-            message,
-            idempotencyKey: clientMessageId,
-            ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
-          });
-        }
-        return connection.request('chat.send', {
-          sessionKey,
-          ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
+        return dispatchGatewayChatMessage(connection, sessionSteer, {
           message,
-          idempotencyKey: clientMessageId,
-          ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
+          attachments: gwAttachments,
+          sessionKey,
+          clientMessageId,
+          sessionId: identity.sessionId,
+          delivery: isSteer ? 'steer' : 'send',
         });
       };
-      // sessions.steer is itself the OpenClaw interrupt-and-send control
-      // operation. It must not wait behind a long chat.send transport promise.
+      // sessions.steer 自身即为 OpenClaw 的中断并发送控制操作，不能等待长时间 chat.send 请求。
       const dispatched = isSteer || isSideQuestion
         ? await dispatch()
         : await sessionCommandCoordinator.runMutation(sessionKey, dispatch);
@@ -1544,6 +1567,9 @@ export const gateway = {
   },
   async setSessionFastMode(mode: boolean | 'auto' | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setFastMode(sessionKey, mode);
+  },
+  async setSessionReasoning(level: 'on' | 'off' | 'stream' | null, sessionKey = 'agent:main:main') {
+    return sessionSettings.setReasoning(sessionKey, level);
   },
   async setSessionLabel(label: string | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setLabel(sessionKey, label);

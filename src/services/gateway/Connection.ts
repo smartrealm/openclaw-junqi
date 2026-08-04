@@ -1227,13 +1227,4 @@ export class GatewayConnection {
     setTimeout(() => this.connect(this.url, newToken, this.deviceToken), 300);
   }
 
-  // ── Enable reasoning visibility for a session (lazy) ──
-  async ensureReasoningStream(sessionKey = 'agent:main:main') {
-    try {
-      await this.request('sessions.patch', { key: sessionKey, reasoningLevel: 'on' }, { timeoutMs: 15_000 });
-      debugLog('gateway', '[GW] Reasoning visibility enabled');
-    } catch (err) {
-      debugWarn('gateway', '[GW] Could not enable reasoning:', err);
-    }
-  }
 }
