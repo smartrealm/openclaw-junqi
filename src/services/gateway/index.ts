@@ -46,7 +46,7 @@ import type { GatewayAuthorizationIssue } from './messageRouter';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
 import type { GatewayAttachment } from '@/services/chat/types';
 import { SessionSettingsClient } from './SessionSettingsClient';
-import { requireOpenClawChatSessionTarget } from './OpenClawChatSessionTarget';
+import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
 import { OpenClawSessionGroupsClient } from './OpenClawSessionGroupsClient';
 import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
@@ -1192,7 +1192,7 @@ export const gateway = {
       supersededRunId?: string;
     } = {},
   ) {
-    const targetSessionKey = requireOpenClawChatSessionTarget(sessionKey);
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     const gwAttachments = attachments?.map((att) => {
       let rawBase64 = att.content || '';
       if (rawBase64.startsWith('data:')) {
@@ -1455,26 +1455,26 @@ export const gateway = {
       ...(agentId ? { agentId } : {}),
     });
   },
-  async abortChat(sessionKey = 'agent:main:main', sessionId?: string) {
-    // Abort is a control-plane request. Waiting behind a long-running
-    // chat.send request makes it impossible to stop a response whose send
-    // acknowledgement was lost or delayed.
+  async abortChat(sessionKey: string, sessionId?: string) {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    // 中止属于控制面请求。若等待长时间运行的 chat.send 请求，会无法停止
+    // 发送确认已丢失或延迟的响应。
     return abortAfterTaskCheckpoint(
       async () => {
         try {
-          await taskExecutionCoordinator.requestStop(sessionKey, sessionId);
+          await taskExecutionCoordinator.requestStop(targetSessionKey, sessionId);
         } catch (error) {
           taskExecutionCoordinator.reportPersistenceFailure('persist Stop checkpoint', error);
           throw error;
         }
       },
       async () => {
-        const runId = chatHandler.abortRunId(sessionKey);
+        const runId = chatHandler.abortRunId(targetSessionKey);
         const result = await sessionAbort.abort({
-          key: sessionKey,
+          key: targetSessionKey,
           ...(runId ? { runId } : {}),
         });
-        return chatHandler.reconcileSessionAbortAcknowledgement(sessionKey, result);
+        return chatHandler.reconcileSessionAbortAcknowledgement(targetSessionKey, result);
       },
     );
   },

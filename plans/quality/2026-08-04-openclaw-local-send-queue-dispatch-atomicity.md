@@ -22,8 +22,8 @@
 - `src/stores/chatStore.test.ts`
 - `src/services/chat/sendTransaction.ts`
 - `src/services/chat/sendTransaction.test.ts`
-- `src/services/gateway/OpenClawChatSessionTarget.ts`
-- `src/services/gateway/OpenClawChatSessionTarget.test.ts`
+- `src/services/gateway/OpenClawSessionTarget.ts`
+- `src/services/gateway/OpenClawSessionTarget.test.ts`
 - `src/services/gateway/index.ts`
 - `src/components/Chat/ChatView.tsx`
 - `src/locales/en.json`

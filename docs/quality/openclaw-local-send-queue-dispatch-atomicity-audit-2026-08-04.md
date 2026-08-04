@@ -91,7 +91,7 @@ registry 也只管理已 admitted 的 followup/collect turn。
 - `src/stores/chatStore.test.ts` 覆盖首项认领后清空后续项，以及已删除 Session 的失败回调
   不恢复本地队列；定向测试 31 通过。
 - `src/services/chat/sendTransaction.test.ts` 与
-  `src/services/gateway/OpenClawChatSessionTarget.test.ts` 覆盖空会话目标在本地状态、Task
+  `src/services/gateway/OpenClawSessionTarget.test.ts` 覆盖空会话目标在本地状态、Task
   checkpoint、Gateway 连接和 pending-send 状态前失败，以及合法键的空白规范化；定向测试
   13 通过。
 - 本次 LQ-02 修改执行 `pnpm lint`、`pnpm test`、`pnpm build` 与

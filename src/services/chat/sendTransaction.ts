@@ -6,7 +6,7 @@ import { sessionMutationGate } from './sessionMutationGate';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import type { TaskExecutionSource } from '@/task-execution/types';
 import { isOpenClawBtwRequestText } from '@/services/gateway/openClawBtw';
-import { requireOpenClawChatSessionTarget } from '@/services/gateway/OpenClawChatSessionTarget';
+import { requireOpenClawSessionTarget } from '@/services/gateway/OpenClawSessionTarget';
 
 interface ChatSendGateway {
   sendMessage: typeof gateway.sendMessage;
@@ -70,7 +70,7 @@ export class ChatSendCoordinator {
   ) {}
 
   async send(request: ChatSendRequest): Promise<unknown> {
-    const sessionKey = requireOpenClawChatSessionTarget(request.sessionKey);
+    const sessionKey = requireOpenClawSessionTarget(request.sessionKey);
     const clientMessageId = request.clientMessageId ?? createClientMessageId();
     const state = this.state();
     const isSideQuestion = request.delivery !== 'steer' && isOpenClawBtwRequestText(request.message);

@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { ChatMessage } from '@/stores/chatStore';
 import { ChatSendCoordinator } from './sendTransaction';
 import { sessionMutationGate } from './sessionMutationGate';
-import { OpenClawChatSessionTargetError } from '@/services/gateway/OpenClawChatSessionTarget';
+import { OpenClawSessionTargetError } from '@/services/gateway/OpenClawSessionTarget';
 
 test('空会话目标会在写入本地状态、任务检查点和 Gateway 请求前失败', async () => {
   let stateReads = 0;
@@ -32,7 +32,7 @@ test('空会话目标会在写入本地状态、任务检查点和 Gateway 请�
 
   await assert.rejects(
     coordinator.send({ sessionKey: '   ', message: '不能发送', clientMessageId: 'empty-session' }),
-    OpenClawChatSessionTargetError,
+    OpenClawSessionTargetError,
   );
   assert.equal(stateReads, 0);
   assert.equal(checkpointCalls, 0);

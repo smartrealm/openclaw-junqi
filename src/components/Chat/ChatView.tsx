@@ -20,9 +20,9 @@ import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
 import {
-  OpenClawChatSessionTargetError,
-  requireOpenClawChatSessionTarget,
-} from '@/services/gateway/OpenClawChatSessionTarget';
+  OpenClawSessionTargetError,
+  requireOpenClawSessionTarget,
+} from '@/services/gateway/OpenClawSessionTarget';
 import { resolveHistoryPageMetadata } from '@/services/chat/historyPagination';
 import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
@@ -865,7 +865,7 @@ function ChatViewContent() {
     const detail = (e as CustomEvent<{ message: string; autoSend?: boolean }>).detail;
     if (!detail?.message) return;
     try {
-      const key = requireOpenClawChatSessionTarget(activeSessionKey);
+      const key = requireOpenClawSessionTarget(activeSessionKey);
       const clientMessageId = createClientMessageId();
       voiceRuntime.interruptGlobally(key);
       await chatSendCoordinator.send({
@@ -875,7 +875,7 @@ function ChatViewContent() {
         sessionId: activeSessionId,
       });
     } catch (error) {
-      if (error instanceof OpenClawChatSessionTargetError) {
+      if (error instanceof OpenClawSessionTargetError) {
         showAlert(t('chat.sendError'), t('chat.sessionTargetRequired'), 'error');
         return;
       }
