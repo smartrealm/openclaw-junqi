@@ -1416,6 +1416,11 @@
     "sending": "Sending",
     "historyLoadFailed": "Unable to load conversation history",
     "systemNote": "System note",
+    "sideQuestion": {
+      "title": "Temporary answer",
+      "error": "OpenClaw returned an error",
+      "dismiss": "Dismiss temporary answer"
+    },
     "modelSwitched": "Model switched",
     "historyLoadedFromCache": "Recent conversation loaded from cache ({{count}} messages)",
     "historySyncingBackground": "Syncing recent conversation in background",

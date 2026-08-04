@@ -39,6 +39,10 @@ import {
 } from './OpenClawPendingChatSend';
 import { parseOpenClawChatSendTiming } from './chatSendTiming';
 import {
+  parseOpenClawBtwSideResult,
+  type OpenClawBtwSideResult,
+} from './openClawBtw';
+import {
   parseOpenClawSessionOperationEvent,
   type OpenClawSessionOperationEvent,
 } from './sessionOperation';
@@ -135,6 +139,7 @@ export class ChatHandler {
   private lastCompactionTsBySession = new Map<string, number>();
   private seenCompactionOperationIds = new Set<string>();
   private seenSessionOperationEvents = new Set<string>();
+  private readonly sideQuestionRuns = new Map<string, { sessionKey: string }>();
 
   // ── Stream micro-batching ──
   // Buffer WebSocket chunks and flush to React every STREAM_FLUSH_MS
@@ -144,6 +149,7 @@ export class ChatHandler {
   private static readonly RECENT_TERMINAL_REPLY_TTL_MS = 120_000;
   private static readonly MAX_RECENT_TERMINAL_REPLIES = 512;
   private static readonly MAX_SESSION_OPERATION_EVENTS = 512;
+  private static readonly MAX_SIDE_QUESTION_RUNS = 512;
   private streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingStreams = new Map<string, { id: string; content: string; media?: MediaInfo; runId?: string | null }>();
   private sessionKeyByRunId = new Map<string, string>();
@@ -214,7 +220,45 @@ export class ChatHandler {
       if (ownerSessionKey === sessionKey) this.recentObservedRunIds.delete(runId);
     }
     this.recentTerminalAssistantReplies.delete(sessionKey);
+    for (const [runId, sideQuestion] of this.sideQuestionRuns) {
+      if (sideQuestion.sessionKey === sessionKey) this.sideQuestionRuns.delete(runId);
+    }
     this.clearSessionProjection(sessionKey);
+  }
+
+  /** Register a locally dispatched `/btw` run without creating a durable Task projection. */
+  registerSideQuestionRun(sessionKey: string, runId: string): void {
+    const normalizedSessionKey = sessionKey.trim();
+    const normalizedRunId = runId.trim();
+    if (!normalizedSessionKey || !normalizedRunId) return;
+    this.sideQuestionRuns.set(normalizedRunId, { sessionKey: normalizedSessionKey });
+    if (this.sideQuestionRuns.size > ChatHandler.MAX_SIDE_QUESTION_RUNS) {
+      const oldest = this.sideQuestionRuns.keys().next().value;
+      if (typeof oldest === 'string') this.sideQuestionRuns.delete(oldest);
+    }
+  }
+
+  discardSideQuestionRun(sessionKey: string, runId: string): void {
+    const registered = this.sideQuestionRuns.get(runId.trim());
+    if (registered?.sessionKey === sessionKey.trim()) this.sideQuestionRuns.delete(runId.trim());
+  }
+
+  private consumeSideQuestionResult(result: OpenClawBtwSideResult): boolean {
+    const registered = this.sideQuestionRuns.get(result.runId);
+    if (!registered || registered.sessionKey !== result.sessionKey) return false;
+    useChatStore.getState().setSideQuestionResult(result);
+    return true;
+  }
+
+  private consumeSideQuestionTerminal(payload: Record<string, unknown>): boolean {
+    const state = typeof payload.state === 'string' ? payload.state : '';
+    if (state !== 'final' && state !== 'error' && state !== 'aborted') return false;
+    const runId = typeof payload.runId === 'string' ? payload.runId.trim() : '';
+    const sessionKey = typeof payload.sessionKey === 'string' ? payload.sessionKey.trim() : '';
+    const registered = this.sideQuestionRuns.get(runId);
+    if (!registered || registered.sessionKey !== sessionKey) return false;
+    this.sideQuestionRuns.delete(runId);
+    return true;
   }
 
   /** Register the exact idempotency key before local send serialization starts. */
@@ -1354,6 +1398,18 @@ export class ChatHandler {
       this.handleChatSendTiming(p);
       return;
     }
+    if (event === 'chat.side_result') {
+      const result = parseOpenClawBtwSideResult(p);
+      if (!result) {
+        debugWarn('gateway', '[GW] Ignoring malformed OpenClaw chat.side_result event');
+        return;
+      }
+      if (!this.consumeSideQuestionResult(result)) {
+        debugLog('gateway', '[GW] Ignoring unowned OpenClaw chat.side_result event');
+      }
+      return;
+    }
+    if (event === 'chat' && this.consumeSideQuestionTerminal(p)) return;
     if (event === 'session.tool' && !isOpenClawSessionToolPayload(p)) {
       debugWarn('gateway', '[GW] Ignoring malformed OpenClaw session.tool event');
       return;

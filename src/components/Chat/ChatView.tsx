@@ -74,6 +74,7 @@ import { ChatTraceSourceMessagePanel } from './ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from './useChatSidePanel';
 import { getToolLabelKey } from './toolCallPresentation';
 import { TaskExecutionRecoveryBanner } from './TaskExecutionRecoveryBanner';
+import { SideQuestionResults } from './SideQuestionResults';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -256,6 +257,10 @@ function ChatViewContent() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const sideQuestionResults = useChatStore(useShallow((s) => Object.values(
+    s.sideQuestionResultsBySession[s.activeSessionKey] ?? {},
+  ).sort((left, right) => left.ts - right.ts)));
+  const dismissSideQuestionResult = useChatStore((s) => s.dismissSideQuestionResult);
   const sidePanel = useChatSidePanel(activeSessionKey);
   const loadTraceAuditEvents = useCallback(
     (runId: string) => gateway.listAuditEvents({ runId, limit: 500 }),
@@ -406,6 +411,7 @@ function ChatViewContent() {
     thinkingRunId || '',
     thinkingText.length,
     isTyping ? 'typing' : 'idle',
+    sideQuestionResults.map((result) => `${result.runId}:${result.text.length}`).join(','),
   ].join('|');
 
   useEffect(() => {
@@ -1251,8 +1257,9 @@ function ChatViewContent() {
           <TypingIndicator />
         </Suspense>
       )}
+      <SideQuestionResults results={sideQuestionResults} onDismiss={dismissSideQuestionResult} />
     </div>
-  ), [thinkingText, isTyping, tailIsStreamingMessage]);
+  ), [thinkingText, isTyping, tailIsStreamingMessage, sideQuestionResults, dismissSideQuestionResult]);
 
   // ── Debounce "no providers" state so gateway restart doesn't flash the banner
   const [showNoProviderBanner, setShowNoProviderBanner] = useState(false);
@@ -1372,7 +1379,9 @@ function ChatViewContent() {
         }}
       >
         {timelineItems.length === 0 ? (
-          <div className="flex-1 h-full" />
+          <div className="flex h-full flex-col justify-end">
+            <SideQuestionResults results={sideQuestionResults} onDismiss={dismissSideQuestionResult} />
+          </div>
         ) : (
           <Virtuoso
             ref={virtuosoRef}

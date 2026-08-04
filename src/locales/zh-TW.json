@@ -1376,6 +1376,11 @@
     "sending": "傳送中",
     "historyLoadFailed": "無法載入會話歷史",
     "systemNote": "系統提示",
+    "sideQuestion": {
+      "title": "臨時回答",
+      "error": "OpenClaw 傳回了錯誤",
+      "dismiss": "關閉臨時回答"
+    },
     "modelSwitched": "模型已切換",
     "historyLoadedFromCache": "已從快取載入最近會話（{{count}} 條訊息）",
     "historySyncingBackground": "正在背景同步最近會話",

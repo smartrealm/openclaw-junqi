@@ -5,6 +5,7 @@ import type { GatewayAttachment, QueuedChatMessage } from './types';
 import { sessionMutationGate } from './sessionMutationGate';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import type { TaskExecutionSource } from '@/task-execution/types';
+import { isOpenClawBtwRequestText } from '@/services/gateway/openClawBtw';
 
 interface ChatSendGateway {
   sendMessage: typeof gateway.sendMessage;
@@ -70,7 +71,8 @@ export class ChatSendCoordinator {
   async send(request: ChatSendRequest): Promise<unknown> {
     const clientMessageId = request.clientMessageId ?? createClientMessageId();
     const state = this.state();
-    const optimisticPatch = request.optimisticMessage === false
+    const isSideQuestion = request.delivery !== 'steer' && isOpenClawBtwRequestText(request.message);
+    const optimisticPatch = isSideQuestion || request.optimisticMessage === false
       ? undefined
       : request.optimisticMessage;
     const timestamp = optimisticPatch
@@ -91,7 +93,8 @@ export class ChatSendCoordinator {
     // destructive JunQi session mutation, or an explicit local queue choice,
     // may keep a normal message in the renderer-owned queue.
     const localQueueRequested = request.queueIfBusy === true || request.delivery === 'queue';
-    const queueLocally = request.delivery !== 'steer'
+    const queueLocally = !isSideQuestion
+      && request.delivery !== 'steer'
       && request.queueIfBusy !== false
       && (sessionMutationBlocked || (localQueueRequested && activeGatewayRun));
     if (queueLocally) {
@@ -142,6 +145,19 @@ export class ChatSendCoordinator {
         });
       }
       return { queued: true, queue: 'session' as const, clientMessageId };
+    }
+
+    if (isSideQuestion) {
+      return this.gatewayPort.sendMessage(
+        request.message,
+        request.attachments,
+        request.sessionKey,
+        {
+          clientMessageId,
+          sessionId: request.sessionId,
+          sideQuestion: true,
+        },
+      );
     }
 
     if (request.optimisticMessage !== false) {

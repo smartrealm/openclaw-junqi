@@ -136,6 +136,7 @@ docs/
 - [本地 main 对齐与客户端边界审计](quality/local-main-alignment-and-client-boundary-audit-2026-08-04.md)
 - [OpenClaw Agent 配置快照与并发写入对齐](quality/openclaw-agent-config-snapshot-alignment-2026-08-04.md)
 - [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
+- [OpenClaw `/btw` 临时侧问对齐验证](quality/openclaw-btw-side-question-alignment-2026-08-04.md)
 - [OpenClaw 模型目录权威性审计](quality/openclaw-model-catalog-authority-alignment-2026-08-04.md)
 - [OpenClaw Talk 事件契约对齐](quality/openclaw-talk-event-contract-alignment-2026-08-04.md)
 - [OpenClaw Talk Barge-in Turn 围栏](quality/openclaw-talk-barge-in-turn-fence-2026-08-04.md)

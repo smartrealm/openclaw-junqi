@@ -1405,6 +1405,11 @@
     "sending": "发送中",
     "historyLoadFailed": "无法加载会话历史",
     "systemNote": "系统提示",
+    "sideQuestion": {
+      "title": "临时回答",
+      "error": "OpenClaw 返回了错误",
+      "dismiss": "关闭临时回答"
+    },
     "modelSwitched": "模型已切换",
     "historyLoadedFromCache": "已从缓存加载最近会话（{{count}} 条消息）",
     "historySyncingBackground": "正在后台同步最近会话",

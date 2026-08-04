@@ -40,6 +40,7 @@ import {
   setSessionOrganizationTopic,
 } from '@/services/chat/sessionOrganization';
 import type { OpenClawChatSendTiming } from '@/services/gateway/chatSendTiming';
+import type { OpenClawBtwSideResult } from '@/services/gateway/openClawBtw';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -522,6 +523,10 @@ interface ChatState {
   /** Read-only Gateway timing for the currently projected response, never persisted. */
   chatSendTimingBySession: Record<string, OpenClawChatSendTiming>;
   setChatSendTiming: (sessionKey: string, timing: OpenClawChatSendTiming | null) => void;
+  /** Ephemeral `/btw` results from OpenClaw; deliberately excluded from transcript history. */
+  sideQuestionResultsBySession: Record<string, Record<string, OpenClawBtwSideResult>>;
+  setSideQuestionResult: (result: OpenClawBtwSideResult) => void;
+  dismissSideQuestionResult: (sessionKey: string, runId: string) => void;
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
   /** Atomically release every transient run indicator for one session. */
   settleSessionRunUi: (sessionKey?: string) => void;
@@ -651,6 +656,7 @@ function clearTranscriptStateForIdentityChanges(
     compactionStatusBySession: withoutSessionKeys(state.compactionStatusBySession, sessionKeys),
     typingStartedAtBySession: withoutSessionKeys(state.typingStartedAtBySession, sessionKeys),
     chatSendTimingBySession: withoutSessionKeys(state.chatSendTimingBySession, sessionKeys),
+    sideQuestionResultsBySession: withoutSessionKeys(state.sideQuestionResultsBySession, sessionKeys),
     quickRepliesBySession: withoutSessionKeys(state.quickRepliesBySession, sessionKeys),
     thinkingBySession: withoutSessionKeys(state.thinkingBySession, sessionKeys),
     sendingBySession: withoutSessionKeys(state.sendingBySession, sessionKeys),
@@ -1203,6 +1209,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       chatSendTimingBySession: Object.fromEntries(
         Object.entries(state.chatSendTimingBySession).filter(([key]) => key !== targetKey),
       ),
+      sideQuestionResultsBySession: Object.fromEntries(
+        Object.entries(state.sideQuestionResultsBySession).filter(([key]) => key !== targetKey),
+      ),
       quickRepliesBySession: {
         ...state.quickRepliesBySession,
         [targetKey]: [],
@@ -1276,6 +1285,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ),
       chatSendTimingBySession: Object.fromEntries(
         Object.entries(state.chatSendTimingBySession).filter(([sessionKey]) => sessionKey !== key),
+      ),
+      sideQuestionResultsBySession: Object.fromEntries(
+        Object.entries(state.sideQuestionResultsBySession).filter(([sessionKey]) => sessionKey !== key),
       ),
       quickRepliesBySession: { ...state.quickRepliesBySession, [key]: [] },
       thinkingBySession: {
@@ -1777,6 +1789,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { [key]: _typingRm, ...restTyping } = state.typingBySession;
     const { [key]: _typingStartedAt, ...restTypingStartedAt } = state.typingStartedAtBySession;
     const { [key]: _timingRm, ...restChatSendTiming } = state.chatSendTimingBySession;
+    const { [key]: _sideQuestionResults, ...restSideQuestionResults } = state.sideQuestionResultsBySession;
     const { [key]: _qr, ...restQuickReplies } = state.quickRepliesBySession;
     const { [key]: _thinking, ...restThinking } = state.thinkingBySession;
     const { [key]: _draft, ...restDrafts } = state.drafts;
@@ -1802,6 +1815,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingBySession: restTyping,
       typingStartedAtBySession: restTypingStartedAt,
       chatSendTimingBySession: restChatSendTiming,
+      sideQuestionResultsBySession: restSideQuestionResults,
       quickRepliesBySession: restQuickReplies,
       thinkingBySession: restThinking,
       drafts: restDrafts,
@@ -1885,6 +1899,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!state.typingBySession[targetKey]) return state;
     next[targetKey] = timing;
     return { chatSendTimingBySession: next };
+  }),
+  sideQuestionResultsBySession: {},
+  setSideQuestionResult: (result) => set((state) => {
+    if (isSessionDeleted(result.sessionKey)) return state;
+    return {
+      sideQuestionResultsBySession: {
+        ...state.sideQuestionResultsBySession,
+        [result.sessionKey]: {
+          ...state.sideQuestionResultsBySession[result.sessionKey],
+          [result.runId]: result,
+        },
+      },
+    };
+  }),
+  dismissSideQuestionResult: (sessionKey, runId) => set((state) => {
+    const normalizedSessionKey = sessionKey.trim();
+    const normalizedRunId = runId.trim();
+    const current = state.sideQuestionResultsBySession[normalizedSessionKey];
+    if (!normalizedSessionKey || !normalizedRunId || !current?.[normalizedRunId]) return state;
+    const { [normalizedRunId]: _dismissed, ...remaining } = current;
+    const next = { ...state.sideQuestionResultsBySession };
+    if (Object.keys(remaining).length === 0) delete next[normalizedSessionKey];
+    else next[normalizedSessionKey] = remaining;
+    return { sideQuestionResultsBySession: next };
   }),
   compactionStatusBySession: {},
   setCompactionStatus: (sessionKey, status) => set((state) => {

@@ -1150,6 +1150,7 @@ export const gateway = {
       clientMessageId?: string;
       sessionId?: string;
       delivery?: 'send' | 'steer';
+      sideQuestion?: boolean;
       supersededRunId?: string;
     } = {},
   ) {
@@ -1168,7 +1169,9 @@ export const gateway = {
 
     const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
     const isSteer = identity.delivery === 'steer';
-    chatHandler.beginPendingSend(sessionKey, clientMessageId);
+    const isSideQuestion = identity.sideQuestion === true;
+    if (isSideQuestion) chatHandler.registerSideQuestionRun(sessionKey, clientMessageId);
+    else chatHandler.beginPendingSend(sessionKey, clientMessageId);
     let requestDispatched = false;
     try {
       const dispatch = async () => {
@@ -1198,12 +1201,13 @@ export const gateway = {
       };
       // sessions.steer is itself the OpenClaw interrupt-and-send control
       // operation. It must not wait behind a long chat.send transport promise.
-      const dispatched = isSteer
+      const dispatched = isSteer || isSideQuestion
         ? await dispatch()
         : await sessionCommandCoordinator.runMutation(sessionKey, dispatch);
       const result = isSteer
         ? (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).response
         : dispatched;
+      if (isSideQuestion) return result;
       const acknowledgement = chatHandler.reconcileSendAcknowledgement(
         sessionKey,
         clientMessageId,
@@ -1227,6 +1231,13 @@ export const gateway = {
       }
       return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
     } catch (error) {
+      if (isSideQuestion) {
+        if (requestDispatched && !(error instanceof GatewayRpcError)) {
+          return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
+        }
+        chatHandler.discardSideQuestionRun(sessionKey, clientMessageId);
+        throw error;
+      }
       // sessions.steer can fail after its native admission has attempted to
       // interrupt the active Run. An RPC error alone cannot distinguish that
       // case from a rejected request, so defer to the fenced history resolver.
