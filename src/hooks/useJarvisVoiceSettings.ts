@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   appAutostartStatus,
@@ -15,6 +15,7 @@ import {
   selectedModelWakeKeywords,
 } from '@/services/voice/VoiceWakeKeywordSelection';
 import { autoArmSessionKey, clearAutoArmSession, setAutoArmSession } from '@/services/voice/VoiceWakePreference';
+import { subscribeVoiceWakeSettingsTriggerProjection } from '@/services/voice/VoiceWakeSettingsProjection';
 import { useChatStore } from '@/stores/chatStore';
 
 export interface JarvisVoiceSettingsState {
@@ -47,10 +48,17 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
   const [standbyEnabled, setStandbyEnabled] = useState(false);
   const [standbySessionKey, setStandbySessionKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const triggerRevisionRef = useRef(0);
+
+  const replaceGatewayTriggers = useCallback((triggers: readonly string[]) => {
+    triggerRevisionRef.current += 1;
+    setGatewayTriggers([...triggers]);
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const triggerRevision = triggerRevisionRef.current;
     try {
       const [nextDetector, triggers, autostartEnabled] = await Promise.all([
         getVoiceWakeDetectorStatus(),
@@ -58,7 +66,9 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
         appAutostartStatus(),
       ]);
       setDetector(nextDetector);
-      setGatewayTriggers(triggers.triggers);
+      if (triggerRevisionRef.current === triggerRevision) {
+        replaceGatewayTriggers(triggers.triggers);
+      }
       const target = autoArmSessionKey();
       setStandbySessionKey(target);
       setStandbyEnabled(autostartEnabled.enabled && target !== null);
@@ -67,12 +77,20 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [replaceGatewayTriggers]);
 
   useEffect(() => {
     if (!enabled) return;
     void refresh();
   }, [enabled, refresh]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    return subscribeVoiceWakeSettingsTriggerProjection(
+      (listener) => voiceWakeGatewayClient.subscribe(listener),
+      replaceGatewayTriggers,
+    );
+  }, [enabled, replaceGatewayTriggers]);
 
   const configureModel = useCallback(async (title: string) => {
     if (configuring) return;
@@ -114,7 +132,7 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
         return false;
       }
       const updated = await voiceWakeGatewayClient.setTriggers(triggers);
-      setGatewayTriggers(updated.triggers);
+      replaceGatewayTriggers(updated.triggers);
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -122,7 +140,7 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     } finally {
       setSaving(false);
     }
-  }, [detector, saving]);
+  }, [detector, replaceGatewayTriggers, saving]);
 
   const toggleStandby = useCallback(async () => {
     setError(null);

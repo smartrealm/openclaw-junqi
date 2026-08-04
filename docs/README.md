@@ -221,6 +221,7 @@ docs/
 - [OpenClaw 原生会话中止对齐](quality/openclaw-native-session-abort-alignment-2026-08-03.md)
 - [OpenClaw 原生会话分组与 Jarvis 对齐](quality/openclaw-native-session-groups-jarvis-alignment-2026-08-03.md)
 - [OpenClaw 全局语音唤醒触发词与 JunQi 对齐](quality/openclaw-voicewake-global-trigger-alignment-2026-08-03.md)
+- [OpenClaw 语音唤醒设置事件投影](quality/openclaw-voicewake-settings-event-projection-2026-08-04.md)
 - [OpenClaw 原生会话转向核验对齐](quality/openclaw-native-session-steer-reconciliation-2026-08-03.md)
 - [OpenClaw 原生会话队列对齐](quality/openclaw-native-session-queue-alignment-2026-08-03.md)
 - [OpenClaw 原生会话预览对齐](quality/openclaw-native-session-preview-alignment-2026-08-03.md)

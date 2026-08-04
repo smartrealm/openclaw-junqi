@@ -106,6 +106,7 @@ plans/
 - [OpenClaw 原生会话中止对齐](quality/2026-08-03-openclaw-native-session-abort.md)
 - [OpenClaw 原生会话分组与 Jarvis 对齐](quality/2026-08-03-openclaw-native-session-groups-jarvis.md)
 - [OpenClaw 全局语音唤醒触发词对齐](quality/2026-08-03-openclaw-voicewake-global-triggers.md)
+- [OpenClaw 语音唤醒设置事件投影](quality/2026-08-04-openclaw-voicewake-settings-event-projection.md)
 - [OpenClaw 原生会话转向核验对齐](quality/2026-08-03-openclaw-native-session-steer-reconciliation.md)
 - [OpenClaw 原生会话队列对齐](quality/2026-08-03-openclaw-native-session-queue-alignment.md)
 - [OpenClaw 原生会话预览对齐](quality/2026-08-03-openclaw-native-session-preview.md)
