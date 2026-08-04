@@ -333,6 +333,8 @@ export interface Session {
   systemSent?: boolean;
   // 从 sessions.list 缓存的每会话模型、思考、快速模式、输出、追踪、推理和用量数据。
   model?: string | null;
+  /** Gateway 明确锁定模型选择时为 true；客户端不得发起模型写入。 */
+  modelSelectionLocked?: boolean;
   /** Gateway 已解析的实际 Agent Runtime；缺失时客户端不得推测。 */
   agentRuntime?: GatewaySessionAgentRuntime | null;
   thinkingLevel?: string | null;

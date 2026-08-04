@@ -372,6 +372,7 @@ export default function App() {
           systemSent: s.systemSent === true,
           // 供标题栏与会话控制使用的每会话元数据。
           model: gatewayModel,
+          modelSelectionLocked: s.modelSelectionLocked === true,
           agentRuntime,
           thinkingLevel: thinkingProfile.level,
           thinkingLevels: thinkingProfile.levels,

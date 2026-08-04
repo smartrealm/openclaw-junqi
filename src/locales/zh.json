@@ -1423,6 +1423,7 @@
     "thinkingSwitchFailed": "思考级别更新失败",
     "sessionSettingsUpdateFailed": "会话设置更新失败",
     "sessionSettingsResponseInvalid": "OpenClaw 未确认本次会话设置变更。",
+    "sessionModelSelectionLocked": "OpenClaw 已锁定此会话的模型选择。",
     "effectiveTools": {
       "open": "查看当前会话实际工具",
       "title": "当前会话实际工具",
@@ -1937,6 +1938,7 @@
     "sessionRuntimeTitle": "会话模型与运行时控制",
     "sessionRuntimeProvider": "供应商",
     "sessionRuntimeModel": "模型",
+    "sessionRuntimeModelSelectionLocked": "OpenClaw 已锁定此会话的模型选择",
     "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}，快速模式 {{fastMode}}，工具输出 {{verbose}}，插件追踪 {{trace}}，响应使用量 {{responseUsage}}，推理可见性 {{reasoning}}",
     "sessionRuntimeThinkingInherit": "继承",
     "sessionRuntimeThinkingInherited": "继承：{{level}}",

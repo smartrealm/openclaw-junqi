@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  assertSessionModelSelectionAllowed,
+  SessionModelSelectionLockedError,
   resolveSessionAgentRuntimePatch,
   resolveSessionThinkingPatch,
 } from './useSessionRuntimeSettings';
@@ -35,4 +37,13 @@ test('模型回执仅在 Gateway 确认有效 runtime 时提供本地投影', ()
   const malformed = patchResult(null);
   malformed.resolved.agentRuntime = { id: '' };
   assert.equal(resolveSessionAgentRuntimePatch(malformed), null);
+});
+
+test('模型锁定会话拒绝模型变更与恢复默认模型', () => {
+  assert.doesNotThrow(() => assertSessionModelSelectionAllowed(false, true));
+  assert.doesNotThrow(() => assertSessionModelSelectionAllowed(true, false));
+  assert.throws(
+    () => assertSessionModelSelectionAllowed(true, true),
+    SessionModelSelectionLockedError,
+  );
 });

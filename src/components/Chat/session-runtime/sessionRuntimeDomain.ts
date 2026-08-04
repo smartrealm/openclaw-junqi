@@ -57,6 +57,11 @@ export function groupSessionModels(models: readonly ModelEntry[]): SessionModelG
   }));
 }
 
+/** 仅以 Gateway 会话行明确给出的锁定状态决定模型是否可改。 */
+export function canChangeSessionModel(modelSelectionLocked: boolean): boolean {
+  return !modelSelectionLocked;
+}
+
 /** null 是清除会话覆盖、继承 Gateway 已解析默认值的唯一客户端表示。 */
 export function normalizeThinkingLevel(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;

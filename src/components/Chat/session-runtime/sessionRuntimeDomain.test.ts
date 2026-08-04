@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  canChangeSessionModel,
   fastModeForGateway,
   canWriteThinkingLevel,
   groupSessionModels,
@@ -51,6 +52,11 @@ test('thinking writes require the latest Gateway profile instead of a client fal
   assert.equal(canWriteThinkingLevel(levels, 'high'), false);
   assert.equal(canWriteThinkingLevel(levels, null), true);
   assert.equal(canWriteThinkingLevel(null, null), false);
+});
+
+test('模型选择仅在 Gateway 未锁定会话时允许写入', () => {
+  assert.equal(canChangeSessionModel(false), true);
+  assert.equal(canChangeSessionModel(true), false);
 });
 
 test('fast modes map exactly to the documented session override values', () => {

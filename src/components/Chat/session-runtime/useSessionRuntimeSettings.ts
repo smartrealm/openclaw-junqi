@@ -22,6 +22,7 @@ import {
   normalizeTraceLevel,
   normalizeThinkingLevel,
   normalizeVerboseLevel,
+  canChangeSessionModel,
   canWriteThinkingLevel,
   reasoningLevelForGateway,
   responseUsageForGateway,
@@ -34,7 +35,29 @@ import {
   type SessionVerboseLevel,
 } from './sessionRuntimeDomain';
 
-function settingErrorMessage(error: unknown, fallback: string, invalidResponse: string): string {
+export class SessionModelSelectionLockedError extends Error {
+  constructor() {
+    super();
+    this.name = 'SessionModelSelectionLockedError';
+  }
+}
+
+export function assertSessionModelSelectionAllowed(
+  modelSelectionLocked: boolean,
+  modelWillChange: boolean,
+): void {
+  if (modelWillChange && !canChangeSessionModel(modelSelectionLocked)) {
+    throw new SessionModelSelectionLockedError();
+  }
+}
+
+function settingErrorMessage(
+  error: unknown,
+  fallback: string,
+  invalidResponse: string,
+  modelSelectionLocked: string,
+): string {
+  if (error instanceof SessionModelSelectionLockedError) return modelSelectionLocked;
   if (
     error
     && typeof error === 'object'
@@ -172,6 +195,9 @@ export function useSessionRuntimeSettings() {
   const currentReasoning = useChatStore((state) => (
     state.sessions.find((session) => session.key === state.activeSessionKey)?.reasoningLevel ?? null
   ));
+  const modelSelectionLocked = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.modelSelectionLocked === true
+  ));
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
 
@@ -203,6 +229,7 @@ export function useSessionRuntimeSettings() {
           error,
           t('errors.occurred'),
           t('chat.sessionSettingsResponseInvalid'),
+          t('chat.sessionModelSelectionLocked'),
         ),
       );
       return false;
@@ -218,26 +245,24 @@ export function useSessionRuntimeSettings() {
       const sessionKey = stateBefore.activeSessionKey || 'agent:main:main';
       const previousModel = stateBefore.manualModelOverride ?? stateBefore.currentModel;
       const previousThinking = normalizeThinkingLevel(stateBefore.currentThinking);
-      const previousFastMode = normalizeFastMode(
-        stateBefore.sessions.find((session) => session.key === sessionKey)?.fastMode ?? null,
-      );
+      const targetSession = stateBefore.sessions.find((session) => session.key === sessionKey);
+      const previousFastMode = normalizeFastMode(targetSession?.fastMode ?? null);
       const previousVerbose = normalizeVerboseLevel(
-        stateBefore.sessions.find((session) => session.key === sessionKey)?.verboseLevel ?? null,
+        targetSession?.verboseLevel ?? null,
       );
       const previousTrace = normalizeTraceLevel(
-        stateBefore.sessions.find((session) => session.key === sessionKey)?.traceLevel ?? null,
+        targetSession?.traceLevel ?? null,
       );
       const previousResponseUsage = normalizeResponseUsage(
-        stateBefore.sessions.find((session) => session.key === sessionKey)?.responseUsage ?? null,
+        targetSession?.responseUsage ?? null,
       );
       const previousReasoning = normalizeReasoningLevel(
-        stateBefore.sessions.find((session) => session.key === sessionKey)?.reasoningLevel ?? null,
+        targetSession?.reasoningLevel ?? null,
       );
       const modelWillChange = Boolean(draft.modelId && draft.modelId !== previousModel);
       const thinkingWillChange = draft.thinking !== previousThinking;
-      const currentThinkingLevels = stateBefore.sessions.find(
-        (session) => session.key === sessionKey,
-      )?.thinkingLevels;
+      const currentThinkingLevels = targetSession?.thinkingLevels;
+      assertSessionModelSelectionAllowed(targetSession?.modelSelectionLocked === true, modelWillChange);
       // 新模型的 profile 只能由随后的权威会话刷新确认，不能拿旧模型的能力集写入。
       if (
         thinkingWillChange
@@ -303,6 +328,10 @@ export function useSessionRuntimeSettings() {
       const state = useChatStore.getState();
       const sessionKey = state.activeSessionKey || 'agent:main:main';
       const previousModel = state.manualModelOverride ?? state.currentModel;
+      assertSessionModelSelectionAllowed(
+        state.sessions.find((session) => session.key === sessionKey)?.modelSelectionLocked === true,
+        true,
+      );
       const result = await gateway.setSessionModel(null, sessionKey);
       const effectiveModel = resolvedPatchModel(result);
       commitSessionModel(
@@ -315,5 +344,12 @@ export function useSessionRuntimeSettings() {
     });
   }, [runUpdate]);
 
-  return { activeSessionKey, committed, saving, apply, restoreDefaultModel };
+  return {
+    activeSessionKey,
+    committed,
+    modelSelectionLocked,
+    saving,
+    apply,
+    restoreDefaultModel,
+  };
 }

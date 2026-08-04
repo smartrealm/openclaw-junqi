@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, LoaderCircle, RotateCcw } from 'lucide-react';
+import { Check, ChevronDown, LoaderCircle, Lock, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { ProviderIcon, providerDisplayLabel } from '@/components/shared/provider-identity';
@@ -8,6 +8,7 @@ import {
   groupSessionModels,
   modelDisplayName,
   modelProviderId,
+  canChangeSessionModel,
   SESSION_FAST_MODES,
   SESSION_REASONING_LEVELS,
   SESSION_RESPONSE_USAGE_LEVELS,
@@ -24,7 +25,14 @@ import { useSessionRuntimeSettings } from './useSessionRuntimeSettings';
 export function SessionRuntimeControl() {
   const { t } = useTranslation();
   const availableModels = useChatStore((state) => state.availableModels);
-  const { activeSessionKey, committed, saving, apply, restoreDefaultModel } = useSessionRuntimeSettings();
+  const {
+    activeSessionKey,
+    committed,
+    modelSelectionLocked,
+    saving,
+    apply,
+    restoreDefaultModel,
+  } = useSessionRuntimeSettings();
   const [open, setOpen] = useState(false);
   const [draftModelId, setDraftModelId] = useState<string | null>(committed.modelId);
   const [draftThinking, setDraftThinking] = useState<string | null>(committed.thinking);
@@ -59,6 +67,10 @@ export function SessionRuntimeControl() {
     setDraftReasoning(committed.reasoning);
     setProviderId(committed.modelId ? modelProviderId(committed.modelId) : (groups[0]?.providerId ?? ''));
   }, [committed.fastMode, committed.modelId, committed.reasoning, committed.responseUsage, committed.thinking, committed.trace, committed.verbose, groups, open]);
+
+  useEffect(() => {
+    if (modelSelectionLocked) setDraftModelId(committed.modelId);
+  }, [committed.modelId, modelSelectionLocked]);
 
   useEffect(() => {
     setOpen(false);
@@ -100,6 +112,7 @@ export function SessionRuntimeControl() {
   const responseUsageLabel = t(`input.sessionRuntimeResponseUsageModes.${committed.responseUsage}`);
   const reasoningLabel = t(`input.sessionRuntimeReasoningModes.${committed.reasoning}`);
   const committedProviderId = committed.modelId ? modelProviderId(committed.modelId) : 'other';
+  const canSelectModel = canChangeSessionModel(modelSelectionLocked);
   return (
     <div ref={rootRef} className="relative min-w-0 no-drag">
       <button
@@ -166,19 +179,32 @@ export function SessionRuntimeControl() {
 
               <div className="min-h-0 overflow-y-auto p-2">
                 <div className="px-1 pb-1 text-[10px] font-semibold uppercase text-aegis-text-dim">
-                  {t('input.sessionRuntimeModel')}
+                  <span className="inline-flex items-center gap-1">
+                    {t('input.sessionRuntimeModel')}
+                    {modelSelectionLocked && (
+                      <span
+                        role="img"
+                        aria-label={t('input.sessionRuntimeModelSelectionLocked')}
+                        title={t('input.sessionRuntimeModelSelectionLocked')}
+                      >
+                        <Lock size={11} aria-hidden="true" />
+                      </span>
+                    )}
+                  </span>
                 </div>
                 {selectedGroup?.models.map((model) => {
                   const selected = model.id === draftModelId;
+                  const disabled = selected || !canSelectModel;
                   return (
                     <button
                       key={model.id}
                       type="button"
                       onClick={() => setDraftModelId(model.id)}
-                      disabled={selected}
+                      disabled={disabled}
                       aria-current={selected ? 'true' : undefined}
+                      title={!canSelectModel ? t('input.sessionRuntimeModelSelectionLocked') : undefined}
                       className={clsx(
-                        'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1.5 text-start transition-colors',
+                        'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1.5 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-45',
                         selected
                           ? 'cursor-default border-aegis-border bg-[rgb(var(--aegis-overlay)/0.055)] text-aegis-text'
                           : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.05)]',
@@ -393,8 +419,10 @@ export function SessionRuntimeControl() {
                 void restoreDefaultModel()
                   .then((updated) => { if (updated) setOpen(false); });
               }}
-              disabled={saving}
-              title={t('input.useDefaultModelHint')}
+              disabled={saving || !canSelectModel}
+              title={!canSelectModel
+                ? t('input.sessionRuntimeModelSelectionLocked')
+                : t('input.useDefaultModelHint')}
               className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-md border border-aegis-border px-3 text-[11px] text-aegis-text-muted transition-colors hover:border-aegis-border-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-45"
             >
               <RotateCcw size={12} className="shrink-0" />
