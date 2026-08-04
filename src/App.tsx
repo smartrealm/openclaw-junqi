@@ -48,6 +48,7 @@ import { parseGatewaySessionAgentRuntime } from '@/services/gateway/sessionAgent
 import { parseGatewaySessionAgentStatus } from '@/services/gateway/sessionAgentStatus';
 import { parseGatewaySessionAbortedLastRun } from '@/services/gateway/sessionAbortedLastRun';
 import { parseGatewaySessionContextBudgetStatus } from '@/services/gateway/sessionContextBudgetStatus';
+import { parseGatewaySessionGoal } from '@/services/gateway/sessionGoal';
 import { parseGatewaySessionLastRunError } from '@/services/gateway/sessionLastRunError';
 import { parseGatewaySessionThinkingProfile } from '@/services/gateway/sessionThinkingProfile';
 import {
@@ -330,7 +331,7 @@ export default function App() {
       if (!requestGate.isCurrent(requestId)) return 'superseded';
       const sessionListSnapshot = parseOpenClawSessionListSnapshot(result);
       const rawSessions = sessionListSnapshot.sessions;
-      // Gateway-level defaults (configured model, context window)
+      // Gateway 下发的默认模型与上下文窗口。
       const defaults = result?.defaults
         ? {
             model: resolveGatewaySessionModelId(
@@ -371,9 +372,9 @@ export default function App() {
           agentStatus: parseGatewaySessionAgentStatus(s.agentStatus),
           abortedLastRun: parseGatewaySessionAbortedLastRun(s.abortedLastRun),
           contextBudgetStatus: parseGatewaySessionContextBudgetStatus(s.contextBudgetStatus),
+          goal: parseGatewaySessionGoal(s.goal),
           lastRunError: parseGatewaySessionLastRunError(s.lastRunError),
-          // Keep an omitted run field as unknown. Treating it as `false`
-          // races local streaming state on older Gateway versions.
+          // 缺失运行字段时保持未知；将其视为 false 会与旧 Gateway 的本地流式状态竞争。
           hasActiveRun: typeof s.hasActiveRun === 'boolean' ? s.hasActiveRun : undefined,
           hasActiveSubagentRun: typeof s.hasActiveSubagentRun === 'boolean' ? s.hasActiveSubagentRun : undefined,
           subagentRunState: typeof s.subagentRunState === 'string' ? s.subagentRunState : undefined,
@@ -406,8 +407,7 @@ export default function App() {
           running: s.running ?? false,
         }];
       });
-      // Always sync sessions/defaults, even when the session list is currently empty.
-      // This keeps TitleBar model in sync from gateway defaults after config changes.
+      // 即使会话列表为空也同步会话与默认值，保证配置变化后标题栏模型保持一致。
       setSessions(sessions, defaults, {
         completeSnapshot: sessionListSnapshot.complete,
         sourceProjectionRevision,

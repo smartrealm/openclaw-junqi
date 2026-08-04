@@ -1439,6 +1439,15 @@
     "sessionContextBudgetCompact": "OpenClaw will compact context before the next prompt",
     "sessionContextBudgetTrimTools": "OpenClaw will trim tool results before the next prompt",
     "sessionContextBudgetCompactAndTrimTools": "OpenClaw will compact context and trim tool results before the next prompt",
+    "sessionGoal": "OpenClaw session goal: {{objective}} ({{status}})",
+    "sessionGoalStatus": {
+      "active": "active",
+      "paused": "paused",
+      "blocked": "blocked",
+      "usage_limited": "usage limited",
+      "budget_limited": "budget limited",
+      "complete": "complete"
+    },
     "sessionLastRunAborted": "Most recent run was stopped",
     "sessionLastRunAbortedShort": "Recent run stopped",
     "sessionLastRunFailed": "Most recent run failed: {{reason}}",

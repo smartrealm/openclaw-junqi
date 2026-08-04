@@ -1428,6 +1428,15 @@
     "sessionContextBudgetCompact": "OpenClaw 将在下一次提示前压缩上下文",
     "sessionContextBudgetTrimTools": "OpenClaw 将在下一次提示前裁剪工具结果",
     "sessionContextBudgetCompactAndTrimTools": "OpenClaw 将在下一次提示前压缩上下文并裁剪工具结果",
+    "sessionGoal": "OpenClaw 会话目标：{{objective}}（{{status}}）",
+    "sessionGoalStatus": {
+      "active": "进行中",
+      "paused": "已暂停",
+      "blocked": "受阻",
+      "usage_limited": "受用量限制",
+      "budget_limited": "受预算限制",
+      "complete": "已完成"
+    },
     "sessionLastRunAborted": "最近一次运行已中止",
     "sessionLastRunAbortedShort": "最近运行已中止",
     "sessionLastRunFailed": "最近一次运行失败：{{reason}}",

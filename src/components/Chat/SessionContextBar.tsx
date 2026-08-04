@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, AlertCircle, Check, ChevronDown, CircleStop, Crosshair, Download, FileDown, FileText, Folder, Gauge, MessageSquareText, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
+import { Activity, AlertCircle, Check, ChevronDown, CircleStop, Crosshair, Download, FileDown, FileText, Folder, Gauge, ListTodo, MessageSquareText, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -279,6 +279,13 @@ export function SessionContextBar() {
       : contextBudgetNotice === 'compact-and-trim-tools'
         ? t('chat.sessionContextBudgetCompactAndTrimTools')
         : null;
+  const sessionGoalObjective = activeSession?.goal?.objective ?? null;
+  const sessionGoalLabel = activeSession?.goal
+    ? t('chat.sessionGoal', {
+        objective: sessionGoalObjective,
+        status: t(`chat.sessionGoalStatus.${activeSession.goal.status}`),
+      })
+    : null;
 
   useEffect(() => {
     void refreshSkills();
@@ -321,6 +328,19 @@ export function SessionContextBar() {
           <Gauge size={11} className="shrink-0" aria-hidden="true" />
           <span className="hidden truncate text-[10px] lg:inline">
             {contextBudgetLabel}
+          </span>
+        </span>
+      )}
+      {sessionGoalLabel && (
+        <span
+          role="status"
+          className="inline-flex min-w-0 max-w-[min(38vw,340px)] items-center gap-1 text-aegis-primary"
+          aria-label={sessionGoalLabel}
+          title={sessionGoalLabel}
+        >
+          <ListTodo size={11} className="shrink-0" aria-hidden="true" />
+          <span className="hidden truncate text-[10px] lg:inline">
+            {sessionGoalObjective}
           </span>
         </span>
       )}

@@ -312,6 +312,27 @@ test('完整 Gateway 会话快照清除已消失的上下文预算状态', () =>
   );
 });
 
+test('完整 Gateway 会话快照清除已消失的原生会话目标', () => {
+  useChatStore.setState({
+    sessions: [{
+      key: MAIN_KEY,
+      label: 'Main',
+      goal: { id: 'goal-1', objective: 'Keep state', status: 'active' },
+    }],
+    openTabs: [MAIN_KEY],
+    activeSessionKey: MAIN_KEY,
+  });
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main', goal: null },
+  ]);
+
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.goal,
+    null,
+  );
+});
+
 test('a partial sessions.list page preserves sessions outside the current page', () => {
   const outsidePageKey = 'agent:worker:outside-partial-page';
   useChatStore.setState({

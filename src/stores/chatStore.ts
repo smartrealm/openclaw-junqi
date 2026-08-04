@@ -45,6 +45,7 @@ import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThink
 import type { GatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
 import type { GatewaySessionAgentStatus } from '@/services/gateway/sessionAgentStatus';
 import type { GatewaySessionContextBudgetStatus } from '@/services/gateway/sessionContextBudgetStatus';
+import type { GatewaySessionGoal } from '@/services/gateway/sessionGoal';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -335,6 +336,8 @@ export interface Session {
   abortedLastRun?: true | null;
   /** Gateway 预提示估算出的上下文预算路线；客户端不得自行推导。 */
   contextBudgetStatus?: GatewaySessionContextBudgetStatus | null;
+  /** Gateway 持久化的会话目标；本地 Task checkpoint 与协作 Run 不得写入或替代它。 */
+  goal?: GatewaySessionGoal | null;
   /** Gateway 记录的最近失败或超时运行摘要；缺失时不保留旧值。 */
   lastRunError?: string | null;
   hasActiveRun?: boolean;

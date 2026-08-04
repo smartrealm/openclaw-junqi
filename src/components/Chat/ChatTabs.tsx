@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, CircleAlert, CircleStop, Gauge, MessageSquareText, Trash2, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
+import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, CircleAlert, CircleStop, Gauge, ListTodo, MessageSquareText, Trash2, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
 import { IconButton } from '@/components/shared/button/Button';
 import { useTranslation } from 'react-i18next';
@@ -1199,6 +1199,12 @@ export function ChatTabs() {
               : contextBudgetNotice === 'compact-and-trim-tools'
                 ? t('chat.sessionContextBudgetCompactAndTrimTools')
                 : null;
+          const sessionGoalLabel = session?.goal
+            ? t('chat.sessionGoal', {
+                objective: session.goal.objective,
+                status: t(`chat.sessionGoalStatus.${session.goal.status}`),
+              })
+            : null;
 
           return (
             <SortableTab id={key} disabled={isMain}>
@@ -1211,7 +1217,7 @@ export function ChatTabs() {
               onMouseLeave={isMainSession ? handleAgentStatusTabLeave : undefined}
               onContextMenu={(e) => handleTabContextMenu(e, key)}
             >
-              {/* Tab button */}
+              {/* 会话页签操作区。 */}
               <button
                 role="tab"
                 aria-selected={isActive}
@@ -1233,7 +1239,7 @@ export function ChatTabs() {
                     className="inset-0 -z-10 border-b-2 border-aegis-primary bg-[rgb(var(--aegis-overlay)/0.04)]"
                   />
                 )}
-                {/* Canonical agent sessions share the same status affordance. */}
+                {/* 主智能体会话统一使用同一状态提示。 */}
                 {isMainSession ? (
                   <>
                     <div className={clsx('w-[6px] h-[6px] rounded-full shrink-0', statusDotClass)} title={statusLabel} />
@@ -1262,6 +1268,16 @@ export function ChatTabs() {
                     <Gauge size={12} aria-hidden="true" />
                   </span>
                 )}
+                {sessionGoalLabel && (
+                  <span
+                    role="img"
+                    aria-label={sessionGoalLabel}
+                    title={sessionGoalLabel}
+                    className="shrink-0 text-aegis-primary"
+                  >
+                    <ListTodo size={12} aria-hidden="true" />
+                  </span>
+                )}
                 {session?.lastRunError && (
                   <span
                     role="img"
@@ -1283,7 +1299,7 @@ export function ChatTabs() {
                   </span>
                 )}
 
-                {/* Label (double-click to rename) */}
+                {/* 会话标签，双击可重命名。 */}
                 {isEditing ? (
                   <input
                     autoFocus
