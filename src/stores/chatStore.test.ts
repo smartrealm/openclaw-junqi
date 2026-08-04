@@ -8,6 +8,7 @@ import {
 } from './chatStore';
 import { normalizeHistoryMessage } from '@/processing/normalizeHistoryMessage';
 import { gateway } from '@/services/gateway';
+import { OpenClawSessionGroupsUnsupportedError } from '@/services/gateway/OpenClawSessionGroupsClient';
 import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
 import {
   __resetSessionOrganizationForTests,
@@ -438,6 +439,50 @@ test('session category updates only after Gateway confirms the patched entry', a
     }]);
   } finally {
     Object.assign(gateway, { setSessionCategory });
+  }
+});
+
+test('native session group catalog stays transient and preserves Gateway display order', async () => {
+  const listSessionGroups = gateway.listSessionGroups;
+  Object.assign(gateway, {
+    listSessionGroups: async () => [
+      { name: 'Jarvis: Office', position: 0 },
+      { name: 'Projects', position: 1 },
+    ],
+  });
+  useChatStore.setState({
+    sessionGroupCatalog: [],
+    sessionGroupCatalogAvailability: 'unknown',
+  });
+
+  try {
+    await useChatStore.getState().refreshSessionGroupCatalog();
+    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, ['Jarvis: Office', 'Projects']);
+    assert.equal(useChatStore.getState().sessionGroupCatalogAvailability, 'ready');
+    useChatStore.getState().setConnectionStatus({ connected: false, connecting: false });
+    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, []);
+    assert.equal(useChatStore.getState().sessionGroupCatalogAvailability, 'unknown');
+  } finally {
+    Object.assign(gateway, { listSessionGroups });
+  }
+});
+
+test('unsupported native group catalog does not create a local catalog', async () => {
+  const listSessionGroups = gateway.listSessionGroups;
+  Object.assign(gateway, {
+    listSessionGroups: async () => { throw new OpenClawSessionGroupsUnsupportedError(); },
+  });
+  useChatStore.setState({
+    sessionGroupCatalog: ['stale local value'],
+    sessionGroupCatalogAvailability: 'unknown',
+  });
+
+  try {
+    await useChatStore.getState().refreshSessionGroupCatalog();
+    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, []);
+    assert.equal(useChatStore.getState().sessionGroupCatalogAvailability, 'unavailable');
+  } finally {
+    Object.assign(gateway, { listSessionGroups });
   }
 });
 

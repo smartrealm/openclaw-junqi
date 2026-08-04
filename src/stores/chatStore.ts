@@ -6,6 +6,7 @@ import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
 import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import { gateway, isGatewayChatSendDeliveryUncertain } from '@/services/gateway';
+import { OpenClawSessionGroupsUnsupportedError } from '@/services/gateway/OpenClawSessionGroupsClient';
 import type {
   OutboundChatPayload,
   PreparedAttachment,
@@ -457,6 +458,10 @@ interface ChatState {
   setSessionArchived: (key: string, archived: boolean) => Promise<void>;
   markSessionUnread: (key: string) => Promise<void>;
   setSessionCategory: (key: string, category: string | null) => Promise<void>;
+  /** Gateway-owned category catalog; never persisted or locally synthesized. */
+  sessionGroupCatalog: readonly string[];
+  sessionGroupCatalogAvailability: 'unknown' | 'ready' | 'unavailable';
+  refreshSessionGroupCatalog: () => Promise<void>;
   setActiveSession: (key: string) => void;
   incrementSessionUnread: (key: string, amount?: number) => void;
   markSessionCompleted: (key: string) => void;
@@ -1581,6 +1586,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       })),
     }));
   },
+  sessionGroupCatalog: [],
+  sessionGroupCatalogAvailability: 'unknown',
+  refreshSessionGroupCatalog: async () => {
+    if (get().sessionGroupCatalogAvailability === 'unavailable') return;
+    try {
+      const groups = await gateway.listSessionGroups();
+      set({
+        sessionGroupCatalog: groups.map((group) => group.name),
+        sessionGroupCatalogAvailability: 'ready',
+      });
+    } catch (error) {
+      if (error instanceof OpenClawSessionGroupsUnsupportedError) {
+        set({ sessionGroupCatalog: [], sessionGroupCatalogAvailability: 'unavailable' });
+        return;
+      }
+      throw error;
+    }
+  },
 
   // ── Pending file attachments (drag-drop → new session) ─────
   // ChatPage drains this on mount; if a new drag-drop happens while
@@ -2156,6 +2179,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       connected: status.connected,
       connecting: status.connecting,
       connectionError: status.error || null,
+      ...(!status.connected
+        ? { sessionGroupCatalog: [], sessionGroupCatalogAvailability: 'unknown' as const }
+        : {}),
       // Clear restarting once we (re)connect
       restarting: status.connected ? false : state.restarting,
     })),

@@ -78,18 +78,24 @@ export function SessionActionsMenu({
     markSessionUnread,
     setSessionArchived,
     setSessionCategory,
+    sessionGroupCatalog,
+    refreshSessionGroupCatalog,
   } = useChatStore();
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [newCategory, setNewCategory] = useState('');
   const isMainSession = isAgentMainSession(session.key);
   const sessionCategories = useMemo(() => {
     const categories = new Map<string, string>();
+    for (const category of sessionGroupCatalog) {
+      const normalized = category.trim();
+      if (normalized) categories.set(normalized, normalized);
+    }
     for (const candidate of sessions) {
       const category = typeof candidate.category === 'string' ? candidate.category.trim() : '';
       if (category) categories.set(category, category);
     }
     return [...categories.values()];
-  }, [sessions]);
+  }, [sessionGroupCatalog, sessions]);
 
   const finish = (action: () => Promise<void>) => {
     void action().then(onDismiss).catch((error: unknown) => {
@@ -151,7 +157,11 @@ export function SessionActionsMenu({
             <GitFork size={13} aria-hidden="true" />
             {t('chat.forkSession')}
           </MenuButton>
-          <MenuButton onClick={() => setGroupsOpen((current) => !current)}>
+          <MenuButton onClick={() => {
+            const nextOpen = !groupsOpen;
+            setGroupsOpen(nextOpen);
+            if (nextOpen) void refreshSessionGroupCatalog().catch(() => undefined);
+          }}>
             <Folder size={13} aria-hidden="true" />
             <span className="min-w-0 flex-1">{t('chat.setSessionCategory')}</span>
             <ChevronRight size={13} className={clsx('transition-transform', groupsOpen && 'rotate-90')} aria-hidden="true" />

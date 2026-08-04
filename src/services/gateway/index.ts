@@ -47,6 +47,7 @@ import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordin
 import type { GatewayAttachment } from '@/services/chat/types';
 import { SessionSettingsClient } from './SessionSettingsClient';
 import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
+import { OpenClawSessionGroupsClient } from './OpenClawSessionGroupsClient';
 import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
 import {
   OpenClawTaskLedgerClient,
@@ -923,6 +924,9 @@ const sessionOrganization = new OpenClawSessionOrganizationClient({
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
   request: (method, params) => connection.request(method, params),
 });
+const sessionGroups = new OpenClawSessionGroupsClient(
+  (method, params) => connection.request(method, params),
+);
 const sessionLifecycle = new OpenClawSessionLifecycleClient(
   (method, params) => connection.request(method, params),
 );
@@ -1481,6 +1485,9 @@ export const gateway = {
   },
   async setSessionCategory(category: string | null, sessionKey: string) {
     return sessionOrganization.setCategory(sessionKey, category);
+  },
+  async listSessionGroups() {
+    return sessionGroups.list();
   },
   async updateAgentParams(agentId: string, params: Record<string, unknown>) {
     return requestPrivileged('agents.update', { agentId, params });
