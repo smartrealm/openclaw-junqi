@@ -6,6 +6,7 @@ import {
   OpenClawCompactionCheckpointsUnavailableError,
   OpenClawSessionCompactionCheckpointsClient,
 } from './OpenClawSessionCompactionCheckpointsClient';
+import { OpenClawSessionTargetError } from './OpenClawSessionTarget';
 
 const checkpoint = {
   checkpointId: 'checkpoint-1',
@@ -37,6 +38,26 @@ test('reads Gateway compaction checkpoint metadata through a fenced official req
     params: { key: 'agent:main:main' },
     connectionId: 'gateway-a',
   }]);
+});
+
+test('在读取连接或 Gateway 请求前拒绝缺失检查点会话目标', async () => {
+  let capturedConnection = false;
+  let requested = false;
+  const client = new OpenClawSessionCompactionCheckpointsClient({
+    captureConnectionId: () => {
+      capturedConnection = true;
+      return 'gateway-a';
+    },
+    isConnectionCurrent: () => true,
+    requestFenced: async () => {
+      requested = true;
+      return {};
+    },
+  });
+
+  await assert.rejects(client.list('   '), OpenClawSessionTargetError);
+  assert.equal(capturedConnection, false);
+  assert.equal(requested, false);
 });
 
 test('preserves an official safe-integer checkpoint timestamp for the UI to validate', async () => {

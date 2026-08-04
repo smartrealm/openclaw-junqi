@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SessionCompactionClient } from './SessionCompactionClient';
+import { OpenClawSessionTargetError } from './OpenClawSessionTarget';
 
 const SESSION_KEY = 'agent:main:main';
 const CHECKPOINT_ID = 'checkpoint-1';
@@ -119,4 +120,30 @@ test('serializes branch and restore mutations through the shared session lane', 
     'start-sessions.compaction.restore',
     'end-sessions.compaction.restore',
   ]);
+});
+
+test('在请求或 mutation coordinator 前拒绝缺失检查点会话目标', async () => {
+  let mutations = 0;
+  let requests = 0;
+  const client = new SessionCompactionClient({
+    request: async () => {
+      requests += 1;
+      return {};
+    },
+    requestPrivileged: async () => {
+      requests += 1;
+      return {};
+    },
+    runMutation: async (_key, operation) => {
+      mutations += 1;
+      return operation();
+    },
+  });
+  const missingTarget = '   ';
+
+  await assert.rejects(client.get(missingTarget, CHECKPOINT_ID), OpenClawSessionTargetError);
+  await assert.rejects(client.branch(missingTarget, CHECKPOINT_ID), OpenClawSessionTargetError);
+  await assert.rejects(client.restore(missingTarget, CHECKPOINT_ID), OpenClawSessionTargetError);
+  assert.equal(mutations, 0);
+  assert.equal(requests, 0);
 });

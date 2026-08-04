@@ -3,6 +3,7 @@ import {
   GatewayDisconnectedError,
   GatewayRpcError,
 } from './Connection';
+import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 export const OPENCLAW_COMPACTION_CHECKPOINT_LIST_METHOD = 'sessions.compaction.list' as const;
 
@@ -120,12 +121,6 @@ function parseCheckpoint(value: unknown): OpenClawCompactionCheckpoint {
   };
 }
 
-function key(input: string): string {
-  const normalized = input.trim();
-  if (!normalized) throw new Error('Invalid OpenClaw compaction checkpoint key');
-  return normalized;
-}
-
 function unsupported(error: unknown): boolean {
   return error instanceof GatewayRpcError && ['METHOD_NOT_FOUND', 'UNKNOWN_METHOD', 'UNKNOWN_COMMAND'].includes(error.code ?? '');
 }
@@ -134,7 +129,7 @@ function unavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
 
-/** Reads only Gateway-owned compaction checkpoint metadata. */
+/** 只读取由 Gateway 持有的压缩检查点元数据。 */
 export class OpenClawSessionCompactionCheckpointsClient {
   constructor(private readonly dependencies: OpenClawCompactionCheckpointClientDependencies) {}
 
@@ -156,7 +151,7 @@ export class OpenClawSessionCompactionCheckpointsClient {
   }
 
   async list(sessionKey: string): Promise<readonly OpenClawCompactionCheckpoint[]> {
-    const requestedKey = key(sessionKey);
+    const requestedKey = requireOpenClawSessionTarget(sessionKey);
     const source = record(await this.request(OPENCLAW_COMPACTION_CHECKPOINT_LIST_METHOD, { key: requestedKey }));
     if (!source || source.ok !== true || nonEmptyString(source.key) !== requestedKey || !Array.isArray(source.checkpoints)) {
       throw new OpenClawCompactionCheckpointsResponseError();
