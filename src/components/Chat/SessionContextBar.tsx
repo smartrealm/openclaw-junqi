@@ -16,6 +16,7 @@ import { EffectiveToolsControl } from './EffectiveToolsControl';
 import { SessionInspectionControl } from './SessionInspectionControl';
 import { SessionArtifactsControl } from './SessionArtifactsControl';
 import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
+import { BrowserProviderControl } from '@/components/Browser/BrowserProviderControl';
 
 function WorkspacePicker({ agentId, current }: { agentId: string; current?: string }) {
   const { t } = useTranslation();
@@ -170,6 +171,7 @@ export function SessionContextBar() {
             agentId={agentId}
             onOpenConfiguration={() => navigate('/tools')}
           />
+          <BrowserProviderControl />
           <SessionInspectionControl sessionKey={activeSessionKey} agentId={agentId} />
           <SessionArtifactsControl sessionKey={activeSessionKey} agentId={agentId} />
           <button

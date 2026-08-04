@@ -9,6 +9,7 @@ export interface BrowserProviderProbe {
   platform: string;
   platformSupported: boolean;
   executablePath?: string;
+  applicationPath?: string;
 }
 
 export interface BrowserProviderDescriptor {
@@ -86,6 +87,8 @@ function parseProbe(value: unknown, index: number): BrowserProviderProbe {
   };
   const executablePath = nullableString(value.executablePath, `providers[${index}].executablePath`);
   if (executablePath) probe.executablePath = executablePath;
+  const applicationPath = nullableString(value.applicationPath, `providers[${index}].applicationPath`);
+  if (applicationPath) probe.applicationPath = applicationPath;
   return probe;
 }
 
@@ -104,4 +107,8 @@ export function findEgoLiteProbe(
   probes: readonly BrowserProviderProbe[],
 ): BrowserProviderProbe | undefined {
   return probes.find((probe) => probe.providerId === 'ego-lite');
+}
+
+export function isEgoLiteReady(probe: BrowserProviderProbe | undefined): boolean {
+  return probe?.status === 'available' && Boolean(probe.applicationPath);
 }

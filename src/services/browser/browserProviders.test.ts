@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   BROWSER_PROVIDER_DESCRIPTORS,
   hasOpenClawBrowserTool,
+  isEgoLiteReady,
   parseBrowserProviderProbes,
 } from './browserProviders';
 
@@ -13,10 +14,14 @@ test('browser provider probe keeps the native and external providers distinct', 
     platform: 'macos',
     platformSupported: true,
     executablePath: '/usr/local/bin/ego-browser',
+    applicationPath: '/Applications/ego lite.app',
   }]);
 
   assert.equal(result[0]?.providerId, 'ego-lite');
   assert.equal(result[0]?.executablePath, '/usr/local/bin/ego-browser');
+  assert.equal(result[0]?.applicationPath, '/Applications/ego lite.app');
+  assert.equal(isEgoLiteReady(result[0]), true);
+  assert.equal(isEgoLiteReady({ ...result[0], applicationPath: undefined }), false);
   assert.deepEqual(BROWSER_PROVIDER_DESCRIPTORS.map((provider) => provider.id), [
     'openclaw-native',
     'ego-lite',
@@ -26,6 +31,7 @@ test('browser provider probe keeps the native and external providers distinct', 
 test('browser provider probe rejects unknown providers and invalid status values', () => {
   assert.throws(() => parseBrowserProviderProbes([{ providerId: 'fake', status: 'available', platform: 'macos', platformSupported: true }]));
   assert.throws(() => parseBrowserProviderProbes([{ providerId: 'ego-lite', status: 'ready', platform: 'macos', platformSupported: true }]));
+  assert.throws(() => parseBrowserProviderProbes([{ providerId: 'ego-lite', status: 'available', platform: 'macos', platformSupported: true, applicationPath: 42 }]));
 });
 
 test('native browser availability is derived from the effective Gateway tool list', () => {

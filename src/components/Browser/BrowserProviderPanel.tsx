@@ -18,8 +18,11 @@ import { useBrowserRuntimeStatus, type NativeBrowserStatus } from '@/hooks/useBr
 import {
   BROWSER_PROVIDER_DESCRIPTORS,
   findEgoLiteProbe,
+  isEgoLiteReady,
   type BrowserProviderProbeStatus,
 } from '@/services/browser/browserProviders';
+import { openEgoLite } from '@/services/browser/browserProviderRuntime';
+import { EgoLiteSetupDialog } from './EgoLiteSetupDialog';
 
 interface BrowserProviderPanelProps {
   compact?: boolean;
@@ -59,10 +62,15 @@ export function BrowserProviderPanel({ compact = false }: BrowserProviderPanelPr
     nativeToolError,
   } = useBrowserRuntimeStatus();
   const [copied, setCopied] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
   const egoProbe = findEgoLiteProbe(probes);
   const egoStatus: DisplayStatus = probeLoading
     ? 'checking'
-    : egoProbe?.status ?? (probeError ? 'unknown' : 'unknown');
+    : egoProbe?.status === 'available' && !isEgoLiteReady(egoProbe)
+      ? 'notInstalled'
+      : egoProbe?.status ?? (probeError ? 'unknown' : 'unknown');
   const nativeDescriptor = BROWSER_PROVIDER_DESCRIPTORS.find((provider) => provider.id === 'openclaw-native');
   const egoDescriptor = BROWSER_PROVIDER_DESCRIPTORS.find((provider) => provider.id === 'ego-lite');
 
@@ -74,6 +82,20 @@ export function BrowserProviderPanel({ compact = false }: BrowserProviderPanelPr
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
       setCopied(false);
+    }
+  }
+
+  async function openApplication(): Promise<void> {
+    if (!egoProbe?.applicationPath || opening) return;
+    setOpening(true);
+    setOpenError(null);
+    try {
+      await openEgoLite();
+      setSetupOpen(false);
+    } catch (error) {
+      setOpenError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOpening(false);
     }
   }
 
@@ -181,6 +203,11 @@ export function BrowserProviderPanel({ compact = false }: BrowserProviderPanelPr
                   ? t('browserProviders.detectedPlatform', { platform: egoProbe.platform })
                   : t(egoDescriptor.capabilityKey)}
             </p>
+            {egoProbe?.applicationPath ? (
+              <p className="mt-1 text-[10px] leading-4 text-aegis-text-dim">
+                {t('browserProviders.detectedApplication', { path: egoProbe.applicationPath })}
+              </p>
+            ) : null}
             {egoStatus === 'notInstalled' && egoDescriptor.installCommand ? (
               <div className="mt-3 flex items-center gap-2 rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] px-2.5 py-2">
                 <code className="min-w-0 flex-1 truncate text-[10px] text-aegis-text-secondary">
@@ -200,6 +227,17 @@ export function BrowserProviderPanel({ compact = false }: BrowserProviderPanelPr
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={() => {
+                  setOpenError(null);
+                  setSetupOpen(true);
+                }}
+                className="inline-flex items-center gap-1 rounded-md bg-aegis-accent px-2.5 py-1.5 text-[11px] font-medium text-white transition-colors hover:brightness-105"
+              >
+                <ExternalLink size={12} />
+                {t('browserProviders.openSetup')}
+              </button>
+              <button
+                type="button"
                 onClick={() => void openExternal(egoDescriptor.docsUrl)}
                 className="inline-flex items-center gap-1 rounded-md border border-aegis-border px-2.5 py-1.5 text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-hover"
               >
@@ -217,6 +255,22 @@ export function BrowserProviderPanel({ compact = false }: BrowserProviderPanelPr
           {t('browserProviders.probeError')}
         </p>
       ) : null}
+      {openError && !setupOpen ? (
+        <p role="alert" className="mt-3 text-[10px] text-aegis-danger">
+          {t('browserProviders.openError')}
+        </p>
+      ) : null}
+      <EgoLiteSetupDialog
+        open={setupOpen}
+        applicationPath={egoProbe?.applicationPath}
+        executablePath={egoProbe?.executablePath}
+        opening={opening}
+        error={openError}
+        onClose={() => setSetupOpen(false)}
+        onOpenApplication={() => void openApplication()}
+        onOpenDocs={() => void openExternal(egoDescriptor?.docsUrl ?? 'https://github.com/citrolabs/ego-lite')}
+        onRefresh={() => void refresh()}
+      />
     </section>
   );
 }
