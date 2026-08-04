@@ -452,17 +452,6 @@ const sessionDiff = new OpenClawSessionDiffClient({
     expectedConnectionId,
   ),
 });
-const sessionFiles = new OpenClawSessionFilesClient({
-  captureConnectionId: () => connection.getAttestedConnectionId(),
-  isConnectionCurrent: (connectionId) => (
-    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
-  ),
-  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
-    method,
-    params,
-    expectedConnectionId,
-  ),
-});
 const auditClient = new OpenClawAuditClient(
   (method, params) => connection.request(method, params),
 );
@@ -1028,6 +1017,18 @@ export function createApprovalRequester(
 
 const requestPrivileged = createPrivilegedRequester(connection);
 const requestApprovals = createApprovalRequester(connection);
+const sessionFiles = new OpenClawSessionFilesClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+});
 const approvalClient = new OpenClawApprovalClient(
   (method, params) => requestApprovals(method, params),
 );
@@ -1451,6 +1452,15 @@ export const gateway = {
   },
   async getSessionFile(sessionKey: string, path: string, agentId?: string) {
     return sessionFiles.get(sessionKey, path, agentId);
+  },
+  async setSessionFile(
+    sessionKey: string,
+    path: string,
+    content: string,
+    expectedHash: string,
+    agentId?: string,
+  ) {
+    return sessionFiles.set(sessionKey, path, content, expectedHash, agentId);
   },
   async listSessionArtifacts(sessionKey: string, agentId?: string): Promise<ArtifactSummary[]> {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);

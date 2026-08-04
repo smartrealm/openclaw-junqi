@@ -7,6 +7,7 @@ import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 export const OPENCLAW_SESSIONS_FILES_LIST_METHOD = 'sessions.files.list' as const;
 export const OPENCLAW_SESSIONS_FILES_GET_METHOD = 'sessions.files.get' as const;
+export const OPENCLAW_SESSIONS_FILES_SET_METHOD = 'sessions.files.set' as const;
 
 export type OpenClawSessionFileKind = 'modified' | 'read';
 export type OpenClawSessionFileContentEncoding = 'utf8' | 'base64';
@@ -67,6 +68,7 @@ export interface OpenClawSessionFilesClientDependencies {
     params: Record<string, unknown>,
     connectionId: string,
   ) => Promise<unknown>;
+  requestPrivileged?: (method: string, params: Record<string, unknown>) => Promise<unknown>;
 }
 
 export class OpenClawSessionFilesResponseError extends Error {
@@ -84,6 +86,15 @@ export class OpenClawSessionFilesUnavailableError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'OpenClawSessionFilesUnavailableError';
+  }
+}
+
+export class OpenClawSessionFileConflictError extends Error {
+  readonly code = 'OPENCLAW_SESSION_FILE_CONFLICT';
+
+  constructor(readonly currentHash?: string) {
+    super('The session file changed before OpenClaw could save it');
+    this.name = 'OpenClawSessionFileConflictError';
   }
 }
 
@@ -280,6 +291,20 @@ function optionalAgentId(value: string | undefined): string | undefined {
   return value?.trim() || undefined;
 }
 
+function hash(value: unknown): string | null {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) ? value : null;
+}
+
+function sessionFileConflict(error: unknown): OpenClawSessionFileConflictError | null {
+  if (!(error instanceof GatewayRpcError) || error.code !== 'INVALID_REQUEST') return null;
+  const details = record(error.details);
+  if (details?.type !== 'session_file_conflict') return null;
+  const parsedCurrentHash = details.currentHash === undefined ? undefined : hash(details.currentHash);
+  if (parsedCurrentHash === null) return null;
+  const currentHash = parsedCurrentHash;
+  return new OpenClawSessionFileConflictError(currentHash);
+}
+
 function unsupportedMethod(error: unknown): boolean {
   return error instanceof GatewayRpcError
     && (error.code === 'METHOD_NOT_FOUND'
@@ -322,6 +347,41 @@ export class OpenClawSessionFilesClient {
       ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
     });
     return parseGet(response, key);
+  }
+
+  async set(
+    sessionKey: string,
+    path: string,
+    content: string,
+    expectedHash: string,
+    agentId?: string,
+  ): Promise<OpenClawSessionFilesGet> {
+    const key = requireOpenClawSessionTarget(sessionKey);
+    const targetPath = nonEmptyText(path);
+    const expected = hash(expectedHash);
+    if (!targetPath || !expected || typeof content !== 'string') {
+      throw new OpenClawSessionFilesResponseError();
+    }
+    if (!this.dependencies.requestPrivileged) {
+      throw new OpenClawSessionFilesUnavailableError(
+        'No privileged Gateway requester is available for session file writes',
+      );
+    }
+    const normalizedAgentId = optionalAgentId(agentId);
+    try {
+      const response = await this.dependencies.requestPrivileged(OPENCLAW_SESSIONS_FILES_SET_METHOD, {
+        sessionKey: key,
+        path: targetPath,
+        content,
+        expectedHash: expected,
+        ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
+      });
+      return parseGet(response, key);
+    } catch (error) {
+      const conflict = sessionFileConflict(error);
+      if (conflict) throw conflict;
+      throw error;
+    }
   }
 
   private async request(

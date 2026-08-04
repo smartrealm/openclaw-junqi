@@ -189,6 +189,7 @@ specs/
 - [OpenClaw 原生会话组写入对齐](quality/2026-08-04-openclaw-session-group-mutations.md)
 - [OpenClaw 会话变更快照对齐](quality/2026-08-04-openclaw-session-diff.md)
 - [OpenClaw 会话文件只读投影对齐](quality/2026-08-04-openclaw-session-files-readonly.md)
+- [OpenClaw 会话文件 CAS 写入对齐](quality/2026-08-04-openclaw-session-files-cas-write.md)
 - [OpenClaw 原生会话组目录投影](quality/2026-08-04-openclaw-native-session-group-catalog-projection.md)
 - [OpenClaw Gateway 方法广告发现边界修正](quality/2026-08-04-openclaw-gateway-method-advertisement-gate.md)
 - [OpenClaw 稳定性诊断只读投影](quality/2026-08-04-openclaw-diagnostic-stability.md)
