@@ -58,7 +58,7 @@ export function PaneComposerBar({
         flexShrink: 0,
         overflow: "hidden",
         // 高度自适应内容，上下限由内部 textarea 保证
-        borderTop: "1px solid rgb(255 255 255 / 0.07)",
+        borderTop: "1px solid var(--aegis-border)",
         background: "rgb(var(--aegis-surface))",
         transform: isOpen ? "translateY(0)" : "translateY(100%)",
         // ponytail: display:none when closed avoids height:0 rendering quirks
@@ -78,7 +78,7 @@ export function PaneComposerBar({
           minHeight: 80,
           maxHeight: 240,
           background: "rgb(var(--aegis-surface))",
-          border: "1px solid rgb(255 255 255 / 0.12)",
+          border: "1px solid var(--aegis-border-hover)",
           borderRadius: 6,
           padding: "8px 12px",
           fontSize: 12,

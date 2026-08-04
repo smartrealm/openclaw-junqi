@@ -15,31 +15,31 @@
   --terminal-border:    var(--aegis-border);
 
   /* Text — follows aegis text tokens. */
-  --terminal-text:      var(--aegis-text);
-  --terminal-text-dim:  var(--aegis-text-muted);
+  --terminal-text:      rgb(var(--aegis-text));
+  --terminal-text-dim:  rgb(var(--aegis-text-muted));
 
-  /* Cursor must stay visible on both dark and light/elevated terminal backgrounds. */
-  --terminal-cursor:    #38bdf8;
-  --terminal-cursor-accent: #020617;
-  --terminal-selection: rgba(127, 154, 255, 0.25);
+  /* Cursor and selection follow the active product accent. */
+  --terminal-cursor:    rgb(var(--aegis-primary));
+  --terminal-cursor-accent: var(--aegis-btn-primary-text);
+  --terminal-selection: rgb(var(--aegis-primary) / 0.25);
 
-  /* ANSI 16-color palette — aegis-status-* tokens. */
-  --ansi-black:         #727b8f;
-  --ansi-red:           #ff5a5a;    /* = aegis-danger */
-  --ansi-green:         #3dd68c;    /* = aegis-success */
-  --ansi-yellow:        #f5a623;    /* = aegis-warning */
-  --ansi-blue:          #7f9aff;    /* = aegis-primary */
-  --ansi-magenta:       #b894f5;
-  --ansi-cyan:          #56d4dd;
-  --ansi-white:         #d6dbe8;
-  --ansi-bright-black:  #8b95a8;
-  --ansi-bright-red:    #ff7b7b;
-  --ansi-bright-green:  #5ee8a0;
-  --ansi-bright-yellow: #f7bb4a;
-  --ansi-bright-blue:   #9eb4ff;
-  --ansi-bright-magenta:#d0a8ff;
-  --ansi-bright-cyan:   #7ae8f0;
-  --ansi-bright-white:  #f1f4fb;
+  /* ANSI 16-color palette — semantic tokens, not a second theme palette. */
+  --ansi-black:         rgb(var(--aegis-text-dim));
+  --ansi-red:           rgb(var(--aegis-danger));
+  --ansi-green:         rgb(var(--aegis-success));
+  --ansi-yellow:        rgb(var(--aegis-warning));
+  --ansi-blue:          rgb(var(--aegis-primary));
+  --ansi-magenta:       var(--aegis-data-4);
+  --ansi-cyan:          rgb(var(--aegis-accent));
+  --ansi-white:         rgb(var(--aegis-text-secondary));
+  --ansi-bright-black:  rgb(var(--aegis-text-muted));
+  --ansi-bright-red:    rgb(var(--aegis-status-failed));
+  --ansi-bright-green:  rgb(var(--aegis-status-ended));
+  --ansi-bright-yellow: rgb(var(--aegis-status-attention));
+  --ansi-bright-blue:   rgb(var(--aegis-primary-hover));
+  --ansi-bright-magenta:var(--aegis-data-4);
+  --ansi-bright-cyan:   var(--aegis-data-7);
+  --ansi-bright-white:  rgb(var(--aegis-text));
 }
 
 /* StatusBadge pulse — used by StatusDot when state === "running". */

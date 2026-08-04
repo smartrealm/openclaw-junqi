@@ -70,6 +70,12 @@
   --color-aegis-danger: rgb(var(--aegis-danger));
   --color-aegis-warning: rgb(var(--aegis-warning));
   --color-aegis-success: rgb(var(--aegis-success));
+  --color-aegis-status-running: rgb(var(--aegis-status-running));
+  --color-aegis-status-attention: rgb(var(--aegis-status-attention));
+  --color-aegis-status-idle: rgb(var(--aegis-status-idle));
+  --color-aegis-status-dormant: rgb(var(--aegis-status-dormant));
+  --color-aegis-status-failed: rgb(var(--aegis-status-failed));
+  --color-aegis-status-ended: rgb(var(--aegis-status-ended));
   --color-aegis-menu-text: rgb(var(--aegis-menu-text));
   --color-aegis-menu-text-muted: rgb(var(--aegis-menu-text-muted));
 
@@ -99,10 +105,10 @@
   --font-editor: var(--font-mono);
   --font-arabic: 'IBM Plex Sans Arabic', 'Segoe UI', 'Tahoma', sans-serif;
 
-  /* ── shadows — junqi-scale (cards use borders, not shadows) ── */
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-float: 0 8px 32px rgba(0,0,0,0.2);
-  --shadow-popover: 0 8px 32px rgba(0,0,0,0.22);
+  /* ── shadows — resolved by the active theme ── */
+  --shadow-card: var(--aegis-shadow-card);
+  --shadow-float: var(--aegis-shadow-float);
+  --shadow-popover: var(--aegis-shadow-popover);
 
   /* ── background images ── */
   --background-image-gradient-radial: radial-gradient(var(--tw-gradient-stops));
@@ -161,6 +167,46 @@
 @custom-variant dark (&:where([data-theme="aegis-dark"], [data-theme="aegis-dark"] *, [data-theme="aegis-midnight"], [data-theme="aegis-midnight"] *));
 
 @layer base {
+  /*
+   * Compatibility bridge for legacy Tailwind colour utilities.
+   *
+   * Product code should use `aegis-*` utilities directly, but existing
+   * surfaces still contain semantic-looking classes such as `text-red-400`
+   * and `bg-emerald-500/10`. Rebinding those palette variables at the active
+   * theme boundary keeps those surfaces repaintable while they are migrated.
+   * Do not use this bridge for artwork or data-viz palettes.
+   */
+  [data-theme] {
+    --color-blue-300: rgb(var(--aegis-primary));
+    --color-blue-400: rgb(var(--aegis-primary));
+    --color-blue-500: rgb(var(--aegis-primary));
+    --color-blue-600: rgb(var(--aegis-primary-deep));
+    --color-cyan-300: rgb(var(--aegis-accent));
+    --color-cyan-400: rgb(var(--aegis-accent));
+    --color-cyan-500: rgb(var(--aegis-accent-hover));
+    --color-emerald-300: rgb(var(--aegis-success));
+    --color-emerald-400: rgb(var(--aegis-success));
+    --color-emerald-500: rgb(var(--aegis-success));
+    --color-green-300: rgb(var(--aegis-success));
+    --color-green-400: rgb(var(--aegis-success));
+    --color-green-500: rgb(var(--aegis-success));
+    --color-orange-300: rgb(var(--aegis-warning));
+    --color-orange-400: rgb(var(--aegis-warning));
+    --color-orange-500: rgb(var(--aegis-warning));
+    --color-orange-600: rgb(var(--aegis-warning));
+    --color-yellow-300: rgb(var(--aegis-warning));
+    --color-yellow-400: rgb(var(--aegis-warning));
+    --color-yellow-500: rgb(var(--aegis-warning));
+    --color-yellow-600: rgb(var(--aegis-warning));
+    --color-red-300: rgb(var(--aegis-danger));
+    --color-red-400: rgb(var(--aegis-danger));
+    --color-red-500: rgb(var(--aegis-danger));
+    --color-red-600: rgb(var(--aegis-danger));
+    --color-slate-300: rgb(var(--aegis-text-secondary));
+    --color-slate-400: rgb(var(--aegis-text-dim));
+    --color-slate-500: rgb(var(--aegis-text-dim));
+  }
+
   *, ::before, ::after {
     border-color: var(--color-gray-200, currentcolor);
   }
@@ -736,7 +782,7 @@
   background: rgb(var(--aegis-primary));
   cursor: pointer;
   border: 2px solid var(--aegis-bg-solid);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+  box-shadow: var(--aegis-shadow-card);
 }
 .aegis-slider::-moz-range-thumb {
   width: 16px;
@@ -745,7 +791,7 @@
   background: rgb(var(--aegis-primary));
   cursor: pointer;
   border: 2px solid var(--aegis-bg-solid);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+  box-shadow: var(--aegis-shadow-card);
 }
 
 /* Calendar shared utilities */

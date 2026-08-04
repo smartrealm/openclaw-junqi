@@ -208,8 +208,8 @@ function CommitDetailPanel({
             {t(detail.files.length === 1 ? "gitHistory.fileChanged" : "gitHistory.filesChanged", {
               count: detail.files.length,
             })}{" "}
-            <span style={{ color: "#3fb950" }}>+{detail.total_additions}</span>{" "}
-            <span style={{ color: "#f85149" }}>-{detail.total_deletions}</span>
+            <span style={{ color: "var(--diff-add-fg)" }}>+{detail.total_additions}</span>{" "}
+            <span style={{ color: "var(--diff-delete-fg)" }}>-{detail.total_deletions}</span>
           </div>
           <GitFileViewToggle mode={fileViewMode} onChange={setFileViewMode} />
         </div>
@@ -529,7 +529,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
                 position: "absolute", top: "calc(100% - 2px)", left: 10, right: 10,
                 background: "var(--aegis-card)",
                 border: "1px solid var(--aegis-border)", borderRadius: 7,
-                boxShadow: "0 8px 32px rgba(0,0,0,0.22)",
+                boxShadow: "var(--aegis-shadow-popover)",
                 zIndex: 200, overflow: "hidden",
               }}
             >

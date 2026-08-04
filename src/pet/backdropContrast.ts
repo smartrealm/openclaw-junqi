@@ -16,13 +16,13 @@ export type PetBackdropSurface = 'light' | 'dark';
 const DARK_TEXT_LUMINANCE = 0.00641851682408105;
 const LIGHT_TEXT_LUMINANCE = 0.9535594780808019;
 const LIGHT_SURFACE: PetBackdropTextStyle = {
-  foreground: '#101318',
+  foreground: 'rgb(var(--aegis-pet-text-on-light))',
   shadow: 'none',
   surface: 'light',
 };
 
 const DARK_SURFACE: PetBackdropTextStyle = {
-  foreground: '#f8fafc',
+  foreground: 'rgb(var(--aegis-pet-text-on-dark))',
   shadow: 'none',
   surface: 'dark',
 };

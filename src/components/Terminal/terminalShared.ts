@@ -54,16 +54,10 @@ export function buildDarkTerminalTheme() {
   };
 }
 
-export const DARK_THEME   = buildDarkTerminalTheme();
-export const LIGHT_THEME   = { ...DARK_THEME, background: "#1a1e27", foreground: "#f1f4fb" };
-export const MIDNIGHT_THEME = { ...DARK_THEME, background: "#0a0d12" };
-export const EYECARE_THEME = { ...DARK_THEME, background: "#1c1a14" };
-
-export function themeFor(variant: ThemeVariant) {
-  if (variant === "dark") return DARK_THEME;
-  if (variant === "midnight") return MIDNIGHT_THEME;
-  if (variant === "eyecare") return EYECARE_THEME;
-  return LIGHT_THEME;
+export function themeFor(_variant: ThemeVariant) {
+  // The active document theme is the single source of truth. A fresh object
+  // is required because xterm snapshots its palette when options are set.
+  return buildDarkTerminalTheme();
 }
 
 export function minimumContrastRatioFor(variant: ThemeVariant): number {

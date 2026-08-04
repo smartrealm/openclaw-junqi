@@ -42,7 +42,7 @@ function useEmotionColor(themeName: PetThemeName): Record<PetEmotion, string> {
     working: petAccent.warning,
     happy: petAccent.success,
     celebrate: petAccent.success,
-    error: '#ef4444',
+    error: 'rgb(var(--aegis-danger))',
     sleepy: 'rgb(var(--aegis-text-dim))',
     sleep: 'rgb(var(--aegis-text-muted))',
     memory: petAccent.warm,

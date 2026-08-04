@@ -19,11 +19,27 @@ function getOrCreateAddon(term: XTerm): SearchAddon {
   const a = new SearchAddon(); term.loadAddon(a); addonCache.set(term, a); return a;
 }
 
-const DECO = {
-  matchBackground: '#ffed4a33', matchBorder: '#ffed4a88', matchOverviewRuler: '#ffed4a',
-  activeMatchColorOverviewRuler: '#ffed4a',
-  selectedMatchBackground: '#ffed4a66', selectedMatchBorder: '#ffed4a', selectedMatchOverviewRuler: '#ffed4a',
-};
+function readSearchColor(alpha?: number): string {
+  if (typeof document === 'undefined') return 'transparent';
+  const channels = getComputedStyle(document.documentElement)
+    .getPropertyValue('--aegis-status-attention')
+    .trim();
+  if (!channels) return 'transparent';
+  return alpha == null ? `rgb(${channels})` : `rgb(${channels} / ${alpha})`;
+}
+
+function getSearchDecorations() {
+  const match = readSearchColor();
+  return {
+    matchBackground: readSearchColor(0.2),
+    matchBorder: readSearchColor(0.55),
+    matchOverviewRuler: match,
+    activeMatchColorOverviewRuler: match,
+    selectedMatchBackground: readSearchColor(0.4),
+    selectedMatchBorder: match,
+    selectedMatchOverviewRuler: match,
+  };
+}
 
 export function PaneSearchBar({ term, isOpen, onClose }: PaneSearchBarProps) {
   const [needle, setNeedle] = useState('');
@@ -43,8 +59,8 @@ export function PaneSearchBar({ term, isOpen, onClose }: PaneSearchBarProps) {
     if (!term || !val) { setNoResult(false); return; }
     const a = getOrCreateAddon(term);
     const found = dir === 'forward'
-      ? a.findNext(val, { caseSensitive: cs, wholeWord: ww, regex: rx, decorations: DECO })
-      : a.findPrevious(val, { caseSensitive: cs, wholeWord: ww, regex: rx, decorations: DECO });
+      ? a.findNext(val, { caseSensitive: cs, wholeWord: ww, regex: rx, decorations: getSearchDecorations() })
+      : a.findPrevious(val, { caseSensitive: cs, wholeWord: ww, regex: rx, decorations: getSearchDecorations() });
     setNoResult(!found);
   }, [term, cs, ww, rx]);
 
@@ -100,8 +116,8 @@ export function PaneSearchBar({ term, isOpen, onClose }: PaneSearchBarProps) {
         position: 'absolute', top: 6, right: 8, zIndex: 60,
         display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px',
         background: 'rgb(var(--aegis-elevated))',
-        border: '1px solid rgb(255 255 255 / 0.10)',
-        borderRadius: 7, boxShadow: '0 4px 16px rgb(0 0 0 / 0.35)',
+        border: '1px solid var(--aegis-border-hover)',
+        borderRadius: 7, boxShadow: 'var(--aegis-shadow-popover)',
         minWidth: 260, maxWidth: 380,
       }}
       onMouseDown={(e) => e.stopPropagation()}
@@ -117,17 +133,17 @@ export function PaneSearchBar({ term, isOpen, onClose }: PaneSearchBarProps) {
         placeholder={'Search (' + hint + ')'}
         style={{
           flex: 1, height: 22, background: 'transparent', border: 'none', outline: 'none',
-          color: noResult ? 'rgb(239 68 68)' : 'rgb(var(--aegis-text))',
+          color: noResult ? 'rgb(var(--aegis-status-failed))' : 'rgb(var(--aegis-text))',
           fontSize: 12, fontFamily: '"JetBrains Mono", monospace', minWidth: 0,
         }}
       />
       {noResult && needle && (
-        <span style={{ fontSize: 10, color: 'rgb(239 68 68)', flexShrink: 0, whiteSpace: 'nowrap' }}>No results</span>
+        <span style={{ fontSize: 10, color: 'rgb(var(--aegis-status-failed))', flexShrink: 0, whiteSpace: 'nowrap' }}>No results</span>
       )}
       {toggle(cs, 'Match Case', () => setCs((v) => !v), 'Aa')}
       {toggle(ww, 'Whole Word', () => setWw((v) => !v), 'W')}
       {toggle(rx, 'Use Regex', () => setRx((v) => !v), '.*')}
-      <div style={{ width: 1, height: 16, background: 'rgb(255 255 255 / 0.1)', flexShrink: 0 }} />
+      <div style={{ width: 1, height: 16, background: 'var(--aegis-border)', flexShrink: 0 }} />
       {navBtn('Previous (Shift+Enter)', () => doSearch(needle, 'backward'), 'M18 15l-6-6-6 6')}
       {navBtn('Next (Enter)', () => doSearch(needle, 'forward'), 'M6 9l6 6 6-6')}
       {navBtn('Close (Esc)', onClose, 'M18 6 6 18M6 6l12 12')}

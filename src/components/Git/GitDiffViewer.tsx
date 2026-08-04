@@ -166,8 +166,8 @@ export function GitDiffViewer({
                 count: parsedFiles.length,
               })}
             </span>
-            <span style={{ color: "#3fb950", fontWeight: 650 }}>+{totalAdditions}</span>
-            <span style={{ color: "#f85149", fontWeight: 650 }}>-{totalDeletions}</span>
+            <span style={{ color: "var(--diff-add-fg)", fontWeight: 650 }}>+{totalAdditions}</span>
+            <span style={{ color: "var(--diff-delete-fg)", fontWeight: 650 }}>-{totalDeletions}</span>
           </div>
         </div>
 

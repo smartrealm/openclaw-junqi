@@ -98,7 +98,7 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
         aria-busy={confirming || undefined}
         tabIndex={-1}
         className="w-[min(380px,calc(100vw-32px))] rounded-lg bg-aegis-menu-bg border border-aegis-menu-border shadow-2xl overflow-hidden animate-fade-in outline-none"
-        style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05) inset' }}
+        style={{ boxShadow: 'var(--aegis-shadow-popover)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

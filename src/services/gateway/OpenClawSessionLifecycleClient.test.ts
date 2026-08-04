@@ -31,14 +31,50 @@ describe('OpenClawSessionLifecycleClient', () => {
       agentId: ' main ',
       label: ' Planning ',
       parentSessionKey: ' agent:main:parent ',
+      fork: true,
     });
 
     assert.deepEqual(calls, [{
       method: 'sessions.create',
-      params: { agentId: 'main', label: 'Planning', parentSessionKey: 'agent:main:parent' },
+      params: {
+        agentId: 'main',
+        label: 'Planning',
+        parentSessionKey: 'agent:main:parent',
+        fork: true,
+      },
     }]);
     assert.equal(created.key, SESSION_KEY);
     assert.equal(created.sessionId, SESSION_ID);
+  });
+
+  it('sends the official transcript fork flag and rejects fork without a parent', async () => {
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const client = new OpenClawSessionLifecycleClient(async (method, params) => {
+      calls.push({ method, params });
+      return response() as never;
+    });
+
+    await client.create({
+      agentId: 'main',
+      label: 'Forked',
+      parentSessionKey: ' agent:main:parent ',
+      fork: true,
+    });
+
+    assert.deepEqual(calls, [{
+      method: 'sessions.create',
+      params: {
+        agentId: 'main',
+        label: 'Forked',
+        parentSessionKey: 'agent:main:parent',
+        fork: true,
+      },
+    }]);
+    await assert.rejects(
+      () => client.create({ agentId: 'main', label: 'Forked', fork: true }),
+      /fork requires parentSessionKey/,
+    );
+    assert.equal(calls.length, 1);
   });
 
   it('rejects an unconfirmed or identity-inconsistent response', () => {
@@ -50,5 +86,19 @@ describe('OpenClawSessionLifecycleClient', () => {
       () => parseOpenClawCreatedSession(response({ entry: { sessionId: 'different' } })),
       (error: unknown) => error instanceof OpenClawSessionLifecycleResponseError && error.reason === 'missing-identity',
     );
+  });
+
+  it('rejects a transcript fork without a parent before sending an RPC', async () => {
+    let calls = 0;
+    const client = new OpenClawSessionLifecycleClient(async () => {
+      calls += 1;
+      return response() as never;
+    });
+
+    await assert.rejects(
+      client.create({ agentId: 'main', label: 'Fork', fork: true }),
+      /fork requires parentSessionKey/,
+    );
+    assert.equal(calls, 0);
   });
 });

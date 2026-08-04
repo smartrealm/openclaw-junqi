@@ -26,25 +26,25 @@ test('pet dark mode falls back to system preference for unknown/system theme', (
 
 test('pet text palette uses solid readable colors for dark theme', () => {
   assert.deepEqual(resolvePetTextPalette('aegis-dark'), {
-    primary: '#f8fafc',
-    secondary: '#dbe4f0',
-    danger: '#fecaca',
+    primary: 'rgb(var(--aegis-text))',
+    secondary: 'rgb(var(--aegis-text-secondary))',
+    danger: 'rgb(var(--aegis-danger))',
   });
 });
 
 test('pet text palette uses high-contrast ink for light theme', () => {
   assert.deepEqual(resolvePetTextPalette('aegis-light'), {
-    primary: '#020617',
-    secondary: '#0f172a',
-    danger: '#7f1d1d',
+    primary: 'rgb(var(--aegis-text))',
+    secondary: 'rgb(var(--aegis-text-secondary))',
+    danger: 'rgb(var(--aegis-danger))',
   });
 });
 
 test('pet text palette uses darker warm ink for eyecare theme', () => {
   assert.deepEqual(resolvePetTextPalette('aegis-eyecare'), {
-    primary: '#201307',
-    secondary: '#36220d',
-    danger: '#7f1d1d',
+    primary: 'rgb(var(--aegis-text))',
+    secondary: 'rgb(var(--aegis-text-secondary))',
+    danger: 'rgb(var(--aegis-danger))',
   });
 });
 
@@ -128,13 +128,13 @@ test('pet character palette changes body color by theme and skin', () => {
 
 test('pet accent palette uses blue UI colors without changing the lobster body', () => {
   assert.deepEqual(resolvePetAccentPalette('aegis-dark'), {
-    primary: '#6c9fff',
-    secondary: '#73e6ff',
-    warm: '#f6c177',
-    success: '#8bd98b',
-    warning: '#f0b45d',
+    primary: 'rgb(var(--aegis-primary))',
+    secondary: 'rgb(var(--aegis-accent))',
+    warm: 'rgb(var(--aegis-warning))',
+    success: 'rgb(var(--aegis-success))',
+    warning: 'rgb(var(--aegis-status-attention))',
   });
-  assert.equal(resolvePetAccentPalette('aegis-light').primary, '#3b82f6');
+  assert.equal(resolvePetAccentPalette('aegis-light').primary, 'rgb(var(--aegis-primary))');
   assert.equal(resolvePetCharacterPalette('aegis-dark', 'lobster').body, '#ff836f');
 });
 

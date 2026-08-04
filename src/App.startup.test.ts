@@ -21,7 +21,10 @@ test('the first workspace render waits for the authoritative session snapshot', 
 });
 
 test('workspace loading has a localized shared fallback and cannot wait forever after a session error', () => {
-  assert.match(appSource, /return requestGate\.isCurrent\(requestId\) \? 'failed' : 'superseded'/);
+  assert.match(
+    appSource,
+    /return requestGate\.isCurrent\(requestId\)\s+&&\s+sessionListMutationFence\.isCurrent\(mutationRevision\)\s+\? 'failed'\s+:\s+'superseded'/,
+  );
   assert.match(appSource, /boot\.markStageError\('config', 'Session load failed'\);\s+markInitialWorkspaceDataReady\(true\)/);
   assert.match(fallbackSource, /t\('app\.loadingWorkspace'\)/);
 });

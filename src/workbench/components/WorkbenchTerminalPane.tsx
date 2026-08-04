@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { useResolvedTheme } from '@/theme/useTheme';
+import { buildDarkTerminalTheme } from '@/components/Terminal/terminalShared';
 import type { WorkbenchTab } from '../domain/types';
 import { useWorkbenchStore } from '../store/workbenchStore';
 import {
@@ -21,6 +23,8 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
   const endResourceTransaction = useWorkbenchStore((state) => state.endResourceTransaction);
   const reconcileProviderPtyExit = useWorkbenchStore((state) => state.reconcileProviderPtyExit);
   const containerRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const resolvedTheme = useResolvedTheme();
   const [error, setError] = useState<string | null>(null);
   const identity = useMemo<WorkbenchPtyIdentity | null>(() => (
     tab.ptyId && tab.ptyRunId ? { ptyId: tab.ptyId, runId: tab.ptyRunId } : null
@@ -38,8 +42,9 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
       scrollback: 10_000,
       fontFamily: 'var(--font-mono), ui-monospace, monospace',
       fontSize: 12,
-      theme: { background: '#171b24', foreground: '#d6dbe8', cursor: '#8fa5ff' },
+      theme: buildDarkTerminalTheme(),
     });
+    terminalRef.current = terminal;
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(containerRef.current);
@@ -132,9 +137,20 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
       input.dispose();
       resize.dispose();
       terminal.dispose();
+      terminalRef.current = null;
       // Deliberately do not stop the PTY: hidden/unmounted panes detach only.
     };
   }, [acknowledgePtyCreate, cwd, identity, reconcileProviderPtyExit, tab.id, tab.paneId, tab.ptyCreatePending, tab.worktreeId]);
+
+  // xterm paints to a canvas, so CSS custom-property changes do not repaint it
+  // automatically. Re-read the shared terminal palette after a theme change
+  // without recreating the PTY or losing its scrollback.
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.options.theme = buildDarkTerminalTheme();
+    terminal.refresh(0, Math.max(0, terminal.rows - 1));
+  }, [resolvedTheme]);
 
   const restart = async () => {
     if (!identity) return;

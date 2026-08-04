@@ -153,7 +153,7 @@ export function PetBreakOverlay() {
             style={{
               background: 'linear-gradient(158deg, rgba(var(--aegis-surface-elevated),0.97), rgba(var(--aegis-surface),0.92))',
               border: '1px solid rgba(var(--aegis-overlay),0.13)',
-              boxShadow: '0 28px 72px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.06)',
+              boxShadow: 'var(--aegis-shadow-float)',
               borderRadius: 28,
               padding: '40px 52px 32px',
               minWidth: 308,

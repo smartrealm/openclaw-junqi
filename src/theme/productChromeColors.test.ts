@@ -17,36 +17,36 @@ const srcRoot = fileURLToPath(new URL('../', import.meta.url));
 const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'components/Chat/MessageBubble.tsx': 1, // sandboxed HTML preview paper
   'components/FileExplorer/fileViewerCapabilities.ts': 15, // language/file identity palette
-  'components/Git/DiffFileBlock.tsx': 4, // diff semantic palette
-  'components/Git/GitDiffViewer.tsx': 2,
-  'components/Git/GitFileBrowser.tsx': 2,
-  'components/Git/GitHistory.tsx': 2,
+  'components/Git/DiffFileBlock.tsx': 0, // diff semantic palette
+  'components/Git/GitDiffViewer.tsx': 0,
+  'components/Git/GitFileBrowser.tsx': 0,
+  'components/Git/GitHistory.tsx': 0,
   'components/Git/types.ts': 7,
-  'components/Terminal/PaneSearchBar.tsx': 7, // xterm search decoration contract
-  'components/Terminal/terminalShared.ts': 24, // xterm ANSI palette and fallback contract
+  'components/Terminal/PaneSearchBar.tsx': 0, // xterm search decorations resolve from the active theme
+  'components/Terminal/terminalShared.ts': 20, // xterm fallback contract
   'components/settings/ThemePicker.tsx': 11, // renders theme swatches and preview canvases
-  'pages/AgentRunView.tsx': 2, // xterm fallback palette
+  'pages/AgentRunView.tsx': 0,
   'pages/OpenClawCommands/commands-core.ts': 1, // URL fragment syntax, not a color
   'pages/SetupPage/WizardScreen.tsx': 2, // generated QR bitmap foreground/background
   'pages/SetupPage/shared.tsx': 10, // renders theme swatches
-  'pet/PetBubble.tsx': 1,
+  'pet/PetBubble.tsx': 0,
   'pet/PetCharacter.tsx': 3,
-  'pet/backdropContrast.ts': 2,
+  'pet/backdropContrast.ts': 0,
   'pet/effects.tsx': 1,
-  'pet/petTheme.ts': 73,
+  'pet/petTheme.ts': 44,
   'pet/pomodoroView.ts': 4,
   'pet/skins/index.tsx': 13, // mascot artwork palette
   'runtime/fatalErrorOverlay.ts': 3, // pre-React emergency surface
   'styles/index.css': 6, // CSS mask sentinel colors; not rendered chrome
   'styles/primitives.css': 10, // fixed data-visualization primitives
   'styles/terminal-kooky.css': 0, // terminal chrome must consume semantic theme tokens
-  'styles/terminal.css': 18, // terminal/ANSI theme definition
+  'styles/terminal.css': 0, // terminal/ANSI theme aliases
   'styles/themes/aegis-dark.css': 30,
   'styles/themes/aegis-eyecare.css': 30,
   'styles/themes/aegis-light.css': 24,
   'styles/themes/aegis-midnight.css': 33, // semantic token definitions
   'utils/theme-colors.ts': 1, // token conversion fallback and documentation
-  'workbench/components/WorkbenchTerminalPane.tsx': 3, // isolated xterm palette
+  'workbench/components/WorkbenchTerminalPane.tsx': 0,
 };
 
 function sourceFiles(root: string): string[] {

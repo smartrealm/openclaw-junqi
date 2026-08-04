@@ -90,7 +90,7 @@ export function AgentOverviewPanel({ mode = 'full' }: AgentOverviewPanelProps) {
         </span>
         {entries.length > 0 && <span style={{ fontSize: 10, fontWeight: 500, color: 'rgb(var(--aegis-text-dim))', fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace' }}>{entries.length}</span>}
       </div>
-      <div style={{ height: 1, flexShrink: 0, background: 'rgb(255 255 255 / 0.07)' }} />
+      <div style={{ height: 1, flexShrink: 0, background: 'var(--aegis-border)' }} />
       {entries.length === 0 ? (
         <>
           <div style={{ height: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 7, flexShrink: 0, userSelect: 'none' }}>

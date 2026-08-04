@@ -143,7 +143,7 @@ export function FileExplorerContextMenu({
           background: "var(--aegis-elevated-solid, var(--aegis-elevated))",
           border: "1px solid var(--aegis-border)",
           borderRadius: 8,
-          boxShadow: "var(--aegis-menu-shadow, 0 8px 32px rgba(0,0,0,0.32))",
+          boxShadow: "var(--aegis-shadow-popover)",
           minWidth: 150,
           padding: "4px 0",
           fontSize: 12,

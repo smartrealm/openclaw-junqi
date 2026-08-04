@@ -884,7 +884,12 @@ export const gateway = {
   async getSessions(): Promise<GatewaySessionListResponse> {
     return connection.request<GatewaySessionListResponse>('sessions.list', {});
   },
-  async createSession(input: { agentId: string; label?: string; parentSessionKey?: string }) {
+  async createSession(input: {
+    agentId: string;
+    label?: string;
+    parentSessionKey?: string;
+    fork?: boolean;
+  }) {
     return sessionLifecycle.create(input);
   },
   async describeSession(sessionKey: string) {

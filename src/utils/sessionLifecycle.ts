@@ -15,6 +15,27 @@ type SessionKeyLike = {
  * that fail-closed case an explicit local restore is required.
  */
 const deletedSessionIdentities = new Map<string, string | null>();
+const nativeSessionCommitListeners = new Set<() => void>();
+
+/**
+ * Lets the session-list owner discard a response that began before a native
+ * session creation was confirmed. List data remains authoritative, but an old
+ * response must not be allowed to erase the just-confirmed session locally.
+ */
+export function subscribeNativeSessionCommit(listener: () => void): () => void {
+  nativeSessionCommitListeners.add(listener);
+  return () => nativeSessionCommitListeners.delete(listener);
+}
+
+export function notifyNativeSessionCommit(): void {
+  for (const listener of nativeSessionCommitListeners) {
+    try {
+      listener();
+    } catch {
+      // A refresh observer must not turn a confirmed Gateway create into a failed create.
+    }
+  }
+}
 
 export function normalizeSessionKey(value: string): string {
   return String(value ?? '').trim();

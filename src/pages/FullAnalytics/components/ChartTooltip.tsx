@@ -22,7 +22,7 @@ export const ChartTooltip = ({ active, payload, label }: TooltipProps) => {
       style={{
         background: 'var(--aegis-bg-frosted)',
         backdropFilter: 'blur(20px)',
-        boxShadow: '0 8px 32px rgb(var(--aegis-overlay) / 0.15)',
+        boxShadow: 'var(--aegis-shadow-popover)',
       }}
     >
       <div className="text-aegis-text-muted mb-1 font-mono">{label}</div>

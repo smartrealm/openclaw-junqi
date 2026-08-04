@@ -32,6 +32,8 @@
   --aegis-text-secondary: 65 72 87;     /* text-secondary #414857 */
   --aegis-text-muted:     105 117 138;  /* text-muted #69758a */
   --aegis-text-dim:       154 163 178;  /* text-hint #9aa3b2 */
+  --aegis-pet-text-on-light: 16 19 24;
+  --aegis-pet-text-on-dark:  248 250 252;
 
   /* ── Primary = junqi accent (blue) ── */
   --aegis-primary:         93 124 255;   /* accent #5d7cff */
@@ -114,6 +116,13 @@
   --aegis-menu-shadow:    0 8px 32px rgba(0, 0, 0, 0.22);
   --aegis-menu-text:      23 27 36;
   --aegis-menu-text-muted:105 117 138;
+
+  /* ── Shared elevation and scrim tokens ── */
+  --aegis-shadow-color:   15 23 42;
+  --aegis-shadow-card:    0 1px 3px rgb(var(--aegis-shadow-color) / 0.08), 0 1px 2px rgb(var(--aegis-shadow-color) / 0.06);
+  --aegis-shadow-float:   0 8px 32px rgb(var(--aegis-shadow-color) / 0.20);
+  --aegis-shadow-popover: 0 8px 32px rgb(var(--aegis-shadow-color) / 0.22);
+  --aegis-scrim:          rgb(var(--aegis-overlay) / 0.45);
 
   /* ── Button ── */
   --aegis-btn-primary-text: #ffffff;

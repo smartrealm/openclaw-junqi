@@ -93,7 +93,7 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
     )} onClick={interacting ? undefined : onClose} role="dialog" aria-modal="true">
       <div
         className="w-[420px] max-h-[70vh] rounded-2xl bg-aegis-menu-bg border border-aegis-menu-border shadow-2xl overflow-hidden animate-fade-in"
-        style={{ boxShadow: '0 -8px 40px rgba(0,0,0,0.4)' }}
+        style={{ boxShadow: 'var(--aegis-shadow-float)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

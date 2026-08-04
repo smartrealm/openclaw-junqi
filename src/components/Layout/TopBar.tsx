@@ -142,7 +142,7 @@ function TerminalOpenInControl({ directory }: { directory: string }) {
         <ChevronDown size={10} />
       </button>
       {menuOpen && (
-        <div className="terminal-kooky-menu absolute end-0 top-[30px] z-[100] w-[220px] border p-1 shadow-[0_10px_28px_rgb(0_0_0_/_0.35)]">
+        <div className="terminal-kooky-menu absolute end-0 top-[30px] z-[100] w-[220px] border p-1 shadow-popover">
           {visibleApps.map((app) => (
             <TerminalKookyMenuItem
               key={app.id}

@@ -68,37 +68,37 @@ export function GatewayErrorScreen({
     'config-invalid': {
       title: t('gatewayError.configInvalid.title'),
       hint: t('gatewayError.configInvalid.hint'),
-      color: 'text-orange-400',
+      color: 'text-aegis-warning',
     },
     'config-schema-invalid': {
       title: t('gatewayError.configSchemaInvalid.title'),
       hint: t('gatewayError.configSchemaInvalid.hint'),
-      color: 'text-orange-400',
+      color: 'text-aegis-warning',
     },
     'port-in-use': {
       title: t('gatewayError.portInUse.title'),
       hint: t('gatewayError.portInUse.hint'),
-      color: 'text-yellow-400',
+      color: 'text-aegis-warning',
     },
     timeout: {
       title: t('gatewayError.timeout.title'),
       hint: t('gatewayError.timeout.hint'),
-      color: 'text-yellow-400',
+      color: 'text-aegis-warning',
     },
     'not-found': {
       title: t('gatewayError.notFound.title'),
       hint: t('gatewayError.notFound.hint'),
-      color: 'text-red-400',
+      color: 'text-aegis-danger',
     },
     crash: {
       title: t('gatewayError.crash.title'),
       hint: t('gatewayError.crash.hint'),
-      color: 'text-red-400',
+      color: 'text-aegis-danger',
     },
     unknown: {
       title: t('gatewayError.unknown.title'),
       hint: t('gatewayError.unknown.hint'),
-      color: 'text-red-400',
+      color: 'text-aegis-danger',
     },
   }[category];
   const isConfigInvalid = category === 'config-invalid' || category === 'config-schema-invalid';
@@ -173,16 +173,16 @@ export function GatewayErrorScreen({
 
       <div className="relative w-full max-w-2xl mx-4 max-h-[92vh] rounded-2xl bg-aegis-card-solid border border-aegis-border shadow-2xl overflow-hidden">
         {/* Top accent bar */}
-        <div className="h-1 bg-gradient-to-r from-red-500 via-orange-400 to-yellow-400" />
+        <div className="h-1 bg-gradient-to-r from-aegis-danger via-aegis-warning to-aegis-primary" />
 
         <div className="max-h-[calc(92vh-4px)] overflow-y-auto p-6">
           {/* Header */}
           <div className="flex items-start gap-4 mb-5">
-            <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+            <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-aegis-danger/10 border border-aegis-danger/20 flex items-center justify-center">
               <AlertTriangle className={`w-6 h-6 ${meta.color}`} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-aegis-text-primary mb-1">
+              <h2 className="text-lg font-semibold text-aegis-text mb-1">
                 {meta.title}
               </h2>
               <p className="text-sm text-aegis-text-muted leading-relaxed">
@@ -193,20 +193,20 @@ export function GatewayErrorScreen({
 
           {/* Config validation badge */}
           {configValidation && !configValidation.valid && (
-            <div className="mb-4 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-start gap-2">
-              <FileText className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
-              <div className="text-xs text-orange-300 leading-relaxed">
+            <div className="mb-4 p-3 rounded-lg bg-aegis-warning/10 border border-aegis-warning/20 flex items-start gap-2">
+              <FileText className="w-4 h-4 text-aegis-warning mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-aegis-warning leading-relaxed">
                 <span className="font-semibold">{t('gatewayError.invalidConfigLabel')}</span>{' '}
-                <span className="font-mono text-orange-200 break-all">{configValidation.path}</span>
+                <span className="font-mono text-aegis-warning break-all">{configValidation.path}</span>
                 {configValidation.error && (
-                  <div className="mt-1 text-orange-400/80">{configValidation.error}</div>
+                  <div className="mt-1 text-aegis-warning/80">{configValidation.error}</div>
                 )}
               </div>
             </div>
           )}
 
           {/* Error detail lines */}
-          <div className="mb-4 p-3 rounded-lg bg-aegis-bg-primary border border-aegis-border">
+          <div className="mb-4 p-3 rounded-lg bg-aegis-bg border border-aegis-border">
             <div className="flex items-center gap-1.5 mb-2">
               <Terminal className="w-3.5 h-3.5 text-aegis-text-muted" />
               <span className="text-xs font-semibold text-aegis-text-muted uppercase tracking-wider">Error Detail</span>
@@ -222,9 +222,9 @@ export function GatewayErrorScreen({
 
           {/* Reset result */}
           {resetResult && (
-            <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20 flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-green-300 leading-relaxed break-all">{resetResult}</p>
+            <div className="mb-4 p-3 rounded-lg bg-aegis-success/10 border border-aegis-success/20 flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-aegis-success mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-aegis-success leading-relaxed break-all">{resetResult}</p>
             </div>
           )}
 
@@ -233,7 +233,7 @@ export function GatewayErrorScreen({
               <button
                 onClick={onRetry}
                 disabled={retrying}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary text-white text-sm font-medium hover:bg-aegis-primary/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary text-aegis-btn-primary-text text-sm font-medium hover:bg-aegis-primary/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
                 {retrying
                   ? <LoadingIndicator size={16} />
@@ -245,7 +245,7 @@ export function GatewayErrorScreen({
               <button
                 onClick={() => void handleResetConfig()}
                 disabled={resetting}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-600/80 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-warning text-aegis-btn-primary-text text-sm font-medium hover:bg-aegis-warning/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               >
                 {resetting
                   ? <LoadingIndicator size={16} />
@@ -256,7 +256,7 @@ export function GatewayErrorScreen({
 
             <button
               onClick={handleOpenLogFile}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-card-hover text-aegis-text-secondary text-sm font-medium hover:text-aegis-text-primary border border-aegis-border transition-colors"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-card text-aegis-text-secondary text-sm font-medium hover:bg-aegis-hover hover:text-aegis-text border border-aegis-border transition-colors"
             >
               <FolderOpen className="w-4 h-4" />
               {t('gatewayError.actions.openLogFile')}

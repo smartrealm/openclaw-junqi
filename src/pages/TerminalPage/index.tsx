@@ -749,7 +749,7 @@ export function TerminalPage() {
               flexShrink: 0,
               minWidth: 0,
               overflow: 'hidden',
-              borderInlineStart: '1px solid rgb(255 255 255 / 0.07)',
+              borderInlineStart: '1px solid var(--aegis-border)',
               background: 'rgb(var(--aegis-surface))',
               transition: agentPanelTransitionActive ? 'none' : 'width 0.18s cubic-bezier(0.22,1,0.36,1)',
             }}
@@ -1405,7 +1405,7 @@ function WorkspaceSidebarPanel({
         )}
 
         {mode === 'full' && visibleRecentDirectories.length > 0 && (
-          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgb(255 255 255 / 0.05)' }}>
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--aegis-border)' }}>
             <div style={{ height: 22, display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px 0 12px' }}>
               <Clock3 size={11} strokeWidth={1.9} color="rgb(var(--aegis-text-dim))" />
               <span style={{ flex: 1, fontSize: 10, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
@@ -1451,7 +1451,7 @@ function WorkspaceSidebarPanel({
       {/* ── Kooky footer: 工作区 / 文件分段（full 模式） ── */}
       {mode === 'full' && (
         <>
-          <div className="terminal-kooky-sidebar-footer" style={{ height: 1, background: 'rgb(255 255 255 / 0.05)', flexShrink: 0 }} />
+          <div className="terminal-kooky-sidebar-footer" style={{ height: 1, background: 'var(--aegis-border)', flexShrink: 0 }} />
           <div className="terminal-kooky-sidebar-footer" style={{ height: 30, display: 'flex', alignItems: 'center', gap: 2, padding: '4px 8px' }}>
             <button
               type="button"
@@ -1719,7 +1719,7 @@ function TerminalWorktreeCreateDialog({ workspace, existingWorktreePaths, onClos
             )}
           </div>
         )}
-        {error && <div style={{ color: 'rgb(239 68 68)', fontSize: 11, lineHeight: 1.45 }}>{error}</div>}
+        {error && <div style={{ color: 'rgb(var(--aegis-status-failed))', fontSize: 11, lineHeight: 1.45 }}>{error}</div>}
         <div style={terminalModalActionsStyle}>
           <button type="button" onClick={onClose} disabled={submitting} style={terminalModalSecondaryButtonStyle}>{t('common.cancel', 'Cancel')}</button>
           <button type="button" onClick={() => void submit()} disabled={mode === 'adopt' ? selectedAdoptPaths.size === 0 || submitting : !(mode === 'new' ? branch.trim() : existingBranch.trim()) || submitting} style={terminalModalPrimaryButtonStyle}>{submitting ? t('common.working', 'Working...') : mode === 'adopt' ? t('terminal.worktreeAdopt', 'Adopt existing') : t('terminal.worktreeCreate')}</button>
@@ -1763,7 +1763,7 @@ function TerminalSshWorkspaceDialog({ onClose, onCreate }: {
             style={terminalModalInputStyle}
           />
         </label>
-        {error && <div style={{ color: 'rgb(239 68 68)', fontSize: 11, lineHeight: 1.45 }}>{error}</div>}
+        {error && <div style={{ color: 'rgb(var(--aegis-status-failed))', fontSize: 11, lineHeight: 1.45 }}>{error}</div>}
         <div style={terminalModalActionsStyle}>
           <button type="button" onClick={onClose} style={terminalModalSecondaryButtonStyle}>{t('common.cancel', 'Cancel')}</button>
           <button type="button" onClick={submit} disabled={!host.trim()} style={terminalModalPrimaryButtonStyle}>{t('terminal.sshWorkspaceCreate')}</button>
@@ -1804,10 +1804,10 @@ function TerminalWorktreeCloseDialog({ workspace, onClose, onConfirm }: {
           <input type="checkbox" checked={deleteOnDisk} onChange={(event) => setDeleteOnDisk(event.target.checked)} disabled={submitting} />
           {t('terminal.worktreeDeleteOnClose')}
         </label>
-        {error && <div style={{ color: 'rgb(239 68 68)', fontSize: 11, lineHeight: 1.45 }}>{error}</div>}
+        {error && <div style={{ color: 'rgb(var(--aegis-status-failed))', fontSize: 11, lineHeight: 1.45 }}>{error}</div>}
         <div style={terminalModalActionsStyle}>
           <button type="button" onClick={onClose} disabled={submitting} style={terminalModalSecondaryButtonStyle}>{t('common.cancel', 'Cancel')}</button>
-          <button type="button" onClick={() => void submit()} disabled={submitting} style={{ ...terminalModalPrimaryButtonStyle, background: deleteOnDisk ? 'rgb(239 68 68)' : 'rgb(var(--aegis-primary))' }}>{submitting ? t('common.working', 'Working...') : deleteOnDisk ? t('terminal.worktreeCloseAndDelete') : t('terminal.worktreeClose')}</button>
+          <button type="button" onClick={() => void submit()} disabled={submitting} style={{ ...terminalModalPrimaryButtonStyle, background: deleteOnDisk ? 'rgb(var(--aegis-status-failed))' : 'rgb(var(--aegis-primary))' }}>{submitting ? t('common.working', 'Working...') : deleteOnDisk ? t('terminal.worktreeCloseAndDelete') : t('terminal.worktreeClose')}</button>
         </div>
       </div>
     </div>
@@ -1839,8 +1839,8 @@ function TerminalWorktreeFamilyCloseDialog({ workspace, worktreeCount, onClose, 
   );
 }
 
-const terminalModalBackdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgb(0 0 0 / 0.42)', padding: 20 };
-const terminalModalStyle: React.CSSProperties = { width: 'min(440px, 100%)', display: 'flex', flexDirection: 'column', gap: 14, padding: 24, borderRadius: 8, background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(var(--aegis-overlay) / 0.16)', boxShadow: '0 18px 52px rgb(0 0 0 / 0.38)' };
+const terminalModalBackdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--aegis-scrim)', padding: 20 };
+const terminalModalStyle: React.CSSProperties = { width: 'min(440px, 100%)', display: 'flex', flexDirection: 'column', gap: 14, padding: 24, borderRadius: 8, background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(var(--aegis-overlay) / 0.16)', boxShadow: 'var(--aegis-shadow-float)' };
 const terminalModalEyebrowStyle: React.CSSProperties = { color: 'rgb(var(--aegis-text-dim))', fontFamily: '"JetBrains Mono", monospace', fontSize: 10, letterSpacing: '0.12em' };
 const terminalModalTitleStyle: React.CSSProperties = { color: 'rgb(var(--aegis-text))', fontSize: 17, fontWeight: 600 };
 const terminalModalPathStyle: React.CSSProperties = { color: 'rgb(var(--aegis-text-dim))', fontFamily: '"JetBrains Mono", monospace', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
@@ -1975,12 +1975,12 @@ function CommandPaletteModal({
         position: 'fixed', top: 120, left: '50%', transform: 'translateX(-50%)',
         zIndex: 1000, width: 'min(720px, calc(100vw - 32px))', height: 'min(440px, calc(100vh - 144px))',
         background: 'rgb(var(--aegis-elevated))',
-        border: '1px solid rgb(255 255 255 / 0.12)',
-        borderRadius: 10, boxShadow: '0 20px 60px rgb(0 0 0 / 0.6)',
+        border: '1px solid var(--aegis-border-hover)',
+        borderRadius: 10, boxShadow: 'var(--aegis-shadow-popover)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Kooky CommandPaletteView.searchField */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid rgb(255 255 255 / 0.07)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--aegis-border)' }}>
           <Search size={13} strokeWidth={2} color="rgb(var(--aegis-text-dim))" />
           <input
             ref={inputRef}

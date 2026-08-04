@@ -247,7 +247,7 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, agentName, session
       {visible && (
         <div
           className="absolute start-0 top-0 mt-2 w-[300px] rounded-2xl border border-[rgb(var(--aegis-overlay)/0.1)] z-[9999] overflow-hidden"
-          style={{ background: 'var(--aegis-bg-frosted)', backdropFilter: 'blur(40px)', boxShadow: '0 16px 48px rgb(var(--aegis-overlay) / 0.2)' }}
+                style={{ background: 'var(--aegis-bg-frosted)', backdropFilter: 'blur(40px)', boxShadow: 'var(--aegis-shadow-popover)' }}
         >
           {/* Header */}
           <div className="flex items-center gap-3 p-4 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
@@ -981,7 +981,7 @@ export function ChatTabs() {
     try {
       const result = await createNativeSession({
         agentId,
-        label: t('sidebar.newSession'),
+        label: t('chat.newSessionLabel'),
       });
       if (!result.ok) {
         useNotificationStore.getState().addToast('error', t('chat.newSession'), result.error);

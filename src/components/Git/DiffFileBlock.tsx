@@ -152,9 +152,9 @@ function UnifiedView({ file }: { file: DiffFile }) {
               style={{
                 display: "flex",
                 background: line.kind === "add"
-                  ? "rgba(63, 185, 80, 0.1)"
+                  ? "var(--diff-add-bg)"
                   : line.kind === "delete"
-                  ? "rgba(248, 81, 73, 0.1)"
+                  ? "var(--diff-delete-bg)"
                   : "transparent",
               }}
             >
@@ -192,9 +192,9 @@ function UnifiedView({ file }: { file: DiffFile }) {
                   width: 20,
                   flexShrink: 0,
                   color: line.kind === "add"
-                    ? "#3fb950"
+                    ? "var(--diff-add-fg)"
                     : line.kind === "delete"
-                    ? "#f85149"
+                    ? "var(--diff-delete-fg)"
                     : "var(--aegis-text-dim)",
                   userSelect: "none",
                 }}
@@ -253,7 +253,7 @@ function SplitView({ file }: { file: DiffFile }) {
                     minHeight: 22,
                     background:
                       line.kind === "delete"
-                        ? "rgba(248, 81, 73, 0.12)"
+                        ? "var(--diff-delete-bg)"
                         : line.kind === "add"
                         ? "var(--aegis-card)"
                         : "transparent",
@@ -278,7 +278,7 @@ function SplitView({ file }: { file: DiffFile }) {
                       textAlign: "center",
                       width: 16,
                       flexShrink: 0,
-                      color: line.kind === "delete" ? "#f85149" : "var(--aegis-text-dim)",
+                      color: line.kind === "delete" ? "var(--diff-delete-fg)" : "var(--aegis-text-dim)",
                       userSelect: "none",
                       lineHeight: "22px",
                     }}
@@ -311,7 +311,7 @@ function SplitView({ file }: { file: DiffFile }) {
                     minHeight: 22,
                     background:
                       line.kind === "add"
-                        ? "rgba(63, 185, 80, 0.1)"
+                        ? "var(--diff-add-bg)"
                         : line.kind === "delete"
                         ? "var(--aegis-card)"
                         : "transparent",
@@ -336,7 +336,7 @@ function SplitView({ file }: { file: DiffFile }) {
                       textAlign: "center",
                       width: 16,
                       flexShrink: 0,
-                      color: line.kind === "add" ? "#3fb950" : "var(--aegis-text-dim)",
+                      color: line.kind === "add" ? "var(--diff-add-fg)" : "var(--aegis-text-dim)",
                       userSelect: "none",
                       lineHeight: "22px",
                     }}
