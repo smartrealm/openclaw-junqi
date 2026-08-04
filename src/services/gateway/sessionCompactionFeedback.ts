@@ -21,7 +21,20 @@ export type SessionCompactionTranslator = (
   options?: { reason: string },
 ) => string;
 
-/** Classifies the narrow official compaction result without inventing lifecycle state. */
+export class OpenClawSessionCompactionTargetError extends Error {
+  constructor() {
+    super('OPENCLAW_SESSION_COMPACTION_TARGET_REQUIRED');
+    this.name = 'OpenClawSessionCompactionTargetError';
+  }
+}
+
+export function requireOpenClawSessionCompactionTarget(value: string | null | undefined): string {
+  const key = typeof value === 'string' ? value.trim() : '';
+  if (!key) throw new OpenClawSessionCompactionTargetError();
+  return key;
+}
+
+/** 不虚构生命周期状态，只分类官方压缩结果。 */
 export function presentOpenClawSessionCompaction(
   result: OpenClawSessionCompactionResult,
 ): SessionCompactionFeedback {
@@ -57,7 +70,7 @@ export function presentOpenClawSessionCompaction(
   };
 }
 
-/** Renders the shared feedback while leaving remote completion to Gateway events. */
+/** 渲染统一反馈，远端终态仍只接受 Gateway 事件。 */
 export function notifyOpenClawSessionCompaction(
   result: OpenClawSessionCompactionResult,
   t: SessionCompactionTranslator,
@@ -79,6 +92,14 @@ export function notifyOpenClawSessionCompactionFailure(
   t: SessionCompactionTranslator,
   addToast: SessionCompactionToast,
 ): void {
+  if (error instanceof OpenClawSessionCompactionTargetError) {
+    addToast(
+      'error',
+      t('dashboard.compactFailedTitle'),
+      t('dashboard.compactSessionRequired'),
+    );
+    return;
+  }
   addToast(
     'error',
     t('dashboard.compactFailedTitle'),

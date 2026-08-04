@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  OpenClawSessionCompactionTargetError,
   notifyOpenClawSessionCompaction,
   notifyOpenClawSessionCompactionFailure,
   presentOpenClawSessionCompaction,
+  requireOpenClawSessionCompactionTarget,
 } from './sessionCompactionFeedback';
 
 const translate = (key: string, options?: { reason: string }): string => (
@@ -72,4 +74,31 @@ test('Gateway rejection and request failure both remain errors', () => {
       body: 'authorization denied',
     },
   ]);
+});
+
+test('requires an explicit active session before requesting compaction', () => {
+  assert.equal(requireOpenClawSessionCompactionTarget(' agent:main:main '), 'agent:main:main');
+  assert.throws(
+    () => requireOpenClawSessionCompactionTarget('   '),
+    OpenClawSessionCompactionTargetError,
+  );
+  assert.throws(
+    () => requireOpenClawSessionCompactionTarget(null),
+    OpenClawSessionCompactionTargetError,
+  );
+});
+
+test('missing active session renders a localized compaction failure', () => {
+  const notifications: Array<{ type: string; title: string; body: string }> = [];
+  notifyOpenClawSessionCompactionFailure(
+    new OpenClawSessionCompactionTargetError(),
+    (key) => key,
+    (type, title, body) => { notifications.push({ type, title, body }); },
+  );
+
+  assert.deepEqual(notifications, [{
+    type: 'error',
+    title: 'dashboard.compactFailedTitle',
+    body: 'dashboard.compactSessionRequired',
+  }]);
 });

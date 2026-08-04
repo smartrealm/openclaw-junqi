@@ -1477,7 +1477,7 @@ export const gateway = {
       },
     );
   },
-  async compactSession(sessionKey = 'agent:main:main') {
+  async compactSession(sessionKey: string) {
     const key = sessionKey.trim();
     if (!key) throw new Error('A session key is required for OpenClaw compaction');
     return sessionCommandCoordinator.runMutation(

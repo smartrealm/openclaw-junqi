@@ -404,6 +404,7 @@
     "compactFailedTitle": "壓縮失敗",
     "compactFailedBody": "OpenClaw 未完成上下文壓縮：{{reason}}",
     "compactFailureReason": "Gateway 未回報失敗原因。",
+    "compactSessionRequired": "請先選擇一個 OpenClaw 工作階段，再壓縮上下文。",
     "compactCount": "{{n}} 次壓縮",
     "compactions": "壓縮次數",
     "connected": "已連接 · 工作中",

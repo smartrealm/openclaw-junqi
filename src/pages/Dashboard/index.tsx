@@ -34,6 +34,7 @@ import { gateway } from '@/services/gateway';
 import {
   notifyOpenClawSessionCompaction,
   notifyOpenClawSessionCompactionFailure,
+  requireOpenClawSessionCompactionTarget,
 } from '@/services/gateway/sessionCompactionFeedback';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -218,9 +219,8 @@ export function DashboardPage() {
     void gatewayLifecycle.recover('dashboard');
   }, []);
 
-  // ── Quick Actions ────────────────────────────────────────────
-  // Keep only actions that have a real local workflow. Prompt-only shortcuts
-  // looked functional but depended on the LLM to decide what to do.
+  // ── 快捷操作 ────────────────────────────────────────────
+  // 仅保留具有真实本地流程的操作，提示词快捷方式会依赖模型自行决定执行内容。
   const handleQuickAction = async (action: 'compact' | 'status') => {
     if (action === 'status') {
       navigate('/perf');
@@ -228,8 +228,10 @@ export function DashboardPage() {
     }
     if (!connected || quickActionLoading) return;
     setQuickActionLoading(action);
-    const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
     try {
+      const sessionKey = requireOpenClawSessionCompactionTarget(
+        useChatStore.getState().activeSessionKey,
+      );
       const result = await gateway.compactSession(sessionKey);
       notifyOpenClawSessionCompaction(result, t, useNotificationStore.getState().addToast);
     } catch (error) {

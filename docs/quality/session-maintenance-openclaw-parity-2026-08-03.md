@@ -32,7 +32,9 @@ JunQi Dashboard 的“压缩上下文”入口曾通过 `chat.send` 发送 `/com
 
 ## 验证结果
 
-- `src/services/gateway/sessionMaintenance.test.ts` 覆盖参数构建、非法输入、不同会话响应、实际压缩和无 transcript 结果。
+- 历史 `sessionMaintenance` 模块已在 2026-08-04 审查中确认无生产消费者，并与其专属测试一并删除；
+  当前压缩契约由 `OpenClawSessionCompactionClient.test.ts` 覆盖，包括参数、非法输入、不同会话回执、
+  完成、no-op 和 pending。
 - `src/services/gateway/sessionInspection.test.ts` 覆盖 preview、resolve 与 checkpoint 的严格参数/响应解码、会话 key fence 和状态枚举。
 - `gatewayRecoveryRegression.test.ts` 固定会话上下文栏使用官方 preview/resolve/list，并固定
   checkpoint get/branch/restore 由独立 service client 走正确协议入口。

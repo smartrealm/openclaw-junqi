@@ -92,3 +92,16 @@ test('rejects an unverifiable compaction response and invalid request values', a
   await assert.rejects(client.compact({ key: 'agent:main:main', maxLines: 0 }));
   await assert.rejects(client.compact({ key: '   ' }));
 });
+
+test('rejects a compaction response for another session', async () => {
+  const client = new OpenClawSessionCompactionClient(async <T>(): Promise<T> => ({
+    ok: true,
+    key: 'agent:main:other',
+    compacted: true,
+  } as T));
+
+  await assert.rejects(
+    client.compact({ key: 'agent:main:main' }),
+    OpenClawSessionCompactionResponseError,
+  );
+});

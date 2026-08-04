@@ -413,6 +413,7 @@
     "compactFailedTitle": "Compaction failed",
     "compactFailedBody": "OpenClaw did not complete compaction: {{reason}}",
     "compactFailureReason": "No failure reason was reported.",
+    "compactSessionRequired": "Select an OpenClaw session before compacting context.",
     "compactCount": "{{n}} compact",
     "compactions": "Compactions",
     "connected": "Connected · Working",

@@ -52,7 +52,7 @@ function buildParams(input: OpenClawSessionCompactionInput): Record<string, unkn
   };
 }
 
-/** Decode the stable result fields emitted by OpenClaw's sessions.compact handler. */
+/** 解码 OpenClaw `sessions.compact` handler 返回的稳定结果字段。 */
 export function parseOpenClawSessionCompactionResult(value: unknown): OpenClawSessionCompactionResult {
   const source = record(value);
   const key = source ? nonEmptyString(source.key) : null;
@@ -80,17 +80,18 @@ export function parseOpenClawSessionCompactionResult(value: unknown): OpenClawSe
 }
 
 /**
- * Narrow client for the admin-scoped native compaction RPC. The caller owns
- * authorization and transport selection; this class only validates the
- * OpenClaw request and response contract.
+ * 仅覆盖管理员权限的原生压缩 RPC。调用方负责授权和传输选择；本类只校验
+ * OpenClaw 请求与响应契约。
  */
 export class OpenClawSessionCompactionClient {
   constructor(private readonly request: OpenClawSessionCompactionRequester) {}
 
   async compact(input: OpenClawSessionCompactionInput): Promise<OpenClawSessionCompactionResult> {
     const params = buildParams(input);
-    return parseOpenClawSessionCompactionResult(
+    const result = parseOpenClawSessionCompactionResult(
       await this.request<unknown>('sessions.compact', params),
     );
+    if (result.key !== params.key) throw new OpenClawSessionCompactionResponseError();
+    return result;
   }
 }

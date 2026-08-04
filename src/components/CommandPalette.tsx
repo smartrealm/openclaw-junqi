@@ -22,6 +22,7 @@ import { gateway } from '@/services/gateway';
 import {
   notifyOpenClawSessionCompaction,
   notifyOpenClawSessionCompactionFailure,
+  requireOpenClawSessionCompactionTarget,
 } from '@/services/gateway/sessionCompactionFeedback';
 import { useNotificationStore } from '@/stores/notificationStore';
 import clsx from 'clsx';
@@ -80,7 +81,7 @@ export function CommandPalette() {
     { id: 'nav-ai-workspace', feature: 'agentRun', icon: FolderKanban, name: t('nav.aiWorkspace', 'AI Workspace'), keywords: ['workspace', 'agent run', 'tasks', '工作台'], action: () => navigate('/ai-workspace') },
     { id: 'nav-settings', feature: 'settings', icon: Settings, name: t('nav.settings'), shortcut: 'Ctrl+,', keywords: ['settings', 'إعدادات'], action: () => navigate('/settings') },
 
-    // Actions
+    // 操作
     { id: 'act-heartbeat', icon: Heart, name: t('palette.heartbeat'), keywords: ['heartbeat', 'فحص', 'check'], action: () => {
       window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: 'Run a quick heartbeat check — emails, calendar, anything urgent?', autoSend: true } }));
     }},
@@ -91,8 +92,10 @@ export function CommandPalette() {
       window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: "What's on my calendar today and tomorrow?", autoSend: true } }));
     }},
     { id: 'act-compact', icon: RefreshCw, name: t('palette.compactContext'), keywords: ['compact', 'ضغط', 'context'], action: () => {
-      const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
-      void gateway.compactSession(sessionKey).then((result) => {
+      const sessionKey = useChatStore.getState().activeSessionKey;
+      void Promise.resolve().then(() => gateway.compactSession(
+        requireOpenClawSessionCompactionTarget(sessionKey),
+      )).then((result) => {
         notifyOpenClawSessionCompaction(result, t, useNotificationStore.getState().addToast);
       }).catch((error) => {
         notifyOpenClawSessionCompactionFailure(error, t, useNotificationStore.getState().addToast);
