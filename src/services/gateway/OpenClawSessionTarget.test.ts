@@ -19,3 +19,19 @@ test('Gateway 发送外观在连接或 pending-send 状态之前拒绝空会话�
     OpenClawSessionTargetError,
   );
 });
+
+test('Gateway 会话读取外观在连接请求前拒绝缺失目标', async () => {
+  const missingTarget = undefined as unknown as string;
+  const requests = [
+    gateway.getEffectiveTools(missingTarget),
+    gateway.getSessionPreview(missingTarget),
+    gateway.resolveSessionKey(missingTarget),
+    gateway.listSessionArtifacts(missingTarget),
+    gateway.getSessionArtifact('artifact-1', missingTarget),
+    gateway.downloadSessionArtifact('artifact-1', missingTarget),
+  ];
+
+  for (const request of requests) {
+    await assert.rejects(request, OpenClawSessionTargetError);
+  }
+});

@@ -1,0 +1,38 @@
+# OpenClaw 会话读取目标围栏
+
+日期：2026-08-04
+
+## 结论
+
+`gateway` facade 曾为 `tools.effective`、`sessions.preview`、`sessions.resolve` 和
+`artifacts.list/get/download` 隐式填入主会话 key。即使当前 React 调用方均已传入已选择的
+Session，这个默认值仍允许遗漏参数的 JavaScript 调用把读取操作静默定向到其他会话。
+
+现在上述入口都要求显式 session key，并在建立 Gateway 请求前复用
+`requireOpenClawSessionTarget`。空白、缺失或非字符串目标统一返回
+`OPENCLAW_SESSION_TARGET_REQUIRED`；不会触发默认会话请求，也不会把本地错误伪装成
+Gateway 的读取结果。
+
+## 权威依据
+
+- [OpenClaw Gateway protocol](https://docs.openclaw.ai/gateway/protocol)
+- [OpenClaw tools.effective handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/tools-effective.ts)
+- [OpenClaw artifacts handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/artifacts.ts)
+- [OpenClaw sessions preview handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/sessions-preview.ts)
+- [OpenClaw sessions resolve handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/sessions-resolve.ts)
+
+这些协议都以请求中明确给出的会话范围作为 Gateway 处理的输入。JunQi 只保留其桌面客户端
+投影职责，不从主会话名称、当前开发环境或参数缺失推断一个目标。
+
+## 验证
+
+- `OpenClawSessionTarget.test.ts` 覆盖六个 facade 入口在连接请求前拒绝缺失目标。
+- 所有现有 React 调用方已审查并显式传入选中的 session key。
+- 本轮执行 `pnpm lint`、`pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs` 与
+  `git diff --check`。
+
+## 未验证边界
+
+- 未在真实 Gateway 上分别验证每个只读方法的多会话响应；本修复不改变其请求字段、权限或
+  响应解码。
+- 未进行 macOS、Windows、CentOS 或 Ubuntu 的目标平台真机验收。

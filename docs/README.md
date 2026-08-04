@@ -252,6 +252,7 @@ docs/
 - [OpenClaw 原生会话转向核验对齐](quality/openclaw-native-session-steer-reconciliation-2026-08-03.md)
 - [OpenClaw 原生会话队列对齐](quality/openclaw-native-session-queue-alignment-2026-08-03.md)
 - [OpenClaw 原生会话预览对齐](quality/openclaw-native-session-preview-alignment-2026-08-03.md)
+- [OpenClaw 会话读取目标围栏](quality/openclaw-session-read-target-fence-2026-08-04.md)
 - [OpenClaw 原生有效工具目录对齐](quality/openclaw-native-tools-effective-alignment-2026-08-03.md)
 - [OpenClaw 原生工具目录对齐](quality/openclaw-native-tools-catalog-alignment-2026-08-03.md)
 - [OpenClaw 原生工具调用对齐](quality/openclaw-native-tools-invoke-alignment-2026-08-03.md)

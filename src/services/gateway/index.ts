@@ -1297,9 +1297,10 @@ export const gateway = {
   async describeSession(sessionKey: string) {
     return connection.request('sessions.describe', { key: sessionKey });
   },
-  async getEffectiveTools(sessionKey = 'agent:main:main', agentId?: string): Promise<ToolsEffectiveResult> {
+  async getEffectiveTools(sessionKey: string, agentId?: string): Promise<ToolsEffectiveResult> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return parseToolsEffectiveResult(
-      await connection.request('tools.effective', buildToolsEffectiveParams(sessionKey, agentId)),
+      await connection.request('tools.effective', buildToolsEffectiveParams(targetSessionKey, agentId)),
     );
   },
   async invokeTool(params: ToolsInvokeParams): Promise<ToolsInvokeResult> {
@@ -1313,19 +1314,21 @@ export const gateway = {
     );
   },
   async getSessionPreview(
-    sessionKey = 'agent:main:main',
+    sessionKey: string,
     options: Pick<SessionsPreviewParams, 'limit' | 'maxChars'> = {},
   ): Promise<SessionPreview> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     const result = parseSessionsPreviewResult(
-      await connection.request('sessions.preview', buildSessionsPreviewParams([sessionKey], options)),
+      await connection.request('sessions.preview', buildSessionsPreviewParams([targetSessionKey], options)),
     );
-    return requireSessionPreview(result, sessionKey);
+    return requireSessionPreview(result, targetSessionKey);
   },
-  async resolveSessionKey(sessionKey = 'agent:main:main', agentId?: string): Promise<SessionsResolveResult> {
+  async resolveSessionKey(sessionKey: string, agentId?: string): Promise<SessionsResolveResult> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return parseSessionsResolveResult(
       await connection.request(
         'sessions.resolve',
-        buildSessionsResolveParams(sessionKey, { agentId, allowMissing: true }),
+        buildSessionsResolveParams(targetSessionKey, { agentId, allowMissing: true }),
       ),
     );
   },
@@ -1350,35 +1353,44 @@ export const gateway = {
   ) {
     return sessionCompactionOperations.restore(sessionKey, checkpointId, agentId);
   },
-  async listSessionArtifacts(sessionKey = 'agent:main:main', agentId?: string): Promise<ArtifactSummary[]> {
+  async listSessionArtifacts(sessionKey: string, agentId?: string): Promise<ArtifactSummary[]> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return parseArtifactsListResult(
-      await connection.request('artifacts.list', buildArtifactsListParams({ sessionKey, agentId })),
-      sessionKey,
+      await connection.request(
+        'artifacts.list',
+        buildArtifactsListParams({ sessionKey: targetSessionKey, agentId }),
+      ),
+      targetSessionKey,
     ).artifacts;
   },
   async getSessionArtifact(
     artifactId: string,
-    sessionKey = 'agent:main:main',
+    sessionKey: string,
     agentId?: string,
   ): Promise<ArtifactSummary> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return parseArtifactGetResult(
-      await connection.request('artifacts.get', buildArtifactsGetParams(artifactId, { sessionKey, agentId })),
+      await connection.request(
+        'artifacts.get',
+        buildArtifactsGetParams(artifactId, { sessionKey: targetSessionKey, agentId }),
+      ),
       artifactId,
-      sessionKey,
+      targetSessionKey,
     ).artifact;
   },
   async downloadSessionArtifact(
     artifactId: string,
-    sessionKey = 'agent:main:main',
+    sessionKey: string,
     agentId?: string,
   ): Promise<ArtifactDownloadResult> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return parseArtifactDownloadResult(
       await connection.request(
         'artifacts.download',
-        buildArtifactsDownloadParams(artifactId, { sessionKey, agentId }),
+        buildArtifactsDownloadParams(artifactId, { sessionKey: targetSessionKey, agentId }),
       ),
       artifactId,
-      sessionKey,
+      targetSessionKey,
     );
   },
   async getCronJob(jobId: string): Promise<OpenClawCronJobDetails> {
