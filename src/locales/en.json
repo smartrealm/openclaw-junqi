@@ -1393,6 +1393,7 @@
     "thinkingSwitchFailed": "Thinking level update failed",
     "sessionSettingsUpdateFailed": "Session settings update failed",
     "sessionSettingsResponseInvalid": "OpenClaw did not confirm the session setting change.",
+    "sessionSettingsTargetRequired": "Select an OpenClaw session before changing its settings.",
     "sessionModelSelectionLocked": "OpenClaw has locked model selection for this session.",
     "sessionAgentStatus": "Agent status: {{note}}",
     "sessionContextBudgetCompact": "OpenClaw will compact context before the next prompt",

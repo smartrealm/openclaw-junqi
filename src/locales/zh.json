@@ -1382,6 +1382,7 @@
     "thinkingSwitchFailed": "思考级别更新失败",
     "sessionSettingsUpdateFailed": "会话设置更新失败",
     "sessionSettingsResponseInvalid": "OpenClaw 未确认本次会话设置变更。",
+    "sessionSettingsTargetRequired": "请先选择一个 OpenClaw 会话，再修改其设置。",
     "sessionModelSelectionLocked": "OpenClaw 已锁定此会话的模型选择。",
     "sessionAgentStatus": "Agent 状态：{{note}}",
     "sessionContextBudgetCompact": "OpenClaw 将在下一次提示前压缩上下文",

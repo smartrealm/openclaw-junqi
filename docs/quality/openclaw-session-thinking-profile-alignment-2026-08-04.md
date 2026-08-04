@@ -16,6 +16,16 @@ JunQi 旧控制面把思考等级硬编码为自动、高、中、低、最小�
 - 紧凑触发器和弹层直接显示 Gateway label；继承仅在 Gateway 给出可匹配默认等级时显示解析后的默认 label。
 - Agent 会话状态提示同样保留会话 profile；会话未覆盖等级时显示继承及 Gateway 解析后的默认标签，不再以客户端“自动”代替。
 - 思考等级写入继续复用每会话串行 `operator.admin` 通道，并在 Gateway 回执的 `entry.thinkingLevel` 合法后才更新目标会话。
+- 所有复用 `SessionSettingsClient` 的 `sessions.patch` 写入均要求明确的非空 session key；模型、思考、
+  快速模式、详细输出、追踪、用量、推理与标签不再回退到固定主会话。缺少目标会在进入 mutation lane
+  前以异步错误失败，并呈现本地化说明。
+
+## 本次验证
+
+- `SessionSettingsClient` 回归覆盖空目标不得开启串行 mutation lane 或发送 RPC。
+- 会话运行时设置回归覆盖该错误到本地化提示的映射；思考 profile、回执、模型锁定与结构化能力集回归保持通过。
+- 本轮 13 项定向测试、`pnpm lint`、`pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs`、
+  三语 JSON 校验与 `git diff --check` 通过。完整测试只有既有 Node 弃用提示，没有失败项。
 
 ## 未验证边界
 

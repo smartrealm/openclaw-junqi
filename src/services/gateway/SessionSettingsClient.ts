@@ -27,8 +27,23 @@ export class SessionSettingsResponseError extends Error {
   }
 }
 
+export class SessionSettingsTargetError extends Error {
+  readonly code = 'SESSION_SETTINGS_TARGET_REQUIRED';
+
+  constructor() {
+    super('SESSION_SETTINGS_TARGET_REQUIRED');
+    this.name = 'SessionSettingsTargetError';
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requireSessionSettingsTarget(value: unknown): string {
+  const key = typeof value === 'string' ? value.trim() : '';
+  if (!key) throw new SessionSettingsTargetError();
+  return key;
 }
 
 function confirmedPatchResult(result: unknown, sessionKey: string): SessionPatchResult {
@@ -74,15 +89,16 @@ function confirmedPatchResult(result: unknown, sessionKey: string): SessionPatch
 export class SessionSettingsClient {
   constructor(private readonly deps: SessionSettingsClientDeps) {}
 
-  private patch(
+  private async patch(
     sessionKey: string,
     patch: Record<string, unknown>,
     privileged: boolean,
   ): Promise<SessionPatchResult> {
-    return this.deps.runMutation(sessionKey, async () => {
+    const key = requireSessionSettingsTarget(sessionKey);
+    return this.deps.runMutation(key, async () => {
       const request = privileged ? this.deps.requestPrivileged : this.deps.request;
-      const result = await request<unknown>('sessions.patch', { key: sessionKey, ...patch });
-      return confirmedPatchResult(result, sessionKey);
+      const result = await request<unknown>('sessions.patch', { key, ...patch });
+      return confirmedPatchResult(result, key);
     });
   }
 

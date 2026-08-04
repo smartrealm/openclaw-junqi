@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   assertSessionModelSelectionAllowed,
+  sessionSettingsErrorMessage,
   SessionModelSelectionLockedError,
   resolveSessionAgentRuntimePatch,
   resolveSessionThinkingPatch,
 } from './useSessionRuntimeSettings';
-import type { SessionPatchResult } from '@/services/gateway/SessionSettingsClient';
+import {
+  SessionSettingsTargetError,
+  type SessionPatchResult,
+} from '@/services/gateway/SessionSettingsClient';
 
 function patchResult(thinkingLevel: unknown): SessionPatchResult {
   return {
@@ -45,5 +49,18 @@ test('模型锁定会话拒绝模型变更与恢复默认模型', () => {
   assert.throws(
     () => assertSessionModelSelectionAllowed(true, true),
     SessionModelSelectionLockedError,
+  );
+});
+
+test('缺少活动会话时使用本地化设置错误，不伪造主会话目标', () => {
+  assert.equal(
+    sessionSettingsErrorMessage(
+      new SessionSettingsTargetError(),
+      'fallback',
+      'invalid',
+      'locked',
+      'target-required',
+    ),
+    'target-required',
   );
 });

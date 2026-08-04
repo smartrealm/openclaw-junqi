@@ -9,6 +9,7 @@ import {
 import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
 import {
   SessionSettingsResponseError,
+  SessionSettingsTargetError,
   type SessionPatchResult,
 } from '@/services/gateway/SessionSettingsClient';
 import { useChatStore } from '@/stores/chatStore';
@@ -51,13 +52,15 @@ export function assertSessionModelSelectionAllowed(
   }
 }
 
-function settingErrorMessage(
+export function sessionSettingsErrorMessage(
   error: unknown,
   fallback: string,
   invalidResponse: string,
   modelSelectionLocked: string,
+  targetRequired: string,
 ): string {
   if (error instanceof SessionModelSelectionLockedError) return modelSelectionLocked;
+  if (error instanceof SessionSettingsTargetError) return targetRequired;
   if (
     error
     && typeof error === 'object'
@@ -225,11 +228,12 @@ export function useSessionRuntimeSettings() {
       addToast(
         'error',
         t('chat.sessionSettingsUpdateFailed'),
-        settingErrorMessage(
+        sessionSettingsErrorMessage(
           error,
           t('errors.occurred'),
           t('chat.sessionSettingsResponseInvalid'),
           t('chat.sessionModelSelectionLocked'),
+          t('chat.sessionSettingsTargetRequired'),
         ),
       );
       return false;
@@ -242,7 +246,7 @@ export function useSessionRuntimeSettings() {
   const apply = useCallback(async (draft: SessionRuntimeDraft): Promise<boolean> => {
     return runUpdate(async () => {
       const stateBefore = useChatStore.getState();
-      const sessionKey = stateBefore.activeSessionKey || 'agent:main:main';
+      const sessionKey = stateBefore.activeSessionKey;
       const previousModel = stateBefore.manualModelOverride ?? stateBefore.currentModel;
       const previousThinking = normalizeThinkingLevel(stateBefore.currentThinking);
       const targetSession = stateBefore.sessions.find((session) => session.key === sessionKey);
@@ -326,7 +330,7 @@ export function useSessionRuntimeSettings() {
   const restoreDefaultModel = useCallback(async (): Promise<boolean> => {
     return runUpdate(async () => {
       const state = useChatStore.getState();
-      const sessionKey = state.activeSessionKey || 'agent:main:main';
+      const sessionKey = state.activeSessionKey;
       const previousModel = state.manualModelOverride ?? state.currentModel;
       assertSessionModelSelectionAllowed(
         state.sessions.find((session) => session.key === sessionKey)?.modelSelectionLocked === true,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { SessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
-import { SessionSettingsClient } from './SessionSettingsClient';
+import { SessionSettingsClient, SessionSettingsTargetError } from './SessionSettingsClient';
 
 const SESSION_KEY = 'agent:main:main';
 
@@ -122,5 +122,28 @@ describe('SessionSettingsClient', () => {
         && (error as Error & { reason?: string }).reason === 'missing-resolved-model'
       ),
     );
+  });
+
+  it('requires an explicit session target before opening a mutation lane', async () => {
+    let mutations = 0;
+    let requests = 0;
+    const client = new SessionSettingsClient({
+      runMutation: async (_key, operation) => {
+        mutations += 1;
+        return operation();
+      },
+      request: async () => {
+        requests += 1;
+        return response() as never;
+      },
+      requestPrivileged: async () => {
+        requests += 1;
+        return response() as never;
+      },
+    });
+
+    await assert.rejects(client.setThinking('  ', 'high'), SessionSettingsTargetError);
+    assert.equal(mutations, 0);
+    assert.equal(requests, 0);
   });
 });

@@ -1558,29 +1558,29 @@ export const gateway = {
     );
   },
 
-  // Session Settings
-  async setSessionModel(model: string | null, sessionKey = 'agent:main:main') {
+  // 会话设置
+  async setSessionModel(model: string | null, sessionKey: string) {
     return sessionSettings.setModel(sessionKey, model);
   },
-  async setSessionThinking(level: string | null, sessionKey = 'agent:main:main') {
+  async setSessionThinking(level: string | null, sessionKey: string) {
     return sessionSettings.setThinking(sessionKey, level);
   },
-  async setSessionFastMode(mode: boolean | 'auto' | null, sessionKey = 'agent:main:main') {
+  async setSessionFastMode(mode: boolean | 'auto' | null, sessionKey: string) {
     return sessionSettings.setFastMode(sessionKey, mode);
   },
-  async setSessionVerbose(level: 'on' | 'full' | 'off' | null, sessionKey = 'agent:main:main') {
+  async setSessionVerbose(level: 'on' | 'full' | 'off' | null, sessionKey: string) {
     return sessionSettings.setVerbose(sessionKey, level);
   },
-  async setSessionTrace(level: 'on' | 'off' | null, sessionKey = 'agent:main:main') {
+  async setSessionTrace(level: 'on' | 'off' | null, sessionKey: string) {
     return sessionSettings.setTrace(sessionKey, level);
   },
-  async setSessionResponseUsage(level: 'off' | 'tokens' | 'full' | null, sessionKey = 'agent:main:main') {
+  async setSessionResponseUsage(level: 'off' | 'tokens' | 'full' | null, sessionKey: string) {
     return sessionSettings.setResponseUsage(sessionKey, level);
   },
-  async setSessionReasoning(level: 'on' | 'off' | 'stream' | null, sessionKey = 'agent:main:main') {
+  async setSessionReasoning(level: 'on' | 'off' | 'stream' | null, sessionKey: string) {
     return sessionSettings.setReasoning(sessionKey, level);
   },
-  async setSessionLabel(label: string | null, sessionKey = 'agent:main:main') {
+  async setSessionLabel(label: string | null, sessionKey: string) {
     return sessionSettings.setLabel(sessionKey, label);
   },
   async setSessionPinned(pinned: boolean, sessionKey: string) {
