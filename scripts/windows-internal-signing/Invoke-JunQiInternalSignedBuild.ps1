@@ -23,7 +23,7 @@ $importedCertificate = Import-PfxCertificate `
   -Password $securePassword `
   -Exportable:$false
 
-$signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+$signtool = & (Join-Path $PSScriptRoot 'Resolve-JunQiSignTool.ps1')
 $binaryPath = Join-Path $repoRoot "src-tauri\target\$Target\release\junqi-desktop.exe"
 $bundleRoot = Join-Path $repoRoot "src-tauri\target\$Target\release\bundle\nsis"
 $buildConfig = Join-Path $repoRoot 'src-tauri\tauri.no-updater-artifacts.conf.json'

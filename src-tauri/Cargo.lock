@@ -2593,7 +2593,7 @@ dependencies = [
 
 [[package]]
 name = "junqi-desktop"
-version = "2.2.3"
+version = "2.2.5"
 dependencies = [
  "base64 0.22.1",
  "chrono",

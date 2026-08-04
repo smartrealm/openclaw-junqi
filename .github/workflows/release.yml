@@ -596,7 +596,7 @@ jobs:
           $certificatePath = Join-Path $env:RUNNER_TEMP 'junqi-release-signing.pfx'
           try {
             [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
-            $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+            $signtool = & .\scripts\windows-internal-signing\Resolve-JunQiSignTool.ps1
             $installerRoot = "src-tauri/target/${{ matrix.target }}/release/bundle"
             $installers = Get-ChildItem -Path $installerRoot -Recurse -File | Where-Object { $_.Extension -in '.exe', '.msi' }
             if ($installers.Count -eq 0) { throw "No Windows installers found under $installerRoot" }
