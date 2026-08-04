@@ -44,6 +44,7 @@ import type { OpenClawBtwSideResult } from '@/services/gateway/openClawBtw';
 import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
 import type { GatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
 import type { GatewaySessionAgentStatus } from '@/services/gateway/sessionAgentStatus';
+import type { GatewaySessionContextBudgetStatus } from '@/services/gateway/sessionContextBudgetStatus';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -332,6 +333,8 @@ export interface Session {
   agentStatus?: GatewaySessionAgentStatus | null;
   /** Gateway 明确记录的最近一次运行已中止；缺失时不保留旧值。 */
   abortedLastRun?: true | null;
+  /** Gateway 预提示估算出的上下文预算路线；客户端不得自行推导。 */
+  contextBudgetStatus?: GatewaySessionContextBudgetStatus | null;
   /** Gateway 记录的最近失败或超时运行摘要；缺失时不保留旧值。 */
   lastRunError?: string | null;
   hasActiveRun?: boolean;

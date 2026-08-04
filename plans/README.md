@@ -60,6 +60,7 @@ plans/
 - [OpenClaw 会话最近运行错误投影](quality/2026-08-04-openclaw-session-last-run-error-projection.md)
 - [OpenClaw 会话 Agent 状态投影](quality/2026-08-04-openclaw-session-agent-status-projection.md)
 - [OpenClaw 会话最近中止状态投影](quality/2026-08-04-openclaw-session-aborted-last-run-projection.md)
+- [OpenClaw 会话上下文预算状态投影](quality/2026-08-04-openclaw-session-context-budget-status.md)
 
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
 - [Session origin aggregation](quality/2026-07-20-session-origin-aggregation.md)

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, CircleAlert, CircleStop, MessageSquareText, Trash2, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
+import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, CircleAlert, CircleStop, Gauge, MessageSquareText, Trash2, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
 import { IconButton } from '@/components/shared/button/Button';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +25,7 @@ import clsx from 'clsx';
 import { applyPersonaToSessionDraft } from '@/utils/personaDraft';
 import { resolveAgentStatusSnapshot } from './agentStatus';
 import { gatewayThinkingLevelLabel } from '@/services/gateway/sessionThinkingProfile';
+import { getGatewaySessionContextBudgetNotice } from '@/services/gateway/sessionContextBudgetStatus';
 import { useOptionalCollaborationChat } from './CollaborationChatProvider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SessionActionsMenu } from './session-actions/SessionActionsMenu';
@@ -1190,6 +1191,14 @@ export function ChatTabs() {
             || label;
           const unread = session?.unread ?? 0;
           const isEditing = editingKey === key;
+          const contextBudgetNotice = getGatewaySessionContextBudgetNotice(session?.contextBudgetStatus);
+          const contextBudgetLabel = contextBudgetNotice === 'compact'
+            ? t('chat.sessionContextBudgetCompact')
+            : contextBudgetNotice === 'trim-tools'
+              ? t('chat.sessionContextBudgetTrimTools')
+              : contextBudgetNotice === 'compact-and-trim-tools'
+                ? t('chat.sessionContextBudgetCompactAndTrimTools')
+                : null;
 
           return (
             <SortableTab id={key} disabled={isMain}>
@@ -1241,6 +1250,16 @@ export function ChatTabs() {
                     className="shrink-0 text-aegis-text-muted"
                   >
                     <MessageSquareText size={12} aria-hidden="true" />
+                  </span>
+                )}
+                {contextBudgetLabel && (
+                  <span
+                    role="img"
+                    aria-label={contextBudgetLabel}
+                    title={contextBudgetLabel}
+                    className="shrink-0 text-aegis-warning"
+                  >
+                    <Gauge size={12} aria-hidden="true" />
                   </span>
                 )}
                 {session?.lastRunError && (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, AlertCircle, Check, ChevronDown, CircleStop, Crosshair, Download, FileDown, FileText, Folder, MessageSquareText, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
+import { Activity, AlertCircle, Check, ChevronDown, CircleStop, Crosshair, Download, FileDown, FileText, Folder, Gauge, MessageSquareText, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -22,6 +22,7 @@ import { EffectiveToolsControl } from './EffectiveToolsControl';
 import { SessionInspectionControl } from './SessionInspectionControl';
 import { SessionArtifactsControl } from './SessionArtifactsControl';
 import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
+import { getGatewaySessionContextBudgetNotice } from '@/services/gateway/sessionContextBudgetStatus';
 
 function WorkspacePicker({ agentId, current }: { agentId: string; current?: string }) {
   const { t } = useTranslation();
@@ -270,6 +271,14 @@ export function SessionContextBar() {
   const enabledSkillCount = Object.values(skills).filter((skill) => skill.enabled !== false).length;
   const activeSession = sessions.find((session) => session.key === activeSessionKey);
   const compactionActive = Boolean(compactionStatusBySession[activeSessionKey]);
+  const contextBudgetNotice = getGatewaySessionContextBudgetNotice(activeSession?.contextBudgetStatus);
+  const contextBudgetLabel = contextBudgetNotice === 'compact'
+    ? t('chat.sessionContextBudgetCompact')
+    : contextBudgetNotice === 'trim-tools'
+      ? t('chat.sessionContextBudgetTrimTools')
+      : contextBudgetNotice === 'compact-and-trim-tools'
+        ? t('chat.sessionContextBudgetCompactAndTrimTools')
+        : null;
 
   useEffect(() => {
     void refreshSkills();
@@ -299,6 +308,19 @@ export function SessionContextBar() {
           <MessageSquareText size={11} className="shrink-0" aria-hidden="true" />
           <span className="hidden truncate text-[10px] lg:inline">
             {activeSession.agentStatus.note}
+          </span>
+        </span>
+      )}
+      {contextBudgetLabel && (
+        <span
+          role="status"
+          className="inline-flex min-w-0 max-w-[min(38vw,340px)] items-center gap-1 text-aegis-warning"
+          aria-label={contextBudgetLabel}
+          title={contextBudgetLabel}
+        >
+          <Gauge size={11} className="shrink-0" aria-hidden="true" />
+          <span className="hidden truncate text-[10px] lg:inline">
+            {contextBudgetLabel}
           </span>
         </span>
       )}
