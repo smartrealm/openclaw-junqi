@@ -272,8 +272,12 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_THUMBPRINT)) { exit 0 }
-          foreach ($store in @('My', 'TrustedPeople', 'TrustedPublisher')) {
-            $certificatePath = "Cert:\CurrentUser\$store\$env:CERTIFICATE_THUMBPRINT"
+          $certificatePaths = @(
+            "Cert:\CurrentUser\My\$env:CERTIFICATE_THUMBPRINT",
+            "Cert:\LocalMachine\TrustedPeople\$env:CERTIFICATE_THUMBPRINT",
+            "Cert:\LocalMachine\TrustedPublisher\$env:CERTIFICATE_THUMBPRINT"
+          )
+          foreach ($certificatePath in $certificatePaths) {
             if (Test-Path -LiteralPath $certificatePath) {
               Remove-Item -LiteralPath $certificatePath -Force
             }

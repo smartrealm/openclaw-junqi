@@ -44,20 +44,21 @@ test('certificate removal is pinned to both subject and thumbprint', () => {
 
 test('ephemeral CI certificate is non-exportable, short-lived, and emits public trust material only', () => {
   const thumbprintOutput = ciCertificate.indexOf('"thumbprint=$($certificate.Thumbprint)"');
-  const trustStoreWrite = ciCertificate.indexOf('certutil.exe -user -f -addstore');
+  const trustStoreWrite = ciCertificate.indexOf('certutil.exe -f -addstore');
   assert.match(ciCertificate, /\$env:CI -ne 'true'/);
   assert.match(ciCertificate, /-KeyExportPolicy NonExportable/);
   assert.match(ciCertificate, /ValidDays must be between 1 and 30/);
   assert.match(ciCertificate, /Export-Certificate/);
   assert.doesNotMatch(ciCertificate, /Export-PfxCertificate|\.pfx/iu);
   assert.match(ciCertificate, /PublicTrust=None/);
-  assert.match(ciCertificate, /certutil\.exe -user -f -addstore \$storeName \$cerPath/);
+  assert.match(ciCertificate, /certutil\.exe -f -addstore \$storeName \$cerPath/);
+  assert.doesNotMatch(ciCertificate, /certutil\.exe -user/);
   assert.match(ciCertificate, /if \(\$LASTEXITCODE -ne 0\)/);
   assert.ok(thumbprintOutput >= 0 && thumbprintOutput < trustStoreWrite);
   assert.match(ciCertificate, /'TrustedPeople', 'TrustedPublisher'/);
   assert.doesNotMatch(ciCertificate, /'Root'/);
   assert.doesNotMatch(ciCertificate, /Import-Certificate|X509Store/);
-  assert.doesNotMatch(ciCertificate, /LocalMachine/);
+  assert.match(ciCertificate, /CiRunnerTrust=LocalMachineOnly/);
 });
 
 test('internal build signs the app before NSIS bundling and verifies both artifacts', () => {
@@ -101,5 +102,7 @@ test('tagged Windows test release signs the application before NSIS and publishe
   assert.doesNotMatch(taggedRelease, /windows-tag-internal-signing\/\*\.pfx/);
   assert.match(taggedRelease, /Smart App Control 开启时仍可能阻止/);
   assert.match(taggedRelease, /always\(\) && runner\.os == 'Windows'/);
-  assert.match(taggedRelease, /'My', 'TrustedPeople', 'TrustedPublisher'/);
+  assert.match(taggedRelease, /Cert:\\CurrentUser\\My/);
+  assert.match(taggedRelease, /Cert:\\LocalMachine\\TrustedPeople/);
+  assert.match(taggedRelease, /Cert:\\LocalMachine\\TrustedPublisher/);
 });

@@ -41,15 +41,15 @@ Export-Certificate -Cert $certificate -FilePath $cerPath -Type CERT | Out-Null
 "metadata_path=$metadataPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
 foreach ($storeName in @('TrustedPeople', 'TrustedPublisher')) {
-  & certutil.exe -user -f -addstore $storeName $cerPath | Out-Host
+  & certutil.exe -f -addstore $storeName $cerPath | Out-Host
   if ($LASTEXITCODE -ne 0) {
-    throw "Failed to trust the ephemeral certificate in CurrentUser\$storeName."
+    throw "Failed to trust the ephemeral certificate in LocalMachine\$storeName."
   }
 }
 @(
   'Purpose=JunQi controlled internal testing only'
   'PublicTrust=None'
-  'CiRunnerTrust=CurrentUserOnly'
+  'CiRunnerTrust=LocalMachineOnly'
   'SmartAppControlCompatibility=Not guaranteed; public CA signing is required by Microsoft policy'
   "Subject=$($certificate.Subject)"
   "Thumbprint=$($certificate.Thumbprint)"
