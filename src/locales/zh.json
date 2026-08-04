@@ -1606,6 +1606,7 @@
     "compactsAt": "压缩触发点",
     "heartbeat": "心跳",
     "heartbeatInterval": "每 15 分钟",
+    "agentRuntime": "智能体运行时",
     "thinking": "思考",
     "contextCompactedLabel": "上下文已压缩",
     "sessionCompactionStarted": "上下文压缩已开始",

@@ -2,6 +2,10 @@ import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { gateway } from '@/services/gateway';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
+import {
+  parseGatewaySessionAgentRuntime,
+  type GatewaySessionAgentRuntime,
+} from '@/services/gateway/sessionAgentRuntime';
 import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
 import {
   SessionSettingsResponseError,
@@ -61,9 +65,11 @@ function commitSessionModel(
   effectiveModel: string | null,
   manualOverride: string | null,
   previousModel: string | null,
+  agentRuntime: GatewaySessionAgentRuntime | null,
 ): void {
   const state = useChatStore.getState();
   state.setSessionModel(sessionKey, effectiveModel);
+  if (agentRuntime) state.setSessionAgentRuntime(sessionKey, agentRuntime);
   if (state.activeSessionKey === sessionKey) {
     state.setManualModelOverride(manualOverride);
   }
@@ -85,6 +91,12 @@ function resolvedPatchModel(result: SessionPatchResult): string {
   );
   if (!model) throw new SessionSettingsResponseError('missing-resolved-model');
   return model;
+}
+
+export function resolveSessionAgentRuntimePatch(
+  result: SessionPatchResult,
+): GatewaySessionAgentRuntime | null {
+  return parseGatewaySessionAgentRuntime(result.resolved.agentRuntime);
 }
 
 function resolvedPatchFastMode(result: SessionPatchResult): boolean | 'auto' | null {
@@ -237,7 +249,13 @@ export function useSessionRuntimeSettings() {
       if (modelWillChange) {
         const result = await gateway.setSessionModel(draft.modelId, sessionKey);
         const effectiveModel = resolvedPatchModel(result);
-        commitSessionModel(sessionKey, effectiveModel, effectiveModel, previousModel);
+        commitSessionModel(
+          sessionKey,
+          effectiveModel,
+          effectiveModel,
+          previousModel,
+          resolveSessionAgentRuntimePatch(result),
+        );
       }
 
       if (thinkingWillChange) {
@@ -287,7 +305,13 @@ export function useSessionRuntimeSettings() {
       const previousModel = state.manualModelOverride ?? state.currentModel;
       const result = await gateway.setSessionModel(null, sessionKey);
       const effectiveModel = resolvedPatchModel(result);
-      commitSessionModel(sessionKey, effectiveModel, null, previousModel);
+      commitSessionModel(
+        sessionKey,
+        effectiveModel,
+        null,
+        previousModel,
+        resolveSessionAgentRuntimePatch(result),
+      );
     });
   }, [runUpdate]);
 

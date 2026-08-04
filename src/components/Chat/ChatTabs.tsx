@@ -218,6 +218,7 @@ function AgentStatusTooltip({
   connected,
   agentName,
   session,
+  agentRuntime,
   thinkingLevel,
   thinkingLevels,
   thinkingDefault,
@@ -227,6 +228,7 @@ function AgentStatusTooltip({
   connected: boolean;
   agentName: string;
   session: Session;
+  agentRuntime: ReturnType<typeof resolveAgentStatusSnapshot>['agentRuntime'];
   thinkingLevel: string | null;
   thinkingLevels: ReturnType<typeof resolveAgentStatusSnapshot>['thinkingLevels'];
   thinkingDefault: string | null;
@@ -315,7 +317,7 @@ function AgentStatusTooltip({
             </div>
           </div>
 
-          {/* Info Rows */}
+          {/* 会话状态信息行。 */}
           <div className="px-4 pb-3 space-y-0">
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
               <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.tab.compact}</span>
@@ -329,6 +331,15 @@ function AgentStatusTooltip({
               <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.heartbeat')}</span>
               <span className="text-[10px] font-bold font-mono text-aegis-primary">{t('chat.heartbeatInterval')}</span>
             </div>
+            {agentRuntime && (
+              <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
+                <Bot size={12} className="text-aegis-text-dim" aria-hidden />
+                <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.agentRuntime')}</span>
+                <span className="max-w-[148px] truncate text-[10px] font-bold font-mono" style={{ color: dataColor(3) }} title={agentRuntime.id}>
+                  {agentRuntime.id}
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
               <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.tab.memory}</span>
               <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.thinking')}</span>
@@ -1360,6 +1371,7 @@ export function ChatTabs() {
                   connected={connected}
                   agentName={agentName}
                   session={session}
+                  agentRuntime={status.agentRuntime}
                   thinkingLevel={status.thinkingLevel}
                   thinkingLevels={status.thinkingLevels}
                   thinkingDefault={status.thinkingDefault}

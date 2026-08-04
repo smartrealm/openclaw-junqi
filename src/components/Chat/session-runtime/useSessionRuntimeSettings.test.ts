@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  resolveSessionAgentRuntimePatch,
   resolveSessionThinkingPatch,
 } from './useSessionRuntimeSettings';
 import type { SessionPatchResult } from '@/services/gateway/SessionSettingsClient';
@@ -21,4 +22,17 @@ test('思考设置仅以 Gateway 确认回执回写目标会话', () => {
     () => resolveSessionThinkingPatch(patchResult({ id: 'high' })),
     /SESSION_SETTINGS_RESPONSE_INVALID/,
   );
+});
+
+test('模型回执仅在 Gateway 确认有效 runtime 时提供本地投影', () => {
+  const confirmed = patchResult(null);
+  confirmed.resolved.agentRuntime = { id: 'codex', source: 'model' };
+  assert.deepEqual(resolveSessionAgentRuntimePatch(confirmed), { id: 'codex' });
+
+  const omitted = patchResult(null);
+  assert.equal(resolveSessionAgentRuntimePatch(omitted), null);
+
+  const malformed = patchResult(null);
+  malformed.resolved.agentRuntime = { id: '' };
+  assert.equal(resolveSessionAgentRuntimePatch(malformed), null);
 });

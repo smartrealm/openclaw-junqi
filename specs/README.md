@@ -53,6 +53,7 @@ specs/
 - [OpenClaw 会话详细工具输出对齐](quality/2026-08-04-openclaw-session-verbose.md)
 - [OpenClaw 会话插件追踪对齐](quality/2026-08-04-openclaw-session-plugin-trace.md)
 - [OpenClaw 会话响应使用量详情对齐](quality/2026-08-04-openclaw-session-response-usage.md)
+- [OpenClaw 会话 Agent Runtime 投影](quality/2026-08-04-openclaw-session-agent-runtime-projection.md)
 
 - [维护中心](quality/2026-07-14-maintenance-center-hardening.md)
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)

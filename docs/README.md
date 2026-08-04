@@ -142,6 +142,7 @@ docs/
 - [OpenClaw 会话详细工具输出对齐](quality/openclaw-session-verbose-alignment-2026-08-04.md)
 - [OpenClaw 会话插件追踪对齐](quality/openclaw-session-plugin-trace-alignment-2026-08-04.md)
 - [OpenClaw 会话响应使用量详情对齐](quality/openclaw-session-response-usage-alignment-2026-08-04.md)
+- [OpenClaw 会话 Agent Runtime 投影对齐](quality/openclaw-session-agent-runtime-projection-alignment-2026-08-04.md)
 - [OpenClaw 模型目录权威性审计](quality/openclaw-model-catalog-authority-alignment-2026-08-04.md)
 - [OpenClaw Talk 事件契约对齐](quality/openclaw-talk-event-contract-alignment-2026-08-04.md)
 - [OpenClaw Talk Barge-in Turn 围栏](quality/openclaw-talk-barge-in-turn-fence-2026-08-04.md)

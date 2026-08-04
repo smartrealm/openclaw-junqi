@@ -42,6 +42,7 @@ import {
 import type { OpenClawChatSendTiming } from '@/services/gateway/chatSendTiming';
 import type { OpenClawBtwSideResult } from '@/services/gateway/openClawBtw';
 import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
+import type { GatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -332,6 +333,8 @@ export interface Session {
   systemSent?: boolean;
   // 从 sessions.list 缓存的每会话模型、思考、快速模式、输出、追踪、推理和用量数据。
   model?: string | null;
+  /** Gateway 已解析的实际 Agent Runtime；缺失时客户端不得推测。 */
+  agentRuntime?: GatewaySessionAgentRuntime | null;
   thinkingLevel?: string | null;
   /** Gateway 按当前模型 profile 下发的可选思考等级；缺失时客户端不得猜测。 */
   thinkingLevels?: readonly GatewayThinkingLevelOption[] | null;
@@ -465,8 +468,10 @@ interface ChatState {
   addNativeSession: (session: Session) => void;
   /** Update a single session's label locally without a full sessions.list refetch. */
   setSessionLabel: (key: string, label: string) => void;
-  /** Update a single session's model locally after sessions.patch succeeds. */
+  /** `sessions.patch` 成功后在本地更新单个会话模型。 */
   setSessionModel: (key: string, model: string | null) => void;
+  /** Gateway 模型回执确认 runtime 后，定向更新对应会话。 */
+  setSessionAgentRuntime: (key: string, runtime: GatewaySessionAgentRuntime) => void;
   /** Update a single session's thinking level locally after sessions.patch succeeds. */
   setSessionThinking: (key: string, level: string | null) => void;
   /** sessions.patch 成功后在本地更新会话原生快速模式覆盖。 */
@@ -1575,7 +1580,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
   )),
 
-  /** Locally apply a model switch without waiting for sessions.list. */
+  /** 不等待 `sessions.list`，在本地应用已确认的模型切换。 */
   setSessionModel: (key, model) => set((state) => (
     isSessionDeleted(key)
       ? state
@@ -1584,6 +1589,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
             session.model === model ? session : { ...session, model },
           ),
           ...(state.activeSessionKey === key ? { currentModel: model } : {}),
+        }
+  )),
+
+  /** 仅应用 `sessions.patch.resolved` 已确认的 Agent Runtime。 */
+  setSessionAgentRuntime: (key, runtime) => set((state) => (
+    isSessionDeleted(key) || !state.sessions.some((session) => session.key === key)
+      ? state
+      : {
+          sessions: state.sessions.map((session) => (
+            session.key !== key || session.agentRuntime?.id === runtime.id
+              ? session
+              : { ...session, agentRuntime: runtime }
+          )),
         }
   )),
 

@@ -1617,6 +1617,7 @@
     "compactsAt": "Compaction at",
     "heartbeat": "Heartbeat",
     "heartbeatInterval": "15m interval",
+    "agentRuntime": "Agent runtime",
     "thinking": "Thinking",
     "contextCompactedLabel": "Context Compacted",
     "sessionCompactionStarted": "Context compaction started",

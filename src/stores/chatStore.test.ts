@@ -57,6 +57,26 @@ test('setSessionModel updates the session row and active currentModel', () => {
   );
 });
 
+test('setSessionAgentRuntime updates only an existing matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionAgentRuntime(OTHER_KEY, { id: 'codex' });
+  assert.deepEqual(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.agentRuntime,
+    { id: 'codex' },
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.agentRuntime,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionAgentRuntime('agent:removed:main', { id: 'openclaw' });
+  assert.equal(
+    useChatStore.getState().sessions.some((session) => session.key === 'agent:removed:main'),
+    false,
+  );
+});
+
 test('setSessionThinking updates only the matching session and active title state', () => {
   seedSessions(MAIN_KEY);
 
