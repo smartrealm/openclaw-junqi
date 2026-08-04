@@ -20,6 +20,9 @@ test("agent workspace keeps the explorer visible beside shared tabbed previews",
   assert.match(source, /<section className="flex min-w-0 flex-1 flex-col/);
   assert.match(source, /tabs=\{files\.tabs\}/);
   assert.match(source, /activeFilePath=\{files\.activePath\}/);
+  assert.match(source, /key=\{root\}/);
+  assert.match(source, /refreshVersion=\{treeKey\}/);
+  assert.match(source, /onPromoteFile=\{promoteFile\}/);
 });
 
 test("workspace mutations flush and synchronize all affected preview tabs", async () => {
@@ -61,4 +64,24 @@ test("a failed workspace switch stays retryable without resetting open tabs", as
   assert.doesNotMatch(failureBranch, /dispatchFiles\(\{ type: "reset" \}\)/);
   assert.match(source, /onClick=\{\(\) => void switchRoot\(pendingRootSwitch\)\}/);
   assert.match(source, /workspace\.switchPending/);
+});
+
+test("workspace file opening distinguishes preview, promotion, and linked-file navigation", async () => {
+  const source = await read("./WorkspacePanel.tsx");
+  const treeSource = await read("./WorkspaceFileTree.tsx");
+
+  assert.match(source, /preview: options\?\.preview \?\? true/);
+  assert.match(source, /dispatchFiles\(\{ type: "promote", path: entry\.path \}\)/);
+  assert.match(source, /onOpenFile=\{openLinkedFile\}/);
+  assert.match(treeSource, /onOpenFile\(entry, \{ preview: true \}\)/);
+  assert.match(treeSource, /onDoubleClick=\{\(\) => \{/);
+  assert.match(treeSource, /onOpenFile: \(path, name\) => onOpenFile\([\s\S]*\{ preview: false \}\)/);
+});
+
+test("workspace refresh keeps stale rows visible and ignores late directory responses", async () => {
+  const treeSource = await read("./WorkspaceFileTree.tsx");
+
+  assert.match(treeSource, /const loadRequestRef = useRef\(0\)/);
+  assert.match(treeSource, /if \(requestId !== loadRequestRef\.current\) return/);
+  assert.match(treeSource, /setEntries\(\(current\) => current \?\? \[\]\)/);
 });

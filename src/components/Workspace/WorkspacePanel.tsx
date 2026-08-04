@@ -110,10 +110,23 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
     };
   }, [agentWorkspace, rootOverride, switchRoot]);
 
-  const openFile = useCallback((entry: FsEntry) => {
+  const openFile = useCallback((entry: FsEntry, options?: { preview?: boolean }) => {
     dispatchFiles({
       type: "open",
       tab: { path: entry.path, name: entry.name },
+      preview: options?.preview ?? true,
+    });
+  }, []);
+
+  const promoteFile = useCallback((entry: FsEntry) => {
+    dispatchFiles({ type: "promote", path: entry.path });
+  }, []);
+
+  const openLinkedFile = useCallback((path: string, name: string) => {
+    dispatchFiles({
+      type: "open",
+      tab: { path, name },
+      preview: true,
     });
   }, []);
 
@@ -202,10 +215,12 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
             </div>
           ) : (
             <WorkspaceFileTree
-              key={`${root}:${treeKey}`}
+              key={root}
               root={root}
               activePath={files.activePath}
+              refreshVersion={treeKey}
               onOpenFile={openFile}
+              onPromoteFile={promoteFile}
               onBeforePathMutation={handleBeforePathMutation}
               onPathRenamed={handlePathRenamed}
               onPathDeleted={handlePathDeleted}
@@ -229,7 +244,7 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
             onCloseTabsToLeft={(path) => dispatchFiles({ type: "close-left", path })}
             onCloseAllTabs={() => dispatchFiles({ type: "close-all" })}
             onFileMissing={(path) => dispatchFiles({ type: "close", path })}
-            onOpenFile={(path, name) => dispatchFiles({ type: "open", tab: { path, name } })}
+            onOpenFile={openLinkedFile}
           />
         ) : (
           <>

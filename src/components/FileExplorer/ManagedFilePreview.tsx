@@ -3,6 +3,7 @@ import { Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import type { ManagedFilePreview as ManagedFilePreviewValue } from '@/utils/filePreviewCapabilities';
+import { formatJsonPreview } from '@/utils/jsonPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 
 const PdfPreview = lazy(() =>
@@ -128,6 +129,23 @@ export function ManagedFilePreview({
           resolveImageSource={resolveMarkdownImage}
         />
         {truncationNotice}
+      </div>
+    );
+  }
+
+  if (preview.kind === 'json') {
+    const formatted = formatJsonPreview(preview.content);
+    return (
+      <div className={`min-h-0 overflow-auto ${boundedHeight}`}>
+        {formatted === null ? (
+          <PreviewNotice>
+            {t('file.invalidJsonPreview', 'Invalid JSON. Showing the original content.')}
+          </PreviewNotice>
+        ) : null}
+        {truncationNotice}
+        <pre className="min-h-full whitespace-pre-wrap break-words p-4 font-mono text-[11.5px] leading-[1.65] text-aegis-text-muted">
+          {formatted ?? preview.content}
+        </pre>
       </div>
     );
   }

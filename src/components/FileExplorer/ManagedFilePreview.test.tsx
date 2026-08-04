@@ -32,6 +32,25 @@ test('managed Markdown files use the shared safe renderer', () => {
   assert.doesNotMatch(html, /<script>/);
 });
 
+test('managed JSON files format valid content and preserve invalid source', () => {
+  const formatted = renderPreview(
+    <ManagedFilePreview
+      fileName="config.json"
+      preview={{ kind: 'json', content: '{"enabled":true,"count":2}', truncated: false }}
+    />,
+  );
+  assert.match(formatted, /\{\n  &quot;enabled&quot;: true,\n  &quot;count&quot;: 2\n\}/);
+
+  const invalid = renderPreview(
+    <ManagedFilePreview
+      fileName="config.json"
+      preview={{ kind: 'json', content: '{"enabled":', truncated: false }}
+    />,
+  );
+  assert.match(invalid, /Invalid JSON\. Showing the original content\./);
+  assert.match(invalid, /\{&quot;enabled&quot;:/);
+});
+
 test('managed HTML keeps interactive scripts scoped and static HTML scriptless', () => {
   const interactive = renderPreview(
     <ManagedFilePreview

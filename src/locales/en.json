@@ -3377,6 +3377,7 @@
     "imagePreview": "Image preview",
     "binaryFile": "Binary file",
     "binaryCannotPreview": "Binary file cannot be previewed",
+    "invalidJsonPreview": "Invalid JSON. Showing the original content.",
     "openExternal": "Open with system app",
     "outline": "Outline",
     "makeTargets": "Make targets",

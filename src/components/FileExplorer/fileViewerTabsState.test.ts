@@ -29,6 +29,31 @@ test("file viewer tab state opens each path once and selects it", () => {
   assert.equal(reopened.activePath, "/repo/SOUL.md");
 });
 
+test("single-click previews replace one preview tab and double-click promotes it", () => {
+  const firstPreview = reduceFileViewerTabs(EMPTY_FILE_VIEWER_TABS, {
+    type: "open",
+    tab: { path: "/repo/one.md", name: "one.md" },
+    preview: true,
+  });
+  const secondPreview = reduceFileViewerTabs(firstPreview, {
+    type: "open",
+    tab: { path: "/repo/two.json", name: "two.json" },
+    preview: true,
+  });
+  assert.deepEqual(secondPreview.tabs, [{ path: "/repo/two.json", name: "two.json", isPreview: true }]);
+
+  const promoted = reduceFileViewerTabs(secondPreview, { type: "promote", path: "/repo/two.json" });
+  assert.deepEqual(promoted.tabs, [{ path: "/repo/two.json", name: "two.json", isPreview: undefined }]);
+  assert.equal(promoted.activePath, "/repo/two.json");
+
+  const permanent = reduceFileViewerTabs(promoted, {
+    type: "open",
+    tab: { path: "/repo/three.md", name: "three.md" },
+    preview: false,
+  });
+  assert.deepEqual(permanent.tabs.map((tab) => tab.path), ["/repo/two.json", "/repo/three.md"]);
+});
+
 test("file viewer tab state keeps a valid neighbor active after close and delete", () => {
   const closed = reduceFileViewerTabs(tabs, { type: "close", path: "/repo/docs/B.md" });
   assert.deepEqual(closed.tabs.map((tab) => tab.name), ["A.md", "C.md"]);

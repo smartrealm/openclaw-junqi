@@ -3339,6 +3339,7 @@
     "imagePreview": "圖片預覽",
     "binaryFile": "二進位檔案",
     "binaryCannotPreview": "無法預覽此二進位檔案",
+    "invalidJsonPreview": "JSON 無效，目前顯示原始內容。",
     "openExternal": "使用系統應用程式開啟",
     "outline": "大綱",
     "makeTargets": "Make 目標",

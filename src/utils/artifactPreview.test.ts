@@ -34,6 +34,16 @@ test('artifact previews decode Markdown and media through the managed preview mo
     data: 'aW1hZ2U=',
   });
   assert.deepEqual(image, { kind: 'image', url: 'data:image/png;base64,aW1hZ2U=' });
+
+  const jsonArtifact = artifact({ title: 'config.json', mimeType: 'application/json' });
+  assert.deepEqual(
+    artifactDownloadToPreview(jsonArtifact, {
+      artifact: jsonArtifact,
+      encoding: 'base64',
+      data: 'eyJlbmFibGVkIjp0cnVlfQ==',
+    }),
+    { kind: 'json', content: '{"enabled":true}', truncated: false },
+  );
 });
 
 test('artifact previews keep unsafe or oversized content out of the inline renderer', () => {

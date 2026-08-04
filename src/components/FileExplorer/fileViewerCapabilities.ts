@@ -21,6 +21,7 @@ export function resolveFileViewerPreview(fileName: string) {
 export function usesEditableDocument(fileName: string): boolean {
   const mode = resolveFileViewerPreview(fileName).mode;
   return mode === "editor"
+    || mode === "json"
     || mode === "markdown"
     || mode === "static-html"
     || mode === "isolated-html";

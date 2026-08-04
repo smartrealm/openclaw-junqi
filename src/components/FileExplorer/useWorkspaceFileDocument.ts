@@ -45,6 +45,7 @@ export function useWorkspaceFileDocument({
   const onDirtyChangeRef = useRef(onDirtyChange);
   const resolvedPreview = useMemo(() => resolveFileViewerPreview(fileName), [fileName]);
   const isMarkdown = resolvedPreview.mode === "markdown";
+  const isJson = resolvedPreview.mode === "json";
   const usesTextDocument = useMemo(() => usesEditableDocument(fileName), [fileName]);
   const document = useMemo(
     () => usesTextDocument
@@ -172,7 +173,7 @@ export function useWorkspaceFileDocument({
   useEffect(() => {
     let alive = true;
     setLanguageExtension([]);
-    if (!usesTextDocument || (isMarkdown && previewMode)) return;
+    if (!usesTextDocument || ((isMarkdown || isJson) && previewMode)) return;
     void loadCodeMirrorLanguage(fileName).then((extension) => {
       if (alive) setLanguageExtension(extension);
     }).catch(() => {
@@ -181,7 +182,7 @@ export function useWorkspaceFileDocument({
     return () => {
       alive = false;
     };
-  }, [fileName, isMarkdown, previewMode, usesTextDocument]);
+  }, [fileName, isJson, isMarkdown, previewMode, usesTextDocument]);
 
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -241,6 +242,7 @@ export function useWorkspaceFileDocument({
     error,
     diskReadError,
     isMarkdown,
+    isJson,
     edit,
     saveNow,
     reloadFromDisk,

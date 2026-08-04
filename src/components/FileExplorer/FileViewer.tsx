@@ -19,6 +19,10 @@ import type { FileViewerHandle, FileViewerProps } from "./fileViewerTypes";
 
 export type { FileViewerHandle, FileViewerProps, OpenFileTab, ThemeVariant } from "./fileViewerTypes";
 
+function isInlinePreviewMode(mode: ReturnType<typeof resolveFileViewerPreview>["mode"]): boolean {
+  return mode === "markdown" || mode === "json";
+}
+
 export const FileViewer = forwardRef<FileViewerHandle, FileViewerProps>(function FileViewer({
   tabs,
   activeFilePath,
@@ -123,8 +127,10 @@ export const FileViewer = forwardRef<FileViewerHandle, FileViewerProps>(function
 
   if (!activeTab) return null;
 
-  const activeIsMarkdown = resolveFileViewerPreview(activeTab.name).mode === "markdown";
-  const activePreviewMode = activeIsMarkdown && (previewModes[activeTab.path] ?? true);
+  const activePreview = resolveFileViewerPreview(activeTab.name);
+  const activeIsMarkdown = activePreview.mode === "markdown";
+  const activePreviewable = isInlinePreviewMode(activePreview.mode);
+  const activePreviewMode = activePreviewable && (previewModes[activeTab.path] ?? true);
   const activeViewMode: FileViewMode = activePreviewMode ? "preview" : "source";
   const activeTableOfContentsVisible = activePreviewMode && (tableOfContentsModes[activeTab.path] ?? false);
   const activeTableOfContentsAvailable = tableOfContentsAvailability[activeTab.path] ?? false;
@@ -148,6 +154,7 @@ export const FileViewer = forwardRef<FileViewerHandle, FileViewerProps>(function
       <FileViewerToolbar
         relativePath={activeRelativePath}
         isMarkdown={activeIsMarkdown}
+        isPreviewable={activePreviewable}
         viewMode={activeViewMode}
         tableOfContentsVisible={activeTableOfContentsVisible}
         tableOfContentsAvailable={activeTableOfContentsAvailable}
@@ -162,6 +169,7 @@ export const FileViewer = forwardRef<FileViewerHandle, FileViewerProps>(function
       <div style={{ flex: 1, position: "relative", minWidth: 0, minHeight: 0 }}>
         {tabs.map((tab) => {
           const active = tab.path === activeTab.path;
+          const tabPreview = resolveFileViewerPreview(tab.name);
           return (
             <div
               key={tab.path}
@@ -175,7 +183,7 @@ export const FileViewer = forwardRef<FileViewerHandle, FileViewerProps>(function
                 ownerId={`${documentOwnerPrefix}:${tab.path}`}
                 themeVariant={themeVariant}
                 active={active}
-                previewMode={resolveFileViewerPreview(tab.name).mode === "markdown" && (previewModes[tab.path] ?? true)}
+                previewMode={isInlinePreviewMode(tabPreview.mode) && (previewModes[tab.path] ?? true)}
                 tableOfContentsVisible={tableOfContentsModes[tab.path] ?? false}
                 wordWrap={wordWrap}
                 onRunMakeTarget={onRunMakeTarget}

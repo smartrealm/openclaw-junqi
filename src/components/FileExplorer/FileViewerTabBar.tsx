@@ -127,7 +127,16 @@ export function FileViewerTabBar({
               }}
             >
               <span style={{ width: 5, height: 14, borderRadius: 2, background: fileTabColor(tab.name), flexShrink: 0 }} />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tab.name}</span>
+              <span
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  fontStyle: tab.isPreview ? "italic" : "normal",
+                }}
+              >
+                {tab.name}
+              </span>
               <span
                 role="button"
                 aria-label={t("file.closeTab", { name: tab.name })}

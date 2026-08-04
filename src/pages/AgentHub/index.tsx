@@ -714,7 +714,11 @@ export function AgentHubPage() {
   const agents = useGatewayDataStore((s) => s.agents) as AgentInfo[];
   const runningSubAgents = useGatewayDataStore((s) => s.runningSubAgents);
   const loading = useGatewayDataStore((s) => s.loading.sessions || s.loading.agents);
+  const hasHydratedAgentData = useGatewayDataStore(
+    (s) => s.lastFetch.sessions > 0 && s.lastFetch.agents > 0,
+  );
   const dataError = useGatewayDataStore((s) => s.errors.agents || s.errors.sessions);
+  const initialLoading = loading && !hasHydratedAgentData;
   const skillList = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
 
@@ -1291,7 +1295,7 @@ export function AgentHubPage() {
         </div>
       )}
 
-      {loading ? (
+      {initialLoading ? (
         <div className="flex items-center justify-center py-20">
           <LoadingIndicator
             size={24}
@@ -1304,26 +1308,26 @@ export function AgentHubPage() {
           {/* ══════════════════════════════════════════════ */}
           {/* TREE VIEW                                     */}
           {/* ══════════════════════════════════════════════ */}
-          {viewMode === 'tree' && (
+          <div hidden={viewMode !== 'tree'} aria-hidden={viewMode !== 'tree'}>
             <TreeView mainSession={mainSession} registeredAgents={registeredAgents} workers={workers} agents={enrichedAgents} onAgentClick={setSettingsAgent} />
-          )}
+          </div>
 
           {/* ══════════════════════════════════════════════ */}
           {/* ACTIVITY VIEW                                 */}
           {/* ══════════════════════════════════════════════ */}
-          {viewMode === 'activity' && (
+          <div hidden={viewMode !== 'activity'} aria-hidden={viewMode !== 'activity'}>
             <GlassCard delay={0}>
               <div className="text-[10px] text-aegis-text-dim uppercase tracking-widest font-bold mb-2 px-3 pt-2">
                 {t('agentHub.liveActivityFeed', 'Live Activity Feed')}
               </div>
               <ActivityFeed sessions={sessions} agents={enrichedAgents} />
             </GlassCard>
-          )}
+          </div>
 
           {/* ══════════════════════════════════════════════ */}
           {/* GRID VIEW (original layout)                   */}
           {/* ══════════════════════════════════════════════ */}
-          {viewMode === 'grid' && (
+          <div hidden={viewMode !== 'grid'} aria-hidden={viewMode !== 'grid'}>
             <div className="space-y-8">
               {/* Section 1: Main Agent Hero */}
               <div>
@@ -2121,7 +2125,7 @@ export function AgentHubPage() {
                 )}
               </div>
             </div>
-          )}
+          </div>
         </>
       )}
 

@@ -26,6 +26,7 @@ function TreeNode({
   activePath,
   refreshVersion,
   onOpenFile,
+  onPromoteFile,
   onEntryContextMenu,
 }: {
   entry: FsEntry;
@@ -33,7 +34,8 @@ function TreeNode({
   depth: number;
   activePath: string | null;
   refreshVersion: number;
-  onOpenFile: (entry: FsEntry) => void;
+  onOpenFile: (entry: FsEntry, options?: { preview?: boolean }) => void;
+  onPromoteFile: (entry: FsEntry) => void;
   onEntryContextMenu: (event: MouseEvent, entry: FsEntry) => void;
 }) {
   const { t } = useTranslation();
@@ -42,17 +44,22 @@ function TreeNode({
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(false);
   const lastRefreshVersionRef = useRef(refreshVersion);
+  const loadRequestRef = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setErr(false);
     try {
-      setChildren(await readDir(entry.path, root));
+      const nextChildren = await readDir(entry.path, root);
+      if (requestId !== loadRequestRef.current) return;
+      setChildren(nextChildren);
     } catch {
+      if (requestId !== loadRequestRef.current) return;
       setErr(true);
-      setChildren([]);
+      setChildren((current) => current ?? []);
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
   }, [entry.path, root]);
 
@@ -64,7 +71,7 @@ function TreeNode({
 
   const toggle = async () => {
     if (!entry.is_dir) {
-      onOpenFile(entry);
+      onOpenFile(entry, { preview: true });
       return;
     }
     if (!open && children === null) await load();
@@ -78,6 +85,9 @@ function TreeNode({
         type="button"
         data-file-tree-entry="true"
         onClick={() => void toggle()}
+        onDoubleClick={() => {
+          if (!entry.is_dir) onPromoteFile(entry);
+        }}
         onContextMenu={(event) => onEntryContextMenu(event, entry)}
         title={entry.name}
         className={[
@@ -112,6 +122,7 @@ function TreeNode({
           activePath={activePath}
           refreshVersion={refreshVersion}
           onOpenFile={onOpenFile}
+          onPromoteFile={onPromoteFile}
           onEntryContextMenu={onEntryContextMenu}
         />
       ))}
@@ -127,14 +138,18 @@ function TreeNode({
 export function WorkspaceFileTree({
   root,
   activePath,
+  refreshVersion = 0,
   onOpenFile,
+  onPromoteFile,
   onBeforePathMutation,
   onPathRenamed,
   onPathDeleted,
 }: {
   root: string;
   activePath: string | null;
-  onOpenFile: (entry: FsEntry) => void;
+  refreshVersion?: number;
+  onOpenFile: (entry: FsEntry, options?: { preview?: boolean }) => void;
+  onPromoteFile: (entry: FsEntry) => void;
   onBeforePathMutation?: (path: string, isDirectory: boolean) => Promise<void>;
   onPathRenamed?: (oldPath: string, newPath: string, isDirectory: boolean) => void;
   onPathDeleted?: (path: string, isDirectory: boolean) => void;
@@ -144,23 +159,36 @@ export function WorkspaceFileTree({
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [treeVersion, setTreeVersion] = useState(0);
+  const loadRequestRef = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setErr(null);
     try {
-      setEntries(await readDir(root, root));
+      const nextEntries = await readDir(root, root);
+      if (requestId !== loadRequestRef.current) return;
+      setEntries(nextEntries);
     } catch (error) {
+      if (requestId !== loadRequestRef.current) return;
       setErr(error instanceof Error ? error.message : String(error));
-      setEntries([]);
+      setEntries((current) => current ?? []);
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
   }, [root]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const lastRefreshVersionRef = useRef(refreshVersion);
+  useEffect(() => {
+    if (lastRefreshVersionRef.current === refreshVersion) return;
+    lastRefreshVersionRef.current = refreshVersion;
+    void load();
+    setTreeVersion((version) => version + 1);
+  }, [load, refreshVersion]);
 
   const refreshAfterMutation = useCallback(async () => {
     await load();
@@ -174,7 +202,7 @@ export function WorkspaceFileTree({
       path,
       is_dir: false,
       extension: extensionOf(name),
-    }),
+    }, { preview: false }),
     onRefresh: refreshAfterMutation,
     onBeforePathMutation,
     onPathRenamed,
@@ -195,30 +223,42 @@ export function WorkspaceFileTree({
     <div className="flex items-center justify-center py-8 text-aegis-text-dim">
       <LoadingIndicator size={16} />
     </div>
-  ) : err ? (
+  ) : !entries || entries.length === 0 ? err ? (
     <div className="p-3 text-center">
       <p className="mb-2 break-words text-[11px] text-aegis-danger/80">{err}</p>
       <button type="button" onClick={() => void load()} className="inline-flex items-center gap-1 text-[11px] text-aegis-text-muted hover:text-aegis-text">
         <RefreshCw size={11} /> {t('common.retry', 'Retry')}
       </button>
     </div>
-  ) : !entries || entries.length === 0 ? (
+  ) : (
     <div className="p-4 text-center text-[11px] text-aegis-text-dim">{t('workspace.empty', 'Workspace is empty')}</div>
   ) : (
-    <div className="py-1">
-      {entries.map((entry) => (
-        <TreeNode
-          key={entry.path}
-          entry={entry}
-          root={root}
-          depth={0}
-          activePath={activePath}
-          refreshVersion={treeVersion}
-          onOpenFile={onOpenFile}
-          onEntryContextMenu={openEntryContextMenu}
-        />
-      ))}
-    </div>
+    <>
+      {err && (
+        <div className="mx-1.5 mt-1.5 flex items-start gap-1.5 rounded border border-aegis-danger/25 bg-aegis-danger/10 px-2 py-1.5 text-[10px] text-aegis-danger">
+          <AlertCircle size={11} className="mt-px shrink-0" />
+          <span className="min-w-0 break-words">{err}</span>
+          <button type="button" onClick={() => void load()} className="ms-auto shrink-0 font-semibold hover:underline">
+            {t('common.retry', 'Retry')}
+          </button>
+        </div>
+      )}
+      <div className="py-1">
+        {entries.map((entry) => (
+          <TreeNode
+            key={entry.path}
+            entry={entry}
+            root={root}
+            depth={0}
+            activePath={activePath}
+            refreshVersion={treeVersion}
+            onOpenFile={onOpenFile}
+            onPromoteFile={onPromoteFile}
+            onEntryContextMenu={openEntryContextMenu}
+          />
+        ))}
+      </div>
+    </>
   );
 
   return (

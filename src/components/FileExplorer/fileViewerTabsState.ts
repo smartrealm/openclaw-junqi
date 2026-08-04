@@ -7,7 +7,8 @@ export interface FileViewerTabsState {
 }
 
 export type FileViewerTabsAction =
-  | { type: "open"; tab: OpenFileTab }
+  | { type: "open"; tab: OpenFileTab; preview?: boolean }
+  | { type: "promote"; path: string }
   | { type: "select"; path: string }
   | { type: "close"; path: string }
   | { type: "close-others"; path: string }
@@ -39,13 +40,42 @@ export function reduceFileViewerTabs(
   action: FileViewerTabsAction,
 ): FileViewerTabsState {
   switch (action.type) {
-    case "open":
-      return {
-        tabs: state.tabs.some((tab) => tab.path === action.tab.path)
-          ? state.tabs
-          : [...state.tabs, action.tab],
-        activePath: action.tab.path,
-      };
+    case "open": {
+      const requestedPreview = action.preview ?? action.tab.isPreview ?? false;
+      const existingIndex = state.tabs.findIndex((tab) => tab.path === action.tab.path);
+      if (existingIndex !== -1) {
+        const existing = state.tabs[existingIndex];
+        const remainsPreview = requestedPreview && existing.isPreview === true;
+        if (existing.name === action.tab.name && existing.isPreview === (remainsPreview ? true : undefined)) {
+          return { ...state, activePath: action.tab.path };
+        }
+        const tabs = state.tabs.slice();
+        tabs[existingIndex] = {
+          ...existing,
+          ...action.tab,
+          isPreview: remainsPreview ? true : undefined,
+        };
+        return { tabs, activePath: action.tab.path };
+      }
+
+      const tab = { ...action.tab, isPreview: requestedPreview ? true : undefined };
+      if (requestedPreview) {
+        const previewIndex = state.tabs.findIndex((candidate) => candidate.isPreview === true);
+        if (previewIndex !== -1) {
+          const tabs = state.tabs.slice();
+          tabs[previewIndex] = tab;
+          return { tabs, activePath: tab.path };
+        }
+      }
+      return { tabs: [...state.tabs, tab], activePath: tab.path };
+    }
+    case "promote": {
+      const index = state.tabs.findIndex((tab) => tab.path === action.path);
+      if (index === -1 || state.tabs[index]?.isPreview !== true) return state;
+      const tabs = state.tabs.slice();
+      tabs[index] = { ...tabs[index], isPreview: undefined };
+      return { tabs, activePath: action.path };
+    }
     case "select":
       return state.tabs.some((tab) => tab.path === action.path)
         ? { ...state, activePath: action.path }

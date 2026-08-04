@@ -1,4 +1,5 @@
 import type { ManagedFilePreview } from '@/utils/filePreviewCapabilities';
+import { isJsonFileName } from '@/utils/jsonPreview';
 import { resolveWorkspacePreview } from '@/workspace-files/services/previewResolver';
 import {
   createLocalManagedFilePreviewUrl,
@@ -64,6 +65,7 @@ export class FilePreviewError extends Error {
 
 export function getFilePreviewKind(fileName: string): FilePreviewKind | null {
   if (/\.(?:xlsx|pptx|docx)$/i.test(fileName)) return 'office';
+  if (isJsonFileName(fileName)) return 'json';
   const resolution = resolveWorkspacePreview({
     path: fileName,
     policy: 'managed-readonly',

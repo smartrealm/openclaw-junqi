@@ -12,6 +12,7 @@ test('CHAT-12 classifies only formats with a real inline renderer', () => {
   assert.equal(getFilePreviewKind('training/index.html'), 'html');
   assert.equal(getFilePreviewKind('notes.md'), 'markdown');
   assert.equal(getFilePreviewKind('component.mdx'), 'markdown');
+  assert.equal(getFilePreviewKind('config.json'), 'json');
   assert.equal(getFilePreviewKind('diagram.webp'), 'image');
   assert.equal(getFilePreviewKind('recording.m4a'), 'audio');
   assert.equal(getFilePreviewKind('movie.mp4'), 'video');
