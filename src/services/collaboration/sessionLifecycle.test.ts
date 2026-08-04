@@ -126,7 +126,7 @@ test('uses the official native deletion RPC when collaboration is not installed'
 
 test('stops a pending Gateway send before a native session reset', async () => {
   const steps: string[] = [];
-  useChatStore.setState({ sendingBySession: { [KEY]: true } });
+  useChatStore.setState({ typingBySession: { [KEY]: true } });
   setSessionLifecycleDependenciesForTests({
     bootstrapCollaboration: async () => {
       throw { code: 'METHOD_NOT_FOUND', message: 'unknown method junqi.collab.capabilities' };

@@ -33,14 +33,14 @@ function seedSessions(activeSessionKey = MAIN_KEY) {
   });
 }
 
-test('a session request stays interruptible while its Gateway send awaits a stream', () => {
+test('only a Gateway-owned request is eligible for a native Stop', () => {
   const sessionKey = 'agent:main:pending-send';
   const inactive = { typingBySession: {}, sendingBySession: {} };
   const sending = { typingBySession: {}, sendingBySession: { [sessionKey]: true } };
   const streaming = { typingBySession: { [sessionKey]: true }, sendingBySession: {} };
 
   assert.equal(selectSessionRequestActive(inactive, sessionKey), false);
-  assert.equal(selectSessionRequestActive(sending, sessionKey), true);
+  assert.equal(selectSessionRequestActive(sending, sessionKey), false);
   assert.equal(selectSessionRequestActive(streaming, sessionKey), true);
 });
 

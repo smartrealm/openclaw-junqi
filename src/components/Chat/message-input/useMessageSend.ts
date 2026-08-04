@@ -2,7 +2,11 @@ import { useCallback, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { showAlert } from '@/components/shared/AlertDialog';
 import { displayAttachments, toGatewayAttachments } from '@/services/chat/attachments';
-import { chatSendCoordinator, type ChatSendRequest } from '@/services/chat/sendTransaction';
+import {
+  chatSendCoordinator,
+  isChatSendDispatchCancelled,
+  type ChatSendRequest,
+} from '@/services/chat/sendTransaction';
 import type { PreparedAttachment } from '@/services/chat/types';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
@@ -95,7 +99,7 @@ export function useMessageSend({
       }
 
       voiceRuntime.interruptGlobally(sessionKey);
-      const delivery = chatSendCoordinator.send({
+      const delivery = await chatSendCoordinator.send({
         sessionKey,
         sessionId: activeSessionId,
         message: fullMessage,
@@ -105,13 +109,14 @@ export function useMessageSend({
         optimisticMessage: { timestamp: new Date().toISOString() },
         ...composerDeliveryOptions(deliveryMode),
       });
-      const state = useChatStore.getState();
-      state.consumeComposerSnapshot(sessionKey, {
-        text: rawText,
-        attachmentIds: sendFiles.map((file) => file.id),
-      });
-      state.setQuickReplies([], sessionKey);
-      await delivery;
+      if (!isChatSendDispatchCancelled(delivery)) {
+        const state = useChatStore.getState();
+        state.consumeComposerSnapshot(sessionKey, {
+          text: rawText,
+          attachmentIds: sendFiles.map((file) => file.id),
+        });
+        state.setQuickReplies([], sessionKey);
+      }
     } catch (error) {
       debugError('app', '[MessageSend] Delivery failed:', error);
     } finally {

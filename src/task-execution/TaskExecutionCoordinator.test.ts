@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
-import { beginTaskRun, emptyTaskExecutionSnapshot, recordTaskToolEvent } from './stateMachine';
 import {
+  beginTaskRun,
+  emptyTaskExecutionSnapshot,
+  recordTaskToolEvent,
+  requestTaskRunStop,
+} from './stateMachine';
+import {
+  isTaskRunStopRequested,
   resolveTaskExecutionBinding,
   resolveTaskExecutionToolEventBinding,
 } from './TaskExecutionCoordinator';
@@ -19,6 +25,20 @@ const baseBinding = {
   sessionKey: 'agent:main:voice',
   sessionId: 'session-1',
 };
+
+test('recognizes a Stop only for the exact checkpoint Run', () => {
+  const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
+    binding: baseBinding,
+    runId: 'run-to-stop',
+    source: 'chat',
+    now: 10,
+  });
+  const stopped = requestTaskRunStop(started, baseBinding, 20);
+
+  assert.equal(isTaskRunStopRequested(stopped.tasks, baseBinding, 'run-to-stop'), true);
+  assert.equal(isTaskRunStopRequested(stopped.tasks, baseBinding, 'another-run'), false);
+  assert.equal(isTaskRunStopRequested(stopped.tasks, { ...baseBinding, sessionId: 'session-2' }, 'run-to-stop'), false);
+});
 
 test('resolves a session-id-bound checkpoint when an event only carries sessionKey', () => {
   const snapshot = beginTaskRun(emptyTaskExecutionSnapshot(), {

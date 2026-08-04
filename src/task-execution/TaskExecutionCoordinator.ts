@@ -88,6 +88,16 @@ export function resolveTaskExecutionToolEventBinding(
   return candidates.length === 1 ? { ...candidates[0].binding } : null;
 }
 
+export function isTaskRunStopRequested(
+  tasks: TaskExecutionSnapshot['tasks'],
+  binding: TaskExecutionRuntimeBinding,
+  runId: string,
+): boolean {
+  const task = tasks.find((candidate) => candidate.taskId === taskExecutionId(binding));
+  const status = task?.runs.find((candidate) => candidate.runId === runId)?.status;
+  return status === 'cancel_requested' || status === 'cancelled';
+}
+
 export class TaskExecutionCoordinator {
   private snapshot: TaskExecutionSnapshot = emptyTaskExecutionSnapshot();
   private generation = 0;
@@ -194,19 +204,45 @@ export class TaskExecutionCoordinator {
     runId: string;
     source: TaskExecutionSource;
     model?: string | null;
-  }): Promise<string | null> {
+  }): Promise<{ supersededRunId: string | null; created: boolean }> {
     const binding = verifiedBinding(params.sessionKey, params.sessionId);
-    if (!binding) return null;
+    if (!binding) return { supersededRunId: null, created: false };
     await this.hydrate();
     const prepared = prepareTaskRunSteer(this.snapshot, { ...params, binding });
     await this.commit(prepared.snapshot);
-    return prepared.supersededRunId;
+    return { supersededRunId: prepared.supersededRunId, created: true };
   }
 
   async requestStop(sessionKey: string, sessionId?: string): Promise<void> {
     const binding = await this.operationBinding(sessionKey, sessionId, true);
     if (!binding) return;
     await this.commit(requestTaskRunStop(this.snapshot, binding));
+  }
+
+  /**
+   * The local cancellation checkpoint closes the gap before chat.send has
+   * reached the Gateway pending-run registry. It never infers a native Run.
+   */
+  async isRunStopRequested(params: {
+    sessionKey: string;
+    sessionId?: string;
+    runId: string | null | undefined;
+  }): Promise<boolean> {
+    const runId = params.runId?.trim();
+    if (!runId) return false;
+    await this.hydrate();
+    // requestStop serializes its durable update on this tail. Wait for a Stop
+    // already in flight before allowing the same Run to cross the handoff.
+    await this.writeTail;
+    const binding = resolveTaskExecutionBinding(
+      this.snapshot.tasks,
+      params.sessionKey,
+      params.sessionId,
+      getCurrentRuntimeIdentity(),
+      true,
+    );
+    if (!binding) return false;
+    return isTaskRunStopRequested(this.snapshot.tasks, binding, runId);
   }
 
   async settleRun(params: {

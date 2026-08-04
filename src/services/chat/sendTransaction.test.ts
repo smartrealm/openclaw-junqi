@@ -4,6 +4,47 @@ import type { ChatMessage } from '@/stores/chatStore';
 import { ChatSendCoordinator } from './sendTransaction';
 import { sessionMutationGate } from './sessionMutationGate';
 
+test('STOP-04 a checkpointed Stop prevents normal and steer sends from reaching the Gateway', async () => {
+  const messages = new Map<string, ChatMessage>();
+  const typing: boolean[] = [];
+  let transportCalls = 0;
+  const coordinator = new ChatSendCoordinator(
+    { sendMessage: async () => { transportCalls += 1; } },
+    () => ({
+      addMessage(message) { messages.set(message.id, message); },
+      updateMessage(_sessionKey, id, patch) {
+        const current = messages.get(id);
+        if (current) messages.set(id, { ...current, ...patch });
+      },
+      setIsTyping(value) { typing.push(value); },
+      typingBySession: {},
+      enqueueMessage() {},
+    }),
+    {
+      prepareSend: async ({ runId }) => ({ runId, created: true }),
+      prepareSteer: async () => ({ supersededRunId: null, created: true }),
+      isRunStopRequested: async () => true,
+      settleRun: async () => {},
+      reportPersistenceFailure() {},
+    },
+  );
+
+  const normal = await coordinator.send({
+    sessionKey: 'session-a', message: 'do not dispatch', clientMessageId: 'stop-normal',
+  });
+  const steer = await coordinator.send({
+    sessionKey: 'session-a', message: 'do not steer', clientMessageId: 'stop-steer', delivery: 'steer',
+  });
+
+  assert.deepEqual(normal, { cancelled: true, clientMessageId: 'stop-normal' });
+  assert.deepEqual(steer, { cancelled: true, clientMessageId: 'stop-steer' });
+  assert.equal(transportCalls, 0);
+  assert.equal(messages.get('stop-normal')?.status, 'cancelled');
+  assert.equal(messages.get('stop-steer')?.status, 'cancelled');
+  assert.deepEqual(messages.get('stop-normal')?.retryPayload, { text: 'do not dispatch' });
+  assert.deepEqual(typing, [true, false, true, false]);
+});
+
 test('CHAT-02 rejected send records a retryable failure and releases typing', async () => {
   const messages = new Map<string, ChatMessage>();
   const typing: boolean[] = [];

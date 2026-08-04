@@ -10,6 +10,9 @@ interface ChatSendGateway {
   sendMessage: typeof gateway.sendMessage;
 }
 
+type TaskExecutionPort = Pick<typeof taskExecutionCoordinator,
+  'prepareSend' | 'prepareSteer' | 'isRunStopRequested' | 'settleRun' | 'reportPersistenceFailure'>;
+
 interface ChatSendState {
   addMessage: (message: ChatMessage, sessionKey?: string) => void;
   updateMessage: (sessionKey: string, messageId: string, patch: Partial<ChatMessage>) => void;
@@ -39,6 +42,18 @@ export interface ChatSendRequest {
   model?: string | null;
 }
 
+export interface ChatSendDispatchCancelled {
+  cancelled: true;
+  clientMessageId: string;
+}
+
+export function isChatSendDispatchCancelled(value: unknown): value is ChatSendDispatchCancelled {
+  return typeof value === 'object'
+    && value !== null
+    && (value as { cancelled?: unknown }).cancelled === true
+    && typeof (value as { clientMessageId?: unknown }).clientMessageId === 'string';
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim()
     ? error.message
@@ -49,6 +64,7 @@ export class ChatSendCoordinator {
   constructor(
     private readonly gatewayPort: ChatSendGateway,
     private readonly state: () => ChatSendState,
+    private readonly taskExecutionPort: TaskExecutionPort = taskExecutionCoordinator,
   ) {}
 
   async send(request: ChatSendRequest): Promise<unknown> {
@@ -156,7 +172,7 @@ export class ChatSendCoordinator {
     });
     state.setIsTyping(true, request.sessionKey);
     let taskRunId = clientMessageId;
-    let taskRunCreated = request.delivery === 'steer';
+    let taskRunCreated = false;
 
     try {
       const observedModel = request.model
@@ -165,15 +181,17 @@ export class ChatSendCoordinator {
         ?? null;
       let supersededRunId: string | null = null;
       if (request.delivery === 'steer') {
-        supersededRunId = await taskExecutionCoordinator.prepareSteer({
+        const prepared = await this.taskExecutionPort.prepareSteer({
           sessionKey: request.sessionKey,
           sessionId: request.sessionId,
           runId: clientMessageId,
           source: request.source ?? 'chat',
           model: observedModel,
         });
+        supersededRunId = prepared.supersededRunId;
+        taskRunCreated = prepared.created;
       } else {
-        const prepared = await taskExecutionCoordinator.prepareSend({
+        const prepared = await this.taskExecutionPort.prepareSend({
           sessionKey: request.sessionKey,
           sessionId: request.sessionId,
           runId: clientMessageId,
@@ -185,6 +203,19 @@ export class ChatSendCoordinator {
         });
         taskRunId = prepared.runId ?? clientMessageId;
         taskRunCreated = prepared.created;
+      }
+      if (taskRunCreated && await this.taskExecutionPort.isRunStopRequested({
+        sessionKey: request.sessionKey,
+        sessionId: request.sessionId,
+        runId: taskRunId,
+      })) {
+        state.updateMessage(request.sessionKey, clientMessageId, {
+          status: 'cancelled',
+          deliveryError: undefined,
+          retryPayload,
+        });
+        state.setIsTyping(false, request.sessionKey);
+        return { cancelled: true, clientMessageId };
       }
       const result = await this.gatewayPort.sendMessage(
         request.message,
@@ -219,12 +250,12 @@ export class ChatSendCoordinator {
         || error.name === 'GatewayRpcError'
         || error.message === 'Gateway is not connected'
       ) && taskRunCreated) {
-        await taskExecutionCoordinator.settleRun({
+        await this.taskExecutionPort.settleRun({
           sessionKey: request.sessionKey,
           sessionId: request.sessionId,
           runId: taskRunId,
           terminalReason: 'error',
-        }).catch((settleError) => taskExecutionCoordinator.reportPersistenceFailure('settle rejected send checkpoint', settleError));
+        }).catch((settleError) => this.taskExecutionPort.reportPersistenceFailure('settle rejected send checkpoint', settleError));
       }
       throw error;
     }

@@ -10,7 +10,7 @@ test('Quick Chat forwards a pending Gateway send to the native Stop facade', asy
   const stopped = await stopQuickChatRequest(
     SESSION_KEY,
     SESSION_ID,
-    { typingBySession: {}, sendingBySession: { [SESSION_KEY]: true } },
+    { typingBySession: { [SESSION_KEY]: true } },
     async (sessionKey, sessionId) => {
       calls.push([sessionKey, sessionId]);
     },
@@ -25,7 +25,7 @@ test('Quick Chat does not emit an unscoped Stop while the session is idle', asyn
   const stopped = await stopQuickChatRequest(
     SESSION_KEY,
     SESSION_ID,
-    { typingBySession: {}, sendingBySession: {} },
+    { typingBySession: {} },
     async () => { calls += 1; },
   );
 

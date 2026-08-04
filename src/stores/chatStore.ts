@@ -577,11 +577,11 @@ interface ChatState {
 export const selectActiveSessionTyping = (state: ChatState): boolean =>
   Boolean(state.typingBySession[state.activeSessionKey]);
 
-/** A request remains interruptible while its Gateway send is awaiting a stream. */
+/** Only a Gateway-owned request can receive a native OpenClaw Stop. */
 export const selectSessionRequestActive = (
-  state: Pick<ChatState, 'typingBySession' | 'sendingBySession'>,
+  state: Pick<ChatState, 'typingBySession'>,
   sessionKey: string,
-): boolean => Boolean(state.typingBySession[sessionKey] || state.sendingBySession[sessionKey]);
+): boolean => Boolean(state.typingBySession[sessionKey]);
 
 const EMPTY_THINKING_STATE = Object.freeze({ runId: null, text: '' });
 
@@ -1949,6 +1949,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
       taskRunId = prepared.runId ?? next.id;
       taskRunCreated = prepared.created;
+      if (taskRunCreated && await taskExecutionCoordinator.isRunStopRequested({
+        sessionKey,
+        sessionId: next.sessionId,
+        runId: taskRunId,
+      })) {
+        get().updateMessage(sessionKey, next.id, {
+          status: 'cancelled',
+          deliveryError: undefined,
+          retryPayload,
+        });
+        get().setIsTyping(false, sessionKey);
+        return;
+      }
       const result = await gateway.sendMessage(next.text, next.attachments, sessionKey, {
         clientMessageId: next.id,
         sessionId: next.sessionId,
