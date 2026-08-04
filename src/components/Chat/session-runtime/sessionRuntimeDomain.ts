@@ -20,6 +20,12 @@ export const SESSION_VERBOSE_LEVELS = ['inherit', 'on', 'full', 'off'] as const;
 
 export type SessionVerboseLevel = (typeof SESSION_VERBOSE_LEVELS)[number];
 
+export const SESSION_TRACE_LEVELS = ['inherit', 'on', 'off'] as const;
+
+export type SessionTraceWriteLevel = (typeof SESSION_TRACE_LEVELS)[number];
+
+export type SessionTraceLevel = SessionTraceWriteLevel | 'unsupported';
+
 export const SESSION_REASONING_LEVELS = ['inherit', 'on', 'off', 'stream'] as const;
 
 export type SessionReasoningLevel = (typeof SESSION_REASONING_LEVELS)[number];
@@ -85,6 +91,15 @@ export function normalizeVerboseLevel(value: unknown): SessionVerboseLevel {
 }
 
 export function verboseLevelForGateway(mode: SessionVerboseLevel): 'on' | 'full' | 'off' | null {
+  return mode === 'inherit' ? null : mode;
+}
+
+export function normalizeTraceLevel(value: unknown): SessionTraceLevel {
+  if (value === undefined || value === null) return 'inherit';
+  return value === 'on' || value === 'off' ? value : 'unsupported';
+}
+
+export function traceLevelForGateway(mode: SessionTraceWriteLevel): 'on' | 'off' | null {
   return mode === 'inherit' ? null : mode;
 }
 

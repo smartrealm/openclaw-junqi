@@ -1905,7 +1905,7 @@
     "sessionRuntimeTitle": "會話模型與執行期控制",
     "sessionRuntimeProvider": "供應商",
     "sessionRuntimeModel": "模型",
-    "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}，快速模式 {{fastMode}}，工具輸出 {{verbose}}，推理可見性 {{reasoning}}",
+    "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}，快速模式 {{fastMode}}，工具輸出 {{verbose}}，外掛追蹤 {{trace}}，推理可見性 {{reasoning}}",
     "sessionRuntimeFastMode": "快速模式",
     "sessionRuntimeFastModes": {
       "inherit": "繼承",
@@ -1919,6 +1919,14 @@
       "on": "開啟",
       "full": "完整",
       "off": "關閉"
+    },
+    "sessionRuntimeTrace": "外掛追蹤",
+    "sessionRuntimeTraceUnsupported": "Gateway 傳回目前用戶端無法修改的追蹤值。請選擇受支援狀態後再覆蓋。",
+    "sessionRuntimeTraceModes": {
+      "inherit": "繼承",
+      "on": "開啟",
+      "off": "關閉",
+      "unsupported": "Gateway 值無法使用"
     },
     "sessionRuntimeReasoning": "推理可見性",
     "sessionRuntimeReasoningModes": {

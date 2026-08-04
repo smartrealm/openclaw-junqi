@@ -375,6 +375,9 @@ export default function App() {
           verboseLevel: s.verboseLevel === 'on' || s.verboseLevel === 'full' || s.verboseLevel === 'off'
             ? s.verboseLevel
             : null,
+          traceLevel: typeof s.traceLevel === 'string' && s.traceLevel.trim()
+            ? s.traceLevel
+            : null,
           reasoningLevel: s.reasoningLevel === 'on' || s.reasoningLevel === 'off' || s.reasoningLevel === 'stream'
             ? s.reasoningLevel
             : null,

@@ -329,13 +329,15 @@ export interface Session {
   hasActiveSubagentRun?: boolean;
   subagentRunState?: string;
   systemSent?: boolean;
-  // 从 sessions.list 缓存的每会话模型、思考、快速模式、详细工具输出、推理可见性与用量数据。
+  // 从 sessions.list 缓存的每会话模型、思考、快速模式、详细工具输出、插件追踪、推理可见性与用量数据。
   model?: string | null;
   thinkingLevel?: string | null;
   /** OpenClaw 会话快速模式覆盖；null 表示继承运行时默认值。 */
   fastMode?: boolean | 'auto' | null;
   /** OpenClaw 会话详细工具输出覆盖；null 表示继承运行时默认值。 */
   verboseLevel?: 'on' | 'full' | 'off' | null;
+  /** OpenClaw 会话插件追踪覆盖；未知字符串须保留，不能由客户端猜测替换。 */
+  traceLevel?: string | null;
   /** OpenClaw 会话推理可见性覆盖；null 表示继承运行时默认值。 */
   reasoningLevel?: 'on' | 'off' | 'stream' | null;
   totalTokens?: number;
@@ -464,6 +466,8 @@ interface ChatState {
   setSessionFastMode: (key: string, mode: boolean | 'auto' | null) => void;
   /** sessions.patch 成功后在本地更新会话原生详细工具输出覆盖。 */
   setSessionVerbose: (key: string, level: 'on' | 'full' | 'off' | null) => void;
+  /** sessions.patch 成功后在本地更新会话原生插件追踪覆盖。 */
+  setSessionTrace: (key: string, level: string | null) => void;
   /** sessions.patch 成功后在本地更新会话原生推理可见性覆盖。 */
   setSessionReasoning: (key: string, level: 'on' | 'off' | 'stream' | null) => void;
   /** Pin/unpin through the native Gateway protocol, with a legacy fallback. */
@@ -1604,6 +1608,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       : {
           sessions: upsertSession(state.sessions, key, (session) =>
             session.verboseLevel === level ? session : { ...session, verboseLevel: level },
+          ),
+        }
+  )),
+
+  /** 不等待 sessions.list，在本地应用已确认的原生插件追踪覆盖。 */
+  setSessionTrace: (key, level) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : {
+          sessions: upsertSession(state.sessions, key, (session) =>
+            session.traceLevel === level ? session : { ...session, traceLevel: level },
           ),
         }
   )),

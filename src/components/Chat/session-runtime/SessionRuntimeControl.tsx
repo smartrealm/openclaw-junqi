@@ -11,10 +11,12 @@ import {
   SESSION_FAST_MODES,
   SESSION_REASONING_LEVELS,
   SESSION_THINKING_LEVELS,
+  SESSION_TRACE_LEVELS,
   SESSION_VERBOSE_LEVELS,
   type SessionFastMode,
   type SessionReasoningLevel,
   type SessionThinkingLevel,
+  type SessionTraceLevel,
   type SessionVerboseLevel,
 } from './sessionRuntimeDomain';
 import { useSessionRuntimeSettings } from './useSessionRuntimeSettings';
@@ -28,6 +30,7 @@ export function SessionRuntimeControl() {
   const [draftThinking, setDraftThinking] = useState<SessionThinkingLevel>(committed.thinking);
   const [draftFastMode, setDraftFastMode] = useState<SessionFastMode>(committed.fastMode);
   const [draftVerbose, setDraftVerbose] = useState<SessionVerboseLevel>(committed.verbose);
+  const [draftTrace, setDraftTrace] = useState<SessionTraceLevel>(committed.trace);
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningLevel>(committed.reasoning);
   const [providerId, setProviderId] = useState(() => committed.modelId ? modelProviderId(committed.modelId) : '');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -38,6 +41,7 @@ export function SessionRuntimeControl() {
     || draftThinking !== committed.thinking
     || draftFastMode !== committed.fastMode
     || draftVerbose !== committed.verbose
+    || draftTrace !== committed.trace
     || draftReasoning !== committed.reasoning;
 
   useEffect(() => {
@@ -46,9 +50,10 @@ export function SessionRuntimeControl() {
     setDraftThinking(committed.thinking);
     setDraftFastMode(committed.fastMode);
     setDraftVerbose(committed.verbose);
+    setDraftTrace(committed.trace);
     setDraftReasoning(committed.reasoning);
     setProviderId(committed.modelId ? modelProviderId(committed.modelId) : (groups[0]?.providerId ?? ''));
-  }, [committed.fastMode, committed.modelId, committed.reasoning, committed.thinking, committed.verbose, groups, open]);
+  }, [committed.fastMode, committed.modelId, committed.reasoning, committed.thinking, committed.trace, committed.verbose, groups, open]);
 
   useEffect(() => {
     setOpen(false);
@@ -76,6 +81,7 @@ export function SessionRuntimeControl() {
   const thinkingLabel = t(`titlebar.thinking.levels.${committed.thinking}`);
   const fastModeLabel = t(`input.sessionRuntimeFastModes.${committed.fastMode}`);
   const verboseLabel = t(`input.sessionRuntimeVerboseModes.${committed.verbose}`);
+  const traceLabel = t(`input.sessionRuntimeTraceModes.${committed.trace}`);
   const reasoningLabel = t(`input.sessionRuntimeReasoningModes.${committed.reasoning}`);
   const committedProviderId = committed.modelId ? modelProviderId(committed.modelId) : 'other';
   return (
@@ -95,6 +101,7 @@ export function SessionRuntimeControl() {
           thinking: thinkingLabel,
           fastMode: fastModeLabel,
           verbose: verboseLabel,
+          trace: traceLabel,
           reasoning: reasoningLabel,
         })}
       >
@@ -252,6 +259,36 @@ export function SessionRuntimeControl() {
 
             <div className="border-t border-aegis-menu-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
+                {t('input.sessionRuntimeTrace')}
+              </div>
+              {draftTrace === 'unsupported' && (
+                <div role="status" className="mb-2 text-[11px] text-aegis-warning">
+                  {t('input.sessionRuntimeTraceUnsupported')}
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-1.5">
+                {SESSION_TRACE_LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setDraftTrace(level)}
+                    disabled={draftTrace === level}
+                    aria-current={draftTrace === level ? 'true' : undefined}
+                    className={clsx(
+                      'h-8 rounded-md border px-2 text-[11px] transition-colors',
+                      draftTrace === level
+                        ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
+                        : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
+                    )}
+                  >
+                    {t(`input.sessionRuntimeTraceModes.${level}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-aegis-menu-border px-3 py-2.5">
+              <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
                 {t('input.sessionRuntimeReasoning')}
               </div>
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
@@ -307,6 +344,7 @@ export function SessionRuntimeControl() {
                     thinking: draftThinking,
                     fastMode: draftFastMode,
                     verbose: draftVerbose,
+                    trace: draftTrace,
                     reasoning: draftReasoning,
                   })
                     .then((updated) => { if (updated) setOpen(false); });

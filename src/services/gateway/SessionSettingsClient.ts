@@ -102,6 +102,10 @@ export class SessionSettingsClient {
     return this.patch(sessionKey, { verboseLevel }, true);
   }
 
+  setTrace(sessionKey: string, traceLevel: 'on' | 'off' | null): Promise<SessionPatchResult> {
+    return this.patch(sessionKey, { traceLevel }, true);
+  }
+
   setReasoning(sessionKey: string, reasoningLevel: 'on' | 'off' | 'stream' | null): Promise<SessionPatchResult> {
     return this.patch(sessionKey, { reasoningLevel }, true);
   }

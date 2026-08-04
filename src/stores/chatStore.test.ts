@@ -111,6 +111,26 @@ test('setSessionVerbose updates only the matching session', () => {
   );
 });
 
+test('setSessionTrace preserves an unrecognized Gateway value on the matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionTrace(OTHER_KEY, 'raw');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.traceLevel,
+    'raw',
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.traceLevel,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionTrace(MAIN_KEY, 'off');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.traceLevel,
+    'off',
+  );
+});
+
 test('setSessionReasoning updates only the matching session', () => {
   seedSessions(MAIN_KEY);
 

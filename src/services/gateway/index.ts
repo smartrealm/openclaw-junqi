@@ -1571,6 +1571,9 @@ export const gateway = {
   async setSessionVerbose(level: 'on' | 'full' | 'off' | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setVerbose(sessionKey, level);
   },
+  async setSessionTrace(level: 'on' | 'off' | null, sessionKey = 'agent:main:main') {
+    return sessionSettings.setTrace(sessionKey, level);
+  },
   async setSessionReasoning(level: 'on' | 'off' | 'stream' | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setReasoning(sessionKey, level);
   },

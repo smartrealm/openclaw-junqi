@@ -51,6 +51,7 @@ specs/
 - [OpenClaw 会话快速模式对齐](quality/2026-08-04-openclaw-session-fast-mode.md)
 - [OpenClaw 会话推理可见性对齐](quality/2026-08-04-openclaw-session-reasoning-visibility.md)
 - [OpenClaw 会话详细工具输出对齐](quality/2026-08-04-openclaw-session-verbose.md)
+- [OpenClaw 会话插件追踪对齐](quality/2026-08-04-openclaw-session-plugin-trace.md)
 
 - [维护中心](quality/2026-07-14-maintenance-center-hardening.md)
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
