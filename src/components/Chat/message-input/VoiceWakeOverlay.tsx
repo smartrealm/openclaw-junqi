@@ -77,9 +77,7 @@ export function VoiceWakeOverlay({
   const active = snapshot.phase === 'listening'
     || snapshot.phase === 'triggered'
     || snapshot.phase === 'transcribing';
-  const draftCopy = snapshot.draft?.kind === 'transcript'
-    ? snapshot.draft.text
-    : snapshot.draft ? t('input.voiceAudioDraft') : null;
+  const draftCopy = snapshot.draft ? t('input.voiceAudioDraft') : null;
   const ready = snapshot.phase === 'ready_to_send' && snapshot.draft !== null && snapshot.error === null;
   const unavailable = snapshot.error === 'wake_detector_unavailable'
     || snapshot.error === 'wake_trigger_model_mismatch';

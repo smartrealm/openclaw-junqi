@@ -60,7 +60,7 @@ The WAV fallback waits for an in-flight Talk relay creation before choosing its 
 
 ## Barge-In Boundary
 
-A recognized native KWS phrase is the explicit barge-in signal, so JunQi accepts it even while assistant output is active. VAD-only events and browser dictation have no independently verified phrase and remain suppressed during output to reduce playback feedback from being accepted as user audio. On a new accepted wake, an existing Talk relay stops local output first, requests `talk.session.cancelOutput` on the same attested Gateway connection, and only then closes the old relay before creating the new session. The regular local chat abort remains separate for non-Talk streamed replies.
+A recognized native KWS phrase is the explicit barge-in signal, so JunQi accepts it even while assistant output is active. VAD-only events have no independently verified phrase and remain suppressed during output to reduce playback feedback from being accepted as user audio. On a new accepted wake, an existing Talk relay stops local output first, requests `talk.session.cancelOutput` on the same attested Gateway connection, and only then closes the old relay before creating the new session. The regular local chat abort remains separate for non-Talk streamed replies.
 
 Talk's native PCM output publishes only its active session key and `speaking` state to the existing local voice runtime. The full-window surface retains its more detailed connecting/listening/speaking state; the Dynamic Island and pet consume the ordinary non-sensitive voice projection and therefore change to speaking while native Talk audio plays. Neither projection receives relay audio, transcript, or credentials.
 

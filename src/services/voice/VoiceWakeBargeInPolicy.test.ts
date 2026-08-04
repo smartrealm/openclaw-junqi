@@ -6,7 +6,7 @@ test('a recognized local wake phrase remains a barge-in signal during assistant 
   assert.equal(shouldAcceptVoiceWakeDuringOutput('Jarvis', true), true);
 });
 
-test('unverified VAD or browser input remains suppressed during assistant output', () => {
+test('未验证的原生 VAD 输入在助手播放期间保持抑制', () => {
   assert.equal(shouldAcceptVoiceWakeDuringOutput(null, true), false);
   assert.equal(shouldAcceptVoiceWakeDuringOutput('   ', true), false);
   assert.equal(shouldAcceptVoiceWakeDuringOutput(null, false), true);

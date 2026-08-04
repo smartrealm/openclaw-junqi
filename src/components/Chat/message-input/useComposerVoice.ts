@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   getVoiceWakeDetectorStatus,
@@ -67,9 +67,7 @@ interface UseComposerVoiceOptions {
   activeSessionAgentId?: string;
   connected: boolean;
   historyLoading: boolean;
-  language: string;
   textareaRef: RefObject<HTMLTextAreaElement>;
-  setText: (next: SetStateAction<string>) => void;
   setIsSending: (sending: boolean, sessionKey?: string) => void;
   closeMenu: () => void;
   reportAttachmentError: (error: unknown) => void;
@@ -81,9 +79,7 @@ export function useComposerVoice({
   activeSessionAgentId,
   connected,
   historyLoading,
-  language,
   textareaRef,
-  setText,
   setIsSending,
   closeMenu,
   reportAttachmentError,
@@ -234,15 +230,6 @@ export function useComposerVoice({
   }, [activeSessionId, activeSessionKey]);
 
   const voiceWake = useVoiceWake({
-    onTranscript: (transcript) => {
-      const context = currentContextRef.current;
-      if (!context) return;
-      if (!voiceModeCoordinator.markTranscribing(activeTurnRef.current, context)) return;
-      voiceRuntime.interruptGlobally(context.sessionKey);
-      if (voiceModeCoordinator.acceptTranscript(activeTurnRef.current, context, transcript)) {
-        void stopVoiceWakeRef.current();
-      }
-    },
     onCaptureFallback: async (wavDataUrl) => {
       const context = currentContextRef.current;
       if (!context) return;
@@ -320,7 +307,6 @@ export function useComposerVoice({
       if (context) voiceModeCoordinator.markTranscribing(activeTurnRef.current, context);
       talkConversationRef.current?.appendPcm(frame);
     },
-    lang: language === 'zh-TW' ? 'zh-TW' : language === 'zh' ? 'zh-CN' : 'en-US',
     sessionKey: activeSessionKey,
   });
   stopVoiceWakeRef.current = voiceWake.stop;
@@ -551,14 +537,6 @@ export function useComposerVoice({
     const draft = voiceModeCoordinator.getDraft(turnId, context);
     if (!draft) return;
 
-    if (draft.kind === 'transcript') {
-      activeTurnRef.current = null;
-      void voiceModeCoordinator.stopAndReleaseCapture();
-      setText((current) => current ? `${current} ${draft.text}` : draft.text);
-      textareaRef.current?.focus();
-      return;
-    }
-
     const capture = pendingAudioCapturesRef.current.get(draft.captureId);
     if (!capture) {
       voiceModeCoordinator.fail(turnId, context, 'capture_failed');
@@ -574,7 +552,7 @@ export function useComposerVoice({
     void voiceModeCoordinator.stopAndReleaseCapture();
     await sendVoice(base64, 'audio/wav', capture.durationSec, capture.wavDataUrl);
     requestAutoArmRetry();
-  }, [isCurrentVoiceContext, requestAutoArmRetry, sendVoice, setText, textareaRef]);
+  }, [isCurrentVoiceContext, requestAutoArmRetry, sendVoice]);
 
   const discardVoiceDraft = useCallback(() => {
     const context = currentContextRef.current;

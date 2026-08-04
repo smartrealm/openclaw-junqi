@@ -6,14 +6,6 @@ import { shouldAcceptVoiceWakeDuringOutput } from './VoiceWakeBargeInPolicy';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
-test('BUG-02 recognition callbacks enforce recognizer ownership and FIFO capture delivery', () => {
-  const source = read('../../hooks/useVoiceWake.ts');
-  assert.match(source, /recognitionRef\.current !== rec/);
-  assert.match(source, /callbacksRef\.current/);
-  assert.match(source, /captureQueueRef\.current\.push/);
-  assert.match(source, /await capture\.onCaptureFallback/);
-});
-
 test('BUG-03 Quick Chat gates Gateway voice events to its owned session', () => {
   const root = read('../../pages/QuickChatRoot.tsx');
   const page = read('../../pages/QuickChatPage.tsx');

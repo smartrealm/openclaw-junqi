@@ -13,7 +13,7 @@
 ## Phase B 语音 authority（完成）
 
 - 新增 services voice coordinator 及纯状态测试。
-- 将 Web Speech/native VAD 的回调收敛到 coordinator，保留 `VoiceRuntime` 的播放职责。
+- 将原生 VAD 回调收敛到 coordinator，保留 `VoiceRuntime` 的播放职责；浏览器 Web Speech 已于 2026-08-04 移除。
 - 使用 attested connection fence 的 Gateway `voicewake` adapter 已实现；没有已验证 detector 时 Wake 显示 unavailable，不伪造服务端配置。
 
 ## Phase C 聊天工作台（完成，PTT 延后）
@@ -37,7 +37,7 @@
 
 - PRE-01：Docker fast path identity、AgentRun task identity/canonical route、Dynamic Island close intent 与宠物窗口同步修复。
 - VWS-01：`VoiceModeCoordinator`、严格 Gateway decoder/event bridge、capture owner release 和 stale turn fence。
-- VWS-02：Web Speech/native VAD 都进入确认草稿；手动录音仍走原有直接附件发送。
+- VWS-02：原生 VAD 进入音频确认草稿；手动录音仍走原有直接附件发送。
 - VWS-03：聊天内 voice workspace、三种模式、状态、确认、丢弃和 stop；Wake 在没有真实 detector 时显式 unavailable。
 - VWS-04：Dynamic Island 最小 cue 和 stop intent，宠物既有非文本 thinking cue。
 

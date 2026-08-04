@@ -73,8 +73,9 @@ test('voice input projection excludes transcript, audio, target, and turn identi
     mode: 'dictation',
     phase: 'ready_to_send',
     draft: {
-      kind: 'transcript',
-      text: 'private transcript',
+      kind: 'audio',
+      captureId: 'voice-capture-17',
+      durationSec: 3,
       createdAt: 1,
       turnId: 'voice-turn-17',
     },
@@ -194,7 +195,7 @@ test('a plan advancing to the next step earns one peek', () => {
     executionPlan: { currentStep: 2, totalSteps: 5, stepTitle: 'Locate entry points' },
   };
   assert.equal(shouldPeekForSnapshot(atStepOne, atStepTwo), true);
-  // Replanning alone must not reopen the island: only forward step motion does.
+  // 仅重新规划不能再次展开灵动岛，只有步骤向前推进才允许展开。
   assert.equal(shouldPeekForSnapshot(atStepOne, {
     ...atStepOne,
     executionPlan: { currentStep: 1, totalSteps: 7, stepTitle: 'Inspect protocol' },

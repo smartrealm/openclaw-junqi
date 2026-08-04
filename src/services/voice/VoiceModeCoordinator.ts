@@ -23,20 +23,13 @@ export interface VoiceModeContext {
   connectionId: string;
 }
 
-export type VoiceInputDraft =
-  | {
-      kind: 'transcript';
-      text: string;
-      createdAt: number;
-      turnId: string;
-    }
-  | {
-      kind: 'audio';
-      captureId: string;
-      durationSec: number;
-      createdAt: number;
-      turnId: string;
-    };
+export interface VoiceInputDraft {
+  kind: 'audio';
+  captureId: string;
+  durationSec: number;
+  createdAt: number;
+  turnId: string;
+}
 
 export interface VoiceModeSnapshot {
   revision: number;
@@ -190,19 +183,6 @@ export class VoiceModeCoordinator {
         || this.snapshot.phase === 'transcribing');
   }
 
-  acceptTranscript(turnId: string | null, context: VoiceModeContext, transcript: string): boolean {
-    if (!turnId || !this.canAcceptInput(turnId, context)) return false;
-    const text = transcript.trim();
-    if (!text) return false;
-    this.commit({
-      ...this.snapshot,
-      phase: 'ready_to_send',
-      draft: { kind: 'transcript', text, createdAt: Date.now(), turnId },
-      error: null,
-    });
-    return true;
-  }
-
   acceptAudioCapture(
     turnId: string | null,
     context: VoiceModeContext,
@@ -233,16 +213,6 @@ export class VoiceModeCoordinator {
     }
     this.commit({ ...snapshot, phase: code === 'wake_detector_unavailable' ? 'unavailable' : 'error', error: code });
     return true;
-  }
-
-  takeDraft(turnId: string | null, context: VoiceModeContext): VoiceInputDraft | null {
-    const snapshot = this.snapshot;
-    if (!this.isCurrentTurn(turnId, context) || snapshot.phase !== 'ready_to_send' || !snapshot.draft) {
-      return null;
-    }
-    const draft = snapshot.draft;
-    this.commit({ ...snapshot, phase: 'listening', draft: null, error: null });
-    return draft;
   }
 
   getDraft(turnId: string | null, context: VoiceModeContext): VoiceInputDraft | null {
@@ -333,7 +303,7 @@ export class VoiceModeCoordinator {
       try {
         await listener();
       } catch {
-        // Capture release is best-effort after the coordinator has fenced the turn.
+        // coordinator 已围栏当前轮次，采集释放失败不应重新打开该轮次。
       }
     }));
     return stopped;

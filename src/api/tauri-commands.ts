@@ -2,6 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { presentVoiceWakeWindow } from '@/services/voice/VoiceWakeWindowPresenter';
 import {
+  createNativeVoiceWakeStartRequest,
   isRequestedVoiceWakeListener,
   type VoiceWakeCaptureMode,
   type VoiceWakeStatus,
@@ -106,12 +107,16 @@ export const startVoiceWake = async (
   mode: VoiceWakeCaptureMode,
   options: { streamPcm?: boolean; ownerId: string },
 ): Promise<VoiceWakeStatus> => {
-  if (!options.ownerId.trim()) throw voiceWakeContractError('voice_wake_start');
-  const status = parseVoiceWakeStatus('voice_wake_start', await invoke<unknown>('voice_wake_start', {
-    mode,
-    streamPcm: options.streamPcm ?? false,
-    ownerId: options.ownerId,
-  }));
+  let request;
+  try {
+    request = createNativeVoiceWakeStartRequest(mode, options);
+  } catch {
+    throw voiceWakeContractError('voice_wake_start');
+  }
+  const status = parseVoiceWakeStatus(
+    'voice_wake_start',
+    await invoke<unknown>('voice_wake_start', request),
+  );
   if (!isRequestedVoiceWakeListener(status, mode)) throw voiceWakeContractError('voice_wake_start');
   return status;
 };

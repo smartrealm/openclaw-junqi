@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useMemo, useRef, type ReactNode
 import { useTranslation } from 'react-i18next';
 import { VoiceWakeOverlay } from '@/components/Chat/message-input/VoiceWakeOverlay';
 import { useComposerVoice } from '@/components/Chat/message-input/useComposerVoice';
-import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { debugError } from '@/utils/debugLog';
 
@@ -20,7 +19,6 @@ export function useJarvisVoiceRuntime(): JarvisVoiceController {
  * 桌面级语音所有者统一管理原生麦克风、Talk 中继和全窗口 Jarvis 表面；聊天控件仅消费控制器，不能接管采集。
  */
 export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
-  const { language } = useSettingsStore();
   const { t } = useTranslation();
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const activeSessionId = useChatStore(
@@ -35,11 +33,6 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
     state.connected && messageCount === 0 && Boolean(state.loadingHistoryBySession[state.activeSessionKey])
   ));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const setText = useCallback((next: string | ((current: string) => string)) => {
-    const chat = useChatStore.getState();
-    const current = chat.drafts[activeSessionKey] || '';
-    chat.setDraft(activeSessionKey, typeof next === 'function' ? next(current) : next);
-  }, [activeSessionKey]);
   const reportAttachmentError = useCallback((error: unknown) => {
     debugError('media', '[JarvisVoiceRuntime] Unable to preserve captured audio:', error);
   }, []);
@@ -49,9 +42,7 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
     activeSessionAgentId,
     connected,
     historyLoading,
-    language: String(language),
     textareaRef,
-    setText,
     setIsSending: useChatStore.getState().setIsSending,
     closeMenu: () => undefined,
     reportAttachmentError,

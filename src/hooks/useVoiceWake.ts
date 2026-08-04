@@ -1,8 +1,5 @@
-// Voice wake listener: use the Web Speech API when the host WebView exposes a
-// recognizer, and fall back to the native VAD capture on platforms such as
-// macOS WKWebView. A captured WAV is never passed to SpeechRecognition (that
-// API listens to the microphone); it is handed to the caller as an attachment
-// or to a future provider adapter instead.
+// 桌面语音输入统一由 Tauri 原生采集负责：听写使用本地 VAD，唤醒词使用本地
+// Sherpa-ONNX 检测。WebView 不参与麦克风采集、识别或回退。
 
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { startVoiceWake, stopVoiceWake, type VoiceWakeCaptureMode } from '@/api/tauri-commands';
@@ -26,67 +23,20 @@ export type WakePhase = 'idle' | 'listening' | 'wake_detected' | 'transcribing' 
 export type { VoiceWakeCaptureMode } from '@/api/tauri-commands';
 
 export interface VoiceWakeOptions {
-  /** Called with the transcribed text so the caller can fill the chat input. */
-  onTranscript: (text: string) => void;
-  /** Called when a captured utterance couldn't be transcribed (e.g. no ASR on
-   *  this platform). Lets the caller offer it as an audio attachment instead. */
+  /** 原生采集无法转写时，向调用方交付确认后的音频草稿。 */
   onCaptureFallback?: (wavDataUrl: string) => void | Promise<void>;
-  /** Called just before a new utterance is accepted. */
+  /** 接受新的原生语音轮次前执行身份和路由核验。 */
   onWakeDetected?: (trigger: string | null) => boolean | void | Promise<boolean | void>;
-  /** Native PCM16 frames emitted after a VAD or keyword trigger. */
+  /** 原生 VAD 或关键词触发后发出的 PCM16 帧。 */
   onPcmAudio?: (frame: VoiceWakePcmFrame) => void | Promise<void>;
-  /** Preferred language for transcription (BCP-47). */
-  lang?: string;
-  /** Session that owns captured input and runtime state. */
+  /** 拥有采集输入和运行时状态的会话。 */
   sessionKey?: string | null;
-}
-
-interface SpeechRecognitionLike {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
-  onend: (() => void) | null;
-}
-
-interface SpeechRecognitionAlternativeLike {
-  transcript?: string;
-}
-
-interface SpeechRecognitionResultLike {
-  isFinal?: boolean;
-  0?: SpeechRecognitionAlternativeLike;
-}
-
-interface SpeechRecognitionEventLike {
-  results?: ArrayLike<SpeechRecognitionResultLike>;
-  resultIndex?: number;
-}
-
-interface SpeechRecognitionErrorEventLike {
-  error?: string;
-}
-
-interface SpeechRecognitionConstructor {
-  new (): SpeechRecognitionLike;
 }
 
 interface QueuedCapture {
   wavDataUrl: string;
   sessionKey: string | null | undefined;
   onCaptureFallback?: (wavDataUrl: string) => void | Promise<void>;
-}
-
-function getSpeechRecognition(): SpeechRecognitionConstructor | null {
-  if (typeof window === 'undefined') return null;
-  const w = window as Window & {
-    SpeechRecognition?: SpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-  };
-  return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }
 
 function isVoiceOutputActive(): boolean {
@@ -109,27 +59,23 @@ function errorMessage(error: unknown): string {
 }
 
 export function useVoiceWake({
-  onTranscript,
   onCaptureFallback,
   onWakeDetected,
   onPcmAudio,
-  lang = 'zh-CN',
   sessionKey = null,
 }: VoiceWakeOptions) {
   const [enabled, setEnabled] = useState(false);
   const [phase, setPhase] = useState<WakePhase>('idle');
   const [error, setError] = useState<string | null>(null);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const stoppedRef = useRef(true);
   const nativeVADRef = useRef(false);
-  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captureQueueRef = useRef<QueuedCapture[]>([]);
   const captureDrainingRef = useRef(false);
   const suppressNativeCaptureRef = useRef(false);
   const wakeAcceptanceGateRef = useRef(new VoiceWakeAcceptanceGate());
   const [ownerId] = useState(createVoiceWakeOwnerId);
-  const callbacksRef = useRef({ onTranscript, onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey });
-  callbacksRef.current = { onTranscript, onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey };
+  const callbacksRef = useRef({ onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey });
+  callbacksRef.current = { onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey };
 
   const updatePhase = useCallback((next: WakePhase, ownerSessionKey?: string | null) => {
     const resolvedSessionKey = ownerSessionKey === undefined
@@ -148,9 +94,7 @@ export function useVoiceWake({
       while (!stoppedRef.current && captureQueueRef.current.length > 0) {
         const capture = captureQueueRef.current.shift();
         if (!capture) continue;
-        // A queued utterance belongs to the session that was active when the
-        // native VAD emitted it. Drop it after a session switch instead of
-        // sending old microphone input through the latest callback closure.
+        // 排队语音归属原生 VAD 事件产生时的会话，切换后不能交给最新回调。
         if (capture.sessionKey !== callbacksRef.current.sessionKey) continue;
         updatePhase('transcribing', capture.sessionKey);
         try {
@@ -188,115 +132,29 @@ export function useVoiceWake({
     }
   }, [ownerId, updatePhase]);
 
-  const startBrowserRecognition = useCallback(() => {
-    const Ctor = getSpeechRecognition();
-    if (!Ctor || stoppedRef.current || nativeVADRef.current || recognitionRef.current) return;
-    if (restartTimerRef.current) {
-      clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
-    }
-    const rec = new Ctor();
-    rec.lang = lang;
-    rec.continuous = true;
-    rec.interimResults = false;
-    rec.onresult = (event) => {
-      if (stoppedRef.current || recognitionRef.current !== rec) return;
-      const results = event?.results;
-      if (!results) return;
-      const startIndex = typeof event.resultIndex === 'number' ? event.resultIndex : 0;
-      for (let index = startIndex; index < results.length; index += 1) {
-        const result = results[index];
-        if (!result?.isFinal) continue;
-        const transcript = (result[0]?.transcript || '').trim();
-        if (!transcript) continue;
-        if (!shouldAcceptVoiceWakeDuringOutput(null, isVoiceOutputActive())) continue;
-        updatePhase('transcribing');
-        const callbacks = callbacksRef.current;
-        callbacks.onWakeDetected?.(null);
-        if (stoppedRef.current || recognitionRef.current !== rec) return;
-        callbacks.onTranscript(transcript);
-        if (!stoppedRef.current && recognitionRef.current === rec) updatePhase('listening');
-      }
-    };
-    rec.onerror = (event) => {
-      if (stoppedRef.current || recognitionRef.current !== rec || event?.error === 'aborted') return;
-      const message = String(event?.error || 'speech recognition failed');
-      // Silence is a normal end condition for some continuous recognizers.
-      // Let onend restart the browser backend instead of switching providers.
-      if (message === 'no-speech') return;
-      // Some WebViews expose the constructor but cannot access the OS speech
-      // service. Fall back to the native VAD instead of leaving the control
-      // enabled with no input path.
-      recognitionRef.current = null;
-      try { rec.stop(); } catch {}
-      void startNativeVAD('dictation');
-    };
-    rec.onend = () => {
-      if (recognitionRef.current !== rec) return;
-      recognitionRef.current = null;
-      if (stoppedRef.current || nativeVADRef.current) return;
-      // WebView speech recognizers end after silence on some platforms. Keep
-      // the wake control live until the user explicitly turns it off.
-      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = setTimeout(() => {
-        restartTimerRef.current = null;
-        if (!stoppedRef.current && !nativeVADRef.current && !recognitionRef.current) {
-          startBrowserRecognition();
-        }
-      }, 180);
-    };
-    recognitionRef.current = rec;
-    try {
-      rec.start();
-    } catch (error) {
-      if (recognitionRef.current === rec) recognitionRef.current = null;
-      if (!stoppedRef.current) {
-        setError(String(error));
-        updatePhase('error');
-        voiceRuntime.setError(error, callbacksRef.current.sessionKey);
-        void startNativeVAD('dictation');
-      }
-    }
-  }, [lang, startNativeVAD, updatePhase]);
-
   const start = useCallback(async (
     mode: VoiceWakeCaptureMode = 'dictation',
     options: { streamPcm?: boolean } = {},
   ) => {
-    if (!stoppedRef.current && (recognitionRef.current || nativeVADRef.current)) return;
+    if (!stoppedRef.current && nativeVADRef.current) return;
     voiceRuntime.interruptAll();
     setError(null);
     stoppedRef.current = false;
     captureQueueRef.current = [];
     suppressNativeCaptureRef.current = false;
     wakeAcceptanceGateRef.current.reject();
-    const Ctor = mode === 'dictation' ? getSpeechRecognition() : null;
-    if (Ctor) {
-      nativeVADRef.current = false;
-      setEnabled(true);
-      updatePhase('listening');
-      startBrowserRecognition();
-      return;
-    }
     await startNativeVAD(mode, options.streamPcm === true);
-  }, [startBrowserRecognition, startNativeVAD, updatePhase]);
+  }, [startNativeVAD]);
 
   const stop = useCallback(async () => {
     stoppedRef.current = true;
     captureQueueRef.current = [];
     suppressNativeCaptureRef.current = false;
     wakeAcceptanceGateRef.current.reject();
-    if (restartTimerRef.current) {
-      clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
-    }
     if (nativeVADRef.current) {
       try { await stopVoiceWake(ownerId); } catch {}
     }
     nativeVADRef.current = false;
-    const recognition = recognitionRef.current;
-    recognitionRef.current = null;
-    if (recognition) { try { recognition.stop(); } catch {} }
     setEnabled(false);
     setError(null);
     updatePhase('idle');
@@ -307,16 +165,12 @@ export function useVoiceWake({
     captureQueueRef.current = [];
     suppressNativeCaptureRef.current = false;
     wakeAcceptanceGateRef.current.reject();
-    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-    const recognition = recognitionRef.current;
-    recognitionRef.current = null;
-    if (recognition) { try { recognition.stop(); } catch {} }
     if (nativeVADRef.current) void stopVoiceWake(ownerId).catch(() => undefined);
     nativeVADRef.current = false;
     voiceRuntime.setIdle(callbacksRef.current.sessionKey);
   }, [ownerId]);
 
-  // Subscribe to Rust voice-wake events for the lifetime of `enabled`.
+  // 仅在原生 listener 已启动时订阅 Rust 事件，避免旧事件穿透到新会话。
   useEffect(() => {
     if (!enabled) return;
     const unlisten = subscribeTauriEvent<unknown>('voice-wake', (event) => {
@@ -390,8 +244,7 @@ export function useVoiceWake({
           sampleRateHz: payload.sampleRateHz,
           channels: payload.channels,
         })) return;
-        // A rejected keyword can still have callback frames in flight while
-        // the native stop request reaches the capture worker.
+        // 关键词被拒绝后，原生停止命令抵达 worker 前仍可能有在途 PCM 回调。
         if (suppressNativeCaptureRef.current) return;
         void callbacksRef.current.onPcmAudio?.({
           data: payload.data,

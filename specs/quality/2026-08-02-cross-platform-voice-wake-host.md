@@ -34,7 +34,7 @@
 - JunQi creates only `talk.session.create({ mode: 'realtime', transport: 'gateway-relay', brain: 'agent-consult' })` sessions. It does not use browser-owned WebRTC or provider WebSocket paths for the desktop host.
 - Audio is sent only as native PCM16 chunks. A complete WAV capture must not be submitted to `talk.session.appendAudio`.
 - Gateway `talk.event` envelopes are validated and ordered per Talk session. Repeated or stale sequence numbers cannot update a newer voice turn.
-- A verified local KWS phrase remains a user barge-in signal while assistant output is active; VAD-only and browser-dictation input remain suppressed in that state. A user speech interruption must first stop local output and then request `talk.session.cancelOutput` on the same attested connection before closing a replaced Talk session. Connection changes close the local Talk owner and discard later events.
+- A verified local KWS phrase remains a user barge-in signal while assistant output is active; VAD-only input remains suppressed in that state. A user speech interruption must first stop local output and then request `talk.session.cancelOutput` on the same attested connection before closing a replaced Talk session. Connection changes close the local Talk owner and discard later events.
 
 ## Non-Goals
 

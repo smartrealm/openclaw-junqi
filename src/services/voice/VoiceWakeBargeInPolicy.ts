@@ -1,7 +1,6 @@
 /**
- * An exact local KWS result is the user's deliberate barge-in signal. Plain
- * VAD and browser dictation have no such proof and remain suppressed while
- * assistant audio is active to avoid accepting speaker feedback as input.
+ * 精确的本地关键词识别是用户明确的打断信号；纯 VAD 没有该证明，在助手播放时
+ * 必须抑制，避免把扬声器回声误作输入。
  */
 export function shouldAcceptVoiceWakeDuringOutput(
   trigger: string | null,

@@ -7,17 +7,16 @@ const context = (sessionKey = 'agent:main:main', connectionId = 'connection-a'):
   connectionId,
 });
 
-test('VWS-01 drops events from a stopped or replaced voice turn', () => {
+test('VWS-01 drops captures from a stopped or replaced voice turn', () => {
   const coordinator = new VoiceModeCoordinator();
   const first = coordinator.start({ mode: 'dictation', context: context(), wakeDetectorAvailable: false });
   coordinator.stop();
   const second = coordinator.start({ mode: 'dictation', context: context(), wakeDetectorAvailable: false });
 
-  assert.equal(coordinator.acceptTranscript(first.turnId, context(), 'stale'), false);
-  assert.equal(coordinator.acceptTranscript(second.turnId, context(), 'current'), true);
+  assert.equal(coordinator.acceptAudioCapture(first.turnId, context(), 2), null);
+  assert.notEqual(coordinator.acceptAudioCapture(second.turnId, context(), 2), null);
   const draft = coordinator.getSnapshot().draft;
-  assert.equal(draft?.kind, 'transcript');
-  if (draft?.kind === 'transcript') assert.equal(draft.text, 'current');
+  assert.equal(draft?.kind, 'audio');
 });
 
 test('VWS-01 stop is idempotent and late capture cannot revive the coordinator', () => {
@@ -62,10 +61,9 @@ test('VWS-01 context changes preserve a draft but block its submission', () => {
   const coordinator = new VoiceModeCoordinator();
   const original = context();
   const snapshot = coordinator.start({ mode: 'dictation', context: original, wakeDetectorAvailable: false });
-  assert.equal(coordinator.acceptTranscript(snapshot.turnId, original, 'keep this draft'), true);
+  assert.notEqual(coordinator.acceptAudioCapture(snapshot.turnId, original, 2), null);
   assert.equal(coordinator.invalidateContext(context('agent:other:main', 'connection-b')), true);
-  assert.equal(coordinator.getSnapshot().draft?.kind, 'transcript');
-  assert.equal(coordinator.takeDraft(snapshot.turnId, original), null);
+  assert.equal(coordinator.getSnapshot().draft?.kind, 'audio');
   assert.equal(coordinator.getSnapshot().error, 'target_changed');
   assert.equal(coordinator.discardDraft(null, context('agent:other:main', 'connection-b')), true);
   assert.equal(coordinator.getSnapshot().draft, null);
@@ -81,9 +79,9 @@ test('VWS-01 owner cleanup releases only the active hook turn', async () => {
   });
 
   const first = coordinator.start({ mode: 'dictation', context: owner, wakeDetectorAvailable: false });
-  assert.equal(coordinator.acceptTranscript(first.turnId, owner, 'draft before unmount'), true);
+  assert.notEqual(coordinator.acceptAudioCapture(first.turnId, owner, 2), null);
   assert.equal(await coordinator.stopOwnedTurnAndReleaseCapture(first.turnId, other), false);
-  assert.equal(coordinator.getSnapshot().draft?.kind, 'transcript');
+  assert.equal(coordinator.getSnapshot().draft?.kind, 'audio');
 
   assert.equal(await coordinator.stopOwnedTurnAndReleaseCapture(first.turnId, owner), true);
   assert.equal(coordinator.getSnapshot().phase, 'off');
@@ -99,23 +97,22 @@ test('VWS-01 ownership fence preserves a draft when Gateway identity is invalida
   const coordinator = new VoiceModeCoordinator();
   const owner = context();
   const turn = coordinator.start({ mode: 'dictation', context: owner, wakeDetectorAvailable: false });
-  assert.equal(coordinator.acceptTranscript(turn.turnId, owner, 'do not send after reconnect'), true);
+  assert.notEqual(coordinator.acceptAudioCapture(turn.turnId, owner, 2), null);
 
   assert.equal(coordinator.invalidateOwnedTurn(turn.turnId, context('agent:other:main'), 'gateway_unavailable'), false);
   assert.equal(coordinator.invalidateOwnedTurn(turn.turnId, owner, 'gateway_unavailable'), true);
   assert.equal(coordinator.getSnapshot().phase, 'error');
   assert.equal(coordinator.getSnapshot().error, 'gateway_unavailable');
-  assert.equal(coordinator.getSnapshot().draft?.kind, 'transcript');
+  assert.equal(coordinator.getSnapshot().draft?.kind, 'audio');
 });
 
 test('VWS-02 allows a disconnected stale draft to be discarded without a context', () => {
   const coordinator = new VoiceModeCoordinator();
   const original = context();
   const snapshot = coordinator.start({ mode: 'dictation', context: original, wakeDetectorAvailable: false });
-  assert.equal(coordinator.acceptTranscript(snapshot.turnId, original, 'discard after disconnect'), true);
+  assert.notEqual(coordinator.acceptAudioCapture(snapshot.turnId, original, 2), null);
   assert.equal(coordinator.invalidate('gateway_unavailable'), true);
 
-  assert.equal(coordinator.takeDraft(snapshot.turnId, original), null);
   assert.equal(coordinator.discardDraft(null, null), true);
   assert.equal(coordinator.getSnapshot().phase, 'off');
   assert.equal(coordinator.getSnapshot().draft, null);

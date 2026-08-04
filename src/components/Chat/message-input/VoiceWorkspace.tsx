@@ -66,11 +66,7 @@ export function VoiceWorkspace({
     || snapshot.phase === 'transcribing';
   const confirmable = snapshot.phase === 'ready_to_send' && snapshot.error === null && snapshot.draft !== null;
   const modeSwitchBlocked = snapshot.draft !== null;
-  const draftCopy = snapshot.draft?.kind === 'transcript'
-    ? snapshot.draft.text
-    : snapshot.draft
-      ? t('input.voiceAudioDraft')
-      : null;
+  const draftCopy = snapshot.draft ? t('input.voiceAudioDraft') : null;
 
   return (
     <section
