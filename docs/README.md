@@ -155,6 +155,7 @@ docs/
 - [OpenClaw Talk Barge-in Turn 围栏](quality/openclaw-talk-barge-in-turn-fence-2026-08-04.md)
 - [OpenClaw Talk 全局输出所有权](quality/openclaw-talk-global-output-ownership-2026-08-04.md)
 - [语音唤醒监听配置围栏](quality/voice-wake-listener-configuration-fence-2026-08-04.md)
+- [Jarvis 待机自动启动事务围栏](quality/jarvis-standby-autostart-transaction-2026-08-04.md)
 - [OpenClaw Task 工具事件 Run 绑定审计](quality/openclaw-task-tool-event-run-binding-2026-08-04.md)
 - [OpenClaw 工具生命周期终态围栏](quality/openclaw-tool-lifecycle-terminal-fence-2026-08-04.md)
 - [Task 执行终态合并围栏](quality/task-execution-terminal-merge-fence-2026-08-04.md)

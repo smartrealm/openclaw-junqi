@@ -14,7 +14,11 @@ import {
   resolveModelWakeKeywordSelection,
   selectedModelWakeKeywords,
 } from '@/services/voice/VoiceWakeKeywordSelection';
-import { autoArmSessionKey, clearAutoArmSession, setAutoArmSession } from '@/services/voice/VoiceWakePreference';
+import {
+  autoArmSessionKey,
+  disableVoiceWakeStandby,
+  enableVoiceWakeStandby,
+} from '@/services/voice/VoiceWakePreference';
 import { subscribeVoiceWakeSettingsTriggerProjection } from '@/services/voice/VoiceWakeSettingsProjection';
 import { useChatStore } from '@/stores/chatStore';
 
@@ -38,7 +42,7 @@ export interface JarvisVoiceSettingsState {
   toggleStandby: () => Promise<void>;
 }
 
-/** Reads global Jarvis configuration without owning a conversation or microphone. */
+/** 读取全局 Jarvis 配置，不持有会话或麦克风。 */
 export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsState {
   const [detector, setDetector] = useState<VoiceWakeDetectorStatus | null>(null);
   const [gatewayTriggers, setGatewayTriggers] = useState<string[]>([]);
@@ -146,16 +150,20 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     setError(null);
     try {
       if (standbyEnabled) {
-        await disableAppAutostart();
-        clearAutoArmSession();
+        await disableVoiceWakeStandby({
+          enable: enableAppAutostart,
+          disable: disableAppAutostart,
+        });
         setStandbyEnabled(false);
         setStandbySessionKey(null);
         return;
       }
       const sessionKey = useChatStore.getState().activeSessionKey.trim();
       if (!sessionKey) throw new Error('No active OpenClaw session is available for Jarvis standby');
-      await enableAppAutostart();
-      setAutoArmSession(sessionKey);
+      await enableVoiceWakeStandby(sessionKey, {
+        enable: enableAppAutostart,
+        disable: disableAppAutostart,
+      });
       setStandbyEnabled(true);
       setStandbySessionKey(sessionKey);
     } catch (cause) {
