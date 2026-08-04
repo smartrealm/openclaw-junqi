@@ -60,6 +60,82 @@ test('Talk interruption stops local output before requesting Gateway cancellatio
   assert.deepEqual(calls, ['local', 'gateway']);
 });
 
+test('Talk relay replacement fences delayed audio from the cancelled output turn', async () => {
+  const listeners = new Set<(event: TalkGatewayEvent) => void>();
+  const playback: string[] = [];
+  let createCount = 0;
+  let resolveCancellation: (() => void) | undefined;
+  const coordinator = new TalkConversationCoordinator({
+    client: {
+      createRealtimeRelay: async () => ({ sessionId: `talk-${++createCount}`, provider: 'relay' }),
+      appendAudio: async () => undefined,
+      cancelOutput: () => new Promise<void>((resolve) => { resolveCancellation = resolve; }),
+      close: async () => undefined,
+      subscribe: (next) => { listeners.add(next); return () => listeners.delete(next); },
+    },
+    captureConnectionId: () => 'connection-a',
+    isConnectionCurrent: () => true,
+    interruptLocalOutput: () => undefined,
+    playOutput: (audioBase64) => { playback.push(audioBase64); },
+    finishOutput: () => { playback.push('finish'); },
+    stopOutput: () => undefined,
+  });
+  const emit = (event: TalkGatewayEvent) => {
+    for (const listener of listeners) listener(event);
+  };
+  const output = (
+    type: Extract<TalkGatewayEvent['type'], 'output.audio.delta' | 'output.audio.done'>,
+    turnId: string,
+    seq: number,
+    audioBase64: string | null,
+  ): TalkGatewayEvent => ({
+    id: `event-${seq}`,
+    sessionId: 'talk-1',
+    type,
+    turnId,
+    seq,
+    mode: 'realtime',
+    transport: 'gateway-relay',
+    brain: 'agent-consult',
+    payload: {},
+    audioBase64,
+    relayType: null,
+  });
+
+  await coordinator.start('agent:main:main');
+  emit(output('output.audio.delta', 'turn-old', 1, 'first'));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(playback, ['first']);
+
+  const replacement = coordinator.start('agent:main:main');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(resolveCancellation);
+  emit(output('output.audio.delta', 'turn-old', 2, 'late-old-audio'));
+  emit(output('output.audio.done', 'turn-old', 3, null));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(playback, ['first']);
+
+  resolveCancellation();
+  await replacement;
+  for (const listener of listeners) {
+    listener({
+      id: 'event-new',
+      sessionId: 'talk-2',
+      type: 'output.audio.delta',
+      turnId: 'turn-new',
+      seq: 1,
+      mode: 'realtime',
+      transport: 'gateway-relay',
+      brain: 'agent-consult',
+      payload: {},
+      audioBase64: 'new-audio',
+      relayType: null,
+    });
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(playback, ['first', 'new-audio']);
+});
+
 test('Talk session replacement fences the previous client and queued audio', async () => {
   const calls: string[] = [];
   const listeners = new Set<(event: TalkGatewayEvent) => void>();

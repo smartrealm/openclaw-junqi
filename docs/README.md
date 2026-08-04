@@ -132,6 +132,7 @@ docs/
 - [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
 - [OpenClaw 模型目录权威性审计](quality/openclaw-model-catalog-authority-alignment-2026-08-04.md)
 - [OpenClaw Talk 事件契约对齐](quality/openclaw-talk-event-contract-alignment-2026-08-04.md)
+- [OpenClaw Talk Barge-in Turn 围栏](quality/openclaw-talk-barge-in-turn-fence-2026-08-04.md)
 - [OpenClaw 会话 category 权威性对齐](quality/openclaw-session-category-authority-alignment-2026-08-04.md)
 - [OpenClaw 原生会话组目录投影](quality/openclaw-native-session-group-catalog-projection-2026-08-04.md)
 - [OpenClaw Gateway 方法广告发现边界修正](quality/openclaw-gateway-method-advertisement-gate-2026-08-04.md)

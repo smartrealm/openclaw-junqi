@@ -38,6 +38,8 @@ export class TalkConversationCoordinator {
   private playbackQueue: Promise<void> = Promise.resolve();
   private playbackGeneration = 0;
   private playbackSessionId: string | null = null;
+  private outputTurnId: string | null = null;
+  private readonly cancelledOutputTurnIds = new Set<string>();
   private pendingFrames: Array<{ data: string; sampleRateHz: number; channels: number }> = [];
   private opening: Promise<TalkConversationSnapshot> | null = null;
   private generation = 0;
@@ -149,6 +151,7 @@ export class TalkConversationCoordinator {
     const { sessionId } = this.snapshot;
     const sessionKey = this.sessionKey;
     if (!sessionId || !sessionKey || !this.ownsSession()) return;
+    this.fenceCurrentOutputTurn();
     this.dependencies.interruptLocalOutput(sessionKey);
     await this.stopNativeOutput();
     await this.dependencies.client.cancelOutput(sessionId).catch((error) => {
@@ -163,6 +166,7 @@ export class TalkConversationCoordinator {
     const { sessionId } = this.snapshot;
     const sessionKey = this.sessionKey;
     const ownsSession = this.ownsSession();
+    this.fenceCurrentOutputTurn();
     if (sessionKey) this.dependencies.interruptLocalOutput(sessionKey);
     await this.stopNativeOutput();
     if (!sessionId || !ownsSession) return;
@@ -176,6 +180,8 @@ export class TalkConversationCoordinator {
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = null;
     this.sessionKey = null;
+    this.outputTurnId = null;
+    this.cancelledOutputTurnIds.clear();
     this.appendQueue = Promise.resolve();
     if (!options.retainPendingFrames) this.pendingFrames = [];
     await this.stopNativeOutput();
@@ -194,13 +200,20 @@ export class TalkConversationCoordinator {
       if (!decodeTalkSessionReplacedPayload(event.payload)) return;
       this.terminateWithError('talk_session_replaced');
     } else if (event.type === 'output.audio.started' || event.type === 'output.audio.delta') {
+      if (this.isCancelledOutputTurn(event.turnId)) return;
+      this.outputTurnId = event.turnId;
       this.set({ ...this.snapshot, phase: 'speaking', error: null });
       if (event.audioBase64) this.enqueueOutput(event.sessionId, event.audioBase64);
     } else if (event.type === 'output.audio.done') {
-      this.finishOutput(event.sessionId);
+      if (this.isCancelledOutputTurn(event.turnId)) return;
+      this.finishOutput(event.sessionId, event.turnId);
     } else if (event.type === 'turn.cancelled') {
-      void this.stopNativeOutput();
-      this.set({ ...this.snapshot, phase: 'listening', error: null });
+      const cancelledOutput = this.isCancelledOutputTurn(event.turnId);
+      if (cancelledOutput || event.turnId === this.outputTurnId) {
+        this.outputTurnId = null;
+        void this.stopNativeOutput();
+        this.set({ ...this.snapshot, phase: 'listening', error: null });
+      }
     } else if (event.type === 'session.error' || event.type === 'session.closed') {
       this.terminateWithError(`talk_session_${event.type === 'session.error' ? 'error' : 'closed'}`);
     }
@@ -213,6 +226,8 @@ export class TalkConversationCoordinator {
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = null;
     this.sessionKey = null;
+    this.outputTurnId = null;
+    this.cancelledOutputTurnIds.clear();
     void this.stopNativeOutput();
     this.set({ ...INITIAL, phase: 'error', error });
   }
@@ -230,9 +245,13 @@ export class TalkConversationCoordinator {
       .catch((error) => this.handlePlaybackError(sessionId, playbackGeneration, error));
   }
 
-  private finishOutput(sessionId: string): void {
+  private finishOutput(sessionId: string, turnId: string | null): void {
+    if (turnId && this.outputTurnId && turnId !== this.outputTurnId) return;
     if (this.playbackSessionId !== sessionId) {
-      this.set({ ...this.snapshot, phase: 'listening', error: null });
+      if (!turnId || this.outputTurnId === turnId) {
+        this.outputTurnId = null;
+        this.set({ ...this.snapshot, phase: 'listening', error: null });
+      }
       return;
     }
     const playbackGeneration = this.playbackGeneration;
@@ -242,8 +261,13 @@ export class TalkConversationCoordinator {
           || this.snapshot.sessionId !== sessionId
           || !this.ownsSession()) return;
         await this.dependencies.finishOutput();
-        if (playbackGeneration === this.playbackGeneration && this.snapshot.sessionId === sessionId) {
+        if (
+          playbackGeneration === this.playbackGeneration
+          && this.snapshot.sessionId === sessionId
+          && (!turnId || this.outputTurnId === turnId)
+        ) {
           this.playbackSessionId = null;
+          this.outputTurnId = null;
           this.set({ ...this.snapshot, phase: 'listening', error: null });
         }
       })
@@ -255,6 +279,17 @@ export class TalkConversationCoordinator {
     this.playbackSessionId = null;
     this.playbackQueue = Promise.resolve();
     await Promise.resolve(this.dependencies.stopOutput()).catch(() => undefined);
+  }
+
+  /** Fence the turn before any asynchronous barge-in cancellation begins. */
+  private fenceCurrentOutputTurn(): void {
+    if (!this.outputTurnId) return;
+    this.cancelledOutputTurnIds.add(this.outputTurnId);
+    this.outputTurnId = null;
+  }
+
+  private isCancelledOutputTurn(turnId: string | null): boolean {
+    return turnId !== null && this.cancelledOutputTurnIds.has(turnId);
   }
 
   private handlePlaybackError(sessionId: string, playbackGeneration: number, error: unknown): void {
