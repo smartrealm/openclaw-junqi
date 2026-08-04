@@ -160,11 +160,8 @@ pub fn run() {
             commands::voice_talk_playback::voice_talk_play_pcm,
             commands::voice_talk_playback::voice_talk_finish_playback,
             commands::voice_talk_playback::voice_talk_stop_playback,
-            commands::voice_wake::voice_wake_start,
-            commands::voice_wake::voice_wake_stop,
-            commands::voice_wake::voice_wake_status,
-            commands::voice_wake_model::voice_wake_detector_status,
-            commands::voice_wake_model::voice_wake_set_model_directory,
+            commands::voice_capture::voice_capture_start,
+            commands::voice_capture::voice_capture_stop,
             // Setup
             commands::setup::install_node,
             commands::setup::cancel_setup_operation,

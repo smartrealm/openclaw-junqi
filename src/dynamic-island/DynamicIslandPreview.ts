@@ -7,7 +7,7 @@ interface DynamicIslandPreviewDependencies {
   onChange: (active: boolean) => void;
 }
 
-/** Owns the bounded local preview state; it never persists a user preference. */
+/** 管理有时限的本地预览状态，不写入用户偏好。 */
 export class DynamicIslandPreview {
   private timer: number | null = null;
   private generation = 0;

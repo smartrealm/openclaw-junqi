@@ -51,18 +51,11 @@ function statusTone(status: DynamicIslandTask['status']) {
 }
 
 function voiceInputTitleKey(input: DynamicIslandVoiceInput): string {
-  if (input.requiresConfirmation) return 'dynamicIsland.voiceDraftReady';
-  if (input.phase === 'unavailable') return 'dynamicIsland.voiceInputUnavailable';
   if (input.phase === 'error') return 'dynamicIsland.voiceInputError';
-  return input.phase === 'transcribing'
-    ? 'dynamicIsland.processingVoice'
-    : 'dynamicIsland.listening';
-}
-
-function voiceInputDetailKey(input: DynamicIslandVoiceInput): string {
-  if (input.requiresConfirmation) return 'dynamicIsland.returnToChatToConfirm';
-  if (input.phase === 'unavailable' || input.phase === 'error') return 'dynamicIsland.returnToChatToControlVoice';
-  return 'dynamicIsland.returnToChatToControlVoice';
+  if (input.phase === 'preparing') return 'dynamicIsland.voicePreparing';
+  if (input.phase === 'thinking') return 'dynamicIsland.processingVoice';
+  if (input.phase === 'speaking') return 'dynamicIsland.speaking';
+  return 'dynamicIsland.listening';
 }
 
 function StatusGlyph({ task }: { task: DynamicIslandTask }) {
@@ -234,7 +227,7 @@ export default function DynamicIsland() {
         : t('dynamicIsland.voiceOutput');
     }
     if (outputVoiceActive && (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing')) return t('dynamicIsland.voiceInput');
-    if (inputVoiceActive) return t(voiceInputDetailKey(snapshot.voiceInput));
+    if (inputVoiceActive) return t('dynamicIsland.returnToChatToControlVoice');
     return t(snapshot.connected ? 'dynamicIsland.openclawOnline' : 'dynamicIsland.openclawStandby');
   }, [attentionTasks, inputVoiceActive, now, outputVoiceActive, primaryRunningTask, primarySessionActivity, snapshot.connected, snapshot.focus, snapshot.pomodoro.phase, snapshot.pomodoro.running, snapshot.voiceInput, snapshot.voicePhase, snapshot.voiceQueueLength, statusLabel, t]);
 
@@ -314,7 +307,7 @@ export default function DynamicIsland() {
                 <span><strong>{headline}</strong><small>{snapshot.resourceDrop
                   ? t(snapshot.resourceDrop.phase === 'dragging' ? 'dynamicIsland.releaseFiles' : 'dynamicIsland.quickChatReady')
                   : inputVoiceActive
-                    ? t(voiceInputDetailKey(snapshot.voiceInput))
+                    ? t('dynamicIsland.returnToChatToControlVoice')
                     : primarySessionActivity?.observer
                       ? t(`dynamicIsland.observerHealth.${primarySessionActivity.observer.health}`)
                     : snapshot.notice?.body || t('dynamicIsland.currentActivity')}</small></span>
@@ -413,7 +406,7 @@ export default function DynamicIsland() {
                 ) : inputVoiceActive ? (
                   <div className="junqi-island-empty">
                     <Radio size={18} />
-                    <span><strong>{t(voiceInputTitleKey(snapshot.voiceInput))}</strong><small>{t(voiceInputDetailKey(snapshot.voiceInput))}</small></span>
+                    <span><strong>{t(voiceInputTitleKey(snapshot.voiceInput))}</strong><small>{t('dynamicIsland.returnToChatToControlVoice')}</small></span>
                   </div>
                 ) : outputVoiceActive ? (
                   <div className="junqi-island-empty">

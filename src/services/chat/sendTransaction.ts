@@ -37,12 +37,7 @@ export interface ChatSendRequest {
   displayAttachments?: ChatMessage['attachments'];
   clientMessageId?: string;
   optimisticMessage?: Partial<ChatMessage> | false;
-  /**
-   * Gateway 运行期间，显式选择 JunQi 本地可见队列。
-   * 常规发送不设置此项，由 OpenClaw 应用会话队列模式。
-   */
-  queueIfBusy?: boolean;
-  delivery?: 'queue' | 'steer';
+  delivery?: 'steer';
   source?: TaskExecutionSource;
   model?: string | null;
 }
@@ -91,12 +86,9 @@ export class ChatSendCoordinator {
 
     const activeGatewayRun = state.typingBySession[sessionKey] === true;
     const sessionMutationBlocked = sessionMutationGate.isBlocked(sessionKey);
-    // OpenClaw 是运行中任务队列语义的权威。仅破坏性会话变更或显式本地队列选择，
-    // 才能让常规消息停留在渲染层拥有的队列中。
-    const localQueueRequested = request.queueIfBusy === true || request.delivery === 'queue';
+    // OpenClaw 是运行中任务队列语义的权威；本地队列只保护破坏性会话变更的交接窗口。
     const queueLocally = request.delivery !== 'steer'
-      && request.queueIfBusy !== false
-      && (sessionMutationBlocked || (localQueueRequested && activeGatewayRun));
+      && sessionMutationBlocked;
     if (queueLocally) {
       try {
         state.enqueueMessage(sessionKey, {

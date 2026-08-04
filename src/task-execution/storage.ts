@@ -17,7 +17,7 @@ interface NativeSaveResult {
 const RUN_STATUSES = new Set(['pending', 'running', 'cancel_requested', 'succeeded', 'cancelled', 'failed', 'verification_required']);
 const NODE_STATUSES = new Set(['pending', 'running', 'succeeded', 'cancel_requested', 'cancelled', 'rolled_back', 'verification_required', 'failed', 'blocked']);
 const NODE_KINDS = new Set(['user_turn', 'model_turn', 'tool_invocation', 'tool_reconciliation']);
-const SOURCES = new Set(['chat', 'quick_chat', 'jarvis']);
+const SOURCES = new Set(['chat', 'quick_chat']);
 const TERMINAL_REASONS = new Set(['final', 'aborted', 'error']);
 const EDGE_KINDS = new Set(['observed_after', 'supersedes']);
 const EDGE_EVIDENCE = new Set(['junqi_intent', 'openclaw_event']);
@@ -26,6 +26,28 @@ function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+/** 将旧语音发送来源迁移为普通聊天来源，迁移后不再保留独立 Jarvis 任务语义。 */
+export function migrateLegacyTaskExecutionSnapshot(value: unknown): unknown {
+  const root = record(value);
+  if (!root || root.version !== 1 || !Array.isArray(root.tasks)) return value;
+  let changed = false;
+  const tasks = root.tasks.map((candidate) => {
+    const task = record(candidate);
+    if (!task || !Array.isArray(task.runs)) return candidate;
+    const taskRuns = task.runs;
+    const runs = taskRuns.map((runCandidate) => {
+      const run = record(runCandidate);
+      if (!run || run.source !== 'jarvis') return runCandidate;
+      changed = true;
+      return { ...run, source: 'chat' };
+    });
+    return runs.some((run, index) => run !== taskRuns[index])
+      ? { ...task, runs }
+      : candidate;
+  });
+  return changed ? { ...root, tasks } : value;
 }
 
 function boundedText(value: unknown, max = 512): value is string {
@@ -176,8 +198,9 @@ export function normalizeTaskExecutionSnapshot(snapshot: TaskExecutionSnapshot):
 export async function loadTaskExecutionSnapshot(): Promise<{ generation: number; snapshot: TaskExecutionSnapshot }> {
   const result = await invoke<NativeLoadResult>('load_workbench_session', { partitionId: PARTITION_ID });
   if (!result.found) return { generation: result.generation, snapshot: emptyTaskExecutionSnapshot() };
-  if (!isTaskExecutionSnapshot(result.payload)) throw new Error('Task execution checkpoint failed schema validation');
-  return { generation: result.generation, snapshot: normalizeTaskExecutionSnapshot(result.payload) };
+  const migrated = migrateLegacyTaskExecutionSnapshot(result.payload);
+  if (!isTaskExecutionSnapshot(migrated)) throw new Error('Task execution checkpoint failed schema validation');
+  return { generation: result.generation, snapshot: normalizeTaskExecutionSnapshot(migrated) };
 }
 
 export async function saveTaskExecutionSnapshot(

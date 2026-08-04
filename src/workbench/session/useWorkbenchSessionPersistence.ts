@@ -1,11 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { getVoiceWakeStatus } from '@/api/tauri-commands';
 import { loadWorkbenchSession, saveWorkbenchSession } from './storage';
 import { WorkbenchSessionWriter } from './writer';
 import { useWorkbenchStore } from '../store/workbenchStore';
 import { stopAllWorkbenchPtys } from '../pty/workbenchPtyClient';
 import { checkpointAllLocalEditorDocuments } from '@/workspace-files/services/localEditorDocuments';
-import { shouldKeepVoiceWakeResident } from '@/services/voice/VoiceWakeResidencyPolicy';
 
 const LOCAL_PARTITION = 'local';
 const WRITE_DEBOUNCE_MS = 180;
@@ -50,11 +48,6 @@ export function useWorkbenchSessionPersistence(): void {
         event.preventDefault();
         if (closeCheckpointRef.current) return;
         const finishWindowClose = async () => {
-          const status = await getVoiceWakeStatus().catch(() => null);
-          if (shouldKeepVoiceWakeResident(status)) {
-            await window.hide();
-            return;
-          }
           await window.destroy();
         };
         if (!writer?.isReady() || !useWorkbenchStore.getState().writerReady) {

@@ -327,7 +327,7 @@ export default function DynamicIslandRuntime() {
           stopPomodoro();
           break;
         case 'voice-stop':
-          void voiceModeCoordinator.stopAndReleaseCapture();
+          void voiceModeCoordinator.stopAndReleaseResources();
           voiceRuntime.interruptAll();
           break;
         case 'hide':

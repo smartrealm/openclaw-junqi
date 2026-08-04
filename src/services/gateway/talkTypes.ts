@@ -1,6 +1,7 @@
 export type TalkMode = 'realtime' | 'stt-tts' | 'transcription';
 export type TalkTransport = 'webrtc' | 'provider-websocket' | 'gateway-relay' | 'managed-room';
 export type TalkBrain = 'agent-consult' | 'direct-tools' | 'none';
+export type TalkAgentControlMode = 'status' | 'steer' | 'cancel' | 'followup';
 export type TalkEventType =
   | 'session.started'
   | 'session.ready'
@@ -68,6 +69,14 @@ export interface TalkCatalog {
 export interface TalkSession {
   sessionId: string;
   provider: string | null;
+  inputAudioFormat: TalkAudioFormat;
+  outputAudioFormat: TalkAudioFormat;
+}
+
+export interface TalkRealtimeRelaySelection {
+  provider: TalkProviderCatalogEntry;
+  inputAudioFormat: TalkAudioFormat;
+  outputAudioFormat: TalkAudioFormat;
 }
 
 export interface TalkEvent {
@@ -75,18 +84,28 @@ export interface TalkEvent {
   type: TalkEventType;
   sessionId: string;
   turnId: string | null;
+  captureId?: string;
   seq: number;
   mode: TalkMode;
   transport: TalkTransport;
   brain: TalkBrain;
+  provider?: string;
+  final?: boolean;
+  callId?: string;
+  itemId?: string;
+  parentId?: string;
   payload: unknown;
 }
 
-export interface TalkSessionReplacedPayload {
-  handoffId: string;
-  roomId: string;
-  previousClientId: string;
-  nextClientId: string;
+export interface TalkToolCallPayload {
+  name: string;
+  args: unknown;
+  forced: boolean;
+}
+
+export interface TalkAgentControlInput {
+  text: string;
+  mode?: TalkAgentControlMode;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -106,6 +125,7 @@ function enumValue<T extends string>(value: unknown, allowed: readonly T[]): T |
 const MODES = ['realtime', 'stt-tts', 'transcription'] as const;
 const TRANSPORTS = ['webrtc', 'provider-websocket', 'gateway-relay', 'managed-room'] as const;
 const BRAINS = ['agent-consult', 'direct-tools', 'none'] as const;
+const AGENT_CONTROL_MODES = ['status', 'steer', 'cancel', 'followup'] as const;
 const EVENT_TYPES: readonly TalkEventType[] = [
   'session.started',
   'session.ready',
@@ -282,27 +302,90 @@ export function decodeTalkCatalog(value: unknown): TalkCatalog | null {
   return { modes, transports, brains, speech, transcription, realtime };
 }
 
-export function selectRealtimeRelayProvider(catalog: TalkCatalog): TalkProviderCatalogEntry | null {
+function supportedNativeInputFormat(format: TalkAudioFormat): boolean {
+  return format.encoding === 'pcm16'
+    && format.channels === 1
+    && format.sampleRateHz >= 8_000
+    && format.sampleRateHz <= 192_000;
+}
+
+function supportedNativeOutputFormat(format: TalkAudioFormat): boolean {
+  return format.encoding === 'pcm16'
+    && format.channels >= 1
+    && format.channels <= 8
+    && format.sampleRateHz >= 8_000
+    && format.sampleRateHz <= 192_000;
+}
+
+export function selectRealtimeRelayConfiguration(catalog: TalkCatalog): TalkRealtimeRelaySelection | null {
   if (catalog.realtime.ready !== true) return null;
-  return catalog.realtime.providers.find((provider) => (
+  const eligible = catalog.realtime.providers.filter((provider) => (
     provider.configured
     && provider.modes?.includes('realtime')
     && provider.transports?.includes('gateway-relay')
     && provider.brains?.includes('agent-consult')
     && provider.supportsBargeIn === true
-    && provider.inputAudioFormats?.some((format) => format.encoding === 'pcm16' && format.sampleRateHz === 24_000 && format.channels === 1)
-    && provider.outputAudioFormats?.some((format) => format.encoding === 'pcm16' && format.sampleRateHz === 24_000 && format.channels === 1)
-  )) ?? null;
+    && provider.supportsToolCalls === true
+    && provider.inputAudioFormats?.some(supportedNativeInputFormat)
+    && provider.outputAudioFormats?.some(supportedNativeOutputFormat)
+  ));
+  const provider = eligible.find((entry) => entry.id === catalog.realtime.activeProvider)
+    ?? eligible[0];
+  if (!provider) return null;
+  const inputAudioFormat = provider.inputAudioFormats?.find(supportedNativeInputFormat);
+  const outputAudioFormat = provider.outputAudioFormats?.find(supportedNativeOutputFormat);
+  return inputAudioFormat && outputAudioFormat
+    ? { provider, inputAudioFormat, outputAudioFormat }
+    : null;
 }
 
-export function decodeTalkSession(value: unknown): TalkSession | null {
+export function decodeTalkSession(
+  value: unknown,
+  selection: TalkRealtimeRelaySelection,
+): TalkSession | null {
   if (!isRecord(value)) return null;
   const sessionId = string(value.sessionId);
   if (!sessionId || value.mode !== 'realtime' || value.transport !== 'gateway-relay' || value.brain !== 'agent-consult') {
     return null;
   }
   const provider = value.provider === undefined ? null : string(value.provider);
-  return provider === null && value.provider !== undefined ? null : { sessionId, provider };
+  if (
+    (provider === null && value.provider !== undefined)
+    || (provider !== null && provider !== selection.provider.id)
+    || !isRecord(value.audio)
+  ) return null;
+
+  const inputEncoding = enumValue(value.audio.inputEncoding, ['pcm16', 'g711_ulaw'] as const);
+  const outputEncoding = enumValue(value.audio.outputEncoding, ['pcm16', 'g711_ulaw'] as const);
+  const inputSampleRateHz = value.audio.inputSampleRateHz;
+  const outputSampleRateHz = value.audio.outputSampleRateHz;
+  if (
+    !inputEncoding
+    || !outputEncoding
+    || typeof inputSampleRateHz !== 'number'
+    || !Number.isInteger(inputSampleRateHz)
+    || typeof outputSampleRateHz !== 'number'
+    || !Number.isInteger(outputSampleRateHz)
+  ) return null;
+
+  const inputAudioFormat = selection.provider.inputAudioFormats?.find((format) => (
+    supportedNativeInputFormat(format)
+    && format.encoding === inputEncoding
+    && format.sampleRateHz === inputSampleRateHz
+  ));
+  const outputAudioFormat = selection.provider.outputAudioFormats?.find((format) => (
+    supportedNativeOutputFormat(format)
+    && format.encoding === outputEncoding
+    && format.sampleRateHz === outputSampleRateHz
+  ));
+  if (!inputAudioFormat || !outputAudioFormat) return null;
+
+  return {
+    sessionId,
+    provider,
+    inputAudioFormat: { ...inputAudioFormat },
+    outputAudioFormat: { ...outputAudioFormat },
+  };
 }
 
 export function decodeTalkEvent(value: unknown): TalkEvent | null {
@@ -319,8 +402,18 @@ export function decodeTalkEvent(value: unknown): TalkEvent | null {
     || !Object.prototype.hasOwnProperty.call(value, 'payload')) return null;
   const turnId = value.turnId === undefined ? null : string(value.turnId);
   const captureId = value.captureId === undefined ? null : string(value.captureId);
+  const provider = value.provider === undefined ? undefined : string(value.provider);
+  const final = optionalBoolean(value.final);
+  const callId = value.callId === undefined ? undefined : string(value.callId);
+  const itemId = value.itemId === undefined ? undefined : string(value.itemId);
+  const parentId = value.parentId === undefined ? undefined : string(value.parentId);
   if ((value.turnId !== undefined && !turnId)
     || (value.captureId !== undefined && !captureId)
+    || provider === null
+    || final === null
+    || callId === null
+    || itemId === null
+    || parentId === null
     || (TURN_SCOPED_EVENT_TYPES.includes(type) && !turnId)
     || (CAPTURE_SCOPED_EVENT_TYPES.includes(type) && !captureId)) return null;
   return {
@@ -328,20 +421,55 @@ export function decodeTalkEvent(value: unknown): TalkEvent | null {
     type,
     sessionId,
     turnId,
+    ...(captureId ? { captureId } : {}),
     seq: value.seq,
     mode,
     transport,
     brain,
+    ...(provider === undefined ? {} : { provider }),
+    ...(final === undefined ? {} : { final }),
+    ...(callId === undefined ? {} : { callId }),
+    ...(itemId === undefined ? {} : { itemId }),
+    ...(parentId === undefined ? {} : { parentId }),
     payload: value.payload,
   };
 }
 
-export function decodeTalkSessionReplacedPayload(value: unknown): TalkSessionReplacedPayload | null {
-  if (!isRecord(value)) return null;
-  const handoffId = string(value.handoffId);
-  const roomId = string(value.roomId);
-  const previousClientId = string(value.previousClientId);
-  const nextClientId = string(value.nextClientId);
-  if (!handoffId || !roomId || !previousClientId || !nextClientId) return null;
-  return { handoffId, roomId, previousClientId, nextClientId };
+export function decodeTalkTextPayload(value: unknown): { text: string } | null {
+  if (!isRecord(value) || typeof value.text !== 'string') return null;
+  return { text: value.text };
+}
+
+export function decodeTalkToolCallPayload(value: unknown): TalkToolCallPayload | null {
+  if (!isRecord(value) || !Object.prototype.hasOwnProperty.call(value, 'args')) return null;
+  const name = string(value.name);
+  const forced = optionalBoolean(value.forced);
+  if (!name || forced === null) return null;
+  return {
+    name,
+    args: value.args,
+    forced: forced ?? false,
+  };
+}
+
+export function decodeTalkAgentControlInput(value: unknown): TalkAgentControlInput | null {
+  let source: unknown = value;
+  if (typeof source === 'string') {
+    const normalized = source.trim();
+    if (!normalized) return null;
+    try {
+      source = JSON.parse(normalized) as unknown;
+    } catch {
+      source = { text: normalized };
+    }
+  }
+  if (!isRecord(source)) return null;
+  const text = [source.text, source.message, source.request, source.query]
+    .find((candidate) => typeof candidate === 'string' && candidate.trim());
+  if (typeof text !== 'string') return null;
+  const mode = enumValue(source.mode, AGENT_CONTROL_MODES);
+  return {
+    text: text.trim(),
+    ...(mode ? { mode } : {}),
+  };
 }

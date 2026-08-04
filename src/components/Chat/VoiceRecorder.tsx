@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Mic, Send, X } from 'lucide-react';
+import { Mic, MicOff, RefreshCw, Send, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -15,6 +15,8 @@ interface VoiceRecorderProps {
   disabled?: boolean;
 }
 
+type RecorderFailure = 'microphone' | 'save' | null;
+
 function formatTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${(seconds % 60).toString().padStart(2, '0')}`;
@@ -27,6 +29,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [failure, setFailure] = useState<RecorderFailure>(null);
   const attemptRef = useRef(0);
   const startingRef = useRef(false);
   const activeRecordingIdRef = useRef<string | null>(null);
@@ -79,6 +82,8 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
     const attempt = ++attemptRef.current;
     startingRef.current = true;
     setStarting(true);
+    setFailure(null);
+    setElapsed(0);
     try {
       const result = await voiceFileRuntime.startRecording();
       const recordingId = result.success ? result.recordingId?.trim() : '';
@@ -93,8 +98,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
     } catch (error) {
       if (attempt === attemptRef.current) {
         debugError('media', '[VoiceRecorder] Native start failed:', error);
-        window.alert(t('voice.micError'));
-        onCancel();
+        setFailure('microphone');
       }
     } finally {
       if (attempt === attemptRef.current) {
@@ -102,7 +106,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
         setStarting(false);
       }
     }
-  }, [disabled, onCancel, startTimer, stopNativeRecording, t]);
+  }, [disabled, startTimer, stopNativeRecording]);
 
   const handleSend = useCallback(async () => {
     const recordingId = activeRecordingIdRef.current;
@@ -116,6 +120,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
       onSendVoice(base64, 'audio/wav', result.duration ?? elapsed, result.data);
     } catch (error) {
       debugError('media', '[VoiceRecorder] Send failed:', error);
+      setFailure('save');
     } finally {
       setSaving(false);
     }
@@ -138,11 +143,19 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
     };
   }, [disabled, releaseActiveRecording, startRecording]);
 
-  const status = saving
+  const status = saving || starting
     ? <LoadingIndicator size="sm" />
-    : starting
-      ? <LoadingIndicator size="sm" />
+    : failure
+      ? <MicOff size={17} aria-hidden="true" />
       : <Mic size={17} aria-hidden="true" />;
+
+  const statusText = failure === 'microphone'
+    ? t('voice.micError')
+    : failure === 'save'
+      ? t('voice.recordingSaveError')
+      : recording
+        ? t('voice.runtimeListening')
+        : t('voice.runtimePreparing');
 
   return (
     <div className="flex w-full items-center gap-3" dir={getDirection(language)}>
@@ -155,8 +168,11 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
         >
           {status}
         </span>
-        <span className="min-w-0 truncate text-[13px] text-aegis-text-muted">
-          {recording ? t('voice.runtimeListening') : t('voice.micError')}
+        <span
+          className="min-w-0 truncate text-[13px] text-aegis-text-muted"
+          role={failure ? 'alert' : undefined}
+        >
+          {statusText}
         </span>
       </div>
       <span className="min-w-[40px] shrink-0 text-center font-mono text-[13px] text-aegis-text-muted" dir="ltr">
@@ -172,16 +188,29 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
       >
         <X size={18} />
       </button>
-      <button
-        type="button"
-        onClick={() => { void handleSend(); }}
-        disabled={saving || !recording || elapsed < 1}
-        className="p-2.5 text-aegis-primary transition-colors hover:bg-aegis-primary/15 disabled:opacity-50"
-        title={t('voice.sendRecording')}
-        aria-label={t('voice.sendRecording')}
-      >
-        {saving ? <LoadingIndicator size="sm" /> : <Send size={18} />}
-      </button>
+      {failure ? (
+        <button
+          type="button"
+          onClick={() => { void startRecording(); }}
+          disabled={disabled || starting || saving}
+          className="p-2.5 text-aegis-primary transition-colors hover:bg-aegis-primary/15 disabled:opacity-50"
+          title={t('common.retry')}
+          aria-label={t('common.retry')}
+        >
+          <RefreshCw size={18} />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => { void handleSend(); }}
+          disabled={saving || !recording || elapsed < 1}
+          className="p-2.5 text-aegis-primary transition-colors hover:bg-aegis-primary/15 disabled:opacity-50"
+          title={t('voice.sendRecording')}
+          aria-label={t('voice.sendRecording')}
+        >
+          {saving ? <LoadingIndicator size="sm" /> : <Send size={18} />}
+        </button>
+      )}
     </div>
   );
 }

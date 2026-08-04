@@ -1,142 +1,69 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VoiceModeCoordinator, type VoiceModeContext } from './VoiceModeCoordinator';
+import { VoiceModeCoordinator } from './VoiceModeCoordinator';
 
-const context = (sessionKey = 'agent:main:main', connectionId = 'connection-a'): VoiceModeContext => ({
-  sessionKey,
-  connectionId,
+const context = { sessionKey: 'agent:main:main', connectionId: 'connection-a' };
+
+test('Talk 模式以准备状态启动并只接受所属轮次的状态转换', () => {
+  const coordinator = new VoiceModeCoordinator();
+  const started = coordinator.start({ context });
+
+  assert.equal(started.mode, 'talk');
+  assert.equal(started.phase, 'preparing');
+  assert.ok(started.turnId);
+  assert.equal(coordinator.transition(started.turnId, context, 'listening'), true);
+  assert.equal(coordinator.transition('stale-turn', context, 'speaking'), false);
+  assert.equal(coordinator.getSnapshot().phase, 'listening');
 });
 
-test('VWS-01 drops captures from a stopped or replaced voice turn', () => {
+test('无可信 Gateway 上下文时进入可关闭的错误状态', () => {
   const coordinator = new VoiceModeCoordinator();
-  const first = coordinator.start({ mode: 'dictation', context: context(), wakeDetectorAvailable: false });
-  coordinator.stop();
-  const second = coordinator.start({ mode: 'dictation', context: context(), wakeDetectorAvailable: false });
+  const snapshot = coordinator.start({ context: null });
 
-  assert.equal(coordinator.acceptAudioCapture(first.turnId, context(), 2), null);
-  assert.notEqual(coordinator.acceptAudioCapture(second.turnId, context(), 2), null);
-  const draft = coordinator.getSnapshot().draft;
-  assert.equal(draft?.kind, 'audio');
+  assert.equal(snapshot.mode, 'talk');
+  assert.equal(snapshot.phase, 'error');
+  assert.equal(snapshot.error, 'gateway_unavailable');
+  assert.equal(snapshot.turnId, null);
 });
 
-test('VWS-01 stop is idempotent and late capture cannot revive the coordinator', () => {
+test('目标变化会围栏旧轮次且旧回调不能恢复状态', () => {
   const coordinator = new VoiceModeCoordinator();
-  const snapshot = coordinator.start({ mode: 'dictation', context: context(), wakeDetectorAvailable: false });
-  assert.equal(coordinator.stop(), true);
-  assert.equal(coordinator.stop(), false);
-  assert.equal(coordinator.acceptAudioCapture(snapshot.turnId, context(), 4), null);
-  assert.equal(coordinator.getSnapshot().phase, 'off');
-});
+  const started = coordinator.start({ context });
+  const nextContext = { sessionKey: 'agent:other:main', connectionId: 'connection-a' };
 
-test('VWS-01 stop releases registered capture owners after fencing the turn', async () => {
-  const coordinator = new VoiceModeCoordinator();
-  const stopped: string[] = [];
-  coordinator.subscribeCaptureStop(async () => {
-    stopped.push('capture');
-  });
-  coordinator.start({ mode: 'dictation', context: context(), wakeDetectorAvailable: false });
-
-  assert.equal(await coordinator.stopAndReleaseCapture(), true);
-  assert.deepEqual(stopped, ['capture']);
-  assert.equal(await coordinator.stopAndReleaseCapture(), false);
-});
-
-test('VWS-02 capture creates a draft without an external send side effect', () => {
-  const coordinator = new VoiceModeCoordinator();
-  const snapshot = coordinator.start({ mode: 'dictation', context: context(), wakeDetectorAvailable: false });
-  const draft = coordinator.acceptAudioCapture(snapshot.turnId, context(), 3.8);
-
-  assert.deepEqual(draft, {
-    kind: 'audio',
-    captureId: 'voice-capture-1',
-    durationSec: 4,
-    createdAt: draft?.createdAt,
-    turnId: snapshot.turnId,
-  });
-  assert.equal(coordinator.getSnapshot().phase, 'ready_to_send');
-  assert.equal(coordinator.getSnapshot().draft?.kind, 'audio');
-});
-
-test('VWS-01 context changes preserve a draft but block its submission', () => {
-  const coordinator = new VoiceModeCoordinator();
-  const original = context();
-  const snapshot = coordinator.start({ mode: 'dictation', context: original, wakeDetectorAvailable: false });
-  assert.notEqual(coordinator.acceptAudioCapture(snapshot.turnId, original, 2), null);
-  assert.equal(coordinator.invalidateContext(context('agent:other:main', 'connection-b')), true);
-  assert.equal(coordinator.getSnapshot().draft?.kind, 'audio');
+  assert.equal(coordinator.invalidateContext(nextContext), true);
   assert.equal(coordinator.getSnapshot().error, 'target_changed');
-  assert.equal(coordinator.discardDraft(null, context('agent:other:main', 'connection-b')), true);
-  assert.equal(coordinator.getSnapshot().draft, null);
+  assert.equal(coordinator.transition(started.turnId, context, 'listening'), false);
 });
 
-test('VWS-01 owner cleanup releases only the active hook turn', async () => {
+test('Stop 先围栏模式并且并发调用只执行一次资源释放事务', async () => {
   const coordinator = new VoiceModeCoordinator();
-  const owner = context();
-  const other = context('agent:other:main', 'connection-b');
-  const released: string[] = [];
-  coordinator.subscribeCaptureStop(() => {
-    released.push('capture');
-  });
+  const observations: string[] = [];
+  let release: (() => void) | undefined;
+  coordinator.start({ context });
+  coordinator.subscribeResourceRelease(() => new Promise<void>((resolve) => {
+    observations.push(coordinator.getSnapshot().phase);
+    release = resolve;
+  }));
 
-  const first = coordinator.start({ mode: 'dictation', context: owner, wakeDetectorAvailable: false });
-  assert.notEqual(coordinator.acceptAudioCapture(first.turnId, owner, 2), null);
-  assert.equal(await coordinator.stopOwnedTurnAndReleaseCapture(first.turnId, other), false);
-  assert.equal(coordinator.getSnapshot().draft?.kind, 'audio');
-
-  assert.equal(await coordinator.stopOwnedTurnAndReleaseCapture(first.turnId, owner), true);
-  assert.equal(coordinator.getSnapshot().phase, 'off');
-  assert.equal(coordinator.getSnapshot().draft, null);
-  assert.deepEqual(released, ['capture']);
-
-  const replacement = coordinator.start({ mode: 'dictation', context: owner, wakeDetectorAvailable: false });
-  assert.equal(await coordinator.stopOwnedTurnAndReleaseCapture(first.turnId, owner), false);
-  assert.equal(coordinator.getSnapshot().turnId, replacement.turnId);
+  const first = coordinator.stopAndReleaseResources();
+  const second = coordinator.stopAndReleaseResources();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(observations, ['off']);
+  release?.();
+  assert.equal(await first, true);
+  assert.equal(await second, false);
+  assert.equal(coordinator.getSnapshot().mode, 'off');
 });
 
-test('VWS-01 ownership fence preserves a draft when Gateway identity is invalidated', () => {
+test('只有当前所属轮次可以触发带资源释放的停止', async () => {
   const coordinator = new VoiceModeCoordinator();
-  const owner = context();
-  const turn = coordinator.start({ mode: 'dictation', context: owner, wakeDetectorAvailable: false });
-  assert.notEqual(coordinator.acceptAudioCapture(turn.turnId, owner, 2), null);
+  let releases = 0;
+  const started = coordinator.start({ context });
+  coordinator.subscribeResourceRelease(() => { releases += 1; });
 
-  assert.equal(coordinator.invalidateOwnedTurn(turn.turnId, context('agent:other:main'), 'gateway_unavailable'), false);
-  assert.equal(coordinator.invalidateOwnedTurn(turn.turnId, owner, 'gateway_unavailable'), true);
-  assert.equal(coordinator.getSnapshot().phase, 'error');
-  assert.equal(coordinator.getSnapshot().error, 'gateway_unavailable');
-  assert.equal(coordinator.getSnapshot().draft?.kind, 'audio');
-});
-
-test('VWS-02 allows a disconnected stale draft to be discarded without a context', () => {
-  const coordinator = new VoiceModeCoordinator();
-  const original = context();
-  const snapshot = coordinator.start({ mode: 'dictation', context: original, wakeDetectorAvailable: false });
-  assert.notEqual(coordinator.acceptAudioCapture(snapshot.turnId, original, 2), null);
-  assert.equal(coordinator.invalidate('gateway_unavailable'), true);
-
-  assert.equal(coordinator.discardDraft(null, null), true);
-  assert.equal(coordinator.getSnapshot().phase, 'off');
-  assert.equal(coordinator.getSnapshot().draft, null);
-});
-
-test('VWS-03 does not present VAD as a wake detector', () => {
-  const coordinator = new VoiceModeCoordinator();
-  const snapshot = coordinator.start({ mode: 'wake_word', context: context(), wakeDetectorAvailable: false });
-
-  assert.equal(snapshot.phase, 'unavailable');
-  assert.equal(snapshot.error, 'wake_detector_unavailable');
-});
-
-test('a failed Jarvis category assignment leaves the wake turn recoverable and non-dispatching', () => {
-  const coordinator = new VoiceModeCoordinator();
-  const owner = context();
-  const snapshot = coordinator.start({ mode: 'wake_word', context: owner, wakeDetectorAvailable: true });
-
-  assert.equal(coordinator.markTriggered(snapshot.turnId, owner), true);
-  assert.equal(
-    coordinator.reportUnavailable(snapshot.turnId, owner, 'session_category_unavailable'),
-    true,
-  );
-  assert.equal(coordinator.getSnapshot().phase, 'error');
-  assert.equal(coordinator.getSnapshot().error, 'session_category_unavailable');
-  assert.equal(coordinator.acceptAudioCapture(snapshot.turnId, owner, 1), null);
+  assert.equal(await coordinator.stopOwnedTurnAndReleaseResources('stale', context), false);
+  assert.equal(releases, 0);
+  assert.equal(await coordinator.stopOwnedTurnAndReleaseResources(started.turnId, context), true);
+  assert.equal(releases, 1);
 });

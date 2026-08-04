@@ -35,7 +35,7 @@
 
 - 不新增 OpenClaw RPC、语音转写、实时音量协议、浏览器兼容 fallback 或第二个 Agent。
 - 不声称 CPAL 在未进行真机授权验证的平台已可用。
-- 不改变 Jarvis 唤醒、Talk relay、TTS 播放、Gateway scope 或普通附件大小限制。
+- 不改变 Jarvis Talk、TTS 播放、Gateway scope 或普通附件大小限制。
 
 ## 验证与边界
 

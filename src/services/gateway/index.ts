@@ -42,6 +42,7 @@ import { TalkGatewayClient } from './TalkGatewayClient';
 import {
   routeTalkGatewayEvent,
   subscribeTalkGatewayEvents,
+  subscribeTalkRelayEvents,
 } from './talkEventBridge';
 import type { GatewayAuthorizationIssue } from './messageRouter';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
@@ -657,16 +658,17 @@ export const openClawAgentWaitClient = new OpenClawAgentWaitClient({
 });
 
 export const talkGatewayClient = new TalkGatewayClient({
-  captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
   ),
-  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+  requestFenced: (method, params, expectedConnectionId, options) => connection.requestFenced(
     method,
     params,
     expectedConnectionId,
+    options,
   ),
   subscribe: subscribeTalkGatewayEvents,
+  subscribeRelay: subscribeTalkRelayEvents,
 });
 
 export { GatewayAgentDisplayNameUpdateError };

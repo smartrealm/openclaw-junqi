@@ -3,6 +3,7 @@ import test from 'node:test';
 import { beginTaskRun, emptyTaskExecutionSnapshot } from './stateMachine';
 import {
   isTaskExecutionSnapshot,
+  migrateLegacyTaskExecutionSnapshot,
   normalizeTaskExecutionSnapshot,
 } from './storage';
 
@@ -61,6 +62,28 @@ test('normalizes legacy checkpoints without optional history and recovery fields
   assert.equal(normalized.tasks[0]?.runs[0]?.historyActive, null);
   assert.equal(normalized.tasks[0]?.nodes[0]?.recoveryMode, 'manual');
   assert.deepEqual(normalized.tasks[0]?.edges, []);
+});
+
+test('migrates the retired Jarvis source without accepting it as a current task source', () => {
+  const snapshot = beginTaskRun(emptyTaskExecutionSnapshot(), {
+    binding,
+    runId: 'run-legacy-voice',
+    source: 'chat',
+    now: 10,
+  });
+  const legacy = {
+    ...snapshot,
+    tasks: snapshot.tasks.map((task) => ({
+      ...task,
+      runs: task.runs.map((run) => ({ ...run, source: 'jarvis' })),
+    })),
+  };
+
+  assert.equal(isTaskExecutionSnapshot(legacy), false);
+  const migrated = migrateLegacyTaskExecutionSnapshot(legacy);
+  assert.equal(isTaskExecutionSnapshot(migrated), true);
+  if (!isTaskExecutionSnapshot(migrated)) assert.fail('旧来源迁移后必须满足当前任务快照契约');
+  assert.equal(migrated.tasks[0]?.runs[0]?.source, 'chat');
 });
 
 test('rejects task checkpoints with an invented terminal reason', () => {

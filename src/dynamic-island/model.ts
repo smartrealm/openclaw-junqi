@@ -54,22 +54,14 @@ export interface DynamicIslandDrop {
   labels: string[];
 }
 
-/**
- * The auxiliary window receives only a non-sensitive voice cue. It never
- * receives the voice turn, target, transcript, audio payload, or credentials.
- */
+/** 辅助窗口只接收非敏感语音状态，不接收轮次、转写、音频或凭据。 */
 export interface DynamicIslandVoiceInput {
   mode: VoiceInputMode;
   phase: VoiceInputPhase;
-  requiresConfirmation: boolean;
   error: VoiceModeErrorCode | null;
 }
 
-/**
- * The running `update_plan` projection for the active session. Carries only the
- * step position and its title - never the plan explanation, tool arguments, or
- * any other transcript content, since the island is an auxiliary window.
- */
+/** 活动计划只投影步骤位置和标题，不把解释、工具参数或转写传给辅助窗口。 */
 export interface DynamicIslandExecutionPlan {
   currentStep: number;
   totalSteps: number;
@@ -98,7 +90,7 @@ export interface DynamicIslandSnapshot {
   resourceDrop: DynamicIslandDrop | null;
 }
 
-/** Voice phases that represent ongoing user-visible audio work. */
+/** 表示用户可见音频工作的阶段。 */
 export function isVoiceActivePhase(phase: VoicePhase): boolean {
   return phase === 'listening'
     || phase === 'transcribing'
@@ -107,23 +99,17 @@ export function isVoiceActivePhase(phase: VoicePhase): boolean {
 }
 
 export function projectDynamicIslandVoiceInput(
-  snapshot: Pick<VoiceModeSnapshot, 'mode' | 'phase' | 'draft' | 'error'>,
+  snapshot: Pick<VoiceModeSnapshot, 'mode' | 'phase' | 'error'>,
 ): DynamicIslandVoiceInput {
   return {
     mode: snapshot.mode,
     phase: snapshot.phase,
-    requiresConfirmation: snapshot.phase === 'ready_to_send' && snapshot.draft !== null,
     error: snapshot.error,
   };
 }
 
 export function isDynamicIslandVoiceInputActive(input: DynamicIslandVoiceInput): boolean {
-  return input.phase === 'listening'
-    || input.phase === 'triggered'
-    || input.phase === 'transcribing'
-    || input.phase === 'ready_to_send'
-    || input.phase === 'unavailable'
-    || input.phase === 'error';
+  return input.mode === 'talk' && input.phase !== 'off';
 }
 
 export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
@@ -140,7 +126,6 @@ export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   voiceInput: {
     mode: 'off',
     phase: 'off',
-    requiresConfirmation: false,
     error: null,
   },
   petEnabled: false,
@@ -236,16 +221,13 @@ export function shouldPeekForSnapshot(
     !isDynamicIslandVoiceInputActive(previous.voiceInput)
     && isDynamicIslandVoiceInputActive(next.voiceInput)
   ) return true;
-  if (!previous.voiceInput.requiresConfirmation && next.voiceInput.requiresConfirmation) return true;
   if (next.resourceDrop && (
     !previous.resourceDrop
     || next.resourceDrop.phase !== previous.resourceDrop.phase
     || next.resourceDrop.count !== previous.resourceDrop.count
   )) return true;
   if (next.notice && next.notice.id !== previous.notice?.id) return true;
-  // Advancing to a new plan step is the agent reporting real progress, so it
-  // earns one peek. Step count changes alone do not - a replanned run would
-  // otherwise reopen the island on every revision.
+  // 只有当前步骤前进才短暂展开；重新规划导致的步骤数量变化不能反复打开窗口。
   if (
     next.executionPlan
     && previous.executionPlan

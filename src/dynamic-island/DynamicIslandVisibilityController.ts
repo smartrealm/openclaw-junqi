@@ -10,7 +10,7 @@ interface DynamicIslandVisibilityDependencies<TSnapshot> {
   synchronize: (snapshot: TSnapshot, ignorePointerEvents: boolean) => Promise<unknown>;
 }
 
-/** Serializes local window visibility so stale asynchronous opens cannot win. */
+/** 串行化窗口可见性，避免过期的异步打开覆盖最新隐藏意图。 */
 export class DynamicIslandVisibilityController<TSnapshot> {
   private intent: DynamicIslandVisibilityIntent<TSnapshot> | null = null;
   private processing = false;

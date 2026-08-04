@@ -147,15 +147,14 @@ test('normal and hosted builds reuse committed provider catalogs without a runne
   assert.match(taggedRelease, /--config\s+src-tauri\/tauri\.hosted-release\.conf\.json/);
 });
 
-// Windows-native Rust tests run in the matching tagged installer build. Only
-// x64 is currently shipped because sherpa-onnx has no x86 or ARM64 libraries.
+// Windows 原生 Rust 测试在对应的标签安装包构建中执行。
+// 当前发布工作流只声明 x64，本测试只验证该真实矩阵，不推断未声明架构的能力。
 test('Windows Rust tests run natively for the shipped Windows target', () => {
   assert.match(taggedRelease, /target: 'x86_64-pc-windows-msvc'/);
   assert.doesNotMatch(taggedRelease, /i686-pc-windows-msvc|aarch64-pc-windows-msvc/);
   assert.match(taggedRelease, /- name: Run native Windows Rust tests\n\s+if: runner\.os == 'Windows'/);
   assert.match(taggedRelease, /cargo test --locked --lib --target \$\{\{ matrix\.target \}\} --no-fail-fast/);
-  // ci.yml deliberately keeps only Linux jobs; a Windows matrix reappearing
-  // there without native tests would silently reintroduce untested targets.
+  // ci.yml 只保留 Linux 任务；若重新加入 Windows 矩阵，也必须同时加入原生测试。
   assert.doesNotMatch(ci, /pc-windows-msvc/);
 });
 

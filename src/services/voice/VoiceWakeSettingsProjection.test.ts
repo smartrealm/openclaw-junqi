@@ -1,44 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  subscribeVoiceWakeSettingsTriggerProjection,
-  type VoiceWakeGatewayEventSubscriber,
-} from './VoiceWakeSettingsProjection';
-import type { VoiceWakeGatewayEvent, VoiceWakeGatewayEventListener } from '@/services/gateway/voiceWakeEventBridge';
+import type { VoiceWakeGatewayEventListener } from '@/services/gateway/voiceWakeEventBridge';
+import { subscribeVoiceWakeSettingsProjection } from './VoiceWakeSettingsProjection';
 
-test('projects only Gateway trigger broadcasts and releases the event listener', () => {
-  const listeners = new Set<VoiceWakeGatewayEventListener>();
-  let unsubscribed = 0;
-  const updates: string[][] = [];
-  const subscribe: VoiceWakeGatewayEventSubscriber = (nextListener) => {
-    listeners.add(nextListener);
-    return () => {
-      listeners.delete(nextListener);
-      unsubscribed += 1;
-    };
+test('设置投影分别同步触发词和路由并隔离可变引用', () => {
+  let listener: VoiceWakeGatewayEventListener = () => undefined;
+  let triggers: readonly string[] = [];
+  let routingTrigger = '';
+  const unsubscribe = subscribeVoiceWakeSettingsProjection(
+    (next) => {
+      listener = next;
+      return () => { listener = () => undefined; };
+    },
+    (next) => { triggers = next; },
+    (next) => {
+      routingTrigger = next.routes[0]?.trigger ?? '';
+      if (next.routes[0]) next.routes[0].trigger = '本地修改';
+    },
+  );
+  const config = {
+    version: 1 as const,
+    defaultTarget: { mode: 'current' as const },
+    routes: [{ trigger: 'junqi', target: { agentId: 'main' } }],
+    updatedAtMs: 100,
   };
-  const emit = (event: VoiceWakeGatewayEvent) => {
-    for (const listener of listeners) listener(event);
-  };
-
-  const release = subscribeVoiceWakeSettingsTriggerProjection(subscribe, (triggers) => {
-    updates.push([...triggers]);
-  });
-
-  emit({
-    type: 'routing',
-    config: { version: 1, defaultTarget: { mode: 'current' }, routes: [], updatedAtMs: 1 },
-  });
-  assert.deepEqual(updates, []);
-
-  const triggers = ['OpenClaw', 'JunQi'];
-  emit({ type: 'triggers', snapshot: { triggers } });
-  assert.deepEqual(updates, [['OpenClaw', 'JunQi']]);
-  triggers.push('mutated event payload');
-  assert.deepEqual(updates, [['OpenClaw', 'JunQi']]);
-
-  release();
-  emit({ type: 'triggers', snapshot: { triggers: ['after release'] } });
-  assert.equal(unsubscribed, 1);
-  assert.deepEqual(updates, [['OpenClaw', 'JunQi']]);
+  listener({ type: 'triggers', snapshot: { triggers: ['junqi'] } });
+  listener({ type: 'routing', config });
+  assert.deepEqual(triggers, ['junqi']);
+  assert.equal(routingTrigger, 'junqi');
+  assert.equal(config.routes[0]?.trigger, 'junqi');
+  unsubscribe();
 });

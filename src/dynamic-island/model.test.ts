@@ -68,41 +68,33 @@ test('voice activity peeks once when capture or playback starts', () => {
   assert.equal(shouldPeekForSnapshot(listening, { ...listening, autoExpand: false }), false);
 });
 
-test('voice input projection excludes transcript, audio, target, and turn identifiers', () => {
+test('语音投影只包含非敏感的 Talk 模式状态', () => {
   const projection = projectDynamicIslandVoiceInput({
-    mode: 'dictation',
-    phase: 'ready_to_send',
-    draft: {
-      kind: 'audio',
-      captureId: 'voice-capture-17',
-      durationSec: 3,
-      createdAt: 1,
-      turnId: 'voice-turn-17',
-    },
+    mode: 'talk',
+    phase: 'thinking',
     error: null,
   });
 
   assert.deepEqual(projection, {
-    mode: 'dictation',
-    phase: 'ready_to_send',
-    requiresConfirmation: true,
+    mode: 'talk',
+    phase: 'thinking',
     error: null,
   });
   assert.equal(isDynamicIslandVoiceInputActive(projection), true);
   assert.equal(isDynamicIslandVoiceInputActive(EMPTY_DYNAMIC_ISLAND_SNAPSHOT.voiceInput), false);
 });
 
-test('a voice draft asks the island to peek without exposing its contents', () => {
-  const draftReady = {
+test('Talk 启动只触发一次灵动岛展开', () => {
+  const preparing = {
     ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
     voiceInput: {
-      mode: 'dictation' as const,
-      phase: 'ready_to_send' as const,
-      requiresConfirmation: true,
+      mode: 'talk' as const,
+      phase: 'preparing' as const,
       error: null,
     },
   };
-  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, draftReady), true);
+  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, preparing), true);
+  assert.equal(shouldPeekForSnapshot(preparing, { ...preparing, revision: 2 }), false);
 });
 
 test('a newly blocked native observer digest peeks once without becoming a task', () => {

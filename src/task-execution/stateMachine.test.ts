@@ -15,7 +15,7 @@ import {
 const binding = {
   targetFingerprint: 'gateway-target',
   runtimeId: 'runtime-1',
-  sessionKey: 'agent:main:jarvis',
+  sessionKey: 'agent:main:task-test',
   sessionId: 'session-1',
 };
 
@@ -23,7 +23,7 @@ test('Stop checkpoints a cancel request before the Run reaches its terminal stat
   const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
     binding,
     runId: 'run-1',
-    source: 'jarvis',
+    source: 'chat',
     now: 10,
   });
   const stopping = requestTaskRunStop(started, binding, 20);
@@ -121,13 +121,13 @@ test('steer checkpoints the old Run cancellation and the replacement Run intent 
   const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
     binding,
     runId: 'run-old',
-    source: 'jarvis',
+    source: 'quick_chat',
     now: 10,
   });
   const prepared = prepareTaskRunSteer(started, {
     binding,
     runId: 'run-new',
-    source: 'jarvis',
+    source: 'quick_chat',
     now: 20,
   });
 
@@ -253,7 +253,7 @@ test('cross-window merge cannot reopen terminal run or node from a delayed activ
   const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
     binding,
     runId: 'run-terminal-merge',
-    source: 'jarvis',
+    source: 'quick_chat',
     now: 10,
   });
   const terminal = settleTaskRun(started, binding, 'run-terminal-merge', 'final', 30);
@@ -282,13 +282,13 @@ test('cross-window steer intents keep one running replacement and quarantine the
   const left = prepareTaskRunSteer(started, {
     binding,
     runId: 'run-left',
-    source: 'jarvis',
+    source: 'quick_chat',
     now: 20,
   }).snapshot;
   const right = prepareTaskRunSteer(started, {
     binding,
     runId: 'run-right',
-    source: 'jarvis',
+    source: 'quick_chat',
     now: 30,
   }).snapshot;
   const merged = mergeTaskExecutionSnapshots(left, right);
@@ -320,7 +320,7 @@ test('history reopens only a cancel-requested Run that OpenClaw still reports as
   const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
     binding,
     runId: 'run-steer-old',
-    source: 'jarvis',
+    source: 'quick_chat',
     now: 10,
   });
   const toolStarted = recordTaskToolEvent(started, binding, {
@@ -341,7 +341,7 @@ test('history does not reopen a cancel-requested Run for another active Run', ()
   const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
     binding,
     runId: 'run-steer-old',
-    source: 'jarvis',
+    source: 'quick_chat',
     now: 10,
   });
   const stopping = requestTaskRunStop(started, binding, 20);

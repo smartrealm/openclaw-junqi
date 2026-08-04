@@ -690,21 +690,21 @@ test('opening or replacing the active tab does not create a local unread marker'
 
 test('session category updates only after Gateway confirms the patched entry', async () => {
   const setSessionCategory = gateway.setSessionCategory;
-  const sessionKey = 'agent:main:jarvis';
+  const sessionKey = 'agent:main:project-alpha';
   Object.assign(gateway, {
-    setSessionCategory: async () => 'Jarvis: JunQi',
+    setSessionCategory: async () => 'Projects',
   });
   useChatStore.setState({
-    sessions: [{ key: sessionKey, label: 'Jarvis session' }],
+    sessions: [{ key: sessionKey, label: 'Project session' }],
   });
 
   try {
-    await useChatStore.getState().setSessionCategory(sessionKey, 'Jarvis: JunQi');
+    await useChatStore.getState().setSessionCategory(sessionKey, 'Projects');
     assert.deepEqual(useChatStore.getState().sessions, [{
       key: sessionKey,
-      label: 'Jarvis session',
-      groupId: 'Jarvis: JunQi',
-      category: 'Jarvis: JunQi',
+      label: 'Project session',
+      groupId: 'Projects',
+      category: 'Projects',
     }]);
   } finally {
     Object.assign(gateway, { setSessionCategory });
@@ -715,7 +715,7 @@ test('native session group catalog stays transient and preserves Gateway display
   const listSessionGroups = gateway.listSessionGroups;
   Object.assign(gateway, {
     listSessionGroups: async () => [
-      { name: 'Jarvis: Office', position: 0 },
+      { name: 'Operations', position: 0 },
       { name: 'Projects', position: 1 },
     ],
   });
@@ -726,7 +726,7 @@ test('native session group catalog stays transient and preserves Gateway display
 
   try {
     await useChatStore.getState().refreshSessionGroupCatalog();
-    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, ['Jarvis: Office', 'Projects']);
+    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, ['Operations', 'Projects']);
     assert.equal(useChatStore.getState().sessionGroupCatalogAvailability, 'ready');
     useChatStore.getState().setConnectionStatus({ connected: false, connecting: false });
     assert.deepEqual(useChatStore.getState().sessionGroupCatalog, []);
@@ -741,13 +741,13 @@ test('会话组仅在 Gateway 确认后写入瞬态目录', async () => {
   Object.assign(gateway, {
     ensureSessionGroup: async () => [
       { name: 'Existing', position: 0 },
-      { name: 'Jarvis: JunQi', position: 1 },
+      { name: 'Projects', position: 1 },
     ],
   });
 
   try {
-    await useChatStore.getState().ensureSessionGroup('Jarvis: JunQi');
-    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, ['Existing', 'Jarvis: JunQi']);
+    await useChatStore.getState().ensureSessionGroup('Projects');
+    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, ['Existing', 'Projects']);
     assert.equal(useChatStore.getState().sessionGroupCatalogAvailability, 'ready');
   } finally {
     Object.assign(gateway, { ensureSessionGroup });

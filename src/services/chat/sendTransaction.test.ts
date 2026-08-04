@@ -201,36 +201,6 @@ test('普通发送使用当前 Gateway transcript leaf，steer 不伪造该围�
   assert.equal(identities[1]?.expectedLeafEntryId, undefined);
 });
 
-test('CHAT-02 local queue remains opt-in while a Gateway run is active', async () => {
-  const queued: Array<{ sessionKey: string; message: unknown }> = [];
-  let transportCalls = 0;
-  const coordinator = new ChatSendCoordinator(
-    { sendMessage: async () => { transportCalls += 1; } },
-    () => ({
-      addMessage() {},
-      updateMessage() {},
-      setIsTyping() {},
-      typingBySession: { 'session-a': true },
-      enqueueMessage(sessionKey, message) { queued.push({ sessionKey, message }); },
-    }),
-  );
-
-  const result = await coordinator.send({
-    sessionKey: 'session-a',
-    message: 'keep this local',
-    clientMessageId: 'client-local-queue',
-    queueIfBusy: true,
-  });
-
-  assert.deepEqual(result, {
-    queued: true,
-    queue: 'session',
-    clientMessageId: 'client-local-queue',
-  });
-  assert.equal(transportCalls, 0);
-  assert.equal(queued.length, 1);
-});
-
 test('native session steering bypasses the visible queue and calls the interrupt-and-steer lane', async () => {
   const messages = new Map<string, ChatMessage>();
   const typing: boolean[] = [];
@@ -271,7 +241,6 @@ test('native session steering bypasses the visible queue and calls the interrupt
     message: 'focus on the failing Windows path',
     clientMessageId: 'client-steer',
     delivery: 'steer',
-    queueIfBusy: false,
   });
 
   assert.deepEqual(calls, [{
@@ -356,6 +325,11 @@ test('CHAT-10 a destructive session mutation holds new sends in the visible queu
 
 test('CHAT-02 queue overflow becomes a visible retryable failure', async () => {
   const messages = new Map<string, ChatMessage>();
+  let releaseMutation!: () => void;
+  const mutation = sessionMutationGate.run(
+    'session-a',
+    () => new Promise<void>((resolve) => { releaseMutation = resolve; }),
+  );
   const coordinator = new ChatSendCoordinator(
     { sendMessage: async () => { throw new Error('transport must not run'); } },
     () => ({
@@ -367,12 +341,16 @@ test('CHAT-02 queue overflow becomes a visible retryable failure', async () => {
     }),
   );
 
-  await assert.rejects(coordinator.send({
-    sessionKey: 'session-a',
-    message: 'keep this text',
-    clientMessageId: 'client-overflow',
-    queueIfBusy: true,
-  }), /queue is full/);
-  assert.equal(messages.get('client-overflow')?.status, 'failed');
-  assert.deepEqual(messages.get('client-overflow')?.retryPayload, { text: 'keep this text' });
+  try {
+    await assert.rejects(coordinator.send({
+      sessionKey: 'session-a',
+      message: 'keep this text',
+      clientMessageId: 'client-overflow',
+    }), /queue is full/);
+    assert.equal(messages.get('client-overflow')?.status, 'failed');
+    assert.deepEqual(messages.get('client-overflow')?.retryPayload, { text: 'keep this text' });
+  } finally {
+    releaseMutation();
+    await mutation;
+  }
 });

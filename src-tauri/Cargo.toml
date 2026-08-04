@@ -44,7 +44,6 @@ flume = "0.11"
 cpal = "0.15"
 rodio = "0.20"
 hound = "3.5"
-sherpa-onnx = "1.13.4"
 sysinfo = "0.33"
 trash = "5"
 uuid = { version = "1", features = ["v4"] }

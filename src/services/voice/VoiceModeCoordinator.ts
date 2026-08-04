@@ -1,34 +1,25 @@
-export type VoiceInputMode = 'off' | 'dictation' | 'wake_word';
+export type VoiceInputMode = 'off' | 'talk';
 
 export type VoiceInputPhase =
   | 'off'
   | 'preparing'
   | 'listening'
-  | 'triggered'
-  | 'transcribing'
-  | 'ready_to_send'
-  | 'unavailable'
+  | 'hearing'
+  | 'thinking'
+  | 'speaking'
   | 'error';
 
 export type VoiceModeErrorCode =
   | 'gateway_unavailable'
-  | 'wake_detector_unavailable'
-  | 'wake_trigger_model_mismatch'
-  | 'session_category_unavailable'
   | 'target_changed'
-  | 'capture_failed';
+  | 'capture_failed'
+  | 'talk_unavailable'
+  | 'talk_session_replaced'
+  | 'talk_session_closed';
 
 export interface VoiceModeContext {
   sessionKey: string;
   connectionId: string;
-}
-
-export interface VoiceInputDraft {
-  kind: 'audio';
-  captureId: string;
-  durationSec: number;
-  createdAt: number;
-  turnId: string;
 }
 
 export interface VoiceModeSnapshot {
@@ -37,18 +28,16 @@ export interface VoiceModeSnapshot {
   phase: VoiceInputPhase;
   turnId: string | null;
   context: VoiceModeContext | null;
-  draft: VoiceInputDraft | null;
   error: VoiceModeErrorCode | null;
+  errorDetail: string | null;
 }
 
 export interface StartVoiceModeRequest {
-  mode: Exclude<VoiceInputMode, 'off'>;
-  context: VoiceModeContext;
-  wakeDetectorAvailable: boolean;
+  context: VoiceModeContext | null;
 }
 
 type VoiceModeListener = () => void;
-type CaptureStopListener = () => void | Promise<void>;
+type ResourceReleaseListener = () => void | Promise<void>;
 
 const INITIAL_SNAPSHOT: VoiceModeSnapshot = {
   revision: 0,
@@ -56,28 +45,30 @@ const INITIAL_SNAPSHOT: VoiceModeSnapshot = {
   phase: 'off',
   turnId: null,
   context: null,
-  draft: null,
   error: null,
+  errorDetail: null,
 };
 
 function sameContext(left: VoiceModeContext, right: VoiceModeContext): boolean {
   return left.sessionKey === right.sessionKey && left.connectionId === right.connectionId;
 }
 
-function validContext(context: VoiceModeContext): boolean {
-  return context.sessionKey.trim().length > 0 && context.connectionId.trim().length > 0;
+function validContext(context: VoiceModeContext | null): context is VoiceModeContext {
+  return context !== null
+    && context.sessionKey.trim().length > 0
+    && context.connectionId.trim().length > 0;
 }
 
 export function isVoiceInputCapturePhase(phase: VoiceInputPhase): boolean {
-  return phase === 'listening' || phase === 'triggered' || phase === 'transcribing';
+  return phase === 'listening' || phase === 'hearing' || phase === 'thinking';
 }
 
 export class VoiceModeCoordinator {
   private snapshot: VoiceModeSnapshot = INITIAL_SNAPSHOT;
   private turnSequence = 0;
-  private captureSequence = 0;
   private readonly listeners = new Set<VoiceModeListener>();
-  private readonly captureStopListeners = new Set<CaptureStopListener>();
+  private readonly resourceReleaseListeners = new Set<ResourceReleaseListener>();
+  private releaseOperation: Promise<void> | null = null;
 
   getSnapshot = (): VoiceModeSnapshot => this.snapshot;
 
@@ -86,9 +77,9 @@ export class VoiceModeCoordinator {
     return () => this.listeners.delete(listener);
   };
 
-  subscribeCaptureStop = (listener: CaptureStopListener): (() => void) => {
-    this.captureStopListeners.add(listener);
-    return () => this.captureStopListeners.delete(listener);
+  subscribeResourceRelease = (listener: ResourceReleaseListener): (() => void) => {
+    this.resourceReleaseListeners.add(listener);
+    return () => this.resourceReleaseListeners.delete(listener);
   };
 
   private commit(next: Omit<VoiceModeSnapshot, 'revision'>): VoiceModeSnapshot {
@@ -100,45 +91,24 @@ export class VoiceModeCoordinator {
   start(request: StartVoiceModeRequest): VoiceModeSnapshot {
     if (!validContext(request.context)) {
       return this.commit({
-        mode: 'off',
+        mode: 'talk',
         phase: 'error',
         turnId: null,
         context: null,
-        draft: null,
         error: 'gateway_unavailable',
+        errorDetail: null,
       });
     }
 
     const turnId = `voice-turn-${++this.turnSequence}`;
-    if (request.mode === 'wake_word' && !request.wakeDetectorAvailable) {
-      return this.commit({
-        mode: 'wake_word',
-        phase: 'unavailable',
-        turnId,
-        context: { ...request.context },
-        draft: null,
-        error: 'wake_detector_unavailable',
-      });
-    }
-
     return this.commit({
-      mode: request.mode,
-      phase: 'listening',
+      mode: 'talk',
+      phase: 'preparing',
       turnId,
       context: { ...request.context },
-      draft: null,
       error: null,
+      errorDetail: null,
     });
-  }
-
-  isCurrentTurn(turnId: string | null, context: VoiceModeContext): boolean {
-    const snapshot = this.snapshot;
-    return Boolean(
-      this.ownsTurn(turnId, context)
-      && snapshot.phase !== 'off'
-      && snapshot.phase !== 'unavailable'
-      && snapshot.phase !== 'error',
-    );
   }
 
   ownsTurn(turnId: string | null, context: VoiceModeContext | null): boolean {
@@ -152,97 +122,27 @@ export class VoiceModeCoordinator {
     );
   }
 
-  markTriggered(turnId: string | null, context: VoiceModeContext): boolean {
-    if (!this.isCurrentTurn(turnId, context) || this.snapshot.phase !== 'listening') return false;
-    this.commit({ ...this.snapshot, phase: 'triggered' });
-    return true;
-  }
-
-  markTranscribing(turnId: string | null, context: VoiceModeContext): boolean {
-    if (
-      !this.isCurrentTurn(turnId, context)
-      || (this.snapshot.phase !== 'listening' && this.snapshot.phase !== 'triggered')
-    ) {
-      return false;
-    }
-    this.commit({ ...this.snapshot, phase: 'transcribing' });
-    return true;
-  }
-
-  resumeListening(turnId: string | null, context: VoiceModeContext): boolean {
-    if (!this.isCurrentTurn(turnId, context)) return false;
-    if (this.snapshot.phase !== 'triggered' && this.snapshot.phase !== 'transcribing') return false;
-    this.commit({ ...this.snapshot, phase: 'listening', error: null });
-    return true;
-  }
-
-  private canAcceptInput(turnId: string | null, context: VoiceModeContext): boolean {
-    return this.isCurrentTurn(turnId, context)
-      && (this.snapshot.phase === 'listening'
-        || this.snapshot.phase === 'triggered'
-        || this.snapshot.phase === 'transcribing');
-  }
-
-  acceptAudioCapture(
+  transition(
     turnId: string | null,
     context: VoiceModeContext,
-    durationSec: number,
-  ): VoiceInputDraft | null {
-    if (!turnId || !this.canAcceptInput(turnId, context)) return null;
-    const draft: VoiceInputDraft = {
-      kind: 'audio',
-      captureId: `voice-capture-${++this.captureSequence}`,
-      durationSec: Math.max(0, Math.round(durationSec)),
-      createdAt: Date.now(),
-      turnId,
-    };
-    this.commit({ ...this.snapshot, phase: 'ready_to_send', draft, error: null });
-    return draft;
-  }
-
-  fail(turnId: string | null, context: VoiceModeContext, code: VoiceModeErrorCode): boolean {
-    if (!this.isCurrentTurn(turnId, context)) return false;
-    this.commit({ ...this.snapshot, phase: 'error', error: code });
-    return true;
-  }
-
-  reportUnavailable(turnId: string | null, context: VoiceModeContext, code: VoiceModeErrorCode): boolean {
-    const snapshot = this.snapshot;
-    if (!turnId || snapshot.turnId !== turnId || !snapshot.context || !sameContext(snapshot.context, context)) {
+    phase: Exclude<VoiceInputPhase, 'off' | 'error'>,
+  ): boolean {
+    if (!this.ownsTurn(turnId, context) || this.snapshot.mode !== 'talk' || this.snapshot.phase === 'error') {
       return false;
     }
-    this.commit({ ...snapshot, phase: code === 'wake_detector_unavailable' ? 'unavailable' : 'error', error: code });
+    if (this.snapshot.phase === phase) return true;
+    this.commit({ ...this.snapshot, phase, error: null, errorDetail: null });
     return true;
   }
 
-  getDraft(turnId: string | null, context: VoiceModeContext): VoiceInputDraft | null {
-    const snapshot = this.snapshot;
-    if (
-      !this.isCurrentTurn(turnId, context)
-      || snapshot.phase !== 'ready_to_send'
-      || !snapshot.draft
-      || snapshot.draft.turnId !== turnId
-    ) {
-      return null;
-    }
-    return snapshot.draft;
-  }
-
-  discardDraft(turnId: string | null, context: VoiceModeContext | null): boolean {
-    const snapshot = this.snapshot;
-    const staleDraft = snapshot.phase === 'error'
-      && snapshot.turnId === null
-      && snapshot.context === null;
-    const currentTurn = context !== null && this.isCurrentTurn(turnId, context);
-    if (!snapshot.draft || (!currentTurn && !staleDraft)) return false;
-    this.commit({
-      mode: 'off',
-      phase: 'off',
-      turnId: null,
-      context: null,
-      draft: null,
-      error: null,
-    });
+  fail(
+    turnId: string | null,
+    context: VoiceModeContext | null,
+    code: VoiceModeErrorCode,
+    detail: string | null = null,
+  ): boolean {
+    if (!this.ownsTurn(turnId, context)) return false;
+    this.commit({ ...this.snapshot, phase: 'error', error: code, errorDetail: detail });
     return true;
   }
 
@@ -251,70 +151,64 @@ export class VoiceModeCoordinator {
     if (!snapshot.context || sameContext(snapshot.context, context)) return false;
     this.commit({
       ...snapshot,
-      mode: 'off',
+      mode: 'talk',
       phase: 'error',
       turnId: null,
       context: null,
       error: 'target_changed',
+      errorDetail: null,
     });
     return true;
   }
 
-  invalidate(code: VoiceModeErrorCode = 'target_changed'): boolean {
+  invalidate(code: VoiceModeErrorCode = 'target_changed', detail: string | null = null): boolean {
     const snapshot = this.snapshot;
-    if (!snapshot.context) return false;
+    if (snapshot.mode === 'off' && snapshot.phase === 'off') return false;
     this.commit({
       ...snapshot,
-      mode: 'off',
+      mode: 'talk',
       phase: 'error',
       turnId: null,
       context: null,
       error: code,
+      errorDetail: detail,
     });
     return true;
   }
 
-  invalidateOwnedTurn(
-    turnId: string | null,
-    context: VoiceModeContext | null,
-    code: VoiceModeErrorCode = 'target_changed',
-  ): boolean {
-    if (!this.ownsTurn(turnId, context)) return false;
-    return this.invalidate(code);
-  }
-
   stop(): boolean {
     const snapshot = this.snapshot;
-    if (snapshot.mode === 'off' && snapshot.phase === 'off' && snapshot.draft === null) return false;
+    if (snapshot.mode === 'off' && snapshot.phase === 'off') return false;
     this.commit({
       mode: 'off',
       phase: 'off',
       turnId: null,
       context: null,
-      draft: null,
       error: null,
+      errorDetail: null,
     });
     return true;
   }
 
-  async stopAndReleaseCapture(): Promise<boolean> {
+  async stopAndReleaseResources(): Promise<boolean> {
     const stopped = this.stop();
-    await Promise.all([...this.captureStopListeners].map(async (listener) => {
-      try {
-        await listener();
-      } catch {
-        // coordinator 已围栏当前轮次，采集释放失败不应重新打开该轮次。
-      }
-    }));
+    if (!this.releaseOperation) {
+      this.releaseOperation = Promise.allSettled(
+        [...this.resourceReleaseListeners].map((listener) => Promise.resolve().then(listener)),
+      ).then(() => undefined).finally(() => {
+        this.releaseOperation = null;
+      });
+    }
+    await this.releaseOperation;
     return stopped;
   }
 
-  async stopOwnedTurnAndReleaseCapture(
+  async stopOwnedTurnAndReleaseResources(
     turnId: string | null,
     context: VoiceModeContext | null,
   ): Promise<boolean> {
     if (!this.ownsTurn(turnId, context)) return false;
-    return this.stopAndReleaseCapture();
+    return this.stopAndReleaseResources();
   }
 }
 

@@ -44,7 +44,7 @@ test('resolves a session-id-bound checkpoint when an event only carries sessionK
   const snapshot = beginTaskRun(emptyTaskExecutionSnapshot(), {
     binding: baseBinding,
     runId: 'run-1',
-    source: 'jarvis',
+    source: 'quick_chat',
     now: 10,
   });
 

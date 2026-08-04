@@ -1,52 +1,29 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  getVoiceWakeDetectorStatus,
   finishTalkPlayback,
   playTalkPcm,
-  presentCurrentWindowForVoiceWake,
   stopTalkPlayback,
 } from '@/api/tauri-commands';
+import { useVoiceCapture } from '@/hooks/useVoiceCapture';
 import { useVoiceMode } from '@/hooks/useVoiceMode';
-import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { AttachmentValidationError, createPreparedAttachment, toGatewayAttachments } from '@/services/chat/attachments';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
-import { gateway, talkGatewayClient, voiceWakeGatewayClient } from '@/services/gateway';
+import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
+import { gateway, talkGatewayClient } from '@/services/gateway';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
-import type { VoiceWakeGatewayConfiguration } from '@/services/gateway/VoiceWakeGatewayClient';
+import type { TalkConversationErrorCode } from '@/services/voice/TalkConversationCoordinator';
+import { TalkConversationCoordinator, shouldCancelTalkOutput } from '@/services/voice/TalkConversationCoordinator';
 import {
   voiceModeCoordinator,
   type VoiceModeContext,
+  type VoiceModeErrorCode,
 } from '@/services/voice/VoiceModeCoordinator';
-import {
-  decideVoiceWakeRoute,
-  hasCompatibleVoiceWakeTrigger,
-  type VoiceWakeRouteContext,
-} from '@/services/voice/VoiceWakeRoutePolicy';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
-import { TalkConversationCoordinator, shouldCancelTalkOutput } from '@/services/voice/TalkConversationCoordinator';
 import { VOICE_INTERRUPT_EVENT, type VoiceInterruptControl } from '@/services/voice/types';
-import { createJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
-import { shouldAutoArmSession, subscribeAutoArmPreference } from '@/services/voice/VoiceWakePreference';
 import { selectSessionRequestActive, useChatStore } from '@/stores/chatStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { debugError } from '@/utils/debugLog';
-import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
-
-function estimateWavDuration(base64: string): number {
-  try {
-    const raw = atob(base64);
-    if (raw.length < 44) return 0;
-    const view = new DataView(Uint8Array.from(raw, (char) => char.charCodeAt(0)).buffer);
-    const channels = view.getUint16(22, true) || 1;
-    const sampleRate = view.getUint32(24, true) || 16_000;
-    const bits = view.getUint16(34, true) || 16;
-    const dataBytes = view.getUint32(40, true) || Math.max(0, raw.length - 44);
-    return Math.max(0, Math.round(dataBytes / Math.max(1, sampleRate * channels * (bits / 8))));
-  } catch {
-    return 0;
-  }
-}
 
 function sameVoiceContext(left: VoiceModeContext, right: VoiceModeContext): boolean {
   return left.sessionKey === right.sessionKey && left.connectionId === right.connectionId;
@@ -61,48 +38,39 @@ function isAttestedVoiceContext(
     && gateway.isConnectionCurrent(expected.connectionId);
 }
 
+function voiceModeError(code: TalkConversationErrorCode): VoiceModeErrorCode {
+  if (code === 'talk_session_replaced') return 'talk_session_replaced';
+  if (code === 'talk_session_closed') return 'talk_session_closed';
+  if (code === 'gateway_unavailable' || code === 'connection_changed') return 'gateway_unavailable';
+  return 'talk_unavailable';
+}
+
 interface UseComposerVoiceOptions {
   activeSessionKey: string;
   activeSessionId?: string;
-  activeSessionAgentId?: string;
   connected: boolean;
   historyLoading: boolean;
-  runtimeTargetFingerprint: string | null;
-  textareaRef: RefObject<HTMLTextAreaElement>;
   setIsSending: (sending: boolean, sessionKey?: string) => void;
-  closeMenu: () => void;
   reportAttachmentError: (error: unknown) => void;
 }
 
 export function useComposerVoice({
   activeSessionKey,
   activeSessionId,
-  activeSessionAgentId,
   connected,
   historyLoading,
-  runtimeTargetFingerprint,
-  textareaRef,
   setIsSending,
-  closeMenu,
   reportAttachmentError,
 }: UseComposerVoiceOptions) {
   const { t } = useTranslation();
   const [recording, setRecording] = useState(false);
-  const [autoArmEnabled, setAutoArmEnabledState] = useState(() => (
-    shouldAutoArmSession(activeSessionKey, runtimeTargetFingerprint)
-  ));
-  const [autoArmRevision, setAutoArmRevision] = useState(0);
   const voiceMode = useVoiceMode();
   const activeTurnRef = useRef<string | null>(null);
-  const autoArmAttemptRef = useRef<string | null>(null);
-  const autoArmRecoveryAttemptsRef = useRef(0);
-  const wakeConfigurationRef = useRef<VoiceWakeGatewayConfiguration | null>(null);
-  const pendingAudioCapturesRef = useRef(new Map<string, {
-    wavDataUrl: string;
-    durationSec: number;
-  }>());
-  const stopVoiceWakeRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const currentContextRef = useRef<VoiceModeContext | null>(null);
+  const stopVoiceCaptureRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const talkConversationRef = useRef<TalkConversationCoordinator | null>(null);
+  const projectedTalkOutputSessionRef = useRef<string | null>(null);
+
   if (!talkConversationRef.current) {
     talkConversationRef.current = new TalkConversationCoordinator({
       client: talkGatewayClient,
@@ -114,70 +82,29 @@ export function useComposerVoice({
       stopOutput: stopTalkPlayback,
     });
   }
+
   const talkConversation = useSyncExternalStore(
     talkConversationRef.current.subscribe,
     talkConversationRef.current.getSnapshot,
     talkConversationRef.current.getSnapshot,
   );
-  const projectedTalkOutputSessionRef = useRef<string | null>(null);
-  useEffect(() => {
-    const sessionKey = talkConversation.sessionKey;
-    const projected = projectedTalkOutputSessionRef.current;
-    if (projected && (projected !== sessionKey || talkConversation.phase !== 'speaking')) {
-      voiceRuntime.setNativeTalkOutput(projected, false);
-      projectedTalkOutputSessionRef.current = null;
-    }
-    if (sessionKey && talkConversation.phase === 'speaking') {
-      voiceRuntime.setNativeTalkOutput(sessionKey, true);
-      projectedTalkOutputSessionRef.current = sessionKey;
-    }
-  }, [talkConversation.phase, talkConversation.sessionKey]);
-  useEffect(() => {
-    const cancelTalkOutput = (event: Event) => {
-      const detail = (event as CustomEvent<VoiceInterruptControl>).detail;
-      if (!detail || !detail.cancelTalk) return;
-      const coordinator = talkConversationRef.current;
-      const snapshot = coordinator?.getSnapshot();
-      if (!coordinator || !snapshot || !shouldCancelTalkOutput(snapshot, detail)) return;
-      void coordinator.interrupt();
-    };
-    window.addEventListener(VOICE_INTERRUPT_EVENT, cancelTalkOutput);
-    return () => window.removeEventListener(VOICE_INTERRUPT_EVENT, cancelTalkOutput);
-  }, []);
-  const currentContextRef = useRef<VoiceModeContext | null>(null);
-  const currentRouteContextRef = useRef<VoiceWakeRouteContext | null>(null);
   const connectionId = gateway.captureConnectionId();
   currentContextRef.current = connectionId && activeSessionKey
     ? { sessionKey: activeSessionKey, connectionId }
     : null;
-  currentRouteContextRef.current = currentContextRef.current
-    ? { sessionKey: activeSessionKey, agentId: activeSessionAgentId }
-    : null;
+
   const phase = useVoiceStore((state) => state.phase);
   const voiceSessionKey = useVoiceStore((state) => state.sessionKey);
   const remoteOutput = useVoiceStore((state) => state.remoteOutput);
-  const outputActive = remoteOutput !== null
+  const outputActive = talkConversation.phase === 'speaking'
+    || remoteOutput !== null
     || ((phase === 'queued' || phase === 'speaking')
       && (voiceSessionKey == null || voiceSessionKey === activeSessionKey));
+
   const isCurrentVoiceContext = useCallback(
     (context: VoiceModeContext) => isAttestedVoiceContext(currentContextRef.current, context),
     [],
   );
-
-  const requestAutoArmRetry = useCallback(() => {
-    autoArmAttemptRef.current = null;
-    setAutoArmRevision((revision) => revision + 1);
-  }, []);
-
-  useEffect(() => voiceWakeGatewayClient.subscribe((event) => {
-    const current = wakeConfigurationRef.current;
-    if (!current) return;
-    if (event.type === 'triggers') {
-      wakeConfigurationRef.current = { ...current, triggers: event.snapshot };
-      return;
-    }
-    wakeConfigurationRef.current = { ...current, routing: event.config };
-  }), []);
 
   const sendVoice = useCallback(async (
     base64: string,
@@ -204,8 +131,6 @@ export function useComposerVoice({
         sessionKey,
         sessionId: activeSessionId,
         clientMessageId: createClientMessageId(),
-        source: 'jarvis',
-        delivery: 'steer',
         message: t('voice.voiceMessage', { seconds: durationSec }),
         attachments,
         optimisticMessage: { mediaUrl: previewUrl, mediaType: 'audio' },
@@ -233,344 +158,154 @@ export function useComposerVoice({
       .catch((error) => debugError('gateway', '[ComposerVoice] Unable to stop response:', error));
   }, [activeSessionId, activeSessionKey]);
 
-  const voiceWake = useVoiceWake({
-    onCaptureFallback: async (wavDataUrl) => {
+  const voiceCapture = useVoiceCapture({
+    onSpeechStart: () => {
       const context = currentContextRef.current;
-      if (!context) return;
-      const talkConversation = talkConversationRef.current;
-      if (talkConversation?.getSnapshot().phase === 'connecting') {
-        await talkConversation.waitForOpening();
-      }
-      if (!isCurrentVoiceContext(context) || !voiceModeCoordinator.ownsTurn(activeTurnRef.current, context)) {
-        return;
-      }
-      if (talkConversation?.getSnapshot().sessionId) {
-        voiceModeCoordinator.resumeListening(activeTurnRef.current, context);
-        return;
-      }
-      if (!voiceModeCoordinator.markTranscribing(activeTurnRef.current, context)) return;
-      voiceRuntime.interruptGlobally(context.sessionKey);
-      const base64 = wavDataUrl.split(',')[1] || '';
-      if (!base64) return;
-      const draft = voiceModeCoordinator.acceptAudioCapture(
-        activeTurnRef.current,
-        context,
-        estimateWavDuration(base64),
-      );
-      if (draft?.kind === 'audio') {
-        pendingAudioCapturesRef.current.set(draft.captureId, {
-          wavDataUrl,
-          durationSec: draft.durationSec,
-        });
-        void stopVoiceWakeRef.current();
+      const turnId = activeTurnRef.current;
+      if (!context || !voiceModeCoordinator.transition(turnId, context, 'hearing')) return;
+      if (talkConversationRef.current?.getSnapshot().phase === 'speaking') {
+        void talkConversationRef.current.interrupt();
       }
     },
-    onWakeDetected: (trigger) => {
+    onSpeechEnd: () => {
       const context = currentContextRef.current;
-      if (!context || !voiceModeCoordinator.markTriggered(activeTurnRef.current, context)) return false;
-      if (trigger) {
-        const routeContext = currentRouteContextRef.current;
-        const disposition = routeContext?.sessionKey === context.sessionKey
-          ? decideVoiceWakeRoute(wakeConfigurationRef.current, trigger, routeContext)
-          : 'target_changed';
-        if (disposition === 'unknown_trigger') {
-          voiceModeCoordinator.resumeListening(activeTurnRef.current, context);
-          return false;
-        }
-        if (disposition === 'target_changed') {
-          voiceModeCoordinator.reportUnavailable(activeTurnRef.current, context, 'target_changed');
-          void stopVoiceWakeRef.current();
-          return false;
-        }
-      }
-      const acceptWake = (): boolean => {
-        if (!isCurrentVoiceContext(context) || !voiceModeCoordinator.ownsTurn(activeTurnRef.current, context)) {
-          return false;
-        }
-        void presentCurrentWindowForVoiceWake().catch((error) => {
-          debugError('media', '[ComposerVoice] Could not restore the wake window:', error);
-        });
-        void talkConversationRef.current?.start(context.sessionKey);
-        void stopAssistant();
-        return true;
-      };
-      if (!trigger) return acceptWake();
-      const category = createJarvisSessionCategory(trigger);
-      if (!category) return acceptWake();
-      return useChatStore.getState().ensureSessionGroup(category)
-        .then(() => useChatStore.getState().setSessionCategory(context.sessionKey, category))
-        .then(() => acceptWake())
-        .catch((error) => {
-          debugError('gateway', '[ComposerVoice] Unable to confirm Jarvis session category:', error);
-          voiceModeCoordinator.reportUnavailable(activeTurnRef.current, context, 'session_category_unavailable');
-          void stopVoiceWakeRef.current();
-          return false;
-        });
+      if (context) voiceModeCoordinator.transition(activeTurnRef.current, context, 'thinking');
     },
     onPcmAudio: (frame) => {
       const context = currentContextRef.current;
-      if (context) voiceModeCoordinator.markTranscribing(activeTurnRef.current, context);
+      if (!context || !voiceModeCoordinator.ownsTurn(activeTurnRef.current, context)) return;
       talkConversationRef.current?.appendPcm(frame);
     },
     sessionKey: activeSessionKey,
   });
-  stopVoiceWakeRef.current = voiceWake.stop;
+  stopVoiceCaptureRef.current = voiceCapture.stop;
 
   const stopVoiceMode = useCallback(async () => {
     activeTurnRef.current = null;
-    pendingAudioCapturesRef.current.clear();
-    await talkConversationRef.current?.stop();
-    await voiceModeCoordinator.stopAndReleaseCapture();
+    await voiceModeCoordinator.stopAndReleaseResources();
   }, []);
 
-  const startDictation = useCallback(async () => {
-    closeMenu();
+  const startTalk = useCallback(async () => {
+    if (recording) setRecording(false);
+    if (voiceModeCoordinator.getSnapshot().mode !== 'off') await stopVoiceMode();
     const context = currentContextRef.current;
-    if (voiceWake.enabled) await voiceWake.stop();
-    if (!context) {
-      voiceModeCoordinator.start({
-        mode: 'dictation',
-        context: { sessionKey: activeSessionKey, connectionId: '' },
-        wakeDetectorAvailable: false,
-      });
-      activeTurnRef.current = null;
+    if (!context || !isCurrentVoiceContext(context)) {
+      activeTurnRef.current = voiceModeCoordinator.start({ context: null }).turnId;
       return;
     }
 
-    if (!isCurrentVoiceContext(context)) return;
-
+    const started = voiceModeCoordinator.start({ context });
+    activeTurnRef.current = started.turnId;
     await stopAssistant();
-    if (!isCurrentVoiceContext(context)) return;
-    pendingAudioCapturesRef.current.clear();
-    const snapshot = voiceModeCoordinator.start({
-      mode: 'dictation',
-      context,
-      wakeDetectorAvailable: false,
-    });
-    activeTurnRef.current = snapshot.turnId;
-    await voiceWake.start();
-    if (
-      !isCurrentVoiceContext(context)
-      || !voiceModeCoordinator.ownsTurn(snapshot.turnId, context)
-    ) {
-      activeTurnRef.current = null;
-      pendingAudioCapturesRef.current.clear();
-      await voiceWake.stop();
-      await voiceModeCoordinator.stopOwnedTurnAndReleaseCapture(snapshot.turnId, context);
+    if (!isCurrentVoiceContext(context) || !voiceModeCoordinator.ownsTurn(started.turnId, context)) {
+      await voiceModeCoordinator.stopOwnedTurnAndReleaseResources(started.turnId, context);
       return;
     }
-    textareaRef.current?.focus();
-  }, [
-    activeSessionKey,
-    closeMenu,
-    isCurrentVoiceContext,
-    stopAssistant,
-    textareaRef,
-    voiceWake.enabled,
-    voiceWake.start,
-    voiceWake.stop,
-  ]);
 
-  const requestWakeWord = useCallback(() => {
-    void (async () => {
-      closeMenu();
-      if (voiceWake.enabled) await voiceWake.stop();
-      pendingAudioCapturesRef.current.clear();
-      const context = currentContextRef.current;
-      if (!context) {
-        voiceModeCoordinator.start({
-          mode: 'wake_word',
-          context: { sessionKey: activeSessionKey, connectionId: '' },
-          wakeDetectorAvailable: false,
-        });
-        activeTurnRef.current = null;
-        return;
+    const coordinator = talkConversationRef.current;
+    const acceptance = await coordinator?.acceptInput(context.sessionKey);
+    if (
+      !coordinator
+      || !acceptance
+      || !coordinator.ownsLease(acceptance.lease)
+      || !voiceModeCoordinator.ownsTurn(started.turnId, context)
+    ) {
+      if (coordinator && acceptance?.lease) {
+        await coordinator.stopOwnedLease(acceptance.lease);
       }
-
-      let detectorAvailable = false;
-      let detectorKeywords: string[] = [];
-      try {
-        const detector = await getVoiceWakeDetectorStatus();
-        detectorAvailable = detector.available;
-        detectorKeywords = detector.keywords;
-      } catch (error) {
-        const snapshot = voiceModeCoordinator.start({
-          mode: 'wake_word',
-          context,
-          wakeDetectorAvailable: false,
-        });
-        activeTurnRef.current = snapshot.turnId;
-        return;
-      }
-      if (!detectorAvailable) {
-        const snapshot = voiceModeCoordinator.start({
-          mode: 'wake_word',
-          context,
-          wakeDetectorAvailable: false,
-        });
-        activeTurnRef.current = snapshot.turnId;
-        return;
-      }
-      try {
-        const configuration = await voiceWakeGatewayClient.getConfiguration();
-        if (!isCurrentVoiceContext(context)) return;
-        wakeConfigurationRef.current = configuration;
-        if (!hasCompatibleVoiceWakeTrigger(detectorKeywords, configuration)) {
-          const snapshot = voiceModeCoordinator.start({
-            mode: 'wake_word',
-            context,
-            wakeDetectorAvailable: true,
-          });
-          activeTurnRef.current = snapshot.turnId;
-          voiceModeCoordinator.reportUnavailable(snapshot.turnId, context, 'wake_trigger_model_mismatch');
-          return;
-        }
-      } catch (error) {
-        if (!isCurrentVoiceContext(context)) return;
-        const snapshot = voiceModeCoordinator.start({
-          mode: 'wake_word',
-          context,
-          wakeDetectorAvailable: true,
-        });
-        activeTurnRef.current = snapshot.turnId;
-        voiceModeCoordinator.reportUnavailable(snapshot.turnId, context, 'gateway_unavailable');
-        return;
-      }
-      const snapshot = voiceModeCoordinator.start({
-        mode: 'wake_word',
+      return;
+    }
+    const talk = acceptance.snapshot;
+    if (talk.phase === 'error' || !talk.inputAudioFormat) {
+      voiceModeCoordinator.fail(
+        started.turnId,
         context,
-        wakeDetectorAvailable: detectorAvailable,
-      });
-      activeTurnRef.current = snapshot.turnId;
-      await voiceWake.start('wake_word', { streamPcm: true });
-      if (
-        !isCurrentVoiceContext(context)
-        || !voiceModeCoordinator.ownsTurn(snapshot.turnId, context)
-      ) {
-        activeTurnRef.current = null;
-        await voiceWake.stop();
-        await voiceModeCoordinator.stopOwnedTurnAndReleaseCapture(snapshot.turnId, context);
+        talk.error ? voiceModeError(talk.error) : 'talk_unavailable',
+        talk.errorDetail,
+      );
+      return;
+    }
+
+    const captureResult = await voiceCapture.start(talk.inputAudioFormat);
+    if (
+      !captureResult.ok
+      || !isCurrentVoiceContext(context)
+      || !voiceModeCoordinator.ownsTurn(started.turnId, context)
+    ) {
+      await coordinator.stopOwnedLease(acceptance.lease);
+      if (voiceModeCoordinator.ownsTurn(started.turnId, context)) {
+        voiceModeCoordinator.fail(started.turnId, context, 'capture_failed', captureResult.ok ? null : captureResult.error);
       }
-    })();
-  }, [activeSessionKey, closeMenu, isCurrentVoiceContext, voiceWake.enabled, voiceWake.start, voiceWake.stop]);
-
-  useEffect(() => {
-    setAutoArmEnabledState(shouldAutoArmSession(activeSessionKey, runtimeTargetFingerprint));
-  }, [activeSessionKey, runtimeTargetFingerprint]);
-
-  useEffect(() => subscribeAutoArmPreference(() => {
-    const shouldArm = shouldAutoArmSession(activeSessionKey, runtimeTargetFingerprint);
-    setAutoArmEnabledState(shouldArm);
-    if (shouldArm) requestAutoArmRetry();
-    else void stopVoiceMode();
-  }), [activeSessionKey, requestAutoArmRetry, runtimeTargetFingerprint, stopVoiceMode]);
-
-  useEffect(() => {
-    if (
-      !connected
-      || historyLoading
-      || !connectionId
-      || !autoArmEnabled
-      || !shouldAutoArmSession(activeSessionKey, runtimeTargetFingerprint)
-      || voiceWake.enabled
-      || voiceMode.mode !== 'off'
-    ) {
       return;
     }
-    const attempt = `${connectionId}:${activeSessionKey}`;
-    if (autoArmAttemptRef.current === attempt) return;
-    autoArmAttemptRef.current = attempt;
-    requestWakeWord();
+    voiceModeCoordinator.transition(started.turnId, context, 'listening');
   }, [
-    activeSessionKey,
-    autoArmEnabled,
-    autoArmRevision,
-    connected,
-    connectionId,
-    historyLoading,
-    requestWakeWord,
-    runtimeTargetFingerprint,
-    voiceMode.mode,
-    voiceWake.enabled,
+    isCurrentVoiceContext,
+    recording,
+    stopAssistant,
+    stopVoiceMode,
+    voiceCapture.start,
   ]);
 
   useEffect(() => {
-    if (voiceWake.enabled) autoArmRecoveryAttemptsRef.current = 0;
-  }, [voiceWake.enabled]);
-
-  useEffect(() => {
-    if (
-      !voiceWake.error
-      || !connected
-      || historyLoading
-      || !connectionId
-      || !autoArmEnabled
-      || !shouldAutoArmSession(activeSessionKey, runtimeTargetFingerprint)
-    ) {
-      return;
+    const previousSessionKey = projectedTalkOutputSessionRef.current;
+    const sessionKey = talkConversation.sessionKey;
+    if (previousSessionKey && previousSessionKey !== sessionKey) {
+      voiceRuntime.setNativeTalkOutput(previousSessionKey, false);
     }
-    const attempt = autoArmRecoveryAttemptsRef.current;
-    autoArmRecoveryAttemptsRef.current += 1;
-    const timer = window.setTimeout(() => {
-      void voiceModeCoordinator.stopAndReleaseCapture();
-      requestAutoArmRetry();
-    }, Math.min(30_000, 1_000 * (2 ** attempt)));
-    return () => window.clearTimeout(timer);
-  }, [
-    activeSessionKey,
-    autoArmEnabled,
-    connected,
-    connectionId,
-    historyLoading,
-    requestAutoArmRetry,
-    runtimeTargetFingerprint,
-    voiceWake.error,
-  ]);
+    if (sessionKey && talkConversation.phase === 'speaking') {
+      voiceRuntime.setNativeTalkOutput(sessionKey, true);
+    } else if (sessionKey) {
+      voiceRuntime.setNativeTalkOutput(sessionKey, false);
+    }
+    projectedTalkOutputSessionRef.current = sessionKey;
 
-  const confirmVoiceDraft = useCallback(async () => {
     const context = currentContextRef.current;
-    if (!context) return;
     const turnId = activeTurnRef.current;
-    if (
-      !isCurrentVoiceContext(context)
-      || !voiceModeCoordinator.ownsTurn(turnId, context)
-    ) {
-      pendingAudioCapturesRef.current.clear();
-      activeTurnRef.current = null;
-      voiceModeCoordinator.invalidateOwnedTurn(turnId, context, 'gateway_unavailable');
-      void stopVoiceWakeRef.current();
-      return;
+    if (!context || !voiceModeCoordinator.ownsTurn(turnId, context)) return;
+    if (talkConversation.phase === 'connecting') {
+      voiceModeCoordinator.transition(turnId, context, 'preparing');
+    } else if (talkConversation.phase === 'thinking') {
+      voiceModeCoordinator.transition(turnId, context, 'thinking');
+    } else if (talkConversation.phase === 'speaking') {
+      voiceModeCoordinator.transition(turnId, context, 'speaking');
+    } else if (talkConversation.phase === 'listening' && voiceModeCoordinator.getSnapshot().phase === 'speaking') {
+      voiceModeCoordinator.transition(turnId, context, 'listening');
+    } else if (talkConversation.phase === 'error' && talkConversation.error) {
+      voiceModeCoordinator.fail(
+        turnId,
+        context,
+        voiceModeError(talkConversation.error),
+        talkConversation.errorDetail,
+      );
+      void voiceCapture.stop();
     }
-    const draft = voiceModeCoordinator.getDraft(turnId, context);
-    if (!draft) return;
+  }, [
+    talkConversation.error,
+    talkConversation.errorDetail,
+    talkConversation.phase,
+    talkConversation.sessionKey,
+    voiceCapture.stop,
+  ]);
 
-    const capture = pendingAudioCapturesRef.current.get(draft.captureId);
-    if (!capture) {
-      voiceModeCoordinator.fail(turnId, context, 'capture_failed');
-      return;
-    }
-    const base64 = capture.wavDataUrl.split(',')[1] || '';
-    if (!base64) {
-      voiceModeCoordinator.fail(turnId, context, 'capture_failed');
-      return;
-    }
-    pendingAudioCapturesRef.current.delete(draft.captureId);
-    activeTurnRef.current = null;
-    void voiceModeCoordinator.stopAndReleaseCapture();
-    await sendVoice(base64, 'audio/wav', capture.durationSec, capture.wavDataUrl);
-    requestAutoArmRetry();
-  }, [isCurrentVoiceContext, requestAutoArmRetry, sendVoice]);
+  useEffect(() => {
+    const cancelTalkOutput = (event: Event) => {
+      const detail = (event as CustomEvent<VoiceInterruptControl>).detail;
+      const coordinator = talkConversationRef.current;
+      const snapshot = coordinator?.getSnapshot();
+      if (!coordinator || !snapshot || !shouldCancelTalkOutput(snapshot, detail)) return;
+      void coordinator.interrupt();
+    };
+    window.addEventListener(VOICE_INTERRUPT_EVENT, cancelTalkOutput);
+    return () => window.removeEventListener(VOICE_INTERRUPT_EVENT, cancelTalkOutput);
+  }, []);
 
-  const discardVoiceDraft = useCallback(() => {
-    const context = currentContextRef.current;
-    const draft = voiceModeCoordinator.getSnapshot().draft;
-    if (voiceModeCoordinator.discardDraft(activeTurnRef.current, context)) {
-      if (draft?.kind === 'audio') pendingAudioCapturesRef.current.delete(draft.captureId);
-      activeTurnRef.current = null;
-      void voiceModeCoordinator.stopAndReleaseCapture();
-      requestAutoArmRetry();
-    }
-  }, [requestAutoArmRetry]);
+  useEffect(() => voiceModeCoordinator.subscribeResourceRelease(async () => {
+    await Promise.allSettled([
+      voiceCapture.stop(),
+      talkConversationRef.current?.stop() ?? Promise.resolve(),
+    ]);
+  }), [voiceCapture.stop]);
 
   useEffect(() => {
     const snapshot = voiceModeCoordinator.getSnapshot();
@@ -578,75 +313,69 @@ export function useComposerVoice({
     if (!snapshot.context) return;
     if (!context) {
       activeTurnRef.current = null;
-      pendingAudioCapturesRef.current.clear();
-      void talkConversationRef.current?.stop();
       voiceModeCoordinator.invalidate('gateway_unavailable');
-      void voiceWake.stop();
+      void voiceCapture.stop();
+      void talkConversationRef.current?.stop();
       return;
     }
     if (!sameVoiceContext(snapshot.context, context)) {
       activeTurnRef.current = null;
-      pendingAudioCapturesRef.current.clear();
-      void talkConversationRef.current?.stop();
       voiceModeCoordinator.invalidateContext(context);
-      void voiceWake.stop();
+      void voiceCapture.stop();
+      void talkConversationRef.current?.stop();
     }
-  }, [activeSessionKey, connectionId, voiceWake.stop]);
+  }, [activeSessionKey, connectionId, voiceCapture.stop]);
 
   useEffect(() => {
-    if (!voiceWake.error) return;
+    if (!voiceCapture.error) return;
     const context = currentContextRef.current;
-    if (context) voiceModeCoordinator.fail(activeTurnRef.current, context, 'capture_failed');
-  }, [voiceWake.error]);
+    if (context) {
+      voiceModeCoordinator.fail(activeTurnRef.current, context, 'capture_failed', voiceCapture.error);
+      void talkConversationRef.current?.stop();
+    }
+  }, [voiceCapture.error]);
 
   useEffect(() => () => {
     const turnId = activeTurnRef.current;
     const context = currentContextRef.current;
+    const projectedSessionKey = projectedTalkOutputSessionRef.current;
     activeTurnRef.current = null;
-    pendingAudioCapturesRef.current.clear();
-    const projectedTalkSession = projectedTalkOutputSessionRef.current;
-    if (projectedTalkSession) voiceRuntime.setNativeTalkOutput(projectedTalkSession, false);
+    projectedTalkOutputSessionRef.current = null;
+    if (projectedSessionKey) voiceRuntime.setNativeTalkOutput(projectedSessionKey, false);
     void talkConversationRef.current?.stop();
-    void stopVoiceWakeRef.current();
-    void voiceModeCoordinator.stopOwnedTurnAndReleaseCapture(turnId, context);
+    void stopVoiceCaptureRef.current();
+    void voiceModeCoordinator.stopOwnedTurnAndReleaseResources(turnId, context);
   }, []);
-
-  useEffect(() => voiceModeCoordinator.subscribeCaptureStop(() => voiceWake.stop()), [voiceWake.stop]);
 
   const startRecording = useCallback(() => {
     void (async () => {
-      closeMenu();
-      if (voiceWake.enabled || voiceWake.error || voiceMode.mode !== 'off') await stopVoiceMode();
+      if (voiceModeCoordinator.getSnapshot().mode !== 'off') await stopVoiceMode();
       await stopAssistant();
       setRecording(true);
     })();
-  }, [closeMenu, stopAssistant, stopVoiceMode, voiceMode.mode, voiceWake.enabled, voiceWake.error]);
+  }, [stopAssistant, stopVoiceMode]);
 
-  const toggleDictation = useCallback(() => {
+  const toggleTalk = useCallback(() => {
     void (async () => {
-      if (voiceWake.enabled || voiceMode.mode !== 'off' || voiceMode.draft !== null) await stopVoiceMode();
-      else await startDictation();
+      if (voiceModeCoordinator.getSnapshot().mode !== 'off') await stopVoiceMode();
+      else await startTalk();
     })();
-  }, [startDictation, stopVoiceMode, voiceMode.draft, voiceMode.mode, voiceWake.enabled]);
+  }, [startTalk, stopVoiceMode]);
 
-  const status = voiceWake.phase === 'transcribing' || voiceWake.phase === 'wake_detected'
-    ? t('input.dictationProcessing')
-    : t('input.dictationListening');
+  const startTalkAction = useCallback(() => { void startTalk(); }, [startTalk]);
+  const stopVoiceModeAction = useCallback(() => { void stopVoiceMode(); }, [stopVoiceMode]);
+
   return {
     recording,
     setRecording,
     outputActive,
-    voiceWake,
+    voiceCapture,
     voiceMode,
     talkConversation,
-    status,
     startRecording,
-    toggleDictation,
-    startDictation: () => { void startDictation(); },
-    requestWakeWord,
-    stopVoiceMode: () => { void stopVoiceMode(); },
-    confirmVoiceDraft: () => { void confirmVoiceDraft(); },
-    discardVoiceDraft,
+    startTalk: startTalkAction,
+    toggleTalk,
+    stopVoiceMode: stopVoiceModeAction,
     sendVoice: (base64: string, mimeType: string, durationSec: number, previewUrl: string) => {
       void sendVoice(base64, mimeType, durationSec, previewUrl);
     },

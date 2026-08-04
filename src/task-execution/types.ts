@@ -1,4 +1,4 @@
-export type TaskExecutionSource = 'chat' | 'quick_chat' | 'jarvis';
+export type TaskExecutionSource = 'chat' | 'quick_chat';
 
 export type TaskRunStatus =
   | 'pending'
