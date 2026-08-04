@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   selectActiveSessionThinking,
   selectActiveSessionTyping,
+  selectSessionRequestActive,
   useChatStore,
   type Session,
 } from './chatStore';
@@ -31,6 +32,17 @@ function seedSessions(activeSessionKey = MAIN_KEY) {
     manualModelOverride: null,
   });
 }
+
+test('a session request stays interruptible while its Gateway send awaits a stream', () => {
+  const sessionKey = 'agent:main:pending-send';
+  const inactive = { typingBySession: {}, sendingBySession: {} };
+  const sending = { typingBySession: {}, sendingBySession: { [sessionKey]: true } };
+  const streaming = { typingBySession: { [sessionKey]: true }, sendingBySession: {} };
+
+  assert.equal(selectSessionRequestActive(inactive, sessionKey), false);
+  assert.equal(selectSessionRequestActive(sending, sessionKey), true);
+  assert.equal(selectSessionRequestActive(streaming, sessionKey), true);
+});
 
 test('setSessionModel updates the session row and active currentModel', () => {
   seedSessions(MAIN_KEY);

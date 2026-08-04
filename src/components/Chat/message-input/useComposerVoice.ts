@@ -24,7 +24,7 @@ import { TalkConversationCoordinator, shouldCancelTalkOutput } from '@/services/
 import { VOICE_INTERRUPT_EVENT, type VoiceInterruptControl } from '@/services/voice/types';
 import { createJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
 import { shouldAutoArmSession, subscribeAutoArmPreference } from '@/services/voice/VoiceWakePreference';
-import { useChatStore } from '@/stores/chatStore';
+import { selectSessionRequestActive, useChatStore } from '@/stores/chatStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { debugError } from '@/utils/debugLog';
 import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
@@ -218,7 +218,7 @@ export function useComposerVoice({
 
   const stopAssistant = useCallback(async () => {
     voiceRuntime.interruptGlobally(activeSessionKey);
-    if (!useChatStore.getState().typingBySession[activeSessionKey]) return;
+    if (!selectSessionRequestActive(useChatStore.getState(), activeSessionKey)) return;
     await gateway.abortChat(activeSessionKey, activeSessionId)
       .catch((error) => debugError('gateway', '[ComposerVoice] Unable to stop response:', error));
   }, [activeSessionId, activeSessionKey]);

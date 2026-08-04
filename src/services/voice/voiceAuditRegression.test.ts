@@ -42,11 +42,9 @@ test('BUG-07 all direct chat send paths interrupt voice first', () => {
   const input = read('../../components/Chat/MessageInput.tsx');
   const composerVoice = read('../../components/Chat/message-input/useComposerVoice.ts');
   const runtime = read('../../runtime/JarvisVoiceRuntime.tsx');
-  const interruption = read('../../components/Chat/message-input/useComposerInterruption.ts');
   const chat = read('../../components/Chat/ChatView.tsx');
   const quick = read('../../pages/QuickChatPage.tsx');
   assert.match(input, /useComposerInterruption\(\{/);
-  assert.match(interruption, /if \(state\.typingBySession\[activeSessionKey\] \|\| voiceOutputActive\)/);
   assert.match(input, /useJarvisVoiceRuntime\(\)/);
   assert.match(runtime, /<VoiceWakeOverlay/);
   assert.match(runtime, /useComposerVoice\(\{/);

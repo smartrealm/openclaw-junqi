@@ -45,3 +45,11 @@ test('dictation and confirmation fence the attested Gateway identity around asyn
   assert.match(confirm, /invalidateOwnedTurn\(turnId, context, 'gateway_unavailable'\)/);
   assert.ok(confirm.indexOf('isCurrentVoiceContext(context)') < confirm.indexOf('getDraft(turnId, context)'));
 });
+
+test('voice-triggered interruption keeps a pending Gateway send in the native Stop path', () => {
+  const stopStart = source.indexOf('const stopAssistant = useCallback(async () =>');
+  const stopEnd = source.indexOf('const voiceWake = useVoiceWake', stopStart);
+  const stopAssistant = source.slice(stopStart, stopEnd);
+  assert.match(stopAssistant, /selectSessionRequestActive\(useChatStore\.getState\(\), activeSessionKey\)/);
+  assert.match(stopAssistant, /gateway\.abortChat\(activeSessionKey, activeSessionId\)/);
+});

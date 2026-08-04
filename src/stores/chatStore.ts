@@ -577,6 +577,12 @@ interface ChatState {
 export const selectActiveSessionTyping = (state: ChatState): boolean =>
   Boolean(state.typingBySession[state.activeSessionKey]);
 
+/** A request remains interruptible while its Gateway send is awaiting a stream. */
+export const selectSessionRequestActive = (
+  state: Pick<ChatState, 'typingBySession' | 'sendingBySession'>,
+  sessionKey: string,
+): boolean => Boolean(state.typingBySession[sessionKey] || state.sendingBySession[sessionKey]);
+
 const EMPTY_THINKING_STATE = Object.freeze({ runId: null, text: '' });
 
 export const selectActiveSessionThinking = (

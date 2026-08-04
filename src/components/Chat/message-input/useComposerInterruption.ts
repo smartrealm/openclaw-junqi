@@ -1,7 +1,7 @@
 import { useCallback, useEffect, type RefObject, type SetStateAction } from 'react';
 import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
-import { useChatStore } from '@/stores/chatStore';
+import { selectSessionRequestActive, useChatStore } from '@/stores/chatStore';
 import { debugError } from '@/utils/debugLog';
 import type { ComposerMenuId } from './useComposerMenu';
 
@@ -13,6 +13,14 @@ interface UseComposerInterruptionOptions {
   voiceOutputActive: boolean;
   textareaRef: RefObject<HTMLTextAreaElement>;
   setText: (next: SetStateAction<string>) => void;
+}
+
+export function shouldStopComposerResponse(
+  state: Pick<ReturnType<typeof useChatStore.getState>, 'typingBySession' | 'sendingBySession'>,
+  sessionKey: string,
+  voiceOutputActive: boolean,
+): boolean {
+  return selectSessionRequestActive(state, sessionKey) || voiceOutputActive;
 }
 
 export function useComposerInterruption({
@@ -27,7 +35,7 @@ export function useComposerInterruption({
   const stopActiveResponse = useCallback(async () => {
     voiceRuntime.interruptGlobally(activeSessionKey);
     const state = useChatStore.getState();
-    if (!state.typingBySession[activeSessionKey] && !state.sendingBySession[activeSessionKey]) return;
+    if (!selectSessionRequestActive(state, activeSessionKey)) return;
     await gateway.abortChat(activeSessionKey, activeSessionId)
       .catch((error) => debugError('gateway', '[ComposerInterruption] Unable to stop response:', error));
   }, [activeSessionId, activeSessionKey]);
@@ -43,7 +51,7 @@ export function useComposerInterruption({
       }
 
       const state = useChatStore.getState();
-      if (state.typingBySession[activeSessionKey] || voiceOutputActive) {
+      if (shouldStopComposerResponse(state, activeSessionKey, voiceOutputActive)) {
         event.preventDefault();
         void stopActiveResponse();
         return;
