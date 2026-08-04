@@ -60,6 +60,7 @@ import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import { isSessionDeleted } from '@/utils/sessionLifecycle';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
 import { startRecoverableTask } from '@/utils/recoverableTask';
+import { scheduleRecoverableSessionHistoryRefresh } from '@/services/chat/recoverableHistoryRefresh';
 import {
   buildCollaborationChatTimeline,
   type ChatTimelineItem,
@@ -877,9 +878,12 @@ function ChatViewContent() {
   }, [handleRefresh]);
 
   const refreshActiveLeaf = useCallback((sessionKey: string) => {
-    void loadHistory(sessionKey, { force: true, background: true })
-      .catch((error) => debugError('app', '[ChatView] Active leaf refresh failed:', error));
-  }, [loadHistory]);
+    scheduleRecoverableSessionHistoryRefresh(
+      sessionKey,
+      loadHistory,
+      reportBackgroundHistoryFailure,
+    );
+  }, [loadHistory, reportBackgroundHistoryFailure]);
 
   // 仪表盘和命令面板的快捷指令统一发送到当前活动会话。
   const handleQuickAction = useCallback(async (e: Event) => {

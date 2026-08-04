@@ -49,7 +49,9 @@ test('会话文件读取绑定当前会话和 Gateway 连接', async () => {
   });
 
   assert.equal((await client.list(` ${sessionKey} `, { agentId: ' main ' })).browser?.entries[0]?.name, 'src');
-  assert.equal((await client.get(sessionKey, ' src/main.ts ', 'main')).file.content, 'export {};');
+  const loaded = await client.get(sessionKey, ' src/main.ts ', 'main');
+  assert.equal(loaded.file.content, 'export {};');
+  assert.equal(loaded.gatewayConnectionId, 'gateway-a');
   assert.deepEqual(calls, [
     { method: 'sessions.files.list', params: { sessionKey, agentId: 'main' } },
     { method: 'sessions.files.get', params: { sessionKey, path: 'src/main.ts', agentId: 'main' } },
@@ -90,7 +92,8 @@ test('会话文件写入只走管理员请求并保留原生 CAS 冲突', async 
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
     requestFenced: async () => { throw new Error('写入不应使用日常连接'); },
-    requestPrivileged: async (method, params) => {
+    requestPrivileged: async (method, params, expectedConnectionId) => {
+      assert.equal(expectedConnectionId, 'gateway-a');
       calls.push({ method, params });
       return {
         sessionKey,
@@ -98,7 +101,7 @@ test('会话文件写入只走管理员请求并保留原生 CAS 冲突', async 
       };
     },
   });
-  assert.equal((await client.set(sessionKey, 'src/main.ts', 'next\n', hash, 'main')).file.hash, hash);
+  assert.equal((await client.set(sessionKey, 'src/main.ts', 'next\n', hash, 'main', 'gateway-a')).file.hash, hash);
   assert.deepEqual(calls, [{
     method: 'sessions.files.set',
     params: { sessionKey, path: 'src/main.ts', content: 'next\n', expectedHash: hash, agentId: 'main' },
@@ -118,5 +121,31 @@ test('会话文件写入只走管理员请求并保留原生 CAS 冲突', async 
   await assert.rejects(
     conflict.set(sessionKey, 'src/main.ts', 'next\n', hash),
     (error: unknown) => error instanceof OpenClawSessionFileConflictError && error.currentHash === 'b'.repeat(64),
+  );
+
+  let privilegedCalls = 0;
+  const switched = new OpenClawSessionFilesClient({
+    captureConnectionId: () => 'gateway-b',
+    isConnectionCurrent: (connectionId) => connectionId === 'gateway-b',
+    requestFenced: async () => null,
+    requestPrivileged: async () => { privilegedCalls += 1; return null; },
+  });
+  await assert.rejects(
+    switched.set(sessionKey, 'src/main.ts', 'next\n', hash, 'main', 'gateway-a'),
+    OpenClawSessionFilesUnavailableError,
+  );
+  assert.equal(privilegedCalls, 0);
+
+  const unavailable = new OpenClawSessionFilesClient({
+    captureConnectionId: () => 'gateway-a',
+    isConnectionCurrent: () => true,
+    requestFenced: async () => null,
+    requestPrivileged: async () => {
+      throw new GatewayRpcError('missing method', 'METHOD_NOT_FOUND');
+    },
+  });
+  await assert.rejects(
+    unavailable.set(sessionKey, 'src/main.ts', 'next\n', hash, 'main', 'gateway-a'),
+    OpenClawSessionFilesUnavailableError,
   );
 });

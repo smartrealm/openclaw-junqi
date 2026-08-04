@@ -1532,6 +1532,13 @@
       "parent": "返回上層目錄",
       "touched": "會話已觸及",
       "workspace": "會話工作區",
+      "editor": "會話檔案編輯器",
+      "save": "儲存",
+      "saving": "正在儲存",
+      "saved": "已透過 Gateway 儲存",
+      "conflict": "檔案已在 Gateway 中變更；保留本機草稿，請重新讀取後再處理。",
+      "reload": "重新讀取並取代草稿",
+      "saveFailed": "Gateway 未確認檔案已儲存。",
       "kind": { "modified": "修改", "read": "讀取" }
     },
     "messageCount": "{{count}} 條消息",

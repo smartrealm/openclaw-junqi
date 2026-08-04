@@ -1572,6 +1572,13 @@
       "parent": "Go to parent directory",
       "touched": "Touched in session",
       "workspace": "Session workspace",
+      "editor": "Session file editor",
+      "save": "Save",
+      "saving": "Saving",
+      "saved": "Saved through Gateway",
+      "conflict": "The file changed in Gateway. Your local draft is retained; reload before deciding how to proceed.",
+      "reload": "Reload and replace draft",
+      "saveFailed": "Gateway did not confirm that the file was saved.",
       "kind": { "modified": "Modified", "read": "Read" }
     },
     "messageCount": "{{count}} messages",

@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import {
+  GatewayConnectionFenceError,
   GatewayConnection,
   GatewayDisconnectedError,
   GatewayRpcError,
@@ -174,6 +175,7 @@ export type {
   OpenClawSessionFilesGet,
   OpenClawSessionFilesList,
 } from './OpenClawSessionFilesClient';
+export { OpenClawSessionFileConflictError } from './OpenClawSessionFilesClient';
 export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
 export type { OpenClawProviderUsageSnapshot } from './OpenClawProviderUsageClient';
 export type {
@@ -1027,7 +1029,12 @@ const sessionFiles = new OpenClawSessionFilesClient({
     params,
     expectedConnectionId,
   ),
-  requestPrivileged: (method, params) => requestPrivileged(method, params),
+  requestPrivileged: (method, params, expectedConnectionId) => {
+    if (!connection.isConnected() || connection.getAttestedConnectionId() !== expectedConnectionId) {
+      throw new GatewayConnectionFenceError(expectedConnectionId, connection.getAttestedConnectionId());
+    }
+    return requestPrivileged(method, params);
+  },
 });
 const approvalClient = new OpenClawApprovalClient(
   (method, params) => requestApprovals(method, params),
@@ -1459,8 +1466,9 @@ export const gateway = {
     content: string,
     expectedHash: string,
     agentId?: string,
+    expectedConnectionId?: string,
   ) {
-    return sessionFiles.set(sessionKey, path, content, expectedHash, agentId);
+    return sessionFiles.set(sessionKey, path, content, expectedHash, agentId, expectedConnectionId);
   },
   async listSessionArtifacts(sessionKey: string, agentId?: string): Promise<ArtifactSummary[]> {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);

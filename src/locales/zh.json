@@ -1561,6 +1561,13 @@
       "parent": "返回上级目录",
       "touched": "会话已触及",
       "workspace": "会话工作区",
+      "editor": "会话文件编辑器",
+      "save": "保存",
+      "saving": "正在保存",
+      "saved": "已通过 Gateway 保存",
+      "conflict": "文件已在 Gateway 中变更；保留本地草稿，请重读后再处理。",
+      "reload": "重读并替换草稿",
+      "saveFailed": "Gateway 未确认文件已保存。",
       "kind": { "modified": "修改", "read": "读取" }
     },
     "messageCount": "{{count}} 条消息",

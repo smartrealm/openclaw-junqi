@@ -58,6 +58,8 @@ export interface OpenClawSessionFilesGet {
   readonly sessionKey: string;
   readonly root?: string;
   readonly file: OpenClawSessionFile;
+  /** 仅供 JunQi 将读取快照与同一认证 Gateway 连接绑定，不属于 Gateway wire 响应。 */
+  readonly gatewayConnectionId: string;
 }
 
 export interface OpenClawSessionFilesClientDependencies {
@@ -68,7 +70,11 @@ export interface OpenClawSessionFilesClientDependencies {
     params: Record<string, unknown>,
     connectionId: string,
   ) => Promise<unknown>;
-  requestPrivileged?: (method: string, params: Record<string, unknown>) => Promise<unknown>;
+  requestPrivileged?: (
+    method: string,
+    params: Record<string, unknown>,
+    expectedConnectionId: string,
+  ) => Promise<unknown>;
 }
 
 export class OpenClawSessionFilesResponseError extends Error {
@@ -273,7 +279,11 @@ function parseList(value: unknown, expectedSessionKey: string): OpenClawSessionF
   };
 }
 
-function parseGet(value: unknown, expectedSessionKey: string): OpenClawSessionFilesGet {
+function parseGet(
+  value: unknown,
+  expectedSessionKey: string,
+  gatewayConnectionId: string,
+): OpenClawSessionFilesGet {
   const source = record(value);
   const sessionKey = nonEmptyText(source?.sessionKey);
   const root = optionalText(source?.root);
@@ -283,6 +293,7 @@ function parseGet(value: unknown, expectedSessionKey: string): OpenClawSessionFi
   return {
     sessionKey,
     file: parseFile(source.file),
+    gatewayConnectionId,
     ...(root === undefined ? {} : { root }),
   };
 }
@@ -325,7 +336,7 @@ export class OpenClawSessionFilesClient {
   ): Promise<OpenClawSessionFilesList> {
     const key = requireOpenClawSessionTarget(sessionKey);
     const normalizedAgentId = optionalAgentId(options.agentId);
-    const response = await this.request(OPENCLAW_SESSIONS_FILES_LIST_METHOD, key, {
+    const { response } = await this.request(OPENCLAW_SESSIONS_FILES_LIST_METHOD, key, {
       ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
       ...(options.path !== undefined ? { path: options.path } : {}),
       ...(options.search !== undefined ? { search: options.search } : {}),
@@ -342,11 +353,11 @@ export class OpenClawSessionFilesClient {
     const targetPath = nonEmptyText(path);
     if (!targetPath) throw new OpenClawSessionFilesResponseError();
     const normalizedAgentId = optionalAgentId(agentId);
-    const response = await this.request(OPENCLAW_SESSIONS_FILES_GET_METHOD, key, {
+    const { response, connectionId } = await this.request(OPENCLAW_SESSIONS_FILES_GET_METHOD, key, {
       path: targetPath,
       ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
     });
-    return parseGet(response, key);
+    return parseGet(response, key, connectionId);
   }
 
   async set(
@@ -355,6 +366,7 @@ export class OpenClawSessionFilesClient {
     content: string,
     expectedHash: string,
     agentId?: string,
+    expectedConnectionId?: string,
   ): Promise<OpenClawSessionFilesGet> {
     const key = requireOpenClawSessionTarget(sessionKey);
     const targetPath = nonEmptyText(path);
@@ -367,6 +379,12 @@ export class OpenClawSessionFilesClient {
         'No privileged Gateway requester is available for session file writes',
       );
     }
+    const connectionId = expectedConnectionId?.trim() || this.dependencies.captureConnectionId();
+    if (!connectionId || !this.dependencies.isConnectionCurrent(connectionId)) {
+      throw new OpenClawSessionFilesUnavailableError(
+        'The Gateway connection that supplied this session file is no longer current',
+      );
+    }
     const normalizedAgentId = optionalAgentId(agentId);
     try {
       const response = await this.dependencies.requestPrivileged(OPENCLAW_SESSIONS_FILES_SET_METHOD, {
@@ -375,11 +393,28 @@ export class OpenClawSessionFilesClient {
         content,
         expectedHash: expected,
         ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
-      });
-      return parseGet(response, key);
+      }, connectionId);
+      if (!this.dependencies.isConnectionCurrent(connectionId)) {
+        throw new OpenClawSessionFilesUnavailableError(
+          'Gateway connection changed while writing a session file',
+        );
+      }
+      const result = parseGet(response, key, connectionId);
+      if (!result.file.hash) throw new OpenClawSessionFilesResponseError();
+      return result;
     } catch (error) {
       const conflict = sessionFileConflict(error);
       if (conflict) throw conflict;
+      if (unsupportedMethod(error)) {
+        throw new OpenClawSessionFilesUnavailableError(
+          `The connected OpenClaw Gateway does not support ${OPENCLAW_SESSIONS_FILES_SET_METHOD}`,
+        );
+      }
+      if (connectionUnavailable(error)) {
+        throw new OpenClawSessionFilesUnavailableError(
+          'The Gateway connection that supplied this session file is no longer current',
+        );
+      }
       throw error;
     }
   }
@@ -388,7 +423,7 @@ export class OpenClawSessionFilesClient {
     method: typeof OPENCLAW_SESSIONS_FILES_LIST_METHOD | typeof OPENCLAW_SESSIONS_FILES_GET_METHOD,
     sessionKey: string,
     params: Record<string, unknown>,
-  ): Promise<unknown> {
+  ): Promise<{ response: unknown; connectionId: string }> {
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId) {
       throw new OpenClawSessionFilesUnavailableError(
@@ -406,7 +441,7 @@ export class OpenClawSessionFilesClient {
           'Gateway connection changed while reading session files',
         );
       }
-      return response;
+      return { response, connectionId };
     } catch (error) {
       if (unsupportedMethod(error)) {
         throw new OpenClawSessionFilesUnavailableError(
