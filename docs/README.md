@@ -127,6 +127,7 @@ docs/
 - [OpenClaw Stop 发送中状态围栏审计](quality/openclaw-stop-dispatch-state-fence-audit-2026-08-04.md)
 - [OpenClaw Stop 跨入口请求状态围栏审计](quality/openclaw-stop-cross-entry-request-fence-audit-2026-08-04.md)
 - [OpenClaw Stop 派发前围栏审计](quality/openclaw-stop-pre-dispatch-fence-audit-2026-08-04.md)
+- [OpenClaw Agent 身份投影](quality/openclaw-agent-identity-projection-2026-08-04.md)
 - [OpenClaw Composer 队列权威与灵动岛预览可见性审计](quality/openclaw-composer-queue-authority-2026-08-03.md)
 - [灵动岛显隐生命周期审计](quality/dynamic-island-visibility-lifecycle-audit-2026-08-04.md)
 - [OpenClaw 本地发送队列交付原子性审计](quality/openclaw-local-send-queue-dispatch-atomicity-audit-2026-08-04.md)

@@ -10,6 +10,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useOpenClawAgentIdentity } from '@/hooks/useOpenClawAgentIdentity';
 import { getDirection } from '@/i18n';
 import type { MessageBlock, Artifact, MetaItem } from '@/types/RenderBlock';
 import type { ResponseGroupMessagePosition } from '@/processing/buildResponseGroups';
@@ -210,11 +211,14 @@ function agentIdFromSessionKey(sessionKey?: string | null): string {
 
 function useAgentPresentation(sessionKey?: string | null) {
   const { t } = useTranslation();
+  const connected = useChatStore((state) => state.connected);
   const agents = useGatewayDataStore((state) => state.agents);
+  const identity = useOpenClawAgentIdentity(sessionKey, connected);
   const agentId = agentIdFromSessionKey(sessionKey);
-  const name = agents.find((agent) => agent.id === agentId)?.name
+  const fallbackName = agents.find((agent) => agent.id === agentId)?.name
     || (agentId === 'main' ? t('agents.mainAgent') : agentId);
-  return { name, letter: name.charAt(0) || 'M' };
+  const name = identity.identity?.name || fallbackName;
+  return { name, letter: name.charAt(0) || 'M', marker: identity.identity?.emoji };
 }
 
 export function AssistantResponseAvatar({
@@ -234,7 +238,9 @@ export function AssistantResponseAvatar({
       style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--aegis-primary)), rgb(var(--aegis-primary-deep)))' }}
       aria-label={agent.name}
     >
-      {agent.name === 'Claude Code' ? (
+      {agent.marker ? (
+        <span className="max-w-5 overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-none" aria-hidden>{agent.marker}</span>
+      ) : agent.name === 'Claude Code' ? (
         <Sparkles size={14} className="text-white" />
       ) : agent.name === 'Codex' ? (
         <Bot size={14} className="text-white" />
