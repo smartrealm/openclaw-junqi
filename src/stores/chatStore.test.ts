@@ -750,6 +750,24 @@ test('native session group catalog stays transient and preserves Gateway display
   }
 });
 
+test('会话组仅在 Gateway 确认后写入瞬态目录', async () => {
+  const ensureSessionGroup = gateway.ensureSessionGroup;
+  Object.assign(gateway, {
+    ensureSessionGroup: async () => [
+      { name: 'Existing', position: 0 },
+      { name: 'Jarvis: JunQi', position: 1 },
+    ],
+  });
+
+  try {
+    await useChatStore.getState().ensureSessionGroup('Jarvis: JunQi');
+    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, ['Existing', 'Jarvis: JunQi']);
+    assert.equal(useChatStore.getState().sessionGroupCatalogAvailability, 'ready');
+  } finally {
+    Object.assign(gateway, { ensureSessionGroup });
+  }
+});
+
 test('unsupported native group catalog does not create a local catalog', async () => {
   const listSessionGroups = gateway.listSessionGroups;
   Object.assign(gateway, {

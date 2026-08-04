@@ -57,6 +57,18 @@ export function parseOpenClawSessionGroups(value: unknown): readonly OpenClawSes
   return [...groups].sort((left, right) => left.position - right.position);
 }
 
+function requiredGroupName(value: string): string {
+  const name = value.trim();
+  if (!name) throw new OpenClawSessionGroupsResponseError();
+  return name;
+}
+
+function parseMutationResult(value: unknown): readonly OpenClawSessionGroup[] {
+  const source = record(value);
+  if (!source || source.ok !== true) throw new OpenClawSessionGroupsResponseError();
+  return parseOpenClawSessionGroups(source);
+}
+
 /** Read-only OpenClaw group catalog adapter. It never synthesizes a local catalog. */
 export class OpenClawSessionGroupsClient {
   constructor(private readonly request: OpenClawSessionGroupsRequester) {}
@@ -66,6 +78,25 @@ export class OpenClawSessionGroupsClient {
       return parseOpenClawSessionGroups(
         await this.request<unknown>('sessions.groups.list', {}),
       );
+    } catch (error) {
+      if (unsupportedMethod(error)) throw new OpenClawSessionGroupsUnsupportedError();
+      throw error;
+    }
+  }
+
+  /** 以刚读取的 Gateway 目录追加一个名称，绝不合成客户端目录。 */
+  async ensure(name: string): Promise<readonly OpenClawSessionGroup[]> {
+    const target = requiredGroupName(name);
+    const current = await this.list();
+    if (current.some((group) => group.name === target)) return current;
+    try {
+      const groups = parseMutationResult(await this.request<unknown>('sessions.groups.put', {
+        names: [...current.map((group) => group.name), target],
+      }));
+      if (!groups.some((group) => group.name === target)) {
+        throw new OpenClawSessionGroupsResponseError();
+      }
+      return groups;
     } catch (error) {
       if (unsupportedMethod(error)) throw new OpenClawSessionGroupsUnsupportedError();
       throw error;

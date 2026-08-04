@@ -54,3 +54,21 @@ test('maps only explicit unsupported responses and rejects malformed catalogs', 
   await assert.rejects(malformed.list(), OpenClawSessionGroupsResponseError);
   await assert.rejects(denied.list(), GatewayRpcError);
 });
+
+test('仅以 Gateway 目录追加并确认新会话组', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const client = new OpenClawSessionGroupsClient(async (method, params) => {
+    calls.push({ method, params });
+    if (method === 'sessions.groups.list') return { groups: [{ name: 'Existing', position: 0 }] } as never;
+    return { ok: true, groups: [{ name: 'Existing', position: 0 }, { name: 'Jarvis: JunQi', position: 1 }] } as never;
+  });
+
+  assert.deepEqual(await client.ensure(' Jarvis: JunQi '), [
+    { name: 'Existing', position: 0 },
+    { name: 'Jarvis: JunQi', position: 1 },
+  ]);
+  assert.deepEqual(calls, [
+    { method: 'sessions.groups.list', params: {} },
+    { method: 'sessions.groups.put', params: { names: ['Existing', 'Jarvis: JunQi'] } },
+  ]);
+});

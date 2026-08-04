@@ -1671,6 +1671,9 @@ export const gateway = {
   async listSessionGroups() {
     return sessionGroups.list();
   },
+  async ensureSessionGroup(name: string) {
+    return sessionGroups.ensure(name);
+  },
   async updateAgentParams(agentId: string, params: Record<string, unknown>) {
     return requestPrivileged('agents.update', { agentId, params });
   },

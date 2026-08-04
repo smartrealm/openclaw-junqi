@@ -78,6 +78,7 @@ export function SessionActionsMenu({
     markSessionUnread,
     setSessionArchived,
     setSessionCategory,
+    ensureSessionGroup,
     sessionGroupCatalog,
     refreshSessionGroupCatalog,
   } = useChatStore();
@@ -125,6 +126,7 @@ export function SessionActionsMenu({
     try {
       const category = newCategory.trim();
       if (!category) return;
+      await ensureSessionGroup(category);
       await setSessionCategory(session.key, category);
       setNewCategory('');
       onDismiss();

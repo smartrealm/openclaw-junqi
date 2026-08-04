@@ -509,6 +509,8 @@ interface ChatState {
   setSessionArchived: (key: string, archived: boolean) => Promise<void>;
   markSessionUnread: (key: string) => Promise<void>;
   setSessionCategory: (key: string, category: string | null) => Promise<void>;
+  /** 确认 Gateway 会话组目录包含名称，不持久化客户端副本。 */
+  ensureSessionGroup: (name: string) => Promise<void>;
   /** Gateway-owned category catalog; never persisted or locally synthesized. */
   sessionGroupCatalog: readonly string[];
   sessionGroupCatalogAvailability: 'unknown' | 'ready' | 'unavailable';
@@ -1743,6 +1745,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
           : { groupId: undefined, category: null }),
       })),
     }));
+  },
+  ensureSessionGroup: async (name) => {
+    const groups = await gateway.ensureSessionGroup(name);
+    set({
+      sessionGroupCatalog: groups.map((group) => group.name),
+      sessionGroupCatalogAvailability: 'ready',
+    });
   },
   sessionGroupCatalog: [],
   sessionGroupCatalogAvailability: 'unknown',

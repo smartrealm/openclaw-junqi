@@ -293,7 +293,8 @@ export function useComposerVoice({
       if (!trigger) return acceptWake();
       const category = createJarvisSessionCategory(trigger);
       if (!category) return acceptWake();
-      return useChatStore.getState().setSessionCategory(context.sessionKey, category)
+      return useChatStore.getState().ensureSessionGroup(category)
+        .then(() => useChatStore.getState().setSessionCategory(context.sessionKey, category))
         .then(() => acceptWake())
         .catch((error) => {
           debugError('gateway', '[ComposerVoice] Unable to confirm Jarvis session category:', error);
