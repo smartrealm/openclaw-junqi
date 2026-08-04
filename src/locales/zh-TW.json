@@ -1370,6 +1370,7 @@
     "fullMessageUnavailable": "完整訊息無法使用",
     "sendFailed": "傳送失敗",
     "context": "上下文",
+    "assistant": "助理",
     "assistantPreparing": "助理正在準備回覆",
     "loadFullMessage": "載入完整訊息",
     "sending": "傳送中",

@@ -8,7 +8,6 @@ import {
   Kanban, Wrench, Brain, CheckCircle2, Info, GitFork, History,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useOpenClawAgentIdentity } from '@/hooks/useOpenClawAgentIdentity';
 import { getDirection } from '@/i18n';
@@ -24,6 +23,7 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { createChatMessagePreview, type ChatMessagePreview } from './chatMessagePreview';
 import { ChatMarkdownRenderer, ChatMediaFallback } from './ChatMarkdownRenderer';
 import { ChatIconButton } from './ChatIconButton';
+import { resolveAssistantPresentation } from './assistantPresentation';
 
 const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
 const AudioPlayer = lazy(() => import('./AudioPlayer').then((m) => ({ default: m.AudioPlayer })));
@@ -203,22 +203,11 @@ interface MessageBubbleProps {
   };
 }
 
-function agentIdFromSessionKey(sessionKey?: string | null): string {
-  if (!sessionKey) return 'main';
-  const parts = sessionKey.split(':');
-  return parts[0] === 'agent' && parts[1] ? parts[1] : 'main';
-}
-
 function useAgentPresentation(sessionKey?: string | null) {
   const { t } = useTranslation();
   const connected = useChatStore((state) => state.connected);
-  const agents = useGatewayDataStore((state) => state.agents);
   const identity = useOpenClawAgentIdentity(sessionKey, connected);
-  const agentId = agentIdFromSessionKey(sessionKey);
-  const fallbackName = agents.find((agent) => agent.id === agentId)?.name
-    || (agentId === 'main' ? t('agents.mainAgent') : agentId);
-  const name = identity.identity?.name || fallbackName;
-  return { name, letter: name.charAt(0) || 'M', marker: identity.identity?.emoji };
+  return resolveAssistantPresentation(identity.identity, t('chat.assistant'));
 }
 
 export function AssistantResponseAvatar({

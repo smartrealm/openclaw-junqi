@@ -23,8 +23,8 @@ from the targeted session and its agent identity configuration.
 1. Add a fenced `agent.identity.get` client with strict response decoding and a structured unavailable state.
 2. Cache successful identity reads only within the current attested Gateway connection and session key.
 3. Reuse the resolved name and configured marker in the assistant avatar, response footer, QuickChat, and typing
-   indicator. Existing configured-agent presentation remains only as visual continuity when the official read is
-   unavailable; it neither creates local identity state nor reports an effective identity.
+   indicator. When the official read is unavailable, show only the localized generic assistant label; do not derive
+   a name or marker from a session key or `agents.list` entry.
 4. Decode official avatar metadata but do not render the returned URL until JunQi has an authenticated,
    credential-scoped avatar media bridge equivalent to the upstream contract.
 
@@ -36,8 +36,8 @@ from the targeted session and its agent identity configuration.
 
 ## Validation
 
-- Focused Gateway-client regression tests cover request shape, strict decode, unavailable-method behavior, and
-  connection fencing.
+- Focused Gateway-client and presentation regression tests cover request shape, strict decode, unavailable-method
+  behavior, connection fencing, and the generic fallback.
 - `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm verify:openclaw-docs`, and `git diff --check` passed.
 
 ## Unverified boundaries

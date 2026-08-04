@@ -1410,6 +1410,7 @@
     "fullMessageUnavailable": "Full message unavailable",
     "sendFailed": "Send failed",
     "context": "Context",
+    "assistant": "Assistant",
     "assistantPreparing": "Assistant is preparing a response",
     "loadFullMessage": "Load full message",
     "sending": "Sending",
