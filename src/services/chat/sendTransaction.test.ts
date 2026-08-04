@@ -137,55 +137,6 @@ test('an ambiguous transport result stays pending until official reconciliation'
   assert.deepEqual(typing, [true]);
 });
 
-test('OpenClaw `/btw` bypasses transcript, local queue, typing, and Task checkpoints', async () => {
-  const messages = new Map<string, ChatMessage>();
-  const typing: boolean[] = [];
-  const queued: unknown[] = [];
-  const calls: Array<{ message: string; sessionKey: string; sideQuestion?: boolean }> = [];
-  const coordinator = new ChatSendCoordinator(
-    {
-      sendMessage: async (message, _attachments, sessionKey, identity) => {
-        calls.push({ message, sessionKey: sessionKey ?? '', sideQuestion: identity?.sideQuestion });
-        return { runId: identity?.clientMessageId, status: 'started' };
-      },
-    },
-    () => ({
-      addMessage(message) { messages.set(message.id, message); },
-      updateMessage(_sessionKey, id, patch) {
-        const current = messages.get(id);
-        if (current) messages.set(id, { ...current, ...patch });
-      },
-      setIsTyping(value) { typing.push(value); },
-      typingBySession: { 'session-a': true },
-      enqueueMessage(_sessionKey, message) { queued.push(message); },
-    }),
-    {
-      prepareSend: async () => { throw new Error('side question must not create a Task checkpoint'); },
-      prepareSteer: async () => { throw new Error('side question must not steer'); },
-      isRunStopRequested: async () => false,
-      settleRun: async () => {},
-      reportPersistenceFailure() {},
-    },
-  );
-
-  const result = await coordinator.send({
-    sessionKey: 'session-a',
-    message: '/btw: what changed?',
-    clientMessageId: 'btw-client',
-    queueIfBusy: true,
-  });
-
-  assert.deepEqual(result, { runId: 'btw-client', status: 'started' });
-  assert.deepEqual(calls, [{
-    message: '/btw: what changed?',
-    sessionKey: 'session-a',
-    sideQuestion: true,
-  }]);
-  assert.equal(messages.size, 0);
-  assert.deepEqual(typing, []);
-  assert.deepEqual(queued, []);
-});
-
 test('CHAT-02 active sessions forward normal messages to the Gateway queue authority', async () => {
   const messages = new Map<string, ChatMessage>();
   const typing: boolean[] = [];

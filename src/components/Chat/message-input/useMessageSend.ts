@@ -15,6 +15,7 @@ import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore
 import { useSettingsStore } from '@/stores/settingsStore';
 import { debugError } from '@/utils/debugLog';
 import { isOpenClawActiveLeafChangedError } from '@/services/gateway/activeLeafEntryId';
+import { readSessionCompanionCommand, requestSessionCompanionOpen } from '../sessionCompanionUi';
 
 interface UseMessageSendOptions {
   activeSessionKey: string;
@@ -82,6 +83,17 @@ export function useMessageSend({
     const fullMessage = trimmed || t('input.attachmentsOnlyMessage', {
       files: sendFiles.map((file) => file.fileName ?? file.mimeType).join(', '),
     });
+    const companionQuestion = sendFiles.length === 0 ? readSessionCompanionCommand(fullMessage) : null;
+    if (companionQuestion !== null) {
+      requestSessionCompanionOpen(companionQuestion);
+      const state = useChatStore.getState();
+      state.consumeComposerSnapshot(sessionKey, {
+        text: rawText,
+        attachmentIds: [],
+      });
+      state.setQuickReplies([], sessionKey);
+      return;
+    }
     setIsSending(true, sessionKey);
 
     try {

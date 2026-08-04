@@ -24,7 +24,6 @@ function resetChatStore() {
     compactionStatusBySession: {},
     typingStartedAtBySession: {},
     chatSendTimingBySession: {},
-    sideQuestionResultsBySession: {},
   });
 }
 
@@ -127,56 +126,6 @@ test('chat.final replaces a longer streamed draft with OpenClaw canonical text',
   assert.ok(streamEnds[0].messageId.length > 0);
   assert.equal(streamEnds[0].content, 'Corrected answer.');
   assert.equal(streamEnds[0].meta?.runId, runId);
-});
-
-test('chat.side_result stays ephemeral and does not settle the active main Run', async () => {
-  installWindowMock();
-  const { ChatHandler, useChatStore } = await loadDeps();
-  resetChatStore();
-  const handler = new ChatHandler({ callbacks: { onStreamChunk() {}, onStreamEnd() {} } } as any);
-  const sessionKey = 'agent:main:session-a';
-
-  handler.handleEvent({
-    event: 'chat',
-    payload: {
-      sessionKey,
-      runId: 'main-run',
-      state: 'delta',
-      message: { content: 'Main response is still running.' },
-    },
-  });
-  handler.registerSideQuestionRun(sessionKey, 'btw-run');
-  handler.handleEvent({
-    event: 'chat.side_result',
-    payload: {
-      kind: 'btw',
-      sessionKey,
-      runId: 'btw-run',
-      question: 'What changed?',
-      text: 'Only the current configuration changed.',
-      isError: false,
-      ts: 1_773_000_000_000,
-    },
-  });
-  handler.handleEvent({
-    event: 'chat',
-    payload: { sessionKey, runId: 'btw-run', state: 'final' },
-  });
-
-  const state = useChatStore.getState();
-  assert.equal(state.typingBySession[sessionKey], true);
-  assert.equal(Boolean(state.messagesPerSession[sessionKey]?.some((message: any) => (
-    message.content.includes('Only the current configuration changed.')
-  ))), false);
-  assert.deepEqual(state.sideQuestionResultsBySession[sessionKey]?.['btw-run'], {
-    kind: 'btw',
-    sessionKey,
-    runId: 'btw-run',
-    question: 'What changed?',
-    text: 'Only the current configuration changed.',
-    isError: false,
-    ts: 1_773_000_000_000,
-  });
 });
 
 test('session.operation forwards only the official compact operation projection', async () => {

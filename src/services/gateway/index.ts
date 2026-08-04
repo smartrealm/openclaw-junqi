@@ -86,6 +86,7 @@ import { OpenClawTtsStatusClient } from './OpenClawTtsStatusClient';
 import { OpenClawTtsPreferencesClient } from './OpenClawTtsPreferencesClient';
 import { OpenClawDiagnosticStabilityClient } from './OpenClawDiagnosticStabilityClient';
 import { OpenClawHooksStatusClient } from './OpenClawHooksStatusClient';
+import { OpenClawSessionCompanionClient } from './OpenClawSessionCompanionClient';
 import { OpenClawSessionUsageLogsClient } from './OpenClawSessionUsageLogsClient';
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
 import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
@@ -167,6 +168,11 @@ export type {
   OpenClawHookStatusEntry,
   OpenClawHooksStatusSnapshot,
 } from './OpenClawHooksStatusClient';
+export type {
+  OpenClawSessionCompanionAnswer,
+  OpenClawSessionCompanionExchange,
+  OpenClawSessionCompanionState,
+} from './OpenClawSessionCompanionClient';
 export type {
   OpenClawSessionUsageLogEntry,
   OpenClawSessionUsageLogRole,
@@ -545,6 +551,12 @@ export const openClawHooksStatusClient = new OpenClawHooksStatusClient({
     params,
     expectedConnectionId,
   ),
+});
+
+export const openClawSessionCompanionClient = new OpenClawSessionCompanionClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => connection.isConnected() && connection.getAttestedConnectionId() === connectionId,
+  requestFenced: (method, params, connectionId) => connection.requestFenced(method, params, connectionId),
 });
 
 export const openClawSessionUsageLogsClient = new OpenClawSessionUsageLogsClient({
@@ -1335,7 +1347,6 @@ export const gateway = {
       sessionId?: string;
       expectedLeafEntryId?: string | null;
       delivery?: 'send' | 'steer';
-      sideQuestion?: boolean;
       supersededRunId?: string;
     } = {},
   ) {
@@ -1355,9 +1366,7 @@ export const gateway = {
 
     const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
     const isSteer = identity.delivery === 'steer';
-    const isSideQuestion = identity.sideQuestion === true;
-    if (isSideQuestion) chatHandler.registerSideQuestionRun(targetSessionKey, clientMessageId);
-    else chatHandler.beginPendingSend(targetSessionKey, clientMessageId);
+    chatHandler.beginPendingSend(targetSessionKey, clientMessageId);
     let requestDispatched = false;
     try {
       const dispatch = async () => {
@@ -1374,13 +1383,12 @@ export const gateway = {
         });
       };
       // sessions.steer 自身即为 OpenClaw 的中断并发送控制操作，不能等待长时间 chat.send 请求。
-      const dispatched = isSteer || isSideQuestion
+      const dispatched = isSteer
         ? await dispatch()
         : await sessionCommandCoordinator.runMutation(targetSessionKey, dispatch);
       const result = isSteer
         ? (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).response
         : dispatched;
-      if (isSideQuestion) return result;
       const acknowledgement = chatHandler.reconcileSendAcknowledgement(
         targetSessionKey,
         clientMessageId,
@@ -1404,13 +1412,6 @@ export const gateway = {
       }
       return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
     } catch (error) {
-      if (isSideQuestion) {
-        if (requestDispatched && !(error instanceof GatewayRpcError)) {
-          return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
-        }
-        chatHandler.discardSideQuestionRun(targetSessionKey, clientMessageId);
-        throw error;
-      }
       // sessions.steer 的原生准入可能已经尝试中断活动 Run 后才失败。
       // 单独的 RPC 错误无法区分该情况与请求被拒绝，故交由带围栏的历史解析器确认。
       if (isSteer && requestDispatched) {

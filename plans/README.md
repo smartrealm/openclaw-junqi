@@ -52,7 +52,7 @@ plans/
 - [本地 main 对齐与客户端边界](quality/2026-08-04-local-main-alignment-and-client-boundary.md)
 - [OpenClaw Agent 配置快照与并发写入对齐](quality/2026-08-04-openclaw-agent-config-snapshot-alignment.md)
 - [OpenClaw Gateway 挑战与策略对齐](quality/2026-08-04-openclaw-gateway-challenge-policy-alignment.md)
-- [OpenClaw `/btw` 临时侧问对齐](quality/2026-08-04-openclaw-btw-side-question.md)
+- [OpenClaw 会话 Companion 控制台对齐计划](quality/2026-08-04-openclaw-session-companion-control-ui.md)
 - [OpenClaw 会话快速模式对齐](quality/2026-08-04-openclaw-session-fast-mode.md)
 - [OpenClaw 会话推理可见性对齐](quality/2026-08-04-openclaw-session-reasoning-visibility.md)
 - [OpenClaw 会话详细工具输出对齐](quality/2026-08-04-openclaw-session-verbose.md)

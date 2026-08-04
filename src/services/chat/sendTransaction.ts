@@ -5,7 +5,6 @@ import type { GatewayAttachment, QueuedChatMessage } from './types';
 import { sessionMutationGate } from './sessionMutationGate';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import type { TaskExecutionSource } from '@/task-execution/types';
-import { isOpenClawBtwRequestText } from '@/services/gateway/openClawBtw';
 import { requireOpenClawSessionTarget } from '@/services/gateway/OpenClawSessionTarget';
 
 interface ChatSendGateway {
@@ -77,10 +76,7 @@ export class ChatSendCoordinator {
     const sessionKey = requireOpenClawSessionTarget(request.sessionKey);
     const clientMessageId = request.clientMessageId ?? createClientMessageId();
     const state = this.state();
-    const isSideQuestion = request.delivery !== 'steer' && isOpenClawBtwRequestText(request.message);
-    const optimisticPatch = isSideQuestion || request.optimisticMessage === false
-      ? undefined
-      : request.optimisticMessage;
+    const optimisticPatch = request.optimisticMessage === false ? undefined : request.optimisticMessage;
     const timestamp = optimisticPatch
       ? optimisticPatch.timestamp ?? new Date().toISOString()
       : new Date().toISOString();
@@ -98,8 +94,7 @@ export class ChatSendCoordinator {
     // OpenClaw 是运行中任务队列语义的权威。仅破坏性会话变更或显式本地队列选择，
     // 才能让常规消息停留在渲染层拥有的队列中。
     const localQueueRequested = request.queueIfBusy === true || request.delivery === 'queue';
-    const queueLocally = !isSideQuestion
-      && request.delivery !== 'steer'
+    const queueLocally = request.delivery !== 'steer'
       && request.queueIfBusy !== false
       && (sessionMutationBlocked || (localQueueRequested && activeGatewayRun));
     if (queueLocally) {
@@ -150,19 +145,6 @@ export class ChatSendCoordinator {
         });
       }
       return { queued: true, queue: 'session' as const, clientMessageId };
-    }
-
-    if (isSideQuestion) {
-      return this.gatewayPort.sendMessage(
-        request.message,
-        request.attachments,
-        sessionKey,
-        {
-          clientMessageId,
-          sessionId: request.sessionId,
-          sideQuestion: true,
-        },
-      );
     }
 
     if (request.optimisticMessage !== false) {

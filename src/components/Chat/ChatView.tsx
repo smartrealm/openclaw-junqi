@@ -85,7 +85,8 @@ import { ChatTraceSourceMessagePanel } from './ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from './useChatSidePanel';
 import { getToolLabelKey } from './toolCallPresentation';
 import { TaskExecutionRecoveryBanner } from './TaskExecutionRecoveryBanner';
-import { SideQuestionResults } from './SideQuestionResults';
+import { SessionCompanionPanel } from './SessionCompanionPanel';
+import { subscribeSessionCompanionOpen } from './sessionCompanionUi';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -268,11 +269,10 @@ function ChatViewContent() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
-  const sideQuestionResults = useChatStore(useShallow((s) => Object.values(
-    s.sideQuestionResultsBySession[s.activeSessionKey] ?? {},
-  ).sort((left, right) => left.ts - right.ts)));
-  const dismissSideQuestionResult = useChatStore((s) => s.dismissSideQuestionResult);
   const sidePanel = useChatSidePanel(activeSessionKey);
+  const [sessionCompanion, setSessionCompanion] = useState<{ open: boolean; question?: string }>({ open: false });
+  useEffect(() => subscribeSessionCompanionOpen((question) => setSessionCompanion({ open: true, ...(question ? { question } : {}) })), []);
+  useEffect(() => setSessionCompanion({ open: false }), [activeSessionKey]);
   const loadTraceAuditEvents = useCallback(
     (runId: string) => gateway.listAuditEvents({ runId, limit: 500 }),
     [],
@@ -429,7 +429,6 @@ function ChatViewContent() {
     thinkingRunId || '',
     thinkingText.length,
     isTyping ? 'typing' : 'idle',
-    sideQuestionResults.map((result) => `${result.runId}:${result.text.length}`).join(','),
   ].join('|');
 
   useEffect(() => {
@@ -1374,9 +1373,8 @@ function ChatViewContent() {
           <TypingIndicator />
         </Suspense>
       )}
-      <SideQuestionResults results={sideQuestionResults} onDismiss={dismissSideQuestionResult} />
     </div>
-  ), [thinkingText, isTyping, tailIsStreamingMessage, sideQuestionResults, dismissSideQuestionResult]);
+  ), [thinkingText, isTyping, tailIsStreamingMessage]);
 
   // ── Debounce "no providers" state so gateway restart doesn't flash the banner
   const [showNoProviderBanner, setShowNoProviderBanner] = useState(false);
@@ -1496,9 +1494,7 @@ function ChatViewContent() {
         }}
       >
         {timelineItems.length === 0 ? (
-          <div className="flex h-full flex-col justify-end">
-            <SideQuestionResults results={sideQuestionResults} onDismiss={dismissSideQuestionResult} />
-          </div>
+          <div className="flex h-full flex-col justify-end" />
         ) : (
           <Virtuoso
             ref={virtuosoRef}
@@ -1640,6 +1636,14 @@ function ChatViewContent() {
           />
         ) : null;
       })()}
+      {sessionCompanion.open && (
+        <SessionCompanionPanel
+          sessionKey={activeSessionKey}
+          connected={connected}
+          initialQuestion={sessionCompanion.question}
+          onClose={() => setSessionCompanion({ open: false })}
+        />
+      )}
   </div>
   );
 }

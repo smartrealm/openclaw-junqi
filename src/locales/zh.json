@@ -1373,10 +1373,24 @@
     "sending": "发送中",
     "historyLoadFailed": "无法加载会话历史",
     "systemNote": "系统提示",
-    "sideQuestion": {
-      "title": "临时回答",
-      "error": "OpenClaw 返回了错误",
-      "dismiss": "关闭临时回答"
+    "sessionCompanion": {
+      "open": "打开会话助手",
+      "title": "会话助手",
+      "close": "关闭会话助手",
+      "description": "针对当前会话及其工作区的只读提问。回答仅保留在 OpenClaw Gateway 内存中，不会进入聊天历史。",
+      "loading": "正在读取当前助手线程",
+      "empty": "可就当前会话提出简短问题，不会中断主运行。",
+      "inputLabel": "向会话助手提问",
+      "placeholder": "询问当前会话",
+      "ask": "提问",
+      "answering": "OpenClaw 正在准备只读回答",
+      "refresh": "读取当前助手线程",
+      "clear": "清空助手线程",
+      "clearTitle": "清空会话助手线程",
+      "clearDescription": "这会清空当前仅存在于 Gateway 的助手线程。聊天历史与主运行不会改变。",
+      "busy": "会话助手正在回答另一条问题。",
+      "unavailable": "当前 Gateway 暂时未提供会话助手。",
+      "invalid": "OpenClaw 返回了无效的会话助手响应。"
     },
     "modelSwitched": "模型已切换",
     "historyLoadedFromCache": "已从缓存加载最近会话（{{count}} 条消息）",

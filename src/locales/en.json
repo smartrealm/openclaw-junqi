@@ -1384,10 +1384,24 @@
     "sending": "Sending",
     "historyLoadFailed": "Unable to load conversation history",
     "systemNote": "System note",
-    "sideQuestion": {
-      "title": "Temporary answer",
-      "error": "OpenClaw returned an error",
-      "dismiss": "Dismiss temporary answer"
+    "sessionCompanion": {
+      "open": "Open session companion",
+      "title": "Session companion",
+      "close": "Close session companion",
+      "description": "Read-only questions about this session and its workspace. Answers are kept in OpenClaw Gateway memory and never enter chat history.",
+      "loading": "Reading the current companion thread",
+      "empty": "Ask a short question about the current session without interrupting its main run.",
+      "inputLabel": "Question for the session companion",
+      "placeholder": "Ask about this session",
+      "ask": "Ask",
+      "answering": "OpenClaw is preparing a read-only answer",
+      "refresh": "Read current companion thread",
+      "clear": "Clear companion thread",
+      "clearTitle": "Clear session companion thread",
+      "clearDescription": "This clears the current Gateway-only companion thread. Chat history and the main run are unchanged.",
+      "busy": "The companion is already answering another question.",
+      "unavailable": "This Gateway does not currently provide the session companion.",
+      "invalid": "OpenClaw returned an invalid companion response."
     },
     "modelSwitched": "Model switched",
     "historyLoadedFromCache": "Recent conversation loaded from cache ({{count}} messages)",

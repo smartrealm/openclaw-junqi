@@ -24,6 +24,7 @@ import { SessionBranchesControl } from './SessionBranchesControl';
 import { SessionArtifactsControl } from './SessionArtifactsControl';
 import { SessionDiffControl } from './SessionDiffControl';
 import { SessionFilesControl } from './SessionFilesControl';
+import { requestSessionCompanionOpen } from './sessionCompanionUi';
 import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
 import { getGatewaySessionContextBudgetNotice } from '@/services/gateway/sessionContextBudgetStatus';
 
@@ -394,6 +395,15 @@ export function SessionContextBar() {
             <Crosshair size={11} />
           </button>
           <SessionArtifactsButton sessionKey={activeSessionKey} agentId={agentId} />
+          <button
+            type="button"
+            onClick={() => requestSessionCompanionOpen()}
+            className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
+            title={t('chat.sessionCompanion.open')}
+            aria-label={t('chat.sessionCompanion.open')}
+          >
+            <MessageSquareText size={11} />
+          </button>
           <button
             type="button"
             onClick={() => navigate('/skills')}

@@ -1344,10 +1344,24 @@
     "sending": "傳送中",
     "historyLoadFailed": "無法載入會話歷史",
     "systemNote": "系統提示",
-    "sideQuestion": {
-      "title": "臨時回答",
-      "error": "OpenClaw 傳回了錯誤",
-      "dismiss": "關閉臨時回答"
+    "sessionCompanion": {
+      "open": "開啟會話助手",
+      "title": "會話助手",
+      "close": "關閉會話助手",
+      "description": "針對目前會話及其工作區的唯讀提問。回答僅保留在 OpenClaw Gateway 記憶體中，不會進入聊天歷史。",
+      "loading": "正在讀取目前助手執行緒",
+      "empty": "可就目前會話提出簡短問題，不會中斷主執行。",
+      "inputLabel": "向會話助手提問",
+      "placeholder": "詢問目前會話",
+      "ask": "提問",
+      "answering": "OpenClaw 正在準備唯讀回答",
+      "refresh": "讀取目前助手執行緒",
+      "clear": "清空助手執行緒",
+      "clearTitle": "清空會話助手執行緒",
+      "clearDescription": "這會清空目前僅存在於 Gateway 的助手執行緒。聊天歷史與主執行不會改變。",
+      "busy": "會話助手正在回答另一條問題。",
+      "unavailable": "目前 Gateway 暫時未提供會話助手。",
+      "invalid": "OpenClaw 傳回了無效的會話助手回應。"
     },
     "modelSwitched": "模型已切換",
     "historyLoadedFromCache": "已從快取載入最近會話（{{count}} 條訊息）",

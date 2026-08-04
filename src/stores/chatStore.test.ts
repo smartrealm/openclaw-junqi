@@ -656,19 +656,6 @@ test('removeSession closes the tab, switches active session, and persists tab or
         timestamp: new Date(0).toISOString(),
       }],
     },
-    sideQuestionResultsBySession: {
-      [deletedKey]: {
-        'btw-delete': {
-          kind: 'btw',
-          sessionKey: deletedKey,
-          runId: 'btw-delete',
-          question: 'Temporary question',
-          text: 'Temporary answer',
-          isError: false,
-          ts: 1_773_000_000_000,
-        },
-      },
-    },
   });
 
   useChatStore.getState().removeSession(deletedKey);
@@ -678,7 +665,6 @@ test('removeSession closes the tab, switches active session, and persists tab or
   assert.equal(state.activeSessionKey, MAIN_KEY);
   assert.equal(state.sessions.some((session) => session.key === deletedKey), false);
   assert.equal(state.messagesPerSession[deletedKey], undefined);
-  assert.equal(state.sideQuestionResultsBySession[deletedKey], undefined);
   assert.equal(localStorage.getItem('aegis-open-tabs'), JSON.stringify([MAIN_KEY]));
 });
 
