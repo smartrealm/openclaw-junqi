@@ -99,17 +99,24 @@ Validation: focused voice compatibility `28 passed`; full frontend `955 passed`,
 - [x] Saving a recording never invokes `open_folder`.
 - [x] Encoding a byte array larger than JavaScript's argument limit succeeds.
 
-### BUG-09 - Native manual recording fallback
+### BUG-09 - 原生手动录音权威路径
 
-**Current**: browser capture failure ends the flow; native stop sleeps for a guessed interval before reading.
+状态注记（2026-08-04）：本节原先的“浏览器失败后回退原生”目标已经被原生手动语音采集
+权威规格取代。JunQi 是桌面应用，手动录音不再以 WebView 采集作为首选或 fallback；当前
+行为与验收以 [`2026-08-04-native-manual-voice-capture-authority.md`](2026-08-04-native-manual-voice-capture-authority.md)
+为准。
 
-**Target**: browser capture falls back to typed native start/stop methods; the native command confirms startup and joins the exact worker before reading/removing the WAV.
+**Current**: 原生录音开始与停止通过带实例标识的 Tauri IPC 完成，停止只接受同一实例标识。
+
+**Target**: 手动录音只使用 typed native start/stop methods；原生命令确认启动、保留实例身份，
+并在读取或删除 WAV 前 join 对应工作线程。
 
 **Acceptance**:
 
-- [x] VoiceRecorder can send a native WAV data URL when MediaRecorder is unavailable.
+- [x] VoiceRecorder 只发送原生 WAV data URL，不依赖 MediaRecorder。
 - [x] Native start reports setup failure synchronously.
 - [x] Native stop reads only after worker finalization.
+- [x] A stale stop request cannot stop a replacement native recording.
 
 ### BUG-10 - Native VAD pre-roll and sample formats
 

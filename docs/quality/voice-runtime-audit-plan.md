@@ -31,7 +31,7 @@ Status: complete through Phase J; final validation recorded in the audit and spe
 | Bug | File | Fix |
 |---|---|---|
 | BUG-08 | `src/api/tauri-adapter.ts` | Replace Explorer side effect with `mkdir`; chunk base64 encoding. |
-| BUG-09 | `src/components/Chat/VoiceRecorder.tsx`, `src/types/global.d.ts`, `src-tauri/src/commands/voice.rs` | Add native UI fallback and deterministic worker finalization. |
+| BUG-09 | `src/components/Chat/VoiceRecorder.tsx`, `src/api/tauri-commands.ts`, `src-tauri/src/commands/voice.rs` | 以原生 UI 采集替代浏览器路径，加入录音实例围栏并保持确定性工作线程收尾。 |
 | BUG-10 | `src-tauri/src/commands/voice_wake.rs` | Add pre-roll and `U16` normalization. |
 
 ### Phase E - Follow-up lifecycle audit

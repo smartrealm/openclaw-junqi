@@ -615,10 +615,16 @@ export const inspectSharePackage = (sourcePath: string) => invoke<SharePackageIn
 export const previewSharePackageImport = (request: SharePackageImportPreviewRequest) => invoke<SharePackageImportPreview>('preview_share_package_import', { request });
 export const importSharePackage = (request: SharePackageImportRequest) => invoke<SharePackageImportResult>('import_share_package', { request });
 
-export interface VoiceRecordingStartResult { success: boolean; error?: string; }
+export interface VoiceRecordingStartResult {
+  success: boolean;
+  recordingId?: string;
+  error?: string;
+}
 export interface VoiceRecordingStopResult { success: boolean; data?: string; duration?: number; error?: string; }
 export const startVoiceRecording = () => invoke<VoiceRecordingStartResult>('voice_start_recording');
-export const stopVoiceRecording = () => invoke<VoiceRecordingStopResult>('voice_stop_recording');
+export const stopVoiceRecording = (recordingId: string) => (
+  invoke<VoiceRecordingStopResult>('voice_stop_recording', { recordingId })
+);
 
 export interface ActiveOpenClawModelProbe {
   ready: boolean;

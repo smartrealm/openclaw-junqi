@@ -1,17 +1,13 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Send, Pause, Play } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Mic, Send, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
-import clsx from 'clsx';
 import { debugError } from '@/utils/debugLog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
-
-// ═══════════════════════════════════════════════════════════
-// VoiceRecorder — capture a portable audio payload in the WebView or native host.
-// Persistence and Gateway transport are owned by MessageInput.
-// ═══════════════════════════════════════════════════════════
+import type { VoiceRecordingStopResult } from '@/api/tauri-commands';
 
 interface VoiceRecorderProps {
   onSendVoice: (base64: string, mimeType: string, durationSec: number, previewUrl: string) => void;
@@ -19,516 +15,172 @@ interface VoiceRecorderProps {
   disabled?: boolean;
 }
 
+function formatTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${(seconds % 60).toString().padStart(2, '0')}`;
+}
+
 export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorderProps) {
   const { t } = useTranslation();
   const { language } = useSettingsStore();
-  const dir = getDirection(language);
-  const [, setRecording] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [paused, setPaused] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [nativeBackend, setNativeBackend] = useState(false);
-  const [, setLevel] = useState(0); // Audio level 0-1 for visualizer
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const backendRef = useRef<'browser' | 'native' | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTimeRef = useRef(0);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const animFrameRef = useRef<number>(0);
-  const streamRef = useRef<MediaStream | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const frozenHistory = useRef<number[]>([]); // Left: speaking segments accumulate
-  const liveHistory = useRef<number[]>(new Array(180).fill(0.05)); // Right: scrolling window
-  const noiseSum = useRef(0);
-  const noiseSamples = useRef(0);
-  const startAttemptRef = useRef(0);
+  const [elapsed, setElapsed] = useState(0);
+  const attemptRef = useRef(0);
   const startingRef = useRef(false);
-  const nativeStopPromiseRef = useRef<Promise<void> | null>(null);
+  const activeRecordingIdRef = useRef<string | null>(null);
+  const stopPromiseRef = useRef<{
+    recordingId: string;
+    promise: Promise<VoiceRecordingStopResult | null>;
+  } | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startedAtRef = useRef(0);
 
-  const stopNativeCapture = useCallback(() => {
-    if (nativeStopPromiseRef.current) return nativeStopPromiseRef.current;
-    const pending = Promise.resolve()
-      .then(() => voiceFileRuntime.stopRecording())
-      .then(() => undefined, () => undefined);
-    nativeStopPromiseRef.current = pending;
-    void pending.finally(() => {
-      if (nativeStopPromiseRef.current === pending) nativeStopPromiseRef.current = null;
-    });
+  const clearTimer = useCallback(() => {
+    if (timerRef.current !== null) clearInterval(timerRef.current);
+    timerRef.current = null;
+  }, []);
+
+  const startTimer = useCallback(() => {
+    clearTimer();
+    startedAtRef.current = Date.now();
+    timerRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000));
+    }, 200);
+  }, [clearTimer]);
+
+  const stopNativeRecording = useCallback((recordingId: string) => {
+    const pendingStop = stopPromiseRef.current;
+    if (pendingStop?.recordingId === recordingId) return pendingStop.promise;
+    const pending = voiceFileRuntime.stopRecording(recordingId)
+      .catch((error) => {
+        debugError('media', '[VoiceRecorder] Native stop failed:', error);
+        return null;
+      })
+      .finally(() => {
+        if (stopPromiseRef.current?.promise === pending) stopPromiseRef.current = null;
+      });
+    stopPromiseRef.current = { recordingId, promise: pending };
     return pending;
   }, []);
 
-  const startElapsedTimer = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    startTimeRef.current = Date.now();
-    timerRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
-    }, 200);
-  }, []);
+  const releaseActiveRecording = useCallback(async () => {
+    const recordingId = activeRecordingIdRef.current;
+    activeRecordingIdRef.current = null;
+    clearTimer();
+    setRecording(false);
+    if (!recordingId) return null;
+    return stopNativeRecording(recordingId);
+  }, [clearTimer, stopNativeRecording]);
 
-  const cleanupCaptureResources = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = null;
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    animFrameRef.current = 0;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    analyserRef.current = null;
-    const context = audioContextRef.current;
-    audioContextRef.current = null;
-    if (context) void context.close().catch(() => undefined);
-  }, []);
-
-  // ── Format elapsed time ──
-  const formatTime = (sec: number): string => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  // ── Audio level visualizer ──
-  const updateLevel = useCallback(() => {
-    const analyser = analyserRef.current;
-    const canvas = canvasRef.current;
-    if (!analyser || !canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const w = canvas.width, h = canvas.height, mid = h / 2;
-    const DIVIDER_X = Math.min(Math.floor(w * 0.65), (frozenHistory.current.length > 0 ? Math.floor(w * 0.06) + frozenHistory.current.length : 0));
-
-    const tdData = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteTimeDomainData(tdData);
-
-    let sum = 0;
-    for (let i = 0; i < tdData.length; i++) {
-      const v = (tdData[i] - 128) / 128;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / tdData.length);
-    const level = Math.min(1, rms * 3);
-
-    // Running noise gate
-    if (rms < 0.04 && noiseSamples.current < 300) {
-      noiseSum.current += rms;
-      noiseSamples.current++;
-    }
-    const baseline = noiseSamples.current > 20 ? noiseSum.current / noiseSamples.current : 0.01;
-    const threshold = Math.max(0.04, baseline * 3);
-    const speaking = !paused && rms > threshold;
-
-    const val = speaking ? (0.5 + (level * 0.5)) : 0.05;
-
-    // Left: frozen — push only when speaking
-    if (speaking) {
-      frozenHistory.current.push(val);
-      const MAX_FROZEN = 600;
-      if (frozenHistory.current.length > MAX_FROZEN) frozenHistory.current.shift();
-    }
-
-    // Right: live — always push (flat when silent)
-    liveHistory.current.push(val);
-    if (liveHistory.current.length > 180) liveHistory.current.shift();
-
-    // Canvas APIs cannot consume CSS variables directly. Resolve the current
-    // theme token on every frame so theme changes repaint the waveform without
-    // introducing a second product-chrome color source.
-    const primary = getComputedStyle(document.documentElement)
-      .getPropertyValue('--aegis-primary')
-      .trim();
-    const waveformColor = primary ? `rgb(${primary})` : 'currentColor';
-
-    // Draw
-    ctx.clearRect(0, 0, w, h);
-
-    // ── Left: frozen history (same style as live) ──
-    const fh = frozenHistory.current;
-    if (fh.length > 0) {
-      const fgrad = ctx.createLinearGradient(0, mid - h * 0.3, 0, mid + h * 0.3);
-      fgrad.addColorStop(0, 'rgba(14,165,233,0.10)');
-      fgrad.addColorStop(0.5, 'rgba(14,165,233,0.015)');
-      fgrad.addColorStop(1, 'rgba(14,165,233,0.10)');
-      ctx.beginPath();
-      for (let i = 0; i < fh.length; i++) {
-        const x = (i / Math.max(fh.length - 1, 1)) * DIVIDER_X;
-        const y = mid + (fh[i] - 0.5) * h * 1.0;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.lineTo(DIVIDER_X, mid + h * 0.3);
-      ctx.lineTo(0, mid + h * 0.3);
-      ctx.closePath();
-      ctx.fillStyle = fgrad;
-      ctx.fill();
-
-      ctx.beginPath();
-      for (let i = 0; i < fh.length; i++) {
-        const x = (i / Math.max(fh.length - 1, 1)) * DIVIDER_X;
-        const y = mid + (fh[i] - 0.5) * h * 1.0;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.strokeStyle = waveformColor;
-      ctx.lineWidth = 1.2;
-      ctx.shadowColor = waveformColor;
-      ctx.shadowBlur = 4;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
-
-    // ── Divider line ──
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 4]);
-    ctx.beginPath();
-    ctx.moveTo(DIVIDER_X, mid - h * 0.35);
-    ctx.lineTo(DIVIDER_X, mid + h * 0.35);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // ── Right: live scrolling ──
-    const lh = liveHistory.current;
-    const grad = ctx.createLinearGradient(DIVIDER_X, mid - h * 0.3, DIVIDER_X, mid + h * 0.3);
-    grad.addColorStop(0, 'rgba(14,165,233,0.12)');
-    grad.addColorStop(0.5, 'rgba(14,165,233,0.02)');
-    grad.addColorStop(1, 'rgba(14,165,233,0.12)');
-    ctx.beginPath();
-    for (let i = 0; i < lh.length; i++) {
-      const x = DIVIDER_X + (i / (lh.length - 1)) * (w - DIVIDER_X);
-      const y = mid + (lh[i] - 0.5) * h * 1.0;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.lineTo(w, mid + h * 0.3);
-    ctx.lineTo(DIVIDER_X, mid + h * 0.3);
-    ctx.closePath();
-    ctx.fillStyle = grad;
-    ctx.fill();
-
-    ctx.beginPath();
-    for (let i = 0; i < lh.length; i++) {
-      const x = DIVIDER_X + (i / (lh.length - 1)) * (w - DIVIDER_X);
-      const y = mid + (lh[i] - 0.5) * h * 1.0;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = waveformColor;
-    ctx.lineWidth = 1.5;
-    ctx.shadowColor = waveformColor;
-    ctx.shadowBlur = 6;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    animFrameRef.current = requestAnimationFrame(updateLevel);
-  }, [paused]);
-
-  const pauseRef = useRef(0);
-
-  // ── Pause / Resume ──
-  const togglePause = useCallback(() => {
-    if (backendRef.current !== 'browser') return;
-    const rec = mediaRecorderRef.current;
-    if (!rec) return;
-    if (paused) {
-      rec.resume();
-      setPaused(false);
-      startTimeRef.current += Date.now() - (pauseRef.current || Date.now());
-      timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 200);
-      animFrameRef.current = requestAnimationFrame(updateLevel);
-    } else {
-      rec.pause();
-      setPaused(true);
-      pauseRef.current = Date.now();
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    }
-  }, [paused, updateLevel]);
-
-  // ── Start Recording ──
   const startRecording = useCallback(async () => {
-    if (disabled || backendRef.current || startingRef.current) return;
-    const attempt = ++startAttemptRef.current;
+    if (disabled || activeRecordingIdRef.current || startingRef.current) return;
+    const attempt = ++attemptRef.current;
     startingRef.current = true;
-    const isCurrentAttempt = () => attempt === startAttemptRef.current && !disabled;
-    let browserError: unknown = null;
-    let browserStream: MediaStream | null = null;
-    let browserContext: AudioContext | null = null;
-    const releaseStaleBrowserCapture = () => {
-      browserStream?.getTracks().forEach((track) => track.stop());
-      if (browserContext) void browserContext.close().catch(() => undefined);
-    };
+    setStarting(true);
     try {
-      if (nativeStopPromiseRef.current) await nativeStopPromiseRef.current;
-      if (!isCurrentAttempt()) return;
-      try {
-        if (typeof navigator.mediaDevices?.getUserMedia !== 'function' || typeof MediaRecorder === 'undefined') {
-          throw new Error('browser-media-recorder-unavailable');
-        }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            sampleRate: 44100,
-          },
-        });
-        browserStream = stream;
-        if (!isCurrentAttempt()) {
-          releaseStaleBrowserCapture();
-          return;
-        }
-        streamRef.current = stream;
-
-        // Setup audio analyser for level visualization
-        const audioCtx = new AudioContext();
-        browserContext = audioCtx;
-        audioContextRef.current = audioCtx;
-        if (!isCurrentAttempt()) {
-          releaseStaleBrowserCapture();
-          return;
-        }
-        const source = audioCtx.createMediaStreamSource(stream);
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-        analyserRef.current = analyser;
-
-        // Pick best supported format
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus'
-          : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
-            ? 'audio/ogg;codecs=opus'
-            : 'audio/webm';
-
-        const recorder = new MediaRecorder(stream, { mimeType });
-        if (!isCurrentAttempt()) {
-          releaseStaleBrowserCapture();
-          return;
-        }
-        mediaRecorderRef.current = recorder;
-        backendRef.current = 'browser';
-        setNativeBackend(false);
-        chunksRef.current = [];
-
-        recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) chunksRef.current.push(e.data);
-        };
-
-        if (canvasRef.current) { const r = canvasRef.current.getBoundingClientRect(); canvasRef.current.width = r.width * 2; canvasRef.current.height = r.height * 2; }
-        recorder.start(100); // Collect chunks every 100ms
-        setRecording(true);
-        startElapsedTimer();
-
-        // Start level visualizer
-        updateLevel();
+      const result = await voiceFileRuntime.startRecording();
+      const recordingId = result.success ? result.recordingId?.trim() : '';
+      if (!result.success || !recordingId) throw new Error(result.error || 'native-voice-start-failed');
+      if (attempt !== attemptRef.current || disabled) {
+        await stopNativeRecording(recordingId);
         return;
-      } catch (err) {
-        browserError = err;
-        if (isCurrentAttempt()) {
-          cleanupCaptureResources();
-          mediaRecorderRef.current = null;
-          backendRef.current = null;
-        } else {
-          releaseStaleBrowserCapture();
-        }
       }
-
-      if (!isCurrentAttempt()) return;
-
-      // WKWebView and locked-down desktop shells may expose neither
-      // getUserMedia nor MediaRecorder. Use the native cpal recorder when the
-      // bridge provides it, while keeping the same send callback contract.
-      {
-        try {
-          const result = await voiceFileRuntime.startRecording();
-          if (!isCurrentAttempt()) {
-            if (result?.success) await stopNativeCapture();
-            return;
-          }
-          if (result?.success) {
-            backendRef.current = 'native';
-            setNativeBackend(true);
-            setRecording(true);
-            setPaused(false);
-            startElapsedTimer();
-            return;
-          }
-          browserError = new Error(result?.error || 'native-voice-start-failed');
-        } catch (nativeError) {
-          browserError = nativeError;
-        }
-      }
-      if (isCurrentAttempt()) {
-        debugError('media', '[VoiceRecorder] Failed to start:', browserError);
-        alert(t('voice.micError'));
+      activeRecordingIdRef.current = recordingId;
+      setRecording(true);
+      startTimer();
+    } catch (error) {
+      if (attempt === attemptRef.current) {
+        debugError('media', '[VoiceRecorder] Native start failed:', error);
+        window.alert(t('voice.micError'));
+        onCancel();
       }
     } finally {
-      if (attempt === startAttemptRef.current) startingRef.current = false;
+      if (attempt === attemptRef.current) {
+        startingRef.current = false;
+        setStarting(false);
+      }
     }
-  }, [cleanupCaptureResources, disabled, startElapsedTimer, stopNativeCapture, t, updateLevel]);
+  }, [disabled, onCancel, startTimer, stopNativeRecording, t]);
 
-  // ── Stop Recording ──
-  const stopRecording = useCallback((): Promise<Blob> => {
-    return new Promise((resolve) => {
-      const recorder = mediaRecorderRef.current;
-      if (!recorder || recorder.state === 'inactive') {
-        cleanupCaptureResources();
-        mediaRecorderRef.current = null;
-        backendRef.current = null;
-        resolve(new Blob());
-        return;
-      }
-
-      let settled = false;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
-        cleanupCaptureResources();
-        mediaRecorderRef.current = null;
-        backendRef.current = null;
-        resolve(blob);
-      };
-      recorder.onstop = finish;
-
-      try {
-        recorder.stop();
-      } catch {
-        finish();
-      }
-      setRecording(false);
-    });
-  }, [cleanupCaptureResources]);
-
-  // ── Send Voice ──
   const handleSend = useCallback(async () => {
+    const recordingId = activeRecordingIdRef.current;
+    if (!recordingId || saving) return;
     setSaving(true);
+    const result = await releaseActiveRecording();
     try {
-      if (backendRef.current === 'native') {
-        const result = await voiceFileRuntime.stopRecording();
-        backendRef.current = null;
-        setNativeBackend(false);
-        setRecording(false);
-        cleanupCaptureResources();
-        if (!result?.success || !result.data) throw new Error(result?.error || 'native-voice-empty');
-        const base64 = result.data.split(',')[1] || '';
-        if (!base64) throw new Error('native-voice-base64-empty');
-        onSendVoice(base64, 'audio/wav', result.duration ?? elapsed, result.data);
-        setSaving(false);
-        return;
-      }
-      const blob = await stopRecording();
-      if (blob.size === 0) {
-        setSaving(false);
-        onCancel();
-        return;
-      }
-
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(reader.error || new Error('voice-read-failed'));
-        reader.readAsDataURL(blob);
-      });
-      const base64 = dataUrl.split(',')[1] || '';
-      if (!base64) throw new Error('voice-base64-empty');
-      const mimeType = blob.type || 'audio/webm';
-      backendRef.current = null;
-      onSendVoice(base64, mimeType, elapsed, dataUrl);
-      setSaving(false);
-    } catch (err) {
-      debugError('media', '[VoiceRecorder] Send failed:', err);
+      if (!result?.success || !result.data) throw new Error(result?.error || 'native-voice-empty');
+      const base64 = result.data.split(',')[1] || '';
+      if (!base64) throw new Error('native-voice-base64-empty');
+      onSendVoice(base64, 'audio/wav', result.duration ?? elapsed, result.data);
+    } catch (error) {
+      debugError('media', '[VoiceRecorder] Send failed:', error);
+    } finally {
       setSaving(false);
     }
-  }, [cleanupCaptureResources, elapsed, onCancel, onSendVoice, stopRecording]);
+  }, [elapsed, onSendVoice, releaseActiveRecording, saving]);
 
-  // ── Cancel ──
   const handleCancel = useCallback(async () => {
-    startAttemptRef.current += 1;
+    attemptRef.current += 1;
     startingRef.current = false;
-    if (backendRef.current === 'native') {
-      await stopNativeCapture();
-      backendRef.current = null;
-      setNativeBackend(false);
-      setRecording(false);
-      cleanupCaptureResources();
-    } else {
-      await stopRecording();
-    }
+    await releaseActiveRecording();
     setElapsed(0);
-    setLevel(0);
     onCancel();
-  }, [cleanupCaptureResources, onCancel, stopNativeCapture, stopRecording]);
+  }, [onCancel, releaseActiveRecording]);
 
-  // Auto-start recording when mounted
   useEffect(() => {
     if (!disabled) void startRecording();
     return () => {
-      startAttemptRef.current += 1;
+      attemptRef.current += 1;
       startingRef.current = false;
-      if (backendRef.current === 'native') {
-        void stopNativeCapture();
-        backendRef.current = null;
-      }
-      if (mediaRecorderRef.current?.state === 'recording') {
-        try { mediaRecorderRef.current.stop(); } catch {}
-      }
-      mediaRecorderRef.current = null;
-      backendRef.current = null;
-      cleanupCaptureResources();
+      void releaseActiveRecording();
     };
-  // The recorder must not restart when `paused` changes the visualizer
-  // callback identity; only a mount/disabled transition owns its lifecycle.
-  }, [disabled]);
+  }, [disabled, releaseActiveRecording, startRecording]);
+
+  const status = saving
+    ? <LoadingIndicator size="sm" />
+    : starting
+      ? <LoadingIndicator size="sm" />
+      : <Mic size={17} aria-hidden="true" />;
 
   return (
-    <div className="flex w-full items-center gap-3" dir={dir}>
-      {/* Waveform — full width */}
-      <div className="flex-1 h-10 flex items-center">
-        <canvas ref={canvasRef} width={400} height={40} className="w-full h-full rounded" />
+    <div className="flex w-full items-center gap-3" dir={getDirection(language)}>
+      <div className="flex min-w-0 flex-1 items-center gap-2 text-aegis-text-muted">
+        <span
+          className={clsx(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-md',
+            recording ? 'bg-aegis-danger/15 text-aegis-danger' : 'bg-[rgb(var(--aegis-overlay)/0.08)]',
+          )}
+        >
+          {status}
+        </span>
+        <span className="min-w-0 truncate text-[13px] text-aegis-text-muted">
+          {recording ? t('voice.runtimeListening') : t('voice.micError')}
+        </span>
       </div>
-
-      {/* Elapsed time */}
-      <span className="text-[13px] font-mono text-aegis-text-muted shrink-0 min-w-[40px] text-center" dir="ltr">
+      <span className="min-w-[40px] shrink-0 text-center font-mono text-[13px] text-aegis-text-muted" dir="ltr">
         {formatTime(elapsed)}
       </span>
-
-      {/* Pause / Resume */}
       <button
-        onClick={togglePause}
-        disabled={saving || nativeBackend}
-        className={clsx(
-          'p-2 rounded-lg transition-colors',
-          paused ? 'text-aegis-danger hover:bg-aegis-danger/[0.08]' : 'text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
-        )}
-        title={paused ? t('voice.resume') : t('voice.pause')}
-        aria-label={paused ? t('voice.resume') : t('voice.pause')}
-      >
-        {paused ? <Play size={18} /> : <Pause size={18} />}
-      </button>
-
-      {/* Cancel */}
-      <button
-        onClick={handleCancel}
-        className="p-2 rounded-lg hover:bg-aegis-danger/20 text-aegis-danger transition-colors"
+        type="button"
+        onClick={() => { void handleCancel(); }}
+        disabled={saving}
+        className="p-2 text-aegis-danger transition-colors hover:bg-aegis-danger/20 disabled:opacity-50"
         title={t('voice.cancel')}
+        aria-label={t('voice.cancel')}
       >
         <X size={18} />
       </button>
-
-      {/* Send */}
       <button
-        onClick={handleSend}
-        disabled={saving || elapsed < 1}
-        className={clsx(
-          'p-2.5 rounded-xl transition-all',
-          'bg-aegis-primary hover:bg-aegis-primary-hover text-aegis-btn-primary-text',
-          'shadow-lg shadow-aegis-primary/20',
-          'disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none'
-        )}
+        type="button"
+        onClick={() => { void handleSend(); }}
+        disabled={saving || !recording || elapsed < 1}
+        className="p-2.5 text-aegis-primary transition-colors hover:bg-aegis-primary/15 disabled:opacity-50"
         title={t('voice.sendRecording')}
+        aria-label={t('voice.sendRecording')}
       >
-        {saving ? (
-          <LoadingIndicator size={18} />
-        ) : (
-          <Send size={18} className="rotate-180" />
-        )}
+        {saving ? <LoadingIndicator size="sm" /> : <Send size={18} />}
       </button>
     </div>
   );

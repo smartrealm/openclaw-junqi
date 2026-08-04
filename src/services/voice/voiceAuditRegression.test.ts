@@ -61,11 +61,16 @@ test('BUG-08 chunked base64 encoding handles large audio buffers', () => {
   assert.doesNotMatch(files, /open_folder/);
 });
 
-test('BUG-09 manual recorder exposes native fallback and deterministic stop', () => {
+test('手动录音只使用原生采集并以实例标识围栏停止请求', () => {
   const recorder = read('../../components/Chat/VoiceRecorder.tsx');
+  const commands = read('../../api/tauri-commands.ts');
   const native = read('../../../src-tauri/src/commands/voice.rs');
   assert.match(recorder, /voiceFileRuntime\.startRecording\(\)/);
-  assert.match(recorder, /voiceFileRuntime\.stopRecording\(\)/);
+  assert.match(recorder, /voiceFileRuntime\.stopRecording\(recordingId\)/);
+  assert.doesNotMatch(recorder, /navigator\.mediaDevices|MediaRecorder|AudioContext|MediaStream/);
+  assert.match(commands, /stopVoiceRecording = \(recordingId: string\)/);
+  assert.match(native, /pub fn voice_stop_recording\(recording_id: String\)/);
+  assert.match(native, /take_matching_recording\(&mut guard, &recording_id\)/);
   assert.match(native, /recv_timeout\(Duration::from_secs\(3\)\)/);
   assert.match(native, /worker\n\s*\.join\(\)/);
   assert.doesNotMatch(native, /sleep\(std::time::Duration::from_millis\(200\)\)/);
@@ -78,12 +83,13 @@ test('BUG-12 VAD startup is handshaken and stale stop events are suppressed', ()
   assert.match(native, /run_capture_loop\([\s\S]*app_for_thread,[\s\S]*cmd_rx,[\s\S]*worker_id,[\s\S]*mode,[\s\S]*stream_pcm,[\s\S]*ready_tx/);
 });
 
-test('BUG-13 recorder invalidates stale starts and finalizes browser chunks before cleanup', () => {
+test('手动录音会清理过期启动且不停止后续实例', () => {
   const recorder = read('../../components/Chat/VoiceRecorder.tsx');
-  assert.match(recorder, /startAttemptRef/);
+  assert.match(recorder, /attemptRef/);
   assert.match(recorder, /startingRef/);
-  assert.match(recorder, /nativeStopPromiseRef/);
-  assert.match(recorder, /recorder\.onstop = finish/);
+  assert.match(recorder, /activeRecordingIdRef/);
+  assert.match(recorder, /attempt !== attemptRef\.current \|\| disabled/);
+  assert.match(recorder, /await stopNativeRecording\(recordingId\)/);
 });
 
 test('BUG-14 native captures retain their originating session', () => {

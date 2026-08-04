@@ -205,6 +205,7 @@ docs/
 - [PTY 锁毒化加固](quality/pty-lock-poisoning-hardening-2026-08-03.md)
 - [Voice Runtime 审计](quality/voice-runtime-audit.md)
 - [Voice Runtime 审计计划](quality/voice-runtime-audit-plan.md)
+- [原生手动语音采集权威链路审计](quality/native-manual-voice-capture-authority-2026-08-04.md)
 - [跨平台语音唤醒宿主验证](quality/2026-08-02-cross-platform-voice-wake-host.md)
 - [JunQi Namespace 审计](quality/junqi-namespace-audit.md)
 - [JunQi Namespace 计划](quality/junqi-namespace-plan.md)

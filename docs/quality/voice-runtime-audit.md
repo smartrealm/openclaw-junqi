@@ -2,7 +2,9 @@
 
 Date: 2026-07-21
 
-Status: complete; BUG-01 through BUG-24 fixed and validated
+Status: BUG-01 through BUG-24 fixed and validated. 手动录音的浏览器 fallback 结论已于
+2026-08-04 被原生权威采集链路取代，当前契约见
+[原生手动语音采集权威链路审计](native-manual-voice-capture-authority-2026-08-04.md)。
 
 Scope: Gateway stream callbacks, sentence extraction, browser recognition, native VAD, manual recording, external audio playback, session routing, and barge-in controls.
 
