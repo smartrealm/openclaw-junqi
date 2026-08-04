@@ -34,6 +34,16 @@ export function parseGatewayThinkingLevels(value: unknown): readonly GatewayThin
   return levels.length > 0 ? levels : null;
 }
 
+/** 优先使用 provider 下发标签；无匹配能力集时仅保留已确认的原始等级 id。 */
+export function gatewayThinkingLevelLabel(
+  level: unknown,
+  levels: readonly GatewayThinkingLevelOption[] | null | undefined,
+): string | null {
+  const id = nonEmptyString(level);
+  if (!id) return null;
+  return levels?.find((option) => option.id === id)?.label ?? id;
+}
+
 /** 将 `sessions.list` 的会话思考字段投影为严格的客户端模型。 */
 export function parseGatewaySessionThinkingProfile(value: unknown): GatewaySessionThinkingProfile {
   if (!isRecord(value)) {

@@ -24,6 +24,7 @@ import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
 import { applyPersonaToSessionDraft } from '@/utils/personaDraft';
 import { resolveAgentStatusSnapshot } from './agentStatus';
+import { gatewayThinkingLevelLabel } from '@/services/gateway/sessionThinkingProfile';
 import { useOptionalCollaborationChat } from './CollaborationChatProvider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SessionActionsMenu } from './session-actions/SessionActionsMenu';
@@ -208,23 +209,39 @@ function sessionLabel(
 }
 
 // ═══════════════════════════════════════════════════════════
-// Agent Status Tooltip — hover card on every agent's canonical session tab
+// Agent 状态提示：每个 Agent 规范会话标签上的悬停卡片。
 // ═══════════════════════════════════════════════════════════
 
-function AgentStatusTooltip({ visible, tokenUsage, connected, agentName, session, thinkingLevel }: {
+function AgentStatusTooltip({
+  visible,
+  tokenUsage,
+  connected,
+  agentName,
+  session,
+  thinkingLevel,
+  thinkingLevels,
+  thinkingDefault,
+}: {
   visible: boolean;
   tokenUsage: ReturnType<typeof resolveAgentStatusSnapshot>['tokenUsage'];
   connected: boolean;
   agentName: string;
   session: Session;
   thinkingLevel: string | null;
+  thinkingLevels: ReturnType<typeof resolveAgentStatusSnapshot>['thinkingLevels'];
+  thinkingDefault: string | null;
 }) {
   const { t } = useTranslation();
 
-  // Reuse the same i18n keys as TitleBar's ThinkingPicker
-  const thinkingId = thinkingLevel ?? 'auto';
-  const thinkingFallback = thinkingId.charAt(0).toUpperCase() + thinkingId.slice(1);
-  const thinkingLabel = t(`titlebar.thinking.levels.${thinkingId}`, thinkingFallback);
+  const effectiveThinkingLabel = gatewayThinkingLevelLabel(thinkingLevel, thinkingLevels);
+  const inheritedThinkingLabel = thinkingLevels
+    ?.find((option) => option.id === thinkingDefault)
+    ?.label ?? null;
+  const thinkingLabel = thinkingLevel === null
+    ? inheritedThinkingLabel
+      ? t('input.sessionRuntimeThinkingInherited', { level: inheritedThinkingLabel })
+      : t('input.sessionRuntimeThinkingInherit')
+    : effectiveThinkingLabel ?? t('input.sessionRuntimeThinkingInherit');
 
   const contextTokens = tokenUsage?.contextTokens || 0;
   const maxTokens = tokenUsage?.maxTokens || 0;
@@ -1344,6 +1361,8 @@ export function ChatTabs() {
                   agentName={agentName}
                   session={session}
                   thinkingLevel={status.thinkingLevel}
+                  thinkingLevels={status.thinkingLevels}
+                  thinkingDefault={status.thinkingDefault}
                 />
               );
             })()}

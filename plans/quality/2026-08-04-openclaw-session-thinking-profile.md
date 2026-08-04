@@ -7,6 +7,7 @@
 3. 添加严格 Gateway profile 解析，仅投影非空且去重的结构化 id/label 对。
 4. 以 Gateway `thinkingLevels` 和 `thinkingDefault` 驱动控制面；未提供结构化数据时停止写入。
 5. 补充协议投影、继承写入、回执、会话定向、三语文案和界面能力来源回归，执行完整验证和中文提交。
+6. 审查非控制面展示，确保 Agent 会话状态提示保留 Gateway profile，并在继承时展示 Gateway 解析标签。
 
 ## 非目标
 
