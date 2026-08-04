@@ -232,6 +232,35 @@ export class ChatHandler {
     return true;
   }
 
+  /** Settle only an exact uncertain delivery confirmed terminal by `agent.wait`. */
+  reconcilePendingRunWaitTerminal(
+    sessionKey: string,
+    runId: string,
+    observation: ChatSessionRunObservation,
+  ): boolean {
+    const normalizedSessionKey = sessionKey.trim();
+    const normalizedRunId = runId.trim();
+    if (
+      !normalizedSessionKey
+      || !normalizedRunId
+      || !this.isSessionRunObservationCurrent(observation)
+    ) {
+      return false;
+    }
+    const pending = this.pendingSends.current(normalizedSessionKey);
+    if (pending?.phase !== 'uncertain' || pending.runId !== normalizedRunId) return false;
+    const active = this.runProjection.active(normalizedSessionKey);
+    if (active && active.runId !== normalizedRunId) return false;
+
+    this.completePendingSend(normalizedSessionKey, normalizedRunId);
+    const resolutions = this.runProjection.reconcileSessionSnapshots(
+      [{ key: normalizedSessionKey, hasActiveRun: false, activeRunIds: [] }],
+      [normalizedSessionKey],
+    );
+    this.applySessionRunReconciliations(resolutions);
+    return resolutions.some((resolution) => resolution.state === 'settled');
+  }
+
   /** Release a request that definitively failed before OpenClaw accepted it. */
   failPendingSend(sessionKey: string, runId: string): void {
     this.pendingSends.complete(sessionKey.trim(), runId.trim());

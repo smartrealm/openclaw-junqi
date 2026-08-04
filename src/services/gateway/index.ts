@@ -82,6 +82,8 @@ import { OpenClawSessionUsageLogsClient } from './OpenClawSessionUsageLogsClient
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
 import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
 import { OpenClawAgentIdentityClient } from './OpenClawAgentIdentityClient';
+import { OpenClawAgentWaitClient } from './OpenClawAgentWaitClient';
+import { OpenClawPendingRunWaitReconciler } from './OpenClawPendingRunWaitReconciler';
 import {
   OpenClawCommandsClient,
   type OpenClawCommandsListInput,
@@ -158,6 +160,10 @@ export type {
   OpenClawAgentIdentity,
   OpenClawAgentIdentityInput,
 } from './OpenClawAgentIdentityClient';
+export type {
+  OpenClawAgentWaitResult,
+  OpenClawAgentWaitStatus,
+} from './OpenClawAgentWaitClient';
 export type {
   OpenClawSessionObserverDigest,
   OpenClawSessionObserverHealth,
@@ -478,6 +484,19 @@ export const openClawAgentIdentityClient = new OpenClawAgentIdentityClient({
     method,
     params,
     expectedConnectionId,
+  ),
+});
+
+export const openClawAgentWaitClient = new OpenClawAgentWaitClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+    { timeoutMs: RUN_STATE_LOOKUP_TIMEOUT_MS },
   ),
 });
 
@@ -1016,6 +1035,29 @@ const sessionRunReconciler = new OpenClawSessionRunReconciler({
   },
 });
 
+const pendingRunWaitReconciler = new OpenClawPendingRunWaitReconciler({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  checkRunForConnection: (runId, connectionId) => openClawAgentWaitClient.checkForConnection(runId, connectionId),
+  captureObservation: (sessionKey) => chatHandler.captureSessionRunObservation(sessionKey),
+  isObservationCurrent: (observation) => chatHandler.isSessionRunObservationCurrent(observation),
+  applyTerminal: (sessionKey, runId, observation) => chatHandler.reconcilePendingRunWaitTerminal(
+    sessionKey,
+    runId,
+    observation,
+  ),
+  onError: (sessionKey, error) => {
+    debugWarn('gateway', `[gateway] Could not resolve uncertain run ${sessionKey} through agent.wait:`, error);
+  },
+});
+
+async function reconcileOneChatSessionRun(sessionKey: string): Promise<void> {
+  const settledByExactRun = await pendingRunWaitReconciler.reconcile(sessionKey);
+  if (!settledByExactRun) await sessionRunReconciler.reconcile(sessionKey);
+}
+
 // Collaboration plugin streams are refresh hints, not chat/agent activity.
 // Route them through the typed bridge before the generic ChatHandler path.
 connection.onEvent = (msg: unknown) => routeTalkGatewayEvent(
@@ -1053,7 +1095,7 @@ export const gateway = {
       observations,
     );
     if (unresolved.length > 0) {
-      void Promise.all(unresolved.map((sessionKey) => sessionRunReconciler.reconcile(sessionKey)));
+      void Promise.all(unresolved.map((sessionKey) => reconcileOneChatSessionRun(sessionKey)));
     }
   },
   observeActiveChatSessionRuns(sessions: unknown[]) { chatHandler.observeActiveSessionRuns(sessions); },
@@ -1061,7 +1103,7 @@ export const gateway = {
     return chatHandler.captureSessionRunObservation(sessionKey);
   },
   reconcileChatSessionRun(sessionKey: string) {
-    return sessionRunReconciler.reconcile(sessionKey);
+    return reconcileOneChatSessionRun(sessionKey);
   },
   reconcileChatHistoryRunState(
     sessionKey: string,

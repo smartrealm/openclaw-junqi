@@ -500,6 +500,42 @@ test('history confirms an uncertain send only from its exact idempotency identit
   assert.equal(useChatStore.getState().getCachedMessages(sessionKey)[0]?.status, 'sent');
 });
 
+test('an exact terminal agent.wait result settles only the current uncertain send', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+  const { useChatStore } = (globalThis as any).__chatDeps as { useChatStore: any };
+  const reconciliations: string[] = [];
+  const sessionKey = 'agent:main:uncertain-agent-wait';
+  const runId = 'run-uncertain-agent-wait';
+  useChatStore.getState().addMessage({
+    id: runId,
+    clientMessageId: runId,
+    role: 'user',
+    content: 'Persist me.',
+    timestamp: new Date().toISOString(),
+    status: 'pending',
+  }, sessionKey);
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onSessionRunReconciliation: (resolution: { state: string }) => reconciliations.push(resolution.state),
+      onSessionRunReconciliationNeeded: () => {},
+    },
+  } as any);
+  handler.beginPendingSend(sessionKey, runId);
+  handler.markPendingSendUncertain(sessionKey, runId);
+  const observation = handler.captureSessionRunObservation(sessionKey);
+
+  assert.equal(handler.reconcilePendingRunWaitTerminal(sessionKey, runId, observation), true);
+  assert.equal(useChatStore.getState().getCachedMessages(sessionKey)[0]?.status, 'sent');
+  assert.deepEqual(reconciliations, ['settled']);
+
+  handler.beginPendingSend(sessionKey, 'run-newer');
+  assert.equal(handler.reconcilePendingRunWaitTerminal(sessionKey, runId, observation), false);
+});
+
 test('an exact sessions.abort acknowledgement settles a send before chat.send acknowledgement', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();
