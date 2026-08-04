@@ -330,6 +330,8 @@ export interface Session {
   status?: string;
   /** Gateway 已过滤有效期的会话 Agent 状态说明；缺失时不保留旧值。 */
   agentStatus?: GatewaySessionAgentStatus | null;
+  /** Gateway 明确记录的最近一次运行已中止；缺失时不保留旧值。 */
+  abortedLastRun?: true | null;
   /** Gateway 记录的最近失败或超时运行摘要；缺失时不保留旧值。 */
   lastRunError?: string | null;
   hasActiveRun?: boolean;

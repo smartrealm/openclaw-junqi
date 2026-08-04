@@ -1425,6 +1425,8 @@
     "sessionSettingsResponseInvalid": "OpenClaw 未确认本次会话设置变更。",
     "sessionModelSelectionLocked": "OpenClaw 已锁定此会话的模型选择。",
     "sessionAgentStatus": "Agent 状态：{{note}}",
+    "sessionLastRunAborted": "最近一次运行已中止",
+    "sessionLastRunAbortedShort": "最近运行已中止",
     "sessionLastRunFailed": "最近一次运行失败：{{reason}}",
     "sessionLastRunFailedShort": "最近运行失败",
     "effectiveTools": {

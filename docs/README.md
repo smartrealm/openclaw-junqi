@@ -146,6 +146,7 @@ docs/
 - [OpenClaw 会话模型选择锁对齐](quality/openclaw-session-model-selection-lock-alignment-2026-08-04.md)
 - [OpenClaw 会话最近运行错误投影](quality/openclaw-session-last-run-error-projection-2026-08-04.md)
 - [OpenClaw 会话 Agent 状态投影](quality/openclaw-session-agent-status-projection-2026-08-04.md)
+- [OpenClaw 会话最近中止状态投影](quality/openclaw-session-aborted-last-run-projection-2026-08-04.md)
 - [OpenClaw 模型目录权威性审计](quality/openclaw-model-catalog-authority-alignment-2026-08-04.md)
 - [OpenClaw Talk 事件契约对齐](quality/openclaw-talk-event-contract-alignment-2026-08-04.md)
 - [OpenClaw Talk Barge-in Turn 围栏](quality/openclaw-talk-barge-in-turn-fence-2026-08-04.md)

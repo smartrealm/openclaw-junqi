@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, AlertCircle, Check, ChevronDown, Crosshair, Download, FileDown, FileText, Folder, MessageSquareText, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
+import { Activity, AlertCircle, Check, ChevronDown, CircleStop, Crosshair, Download, FileDown, FileText, Folder, MessageSquareText, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -312,6 +312,19 @@ export function SessionContextBar() {
           <AlertCircle size={11} className="shrink-0" aria-hidden="true" />
           <span className="hidden truncate text-[10px] lg:inline">
             {t('chat.sessionLastRunFailedShort')}
+          </span>
+        </span>
+      )}
+      {activeSession?.abortedLastRun && (
+        <span
+          role="status"
+          className="inline-flex min-w-0 items-center gap-1 text-aegis-text-muted"
+          aria-label={t('chat.sessionLastRunAborted')}
+          title={t('chat.sessionLastRunAborted')}
+        >
+          <CircleStop size={11} className="shrink-0" aria-hidden="true" />
+          <span className="hidden truncate text-[10px] lg:inline">
+            {t('chat.sessionLastRunAbortedShort')}
           </span>
         </span>
       )}
