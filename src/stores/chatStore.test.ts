@@ -71,6 +71,26 @@ test('setSessionThinking updates only the matching session and active title stat
   assert.equal(useChatStore.getState().currentThinking, 'xhigh');
 });
 
+test('setSessionFastMode updates only the matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionFastMode(OTHER_KEY, 'auto');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.fastMode,
+    'auto',
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.fastMode,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionFastMode(MAIN_KEY, false);
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.fastMode,
+    false,
+  );
+});
+
 test('setSessionModel does not overwrite currentModel for inactive sessions', () => {
   seedSessions(MAIN_KEY);
 

@@ -329,9 +329,11 @@ export interface Session {
   hasActiveSubagentRun?: boolean;
   subagentRunState?: string;
   systemSent?: boolean;
-  // Per-session model/thinking/token data cached from sessions.list
+  // 从 sessions.list 缓存的每会话模型、思考、快速模式与用量数据。
   model?: string | null;
   thinkingLevel?: string | null;
+  /** OpenClaw 会话快速模式覆盖；null 表示继承运行时默认值。 */
+  fastMode?: boolean | 'auto' | null;
   totalTokens?: number;
   contextTokens?: number;
   compactionCount?: number;
@@ -454,6 +456,8 @@ interface ChatState {
   setSessionModel: (key: string, model: string | null) => void;
   /** Update a single session's thinking level locally after sessions.patch succeeds. */
   setSessionThinking: (key: string, level: string | null) => void;
+  /** sessions.patch 成功后在本地更新会话原生快速模式覆盖。 */
+  setSessionFastMode: (key: string, mode: boolean | 'auto' | null) => void;
   /** Pin/unpin through the native Gateway protocol, with a legacy fallback. */
   togglePinSession: (key: string) => Promise<void>;
   /** Archive/restore through the native Gateway protocol, with a legacy fallback. */
@@ -1571,6 +1575,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
             session.thinkingLevel === level ? session : { ...session, thinkingLevel: level },
           ),
           ...(state.activeSessionKey === key ? { currentThinking: level } : {}),
+        }
+  )),
+
+  /** 不等待 sessions.list，在本地应用已确认的原生快速模式覆盖。 */
+  setSessionFastMode: (key, mode) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : {
+          sessions: upsertSession(state.sessions, key, (session) =>
+            session.fastMode === mode ? session : { ...session, fastMode: mode },
+          ),
         }
   )),
 

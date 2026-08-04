@@ -8,7 +8,9 @@ import {
   groupSessionModels,
   modelDisplayName,
   modelProviderId,
+  SESSION_FAST_MODES,
   SESSION_THINKING_LEVELS,
+  type SessionFastMode,
   type SessionThinkingLevel,
 } from './sessionRuntimeDomain';
 import { useSessionRuntimeSettings } from './useSessionRuntimeSettings';
@@ -20,19 +22,23 @@ export function SessionRuntimeControl() {
   const [open, setOpen] = useState(false);
   const [draftModelId, setDraftModelId] = useState<string | null>(committed.modelId);
   const [draftThinking, setDraftThinking] = useState<SessionThinkingLevel>(committed.thinking);
+  const [draftFastMode, setDraftFastMode] = useState<SessionFastMode>(committed.fastMode);
   const [providerId, setProviderId] = useState(() => committed.modelId ? modelProviderId(committed.modelId) : '');
   const rootRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => groupSessionModels(availableModels), [availableModels]);
   const activeModel = availableModels.find((model) => model.id === committed.modelId);
   const selectedGroup = groups.find((group) => group.providerId === providerId) ?? groups[0];
-  const hasChanges = draftModelId !== committed.modelId || draftThinking !== committed.thinking;
+  const hasChanges = draftModelId !== committed.modelId
+    || draftThinking !== committed.thinking
+    || draftFastMode !== committed.fastMode;
 
   useEffect(() => {
     if (open) return;
     setDraftModelId(committed.modelId);
     setDraftThinking(committed.thinking);
+    setDraftFastMode(committed.fastMode);
     setProviderId(committed.modelId ? modelProviderId(committed.modelId) : (groups[0]?.providerId ?? ''));
-  }, [committed.modelId, committed.thinking, groups, open]);
+  }, [committed.fastMode, committed.modelId, committed.thinking, groups, open]);
 
   useEffect(() => {
     setOpen(false);
@@ -58,6 +64,7 @@ export function SessionRuntimeControl() {
 
   const modelLabel = modelDisplayName(activeModel, committed.modelId) || t('config.notSet');
   const thinkingLabel = t(`titlebar.thinking.levels.${committed.thinking}`);
+  const fastModeLabel = t(`input.sessionRuntimeFastModes.${committed.fastMode}`);
   const committedProviderId = committed.modelId ? modelProviderId(committed.modelId) : 'other';
   return (
     <div ref={rootRef} className="relative min-w-0 no-drag">
@@ -71,12 +78,18 @@ export function SessionRuntimeControl() {
           'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
           open && 'bg-[rgb(var(--aegis-overlay)/0.07)] text-aegis-text',
         )}
-        title={t('input.sessionRuntimeSummary', { model: modelLabel, thinking: thinkingLabel })}
+        title={t('input.sessionRuntimeSummary', {
+          model: modelLabel,
+          thinking: thinkingLabel,
+          fastMode: fastModeLabel,
+        })}
       >
         <ProviderIcon providerId={committedProviderId} size={14} className="text-aegis-text-dim" />
-        <span className="truncate font-mono">{modelLabel}</span>
+        <span className="min-w-0 truncate font-mono">{modelLabel}</span>
         <span aria-hidden className="text-aegis-text-dim">·</span>
         <span className="shrink-0">{thinkingLabel}</span>
+        <span aria-hidden className="text-aegis-text-dim">·</span>
+        <span className="shrink-0">{fastModeLabel}</span>
         <span className="grid size-3 shrink-0 place-items-center">
           {saving
             ? <LoaderCircle size={11} className="animate-spin" />
@@ -174,6 +187,31 @@ export function SessionRuntimeControl() {
             </div>
           </div>
 
+          <div className="border-t border-aegis-menu-border px-3 py-2.5">
+            <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
+              {t('input.sessionRuntimeFastMode')}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {SESSION_FAST_MODES.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setDraftFastMode(mode)}
+                  disabled={draftFastMode === mode}
+                  aria-current={draftFastMode === mode ? 'true' : undefined}
+                  className={clsx(
+                    'h-8 rounded-md border px-2 text-[11px] transition-colors',
+                    draftFastMode === mode
+                      ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
+                      : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
+                  )}
+                >
+                  {t(`input.sessionRuntimeFastModes.${mode}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between gap-2 border-t border-aegis-menu-border px-3 py-2.5">
             <button
               type="button"
@@ -200,7 +238,7 @@ export function SessionRuntimeControl() {
               <button
                 type="button"
                 onClick={() => {
-                  void apply({ modelId: draftModelId, thinking: draftThinking })
+                  void apply({ modelId: draftModelId, thinking: draftThinking, fastMode: draftFastMode })
                     .then((updated) => { if (updated) setOpen(false); });
                 }}
                 disabled={!draftModelId || !hasChanges || saving}

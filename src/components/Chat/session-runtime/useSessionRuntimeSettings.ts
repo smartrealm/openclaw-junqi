@@ -10,8 +10,11 @@ import { useChatStore } from '@/stores/chatStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { debugError } from '@/utils/debugLog';
 import {
+  fastModeForGateway,
+  normalizeFastMode,
   normalizeThinkingLevel,
   thinkingLevelForGateway,
+  type SessionFastMode,
   type SessionThinkingLevel,
 } from './sessionRuntimeDomain';
 
@@ -30,6 +33,7 @@ function settingErrorMessage(error: unknown, fallback: string, invalidResponse: 
 export interface SessionRuntimeSnapshot {
   modelId: string | null;
   thinking: SessionThinkingLevel;
+  fastMode: SessionFastMode;
 }
 
 function commitSessionModel(
@@ -63,6 +67,14 @@ function resolvedPatchModel(result: SessionPatchResult): string {
   return model;
 }
 
+function resolvedPatchFastMode(result: SessionPatchResult): boolean | 'auto' | null {
+  const value = result.entry.fastMode;
+  if (value === undefined || value === null || value === true || value === false || value === 'auto') {
+    return value ?? null;
+  }
+  throw new SessionSettingsResponseError('invalid-payload');
+}
+
 export function useSessionRuntimeSettings() {
   const { t } = useTranslation();
   const addToast = useNotificationStore((state) => state.addToast);
@@ -70,12 +82,16 @@ export function useSessionRuntimeSettings() {
   const currentModel = useChatStore((state) => state.currentModel);
   const currentThinking = useChatStore((state) => state.currentThinking);
   const manualModelOverride = useChatStore((state) => state.manualModelOverride);
+  const currentFastMode = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.fastMode ?? null
+  ));
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
 
   const committed: SessionRuntimeSnapshot = {
     modelId: manualModelOverride ?? currentModel,
     thinking: normalizeThinkingLevel(currentThinking),
+    fastMode: normalizeFastMode(currentFastMode),
   };
 
   const runUpdate = useCallback(async (operation: () => Promise<void>): Promise<boolean> => {
@@ -109,6 +125,9 @@ export function useSessionRuntimeSettings() {
       const sessionKey = stateBefore.activeSessionKey || 'agent:main:main';
       const previousModel = stateBefore.manualModelOverride ?? stateBefore.currentModel;
       const previousThinking = normalizeThinkingLevel(stateBefore.currentThinking);
+      const previousFastMode = normalizeFastMode(
+        stateBefore.sessions.find((session) => session.key === sessionKey)?.fastMode ?? null,
+      );
       if (draft.modelId && draft.modelId !== previousModel) {
         const result = await gateway.setSessionModel(draft.modelId, sessionKey);
         const effectiveModel = resolvedPatchModel(result);
@@ -119,6 +138,11 @@ export function useSessionRuntimeSettings() {
         const nextThinking = thinkingLevelForGateway(draft.thinking);
         await gateway.setSessionThinking(nextThinking, sessionKey);
         useChatStore.getState().setSessionThinking(sessionKey, nextThinking);
+      }
+
+      if (draft.fastMode !== previousFastMode) {
+        const result = await gateway.setSessionFastMode(fastModeForGateway(draft.fastMode), sessionKey);
+        useChatStore.getState().setSessionFastMode(sessionKey, resolvedPatchFastMode(result));
       }
     });
   }, [runUpdate]);

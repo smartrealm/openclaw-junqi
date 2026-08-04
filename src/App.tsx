@@ -366,9 +366,12 @@ export default function App() {
           hasActiveSubagentRun: typeof s.hasActiveSubagentRun === 'boolean' ? s.hasActiveSubagentRun : undefined,
           subagentRunState: typeof s.subagentRunState === 'string' ? s.subagentRunState : undefined,
           systemSent: s.systemSent === true,
-          // Per-session metadata for TitleBar
+          // 供标题栏与会话控制使用的每会话元数据。
           model: gatewayModel,
           thinkingLevel: s.thinkingLevel ?? null,
+          fastMode: s.fastMode === true || s.fastMode === false || s.fastMode === 'auto'
+            ? s.fastMode
+            : null,
           totalTokens: s.totalTokens,
           contextTokens: s.contextTokens,
           compactionCount: s.compactionCount,

@@ -4,11 +4,11 @@ import { shouldStopComposerResponse } from './useComposerInterruption';
 
 const SESSION_KEY = 'agent:main:stop-test';
 
-test('Escape treats a pending Gateway send as interruptible before stream output begins', () => {
+test('Escape does not treat local sending preflight as a native Gateway run', () => {
   assert.equal(shouldStopComposerResponse({
     typingBySession: {},
     sendingBySession: { [SESSION_KEY]: true },
-  }, SESSION_KEY, false), true);
+  }, SESSION_KEY, false), false);
 });
 
 test('Escape preserves input recovery when neither a request nor voice output is active', () => {

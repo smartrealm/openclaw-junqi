@@ -12,6 +12,10 @@ export const SESSION_THINKING_LEVELS = [
 
 export type SessionThinkingLevel = (typeof SESSION_THINKING_LEVELS)[number];
 
+export const SESSION_FAST_MODES = ['inherit', 'auto', 'on', 'off'] as const;
+
+export type SessionFastMode = (typeof SESSION_FAST_MODES)[number];
+
 export interface SessionModelGroup {
   providerId: string;
   models: ModelEntry[];
@@ -52,4 +56,18 @@ export function normalizeThinkingLevel(level: string | null): SessionThinkingLev
 
 export function thinkingLevelForGateway(level: SessionThinkingLevel): string | null {
   return level === 'auto' ? null : level;
+}
+
+export function normalizeFastMode(value: unknown): SessionFastMode {
+  if (value === 'auto') return 'auto';
+  if (value === true) return 'on';
+  if (value === false) return 'off';
+  return 'inherit';
+}
+
+export function fastModeForGateway(mode: SessionFastMode): boolean | 'auto' | null {
+  if (mode === 'auto') return 'auto';
+  if (mode === 'on') return true;
+  if (mode === 'off') return false;
+  return null;
 }

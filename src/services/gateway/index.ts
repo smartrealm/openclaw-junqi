@@ -1542,6 +1542,9 @@ export const gateway = {
   async setSessionThinking(level: string | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setThinking(sessionKey, level);
   },
+  async setSessionFastMode(mode: boolean | 'auto' | null, sessionKey = 'agent:main:main') {
+    return sessionSettings.setFastMode(sessionKey, mode);
+  },
   async setSessionLabel(label: string | null, sessionKey = 'agent:main:main') {
     return sessionSettings.setLabel(sessionKey, label);
   },

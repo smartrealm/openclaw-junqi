@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  fastModeForGateway,
   groupSessionModels,
   modelDisplayName,
+  normalizeFastMode,
   normalizeThinkingLevel,
+  SESSION_FAST_MODES,
   thinkingLevelForGateway,
 } from './sessionRuntimeDomain';
 
@@ -37,6 +40,20 @@ test('thinking levels normalize to the supported gateway values', () => {
   assert.equal(normalizeThinkingLevel('unexpected'), 'auto');
   assert.equal(thinkingLevelForGateway('auto'), null);
   assert.equal(thinkingLevelForGateway('minimal'), 'minimal');
+});
+
+test('fast modes map exactly to the documented session override values', () => {
+  assert.deepEqual(SESSION_FAST_MODES, ['inherit', 'auto', 'on', 'off']);
+  assert.equal(normalizeFastMode(null), 'inherit');
+  assert.equal(normalizeFastMode(undefined), 'inherit');
+  assert.equal(normalizeFastMode(true), 'on');
+  assert.equal(normalizeFastMode(false), 'off');
+  assert.equal(normalizeFastMode('auto'), 'auto');
+  assert.equal(normalizeFastMode('unsupported'), 'inherit');
+  assert.equal(fastModeForGateway('inherit'), null);
+  assert.equal(fastModeForGateway('auto'), 'auto');
+  assert.equal(fastModeForGateway('on'), true);
+  assert.equal(fastModeForGateway('off'), false);
 });
 
 test('session runtime picker follows the compact shared provider identity contract', () => {

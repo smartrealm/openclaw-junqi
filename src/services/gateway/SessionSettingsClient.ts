@@ -68,9 +68,8 @@ function confirmedPatchResult(result: unknown, sessionKey: string): SessionPatch
 }
 
 /**
- * `sessions.patch` is an OpenClaw control-plane mutation. Route every field
- * through the short-lived operator.admin connection so the runtime's
- * method-level authorization remains valid across supported versions.
+ * `sessions.patch` 是 OpenClaw 控制平面变更。所有字段都经由短生命周期的
+ * operator.admin 连接发送，以保持运行时逐方法授权的有效性。
  */
 export class SessionSettingsClient {
   constructor(private readonly deps: SessionSettingsClientDeps) {}
@@ -93,6 +92,10 @@ export class SessionSettingsClient {
 
   setThinking(sessionKey: string, thinkingLevel: string | null): Promise<SessionPatchResult> {
     return this.patch(sessionKey, { thinkingLevel }, true);
+  }
+
+  setFastMode(sessionKey: string, fastMode: boolean | 'auto' | null): Promise<SessionPatchResult> {
+    return this.patch(sessionKey, { fastMode }, true);
   }
 
   setLabel(sessionKey: string, label: string | null): Promise<SessionPatchResult> {

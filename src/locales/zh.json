@@ -1933,10 +1933,17 @@
       "close": "Esc 关闭",
       "chooseArgument": "选择…"
     },
-    "sessionRuntimeTitle": "会话模型与思考",
+    "sessionRuntimeTitle": "会话模型、思考与快速模式",
     "sessionRuntimeProvider": "供应商",
     "sessionRuntimeModel": "模型",
-    "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}",
+    "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}，快速模式 {{fastMode}}",
+    "sessionRuntimeFastMode": "快速模式",
+    "sessionRuntimeFastModes": {
+      "inherit": "继承",
+      "auto": "自动",
+      "on": "开启",
+      "off": "关闭"
+    },
     "useDefaultModel": "使用默认模型",
     "useDefaultModelHint": "清除当前会话覆盖并遵循已配置的模型路由"
   },
