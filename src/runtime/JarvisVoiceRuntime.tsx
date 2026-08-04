@@ -1,9 +1,21 @@
-import { createContext, useCallback, useContext, useMemo, useRef, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { VoiceWakeOverlay } from '@/components/Chat/message-input/VoiceWakeOverlay';
 import { useComposerVoice } from '@/components/Chat/message-input/useComposerVoice';
 import { useChatStore } from '@/stores/chatStore';
 import { debugError } from '@/utils/debugLog';
+import { gateway } from '@/services/gateway';
+import { subscribeAutoArmPreference, autoArmSessionKey } from '@/services/voice/VoiceWakePreference';
+import { resolveVoiceWakeStandbySessionRestore } from '@/services/voice/VoiceWakeStandbySessionRestore';
 
 type JarvisVoiceController = ReturnType<typeof useComposerVoice>;
 
@@ -27,12 +39,37 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
   const activeSessionAgentId = useChatStore(
     (state) => state.sessions.find((session) => session.key === state.activeSessionKey)?.agentId,
   );
+  const sessions = useChatStore((state) => state.sessions);
   const connected = useChatStore((state) => state.connected);
   const messageCount = useChatStore((state) => state.messages.length);
   const historyLoading = useChatStore((state) => (
     state.connected && messageCount === 0 && Boolean(state.loadingHistoryBySession[state.activeSessionKey])
   ));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const restoredStandbyBindingRef = useRef<string | null>(null);
+  const standbySessionKey = useSyncExternalStore(
+    subscribeAutoArmPreference,
+    autoArmSessionKey,
+    autoArmSessionKey,
+  );
+  const attestedConnectionId = connected ? gateway.captureConnectionId() : null;
+
+  useEffect(() => {
+    if (!standbySessionKey) {
+      restoredStandbyBindingRef.current = null;
+      return;
+    }
+    const restore = resolveVoiceWakeStandbySessionRestore({
+      attestedConnectionId,
+      standbySessionKey,
+      sessions,
+      restoredBinding: restoredStandbyBindingRef.current,
+    });
+    if (!restore) return;
+    restoredStandbyBindingRef.current = restore.binding;
+    useChatStore.getState().setActiveSession(restore.sessionKey);
+  }, [attestedConnectionId, sessions, standbySessionKey]);
+
   const reportAttachmentError = useCallback((error: unknown) => {
     debugError('media', '[JarvisVoiceRuntime] Unable to preserve captured audio:', error);
   }, []);
