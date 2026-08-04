@@ -17,8 +17,7 @@ export function useJarvisVoiceRuntime(): JarvisVoiceController {
 }
 
 /**
- * The desktop-level owner for the native microphone, Talk relay and full-window
- * Jarvis surface. Chat controls consume this controller but never own capture.
+ * 桌面级语音所有者统一管理原生麦克风、Talk 中继和全窗口 Jarvis 表面；聊天控件仅消费控制器，不能接管采集。
  */
 export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
   const { language } = useSettingsStore();
@@ -26,6 +25,9 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const activeSessionId = useChatStore(
     (state) => state.sessions.find((session) => session.key === state.activeSessionKey)?.sessionId,
+  );
+  const activeSessionAgentId = useChatStore(
+    (state) => state.sessions.find((session) => session.key === state.activeSessionKey)?.agentId,
   );
   const connected = useChatStore((state) => state.connected);
   const messageCount = useChatStore((state) => state.messages.length);
@@ -44,6 +46,7 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
   const controller = useComposerVoice({
     activeSessionKey,
     activeSessionId,
+    activeSessionAgentId,
     connected,
     historyLoading,
     language: String(language),

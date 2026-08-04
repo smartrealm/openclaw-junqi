@@ -18,7 +18,11 @@ import {
   voiceModeCoordinator,
   type VoiceModeContext,
 } from '@/services/voice/VoiceModeCoordinator';
-import { decideVoiceWakeRoute, hasCompatibleVoiceWakeTrigger } from '@/services/voice/VoiceWakeRoutePolicy';
+import {
+  decideVoiceWakeRoute,
+  hasCompatibleVoiceWakeTrigger,
+  type VoiceWakeRouteContext,
+} from '@/services/voice/VoiceWakeRoutePolicy';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { TalkConversationCoordinator, shouldCancelTalkOutput } from '@/services/voice/TalkConversationCoordinator';
 import { VOICE_INTERRUPT_EVENT, type VoiceInterruptControl } from '@/services/voice/types';
@@ -60,6 +64,7 @@ function isAttestedVoiceContext(
 interface UseComposerVoiceOptions {
   activeSessionKey: string;
   activeSessionId?: string;
+  activeSessionAgentId?: string;
   connected: boolean;
   historyLoading: boolean;
   language: string;
@@ -73,6 +78,7 @@ interface UseComposerVoiceOptions {
 export function useComposerVoice({
   activeSessionKey,
   activeSessionId,
+  activeSessionAgentId,
   connected,
   historyLoading,
   language,
@@ -139,9 +145,13 @@ export function useComposerVoice({
     return () => window.removeEventListener(VOICE_INTERRUPT_EVENT, cancelTalkOutput);
   }, []);
   const currentContextRef = useRef<VoiceModeContext | null>(null);
+  const currentRouteContextRef = useRef<VoiceWakeRouteContext | null>(null);
   const connectionId = gateway.captureConnectionId();
   currentContextRef.current = connectionId && activeSessionKey
     ? { sessionKey: activeSessionKey, connectionId }
+    : null;
+  currentRouteContextRef.current = currentContextRef.current
+    ? { sessionKey: activeSessionKey, agentId: activeSessionAgentId }
     : null;
   const phase = useVoiceStore((state) => state.phase);
   const voiceSessionKey = useVoiceStore((state) => state.sessionKey);
@@ -268,7 +278,10 @@ export function useComposerVoice({
       const context = currentContextRef.current;
       if (!context || !voiceModeCoordinator.markTriggered(activeTurnRef.current, context)) return false;
       if (trigger) {
-        const disposition = decideVoiceWakeRoute(wakeConfigurationRef.current, trigger, context.sessionKey);
+        const routeContext = currentRouteContextRef.current;
+        const disposition = routeContext?.sessionKey === context.sessionKey
+          ? decideVoiceWakeRoute(wakeConfigurationRef.current, trigger, routeContext)
+          : 'target_changed';
         if (disposition === 'unknown_trigger') {
           voiceModeCoordinator.resumeListening(activeTurnRef.current, context);
           return false;
