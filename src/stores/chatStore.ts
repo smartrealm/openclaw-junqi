@@ -260,10 +260,10 @@ export interface ChatMessage {
   attachments?: Array<{
     mimeType: string;
     content: string;
-    fileName: string;
+    fileName?: string;
   }>;
   /** Local delivery metadata. Never serialized into the OpenClaw transcript. */
-  outboundAttachments?: Array<{ fileName: string; mimeType: string }>;
+  outboundAttachments?: Array<{ fileName?: string; mimeType: string }>;
   /** Retained only while a delivery is queued or failed so retry is lossless. */
   retryPayload?: OutboundChatPayload;
   // Tool call metadata (role === 'tool')

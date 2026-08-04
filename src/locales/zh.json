@@ -1501,6 +1501,16 @@
       "messageCount": "{{count}} 条消息",
       "untitled": "未命名分支"
     },
+    "messageCut": {
+      "rewind": "重绕到此消息",
+      "fork": "从此消息分叉",
+      "rewindConfirmTitle": "重绕到此消息？",
+      "rewindConfirmMessage": "OpenClaw 将移除这条消息之后的当前会话路径，并把这条消息恢复到输入框。",
+      "rewindFailedTitle": "会话重绕失败",
+      "forkConfirmTitle": "从此消息创建分叉？",
+      "forkConfirmMessage": "OpenClaw 将在这条消息之前创建一个新会话，并在新标签页中打开。",
+      "forkFailedTitle": "创建会话分叉失败"
+    },
     "sessionArtifacts": {
       "open": "查看会话产物",
       "title": "会话产物",

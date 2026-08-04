@@ -62,14 +62,14 @@ export function validatePreparedAttachments(files: readonly PreparedAttachment[]
   let totalBytes = 0;
   for (const file of files) {
     if (!file.content.trim()) {
-      throw new AttachmentValidationError(`${file.fileName} has no readable content`, 'EMPTY_CONTENT');
+      throw new AttachmentValidationError(`${file.fileName ?? file.mimeType} has no readable content`, 'EMPTY_CONTENT');
     }
     const perFileLimit = file.isImage
       ? ATTACHMENT_LIMITS.maxImageBytes
       : ATTACHMENT_LIMITS.maxFileBytes;
     if (file.size > perFileLimit) {
       throw new AttachmentValidationError(
-        `${file.fileName} exceeds the ${Math.floor(perFileLimit / 1024 / 1024)} MB limit`,
+        `${file.fileName ?? file.mimeType} exceeds the ${Math.floor(perFileLimit / 1024 / 1024)} MB limit`,
         'FILE_SIZE_LIMIT',
       );
     }
@@ -87,7 +87,7 @@ export function toGatewayAttachments(files: readonly PreparedAttachment[]): Gate
     type: file.isImage ? 'image' : 'file',
     mimeType: file.mimeType,
     content: stripDataUrlPrefix(file.content),
-    fileName: file.fileName,
+    ...(file.fileName ? { fileName: file.fileName } : {}),
   }));
 }
 
@@ -120,6 +120,40 @@ export function displayAttachments(files: readonly PreparedAttachment[]) {
     .map((file) => ({
       mimeType: file.mimeType,
       content: file.preview!,
-      fileName: file.fileName,
+      ...(file.fileName ? { fileName: file.fileName } : {}),
     }));
+}
+
+const OPENCLAW_EDITOR_IMAGE_MIME = /^image\/[\w.+-]+$/u;
+const OPENCLAW_EDITOR_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
+const OPENCLAW_EDITOR_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const OPENCLAW_EDITOR_IMAGE_MAX_BASE64_CHARS = Math.ceil(OPENCLAW_EDITOR_IMAGE_MAX_BYTES / 3) * 4;
+
+function base64DecodedBytes(value: string): number {
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((value.length * 3) / 4) - padding);
+}
+
+/** 仅恢复 OpenClaw 消息截断响应中可验证、受限的内联图片。 */
+export function restoreOpenClawEditorImages(
+  attachments: readonly { mimeType: string; data: string }[] = [],
+): PreparedAttachment[] {
+  return attachments.flatMap(({ mimeType, data }) => {
+    if (
+      !OPENCLAW_EDITOR_IMAGE_MIME.test(mimeType)
+      || data.length === 0
+      || data.length > OPENCLAW_EDITOR_IMAGE_MAX_BASE64_CHARS
+      || !OPENCLAW_EDITOR_BASE64.test(data)
+    ) return [];
+
+    return [{
+      id: crypto.randomUUID?.() ?? `attachment-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      type: 'image' as const,
+      mimeType,
+      content: data,
+      isImage: true,
+      size: base64DecodedBytes(data),
+      preview: `data:${mimeType};base64,${data}`,
+    }];
+  });
 }

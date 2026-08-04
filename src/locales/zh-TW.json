@@ -1472,6 +1472,16 @@
       "messageCount": "{{count}} 條訊息",
       "untitled": "未命名分支"
     },
+    "messageCut": {
+      "rewind": "重繞到此訊息",
+      "fork": "從此訊息分叉",
+      "rewindConfirmTitle": "重繞到此訊息？",
+      "rewindConfirmMessage": "OpenClaw 將移除這條訊息之後的目前會話路徑，並把這條訊息恢復到輸入框。",
+      "rewindFailedTitle": "會話重繞失敗",
+      "forkConfirmTitle": "從此訊息建立分叉？",
+      "forkConfirmMessage": "OpenClaw 將在這條訊息之前建立新會話，並在新分頁中開啟。",
+      "forkFailedTitle": "建立會話分叉失敗"
+    },
     "sessionArtifacts": {
       "open": "查看會話產物",
       "title": "會話產物",

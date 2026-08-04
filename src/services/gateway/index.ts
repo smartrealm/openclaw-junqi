@@ -69,6 +69,7 @@ import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClie
 import { OpenClawSessionCompactionCheckpointsClient } from './OpenClawSessionCompactionCheckpointsClient';
 import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
 import { OpenClawSessionBranchesClient } from './OpenClawSessionBranchesClient';
+import { OpenClawSessionMessageCutClient } from './OpenClawSessionMessageCutClient';
 import { OpenClawSessionObserverClient } from './OpenClawSessionObserverClient';
 import {
   openClawSessionObserverStream,
@@ -156,6 +157,11 @@ export type {
   OpenClawSessionUsageLogRole,
 } from './OpenClawSessionUsageLogsClient';
 export type { OpenClawSessionBranch } from './OpenClawSessionBranchesClient';
+export type {
+  OpenClawSessionEditorAttachment,
+  OpenClawSessionForkResult,
+  OpenClawSessionRewindResult,
+} from './OpenClawSessionMessageCutClient';
 export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
 export type { OpenClawProviderUsageSnapshot } from './OpenClawProviderUsageClient';
 export type {
@@ -1053,6 +1059,11 @@ const sessionBranches = new OpenClawSessionBranchesClient({
   requestPrivileged: (method, params) => requestPrivileged(method, params),
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
 });
+const sessionMessageCut = new OpenClawSessionMessageCutClient({
+  request: (method, params) => connection.request(method, params),
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+  runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
+});
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
 });
@@ -1214,7 +1225,7 @@ export const gateway = {
         type: att.mimeType?.startsWith('image/') ? 'image' : 'file',
         mimeType: att.mimeType,
         content: rawBase64,
-        fileName: att.fileName || 'file',
+        ...(att.fileName ? { fileName: att.fileName } : {}),
       };
     });
 
@@ -1372,6 +1383,12 @@ export const gateway = {
   },
   async switchSessionBranch(sessionKey: string, leafEntryId: string, agentId?: string) {
     return sessionBranches.switch(sessionKey, leafEntryId, agentId);
+  },
+  async rewindSessionAtMessage(sessionKey: string, entryId: string, agentId?: string) {
+    return sessionMessageCut.rewind(sessionKey, entryId, agentId);
+  },
+  async forkSessionAtMessage(sessionKey: string, entryId: string, agentId?: string) {
+    return sessionMessageCut.fork(sessionKey, entryId, agentId);
   },
   async listSessionArtifacts(sessionKey: string, agentId?: string): Promise<ArtifactSummary[]> {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);

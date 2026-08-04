@@ -1,4 +1,4 @@
-import { Check, Copy, PanelRightOpen } from 'lucide-react';
+import { Check, Copy, GitFork, PanelRightOpen, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ChatIconButton } from './ChatIconButton';
 
@@ -7,6 +7,9 @@ interface MessageBubbleActionsProps {
   previewable: boolean;
   onCopy: () => void;
   onPreview: () => void;
+  onRewind?: () => void;
+  onFork?: () => void;
+  messageCutDisabled?: boolean;
 }
 
 export function MessageBubbleActions({
@@ -14,6 +17,9 @@ export function MessageBubbleActions({
   previewable,
   onCopy,
   onPreview,
+  onRewind,
+  onFork,
+  messageCutDisabled = false,
 }: MessageBubbleActionsProps) {
   const { t } = useTranslation();
   const buttonClass = [
@@ -25,6 +31,28 @@ export function MessageBubbleActions({
 
   return (
     <div className="flex shrink-0 items-center gap-0.5" data-message-actions>
+      {onRewind && (
+        <ChatIconButton
+          type="button"
+          onClick={onRewind}
+          disabled={messageCutDisabled}
+          className={buttonClass}
+          label={t('chat.messageCut.rewind')}
+        >
+          <RotateCcw size={14} />
+        </ChatIconButton>
+      )}
+      {onFork && (
+        <ChatIconButton
+          type="button"
+          onClick={onFork}
+          disabled={messageCutDisabled}
+          className={buttonClass}
+          label={t('chat.messageCut.fork')}
+        >
+          <GitFork size={14} />
+        </ChatIconButton>
+      )}
       {previewable && (
         <ChatIconButton
           type="button"

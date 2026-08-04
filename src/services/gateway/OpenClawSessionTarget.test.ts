@@ -45,6 +45,8 @@ test('Gateway 会话定向外观在连接或 mutation 协调器前拒绝缺失�
     gateway.branchSessionCompactionCheckpoint(missingTarget, 'checkpoint-1'),
     gateway.restoreSessionCompactionCheckpoint(missingTarget, 'checkpoint-1'),
     gateway.listSessionCompactionCheckpoints(missingTarget),
+    gateway.rewindSessionAtMessage(missingTarget, 'entry-1'),
+    gateway.forkSessionAtMessage(missingTarget, 'entry-1'),
   ];
 
   for (const request of requests) {

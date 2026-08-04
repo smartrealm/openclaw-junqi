@@ -1512,6 +1512,16 @@
       "messageCount": "{{count}} messages",
       "untitled": "Untitled branch"
     },
+    "messageCut": {
+      "rewind": "Rewind to this message",
+      "fork": "Fork from this message",
+      "rewindConfirmTitle": "Rewind to this message?",
+      "rewindConfirmMessage": "OpenClaw will remove the current session path after this message and restore it to the composer.",
+      "rewindFailedTitle": "Session rewind failed",
+      "forkConfirmTitle": "Create a fork from this message?",
+      "forkConfirmMessage": "OpenClaw will create a new session before this message and open it in a new tab.",
+      "forkFailedTitle": "Creating the session fork failed"
+    },
     "sessionArtifacts": {
       "open": "View session artifacts",
       "title": "Session artifacts",

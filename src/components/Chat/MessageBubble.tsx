@@ -192,11 +192,14 @@ interface MessageBubbleProps {
   onErrorAction?: (action: string) => void;
   deliveryStatus?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
   deliveryError?: string;
-  outboundAttachments?: Array<{ fileName: string; mimeType: string }>;
+  outboundAttachments?: Array<{ fileName?: string; mimeType: string }>;
   historyTruncated?: boolean;
   historyTruncationReason?: string;
   onLoadFullMessage?: () => Promise<void>;
   onOpenPreview?: (preview: ChatMessagePreview) => void;
+  onRewind?: () => void;
+  onFork?: () => void;
+  messageCutDisabled?: boolean;
   collaborationAction?: {
     state: 'confirming' | 'ready' | 'active';
     onClick?: () => void;
@@ -430,7 +433,8 @@ function ActionBtn({ icon, label, onClick, disabled, danger = false }: {
 export const MessageBubble = memo(function MessageBubble({
   block, sessionKey, onEdit, onDelete, onRetry, onErrorAction, collaborationAction,
   deliveryStatus, deliveryError, outboundAttachments,
-  historyTruncated, historyTruncationReason, onLoadFullMessage, onOpenPreview,
+  historyTruncated, historyTruncationReason, onLoadFullMessage, onOpenPreview, onRewind, onFork,
+  messageCutDisabled,
   groupPosition = 'standalone',
 }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
@@ -499,6 +503,9 @@ function stripInlineCodeTicks(md: string): string {
       onPreview={() => {
         if (messagePreview) onOpenPreview?.(messagePreview);
       }}
+      onRewind={isUser ? onRewind : undefined}
+      onFork={isUser ? onFork : undefined}
+      messageCutDisabled={messageCutDisabled}
     />
   ) : null;
   const hasBubbleActions = !isUser && Boolean(messageActions);
@@ -615,12 +622,12 @@ function stripInlineCodeTicks(md: string): string {
                 .filter((attachment) => !attachment.mimeType.startsWith('image/'))
                 .map((attachment) => (
                   <span
-                    key={`${attachment.fileName}:${attachment.mimeType}`}
+                    key={`${attachment.fileName ?? attachment.mimeType}:${attachment.mimeType}`}
                     className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] px-2 py-1 text-[10.5px] text-aegis-text-muted"
-                    title={attachment.fileName}
+                    title={attachment.fileName ?? attachment.mimeType}
                   >
                     <FileText size={11} className="shrink-0 text-aegis-primary" />
-                    <span className="truncate">{attachment.fileName}</span>
+                    <span className="truncate">{attachment.fileName ?? attachment.mimeType}</span>
                   </span>
                 ))}
             </div>

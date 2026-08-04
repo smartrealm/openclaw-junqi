@@ -80,7 +80,7 @@ export function useMessageSend({
     }
 
     const fullMessage = trimmed || t('input.attachmentsOnlyMessage', {
-      files: sendFiles.map((file) => file.fileName).join(', '),
+      files: sendFiles.map((file) => file.fileName ?? file.mimeType).join(', '),
     });
     setIsSending(true, sessionKey);
 

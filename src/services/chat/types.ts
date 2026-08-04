@@ -4,7 +4,7 @@ export interface GatewayAttachment {
   type?: 'image' | 'file' | 'base64';
   mimeType: string;
   content: string;
-  fileName: string;
+  fileName?: string;
 }
 
 export interface PreparedAttachment extends GatewayAttachment {
@@ -18,7 +18,7 @@ export interface PreparedAttachment extends GatewayAttachment {
 export interface DisplayAttachment {
   mimeType: string;
   content: string;
-  fileName: string;
+  fileName?: string;
 }
 
 export interface OutboundChatPayload {

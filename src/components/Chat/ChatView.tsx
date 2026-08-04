@@ -23,6 +23,8 @@ import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
+import { restoreOpenClawEditorImages } from '@/services/chat/attachments';
+import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
 import {
   OpenClawSessionTargetError,
   requireOpenClawSessionTarget,
@@ -283,6 +285,9 @@ function ChatViewContent() {
   const activeAgentId = useChatStore(
     (s) => s.sessions.find((session) => session.key === activeSessionKey)?.agentId,
   );
+  const activeSessionHasRun = useChatStore(
+    (s) => s.sessions.find((session) => session.key === activeSessionKey)?.hasActiveRun === true,
+  );
   const agents = useGatewayDataStore((s) => s.agents);
   const messageQueue = useChatStore((s) => s.messageQueue);
   const queueCount = (messageQueue[activeSessionKey] || []).length;
@@ -303,6 +308,9 @@ function ChatViewContent() {
   const setQuickReplies = useChatStore((s) => s.setQuickReplies);
   const setSessionIdentity = useChatStore((s) => s.setSessionIdentity);
   const setSessionActiveLeafEntryId = useChatStore((s) => s.setSessionActiveLeafEntryId);
+  const clearSessionMessages = useChatStore((s) => s.clearSessionMessages);
+  const setDraft = useChatStore((s) => s.setDraft);
+  const setPreparedAttachments = useChatStore((s) => s.setPreparedAttachments);
 
   const { timelineItems, anchoredRunIds } = useMemo(
     () => buildCollaborationChatTimeline(responseGroups, messages, collaboration.runs),
@@ -984,6 +992,62 @@ function ChatViewContent() {
     }
   }, [activeSessionKey, t]);
 
+  const handleRewindMessage = useCallback((sourceMessage: ChatMessage) => {
+    const entryId = sourceMessage.nativeMessageId;
+    if (!entryId) return;
+    const sessionKey = activeSessionKey;
+    showConfirm(
+      t('chat.messageCut.rewindConfirmTitle'),
+      t('chat.messageCut.rewindConfirmMessage'),
+      async () => {
+        try {
+          await sessionMutationGate.run(sessionKey, async () => {
+            const result = await gateway.rewindSessionAtMessage(sessionKey, entryId, activeAgentId);
+            sessionTranscriptFence.invalidate(sessionKey);
+            clearSessionMessages(sessionKey);
+            setDraft(sessionKey, result.editorText ?? '');
+            setPreparedAttachments(sessionKey, restoreOpenClawEditorImages(result.editorAttachments));
+            await loadHistory(sessionKey, { force: true });
+          });
+        } catch (cause) {
+          const detail = cause instanceof Error && cause.message ? cause.message : String(cause);
+          showAlert(t('chat.messageCut.rewindFailedTitle'), detail, 'error');
+        }
+      },
+    );
+  }, [activeAgentId, activeSessionKey, clearSessionMessages, loadHistory, setDraft, setPreparedAttachments, t]);
+
+  const handleForkMessage = useCallback((sourceMessage: ChatMessage) => {
+    const entryId = sourceMessage.nativeMessageId;
+    if (!entryId) return;
+    const sourceSessionKey = activeSessionKey;
+    showConfirm(
+      t('chat.messageCut.forkConfirmTitle'),
+      t('chat.messageCut.forkConfirmMessage'),
+      async () => {
+        try {
+          const result = await sessionMutationGate.run(
+            sourceSessionKey,
+            () => gateway.forkSessionAtMessage(sourceSessionKey, entryId, activeAgentId),
+          );
+          if (useChatStore.getState().activeSessionKey !== sourceSessionKey) return;
+          const state = useChatStore.getState();
+          state.addNativeSession({
+            key: result.sessionKey,
+            label: result.sessionKey,
+            ...(activeAgentId ? { agentId: activeAgentId } : {}),
+          });
+          setDraft(result.sessionKey, result.editorText ?? '');
+          setPreparedAttachments(result.sessionKey, restoreOpenClawEditorImages(result.editorAttachments));
+          await loadHistory(result.sessionKey, { force: true });
+        } catch (cause) {
+          const detail = cause instanceof Error && cause.message ? cause.message : String(cause);
+          showAlert(t('chat.messageCut.forkFailedTitle'), detail, 'error');
+        }
+      },
+    );
+  }, [activeAgentId, activeSessionKey, loadHistory, setDraft, setPreparedAttachments, t]);
+
   const handleInlineButtonClick = useCallback(async (callbackData: string) => {
     const text = callbackData;
     voiceRuntime.interruptGlobally(activeSessionKey);
@@ -1143,6 +1207,12 @@ function ChatViewContent() {
       case 'message':
         const sourceMessage = messages.find((message) => message.id === block.id);
         const messageCapabilities = localUserMessageCapabilities(sourceMessage);
+        const canCutAtMessage = sourceMessage?.role === 'user' && Boolean(sourceMessage.nativeMessageId);
+        const messageCutDisabled = !connected
+          || isTyping
+          || activeSessionHasRun
+          || isLoadingHistory
+          || sessionMutationGate.isBlocked(activeSessionKey);
         return (
           <Suspense fallback={<MessageBubbleFallback block={block} groupPosition={groupPosition} />}>
             <MessageBubble
@@ -1168,6 +1238,13 @@ function ChatViewContent() {
                 ? () => handleLoadFullMessage(sourceMessage)
                 : undefined}
               onOpenPreview={sidePanel.openMessagePreview}
+              onRewind={canCutAtMessage && sourceMessage
+                ? () => handleRewindMessage(sourceMessage)
+                : undefined}
+              onFork={canCutAtMessage && sourceMessage
+                ? () => handleForkMessage(sourceMessage)
+                : undefined}
+              messageCutDisabled={messageCutDisabled}
               collaborationAction={block.role === 'user'
                 ? collaboration.getMessageAction(sourceMessage)
                 : undefined}
@@ -1180,8 +1257,14 @@ function ChatViewContent() {
     }
   }, [
     collaboration,
+    connected,
+    activeSessionHasRun,
+    isLoadingHistory,
+    isTyping,
     handleDeleteLocalMessage,
     handleEditFailedMessage,
+    handleForkMessage,
+    handleRewindMessage,
     handleRetryMessage,
     handleInlineButtonClick,
     handleDecisionSelect,
