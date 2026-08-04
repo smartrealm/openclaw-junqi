@@ -2,6 +2,12 @@ const AUTO_ARM_STORAGE_KEY = 'junqi:voice-wake:auto-arm:v1';
 
 interface StoredAutoArmPreference {
   sessionKey: string;
+  targetFingerprint: string;
+}
+
+export interface VoiceWakeStandbyBinding {
+  sessionKey: string;
+  targetFingerprint: string;
 }
 
 const listeners = new Set<() => void>();
@@ -16,12 +22,12 @@ function publish(): void {
   }
 }
 
-function writeAutoArmSession(sessionKey: string | null): void {
-  if (sessionKey === null) {
+function writeAutoArmBinding(binding: VoiceWakeStandbyBinding | null): void {
+  if (binding === null) {
     localStorage.removeItem(AUTO_ARM_STORAGE_KEY);
     return;
   }
-  localStorage.setItem(AUTO_ARM_STORAGE_KEY, JSON.stringify({ sessionKey }));
+  localStorage.setItem(AUTO_ARM_STORAGE_KEY, JSON.stringify(binding));
 }
 
 export interface VoiceWakeAutostartController {
@@ -34,48 +40,68 @@ export function subscribeAutoArmPreference(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-export function autoArmSessionKey(): string | null {
+export function autoArmBinding(): VoiceWakeStandbyBinding | null {
   try {
     const raw = localStorage.getItem(AUTO_ARM_STORAGE_KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    const sessionKey = (parsed as StoredAutoArmPreference).sessionKey;
-    return typeof sessionKey === 'string' && sessionKey.trim() ? sessionKey : null;
+    const { sessionKey, targetFingerprint } = parsed as StoredAutoArmPreference;
+    if (typeof sessionKey !== 'string' || typeof targetFingerprint !== 'string') return null;
+    const normalizedSessionKey = sessionKey.trim();
+    const normalizedTargetFingerprint = targetFingerprint.trim();
+    return normalizedSessionKey && normalizedTargetFingerprint
+      ? { sessionKey: normalizedSessionKey, targetFingerprint: normalizedTargetFingerprint }
+      : null;
   } catch {
     return null;
   }
 }
 
-export function setAutoArmSession(sessionKey: string): void {
-  const normalized = sessionKey.trim();
-  if (!normalized) return;
-  writeAutoArmSession(normalized);
+export function setAutoArmBinding(binding: VoiceWakeStandbyBinding): void {
+  const sessionKey = binding.sessionKey.trim();
+  const targetFingerprint = binding.targetFingerprint.trim();
+  if (!sessionKey || !targetFingerprint) return;
+  writeAutoArmBinding({ sessionKey, targetFingerprint });
   publish();
 }
 
 export function clearAutoArmSession(): void {
-  writeAutoArmSession(null);
+  writeAutoArmBinding(null);
   publish();
 }
 
-export function shouldAutoArmSession(sessionKey: string): boolean {
-  return autoArmSessionKey() === sessionKey;
+export function shouldAutoArmSession(
+  sessionKey: string,
+  targetFingerprint: string | null | undefined,
+): boolean {
+  const binding = autoArmBinding();
+  return Boolean(
+    binding
+    && binding.sessionKey === sessionKey
+    && targetFingerprint?.trim()
+    && binding.targetFingerprint === targetFingerprint.trim(),
+  );
 }
 
 /**
  * 仅在系统自动启动回执确认后发布待机会话，避免登录启动与恢复目标半配置。
  */
 export async function enableVoiceWakeStandby(
-  sessionKey: string,
+  binding: VoiceWakeStandbyBinding,
   autostart: VoiceWakeAutostartController,
+  isBindingCurrent: () => boolean,
 ): Promise<void> {
-  const normalized = sessionKey.trim();
-  if (!normalized) throw new Error('voice_wake_standby_session_missing');
+  const sessionKey = binding.sessionKey.trim();
+  const targetFingerprint = binding.targetFingerprint.trim();
+  if (!sessionKey) throw new Error('voice_wake_standby_session_missing');
+  if (!targetFingerprint) throw new Error('voice_wake_standby_runtime_missing');
+  if (!isBindingCurrent()) throw new Error('voice_wake_standby_runtime_changed');
   const status = await autostart.enable();
   if (!status.enabled) throw new Error('app_autostart_enable_not_confirmed');
   try {
-    writeAutoArmSession(normalized);
+    if (!isBindingCurrent()) throw new Error('voice_wake_standby_runtime_changed');
+    writeAutoArmBinding({ sessionKey, targetFingerprint });
   } catch (error) {
     try {
       const restored = await autostart.disable();
@@ -99,7 +125,7 @@ export async function disableVoiceWakeStandby(
   const status = await autostart.disable();
   if (status.enabled) throw new Error('app_autostart_disable_not_confirmed');
   try {
-    writeAutoArmSession(null);
+    writeAutoArmBinding(null);
   } catch (error) {
     try {
       const restored = await autostart.enable();

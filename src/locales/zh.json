@@ -897,6 +897,7 @@
     "jarvisWakePhrasesHint": "仅可选择当前本地模型声明的词。保存时会保留 OpenClaw Gateway 的其他触发词。",
     "jarvisStandby": "桌面待命",
     "jarvisStandbyEnabled": "JunQi 将在登录后启动，并为该 OpenClaw 会话进入 Jarvis 待命。",
+    "jarvisStandbyRuntimeMismatch": "已配置登录启动，但当前 JunQi 运行目标没有保存的 OpenClaw 会话的有效待命绑定。",
     "jarvisStandbyDisabled": "JunQi 启动后不会自动进入 Jarvis 待命。",
     "jarvisStandbyStart": "开启待命",
     "jarvisStandbyStop": "关闭待命",

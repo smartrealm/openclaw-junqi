@@ -52,7 +52,9 @@ export function JarvisVoiceSettingsPanel({ settings }: JarvisVoiceSettingsPanelP
           <div className="min-w-0">
             <h3 className="text-[13px] font-semibold text-aegis-text">{t('settings.jarvisStandby')}</h3>
             <p className="mt-1 text-[12px] leading-5 text-aegis-text-dim">
-              {settings.standbyEnabled ? t('settings.jarvisStandbyEnabled') : t('settings.jarvisStandbyDisabled')}
+              {settings.standbyEnabled
+                ? (settings.standbyReady ? t('settings.jarvisStandbyEnabled') : t('settings.jarvisStandbyRuntimeMismatch'))
+                : t('settings.jarvisStandbyDisabled')}
             </p>
             {settings.standbySessionKey && (
               <p className="mt-3 break-all font-mono text-[11px] text-aegis-text-secondary">{settings.standbySessionKey}</p>

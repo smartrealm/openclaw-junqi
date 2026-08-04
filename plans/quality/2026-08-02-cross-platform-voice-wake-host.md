@@ -29,6 +29,7 @@
 25. Move the sole Jarvis microphone, Talk, full-window overlay, draft-confirmation, and retry owner to an application-root Provider. The chat composer consumes this owner and cannot stop an armed listener by unmounting.
 26. Complete the Settings Jarvis entry by moving desktop-standby enablement and its selected-session binding there. Publish preference changes so the root runtime immediately arms or releases capture.
 27. 对照官方 voice-wake routing target，使用 Gateway 投影的会话 `agentId` 核验 agent route；删除通过 session key 格式推断身份的路径，并保持跨会话路由失败关闭。
+28. 将桌面待命绑定扩展为会话键与已验证 JunQi 运行目标指纹的原子记录；旧版记录、目标不匹配和启用期间目标切换均失败关闭，且新启用的自动启动必须回滚。
 
 ## Current Remediation (Completed)
 

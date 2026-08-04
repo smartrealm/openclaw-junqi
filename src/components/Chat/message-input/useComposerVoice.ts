@@ -67,6 +67,7 @@ interface UseComposerVoiceOptions {
   activeSessionAgentId?: string;
   connected: boolean;
   historyLoading: boolean;
+  runtimeTargetFingerprint: string | null;
   textareaRef: RefObject<HTMLTextAreaElement>;
   setIsSending: (sending: boolean, sessionKey?: string) => void;
   closeMenu: () => void;
@@ -79,6 +80,7 @@ export function useComposerVoice({
   activeSessionAgentId,
   connected,
   historyLoading,
+  runtimeTargetFingerprint,
   textareaRef,
   setIsSending,
   closeMenu,
@@ -86,7 +88,9 @@ export function useComposerVoice({
 }: UseComposerVoiceOptions) {
   const { t } = useTranslation();
   const [recording, setRecording] = useState(false);
-  const [autoArmEnabled, setAutoArmEnabledState] = useState(() => shouldAutoArmSession(activeSessionKey));
+  const [autoArmEnabled, setAutoArmEnabledState] = useState(() => (
+    shouldAutoArmSession(activeSessionKey, runtimeTargetFingerprint)
+  ));
   const [autoArmRevision, setAutoArmRevision] = useState(0);
   const voiceMode = useVoiceMode();
   const activeTurnRef = useRef<string | null>(null);
@@ -451,15 +455,15 @@ export function useComposerVoice({
   }, [activeSessionKey, closeMenu, isCurrentVoiceContext, voiceWake.enabled, voiceWake.start, voiceWake.stop]);
 
   useEffect(() => {
-    setAutoArmEnabledState(shouldAutoArmSession(activeSessionKey));
-  }, [activeSessionKey]);
+    setAutoArmEnabledState(shouldAutoArmSession(activeSessionKey, runtimeTargetFingerprint));
+  }, [activeSessionKey, runtimeTargetFingerprint]);
 
   useEffect(() => subscribeAutoArmPreference(() => {
-    const shouldArm = shouldAutoArmSession(activeSessionKey);
+    const shouldArm = shouldAutoArmSession(activeSessionKey, runtimeTargetFingerprint);
     setAutoArmEnabledState(shouldArm);
     if (shouldArm) requestAutoArmRetry();
     else void stopVoiceMode();
-  }), [activeSessionKey, requestAutoArmRetry, stopVoiceMode]);
+  }), [activeSessionKey, requestAutoArmRetry, runtimeTargetFingerprint, stopVoiceMode]);
 
   useEffect(() => {
     if (
@@ -467,7 +471,7 @@ export function useComposerVoice({
       || historyLoading
       || !connectionId
       || !autoArmEnabled
-      || !shouldAutoArmSession(activeSessionKey)
+      || !shouldAutoArmSession(activeSessionKey, runtimeTargetFingerprint)
       || voiceWake.enabled
       || voiceMode.mode !== 'off'
     ) {
@@ -485,6 +489,7 @@ export function useComposerVoice({
     connectionId,
     historyLoading,
     requestWakeWord,
+    runtimeTargetFingerprint,
     voiceMode.mode,
     voiceWake.enabled,
   ]);
@@ -500,7 +505,7 @@ export function useComposerVoice({
       || historyLoading
       || !connectionId
       || !autoArmEnabled
-      || !shouldAutoArmSession(activeSessionKey)
+      || !shouldAutoArmSession(activeSessionKey, runtimeTargetFingerprint)
     ) {
       return;
     }
@@ -518,6 +523,7 @@ export function useComposerVoice({
     connectionId,
     historyLoading,
     requestAutoArmRetry,
+    runtimeTargetFingerprint,
     voiceWake.error,
   ]);
 

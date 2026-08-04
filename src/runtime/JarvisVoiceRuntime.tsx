@@ -14,7 +14,8 @@ import { useComposerVoice } from '@/components/Chat/message-input/useComposerVoi
 import { useChatStore } from '@/stores/chatStore';
 import { debugError } from '@/utils/debugLog';
 import { gateway } from '@/services/gateway';
-import { subscribeAutoArmPreference, autoArmSessionKey } from '@/services/voice/VoiceWakePreference';
+import { getCurrentRuntimeIdentity, subscribeRuntimeIdentity } from '@/services/gateway/runtimeIdentity';
+import { autoArmBinding, subscribeAutoArmPreference } from '@/services/voice/VoiceWakePreference';
 import { resolveVoiceWakeStandbySessionRestore } from '@/services/voice/VoiceWakeStandbySessionRestore';
 
 type JarvisVoiceController = ReturnType<typeof useComposerVoice>;
@@ -47,28 +48,38 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
   ));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const restoredStandbyBindingRef = useRef<string | null>(null);
-  const standbySessionKey = useSyncExternalStore(
+  const standbyBinding = useSyncExternalStore(
     subscribeAutoArmPreference,
-    autoArmSessionKey,
-    autoArmSessionKey,
+    autoArmBinding,
+    autoArmBinding,
   );
-  const attestedConnectionId = connected ? gateway.captureConnectionId() : null;
+  const runtimeIdentity = useSyncExternalStore(
+    subscribeRuntimeIdentity,
+    getCurrentRuntimeIdentity,
+    getCurrentRuntimeIdentity,
+  );
+  const attestedConnectionId = connected
+    && runtimeIdentity?.verified === true
+    && runtimeIdentity.connectionId === gateway.captureConnectionId()
+    && standbyBinding?.targetFingerprint === runtimeIdentity.targetFingerprint
+    ? runtimeIdentity.connectionId
+    : null;
 
   useEffect(() => {
-    if (!standbySessionKey) {
+    if (!standbyBinding) {
       restoredStandbyBindingRef.current = null;
       return;
     }
     const restore = resolveVoiceWakeStandbySessionRestore({
       attestedConnectionId,
-      standbySessionKey,
+      standbySessionKey: standbyBinding.sessionKey,
       sessions,
       restoredBinding: restoredStandbyBindingRef.current,
     });
     if (!restore) return;
     restoredStandbyBindingRef.current = restore.binding;
     useChatStore.getState().setActiveSession(restore.sessionKey);
-  }, [attestedConnectionId, sessions, standbySessionKey]);
+  }, [attestedConnectionId, sessions, standbyBinding]);
 
   const reportAttachmentError = useCallback((error: unknown) => {
     debugError('media', '[JarvisVoiceRuntime] Unable to preserve captured audio:', error);
@@ -79,6 +90,10 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
     activeSessionAgentId,
     connected,
     historyLoading,
+    runtimeTargetFingerprint: runtimeIdentity?.verified === true
+      && runtimeIdentity.connectionId === gateway.captureConnectionId()
+      ? runtimeIdentity.targetFingerprint
+      : null,
     textareaRef,
     setIsSending: useChatStore.getState().setIsSending,
     closeMenu: () => undefined,

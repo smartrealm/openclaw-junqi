@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   appAutostartStatus,
@@ -9,13 +9,14 @@ import {
   type VoiceWakeDetectorStatus,
 } from '@/api/tauri-commands';
 import { voiceWakeGatewayClient } from '@/services/gateway';
+import { getCurrentRuntimeIdentity, subscribeRuntimeIdentity } from '@/services/gateway/runtimeIdentity';
 import {
   mergeGatewayTriggersForModelSelection,
   resolveModelWakeKeywordSelection,
   selectedModelWakeKeywords,
 } from '@/services/voice/VoiceWakeKeywordSelection';
 import {
-  autoArmSessionKey,
+  autoArmBinding,
   disableVoiceWakeStandby,
   enableVoiceWakeStandby,
 } from '@/services/voice/VoiceWakePreference';
@@ -30,6 +31,7 @@ export interface JarvisVoiceSettingsState {
   configuring: boolean;
   saving: boolean;
   standbyEnabled: boolean;
+  standbyReady: boolean;
   standbySessionKey: string | null;
   error: string | null;
   configureModel: (title: string) => Promise<void>;
@@ -50,9 +52,15 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
   const [configuring, setConfiguring] = useState(false);
   const [saving, setSaving] = useState(false);
   const [standbyEnabled, setStandbyEnabled] = useState(false);
+  const [standbyReady, setStandbyReady] = useState(false);
   const [standbySessionKey, setStandbySessionKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const triggerRevisionRef = useRef(0);
+  const runtimeIdentity = useSyncExternalStore(
+    subscribeRuntimeIdentity,
+    getCurrentRuntimeIdentity,
+    getCurrentRuntimeIdentity,
+  );
 
   const replaceGatewayTriggers = useCallback((triggers: readonly string[]) => {
     triggerRevisionRef.current += 1;
@@ -73,9 +81,16 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
       if (triggerRevisionRef.current === triggerRevision) {
         replaceGatewayTriggers(triggers.triggers);
       }
-      const target = autoArmSessionKey();
-      setStandbySessionKey(target);
-      setStandbyEnabled(autostartEnabled.enabled && target !== null);
+      const binding = autoArmBinding();
+      const identity = getCurrentRuntimeIdentity();
+      const bindingCurrent = Boolean(
+        binding
+        && identity?.verified
+        && binding.targetFingerprint === identity.targetFingerprint,
+      );
+      setStandbySessionKey(binding?.sessionKey ?? null);
+      setStandbyEnabled(autostartEnabled.enabled);
+      setStandbyReady(autostartEnabled.enabled && bindingCurrent);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -86,7 +101,7 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
   useEffect(() => {
     if (!enabled) return;
     void refresh();
-  }, [enabled, refresh]);
+  }, [enabled, refresh, runtimeIdentity]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -155,16 +170,25 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
           disable: disableAppAutostart,
         });
         setStandbyEnabled(false);
+        setStandbyReady(false);
         setStandbySessionKey(null);
         return;
       }
       const sessionKey = useChatStore.getState().activeSessionKey.trim();
       if (!sessionKey) throw new Error('No active OpenClaw session is available for Jarvis standby');
-      await enableVoiceWakeStandby(sessionKey, {
-        enable: enableAppAutostart,
-        disable: disableAppAutostart,
-      });
+      const identity = getCurrentRuntimeIdentity();
+      const targetFingerprint = identity?.verified ? identity.targetFingerprint.trim() : '';
+      if (!targetFingerprint) throw new Error('voice_wake_standby_runtime_unavailable');
+      await enableVoiceWakeStandby(
+        { sessionKey, targetFingerprint },
+        { enable: enableAppAutostart, disable: disableAppAutostart },
+        () => {
+          const current = getCurrentRuntimeIdentity();
+          return current?.verified === true && current.targetFingerprint === targetFingerprint;
+        },
+      );
       setStandbyEnabled(true);
+      setStandbyReady(true);
       setStandbySessionKey(sessionKey);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -183,6 +207,7 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     configuring,
     saving,
     standbyEnabled,
+    standbyReady,
     standbySessionKey,
     error,
     configureModel,

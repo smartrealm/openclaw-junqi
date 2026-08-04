@@ -906,6 +906,7 @@
     "jarvisWakePhrasesHint": "Only phrases declared by the current local model can be selected. Saving preserves other OpenClaw Gateway triggers.",
     "jarvisStandby": "Desktop standby",
     "jarvisStandbyEnabled": "JunQi starts on login and arms Jarvis for this OpenClaw session.",
+    "jarvisStandbyRuntimeMismatch": "Login startup is configured, but this JunQi runtime has no valid standby binding for the saved OpenClaw session.",
     "jarvisStandbyDisabled": "Jarvis is not armed automatically when JunQi starts.",
     "jarvisStandbyStart": "Enable standby",
     "jarvisStandbyStop": "Disable standby",
