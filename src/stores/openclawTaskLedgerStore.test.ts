@@ -89,3 +89,44 @@ test('does not claim cancellation when the native Gateway does not confirm it', 
     gateway.cancelTask = originalCancel;
   }
 });
+
+test('refreshes only after the native Gateway confirms blocked completion delivery recovery', async () => {
+  const originalRetry = gateway.retryTaskDelivery;
+  const originalList = gateway.listTasks;
+  const originalGetStatus = gateway.getStatus;
+  const blocked = { ...task('task-1'), status: 'completed' as const, deliveryStatus: 'failed' as const, terminalOutcome: 'blocked' as const };
+  let listCalls = 0;
+  gateway.retryTaskDelivery = async () => ({ results: [{ taskId: 'task-1', ok: true }] });
+  gateway.listTasks = async () => {
+    listCalls += 1;
+    return { tasks: [blocked], availability: 'available' as const };
+  };
+  gateway.getStatus = () => ({ ...originalGetStatus(), connected: true });
+  useOpenClawTaskLedgerStore.setState({ retryingTaskId: null, error: null, page: null });
+
+  try {
+    await useOpenClawTaskLedgerStore.getState().retryDelivery(true, blocked);
+    assert.equal(listCalls, 1);
+    assert.equal(useOpenClawTaskLedgerStore.getState().retryingTaskId, null);
+    assert.equal(useOpenClawTaskLedgerStore.getState().error, null);
+  } finally {
+    gateway.retryTaskDelivery = originalRetry;
+    gateway.listTasks = originalList;
+    gateway.getStatus = originalGetStatus;
+  }
+});
+
+test('does not claim delivery dismissal when the native Gateway rejects it', async () => {
+  const originalDismiss = gateway.dismissTaskDelivery;
+  const blocked = { ...task('task-1'), status: 'completed' as const, deliveryStatus: 'failed' as const, terminalOutcome: 'blocked' as const };
+  gateway.dismissTaskDelivery = async () => ({ results: [{ taskId: 'task-1', ok: false, reason: 'completion delivery is not blocked' }] });
+  useOpenClawTaskLedgerStore.setState({ dismissingTaskId: null, error: null });
+
+  try {
+    await useOpenClawTaskLedgerStore.getState().dismissDelivery(true, blocked);
+    assert.equal(useOpenClawTaskLedgerStore.getState().error, 'completion delivery is not blocked');
+    assert.equal(useOpenClawTaskLedgerStore.getState().dismissingTaskId, null);
+  } finally {
+    gateway.dismissTaskDelivery = originalDismiss;
+  }
+});

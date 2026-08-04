@@ -6,16 +6,20 @@
 
 现行链路统一为 `OpenClawTaskLedgerClient`、Gateway facade、`openclawTaskLedgerStore` 和 `OpenClawTaskLedgerPanel`。列表、详情、分页和取消仍由 Gateway 唯一确认；JunQi 不创建或合成本地任务记录。
 
-## 契约差异
+## 当前协议更新
 
-当前稳定 `TaskSummary` schema 不包含 `toolUseCount`、`lastToolName` 或 `prompt`。当前 Gateway handler 的 `tasks.get` 明确传入 `includePrompt: true`，因此仅详情解析可以接受 `prompt`。列表和取消快照仍拒绝该字段及任何未知字段，避免将 handler 的详情扩展误用为稳定列表契约。
+本地官方 OpenClaw 工作树更新后，`TaskSummary` 已增加 `toolUseCount`、`lastToolName`、`deliveryStatus`、`terminalOutcome`，并由 `tasks.get` 返回 lookup-only `prompt` 与 `result`。`tasks.retry` 和 `tasks.dismiss` 是 `2026.7` 的 `operator.write` 增量 RPC：它们只恢复或确认不投递已阻塞的子智能体完成结果，不创建或重跑任务。
+
+JunQi 因此将账本请求切换到经认证连接身份的 `requestFenced`；连接断开或切换时，请求不会发送或采纳旧 Gateway 的结果。列表与取消快照仍拒绝详情专属字段，恢复结果则按官方 handler 返回的详情快照解析。活动中心只在官方 `deliveryStatus=failed` 与 `terminalOutcome=blocked` 同时成立时显示恢复操作，并在重试前明确告知官方记录的重复可见结果风险。
+
+官方 `docs/gateway/protocol.md` 当前仍只描述 `list/get/cancel` 的较早任务账本章节。按仓库规范，本次以同一官方工作树中可复现的 protocol schema、核心方法注册、handler 和 CLI/子智能体文档为行为依据，并记录该差异。
 
 ## 验证结果
 
-- 已通过：`node --import ./test-setup.ts --import tsx --test src/services/gateway/OpenClawTaskLedgerClient.test.ts src/stores/openclawTaskLedgerStore.test.ts`，12 项回归测试通过。
-- 已通过：`pnpm exec tsc --noEmit`、三份语言包的 `jq empty`、遗弃任务账本链路引用扫描与 `git diff --check`。
-- 已通过：`pnpm lint`、`pnpm test`（2743 项通过）、`pnpm build` 与 `pnpm verify:openclaw-docs`。
+- 已通过：`node --import ./test-setup.ts --import tsx --test src/services/gateway/OpenClawTaskLedgerClient.test.ts src/stores/openclawTaskLedgerStore.test.ts`，17 项回归测试通过。
+- 已通过：`pnpm lint`、`pnpm test`、`pnpm test:rust`（709 通过、0 失败、3 跳过）、`pnpm build` 与 `pnpm verify:openclaw-docs`。
+- 已通过：三份语言包 JSON 校验、`git diff --check` 与本次修改完整文件的 Emoji 扫描。
 
 ## 未验证边界
 
-真实 Gateway 的 schema 与 handler 演进，以及 macOS、Windows、CentOS、Ubuntu 真机中的任务列表、取消和辅助功能验收仍待执行。
+真实 Gateway 的 schema 与 handler 演进，以及 macOS、Windows、CentOS、Ubuntu 真机中的任务列表、取消、阻塞投递恢复和辅助功能验收仍待执行。

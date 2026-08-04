@@ -8,7 +8,9 @@ import {
   FileText,
   LoaderCircle,
   RefreshCw,
+  RotateCcw,
   TerminalSquare,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { showConfirm } from '@/components/shared/AlertDialog';
@@ -60,6 +62,9 @@ function metadata(task: OpenClawTaskSummary): Array<{ label: string; value: stri
     ['flowId', task.flowId],
     ['parentTaskId', task.parentTaskId],
     ['sourceId', task.sourceId],
+    ['lastToolName', task.lastToolName],
+    ['deliveryStatus', task.deliveryStatus],
+    ['terminalOutcome', task.terminalOutcome],
   ];
   return fields.flatMap(([label, value]) => value === undefined ? [] : [{ label, value }]);
 }
@@ -104,6 +109,13 @@ function TaskDetails({ task }: { task: OpenClawTaskSummary }) {
       {task.progressSummary && <p className="mt-3 whitespace-pre-wrap break-words text-[11px] leading-5 text-aegis-text-secondary">{task.progressSummary}</p>}
       {task.terminalSummary && <p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-5 text-aegis-text-secondary">{task.terminalSummary}</p>}
       {task.error && <p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-5 text-aegis-danger">{task.error}</p>}
+      {task.toolUseCount !== undefined && <p className="mt-2 text-[10px] text-aegis-text-dim">{t('activity.tasks.toolUseCount', 'Tool calls')}: {task.toolUseCount}</p>}
+      {task.result !== undefined && (
+        <div className="mt-3 border-t border-aegis-border pt-3">
+          <div className="mb-1 text-[10px] font-medium text-aegis-text-dim">{t('activity.tasks.result', 'Result')}</div>
+          <p className="whitespace-pre-wrap break-words text-[11px] leading-5 text-aegis-text-secondary">{task.result}</p>
+        </div>
+      )}
       {task.prompt !== undefined && (
         <div className="mt-3 border-t border-aegis-border pt-3">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium text-aegis-text-dim"><FileText size={11} />{t('activity.tasks.prompt', 'Prompt')}</div>
@@ -120,11 +132,16 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
   const detailLoadingId = useOpenClawTaskLedgerStore((state) => state.detailLoadingId);
   const detailErrors = useOpenClawTaskLedgerStore((state) => state.detailErrors);
   const cancellingTaskId = useOpenClawTaskLedgerStore((state) => state.cancellingTaskId);
+  const retryingTaskId = useOpenClawTaskLedgerStore((state) => state.retryingTaskId);
+  const dismissingTaskId = useOpenClawTaskLedgerStore((state) => state.dismissingTaskId);
   const loadDetail = useOpenClawTaskLedgerStore((state) => state.loadDetail);
   const cancel = useOpenClawTaskLedgerStore((state) => state.cancel);
+  const retryDelivery = useOpenClawTaskLedgerStore((state) => state.retryDelivery);
+  const dismissDelivery = useOpenClawTaskLedgerStore((state) => state.dismissDelivery);
   const [expanded, setExpanded] = useState(false);
   const detail = detailsById[task.id];
   const canCancel = task.status === 'queued' || task.status === 'running';
+  const canRecoverDelivery = task.deliveryStatus === 'failed' && task.terminalOutcome === 'blocked';
   const time = formatTimestamp(task.updatedAt ?? task.createdAt);
 
   const toggleDetail = () => {
@@ -140,6 +157,22 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
       t('activity.tasks.cancelTitle', 'Cancel native task'),
       t('activity.tasks.cancelMessage', 'OpenClaw will be asked to cancel this task. This does not delete its ledger record.'),
       () => cancel(connected, task),
+    );
+  };
+
+  const confirmRetryDelivery = () => {
+    showConfirm(
+      t('activity.tasks.retryTitle', 'Retry completion delivery'),
+      t('activity.tasks.retryMessage', 'OpenClaw will redrive the retained completion result. An ambiguous earlier acknowledgement can produce a duplicate visible result.'),
+      () => retryDelivery(connected, task),
+    );
+  };
+
+  const confirmDismissDelivery = () => {
+    showConfirm(
+      t('activity.tasks.dismissTitle', 'Dismiss completion delivery'),
+      t('activity.tasks.dismissMessage', 'OpenClaw will retain this blocked task but record that its completion result should not be delivered.'),
+      () => dismissDelivery(connected, task),
     );
   };
 
@@ -171,11 +204,35 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
           >
             {detailLoadingId === task.id ? <LoaderCircle size={13} className="animate-spin" /> : <ChevronDown size={14} className={clsx(expanded && 'rotate-180')} />}
           </button>
+          {canRecoverDelivery && (
+            <>
+              <button
+                type="button"
+                onClick={confirmRetryDelivery}
+                disabled={!connected || cancellingTaskId !== null || retryingTaskId !== null || dismissingTaskId !== null}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-primary/10 hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-45"
+                title={t('activity.tasks.retry', 'Retry completion delivery')}
+                aria-label={t('activity.tasks.retry', 'Retry completion delivery')}
+              >
+                {retryingTaskId === task.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={14} />}
+              </button>
+              <button
+                type="button"
+                onClick={confirmDismissDelivery}
+                disabled={!connected || cancellingTaskId !== null || retryingTaskId !== null || dismissingTaskId !== null}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-45"
+                title={t('activity.tasks.dismiss', 'Dismiss completion delivery')}
+                aria-label={t('activity.tasks.dismiss', 'Dismiss completion delivery')}
+              >
+                {dismissingTaskId === task.id ? <LoaderCircle size={13} className="animate-spin" /> : <X size={14} />}
+              </button>
+            </>
+          )}
           {canCancel && (
             <button
               type="button"
               onClick={confirmCancel}
-              disabled={!connected || cancellingTaskId !== null}
+              disabled={!connected || cancellingTaskId !== null || retryingTaskId !== null || dismissingTaskId !== null}
               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-danger/10 hover:text-aegis-danger disabled:cursor-not-allowed disabled:opacity-45"
               title={t('activity.tasks.cancel', 'Cancel task')}
               aria-label={t('activity.tasks.cancel', 'Cancel task')}

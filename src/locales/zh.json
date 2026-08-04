@@ -312,6 +312,12 @@
       "cancel": "取消任务",
       "cancelTitle": "取消原生任务",
       "cancelMessage": "将请求 OpenClaw 取消该任务，不会删除其账本记录。",
+      "retry": "重试完成投递",
+      "retryTitle": "重试完成投递",
+      "retryMessage": "OpenClaw 将重新投递保留的完成结果。此前确认状态不明确时，可能产生重复的可见结果。",
+      "dismiss": "确认不投递完成结果",
+      "dismissTitle": "确认不投递完成结果",
+      "dismissMessage": "OpenClaw 会保留该阻塞任务，并记录其完成结果不应继续投递。",
       "statusQueued": "排队中",
       "statusRunning": "运行中",
       "statusCompleted": "已完成",
@@ -322,7 +328,9 @@
       "updatedAt": "更新时间",
       "startedAt": "开始时间",
       "endedAt": "结束时间",
-      "prompt": "提示词"
+      "prompt": "提示词",
+      "result": "结果",
+      "toolUseCount": "工具调用"
     },
     "attentionTitle": "需要处理",
     "noAttention": "没有等待输入或审阅的任务。",

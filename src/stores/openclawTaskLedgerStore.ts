@@ -18,12 +18,16 @@ interface OpenClawTaskLedgerState {
   loading: boolean;
   detailLoadingId: string | null;
   cancellingTaskId: string | null;
+  retryingTaskId: string | null;
+  dismissingTaskId: string | null;
   error: string | null;
   detailErrors: Readonly<Record<string, string>>;
   refresh: (connected: boolean, showLoading?: boolean) => Promise<void>;
   loadMore: (connected: boolean) => Promise<void>;
   loadDetail: (connected: boolean, taskId: string) => Promise<void>;
   cancel: (connected: boolean, task: OpenClawTaskSummary) => Promise<void>;
+  retryDelivery: (connected: boolean, task: OpenClawTaskSummary) => Promise<void>;
+  dismissDelivery: (connected: boolean, task: OpenClawTaskSummary) => Promise<void>;
 }
 
 let listRequestSequence = 0;
@@ -43,6 +47,8 @@ export const useOpenClawTaskLedgerStore = create<OpenClawTaskLedgerState>((set, 
   loading: false,
   detailLoadingId: null,
   cancellingTaskId: null,
+  retryingTaskId: null,
+  dismissingTaskId: null,
   error: null,
   detailErrors: {},
   refresh: async (connected, showLoading = true) => {
@@ -58,6 +64,8 @@ export const useOpenClawTaskLedgerStore = create<OpenClawTaskLedgerState>((set, 
         loading: false,
         detailLoadingId: null,
         cancellingTaskId: null,
+        retryingTaskId: null,
+        dismissingTaskId: null,
         error: null,
         detailErrors: {},
       });
@@ -143,6 +151,54 @@ export const useOpenClawTaskLedgerStore = create<OpenClawTaskLedgerState>((set, 
       set({ error: errorMessage(error) });
     } finally {
       if (sequence === cancellationRequestSequence) set({ cancellingTaskId: null });
+    }
+  },
+  retryDelivery: async (connected, task) => {
+    if (!connected) {
+      set({ error: 'Gateway is not connected' });
+      return;
+    }
+    const sequence = cancellationRequestSequence + 1;
+    cancellationRequestSequence = sequence;
+    set({ retryingTaskId: task.id, error: null });
+    try {
+      const result = await gateway.retryTaskDelivery([task.id]);
+      if (sequence !== cancellationRequestSequence) return;
+      const item = result.results.find((entry) => entry.taskId === task.id);
+      if (!item?.ok) {
+        set({ error: item?.reason || 'OpenClaw did not confirm task delivery recovery' });
+        return;
+      }
+      await get().refresh(gateway.getStatus().connected, false);
+    } catch (error) {
+      if (sequence !== cancellationRequestSequence) return;
+      set({ error: errorMessage(error) });
+    } finally {
+      if (sequence === cancellationRequestSequence) set({ retryingTaskId: null });
+    }
+  },
+  dismissDelivery: async (connected, task) => {
+    if (!connected) {
+      set({ error: 'Gateway is not connected' });
+      return;
+    }
+    const sequence = cancellationRequestSequence + 1;
+    cancellationRequestSequence = sequence;
+    set({ dismissingTaskId: task.id, error: null });
+    try {
+      const result = await gateway.dismissTaskDelivery([task.id]);
+      if (sequence !== cancellationRequestSequence) return;
+      const item = result.results.find((entry) => entry.taskId === task.id);
+      if (!item?.ok) {
+        set({ error: item?.reason || 'OpenClaw did not confirm task delivery dismissal' });
+        return;
+      }
+      await get().refresh(gateway.getStatus().connected, false);
+    } catch (error) {
+      if (sequence !== cancellationRequestSequence) return;
+      set({ error: errorMessage(error) });
+    } finally {
+      if (sequence === cancellationRequestSequence) set({ dismissingTaskId: null });
     }
   },
 }));

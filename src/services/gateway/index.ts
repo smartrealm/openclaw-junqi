@@ -1110,9 +1110,17 @@ const sessionGroups = new OpenClawSessionGroupsClient(
 const sessionLifecycle = new OpenClawSessionLifecycleClient(
   (method, params) => connection.request(method, params),
 );
-const taskLedger = new OpenClawTaskLedgerClient(
-  (method, params) => connection.request(method, params),
-);
+const taskLedger = new OpenClawTaskLedgerClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
 const cronRunClient = new OpenClawCronRunClient(
   (method, params) => connection.request(method, params),
 );
@@ -1583,6 +1591,8 @@ export const gateway = {
   async listTasks(input: OpenClawTaskListInput = {}) { return taskLedger.list(input); },
   async getTask(taskId: string) { return taskLedger.get(taskId); },
   async cancelTask(taskId: string, reason?: string) { return taskLedger.cancel(taskId, reason); },
+  async retryTaskDelivery(taskIds: readonly string[]) { return taskLedger.retry(taskIds); },
+  async dismissTaskDelivery(taskIds: readonly string[]) { return taskLedger.dismiss(taskIds); },
   async enqueueCronRun(jobId: string) { return cronRunClient.enqueue(jobId); },
   async listCronRuns(jobId: string, runId?: string) { return cronRunClient.list(jobId, runId); },
   async findTerminalCronRun(jobId: string, runId: string) { return cronRunClient.findTerminal(jobId, runId); },

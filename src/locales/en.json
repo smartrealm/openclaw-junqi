@@ -321,6 +321,12 @@
       "cancel": "Cancel task",
       "cancelTitle": "Cancel native task",
       "cancelMessage": "OpenClaw will be asked to cancel this task. This does not delete its ledger record.",
+      "retry": "Retry completion delivery",
+      "retryTitle": "Retry completion delivery",
+      "retryMessage": "OpenClaw will redrive the retained completion result. An ambiguous earlier acknowledgement can produce a duplicate visible result.",
+      "dismiss": "Dismiss completion delivery",
+      "dismissTitle": "Dismiss completion delivery",
+      "dismissMessage": "OpenClaw will retain this blocked task but record that its completion result should not be delivered.",
       "statusQueued": "Queued",
       "statusRunning": "Running",
       "statusCompleted": "Completed",
@@ -331,7 +337,9 @@
       "updatedAt": "Updated",
       "startedAt": "Started",
       "endedAt": "Ended",
-      "prompt": "Prompt"
+      "prompt": "Prompt",
+      "result": "Result",
+      "toolUseCount": "Tool calls"
     },
     "attentionTitle": "Needs action",
     "noAttention": "No task is waiting for input or review.",
