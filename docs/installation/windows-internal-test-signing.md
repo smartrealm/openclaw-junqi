@@ -192,6 +192,14 @@ CI 私钥只存在于临时 runner 的当前用户证书存储，不导出、不
 
 - `v2.2.4` 已在 Windows Runner 找到 SignTool 并成功签署 `junqi-desktop.exe`。
 - 随后的 `/pa` 验证因自签根证书未受 Runner 当前用户信任而失败，公开 Release 未创建。
-- 当前实现只在临时 CI 当前用户范围导入公开 CER，并在 job 结束时无条件清理；最终结果以 `v2.2.5` 标签工作流为准。
+- `v2.2.5` 标签用于验证临时 CI 当前用户信任与无条件清理，非交互执行结论见下一节。
+
+## 2026-08-05 非交互证书存储验证
+
+- `v2.2.5` 的 `Import-Certificate` 在非交互 Windows Runner 写入自签根存储时持续阻塞，工作流已主动取消，未创建公开 Release。
+- 当前实现按 Microsoft `X509Store` 契约，以 `StoreLocation.CurrentUser` 和 `OpenFlags.ReadWrite` 直接写入公开证书，并始终关闭证书存储。
+- thumbprint 在信任操作前写入 job output，确保后续失败时 `always()` 清理仍有精确目标；最终结果以 `v2.2.6` 标签工作流为准。
+
+官方依据：Microsoft Learn, [X509Store.Open](https://learn.microsoft.com/dotnet/api/system.security.cryptography.x509certificates.x509store.open) 与 [X509Store.Add](https://learn.microsoft.com/dotnet/api/system.security.cryptography.x509certificates.x509store.add)。
 
 官方依据：Microsoft Learn, [Smart App Control overview](https://learn.microsoft.com/windows/apps/develop/smart-app-control/overview)。
