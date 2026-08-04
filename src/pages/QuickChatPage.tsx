@@ -19,7 +19,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, FileText, Folder, Sparkles, GripVertical, Square } from 'lucide-react';
 import clsx from 'clsx';
-import { useChatStore } from '@/stores/chatStore';
+import { selectSessionRequestActive, useChatStore } from '@/stores/chatStore';
 import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { useVoiceStore } from '@/stores/voiceStore';
@@ -46,6 +46,7 @@ import { closeQuickChat, getQuickChatSeed } from '@/api/tauri-commands';
 import { ChatTraceSourceMessagePanel } from '@/components/Chat/ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from '@/components/Chat/useChatSidePanel';
 import { TaskExecutionRecoveryBanner } from '@/components/Chat/TaskExecutionRecoveryBanner';
+import { stopQuickChatRequest } from './quickChatStop';
 
 interface SeedFile {
   path: string;
@@ -104,6 +105,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     [],
   );
   const isTyping = useChatStore((state) => Boolean(state.typingBySession[sessionKey]));
+  const isRequestActive = useChatStore((state) => selectSessionRequestActive(state, sessionKey));
   const queue = useChatStore((state) => state.messageQueue[sessionKey] ?? EMPTY_QUEUE);
   const queueCount = queue.length;
   const failedQueuedMessage = queue.find((message) => message.failed);
@@ -239,9 +241,8 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
 
   const handleStop = useCallback(async () => {
     voiceRuntime.interruptGlobally(sessionKey);
-    if (!useChatStore.getState().typingBySession[sessionKey]) return;
     try {
-      await gateway.abortChat(sessionKey, sessionId);
+      await stopQuickChatRequest(sessionKey, sessionId, useChatStore.getState(), gateway.abortChat);
     } catch (error) {
       setSendError(t('pet.quickChat.sendError', {
         error: error instanceof Error ? error.message : String(error),
@@ -556,7 +557,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
               : text.length > 0 && t('pet.quickChat.characterCount', { count: text.length })}
           </div>
           <div className="flex items-center gap-1.5">
-            {(isTyping || voiceOutputActive) && (
+            {(isRequestActive || voiceOutputActive) && (
               <button
                 onClick={() => { void handleStop(); }}
                 className="flex h-7 w-7 items-center justify-center rounded-md bg-aegis-danger/80 text-white transition-colors hover:bg-aegis-danger"

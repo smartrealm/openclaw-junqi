@@ -80,6 +80,7 @@ plans/
 - [OpenClaw Stop 检查点与队列对齐](quality/2026-08-03-openclaw-stop-checkpoint-queue-alignment.md)
 - [OpenClaw Stop 会话身份围栏](quality/2026-08-03-openclaw-stop-session-identity-fence.md)
 - [OpenClaw Stop 发送中状态围栏](quality/2026-08-04-openclaw-stop-dispatch-state-fence.md)
+- [OpenClaw Stop 跨入口请求状态围栏](quality/2026-08-04-openclaw-stop-cross-entry-request-fence.md)
 - [OpenClaw Composer 队列权威对齐](quality/2026-08-03-openclaw-composer-queue-authority.md)
 - [灵动岛显隐生命周期](quality/2026-08-04-dynamic-island-visibility-lifecycle.md)
 - [OpenClaw 本地发送队列交付原子性](quality/2026-08-04-openclaw-local-send-queue-dispatch-atomicity.md)
