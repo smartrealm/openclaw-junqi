@@ -289,6 +289,19 @@ export function SessionContextBar() {
       </span>
       <WorkspacePicker agentId={agentId} current={agent?.workspace} />
       <SessionRuntimeControl />
+      {activeSession?.lastRunError && (
+        <span
+          role="status"
+          className="inline-flex min-w-0 max-w-[min(38vw,340px)] items-center gap-1 text-aegis-danger"
+          aria-label={t('chat.sessionLastRunFailed', { reason: activeSession.lastRunError })}
+          title={t('chat.sessionLastRunFailed', { reason: activeSession.lastRunError })}
+        >
+          <AlertCircle size={11} className="shrink-0" aria-hidden="true" />
+          <span className="hidden truncate text-[10px] lg:inline">
+            {t('chat.sessionLastRunFailedShort')}
+          </span>
+        </span>
+      )}
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
         <div className="hidden items-center gap-0.5 lg:flex">
           <button

@@ -327,6 +327,8 @@ export interface Session {
   spawnedBy?: string;
   parentSessionKey?: string;
   status?: string;
+  /** Gateway 记录的最近失败或超时运行摘要；缺失时不保留旧值。 */
+  lastRunError?: string | null;
   hasActiveRun?: boolean;
   hasActiveSubagentRun?: boolean;
   subagentRunState?: string;

@@ -1395,6 +1395,8 @@
     "sessionSettingsUpdateFailed": "會話設定更新失敗",
     "sessionSettingsResponseInvalid": "OpenClaw 未確認本次會話設定變更。",
     "sessionModelSelectionLocked": "OpenClaw 已鎖定此會話的模型選擇。",
+    "sessionLastRunFailed": "最近一次執行失敗：{{reason}}",
+    "sessionLastRunFailedShort": "最近執行失敗",
     "effectiveTools": {
       "open": "查看目前會話實際工具",
       "title": "目前會話實際工具",

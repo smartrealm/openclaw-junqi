@@ -240,6 +240,23 @@ test('setSessions follows the Gateway session list after a deletion', () => {
   assert.equal(state.activeSessionKey, MAIN_KEY);
 });
 
+test('完整 Gateway 会话快照清除已消失的最近运行错误', () => {
+  useChatStore.setState({
+    sessions: [{ key: MAIN_KEY, label: 'Main', lastRunError: 'provider timeout' }],
+    openTabs: [MAIN_KEY],
+    activeSessionKey: MAIN_KEY,
+  });
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main', lastRunError: null },
+  ]);
+
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.lastRunError,
+    null,
+  );
+});
+
 test('a partial sessions.list page preserves sessions outside the current page', () => {
   const outsidePageKey = 'agent:worker:outside-partial-page';
   useChatStore.setState({

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
+import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, CircleAlert, Trash2, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
 import { IconButton } from '@/components/shared/button/Button';
 import { useTranslation } from 'react-i18next';
@@ -1232,6 +1232,16 @@ export function ChatTabs() {
                   </>
                 ) : (
                   <FilePlus size={12} className={clsx('shrink-0 opacity-60', isActive ? 'text-aegis-primary' : 'text-aegis-text-dim')} />
+                )}
+                {session?.lastRunError && (
+                  <span
+                    role="img"
+                    aria-label={t('chat.sessionLastRunFailed', { reason: session.lastRunError })}
+                    title={t('chat.sessionLastRunFailed', { reason: session.lastRunError })}
+                    className="shrink-0 text-aegis-danger"
+                  >
+                    <CircleAlert size={12} aria-hidden="true" />
+                  </span>
                 )}
 
                 {/* Label (double-click to rename) */}

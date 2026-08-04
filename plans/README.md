@@ -57,6 +57,7 @@ plans/
 - [OpenClaw 会话响应使用量详情对齐](quality/2026-08-04-openclaw-session-response-usage.md)
 - [OpenClaw 会话 Agent Runtime 投影](quality/2026-08-04-openclaw-session-agent-runtime-projection.md)
 - [OpenClaw 会话模型选择锁对齐](quality/2026-08-04-openclaw-session-model-selection-lock.md)
+- [OpenClaw 会话最近运行错误投影](quality/2026-08-04-openclaw-session-last-run-error-projection.md)
 
 - [Dashboard operations](quality/2026-07-20-dashboard-operations.md)
 - [Session origin aggregation](quality/2026-07-20-session-origin-aggregation.md)

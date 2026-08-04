@@ -1435,6 +1435,8 @@
     "sessionSettingsUpdateFailed": "Session settings update failed",
     "sessionSettingsResponseInvalid": "OpenClaw did not confirm the session setting change.",
     "sessionModelSelectionLocked": "OpenClaw has locked model selection for this session.",
+    "sessionLastRunFailed": "Most recent run failed: {{reason}}",
+    "sessionLastRunFailedShort": "Recent run failed",
     "effectiveTools": {
       "open": "View effective tools for this session",
       "title": "Effective tools for this session",
