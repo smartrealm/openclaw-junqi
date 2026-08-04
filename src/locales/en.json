@@ -1538,6 +1538,28 @@
       "openExternal": "Open externally",
       "previewUnavailable": "This artifact cannot be previewed inline."
     },
+    "sessionDiff": {
+      "open": "View session changes",
+      "title": "Session changes",
+      "refresh": "Refresh session changes",
+      "loading": "Reading session changes from Gateway",
+      "error": "The session changes could not be read.",
+      "retry": "Retry",
+      "empty": "No changes in this session.",
+      "notGit": "This session is not in a Git workspace.",
+      "unknownSession": "Gateway could not find this session.",
+      "binary": "Binary file",
+      "untracked": "Untracked",
+      "patchUnavailable": "Patch unavailable or truncated.",
+      "resultTruncated": "Gateway truncated this session change result.",
+      "fileTruncated": "This file patch was truncated.",
+      "status": {
+        "added": "Added",
+        "modified": "Modified",
+        "deleted": "Deleted",
+        "renamed": "Renamed"
+      }
+    },
     "messageCount": "{{count}} messages",
     "refresh": "Refresh",
     "workspaceDefault": "Default workspace",

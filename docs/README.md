@@ -135,6 +135,7 @@ docs/
 - [OpenClaw 原生会话消息截断对齐](quality/openclaw-session-message-cut-alignment-2026-08-04.md)
 - [OpenClaw 桌面会话查看声明对齐](quality/openclaw-session-viewer-presence-alignment-2026-08-04.md)
 - [OpenClaw 原生会话组写入对齐](quality/openclaw-session-group-mutations-alignment-2026-08-04.md)
+- [OpenClaw 会话变更快照对齐](quality/openclaw-session-diff-alignment-2026-08-04.md)
 - [灵动岛显隐生命周期审计](quality/dynamic-island-visibility-lifecycle-audit-2026-08-04.md)
 - [OpenClaw 本地发送队列交付原子性审计](quality/openclaw-local-send-queue-dispatch-atomicity-audit-2026-08-04.md)
 - [P0 IPC 与 Gateway 边界收敛验证](quality/p0-ipc-and-gateway-boundary-validation-2026-08-03.md)

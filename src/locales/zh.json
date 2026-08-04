@@ -1527,6 +1527,28 @@
       "openExternal": "外部打开",
       "previewUnavailable": "该产物不支持内联预览。"
     },
+    "sessionDiff": {
+      "open": "查看会话变更",
+      "title": "会话变更",
+      "refresh": "刷新会话变更",
+      "loading": "正在从 Gateway 读取会话变更",
+      "error": "无法读取当前会话变更。",
+      "retry": "重试",
+      "empty": "当前会话没有变更。",
+      "notGit": "该会话不在 Git 工作区中。",
+      "unknownSession": "Gateway 未找到该会话。",
+      "binary": "二进制文件",
+      "untracked": "未跟踪",
+      "patchUnavailable": "补丁不可用或已截断。",
+      "resultTruncated": "Gateway 已截断本次会话变更结果。",
+      "fileTruncated": "该文件补丁已截断。",
+      "status": {
+        "added": "新增",
+        "modified": "修改",
+        "deleted": "删除",
+        "renamed": "重命名"
+      }
+    },
     "messageCount": "{{count}} 条消息",
     "refresh": "刷新",
     "workspaceDefault": "默认工作区",
