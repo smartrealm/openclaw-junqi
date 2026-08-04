@@ -8,9 +8,15 @@ export type DynamicIslandAction =
   | { type: 'voice-stop' }
   | { type: 'hide' };
 
-/** Returns the hide request to the main-window visibility owner. */
-export function hideDynamicIsland(
-  emitAction: (action: DynamicIslandAction) => void,
-): void {
-  emitAction({ type: 'hide' });
+/** 先要求原生窗口立即隐藏，再将持久化意图交给主窗口所有者。 */
+export async function hideDynamicIsland(
+  requestNativeHide: () => Promise<unknown>,
+  emitAction: (action: DynamicIslandAction) => Promise<unknown>,
+): Promise<void> {
+  const [nativeResult, actionResult] = await Promise.allSettled([
+    requestNativeHide(),
+    emitAction({ type: 'hide' }),
+  ]);
+  if (nativeResult.status === 'rejected') throw nativeResult.reason;
+  if (actionResult.status === 'rejected') throw actionResult.reason;
 }

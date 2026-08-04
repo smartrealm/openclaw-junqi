@@ -229,6 +229,7 @@ pub fn run() {
             // Dynamic Island — top-center agent status and quick actions
             commands::dynamic_island::open_dynamic_island,
             commands::dynamic_island::close_dynamic_island,
+            commands::dynamic_island::request_dynamic_island_hide,
             commands::dynamic_island::toggle_dynamic_island,
             commands::dynamic_island::get_dynamic_island_visible,
             commands::dynamic_island::set_dynamic_island_expanded,

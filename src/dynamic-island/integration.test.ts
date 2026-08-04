@@ -40,6 +40,7 @@ test('dynamic island commands and auxiliary root stay wired into Tauri', () => {
   for (const command of [
     'open_dynamic_island',
     'close_dynamic_island',
+    'request_dynamic_island_hide',
     'set_dynamic_island_expanded',
     'set_dynamic_island_click_through',
     'dynamic_island_focus_main',

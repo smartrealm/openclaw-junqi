@@ -36,6 +36,7 @@ import {
 } from './model';
 import './dynamic-island.css';
 import { useTheme } from '@/theme/useTheme';
+import { requestDynamicIslandHide } from '@/api/tauri-commands';
 import { hideDynamicIsland, type DynamicIslandAction } from './DynamicIslandActions';
 
 const COLLAPSE_DELAY_MS = 5_200;
@@ -169,6 +170,14 @@ export default function DynamicIsland() {
   const action = useCallback((payload: DynamicIslandAction) => {
     void emitTauriEvent('dynamic-island:action', payload).catch(() => undefined);
   }, []);
+
+  const requestHide = useCallback(
+    () => hideDynamicIsland(
+      requestDynamicIslandHide,
+      (payload) => emitTauriEvent('dynamic-island:action', payload),
+    ),
+    [],
+  );
 
   const primarySessionActivity = snapshot.sessionActivities[0];
   const runningCount = snapshot.tasks.filter((task) => task.status === 'running').length;
@@ -314,7 +323,7 @@ export default function DynamicIsland() {
                 <button type="button" onClick={() => setIslandExpanded(false)} title={t('dynamicIsland.collapse')}><ChevronUp size={15} /></button>
                 <button
                   type="button"
-                  onClick={() => hideDynamicIsland(action)}
+                  onClick={() => { void requestHide().catch(() => undefined); }}
                   title={t('dynamicIsland.hide')}
                 ><X size={15} /></button>
               </div>

@@ -25,7 +25,7 @@
 21. Preserve a verified KWS phrase as the barge-in signal during assistant output, while retaining VAD/browser feedback suppression; cancel old Gateway Talk output after local stop and before closing its replaced relay session.
 22. Serialize Gateway Talk PCM deltas at the Tauri boundary, wait for the native sink to drain after `output.audio.done`, and make cancellation fence queued frames before stopping the sink.
 23. Move Jarvis model and wake-phrase configuration to an independent Settings tab; retain the composer as a session-scoped shortcut only.
-24. Make the Dynamic Island close control invoke its native hide command before synchronizing the main-window display preference.
+24. 审计灵动岛关闭链路后，将辅助窗口关闭控件改为调用只允许立即隐藏自身的原生命令，并并行同步主窗口展示偏好；通用显隐命令仍只由主窗口串行队列调用。
 25. Move the sole Jarvis microphone, Talk, full-window overlay, draft-confirmation, and retry owner to an application-root Provider. The chat composer consumes this owner and cannot stop an armed listener by unmounting.
 26. Complete the Settings Jarvis entry by moving desktop-standby enablement and its selected-session binding there. Publish preference changes so the root runtime immediately arms or releases capture.
 27. 对照官方 voice-wake routing target，使用 Gateway 投影的会话 `agentId` 核验 agent route；删除通过 session key 格式推断身份的路径，并保持跨会话路由失败关闭。

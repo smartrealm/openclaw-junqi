@@ -1187,6 +1187,7 @@ export const installBuiltinSkillForChat = (skillId: string) => (
 export const clearPetAsset = () => invoke<void>('clear_pet_asset');
 export const clearPetPackage = () => invoke<void>('clear_pet_package');
 export const openDynamicIsland = () => invoke<void>('open_dynamic_island');
+export const requestDynamicIslandHide = () => invoke<void>('request_dynamic_island_hide');
 export const openPetWindow = () => invoke<void>('open_pet_window');
 export const closePetWindow = () => invoke<void>('close_pet_window');
 export const closeQuickChat = () => invoke<void>('close_quickchat');
