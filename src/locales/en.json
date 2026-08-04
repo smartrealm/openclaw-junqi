@@ -1560,6 +1560,20 @@
         "renamed": "Renamed"
       }
     },
+    "sessionFiles": {
+      "open": "View session files",
+      "title": "Session files",
+      "refresh": "Refresh session files",
+      "loading": "Reading session files from Gateway",
+      "error": "The session files could not be read.",
+      "empty": "No files are available in this session.",
+      "select": "Select a file to view its content.",
+      "previewUnavailable": "Gateway did not provide a file preview that can be shown safely.",
+      "parent": "Go to parent directory",
+      "touched": "Touched in session",
+      "workspace": "Session workspace",
+      "kind": { "modified": "Modified", "read": "Read" }
+    },
     "messageCount": "{{count}} messages",
     "refresh": "Refresh",
     "workspaceDefault": "Default workspace",

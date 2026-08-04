@@ -73,6 +73,7 @@ import { OpenClawSessionMessageCutClient } from './OpenClawSessionMessageCutClie
 import { OpenClawSessionObserverClient } from './OpenClawSessionObserverClient';
 import { OpenClawSessionViewerPresenceClient } from './OpenClawSessionViewerPresenceClient';
 import { OpenClawSessionDiffClient } from './OpenClawSessionDiffClient';
+import { OpenClawSessionFilesClient } from './OpenClawSessionFilesClient';
 import {
   openClawSessionObserverStream,
   routeOpenClawSessionObserverEvent,
@@ -166,6 +167,13 @@ export type {
 } from './OpenClawSessionMessageCutClient';
 export type { OpenClawSessionViewerPresenceResult } from './OpenClawSessionViewerPresenceClient';
 export type { OpenClawSessionDiff, OpenClawSessionDiffFile } from './OpenClawSessionDiffClient';
+export type {
+  OpenClawSessionFile,
+  OpenClawSessionFileBrowser,
+  OpenClawSessionFileBrowserEntry,
+  OpenClawSessionFilesGet,
+  OpenClawSessionFilesList,
+} from './OpenClawSessionFilesClient';
 export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
 export type { OpenClawProviderUsageSnapshot } from './OpenClawProviderUsageClient';
 export type {
@@ -434,6 +442,17 @@ const sessionViewerPresence = new OpenClawSessionViewerPresenceClient({
   ),
 });
 const sessionDiff = new OpenClawSessionDiffClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+const sessionFiles = new OpenClawSessionFilesClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
@@ -1423,6 +1442,15 @@ export const gateway = {
   },
   async getSessionDiff(sessionKey: string, agentId?: string) {
     return sessionDiff.get(sessionKey, agentId);
+  },
+  async listSessionFiles(
+    sessionKey: string,
+    options: { agentId?: string; path?: string; search?: string } = {},
+  ) {
+    return sessionFiles.list(sessionKey, options);
+  },
+  async getSessionFile(sessionKey: string, path: string, agentId?: string) {
+    return sessionFiles.get(sessionKey, path, agentId);
   },
   async listSessionArtifacts(sessionKey: string, agentId?: string): Promise<ArtifactSummary[]> {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);

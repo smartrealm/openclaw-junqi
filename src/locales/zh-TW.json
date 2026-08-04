@@ -1520,6 +1520,20 @@
         "renamed": "重新命名"
       }
     },
+    "sessionFiles": {
+      "open": "查看會話檔案",
+      "title": "會話檔案",
+      "refresh": "刷新會話檔案",
+      "loading": "正在從 Gateway 讀取會話檔案",
+      "error": "無法讀取目前會話檔案。",
+      "empty": "目前會話沒有可查看檔案。",
+      "select": "選擇一個檔案以查看內容。",
+      "previewUnavailable": "Gateway 未提供可安全顯示的檔案預覽。",
+      "parent": "返回上層目錄",
+      "touched": "會話已觸及",
+      "workspace": "會話工作區",
+      "kind": { "modified": "修改", "read": "讀取" }
+    },
     "messageCount": "{{count}} 條消息",
     "refresh": "刷新",
     "workspaceDefault": "預設工作區",
