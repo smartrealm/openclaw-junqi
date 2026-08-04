@@ -32,6 +32,7 @@ describe('SessionSettingsClient', () => {
     await client.setModel(SESSION_KEY, 'openai/gpt-5.6');
     await client.setModel(SESSION_KEY, null);
     await client.setThinking(SESSION_KEY, 'high');
+    await client.setThinking(SESSION_KEY, null);
     await client.setFastMode(SESSION_KEY, 'auto');
     await client.setFastMode(SESSION_KEY, null);
     await client.setVerbose(SESSION_KEY, 'full');
@@ -48,6 +49,7 @@ describe('SessionSettingsClient', () => {
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, model: 'openai/gpt-5.6' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, model: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, thinkingLevel: 'high' } },
+      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, thinkingLevel: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, fastMode: 'auto' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, fastMode: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, verboseLevel: 'full' } },

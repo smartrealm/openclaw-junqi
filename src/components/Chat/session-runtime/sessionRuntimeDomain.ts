@@ -1,17 +1,6 @@
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
 import { canonicalProviderId } from '@/services/gateway/modelIdentity';
 
-export const SESSION_THINKING_LEVELS = [
-  'auto',
-  'high',
-  'medium',
-  'low',
-  'minimal',
-  'off',
-] as const;
-
-export type SessionThinkingLevel = (typeof SESSION_THINKING_LEVELS)[number];
-
 export const SESSION_FAST_MODES = ['inherit', 'auto', 'on', 'off'] as const;
 
 export type SessionFastMode = (typeof SESSION_FAST_MODES)[number];
@@ -68,14 +57,18 @@ export function groupSessionModels(models: readonly ModelEntry[]): SessionModelG
   }));
 }
 
-export function normalizeThinkingLevel(level: string | null): SessionThinkingLevel {
-  return SESSION_THINKING_LEVELS.includes(level as SessionThinkingLevel)
-    ? level as SessionThinkingLevel
-    : 'auto';
+/** null 是清除会话覆盖、继承 Gateway 已解析默认值的唯一客户端表示。 */
+export function normalizeThinkingLevel(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-export function thinkingLevelForGateway(level: SessionThinkingLevel): string | null {
-  return level === 'auto' ? null : level;
+/** 仅允许写入 Gateway 当前 profile 明确声明的等级，继承仍需 profile 存在。 */
+export function canWriteThinkingLevel(
+  levels: readonly { id: string }[] | null | undefined,
+  level: string | null,
+): boolean {
+  return levels !== null && levels !== undefined
+    && (level === null || levels.some((option) => option.id === level));
 }
 
 export function normalizeFastMode(value: unknown): SessionFastMode {

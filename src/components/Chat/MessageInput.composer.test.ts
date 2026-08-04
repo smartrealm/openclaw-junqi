@@ -67,7 +67,6 @@ test('session runtime control has a single stable top context owner beside works
   assert.match(runtime, /if \(!saving\) setOpen/);
   assert.doesNotMatch(runtime, /switching \? null/);
   assert.match(settings, /activeSessionKey === sessionKey/);
-  assert.match(settings, /setSessionThinking\(sessionKey, nextThinking\)/);
   assert.match(settings, /setSessionModel\(null, sessionKey\)/);
   assert.match(runtime, /input\.useDefaultModel/);
 });
@@ -157,6 +156,10 @@ test('composer menu labels are localized in every shipped language', () => {
     'sessionRuntimeTitle',
     'sessionRuntimeProvider',
     'sessionRuntimeModel',
+    'sessionRuntimeThinkingInherit',
+    'sessionRuntimeThinkingInherited',
+    'sessionRuntimeThinkingUnavailable',
+    'sessionRuntimeThinkingModelChange',
     'sessionRuntimeFastMode',
     'sessionRuntimeVerbose',
     'sessionRuntimeTrace',

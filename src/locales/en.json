@@ -1948,6 +1948,10 @@
     "sessionRuntimeProvider": "Provider",
     "sessionRuntimeModel": "Model",
     "sessionRuntimeSummary": "{{model}}, thinking {{thinking}}, fast {{fastMode}}, verbose {{verbose}}, plugin trace {{trace}}, response usage {{responseUsage}}, reasoning {{reasoning}}",
+    "sessionRuntimeThinkingInherit": "Inherit",
+    "sessionRuntimeThinkingInherited": "Inherited: {{level}}",
+    "sessionRuntimeThinkingUnavailable": "The Gateway did not provide the available thinking levels for this model. This client will not change the session setting.",
+    "sessionRuntimeThinkingModelChange": "Save the model change first and wait for the Gateway to refresh the available thinking levels.",
     "sessionRuntimeFastMode": "Fast mode",
     "sessionRuntimeFastModes": {
       "inherit": "Inherit",

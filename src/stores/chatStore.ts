@@ -41,6 +41,7 @@ import {
 } from '@/services/chat/sessionOrganization';
 import type { OpenClawChatSendTiming } from '@/services/gateway/chatSendTiming';
 import type { OpenClawBtwSideResult } from '@/services/gateway/openClawBtw';
+import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -332,6 +333,10 @@ export interface Session {
   // 从 sessions.list 缓存的每会话模型、思考、快速模式、输出、追踪、推理和用量数据。
   model?: string | null;
   thinkingLevel?: string | null;
+  /** Gateway 按当前模型 profile 下发的可选思考等级；缺失时客户端不得猜测。 */
+  thinkingLevels?: readonly GatewayThinkingLevelOption[] | null;
+  /** Gateway 解析出的当前模型默认思考等级；仅用于说明继承结果。 */
+  thinkingDefault?: string | null;
   /** OpenClaw 会话快速模式覆盖；null 表示继承运行时默认值。 */
   fastMode?: boolean | 'auto' | null;
   /** OpenClaw 会话详细工具输出覆盖；null 表示继承运行时默认值。 */

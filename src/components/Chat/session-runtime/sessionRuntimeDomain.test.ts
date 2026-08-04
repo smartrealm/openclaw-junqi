@@ -3,13 +3,13 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   fastModeForGateway,
+  canWriteThinkingLevel,
   groupSessionModels,
   modelDisplayName,
   normalizeFastMode,
   normalizeReasoningLevel,
   normalizeResponseUsage,
   normalizeTraceLevel,
-  normalizeThinkingLevel,
   normalizeVerboseLevel,
   SESSION_FAST_MODES,
   SESSION_REASONING_LEVELS,
@@ -19,7 +19,6 @@ import {
   reasoningLevelForGateway,
   responseUsageForGateway,
   traceLevelForGateway,
-  thinkingLevelForGateway,
   verboseLevelForGateway,
 } from './sessionRuntimeDomain';
 
@@ -46,12 +45,12 @@ test('modelDisplayName prefers catalog metadata without model-specific rules', (
   assert.equal(modelDisplayName(undefined, 'provider/model'), 'model');
 });
 
-test('thinking levels normalize to the supported gateway values', () => {
-  assert.equal(normalizeThinkingLevel(null), 'auto');
-  assert.equal(normalizeThinkingLevel('high'), 'high');
-  assert.equal(normalizeThinkingLevel('unexpected'), 'auto');
-  assert.equal(thinkingLevelForGateway('auto'), null);
-  assert.equal(thinkingLevelForGateway('minimal'), 'minimal');
+test('thinking writes require the latest Gateway profile instead of a client fallback list', () => {
+  const levels = [{ id: 'xhigh' }, { id: 'max' }];
+  assert.equal(canWriteThinkingLevel(levels, 'xhigh'), true);
+  assert.equal(canWriteThinkingLevel(levels, 'high'), false);
+  assert.equal(canWriteThinkingLevel(levels, null), true);
+  assert.equal(canWriteThinkingLevel(null, null), false);
 });
 
 test('fast modes map exactly to the documented session override values', () => {
@@ -134,6 +133,10 @@ test('session runtime picker follows the compact shared provider identity contra
   assert.match(source, /sessionRuntimeTraceUnsupported/);
   assert.match(source, /SESSION_RESPONSE_USAGE_LEVELS/);
   assert.match(source, /sessionRuntimeResponseUsageUnsupported/);
+  assert.match(source, /thinkingOptions\.map/);
+  assert.match(source, /sessionRuntimeThinkingUnavailable/);
+  assert.match(source, /requiresThinkingProfileRefresh/);
+  assert.doesNotMatch(source, /SESSION_THINKING_LEVELS/);
   assert.doesNotMatch(source, /<span className="shrink-0">\{fastModeLabel\}<\/span>/);
   assert.doesNotMatch(source, /w-\[min\(620px/);
   assert.doesNotMatch(source, /Icon\.provider/);

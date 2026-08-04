@@ -1906,6 +1906,10 @@
     "sessionRuntimeProvider": "供應商",
     "sessionRuntimeModel": "模型",
     "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}，快速模式 {{fastMode}}，工具輸出 {{verbose}}，外掛追蹤 {{trace}}，回應用量 {{responseUsage}}，推理可見性 {{reasoning}}",
+    "sessionRuntimeThinkingInherit": "繼承",
+    "sessionRuntimeThinkingInherited": "繼承：{{level}}",
+    "sessionRuntimeThinkingUnavailable": "Gateway 未提供目前模型可選的思考等級，用戶端不會修改此會話設定。",
+    "sessionRuntimeThinkingModelChange": "請先儲存模型變更並等待 Gateway 重新整理可選思考等級。",
     "sessionRuntimeFastMode": "快速模式",
     "sessionRuntimeFastModes": {
       "inherit": "繼承",

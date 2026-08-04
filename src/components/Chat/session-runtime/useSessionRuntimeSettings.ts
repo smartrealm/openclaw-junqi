@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { gateway } from '@/services/gateway';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
+import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
 import {
   SessionSettingsResponseError,
   type SessionPatchResult,
@@ -17,16 +18,15 @@ import {
   normalizeTraceLevel,
   normalizeThinkingLevel,
   normalizeVerboseLevel,
+  canWriteThinkingLevel,
   reasoningLevelForGateway,
   responseUsageForGateway,
   traceLevelForGateway,
-  thinkingLevelForGateway,
   verboseLevelForGateway,
   type SessionFastMode,
   type SessionReasoningLevel,
   type SessionResponseUsageLevel,
   type SessionTraceLevel,
-  type SessionThinkingLevel,
   type SessionVerboseLevel,
 } from './sessionRuntimeDomain';
 
@@ -44,13 +44,17 @@ function settingErrorMessage(error: unknown, fallback: string, invalidResponse: 
 
 export interface SessionRuntimeSnapshot {
   modelId: string | null;
-  thinking: SessionThinkingLevel;
+  thinking: string | null;
+  thinkingLevels: readonly GatewayThinkingLevelOption[] | null;
+  thinkingDefault: string | null;
   fastMode: SessionFastMode;
   verbose: SessionVerboseLevel;
   trace: SessionTraceLevel;
   responseUsage: SessionResponseUsageLevel;
   reasoning: SessionReasoningLevel;
 }
+
+type SessionRuntimeDraft = Omit<SessionRuntimeSnapshot, 'thinkingLevels' | 'thinkingDefault'>;
 
 function commitSessionModel(
   sessionKey: string,
@@ -91,6 +95,13 @@ function resolvedPatchFastMode(result: SessionPatchResult): boolean | 'auto' | n
   throw new SessionSettingsResponseError('invalid-payload');
 }
 
+export function resolveSessionThinkingPatch(result: SessionPatchResult): string | null {
+  const value = result.entry.thinkingLevel;
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  throw new SessionSettingsResponseError('invalid-payload');
+}
+
 function resolvedPatchVerboseLevel(result: SessionPatchResult): 'on' | 'full' | 'off' | null {
   const value = result.entry.verboseLevel;
   if (value === undefined || value === null || value === 'on' || value === 'full' || value === 'off') {
@@ -127,6 +138,12 @@ export function useSessionRuntimeSettings() {
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const currentModel = useChatStore((state) => state.currentModel);
   const currentThinking = useChatStore((state) => state.currentThinking);
+  const currentThinkingLevels = useChatStore((state) => (
+    state.sessions.find((entry) => entry.key === state.activeSessionKey)?.thinkingLevels ?? null
+  ));
+  const currentThinkingDefault = useChatStore((state) => (
+    state.sessions.find((entry) => entry.key === state.activeSessionKey)?.thinkingDefault ?? null
+  ));
   const manualModelOverride = useChatStore((state) => state.manualModelOverride);
   const currentFastMode = useChatStore((state) => (
     state.sessions.find((session) => session.key === state.activeSessionKey)?.fastMode ?? null
@@ -149,6 +166,8 @@ export function useSessionRuntimeSettings() {
   const committed: SessionRuntimeSnapshot = {
     modelId: manualModelOverride ?? currentModel,
     thinking: normalizeThinkingLevel(currentThinking),
+    thinkingLevels: currentThinkingLevels,
+    thinkingDefault: normalizeThinkingLevel(currentThinkingDefault),
     fastMode: normalizeFastMode(currentFastMode),
     verbose: normalizeVerboseLevel(currentVerbose),
     trace: normalizeTraceLevel(currentTrace),
@@ -181,7 +200,7 @@ export function useSessionRuntimeSettings() {
     }
   }, [addToast, t]);
 
-  const apply = useCallback(async (draft: SessionRuntimeSnapshot): Promise<boolean> => {
+  const apply = useCallback(async (draft: SessionRuntimeDraft): Promise<boolean> => {
     return runUpdate(async () => {
       const stateBefore = useChatStore.getState();
       const sessionKey = stateBefore.activeSessionKey || 'agent:main:main';
@@ -202,16 +221,28 @@ export function useSessionRuntimeSettings() {
       const previousReasoning = normalizeReasoningLevel(
         stateBefore.sessions.find((session) => session.key === sessionKey)?.reasoningLevel ?? null,
       );
-      if (draft.modelId && draft.modelId !== previousModel) {
+      const modelWillChange = Boolean(draft.modelId && draft.modelId !== previousModel);
+      const thinkingWillChange = draft.thinking !== previousThinking;
+      const currentThinkingLevels = stateBefore.sessions.find(
+        (session) => session.key === sessionKey,
+      )?.thinkingLevels;
+      // 新模型的 profile 只能由随后的权威会话刷新确认，不能拿旧模型的能力集写入。
+      if (
+        thinkingWillChange
+        && (modelWillChange || !canWriteThinkingLevel(currentThinkingLevels, draft.thinking))
+      ) {
+        throw new SessionSettingsResponseError('invalid-payload');
+      }
+
+      if (modelWillChange) {
         const result = await gateway.setSessionModel(draft.modelId, sessionKey);
         const effectiveModel = resolvedPatchModel(result);
         commitSessionModel(sessionKey, effectiveModel, effectiveModel, previousModel);
       }
 
-      if (draft.thinking !== previousThinking) {
-        const nextThinking = thinkingLevelForGateway(draft.thinking);
-        await gateway.setSessionThinking(nextThinking, sessionKey);
-        useChatStore.getState().setSessionThinking(sessionKey, nextThinking);
+      if (thinkingWillChange) {
+        const result = await gateway.setSessionThinking(draft.thinking, sessionKey);
+        useChatStore.getState().setSessionThinking(sessionKey, resolveSessionThinkingPatch(result));
       }
 
       if (draft.fastMode !== previousFastMode) {

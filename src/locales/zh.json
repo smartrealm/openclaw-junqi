@@ -1937,6 +1937,10 @@
     "sessionRuntimeProvider": "供应商",
     "sessionRuntimeModel": "模型",
     "sessionRuntimeSummary": "{{model}}，思考 {{thinking}}，快速模式 {{fastMode}}，工具输出 {{verbose}}，插件追踪 {{trace}}，响应使用量 {{responseUsage}}，推理可见性 {{reasoning}}",
+    "sessionRuntimeThinkingInherit": "继承",
+    "sessionRuntimeThinkingInherited": "继承：{{level}}",
+    "sessionRuntimeThinkingUnavailable": "Gateway 未提供当前模型可选的思考等级，客户端不会修改此会话设置。",
+    "sessionRuntimeThinkingModelChange": "请先保存模型更改并等待 Gateway 刷新可选思考等级。",
     "sessionRuntimeFastMode": "快速模式",
     "sessionRuntimeFastModes": {
       "inherit": "继承",

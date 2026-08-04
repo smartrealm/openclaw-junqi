@@ -44,6 +44,7 @@ import {
   type GatewayRecoveryProgress,
 } from '@/services/gateway/recoveryProgress';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
+import { parseGatewaySessionThinkingProfile } from '@/services/gateway/sessionThinkingProfile';
 import {
   OPENCLAW_UPDATE_MAINTENANCE_FINISHED,
   OPENCLAW_UPDATE_MAINTENANCE_STARTED,
@@ -342,6 +343,7 @@ export default function App() {
             : '';
         if (!key) return [];
         const gatewayModel = resolveGatewaySessionModelId(s.modelProvider, s.model);
+        const thinkingProfile = parseGatewaySessionThinkingProfile(s);
         return [{
           key,
           sessionId: typeof s.sessionId === 'string' ? s.sessionId : undefined,
@@ -368,7 +370,9 @@ export default function App() {
           systemSent: s.systemSent === true,
           // 供标题栏与会话控制使用的每会话元数据。
           model: gatewayModel,
-          thinkingLevel: s.thinkingLevel ?? null,
+          thinkingLevel: thinkingProfile.level,
+          thinkingLevels: thinkingProfile.levels,
+          thinkingDefault: thinkingProfile.defaultLevel,
           fastMode: s.fastMode === true || s.fastMode === false || s.fastMode === 'auto'
             ? s.fastMode
             : null,

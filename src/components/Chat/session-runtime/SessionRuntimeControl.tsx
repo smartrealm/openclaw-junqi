@@ -11,13 +11,11 @@ import {
   SESSION_FAST_MODES,
   SESSION_REASONING_LEVELS,
   SESSION_RESPONSE_USAGE_LEVELS,
-  SESSION_THINKING_LEVELS,
   SESSION_TRACE_LEVELS,
   SESSION_VERBOSE_LEVELS,
   type SessionFastMode,
   type SessionReasoningLevel,
   type SessionResponseUsageLevel,
-  type SessionThinkingLevel,
   type SessionTraceLevel,
   type SessionVerboseLevel,
 } from './sessionRuntimeDomain';
@@ -29,7 +27,7 @@ export function SessionRuntimeControl() {
   const { activeSessionKey, committed, saving, apply, restoreDefaultModel } = useSessionRuntimeSettings();
   const [open, setOpen] = useState(false);
   const [draftModelId, setDraftModelId] = useState<string | null>(committed.modelId);
-  const [draftThinking, setDraftThinking] = useState<SessionThinkingLevel>(committed.thinking);
+  const [draftThinking, setDraftThinking] = useState<string | null>(committed.thinking);
   const [draftFastMode, setDraftFastMode] = useState<SessionFastMode>(committed.fastMode);
   const [draftVerbose, setDraftVerbose] = useState<SessionVerboseLevel>(committed.verbose);
   const [draftTrace, setDraftTrace] = useState<SessionTraceLevel>(committed.trace);
@@ -47,6 +45,8 @@ export function SessionRuntimeControl() {
     || draftTrace !== committed.trace
     || draftResponseUsage !== committed.responseUsage
     || draftReasoning !== committed.reasoning;
+  const requiresThinkingProfileRefresh = draftModelId !== committed.modelId
+    && draftThinking !== committed.thinking;
 
   useEffect(() => {
     if (open) return;
@@ -83,7 +83,17 @@ export function SessionRuntimeControl() {
   if (availableModels.length === 0) return null;
 
   const modelLabel = modelDisplayName(activeModel, committed.modelId) || t('config.notSet');
-  const thinkingLabel = t(`titlebar.thinking.levels.${committed.thinking}`);
+  const thinkingOptions = committed.thinkingLevels ?? [];
+  const thinkingOptionLabel = (level: string | null): string => {
+    if (level === null) {
+      const defaultOption = thinkingOptions.find((option) => option.id === committed.thinkingDefault);
+      return defaultOption
+        ? t('input.sessionRuntimeThinkingInherited', { level: defaultOption.label })
+        : t('input.sessionRuntimeThinkingInherit');
+    }
+    return thinkingOptions.find((option) => option.id === level)?.label ?? level;
+  };
+  const thinkingLabel = thinkingOptionLabel(committed.thinking);
   const fastModeLabel = t(`input.sessionRuntimeFastModes.${committed.fastMode}`);
   const verboseLabel = t(`input.sessionRuntimeVerboseModes.${committed.verbose}`);
   const traceLabel = t(`input.sessionRuntimeTraceModes.${committed.trace}`);
@@ -193,25 +203,51 @@ export function SessionRuntimeControl() {
               <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
                 {t('titlebar.thinking.label')}
               </div>
-              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
-                {SESSION_THINKING_LEVELS.map((level) => (
+              {thinkingOptions.length === 0 ? (
+                <div role="status" className="text-[11px] text-aegis-warning">
+                  {t('input.sessionRuntimeThinkingUnavailable')}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                   <button
-                    key={level}
                     type="button"
-                    onClick={() => setDraftThinking(level)}
-                    disabled={draftThinking === level}
-                    aria-current={draftThinking === level ? 'true' : undefined}
+                    onClick={() => setDraftThinking(null)}
+                    disabled={draftThinking === null}
+                    aria-current={draftThinking === null ? 'true' : undefined}
                     className={clsx(
                       'h-8 rounded-md border px-2 text-[11px] transition-colors',
-                      draftThinking === level
+                      draftThinking === null
                         ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
                         : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
                     )}
                   >
-                    {t(`titlebar.thinking.levels.${level}`)}
+                    <span className="block truncate">{thinkingOptionLabel(null)}</span>
                   </button>
-                ))}
-              </div>
+                  {thinkingOptions.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setDraftThinking(option.id)}
+                      disabled={draftThinking === option.id}
+                      aria-current={draftThinking === option.id ? 'true' : undefined}
+                      className={clsx(
+                        'h-8 min-w-0 rounded-md border px-2 text-[11px] transition-colors',
+                        draftThinking === option.id
+                          ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
+                          : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
+                      )}
+                      title={option.label}
+                    >
+                      <span className="block truncate">{option.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {requiresThinkingProfileRefresh && (
+                <div role="status" className="mt-2 text-[11px] text-aegis-warning">
+                  {t('input.sessionRuntimeThinkingModelChange')}
+                </div>
+              )}
             </div>
 
             <div className="border-t border-aegis-menu-border px-3 py-2.5">
@@ -387,7 +423,7 @@ export function SessionRuntimeControl() {
                   })
                     .then((updated) => { if (updated) setOpen(false); });
                 }}
-                disabled={!draftModelId || !hasChanges || saving}
+                disabled={!draftModelId || !hasChanges || saving || requiresThinkingProfileRefresh}
                 className="inline-flex h-8 min-w-16 items-center justify-center gap-1.5 rounded-md bg-aegis-primary px-3 text-[11px] font-medium text-aegis-btn-primary-text transition-colors hover:bg-aegis-primary-hover disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {saving && <LoaderCircle size={12} className="animate-spin" />}
