@@ -1097,6 +1097,21 @@ export class ChatHandler {
     const msgId = `tool-live-${runId}-${toolCallId}`;
     if (!this.beginRun(sessionKey, runId)) return;
     this.bindRunToSession(sessionKey, runId);
+    const store = useChatStore.getState();
+    const listFor = () => store.getCachedMessages(sessionKey) || [];
+    const existingToolCard = listFor().find((message) => message.id === msgId);
+    const toolCardIsTerminal = existingToolCard?.responseState === 'final'
+      || existingToolCard?.toolStatus === 'done'
+      || existingToolCard?.toolStatus === 'error'
+      || existingToolCard?.toolStatus === 'cancelled'
+      || existingToolCard?.toolStatus === 'verification_required';
+    // A delayed non-terminal event must not make a completed or locally
+    // verification-required tool appear active again. A later result remains
+    // admissible because it may be the authoritative closure for that state.
+    if (
+      phase !== 'result'
+      && toolCardIsTerminal
+    ) return;
     void taskExecutionCoordinator.recordToolEvent({
       sessionKey,
       runId,
@@ -1113,9 +1128,6 @@ export class ChatHandler {
           }
         : {}),
     }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('record tool checkpoint', error));
-
-    const store = useChatStore.getState();
-    const listFor = () => store.getCachedMessages(sessionKey) || [];
 
     if (phase === 'start') {
       const currentContent = this.currentStreamContentBySession.get(sessionKey) || '';

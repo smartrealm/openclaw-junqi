@@ -910,6 +910,33 @@ test('session.tool renders the official late-subscriber tool lifecycle exactly o
   assert.deepEqual(reconciliationRequests, []);
 });
 
+test('a delayed tool update cannot reopen a finalized tool card', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const handler = new ChatHandler({
+    callbacks: { onStreamChunk: () => {}, onStreamEnd: () => {} },
+  } as any);
+  const sessionKey = 'agent:main:tool-terminal-fence';
+  const runId = 'run-tool-terminal-fence';
+  const toolCallId = 'tool-terminal-fence';
+
+  handler.handleToolStream({ sessionKey, runId, ts: 1_000, data: {
+    phase: 'result', name: 'exec', toolCallId, result: 'complete output',
+  } });
+  handler.handleToolStream({ sessionKey, runId, ts: 1_100, data: {
+    phase: 'update', name: 'exec', toolCallId, partialResult: 'late partial output',
+  } });
+
+  const { useChatStore } = (globalThis as any).__chatDeps as { useChatStore: any };
+  const tool = (useChatStore.getState().messagesPerSession[sessionKey] ?? [])
+    .find((message: any) => message.id === `tool-live-${runId}-${toolCallId}`);
+  assert.equal(tool?.toolStatus, 'done');
+  assert.equal(tool?.toolOutput, 'complete output');
+  assert.equal(tool?.responseState, 'final');
+});
+
 test('agent item keeps tool identity, input, failed output, and source timing through the live projection', async () => {
   installWindowMock();
   const { ChatHandler, useChatStore } = await loadDeps();

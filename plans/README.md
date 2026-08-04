@@ -161,6 +161,7 @@ plans/
 - [OpenClaw Talk 事件契约](quality/2026-08-04-openclaw-talk-event-contract-alignment.md)
 - [OpenClaw Talk Barge-in Turn 围栏](quality/2026-08-04-openclaw-talk-barge-in-turn-fence.md)
 - [OpenClaw Task 工具事件 Run 绑定](quality/2026-08-04-openclaw-task-tool-event-run-binding.md)
+- [OpenClaw 工具生命周期终态围栏](quality/2026-08-04-openclaw-tool-lifecycle-terminal-fence.md)
 - [OpenClaw 会话 category 权威性](quality/2026-08-04-openclaw-session-category-authority-alignment.md)
 - [OpenClaw 原生会话组目录投影](quality/2026-08-04-openclaw-native-session-group-catalog-projection.md)
 - [OpenClaw Gateway 方法广告发现边界修正](quality/2026-08-04-openclaw-gateway-method-advertisement-gate.md)
