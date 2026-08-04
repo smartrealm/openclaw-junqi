@@ -303,6 +303,15 @@ test('sessionId rotation atomically replaces transcript state and resets identit
       [OTHER_KEY]: [{ id: 'old', role: 'assistant', content: 'old', timestamp: '2026-01-01' }],
     },
     typingBySession: { [OTHER_KEY]: true },
+    chatSendTimingBySession: {
+      [OTHER_KEY]: {
+        sessionKey: OTHER_KEY,
+        runId: 'run-old',
+        phase: 'agent-run-started',
+        ackToPhaseMs: 12,
+        receivedToPhaseMs: 18,
+      },
+    },
     thinkingBySession: { [OTHER_KEY]: { runId: 'run-old', text: 'old thought' } },
     messageQueue: { [OTHER_KEY]: [{ id: 'queued-old', text: 'old', timestamp: '2026-01-01' }] },
     drafts: { [OTHER_KEY]: 'keep this draft' },
@@ -317,6 +326,7 @@ test('sessionId rotation atomically replaces transcript state and resets identit
   const state = useChatStore.getState();
   assert.equal(state.messagesPerSession[OTHER_KEY], undefined);
   assert.equal(state.typingBySession[OTHER_KEY], undefined);
+  assert.equal(state.chatSendTimingBySession[OTHER_KEY], undefined);
   assert.equal(state.thinkingBySession[OTHER_KEY], undefined);
   assert.equal(state.messageQueue[OTHER_KEY], undefined);
   assert.deepEqual(state.messages, []);
@@ -335,6 +345,22 @@ test('settleSessionRunUi atomically clears one session without disturbing anothe
   useChatStore.setState({
     typingBySession: { [MAIN_KEY]: true, [OTHER_KEY]: true },
     typingStartedAtBySession: { [MAIN_KEY]: 1_000, [OTHER_KEY]: 2_000 },
+    chatSendTimingBySession: {
+      [MAIN_KEY]: {
+        sessionKey: MAIN_KEY,
+        runId: 'run-main',
+        phase: 'agent-run-started',
+        ackToPhaseMs: 10,
+        receivedToPhaseMs: 14,
+      },
+      [OTHER_KEY]: {
+        sessionKey: OTHER_KEY,
+        runId: 'run-other',
+        phase: 'model-selected',
+        ackToPhaseMs: 16,
+        receivedToPhaseMs: 21,
+      },
+    },
     thinkingBySession: {
       [MAIN_KEY]: { runId: 'run-main', text: 'main thinking' },
       [OTHER_KEY]: { runId: 'run-other', text: 'other thinking' },
@@ -348,9 +374,11 @@ test('settleSessionRunUi atomically clears one session without disturbing anothe
   assert.equal(selectActiveSessionTyping(state), false);
   assert.deepEqual(selectActiveSessionThinking(state), { runId: null, text: '' });
   assert.equal(state.typingStartedAtBySession[MAIN_KEY], undefined);
+  assert.equal(state.chatSendTimingBySession[MAIN_KEY], undefined);
   assert.equal(state.sendingBySession[MAIN_KEY], false);
   assert.equal(state.typingBySession[OTHER_KEY], true);
   assert.equal(state.typingStartedAtBySession[OTHER_KEY], 2_000);
+  assert.equal(state.chatSendTimingBySession[OTHER_KEY]?.runId, 'run-other');
   assert.deepEqual(state.thinkingBySession[OTHER_KEY], { runId: 'run-other', text: 'other thinking' });
   assert.equal(state.sendingBySession[OTHER_KEY], true);
 });

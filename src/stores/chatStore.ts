@@ -39,6 +39,7 @@ import {
   removeSessionOrganization,
   setSessionOrganizationTopic,
 } from '@/services/chat/sessionOrganization';
+import type { OpenClawChatSendTiming } from '@/services/gateway/chatSendTiming';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -518,6 +519,9 @@ interface ChatState {
   typingBySession: Record<string, boolean>;
   /** Started timestamps keep background activity surfaces truthful and measurable. */
   typingStartedAtBySession: Record<string, number>;
+  /** Read-only Gateway timing for the currently projected response, never persisted. */
+  chatSendTimingBySession: Record<string, OpenClawChatSendTiming>;
+  setChatSendTiming: (sessionKey: string, timing: OpenClawChatSendTiming | null) => void;
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
   /** Atomically release every transient run indicator for one session. */
   settleSessionRunUi: (sessionKey?: string) => void;
@@ -646,6 +650,7 @@ function clearTranscriptStateForIdentityChanges(
     typingBySession: withoutSessionKeys(state.typingBySession, sessionKeys),
     compactionStatusBySession: withoutSessionKeys(state.compactionStatusBySession, sessionKeys),
     typingStartedAtBySession: withoutSessionKeys(state.typingStartedAtBySession, sessionKeys),
+    chatSendTimingBySession: withoutSessionKeys(state.chatSendTimingBySession, sessionKeys),
     quickRepliesBySession: withoutSessionKeys(state.quickRepliesBySession, sessionKeys),
     thinkingBySession: withoutSessionKeys(state.thinkingBySession, sessionKeys),
     sendingBySession: withoutSessionKeys(state.sendingBySession, sessionKeys),
@@ -1195,6 +1200,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingStartedAtBySession: Object.fromEntries(
         Object.entries(state.typingStartedAtBySession).filter(([key]) => key !== targetKey),
       ),
+      chatSendTimingBySession: Object.fromEntries(
+        Object.entries(state.chatSendTimingBySession).filter(([key]) => key !== targetKey),
+      ),
       quickRepliesBySession: {
         ...state.quickRepliesBySession,
         [targetKey]: [],
@@ -1265,6 +1273,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingBySession: { ...state.typingBySession, [key]: false },
       typingStartedAtBySession: Object.fromEntries(
         Object.entries(state.typingStartedAtBySession).filter(([sessionKey]) => sessionKey !== key),
+      ),
+      chatSendTimingBySession: Object.fromEntries(
+        Object.entries(state.chatSendTimingBySession).filter(([sessionKey]) => sessionKey !== key),
       ),
       quickRepliesBySession: { ...state.quickRepliesBySession, [key]: [] },
       thinkingBySession: {
@@ -1765,6 +1776,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { [key]: _groupsRm, ...restGroupsCache } = state._groupsCache;
     const { [key]: _typingRm, ...restTyping } = state.typingBySession;
     const { [key]: _typingStartedAt, ...restTypingStartedAt } = state.typingStartedAtBySession;
+    const { [key]: _timingRm, ...restChatSendTiming } = state.chatSendTimingBySession;
     const { [key]: _qr, ...restQuickReplies } = state.quickRepliesBySession;
     const { [key]: _thinking, ...restThinking } = state.thinkingBySession;
     const { [key]: _draft, ...restDrafts } = state.drafts;
@@ -1789,6 +1801,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       _groupsCache: restGroupsCache,
       typingBySession: restTyping,
       typingStartedAtBySession: restTypingStartedAt,
+      chatSendTimingBySession: restChatSendTiming,
       quickRepliesBySession: restQuickReplies,
       thinkingBySession: restThinking,
       drafts: restDrafts,
@@ -1860,6 +1873,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── UI State ──
   typingBySession: {},
   typingStartedAtBySession: {},
+  chatSendTimingBySession: {},
+  setChatSendTiming: (sessionKey, timing) => set((state) => {
+    const targetKey = sessionKey.trim();
+    if (!targetKey || isSessionDeleted(targetKey)) return state;
+    const next = { ...state.chatSendTimingBySession };
+    if (!timing) {
+      delete next[targetKey];
+      return { chatSendTimingBySession: next };
+    }
+    if (!state.typingBySession[targetKey]) return state;
+    next[targetKey] = timing;
+    return { chatSendTimingBySession: next };
+  }),
   compactionStatusBySession: {},
   setCompactionStatus: (sessionKey, status) => set((state) => {
     const normalizedKey = sessionKey.trim();
@@ -2078,24 +2104,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (isSessionDeleted(targetKey)) return state;
       const wasTyping = state.typingBySession[targetKey] === true;
       const typingStartedAtBySession = { ...state.typingStartedAtBySession };
+      const chatSendTimingBySession = { ...state.chatSendTimingBySession };
       if (typing && !wasTyping) typingStartedAtBySession[targetKey] = Date.now();
-      if (!typing) delete typingStartedAtBySession[targetKey];
+      if (!typing) {
+        delete typingStartedAtBySession[targetKey];
+        delete chatSendTimingBySession[targetKey];
+      }
       return {
         typingBySession: {
           ...state.typingBySession,
           [targetKey]: typing,
         },
         typingStartedAtBySession,
+        chatSendTimingBySession,
       };
     }),
   settleSessionRunUi: (sessionKey) => set((state) => {
     const targetKey = sessionKey ?? state.activeSessionKey;
     if (isSessionDeleted(targetKey)) return state;
     const typingStartedAtBySession = { ...state.typingStartedAtBySession };
+    const chatSendTimingBySession = { ...state.chatSendTimingBySession };
     delete typingStartedAtBySession[targetKey];
+    delete chatSendTimingBySession[targetKey];
     return {
       typingBySession: { ...state.typingBySession, [targetKey]: false },
       typingStartedAtBySession,
+      chatSendTimingBySession,
       thinkingBySession: {
         ...state.thinkingBySession,
         [targetKey]: { runId: null, text: '' },

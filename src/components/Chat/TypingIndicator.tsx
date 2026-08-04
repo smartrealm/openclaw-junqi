@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { selectActiveSessionTyping, useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
@@ -11,10 +12,12 @@ import { AssistantResponseAvatar } from './MessageBubble';
 // ═══════════════════════════════════════════════════════════
 
 export function TypingIndicator() {
+  const { t } = useTranslation();
   const { language } = useSettingsStore();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const isTyping = useChatStore(selectActiveSessionTyping);
   const typingStartedAt = useChatStore((s) => s.typingStartedAtBySession[s.activeSessionKey]);
+  const gatewayTiming = useChatStore((s) => s.chatSendTimingBySession[s.activeSessionKey]);
   const dir = getDirection(language);
 
   // The store owns the start instant. This keeps elapsed time truthful when
@@ -45,6 +48,9 @@ export function TypingIndicator() {
     const s = sec % 60;
     return `${m}:${String(s).padStart(2, '0')}`;
   };
+
+  const timingPhase = gatewayTiming ? t(`chat.responseTiming.${gatewayTiming.phase}`) : null;
+  const timingMs = gatewayTiming ? Math.round(gatewayTiming.receivedToPhaseMs) : null;
 
   return (
     <div className="group flex gap-2.5 items-start mx-1 mr-4 mb-2.5 animate-fade-in" dir={dir}>
@@ -90,6 +96,11 @@ export function TypingIndicator() {
             </div>
           )}
         </div>
+        {timingPhase && timingMs !== null && (
+          <div className="mt-1.5 px-1 text-[10px] text-aegis-text-dim" aria-live="polite">
+            {t('chat.responseTiming.detail', { phase: timingPhase, ms: timingMs })}
+          </div>
+        )}
       </div>
     </div>
   );

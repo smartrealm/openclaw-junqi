@@ -1567,6 +1567,15 @@
       "statusVerificationRequired": "verification required",
       "statusUnknown": "unknown"
     },
+    "responseTiming": {
+      "dispatch-started": "Gateway dispatching",
+      "model-selected": "Model selected",
+      "agent-run-started": "Agent started",
+      "first-assistant-event": "First response received",
+      "dispatch-completed": "Gateway dispatch completed",
+      "post-dispatch-completed": "Response finalized",
+      "detail": "{{phase}} - Gateway {{ms}} ms"
+    },
     "untrustedWorkshopCommandIgnored": "An untrusted text command was ignored. Use an authorized workspace action instead.",
     "deliveryNotConfirmed": "OpenClaw did not confirm this message. You can retry it safely.",
     "availableSessions": "Available Sessions",

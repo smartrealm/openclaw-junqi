@@ -37,6 +37,7 @@ import {
   OpenClawPendingChatSendRegistry,
   type OpenClawPendingChatSendPhase,
 } from './OpenClawPendingChatSend';
+import { parseOpenClawChatSendTiming } from './chatSendTiming';
 import {
   parseOpenClawSessionOperationEvent,
   type OpenClawSessionOperationEvent,
@@ -675,6 +676,17 @@ export class ChatHandler {
     return null;
   }
 
+  private handleChatSendTiming(payload: unknown): void {
+    const timing = parseOpenClawChatSendTiming(payload);
+    if (!timing || isIsolatedExecutionSessionKey(timing.sessionKey)) return;
+
+    // This event is not a run admission signal. It can be delayed after the
+    // official chat.send acknowledgement, so it may only decorate an exact
+    // Run already accepted by this projection.
+    if (!this.runProjection.active(timing.sessionKey, timing.runId)) return;
+    useChatStore.getState().setChatSendTiming(timing.sessionKey, timing);
+  }
+
   /** Flush buffered stream content to the UI */
   private flushStream(sessionKey?: string) {
     const entries = sessionKey
@@ -906,7 +918,9 @@ export class ChatHandler {
     // accepted the user's request. Do not keep its optimistic bubble pending
     // while the assistant is working or after a later abort.
     this.completePendingSend(sessionKey, runId);
-    useChatStore.getState().setIsTyping(true, sessionKey);
+    const store = useChatStore.getState();
+    store.setIsTyping(true, sessionKey);
+    store.setChatSendTiming(sessionKey, null);
     if (started.replacedRunId) {
       this.closeCurrentStreamSegment(sessionKey, undefined, started.replacedRunId);
       this.clearActiveResponse(sessionKey, started.replacedRunId);
@@ -1336,6 +1350,10 @@ export class ChatHandler {
   handleEvent(msg: any) {
     const event = msg.event || '';
     const p = msg.payload || {};
+    if (event === 'chat.send_timing') {
+      this.handleChatSendTiming(p);
+      return;
+    }
     if (event === 'session.tool' && !isOpenClawSessionToolPayload(p)) {
       debugWarn('gateway', '[GW] Ignoring malformed OpenClaw session.tool event');
       return;

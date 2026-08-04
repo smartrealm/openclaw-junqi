@@ -1527,6 +1527,15 @@
       "statusVerificationRequired": "需要核驗",
       "statusUnknown": "未知"
     },
+    "responseTiming": {
+      "dispatch-started": "Gateway 正在派送",
+      "model-selected": "已選擇模型",
+      "agent-run-started": "智能體已啟動",
+      "first-assistant-event": "已收到首段回應",
+      "dispatch-completed": "Gateway 派送完成",
+      "post-dispatch-completed": "回應已完成",
+      "detail": "{{phase}} - Gateway {{ms}} 毫秒"
+    },
     "untrustedWorkshopCommandIgnored": "已忽略不可信的文本命令，請改用經過授權的工作台操作。",
     "availableSessions": "可用會話",
     "newTab": "新建標籤頁",

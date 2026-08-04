@@ -69,3 +69,20 @@ OpenClaw Control UI 当前并未为 JunQi 的 SemanticBlock 和 ResponseGroup �
 ## 验证边界
 
 自动化验证了投影等价性、历史对象引用复用和回退行为，但不能替代真实 Tauri 中的长会话帧率、滚动稳定性、亮暗主题及窄窗口验收。本次未执行真实性能录制，因此不声明已达到固定 FPS 或 commit 耗时目标。
+
+## 2026-08-04 Gateway 响应阶段投影
+
+官方 OpenClaw 当前源码在 `chat.send` 的 Control UI 连接上发出只读
+`chat.send_timing` 事件，包含精确 `sessionKey`、`runId`、阶段以及 Gateway 端耗时。JunQi
+同样以官方 `openclaw-control-ui` 客户端身份连接，因此可接收该事件；此前未消费它，界面只能
+显示本地等待时间。
+
+本次将事件严格解码，且只接受已在本地 Run 投影中确认活动的完全相同 `sessionKey + runId`。
+它仅驱动输入中气泡下方的 Gateway 阶段和上游报告耗时，不影响 Stop、队列、Task checkpoint、
+消息历史或 OpenClaw 终态判断。Run 结算、会话重置、删除和 identity 轮换都会清除该临时视图。
+
+### 验证结果
+
+2026-08-04 已通过 timing decoder、ChatHandler 和 ChatStore 定向回归（92 项），以及
+`pnpm lint`、`pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs`。未连接真实 Gateway
+或执行 Windows、macOS、Linux 真机界面验收，因此不声明该事件已在具体运行环境中实测到达。

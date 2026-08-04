@@ -32,6 +32,13 @@
 4. 扫描修改文件中的禁用 Unicode 符号。
 5. 将真实 Tauri 长会话性能录制列为未验证边界。
 
+### Phase E Gateway 响应阶段投影
+
+1. 核对当前官方 `chat.send_timing` 事件、Control UI 客户端身份和 JunQi 握手身份。
+2. 增加严格 decoder 与精确活动 Run 围栏，不让该只读事件创建或结算 Run。
+3. 仅在输入中组件显示 Gateway 已报告的阶段和耗时；终态及会话身份清理临时状态。
+4. 为 decoder、错 Run 忽略、清理和正常投影补回归，并运行完整验证。
+
 ## 文件范围
 
 - `src/stores/chatStore.ts`

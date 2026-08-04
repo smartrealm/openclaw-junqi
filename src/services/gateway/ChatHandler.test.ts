@@ -23,6 +23,7 @@ function resetChatStore() {
     typingBySession: {},
     compactionStatusBySession: {},
     typingStartedAtBySession: {},
+    chatSendTimingBySession: {},
   });
 }
 
@@ -1914,6 +1915,47 @@ test('a cached terminal chat.send acknowledgement settles without waiting for re
   handler.reconcileSendAcknowledgement(sessionKey, runId, { runId, status: 'ok' });
 
   assert.deepEqual(reconciliations, [{ sessionKey, state: 'settled', activeRunIds: [] }]);
+});
+
+test('chat.send_timing decorates only the exact active OpenClaw run', async () => {
+  installWindowMock();
+  const { ChatHandler, useChatStore } = await loadDeps();
+  resetChatStore();
+
+  const handler = new ChatHandler({ callbacks: { onStreamChunk: () => {}, onStreamEnd: () => {} } } as any);
+  const sessionKey = 'agent:main:timing';
+  const runId = 'run-timing';
+  handler.reconcileSendAcknowledgement(sessionKey, runId, { runId, status: 'started' });
+
+  handler.handleEvent({ event: 'chat.send_timing', payload: {
+    sessionKey,
+    runId,
+    phase: 'agent-run-started',
+    ackToPhaseMs: 12.25,
+    receivedToPhaseMs: 18.5,
+    dispatchStartedToPhaseMs: 8,
+  } });
+
+  assert.deepEqual(useChatStore.getState().chatSendTimingBySession[sessionKey], {
+    sessionKey,
+    runId,
+    phase: 'agent-run-started',
+    ackToPhaseMs: 12.25,
+    receivedToPhaseMs: 18.5,
+    dispatchStartedToPhaseMs: 8,
+  });
+
+  handler.handleEvent({ event: 'chat.send_timing', payload: {
+    sessionKey,
+    runId: 'run-stale',
+    phase: 'model-selected',
+    ackToPhaseMs: 20,
+    receivedToPhaseMs: 25,
+  } });
+
+  assert.equal(useChatStore.getState().chatSendTimingBySession[sessionKey]?.runId, runId);
+  useChatStore.getState().settleSessionRunUi(sessionKey);
+  assert.equal(useChatStore.getState().chatSendTimingBySession[sessionKey], undefined);
 });
 
 test('a delayed send acknowledgement cannot settle a newer observed run', async () => {

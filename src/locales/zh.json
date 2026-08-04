@@ -1556,6 +1556,15 @@
       "statusVerificationRequired": "需要核验",
       "statusUnknown": "未知"
     },
+    "responseTiming": {
+      "dispatch-started": "Gateway 正在派发",
+      "model-selected": "已选择模型",
+      "agent-run-started": "智能体已启动",
+      "first-assistant-event": "已收到首段响应",
+      "dispatch-completed": "Gateway 派发完成",
+      "post-dispatch-completed": "响应已完成",
+      "detail": "{{phase}} - Gateway {{ms}} 毫秒"
+    },
     "untrustedWorkshopCommandIgnored": "已忽略不可信的文本命令，请改用经过授权的工作台操作。",
     "deliveryNotConfirmed": "OpenClaw 未确认收到此消息，您可以安全重试。",
     "availableSessions": "可用会话",
